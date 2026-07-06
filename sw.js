@@ -1,5 +1,4 @@
-
-const CACHE_NAME = 'sidecut-shell-v2';
+const CACHE_NAME = 'sidecut-shell-v3';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -24,4 +23,3 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
- 
