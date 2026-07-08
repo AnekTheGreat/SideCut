@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>SideCut — your files, your player</title>
+<title>Sidecut — your files, your player</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0E1B1F">
 <link rel="icon" href="icon-192.png">
@@ -179,20 +179,25 @@
   .speed-row span{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-dim); flex-shrink:0; }
   #speedSlider{ flex:1; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; background:var(--line); outline:none; }
   #speedSlider::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%; background:var(--gold); }
-  .speed-presets{ display:flex; gap:5px; overflow-x:auto; padding-top:2px; }
-  .speed-presets::-webkit-scrollbar{ display:none; }
-  .speed-presets button{
-    flex-shrink:0; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink-dim);
-    border-radius:12px; padding:4px 10px; font-size:11px; font-family:'JetBrains Mono',monospace; cursor:pointer;
-  }
-  .speed-presets button.active{ background:var(--gold); color:var(--bg); border-color:var(--gold); font-weight:600; }
   .np-row{ display:flex; align-items:center; gap:12px; }
-  #nowPlaying .disc{ width:42px; height:42px; border-width:4px; flex-shrink:0; cursor:pointer; }
+  #nowPlaying .disc{ width:54px; height:54px; border-width:5px; flex-shrink:0; cursor:pointer; }
   #nowPlaying .disc.tap-spin{ animation-play-state: running !important; animation-duration: 0.5s !important; }
   #nowPlaying .disc::after{ width:8px; height:8px; }
-  #npInfo{ flex:1; min-width:0; }
+  #npInfo{ flex:1; min-width:0; position:relative; cursor:pointer; }
   #npInfo .t{ font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #npInfo .a{ font-size:11.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .name-bubble{
+    position:absolute; bottom:calc(100% + 12px); left:0; min-width:180px; max-width:260px;
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:12px; padding:10px 14px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.45); z-index:30;
+  }
+  .name-bubble::after{
+    content:''; position:absolute; bottom:-7px; left:18px; width:12px; height:12px;
+    background:var(--bg-raised); border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+    transform:rotate(45deg);
+  }
+  .name-bubble .bt{ font-size:14px; font-weight:600; word-break:break-word; line-height:1.3; }
+  .name-bubble .ba{ font-size:12px; color:var(--ink-dim); margin-top:3px; word-break:break-word; }
   #npControls{ display:flex; align-items:center; gap:4px; flex-shrink:0; }
   #npControls button{ background:none; border:none; color:var(--ink); cursor:pointer; width:36px; height:36px; display:flex; align-items:center; justify-content:center; }
   #npControls svg{ width:19px; height:19px; }
@@ -227,6 +232,7 @@
     background:var(--bg-raised); border-top:1px solid var(--line); border-radius:18px 18px 0 0;
     width:100%; max-width:480px; padding:22px 20px calc(22px + env(safe-area-inset-bottom));
     display:flex; flex-direction:column; gap:14px;
+    max-height:82vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
   .modal h3{ font-size:18px; }
   .modal input{
@@ -293,7 +299,12 @@
   <div id="miniBar"><div class="fill" id="miniFill"></div></div>
   <div class="np-row">
     <div class="disc" id="npDisc"></div>
-    <div id="npInfo"><div class="t" id="npTitle">—</div><div class="a" id="npArtist">—</div></div>
+    <div id="npInfo"><div class="t" id="npTitle">—</div><div class="a" id="npArtist">—</div>
+      <div class="name-bubble" id="nameBubble" style="display:none;">
+        <div class="bt" id="bubbleTitle">—</div>
+        <div class="ba" id="bubbleArtist">—</div>
+      </div>
+    </div>
     <div id="npControls">
       <button id="shuffleBtn" title="Shuffle"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg></button>
       <button id="prevBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
@@ -314,15 +325,6 @@
     <span>Speed</span>
     <input type="range" id="speedSlider" min="0.5" max="2" step="0.05" value="1">
     <span id="speedValue">1.0x</span>
-  </div>
-  <div class="speed-presets" id="speedPresets">
-    <button data-speed="0.5">0.5x</button>
-    <button data-speed="0.75">0.75x</button>
-    <button data-speed="1">1x</button>
-    <button data-speed="1.25">1.25x</button>
-    <button data-speed="1.5">1.5x</button>
-    <button data-speed="1.75">1.75x</button>
-    <button data-speed="2">2x</button>
   </div>
 </div>
 
@@ -403,16 +405,7 @@
   </div>
 </div>
 
-<!-- Full song name, revealed by swiping up on the now-playing title -->
-<div class="modal-backdrop" id="fullNameBackdrop">
-  <div class="modal" style="align-items:center; text-align:center;">
-    <h3 id="fullNameTitle" style="word-break:break-word;">—</h3>
-    <div id="fullNameArtist" style="color:var(--ink-dim); font-size:14px;">—</div>
-    <div class="modal-btns">
-      <button class="cancel" id="fullNameClose" style="flex:1;">Close</button>
-    </div>
-  </div>
-</div>
+
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
@@ -1066,6 +1059,18 @@
     nextBtn.addEventListener('click', () => { playNext(id); $('songActionsBackdrop').style.display='none'; });
     list.appendChild(nextBtn);
 
+    const speedWrap = document.createElement('div');
+    speedWrap.style.cssText = 'padding:10px 4px 4px;';
+    const speedLabel = playbackSpeed.toFixed(2).replace(/0$/,'').replace(/\.$/,'') + 'x';
+    speedWrap.innerHTML = `
+      <div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-dim); margin-bottom:6px;">
+        <span>Playback speed</span><span id="actionSpeedValue">${speedLabel}</span>
+      </div>
+      <input type="range" id="actionSpeedSlider" min="0.5" max="2" step="0.05" value="${playbackSpeed}" style="width:100%;">
+    `;
+    list.appendChild(speedWrap);
+    speedWrap.querySelector('#actionSpeedSlider').addEventListener('input', (e) => setPlaybackSpeed(parseFloat(e.target.value)));
+
     if(isAllSongsView){
       const addBtn = document.createElement('button');
       addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> Add to playlist`;
@@ -1545,48 +1550,40 @@
     if(a.duration) a.currentTime = (($('seekBar').value)/100) * a.duration;
     savePlaybackState(true);
   });
-  $('speedSlider').addEventListener('input', (e) => {
-    playbackSpeed = parseFloat(e.target.value);
+  function setPlaybackSpeed(v){
+    playbackSpeed = v;
     activeAudio().playbackRate = playbackSpeed;
-    $('speedValue').textContent = playbackSpeed.toFixed(2).replace(/0$/,'') + 'x';
-    updateSpeedPresetHighlight();
-  });
-  function updateSpeedPresetHighlight(){
-    document.querySelectorAll('.speed-presets button').forEach(btn => {
-      btn.classList.toggle('active', Math.abs(parseFloat(btn.dataset.speed) - playbackSpeed) < 0.001);
-    });
+    const label = playbackSpeed.toFixed(2).replace(/0$/,'').replace(/\.$/,'') + 'x';
+    $('speedSlider').value = playbackSpeed;
+    $('speedValue').textContent = label;
+    const actionSlider = document.getElementById('actionSpeedSlider');
+    if(actionSlider){
+      actionSlider.value = playbackSpeed;
+      document.getElementById('actionSpeedValue').textContent = label;
+    }
   }
-  document.querySelectorAll('.speed-presets button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      playbackSpeed = parseFloat(btn.dataset.speed);
-      activeAudio().playbackRate = playbackSpeed;
-      $('speedSlider').value = playbackSpeed;
-      $('speedValue').textContent = playbackSpeed.toFixed(2).replace(/0$/,'') + 'x';
-      updateSpeedPresetHighlight();
-    });
-  });
+  $('speedSlider').addEventListener('input', (e) => setPlaybackSpeed(parseFloat(e.target.value)));
   $('miniBar').addEventListener('click', () => { $('nowPlaying').classList.remove('mini'); });
-  // ---------------- Swipe up on song title to see full name ----------------
-  (function(){
-    let startY = null;
-    const npInfo = $('npInfo');
-    npInfo.addEventListener('pointerdown', (e) => { startY = e.clientY; });
-    npInfo.addEventListener('pointerup', (e) => {
-      if(startY == null) return;
-      const deltaY = startY - e.clientY;
-      startY = null;
-      if(deltaY > 30){
-        if(queueIndex < 0 || queueIndex >= queue.length) return;
-        const t = allTracks.find(tr => tr.id === queue[queueIndex]);
-        if(!t) return;
-        $('fullNameTitle').textContent = t.name;
-        $('fullNameArtist').textContent = t.artist;
-        $('fullNameBackdrop').style.display = 'flex';
-      }
-    });
-  })();
-  $('fullNameClose').addEventListener('click', () => { $('fullNameBackdrop').style.display = 'none'; });
-  $('fullNameBackdrop').addEventListener('click', e => { if(e.target === $('fullNameBackdrop')) $('fullNameBackdrop').style.display = 'none'; });
+  // ---------------- Tap song title/artist for a full-name pop-out bubble ----------------
+  $('npInfo').addEventListener('click', (e) => {
+    if(e.target.closest('.name-bubble')) return;
+    const bubble = $('nameBubble');
+    if(bubble.style.display === 'block'){
+      bubble.style.display = 'none';
+      return;
+    }
+    if(queueIndex < 0 || queueIndex >= queue.length) return;
+    const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(!t) return;
+    $('bubbleTitle').textContent = t.name;
+    $('bubbleArtist').textContent = t.artist;
+    bubble.style.display = 'block';
+    clearTimeout(bubble._hideTimer);
+    bubble._hideTimer = setTimeout(() => { bubble.style.display = 'none'; }, 4000);
+  });
+  document.addEventListener('click', (e) => {
+    if(!e.target.closest('#npInfo')) $('nameBubble').style.display = 'none';
+  });
   $('npDisc').addEventListener('click', () => {
     if(queueIndex < 0 || queueIndex >= queue.length) return;
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
