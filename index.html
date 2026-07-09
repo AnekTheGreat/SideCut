@@ -2098,4 +2098,186 @@
       if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
       hardAdvance(-1, true);
     });
-    nav
+    navigator.mediaSession.setActionHandler('nexttrack', () => hardAdvance(1, true));
+    try{
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if(details.seekTime != null) activeAudio().currentTime = details.seekTime;
+      });
+    }catch(e){ /* not all browsers support seekto */ }
+  }
+
+  // ---------------- Mix: tempo analysis + compatibility ordering ----------------
+  async function estimateBPM(track){
+    const resp = await fetch(track.url);
+    const arrBuf = await resp.arrayBuffer();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    let audioBuffer;
+    try{
+      audioBuffer = await ctx.decodeAudioData(arrBuf);
+    } finally {
+      ctx.close();
+    }
+    const sampleRate = audioBuffer.sampleRate;
+    const raw = audioBuffer.getChannelData(0);
+    const maxSamples = Math.min(raw.length, sampleRate * 45); // analyze up to first 45s
+    const data = raw.subarray(0, maxSamples);
+
+    const hop = Math.round(sampleRate * 0.01); // 10ms frames
+    const frameCount = Math.floor(data.length / hop);
+    if(frameCount < 20) return null;
+    const envelope = new Float32Array(frameCount);
+    for(let i=0;i<frameCount;i++){
+      let sum = 0;
+      const start = i*hop, end = Math.min(start+hop, data.length);
+      for(let j=start;j<end;j++) sum += data[j]*data[j];
+      envelope[i] = Math.sqrt(sum / hop);
+    }
+    const onset = new Float32Array(frameCount);
+    for(let i=1;i<frameCount;i++){
+      const d = envelope[i] - envelope[i-1];
+      onset[i] = d > 0 ? d : 0;
+    }
+    const frameRate = 100; // frames per second given 10ms hop
+    const minBPM = 50, maxBPM = 200;
+    const minLag = Math.max(1, Math.round(frameRate*60/maxBPM));
+    const maxLag = Math.min(frameCount-1, Math.round(frameRate*60/minBPM));
+    let bestLag = minLag, bestScore = -Infinity;
+    for(let lag=minLag; lag<=maxLag; lag++){
+      let score = 0;
+      for(let i=0; i+lag<frameCount; i++) score += onset[i]*onset[i+lag];
+      if(score > bestScore){ bestScore = score; bestLag = lag; }
+    }
+    return Math.round(60 / (bestLag/frameRate));
+  }
+
+  function buildMixOrder(tracks){
+    // Chain tracks by nearest tempo so each transition feels close in energy/pace —
+    // an approximation of "songs that go together," not true key/genre matching.
+    const withBpm = tracks.filter(t => t.bpm != null);
+    const withoutBpm = tracks.filter(t => t.bpm == null);
+    if(!withBpm.length) return tracks.slice();
+    withBpm.sort((a,b) => a.bpm - b.bpm);
+    const ordered = [withBpm[0]];
+    const remaining = withBpm.slice(1);
+    while(remaining.length){
+      const last = ordered[ordered.length-1];
+      let bestIdx = 0, bestDiff = Infinity;
+      remaining.forEach((t,i) => { const d = Math.abs(t.bpm - last.bpm); if(d < bestDiff){ bestDiff = d; bestIdx = i; } });
+      ordered.push(remaining.splice(bestIdx,1)[0]);
+    }
+    return ordered.concat(withoutBpm);
+  }
+
+  async function startMix(ids){
+    if(!ids || !ids.length){ toast('Nothing to mix yet.'); return; }
+    if(ids.length < 2){ toast('Add a couple more songs to mix.'); return; }
+    const mixBtn = $('mixBtn');
+    if(mixBtn) mixBtn.disabled = true;
+    try{
+      const tracks = ids.map(id => allTracks.find(t => t.id === id)).filter(Boolean);
+      for(let i=0;i<tracks.length;i++){
+        const t = tracks[i];
+        if(t.bpm == null){
+          toast(`Analyzing tempo ${i+1}/${tracks.length}…`, 1800);
+          t.bpm = await estimateBPM(t).catch(() => null);
+          persistTrackMeta(t);
+        }
+      }
+      const ordered = buildMixOrder(tracks);
+      isMixMode = true;
+      queue = ordered.map(t => t.id);
+      queueIndex = 0;
+      queueSourcePlaylist = activePlaylist;
+      cancelCrossfade();
+      playCurrent(true);
+      toast('Mix started — tracks will blend into each other');
+    }catch(e){
+      console.error(e);
+      toast('Could not build a mix from this playlist.');
+    }finally{
+      if(mixBtn) mixBtn.disabled = false;
+    }
+  }
+
+  // ---------------- Boot: auto-load anything saved from before ----------------
+  (async function boot(){
+    try{
+      await loadSavedTheme();
+      const loaded = await loadFromDB();
+      if(loaded){
+        $('emptyState').style.display = 'none';
+        $('library').style.display = 'flex';
+        // Reopen on whichever playlist the last-playing song came from, not always All Songs
+        if(lastPlaybackState && lastPlaybackState.sourcePlaylist && playlists[lastPlaybackState.sourcePlaylist]){
+          activePlaylist = lastPlaybackState.sourcePlaylist;
+        }
+        renderTabs();
+        renderList();
+        toast(`Welcome back — ${allTracks.length} track${allTracks.length===1?'':'s'} loaded`);
+        restorePlaybackState();
+      }
+    }catch(e){
+      console.error('Auto-load failed', e);
+    }
+  })();
+
+  function restorePlaybackState(){
+    const state = lastPlaybackState;
+    if(!state || !state.trackId) return;
+    const validQueue = (state.queue || []).filter(id => allTracks.find(t => t.id === id));
+    if(!validQueue.length) return;
+    const track = allTracks.find(t => t.id === state.trackId);
+    if(!track) return;
+
+    queue = validQueue;
+    queueIndex = validQueue.indexOf(state.trackId);
+    if(queueIndex < 0) queueIndex = 0;
+    isMixMode = !!state.isMixMode;
+    shuffle = !!state.shuffle;
+    repeatMode = state.repeatMode || 'off';
+    queueSourcePlaylist = (state.sourcePlaylist && playlists[state.sourcePlaylist]) ? state.sourcePlaylist : 'All Songs';
+    $('shuffleBtn').classList.toggle('active', shuffle);
+    $('repeatBtn').classList.toggle('active', repeatMode !== 'off');
+    if(shuffle){ regenerateShuffleOrder(); renderList(); }
+
+    const a = activeAudio();
+    a.src = track.url;
+    a.playbackRate = playbackSpeed;
+    applyNormalizedGain(track, activeIdx); applyEQ(track, activeIdx);
+    const resumeAt = state.currentTime || 0;
+    a.addEventListener('loadedmetadata', function onMeta(){
+      a.currentTime = resumeAt;
+      $('seekBar').value = a.duration ? (resumeAt / a.duration) * 100 : 0;
+      $('curTime').textContent = fmtTime(resumeAt);
+      $('totalTime').textContent = fmtTime(a.duration || 0);
+      a.removeEventListener('loadedmetadata', onMeta);
+    }, { once: true });
+
+    // Paused on purpose — mobile browsers block autoplay without a tap anyway.
+    $('nowPlaying').style.display = 'flex';
+    $('npTitle').textContent = track.name;
+    $('npArtist').textContent = track.artist;
+    $('mixBadge').style.display = isMixMode ? 'inline-block' : 'none';
+    highlightPlaying(track.id);
+    updateNowPlayingArt(track);
+    updateMediaSession(track);
+    if('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+
+    $('playPauseBtn').classList.add('pulse-cue');
+    toast(`Tap play to pick back up on "${track.name}"`, 3500);
+  }
+
+  // ---------------- PWA: register service worker so this can be installed ----------------
+  // Only matters once these files are hosted online (https) — a plain
+  // downloaded/local file won't trigger an install prompt, that's an OS-level
+  // restriction no website can bypass.
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration skipped:', err));
+    });
+  }
+
+})();
+</script>
+</body>
+</html>
