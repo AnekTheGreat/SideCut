@@ -59,6 +59,7 @@
   #emptyState{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center; }
   .disc{
     width:120px; height:120px; border-radius:50%;
+    touch-action: none;
     background:
       radial-gradient(circle at 32% 28%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 32%),
       repeating-radial-gradient(circle at center, #12181a 0, #12181a 1.5px, #1b2224 1.5px, #1b2224 3px);
@@ -84,6 +85,49 @@
     box-shadow: 0 0 0 2px rgba(0,0,0,0.5), inset 0 0 6px rgba(0,0,0,0.25);
   }
   @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  /* ---------- DJ Mode: turntable ---------- */
+  .turntable{
+    position:relative; width:260px; height:260px; margin:8px auto 4px; padding:18px;
+    touch-action: none;
+    background: linear-gradient(145deg, #2b2b2b, #161616);
+    border-radius:18px;
+    box-shadow: 0 16px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06), inset 0 0 0 1px rgba(0,0,0,0.4);
+  }
+  .platter{
+    position:relative; width:100%; height:100%; border-radius:50%;
+    touch-action: none;
+    background: radial-gradient(circle, #363636 0%, #232323 65%, #1a1a1a 100%);
+    box-shadow: inset 0 0 18px rgba(0,0,0,0.65), 0 2px 6px rgba(0,0,0,0.4);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .turntable .disc{ width:87%; height:87%; }
+  .tonearm{
+    position:absolute; top:16px; right:14px; width:96px; height:6px;
+    transform-origin: 88% 50%;
+    transform: rotate(-32deg);
+    transition: transform 0.7s cubic-bezier(0.34, 1.15, 0.64, 1);
+    z-index:6;
+  }
+  .turntable.playing .tonearm{ transform: rotate(6deg); }
+  .tonearm::before{
+    content:''; position:absolute; right:-9px; top:-8px; width:22px; height:22px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #ddc196, #8a7455);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    z-index:1;
+  }
+  .tonearm-shaft{
+    position:absolute; top:1px; left:0; width:100%; height:4px; border-radius:2px;
+    background: linear-gradient(90deg, #c9a876, #9c8560);
+  }
+  .tonearm-head{
+    position:absolute; left:-7px; top:-5px; width:18px; height:13px; border-radius:2px;
+    background:#111; box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
+  }
+  .tonearm-head::after{
+    content:''; position:absolute; left:3px; bottom:-4px; width:2px; height:6px; border-radius:1px;
+    background: var(--coral);
+  }
   #emptyState h2{ font-size:24px; max-width:300px; line-height:1.3; }
   #emptyState p{ color:var(--ink-dim); max-width:280px; font-size:14px; line-height:1.5; }
 
@@ -523,12 +567,20 @@
 <div class="modal-backdrop" id="djModeBackdrop">
   <div class="modal" style="align-items:center; text-align:center;">
     <h3 style="letter-spacing:2px; font-size:14px; color:var(--ink-dim);">DJ MODE</h3>
-    <div class="disc" id="djDisc" style="width:230px; height:230px; margin:8px auto 4px;">
-      <div class="disc-label" id="djDiscLabel"></div>
+    <div class="turntable" id="djTurntable">
+      <div class="platter">
+        <div class="disc" id="djDisc">
+          <div class="disc-label" id="djDiscLabel"></div>
+        </div>
+      </div>
+      <div class="tonearm" id="djTonearm">
+        <div class="tonearm-shaft"></div>
+        <div class="tonearm-head"></div>
+      </div>
     </div>
-    <div style="font-size:15px; font-weight:600;" id="djTrackTitle">—</div>
+    <div style="font-size:15px; font-weight:600; margin-top:8px;" id="djTrackTitle">—</div>
     <div style="font-size:12.5px; color:var(--ink-dim); margin-bottom:6px;" id="djTrackArtist">—</div>
-    <div style="font-size:11px; color:var(--ink-dim);">Drag the record to scratch</div>
+    <div style="font-size:11px; color:var(--ink-dim);">Grab the record to scratch</div>
     <button class="playlist-pick-btn" id="djPlayPause" style="margin-top:12px; text-align:center;">Pause</button>
     <div class="modal-btns">
       <button class="cancel" id="djModeClose" style="flex:1;">Exit DJ Mode</button>
@@ -2128,7 +2180,7 @@
     $('npDisc').classList.add('spinning');
     $('playIcon').innerHTML = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
     if('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-    if($('djModeBackdrop').style.display === 'flex'){ $('djDisc').classList.add('spinning'); $('djPlayPause').textContent = 'Pause'; }
+    if($('djModeBackdrop').style.display === 'flex'){ $('djDisc').classList.add('spinning'); $('djTurntable').classList.add('playing'); $('djPlayPause').textContent = 'Pause'; }
   }
   function onPauseEvt(e){
     if(e.target !== activeAudio()) return;
@@ -2136,7 +2188,7 @@
     $('playIcon').innerHTML = '<path d="M8 5v14l11-7z"/>';
     if('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     savePlaybackState(true);
-    if($('djModeBackdrop').style.display === 'flex'){ $('djDisc').classList.remove('spinning'); $('djPlayPause').textContent = 'Play'; }
+    if($('djModeBackdrop').style.display === 'flex'){ $('djDisc').classList.remove('spinning'); $('djTurntable').classList.remove('playing'); $('djPlayPause').textContent = 'Play'; }
   }
   // Recreates a track's blob URL and retries playback — handles the case where
   // Android reclaims memory while backgrounded and the old blob URL goes dead.
@@ -2387,10 +2439,11 @@
   // ---------------- Scratch: drag the vinyl to scrub + pitch-bend, like a real turntable ----------------
   function attachScratch(discEl){
     let dragging = false;
-    let startX = 0, lastX = 0, lastMoveTime = 0, startRotation = 0;
+    let startX = 0, lastX = 0, lastMoveTime = 0;
 
     discEl.addEventListener('pointerdown', (e) => {
       if(queueIndex < 0 || queueIndex >= queue.length) return;
+      e.preventDefault();
       dragging = true;
       startX = e.clientX;
       lastX = e.clientX;
@@ -2400,6 +2453,7 @@
     });
     discEl.addEventListener('pointermove', (e) => {
       if(!dragging) return;
+      e.preventDefault();
       const a = activeAudio();
       const now = Date.now();
       const dt = Math.max(1, now - lastMoveTime);
@@ -2417,7 +2471,7 @@
       const totalDx = e.clientX - startX;
       discEl.style.transform = `rotate(${totalDx * 1.3}deg)`;
     });
-    function endScratch(){
+    function endScratch(e){
       if(!dragging) return;
       dragging = false;
       discEl.classList.remove('scratching');
@@ -2437,7 +2491,7 @@
     $('djTrackTitle').textContent = t.name;
     $('djTrackArtist').textContent = t.artist;
     $('djDiscLabel').style.backgroundImage = t.artUrl ? `url("${t.artUrl}")` : '';
-    $('djDisc').classList.toggle('spinning', !activeAudio().paused);
+    $('djDisc').classList.toggle('spinning', !activeAudio().paused); $('djTurntable').classList.toggle('playing', !activeAudio().paused);
     $('djPlayPause').textContent = activeAudio().paused ? 'Play' : 'Pause';
   }
   $('djModeBtn').addEventListener('click', () => {
