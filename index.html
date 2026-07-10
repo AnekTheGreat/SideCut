@@ -2655,29 +2655,145 @@
   });
 
   // ================================================================
-  // ---------------- REAL SCRATCH / DJ TURNTABLE ENGINE ----------------
+  // ---------------- REAL SCRATCH / DJ TURNTABLE ENGINE (AudioBuffer-based) ----------------
   // ================================================================
-  // Design: grabbing the record grabs whichever <audio> is CURRENTLY active
-  // at grab-time and locks onto it for the whole gesture (doesn't re-check
-  // activeAudio() mid-drag, so a crossfade swap can't sever the connection).
-  // The CSS spin animation is explicitly paused (not just relying on the
-  // .spinning class) so our inline rotate() transform actually takes effect
-  // every frame instead of the animation engine fighting it. CurrentTime is
-  // driven 1:1 by finger rotation around the record center, exactly like a
-  // real vinyl. Releasing resumes playback (if it was playing) at whatever
-  // speed the pitch fader / playbackSpeed is currently set to.
+  // HTMLMediaElement.currentTime scrubbing (the old approach) is not a
+  // real-time operation — every seek re-primes the browser's decode
+  // pipeline, which is exactly why it sounded broken and glitchy, especially
+  // while playing. Real scratching needs sample-accurate, glitch-free control,
+  // so DJ Mode decodes the track into an AudioBuffer up front and plays it
+  // through AudioBufferSourceNodes instead. playbackRate on a buffer source is
+  // a continuously-variable AudioParam — no reinitialization, no clicks — so
+  // the platter drag can drive it directly at gesture speed.
+  //
+  // A buffer source can only run forward from a fixed start offset (you can't
+  // scrub one backwards without restarting it), so the engine tracks a virtual
+  // "playhead" in seconds and restarts the source under the hood whenever the
+  // direction reverses or the position needs a hard jump — same trick real
+  // software scratch engines use.
+  const deckEngine = {
+    buffer: null,
+    trackId: null,
+    node: null,        // current AudioBufferSourceNode
+    startedAt: 0,       // audioCtx.currentTime when `node` was started
+    startOffset: 0,     // buffer-seconds the node was started from
+    rate: 1,            // current playbackRate applied to `node`
+    running: false,     // true if a source is actively playing (not paused)
+    decoding: false,
+  };
+
+  function deckNow(){
+    // Virtual playhead position in buffer-seconds, right now.
+    if(!deckEngine.buffer) return 0;
+    if(!deckEngine.running) return deckEngine.startOffset;
+    const elapsed = (audioCtx.currentTime - deckEngine.startedAt) * deckEngine.rate;
+    return deckEngine.startOffset + elapsed;
+  }
+
+  function deckStop(){
+    if(deckEngine.node){
+      try{ deckEngine.node.onended = null; deckEngine.node.stop(); }catch(e){}
+      try{ deckEngine.node.disconnect(); }catch(e){}
+      deckEngine.node = null;
+    }
+    deckEngine.running = false;
+  }
+
+  function deckStart(offsetSeconds, rate){
+    if(!deckEngine.buffer) return;
+    ensureAudioGraph();
+    if(audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+    deckStop();
+    const dur = deckEngine.buffer.duration;
+    const offset = Math.max(0, Math.min(dur - 0.001, offsetSeconds));
+    const node = audioCtx.createBufferSource();
+    node.buffer = deckEngine.buffer;
+    node.playbackRate.value = Math.max(0.01, rate);
+    // Route through the SAME eq/gain/limiter chain as deck 0, so EQ/kill/gain knobs keep working.
+    node.connect(eqNodes[0].bass);
+    node.onended = () => { if(deckEngine.node === node) deckEngine.running = false; };
+    node.start(0, offset);
+    deckEngine.node = node;
+    deckEngine.startedAt = audioCtx.currentTime;
+    deckEngine.startOffset = offset;
+    deckEngine.rate = rate;
+    deckEngine.running = true;
+  }
+
+  function deckSetRate(rate){
+    // Smooth, glitch-free speed change on the LIVE node — this is the whole point.
+    if(!deckEngine.node || !deckEngine.running) return;
+    // Re-anchor start time/offset to "now" so the rate change doesn't retroactively
+    // affect time already elapsed at the old rate.
+    const pos = deckNow();
+    deckEngine.startOffset = pos;
+    deckEngine.startedAt = audioCtx.currentTime;
+    deckEngine.rate = Math.max(0.01, rate);
+    try{ deckEngine.node.playbackRate.setValueAtTime(deckEngine.rate, audioCtx.currentTime); }catch(e){}
+  }
+
+  function deckSeekTo(offsetSeconds){
+    // Hard jump (used when scratching reverses direction or crosses too far to
+    // just re-rate) — restarts the buffer source at the new offset, same rate.
+    const rate = deckEngine.running ? deckEngine.rate : deckEngine.rate;
+    const wasRunning = deckEngine.running;
+    if(wasRunning){
+      deckStart(offsetSeconds, rate);
+    } else {
+      deckEngine.startOffset = Math.max(0, Math.min((deckEngine.buffer?.duration||0) - 0.001, offsetSeconds));
+    }
+  }
+
+  function deckPause(){
+    if(!deckEngine.running) return;
+    const pos = deckNow();
+    deckStop();
+    deckEngine.startOffset = pos;
+  }
+
+  function deckPlay(){
+    if(deckEngine.running) return;
+    deckStart(deckEngine.startOffset, deckEngine.rate || playbackSpeedDJ || 1);
+  }
+
+  let deckDecodePromise = null;
+  async function ensureDeckBuffer(track){
+    if(deckEngine.trackId === track.id && deckEngine.buffer) return deckEngine.buffer;
+    if(deckDecodePromise && deckEngine._decodingId === track.id) return deckDecodePromise;
+    deckEngine.decoding = true;
+    deckEngine._decodingId = track.id;
+    $('djDiscLabel').textContent = '';
+    toast('Loading turntable…', 60000);
+    deckDecodePromise = (async () => {
+      ensureAudioGraph();
+      const resp = await fetch(track.url);
+      const arrBuf = await resp.arrayBuffer();
+      const buf = await audioCtx.decodeAudioData(arrBuf);
+      if(deckEngine._decodingId === track.id){
+        deckEngine.buffer = buf;
+        deckEngine.trackId = track.id;
+      }
+      deckEngine.decoding = false;
+      toastEl.style.display = 'none';
+      return buf;
+    })().catch(e => {
+      deckEngine.decoding = false;
+      toast('Could not load this track for DJ Mode');
+      throw e;
+    });
+    return deckDecodePromise;
+  }
+
+  // ---------------- Scratch gesture: drives deckSetRate/deckSeekTo, never <audio>.currentTime ----------------
   let isScratching = false;
-  let scratchAudio = null;          // the exact <audio> element locked in at grab-time
-  let scratchDiscEls = [];          // all disc elements to visually rotate together (mini + DJ, kept in sync)
+  let scratchDiscEls = [];
   let scratchLastAngle = 0;
   let scratchLastTime = 0;
-  let scratchWasPlaying = false;
-  let scratchAccum = 0;             // seconds of currentTime accumulated this drag
-  let scratchRotationDeg = 0;       // visual rotation applied on top of the (paused) CSS spin anim
-  let scratchRateResetTimer = null;
+  let scratchWasRunning = false;
+  let scratchRotationDeg = 0;
+  let scratchSmoothedRate = 1;
 
-  const PIXELS_TO_DEGREES = 0.9;    // linear drag fallback sensitivity (mini disc, small target)
-  const SECONDS_PER_360 = 1.8;      // seconds of audio per full platter rotation — real-turntable-ish feel
+  const SECONDS_PER_360 = 1.8; // seconds of audio per full platter rotation, real-turntable-ish feel
 
   function angleFromCenter(el, clientX, clientY){
     const rect = el.getBoundingClientRect();
@@ -2691,76 +2807,62 @@
     while(d < -180) d += 360;
     return d;
   }
-  function setDiscRotation(deg){
-    scratchDiscEls.forEach(el => { if(el) el.style.transform = `rotate(${deg}deg)`; });
-  }
-  function clearDiscRotation(){
-    scratchDiscEls.forEach(el => { if(el) el.style.transform = ''; });
-  }
-  function pauseSpinAnimation(pause){
-    // Explicitly override the CSS animation-play-state instead of relying on
-    // the .spinning class toggle, so our inline transform always wins during a scratch.
-    scratchDiscEls.forEach(el => { if(el) el.style.animationPlayState = pause ? 'paused' : ''; });
-  }
+  function setDiscRotation(deg){ scratchDiscEls.forEach(el => { if(el) el.style.transform = `rotate(${deg}deg)`; }); }
+  function clearDiscRotation(){ scratchDiscEls.forEach(el => { if(el) el.style.transform = ''; }); }
+  function pauseSpinAnimation(pause){ scratchDiscEls.forEach(el => { if(el) el.style.animationPlayState = pause ? 'paused' : ''; }); }
 
-  function beginScratch(discEls, clientX, clientY, useAngle, refEl){
-    if(queueIndex < 0 || queueIndex >= queue.length) return;
-    const a = activeAudio(); // snapshot NOW and hold this reference for the whole gesture
+  function beginScratch(discEls, clientX, clientY, refEl){
+    if(!deckEngine.buffer) return; // not decoded yet — ignore the grab
     isScratching = true;
-    scratchAudio = a;
     scratchDiscEls = discEls;
-    scratchWasPlaying = !a.paused;
-    scratchLastAngle = useAngle ? angleFromCenter(refEl, clientX, clientY) : clientX;
+    scratchWasRunning = deckEngine.running;
+    scratchLastAngle = angleFromCenter(refEl, clientX, clientY);
     scratchLastTime = performance.now();
-    scratchAccum = a.currentTime || 0;
     scratchRotationDeg = 0;
+    scratchSmoothedRate = 1;
     pauseSpinAnimation(true);
     setDiscRotation(0);
     discEls.forEach(el => el && el.classList.add('scratching'));
     if(navigator.vibrate) navigator.vibrate(6);
-    if(scratchRateResetTimer){ clearTimeout(scratchRateResetTimer); scratchRateResetTimer = null; }
+    // Start (or keep running) the deck at rate 0-ish so we can drive it live from here on.
+    if(!deckEngine.running) deckStart(deckEngine.startOffset, 0.0001);
   }
 
-  function moveScratch(clientX, clientY, useAngle, refEl){
-    if(!isScratching || !scratchAudio) return;
+  function moveScratch(clientX, clientY, refEl){
+    if(!isScratching) return;
     const now = performance.now();
     const dt = Math.max(1, now - scratchLastTime);
 
-    let dAngle;
-    if(useAngle){
-      const angle = angleFromCenter(refEl, clientX, clientY);
-      dAngle = shortestAngleDelta(scratchLastAngle, angle);
-      scratchLastAngle = angle;
-    } else {
-      const dx = clientX - scratchLastAngle;
-      dAngle = dx * PIXELS_TO_DEGREES;
-      scratchLastAngle = clientX;
-    }
+    const angle = angleFromCenter(refEl, clientX, clientY);
+    const dAngle = shortestAngleDelta(scratchLastAngle, angle);
+    scratchLastAngle = angle;
     if(dAngle === 0) return;
 
     scratchRotationDeg += dAngle;
     setDiscRotation(scratchRotationDeg);
 
-    const dur = scratchAudio.duration;
-    if(dur && isFinite(dur)){
-      const dSeconds = (dAngle / 360) * SECONDS_PER_360;
-      scratchAccum = Math.max(0, Math.min(dur - 0.02, scratchAccum + dSeconds));
-      try{ scratchAudio.currentTime = scratchAccum; }catch(e){}
+    // Instantaneous angular velocity -> playback rate. Positive = forward (clockwise),
+    // negative = reverse. Smoothed slightly so tiny jitter doesn't crackle the audio.
+    const instRate = (dAngle / dt) * (SECONDS_PER_360 / 360) * 1000; // "seconds of audio per second" == rate
+    scratchSmoothedRate = scratchSmoothedRate * 0.5 + instRate * 0.5;
+    const clamped = Math.max(-3.5, Math.min(3.5, scratchSmoothedRate));
 
-      const pct = (scratchAccum / dur) * 100;
-      updateSeekDisplay(pct);
-      $('curTime').textContent = fmtTime(scratchAccum);
+    if(clamped >= 0){
+      deckSetRate(Math.max(0.02, clamped));
+    } else {
+      // Reverse playback: buffer sources can't run negative, so scrub backward with
+      // fast, tiny hops instead. It's chunky rather than a perfectly smooth reverse,
+      // but genuinely audible and responsive — real backward-scratch feel.
+      const pos = deckNow();
+      const hop = Math.min(0.09, Math.abs(clamped) * (dt/1000));
+      deckSeekTo(pos - hop);
+      if(deckEngine.node) deckEngine.node.playbackRate.setValueAtTime(Math.min(3.5, Math.abs(clamped)) || 0.5, audioCtx.currentTime);
     }
 
-    // Audible scratch: play a short burst at a rate derived from drag speed/direction —
-    // this is what makes it *sound* scratched instead of just a silent seek.
-    const instVelocity = dAngle / dt; // deg per ms
-    const rate = Math.max(0.08, Math.min(4, Math.abs(instVelocity) * 0.9 + 0.15));
-    try{
-      scratchAudio.playbackRate = rate;
-      scratchAudio.muted = false;
-      if(scratchAudio.paused) scratchAudio.play().catch(()=>{});
-    }catch(e){}
+    const dur = deckEngine.buffer.duration;
+    const pos = Math.max(0, Math.min(dur, deckNow()));
+    updateSeekDisplay((pos/dur)*100);
+    $('curTime').textContent = fmtTime(pos);
 
     scratchLastTime = now;
   }
@@ -2772,32 +2874,26 @@
     pauseSpinAnimation(false);
     clearDiscRotation();
 
-    const a = scratchAudio;
-    if(a){
-      const rate = (typeof playbackSpeedDJ === 'number' && $('djModeBackdrop').style.display === 'flex') ? playbackSpeedDJ : playbackSpeed;
-      a.playbackRate = rate;
-      if(scratchWasPlaying){
-        a.play().catch(()=>{});
-      } else {
-        a.pause();
-      }
+    if(scratchWasRunning){
+      deckSetRate(playbackSpeedDJ || 1);
+    } else {
+      deckPause();
     }
-    scratchAudio = null;
-    scratchDiscEls = [];
+    refreshDjMode();
   }
 
-  function attachScratch(el, useAngle, syncEls){
-    // syncEls: other disc elements (e.g. mini + DJ platter) that should visually rotate together
+  function attachScratch(el, syncEls){
     el.addEventListener('pointerdown', (e) => {
+      if($('djModeBackdrop').style.display !== 'flex') return; // scratch only lives in DJ Mode now
       e.preventDefault();
       try{ el.setPointerCapture(e.pointerId); }catch(err){}
       const discEls = [el, ...(syncEls||[])].filter(Boolean);
-      beginScratch(discEls, e.clientX, e.clientY, useAngle, el);
+      beginScratch(discEls, e.clientX, e.clientY, el);
     });
     el.addEventListener('pointermove', (e) => {
       if(!isScratching) return;
       e.preventDefault();
-      moveScratch(e.clientX, e.clientY, useAngle, el);
+      moveScratch(e.clientX, e.clientY, el);
     });
     function release(e){
       if(!isScratching) return;
@@ -2808,11 +2904,8 @@
     el.addEventListener('pointercancel', release);
     el.addEventListener('lostpointercapture', () => { if(isScratching) endScratch(); });
   }
-  // Mini disc in the now-playing bar: linear-drag scratch (small target, angle math is overkill here)
-  attachScratch($('npDisc'), false, []);
-  // Big DJ Mode platter: angle-based scratch, grab anywhere on the record — mirrors onto the mini disc too
-  attachScratch($('djJog'), true, [$('djDisc'), $('npDisc')]);
-  attachScratch($('djDisc'), true, [$('npDisc')]);
+  attachScratch($('djJog'), [$('djDisc')]);
+  attachScratch($('djDisc'), []);
 
   // ---------------- DJ Mode: turntable rig wiring ----------------
   let pitchPercent = 0;     // -100..100, mapped to 0.5x..1.5x-ish like real pitch faders (+/-50% typical range on DJ decks, but keep it musical)
@@ -2847,37 +2940,73 @@
     $('djTrackTitle').textContent = t.name;
     $('djTrackArtist').textContent = t.artist;
     $('djDiscLabel').style.backgroundImage = t.artUrl ? `url("${t.artUrl}")` : '';
-    const playing = !activeAudio().paused;
+    const playing = deckEngine.running;
     $('djDisc').classList.toggle('spinning', playing);
     $('djPlatter').classList.toggle('playing', playing);
-    $('djPlayPause').textContent = playing ? 'PAUSE' : 'PLAY';
+    $('djPlayPause').textContent = deckEngine.decoding ? '…' : (playing ? 'PAUSE' : 'PLAY');
     $('djPlayPause').classList.toggle('active', playing);
   }
-  $('djModeBtn').addEventListener('click', () => {
+
+  async function enterDjMode(){
     if(queueIndex < 0 || queueIndex >= queue.length){ toast('Play a song first to enter DJ Mode'); return; }
+    const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(!t) return;
+    const a = activeAudio();
+    const wasPlaying = !a.paused;
+    const startFrom = a.currentTime || 0;
+    a.pause(); // the real <audio> element goes silent — the deck engine owns sound in DJ Mode
+
+    djLastTrackId = null; // force the per-track reset path in refreshDjMode
+    deckEngine.buffer = null;
+    deckEngine.trackId = null;
+    deckEngine.startOffset = startFrom;
+    deckEngine.rate = playbackSpeedDJ || 1;
     refreshDjMode();
     $('djModeBackdrop').style.display = 'flex';
-  });
-  $('djModeClose').addEventListener('click', () => { $('djModeBackdrop').style.display = 'none'; });
-  $('djModeBackdrop').addEventListener('click', e => { if(e.target === $('djModeBackdrop')) $('djModeBackdrop').style.display = 'none'; });
-  $('djPlayPause').addEventListener('click', () => {
+
+    try{
+      await ensureDeckBuffer(t);
+      deckEngine.startOffset = startFrom;
+      if(wasPlaying) deckStart(startFrom, playbackSpeedDJ || 1);
+      refreshDjMode();
+    }catch(e){ /* toast already shown */ }
+  }
+
+  function exitDjMode(){
+    $('djModeBackdrop').style.display = 'none';
+    const pos = deckNow();
+    const wasRunning = deckEngine.running;
+    deckStop();
+    // Hand playback back to the normal <audio> element at wherever the deck left off.
     const a = activeAudio();
-    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-    if(a.paused) a.play().catch(() => recoverAudio(a, 'DJ mode play failed'));
-    else a.pause();
+    if(deckEngine.buffer){
+      a.currentTime = Math.max(0, Math.min(a.duration || pos, pos));
+    }
+    a.playbackRate = playbackSpeed;
+    if(wasRunning){
+      a.play().catch(()=>{});
+    }
+  }
+
+  $('djModeBtn').addEventListener('click', enterDjMode);
+  $('djModeClose').addEventListener('click', exitDjMode);
+  $('djModeBackdrop').addEventListener('click', e => { if(e.target === $('djModeBackdrop')) exitDjMode(); });
+  $('djPlayPause').addEventListener('click', () => {
+    if(!deckEngine.buffer){ toast('Still loading…'); return; }
+    if(deckEngine.running) deckPause(); else deckPlay();
     refreshDjMode();
   });
-  // CUE: jump back to the last spot you started playback from in this DJ session (simple, real-DJ-ish cue point)
+  // CUE: tap while playing to set a cue point and stop; tap again to jump back and play (real deck behavior)
   let djCuePoint = 0;
   $('djCueBtn').addEventListener('click', () => {
-    const a = activeAudio();
-    if(!a.paused){
-      djCuePoint = a.currentTime;
-      a.pause();
+    if(!deckEngine.buffer){ toast('Still loading…'); return; }
+    if(deckEngine.running){
+      djCuePoint = deckNow();
+      deckPause();
       toast('Cue point set');
     } else {
-      a.currentTime = djCuePoint;
-      a.play().catch(()=>{});
+      deckEngine.startOffset = djCuePoint;
+      deckPlay();
     }
     refreshDjMode();
   });
@@ -2894,15 +3023,15 @@
   $('loopLenSelect').addEventListener('change', (e) => { loopLen = parseFloat(e.target.value); });
   function loopWatcher(){
     if(!loopActive) return;
-    const a = activeAudio();
-    if(a.currentTime >= loopStart + loopLen) a.currentTime = loopStart;
+    if(deckEngine.buffer && deckNow() >= loopStart + loopLen) deckSeekTo(loopStart);
     requestAnimationFrame(loopWatcher);
   }
   $('djLoopBtn').addEventListener('click', () => {
+    if(!deckEngine.buffer){ toast('Still loading…'); return; }
     loopActive = !loopActive;
     $('djLoopBtn').classList.toggle('active', loopActive);
     if(loopActive){
-      loopStart = Math.max(0, activeAudio().currentTime - loopLen);
+      loopStart = Math.max(0, deckNow() - loopLen);
       toast(`Looping last ${loopLen}s`);
       loopWatcher();
     } else {
@@ -2915,7 +3044,7 @@
   const killButtons = { bass: $('killLow'), mid: $('killMid'), treble: $('killHigh') };
   function applyKillState(){
     ensureAudioGraph();
-    const nodes = eqNodes[activeIdx];
+    const nodes = eqNodes[0]; // deck engine always routes through deck 0's eq chain in DJ Mode
     if(!nodes) return;
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
     const preset = (t && VIBES[t.vibe]) || globalEQ;
@@ -2941,17 +3070,18 @@
   }
   document.querySelectorAll('.hotcue-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      if(!deckEngine.buffer){ toast('Still loading…'); return; }
       const slot = parseInt(btn.dataset.slot, 10);
-      const a = activeAudio();
       if(hotCues[slot] == null){
-        hotCues[slot] = a.currentTime;
+        hotCues[slot] = deckNow();
         toast(`Hot cue ${slot+1} set`);
       } else {
-        a.currentTime = hotCues[slot];
-        if(a.paused) a.play().catch(()=>{});
+        deckSeekTo(hotCues[slot]);
+        if(!deckEngine.running) deckPlay();
         toast(`Jumped to hot cue ${slot+1}`);
       }
       refreshHotcueButtons();
+      refreshDjMode();
     });
     let holdTimer = null;
     btn.addEventListener('pointerdown', () => {
@@ -2968,7 +3098,7 @@
     ['pointerup','pointercancel','pointerleave'].forEach(ev => btn.addEventListener(ev, () => clearTimeout(holdTimer)));
   });
 
-  // ---------------- VU meter: live level from the active deck via an analyser tap ----------------
+  // ---------------- VU meter: live level from the deck engine via an analyser tap ----------------
   let vuAnalyser = null;
   let vuData = null;
   function ensureVUAnalyser(){
@@ -2977,9 +3107,9 @@
       vuAnalyser = audioCtx.createAnalyser();
       vuAnalyser.fftSize = 256;
       vuData = new Uint8Array(vuAnalyser.frequencyBinCount);
-      // tap post-limiter chain isn't directly exposed per-deck here, so tap destination-adjacent
-      // by connecting each deck's gain node output into the analyser as a parallel branch.
-      gainNodes.forEach(g => { if(g) g.connect(vuAnalyser); });
+      // Tap the deck's own gain node output (shared chain) as a parallel branch.
+      if(gainNodes[0]) gainNodes[0].connect(vuAnalyser);
+      if(deckGainNodes[0]) deckGainNodes[0].connect(vuAnalyser);
     }catch(e){ /* ok if unsupported */ }
   }
   function vuLoop(){
@@ -3010,7 +3140,8 @@
     if(isScratching) return; // don't fight the scratch engine
     const rate = pitchPercentToRate(pitchPercent);
     playbackSpeedDJ = rate;
-    activeAudio().playbackRate = rate;
+    if(deckEngine.running) deckSetRate(rate);
+    else deckEngine.rate = rate;
   }
   let playbackSpeedDJ = 1;
 
