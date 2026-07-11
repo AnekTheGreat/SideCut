@@ -2938,7 +2938,27 @@
     rate: 1,            // current playbackRate applied to `node`
     running: false,     // true if a source is actively playing (not paused)
     decoding: false,
+    gainNode: null,     // per-lane gain, used to blend during a DJ-mode crossfade
   };
+  // A second lane so DJ Mode can genuinely crossfade between two buffer sources —
+  // the crossfader UI used to call the main queue's <audio>-based crossfade
+  // function, which did nothing because the main <audio> elements are paused
+  // and muted while DJ Mode owns sound. This lane fixes that for real.
+  const deckEngineB = {
+    buffer: null, trackId: null, node: null, startedAt: 0, startOffset: 0,
+    rate: 1, running: false, decoding: false, gainNode: null,
+  };
+  let djCrossfading = false;
+
+  function ensureDeckGainNode(deck){
+    if(deck.gainNode) return deck.gainNode;
+    ensureAudioGraph();
+    const g = audioCtx.createGain();
+    g.gain.value = 1;
+    g.connect(eqNodes[0].bass);
+    deck.gainNode = g;
+    return g;
+  }
 
   function deckNow(){
     // Virtual playhead position in buffer-seconds, right now.
@@ -2968,7 +2988,7 @@
     node.buffer = deckEngine.buffer;
     node.playbackRate.value = Math.max(0.01, rate);
     // Route through the SAME eq/gain/limiter chain as deck 0, so EQ/kill/gain knobs keep working.
-    node.connect(eqNodes[0].bass);
+    node.connect(ensureDeckGainNode(deckEngine));
     node.onended = () => { if(deckEngine.node === node) deckEngine.running = false; };
     node.start(0, offset);
     deckEngine.node = node;
@@ -3012,6 +3032,99 @@
   function deckPlay(){
     if(deckEngine.running) return;
     deckStart(deckEngine.startOffset, deckEngine.rate || playbackSpeedDJ || 1);
+  }
+
+  function deckBStop(){
+    if(deckEngineB.node){
+      try{ deckEngineB.node.onended = null; deckEngineB.node.stop(); }catch(e){}
+      try{ deckEngineB.node.disconnect(); }catch(e){}
+      deckEngineB.node = null;
+    }
+    deckEngineB.running = false;
+  }
+  function deckBStart(offsetSeconds, rate){
+    if(!deckEngineB.buffer) return;
+    ensureAudioGraph();
+    deckBStop();
+    const dur = deckEngineB.buffer.duration;
+    const offset = Math.max(0, Math.min(dur - 0.001, offsetSeconds));
+    const node = audioCtx.createBufferSource();
+    node.buffer = deckEngineB.buffer;
+    node.playbackRate.value = Math.max(0.01, rate);
+    node.connect(ensureDeckGainNode(deckEngineB));
+    node.onended = () => { if(deckEngineB.node === node) deckEngineB.running = false; };
+    node.start(0, offset);
+    deckEngineB.node = node;
+    deckEngineB.startedAt = audioCtx.currentTime;
+    deckEngineB.startOffset = offset;
+    deckEngineB.rate = rate;
+    deckEngineB.running = true;
+  }
+
+  // Genuine DJ-mode crossfade: decodes the next DJ Set track into deck B, fades
+  // deck A's gain down and deck B's gain up over `crossfadeSeconds`, then makes
+  // deck B the new "deck A" so all the controls (pitch, EQ, hot cues, scratch)
+  // keep acting on whatever's actually playing.
+  async function djCrossfadeToNext(){
+    if(djCrossfading) return;
+    const ids = playlists['DJ Set'] || [];
+    if(!ids.length) return;
+    const curIdx = ids.indexOf(djCurrentTrackId);
+    let nextIdx = curIdx < 0 ? 0 : curIdx + 1;
+    if(nextIdx >= ids.length) nextIdx = 0;
+    const nextTrack = allTracks.find(tr => tr.id === ids[nextIdx]);
+    if(!nextTrack || nextTrack.id === djCurrentTrackId) return; // nothing else to crossfade into
+
+    djCrossfading = true;
+    try{
+      toast('Loading next track…', 8000);
+      const resp = await fetch(nextTrack.url);
+      const arrBuf = await resp.arrayBuffer();
+      deckEngineB.buffer = await audioCtx.decodeAudioData(arrBuf);
+      deckEngineB.trackId = nextTrack.id;
+      toastEl.style.display = 'none';
+    }catch(e){
+      djCrossfading = false;
+      toast('Could not load the next track');
+      return;
+    }
+
+    const gA = ensureDeckGainNode(deckEngine);
+    const gB = ensureDeckGainNode(deckEngineB);
+    gB.gain.value = 0;
+    deckBStart(0, playbackSpeedDJ || 1);
+
+    const dur = Math.max(1, crossfadeSeconds || 4) * 1000;
+    const start = Date.now();
+    const fadeInterval = setInterval(() => {
+      const p = Math.min(1, (Date.now() - start) / dur);
+      gA.gain.setValueAtTime(1 - p, audioCtx.currentTime);
+      gB.gain.setValueAtTime(p, audioCtx.currentTime);
+      if(p >= 1){
+        clearInterval(fadeInterval);
+        // Deck B becomes the new deck A: swap the buffer/state over, stop the old node.
+        deckStop();
+        deckEngine.buffer = deckEngineB.buffer;
+        deckEngine.trackId = deckEngineB.trackId;
+        deckEngine.node = deckEngineB.node;
+        deckEngine.startedAt = deckEngineB.startedAt;
+        deckEngine.startOffset = deckEngineB.startOffset;
+        deckEngine.rate = deckEngineB.rate;
+        deckEngine.running = deckEngineB.running;
+        gA.gain.value = 1; // reset deck A's gain node for its next use
+        deckEngineB.node = null;
+        deckEngineB.buffer = null;
+        deckEngineB.trackId = null;
+        deckEngineB.running = false;
+
+        djCurrentTrackId = nextTrack.id;
+        djLastTrackId = null; // force per-track reset (hot cues, kill EQ, loop)
+        djCrossfading = false;
+        refreshDjMode();
+        renderDjTrackStrip();
+        toast(`Now playing: ${nextTrack.name}`);
+      }
+    }, 60);
   }
 
   let deckDecodePromise = null;
@@ -3480,6 +3593,27 @@
   }
   vuLoop();
 
+  // ---------------- Auto-crossfade in DJ Mode: when the current deck track is
+  // about to end, blend into the next DJ Set track automatically — same idea
+  // as the main player's crossfade, but driven by the deck engine's own clock
+  // instead of the (paused, muted) main <audio> element.
+  function djAutoCrossfadeWatcher(){
+    if($('djModeBackdrop').style.display !== 'flex'){ requestAnimationFrame(djAutoCrossfadeWatcher); return; }
+    if(!djCrossfading && !isScratching && deckEngine.buffer && deckEngine.running && !loopActive && !beatRepeatActive){
+      const dur = deckEngine.buffer.duration;
+      const remaining = dur - deckNow();
+      const fadeLen = Math.max(1, crossfadeSeconds || 4);
+      if(remaining <= fadeLen && remaining > 0){
+        const ids = playlists['DJ Set'] || [];
+        // Only auto-fade if there's actually something else queued in the DJ Set —
+        // otherwise just let the track play out normally.
+        if(ids.length > 1) djCrossfadeToNext();
+      }
+    }
+    requestAnimationFrame(djAutoCrossfadeWatcher);
+  }
+  djAutoCrossfadeWatcher();
+
   // ---------------- FX pads: synthesized one-shots mixed straight into the deck's own chain ----------------
   // No sample files to ship, so each FX is built live from oscillators/noise —
   // still lands in the recording since it's connected into the same graph.
@@ -3625,29 +3759,42 @@
   }
 
   // ---------------- Beat repeat / stutter: hold a pad to loop a short slice of the live deck ----------------
+  // Restarting the buffer source every animation frame (the previous approach)
+  // hammers the audio graph the same way the old scratch bug did — clicks,
+  // dropouts, or dead silence. AudioBufferSourceNode has native sample-accurate
+  // looping built in (loop / loopStart / loopEnd), so instead of manually
+  // re-triggering playback, we just point the SAME running node's loop window
+  // at the desired slice — zero restarts, zero glitching.
   let beatRepeatActive = false;
-  let beatRepeatRAF = null;
-  let beatRepeatStart = 0;
   let beatRepeatLen = 0.5;
+  let beatRepeatResumeOffset = 0;
   function beatLenToSeconds(beats){
     const bpm = liveBpm || (allTracks.find(tr => tr.id === djCurrentTrackId)?.bpm) || 120;
     return (60 / bpm) * beats;
   }
   function startBeatRepeat(beats){
-    if(!deckEngine.buffer || !deckEngine.running) return;
+    if(!deckEngine.buffer || !deckEngine.running || !deckEngine.node) return;
     beatRepeatActive = true;
     beatRepeatLen = beatLenToSeconds(beats);
-    beatRepeatStart = deckNow();
-    function watch(){
-      if(!beatRepeatActive) return;
-      if(deckNow() >= beatRepeatStart + beatRepeatLen) deckSeekTo(beatRepeatStart);
-      beatRepeatRAF = requestAnimationFrame(watch);
-    }
-    watch();
+    const pos = deckNow();
+    beatRepeatResumeOffset = pos; // remember where to resume normal playback on release
+    const loopStart = Math.max(0, pos);
+    const loopEnd = Math.min(deckEngine.buffer.duration, loopStart + beatRepeatLen);
+    try{
+      deckEngine.node.loop = true;
+      deckEngine.node.loopStart = loopStart;
+      deckEngine.node.loopEnd = loopEnd;
+    }catch(e){}
   }
   function stopBeatRepeat(){
+    if(!beatRepeatActive) return;
     beatRepeatActive = false;
-    if(beatRepeatRAF) cancelAnimationFrame(beatRepeatRAF);
+    if(deckEngine.node){
+      try{ deckEngine.node.loop = false; }catch(e){}
+    }
+    // The native loop kept playing inside the small window the whole time, so
+    // just let it continue forward from wherever it naturally is right now —
+    // no restart needed, which is what kept this glitch-free.
   }
   document.querySelectorAll('.beat-pad').forEach(btn => {
     btn.addEventListener('pointerdown', (e) => {
@@ -3814,9 +3961,8 @@
     track.addEventListener('pointerdown', (e) => { track.setPointerCapture(e.pointerId); setPos(e.clientX); });
     track.addEventListener('pointermove', (e) => { if(e.buttons === 1) setPos(e.clientX); });
     track.addEventListener('pointerup', (e) => {
-      if(crossfadePos > 0.85 && !crossfadeTriggered){
-        maybeStartCrossfade();
-        toast('Crossfading to next track');
+      if(crossfadePos > 0.85 && !crossfadeTriggered && !djCrossfading){
+        djCrossfadeToNext();
       }
       // snap back to center after release, like letting go of a spring-centered fader
       crossfadePos = 0;
