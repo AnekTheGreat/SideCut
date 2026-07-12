@@ -207,6 +207,21 @@
     transform:translate(-50%,-50%); box-shadow:0 2px 4px rgba(0,0,0,0.5);
   }
   .pitch-thumb::after{ content:''; position:absolute; left:3px; right:3px; top:50%; height:1px; background:rgba(0,0,0,0.3); transform:translateY(-50%); }
+  .knob-stack{ display:flex; flex-direction:column; gap:16px; align-items:center; }
+  .knob-wrap{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .knob-wrap label{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:1.5px; color:#8a8577; }
+  .knob{
+    width:46px; height:46px; border-radius:50%; position:relative; touch-action:none; cursor:grab;
+    background: radial-gradient(circle at 35% 30%, #3a3733, #16140f 75%);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.4);
+  }
+  .knob:active{ cursor:grabbing; }
+  .knob-indicator{
+    position:absolute; top:4px; left:50%; width:3px; height:16px; border-radius:2px;
+    background: var(--coral); transform-origin: 50% 19px; transform: translateX(-50%) rotate(0deg);
+    box-shadow: 0 0 4px color-mix(in srgb, var(--coral) 60%, transparent);
+  }
+  .knob-readout{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--coral); min-width:38px; text-align:center; }
   .pitch-readout{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--coral); min-width:38px; text-align:center; }
 
   .deck-center-controls{ display:flex; flex-direction:column; align-items:center; gap:10px; flex:1; }
@@ -268,12 +283,25 @@
   .drum-pad-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
   .drum-pad{
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-    padding:12px 4px; border-radius:9px; border:1px solid rgba(255,255,255,0.1);
-    background:#1c2a26; color:var(--ink-dim); cursor:pointer; font-size:18px;
-    touch-action:manipulation;
+    padding:14px 4px; border-radius:10px; border:none; cursor:pointer; font-size:19px;
+    touch-action:manipulation; position:relative; overflow:hidden;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -6px 10px rgba(0,0,0,0.25);
+    transition: transform 0.06s ease, box-shadow 0.06s ease;
   }
-  .drum-pad span{ font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:0.5px; color:var(--ink-dim); }
-  .drum-pad.firing{ background: color-mix(in srgb, #3fcf6e 40%, #1c2a26); border-color:#3fcf6e; transform:scale(0.96); }
+  .drum-pad span{ font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:0.5px; color:rgba(0,0,0,0.7); font-weight:800; text-shadow:0 1px 0 rgba(255,255,255,0.15); }
+  .drum-pad.firing{
+    transform: translateY(2px) scale(0.96);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -3px 6px rgba(0,0,0,0.3), 0 0 16px 2px var(--pad-glow, rgba(255,255,255,0.5));
+  }
+  /* Each pad gets its own real color, like a physical DJ controller's velocity pad grid */
+  .drum-pad[data-drum="kick"]    { background: linear-gradient(160deg, #ff6b5e, #d43f34); --pad-glow: rgba(255,107,94,0.7); }
+  .drum-pad[data-drum="snare"]   { background: linear-gradient(160deg, #ffb84d, #d98a1f); --pad-glow: rgba(255,184,77,0.7); }
+  .drum-pad[data-drum="hihat"]   { background: linear-gradient(160deg, #ffe14d, #d9b91f); --pad-glow: rgba(255,225,77,0.7); }
+  .drum-pad[data-drum="ohihat"]  { background: linear-gradient(160deg, #b6e84d, #8ab920); --pad-glow: rgba(182,232,77,0.7); }
+  .drum-pad[data-drum="clap"]    { background: linear-gradient(160deg, #4de8a0, #1fb374); --pad-glow: rgba(77,232,160,0.7); }
+  .drum-pad[data-drum="rim"]     { background: linear-gradient(160deg, #4dd9e8, #1f9db3); --pad-glow: rgba(77,217,232,0.7); }
+  .drum-pad[data-drum="tom"]     { background: linear-gradient(160deg, #6b9bff, #3f66d4); --pad-glow: rgba(107,155,255,0.7); }
+  .drum-pad[data-drum="crash"]   { background: linear-gradient(160deg, #c96bff, #9a3fd4); --pad-glow: rgba(201,107,255,0.7); }
   .fx-pad{
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
     padding:10px 4px; border-radius:9px; border:1px solid rgba(255,255,255,0.1);
@@ -838,12 +866,17 @@
           </div>
         </div>
 
-        <div class="pitch-fader-wrap">
-          <label>GAIN</label>
-          <div class="pitch-track" id="gainTrack">
-            <div class="pitch-thumb" id="gainThumb"></div>
+        <div class="knob-stack">
+          <div class="knob-wrap">
+            <label>GAIN</label>
+            <div class="knob" id="gainKnob"><div class="knob-indicator"></div></div>
+            <div class="knob-readout" id="gainReadout">0dB</div>
           </div>
-          <div class="pitch-readout" id="gainReadout">0dB</div>
+          <div class="knob-wrap">
+            <label>FILTER</label>
+            <div class="knob" id="filterKnob"><div class="knob-indicator"></div></div>
+            <div class="knob-readout" id="filterReadout">OFF</div>
+          </div>
         </div>
       </div>
 
@@ -2978,11 +3011,15 @@
   function ensureDeckGainNode(deck){
     if(deck.gainNode) return deck.gainNode;
     ensureAudioGraph();
-    const g = audioCtx.createGain();
-    g.gain.value = 1;
-    g.connect(eqNodes[0].bass);
-    deck.gainNode = g;
-    return g;
+    const knobGain = audioCtx.createGain();
+    knobGain.gain.value = 1; // the dB GAIN knob's own node — independent of crossfade blending
+    const blendGain = audioCtx.createGain();
+    blendGain.gain.value = 1; // the crossfade-blend node — set by djCrossfadeToNext's fade loop only
+    knobGain.connect(blendGain);
+    blendGain.connect(eqNodes[0].bass);
+    deck.knobGainNode = knobGain;
+    deck.gainNode = blendGain; // "gainNode" stays the name djCrossfadeToNext already fades
+    return blendGain;
   }
 
   function deckNow(){
@@ -3013,7 +3050,8 @@
     node.buffer = deckEngine.buffer;
     node.playbackRate.value = Math.max(0.01, rate);
     // Route through the SAME eq/gain/limiter chain as deck 0, so EQ/kill/gain knobs keep working.
-    node.connect(ensureDeckGainNode(deckEngine));
+    ensureDeckGainNode(deckEngine);
+    node.connect(deckEngine.knobGainNode);
     node.onended = () => { if(deckEngine.node === node) deckEngine.running = false; };
     node.start(0, offset);
     deckEngine.node = node;
@@ -3076,7 +3114,8 @@
     const node = audioCtx.createBufferSource();
     node.buffer = deckEngineB.buffer;
     node.playbackRate.value = Math.max(0.01, rate);
-    node.connect(ensureDeckGainNode(deckEngineB));
+    ensureDeckGainNode(deckEngineB);
+    node.connect(deckEngineB.knobGainNode);
     node.onended = () => { if(deckEngineB.node === node) deckEngineB.running = false; };
     node.start(0, offset);
     deckEngineB.node = node;
@@ -3127,8 +3166,16 @@
       gB.gain.setValueAtTime(p, audioCtx.currentTime);
       if(p >= 1){
         clearInterval(fadeInterval);
-        // Deck B becomes the new deck A: swap the buffer/state over, stop the old node.
+        // Deck B becomes the new deck A: swap ALL state over, including the gain
+        // node reference itself — previously only buffer/node/timing were copied,
+        // leaving deckEngine.gainNode pointing at the OLD gain node forever. Every
+        // control (pitch, EQ, gain knob, kill switches) reads deckEngine.gainNode,
+        // so after a crossfade they were silently acting on a disconnected node —
+        // that's why things "stopped working" after a crossfade.
         deckStop();
+        const oldGainNode = deckEngine.gainNode;
+        const oldKnobGainNode = deckEngine.knobGainNode;
+        const oldFilterNode = deckEngine.filterNode;
         deckEngine.buffer = deckEngineB.buffer;
         deckEngine.trackId = deckEngineB.trackId;
         deckEngine.node = deckEngineB.node;
@@ -3136,15 +3183,31 @@
         deckEngine.startOffset = deckEngineB.startOffset;
         deckEngine.rate = deckEngineB.rate;
         deckEngine.running = deckEngineB.running;
-        gA.gain.value = 1; // reset deck A's gain node for its next use
+        deckEngine.gainNode = deckEngineB.gainNode; // <-- the actual fix
+        deckEngine.gainNode.gain.value = 1;
+        deckEngine.knobGainNode = deckEngineB.knobGainNode;
+        deckEngine.filterNode = null; // filter doesn't carry across a crossfade — fresh track starts flat, splices in again if touched
+        // Carry the GAIN knob's current dB setting onto whichever node is now live,
+        // so the physical slider position stays truthful to what you're hearing.
+        if(deckEngine.knobGainNode) deckEngine.knobGainNode.gain.value = Math.pow(10, deckGainDb/20);
+
+        // Retire the old gain/filter nodes (were deck A's) instead of leaving them dangling connected.
+        if(oldGainNode){ try{ oldGainNode.disconnect(); }catch(e){} }
+        if(oldKnobGainNode){ try{ oldKnobGainNode.disconnect(); }catch(e){} }
+        if(oldFilterNode){ try{ oldFilterNode.disconnect(); }catch(e){} }
+
         deckEngineB.node = null;
         deckEngineB.buffer = null;
         deckEngineB.trackId = null;
         deckEngineB.running = false;
+        deckEngineB.gainNode = null; // force fresh gain nodes next time deck B is used
+        deckEngineB.knobGainNode = null;
+        deckEngineB.filterNode = null;
 
         djCurrentTrackId = nextTrack.id;
         djLastTrackId = null; // force per-track reset (hot cues, kill EQ, loop)
         djCrossfading = false;
+        applyKillState(); // re-apply current kill/EQ state to whichever eq chain the new node sits on
         refreshDjMode();
         renderDjTrackStrip();
         toast(`Now playing: ${nextTrack.name}`);
@@ -3537,7 +3600,7 @@
     ensureAudioGraph();
     const nodes = eqNodes[0]; // deck engine always routes through deck 0's eq chain in DJ Mode
     if(!nodes) return;
-    const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+    const t = allTracks.find(tr => tr.id === djCurrentTrackId); // the DJ deck's own track, not the main player's queue
     const preset = (t && VIBES[t.vibe]) || globalEQ;
     nodes.bass.gain.value = killState.bass ? -40 : preset.bass;
     nodes.mid.gain.value = killState.mid ? -40 : preset.mid;
@@ -4061,19 +4124,96 @@
     updatePitchUI();
     applyPitch();
   });
-  attachFaderDrag($('gainTrack'), $('gainThumb'), (pct) => {
-    deckGainDb = Math.max(-12, Math.min(12, (pct/100)*12));
-    const thumb = $('gainThumb');
-    const track = $('gainTrack');
-    const trackH = track.clientHeight - 20;
-    const posPx = (-deckGainDb/12) * (trackH/2);
-    thumb.style.top = `calc(50% + ${posPx}px)`;
-    $('gainReadout').textContent = `${deckGainDb>0?'+':''}${deckGainDb.toFixed(1)}dB`;
-    ensureAudioGraph();
-    const node = deckGainNodes[activeIdx];
-    if(node) node.gain.value = Math.pow(10, deckGainDb/20);
-  });
+
+  // ---------------- Rotary knobs: vertical drag rotates the indicator, same interaction
+  // as GAIN/FILTER knobs in real DJ software (Serato, Traktor, rekordbox). Range is
+  // -135deg to +135deg, matching how a physical mixer knob looks and turns.
   updatePitchUI();
+  function attachKnobDrag(knobEl, indicatorEl, opts, onChange){
+    const { min, max, initial } = opts;
+    let value = initial;
+    function angleForValue(v){
+      const pct = (v - min) / (max - min); // 0..1
+      return -135 + pct * 270;
+    }
+    function render(){
+      indicatorEl.style.transform = `translateX(-50%) rotate(${angleForValue(value)}deg)`;
+      onChange(value);
+    }
+    knobEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      knobEl.setPointerCapture(e.pointerId);
+      let lastY = e.clientY;
+      const range = max - min;
+      function onMove(ev){
+        const dy = lastY - ev.clientY; // up = increase
+        lastY = ev.clientY;
+        value = Math.max(min, Math.min(max, value + dy * (range/150)));
+        render();
+      }
+      function onUp(ev){
+        knobEl.releasePointerCapture(ev.pointerId);
+        knobEl.removeEventListener('pointermove', onMove);
+        knobEl.removeEventListener('pointerup', onUp);
+      }
+      knobEl.addEventListener('pointermove', onMove);
+      knobEl.addEventListener('pointerup', onUp);
+    });
+    // Double-tap/double-click to reset to a sensible default (0 for gain, off for filter)
+    knobEl.addEventListener('dblclick', () => { value = initial; render(); });
+    render();
+    return { get: () => value, set: (v) => { value = v; render(); } };
+  }
+
+  attachKnobDrag($('gainKnob'), $('gainKnob').querySelector('.knob-indicator'), { min:-12, max:12, initial:0 }, (db) => {
+    deckGainDb = db;
+    $('gainReadout').textContent = `${db>0?'+':''}${db.toFixed(1)}dB`;
+    // Was reading deckGainNodes[activeIdx] — that's the MAIN player's audio graph
+    // (for the two <audio> elements), which is paused/idle during DJ Mode, so this
+    // knob previously did nothing audible. Now writes to the DJ deck's own,
+    // dedicated knob-gain node, which is separate from the crossfade-blend node —
+    // so this knob and an in-progress crossfade never fight over the same value.
+    ensureDeckGainNode(deckEngine);
+    if(deckEngine.knobGainNode) deckEngine.knobGainNode.gain.value = Math.pow(10, db/20);
+  });
+
+  // FILTER knob: classic DJ mixer sweep — center (0) is off/flat, turning left
+  // sweeps a low-pass filter down (muffled), turning right sweeps a high-pass
+  // filter up (thin/tinny) — same behavior as a real mixer's filter knob.
+  function ensureFilterNode(){
+    if(deckEngine.filterNode) return deckEngine.filterNode;
+    ensureAudioGraph();
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'allpass';
+    f.frequency.value = 20000;
+    // Splice it in between the knob-gain node and the blend node.
+    ensureDeckGainNode(deckEngine);
+    deckEngine.knobGainNode.disconnect();
+    deckEngine.knobGainNode.connect(f);
+    f.connect(deckEngine.gainNode);
+    deckEngine.filterNode = f;
+    return f;
+  }
+  attachKnobDrag($('filterKnob'), $('filterKnob').querySelector('.knob-indicator'), { min:-100, max:100, initial:0 }, (v) => {
+    const f = ensureFilterNode();
+    if(Math.abs(v) < 3){
+      f.type = 'allpass';
+      f.frequency.value = 20000;
+      $('filterReadout').textContent = 'OFF';
+    } else if(v < 0){
+      f.type = 'lowpass';
+      // -100..-3 maps to 20000Hz..200Hz — turning left muffles the track, like a real filter knob.
+      const pct = (Math.abs(v) - 3) / 97;
+      f.frequency.value = 20000 - pct * 19800;
+      $('filterReadout').textContent = 'LP';
+    } else {
+      f.type = 'highpass';
+      // 3..100 maps to 20Hz..4000Hz — turning right thins the track out.
+      const pct = (v - 3) / 97;
+      f.frequency.value = 20 + pct * 3980;
+      $('filterReadout').textContent = 'HP';
+    }
+  });
 
   // Crossfader: purely a feel/visual control here — dragging hard toward "next"
   // triggers the existing crossfade engine early, same blend logic already in use.
