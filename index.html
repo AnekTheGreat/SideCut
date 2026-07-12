@@ -211,17 +211,26 @@
   .knob-wrap{ display:flex; flex-direction:column; align-items:center; gap:6px; }
   .knob-wrap label{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:1.5px; color:#8a8577; }
   .knob{
-    width:46px; height:46px; border-radius:50%; position:relative; touch-action:none; cursor:grab;
+    width:56px; height:56px; border-radius:50%; position:relative; touch-action:none; cursor:grab;
     background: radial-gradient(circle at 35% 30%, #3a3733, #16140f 75%);
     box-shadow: 0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.4);
+    /* Extend the actual tappable/draggable hit area well beyond the visible circle —
+       a 56px knob is still small under a real thumb, this padding trick (via ::before)
+       gives a generous invisible grab zone without changing how it looks. */
   }
-  .knob:active{ cursor:grabbing; }
+  .knob::before{
+    content:''; position:absolute; inset:-14px; border-radius:50%;
+  }
+  .knob:active, .knob.grabbing{
+    box-shadow: 0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 2px var(--coral);
+    cursor:grabbing;
+  }
   .knob-indicator{
-    position:absolute; top:4px; left:50%; width:3px; height:16px; border-radius:2px;
-    background: var(--coral); transform-origin: 50% 19px; transform: translateX(-50%) rotate(0deg);
+    position:absolute; top:5px; left:50%; width:4px; height:20px; border-radius:2px;
+    background: var(--coral); transform-origin: 50% 23px; transform: translateX(-50%) rotate(0deg);
     box-shadow: 0 0 4px color-mix(in srgb, var(--coral) 60%, transparent);
   }
-  .knob-readout{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--coral); min-width:38px; text-align:center; }
+  .knob-readout{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--coral); min-width:38px; text-align:center; font-weight:700; }
   .pitch-readout{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--coral); min-width:38px; text-align:center; }
 
   .deck-center-controls{ display:flex; flex-direction:column; align-items:center; gap:10px; flex:1; }
@@ -327,14 +336,23 @@
   .record-time{ font-family:'JetBrains Mono',monospace; font-size:14px; color:var(--ink-dim); min-width:48px; }
   .crossfader-wrap label{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:2px; color:#8a8577; }
   .crossfader-track{
-    position:relative; width:180px; height:20px; background:#0e0d0c; border-radius:10px;
-    box-shadow: inset 0 0 6px rgba(0,0,0,0.6); touch-action:none;
+    position:relative; width:100%; max-width:260px; height:34px; background:#0e0d0c; border-radius:17px;
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.6); touch-action:none; cursor:grab;
+  }
+  .crossfader-track::before{
+    content:'DJ SET →'; position:absolute; right:14px; top:50%; transform:translateY(-50%);
+    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:1px; color:rgba(255,255,255,0.2); pointer-events:none;
   }
   .crossfader-thumb{
-    position:absolute; top:50%; left:50%; width:26px; height:26px; border-radius:6px;
+    position:absolute; top:50%; left:50%; width:40px; height:40px; border-radius:10px;
     background: linear-gradient(180deg, #e8e2d8, #b8b0a0);
     transform:translate(-50%,-50%); box-shadow:0 2px 5px rgba(0,0,0,0.5);
   }
+  .crossfader-thumb.armed{
+    background: linear-gradient(180deg, var(--coral), color-mix(in srgb, var(--coral) 70%, black));
+    box-shadow: 0 0 14px 2px color-mix(in srgb, var(--coral) 60%, transparent), 0 2px 5px rgba(0,0,0,0.5);
+  }
+  .crossfader-hint{ font-size:10px; color:var(--ink-dim); margin-top:6px; }
 
   #emptyState h2{ font-size:24px; max-width:300px; line-height:1.3; }
   #emptyState p{ color:var(--ink-dim); max-width:280px; font-size:14px; line-height:1.5; }
@@ -941,6 +959,7 @@
         <div class="crossfader-track" id="crossfaderTrack">
           <div class="crossfader-thumb" id="crossfaderThumb"></div>
         </div>
+        <div class="crossfader-hint">Drag right past the glow to crossfade into the next DJ Set song</div>
       </div>
 
       <div class="record-panel">
@@ -3059,6 +3078,14 @@
     deckEngine.startOffset = offset;
     deckEngine.rate = rate;
     deckEngine.running = true;
+    // A fresh node never has loop points set — if the LOOP button's UI still said
+    // "on" from before this restart, turn it off rather than let the button lie
+    // about what's actually playing.
+    if(typeof loopActive !== 'undefined' && loopActive){
+      loopActive = false;
+      const btn = document.getElementById('djLoopBtn');
+      if(btn) btn.classList.remove('active');
+    }
   }
 
   function deckSetRate(rate){
@@ -3570,25 +3597,30 @@
     applyPitch();
     toast('Pitch reset to normal speed');
   });
-  // LOOP: manual loop of the last N seconds heard, length selectable, toggled
+  // LOOP: manual loop of the last N seconds heard, length selectable, toggled.
+  // Previously restarted the buffer node every animation frame once the loop
+  // point was crossed — the same node-hammering bug that broke beat repeat.
+  // Uses native AudioBufferSourceNode looping now: zero restarts, no glitching.
   let loopActive = false;
   let loopStart = 0;
   let loopLen = 4;
   $('loopLenSelect').addEventListener('change', (e) => { loopLen = parseFloat(e.target.value); });
-  function loopWatcher(){
-    if(!loopActive) return;
-    if(deckEngine.buffer && deckNow() >= loopStart + loopLen) deckSeekTo(loopStart);
-    requestAnimationFrame(loopWatcher);
-  }
   $('djLoopBtn').addEventListener('click', () => {
-    if(!deckEngine.buffer){ toast('Still loading…'); return; }
+    if(!deckEngine.buffer || !deckEngine.node){ toast('Still loading…'); return; }
     loopActive = !loopActive;
     $('djLoopBtn').classList.toggle('active', loopActive);
     if(loopActive){
-      loopStart = Math.max(0, deckNow() - loopLen);
+      const pos = deckNow();
+      loopStart = Math.max(0, pos);
+      const loopEnd = Math.min(deckEngine.buffer.duration, loopStart + loopLen);
+      try{
+        deckEngine.node.loop = true;
+        deckEngine.node.loopStart = loopStart;
+        deckEngine.node.loopEnd = loopEnd;
+      }catch(e){}
       toast(`Looping last ${loopLen}s`);
-      loopWatcher();
     } else {
+      if(deckEngine.node){ try{ deckEngine.node.loop = false; }catch(e){} }
       toast('Loop off');
     }
   });
@@ -4143,15 +4175,22 @@
     knobEl.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       knobEl.setPointerCapture(e.pointerId);
+      knobEl.classList.add('grabbing');
       let lastY = e.clientY;
       const range = max - min;
+      // Much larger virtual travel distance than before (280px instead of 150px)
+      // so small, natural thumb movements make small changes — the old version
+      // was roughly 3x too sensitive for a 46px knob, which is what made it feel
+      // fiddly/impossible to land on a precise value.
+      const travel = 280;
       function onMove(ev){
         const dy = lastY - ev.clientY; // up = increase
         lastY = ev.clientY;
-        value = Math.max(min, Math.min(max, value + dy * (range/150)));
+        value = Math.max(min, Math.min(max, value + dy * (range/travel)));
         render();
       }
       function onUp(ev){
+        knobEl.classList.remove('grabbing');
         knobEl.releasePointerCapture(ev.pointerId);
         knobEl.removeEventListener('pointermove', onMove);
         knobEl.removeEventListener('pointerup', onUp);
@@ -4221,6 +4260,7 @@
   function attachFaderDrag2Axis(){
     const track = $('crossfaderTrack');
     const thumb = $('crossfaderThumb');
+    let armed = false; // fires once per drag, the moment you cross the threshold — not gated on a precise release point
     function setPos(clientX){
       const rect = track.getBoundingClientRect();
       const usable = rect.width - 26;
@@ -4228,17 +4268,39 @@
       x = Math.max(-usable/2, Math.min(usable/2, x));
       crossfadePos = x / (usable/2); // -1..1
       thumb.style.left = `calc(50% + ${x}px)`;
-    }
-    track.addEventListener('pointerdown', (e) => { track.setPointerCapture(e.pointerId); setPos(e.clientX); });
-    track.addEventListener('pointermove', (e) => { if(e.buttons === 1) setPos(e.clientX); });
-    track.addEventListener('pointerup', (e) => {
-      if(crossfadePos > 0.85 && !crossfadeTriggered && !djCrossfading){
-        djCrossfadeToNext();
+      thumb.classList.toggle('armed', crossfadePos > 0.6);
+      // Fire as soon as the threshold is crossed, mid-drag — waiting for a precise
+      // release point made this feel broken; committing on crossing is forgiving.
+      if(crossfadePos > 0.6 && !armed && !crossfadeTriggered && !djCrossfading){
+        armed = true;
+        attemptDjCrossfade();
       }
-      // snap back to center after release, like letting go of a spring-centered fader
+    }
+    function reset(){
+      armed = false;
       crossfadePos = 0;
+      thumb.classList.remove('armed');
+      thumb.style.transition = 'left 0.2s ease';
       thumb.style.left = '50%';
+      setTimeout(() => { thumb.style.transition = ''; }, 220);
+    }
+    track.addEventListener('pointerdown', (e) => {
+      track.setPointerCapture(e.pointerId);
+      thumb.style.transition = '';
+      setPos(e.clientX);
     });
+    track.addEventListener('pointermove', (e) => { if(e.buttons === 1) setPos(e.clientX); });
+    track.addEventListener('pointerup', reset);
+    track.addEventListener('pointercancel', reset);
+    track.addEventListener('lostpointercapture', reset);
+  }
+  function attemptDjCrossfade(){
+    const ids = playlists['DJ Set'] || [];
+    if(ids.length < 2){
+      toast('Add at least 2 songs to your DJ Set to crossfade between them');
+      return;
+    }
+    djCrossfadeToNext();
   }
 
   window.addEventListener('pagehide', () => savePlaybackState(true));
