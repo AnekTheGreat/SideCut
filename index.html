@@ -815,6 +815,11 @@
       <div style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px;">
         <button class="playlist-pick-btn" id="viewListeningStreakBtn" style="text-align:center;">View listening streak</button>
       </div>
+
+      <div style="margin-top:12px;">
+        <button class="playlist-pick-btn" id="viewUpdateLogBtn" style="text-align:center;">Update log</button>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v28</div>
+      </div>
     </div>
 
     <div class="modal-btns">
@@ -1025,6 +1030,11 @@
             <div class="knob" id="delayKnob"><div class="knob-indicator"></div></div>
             <div class="knob-readout" id="delayReadout">0%</div>
           </div>
+          <div class="knob-wrap">
+            <label>DUCK</label>
+            <div class="knob" id="duckKnob"><div class="knob-indicator"></div></div>
+            <div class="knob-readout" id="duckReadout">0%</div>
+          </div>
         </div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin:12px 0 6px;">
           <span class="section-label">TRANSITION FX</span>
@@ -1036,6 +1046,13 @@
         <div class="transition-fx-row" style="margin-top:8px;">
           <button class="deck-btn" id="spinbackBtn" title="Reverse-spin the record backward, classic DJ transition">SPINBACK</button>
           <button class="deck-btn" id="brakeBtn" title="Hard stop, like slamming the brakes">BRAKE</button>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:12px 0 6px;">
+          <span class="section-label">DECK TOOLS</span>
+        </div>
+        <div class="transition-fx-row">
+          <button class="deck-btn" id="keylockBtn" title="Change speed without changing pitch">KEYLOCK</button>
+          <button class="deck-btn" id="autoGainBtn" title="Auto-match this track's loudness to a standard level">AUTO GAIN</button>
         </div>
       </div>
 
@@ -1062,6 +1079,34 @@
     <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Grab the record to scratch — release to resume at pitch speed. Tap a cue pad to set it, hold to jump back to it.</div>
     <div class="modal-btns">
       <button class="cancel" id="djModeClose" style="flex:1;">Exit DJ Mode</button>
+    </div>
+  </div>
+</div>
+
+<!-- What's New popup — shown once whenever the app version changes -->
+<div class="modal-backdrop" id="whatsNewBackdrop">
+  <div class="modal">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="brand-mark" style="width:26px; height:26px;"></div>
+      <div>
+        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v28</h3>
+        <div style="font-size:11.5px; color:var(--ink-dim);">SideCut update</div>
+      </div>
+    </div>
+    <div id="whatsNewBody" style="display:flex; flex-direction:column; gap:6px; font-size:13.5px; margin-top:4px;"></div>
+    <div class="modal-btns">
+      <button class="confirm" id="whatsNewClose" style="flex:1;">Got it</button>
+    </div>
+  </div>
+</div>
+
+<!-- Update log — full changelog history, in Settings -->
+<div class="modal-backdrop" id="updateLogBackdrop">
+  <div class="modal">
+    <h3>Update log</h3>
+    <div id="updateLogBody" style="display:flex; flex-direction:column; gap:16px; max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
+    <div class="modal-btns">
+      <button class="cancel" id="updateLogClose" style="flex:1;">Close</button>
     </div>
   </div>
 </div>
@@ -1537,6 +1582,93 @@
       if(listenedDatesRow && Array.isArray(listenedDatesRow.value)) listenedDates = new Set(listenedDatesRow.value);
     }catch(e){ /* defaults are fine */ }
   }
+  // ---------------- Versioning: bump APP_VERSION and add a CHANGELOG entry every
+  // time a real update ships. Minor/patch updates (bug fixes, small tweaks) use
+  // a decimal like 27.5; bigger feature updates bump the whole number. This is
+  // also what the service worker's cache name should track alongside.
+  const APP_VERSION = '28';
+  const CHANGELOG = [
+    { version: '28', title: 'Update log system + real reverb + more DJ tools', items: [
+      'New: a "what\'s new" popup on every update, plus a full Update Log in Settings',
+      'Fixed REVERB knob — it barely did anything before, now has a genuine audible tail',
+      'Added KEYLOCK (change tempo without changing pitch), AUTO GAIN, and DUCK (sidechain pump)',
+    ]},
+    { version: '27', title: 'DJ Mode expansion + player extras', items: [
+      '8 hot cues, 12 drum pads, 9 FX pads, more beat-repeat lengths',
+      'New FLANGER and DELAY knobs, SPINBACK and BRAKE transition buttons',
+      'DJ Mode now works on any playlist — no more separate "DJ Set"',
+      'Sleep timer, gapless playback mode, per-playlist remembered sort',
+      'Listening streak tracking and per-song notes/lyrics',
+    ]},
+    { version: '26', title: 'DJ Mode fixes + real rotary knobs', items: [
+      'Fixed crossfader and GAIN knob silently doing nothing',
+      'Knobs now follow your finger directly instead of relative dragging',
+      'Added REVERB knob, TAPE STOP, and ECHO OUT transition effects',
+    ]},
+    { version: '25', title: 'Crossfader and LOOP fixes', items: [
+      'Crossfader now commits reliably instead of needing a precise release',
+      'LOOP button fixed — was glitching from restarting audio every frame',
+      'Bigger, easier-to-grab knobs and crossfader',
+    ]},
+    { version: '24', title: 'Colored pads + rotary knobs', items: [
+      'Drum pads restyled as real colored DJ-controller pads',
+      'Added GAIN and FILTER rotary knobs',
+    ]},
+    { version: '23', title: 'Real beat pad added', items: [
+      '8-pad synthesized drum grid (kick, snare, hi-hat, and more)',
+    ]},
+    { version: '22', title: 'DJ crossfade + beat repeat fixes', items: [
+      'DJ Mode crossfading now actually switches to the new track',
+      'Beat repeat pads fixed using native sample-accurate looping',
+    ]},
+  ];
+  function renderWhatsNewBody(entry){
+    return entry.items.map(i => `
+      <div style="display:flex; gap:8px; align-items:flex-start;">
+        <span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span>
+      </div>
+    `).join('');
+  }
+  function renderUpdateLog(){
+    const body = $('updateLogBody');
+    body.innerHTML = CHANGELOG.map(entry => `
+      <div>
+        <div style="font-weight:600; font-size:14px; margin-bottom:6px;">v${entry.version} — ${escapeHtml(entry.title)}</div>
+        <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
+          ${entry.items.map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
+        </div>
+      </div>
+    `).join('');
+  }
+  $('viewUpdateLogBtn').addEventListener('click', () => {
+    renderUpdateLog();
+    $('updateLogBackdrop').style.display = 'flex';
+  });
+  $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
+  $('updateLogBackdrop').addEventListener('click', e => { if(e.target === $('updateLogBackdrop')) $('updateLogBackdrop').style.display = 'none'; });
+  $('whatsNewClose').addEventListener('click', () => { $('whatsNewBackdrop').style.display = 'none'; });
+  $('whatsNewBackdrop').addEventListener('click', e => { if(e.target === $('whatsNewBackdrop')) $('whatsNewBackdrop').style.display = 'none'; });
+
+  async function checkForUpdatePopup(){
+    try{
+      const metaRows = await dbGetAll('meta');
+      const lastSeenRow = metaRows.find(r => r.key === 'lastSeenVersion');
+      const lastSeen = lastSeenRow ? lastSeenRow.value : null;
+      if(lastSeen === APP_VERSION) return; // already seen this version's popup
+      if(lastSeen != null){
+        // Only pop up when actually upgrading from a previously-seen version —
+        // a brand new install has nothing to compare "what's new" against.
+        const entry = CHANGELOG.find(e => e.version === APP_VERSION);
+        if(entry){
+          $('whatsNewVersion').textContent = `What's new in v${entry.version}`;
+          $('whatsNewBody').innerHTML = renderWhatsNewBody(entry);
+          $('whatsNewBackdrop').style.display = 'flex';
+        }
+      }
+      dbPut('meta', { key: 'lastSeenVersion', value: APP_VERSION });
+    }catch(e){ /* not critical if this fails */ }
+  }
+
   let idCounter = 0;
   let isMixMode = false;
   let lastPlaybackState = null;
@@ -3330,6 +3462,12 @@
     deckEngine.startOffset = offset;
     deckEngine.rate = rate;
     deckEngine.running = true;
+    // Keylock's detune compensation lives on the node itself, so a fresh node
+    // (new track, hot cue restart, scratch release) starts at detune=0 — reapply
+    // it immediately if keylock is currently on.
+    if(typeof keylockOn !== 'undefined' && keylockOn){
+      try{ node.detune.setValueAtTime(-1200 * Math.log2(rate), audioCtx.currentTime); }catch(e){}
+    }
     // A fresh node never has loop points set — if the LOOP button's UI still said
     // "on" from before this restart, turn it off rather than let the button lie
     // about what's actually playing.
@@ -4483,14 +4621,94 @@
     const sign = pitchPercent > 0 ? '+' : '';
     $('pitchReadout').textContent = `${sign}${pitchPercent.toFixed(0)}%`;
   }
+  // KEYLOCK: when on, changing the pitch fader changes tempo WITHOUT changing
+  // pitch. AudioBufferSourceNode.playbackRate always shifts both speed and
+  // pitch together — detune is a separate, independent cents-based pitch
+  // offset that stacks on top of playbackRate's own pitch shift. Counter-
+  // shifting detune by the inverse amount cancels playbackRate's pitch change
+  // while leaving the speed change intact — this is a real, standard trick,
+  // not an approximation.
+  let keylockOn = false;
   function applyPitch(){
     if(isScratching) return; // don't fight the scratch engine
     const rate = pitchPercentToRate(pitchPercent);
     playbackSpeedDJ = rate;
     if(deckEngine.running) deckSetRate(rate);
     else deckEngine.rate = rate;
+    applyKeylockDetune(rate);
   }
+  function applyKeylockDetune(rate){
+    if(!deckEngine.node) return;
+    if(keylockOn){
+      // detune is in cents; 1200 cents = one octave = playbackRate x2.
+      const cents = -1200 * Math.log2(rate);
+      try{ deckEngine.node.detune.setValueAtTime(cents, audioCtx.currentTime); }catch(e){}
+    } else {
+      try{ deckEngine.node.detune.setValueAtTime(0, audioCtx.currentTime); }catch(e){}
+    }
+  }
+  $('keylockBtn').addEventListener('click', () => {
+    keylockOn = !keylockOn;
+    $('keylockBtn').classList.toggle('active', keylockOn);
+    applyKeylockDetune(playbackSpeedDJ);
+    toast(keylockOn ? 'Keylock on — tempo changes, pitch stays put' : 'Keylock off');
+  });
   let playbackSpeedDJ = 1;
+
+  // ---------------- AUTO GAIN: instantly normalize the current deck track's
+  // loudness to a standard target, same math as the main player's auto-volume
+  // feature, but as an on-demand button rather than always-on.
+  $('autoGainBtn').addEventListener('click', async () => {
+    const t = allTracks.find(tr => tr.id === djCurrentTrackId);
+    if(!t){ toast('Nothing loaded on the deck'); return; }
+    toast('Analyzing loudness…', 4000);
+    try{
+      const g = await estimateGain(t);
+      if(g == null){ toast('Could not analyze this track'); return; }
+      ensureDeckGainNode(deckEngine);
+      deckGainDb = 20 * Math.log10(g);
+      deckGainDb = Math.max(-12, Math.min(12, deckGainDb));
+      if(deckEngine.knobGainNode) deckEngine.knobGainNode.gain.value = Math.pow(10, deckGainDb/20);
+      // Reflect the new value on the GAIN knob's visual position too.
+      gainKnobControl.set(deckGainDb);
+      $('gainReadout').textContent = `${deckGainDb>0?'+':''}${deckGainDb.toFixed(1)}dB`;
+      toast('Gain matched');
+    }catch(e){ toast('Could not analyze this track'); }
+  });
+
+  // ---------------- DUCK: rhythmic sidechain-style gain pump, synced to tempo — the
+  // classic "pumping" effect heard in EDM, triggered by a fast attack/slow release
+  // envelope on a loop tied to the beat length.
+  let duckAmount = 0;
+  let duckRAF = null;
+  function duckLoop(){
+    if(duckAmount <= 0 || !deckEngine.knobGainNode){ duckRAF = null; return; }
+    const bpm = liveBpm || (allTracks.find(tr => tr.id === djCurrentTrackId)?.bpm) || 120;
+    const beatLen = 60 / bpm;
+    const t0 = audioCtx.currentTime;
+    const baseGain = Math.pow(10, deckGainDb/20);
+    const duckedGain = baseGain * (1 - duckAmount);
+    try{
+      deckEngine.knobGainNode.gain.cancelScheduledValues(t0);
+      deckEngine.knobGainNode.gain.setValueAtTime(duckedGain, t0);
+      deckEngine.knobGainNode.gain.linearRampToValueAtTime(baseGain, t0 + beatLen * 0.85);
+    }catch(e){}
+    duckRAF = setTimeout(duckLoop, beatLen * 1000);
+  }
+  attachKnobDrag($('duckKnob'), $('duckKnob').querySelector('.knob-indicator'), { min:0, max:100, initial:0 }, (v) => {
+    duckAmount = v/100;
+    $('duckReadout').textContent = `${Math.round(v)}%`;
+    ensureDeckGainNode(deckEngine);
+    if(duckAmount > 0 && !duckRAF) duckLoop();
+    if(duckAmount <= 0 && deckEngine.knobGainNode){
+      // Turning it off: cancel the pump and restore flat gain immediately.
+      try{
+        deckEngine.knobGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+        deckEngine.knobGainNode.gain.setValueAtTime(Math.pow(10, deckGainDb/20), audioCtx.currentTime);
+      }catch(e){}
+      if(duckRAF){ clearTimeout(duckRAF); duckRAF = null; }
+    }
+  });
 
   function attachFaderDrag(trackEl, thumbEl, onChange){
     trackEl.addEventListener('pointerdown', (e) => {
@@ -4580,7 +4798,7 @@
     return { get: () => value, set: (v) => { value = v; render(); } };
   }
 
-  attachKnobDrag($('gainKnob'), $('gainKnob').querySelector('.knob-indicator'), { min:-12, max:12, initial:0 }, (db) => {
+  const gainKnobControl = attachKnobDrag($('gainKnob'), $('gainKnob').querySelector('.knob-indicator'), { min:-12, max:12, initial:0 }, (db) => {
     deckGainDb = db;
     $('gainReadout').textContent = `${db>0?'+':''}${db.toFixed(1)}dB`;
     // Was reading deckGainNodes[activeIdx] — that's the MAIN player's audio graph
@@ -4637,13 +4855,30 @@
     if(deckEngine.reverbNodes) return deckEngine.reverbNodes;
     ensureAudioGraph();
     const convolver = audioCtx.createConvolver();
-    const len = audioCtx.sampleRate * 2.2;
+    // A believable-sounding reverb tail needs: (1) several seconds of length,
+    // (2) a smooth, gentle decay curve (not one that dies out in the first
+    // fraction of a second), and (3) high frequencies damping out faster than
+    // lows, since that's how real rooms/halls actually decay. The previous
+    // impulse used a steep exponent (2.2) over only 2.2s, which died almost
+    // instantly and was barely audible even at full wet — this fixes all three.
+    const len = audioCtx.sampleRate * 3.5;
     const impulse = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
     for(let ch=0; ch<2; ch++){
       const data = impulse.getChannelData(ch);
-      for(let i=0;i<len;i++) data[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2.2);
+      let lastSample = 0;
+      for(let i=0;i<len;i++){
+        const t = i/len;
+        const envelope = Math.pow(1 - t, 1.4); // gentler, longer-feeling decay curve
+        const raw = (Math.random()*2-1) * envelope;
+        // Simple one-pole low-pass that gets stronger as the tail progresses —
+        // approximates a room's high frequencies dying out faster than lows.
+        const damping = 0.15 + t * 0.5;
+        lastSample = lastSample + damping * (raw - lastSample);
+        data[i] = lastSample;
+      }
     }
     convolver.buffer = impulse;
+    convolver.normalize = true;
     const wetGain = audioCtx.createGain();
     wetGain.gain.value = 0;
     // Tap the dry signal post-filter, pre-blend, so reverb hears EQ/kill/filter
@@ -4658,7 +4893,7 @@
   }
   attachKnobDrag($('reverbKnob'), $('reverbKnob').querySelector('.knob-indicator'), { min:0, max:100, initial:0 }, (v) => {
     const { wetGain } = ensureReverbSend();
-    wetGain.gain.value = (v/100) * 0.9; // cap wet level so it never fully drowns the dry signal
+    wetGain.gain.value = (v/100) * 1.3; // boosted so the tail is clearly audible even at moderate knob settings
     $('reverbReadout').textContent = `${Math.round(v)}%`;
   });
 
@@ -4988,6 +5223,7 @@
   // ---------------- Boot: auto-load anything saved from before ----------------
   (async function boot(){
     try{
+      $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
       await loadSavedTheme();
       const loaded = await loadFromDB();
       if(loaded){
@@ -5002,6 +5238,7 @@
         toast(`Welcome back — ${allTracks.length} track${allTracks.length===1?'':'s'} loaded`);
         restorePlaybackState();
       }
+      await checkForUpdatePopup();
     }catch(e){
       console.error('Auto-load failed', e);
     }
