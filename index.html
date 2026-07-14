@@ -90,17 +90,17 @@
   /* ---------- RGB + : audio-reactive side glows. Built + shown only for the RGB + theme; ---------- */
   /* every other theme (including plain RGB) never touches these elements. */
   .rgb-glow-side{
-    position:fixed; top:0; bottom:0; width:min(18vw, 130px);
+    position:fixed; top:0; bottom:0; width:5px;
     pointer-events:none; z-index:5; opacity:0;
-    mix-blend-mode:screen; will-change:opacity, transform;
-    transition: opacity 0.25s ease;
+    mix-blend-mode:screen; will-change:opacity, width, box-shadow;
+    transition: opacity 0.2s ease;
   }
-  .rgb-glow-side.left{ left:0; transform-origin:left center;
-    background:linear-gradient(90deg, var(--coral) 0%, color-mix(in srgb, var(--gold) 60%, transparent) 45%, transparent 100%);
-    filter: blur(18px); }
-  .rgb-glow-side.right{ right:0; transform-origin:right center;
-    background:linear-gradient(270deg, var(--gold) 0%, color-mix(in srgb, var(--coral) 60%, transparent) 45%, transparent 100%);
-    filter: blur(18px); }
+  .rgb-glow-side.left{ left:0;
+    background: linear-gradient(180deg, var(--coral), var(--gold));
+    box-shadow: 0 0 10px 1px var(--coral); }
+  .rgb-glow-side.right{ right:0;
+    background: linear-gradient(180deg, var(--gold), var(--coral));
+    box-shadow: 0 0 10px 1px var(--gold); }
   body.rgb-plus-active .rgb-glow-side{ display:block; }
   body:not(.rgb-plus-active) .rgb-glow-side{ display:none; }
 
@@ -509,7 +509,7 @@
   #actionSpeedSlider{ -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; background:var(--line); outline:none; }
   #actionSpeedSlider::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%; background:var(--gold); }
   .np-row{ display:flex; align-items:center; gap:12px; }
-#npPlayerStage{ perspective: 320px; perspective-origin: 68% 30%; flex-shrink:0; }
+#npPlayerStage{ perspective: 320px; perspective-origin: 68% 30%; flex-shrink:0; position:relative; }
   #npPlayerBody{
     position:relative; width:54px; height:52px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center; cursor:pointer; touch-action:none;
@@ -525,8 +525,9 @@
   }
   #npPlatterRing{
     position:relative; width:46px; height:46px; margin:0 auto;
-    /* tilted back and swung toward the right corner, so the label, grooves, and tonearm are all visible at once */
-    transform: rotateX(46deg) rotateZ(26deg);
+    /* tilted back and swung toward the right corner by default — but --np-tilt/--np-spin */
+    /* let a custom drag-set angle (see the angle picker) override these without new CSS. */
+    transform: rotateX(var(--np-tilt, 46deg)) rotateZ(var(--np-spin, 26deg));
     transform-style: preserve-3d;
     border-radius:50%;
     background: radial-gradient(circle at 62% 30%, #3d3d3d 0%, #1c1c1c 68%, #0e0e0e 100%);
@@ -557,6 +558,54 @@
   }
   #npMiniTonearm::after{ content:''; position:absolute; left:-2px; top:0.5px; width:5px; height:4px; background:#111; border-radius:1px; }
   #npPlayerBody .tonearm-post{ display:none; }
+
+  /* ---------- Angle-adjust trigger button, sits at the corner of the mini player ---------- */
+  #npAngleBtn{
+    position:absolute; z-index:6; bottom:-3px; left:-3px; width:17px; height:17px; border-radius:50%;
+    background:rgba(10,10,10,0.75); border:1px solid rgba(255,255,255,0.28);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
+  }
+  #npAngleBtn svg{ width:9px; height:9px; fill:var(--ink-dim); }
+  #npAngleBtn.locked svg{ fill:var(--coral); }
+  body.rp-classic #npAngleBtn{ display:none; }
+
+  /* ---------- Angle picker modal: a bigger, freely-draggable version of the same player ---------- */
+  #npAngleStage{
+    perspective:440px; perspective-origin:68% 30%; width:170px; height:170px;
+    touch-action:none; cursor:grab; margin:0 auto;
+  }
+  #npAngleStage.dragging{ cursor:grabbing; }
+  #npAngleBody{ position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center; transform-style:preserve-3d; }
+  #npAngleBody::after{
+    content:''; position:absolute; bottom:-6px; left:6px; right:-4px; height:14px; border-radius:8px;
+    background: linear-gradient(100deg, #201d19, #3d3a33 45%, #1a1815);
+    box-shadow: 0 6px 10px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.10);
+    transform: rotateX(58deg); z-index:0;
+  }
+  #npAnglePlatterRing{
+    position:relative; width:140px; height:140px; border-radius:50%; transform-style:preserve-3d;
+    background: radial-gradient(circle at 62% 30%, #3d3d3d 0%, #1c1c1c 68%, #0e0e0e 100%);
+    box-shadow: 0 10px 18px rgba(0,0,0,0.5), inset 0 0 10px rgba(0,0,0,0.6);
+    display:flex; align-items:center; justify-content:center; z-index:2;
+  }
+  #npAngleDisc{
+    width:132px; height:132px; border-width:2px; position:relative;
+    background:
+      radial-gradient(circle at 62% 26%, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 30%),
+      repeating-radial-gradient(circle at center, #12181a 0, #12181a 1.5px, #1b2224 1.5px, #1b2224 3px);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.35), inset 2px 3px 5px rgba(255,255,255,0.08);
+    animation: spin 5s linear infinite;
+  }
+  #npAngleTonearm{
+    position:absolute; top:-10px; right:-26px; width:84px; height:5px; border-radius:3px;
+    background: linear-gradient(90deg, #e8dcc0, #cfc0a0 55%, #9c8560); transform-origin: 90% 50%;
+    box-shadow: 0 3px 5px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.35); z-index:5;
+  }
+  #npAngleTonearm::before{
+    content:''; position:absolute; right:-16px; top:-16px; width:30px; height:30px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #5a5a5a, #232323);
+    box-shadow:0 3px 5px rgba(0,0,0,0.5), inset 2px 2px 2px rgba(255,255,255,0.15);
+  }
 
   /* ---------- Classic (flat) record player fallback — a one-tap revert if the ---------- */
   /* corner 3D view above ever looks off, no need to redo any code to go back.  */
@@ -742,6 +791,9 @@
       <div id="npMiniTonearm"></div>
       <div class="tonearm-post"></div>
     </div>
+    <button id="npAngleBtn" title="Adjust record player angle" aria-label="Adjust record player angle">
+      <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0020 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 004 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+    </button>
     </div>
     <div id="npInfo"><div class="t" id="npTitle">—</div><div class="a" id="npArtist">—</div>
       <div class="name-bubble" id="nameBubble" style="display:none;">
@@ -947,6 +999,11 @@
 
       <div style="margin-top:20px; border-top:1px solid var(--line); padding-top:16px;">
         <button class="playlist-pick-btn" id="viewListeningStreakBtn" style="text-align:center;">View listening streak</button>
+      </div>
+
+      <div style="margin-top:12px;">
+        <button class="playlist-pick-btn" id="resetAppearanceBtn" style="text-align:center;">Reset appearance to defaults</button>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">If a theme or record player angle ever gets stuck looking wrong, this puts theme, record player angle, and lock back to how they started — nothing else is touched.</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -1216,6 +1273,35 @@
   </div>
 </div>
 
+<!-- Record player angle picker — open, spin around, and lock in your own viewing angle -->
+<div class="modal-backdrop" id="npAngleBackdrop">
+  <div class="modal">
+    <h3>Record player angle</h3>
+    <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Drag the record to spin it around and tilt it to your angle.</div>
+    <div id="npAngleStageWrap" style="padding:22px 0 34px;">
+      <div id="npAngleStage">
+        <div id="npAngleBody">
+          <div id="npAnglePlatterRing">
+            <div class="disc" id="npAngleDisc"><div class="disc-label" id="npAngleDiscLabel"></div></div>
+          </div>
+          <div id="npAngleTonearm"></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <div>
+        <div style="font-size:13px; color:var(--ink-dim);">Lock this angle</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Stops it from being dragged by accident.</div>
+      </div>
+      <button class="tab" id="npAngleLockBtn" style="padding:5px 12px; font-size:12px; flex-shrink:0;">Off</button>
+    </div>
+    <div class="modal-btns">
+      <button class="cancel" id="npAngleReset" style="flex:1;">Reset to corner</button>
+      <button class="confirm" id="npAngleDone" style="flex:1;">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- What's New popup — shown once whenever the app version changes -->
 <div class="modal-backdrop" id="whatsNewBackdrop">
   <div class="modal">
@@ -1358,8 +1444,8 @@
   function stopGlowSync(){
     if(glowLoopHandle){ cancelAnimationFrame(glowLoopHandle); glowLoopHandle = null; }
     const l = $('rgbGlowLeft'), r = $('rgbGlowRight');
-    if(l) l.style.opacity = 0;
-    if(r) r.style.opacity = 0;
+    if(l){ l.style.opacity = 0; l.style.width = '5px'; l.style.boxShadow = 'none'; }
+    if(r){ r.style.opacity = 0; r.style.width = '5px'; r.style.boxShadow = 'none'; }
   }
   function startGlowSync(){
     if(glowLoopHandle) return; // already running
@@ -1378,12 +1464,21 @@
       const bass = sum / (bassBins * 255); // 0..1
       glowEnergyAvg = glowEnergyAvg * 0.9 + bass * 0.1;
       const thump = Math.max(0, bass - glowEnergyAvg * 1.1);
-      const baseGlow = 0.16 + glowEnergyAvg * 0.4;
-      const pulse = Math.min(1, thump * 2.4);
-      const intensity = Math.min(1, baseGlow + pulse);
-      const scale = 1 + pulse * 0.55;
-      if(l){ l.style.opacity = intensity; l.style.transform = `scaleX(${scale})`; }
-      if(r){ r.style.opacity = intensity; r.style.transform = `scaleX(${scale})`; }
+      const restOpacity = 0.22 + glowEnergyAvg * 0.18; // subtle line, always faintly alive with the music
+      const pop = Math.min(1, thump * 2.6); // sharp pop right on the bass hit
+      const intensity = Math.min(1, restOpacity + pop * 0.8);
+      const width = 5 + pop * 14;
+      const blurSpread = 10 + pop * 26;
+      if(l){
+        l.style.opacity = intensity;
+        l.style.width = width + 'px';
+        l.style.boxShadow = `0 0 ${blurSpread}px ${2 + pop*3}px var(--coral)`;
+      }
+      if(r){
+        r.style.opacity = intensity;
+        r.style.width = width + 'px';
+        r.style.boxShadow = `0 0 ${blurSpread}px ${2 + pop*3}px var(--gold)`;
+      }
     }
     glowLoopHandle = requestAnimationFrame(tick);
   }
@@ -1586,17 +1681,89 @@
   $('seekStyleLine').addEventListener('click', () => setSeekStyle('line'));
   $('seekStyleWaveform').addEventListener('click', () => setSeekStyle('waveform'));
 
-  // ---------------- Mini record player view: corner (new) or classic (flat) fallback ----------------
-  let npPlayerStyle = 'corner'; // 'corner' | 'classic'
+  // ---------------- Mini record player view: corner (new), classic (flat), or your own custom angle ----------------
+  let npPlayerStyle = 'corner'; // 'corner' | 'classic' | 'custom'
   function setNpPlayerStyle(style){
     npPlayerStyle = style;
     document.body.classList.toggle('rp-classic', style === 'classic');
+    if(style === 'corner'){
+      document.documentElement.style.removeProperty('--np-tilt');
+      document.documentElement.style.removeProperty('--np-spin');
+    }
     $('npStyleCorner').classList.toggle('active', style === 'corner');
     $('npStyleClassic').classList.toggle('active', style === 'classic');
     dbPut('meta', { key: 'npPlayerStyle', value: style });
   }
   $('npStyleCorner').addEventListener('click', () => setNpPlayerStyle('corner'));
   $('npStyleClassic').addEventListener('click', () => setNpPlayerStyle('classic'));
+
+  // ---------------- Record player angle picker: open it, drag to spin it around, lock it in ----------------
+  function applyNpAngleVars(tiltX, spinZ){
+    document.documentElement.style.setProperty('--np-tilt', tiltX + 'deg');
+    document.documentElement.style.setProperty('--np-spin', spinZ + 'deg');
+  }
+  function saveCustomNpAngle(tiltX, spinZ){
+    applyNpAngleVars(tiltX, spinZ);
+    document.body.classList.remove('rp-classic');
+    npPlayerStyle = 'custom';
+    $('npStyleCorner').classList.remove('active');
+    $('npStyleClassic').classList.remove('active');
+    dbPut('meta', { key: 'npPlayerStyle', value: 'custom' });
+    dbPut('meta', { key: 'npPlayerAngle', value: { tiltX, spinZ } });
+  }
+  let npAngleLocked = false;
+  function setNpAngleLocked(v){
+    npAngleLocked = v;
+    $('npAngleLockBtn').textContent = v ? 'On' : 'Off';
+    $('npAngleLockBtn').classList.toggle('active', v);
+    $('npAngleBtn').classList.toggle('locked', v);
+    dbPut('meta', { key: 'npAngleLocked', value: v });
+  }
+  $('npAngleLockBtn').addEventListener('click', () => setNpAngleLocked(!npAngleLocked));
+
+  let modalTiltX = 46, modalSpinZ = 26, angleDragState = null;
+  function renderAngleStage(){
+    $('npAnglePlatterRing').style.transform = `rotateX(${modalTiltX}deg) rotateZ(${modalSpinZ}deg)`;
+  }
+  $('npAngleStage').addEventListener('pointerdown', (e) => {
+    if(npAngleLocked){ toast('Locked — tap "On" above to unlock it first'); return; }
+    angleDragState = { startX: e.clientX, startY: e.clientY, tiltX: modalTiltX, spinZ: modalSpinZ };
+    $('npAngleStage').classList.add('dragging');
+    try{ $('npAngleStage').setPointerCapture(e.pointerId); }catch(err){}
+  });
+  $('npAngleStage').addEventListener('pointermove', (e) => {
+    if(!angleDragState) return;
+    const dx = e.clientX - angleDragState.startX;
+    const dy = e.clientY - angleDragState.startY;
+    modalSpinZ = Math.max(-180, Math.min(180, angleDragState.spinZ + dx * 0.7));
+    modalTiltX = Math.max(8, Math.min(85, angleDragState.tiltX - dy * 0.45));
+    renderAngleStage();
+  });
+  ['pointerup','pointercancel','pointerleave'].forEach(ev => {
+    $('npAngleStage').addEventListener(ev, () => { angleDragState = null; $('npAngleStage').classList.remove('dragging'); });
+  });
+  $('npAngleBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cs = getComputedStyle(document.documentElement);
+    modalTiltX = parseFloat(cs.getPropertyValue('--np-tilt')) || 46;
+    modalSpinZ = parseFloat(cs.getPropertyValue('--np-spin')) || 26;
+    renderAngleStage();
+    const t = queueIndex >= 0 ? allTracks.find(tr => tr.id === queue[queueIndex]) : null;
+    $('npAngleDiscLabel').style.backgroundImage = $('npDiscLabel').style.backgroundImage || '';
+    $('npAngleDisc').classList.toggle('spinning', !!(t && !activeAudio().paused));
+    $('npAngleBackdrop').style.display = 'flex';
+  });
+  $('npAngleReset').addEventListener('click', () => {
+    if(npAngleLocked){ toast('Locked — unlock it first'); return; }
+    modalTiltX = 46; modalSpinZ = 26;
+    renderAngleStage();
+  });
+  $('npAngleDone').addEventListener('click', () => {
+    saveCustomNpAngle(modalTiltX, modalSpinZ);
+    $('npAngleBackdrop').style.display = 'none';
+    toast('Angle saved');
+  });
+  $('npAngleBackdrop').addEventListener('click', e => { if(e.target === $('npAngleBackdrop')) $('npAngleBackdrop').style.display = 'none'; });
 
   let autoVolumeEnabled = true;
   function setAutoVolume(on){
@@ -1898,7 +2065,18 @@
       const seekStyleRow = metaRows.find(r => r.key === 'seekStyle');
       setSeekStyle(seekStyleRow && seekStyleRow.value === 'waveform' ? 'waveform' : 'line');
       const npStyleRow = metaRows.find(r => r.key === 'npPlayerStyle');
-      setNpPlayerStyle(npStyleRow && npStyleRow.value === 'classic' ? 'classic' : 'corner');
+      const npAngleRow = metaRows.find(r => r.key === 'npPlayerAngle');
+      const npLockRow = metaRows.find(r => r.key === 'npAngleLocked');
+      setNpAngleLocked(!!(npLockRow && npLockRow.value));
+      if(npStyleRow && npStyleRow.value === 'custom' && npAngleRow && npAngleRow.value){
+        applyNpAngleVars(npAngleRow.value.tiltX, npAngleRow.value.spinZ);
+        npPlayerStyle = 'custom';
+        document.body.classList.remove('rp-classic');
+        $('npStyleCorner').classList.remove('active');
+        $('npStyleClassic').classList.remove('active');
+      } else {
+        setNpPlayerStyle(npStyleRow && npStyleRow.value === 'classic' ? 'classic' : 'corner');
+      }
       const autoVolRow = metaRows.find(r => r.key === 'autoVolume');
       setAutoVolume(autoVolRow ? !!autoVolRow.value : true);
       const gaplessRow = metaRows.find(r => r.key === 'gaplessMode');
@@ -1918,8 +2096,14 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '32';
+  const APP_VERSION = '32.1';
   const CHANGELOG = [
+    { version: '32.1', title: 'RGB + refined, record player now fully adjustable', items: [
+      'RGB + glow is now a subtle thin line on each edge that pops sharply with the bass, instead of a wide wash',
+      'Tap the small dial icon on the mini record player to open it up, drag to spin it around, and set your own angle',
+      'Lock button in the angle picker keeps your angle from being dragged by accident',
+      'Added "Reset appearance to defaults" in Settings → More — puts theme and record player angle back to how they started if anything looks broken',
+    ]},
     { version: '32', title: 'RGB + theme, record player revamp, easier custom themes', items: [
       'New RGB + theme: side glows that sync to the music and thump with the bass — exclusive to RGB +, no other theme is touched',
       'Mini record player rebuilt from a right-corner angle so the label, grooves, and tonearm are all visible at once',
@@ -2003,6 +2187,18 @@
   $('viewUpdateLogBtn').addEventListener('click', () => {
     renderUpdateLog();
     $('updateLogBackdrop').style.display = 'flex';
+  });
+  $('resetAppearanceBtn').addEventListener('click', () => {
+    // In-app safety net: puts theme + record player angle/lock back to first-run defaults,
+    // separate from the full code revert you'd get by keeping an older build around.
+    delete THEMES.custom;
+    applyTheme('rosegold');
+    setNpAngleLocked(false);
+    setNpPlayerStyle('corner');
+    dbPut('meta', { key: 'customTheme', value: null });
+    dbPut('meta', { key: 'npPlayerAngle', value: null });
+    renderThemeOptions();
+    toast('Appearance reset to defaults');
   });
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
   $('updateLogBackdrop').addEventListener('click', e => { if(e.target === $('updateLogBackdrop')) $('updateLogBackdrop').style.display = 'none'; });
