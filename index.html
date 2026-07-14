@@ -14,7 +14,7 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-  :root{ 
+  :root{
     --bg: #0A1330;
     --bg-raised: #131D45;
     --ink: #EDECE7;
@@ -511,7 +511,7 @@
   }
   #npPlatterRing{
     position:absolute; bottom:11px; left:50%; width:50px; height:14px;
-    transform: translateX(-50%) rotateX(72deg);
+    transform: translateX(-50%) rotateX(60deg) rotateY(-25deg);
     transform-style: preserve-3d;
     border-radius:50%;
     background: radial-gradient(ellipse at 40% 35%, #333 0%, #1c1c1c 70%, #101010 100%);
@@ -1707,8 +1707,13 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '31';
+  const APP_VERSION = '31.5';
   const CHANGELOG = [
+    { version: '31.5', title: 'Pad fix + view angle', items: [
+      'Fixed beat pad and FX pads not responding — a handler block got deleted by mistake',
+      'Switched pads to instant pointerdown response instead of click',
+      'Mini record player angled to a bottom-right 3D view',
+    ]},
     { version: '31', title: 'DJ Mode stuck-loading fix, RGB theme, side-view record player, streak fix', items: [
       'Fixed DJ Mode getting stuck on "loading" forever with a hard timeout and stale-URL recovery',
       'Added a real animated RGB theme with a customizable glow speed slider',
@@ -4374,16 +4379,35 @@
     vinylbrake: () => playSamplePad(FX_SAMPLE_PATHS, 'vinylbrake'),
     crowdcheer: () => playSamplePad(FX_SAMPLE_PATHS, 'crowdcheer'),
   };
+  const DRUM_HANDLERS = {
+    kick: () => playSamplePad(DRUM_SAMPLE_PATHS, 'kick'),
+    snare: () => playSamplePad(DRUM_SAMPLE_PATHS, 'snare'),
+    hihat: () => playSamplePad(DRUM_SAMPLE_PATHS, 'hihat'),
+    ohihat: () => playSamplePad(DRUM_SAMPLE_PATHS, 'ohihat'),
+    clap: () => playSamplePad(DRUM_SAMPLE_PATHS, 'clap'),
+    rim: () => playSamplePad(DRUM_SAMPLE_PATHS, 'rim'),
+    tom: () => playSamplePad(DRUM_SAMPLE_PATHS, 'tom'),
+    crash: () => playSamplePad(DRUM_SAMPLE_PATHS, 'crash'),
+    cowbell: () => playSamplePad(DRUM_SAMPLE_PATHS, 'cowbell'),
+    shaker: () => playSamplePad(DRUM_SAMPLE_PATHS, 'shaker'),
+    woodblock: () => playSamplePad(DRUM_SAMPLE_PATHS, 'woodblock'),
+    subboom: () => playSamplePad(DRUM_SAMPLE_PATHS, 'subboom'),
+  };
+  function firePad(btn, key, handlers){
+    ensureAudioGraph();
+    if(audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+    if(handlers[key]) handlers[key]();
+    btn.classList.add('firing');
+    setTimeout(() => btn.classList.remove('firing'), 220);
+    if(navigator.vibrate) navigator.vibrate(8);
+  }
   document.querySelectorAll('.fx-pad').forEach(btn => {
-    btn.addEventListener('click', () => {
-      ensureAudioGraph();
-      if(audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-      const fx = btn.dataset.fx;
-      if(FX_HANDLERS[fx]) FX_HANDLERS[fx]();
-      btn.classList.add('firing');
-      setTimeout(() => btn.classList.remove('firing'), 220);
-      if(navigator.vibrate) navigator.vibrate(8);
-    });
+    // pointerdown, not click — click has touch-delay/scroll-cancel quirks on
+    // mobile that can make pads feel like they "won't press."
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); firePad(btn, btn.dataset.fx, FX_HANDLERS); });
+  });
+  document.querySelectorAll('.drum-pad').forEach(btn => {
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); firePad(btn, btn.dataset.drum, DRUM_HANDLERS); });
   });
 
   // ---------------- Tap tempo: feeds the BPM readout and beat-repeat pad timing ----------------
