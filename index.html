@@ -97,19 +97,20 @@
   .rgb-glow-wash.right{ right:0; background:linear-gradient(270deg, var(--gold), transparent 100%); }
 
   .rgb-glow-side{
-    position:fixed; top:0; bottom:0; width:16px;
+    position:fixed; top:0; bottom:0; width:14px;
     pointer-events:none; z-index:5;
-    display:flex; flex-direction:column; justify-content:space-between; gap:2px;
-    padding:2vh 0;
+    display:flex; flex-direction:column; justify-content:space-between; gap:4px;
+    padding:6vh 0;
   }
   .rgb-glow-side.left{ left:0; align-items:flex-start; }
   .rgb-glow-side.right{ right:0; align-items:flex-end; }
   .rgb-glow-bar{
-    flex:1; min-height:2px; width:5px; border-radius:2px; opacity:0.22;
+    flex:1; min-height:2px; max-height:22px; width:4px; border-radius:2px; opacity:0.16;
     will-change:width, opacity, box-shadow;
+    transition: width 0.24s ease-out, opacity 0.24s ease-out, box-shadow 0.24s ease-out;
   }
-  .rgb-glow-side.left .rgb-glow-bar{ background:var(--coral); box-shadow:0 0 6px 0 var(--coral); }
-  .rgb-glow-side.right .rgb-glow-bar{ background:var(--gold); box-shadow:0 0 6px 0 var(--gold); }
+  .rgb-glow-side.left .rgb-glow-bar{ background:var(--coral); box-shadow:0 0 4px 0 var(--coral); }
+  .rgb-glow-side.right .rgb-glow-bar{ background:var(--gold); box-shadow:0 0 4px 0 var(--gold); }
   body.rgb-plus-active .rgb-glow-side, body.rgb-plus-active .rgb-glow-wash{ display:flex; }
   body:not(.rgb-plus-active) .rgb-glow-side, body:not(.rgb-plus-active) .rgb-glow-wash{ display:none; }
 
@@ -1465,8 +1466,9 @@
     }catch(e){ /* audio graph not ready yet */ }
   }
   let glowLoopHandle = null;
-  const GLOW_BARS = 28;
+  const GLOW_BARS = 16;
   let washEnergyAvg = 0;
+  let barLevels = null; // smoothed per-bar levels, persists across ticks
   function buildGlowBars(){
     ['rgbGlowLeft','rgbGlowRight'].forEach(id => {
       const el = $(id);
@@ -1478,18 +1480,22 @@
         el.appendChild(bar);
       }
     });
+    if(!barLevels || barLevels.length !== GLOW_BARS) barLevels = new Array(GLOW_BARS).fill(0);
   }
   function stopGlowSync(){
     if(glowLoopHandle){ cancelAnimationFrame(glowLoopHandle); glowLoopHandle = null; }
     ['rgbGlowLeft','rgbGlowRight'].forEach(id => {
       $(id).querySelectorAll('.rgb-glow-bar').forEach(bar => {
-        bar.style.width = '5px'; bar.style.opacity = 0.22; bar.style.boxShadow = 'none';
+        bar.style.width = '4px'; bar.style.opacity = 0.16; bar.style.boxShadow = 'none';
       });
     });
     $('rgbGlowWashLeft').style.opacity = 0;
     $('rgbGlowWashRight').style.opacity = 0;
     washEnergyAvg = 0;
+    barLevels = null;
+    glowFrameSkip = 0;
   }
+  let glowFrameSkip = 0;
   function startGlowSync(){
     if(glowLoopHandle) return; // already running
     ensureGlowAnalyser(activeIdx);
@@ -1500,25 +1506,34 @@
     function tick(){
       glowLoopHandle = requestAnimationFrame(tick);
       if(!(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus)) { stopGlowSync(); return; }
+      // Update at ~20fps instead of every frame — a calmer, smoother pulse rather than
+      // a jittery redraw every 16ms, which is what made it read as "lines shooting out."
+      glowFrameSkip++;
+      if(glowFrameSkip % 3 !== 0) return;
       const analyser = glowAnalysers[activeIdx];
       if(!analyser){ ensureGlowAnalyser(activeIdx); return; }
       const data = new Uint8Array(analyser.frequencyBinCount);
       analyser.getByteFrequencyData(data);
-      // spread the usable low/mid spectrum across the bars, log-weighted so bass fills more bars — punchier, real waveform feel
-      const usable = Math.floor(data.length * 0.75);
+      // spread the usable low/mid spectrum across the bars, log-weighted so bass fills more bars
+      const usable = Math.floor(data.length * 0.7);
       let overall = 0;
       for(let i=0;i<GLOW_BARS;i++){
-        const t0 = Math.pow(i / GLOW_BARS, 1.6);
-        const t1 = Math.pow((i+1) / GLOW_BARS, 1.6);
+        const t0 = Math.pow(i / GLOW_BARS, 1.7);
+        const t1 = Math.pow((i+1) / GLOW_BARS, 1.7);
         const b0 = Math.max(0, Math.floor(t0 * usable));
         const b1 = Math.max(b0+1, Math.floor(t1 * usable));
         let sum = 0;
         for(let b=b0;b<b1;b++) sum += data[b];
-        const level = Math.min(1, (sum / (b1-b0)) / 210); // 0..1, headroom so it can hit max on hits
+        const raw = Math.min(1, (sum / (b1-b0)) / 235); // headroom so peaks are rare, not constant
+        // Heavy smoothing per bar: rises quickly on a hit, eases back down gently —
+        // stops every tiny fluctuation from snapping the bar width around.
+        const prev = barLevels[i];
+        barLevels[i] = raw > prev ? prev + (raw - prev) * 0.5 : prev + (raw - prev) * 0.12;
+        const level = barLevels[i];
         overall += level;
-        const width = 5 + level * 26;
-        const glowSize = 4 + level * 16;
-        const opacity = 0.22 + level * 0.78;
+        const width = 4 + level * 14; // gentler max width — a glow, not a spike
+        const glowSize = 3 + level * 9;
+        const opacity = 0.16 + level * 0.55;
         const lb = leftBars[i], rb = rightBars[GLOW_BARS - 1 - i]; // mirror so both sides read as one wave
         if(lb){ lb.style.width = width + 'px'; lb.style.opacity = opacity; lb.style.boxShadow = `0 0 ${glowSize}px 0 var(--coral)`; }
         if(rb){ rb.style.width = width + 'px'; rb.style.opacity = opacity; rb.style.boxShadow = `0 0 ${glowSize}px 0 var(--gold)`; }
@@ -1527,8 +1542,8 @@
       // confined to the edges (fades to transparent well before screen center), never washes
       // the whole screen, just makes the sides feel alive even between hits.
       const avgLevel = overall / GLOW_BARS;
-      washEnergyAvg = washEnergyAvg * 0.85 + avgLevel * 0.15;
-      const washOpacity = Math.min(0.55, 0.08 + washEnergyAvg * 0.75);
+      washEnergyAvg = washEnergyAvg * 0.9 + avgLevel * 0.1;
+      const washOpacity = Math.min(0.4, 0.06 + washEnergyAvg * 0.55);
       washLeft.style.opacity = washOpacity;
       washRight.style.opacity = washOpacity;
     }
@@ -2156,8 +2171,12 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '32.1.7';
+  const APP_VERSION = '32.1.8';
   const CHANGELOG = [
+    { version: '32.1.8', title: 'RGB + calmed down, update popup no longer gets reloaded away', items: [
+      'RGB + smoothed out heavily — fewer bars, eased transitions, capped width — reads as a calm glow instead of spiky lines',
+      'Auto-update reload now waits for the What\'s New popup to be dismissed before refreshing, instead of yanking it away',
+    ]},
     { version: '32.1.7', title: 'Real auto-updating cache', items: [
       'Service worker now checks for a newer version on load, every 30 minutes, and whenever you come back to the tab',
       'App shell fetches network-first when online, so you get the latest version automatically instead of a stale cached copy',
@@ -5967,14 +5986,25 @@
 
       // When the new worker takes control, the cache has already been swapped over —
       // reload once so the page picks up the new index.html instead of running old JS
-      // against a newer cache. Guarded so it only ever fires once per page life.
+      // against a newer cache. Guarded so it only ever fires once per page life, and
+      // never steals the What's New popup out from under someone mid-read.
       let reloadedForUpdate = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
+      function reloadForUpdate(){
         if(reloadedForUpdate) return;
         reloadedForUpdate = true;
-        toast('Updating to the latest version…');
-        setTimeout(() => window.location.reload(), 600);
-      });
+        // Wait slightly longer than the What's New popup's own 900ms show-delay, so if
+        // it's about to appear, it's already on screen by the time we check for it.
+        setTimeout(() => {
+          if($('whatsNewBackdrop').style.display === 'flex'){
+            $('whatsNewClose').addEventListener('click', () => window.location.reload(), { once:true });
+            $('whatsNewBackdrop').addEventListener('click', (e) => { if(e.target === $('whatsNewBackdrop')) window.location.reload(); }, { once:true });
+            return;
+          }
+          toast('Updating to the latest version…');
+          setTimeout(() => window.location.reload(), 600);
+        }, 1300);
+      }
+      navigator.serviceWorker.addEventListener('controllerchange', reloadForUpdate);
     });
   }
 
