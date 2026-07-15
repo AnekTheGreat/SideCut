@@ -97,13 +97,14 @@
   .rgb-glow-wash.right{ right:0; background:linear-gradient(270deg, var(--gold), transparent 100%); }
 
   .rgb-glow-side{
-    position:fixed; top:6vh; bottom:6vh; width:4px; border-radius:3px;
-    pointer-events:none; z-index:5; opacity:0.2;
-    transition: width 0.16s ease-out, opacity 0.16s ease-out, box-shadow 0.16s ease-out;
-    will-change:width, opacity, box-shadow;
+    position:fixed; z-index:5; opacity:0.55; pointer-events:none;
+    transition: opacity 0.14s ease-out, box-shadow 0.14s ease-out;
+    will-change:opacity, box-shadow;
   }
-  .rgb-glow-side.left{ left:0; background:var(--coral); box-shadow:0 0 5px 0 var(--coral); }
-  .rgb-glow-side.right{ right:0; background:var(--gold); box-shadow:0 0 5px 0 var(--gold); }
+  .rgb-glow-side.left{ top:0; bottom:0; left:0; width:2px; background:var(--coral); box-shadow:0 0 4px 0 var(--coral); }
+  .rgb-glow-side.right{ top:0; bottom:0; right:0; width:2px; background:var(--gold); box-shadow:0 0 4px 0 var(--gold); }
+  .rgb-glow-side.top{ top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, var(--coral), var(--gold)); opacity:0.32; }
+  .rgb-glow-side.bottom{ bottom:0; left:0; right:0; height:2px; background:linear-gradient(90deg, var(--coral), var(--gold)); opacity:0.32; }
   body.rgb-plus-active .rgb-glow-side, body.rgb-plus-active .rgb-glow-wash{ display:block; }
   body:not(.rgb-plus-active) .rgb-glow-side, body:not(.rgb-plus-active) .rgb-glow-wash{ display:none; }
 
@@ -709,6 +710,8 @@
 <div class="rgb-glow-wash right" id="rgbGlowWashRight"></div>
 <div class="rgb-glow-side left" id="rgbGlowLeft"></div>
 <div class="rgb-glow-side right" id="rgbGlowRight"></div>
+<div class="rgb-glow-side top"></div>
+<div class="rgb-glow-side bottom"></div>
 
 <header>
   <div class="brand">
@@ -1464,8 +1467,8 @@
   function stopGlowSync(){
     if(glowLoopHandle){ cancelAnimationFrame(glowLoopHandle); glowLoopHandle = null; }
     const l = $('rgbGlowLeft'), r = $('rgbGlowRight');
-    l.style.width = '4px'; l.style.opacity = 0.2; l.style.boxShadow = 'none';
-    r.style.width = '4px'; r.style.opacity = 0.2; r.style.boxShadow = 'none';
+    l.style.opacity = 0.55; l.style.boxShadow = '0 0 4px 0 var(--coral)';
+    r.style.opacity = 0.55; r.style.boxShadow = '0 0 4px 0 var(--gold)';
     $('rgbGlowWashLeft').style.opacity = 0;
     $('rgbGlowWashRight').style.opacity = 0;
     washEnergyAvg = 0;
@@ -1496,13 +1499,13 @@
       const raw = Math.min(1, (sum / bassBins) / 220);
       // Fast attack, slow release — snaps up on the hit, eases back down, never twitchy.
       lineLevel = raw > lineLevel ? lineLevel + (raw - lineLevel) * 0.6 : lineLevel + (raw - lineLevel) * 0.08;
-      const width = 4 + lineLevel * 10;
-      const glowSize = 5 + lineLevel * 22;
-      const opacity = 0.2 + lineLevel * 0.7;
-      const shadowL = `0 0 ${glowSize}px 1px var(--coral)`;
-      const shadowR = `0 0 ${glowSize}px 1px var(--gold)`;
-      l.style.width = width + 'px'; l.style.opacity = opacity; l.style.boxShadow = shadowL;
-      r.style.width = width + 'px'; r.style.opacity = opacity; r.style.boxShadow = shadowR;
+      const glowSize = 4 + lineLevel * 26; // the "pop" — blur radius grows on the hit, line itself stays hairline-thin
+      const spread = lineLevel * 3;
+      const opacity = 0.4 + lineLevel * 0.6;
+      const shadowL = `0 0 ${glowSize}px ${spread}px var(--coral)`;
+      const shadowR = `0 0 ${glowSize}px ${spread}px var(--gold)`;
+      l.style.opacity = opacity; l.style.boxShadow = shadowL;
+      r.style.opacity = opacity; r.style.boxShadow = shadowR;
       // Ambient full-height wash: a soft edge glow that swells with the same bass energy —
       // stays confined to the edges, never washes over the whole screen.
       washEnergyAvg = washEnergyAvg * 0.9 + lineLevel * 0.1;
@@ -2134,8 +2137,12 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '32.1.9';
+  const APP_VERSION = '32.2';
   const CHANGELOG = [
+    { version: '32.2', title: 'RGB + as a real light strip, reverb rebalanced', items: [
+      'RGB + is now a hairline-thin frame around the whole screen — only the left/right edges pop with the beat, top/bottom stay static',
+      'Reverb turned way down and rebalanced — tight and subtle at low settings, only opens into a big bright hall as you push it up, instead of drowning the track at any setting',
+    ]},
     { version: '32.1.9', title: 'RGB + back to one clean line per side, punchy on the beat', items: [
       'Replaced the bar cluster with a single subtle line on each edge',
       'Line is driven by bass only, with a fast snap on the hit and a smooth ease back down',
@@ -5493,13 +5500,13 @@
       const reflections = ch === 0 ? reflectionsMsL : reflectionsMsR;
       reflections.forEach((ms, i) => {
         const idx = Math.floor((ms/1000) * sr);
-        if(idx < len) data[idx] = (i % 2 === 0 ? 1 : -1) * (0.55 * Math.pow(0.78, i));
+        if(idx < len) data[idx] = (i % 2 === 0 ? 1 : -1) * (0.38 * Math.pow(0.75, i));
       });
       let lastSample = 0;
       const tailStart = Math.floor(0.09 * sr); // diffuse tail begins after the early reflections
       for(let i=tailStart;i<len;i++){
         const t = (i - tailStart) / (len - tailStart);
-        const envelope = Math.pow(1 - t, 1.7) * 0.5; // smoother, more natural decay curve than before
+        const envelope = Math.pow(1 - t, 1.9) * 0.34; // quieter, smoother decay — was overpowering the dry signal
         const raw = (Math.random()*2-1) * envelope;
         const damping = 0.12 + t * 0.55; // highs die out faster than lows, like a real room
         lastSample = lastSample + damping * (raw - lastSample);
@@ -5512,9 +5519,9 @@
     const preDelay = audioCtx.createDelay(0.1);
     preDelay.delayTime.value = 0.018; // small gap before the tail arrives — reads as room size, not slap-back
     const wetHighpass = audioCtx.createBiquadFilter();
-    wetHighpass.type = 'highpass'; wetHighpass.frequency.value = 160; // strips the boomy mud a raw noise tail gets in the low end
+    wetHighpass.type = 'highpass'; wetHighpass.frequency.value = 300; // starts tighter/cleaner, opens up as the knob goes up
     const wetLowpass = audioCtx.createBiquadFilter();
-    wetLowpass.type = 'lowpass'; wetLowpass.frequency.value = 8200; // takes the harsh digital edge off the top
+    wetLowpass.type = 'lowpass'; wetLowpass.frequency.value = 4200; // darker/subtler by default — was too bright and washy
     const wetGain = audioCtx.createGain();
     wetGain.gain.value = 0;
 
@@ -5529,9 +5536,12 @@
     return deckEngine.reverbNodes;
   }
   attachKnobDrag($('reverbKnob'), $('reverbKnob').querySelector('.knob-indicator'), { min:0, max:100, initial:0 }, (v) => {
-    const { wetGain, preDelay } = ensureReverbSend();
-    wetGain.gain.value = (v/100) * 1.15;
-    preDelay.delayTime.value = 0.012 + (v/100) * 0.025; // bigger-sounding space as it's pushed further
+    const { wetGain, preDelay, wetHighpass, wetLowpass } = ensureReverbSend();
+    const t = v/100;
+    wetGain.gain.value = t * 0.6; // much gentler ceiling — blends in instead of drowning the track
+    preDelay.delayTime.value = 0.01 + t * 0.03; // bigger-sounding space as it's pushed further
+    wetHighpass.frequency.value = 300 - t * 200; // low knob = tight/clean, high knob = fuller low end
+    wetLowpass.frequency.value = 3200 + t * 6500; // low knob = dark/subtle, high knob = bright/airy hall
     $('reverbReadout').textContent = `${Math.round(v)}%`;
   });
 
