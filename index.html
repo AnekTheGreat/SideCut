@@ -730,6 +730,20 @@
   </div>
 </div>
 
+<!-- Duplicate review: manual pick of which copies to delete -->
+<div class="modal-backdrop" id="dupReviewBackdrop">
+  <div class="modal">
+    <h3>Review duplicates</h3>
+    <div style="font-size:12px; color:var(--ink-dim); margin:-6px 0 4px;">We've pre-checked the extra copies in each group — uncheck anything you'd rather keep, or check ones we left alone. Only checked songs get deleted.</div>
+    <div id="dupReviewBody" style="display:flex; flex-direction:column; gap:14px; max-height:50vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
+    <div class="modal-btns">
+      <button class="cancel" id="dupReviewCancel" style="flex:1;">Cancel</button>
+      <button class="confirm" id="dupReviewDelete" style="flex:1;">Delete selected</button>
+    </div>
+  </div>
+</div>
+
+
 <div class="action-strip" id="actionStrip">
   <button id="addFolderBtn" class="action-pill primary">+ Add folder</button>
   <button id="addBtn" class="action-pill">+ Files</button>
@@ -1733,19 +1747,16 @@
     toast(npAngleLocked ? 'Angle locked' : 'Angle unlocked — drag the player to spin it');
   });
 
-  // Drag directly on the mini player in the now-playing bar. Gated to the platter/body
-  // background only — the lid, tonearm, disc, power cord and lock button all have their
-  // own tap/long-press behavior and take priority over a spin-drag. A press that doesn't
-  // turn into a drag, held past 550ms, opens the bigger play area for a roomier canvas.
+  // Drag directly on the mini player is no longer allowed here in the main library view —
+  // that's now reserved for the play zone (the bigger angle-picker popup) so it can't get
+  // knocked around by accident while scrolling/browsing. A press that doesn't move, held
+  // past 550ms, still opens the play zone for a roomier canvas to actually drag in.
   let miniDragState = null, miniDragMoved = false, miniLongPressTimer = null;
   const MINI_DRAG_EXCLUDE = '#npLid, #npMiniTonearm, #npDisc, #npAngleBtn';
   $('npPlayerBody').addEventListener('pointerdown', (e) => {
     if(e.target.closest(MINI_DRAG_EXCLUDE)) return;
     if(npAngleLocked) return;
-    const cs = getComputedStyle(document.documentElement);
-    const tiltX = parseFloat(cs.getPropertyValue('--np-tilt')) || 46;
-    const spinZ = parseFloat(cs.getPropertyValue('--np-spin')) || 26;
-    miniDragState = { startX: e.clientX, startY: e.clientY, tiltX, spinZ };
+    miniDragState = { startX: e.clientX, startY: e.clientY };
     miniDragMoved = false;
     try{ $('npPlayerBody').setPointerCapture(e.pointerId); }catch(err){}
     clearTimeout(miniLongPressTimer);
@@ -1761,20 +1772,12 @@
       miniDragMoved = true;
       clearTimeout(miniLongPressTimer);
     }
-    if(!miniDragMoved) return;
-    const spinZ = Math.max(-180, Math.min(180, miniDragState.spinZ + dx * 0.7));
-    const tiltX = Math.max(8, Math.min(85, miniDragState.tiltX - dy * 0.45));
-    applyNpAngleVars(tiltX, spinZ);
+    // No spin/tilt applied here anymore — dragging the mini player in the main
+    // menu no longer changes the angle. Open the play zone to actually adjust it.
   });
   ['pointerup','pointercancel','pointerleave'].forEach(ev => {
     $('npPlayerBody').addEventListener(ev, () => {
       clearTimeout(miniLongPressTimer);
-      if(miniDragState && miniDragMoved){
-        const cs = getComputedStyle(document.documentElement);
-        const tiltX = parseFloat(cs.getPropertyValue('--np-tilt')) || 46;
-        const spinZ = parseFloat(cs.getPropertyValue('--np-spin')) || 26;
-        saveCustomNpAngle(tiltX, spinZ);
-      }
       miniDragState = null;
     });
   });
@@ -2021,6 +2024,8 @@
     const body = $('statsBody');
     const totalTracks = allTracks.length;
     const totalPlaylists = Object.keys(playlists).filter(n => n !== 'All Songs' && n !== 'Favorites').length;
+    const currentStreak = computeStreak();
+    const avgPerDay = listenedDates.size > 0 ? totalListenSeconds / listenedDates.size : 0;
 
     const topTracks = allTracks.filter(t => t.playCount > 0).sort((a,b) => (b.playCount||0) - (a.playCount||0)).slice(0, 5);
 
@@ -2049,6 +2054,18 @@
         <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px;">
           <div style="font-size:22px; font-weight:700;">${totalPlaylists}</div>
           <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Playlists</div>
+        </div>
+        <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px;">
+          <div style="font-size:22px; font-weight:700; color:var(--coral);">🔥 ${currentStreak}</div>
+          <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Day streak${currentStreak===1?'':'s'}</div>
+        </div>
+        <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px;">
+          <div style="font-size:22px; font-weight:700;">${Math.max(longestStreak, currentStreak)}</div>
+          <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Best streak (days)</div>
+        </div>
+        <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; grid-column: span 2;">
+          <div style="font-size:22px; font-weight:700;">${fmtDurationLong(avgPerDay)}</div>
+          <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Average per active day</div>
         </div>
       </div>
     `;
@@ -2157,7 +2174,23 @@
       if(perPlaylistSortRow && perPlaylistSortRow.value) perPlaylistSort = perPlaylistSortRow.value;
       const listenedDatesRow = metaRows.find(r => r.key === 'listenedDates');
       if(listenedDatesRow && Array.isArray(listenedDatesRow.value)) listenedDates = new Set(listenedDatesRow.value);
+      const longestStreakRow = metaRows.find(r => r.key === 'longestStreak');
+      if(longestStreakRow && typeof longestStreakRow.value === 'number') longestStreak = longestStreakRow.value;
     }catch(e){ /* defaults are fine */ }
+  }
+
+  // ---------------- Ask the browser to persist storage: on iOS/Android, IndexedDB data
+  // (songs, playlists, stats) can otherwise get silently evicted under storage pressure
+  // if the site hasn't been "engaged with" enough — a real cause of songs and playlist
+  // entries appearing to vanish on their own. This is best-effort; the browser can still
+  // say no, but asking costs nothing and helps on the browsers that honor it.
+  async function requestPersistentStorage(){
+    try{
+      if(navigator.storage && navigator.storage.persist){
+        const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+        if(!already) await navigator.storage.persist();
+      }
+    }catch(e){ /* not critical if this fails */ }
   }
   // ---------------- Versioning: bump APP_VERSION and add a CHANGELOG entry every
   // time ANY update ships, no exceptions. The rule:
@@ -2166,8 +2199,14 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '32.7';
+  const APP_VERSION = '32.8';
   const CHANGELOG = [
+    { version: '32.8', title: 'Manual duplicate review, storage persistence, play-zone-only dragging, deeper stats', items: [
+      'Duplicate songs are now flagged with a notification (bell badge + entry) instead of a single "delete all extras" prompt — open it to see each duplicate group and manually pick which copies to delete',
+      'The app now asks the browser to persist your library storage on load — this helps stop iOS/Android from silently evicting your songs and playlists to free up space, a likely cause of tracks disappearing on their own',
+      'The mini record player in the main library view is no longer directly draggable — drag-to-spin only works in the play zone (long-press the mini player to open it), so you can\'t accidentally knock the angle around while browsing',
+      'Stats now shows your current day streak, your best-ever streak, and your average listening time per active day',
+    ]},
     { version: '32.7', title: 'Fixed file-add, playlist rename, an invisible-song bug, and cut the power-cord easter egg', items: [
       'Adding new files no longer dumps them into whatever playlist you happened to be viewing — new imports go to your library only, add them to a playlist yourself if you want that',
       'Playlists can now be renamed from Manage playlists — tap the pencil next to any playlist',
@@ -2406,11 +2445,23 @@
   function updateNotifBadge(){
     const badge = $('notifBadge');
     if(!badge) return;
-    badge.style.display = (notifLastReadVersion !== APP_VERSION) ? 'block' : 'none';
+    const hasDupAlert = typeof getDuplicateGroups === 'function' && getDuplicateGroups().length > 0;
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert) ? 'block' : 'none';
   }
   function renderNotifPanel(){
     const body = $('notifBody');
-    body.innerHTML = CHANGELOG.map(entry => `
+    let html = '';
+    const dupGroups = (typeof getDuplicateGroups === 'function') ? getDuplicateGroups() : [];
+    if(dupGroups.length){
+      const totalExtra = dupGroups.reduce((sum,g) => sum + g.length - 1, 0);
+      html += `
+        <div id="notifDupEntry" style="border-bottom:1px solid var(--line); padding-bottom:10px; cursor:pointer;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">⚠ Duplicate songs found</div>
+          <div style="font-size:12px; color:var(--ink-dim);">Found ${dupGroups.length} duplicate song${dupGroups.length>1?'s':''} (${totalExtra} extra cop${totalExtra>1?'ies':'y'}). Tap to review and choose what to delete.</div>
+        </div>
+      `;
+    }
+    html += CHANGELOG.map(entry => `
       <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
         <div style="font-weight:600; font-size:13.5px; margin-bottom:6px;">v${entry.version} — ${escapeHtml(entry.title)}</div>
         <div style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--ink-dim);">
@@ -2418,6 +2469,9 @@
         </div>
       </div>
     `).join('');
+    body.innerHTML = html;
+    const dupEntry = document.getElementById('notifDupEntry');
+    if(dupEntry) dupEntry.addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; findDuplicates(); });
   }
   $('notifBtn').addEventListener('click', () => {
     renderNotifPanel();
@@ -2914,6 +2968,7 @@
   function renderDuplicateBanner(){
     const existing = document.getElementById('dupBanner');
     if(existing) existing.remove();
+    updateNotifBadge();
     if(activePlaylist !== 'All Songs') return;
     const dupGroups = getDuplicateGroups();
     if(!dupGroups.length) return;
@@ -2931,14 +2986,58 @@
     if(header) header.after(banner); else pane.prepend(banner);
   }
 
+  let dupReviewSelections = null; // Map<trackId, boolean> for the currently open review modal
+
   function findDuplicates(){
     const dupGroups = getDuplicateGroups();
     if(!dupGroups.length){ toast('No duplicates found — your library looks clean.'); return; }
-    const totalExtra = dupGroups.reduce((sum,g) => sum + g.length - 1, 0);
-    if(!confirm(`Found ${dupGroups.length} duplicate song${dupGroups.length>1?'s':''} (${totalExtra} extra cop${totalExtra>1?'ies':'y'}). Delete the extras and keep one copy of each?`)) return;
-    dupGroups.forEach(g => g.slice(1).forEach(t => deleteTrack(t.id, true)));
-    toast(`Removed ${totalExtra} duplicate cop${totalExtra>1?'ies':'y'}`);
+    renderDupReviewModal(dupGroups);
   }
+
+  function renderDupReviewModal(dupGroups){
+    dupReviewSelections = new Map();
+    const body = $('dupReviewBody');
+    body.innerHTML = '';
+    dupGroups.forEach((group, gi) => {
+      // Pre-check every copy except the first (oldest/kept) one — same default as before,
+      // but now it's just a starting point the user can change before anything is deleted.
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `<div style="font-size:12.5px; font-weight:600; margin-bottom:6px;">${escapeHtml(group[0].name)}</div>`;
+      group.forEach((t, ti) => {
+        const checked = ti > 0;
+        dupReviewSelections.set(t.id, checked);
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; font-size:12.5px; cursor:pointer;';
+        row.innerHTML = `
+          <input type="checkbox" data-dup-id="${t.id}" ${checked ? 'checked' : ''} style="width:16px; height:16px; flex-shrink:0;">
+          <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-dim);">${escapeHtml(t.artist)} · ${t.duration ? fmtTime(t.duration) : '--:--'}${ti===0 ? ' (kept by default)' : ''}</span>
+        `;
+        row.querySelector('input').addEventListener('change', (e) => {
+          dupReviewSelections.set(t.id, e.target.checked);
+        });
+        wrap.appendChild(row);
+      });
+      body.appendChild(wrap);
+      if(gi < dupGroups.length - 1){
+        const sep = document.createElement('div');
+        sep.style.cssText = 'height:1px; background:var(--line);';
+        body.appendChild(sep);
+      }
+    });
+    $('dupReviewBackdrop').style.display = 'flex';
+  }
+  $('dupReviewCancel').addEventListener('click', () => { $('dupReviewBackdrop').style.display = 'none'; dupReviewSelections = null; });
+  $('dupReviewBackdrop').addEventListener('click', e => { if(e.target === $('dupReviewBackdrop')){ $('dupReviewBackdrop').style.display = 'none'; dupReviewSelections = null; } });
+  $('dupReviewDelete').addEventListener('click', () => {
+    if(!dupReviewSelections) return;
+    const idsToDelete = Array.from(dupReviewSelections.entries()).filter(([,checked]) => checked).map(([id]) => id);
+    if(!idsToDelete.length){ toast('Nothing selected to delete.'); $('dupReviewBackdrop').style.display = 'none'; dupReviewSelections = null; return; }
+    idsToDelete.forEach(id => deleteTrack(id, true));
+    $('dupReviewBackdrop').style.display = 'none';
+    dupReviewSelections = null;
+    toast(`Deleted ${idsToDelete.length} song${idsToDelete.length>1?'s':''}`);
+    updateNotifBadge();
+  });
 
   $('fileInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value=''; });
   $('folderInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value=''; });
@@ -3728,6 +3827,8 @@
   let totalPlays = 0;
   let lastRecordedTrackId = null;
   let listenedDates = new Set(); // 'YYYY-MM-DD' strings — any day with at least one play
+  let longestStreak = 0; // best-ever streak, kept separately so a broken current streak
+  // (or the odd data hiccup) doesn't erase the record of your best run
   function todayKey(){
     // Use the LOCAL calendar date, not UTC — toISOString() converts to UTC,
     // which silently attributes late-night listening to the wrong day (or the
@@ -3741,6 +3842,11 @@
     if(listenedDates.has(key)) return;
     listenedDates.add(key);
     dbPut('meta', { key: 'listenedDates', value: Array.from(listenedDates) });
+    const streak = computeStreak();
+    if(streak > longestStreak){
+      longestStreak = streak;
+      dbPut('meta', { key: 'longestStreak', value: longestStreak });
+    }
   }
   function dateKeyFor(d){
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -6069,6 +6175,7 @@
         }
       }
       $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
+      requestPersistentStorage();
       await loadNotifReadState();
       updateNotifBadge();
       await loadSavedTheme();
