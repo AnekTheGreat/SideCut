@@ -556,9 +556,6 @@
   }
   #npMiniTonearm::after{ content:''; position:absolute; left:-2px; top:0.5px; width:5px; height:4px; background:#111; border-radius:1px; }
   #npPlayerBody .tonearm-post{ display:none; }
-  #npPowerCord{ position:absolute; z-index:7; bottom:-4px; right:14px; width:26px; height:26px; touch-action:none; }
-  #npBlackout{ position:fixed; inset:0; background:#000; z-index:2147483647; display:none; }
-  body.unplugged #npBlackout{ display:block; }
   #npLid{
     position:absolute; top:-3px; left:-5px; right:2px; height:32px; border-radius:4px 4px 2px 2px;
     background: linear-gradient(160deg, rgba(220,225,230,0.16), rgba(180,185,190,0.05));
@@ -704,7 +701,6 @@
 </style>
 </head>
 <body>
-<div id="npBlackout"></div>
 <div id="rgbEdgeGlow" style="position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.16;box-shadow:inset 0 0 30px 6px var(--coral),inset 0 0 30px 6px var(--gold);-webkit-mask:radial-gradient(ellipse 70% 70% at 50% 50%,transparent 60%,#000 100%);mask:radial-gradient(ellipse 70% 70% at 50% 50%,transparent 60%,#000 100%);"></div>
 
 
@@ -798,7 +794,6 @@
       <div class="tonearm-post"></div>
       <div id="npLid" title="Open/close the lid"></div>
     </div>
-    <div id="npPowerCord"></div>
     <button id="npAngleBtn" title="Lock the angle so it can't be dragged by accident" aria-label="Lock record player angle">
       <svg id="npAngleBtnIcon" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0020 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 004 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
     </button>
@@ -1743,7 +1738,7 @@
   // own tap/long-press behavior and take priority over a spin-drag. A press that doesn't
   // turn into a drag, held past 550ms, opens the bigger play area for a roomier canvas.
   let miniDragState = null, miniDragMoved = false, miniLongPressTimer = null;
-  const MINI_DRAG_EXCLUDE = '#npLid, #npMiniTonearm, #npDisc, #npPowerCord, #npAngleBtn';
+  const MINI_DRAG_EXCLUDE = '#npLid, #npMiniTonearm, #npDisc, #npAngleBtn';
   $('npPlayerBody').addEventListener('pointerdown', (e) => {
     if(e.target.closest(MINI_DRAG_EXCLUDE)) return;
     if(npAngleLocked) return;
@@ -2171,8 +2166,15 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '32.6';
+  const APP_VERSION = '32.7';
   const CHANGELOG = [
+    { version: '32.7', title: 'Fixed file-add, playlist rename, an invisible-song bug, and cut the power-cord easter egg', items: [
+      'Adding new files no longer dumps them into whatever playlist you happened to be viewing — new imports go to your library only, add them to a playlist yourself if you want that',
+      'Playlists can now be renamed from Manage playlists — tap the pencil next to any playlist',
+      'Fixed a bug where a song could exist in your library but vanish from every playlist including All Songs, if the app closed at the wrong moment during import — it now self-heals and recovers any orphaned song automatically',
+      'Fixed duplicate detection wrongly treating two different songs as the same file and silently dropping one, when they happened to share a file size and guessed title',
+      'Removed the power-cord unplug easter egg',
+    ]},
     { version: '32.6', title: 'Version switching actually sticks, and the mini player is now the play area', items: [
       'Fixed version switching so it no longer silently bounces back to the newest version — an old version\'s own update-checker was force-reloading over your pick',
       'Switching to an older version now sticks across refreshes too, until you pick something else',
@@ -2660,7 +2662,23 @@
       artBlob: r.art || null, artUrl: r.art ? URL.createObjectURL(r.art) : null,
     }));
     playlists = metaMap.playlists || { 'All Songs': allTracks.map(t => t.id) };
+    if(!playlists['All Songs']) playlists['All Songs'] = [];
     if(!playlists['Favorites']) playlists['Favorites'] = [];
+    // Self-heal: a track can exist in the tracks store but be missing from the saved
+    // "All Songs" list if the app closed/crashed between saving the track and saving
+    // playlists (two separate writes) — that track would otherwise be permanently
+    // invisible, since nothing renders a track that's in no playlist at all. Reconcile
+    // every load so nothing gets orphaned like that.
+    const allSongsSet = new Set(playlists['All Songs']);
+    let recovered = 0;
+    allTracks.forEach(t => {
+      if(!allSongsSet.has(t.id)){
+        playlists['All Songs'].push(t.id);
+        allSongsSet.add(t.id);
+        recovered++;
+      }
+    });
+    if(recovered > 0) dbPut('meta', { key: 'playlists', value: playlists });
     // Note: no longer force-creating a "DJ Set" playlist — DJ Mode now works on
     // whichever playlist you're already in. Any DJ Set a user made before this
     // change is left alone (not deleted) since it still shows up like any playlist.
@@ -2774,16 +2792,22 @@
   }
 
   // ---------------- File handling ----------------
-  function dupKey(size, title){ return size + '_' + title.toLowerCase().trim(); }
+  function dupKey(size, title, lastModified){
+    // Includes lastModified alongside size+title — size+title alone can collide for two
+    // different songs (same length recording, same guessed title from filename), which
+    // silently dropped the second one as a "duplicate" during import — a real cause of
+    // songs seeming to vanish. lastModified is nearly always distinct between separate files.
+    return size + '_' + title.toLowerCase().trim() + '_' + (lastModified || 0);
+  }
 
   function handleFiles(fileList){
     const added = [];
     let skippedDup = 0;
-    const seenKeys = new Set(allTracks.map(t => dupKey((t.file && t.file.size) || 0, t.name)));
+    const seenKeys = new Set(allTracks.map(t => dupKey((t.file && t.file.size) || 0, t.name, t.file && t.file.lastModified)));
     Array.from(fileList).forEach(file => {
       if(!file.type.startsWith('audio/') && !/\.(mp3|m4a|wav|ogg|flac|aac)$/i.test(file.name)) return;
       const meta = guessMeta(file.name);
-      const key = dupKey(file.size, meta.title);
+      const key = dupKey(file.size, meta.title, file.lastModified);
       if(seenKeys.has(key)){ skippedDup++; return; }
       seenKeys.add(key);
       const id = 't' + (idCounter++);
@@ -2791,17 +2815,16 @@
       const track = { id, file, name: meta.title, artist: meta.artist, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null };
       allTracks.push(track);
       playlists['All Songs'].push(id);
-      // If we're viewing a specific playlist (not All Songs), add newly picked files there too
-      if(activePlaylist !== 'All Songs' && playlists[activePlaylist] && !playlists[activePlaylist].includes(id)){
-        playlists[activePlaylist].push(id);
-      }
+      // New imports always land in All Songs only — they used to also get pushed into
+      // whatever playlist happened to be open at the time, which meant picking files
+      // while viewing a playlist silently dropped them in there instead of just the
+      // library. Add to a specific playlist manually afterward if you want that.
       added.push(track);
       persistTrackMeta(track);
     });
     if(added.length){
       saveMeta();
-      let msg = `Added ${added.length} track${added.length>1?'s':''}`;
-      if(activePlaylist !== 'All Songs') msg += ` to "${activePlaylist}"`;
+      let msg = `Added ${added.length} track${added.length>1?'s':''} to your library`;
       if(skippedDup) msg += ` · skipped ${skippedDup} duplicate${skippedDup>1?'s':''}`;
       toast(msg);
       $('emptyState').style.display = 'none';
@@ -2878,7 +2901,7 @@
   function getDuplicateGroups(){
     const groups = {};
     allTracks.forEach(t => {
-      const key = dupKey((t.file && t.file.size) || 0, t.name);
+      const key = dupKey((t.file && t.file.size) || 0, t.name, t.file && t.file.lastModified);
       if(!groups[key]) groups[key] = [];
       groups[key].push(t);
     });
@@ -2966,10 +2989,13 @@
     container.innerHTML = '';
     Object.keys(playlists).forEach(name => {
       const hidden = hiddenPlaylists.has(name);
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:6px;';
       const btn = document.createElement('button');
+      btn.style.flex = '1';
       btn.innerHTML = hidden
-        ? `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 6c-5 0-9.27 3.11-11 7.5 1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 9.11 17 6 12 6zm0 12.5a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z" opacity="0.35"/></svg> ${name} — hidden`
-        : `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 6c-5 0-9.27 3.11-11 7.5 1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 9.11 17 6 12 6zm0 12.5a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg> ${name}`;
+        ? `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 6c-5 0-9.27 3.11-11 7.5 1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 9.11 17 6 12 6zm0 12.5a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z" opacity="0.35"/></svg> ${escapeHtml(name)} — hidden`
+        : `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 6c-5 0-9.27 3.11-11 7.5 1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 9.11 17 6 12 6zm0 12.5a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg> ${escapeHtml(name)}`;
       btn.addEventListener('click', () => {
         if(hidden) hiddenPlaylists.delete(name);
         else hiddenPlaylists.add(name);
@@ -2983,8 +3009,45 @@
         renderTabs();
         renderList();
       });
-      container.appendChild(btn);
+      row.appendChild(btn);
+      if(name !== 'All Songs'){
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'icon-btn';
+        renameBtn.title = 'Rename playlist';
+        renameBtn.style.flexShrink = '0';
+        renameBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+        renameBtn.addEventListener('click', (e) => { e.stopPropagation(); renamePlaylist(name); });
+        row.appendChild(renameBtn);
+      }
+      container.appendChild(row);
     });
+  }
+
+  function renamePlaylist(oldName){
+    const newName = (prompt(`Rename "${oldName}" to:`, oldName) || '').trim();
+    if(!newName || newName === oldName) return;
+    if(playlists[newName]){ toast('A playlist with that name already exists.'); return; }
+    // Rebuild the playlists object preserving key order, so the tab it renders as
+    // doesn't jump position in the list.
+    const rebuilt = {};
+    Object.keys(playlists).forEach(k => { rebuilt[k === oldName ? newName : k] = playlists[k]; });
+    playlists = rebuilt;
+    if(hiddenPlaylists.has(oldName)){
+      hiddenPlaylists.delete(oldName);
+      hiddenPlaylists.add(newName);
+      dbPut('meta', { key: 'hiddenPlaylists', value: Array.from(hiddenPlaylists) });
+    }
+    if(perPlaylistSort[oldName] !== undefined){
+      perPlaylistSort[newName] = perPlaylistSort[oldName];
+      delete perPlaylistSort[oldName];
+      dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
+    }
+    if(activePlaylist === oldName) activePlaylist = newName;
+    saveMeta();
+    renderManagePlaylistsList();
+    renderTabs();
+    renderList();
+    toast(`Renamed to "${newName}"`);
   }
   $('managePlaylistsBtn').addEventListener('click', () => {
     renderManagePlaylistsList();
@@ -4154,21 +4217,6 @@
     }, 550);
   });
   ['pointerup','pointercancel','pointerleave'].forEach(ev => $('npDisc').addEventListener(ev, () => clearTimeout(discPressTimer)));
-  (function(){
-    let dragStart = null;
-    const cord = $('npPowerCord');
-    cord.addEventListener('pointerdown', (e) => { e.stopPropagation(); dragStart = { x: e.clientX, y: e.clientY }; });
-    cord.addEventListener('pointermove', (e) => {
-      if(!dragStart) return;
-      if(Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 24){
-        dragStart = null;
-        document.body.classList.add('unplugged');
-        try{ activeAudio().pause(); }catch(err){}
-      }
-    });
-    ['pointerup','pointercancel','pointerleave'].forEach(ev => cord.addEventListener(ev, () => dragStart = null));
-    $('npBlackout').addEventListener('click', () => document.body.classList.remove('unplugged'));
-  })();
   $('npDisc').addEventListener('click', () => {
     if(queueIndex < 0 || queueIndex >= queue.length) return;
     if(discLongPressed){ discLongPressed = false; return; } // long-press already toggled the vinyl — don't also expand
