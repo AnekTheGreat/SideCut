@@ -527,16 +527,17 @@
     position:absolute; right:0; bottom:1px; width:46px; height:46px; flex-shrink:0; transform: translateZ(1px);
     display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
-  /* Base: a raised ring the platter/record actually sits on top of, giving the record real depth */
+  /* Base: a raised ring the platter/record actually sits on top of, giving the record real depth.
+     Sized a bit larger than the platter so its edge peeks out visibly all the way around. */
   .np-base{
-    position:absolute; width:44px; height:44px; border-radius:50%; transform: translateZ(-2px);
-    background: radial-gradient(circle, #2a241a 0%, #17130e 70%, #0b0906 100%);
-    box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), inset 0 0 0 1px rgba(0,0,0,0.4);
+    position:absolute; right:-3px; bottom:-2px; width:52px; height:52px; border-radius:50%; transform: translateZ(-3px);
+    background: radial-gradient(circle, #332c1f 0%, #1c170f 65%, #0b0906 100%);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.55), inset 0 1.5px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(0,0,0,0.45);
   }
-  /* Lid: fixed on the RIGHT, always propped open (never closes) — 15-20% smaller than before.
+  /* Lid: fixed on the RIGHT, full-size, always propped open (never closes over the record).
      Only the tonearm moves onto the record while playing; the lid itself is static. */
   .np-lid{
-    position:absolute; right:-2px; bottom:8px; top:2px; width:19px;
+    position:absolute; right:-2px; bottom:0; top:-2px; width:44px;
     transform-style:preserve-3d;
     transform-origin: bottom center;
     transform: rotateX(-108deg) translateZ(3px);
@@ -577,14 +578,15 @@
     background: radial-gradient(circle at 35% 30%, #7a7a7a, #2a2a2a);
     box-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
-  /* The "hand": tonearm swings from parked (off the record) to resting on the grooves while playing */
+  /* The "hand": tonearm swings from parked (off the record, angled away) to resting on the
+     grooves near the disc center while playing. Pivots from its base near the left edge. */
   .np-tonearm{
     position:absolute; top:5.5px; left:5.5px; width:25px; height:2.5px;
-    transform-origin: 10% 50%; transform: rotate(32deg) scaleX(-1);
+    transform-origin: 0% 50%; transform: rotate(-30deg);
     transition: transform 0.6s cubic-bezier(0.34,1.1,0.6,1);
     z-index:3; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.4));
   }
-  #npPlayerBody.playing ~ .np-tonearm{ transform: rotate(-10deg) scaleX(-1); }
+  #npPlayerBody.playing ~ .np-tonearm{ transform: rotate(18deg); }
   .np-tonearm-shaft{
     position:absolute; inset:0; border-radius:2px;
     background: linear-gradient(90deg, #e8dab8, #b0946a);
@@ -624,7 +626,7 @@
   #ttPopupStage{ position:relative; width:100%; height:160px; perspective:480px; margin:6px 0 4px; }
   #ttPopupStage .np-tt-3d{ position:absolute; left:50%; bottom:8px; width:110px; height:98px; margin-left:-55px; transform-style:preserve-3d; }
   #ttPopupStage .np-plinth{ height:26px; border-radius:8px; }
-  #ttPopupStage .np-base{ width:88px; height:88px; }
+  #ttPopupStage .np-base{ width:98px; height:98px; right:-3px; bottom:-2px; }
   #ttPopupBody{ position:absolute; right:6px; bottom:2px; width:88px; height:88px; display:flex; align-items:center; justify-content:center; }
   #ttPopupStage .np-platter-mat{ width:96px; height:96px; }
   #ttPopupStage #ttPopupDisc{ width:88px; height:88px; border-width:2.5px; }
@@ -633,8 +635,8 @@
   #ttPopupStage .np-tonearm{ width:48px; height:5px; top:10px; left:10px; }
   #ttPopupStage .np-tonearm-head{ width:15px; height:13px; }
   #ttPopupStage .np-tonearm-needle{ width:3px; height:5px; }
-  /* Lid stays fixed, always propped open, on the right side, ~15-20% smaller footprint */
-  #ttPopupStage .np-lid{ width:36px; }
+  /* Lid stays fixed, always propped open, on the right side, full size */
+  #ttPopupStage .np-lid{ width:42px; }
   #ttPopupStage .np-lid-glass{ border-radius:2px 14px 2px 2px; }
 
   /* ---------- Liquid glass: frosted, translucent surfaces across the app, with a drifting specular sheen ---------- */
@@ -1588,6 +1590,7 @@
     stage.addEventListener('pointerdown', (e) => {
       if(e.target !== stage && !stage.contains(e.target)) return;
       longPressed = false;
+      stage.setPointerCapture(e.pointerId);
       pressTimer = setTimeout(() => { longPressed = true; window.openTurntablePopup && window.openTurntablePopup(); }, 420);
     });
     const cancelPress = () => { clearTimeout(pressTimer); };
@@ -2415,9 +2418,21 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '33.7';
+  const APP_VERSION = '33.8';
   const CHANGELOG = [
-    { version: '33.7', title: 'Fixed syntax error, restored RGB+ glow, rebuilt turntable rig, safe-area fix', items: [
+    { version: '33.8', title: 'Playlist tab reordering, base fixed, lid restored to full size', items: [
+      'You can now reorder your playlist tabs — long-press a tab, then drag left/right to move it. All Songs and Favorites always stay pinned first',
+      'Fixed the mini turntable base, which was rendering in the wrong spot (invisible) last version — now sits correctly under the platter',
+      'Lid restored to full size covering the whole turntable',
+      'Tonearm swing direction fixed again so it lands over the record while playing',
+    ] },
+    { version: '33.7', title: 'Fixed click-swallowing bug, real base, full lid, tonearm actually swings onto record', items: [
+      'Fixed the real bug behind buttons not registering app-wide (notifications, files, settings, stats): the turntable long-press timer had no pointer capture, so releasing off the mini player left it running and the popup could open no matter where you tapped next',
+      'Added a real visible base ring under the record/platter (previous version had it in the wrong position, invisible)',
+      'Lid restored to full size, covering the whole turntable, fixed on the right, always propped open',
+      'Tonearm swing math fixed — it now actually swings from parked to resting over the record when playing, instead of swinging the wrong way',
+    ] },
+    { version: '33.6', title: 'Fixed syntax error, restored RGB+ glow, rebuilt turntable rig, safe-area fix', items: [
       'Fixed a real JS syntax error introduced last version',
       'RGB+ now pulses its own edge glow on the bass again (plain RGB theme stays glow-free)',
       'Body now respects the safe-area inset at the top, so the status-bar area no longer renders as a separate colored bar above the SideCut header on mobile',
@@ -3349,7 +3364,11 @@
       const el = document.createElement('div');
       el.className = 'tab' + (name === activePlaylist ? ' active' : '');
       el.textContent = name;
+      el.dataset.playlistName = name;
+      const isPinned = (name === 'All Songs' || name === 'Favorites');
+      if(!isPinned) wireTabReorder(el, name);
       el.addEventListener('click', () => {
+        if(el.dataset.justDragged){ delete el.dataset.justDragged; return; }
         activePlaylist = name;
         reorderMode = false;
         if(shuffle) regenerateShuffleOrder();
@@ -3364,6 +3383,64 @@
     newTab.style.borderStyle = 'dashed';
     newTab.addEventListener('click', openNewPlaylistModal);
     tabs.appendChild(newTab);
+  }
+
+  // ---------------- Playlist tab reordering: long-press a tab (not All Songs/Favorites, which stay pinned first)
+  // then drag left/right to reorder. Order is persisted by rebuilding the playlists object in the new key order. ----------------
+  function wireTabReorder(el, name){
+    let pressTimer = null, dragging = false, startX = 0;
+    const tabsEl = $('tabs');
+    el.addEventListener('pointerdown', (e) => {
+      if(e.target !== el) return;
+      startX = e.clientX;
+      pressTimer = setTimeout(() => {
+        dragging = true;
+        el.setPointerCapture(e.pointerId);
+        el.style.opacity = '0.55';
+        el.style.zIndex = '5';
+      }, 380);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if(!dragging) return;
+      const dx = e.clientX - startX;
+      el.style.transform = `translateX(${dx}px) scale(1.05)`;
+      // Find which sibling tab we're currently hovering over and swap positions live
+      const siblings = [...tabsEl.querySelectorAll('.tab[data-playlist-name]')].filter(s => s !== el);
+      const elRect = el.getBoundingClientRect();
+      const midX = elRect.left + elRect.width / 2 + dx;
+      for(const sib of siblings){
+        const r = sib.getBoundingClientRect();
+        if(midX > r.left && midX < r.right){
+          const sibName = sib.dataset.playlistName;
+          if(sibName === 'All Songs' || sibName === 'Favorites') continue; // pinned, never displaced
+          if(midX < r.left + r.width / 2) tabsEl.insertBefore(el, sib);
+          else tabsEl.insertBefore(el, sib.nextSibling);
+          startX = e.clientX;
+          el.style.transform = '';
+          break;
+        }
+      }
+    });
+    function endDrag(){
+      clearTimeout(pressTimer);
+      if(dragging){
+        dragging = false;
+        el.style.opacity = ''; el.style.zIndex = ''; el.style.transform = '';
+        el.dataset.justDragged = '1';
+        persistTabOrder();
+      }
+    }
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+  }
+  function persistTabOrder(){
+    const order = [...$('tabs').querySelectorAll('.tab[data-playlist-name]')].map(t => t.dataset.playlistName);
+    const rebuilt = {};
+    if(playlists['All Songs']) rebuilt['All Songs'] = playlists['All Songs'];
+    if(playlists['Favorites']) rebuilt['Favorites'] = playlists['Favorites'];
+    order.forEach(name => { if(name !== 'All Songs' && name !== 'Favorites') rebuilt[name] = playlists[name]; });
+    playlists = rebuilt;
+    dbPut('meta', { key: 'playlists', value: playlists });
   }
 
   function renderManagePlaylistsList(){
