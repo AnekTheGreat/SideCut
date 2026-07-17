@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head> 
@@ -418,7 +417,7 @@
     cursor:pointer; border-bottom:1px solid var(--line);
     transition: background 0.2s ease, box-shadow 0.3s ease;
   }
-  .track:active{ background: rgba(255,255,255,0.03); }
+  .track:active{ background: rgba(255,255,255,0.05); }
   .track .idx{ width:20px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; font-size:12px; text-align:center; flex-shrink:0; }
   .track.playing .idx::before{ content:'♪'; color:var(--coral); }
   .track.playing{
@@ -503,34 +502,41 @@
   #actionSpeedSlider{ -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; background:var(--line); outline:none; }
   #actionSpeedSlider::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%; background:var(--gold); }
   .np-row{ display:flex; align-items:center; gap:12px; }
-  #npPlayerStage{ flex-shrink:0; position:relative; width:60px; height:50px; }
+  #npPlayerStage{ flex-shrink:0; position:relative; width:60px; height:50px; perspective:200px; cursor:grab; touch-action:none; }
+  #npPlayerStage.dragging{ cursor:grabbing; }
+  .np-tt-3d{
+    position:absolute; inset:0; transform-style:preserve-3d;
+    transform: rotateX(var(--np-rx, 52deg)) rotateY(var(--np-ry, -34deg)) rotateZ(var(--np-rz, 0deg));
+  }
+  .np-tt-3d.np-anim{ transition: transform 0.4s ease; }
   /* Plinth: the player's actual body/base sitting under the platter */
   .np-plinth{
-    position:absolute; left:0; right:0; bottom:0; height:13px;
+    position:absolute; left:0; right:0; bottom:0; height:13px; transform: translateZ(-5px);
     background: linear-gradient(180deg, #3a352c, #1d1a15 55%, #100e0c);
     border-radius:5px;
     box-shadow: 0 3px 8px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -2px 3px rgba(0,0,0,0.5);
-    z-index:0;
   }
-  /* Lid: propped open at the back, like a real turntable dust cover — glossy, translucent */
+  #npPlayerBody{
+    position:absolute; right:0; bottom:1px; width:46px; height:46px; flex-shrink:0; transform: translateZ(1px);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  /* Lid: propped open behind the platter while idle, swings shut flat over the record while playing */
   .np-lid{
     position:absolute; left:0px; bottom:10px; width:24px; height:32px;
     background: linear-gradient(155deg, rgba(215,228,238,0.30), rgba(150,165,180,0.10) 55%, rgba(110,120,135,0.16));
     border:1px solid rgba(255,255,255,0.30);
     border-radius:2px 9px 2px 2px;
-    transform-origin: bottom left;
-    transform: rotate(-56deg) skewX(-5deg);
+    transform-origin: bottom center;
+    transform: rotateX(-104deg) translateZ(2px);
+    transition: transform 0.55s cubic-bezier(.34,1.05,.6,1);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 3px 8px rgba(0,0,0,0.3);
-    z-index:0; pointer-events:none;
+    pointer-events:none;
   }
+  #npPlayerBody.playing ~ .np-lid{ transform: rotateX(0deg) translateZ(7px); }
   .np-lid::after{
     content:''; position:absolute; top:6%; left:14%; width:20%; height:64%;
     background: linear-gradient(160deg, rgba(255,255,255,0.6), rgba(255,255,255,0) 75%);
     border-radius:2px; transform:rotate(6deg);
-  }
-  #npPlayerBody{
-    position:absolute; right:0; bottom:1px; width:46px; height:46px; flex-shrink:0;
-    display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:1;
   }
   .np-tonearm-base{
     position:absolute; top:0; right:0; width:11px; height:11px; border-radius:50%;
@@ -667,7 +673,8 @@
   #npControls button{ background:none; border:none; color:var(--ink); cursor:pointer; width:36px; height:36px; display:flex; align-items:center; justify-content:center; transition: transform 0.1s ease, color 0.25s ease; }
   #npControls button:active{ transform: scale(0.88); }
   #npControls svg{ width:19px; height:19px; }
-  #playPauseBtn{ background: var(--coral); border-radius:50%; width:46px; height:46px; box-shadow: 0 2px 10px color-mix(in srgb, var(--coral) 35%, transparent); transition: background 0.3s ease, box-shadow 0.3s ease, transform 0.1s ease; }
+  #playPauseBtn{ background: var(--coral); border-radius:50%; width:46px; height:46px; box-shadow: 0 2px 10px color-mix(in srgb, var(--coral) 35%, transparent); transition: background 0.3s ease, box-shadow 0.3s ease, transform 0.15s cubic-bezier(0.34,1.56,0.64,1); }
+  #playPauseBtn:active{ transform: scale(0.88); }
   #playPauseBtn:active{ transform: scale(0.88); }
   #playPauseBtn.pulse-cue{ animation: pulseCue 1.4s ease-in-out infinite; }
   @keyframes pulseCue{
@@ -836,12 +843,14 @@
   <div id="miniBar"><div class="fill" id="miniFill"></div></div>
   <div class="np-row">
     <div id="npPlayerStage">
-    <div class="np-lid"></div>
+    <div class="np-tt-3d" id="npTt3d">
     <div class="np-plinth"></div>
     <div id="npPlayerBody">
       <div class="disc" id="npDisc"><div class="disc-label" id="npDiscLabel"></div></div>
       <div class="np-tonearm-base"><div class="np-tonearm-counterweight"></div></div>
       <div class="np-tonearm"><div class="np-tonearm-shaft"></div><div class="np-tonearm-head"><div class="np-tonearm-needle"></div></div></div>
+    </div>
+    <div class="np-lid"></div>
     </div>
     </div>
     <div id="npInfo"><div class="t" id="npTitle">—</div><div class="a" id="npArtist">—</div>
@@ -1435,7 +1444,7 @@
   // (The home-screen icon on an installed PWA is a separate, platform-cached file that can't be
   // swapped after install — this only reaches the tab icon and the address-bar theme color.)
   let faviconCanvas = null;
-  function updateFavicon(){
+  function updateFavicon(fullUpdate = true){
     if(!faviconCanvas){ faviconCanvas = document.createElement('canvas'); faviconCanvas.width = 64; faviconCanvas.height = 64; }
     const styles = getComputedStyle(document.documentElement);
     const gold = (styles.getPropertyValue('--gold') || '#4A6CF7').trim();
@@ -1451,8 +1460,10 @@
     ctx.fill();
     const link = $('faviconLink');
     if(link) link.href = faviconCanvas.toDataURL('image/png');
-    const themeColorMeta = $('themeColorMeta');
-    if(themeColorMeta) themeColorMeta.setAttribute('content', coral);
+    if(fullUpdate){
+      const themeColorMeta = $('themeColorMeta');
+      if(themeColorMeta) themeColorMeta.setAttribute('content', coral);
+    }
   }
   let lastFaviconUpdate = 0;
   function maybeUpdateFavicon(now){
@@ -1460,8 +1471,59 @@
     // frame would be wasteful, so this only actually redraws a few times per second.
     if(now - lastFaviconUpdate < 200) return;
     lastFaviconUpdate = now;
-    updateFavicon();
+    updateFavicon(false);
   }
+
+  // ---------------- Mini turntable angle: drag to tilt/spin (X/Y), two-finger twist for roll (Z) ----------------
+  (function(){
+    const stage = $('npPlayerStage'), tt = $('npTt3d');
+    let rx = 52, ry = -34, rz = 0, dragging = false, moved = false, startX = 0, startY = 0, startAngle = 0;
+    function apply(){ tt.style.setProperty('--np-rx', rx + 'deg'); tt.style.setProperty('--np-ry', ry + 'deg'); tt.style.setProperty('--np-rz', rz + 'deg'); }
+    function twistAngle(t){ return Math.atan2(t[1].clientY - t[0].clientY, t[1].clientX - t[0].clientX) * 180 / Math.PI; }
+    stage.addEventListener('pointerdown', (e) => {
+      dragging = true; moved = false; startX = e.clientX; startY = e.clientY;
+      stage.classList.add('dragging'); tt.classList.remove('np-anim');
+      stage.setPointerCapture(e.pointerId);
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if(!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if(Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      ry += dx * 0.5; rx -= dy * 0.5;
+      rx = Math.max(-90, Math.min(90, rx));
+      startX = e.clientX; startY = e.clientY;
+      apply();
+    });
+    function endDrag(e){
+      if(!dragging) return;
+      dragging = false; stage.classList.remove('dragging');
+      if(moved){
+        dbPut('meta', { key: 'npTurntableAngle', value: { rx, ry, rz } });
+        const swallow = (ev) => { ev.stopImmediatePropagation(); ev.preventDefault(); stage.removeEventListener('click', swallow, true); };
+        stage.addEventListener('click', swallow, true);
+      }
+    }
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+    // Two-finger twist for roll (Z axis) — native touch events, since Pointer Events fire one at a time
+    stage.addEventListener('touchstart', (e) => {
+      if(e.touches.length === 2){ startAngle = twistAngle(e.touches); tt.classList.remove('np-anim'); }
+    }, { passive:true });
+    stage.addEventListener('touchmove', (e) => {
+      if(e.touches.length === 2){
+        const a = twistAngle(e.touches);
+        rz += (a - startAngle);
+        startAngle = a;
+        apply();
+      }
+    }, { passive:true });
+    stage.addEventListener('touchend', (e) => {
+      if(e.touches.length < 2) dbPut('meta', { key: 'npTurntableAngle', value: { rx, ry, rz } });
+    });
+    window.restoreTurntableAngle = function(saved){
+      if(saved){ rx = saved.rx; ry = saved.ry; rz = saved.rz || 0; apply(); }
+    };
+  })();
 
   const THEMES = {
     rosegold: { name: 'Rose Gold (default)', bg:'#221417', bgRaised:'#2E1D20', coral:'#F0A6A0', gold:'#D9B08C' },
@@ -2172,6 +2234,8 @@
       const themeRow = metaRows.find(r => r.key === 'theme');
       if(themeRow && THEMES[themeRow.value]) applyTheme(themeRow.value);
       else applyTheme('rosegold'); // no saved theme yet — rose gold is the default
+      const ttAngleRow = metaRows.find(r => r.key === 'npTurntableAngle');
+      if(ttAngleRow && window.restoreTurntableAngle) window.restoreTurntableAngle(ttAngleRow.value);
       const rgbSpeedRow = metaRows.find(r => r.key === 'rgbSpeedSec');
       if(rgbSpeedRow && typeof rgbSpeedRow.value === 'number'){
         rgbSpeedSec = rgbSpeedRow.value;
@@ -2241,12 +2305,17 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '33.2';
+  const APP_VERSION = '33.4';
   const CHANGELOG = [
-    { version: '33.2', title: 'Browser-tab icon now matches your theme', items: [
-      'The tab icon (favicon) is now redrawn on the fly to match whichever theme is equipped — same gold/coral gradient as the in-app logo, including live color-cycling on the RGB themes',
-      'The address-bar theme color updates alongside it',
-      'Heads up: this only reaches the browser tab icon — an already-installed home-screen icon is a platform-cached file that can\'t be swapped after install',
+    { version: '33.4', title: 'Small UI polish pass', items: [
+      'Track row press feedback is a touch more visible',
+      'Play/pause button now has a springy press-scale instead of a flat one',
+    ]},
+    { version: '33.3', title: '3D adjustable turntable, closing lid, theme-matched tab icon', items: [
+      'The mini record player is now a true 3D turntable in a 3/4 right-facing corner view — drag it to tilt and spin (X/Y), twist with two fingers to roll it (Z). Your angle is remembered',
+      'The lid now actually closes down over the spinning record while a track plays, and props back open when paused',
+      'The browser tab icon is redrawn on the fly to match your theme (address-bar color too) — fixed it hammering that color every animation frame on RGB themes, it now only updates on an actual theme change',
+      'Note on the app icon: mobile browsers generally don\'t show favicons in their UI at all, and an already-installed home-screen icon is a platform-cached file that can\'t be swapped after install',
     ]},
     { version: '33.2', title: 'Mini record player rebuilt for real, Liquid Glass enhanced, UI polish', items: [
       'The mini record player (bottom-left of the now-playing bar) is now an actual little turntable: a real plinth base, a propped-open lid, and a proper tonearm with a headshell + needle tip that swings down onto the grooves while playing and lifts back off when paused',
