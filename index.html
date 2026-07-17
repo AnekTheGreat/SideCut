@@ -175,8 +175,8 @@
     transition: transform 0.6s cubic-bezier(0.34, 1.1, 0.6, 1);
     z-index:8;
   }
-  /* Tonearm no longer swings onto the record on play — it's a fixed decorative part of the
-     turntable now, not a moving one. */
+  .deck-disc.spinning ~ .tonearm,
+  .platter.playing .tonearm{ transform: rotate(9deg); }
   .tonearm-shaft{
     position:absolute; top:0; left:0; width:100%; height:100%; border-radius:3px;
     background: linear-gradient(90deg, #cfc0a0, #9c8560);
@@ -197,7 +197,6 @@
   /* jog wheel touch ring the finger actually grabs (bigger hit target than the visual disc) */
   .jog-hint{
     position:absolute; inset:0; border-radius:50%; z-index:9;
-    pointer-events:none; /* decorative only now — no longer intercepts the flick/scratch gesture */
   }
 
   .deck-controls{
@@ -504,10 +503,39 @@
   #actionSpeedSlider{ -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; background:var(--line); outline:none; }
   #actionSpeedSlider::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%; background:var(--gold); }
   .np-row{ display:flex; align-items:center; gap:12px; }
-#npPlayerStage{ flex-shrink:0; position:relative; }
+  #npPlayerStage{ flex-shrink:0; position:relative; width:58px; height:48px; }
+  .np-lid{
+    position:absolute; left:0; bottom:0; width:22px; height:16px;
+    background: linear-gradient(160deg, #35322c, #1c1a16 60%, #121110);
+    border-radius:3px 5px 2px 7px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(0,0,0,0.4);
+    z-index:0;
+  }
   #npPlayerBody{
-    position:relative; width:46px; height:46px; flex-shrink:0;
-    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    position:absolute; right:0; top:0; width:46px; height:46px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:1;
+  }
+  .np-tonearm-base{
+    position:absolute; top:0; right:0; width:10px; height:10px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #4a4a4a, #232323);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
+    z-index:3;
+  }
+  .np-tonearm{
+    position:absolute; top:3.5px; right:3.5px; width:24px; height:2.5px;
+    transform-origin: 88% 50%; transform: rotate(-30deg);
+    transition: transform 0.6s cubic-bezier(0.34,1.1,0.6,1);
+    z-index:3;
+  }
+  #npPlayerBody.playing .np-tonearm{ transform: rotate(8deg); }
+  .np-tonearm-shaft{
+    position:absolute; inset:0; border-radius:2px;
+    background: linear-gradient(90deg, #cfc0a0, #9c8560);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .np-tonearm-head{
+    position:absolute; left:-14%; top:-1.5px; width:6px; height:4.5px; border-radius:1px;
+    background:#111; box-shadow: 0 0 0 1px rgba(255,255,255,0.12);
   }
   #nowPlaying .disc{
     width:46px; height:46px; border-width:1.5px; position:relative;
@@ -742,8 +770,11 @@
   <div id="miniBar"><div class="fill" id="miniFill"></div></div>
   <div class="np-row">
     <div id="npPlayerStage">
+    <div class="np-lid"></div>
     <div id="npPlayerBody">
       <div class="disc" id="npDisc"><div class="disc-label" id="npDiscLabel"></div></div>
+      <div class="np-tonearm-base"></div>
+      <div class="np-tonearm"><div class="np-tonearm-shaft"></div><div class="np-tonearm-head"></div></div>
     </div>
     </div>
     <div id="npInfo"><div class="t" id="npTitle">—</div><div class="a" id="npArtist">—</div>
@@ -2107,8 +2138,13 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '33';
+  const APP_VERSION = '33.1';
   const CHANGELOG = [
+    { version: '33.1', title: 'DJ Mode reverted, mini record player back, real update-popup fix', items: [
+      'Reverted the DJ Mode tonearm/jog changes from v33 — the tonearm swings onto the record on play again, and the jog overlay\'s flick-scratch gesture is back exactly as it was',
+      'Added the lid and tonearm back onto the mini record player (bottom-left of the now-playing bar) — still just a visual, tap the disc to open the full player like before',
+      'Fixed the real cause of the missing update popup in the APK: a service-worker update could silently reload the app once in the background before you ever saw it, which marked the new version "seen" and skipped the popup for good. It\'s now only marked seen once you actually dismiss the popup, so it can\'t get eaten by a background reload anymore',
+    ]},
     { version: '33', title: 'Liquid Glass fixes + theme, DJ turntable cleanup, reliable stat adding', items: [
       'Liquid glass mode moved into Settings → Theme (it used to live under Playback)',
       'Fixed liquid glass washing out solid-color buttons like Play — it now only frosts neutral surfaces and gives the primary pill a tinted glass look instead of losing its color',
@@ -2335,25 +2371,37 @@
   });
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
   $('updateLogBackdrop').addEventListener('click', e => { if(e.target === $('updateLogBackdrop')) $('updateLogBackdrop').style.display = 'none'; });
-  $('whatsNewClose').addEventListener('click', () => { $('whatsNewBackdrop').style.display = 'none'; });
-  $('whatsNewBackdrop').addEventListener('click', e => { if(e.target === $('whatsNewBackdrop')) $('whatsNewBackdrop').style.display = 'none'; });
+  $('whatsNewClose').addEventListener('click', () => { $('whatsNewBackdrop').style.display = 'none'; dbPut('meta', { key: 'lastSeenVersion', value: APP_VERSION }); });
+  $('whatsNewBackdrop').addEventListener('click', e => { if(e.target === $('whatsNewBackdrop')){ $('whatsNewBackdrop').style.display = 'none'; dbPut('meta', { key: 'lastSeenVersion', value: APP_VERSION }); } });
 
   async function checkForUpdatePopup(){
     try{
       const metaRows = await dbGetAll('meta');
       const lastPopupRow = metaRows.find(r => r.key === 'lastSeenVersion');
       const lastPopupSeen = lastPopupRow ? lastPopupRow.value : null;
-      if(lastPopupSeen !== APP_VERSION && lastPopupSeen != null){
-        // Only pop up when actually upgrading from a previously-seen version —
-        // a brand new install has nothing to compare "what's new" against.
+      if(lastPopupSeen == null){
+        // Brand new install — nothing to compare "what's new" against, so just set the baseline.
+        dbPut('meta', { key: 'lastSeenVersion', value: APP_VERSION });
+      } else if(lastPopupSeen !== APP_VERSION){
+        // Only pop up when actually upgrading from a previously-seen version.
+        // IMPORTANT: lastSeenVersion is deliberately NOT written here. It used to be written
+        // the instant this check ran, but on the APK a service-worker update can silently
+        // reload the app once in the background before you ever look at it — that reload
+        // ran this exact check, marked the new version "seen", and the popup you'd actually
+        // see never showed. Now it's only marked seen once you actually dismiss the popup
+        // (see the whatsNewClose/whatsNewBackdrop handlers below), so a silent background
+        // boot can no longer eat it — the popup keeps reappearing until a human sees it.
         const entry = CHANGELOG.find(e => e.version === APP_VERSION);
         if(entry){
           $('whatsNewVersion').textContent = `What's new in v${entry.version}`;
           $('whatsNewBody').innerHTML = renderWhatsNewBody(entry);
           $('whatsNewBackdrop').style.display = 'flex';
+        } else {
+          // No changelog entry for this version for some reason — nothing to show,
+          // so don't get stuck retrying forever.
+          dbPut('meta', { key: 'lastSeenVersion', value: APP_VERSION });
         }
       }
-      dbPut('meta', { key: 'lastSeenVersion', value: APP_VERSION });
       updateNotifBadge();
     }catch(e){ /* not critical if this fails */ }
   }
@@ -4707,8 +4755,7 @@
     el.addEventListener('pointercancel', release);
     el.addEventListener('lostpointercapture', () => { if(isScratching) endScratch(); });
   }
-  // The jog-hint overlay's flick-up-top scratch gesture was removed — scratching by
-  // dragging the record itself (below) is the only way to scratch now.
+  attachScratch($('djJog'), [$('djDisc')]);
   attachScratch($('djDisc'), []);
 
   // ---------------- DJ Mode: turntable rig wiring ----------------
