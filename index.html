@@ -526,31 +526,43 @@
     position:absolute; right:0; bottom:1px; width:46px; height:46px; flex-shrink:0; transform: translateZ(1px);
     display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
-  /* Lid: propped open behind the platter while idle, swings shut flat over the record while playing */
+  /* Lid: a full dust-cover that hinges up from the back and, when closed, covers the whole
+     platter — the tonearm lives inside it (nested child), so it reads as playing the record
+     from underneath the cover, the way a real turntable lid works. */
   .np-lid{
-    position:absolute; left:0px; bottom:10px; width:24px; height:32px;
-    background: linear-gradient(155deg, rgba(222,234,244,0.34), rgba(160,175,195,0.12) 55%, rgba(115,125,140,0.20));
-    border:1px solid rgba(255,255,255,0.34);
-    border-radius:2px 9px 2px 2px;
+    position:absolute; left:-2px; right:-2px; bottom:0; top:-2px;
+    transform-style:preserve-3d;
     transform-origin: bottom center;
-    transform: rotateX(-104deg) translateZ(2px);
-    transition: transform 0.55s cubic-bezier(.34,1.05,.6,1);
-    box-shadow: inset 0 1.5px 0 rgba(255,255,255,0.45), inset 0 0 12px rgba(255,255,255,0.06), 0 4px 10px rgba(0,0,0,0.35);
+    transform: rotateX(-118deg) translateZ(3px);
+    transition: transform 0.6s cubic-bezier(.32,1.1,.55,1);
+    z-index:4;
+  }
+  #npPlayerBody.playing ~ .np-lid{ transform: rotateX(-4deg) translateZ(6px); }
+  .np-lid-glass{
+    position:absolute; inset:0; border-radius:4px 12px 4px 4px;
+    background: linear-gradient(155deg, rgba(230,240,250,0.30), rgba(170,185,205,0.10) 50%, rgba(120,130,148,0.16));
+    border:1px solid rgba(255,255,255,0.32);
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,0.5),
+      inset 0 -3px 6px rgba(0,0,0,0.18),
+      inset 0 0 14px rgba(255,255,255,0.07),
+      0 6px 14px rgba(0,0,0,0.4);
     pointer-events:none;
   }
-  #npPlayerBody.playing ~ .np-lid{ transform: rotateX(0deg) translateZ(7px); }
-  .np-lid::after{
-    content:''; position:absolute; top:6%; left:14%; width:20%; height:64%;
-    background: linear-gradient(160deg, rgba(255,255,255,0.65), rgba(255,255,255,0) 75%);
-    border-radius:2px; transform:rotate(6deg);
+  .np-lid-glass::after{ /* primary sheen streak */
+    content:''; position:absolute; top:5%; left:12%; width:22%; height:70%;
+    background: linear-gradient(160deg, rgba(255,255,255,0.7), rgba(255,255,255,0) 78%);
+    border-radius:2px; transform:rotate(5deg);
   }
-  .np-lid::before{ /* second, fainter sheen streak for extra glassiness */
-    content:''; position:absolute; top:10%; right:10%; width:12%; height:45%;
-    background: linear-gradient(160deg, rgba(255,255,255,0.3), rgba(255,255,255,0) 80%);
+  .np-lid-glass::before{ /* second, fainter sheen streak for extra glassiness */
+    content:''; position:absolute; top:8%; right:8%; width:14%; height:50%;
+    background: linear-gradient(160deg, rgba(255,255,255,0.32), rgba(255,255,255,0) 82%);
     border-radius:2px;
   }
+  /* Tonearm rig now lives INSIDE the lid, pinned near its back-top so it swings down
+     together with the lid and appears to be riding the record from beneath the cover. */
   .np-tonearm-base{
-    position:absolute; top:0; right:0; width:11px; height:11px; border-radius:50%;
+    position:absolute; top:2px; right:2px; width:11px; height:11px; border-radius:50%;
     background: radial-gradient(circle at 35% 30%, #6b6b6b, #212121);
     box-shadow: 0 1px 3px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.12);
     z-index:3;
@@ -562,12 +574,12 @@
   }
   /* The "hand": tonearm swings from parked (off the record) to resting on the grooves while playing */
   .np-tonearm{
-    position:absolute; top:3.5px; right:3.5px; width:25px; height:2.5px;
+    position:absolute; top:5.5px; right:5.5px; width:25px; height:2.5px;
     transform-origin: 90% 50%; transform: rotate(-32deg);
     transition: transform 0.6s cubic-bezier(0.34,1.1,0.6,1);
     z-index:3; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.4));
   }
-  #npPlayerBody.playing .np-tonearm{ transform: rotate(10deg); }
+  #npPlayerBody.playing ~ .np-lid .np-tonearm{ transform: rotate(10deg); }
   .np-tonearm-shaft{
     position:absolute; inset:0; border-radius:2px;
     background: linear-gradient(90deg, #e8dab8, #b0946a);
@@ -602,15 +614,30 @@
     background: radial-gradient(circle, color-mix(in srgb, var(--gold) 35%, transparent) 0%, transparent 70%);
     opacity:0; transition: opacity 0.5s ease;
   }
-  #npPlayerBody.playing::before{ opacity:1; }
+  #npPlayerBody.playing::before{ opacity: calc(1 + var(--np-glow-boost, 0)); transform: scale(calc(1 + var(--np-glow-boost, 0) * 0.35)); }
+
+  #ttPopupStage{ position:relative; width:100%; height:160px; perspective:480px; margin:6px 0 4px; }
+  #ttPopupStage .np-tt-3d{ position:absolute; left:50%; bottom:8px; width:110px; height:98px; margin-left:-55px; transform-style:preserve-3d; }
+  #ttPopupStage .np-plinth{ height:26px; border-radius:8px; }
+  #ttPopupBody{ position:absolute; right:6px; bottom:2px; width:88px; height:88px; display:flex; align-items:center; justify-content:center; }
+  #ttPopupStage .np-platter-mat{ width:96px; height:96px; }
+  #ttPopupStage #ttPopupDisc{ width:88px; height:88px; border-width:2.5px; }
+  #ttPopupStage .np-tonearm-base{ width:20px; height:20px; top:6px; right:6px; }
+  #ttPopupStage .np-tonearm-counterweight{ width:11px; height:11px; top:5px; right:-6px; }
+  #ttPopupStage .np-tonearm{ width:48px; height:5px; top:10px; right:10px; }
+  #ttPopupStage .np-tonearm-head{ width:15px; height:13px; }
+  #ttPopupStage .np-tonearm-needle{ width:3px; height:5px; }
+  /* Popup shows the lid permanently open (tilted back) so the whole rig is visible for adjusting */
+  #ttPopupStage .np-lid{ transform: rotateX(-118deg) translateZ(4px) !important; }
+  #ttPopupStage .np-lid-glass{ border-radius:3px 16px 3px 3px; }
 
   /* ---------- Liquid glass: frosted, translucent surfaces across the app, with a drifting specular sheen ---------- */
   body.liquid-glass-on .modal{
-    background: color-mix(in srgb, var(--bg-raised) 64%, transparent);
-    -webkit-backdrop-filter: blur(30px) saturate(175%);
-    backdrop-filter: blur(30px) saturate(175%);
-    border: 1px solid rgba(255,255,255,0.14);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 32px rgba(255,255,255,0.03), 0 20px 44px rgba(0,0,0,0.4);
+    background: color-mix(in srgb, var(--bg-raised) 56%, transparent);
+    -webkit-backdrop-filter: blur(34px) saturate(140%) brightness(1.08);
+    backdrop-filter: blur(34px) saturate(140%) brightness(1.08);
+    border: 1px solid rgba(255,255,255,0.22);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), inset 0 0 36px rgba(255,255,255,0.06), 0 20px 44px rgba(0,0,0,0.4);
     animation: glassBreathe 6s ease-in-out infinite;
   }
   body.liquid-glass-on .modal-btns .cancel{
@@ -646,10 +673,10 @@
     position:relative; overflow:hidden;
   }
   body.liquid-glass-on #nowPlaying{
-    background: color-mix(in srgb, var(--bg-raised) 58%, transparent);
-    -webkit-backdrop-filter: blur(28px) saturate(175%);
-    backdrop-filter: blur(28px) saturate(175%);
-    border-top-color: rgba(255,255,255,0.16);
+    background: color-mix(in srgb, var(--bg-raised) 50%, transparent);
+    -webkit-backdrop-filter: blur(30px) saturate(140%) brightness(1.08);
+    backdrop-filter: blur(30px) saturate(140%) brightness(1.08);
+    border-top-color: rgba(255,255,255,0.22);
     animation: glassBreathe 6s ease-in-out infinite;
   }
   body.liquid-glass-on .icon-btn{
@@ -668,7 +695,7 @@
   body.liquid-glass-on .action-pill.primary::before,
   body.liquid-glass-on .icon-btn::before{
     content:''; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
-    background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,0.22) 34%, rgba(255,255,255,0.03) 46%, transparent 60%);
+    background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,0.32) 34%, rgba(255,255,255,0.05) 46%, transparent 60%);
     background-size:240% 240%; background-position: 120% 50%;
     animation: glassSheen 7s ease-in-out infinite; mix-blend-mode:screen;
   }
@@ -775,8 +802,6 @@
 </style>
 </head>
 <body>
-<div id="rgbEdgeGlow" style="position:fixed;inset:0;height:100dvh;pointer-events:none;z-index:9999;opacity:.12;box-shadow:inset 0 0 40px 2px var(--coral),inset 0 0 70px 10px var(--gold);"></div>
-
 
 <header>
   <div class="brand">
@@ -866,6 +891,36 @@
   </div>
 </div>
 
+<!-- Turntable settings: adjust the mini record player's 3D angle in its own popup -->
+<div class="modal-backdrop" id="turntablePopupBackdrop">
+  <div class="modal" style="max-width:340px;">
+    <h3>Turntable angle</h3>
+    <div id="ttPopupStage">
+      <div class="np-tt-3d" id="ttPopupTt3d">
+        <div class="np-plinth"></div>
+        <div id="ttPopupBody">
+          <div class="np-platter-mat"></div>
+          <div class="disc" id="ttPopupDisc"><div class="disc-label"></div></div>
+        </div>
+        <div class="np-lid" id="ttPopupLid">
+          <div class="np-lid-glass"></div>
+          <div class="np-tonearm-base"><div class="np-tonearm-counterweight"></div></div>
+          <div class="np-tonearm"><div class="np-tonearm-shaft"></div><div class="np-tonearm-head"><div class="np-tonearm-needle"></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:14px;">
+      <div class="speed-row"><span>TILT</span><input type="range" id="ttRxSlider" min="-90" max="90" step="1" style="flex:1;"></div>
+      <div class="speed-row"><span>SPIN</span><input type="range" id="ttRySlider" min="-180" max="180" step="1" style="flex:1;"></div>
+      <div class="speed-row"><span>ROLL</span><input type="range" id="ttRzSlider" min="-45" max="45" step="1" style="flex:1;"></div>
+    </div>
+    <div class="modal-btns" style="margin-top:14px;">
+      <button class="cancel" id="ttPopupReset" style="flex:1;">Reset</button>
+      <button class="cancel" id="ttPopupClose" style="flex:1;">Done</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac" multiple>
 <input type="file" id="folderInput" webkitdirectory directory multiple>
 
@@ -878,10 +933,12 @@
     <div id="npPlayerBody">
       <div class="np-platter-mat"></div>
       <div class="disc" id="npDisc"><div class="disc-label" id="npDiscLabel"></div></div>
+    </div>
+    <div class="np-lid">
+      <div class="np-lid-glass"></div>
       <div class="np-tonearm-base"><div class="np-tonearm-counterweight"></div></div>
       <div class="np-tonearm"><div class="np-tonearm-shaft"></div><div class="np-tonearm-head"><div class="np-tonearm-needle"></div></div></div>
     </div>
-    <div class="np-lid"></div>
     </div>
     </div>
     <div id="npInfo"><div class="t" id="npTitle">—</div><div class="a" id="npArtist">—</div>
@@ -1505,54 +1562,68 @@
     updateFavicon(false);
   }
 
-  // ---------------- Mini turntable angle: drag to tilt/spin (X/Y), two-finger twist for roll (Z) ----------------
+  // ---------------- Mini turntable angle: fixed in the now-playing bar; adjusting happens only ----------------
+  // in the dedicated "Turntable" popup (long-press the mini player, or the gear inside the popup).
+  // Values are still persisted the same way (dbPut('meta', {key:'npTurntableAngle', ...})) so old saved angles keep working.
   (function(){
     const stage = $('npPlayerStage'), tt = $('npTt3d');
-    let rx = 52, ry = -34, rz = 0, dragging = false, moved = false, startX = 0, startY = 0, startAngle = 0;
+    let rx = 52, ry = -34, rz = 0;
     function apply(){ tt.style.setProperty('--np-rx', rx + 'deg'); tt.style.setProperty('--np-ry', ry + 'deg'); tt.style.setProperty('--np-rz', rz + 'deg'); }
-    function twistAngle(t){ return Math.atan2(t[1].clientY - t[0].clientY, t[1].clientX - t[0].clientX) * 180 / Math.PI; }
-    stage.addEventListener('pointerdown', (e) => {
-      dragging = true; moved = false; startX = e.clientX; startY = e.clientY;
-      stage.classList.add('dragging'); tt.classList.remove('np-anim');
-      stage.setPointerCapture(e.pointerId);
-    });
-    stage.addEventListener('pointermove', (e) => {
-      if(!dragging) return;
-      const dx = e.clientX - startX, dy = e.clientY - startY;
-      if(Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
-      ry += dx * 0.5; rx -= dy * 0.5;
-      rx = Math.max(-90, Math.min(90, rx));
-      startX = e.clientX; startY = e.clientY;
-      apply();
-    });
-    function endDrag(e){
-      if(!dragging) return;
-      dragging = false; stage.classList.remove('dragging');
-      if(moved){
-        dbPut('meta', { key: 'npTurntableAngle', value: { rx, ry, rz } });
-        const swallow = (ev) => { ev.stopImmediatePropagation(); ev.preventDefault(); stage.removeEventListener('click', swallow, true); };
-        stage.addEventListener('click', swallow, true);
-      }
-    }
-    stage.addEventListener('pointerup', endDrag);
-    stage.addEventListener('pointercancel', endDrag);
-    // Two-finger twist for roll (Z axis) — native touch events, since Pointer Events fire one at a time
-    stage.addEventListener('touchstart', (e) => {
-      if(e.touches.length === 2){ startAngle = twistAngle(e.touches); tt.classList.remove('np-anim'); }
-    }, { passive:true });
-    stage.addEventListener('touchmove', (e) => {
-      if(e.touches.length === 2){
-        const a = twistAngle(e.touches);
-        rz += (a - startAngle);
-        startAngle = a;
-        apply();
-      }
-    }, { passive:true });
-    stage.addEventListener('touchend', (e) => {
-      if(e.touches.length < 2) dbPut('meta', { key: 'npTurntableAngle', value: { rx, ry, rz } });
-    });
     window.restoreTurntableAngle = function(saved){
       if(saved){ rx = saved.rx; ry = saved.ry; rz = saved.rz || 0; apply(); }
+    };
+    window.getTurntableAngle = function(){ return { rx, ry, rz }; };
+    window.setTurntableAngle = function(next){
+      rx = next.rx; ry = next.ry; rz = next.rz || 0;
+      apply();
+      dbPut('meta', { key: 'npTurntableAngle', value: { rx, ry, rz } });
+    };
+    // Long-press the mini player to open the Turntable settings popup instead of dragging it directly.
+    let pressTimer = null, longPressed = false;
+    stage.addEventListener('pointerdown', () => {
+      longPressed = false;
+      pressTimer = setTimeout(() => { longPressed = true; window.openTurntablePopup && window.openTurntablePopup(); }, 420);
+    });
+    const cancelPress = () => { clearTimeout(pressTimer); };
+    stage.addEventListener('pointerup', cancelPress);
+    stage.addEventListener('pointerleave', cancelPress);
+    stage.addEventListener('pointercancel', cancelPress);
+    stage.addEventListener('click', (e) => {
+      if(longPressed){ e.stopImmediatePropagation(); e.preventDefault(); longPressed = false; }
+    }, true);
+  })();
+
+  // ---------------- Turntable settings popup: the only place the mini player's angle is adjustable ----------------
+  (function(){
+    const backdrop = $('turntablePopupBackdrop');
+    const popupTt = $('ttPopupTt3d');
+    const rxS = $('ttRxSlider'), ryS = $('ttRySlider'), rzS = $('ttRzSlider');
+    const DEFAULT_ANGLE = { rx: 52, ry: -34, rz: 0 };
+    function applyPreview(a){
+      popupTt.style.setProperty('--np-rx', a.rx + 'deg');
+      popupTt.style.setProperty('--np-ry', a.ry + 'deg');
+      popupTt.style.setProperty('--np-rz', a.rz + 'deg');
+    }
+    function syncFromLive(){
+      const a = (window.getTurntableAngle && window.getTurntableAngle()) || DEFAULT_ANGLE;
+      rxS.value = a.rx; ryS.value = a.ry; rzS.value = a.rz;
+      applyPreview(a);
+    }
+    function pushChange(){
+      const a = { rx: parseFloat(rxS.value), ry: parseFloat(ryS.value), rz: parseFloat(rzS.value) };
+      applyPreview(a);
+      if(window.setTurntableAngle) window.setTurntableAngle(a);
+    }
+    [rxS, ryS, rzS].forEach(s => s.addEventListener('input', pushChange));
+    $('ttPopupReset').addEventListener('click', () => {
+      rxS.value = DEFAULT_ANGLE.rx; ryS.value = DEFAULT_ANGLE.ry; rzS.value = DEFAULT_ANGLE.rz;
+      pushChange();
+    });
+    $('ttPopupClose').addEventListener('click', () => { backdrop.style.display = 'none'; });
+    backdrop.addEventListener('click', (e) => { if(e.target === backdrop) backdrop.style.display = 'none'; });
+    window.openTurntablePopup = function(){
+      syncFromLive();
+      backdrop.style.display = 'flex';
     };
   })();
 
@@ -1572,7 +1643,7 @@
     midnight: { name: 'Midnight',        bg:'#080B18', bgRaised:'#101425', coral:'#6C7BFF', gold:'#9FA8DA' },
     rgb:      { name: 'RGB (animated)',  bg:'#0a0a0f', bgRaised:'#14141c', coral:'#ff2ea8', gold:'#2ea8ff', rgb:true },
     rgbplus:  { name: 'RGB + (glow sync)', bg:'#08080d', bgRaised:'#121219', coral:'#ff2ea8', gold:'#2ea8ff', rgb:true, rgbPlus:true },
-    liquidglass: { name: 'Liquid Glass', bg:'#0C0F14', bgRaised:'#171B22', coral:'#0A84FF', gold:'#64D2FF', liquidGlass:true },
+    liquidglass: { name: 'Liquid Glass', bg:'#14161C', bgRaised:'#1E212A', coral:'#E9EDF5', gold:'#C7CEDC', liquidGlass:true },
   };
 
   // ---------------- RGB theme: continuously cycles --coral/--gold hue via requestAnimationFrame,
@@ -1625,7 +1696,7 @@
     lineLevel = 0;
     glowFrameSkip = 0;
     flattenSeekWave();
-    const eg = $('rgbEdgeGlow'); if(eg) eg.style.opacity = 0;
+    const ttGlow = $('npPlayerBody'); if(ttGlow) ttGlow.style.setProperty('--np-glow-boost', '0');
   }
   let glowFrameSkip = 0;
   function startGlowSync(){
@@ -1650,8 +1721,10 @@
       const raw = Math.min(1, (sum / bassBins) / 220);
       // Fast attack, slow release — snaps up on the hit, eases back down, never twitchy.
       lineLevel = raw > lineLevel ? lineLevel + (raw - lineLevel) * 0.6 : lineLevel + (raw - lineLevel) * 0.08;
-      const edgeGlow = $('rgbEdgeGlow');
-      if(edgeGlow) edgeGlow.style.opacity = (0.12 + lineLevel * 0.7).toFixed(2);
+      // RGB+ only: pulse the mini turntable's ambient glow with the bass, so the "pop" lives
+      // on the player itself instead of a full-screen bar.
+      const ttGlow = $('npPlayerBody');
+      if(ttGlow) ttGlow.style.setProperty('--np-glow-boost', (lineLevel * 0.6).toFixed(2));
       if(lineLevel < 0.03){
         svg.classList.remove('live');
         path.setAttribute('d', 'M0,11 L100,11');
@@ -2336,8 +2409,15 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '33.5';
+  const APP_VERSION = '33.6';
   const CHANGELOG = [
+    { version: '33.6', title: 'Removed edge glow bar, turntable lid rebuilt, Liquid Glass re-themed', items: [
+      'Removed the colored glow bar that sat above the SideCut header in every theme',
+      'The mini record player is no longer adjustable by dragging it in the now-playing bar — long-press it to open a dedicated Turntable popup with tilt/spin/roll sliders and a bigger preview instead',
+      'The lid on the mini record player now covers the whole turntable (not just a corner), and the tonearm lives inside the lid so it reads as playing the record from underneath the cover',
+      'Added extra layered shadows and highlights to the mini turntable for real depth',
+      'Liquid Glass theme is no longer blue — it is now a clear, silvery, shiny-cloud look, with brighter blur/sheen across modals, buttons, and the now-playing bar',
+    ] },
     { version: '33.5', title: 'Nicer turntable materials, calmer edge glow, more glass', items: [
       'The turntable now has a proper platter mat under the record, a brushed-metal trim on the plinth, and a glossier two-tone lid — nicer angles at rest too',
       'Fixed the RGB-theme edge glow rendering as an ugly solid bar on some mobile browsers (the CSS mask trick was unreliable there) — it\'s now a plain, safe vignette',
