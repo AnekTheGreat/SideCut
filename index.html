@@ -2419,8 +2419,14 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '33.9';
+  const APP_VERSION = '34.0';
   const CHANGELOG = [
+    { version: '34.0', title: 'Fixed app-wide button freeze, playlist export now bundles real audio', items: [
+      'Found the actual bug behind buttons randomly stopping working (while play/pause kept working): any track missing an artist tag threw an error inside the list renderer, and since almost every button — sort, tabs, kebab menu, reorder, switching playlists — re-renders the list, one bad track silently broke all of them for the rest of the session',
+      'Tracks with missing name/artist metadata now fall back to "Untitled" / "Unknown artist" instead of crashing',
+      'Added a safety net around list/tab rendering so a future bad track shows an error toast instead of freezing the whole list again',
+      '"Export playlist" now bundles the actual audio files into a .zip (same as library export), not just a .m3u of filenames — you can import it back in on another device with "Import library"',
+    ] },
     { version: '33.9', title: 'Fixed the real cause of the colored status bar', items: [
       'Found the actual bug: the phone status-bar color (theme-color) was being set to the bright theme accent color on every theme change, which is what was rendering as a colored bar above the header that always matched whatever theme was active',
       'Status bar color now matches the app background instead, so it blends in like it should',
@@ -3010,7 +3016,7 @@
     metaRows.forEach(r => metaMap[r.key] = r.value);
 
     allTracks = trackRows.map(r => ({
-      id: r.id, file: r.blob, name: r.name, artist: r.artist,
+      id: r.id, file: r.blob, name: r.name || 'Untitled', artist: r.artist || 'Unknown artist',
       url: URL.createObjectURL(r.blob), duration: r.duration || null, bpm: r.bpm ?? null,
       genre: r.genre || null, gain: r.gain ?? null, vibe: r.vibe || null, waveform: r.waveform || null,
       playCount: r.playCount || 0, notes: r.notes || '',
@@ -3043,7 +3049,7 @@
   }
 
   function escapeHtml(s){
-    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
   function fmtTime(sec){
     if(!isFinite(sec) || sec < 0) sec = 0;
@@ -3220,7 +3226,7 @@
     list.innerHTML = '';
 
     const exportBtn = document.createElement('button');
-    exportBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h4.17v6h4V9h4.17L12 2z"/></svg> ${isAllSongs ? 'Export library' : 'Export playlist (.m3u)'}`;
+    exportBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h4.17v6h4V9h4.17L12 2z"/></svg> ${isAllSongs ? 'Export library' : 'Export playlist'}`;
     exportBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; isAllSongs ? exportLibrary() : exportPlaylist(); });
     list.appendChild(exportBtn);
 
@@ -3360,6 +3366,13 @@
 
   // ---------------- Tabs / playlists ----------------
   function renderTabs(){
+    try{ renderTabsInner(); }
+    catch(e){
+      console.error('renderTabs failed', e);
+      toast('Something went wrong showing your playlists — try reloading.');
+    }
+  }
+  function renderTabsInner(){
     const tabs = $('tabs');
     tabs.innerHTML = '';
     Object.keys(playlists).forEach(name => {
@@ -3559,6 +3572,13 @@
 
   // ---------------- List rendering ----------------
   function renderList(){
+    try{ renderListInner(); }
+    catch(e){
+      console.error('renderList failed', e);
+      toast('Something went wrong showing that list — try switching tabs.');
+    }
+  }
+  function renderListInner(){
     const pane = $('listPane');
     const rawIds = playlists[activePlaylist] || [];
     let ids;
@@ -3576,7 +3596,7 @@
       ids = ids.filter(id => {
         const t = allTracks.find(tr => tr.id === id);
         if(!t) return false;
-        return t.name.toLowerCase().includes(searchQuery) || t.artist.toLowerCase().includes(searchQuery);
+        return (t.name||'').toLowerCase().includes(searchQuery) || (t.artist||'').toLowerCase().includes(searchQuery);
       });
     }
     const isAllSongs = activePlaylist === 'All Songs';
@@ -4034,24 +4054,35 @@
     renderList();
   }
 
-  function exportPlaylist(){
+  async function exportPlaylist(){
     const ids = playlists[activePlaylist] || [];
     if(!ids.length){ toast('Nothing to export yet.'); return; }
-    const lines = ['#EXTM3U'];
-    ids.forEach(id => {
-      const t = allTracks.find(tr => tr.id === id);
-      if(t){
-        const fname = (t.file && t.file.name) || (t.name + '.mp3');
-        lines.push(`#EXTINF:${Math.round(t.duration||0)},${t.artist} - ${t.name}`);
-        lines.push(fname);
-      }
-    });
-    const blob = new Blob([lines.join('\n')], { type:'audio/x-mpegurl' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = activePlaylist.replace(/[^a-z0-9]/gi,'_') + '.m3u';
-    a.click();
-    toast('Playlist exported as .m3u');
+    if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
+    toast('Zipping playlist…', 4000);
+    try{
+      const zip = new JSZip();
+      const manifest = { playlists: { [activePlaylist]: ids }, tracks: [] };
+      let missing = 0;
+      ids.forEach(id => {
+        const t = allTracks.find(tr => tr.id === id);
+        if(!t){ missing++; return; }
+        const fname = (t.file && t.file.name) || t.name || 'track';
+        const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
+        const zipPath = `audio/${t.id}${ext}`;
+        zip.file(zipPath, t.file);
+        manifest.tracks.push({ id: t.id, name: t.name, artist: t.artist, duration: t.duration, bpm: t.bpm, genre: t.genre, path: zipPath });
+      });
+      zip.file('manifest.json', JSON.stringify(manifest));
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = activePlaylist.replace(/[^a-z0-9]/gi,'_') + '.zip';
+      a.click();
+      toast(missing ? `Playlist exported (${missing} track${missing>1?'s':''} skipped — file missing)` : 'Playlist exported — import this .zip on another device to restore it');
+    }catch(e){
+      console.error(e);
+      toast('Export failed: ' + (e.message || 'see console for details'));
+    }
   }
 
   // Full library export/import — bundles actual audio + playlists into one
@@ -4102,7 +4133,7 @@
         if(!entry) continue;
         const blob = await entry.async('blob');
         const url = URL.createObjectURL(blob);
-        const track = { id: m.id, file: blob, name: m.name, artist: m.artist, url, duration: m.duration || null, bpm: m.bpm ?? null, genre: m.genre || null, gain: m.gain ?? null, artBlob: null, artUrl: null };
+        const track = { id: m.id, file: blob, name: m.name || 'Untitled', artist: m.artist || 'Unknown artist', url, duration: m.duration || null, bpm: m.bpm ?? null, genre: m.genre || null, gain: m.gain ?? null, artBlob: null, artUrl: null };
         allTracks.push(track);
         persistTrackMeta(track);
         count++;
