@@ -35,7 +35,7 @@
   ::selection{ background: var(--coral); color:#161616; }
   h1,h2,h3{ font-family:'Fraunces', serif; font-weight:600; margin:0; }
 
-  header{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px 10px; }
+  header{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px 10px; position:relative; z-index:10; }
   .brand{ display:flex; align-items:center; gap:10px; }
   .brand-mark{ width:30px; height:30px; border-radius:50%;
     background: radial-gradient(circle at 35% 30%, var(--gold), var(--coral) 70%);
@@ -45,6 +45,7 @@
 
   .action-strip{
     display:flex; gap:8px; padding: 2px 20px 14px; overflow-x:auto;
+    position:relative; z-index:10;
   }
   .action-strip::-webkit-scrollbar{ display:none; }
   .action-pill{
@@ -655,19 +656,31 @@
   }
   #edgeGlowLine.active{ opacity:1; }
 
-  /* ---------- Fully customizable glow suite (Settings → Theme → Glow) ----------
+  /* ---------- Fully customizable glow suite (Settings → Glow) ----------
      All independent, all optional, all live under the same "Glow" section so any
      combination can run at once: top/bottom soft blur bands, a second accent line
      on the left edge (mirroring the existing right-edge line), and RGB corner
      fades. Every piece pumps off the same bass level as the existing edge line,
-     via --glow-pump (0-1), set alongside --edge-glow-len in the glow loop. */
+     via --glow-pump (0-1), set alongside --edge-glow-len in the glow loop.
+
+     IMPORTANT: on some mobile browsers, a `position:fixed` layer with an active
+     blur filter sitting directly over real buttons can end up swallowing taps
+     even with pointer-events:none set — a known WebKit/Chromium quirk where a
+     blurred, animating compositor layer doesn't always pass touches through
+     cleanly. Rather than rely on pointer-events alone, these are also kept
+     BEHIND the header/controls in stacking order (z-index below the header)
+     and pulled in from the true edges so they never geometrically paint over
+     a real button in the first place — belt and suspenders. */
   #glowTop, #glowBottom{
     position:fixed; left:0; right:0; height:var(--glow-edge-size, 90px);
-    pointer-events:none; z-index:9997; opacity:0; transition:opacity 0.3s ease;
+    pointer-events:none; z-index:1; opacity:0; transition:opacity 0.3s ease;
     filter: blur(var(--glow-blur, 26px));
   }
-  #glowTop{ top:0; background: linear-gradient(to bottom, color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent), transparent); }
-  #glowBottom{ bottom:0; background: linear-gradient(to top, color-mix(in srgb, var(--gold) var(--glow-opacity, 45%), transparent), transparent); }
+  /* Inset from the true top/bottom edge so the band's blurred halo can't reach
+     up into the header row or down into the now-playing bar, where real
+     buttons live. */
+  #glowTop{ top:-40px; background: linear-gradient(to bottom, color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent), transparent); }
+  #glowBottom{ bottom:-40px; background: linear-gradient(to top, color-mix(in srgb, var(--gold) var(--glow-opacity, 45%), transparent), transparent); }
   #glowTop.active, #glowBottom.active{ opacity: calc(0.55 + var(--glow-pump, 0) * 0.45); }
 
   #edgeGlowLineLeft{
@@ -683,14 +696,17 @@
 
   .corner-glow{
     position:fixed; width:var(--corner-glow-size, 240px); height:var(--corner-glow-size, 240px);
-    pointer-events:none; z-index:9996; opacity:0; transition:opacity 0.35s ease;
+    pointer-events:none; z-index:1; opacity:0; transition:opacity 0.35s ease;
     background: radial-gradient(circle at var(--corner-origin-x,0) var(--corner-origin-y,0), color-mix(in srgb, var(--corner-hue, var(--coral)) var(--glow-opacity, 45%), transparent) 0%, transparent 72%);
   }
   .corner-glow.active{ opacity: calc(0.6 + var(--glow-pump, 0) * 0.4); }
-  #cornerGlowTL{ top:0; left:0; --corner-origin-x:0; --corner-origin-y:0; --corner-hue:var(--coral); }
-  #cornerGlowTR{ top:0; right:0; --corner-origin-x:100%; --corner-origin-y:0; --corner-hue:var(--gold); }
-  #cornerGlowBL{ bottom:0; left:0; --corner-origin-x:0; --corner-origin-y:100%; --corner-hue:var(--gold); }
-  #cornerGlowBR{ bottom:0; right:0; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral); }
+  /* Pulled off-corner by -60px so the glow's visual falloff still reaches the
+     corner without the element's own box ever sitting on top of the header
+     buttons (top-left/top-right) or now-playing controls (bottom corners). */
+  #cornerGlowTL{ top:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral); }
+  #cornerGlowTR{ top:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:100%; --corner-hue:var(--gold); }
+  #cornerGlowBL{ bottom:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:0%; --corner-hue:var(--gold); }
+  #cornerGlowBR{ bottom:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:0%; --corner-hue:var(--coral); }
 
   #ttPopupStage{ position:relative; width:100%; height:160px; perspective:480px; margin:6px 0 4px; }
   #ttPopupStage .np-tt-3d{ position:absolute; left:50%; bottom:8px; width:110px; height:98px; margin-left:-55px; transform-style:preserve-3d; }
@@ -1908,6 +1924,14 @@
     if(glowSettings.corners){
       ['cornerGlowTL','cornerGlowTR','cornerGlowBL','cornerGlowBR'].forEach(id => $(id).classList.add('active'));
     }
+    // Reused across every frame instead of allocated fresh each time — a per-frame
+    // `new Uint8Array(...)` plus per-frame style writes on multiple elements was extra
+    // main-thread work happening continuously in the background on every device, RGB+
+    // or not; on some mobile browsers heavy per-frame work like this can make touch
+    // hit-testing feel delayed or dropped entirely while it's running. Reusing one
+    // buffer and only writing styles when the value actually changed removes both.
+    let reuseBuffer = null;
+    let lastPumped = -1, lastPumpRounded = -1;
     function tick(){
       glowLoopHandle = requestAnimationFrame(tick);
       if(!(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus)) { stopGlowSync(); return; }
@@ -1916,13 +1940,15 @@
       if(glowFrameSkip % 3 !== 0) return;
       const analyser = glowAnalysers[activeIdx];
       if(!analyser){ ensureGlowAnalyser(activeIdx); return; }
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(data);
+      if(!reuseBuffer || reuseBuffer.length !== analyser.frequencyBinCount){
+        reuseBuffer = new Uint8Array(analyser.frequencyBinCount);
+      }
+      analyser.getByteFrequencyData(reuseBuffer);
       // Bass-only, one number — this is what makes it read as "punchy on the beat"
       // instead of a jumble of unrelated bars.
-      const bassBins = Math.max(4, Math.floor(data.length * 0.08));
+      const bassBins = Math.max(4, Math.floor(reuseBuffer.length * 0.08));
       let sum = 0;
-      for(let i=0;i<bassBins;i++) sum += data[i];
+      for(let i=0;i<bassBins;i++) sum += reuseBuffer[i];
       const raw = Math.min(1, (sum / bassBins) / 220);
       // Fast attack, slow release — snaps up on the hit, eases back down, never twitchy.
       lineLevel = raw > lineLevel ? lineLevel + (raw - lineLevel) * 0.6 : lineLevel + (raw - lineLevel) * 0.08;
@@ -1932,18 +1958,26 @@
       if(ttGlow) ttGlow.style.setProperty('--np-glow-boost', (lineLevel * 0.6).toFixed(2));
       // Edge glow line(s): base length (from the adjustable setting) plus a bass-driven pump on top.
       const pumped = Math.min(100, edgeGlowBaseLen + lineLevel * (100 - edgeGlowBaseLen));
-      if(glowSettings.rightLine){
-        const edgeLine = $('edgeGlowLine');
-        if(edgeLine) edgeLine.style.setProperty('--edge-glow-len', pumped.toFixed(1));
-      }
-      if(glowSettings.leftLine){
-        const edgeLineLeft = $('edgeGlowLineLeft');
-        if(edgeLineLeft) edgeLineLeft.style.setProperty('--edge-glow-len-left', pumped.toFixed(1));
+      const pumpedRounded = Math.round(pumped * 10);
+      if(pumpedRounded !== lastPumped){
+        lastPumped = pumpedRounded;
+        if(glowSettings.rightLine){
+          const edgeLine = $('edgeGlowLine');
+          if(edgeLine) edgeLine.style.setProperty('--edge-glow-len', pumped.toFixed(1));
+        }
+        if(glowSettings.leftLine){
+          const edgeLineLeft = $('edgeGlowLineLeft');
+          if(edgeLineLeft) edgeLineLeft.style.setProperty('--edge-glow-len-left', pumped.toFixed(1));
+        }
       }
       // Shared pump value for the blur band + corner fades — same bass level, just a 0-1
       // read instead of a length, since those effects fade/brighten rather than grow.
       if(glowSettings.topBottomBlur || glowSettings.corners){
-        document.documentElement.style.setProperty('--glow-pump', lineLevel.toFixed(2));
+        const pumpRounded = Math.round(lineLevel * 100);
+        if(pumpRounded !== lastPumpRounded){
+          lastPumpRounded = pumpRounded;
+          document.documentElement.style.setProperty('--glow-pump', lineLevel.toFixed(2));
+        }
       }
       if(lineLevel < 0.03){
         svg.classList.remove('live');
@@ -2736,8 +2770,13 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '35.1';
+  const APP_VERSION = '35.2';
   const CHANGELOG = [
+    { version: '35.2', title: 'Fixed Settings/Files buttons not responding while playing in RGB+ with glow blur or corners on', items: [
+      'Traced it down: the top/bottom blur band and the fading corner glow were painted directly over the header (Settings) and the Files/Add-folder strip — on some mobile browsers a blurred, animating layer like that can swallow taps even though it was set to pass clicks straight through',
+      'The header and Files strip now sit in front of those glow layers by design, and the glow bands themselves are pulled back from the true edges so they can\'t geometrically cover a real button in the first place — should be solid now regardless of which glow options are on',
+      'Also cut background overhead from the glow-sync loop itself — it was allocating a new buffer and writing several element styles on every update, continuously, the whole time a song played; it now reuses one buffer and only touches the page when the glow value actually changed',
+    ] },
     { version: '35.1', title: 'Fixed play button getting stuck on pause after auto-advancing', items: [
       'When a song finished and the next one started automatically (crossfade or gapless), the play/pause button could get stuck showing "paused" even though the new song was actually playing',
       'Same root cause was also silencing RGB+\'s glow sync right after auto-advance — that\'s fixed too, glow now keeps pumping straight through into the next song',
