@@ -48,10 +48,11 @@
   }
   .action-strip::-webkit-scrollbar{ display:none; }
   .action-pill{
-    flex-shrink:0; font-size:12.5px; font-weight:600; padding:8px 14px; border-radius:18px;
+    flex-shrink:0; font-size:12.5px; font-weight:600; padding:10px 14px; border-radius:18px;
     cursor:pointer; white-space:nowrap; border:1px solid var(--line);
     background: var(--bg-raised); color: var(--ink-dim);
     transition: transform 0.1s ease, background 0.25s ease, border-color 0.25s ease;
+    touch-action:manipulation; min-height:36px;
   }
   .action-pill:active{ transform: scale(0.95); }
   .action-pill{ transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1), background 0.2s ease; }
@@ -409,6 +410,14 @@
     background:none; border:1px solid var(--line); color:var(--ink-dim);
     width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;
     transition: transform 0.1s ease, background 0.2s ease, border-color 0.25s ease, color 0.25s ease;
+    position:relative; touch-action:manipulation;
+  }
+  /* Bumped tap target: the visible box stays 32px, but a transparent halo extends the
+     actual hit area to ~44px (the comfortable minimum touch target) so these don't need
+     a hard, deliberate press to register — a light tap near the icon now lands on the
+     button instead of missing it and falling through to whatever's behind it. */
+  .icon-btn::before{
+    content:''; position:absolute; inset:-6px; border-radius:12px;
   }
   .icon-btn:active{ transform: scale(0.92); }
   .icon-btn svg{ width:16px; height:16px; }
@@ -417,18 +426,26 @@
     display:flex; align-items:center; gap:12px; padding:11px 20px;
     cursor:pointer; border-bottom:1px solid var(--line);
     transition: background 0.2s ease, box-shadow 0.3s ease;
+    position:relative; touch-action:manipulation;
   }
   .track:active{ background: rgba(255,255,255,0.05); }
   .track .idx{ width:20px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; font-size:12px; text-align:center; flex-shrink:0; }
   .track.playing .idx::before{ content:'♪'; color:var(--coral); }
+  /* Playing row's glow used to use an un-inset box-shadow, which paints OUTSIDE this row's
+     box and visually/hit-test-wise oversteps into the row directly above it — on some mobile
+     browsers a glowing pseudo-layer sitting on top of the previous row can intercept the tap
+     meant for that row, so you'd have to press hard/precisely to actually hit it. The glow
+     now stays fully inset (never spills past this row's own edges) and z-index is pinned low
+     so it can never sit above a sibling row's clickable surface. */
   .track.playing{
     background: color-mix(in srgb, var(--coral) 8%, transparent);
-    box-shadow: inset 3px 0 0 var(--coral);
+    box-shadow: inset 3px 0 0 var(--coral), inset 0 0 14px color-mix(in srgb, var(--coral) 12%, transparent);
     animation: glowPulse 2s ease-in-out infinite;
+    z-index:0;
   }
   @keyframes glowPulse{
-    0%, 100%{ box-shadow: inset 3px 0 0 var(--coral), 0 0 8px color-mix(in srgb, var(--coral) 15%, transparent); }
-    50%{ box-shadow: inset 3px 0 0 var(--coral), 0 0 22px color-mix(in srgb, var(--coral) 45%, transparent); }
+    0%, 100%{ box-shadow: inset 3px 0 0 var(--coral), inset 0 0 10px color-mix(in srgb, var(--coral) 10%, transparent); }
+    50%{ box-shadow: inset 3px 0 0 var(--coral), inset 0 0 20px color-mix(in srgb, var(--coral) 28%, transparent); }
   }
   .track.playing .track-info .t{ color: var(--coral); transition: color 0.3s ease; }
   .genre-tag{
@@ -638,6 +655,43 @@
   }
   #edgeGlowLine.active{ opacity:1; }
 
+  /* ---------- Fully customizable glow suite (Settings → Theme → Glow) ----------
+     All independent, all optional, all live under the same "Glow" section so any
+     combination can run at once: top/bottom soft blur bands, a second accent line
+     on the left edge (mirroring the existing right-edge line), and RGB corner
+     fades. Every piece pumps off the same bass level as the existing edge line,
+     via --glow-pump (0-1), set alongside --edge-glow-len in the glow loop. */
+  #glowTop, #glowBottom{
+    position:fixed; left:0; right:0; height:var(--glow-edge-size, 90px);
+    pointer-events:none; z-index:9997; opacity:0; transition:opacity 0.3s ease;
+    filter: blur(var(--glow-blur, 26px));
+  }
+  #glowTop{ top:0; background: linear-gradient(to bottom, color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent), transparent); }
+  #glowBottom{ bottom:0; background: linear-gradient(to top, color-mix(in srgb, var(--gold) var(--glow-opacity, 45%), transparent), transparent); }
+  #glowTop.active, #glowBottom.active{ opacity: calc(0.55 + var(--glow-pump, 0) * 0.45); }
+
+  #edgeGlowLineLeft{
+    position:fixed; top:50%; left:0; width:3px;
+    height: calc(var(--edge-glow-len-left, 0) * 1%);
+    background: var(--gold);
+    transform: translateY(-50%);
+    z-index:9998; pointer-events:none;
+    opacity:0; transition: opacity 0.3s ease;
+    border-radius:2px;
+  }
+  #edgeGlowLineLeft.active{ opacity:1; }
+
+  .corner-glow{
+    position:fixed; width:var(--corner-glow-size, 240px); height:var(--corner-glow-size, 240px);
+    pointer-events:none; z-index:9996; opacity:0; transition:opacity 0.35s ease;
+    background: radial-gradient(circle at var(--corner-origin-x,0) var(--corner-origin-y,0), color-mix(in srgb, var(--corner-hue, var(--coral)) var(--glow-opacity, 45%), transparent) 0%, transparent 72%);
+  }
+  .corner-glow.active{ opacity: calc(0.6 + var(--glow-pump, 0) * 0.4); }
+  #cornerGlowTL{ top:0; left:0; --corner-origin-x:0; --corner-origin-y:0; --corner-hue:var(--coral); }
+  #cornerGlowTR{ top:0; right:0; --corner-origin-x:100%; --corner-origin-y:0; --corner-hue:var(--gold); }
+  #cornerGlowBL{ bottom:0; left:0; --corner-origin-x:0; --corner-origin-y:100%; --corner-hue:var(--gold); }
+  #cornerGlowBR{ bottom:0; right:0; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral); }
+
   #ttPopupStage{ position:relative; width:100%; height:160px; perspective:480px; margin:6px 0 4px; }
   #ttPopupStage .np-tt-3d{ position:absolute; left:50%; bottom:8px; width:110px; height:98px; margin-left:-55px; transform-style:preserve-3d; }
   #ttPopupStage .np-plinth{ height:26px; border-radius:8px; }
@@ -827,6 +881,13 @@
 <body>
 
 <div id="edgeGlowLine" aria-hidden="true"></div>
+<div id="edgeGlowLineLeft" aria-hidden="true"></div>
+<div id="glowTop" aria-hidden="true"></div>
+<div id="glowBottom" aria-hidden="true"></div>
+<div id="cornerGlowTL" class="corner-glow" aria-hidden="true"></div>
+<div id="cornerGlowTR" class="corner-glow" aria-hidden="true"></div>
+<div id="cornerGlowBL" class="corner-glow" aria-hidden="true"></div>
+<div id="cornerGlowBR" class="corner-glow" aria-hidden="true"></div>
 
 <header>
   <div class="brand">
@@ -1026,6 +1087,7 @@
     <h3>Settings</h3>
     <div style="display:flex; gap:6px; border-bottom:1px solid var(--line); padding-bottom:12px;">
       <button class="tab" id="settingsTabTheme" style="flex:1; text-align:center;">Theme</button>
+      <button class="tab" id="settingsTabGlow" style="flex:1; text-align:center;">Glow</button>
       <button class="tab" id="settingsTabPlayback" style="flex:1; text-align:center;">Playback</button>
       <button class="tab" id="settingsTabEQ" style="flex:1; text-align:center;">Equalizer</button>
       <button class="tab" id="settingsTabMore" style="flex:1; text-align:center;">More</button>
@@ -1034,25 +1096,6 @@
     <div id="settingsPanesWrap" style="height:56vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">
     <div id="settingsPaneTheme">
       <div id="themeOptions" style="display:flex; flex-direction:column; gap:8px;"></div>
-      <div id="rgbSpeedWrap" style="display:none; margin-top:12px;">
-        <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin-bottom:6px;">
-          <span>RGB glow speed</span><span id="rgbSpeedValue">8s</span>
-        </div>
-        <input type="range" id="rgbSpeedSlider" min="2" max="20" step="1" value="8" style="width:100%;">
-      </div>
-      <div id="edgeGlowLenWrap" style="display:none; margin-top:12px;">
-        <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin-bottom:6px;">
-          <span>Edge glow line length</span><span id="edgeGlowLenValue">15%</span>
-        </div>
-        <input type="range" id="edgeGlowLenSlider" min="5" max="60" step="1" value="15" style="width:100%;">
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">RGB+ only — the resting length of the glow line on the screen edge before it pumps with the bass.</div>
-      </div>
-
-      <div style="border-top:1px solid var(--line); margin-top:14px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:13px; color:var(--ink-dim);">Liquid glass mode</span>
-        <button class="tab" id="liquidGlassToggle" style="padding:5px 12px; font-size:12px;">Off</button>
-      </div>
-      <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Frosted, translucent panels for the now-playing bar and popups — layers on top of whichever theme you pick above. Or just tap the Liquid Glass theme below for the full iOS-style look in one go.</div>
 
       <div style="border-top:1px solid var(--line); margin-top:14px; padding-top:14px;">
         <h3 style="font-size:15px; margin-bottom:10px;">Or build your own</h3>
@@ -1102,6 +1145,85 @@
         </div>
         <button class="playlist-pick-btn" id="applyCustomTheme" style="margin-top:12px; text-align:center;">Save custom theme</button>
       </div>
+    </div>
+
+    <div id="settingsPaneGlow" style="display:none;">
+      <div id="rgbSpeedWrap" style="display:none;">
+        <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin-bottom:6px;">
+          <span>RGB glow speed</span><span id="rgbSpeedValue">8s</span>
+        </div>
+        <input type="range" id="rgbSpeedSlider" min="2" max="20" step="1" value="8" style="width:100%;">
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px; margin-bottom:14px;">How fast the RGB theme's own colors cycle through the hue wheel.</div>
+      </div>
+
+      <div id="glowPlusControls" style="display:none;">
+        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">RGB+ only — mix and match any of these, they all pump together with the bass while a track is playing.</div>
+
+        <!-- Right edge line -->
+        <div class="glow-opt-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid var(--line);">
+          <div><div style="font-size:13.5px; font-weight:600;">Right edge line</div><div style="font-size:11px; color:var(--ink-dim);">Solid accent line on the right screen edge</div></div>
+          <button class="tab glow-toggle" id="glowToggleRightLine" data-key="rightLine" style="padding:5px 12px; font-size:12px;">On</button>
+        </div>
+
+        <!-- Left edge line -->
+        <div class="glow-opt-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid var(--line);">
+          <div><div style="font-size:13.5px; font-weight:600;">Left edge line</div><div style="font-size:11px; color:var(--ink-dim);">Mirrors the right line on the left edge, secondary accent color</div></div>
+          <button class="tab glow-toggle" id="glowToggleLeftLine" data-key="leftLine" style="padding:5px 12px; font-size:12px;">Off</button>
+        </div>
+
+        <div style="border-top:1px solid var(--line); padding-top:12px; margin-top:2px;">
+          <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin-bottom:6px;">
+            <span>Edge line length</span><span id="edgeGlowLenValue">15%</span>
+          </div>
+          <input type="range" id="edgeGlowLenSlider" min="5" max="60" step="1" value="15" style="width:100%;">
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Resting length of either edge line before it pumps with the bass. Applies to both.</div>
+        </div>
+
+        <!-- Top/bottom blur -->
+        <div class="glow-opt-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid var(--line); margin-top:14px;">
+          <div><div style="font-size:13.5px; font-weight:600;">Top &amp; bottom blur glow</div><div style="font-size:11px; color:var(--ink-dim);">Faint soft-blur bands along the top and bottom edges</div></div>
+          <button class="tab glow-toggle" id="glowToggleTopBottom" data-key="topBottomBlur" style="padding:5px 12px; font-size:12px;">Off</button>
+        </div>
+        <div id="glowEdgeSizeWrap" style="display:none;">
+          <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin-bottom:6px;">
+            <span>Blur band size</span><span id="glowEdgeSizeValue">90px</span>
+          </div>
+          <input type="range" id="glowEdgeSizeSlider" min="30" max="200" step="5" value="90" style="width:100%;">
+          <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin:10px 0 6px;">
+            <span>Blur softness</span><span id="glowBlurAmountValue">26px</span>
+          </div>
+          <input type="range" id="glowBlurAmountSlider" min="8" max="60" step="2" value="26" style="width:100%;">
+        </div>
+
+        <!-- Fading RGB corners -->
+        <div class="glow-opt-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid var(--line); margin-top:14px;">
+          <div><div style="font-size:13.5px; font-weight:600;">Fading corner glow</div><div style="font-size:11px; color:var(--ink-dim);">Soft light in all four corners, fading toward the center</div></div>
+          <button class="tab glow-toggle" id="glowToggleCorners" data-key="corners" style="padding:5px 12px; font-size:12px;">Off</button>
+        </div>
+        <div id="glowCornerSizeWrap" style="display:none;">
+          <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin-bottom:6px;">
+            <span>Corner glow size</span><span id="glowCornerSizeValue">240px</span>
+          </div>
+          <input type="range" id="glowCornerSizeSlider" min="100" max="420" step="10" value="240" style="width:100%;">
+        </div>
+
+        <!-- Shared opacity -->
+        <div style="border-top:1px solid var(--line); padding-top:12px; margin-top:14px;">
+          <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--ink-dim); margin-bottom:6px;">
+            <span>Glow intensity</span><span id="glowOpacityValue">45%</span>
+          </div>
+          <input type="range" id="glowOpacitySlider" min="10" max="90" step="5" value="45" style="width:100%;">
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Shared brightness for the top/bottom blur and the corner glow.</div>
+        </div>
+      </div>
+
+      <div id="glowPlusHint" style="display:none; text-align:center; padding:30px 10px; color:var(--ink-dim); font-size:13px;">Switch to the RGB+ theme to unlock the full glow suite — edge lines, top/bottom blur, and corner glow, all customizable.</div>
+
+      <div style="border-top:1px solid var(--line); margin-top:16px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:13px; color:var(--ink-dim);">Liquid glass mode</span>
+        <button class="tab" id="liquidGlassToggle" style="padding:5px 12px; font-size:12px;">Off</button>
+      </div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Frosted, translucent panels for the now-playing bar and popups — layers on top of whichever theme you pick. Or tap the Liquid Glass theme in the Theme tab for the full look in one go.</div>
     </div>
 
     <div id="settingsPanePlayback" style="display:none;">
@@ -1731,6 +1853,29 @@
   let lineLevel = 0; // single smoothed bass level driving the strip ripple
   let edgeGlowBaseLen = 15; // 0-100, adjustable in Settings — floor length the edge line sits at before the beat pumps it up
   let waveSeed = Math.random() * 1000;
+
+  // ---------------- Customizable glow suite (RGB+ only, all independent toggles) ----------------
+  const defaultGlowSettings = () => ({
+    rightLine: true,       // the original edge line, right side
+    leftLine: false,       // mirrored edge line, left side
+    topBottomBlur: false,  // soft blurred band across top and bottom
+    corners: false,        // fading RGB glow in the four corners
+    edgeSize: 90,          // px, top/bottom blur band height
+    blurAmount: 26,        // px, blur radius for top/bottom band
+    cornerSize: 240,       // px, corner glow diameter
+    opacity: 45,           // %, base color-mix opacity shared by blur band + corners
+  });
+  let glowSettings = defaultGlowSettings();
+  function applyGlowCssVars(){
+    const root = document.documentElement.style;
+    root.setProperty('--glow-edge-size', glowSettings.edgeSize + 'px');
+    root.setProperty('--glow-blur', glowSettings.blurAmount + 'px');
+    root.setProperty('--corner-glow-size', glowSettings.cornerSize + 'px');
+    root.setProperty('--glow-opacity', glowSettings.opacity + '%');
+  }
+  function saveGlowSettings(){
+    dbPut('meta', { key: 'glowSettings', value: glowSettings });
+  }
   function flattenSeekWave(){
     const p = $('seekWavePath');
     if(p) p.setAttribute('d', 'M0,11 L100,11');
@@ -1745,14 +1890,24 @@
     const ttGlow = $('npPlayerBody'); if(ttGlow) ttGlow.style.setProperty('--np-glow-boost', '0');
     const edgeLine = $('edgeGlowLine');
     if(edgeLine){ edgeLine.classList.remove('active'); edgeLine.style.setProperty('--edge-glow-len', '0'); }
+    const edgeLineLeft = $('edgeGlowLineLeft');
+    if(edgeLineLeft){ edgeLineLeft.classList.remove('active'); edgeLineLeft.style.setProperty('--edge-glow-len-left', '0'); }
+    ['glowTop','glowBottom','cornerGlowTL','cornerGlowTR','cornerGlowBL','cornerGlowBR'].forEach(id => {
+      const el = $(id); if(el) el.classList.remove('active');
+    });
+    document.documentElement.style.setProperty('--glow-pump', '0');
   }
   let glowFrameSkip = 0;
   function startGlowSync(){
     if(glowLoopHandle) return; // already running
     ensureGlowAnalyser(activeIdx);
     const svg = $('seekWaveSvg'), path = $('seekWavePath');
-    const edgeLine = $('edgeGlowLine');
-    if(edgeLine) edgeLine.classList.add('active');
+    if(glowSettings.rightLine){ const el = $('edgeGlowLine'); if(el) el.classList.add('active'); }
+    if(glowSettings.leftLine){ const el = $('edgeGlowLineLeft'); if(el) el.classList.add('active'); }
+    if(glowSettings.topBottomBlur){ $('glowTop').classList.add('active'); $('glowBottom').classList.add('active'); }
+    if(glowSettings.corners){
+      ['cornerGlowTL','cornerGlowTR','cornerGlowBL','cornerGlowBR'].forEach(id => $(id).classList.add('active'));
+    }
     function tick(){
       glowLoopHandle = requestAnimationFrame(tick);
       if(!(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus)) { stopGlowSync(); return; }
@@ -1775,11 +1930,20 @@
       // on the player itself instead of a full-screen bar.
       const ttGlow = $('npPlayerBody');
       if(ttGlow) ttGlow.style.setProperty('--np-glow-boost', (lineLevel * 0.6).toFixed(2));
-      // Edge glow line: base length (from the adjustable setting) plus a bass-driven pump on top.
-      const edgeLine = $('edgeGlowLine');
-      if(edgeLine){
-        const pumped = Math.min(100, edgeGlowBaseLen + lineLevel * (100 - edgeGlowBaseLen));
-        edgeLine.style.setProperty('--edge-glow-len', pumped.toFixed(1));
+      // Edge glow line(s): base length (from the adjustable setting) plus a bass-driven pump on top.
+      const pumped = Math.min(100, edgeGlowBaseLen + lineLevel * (100 - edgeGlowBaseLen));
+      if(glowSettings.rightLine){
+        const edgeLine = $('edgeGlowLine');
+        if(edgeLine) edgeLine.style.setProperty('--edge-glow-len', pumped.toFixed(1));
+      }
+      if(glowSettings.leftLine){
+        const edgeLineLeft = $('edgeGlowLineLeft');
+        if(edgeLineLeft) edgeLineLeft.style.setProperty('--edge-glow-len-left', pumped.toFixed(1));
+      }
+      // Shared pump value for the blur band + corner fades — same bass level, just a 0-1
+      // read instead of a length, since those effects fade/brighten rather than grow.
+      if(glowSettings.topBottomBlur || glowSettings.corners){
+        document.documentElement.style.setProperty('--glow-pump', lineLevel.toFixed(2));
       }
       if(lineLevel < 0.03){
         svg.classList.remove('live');
@@ -1845,12 +2009,11 @@
       btn.addEventListener('click', () => {
         applyTheme(key);
         renderThemeOptions();
+        renderGlowControls();
         toast(th.liquidGlass ? `Theme: ${th.name} ✨ glass mode on` : `Theme: ${th.name}`);
       });
       container.appendChild(btn);
     });
-    $('rgbSpeedWrap').style.display = (THEMES[currentTheme] && THEMES[currentTheme].rgb) ? '' : 'none';
-    $('edgeGlowLenWrap').style.display = (THEMES[currentTheme] && THEMES[currentTheme].rgbPlus) ? '' : 'none';
   }
   $('rgbSpeedSlider').addEventListener('input', (e) => {
     rgbSpeedSec = parseInt(e.target.value, 10);
@@ -1863,18 +2026,88 @@
     $('edgeGlowLenValue').textContent = edgeGlowBaseLen + '%';
     dbPut('meta', { key: 'edgeGlowBaseLen', value: edgeGlowBaseLen });
   });
+
+  // ---------------- Glow tab rendering + wiring ----------------
+  function renderGlowControls(){
+    const isRgb = THEMES[currentTheme] && THEMES[currentTheme].rgb;
+    const isRgbPlus = THEMES[currentTheme] && THEMES[currentTheme].rgbPlus;
+    $('rgbSpeedWrap').style.display = isRgb ? '' : 'none';
+    $('glowPlusControls').style.display = isRgbPlus ? '' : 'none';
+    $('glowPlusHint').style.display = isRgbPlus ? 'none' : '';
+
+    document.querySelectorAll('.glow-toggle').forEach(btn => {
+      const key = btn.dataset.key;
+      const on = !!glowSettings[key];
+      btn.textContent = on ? 'On' : 'Off';
+      btn.classList.toggle('active', on);
+    });
+    $('glowEdgeSizeWrap').style.display = glowSettings.topBottomBlur ? '' : 'none';
+    $('glowCornerSizeWrap').style.display = glowSettings.corners ? '' : 'none';
+    $('glowEdgeSizeSlider').value = glowSettings.edgeSize;
+    $('glowEdgeSizeValue').textContent = glowSettings.edgeSize + 'px';
+    $('glowBlurAmountSlider').value = glowSettings.blurAmount;
+    $('glowBlurAmountValue').textContent = glowSettings.blurAmount + 'px';
+    $('glowCornerSizeSlider').value = glowSettings.cornerSize;
+    $('glowCornerSizeValue').textContent = glowSettings.cornerSize + 'px';
+    $('glowOpacitySlider').value = glowSettings.opacity;
+    $('glowOpacityValue').textContent = glowSettings.opacity + '%';
+  }
+
+  // Restart the live glow effect so a toggle flip is reflected immediately, without
+  // waiting for the next play/pause — mirrors whatever startGlowSync would already do.
+  function refreshLiveGlow(){
+    const a = activeAudio();
+    if(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus && a && !a.paused){
+      stopGlowSync();
+      startGlowSync();
+    }
+  }
+
+  document.querySelectorAll('.glow-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      glowSettings[key] = !glowSettings[key];
+      saveGlowSettings();
+      renderGlowControls();
+      refreshLiveGlow();
+    });
+  });
+  $('glowEdgeSizeSlider').addEventListener('input', (e) => {
+    glowSettings.edgeSize = parseInt(e.target.value, 10);
+    $('glowEdgeSizeValue').textContent = glowSettings.edgeSize + 'px';
+    applyGlowCssVars(); saveGlowSettings();
+  });
+  $('glowBlurAmountSlider').addEventListener('input', (e) => {
+    glowSettings.blurAmount = parseInt(e.target.value, 10);
+    $('glowBlurAmountValue').textContent = glowSettings.blurAmount + 'px';
+    applyGlowCssVars(); saveGlowSettings();
+  });
+  $('glowCornerSizeSlider').addEventListener('input', (e) => {
+    glowSettings.cornerSize = parseInt(e.target.value, 10);
+    $('glowCornerSizeValue').textContent = glowSettings.cornerSize + 'px';
+    applyGlowCssVars(); saveGlowSettings();
+  });
+  $('glowOpacitySlider').addEventListener('input', (e) => {
+    glowSettings.opacity = parseInt(e.target.value, 10);
+    $('glowOpacityValue').textContent = glowSettings.opacity + '%';
+    applyGlowCssVars(); saveGlowSettings();
+  });
   function showSettingsTab(tab){
     $('settingsPaneTheme').style.display = tab === 'theme' ? '' : 'none';
+    $('settingsPaneGlow').style.display = tab === 'glow' ? '' : 'none';
     $('settingsPanePlayback').style.display = tab === 'playback' ? '' : 'none';
     $('settingsPaneEQ').style.display = tab === 'eq' ? '' : 'none';
     $('settingsPaneMore').style.display = tab === 'more' ? '' : 'none';
+    if(tab === 'glow') renderGlowControls();
     $('settingsTabTheme').classList.toggle('active', tab === 'theme');
+    $('settingsTabGlow').classList.toggle('active', tab === 'glow');
     $('settingsTabPlayback').classList.toggle('active', tab === 'playback');
     $('settingsTabEQ').classList.toggle('active', tab === 'eq');
     $('settingsTabMore').classList.toggle('active', tab === 'more');
     if(tab === 'more') renderVersionSnapshots();
   }
   $('settingsTabTheme').addEventListener('click', () => showSettingsTab('theme'));
+  $('settingsTabGlow').addEventListener('click', () => showSettingsTab('glow'));
   $('settingsTabPlayback').addEventListener('click', () => showSettingsTab('playback'));
   $('settingsTabEQ').addEventListener('click', () => showSettingsTab('eq'));
   $('settingsTabMore').addEventListener('click', () => showSettingsTab('more'));
@@ -2440,6 +2673,12 @@
         $('edgeGlowLenSlider').value = edgeGlowBaseLen;
         $('edgeGlowLenValue').textContent = edgeGlowBaseLen + '%';
       }
+      const glowSettingsRow = metaRows.find(r => r.key === 'glowSettings');
+      if(glowSettingsRow && glowSettingsRow.value){
+        glowSettings = { ...defaultGlowSettings(), ...glowSettingsRow.value };
+      }
+      applyGlowCssVars();
+      renderGlowControls();
       const crossfadeRow = metaRows.find(r => r.key === 'crossfadeSeconds');
       if(crossfadeRow && typeof crossfadeRow.value === 'number'){
         crossfadeSeconds = crossfadeRow.value;
@@ -2497,8 +2736,16 @@
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '34.5';
+  const APP_VERSION = '35';
   const CHANGELOG = [
+    { version: '35', title: 'Full customizable glow suite, real settings reorganization, EQ + tap-target fixes', items: [
+      'New Settings → Glow tab, split out from Theme, with a proper Liquid Glass toggle and clearly grouped sections instead of one long scroll',
+      'RGB+ now supports a mix-and-match glow suite: the original right edge line, a new mirrored left edge line, a soft blurred glow band across the top and bottom, and fading RGB glow in all four corners — toggle any combination on independently',
+      'Every glow piece is customizable: edge line length, blur band size and softness, corner glow size, and a shared intensity slider — all live-preview and saved',
+      'Fixed the equalizer not actually changing the sound when adjusted before ever pressing play — a freshly created audio context starts suspended and wasn\'t always resumed, so EQ moves could silently do nothing until playback happened to wake it up elsewhere',
+      'Settings and "+ Files"-style buttons no longer need a hard, deliberate press — their tappable area is now noticeably larger than what you see, so a light tap near the icon registers instead of missing',
+      'Fixed a glitch where the song row directly above the one currently playing was hard to tap — the playing row\'s glow was spilling outside its own edges and could intercept taps meant for its neighbor; the glow now stays fully contained inside its row',
+    ] },
     { version: '34.5', title: 'Advanced 8-band graphic equalizer + RGB+ edge glow line', items: [
       'Replaced the old 3-slider bass/mid/treble EQ with a real 8-band graphic equalizer (60Hz, 150Hz, 400Hz, 1K, 2.4K, 6K, 12K, 16K) — drag any band independently for much finer control',
       'Added genre presets: Bass Boost, Vocal, Bright, Warm, Rock, Electronic, Acoustic, plus Flat to reset instantly',
@@ -2805,6 +3052,10 @@
     applyTheme('rosegold');
     setLiquidGlass(false);
     dbPut('meta', { key: 'customTheme', value: null });
+    glowSettings = defaultGlowSettings();
+    applyGlowCssVars();
+    saveGlowSettings();
+    renderGlowControls();
     renderThemeOptions();
     toast('Appearance reset to defaults');
   });
@@ -3012,6 +3263,12 @@
   let recordDestNode = null;
   function applyEQ(t, audioIdx){
     ensureAudioGraph();
+    // A fresh AudioContext starts life 'suspended' until a user gesture resumes it. Moving
+    // an EQ slider before ever pressing play would silently build the filter graph and set
+    // gain values that had no audible effect at all until playback happened to resume the
+    // context elsewhere — this made the EQ look completely broken. Resuming right here means
+    // any EQ change takes effect the moment it's made, whether or not audio is already playing.
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
     const nodes = eqNodes[audioIdx];
     if(!nodes) return;
     const preset = (t.vibe && VIBES[t.vibe]) || globalEQ;
