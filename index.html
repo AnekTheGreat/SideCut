@@ -2022,7 +2022,9 @@
   }
   function stopGlowSync(){
     if(glowLoopHandle){ cancelAnimationFrame(glowLoopHandle); glowLoopHandle = null; }
+    if(glowAudioReadInterval){ clearInterval(glowAudioReadInterval); glowAudioReadInterval = null; }
     lineLevel = 0;
+    latestRawLevel = 0;
     glowFrameSkip = 0;
     flattenSeekWave();
     const ttGlow = $('npPlayerBody'); if(ttGlow) ttGlow.style.setProperty('--np-glow-boost', '0');
@@ -2037,6 +2039,8 @@
   }
   let glowFrameSkip = 0;
   let glowWaveBarsCache = null; // invalidated whenever #waveformBar's bars are rebuilt (track change / seek style change)
+  let glowAudioReadInterval = null; // setInterval handle for the audio-read, decoupled from rAF — see startGlowSync
+  let latestRawLevel = 0; // last bass-level reading computed by glowAudioReadInterval; tick() just smooths and applies it
   function startGlowSync(){
     if(glowLoopHandle) return; // already running
     ensureGlowAnalyser(activeIdx);
@@ -2055,25 +2059,40 @@
     // buffer and only writing styles when the value actually changed removes both.
     let reuseBuffer = null;
     let lastPumped = -1, lastPumpRounded = -1;
-    function tick(){
-      glowLoopHandle = requestAnimationFrame(tick);
-      if(!(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus)) { stopGlowSync(); return; }
-      // ~20fps update — smooth, not jittery
-      glowFrameSkip++;
-      if(glowFrameSkip % 3 !== 0) return;
+    // Audio analyser reads used to happen inside the requestAnimationFrame tick itself
+    // (every 3rd rAF, ~20fps) — tying a Web Audio read to the render loop means it's
+    // competing with paint and input dispatch on the same tick, on the same thread.
+    // On some mobile browsers, AnalyserNode.getByteFrequencyData can force a brief
+    // sync with the audio rendering thread; doing that inside rAF, ~20x/sec, for the
+    // entire time a song plays, is exactly the kind of steady background pressure
+    // that can make taps near where the browser is mid-layout (header, tabs, kebab)
+    // feel dropped or delayed — and it only ever happens in RGB+, never plain RGB,
+    // because RGB+ is the only mode that runs this loop at all. Moved the actual
+    // audio read to a plain setInterval instead, decoupled entirely from rAF/paint;
+    // the rAF loop below now only ever reads the last value setInterval computed and
+    // writes styles, no audio-graph calls on the paint path.
+    if(glowAudioReadInterval) clearInterval(glowAudioReadInterval);
+    glowAudioReadInterval = setInterval(() => {
       const analyser = glowAnalysers[activeIdx];
       if(!analyser){ ensureGlowAnalyser(activeIdx); return; }
       if(!reuseBuffer || reuseBuffer.length !== analyser.frequencyBinCount){
         reuseBuffer = new Uint8Array(analyser.frequencyBinCount);
       }
       analyser.getByteFrequencyData(reuseBuffer);
-      // Bass-only, one number — this is what makes it read as "punchy on the beat"
-      // instead of a jumble of unrelated bars.
       const bassBins = Math.max(4, Math.floor(reuseBuffer.length * 0.08));
       let sum = 0;
       for(let i=0;i<bassBins;i++) sum += reuseBuffer[i];
-      const raw = Math.min(1, (sum / bassBins) / 220);
+      latestRawLevel = Math.min(1, (sum / bassBins) / 220);
+    }, 50); // ~20 reads/sec, same effective rate as before, just off the render thread's tick
+    function tick(){
+      glowLoopHandle = requestAnimationFrame(tick);
+      if(!(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus)) { stopGlowSync(); return; }
+      // Style writes still throttled to ~20fps (same as before) — only the audio read
+      // moved to its own interval above; this just controls how often we apply it.
+      glowFrameSkip++;
+      if(glowFrameSkip % 3 !== 0) return;
       // Fast attack, slow release — snaps up on the hit, eases back down, never twitchy.
+      const raw = latestRawLevel;
       lineLevel = raw > lineLevel ? lineLevel + (raw - lineLevel) * 0.6 : lineLevel + (raw - lineLevel) * 0.08;
       // RGB+ only: pulse the mini turntable's ambient glow with the bass, so the "pop" lives
       // on the player itself instead of a full-screen bar.
