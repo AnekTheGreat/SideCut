@@ -4106,8 +4106,14 @@
         clearTimeout(pressTimer);
       }
     });
-    function endDrag(){
+    function endDrag(e){
       clearTimeout(pressTimer);
+      // Was never releasing the pointer capture taken in the pointerdown handler above
+      // when dragging=true — same "everything else stops responding to taps" bug as the
+      // waveform seek bar, but on playlist tabs specifically: matches "can't click on
+      // other playlists" exactly. Release unconditionally (harmless no-op if this
+      // pointerId was never captured by this element).
+      if(e && e.pointerId != null){ try{ el.releasePointerCapture(e.pointerId); }catch(err){} }
       if(dragging){
         dragging = false;
         el.style.opacity = ''; el.style.zIndex = ''; el.style.transform = '';
@@ -5471,7 +5477,19 @@
     const container = $('waveformBar');
     container.setPointerCapture(e.pointerId);
     const onMove = (ev) => seekFromWaveformEvent(ev);
-    const cleanup = () => container.removeEventListener('pointermove', onMove);
+    // cleanup() previously only removed the pointermove listener and never released
+    // the pointer capture taken above. While a pointer stays captured by an element,
+    // every further pointerdown/up for that same pointerId on ANY other element in
+    // the app is routed to the captured one instead — so after seeking once, taps on
+    // playlist tabs, Settings, the kebab menu, anywhere, could silently stop working
+    // until a fresh pointerId came along. This is exactly the "can't click anything
+    // while a song is playing" bug — the waveform seek bar is the thing people touch
+    // most during playback, so it surfaced as an RGB+-while-playing problem even
+    // though the root cause has nothing to do with the theme.
+    const cleanup = (ev) => {
+      container.removeEventListener('pointermove', onMove);
+      try{ container.releasePointerCapture(ev.pointerId); }catch(err){}
+    };
     container.addEventListener('pointermove', onMove);
     container.addEventListener('pointerup', cleanup, { once: true });
     container.addEventListener('pointercancel', cleanup, { once: true });
