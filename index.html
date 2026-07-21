@@ -1796,6 +1796,24 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
+
+  // TEMPORARY DIAGNOSTIC for the "top-half buttons dead in RGB+ while playing" bug.
+  // Every earlier fix targeted a CSS property that looked like a plausible cause
+  // (z-index, clip-path, filter) and got verified in isolation, but the symptom kept
+  // reproducing — meaning the actual blocking element was never actually confirmed,
+  // only guessed at. This logs, on every tap in the top ~250px of the screen, exactly
+  // what document.elementFromPoint() says is on top at that point — the real answer,
+  // not another CSS guess. Shows up as a toast so it's visible without a laptop/devtools
+  // plugged in. Safe to remove entirely once the real element is identified — search
+  // for "RGB_DEBUG" to find every piece of this.
+  window.addEventListener('pointerdown', (e) => {
+    if(e.clientY > 250) return; // only care about the reported dead zone
+    if(!(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus)) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const desc = el ? `${el.tagName}${el.id ? '#'+el.id : ''}${el.className && typeof el.className === 'string' ? '.'+el.className.split(' ').join('.') : ''}` : 'nothing';
+    console.log('[RGB_DEBUG] tap at', e.clientX, e.clientY, '-> topmost element:', desc, el);
+    toast('[DEBUG] tap hit: ' + desc, 4000);
+  }, true); // capture phase — runs before anything can stop propagation
   // Captured before any script-driven DOM mutation, so it's a clean copy of the shipped shell —
   // used by the in-app version rollback feature below.
   const SHELL_SNAPSHOT_HTML = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
