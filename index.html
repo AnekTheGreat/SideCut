@@ -711,14 +711,22 @@
      these are now hard clip-path'd to a safe zone that can't be defeated by the
      size sliders no matter how large they're set. */
   #glowTop, #glowBottom{
-    position:fixed; left:0; right:0; height:var(--glow-edge-size, 90px);
+    position:fixed; left:0; right:0;
+    /* clip-path used to be relied on here to keep the visible glow within a safe
+       zone while letting the box grow with the slider — but clip-path does NOT
+       reliably shrink the hit-test area in every browser; pointer-events:none can
+       get defeated on the clipped-away part of the box in some engines, leaving
+       an invisible-but-still-blocking region above the tabs. There is no visual
+       vs. hit-test split anymore: the box itself is capped with min(), so it
+       physically cannot extend into the header/tabs area regardless of the
+       slider's value. */
+    height: min(var(--glow-edge-size, 90px), 90px);
     pointer-events:none; z-index:1; opacity:0; transition:opacity 0.3s ease;
     filter: blur(var(--glow-blur, 26px));
   }
   #glowTop{
     top:-40px;
     background: linear-gradient(to bottom, color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent), transparent);
-    clip-path: inset(0 0 calc(100% - 140px) 0);
   }
   #glowBottom{ bottom:-40px; background: linear-gradient(to top, color-mix(in srgb, var(--gold) var(--glow-opacity, 45%), transparent), transparent); }
   #glowTop.active, #glowBottom.active{ opacity: calc(0.55 + var(--glow-pump, 0) * 0.45); }
@@ -735,31 +743,19 @@
   #edgeGlowLineLeft.active{ opacity:1; }
 
   .corner-glow{
-    position:fixed; width:var(--corner-glow-size, 240px); height:var(--corner-glow-size, 240px);
+    position:fixed;
+    /* Same reasoning as #glowTop above — real box capped with min(), no clip-path,
+       so pointer-events:none has a genuinely small box to apply to instead of a
+       large one with an unreliable visual clip. */
+    width:min(var(--corner-glow-size, 240px), 160px); height:min(var(--corner-glow-size, 240px), 160px);
     pointer-events:none; z-index:1; opacity:0; transition:opacity 0.35s ease;
     background: radial-gradient(circle at var(--corner-origin-x,0) var(--corner-origin-y,0), color-mix(in srgb, var(--corner-hue, var(--coral)) var(--glow-opacity, 45%), transparent) 0%, transparent 72%);
   }
   .corner-glow.active{ opacity: calc(0.6 + var(--glow-pump, 0) * 0.4); }
-  /* Corner size is a slider up to 420px, so a fixed -60px inset alone can't
-     guarantee the box stays clear of the header/action-strip/tabs row (top
-     corners) or the now-playing bar (bottom corners) at larger settings.
-     Hard clip-path'd to a safe zone that holds regardless of slider value. */
-  #cornerGlowTL{
-    top:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral);
-    clip-path: inset(60px calc(100% - 200px) calc(100% - 200px) 60px);
-  }
-  #cornerGlowTR{
-    top:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:100%; --corner-hue:var(--gold);
-    clip-path: inset(60px 60px calc(100% - 200px) calc(100% - 200px));
-  }
-  #cornerGlowBL{
-    bottom:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:0%; --corner-hue:var(--gold);
-    clip-path: inset(calc(100% - 150px) calc(100% - 150px) 60px 60px);
-  }
-  #cornerGlowBR{
-    bottom:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:0%; --corner-hue:var(--coral);
-    clip-path: inset(calc(100% - 150px) 60px 60px calc(100% - 150px));
-  }
+  #cornerGlowTL{ top:-40px; left:-40px; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral); }
+  #cornerGlowTR{ top:-40px; right:-40px; --corner-origin-x:0%; --corner-origin-y:100%; --corner-hue:var(--gold); }
+  #cornerGlowBL{ bottom:-40px; left:-40px; --corner-origin-x:100%; --corner-origin-y:0%; --corner-hue:var(--gold); }
+  #cornerGlowBR{ bottom:-40px; right:-40px; --corner-origin-x:0%; --corner-origin-y:0%; --corner-hue:var(--coral); }
 
   #ttPopupStage{ position:relative; width:100%; height:160px; perspective:480px; margin:6px 0 4px; }
   #ttPopupStage .np-tt-3d{ position:absolute; left:50%; bottom:8px; width:110px; height:98px; margin-left:-55px; transform-style:preserve-3d; }
@@ -924,6 +920,17 @@
     animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
   @keyframes modalSlideUp{ from{ transform: translateY(24px); opacity:0; } to{ transform: translateY(0); opacity:1; } }
+
+  /* Settings modal's scroll area (below the Theme/Glow/Playback/Equalizer/More tabs)
+     was relying on the browser's default scrollbar, which is invisible on most mobile
+     browsers and very thin/easy to miss on desktop — nothing signaled there was more
+     content below the fold. Explicit, visible scrollbar so it's clear the pane scrolls. */
+  #settingsPanesWrap{ scrollbar-width: thin; scrollbar-color: var(--ink-dim) transparent; }
+  #settingsPanesWrap::-webkit-scrollbar{ width:6px; }
+  #settingsPanesWrap::-webkit-scrollbar-track{ background:transparent; }
+  #settingsPanesWrap::-webkit-scrollbar-thumb{ background:var(--ink-dim); border-radius:3px; }
+  #settingsPanesWrap::-webkit-scrollbar-thumb:hover{ background:var(--ink); }
+
   .modal h3{ font-size:18px; }
   .modal input{
     background:var(--bg); border:1px solid var(--line); color:var(--ink);
