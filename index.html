@@ -702,19 +702,24 @@
      blur filter sitting directly over real buttons can end up swallowing taps
      even with pointer-events:none set — a known WebKit/Chromium quirk where a
      blurred, animating compositor layer doesn't always pass touches through
-     cleanly. Rather than rely on pointer-events alone, these are also kept
-     BEHIND the header/controls in stacking order (z-index below the header)
-     and pulled in from the true edges so they never geometrically paint over
-     a real button in the first place — belt and suspenders. */
+     cleanly. A fixed pixel inset alone isn't actually safe here, though: the
+     blur-band height and corner-glow size are BOTH user-adjustable sliders
+     (up to 200px and 420px respectively), and at higher settings the box grows
+     well past a small inset and squarely over the header, action-strip, and
+     tabs row — exactly where the kebab menu, tab switching, and the top-right
+     header buttons broke. So on top of the low z-index and pointer-events:none,
+     these are now hard clip-path'd to a safe zone that can't be defeated by the
+     size sliders no matter how large they're set. */
   #glowTop, #glowBottom{
     position:fixed; left:0; right:0; height:var(--glow-edge-size, 90px);
     pointer-events:none; z-index:1; opacity:0; transition:opacity 0.3s ease;
     filter: blur(var(--glow-blur, 26px));
   }
-  /* Inset from the true top/bottom edge so the band's blurred halo can't reach
-     up into the header row or down into the now-playing bar, where real
-     buttons live. */
-  #glowTop{ top:-40px; background: linear-gradient(to bottom, color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent), transparent); }
+  #glowTop{
+    top:-40px;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent), transparent);
+    clip-path: inset(0 0 calc(100% - 140px) 0);
+  }
   #glowBottom{ bottom:-40px; background: linear-gradient(to top, color-mix(in srgb, var(--gold) var(--glow-opacity, 45%), transparent), transparent); }
   #glowTop.active, #glowBottom.active{ opacity: calc(0.55 + var(--glow-pump, 0) * 0.45); }
 
@@ -723,7 +728,6 @@
     height: calc(var(--edge-glow-len-left, 0) * 1%);
     background: var(--gold);
     transform: translateY(-50%);
-    /* Same stacking fix as #edgeGlowLine above — see comment there. */
     z-index:1; pointer-events:none;
     opacity:0; transition: opacity 0.3s ease;
     border-radius:2px;
@@ -736,13 +740,26 @@
     background: radial-gradient(circle at var(--corner-origin-x,0) var(--corner-origin-y,0), color-mix(in srgb, var(--corner-hue, var(--coral)) var(--glow-opacity, 45%), transparent) 0%, transparent 72%);
   }
   .corner-glow.active{ opacity: calc(0.6 + var(--glow-pump, 0) * 0.4); }
-  /* Pulled off-corner by -60px so the glow's visual falloff still reaches the
-     corner without the element's own box ever sitting on top of the header
-     buttons (top-left/top-right) or now-playing controls (bottom corners). */
-  #cornerGlowTL{ top:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral); }
-  #cornerGlowTR{ top:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:100%; --corner-hue:var(--gold); }
-  #cornerGlowBL{ bottom:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:0%; --corner-hue:var(--gold); }
-  #cornerGlowBR{ bottom:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:0%; --corner-hue:var(--coral); }
+  /* Corner size is a slider up to 420px, so a fixed -60px inset alone can't
+     guarantee the box stays clear of the header/action-strip/tabs row (top
+     corners) or the now-playing bar (bottom corners) at larger settings.
+     Hard clip-path'd to a safe zone that holds regardless of slider value. */
+  #cornerGlowTL{
+    top:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral);
+    clip-path: inset(60px calc(100% - 200px) calc(100% - 200px) 60px);
+  }
+  #cornerGlowTR{
+    top:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:100%; --corner-hue:var(--gold);
+    clip-path: inset(60px 60px calc(100% - 200px) calc(100% - 200px));
+  }
+  #cornerGlowBL{
+    bottom:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:0%; --corner-hue:var(--gold);
+    clip-path: inset(calc(100% - 150px) calc(100% - 150px) 60px 60px);
+  }
+  #cornerGlowBR{
+    bottom:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:0%; --corner-hue:var(--coral);
+    clip-path: inset(calc(100% - 150px) 60px 60px calc(100% - 150px));
+  }
 
   #ttPopupStage{ position:relative; width:100%; height:160px; perspective:480px; margin:6px 0 4px; }
   #ttPopupStage .np-tt-3d{ position:absolute; left:50%; bottom:8px; width:110px; height:98px; margin-left:-55px; transform-style:preserve-3d; }
