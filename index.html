@@ -713,14 +713,32 @@
   #glowTop, #glowBottom{
     position:fixed; left:0; right:0; height:var(--glow-edge-size, 90px);
     pointer-events:none; z-index:1; opacity:0; transition:opacity 0.3s ease;
-    filter: blur(var(--glow-blur, 26px));
+    /* Used to also have `filter: blur(...)` and `clip-path: inset(...)` here. That
+       exact combination — position:fixed + filter + clip-path + an active opacity
+       transition, all on a layer marked pointer-events:none — is a known WebKit
+       compositor bug: the browser promotes a blurred+clipped element to its own
+       layer, and during the opacity transition (i.e. exactly while .active is
+       toggled on/off — which only happens while a song plays in RGB+) that
+       promoted layer can ignore pointer-events:none and intercept touches for as
+       long as it's actively transitioning/composited. That matches everything
+       reported: only in RGB+ (only mode using .active), only while playing (only
+       time .active is applied), only the top region (where this element and the
+       top corner-glows sit), and clearing on pause (transition ends, layer
+       demotes). Neither filter nor clip-path is used anymore — the soft falloff
+       is baked directly into the gradient's stops instead of a live blur filter. */
+    background: linear-gradient(to bottom,
+      color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent) 0%,
+      color-mix(in srgb, var(--coral) calc(var(--glow-opacity, 45%) * 0.55), transparent) 45%,
+      transparent 100%);
   }
-  #glowTop{
-    top:-40px;
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--coral) var(--glow-opacity, 45%), transparent), transparent);
-    clip-path: inset(0 0 calc(100% - 140px) 0);
+  #glowTop{ top:-40px; }
+  #glowBottom{
+    bottom:-40px;
+    background: linear-gradient(to top,
+      color-mix(in srgb, var(--gold) var(--glow-opacity, 45%), transparent) 0%,
+      color-mix(in srgb, var(--gold) calc(var(--glow-opacity, 45%) * 0.55), transparent) 45%,
+      transparent 100%);
   }
-  #glowBottom{ bottom:-40px; background: linear-gradient(to top, color-mix(in srgb, var(--gold) var(--glow-opacity, 45%), transparent), transparent); }
   #glowTop.active, #glowBottom.active{ opacity: calc(0.55 + var(--glow-pump, 0) * 0.45); }
 
   #edgeGlowLineLeft{
@@ -735,31 +753,23 @@
   #edgeGlowLineLeft.active{ opacity:1; }
 
   .corner-glow{
-    position:fixed; width:var(--corner-glow-size, 240px); height:var(--corner-glow-size, 240px);
+    position:fixed;
+    /* Real box capped with min() — no clip-path. Corner size is a slider up to
+       420px; clip-path was previously used to visually constrain the glow while
+       letting the box grow with the slider, but clip-path + fixed + pointer-events:none
+       + an active opacity transition is the exact WebKit combination that can let a
+       composited layer ignore pointer-events:none while transitioning (i.e. only
+       while .active toggles on/off — only while a song plays in RGB+). No clip-path
+       anymore; the box itself never grows past a small, genuinely safe size. */
+    width:min(var(--corner-glow-size, 240px), 160px); height:min(var(--corner-glow-size, 240px), 160px);
     pointer-events:none; z-index:1; opacity:0; transition:opacity 0.35s ease;
     background: radial-gradient(circle at var(--corner-origin-x,0) var(--corner-origin-y,0), color-mix(in srgb, var(--corner-hue, var(--coral)) var(--glow-opacity, 45%), transparent) 0%, transparent 72%);
   }
   .corner-glow.active{ opacity: calc(0.6 + var(--glow-pump, 0) * 0.4); }
-  /* Corner size is a slider up to 420px, so a fixed -60px inset alone can't
-     guarantee the box stays clear of the header/action-strip/tabs row (top
-     corners) or the now-playing bar (bottom corners) at larger settings.
-     Hard clip-path'd to a safe zone that holds regardless of slider value. */
-  #cornerGlowTL{
-    top:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral);
-    clip-path: inset(60px calc(100% - 200px) calc(100% - 200px) 60px);
-  }
-  #cornerGlowTR{
-    top:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:100%; --corner-hue:var(--gold);
-    clip-path: inset(60px 60px calc(100% - 200px) calc(100% - 200px));
-  }
-  #cornerGlowBL{
-    bottom:-60px; left:-60px; --corner-origin-x:100%; --corner-origin-y:0%; --corner-hue:var(--gold);
-    clip-path: inset(calc(100% - 150px) calc(100% - 150px) 60px 60px);
-  }
-  #cornerGlowBR{
-    bottom:-60px; right:-60px; --corner-origin-x:0%; --corner-origin-y:0%; --corner-hue:var(--coral);
-    clip-path: inset(calc(100% - 150px) 60px 60px calc(100% - 150px));
-  }
+  #cornerGlowTL{ top:-40px; left:-40px; --corner-origin-x:100%; --corner-origin-y:100%; --corner-hue:var(--coral); }
+  #cornerGlowTR{ top:-40px; right:-40px; --corner-origin-x:0%; --corner-origin-y:100%; --corner-hue:var(--gold); }
+  #cornerGlowBL{ bottom:-40px; left:-40px; --corner-origin-x:100%; --corner-origin-y:0%; --corner-hue:var(--gold); }
+  #cornerGlowBR{ bottom:-40px; right:-40px; --corner-origin-x:0%; --corner-origin-y:0%; --corner-hue:var(--coral); }
 
   #ttPopupStage{ position:relative; width:100%; height:160px; perspective:480px; margin:6px 0 4px; }
   #ttPopupStage .np-tt-3d{ position:absolute; left:50%; bottom:8px; width:110px; height:98px; margin-left:-55px; transform-style:preserve-3d; }
