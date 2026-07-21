@@ -692,16 +692,10 @@
   /* RGB+ edge glow line: one solid line centered on the right screen edge that grows/shrinks
      in length with the bass, no blur or radial fade — just a clean line that pumps. Hidden
      unless RGB+ theme is active and something is playing. --edge-glow-len is 0-100 (% of
-     viewport height) and is driven live by the same bass analyser as the turntable glow.
-     Capped with min() against 100vh minus a safe margin at top and bottom — at full length
-     (100%) this used to reach the true top and bottom edges of the screen, running straight
-     through the now-playing bar's control row (shuffle sits at the far left/right edge of
-     that row) and making the line look like it was resting on top of the button instead of
-     the row sitting cleanly below it. 130px of headroom at the bottom keeps it clear of the
-     now-playing bar in every state (mini or full); 60px at top keeps it clear of the header. */
+     viewport height) and is driven live by the same bass analyser as the turntable glow. */
   #edgeGlowLine{
     position:fixed; top:50%; right:0; width:3px;
-    height: min(calc(var(--edge-glow-len, 0) * 1%), calc(100vh - 190px));
+    height: calc(var(--edge-glow-len, 0) * 1%);
     background: var(--coral);
     transform: translateY(-50%);
     /* Was z-index:9998 — miles above the header, list, and every modal in the
@@ -766,12 +760,9 @@
   }
   #glowTop.active, #glowBottom.active{ opacity: calc(0.55 + var(--glow-pump, 0) * 0.45); }
 
-  /* Same length cap as #edgeGlowLine above — this is the line that was actually
-     overlapping the shuffle button, since shuffle sits at the left edge of the
-     now-playing bar's control row, right where this line runs. */
   #edgeGlowLineLeft{
     position:fixed; top:50%; left:0; width:3px;
-    height: min(calc(var(--edge-glow-len-left, 0) * 1%), calc(100vh - 190px));
+    height: calc(var(--edge-glow-len-left, 0) * 1%);
     background: var(--gold);
     transform: translateY(-50%);
     z-index:1; pointer-events:none;
@@ -2958,9 +2949,8 @@
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '35.8';
   const CHANGELOG = [
-    { version: '35.8', title: 'Fixed RGB+ edge glow line overlapping the shuffle button', items: [
-      'The left/right edge glow lines could grow up to 100% of the screen height when the bass hit hard, which meant at full length they ran straight through the now-playing bar\'s control row — visually right over the shuffle button (which sits at the edge of that row) instead of stopping cleanly above it',
-      'Both edge lines are now capped so they always stay clear of the now-playing bar and the header, no matter how loud the track gets',
+    { version: '35.8', title: 'Unsorted tab no longer tied to Favorites', items: [
+      'The "Unsorted" tab was being rendered piggybacked inside the same loop step that happened to reach "Favorites" — meaning its position, and whether it showed up at all, was tied to Favorites. It\'s now its own independent step tied only to "All Songs" (which always exists), so it always renders in the same place regardless of what happens with Favorites',
     ] },
     { version: '35.7', title: 'Actually fixed: top-half buttons unresponsive in RGB+ while playing', items: [
       'Found the real cause this time (confirmed with an on-screen tap diagnostic, not another guess): the small 3D turntable disc in the now-playing bar sits inside a tightly-perspectived 3D scene (a 220px perspective on a 60×50px box). That combination is a known trigger for some browsers to miscalculate hit-testing on 3D-transformed elements — the invisible turntable wrapper was being reported as the "topmost" element at tap coordinates way up near the header and tabs, nowhere near where it\'s actually drawn, only while it was actively spinning (i.e. only while playing)',
@@ -4115,11 +4105,16 @@
         renderList();
       });
       tabs.appendChild(el);
-      // "Unsorted" is a virtual, always-pinned tab right after Favorites —
-      // songs that aren't in any real (non-Favorites) playlist yet. It's
+      // "Unsorted" is a virtual, always-pinned tab rendered right after All Songs —
+      // it used to be tucked inside this same loop, appended only when the loop
+      // happened to reach "Favorites", which meant it didn't render at all if
+      // Favorites was ever hidden/removed from the iteration, and its position was
+      // tied to wherever Favorites happened to sit. It's now its own independent
+      // step with no dependency on Favorites existing or being at any particular
+      // spot — it just always renders once, right after All Songs. Still virtual:
       // computed on the fly in renderListInner, never stored as its own
       // playlists[] entry, so it can't drift out of sync or get deleted.
-      if(name === 'Favorites'){
+      if(name === 'All Songs'){
         const unsortedEl = document.createElement('div');
         unsortedEl.className = 'tab' + (activePlaylist === UNSORTED_VIEW ? ' active' : '');
         unsortedEl.textContent = 'Unsorted';
