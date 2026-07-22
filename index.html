@@ -4026,46 +4026,86 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
   }
 
-  async function loadFromDB(){
-    const [trackRows, metaRows] = await Promise.all([dbGetAll('tracks'), dbGetAll('meta')]);
+ async function loadFromDB(){
+    const [trackRows, metaRows] = await Promise.all([
+        dbGetAll('tracks'),
+        dbGetAll('meta')
+    ]);
+
     if(!trackRows.length) return false;
 
     const metaMap = {};
     metaRows.forEach(r => metaMap[r.key] = r.value);
 
-    allTracks = trackRows.map(r => ({
-      id: r.id, file: r.blob, name: r.name || 'Untitled', artist: r.artist || 'Unknown artist',
-      url: URL.createObjectURL(r.blob), duration: r.duration || null, bpm: r.bpm ?? null,
-      genre: r.genre || null, gain: r.gain ?? null, vibe: r.vibe || null, waveform: r.waveform || null,
-      playCount: r.playCount || 0, notes: r.notes || '',
-      artBlob: r.art || null, artUrl: r.art ? URL.createObjectURL(r.art) : null,
-    }));
-    playlists = metaMap.playlists || { 'All Songs': allTracks.map(t => t.id) };
-    if(!playlists['All Songs']) playlists['All Songs'] = [];
-    if(!playlists['Favorites']) playlists['Favorites'] = [];
-    // Self-heal: a track can exist in the tracks store but be missing from the saved
-    // "All Songs" list if the app closed/crashed between saving the track and saving
-    // playlists (two separate writes) — that track would otherwise be permanently
-    // invisible, since nothing renders a track that's in no playlist at all. Reconcile
-    // every load so nothing gets orphaned like that.
-    const allSongsSet = new Set(playlists['All Songs']);
-    let recovered = 0;
-    allTracks.forEach(t => {
-      if(!allSongsSet.has(t.id)){
-        playlists['All Songs'].push(t.id);
-        allSongsSet.add(t.id);
-        recovered++;
-      }
-    });
-    if(recovered > 0) dbPut('meta', { key: 'playlists', value: playlists });
-    // Note: no longer force-creating a "DJ Set" playlist — DJ Mode now works on
-    // whichever playlist you're already in. Any DJ Set a user made before this
-    // change is left alone (not deleted) since it still shows up like any playlist.
-    idCounter = metaMap.idCounter || allTracks.length;
-    lastPlaybackState = metaMap.playback || null;
-    return true;
-  }
+    // Load only real audio files
+    // Ignore broken Spotify-only entries that have no blob
+    allTracks = trackRows
+        .filter(r => r.blob)
+        .map(r => ({
+            id: r.id,
+            file: r.blob,
+            name: r.name || 'Untitled',
+            artist: r.artist || 'Unknown artist',
+            url: URL.createObjectURL(r.blob),
 
+            duration: r.duration || null,
+            bpm: r.bpm ?? null,
+            genre: r.genre || null,
+            gain: r.gain ?? null,
+            vibe: r.vibe || null,
+            waveform: r.waveform || null,
+
+            playCount: r.playCount || 0,
+            notes: r.notes || '',
+
+            artBlob: r.art || null,
+            artUrl: r.art ? URL.createObjectURL(r.art) : null,
+        }));
+
+
+    playlists = metaMap.playlists || {
+        'All Songs': allTracks.map(t => t.id)
+    };
+
+
+    if(!playlists['All Songs']){
+        playlists['All Songs'] = [];
+    }
+
+    if(!playlists['Favorites']){
+        playlists['Favorites'] = [];
+    }
+
+
+    // Recover tracks missing from All Songs
+    const allSongsSet = new Set(playlists['All Songs']);
+
+    let recovered = 0;
+
+    allTracks.forEach(t => {
+        if(!allSongsSet.has(t.id)){
+            playlists['All Songs'].push(t.id);
+            allSongsSet.add(t.id);
+            recovered++;
+        }
+    });
+
+
+    if(recovered > 0){
+        dbPut('meta', {
+            key:'playlists',
+            value:playlists
+        });
+    }
+
+
+    idCounter = metaMap.idCounter || allTracks.length;
+
+    lastPlaybackState = metaMap.playback || null;
+
+
+    return true;
+}
   function escapeHtml(s){
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
