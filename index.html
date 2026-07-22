@@ -2600,8 +2600,7 @@ async function fetchSpotifyPlaylist(spotifyUrl) {
         }
     }
 }
-
-function downloadSpotifyTracks() {
+async function downloadSpotifyTracks() {
     const tracks = window._spotifyTracks || [];
 
     if (!tracks.length) {
@@ -2609,30 +2608,48 @@ function downloadSpotifyTracks() {
         return;
     }
 
-    const trackData = tracks[0];
+    const track = tracks[0];
 
-    // Keep Spotify separate from normal SideCut songs
-    if (!window.spotifySavedTracks) {
-        window.spotifySavedTracks = [];
+    try {
+        toast("Downloading Spotify track...");
+
+        const response = await fetch(
+            "https://sidecut-backend-tlpa.onrender.com/download",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    url: track.url
+                })
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error("Download failed");
+        }
+
+        const blob = await response.blob();
+
+        const file = new File(
+            [blob],
+            `${track.artist || "Unknown"} - ${track.title || "Spotify Track"}.mp3`,
+            {
+                type: "audio/mpeg"
+            }
+        );
+
+        // Send it through SideCut's normal importer
+        handleFiles([file]);
+
+        toast("Spotify song added to library!");
+
+    } catch (error) {
+        console.error("Spotify download error:", error);
+        toast("Spotify download failed.");
     }
-
-    const spotifyTrack = {
-        id: "spotify_" + Date.now(),
-        name: trackData.title || trackData.name || "Unknown",
-        artist: trackData.artist || "Unknown Artist",
-        album: trackData.album || "",
-        artwork: trackData.artwork || "",
-        url: trackData.url || "",
-        source: "Spotify"
-    };
-
-    window.spotifySavedTracks.push(spotifyTrack);
-
-    console.log("Spotify track saved separately:", spotifyTrack);
-
-    toast("Spotify track loaded!");
 }
-
   function showSettingsTab(tab){
     $('settingsPaneTheme').style.display = tab === 'theme' ? '' : 'none';
     $('settingsPaneGlow').style.display = tab === 'glow' ? '' : 'none';
