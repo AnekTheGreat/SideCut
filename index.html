@@ -981,6 +981,91 @@
     font-size:14px; cursor:pointer; font-family:'Inter',sans-serif;
   }
   .playlist-pick-btn.already{ border-color:var(--coral); color:var(--coral); }
+  /* Download Music Tab Styles */
+.download-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.download-section .input-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.download-section .input-group input {
+  flex: 1;
+}
+.download-section .input-group button {
+  flex-shrink: 0;
+  padding: 11px 18px;
+  border-radius: 20px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  background: #1DB954;
+  color: #fff;
+  font-size: 13px;
+}
+.download-section .input-group button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.track-preview-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+}
+.track-preview-list .preview-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 4px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.track-preview-list .preview-item:last-child { border-bottom: none; }
+.track-preview-list .preview-item .status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.track-preview-list .preview-item .status.pending { background: rgba(255,255,255,0.1); color: var(--ink-dim); }
+.track-preview-list .preview-item .status.downloading { background: rgba(29, 185, 84, 0.2); color: #1DB954; animation: pulse 1s ease-in-out infinite; }
+.track-preview-list .preview-item .status.done { background: rgba(76, 175, 80, 0.2); color: #4CAF50; }
+.track-preview-list .preview-item .status.failed { background: rgba(244, 67, 54, 0.2); color: #f44336; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.download-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+.download-progress-bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1DB954, #1ed760);
+  width: 0%;
+  transition: width 0.3s ease;
+  border-radius: 2px;
+}
+
+.download-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ink-dim);
+  padding: 4px 0;
+}
+.download-stats .count { color: var(--ink); }
+
+.modal-btns .spotify-confirm { background:#1DB954; color:#fff; }
+.modal-btns .spotify-confirm:disabled { opacity:0.5; cursor:not-allowed; }
 </style>
 </head>
 <body>
@@ -1196,6 +1281,7 @@
       <button class="tab" id="settingsTabGlow" style="flex:1; text-align:center;">Glow</button>
       <button class="tab" id="settingsTabPlayback" style="flex:1; text-align:center;">Playback</button>
       <button class="tab" id="settingsTabEQ" style="flex:1; text-align:center;">Equalizer</button>
+      <button class="tab" id="settingsTabDownload" style="flex:1; text-align:center; min-width:60px; background:#1DB954; color:#fff; border-color:#1DB954;">Download Music</button>
       <button class="tab" id="settingsTabMore" style="flex:1; text-align:center;">More</button>
     </div>
 
@@ -1372,7 +1458,50 @@
       </div>
       <div style="font-size:11px; color:var(--ink-dim); margin-top:12px;">Applies to any song without its own Vibe set (see each song's ⋯ menu). Drag any band, or tap a preset to jump straight to it.</div>
     </div>
+         <!-- Download Music Pane -->
+    <div id="settingsPaneDownload" style="display:none;">
+      <div class="download-section">
+        <p style="color:var(--ink-dim); font-size:13px; margin:0 0 4px;">
+          Paste a Spotify playlist, album, or track link to download MP3 files and add them directly to your library.
+        </p>
+        
+        <div class="input-group">
+          <input type="text" id="spotifyInput" placeholder="Paste Spotify link or ID..." style="flex:1;">
+          <button id="spotifyLoadBtn" class="spotify-confirm">Load</button>
+        </div>
 
+        <div id="spotifyStatus" style="font-size:13px; color:var(--ink-dim); min-height:20px;"></div>
+
+        <div id="spotifyTracksPreview" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:14px; font-weight:600;" id="spotifyPlaylistName">Playlist</span>
+            <span style="font-size:12px; color:var(--ink-dim);" id="spotifyTrackCount">0 tracks</span>
+          </div>
+          <div class="track-preview-list" id="spotifyTrackList"></div>
+          
+          <div class="download-progress-bar">
+            <div class="fill" id="spotifyProgressFill"></div>
+          </div>
+          
+          <div class="download-stats">
+            <span id="spotifyDownloadStatus">Ready to download</span>
+            <span class="count" id="spotifyCountDisplay">0 / 0</span>
+          </div>
+          
+          <div class="modal-btns" style="margin-top:8px;">
+            <button class="cancel" id="spotifyCancelBtn" style="display:none;">Cancel</button>
+            <button class="spotify-confirm" id="spotifyDownloadBtn">
+              <i class="fas fa-download"></i> Download All as MP3
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:11px; color:var(--ink-dim);">
+          <p style="margin:0;">Tracks are downloaded as MP3 files (up to 320kbps when available) and added to your library. Your library stays local on this device.</p>
+          <p style="margin:4px 0 0;">Not affiliated with Spotify. Only download content you have the right to back up.</p>
+        </div>
+      </div>
+    </div>
     <div id="settingsPaneMore" style="display:none;">
       <div style="margin-bottom:16px;">
         <button class="playlist-pick-btn" id="howToUseBtn" style="text-align:center;">How to use SideCut</button>
@@ -2308,24 +2437,45 @@
     $('settingsPaneGlow').style.display = tab === 'glow' ? '' : 'none';
     $('settingsPanePlayback').style.display = tab === 'playback' ? '' : 'none';
     $('settingsPaneEQ').style.display = tab === 'eq' ? '' : 'none';
+    $('settingsPaneDownload').style.display = tab === 'download' ? '' : 'none';
     $('settingsPaneMore').style.display = tab === 'more' ? '' : 'none';
     if(tab === 'glow') renderGlowControls();
     $('settingsTabTheme').classList.toggle('active', tab === 'theme');
     $('settingsTabGlow').classList.toggle('active', tab === 'glow');
     $('settingsTabPlayback').classList.toggle('active', tab === 'playback');
     $('settingsTabEQ').classList.toggle('active', tab === 'eq');
+    $('settingsTabDownload').classList.toggle('active', tab === 'download');
     $('settingsTabMore').classList.toggle('active', tab === 'more');
     if(tab === 'more') renderVersionSnapshots();
-  }
-  $('settingsTabTheme').addEventListener('click', () => showSettingsTab('theme'));
-  $('settingsTabGlow').addEventListener('click', () => showSettingsTab('glow'));
-  $('settingsTabPlayback').addEventListener('click', () => showSettingsTab('playback'));
-  $('settingsTabEQ').addEventListener('click', () => showSettingsTab('eq'));
-  $('settingsTabMore').addEventListener('click', () => showSettingsTab('more'));
-  $('themeBtn').addEventListener('click', () => { renderThemeOptions(); populateStartFromOptions(); showSettingsTab('theme'); $('themeBackdrop').style.display = 'flex'; });
-  $('themeCancel').addEventListener('click', () => { applyTheme(currentTheme); $('themeBackdrop').style.display = 'none'; });
-  $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBackdrop')){ applyTheme(currentTheme); $('themeBackdrop').style.display = 'none'; } });
-
+    
+    // Initialize Spotify input when Download tab is opened
+    if(tab === 'download'){
+        const spotifyInput = $('spotifyInput');
+        if(spotifyInput && !spotifyInput._listener){
+            spotifyInput._listener = true;
+            spotifyInput.addEventListener('keydown', (e) => {
+                if(e.key === 'Enter') {
+                    const url = spotifyInput.value.trim();
+                    if(url) fetchSpotifyPlaylist(url);
+                }
+            });
+            $('spotifyLoadBtn').addEventListener('click', () => {
+                const url = $('spotifyInput').value.trim();
+                if(url) fetchSpotifyPlaylist(url);
+            });
+            $('spotifyDownloadBtn').addEventListener('click', downloadSpotifyTracks);
+        }
+    }
+}
+$('settingsTabTheme').addEventListener('click', () => showSettingsTab('theme'));
+$('settingsTabGlow').addEventListener('click', () => showSettingsTab('glow'));
+$('settingsTabPlayback').addEventListener('click', () => showSettingsTab('playback'));
+$('settingsTabEQ').addEventListener('click', () => showSettingsTab('eq'));
+$('settingsTabDownload').addEventListener('click', () => showSettingsTab('download'));
+$('settingsTabMore').addEventListener('click', () => showSettingsTab('more'));
+$('themeBtn').addEventListener('click', () => { renderThemeOptions(); populateStartFromOptions(); showSettingsTab('theme'); $('themeBackdrop').style.display = 'flex'; });
+$('themeCancel').addEventListener('click', () => { applyTheme(currentTheme); $('themeBackdrop').style.display = 'none'; });
+$('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBackdrop')){ applyTheme(currentTheme); $('themeBackdrop').style.display = 'none'; } });
   // ---------------- Custom theme builder ----------------
   // Every field (color swatch + hex text) stays in sync both ways, and any change
   // previews live across the whole app immediately — no more guessing from 4 tiny swatches.
