@@ -3411,8 +3411,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '35.8';
+  const APP_VERSION = '36';
   const CHANGELOG = [
+    { version: '36', title: 'Auto-fetch covers & metadata for songs missing them', items: [
+      'The app now automatically fills in missing album art, artist, and title for your songs by looking them up on the SideCut backend (Spotify search) — no button to press, it just runs quietly in the background after your library loads and after you import new files',
+      'Progress shows up in the notifications bell: open it to see a live "Fetching song details… X/Y" bar, and a summary of how many songs got updated when it finishes',
+      'Only songs that are actually missing a cover or artist get looked up, and each song is only attempted once, so it won\'t re-hit the network on every launch or touch songs that already have full details',
+      'Anything already tagged locally (embedded album art / artist) is kept as-is and takes priority — the lookup only fills in the gaps',
+    ] },
     { version: '35.8', title: 'Unsorted tab no longer tied to Favorites', items: [
       'The "Unsorted" tab was being rendered piggybacked inside the same loop step that happened to reach "Favorites" — meaning its position, and whether it showed up at all, was tied to Favorites. It\'s now its own independent step tied only to "All Songs" (which always exists), so it always renders in the same place regardless of what happens with Favorites',
     ] },
@@ -3836,11 +3842,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const badge = $('notifBadge');
     if(!badge) return;
     const hasDupAlert = typeof getDuplicateGroups === 'function' && getDuplicateGroups().length > 0;
-    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert) ? 'block' : 'none';
+    const hasEnrichAlert = enrichState.active || (enrichState.finishedAt && !enrichState.seen);
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert) ? 'block' : 'none';
   }
   function renderNotifPanel(){
     const body = $('notifBody');
-    let html = '';
+    let html = enrichNotifHtml();
     const dupGroups = (typeof getDuplicateGroups === 'function') ? getDuplicateGroups() : [];
     if(dupGroups.length){
       const totalExtra = dupGroups.reduce((sum,g) => sum + g.length - 1, 0);
@@ -3864,6 +3871,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(dupEntry) dupEntry.addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; findDuplicates(); });
   }
   $('notifBtn').addEventListener('click', () => {
+    enrichState.seen = true;
     renderNotifPanel();
     $('notifBackdrop').style.display = 'flex';
     notifLastReadVersion = APP_VERSION;
@@ -3872,6 +3880,132 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
   $('notifClose').addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; });
   $('notifBackdrop').addEventListener('click', e => { if(e.target === $('notifBackdrop')) $('notifBackdrop').style.display = 'none'; });
+
+  // ---------------- Auto metadata enrichment ------------------------------------
+  // Fill in missing covers + artist/title for songs that lack them, using the
+  // SideCut backend's Spotify search (POST /search-metadata). Runs automatically
+  // after the library loads and after imports; each song is attempted at most
+  // once (tracked in the meta store) so we never re-hit the API for it. Progress
+  // is surfaced in the notifications bell.
+  const ENRICH_ENDPOINT = SPOTIFY_API_BASE + '/search-metadata';
+  const ENRICH_BATCH = 20;
+  let enrichAttemptedIds = new Set();
+  let enrichState = { active:false, total:0, done:0, updated:0, failed:0, finishedAt:0, seen:true };
+
+  async function loadEnrichState(){
+    try{
+      const rows = await dbGetAll('meta');
+      const row = rows.find(r => r.key === 'enrichAttemptedIds');
+      enrichAttemptedIds = new Set(Array.isArray(row && row.value) ? row.value : []);
+    }catch(e){ enrichAttemptedIds = new Set(); }
+  }
+  function saveEnrichAttempted(){
+    dbPut('meta', { key: 'enrichAttemptedIds', value: Array.from(enrichAttemptedIds) });
+  }
+
+  // A song "needs" enrichment when it's missing cover art or has no real artist.
+  function songNeedsMetadata(t){
+    return !t.artBlob || !t.artist || t.artist === 'Unknown artist';
+  }
+  // Build the search text from whatever the song already has.
+  function enrichQueryFor(t){
+    const title = (t.name && t.name !== 'Untitled') ? t.name : '';
+    const artist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
+    return `${artist} ${title}`.trim();
+  }
+
+  // Apply a backend search result to a track — only fills gaps, never overwrites
+  // details the song already has. Returns true if anything changed.
+  async function applyEnrichment(t, r){
+    let changed = false;
+    if((!t.artist || t.artist === 'Unknown artist') && r.artist){ t.artist = r.artist; changed = true; }
+    if((!t.name || t.name === 'Untitled') && r.title){ t.name = r.title; changed = true; }
+    if(!t.artBlob && r.artwork){
+      try{
+        const imgResp = await fetch(r.artwork);
+        if(imgResp.ok){
+          const blob = await imgResp.blob();
+          if(blob && blob.size > 100){
+            t.artBlob = blob;
+            if(t.artUrl){ try{ URL.revokeObjectURL(t.artUrl); }catch(e){} }
+            t.artUrl = URL.createObjectURL(blob);
+            changed = true;
+          }
+        }
+      }catch(e){ /* cover fetch is best-effort — artist/title still apply */ }
+    }
+    if(changed){
+      persistTrackMeta(t);
+      if(queue[queueIndex] === t.id) updateNowPlayingArt(t);
+    }
+    return changed;
+  }
+
+  function enrichNotifHtml(){
+    if(enrichState.active){
+      const pct = enrichState.total ? Math.round((enrichState.done / enrichState.total) * 100) : 0;
+      return `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">Fetching song details…</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Looking up covers &amp; metadata — ${enrichState.done}/${enrichState.total} songs</div>
+          <div style="height:6px; background:var(--bg-raised); border-radius:3px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>
+        </div>`;
+    }
+    if(enrichState.finishedAt){
+      const msg = enrichState.updated > 0
+        ? `Updated ${enrichState.updated} song${enrichState.updated>1?'s':''} with covers &amp; metadata.`
+        : `Checked ${enrichState.total} song${enrichState.total>1?'s':''} — nothing new to add.`;
+      return `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px;">✓ Song details updated</div>
+          <div style="font-size:12px; color:var(--ink-dim);">${msg}</div>
+        </div>`;
+    }
+    return '';
+  }
+
+  function refreshEnrichNotif(){
+    updateNotifBadge();
+    if($('notifBackdrop') && $('notifBackdrop').style.display === 'flex') renderNotifPanel();
+  }
+
+  async function runAutoEnrich(){
+    if(enrichState.active) return;
+    if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    const candidates = allTracks.filter(t => !enrichAttemptedIds.has(t.id) && songNeedsMetadata(t) && enrichQueryFor(t));
+    if(!candidates.length) return;
+    enrichState = { active:true, total:candidates.length, done:0, updated:0, failed:0, finishedAt:0, seen:false };
+    refreshEnrichNotif();
+
+    for(let i=0;i<candidates.length;i+=ENRICH_BATCH){
+      const chunk = candidates.slice(i, i+ENRICH_BATCH);
+      let results = [];
+      try{
+        const resp = await fetch(ENRICH_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: chunk.map(t => ({ query: enrichQueryFor(t) })) }),
+        });
+        if(resp.ok){ const data = await resp.json(); results = (data && data.results) || []; }
+      }catch(e){ results = []; }
+
+      for(let j=0;j<chunk.length;j++){
+        const t = chunk[j], r = results[j];
+        enrichAttemptedIds.add(t.id);
+        try{ if(r && r.found && await applyEnrichment(t, r)) enrichState.updated++; }
+        catch(e){ enrichState.failed++; }
+        enrichState.done++;
+      }
+      saveEnrichAttempted();
+      renderList();
+      refreshEnrichNotif();
+    }
+
+    enrichState.active = false;
+    enrichState.finishedAt = Date.now();
+    if(enrichState.updated > 0) toast(`Added covers/details to ${enrichState.updated} song${enrichState.updated>1?'s':''}`);
+    refreshEnrichNotif();
+  }
 
   let idCounter = 0;
   let isMixMode = false;
@@ -4404,6 +4538,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           if(queue[queueIndex] === t.id) updateNowPlayingArt(t);
         });
       });
+      // Once local tag extraction has had a moment to fill in what it can,
+      // look up covers/metadata for anything still missing them.
+      setTimeout(() => { runAutoEnrich(); }, 4000);
     } else if(skippedDup && !skippedType){
       toast(`All ${skippedDup} file${skippedDup>1?'s were':' was'} already in your library`);
     } else if(skippedType && !skippedDup){
@@ -8023,6 +8160,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // once the library/UI has settled, rather than flashing in instantly
       // alongside other boot toasts and getting dismissed on reflex.
       setTimeout(() => { checkForUpdatePopup(); }, 900);
+
+      // Auto-fill missing covers/metadata in the background once the library
+      // has settled (each song is only ever attempted once).
+      await loadEnrichState();
+      if(loaded) setTimeout(() => { runAutoEnrich(); }, 2500);
     }catch(e){
       console.error('Auto-load failed', e);
     }
