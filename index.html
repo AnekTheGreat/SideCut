@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head> 
@@ -2589,12 +2588,8 @@ async function fetchSpotifyPlaylist(spotifyUrl) {
     try {
         const response = await fetch(`${SPOTIFY_API_BASE}/metadata`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                url: spotifyUrl
-            })
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: spotifyUrl })
         });
 
         const data = await response.json();
@@ -2603,81 +2598,76 @@ async function fetchSpotifyPlaylist(spotifyUrl) {
             throw new Error(data.error || "Failed to load Spotify data");
         }
 
-        const track = {
-            name: data.id,
-            title: data.title || "Unknown",
-            artist: data.artist || "Unknown",
-            album: data.album || "",
-            artwork: data.artwork || "",
-            url: spotifyUrl
-        };
-
-        window._spotifyTracks = [track];
-
-        if (nameEl) {
-            nameEl.textContent = track.title;
+        // Build track list — albums and playlists return a tracks array
+        let trackList = [];
+        if (data.tracks && data.tracks.length > 0) {
+            // Album or playlist — multiple tracks
+            trackList = data.tracks.map(t => ({
+                title: t.title || "Unknown",
+                artist: t.artist || "Unknown",
+                album: data.album || data.title || "",
+                artwork: data.artwork || t.artwork || "",
+                url: t.spotifyUrl || spotifyUrl,
+                spotifyId: t.spotifyId || ""
+            }));
+        } else {
+            // Single track
+            trackList = [{
+                title: data.title || "Unknown",
+                artist: data.artist || "Unknown",
+                album: data.album || "",
+                artwork: data.artwork || "",
+                url: spotifyUrl
+            }];
         }
 
-        if (countEl) {
-            countEl.textContent = "1 track";
-        }
+        window._spotifyTracks = trackList;
 
-        const div = document.createElement("div");
-        div.className = "preview-item";
+        if (nameEl) nameEl.textContent = data.title || "Unknown";
+        if (countEl) countEl.textContent = trackList.length + (trackList.length === 1 ? " track" : " tracks");
 
-        div.innerHTML = `
-            <span>
-                ${escapeHtml(track.artist)} - ${escapeHtml(track.title)}
-            </span>
-            <span class="status done">
-                ✓ Ready
-            </span>
-        `;
+        // Render track list preview
+        trackList.forEach((track, i) => {
+            const div = document.createElement("div");
+            div.className = "preview-item";
+            div.id = "spotify-track-" + i;
+            div.innerHTML = `
+                <span>${escapeHtml(track.artist)} - ${escapeHtml(track.title)}</span>
+                <span class="status done">✓ Ready</span>
+            `;
+            listEl.appendChild(div);
+        });
 
-        listEl.appendChild(div);
-
-        if (previewEl) {
-            previewEl.style.display = "block";
-        }
-
-        if (statusEl) {
-            statusEl.textContent = "Spotify metadata loaded.";
-        }
-
+        if (previewEl) previewEl.style.display = "block";
+        if (statusEl) statusEl.textContent = "Spotify metadata loaded.";
         if (downloadBtn) {
             downloadBtn.disabled = false;
-            downloadBtn.textContent = "Add To Library";
+            downloadBtn.textContent = trackList.length > 1 ? "Download All" : "Add To Library";
         }
 
     } catch (err) {
         console.error("Spotify error:", err);
-
-        if (statusEl) {
-            statusEl.textContent = "Error: " + err.message;
-        }
-
+        if (statusEl) statusEl.textContent = "Error: " + err.message;
         if (downloadBtn) {
             downloadBtn.disabled = true;
             downloadBtn.textContent = "Add To Library";
         }
     }
 }
+
 async function downloadSpotifyTracks() {
     const tracks = window._spotifyTracks || [];
-
     if (!tracks.length) {
         toast("No Spotify track loaded.");
         return;
     }
 
-    const track = tracks[0];
     const downloadBtn = document.getElementById('spotifyDownloadBtn');
     const statusEl = document.getElementById('spotifyStatus');
     const progressFill = document.getElementById('spotifyProgressFill');
     const dlStatus = document.getElementById('spotifyDownloadStatus');
     const countDisplay = document.getElementById('spotifyCountDisplay');
 
-    // Disable button and show loading state
     if (downloadBtn) {
         downloadBtn.disabled = true;
         downloadBtn.innerHTML = '<span class="dl-spinner"></span> Downloading...';
@@ -2686,61 +2676,74 @@ async function downloadSpotifyTracks() {
     }
     if (statusEl) statusEl.textContent = '';
     if (dlStatus) dlStatus.textContent = 'Fetching from YouTube...';
-    if (progressFill) progressFill.style.width = '15%';
+    if (progressFill) progressFill.style.width = '5%';
 
-    // Show a pulse to indicate the connection is being established
-    let pulseTimer = setInterval(() => {
-        if (progressFill && parseFloat(progressFill.style.width) < 85) {
-            progressFill.style.width = (parseFloat(progressFill.style.width) + 2) + '%';
+    let succeeded = 0;
+    let failed = 0;
+    const total = tracks.length;
+
+    for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+        const trackRow = document.getElementById('spotify-track-' + i);
+        const pct = total > 1 ? Math.round((i / total) * 100) : 15;
+        if (progressFill) progressFill.style.width = pct + '%';
+        if (dlStatus) dlStatus.textContent = `Downloading ${i + 1}/${total}: ${track.title}`;
+        if (trackRow) {
+            trackRow.querySelector('.status').className = 'status downloading';
+            trackRow.querySelector('.status').textContent = '⏳ Downloading...';
         }
-    }, 2000);
 
-    try {
-        const response = await fetch(
-            "https://sidecut-backend-tlpa.onrender.com/download",
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url: track.url })
+        try {
+            const response = await fetch(
+                "https://sidecut-backend-tlpa.onrender.com/download",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: track.url })
+                }
+            );
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || "Download failed (server error)");
             }
-        );
 
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || "Download failed (server error)");
+            const blob = await response.blob();
+            const file = new File(
+                [blob],
+                `${track.artist || "Unknown"} - ${track.title || "Spotify Track"}.mp3`,
+                { type: "audio/mpeg" }
+            );
+            handleFiles([file]);
+            succeeded++;
+            if (trackRow) {
+                trackRow.querySelector('.status').className = 'status done';
+                trackRow.querySelector('.status').textContent = '✓ Done';
+            }
+            toast(`Added: ${track.title}`);
+        } catch (error) {
+            console.error("Spotify download error:", error);
+            failed++;
+            if (trackRow) {
+                trackRow.querySelector('.status').className = 'status done';
+                trackRow.querySelector('.status').textContent = '✗ Failed';
+            }
+            toast(`Failed: ${track.title} — ${error.message}`);
         }
 
-        if (progressFill) progressFill.style.width = '90%';
-        if (dlStatus) dlStatus.textContent = 'Receiving audio data...';
+        // Small delay between downloads to avoid rate limiting
+        if (i < tracks.length - 1) await new Promise(r => setTimeout(r, 1000));
+    }
 
-        const blob = await response.blob();
+    if (progressFill) progressFill.style.width = '100%';
+    if (dlStatus) dlStatus.textContent = `Done! ${succeeded} succeeded, ${failed} failed`;
+    if (statusEl) statusEl.textContent = `${succeeded}/${total} tracks downloaded successfully.`;
 
-        if (progressFill) progressFill.style.width = '100%';
-        if (dlStatus) dlStatus.textContent = 'Done!';
-
-        const file = new File(
-            [blob],
-            `${track.artist || "Unknown"} - ${track.title || "Spotify Track"}.mp3`,
-            { type: "audio/mpeg" }
-        );
-
-        handleFiles([file]);
-        toast("Added to library: " + (track.title || "track"));
-
-    } catch (error) {
-        console.error("Spotify download error:", error);
-        const msg = error.message || "Download failed";
-        toast(msg.includes("timeout") || msg.includes("Failed to fetch") ? "Download timed out — the server may be starting up. Try again in 30 seconds." : "Download failed: " + msg);
-        if (dlStatus) dlStatus.textContent = 'Failed';
-        if (progressFill) progressFill.style.width = '0%';
-    } finally {
-        clearInterval(pulseTimer);
-        if (downloadBtn) {
-            downloadBtn.disabled = false;
-            downloadBtn.innerHTML = '<i class="fas fa-download"></i> Add To Library';
-            downloadBtn.style.background = '';
-            downloadBtn.style.color = '';
-        }
+    if (downloadBtn) {
+        downloadBtn.disabled = false;
+        downloadBtn.innerHTML = '<i class="fas fa-download"></i> Add To Library';
+        downloadBtn.style.background = '';
+        downloadBtn.style.color = '';
     }
 }
   function showSettingsTab(tab){
