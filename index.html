@@ -2091,6 +2091,7 @@
   // once you've imported your files the first time, they auto-load
   // every time you reopen the page, no re-picking needed.
   let allTracks = [];      // { id, file, name, artist, url, duration }
+  let downloadCancelled = false;
   let searchQuery = '';    // live search filter, lowercase
   let playlists = { 'All Songs': [], 'Favorites': [] }; // name -> array of track ids
   const UNSORTED_VIEW = '__unsorted__'; // virtual tab: tracks not in any real playlist besides All Songs
@@ -2729,6 +2730,8 @@ async function downloadSpotifyTracks() {
         downloadBtn.style.background = 'var(--bg)';
         downloadBtn.style.color = 'var(--ink-dim)';
     }
+    const cancelBtn = document.getElementById('spotifyCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'block';
     if (statusEl) statusEl.textContent = '';
     if (dlStatus) dlStatus.textContent = 'Fetching from YouTube...';
     if (progressFill) progressFill.style.width = '5%';
@@ -2830,6 +2833,9 @@ async function downloadSpotifyTracks() {
     if (dlStatus) dlStatus.textContent = `Done! ${succeeded} succeeded, ${failed} failed`;
     if (statusEl) statusEl.textContent = `${succeeded}/${total} tracks downloaded successfully.`;
 
+    const cancelBtn = document.getElementById('spotifyCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    
     if (downloadBtn) {
         downloadBtn.disabled = false;
         downloadBtn.innerHTML = '<i class="fas fa-download"></i> Add To Library';
@@ -2848,8 +2854,13 @@ async function downloadSpotifyTracks() {
 async function downloadIndividually(tracks, apiBase, state) {
     let { succeeded, failed, failedTracks, dlStatus, progressFill, downloadBtn, statusEl } = state;
     const total = tracks.length;
+    downloadCancelled = false;
     
     for (let i = 0; i < tracks.length; i++) {
+        if (downloadCancelled) {
+            if (dlStatus) dlStatus.textContent = 'Download cancelled';
+            break;
+        }
         const track = tracks[i];
         const trackRow = document.getElementById('spotify-track-' + i);
         const pct = total > 1 ? Math.round((i / total) * 100) : 15;
@@ -2863,7 +2874,7 @@ async function downloadIndividually(tracks, apiBase, state) {
         let retries = 2;
         let success = false;
         
-        while (retries > 0 && !success) {
+        while (retries > 0 && !success && !downloadCancelled) {
             try {
                 const response = await fetch(`${apiBase}/download`, {
                     method: "POST",
@@ -2915,8 +2926,12 @@ async function downloadIndividually(tracks, apiBase, state) {
         }
 
         // Small delay between downloads to avoid rate limiting
-        if (i < tracks.length - 1) await new Promise(r => setTimeout(r, 1500));
+        if (!downloadCancelled && i < tracks.length - 1) await new Promise(r => setTimeout(r, 1500));
     }
+    
+    // Hide cancel button when done
+    const cancelBtn = document.getElementById('spotifyCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
 }
   function showSettingsTab(tab){
     $('settingsPaneTheme').style.display = tab === 'theme' ? '' : 'none';
@@ -2950,6 +2965,10 @@ async function downloadIndividually(tracks, apiBase, state) {
                 if(url) fetchSpotifyPlaylist(url);
             });
             $('spotifyDownloadBtn').addEventListener('click', downloadSpotifyTracks);
+            $('spotifyCancelBtn').addEventListener('click', () => {
+                downloadCancelled = true;
+                toast('Cancelling download...');
+            });
         }
     }
 }
