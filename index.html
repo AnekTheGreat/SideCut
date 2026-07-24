@@ -2565,11 +2565,14 @@
   // ---- SPOTIFY IMPORT FUNCTIONS ----
 // PUT THIS AT THE TOP OF YOUR SCRIPT, BEFORE showSettingsTab
 
-// Make API URL configurable - allows users to set their own backend
+// Make API URL and Key configurable - allows users to set their own backend
 const SPOTIFY_API_BASE = (function() {
-    // Check localStorage first, then fall back to default
     const stored = localStorage.getItem('sidecut_api_base');
     return stored || 'https://sidecut-backend-tlpa.onrender.com';
+})();
+
+const API_KEY = (function() {
+    return localStorage.getItem('sidecut_api_key') || '';
 })();
 
 function setSpotifyApiBase(url) {
@@ -2579,8 +2582,28 @@ function setSpotifyApiBase(url) {
     }
 }
 
+function setSpotifyApiKey(key) {
+    if (key) {
+        localStorage.setItem('sidecut_api_key', key);
+        window._spotifyApiKey = key;
+    }
+}
+
 function getSpotifyApiBase() {
     return window._spotifyApiBase || SPOTIFY_API_BASE;
+}
+
+function getSpotifyApiKey() {
+    return window._spotifyApiKey || API_KEY;
+}
+
+function getApiHeaders() {
+    const headers = { "Content-Type": "application/json" };
+    const key = getSpotifyApiKey();
+    if (key) {
+        headers["x-api-key"] = key;
+    }
+    return headers;
 }
 
 async function fetchSpotifyPlaylist(spotifyUrl) {
@@ -2605,7 +2628,7 @@ async function fetchSpotifyPlaylist(spotifyUrl) {
     try {
         const response = await fetch(`${apiBase}/metadata`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getApiHeaders(),
             body: JSON.stringify({ url: spotifyUrl })
         });
 
@@ -2726,7 +2749,7 @@ async function downloadSpotifyTracks() {
             
             const response = await fetch(`${apiBase}/download-batch`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: getApiHeaders(),
                 body: JSON.stringify({ tracks: tracks.map(t => ({
                     spotifyUrl: t.url,
                     title: t.title,
@@ -2844,7 +2867,7 @@ async function downloadIndividually(tracks, apiBase, state) {
             try {
                 const response = await fetch(`${apiBase}/download`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: getApiHeaders(),
                     body: JSON.stringify({ url: track.url })
                 });
 
@@ -4132,7 +4155,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       try{
         const resp = await fetch(ENRICH_ENDPOINT, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getApiHeaders(),
           body: JSON.stringify({ items: chunk.map(t => ({ query: enrichQueryFor(t) })) }),
         });
         if(resp.ok){ const data = await resp.json(); results = (data && data.results) || []; }
