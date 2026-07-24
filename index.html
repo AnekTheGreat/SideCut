@@ -2565,14 +2565,11 @@
   // ---- SPOTIFY IMPORT FUNCTIONS ----
 // PUT THIS AT THE TOP OF YOUR SCRIPT, BEFORE showSettingsTab
 
-// Make API URL and Key configurable - allows users to set their own backend
+// Make API URL configurable - allows users to set their own backend
 const SPOTIFY_API_BASE = (function() {
+    // Check localStorage first, then fall back to default
     const stored = localStorage.getItem('sidecut_api_base');
     return stored || 'https://sidecut-backend-tlpa.onrender.com';
-})();
-
-const API_KEY = (function() {
-    return localStorage.getItem('sidecut_api_key') || '';
 })();
 
 function setSpotifyApiBase(url) {
@@ -2582,28 +2579,8 @@ function setSpotifyApiBase(url) {
     }
 }
 
-function setSpotifyApiKey(key) {
-    if (key) {
-        localStorage.setItem('sidecut_api_key', key);
-        window._spotifyApiKey = key;
-    }
-}
-
 function getSpotifyApiBase() {
     return window._spotifyApiBase || SPOTIFY_API_BASE;
-}
-
-function getSpotifyApiKey() {
-    return window._spotifyApiKey || API_KEY;
-}
-
-function getApiHeaders() {
-    const headers = { "Content-Type": "application/json" };
-    const key = getSpotifyApiKey();
-    if (key) {
-        headers["x-api-key"] = key;
-    }
-    return headers;
 }
 
 async function fetchSpotifyPlaylist(spotifyUrl) {
@@ -2628,7 +2605,7 @@ async function fetchSpotifyPlaylist(spotifyUrl) {
     try {
         const response = await fetch(`${apiBase}/metadata`, {
             method: "POST",
-            headers: getApiHeaders(),
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url: spotifyUrl })
         });
 
@@ -2717,7 +2694,6 @@ async function downloadSpotifyTracks() {
     }
 
     const downloadBtn = document.getElementById('spotifyDownloadBtn');
-    const cancelBtn = document.getElementById('spotifyCancelBtn');
     const statusEl = document.getElementById('spotifyStatus');
     const progressFill = document.getElementById('spotifyProgressFill');
     const dlStatus = document.getElementById('spotifyDownloadStatus');
@@ -2730,7 +2706,6 @@ async function downloadSpotifyTracks() {
         downloadBtn.style.background = 'var(--bg)';
         downloadBtn.style.color = 'var(--ink-dim)';
     }
-    if (cancelBtn) cancelBtn.style.display = 'block';
     if (statusEl) statusEl.textContent = '';
     if (dlStatus) dlStatus.textContent = 'Fetching from YouTube...';
     if (progressFill) progressFill.style.width = '5%';
@@ -2751,7 +2726,7 @@ async function downloadSpotifyTracks() {
             
             const response = await fetch(`${apiBase}/download-batch`, {
                 method: "POST",
-                headers: getApiHeaders(),
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ tracks: tracks.map(t => ({
                     spotifyUrl: t.url,
                     title: t.title,
@@ -2832,9 +2807,6 @@ async function downloadSpotifyTracks() {
     if (dlStatus) dlStatus.textContent = `Done! ${succeeded} succeeded, ${failed} failed`;
     if (statusEl) statusEl.textContent = `${succeeded}/${total} tracks downloaded successfully.`;
 
-    const cancelBtn = document.getElementById('spotifyCancelBtn');
-    if (cancelBtn) cancelBtn.style.display = 'none';
-    
     if (downloadBtn) {
         downloadBtn.disabled = false;
         downloadBtn.innerHTML = '<i class="fas fa-download"></i> Add To Library';
@@ -2850,22 +2822,11 @@ async function downloadSpotifyTracks() {
     }
 }
 
-// Track download state for cancellation
-let downloadCancelled = false;
-let currentDownloadId = null;
-
 async function downloadIndividually(tracks, apiBase, state) {
     let { succeeded, failed, failedTracks, dlStatus, progressFill, downloadBtn, statusEl } = state;
     const total = tracks.length;
-    downloadCancelled = false;
     
     for (let i = 0; i < tracks.length; i++) {
-        if (downloadCancelled) {
-            if (dlStatus) dlStatus.textContent = 'Download cancelled';
-            toast('Download cancelled by user');
-            break;
-        }
-        
         const track = tracks[i];
         const trackRow = document.getElementById('spotify-track-' + i);
         const pct = total > 1 ? Math.round((i / total) * 100) : 15;
@@ -2876,18 +2837,14 @@ async function downloadIndividually(tracks, apiBase, state) {
             trackRow.querySelector('.status').textContent = '⏳ Downloading...';
         }
 
-        // Extract track ID from Spotify URL
-        const trackId = track.url.split('/track/')[1]?.split('?')[0] || track.spotifyId || `track_${i}_${Date.now()}`;
-        currentDownloadId = trackId;
-
         let retries = 2;
         let success = false;
         
-        while (retries > 0 && !success && !downloadCancelled) {
+        while (retries > 0 && !success) {
             try {
                 const response = await fetch(`${apiBase}/download`, {
                     method: "POST",
-                    headers: getApiHeaders(),
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ url: track.url })
                 });
 
@@ -2903,8 +2860,6 @@ async function downloadIndividually(tracks, apiBase, state) {
                         userMsg = "Rate limited by YouTube. Wait a moment and try again.";
                     } else if (errorMsg.includes("unavailable")) {
                         userMsg = "Video unavailable or age-restricted.";
-                    } else if (errorMsg.includes("cancelled")) {
-                        userMsg = "Download cancelled.";
                     }
                     
                     if (retries === 1) throw new Error(userMsg);
@@ -2917,7 +2872,6 @@ async function downloadIndividually(tracks, apiBase, state) {
                 saveBlobAsFile(blob, `${track.artist || "Unknown"} - ${track.title || "Track"}.mp3`);
                 succeeded++;
                 success = true;
-                currentDownloadId = null;
                 if (trackRow) {
                     trackRow.querySelector('.status').className = 'status done';
                     trackRow.querySelector('.status').textContent = '✓ Done';
@@ -2925,51 +2879,20 @@ async function downloadIndividually(tracks, apiBase, state) {
                 toast(`Added: ${track.title}`);
             } catch (error) {
                 console.error("Spotify download error:", error);
-                if (downloadCancelled) {
-                    toast('Download cancelled');
-                    break;
-                }
                 if (retries === 1) {
                     failed++;
                     failedTracks.push(track);
-                    currentDownloadId = null;
                     if (trackRow) {
                         trackRow.querySelector('.status').className = 'status done';
                         trackRow.querySelector('.status').textContent = '✗ Failed';
                     }
-                    toast(`Failed: ${track.title} — ${error.message.substring(0, 80)}`);
-                } else {
-                    retries--;
+                    toast(`Failed: ${track.title} — ${error.message.substring(0, 50)}`);
                 }
             }
         }
 
         // Small delay between downloads to avoid rate limiting
-        if (i < tracks.length - 1 && !downloadCancelled) await new Promise(r => setTimeout(r, 1500));
-    }
-    currentDownloadId = null;
-    
-    // Hide cancel button when done
-    const cancelBtn = document.getElementById('spotifyCancelBtn');
-    if (cancelBtn) cancelBtn.style.display = 'none';
-}
-
-// Cancel current download
-async function cancelCurrentDownload() {
-    if (currentDownloadId) {
-        downloadCancelled = true;
-        const apiBase = getSpotifyApiBase();
-        try {
-            await fetch(`${apiBase}/download-cancel/${currentDownloadId}`, {
-                method: "POST",
-                headers: getApiHeaders()
-            });
-        } catch (e) {
-            console.log("Cancel request sent");
-        }
-        toast('Cancelling download...');
-    } else {
-        toast('No active download to cancel');
+        if (i < tracks.length - 1) await new Promise(r => setTimeout(r, 1500));
     }
 }
   function showSettingsTab(tab){
@@ -3004,7 +2927,6 @@ async function cancelCurrentDownload() {
                 if(url) fetchSpotifyPlaylist(url);
             });
             $('spotifyDownloadBtn').addEventListener('click', downloadSpotifyTracks);
-            $('spotifyCancelBtn').addEventListener('click', cancelCurrentDownload);
         }
     }
 }
@@ -4210,7 +4132,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       try{
         const resp = await fetch(ENRICH_ENDPOINT, {
           method: 'POST',
-          headers: getApiHeaders(),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ items: chunk.map(t => ({ query: enrichQueryFor(t) })) }),
         });
         if(resp.ok){ const data = await resp.json(); results = (data && data.results) || []; }
