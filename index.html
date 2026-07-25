@@ -3977,8 +3977,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '40.5';
+  const APP_VERSION = '40.6';
   const CHANGELOG = [
+    { version: '40.6', date: 'July 25th, 2026 at 6:05 pm EDT', title: 'Debug export/import and data persistence', items: [
+      'Added console.log debugging for stats export and import',
+      'Stats now update in-memory variables after import',
+      'Added debugging for IndexedDB load to track data persistence',
+      'Toast now shows restored stats count after import',
+    ] },
     { version: '40.5', date: 'July 25th, 2026 at 5:55 pm EDT', title: 'Fix export/import of theme and stats', items: [
       'Fixed theme settings not transferring in export/import',
       'Fixed listening stats not transferring in export/import',
@@ -4902,12 +4908,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
  async function loadFromDB(){
+    console.log('Loading data from IndexedDB...');
     const [trackRows, metaRows] = await Promise.all([
         dbGetAll('tracks'),
         dbGetAll('meta')
     ]);
+    console.log('DB loaded:', trackRows.length, 'tracks,', metaRows.length, 'meta entries');
 
-    if(!trackRows.length) return false;
+    if(!trackRows.length){
+        console.log('No tracks found in DB - this is why data appears empty');
+        return false;
+    }
 
     const metaMap = {};
     metaRows.forEach(r => metaMap[r.key] = r.value);
@@ -6566,8 +6577,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         // Export listening stats
         try{
           manifest.stats = {};
+          // First check in-memory variables
+          manifest.stats.totalListenSeconds = totalListenSeconds;
+          manifest.stats.totalPlays = totalPlays;
+          console.log('Exporting stats from memory:', manifest.stats);
+          // Then check DB for any additional data
           const stats = await dbGet('meta', 'stats');
-          if(stats) manifest.stats = { ...stats.value };
+          console.log('Stats from DB:', stats);
+          if(stats && stats.value){
+            manifest.stats = { ...stats.value }; // DB has the full object
+            console.log('Using DB stats:', manifest.stats);
+          }
           const streak = await dbGet('meta', 'streak');
           if(streak) manifest.stats.streak = streak.value;
           const listenHistory = await dbGet('meta', 'listenHistory');
@@ -6708,6 +6728,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         console.log('Restoring stats:', manifest.stats);
         if(manifest.stats.totalListenSeconds !== undefined || manifest.stats.totalPlays !== undefined){
           dbPut('meta', { key: 'stats', value: manifest.stats });
+          // Also update in-memory variables
+          if(manifest.stats.totalListenSeconds !== undefined) totalListenSeconds = manifest.stats.totalListenSeconds;
+          if(manifest.stats.totalPlays !== undefined) totalPlays = manifest.stats.totalPlays;
         }
         if(manifest.stats.streak){
           dbPut('meta', { key: 'streak', value: manifest.stats.streak });
@@ -6719,7 +6742,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           dbPut('meta', { key: 'artistStats', value: manifest.stats.artistStats });
         }
         // Refresh the stats display
-        setTimeout(() => { renderStats(); }, 500);
+        renderStats();
+        toast(`Stats restored! Total: ${fmtDurationShort(totalListenSeconds)} listened, ${totalPlays} plays`);
       }
       
       $('emptyState').style.display = 'none';
