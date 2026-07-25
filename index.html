@@ -3977,8 +3977,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '40.4';
+  const APP_VERSION = '40.5';
   const CHANGELOG = [
+    { version: '40.5', date: 'July 25th, 2026 at 5:55 pm EDT', title: 'Fix export/import of theme and stats', items: [
+      'Fixed theme settings not transferring in export/import',
+      'Fixed listening stats not transferring in export/import',
+      'Export now properly includes: currentTheme, liquidGlass, customTheme, customGlow',
+      'Import now properly restores all theme and stats data',
+    ] },
     { version: '40.4', date: 'July 25th, 2026 at 5:52 pm EDT', title: 'Fix data persistence on refresh', items: [
       'Fixed data resetting on refresh - cleared old service worker caches',
       'Export now includes all settings: songs, playlists, listening stats, theme, EQ, turntable angle, glow settings',
@@ -6548,10 +6554,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         manifest.settings.glowColor = $('glowColorHex')?.value;
         manifest.settings.glowStyle = $('glowStyleSelect')?.value;
         
+        // Export theme settings
+        manifest.settings.currentTheme = currentTheme;
+        const liquidGlassRow = await dbGet('meta', 'liquidGlass');
+        if(liquidGlassRow) manifest.settings.liquidGlass = liquidGlassRow.value;
+        const customThemeRow = await dbGet('meta', 'customTheme');
+        if(customThemeRow) manifest.settings.customTheme = customThemeRow.value;
+        const customGlowRow = await dbGet('meta', 'customGlow');
+        if(customGlowRow) manifest.settings.customGlow = customGlowRow.value;
+        
         // Export listening stats
         try{
+          manifest.stats = {};
           const stats = await dbGet('meta', 'stats');
-          if(stats) manifest.stats = stats.value;
+          if(stats) manifest.stats = { ...stats.value };
           const streak = await dbGet('meta', 'streak');
           if(streak) manifest.stats.streak = streak.value;
           const listenHistory = await dbGet('meta', 'listenHistory');
@@ -6670,15 +6686,27 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           $('glowStyleSelect').value = manifest.settings.glowStyle;
           dbPut('meta', { key: 'glowStyle', value: manifest.settings.glowStyle });
         }
-        // Restore theme mode
-        if(manifest.settings.themeMode){
-          applyThemeMode(manifest.settings.themeMode);
+        // Restore theme settings
+        if(manifest.settings.currentTheme){
+          dbPut('meta', { key: 'theme', value: manifest.settings.currentTheme });
+          applyTheme(manifest.settings.currentTheme);
+        }
+        if(manifest.settings.liquidGlass !== undefined){
+          dbPut('meta', { key: 'liquidGlass', value: manifest.settings.liquidGlass });
+          setLiquidGlass(manifest.settings.liquidGlass);
+        }
+        if(manifest.settings.customTheme){
+          dbPut('meta', { key: 'customTheme', value: manifest.settings.customTheme });
+        }
+        if(manifest.settings.customGlow){
+          dbPut('meta', { key: 'customGlow', value: manifest.settings.customGlow });
         }
       }
       
       // Restore listening stats if present
       if(manifest.stats){
-        if(manifest.stats.totalListenSeconds !== undefined){
+        console.log('Restoring stats:', manifest.stats);
+        if(manifest.stats.totalListenSeconds !== undefined || manifest.stats.totalPlays !== undefined){
           dbPut('meta', { key: 'stats', value: manifest.stats });
         }
         if(manifest.stats.streak){
@@ -6690,13 +6718,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(manifest.stats.artistStats){
           dbPut('meta', { key: 'artistStats', value: manifest.stats.artistStats });
         }
+        // Refresh the stats display
+        setTimeout(() => { renderStats(); }, 500);
       }
       
       $('emptyState').style.display = 'none';
       $('library').style.display = 'flex';
       renderTabs();
       renderList();
-      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + settings' : ''}`);
+      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings || manifest.stats ? ' + settings/stats' : ''}`);
     }catch(e){
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
