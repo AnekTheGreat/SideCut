@@ -5136,7 +5136,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           </div>
           <div id="csvTracksList" style="flex:1;overflow-y:auto;padding:12px;"></div>
           <div style="padding:16px;border-top:1px solid var(--line);">
-            <button id="downloadCSVTracks" class="playlist-pick-btn" style="width:100%;text-align:center;">Download All Tracks</button>
+            <button id="downloadCSVTracks" class="playlist-pick-btn" style="width:100%;text-align:center;">How to get audio files</button>
           </div>
         </div>`;
       document.body.appendChild(modal);
@@ -5169,23 +5169,35 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   
   function downloadCSVTracks(tracks){
-    // Use the existing Spotify download infrastructure
-    // Map CSV tracks to the format expected by the download function
-    const spotifyTracks = tracks.map(t => ({
-      name: t.title,
-      artists: [{ name: t.artist }],
-      album: { name: t.album }
-    }));
+    // CSV files only contain metadata, not actual audio URLs
+    // Show a message explaining this and how to get the actual files
+    toast(`CSV tracks are metadata only. Use a Spotify downloader (Spoticatch, Spotisaver, etc.) to download the audio files, then import them to SideCut.`);
     
-    // Store for download
-    window._pendingSpotifyTracks = spotifyTracks;
-    
-    // Call the download function
-    if(typeof downloadSpotifyTracks === 'function'){
-      downloadSpotifyTracks();
-    } else {
-      toast('Download feature not available');
-    }
+    // Optionally, show a help modal
+    const helpModal = document.createElement('div');
+    helpModal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    helpModal.innerHTML = `
+      <div style="background:var(--bg-raised);border-radius:16px;max-width:400px;width:100%;padding:24px;text-align:center;">
+        <div style="font-size:24px;margin-bottom:12px;">📋</div>
+        <h3 style="margin:0 0 12px;">CSV = Playlist List Only</h3>
+        <p style="color:var(--ink-dim);font-size:14px;line-height:1.6;margin:0 0 16px;">
+          CSV files from TuneMyMusic contain <strong>only track names and artists</strong> — not the actual audio files.
+        </p>
+        <p style="color:var(--ink-dim);font-size:14px;line-height:1.6;margin:0 0 16px;">
+          <strong>To get the music:</strong><br>
+          1. Use Spoticatch, Spotisaver, or similar<br>
+          2. Download the MP3s<br>
+          3. Drag & drop the audio files into SideCut
+        </p>
+        <button id="closeHelpModal" class="playlist-pick-btn" style="padding:10px 20px;">Got it</button>
+      </div>`;
+    document.body.appendChild(helpModal);
+    document.getElementById('closeHelpModal').addEventListener('click', () => {
+      helpModal.remove();
+    });
+    helpModal.addEventListener('click', (e) => {
+      if(e.target === helpModal) helpModal.remove();
+    });
   }
   
   function parseSpotifyCSV(content){
@@ -6489,6 +6501,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Full library export/import — bundles actual audio + playlists into one
   // .zip so you can carry your whole library into a newer version of this
   // page (or restore it after clearing browser data), no re-picking needed.
+  // INCLUDES: songs, playlists, listening stats, theme, EQ, turntable angle, glow settings.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
     showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async () => {
@@ -6497,14 +6510,47 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(btn){ btn.disabled = true; btn.textContent = 'Zipping…'; }
       try{
         const zip = new JSZip();
-        const manifest = { playlists, tracks: [] };
+        const manifest = { playlists, tracks: [], settings: {}, stats: {} };
+        
+        // Export tracks
         allTracks.forEach(t => {
           const fname = (t.file && t.file.name) || t.name || 'track';
           const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
           const zipPath = `audio/${t.id}${ext}`;
-          zip.file(zipPath, t.file);
-          manifest.tracks.push({ id: t.id, name: t.name, artist: t.artist, duration: t.duration, bpm: t.bpm, genre: t.genre, path: zipPath });
+          if(t.file) zip.file(zipPath, t.file);
+          manifest.tracks.push({ id: t.id, name: t.name, artist: t.artist, duration: t.duration, bpm: t.bpm, genre: t.genre, artBlob: t.artBlob ? true : false, path: t.file ? zipPath : null });
         });
+        
+        // Export settings
+        manifest.settings = {
+          crossfadeSeconds: crossfadeSeconds,
+          eq: globalEQ,
+          themeMode: document.body.className,
+          gaplessMode: $('gaplessToggle')?.textContent === 'On',
+          perPlaylistSort: $('perPlaylistSortToggle')?.textContent === 'On',
+        };
+        
+        // Export turntable angle if available
+        if(window.getTurntableAngle){
+          manifest.settings.turntableAngle = window.getTurntableAngle();
+        }
+        
+        // Export glow settings
+        manifest.settings.glowColor = $('glowColorHex')?.value;
+        manifest.settings.glowStyle = $('glowStyleSelect')?.value;
+        
+        // Export listening stats
+        try{
+          const stats = await dbGet('meta', 'stats');
+          if(stats) manifest.stats = stats.value;
+          const streak = await dbGet('meta', 'streak');
+          if(streak) manifest.stats.streak = streak.value;
+          const listenHistory = await dbGet('meta', 'listenHistory');
+          if(listenHistory) manifest.stats.listenHistory = listenHistory.value;
+          const artistStats = await dbGet('meta', 'artistStats');
+          if(artistStats) manifest.stats.artistStats = artistStats.value;
+        }catch(e){ console.log('Could not export stats:', e); }
+        
         zip.file('manifest.json', JSON.stringify(manifest));
         const blob = await zip.generateAsync({ type: 'blob' });
         const a = document.createElement('a');
@@ -6585,11 +6631,63 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       playlists['All Songs'] = allTracks.map(t => t.id);
       saveMeta();
+      
+      // Restore settings if present in manifest
+      if(manifest.settings){
+        // Restore crossfade
+        if(manifest.settings.crossfadeSeconds !== undefined){
+          crossfadeSeconds = manifest.settings.crossfadeSeconds;
+          $('crossfadeSlider').value = crossfadeSeconds;
+          $('crossfadeValue').textContent = crossfadeSeconds + 's';
+          dbPut('meta', { key: 'crossfadeSeconds', value: crossfadeSeconds });
+        }
+        // Restore EQ
+        if(manifest.settings.eq){
+          globalEQ = manifest.settings.eq;
+          dbPut('meta', { key: 'eq', value: globalEQ });
+        }
+        // Restore turntable angle
+        if(manifest.settings.turntableAngle && window.setTurntableAngle){
+          window.setTurntableAngle(manifest.settings.turntableAngle);
+        }
+        // Restore glow settings
+        if(manifest.settings.glowColor && $('glowColorHex')){
+          $('glowColorHex').value = manifest.settings.glowColor;
+          document.querySelectorAll('.glow-sample').forEach(el => el.style.background = manifest.settings.glowColor);
+          updateCSSGlow();
+          dbPut('meta', { key: 'glowColor', value: manifest.settings.glowColor });
+        }
+        if(manifest.settings.glowStyle && $('glowStyleSelect')){
+          $('glowStyleSelect').value = manifest.settings.glowStyle;
+          dbPut('meta', { key: 'glowStyle', value: manifest.settings.glowStyle });
+        }
+        // Restore theme mode
+        if(manifest.settings.themeMode){
+          applyThemeMode(manifest.settings.themeMode);
+        }
+      }
+      
+      // Restore listening stats if present
+      if(manifest.stats){
+        if(manifest.stats.totalListenSeconds !== undefined){
+          dbPut('meta', { key: 'stats', value: manifest.stats });
+        }
+        if(manifest.stats.streak){
+          dbPut('meta', { key: 'streak', value: manifest.stats.streak });
+        }
+        if(manifest.stats.listenHistory){
+          dbPut('meta', { key: 'listenHistory', value: manifest.stats.listenHistory });
+        }
+        if(manifest.stats.artistStats){
+          dbPut('meta', { key: 'artistStats', value: manifest.stats.artistStats });
+        }
+      }
+      
       $('emptyState').style.display = 'none';
       $('library').style.display = 'flex';
       renderTabs();
       renderList();
-      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}`);
+      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + settings' : ''}`);
     }catch(e){
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
