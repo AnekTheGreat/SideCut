@@ -3977,26 +3977,35 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '40.4';
+  const APP_VERSION = '40.5';
   const CHANGELOG = [
-    { version: '40.4', date: 'July 25th, 2026 at 9:52 pm', title: 'Fix data persistence on refresh', items: [
+    { version: '40.5', date: 'July 25th, 2026 at 5:55 pm EDT', title: 'Fix export/import of theme and stats', items: [
+      'Fixed theme settings not transferring in export/import',
+      'Fixed listening stats not transferring in export/import',
+      'Export now properly includes: currentTheme, liquidGlass, customTheme, customGlow',
+      'Import now properly restores all theme and stats data',
+    ] },
+    { version: '40.4', date: 'July 25th, 2026 at 5:52 pm EDT', title: 'Fix data persistence on refresh', items: [
       'Fixed data resetting on refresh - cleared old service worker caches',
       'Export now includes all settings: songs, playlists, listening stats, theme, EQ, turntable angle, glow settings',
       'Import restores all settings from backup',
       'CSV import shows explanation - CSV only has metadata, not audio files',
     ] },
-    { version: '40.2', date: 'July 25th, 2026 at 4:00 pm', title: 'Add re-fetch metadata and CSV import', items: [
+    { version: '40.3', date: 'July 25th, 2026 at 5:51 pm EDT', title: 'Initial service worker fix', items: [
+      'First attempt at fixing data persistence on refresh',
+    ] },
+    { version: '40.2', date: 'July 25th, 2026 at 12:00 pm EDT', title: 'Add re-fetch metadata and CSV import', items: [
       'Added "Re-fetch all metadata" button in Settings → More',
       'Fixed refetch to properly restore album covers',
       'Added CSV file support for importing Spotify playlists (TuneMyMusic format)',
       'Added "Accepted file types" section in Settings → More',
       'Improved Settings UI with better styling',
     ] },
-    { version: '40.1.5', date: 'July 25th, 2026 at 3:35 pm', title: 'Timestamps and version guide', items: [
-      'Timestamps now show in notification bell changelog (e.g. v40.1.5 · July 25th, 2026 at 3:35 pm)',
+    { version: '40.1.5', date: 'July 25th, 2026 at 11:35 am EDT', title: 'Timestamps and version guide', items: [
+      'Timestamps now show in notification bell changelog (e.g. v40.1.5 · July 25th, 2026 at 11:35 am EDT)',
       'Added version guide in Settings → More explaining how the version system works',
     ] },
-    { version: '40.1', date: 'July 25th, 2026 at 3:05 pm', title: 'Bug fixes for duplicate detection and Unsorted playlist', items: [
+    { version: '40.1', date: 'July 25th, 2026 at 11:05 am EDT', title: 'Bug fixes for duplicate detection and Unsorted playlist', items: [
       'Fixed duplicate detection to use file size in addition to name/artist/duration for more accurate matching',
       'Added ability to hide the Unsorted playlist tab (toggle in Manage Playlists)',
       'Fixed notification bell not responding to taps on mobile',
@@ -4004,7 +4013,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       'Added reset button for all sandbox settings',
       'Improved liquid glass effect (50px blur, 160% saturation, 1.15 brightness)',
     ] },
-    { version: '40', date: 'July 24th, 2026 at 3:42 pm', title: 'Major update - listening stats, sandbox mode, and UI polish', items: [
+    { version: '40', date: 'July 24th, 2026 at 11:42 am EDT', title: 'Major update - listening stats, sandbox mode, and UI polish', items: [
       'Listening Stats now shows all played songs with play counts (not just top 5)',
       'Added Top Artists section in Listening Stats',
       'Added weekly active days counter',
@@ -6545,10 +6554,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         manifest.settings.glowColor = $('glowColorHex')?.value;
         manifest.settings.glowStyle = $('glowStyleSelect')?.value;
         
+        // Export theme settings
+        manifest.settings.currentTheme = currentTheme;
+        const liquidGlassRow = await dbGet('meta', 'liquidGlass');
+        if(liquidGlassRow) manifest.settings.liquidGlass = liquidGlassRow.value;
+        const customThemeRow = await dbGet('meta', 'customTheme');
+        if(customThemeRow) manifest.settings.customTheme = customThemeRow.value;
+        const customGlowRow = await dbGet('meta', 'customGlow');
+        if(customGlowRow) manifest.settings.customGlow = customGlowRow.value;
+        
         // Export listening stats
         try{
+          manifest.stats = {};
           const stats = await dbGet('meta', 'stats');
-          if(stats) manifest.stats = stats.value;
+          if(stats) manifest.stats = { ...stats.value };
           const streak = await dbGet('meta', 'streak');
           if(streak) manifest.stats.streak = streak.value;
           const listenHistory = await dbGet('meta', 'listenHistory');
@@ -6667,15 +6686,27 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           $('glowStyleSelect').value = manifest.settings.glowStyle;
           dbPut('meta', { key: 'glowStyle', value: manifest.settings.glowStyle });
         }
-        // Restore theme mode
-        if(manifest.settings.themeMode){
-          applyThemeMode(manifest.settings.themeMode);
+        // Restore theme settings
+        if(manifest.settings.currentTheme){
+          dbPut('meta', { key: 'theme', value: manifest.settings.currentTheme });
+          applyTheme(manifest.settings.currentTheme);
+        }
+        if(manifest.settings.liquidGlass !== undefined){
+          dbPut('meta', { key: 'liquidGlass', value: manifest.settings.liquidGlass });
+          setLiquidGlass(manifest.settings.liquidGlass);
+        }
+        if(manifest.settings.customTheme){
+          dbPut('meta', { key: 'customTheme', value: manifest.settings.customTheme });
+        }
+        if(manifest.settings.customGlow){
+          dbPut('meta', { key: 'customGlow', value: manifest.settings.customGlow });
         }
       }
       
       // Restore listening stats if present
       if(manifest.stats){
-        if(manifest.stats.totalListenSeconds !== undefined){
+        console.log('Restoring stats:', manifest.stats);
+        if(manifest.stats.totalListenSeconds !== undefined || manifest.stats.totalPlays !== undefined){
           dbPut('meta', { key: 'stats', value: manifest.stats });
         }
         if(manifest.stats.streak){
@@ -6687,13 +6718,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(manifest.stats.artistStats){
           dbPut('meta', { key: 'artistStats', value: manifest.stats.artistStats });
         }
+        // Refresh the stats display
+        setTimeout(() => { renderStats(); }, 500);
       }
       
       $('emptyState').style.display = 'none';
       $('library').style.display = 'flex';
       renderTabs();
       renderList();
-      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + settings' : ''}`);
+      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings || manifest.stats ? ' + settings/stats' : ''}`);
     }catch(e){
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
