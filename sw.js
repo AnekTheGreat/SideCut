@@ -1,11 +1,12 @@
-const CACHE_NAME = 'sidecut-shell-v40.2';
+const CACHE_NAME = 'sidecut-shell-v40.3';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
+// Always skip waiting to get the latest version immediately
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)).catch(() => {})
   );
-  self.skipWaiting(); // don't wait for old tabs to close — new version takes over right away
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -18,14 +19,29 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Auto-update cache: index.html (and other same-origin shell files) go network-first,
-// so a visit while online always checks for a newer version instead of quietly serving
-// a stale cached copy. Falls back to whatever's cached the moment the network fails,
-// so it still works offline. Everything cross-origin (fonts, JSZip CDN) just goes to network.
+// Network-first for index.html to ensure we always get the latest version
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  
+  // Network-first for same-origin, especially index.html
   if (url.origin !== self.location.origin) return;
-
+  
+  // For index.html specifically, ALWAYS go to network
+  if (url.pathname.endsWith('index.html') || url.pathname === '/' || url.pathname === '') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          // Update cache
+          const copy = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+  
+  // For other files, try network first then cache
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
@@ -37,8 +53,6 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Lets a page ask the waiting/active worker to check for updates on demand
-// (used by the in-app "Check for updates" flow) instead of only on page load.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'CHECK_FOR_UPDATE') {
     self.registration.update().catch(() => {});
