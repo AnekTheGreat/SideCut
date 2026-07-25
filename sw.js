@@ -11,9 +11,12 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    // DELETE ALL OLD CACHES - fix for data persistence issues
     caches.keys()
-      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(
+        keys
+          .filter((k) => k !== CACHE_NAME) // Keep current cache, delete only old ones
+          .map((k) => caches.delete(k))
+      ))
       .then(() => self.clients.claim())
   );
 });
