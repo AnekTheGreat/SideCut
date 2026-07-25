@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sidecut-shell-v40.3';
+const CACHE_NAME = 'sidecut-shell-v40.4';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 // Always skip waiting to get the latest version immediately
@@ -11,11 +11,10 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
+    // DELETE ALL OLD CACHES - fix for data persistence issues
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll())
-      .then((clients) => clients.forEach((c) => c.postMessage({ type: 'SW_UPDATED', version: CACHE_NAME })))
   );
 });
 
