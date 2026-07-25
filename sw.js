@@ -1,12 +1,12 @@
 const CACHE_NAME = 'sidecut-shell-v40.6';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
-// Always skip waiting to get the latest version immediately
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)).catch(() => {})
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(SHELL_FILES))
+      .then(() => self.skipWaiting()) // Wait for cache to be populated before activating
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
