@@ -4872,16 +4872,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }catch(e){ console.error('Storage read failed', e); return []; }
   }
 
-  function saveMeta(){
-    dbPut('meta', { key: 'playlists', value: playlists });
-    dbPut('meta', { key: 'idCounter', value: idCounter });
+  async function saveMeta(){
+    await dbPut('meta', { key: 'playlists', value: playlists });
+    await dbPut('meta', { key: 'idCounter', value: idCounter });
   }
 
   // Single source of truth for what gets written to the tracks store —
   // every field we track per-song funnels through here so nothing gets
   // silently dropped when one code path forgets a field another path added.
-  function persistTrackMeta(t){
-    dbPut('tracks', {
+  async function persistTrackMeta(t){
+    await dbPut('tracks', {
       id: t.id, blob: t.file, name: t.name, artist: t.artist,
       duration: t.duration, bpm: t.bpm, genre: t.genre,
       gain: t.gain ?? null, art: t.artBlob || null, vibe: t.vibe || null,
@@ -6639,7 +6639,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       for(const m of (manifest.tracks || [])){
         const existing = findExistingByContent(m);
-        if(existing){ idRemap[m.id] = existing.id; continue; } // truly already have it
+        if(existing){ 
+          idRemap[m.id] = existing.id; 
+          continue; 
+        } // truly already have it
         const entry = zip.file(m.path);
         if(!entry) continue;
         const blob = await entry.async('blob');
@@ -6650,7 +6653,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         idRemap[m.id] = localId;
         const track = { id: localId, file: blob, name: m.name || 'Untitled', artist: m.artist || 'Unknown artist', url, duration: m.duration || null, bpm: m.bpm ?? null, genre: m.genre || null, gain: m.gain ?? null, artBlob: null, artUrl: null };
         allTracks.push(track);
-        persistTrackMeta(track);
+        await persistTrackMeta(track);
         count++;
       }
       Object.keys(manifest.playlists || {}).forEach(name => {
@@ -6675,7 +6678,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         });
       }
       playlists['All Songs'] = allTracks.map(t => t.id);
-      saveMeta();
+      await saveMeta();
       
       // Restore settings if present in manifest
       if(manifest.settings){
