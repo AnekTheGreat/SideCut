@@ -6631,6 +6631,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   async function importLibrary(file, targetPlaylist){
     if(typeof JSZip === 'undefined'){ toast('Import tool failed to load — check your connection and reload.'); return; }
+    disableSWUpdate = true; // Prevent SW from reloading during import
+    console.log('IMPORT: Starting import, SW update disabled');
     toast(targetPlaylist ? `Importing into "${targetPlaylist}"…` : 'Importing library…', 3000);
     try{
       const zip = await JSZip.loadAsync(file);
@@ -6787,9 +6789,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       renderTabs();
       renderList();
       toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings || manifest.stats ? ' + settings/stats' : ''}`);
+      console.log('IMPORT: Complete, re-enabling SW updates');
     }catch(e){
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
+    }finally{
+      disableSWUpdate = false;
     }
   }
 
@@ -9364,6 +9369,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     toast(`Tap play to pick back up on "${track.name}"`, 3500);
   }
 
+  // Flag to prevent service worker from reloading during critical operations
+  let disableSWUpdate = false;
+
   // ---------------- PWA: register service worker so this can be installed ----------------
   // Only matters once these files are hosted online (https) — a plain
   // downloaded/local file won't trigger an install prompt, that's an OS-level
@@ -9388,14 +9396,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // against firing while a version-pin switch is in flight (see __SIDECUT_PIN_SWITCHING__
       // below) — otherwise the SW's own reload races the pin's reload and can win, dropping
       // the pin before boot() ever gets a chance to read it back on the next load.
+      // Also guarded against firing during critical operations like import (disableSWUpdate).
       let reloadedForUpdate = false;
       function reloadForUpdate(){
-        if(reloadedForUpdate || window.__SIDECUT_PIN_SWITCHING__) return;
+        if(reloadedForUpdate || window.__SIDECUT_PIN_SWITCHING__ || disableSWUpdate) return;
         reloadedForUpdate = true;
         // Wait slightly longer than the What's New popup's own 900ms show-delay, so if
         // it's about to appear, it's already on screen by the time we check for it.
         setTimeout(() => {
-          if(window.__SIDECUT_PIN_SWITCHING__) return;
+          if(window.__SIDECUT_PIN_SWITCHING__ || disableSWUpdate) return;
           if($('whatsNewBackdrop').style.display === 'flex'){
             $('whatsNewClose').addEventListener('click', () => window.location.reload(), { once:true });
             $('whatsNewBackdrop').addEventListener('click', (e) => { if(e.target === $('whatsNewBackdrop')) window.location.reload(); }, { once:true });
