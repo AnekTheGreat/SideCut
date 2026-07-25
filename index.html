@@ -5106,13 +5106,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const reader = new FileReader();
     reader.onload = function(e){
       const content = e.target.result;
+      console.log('CSV content preview:', content.substring(0, 500));
       parseSpotifyCSV(content).then(tracks => {
+        console.log('Parsed tracks:', tracks);
         if(tracks.length > 0){
           window._spotifyTracks = tracks;
           renderSpotifyTracks(tracks);
           toast(`Loaded ${tracks.length} tracks from CSV. Click "Add To Library" to download.`);
         } else {
-          toast('No valid tracks found in CSV file.');
+          toast('No valid tracks found in CSV file. Check console for debug info.');
         }
       }).catch(err => {
         toast('Error parsing CSV: ' + err.message);
@@ -5123,30 +5125,45 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   
   function parseSpotifyCSV(content){
     return new Promise((resolve, reject) => {
-      const lines = content.split('\n').filter(line => line.trim());
+      // Handle different line endings (Windows \r\n, Mac \r, Unix \n)
+      const lines = content.split(/\r\n|\r|\n/).filter(line => line.trim());
       if(lines.length < 2){
         resolve([]);
         return;
       }
       
       // Parse header to find column indices
-      const header = lines[0].toLowerCase();
+      const headerLine = lines[0];
+      const cols = parseCSVLine(headerLine);
+      console.log('CSV Headers:', cols);
+      
       let nameCol = -1, artistCol = -1, albumCol = -1;
       
-      // Common Spotify CSV header formats
-      const cols = header.split(',').map(c => c.trim().replace(/"/g, ''));
+      // Try to find columns by header name (case-insensitive)
       cols.forEach((col, i) => {
-        if(col.includes('name') && !col.includes('album') && !col.includes('artist')) nameCol = i;
-        if(col.includes('artist')) artistCol = i;
-        if(col.includes('album')) albumCol = i;
+        const c = col.toLowerCase().replace(/"/g, '').trim();
+        // Track name columns
+        if(nameCol === -1 && (c === 'name' || c === 'track' || c === 'title' || c === 'track name' || c.includes('track') && c.includes('name') && !c.includes('artist'))){
+          nameCol = i;
+        }
+        // Artist columns
+        if(artistCol === -1 && (c === 'artist' || c === 'artists' || c.includes('artist'))){
+          artistCol = i;
+        }
+        // Album columns
+        if(albumCol === -1 && (c === 'album' || c.includes('album'))){
+          albumCol = i;
+        }
       });
       
-      // If no standard columns found, try by position (Spotify export format)
+      // If no columns found, try by position (common formats)
       if(nameCol === -1){
         nameCol = 0;
         if(cols.length > 1) artistCol = 1;
         if(cols.length > 2) albumCol = 2;
       }
+      
+      console.log('Column mapping:', { nameCol, artistCol, albumCol });
       
       const tracks = [];
       for(let i = 1; i < lines.length; i++){
@@ -5157,15 +5174,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const artist = artistCol >= 0 && artistCol < values.length ? values[artistCol].trim() : '';
         const album = albumCol >= 0 && albumCol < values.length ? values[albumCol].trim() : '';
         
-        if(name){
-          tracks.push({
-            title: name || 'Unknown',
-            artist: artist || 'Unknown Artist',
-            album: album || '',
-            url: '',
-            spotifyId: ''
-          });
+        // Skip empty lines or lines that are just commas
+        if(!name && !artist){
+          continue;
         }
+        
+        // Use name or artist as title if name is empty
+        const title = name || artist || 'Unknown Track';
+        const trackArtist = artist || 'Unknown Artist';
+        
+        tracks.push({
+          title: title,
+          artist: trackArtist,
+          album: album || '',
+          url: '',
+          spotifyId: ''
+        });
       }
       
       resolve(tracks);
