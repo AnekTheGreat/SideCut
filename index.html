@@ -4878,6 +4878,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     console.log('SAVEMETA: Saving playlists with', Object.keys(playlists).length, 'playlists, idCounter =', idCounter);
     await dbPut('meta', { key: 'playlists', value: playlists });
     await dbPut('meta', { key: 'idCounter', value: idCounter });
+    // Also save to localStorage as backup for mobile browsers
+    try {
+      localStorage.setItem('sidecut_backup_playlists', JSON.stringify(playlists));
+      localStorage.setItem('sidecut_backup_idCounter', String(idCounter));
+      localStorage.setItem('sidecut_backup_time', String(Date.now()));
+    } catch(e) { /* localStorage might be full */ }
     console.log('SAVEMETA: Done saving');
   }
 
@@ -4922,7 +4928,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     console.log('LOADFROMDB: Meta keys in DB:', metaRows.map(r => r.key).join(', '));
 
     if(!trackRows.length){
-        console.log('LOADFROMDB: No tracks found in DB - this is why data appears empty');
+        console.log('LOADFROMDB: No tracks in IndexedDB, checking localStorage backup...');
+        // Try localStorage backup for mobile browsers
+        try {
+            const backup = localStorage.getItem('sidecut_backup_playlists');
+            if(backup){
+                const backupTime = localStorage.getItem('sidecut_backup_time');
+                console.log('LOADFROMDB: Found localStorage backup from', new Date(parseInt(backupTime)), 'Backup playlists:', backup);
+                // Restore from backup
+                playlists = JSON.parse(backup);
+                idCounter = parseInt(localStorage.getItem('sidecut_backup_idCounter') || '0');
+                console.log('LOADFROMDB: Restored from localStorage backup');
+                // We still need tracks from IndexedDB, so return true only if we have them
+                if(trackRows.length > 0){
+                    return true;
+                }
+                console.log('LOADFROMDB: No tracks in DB even with backup');
+                return false;
+            }
+        } catch(e) {
+            console.log('LOADFROMDB: Error reading localStorage backup:', e);
+        }
+        console.log('LOADFROMDB: No tracks found in DB or localStorage - this is why data appears empty');
         return false;
     }
 
@@ -4958,7 +4985,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     
     console.log('LOADFROMDB: Loaded allTracks with', allTracks.length, 'tracks');
 
-
+    // Use IndexedDB data if available, otherwise use localStorage backup
     playlists = metaMap.playlists || {
         'All Songs': allTracks.map(t => t.id)
     };
