@@ -4828,48 +4828,40 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   async function dbPut(storeName, value){
-    try{
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        tx.objectStore(storeName).put(value);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    }catch(e){ console.error('Storage save failed', e); }
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).put(value);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   }
   async function dbDelete(storeName, key){
-    try{
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        tx.objectStore(storeName).delete(key);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    }catch(e){ console.error('Storage delete failed', e); }
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   }
   async function dbGet(storeName, key){
-    try{
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readonly');
-        const req = tx.objectStore(storeName).get(key);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => reject(req.error);
-      });
-    }catch(e){ console.error('Storage get failed', e); return null; }
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readonly');
+      const req = tx.objectStore(storeName).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
   }
   async function dbGetAll(storeName){
-    try{
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readonly');
-        const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-    }catch(e){ console.error('Storage read failed', e); return []; }
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readonly');
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
   }
 
   async function saveMeta(){
@@ -6660,7 +6652,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         idRemap[m.id] = localId;
         const track = { id: localId, file: blob, name: m.name || 'Untitled', artist: m.artist || 'Unknown artist', url, duration: m.duration || null, bpm: m.bpm ?? null, genre: m.genre || null, gain: m.gain ?? null, artBlob: null, artUrl: null };
         allTracks.push(track);
-        await persistTrackMeta(track);
+        try {
+          await persistTrackMeta(track);
+        } catch(e) {
+          console.error('Failed to save track:', track.name, e);
+          toast('Failed to save track: ' + track.name);
+        }
         count++;
       }
       Object.keys(manifest.playlists || {}).forEach(name => {
@@ -6685,7 +6682,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         });
       }
       playlists['All Songs'] = allTracks.map(t => t.id);
-      await saveMeta();
+      try {
+        await saveMeta();
+      } catch(e) {
+        console.error('Failed to save playlists:', e);
+        toast('Failed to save playlists - data may be lost on reload!');
+      }
       
       // Restore settings if present in manifest
       if(manifest.settings){
