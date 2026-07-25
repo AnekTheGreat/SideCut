@@ -2950,6 +2950,9 @@ async function downloadSpotifyTracks() {
     const countDisplay = document.getElementById('spotifyCountDisplay');
     const apiBase = getSpotifyApiBase();
 
+    // Reset cancelled flag at start
+    downloadCancelled = false;
+
     if (downloadBtn) {
         downloadBtn.disabled = true;
         downloadBtn.innerHTML = '<span class="dl-spinner"></span> Downloading...';
@@ -3000,6 +3003,11 @@ async function downloadSpotifyTracks() {
             
             // Process batch results
             for (let i = 0; i < data.results.length; i++) {
+                if (downloadCancelled) {
+                    if (dlStatus) dlStatus.textContent = 'Download cancelled';
+                    if (progressFill) progressFill.style.width = '0%';
+                    break;
+                }
                 const result = data.results[i];
                 const track = tracks.find(t => t.spotifyId === result.spotifyId) || tracks[i];
                 const trackRow = document.getElementById('spotify-track-' + i);
@@ -3055,9 +3063,17 @@ async function downloadSpotifyTracks() {
         await downloadIndividually(tracks, apiBase, { succeeded, failed, failedTracks, dlStatus, progressFill, downloadBtn, statusEl });
     }
 
-    if (progressFill) progressFill.style.width = '100%';
-    if (dlStatus) dlStatus.textContent = `Done! ${succeeded} succeeded, ${failed} failed`;
-    if (statusEl) statusEl.textContent = `${succeeded}/${total} tracks downloaded successfully.`;
+    // Check if cancelled and update UI accordingly
+    if (downloadCancelled) {
+        if (progressFill) progressFill.style.width = '0%';
+        if (dlStatus) dlStatus.textContent = 'Download cancelled';
+        if (statusEl) statusEl.textContent = `${succeeded} track(s) were downloaded before cancellation.`;
+        succeeded = 0; // Don't count as successful completion
+    } else {
+        if (progressFill) progressFill.style.width = '100%';
+        if (dlStatus) dlStatus.textContent = `Done! ${succeeded} succeeded, ${failed} failed`;
+        if (statusEl) statusEl.textContent = `${succeeded}/${total} tracks downloaded successfully.`;
+    }
 
     if (cancelBtn) cancelBtn.style.display = 'none';
     
@@ -3068,8 +3084,11 @@ async function downloadSpotifyTracks() {
         downloadBtn.style.color = '';
     }
     
-    // Show retry button if there were failures
-    if (failed > 0 && failedTracks.length > 0) {
+    // Reset cancelled flag
+    downloadCancelled = false;
+    
+    // Show retry button if there were failures and not cancelled
+    if (failed > 0 && failedTracks.length > 0 && !downloadCancelled) {
         setTimeout(() => {
             toast(`${failed} track(s) failed. Check your connection and try again.`, 5000);
         }, 1000);
@@ -3948,9 +3967,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '40.1.5';
   const CHANGELOG = [
-    { version: '40.1.5', date: 'July 25th, 2026 at 3:17 pm', title: 'Fix timestamps showing in notification panel', items: [
+    { version: '40.1.5', date: 'July 25th, 2026 at 3:17 pm', title: 'Fix timestamps and cancel button in download', items: [
       'Timestamps now show in notification bell changelog (e.g. v40.1.5 · July 25th, 2026 at 3:17 pm)',
       'Added version guide in Settings → More explaining how the version system works (.0.5, .1, .2, .5, +1, +5)',
+      'Fixed cancel button not working when downloading Spotify songs - now properly stops batch and individual downloads',
     ] },
     { version: '40.1', date: 'July 25th, 2026 at 3:05 pm', title: 'Bug fixes for duplicate detection and Unsorted playlist', items: [
       'Fixed duplicate detection to use file size in addition to name/artist/duration for more accurate matching',
