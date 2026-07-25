@@ -1796,6 +1796,11 @@ body.sandbox-always-search #searchInput {
       </div>
 
       <div style="margin-top:12px;">
+        <button class="playlist-pick-btn" id="refetchMetadataBtn" style="text-align:center;">Re-fetch all metadata</button>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Re-download covers and artist info for all songs. Use this if songs have wrong covers.</div>
+      </div>
+
+      <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="resetAppearanceBtn" style="text-align:center;">Reset appearance to defaults</button>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">If a theme or liquid glass mode ever gets stuck looking wrong, this puts theme and liquid glass back to how they started — nothing else is touched.</div>
       </div>
@@ -3972,9 +3977,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '40.1.5';
+  const APP_VERSION = '40.2';
   const CHANGELOG = [
-    { version: '40.1.5', date: 'July 25th, 2026 at 3:35 pm', title: 'Add CSV import and accepted files info', items: [
+    { version: '40.2', date: 'July 25th, 2026 at 3:50 pm', title: 'Add re-fetch metadata and CSV import', items: [
+      'Added "Re-fetch all metadata" button in Settings → More',
+      'Clears artwork cache and re-downloads covers for all songs',
+      'Use to fix songs that have wrong or random covers',
+      'Added CSV file support for importing Spotify playlists',
+      'Added "Accepted file types" section in Settings → More',
+    ] },
+    { version: '40.1', date: 'July 25th, 2026 at 3:05 pm', title: 'Bug fixes for duplicate detection and Unsorted playlist', items: [
       'Timestamps now show in notification bell changelog (e.g. v40.1.5 · July 25th, 2026 at 3:35 pm)',
       'Added version guide in Settings → More explaining how the version system works (.0.5, .1, .2, .5, +1, +5)',
       'Added CSV file support for importing Spotify playlists (export from Spotify as CSV)',
@@ -6620,6 +6632,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const dupGroups = getDuplicateGroups();
     if(!dupGroups.length){ toast('No duplicates found — your library looks clean.'); return; }
     findDuplicates();
+  });
+
+  $('refetchMetadataBtn').addEventListener('click', () => {
+    if(enrichState.active){ toast('Already fetching metadata...'); return; }
+    enrichAttemptedIds = new Set();
+    saveEnrichAttempted();
+    allTracks.forEach(t => {
+      if(t.artBlob){
+        t.artBlob = null;
+        if(t.artUrl){ try{ URL.revokeObjectURL(t.artUrl); }catch(e){} }
+        t.artUrl = null;
+        persistTrackMeta(t);
+      }
+    });
+    toast('Re-fetching metadata for all songs...');
+    runAutoEnrich();
   });
 
   function updateNowPlayingArt(t){
