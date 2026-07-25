@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sidecut-shell-v40.7';
+const CACHE_NAME = 'sidecut-shell-v40.8';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -21,37 +21,30 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first for index.html to ensure we always get the latest version
+// Stale-while-revalidate: serve cached immediately, update cache in background
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  
-  // Network-first for same-origin, especially index.html
+
+  // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
-  
-  // For index.html specifically, ALWAYS go to network
-  if (url.pathname.endsWith('index.html') || url.pathname === '/' || url.pathname === '') {
-    event.respondWith(
-      fetch(event.request)
-        .then((networkResponse) => {
-          // Update cache
-          const copy = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
-          return networkResponse;
-        })
-        .catch(() => caches.match(event.request))
-    );
-    return;
-  }
-  
-  // For other files, try network first then cache
+
   event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        const copy = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
-        return networkResponse;
-      })
-      .catch(() => caches.match(event.request))
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        // Always fetch from network and update cache in background
+        const fetchPromise = fetch(event.request)
+          .then((networkResponse) => {
+            if (networkResponse.ok) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          })
+          .catch(() => null);
+
+        // Return cached response immediately if available, otherwise wait for network
+        return cachedResponse || fetchPromise;
+      });
+    })
   );
 });
 
