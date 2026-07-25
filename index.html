@@ -1312,7 +1312,7 @@ body.sandbox-always-search #searchInput {
 </div>
 <input type="file" id="importLibInput" accept=".zip">
 <input type="file" id="importIntoPlaylistInput" accept=".zip">
-<input type="file" id="addFilesToPlaylistInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac" multiple>
+<input type="file" id="addFilesToPlaylistInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
 
 <div class="toast" id="toast"></div>
 
@@ -1386,7 +1386,7 @@ body.sandbox-always-search #searchInput {
   </div>
 </div>
 
-<input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac" multiple>
+<input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
 <input type="file" id="folderInput" webkitdirectory directory multiple>
 
 <div id="nowPlaying">
@@ -1748,6 +1748,14 @@ body.sandbox-always-search #searchInput {
     <div id="settingsPaneMore" style="display:none;">
       <div style="margin-bottom:16px;">
         <button class="playlist-pick-btn" id="howToUseBtn" style="text-align:center;">How to use SideCut</button>
+      </div>
+
+      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
+        <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Accepted file types</div>
+        <div style="font-size:11px; color:var(--ink-dim);">
+          <div style="margin-bottom:4px;"><strong>Audio:</strong> .mp3, .m4a, .wav, .flac, .ogg, .aac, .wma, .opus, .aiff, .alac</div>
+          <div><strong>Other:</strong> .zip (library/playlist import), .csv (Spotify playlist import)</div>
+        </div>
       </div>
 
       <div>
@@ -3966,9 +3974,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '40.1.5';
   const CHANGELOG = [
-    { version: '40.1.5', date: 'July 25th, 2026 at 3:17 pm', title: 'Fix timestamps showing in notification panel', items: [
+    { version: '40.1.5', date: 'July 25th, 2026 at 3:17 pm', title: 'Fix timestamps, cancel button, and add CSV import', items: [
       'Timestamps now show in notification bell changelog (e.g. v40.1.5 · July 25th, 2026 at 3:17 pm)',
       'Added version guide in Settings → More explaining how the version system works (.0.5, .1, .2, .5, +1, +5)',
+      'Fixed cancel button not working when downloading Spotify songs',
+      'Added CSV file support for importing Spotify playlists (export from Spotify as CSV)',
+      'Added "Accepted file types" section in Settings → More showing all supported formats',
     ] },
     { version: '40.1', date: 'July 25th, 2026 at 3:05 pm', title: 'Bug fixes for duplicate detection and Unsorted playlist', items: [
       'Fixed duplicate detection to use file size in addition to name/artist/duration for more accurate matching',
@@ -5062,6 +5073,123 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function handleFiles(fileList, targetPlaylist){
+    // Check if any CSV files are included - handle Spotify playlist imports
+    const csvFiles = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.csv'));
+    if(csvFiles.length > 0){
+      csvFiles.forEach(csvFile => {
+        handleCSVFile(csvFile);
+      });
+      // Remove CSV files from the list and process remaining audio files
+      const audioFiles = Array.from(fileList).filter(f => !f.name.toLowerCase().endsWith('.csv'));
+      if(audioFiles.length > 0){
+        handleAudioFiles(audioFiles, targetPlaylist);
+      }
+      return;
+    }
+    
+    // Process regular audio files
+    handleAudioFiles(Array.from(fileList), targetPlaylist);
+  }
+  
+  function handleCSVFile(csvFile){
+    const reader = new FileReader();
+    reader.onload = function(e){
+      const content = e.target.result;
+      parseSpotifyCSV(content).then(tracks => {
+        if(tracks.length > 0){
+          window._spotifyTracks = tracks;
+          // Update the Spotify tracks display
+          renderSpotifyTracks(tracks);
+          toast(`Loaded ${tracks.length} tracks from CSV. Click "Add To Library" to download.`);
+        } else {
+          toast('No valid tracks found in CSV file.');
+        }
+      }).catch(err => {
+        toast('Error parsing CSV: ' + err.message);
+      });
+    };
+    reader.readAsText(csvFile);
+  }
+  
+  function parseSpotifyCSV(content){
+    return new Promise((resolve, reject) => {
+      const lines = content.split('\n').filter(line => line.trim());
+      if(lines.length < 2){
+        resolve([]);
+        return;
+      }
+      
+      // Parse header to find column indices
+      const header = lines[0].toLowerCase();
+      let nameCol = -1, artistCol = -1, albumCol = -1, urlCol = -1;
+      
+      // Common Spotify CSV header formats
+      const cols = header.split(',').map(c => c.trim().replace(/"/g, ''));
+      cols.forEach((col, i) => {
+        if(col.includes('name') && !col.includes('album') && !col.includes('artist')) nameCol = i;
+        if(col.includes('artist')) artistCol = i;
+        if(col.includes('album')) albumCol = i;
+        if(col.includes('url') || col.includes('link') || col.includes('uri')) urlCol = i;
+      });
+      
+      // If no standard columns found, try common patterns
+      if(nameCol === -1){
+        // Try to find columns by position (Spotify export format: Name, Artist, Album, etc.)
+        nameCol = 0;
+        if(cols.length > 1) artistCol = 1;
+        if(cols.length > 2) albumCol = 2;
+      }
+      
+      const tracks = [];
+      for(let i = 1; i < lines.length; i++){
+        const values = parseCSVLine(lines[i]);
+        if(values.length === 0) continue;
+        
+        const name = nameCol >= 0 && nameCol < values.length ? values[nameCol].trim() : '';
+        const artist = artistCol >= 0 && artistCol < values.length ? values[artistCol].trim() : '';
+        const album = albumCol >= 0 && albumCol < values.length ? values[albumCol].trim() : '';
+        
+        if(name){
+          tracks.push({
+            title: name || 'Unknown',
+            artist: artist || 'Unknown Artist',
+            album: album || '',
+            url: '', // No URL, will need YouTube search
+            spotifyId: ''
+          });
+        }
+      }
+      
+      resolve(tracks);
+    });
+  }
+  
+  function parseCSVLine(line){
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for(let i = 0; i < line.length; i++){
+      const char = line[i];
+      if(char === '"'){
+        if(inQuotes && line[i+1] === '"'){
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if(char === ',' && !inQuotes){
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+  
+  function handleAudioFiles(fileList, targetPlaylist){
     const added = [];
     let skippedDup = 0, skippedType = 0;
     const seenKeys = new Set(allTracks.map(t => dupKey((t.file && t.file.size) || 0, t.name, t.artist, t.duration, t.file && t.file.lastModified)));
