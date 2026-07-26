@@ -1796,6 +1796,11 @@ body.sandbox-always-search #searchInput {
       </div>
 
       <div style="margin-top:12px;">
+        <button class="playlist-pick-btn" id="refetchMetadataBtn" style="text-align:center;">Re-fetch all metadata</button>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Re-download covers and artist info for all songs. Use this if songs have wrong covers.</div>
+      </div>
+
+      <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="resetAppearanceBtn" style="text-align:center;">Reset appearance to defaults</button>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">If a theme or liquid glass mode ever gets stuck looking wrong, this puts theme and liquid glass back to how they started — nothing else is touched.</div>
       </div>
@@ -3974,10 +3979,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '40.3';
   const CHANGELOG = [
-    { version: '40.3', date: 'July 25th, 2026 at 8:25 pm EDT', title: 'Export includes all settings and stats', items: [
+    { version: '40.3', date: 'July 25th, 2026 at 8:25 pm EDT', title: 'Export, refetch metadata, CSV import, accepted files', items: [
       'Export now includes: songs, playlists, listening stats, streaks, theme, EQ, turntable angle, glow settings',
       'Import restores all settings from backup',
-      'Fixed service worker skipWaiting() timing (preserved from v40.2)',
+      'Added "Re-fetch all metadata" button in Settings → More',
+      'Re-download covers and artist info for all songs (fix wrong covers)',
+      'CSV import for Spotify playlists (TuneMyMusic format)',
+      'Accepted file types section in Settings → More',
+      'Fixed service worker skipWaiting() timing',
     ] },
     { version: '40.2', date: 'July 25th, 2026 at 8:15 pm EDT', title: 'Fix service worker data loss', items: [
       'Fixed skipWaiting() timing - now waits for cache before activating',
@@ -4379,6 +4388,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderGlowControls();
     renderThemeOptions();
     toast('Appearance reset to defaults');
+  });
+  $('refetchMetadataBtn').addEventListener('click', () => {
+    if(enrichState.active){ toast('Already fetching metadata...'); return; }
+    enrichAttemptedIds = new Set();
+    saveEnrichAttempted();
+    allTracks.forEach(t => {
+      if(t.artBlob){
+        t.artBlob = null;
+        if(t.artUrl){ try{ URL.revokeObjectURL(t.artUrl); }catch(e){} }
+        t.artUrl = null;
+        persistTrackMeta(t);
+      }
+    });
+    toast('Re-fetching metadata for all songs...');
+    runAutoEnrich();
   });
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
   $('updateLogBackdrop').addEventListener('click', e => { if(e.target === $('updateLogBackdrop')) $('updateLogBackdrop').style.display = 'none'; });
