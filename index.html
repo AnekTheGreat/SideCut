@@ -5230,74 +5230,145 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     modal.style.display = 'flex';
   }
 
+  // Background import state
+  let bgImportState = null;
+  let bgImportInterval = null;
+
   function downloadCSVTracks(tracks){
     const searchBtn = document.getElementById('downloadCSVTracks');
     searchBtn.disabled = true;
-    let completed = 0;
-    let found = 0;
-    const PARALLEL = 8; // Number of parallel searches
-    const batchSize = Math.min(PARALLEL, tracks.length);
-    searchBtn.textContent = `Searching... 0/${tracks.length}`;
+    searchBtn.textContent = 'Import in background';
 
-    async function searchTrack(t, idx){
-      const query = `${t.artist} ${t.title}`;
-      try{
-        const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=1`);
-        if(resp.ok){
-          const data = await resp.json();
-          if(data.results && data.results[0]){
-            const result = data.results[0];
-            const previewUrl = result.previewUrl;
-            if(previewUrl){
-              const audio = new Audio(previewUrl);
-              return new Promise(resolve => {
-                audio.addEventListener('canplaythrough', () => {
-                  const newTrack = {
-                    id: 'sp_' + Date.now() + '_' + Math.random().toString(36).substr(2,9),
-                    name: t.title || result.trackName,
-                    artist: t.artist || result.artistName,
-                    album: t.album || result.collectionName,
-                    url: previewUrl,
-                    duration: audio.duration || 30,
-                    dateAdded: Date.now()
-                  };
-                  allTracks.push(newTrack);
-                  queue.push(newTrack.id);
-                  persistLibrary();
-                  resolve(true);
-                });
-                audio.addEventListener('error', () => resolve(false));
-                audio.load();
-                setTimeout(() => resolve(false), 5000); // 5s timeout
+    // Save import state for background processing
+    bgImportState = {
+      tracks: tracks,
+      completed: 0,
+      found: 0,
+      total: tracks.length,
+      running: true
+    };
+    localStorage.setItem('bgImportState', JSON.stringify(bgImportState));
+
+    // Start background import
+    runBackgroundImport();
+
+    // Show small progress indicator
+    showBackgroundImportIndicator();
+
+    // Close modal after a moment
+    setTimeout(() => {
+      const modal = document.getElementById('spotifyCSVModal');
+      if(modal) modal.style.display = 'none';
+    }, 500);
+
+    toast(`Importing ${tracks.length} tracks in background...`);
+  }
+
+  function showBackgroundImportIndicator(){
+    let indicator = document.getElementById('bgImportIndicator');
+    if(!indicator){
+      indicator = document.createElement('div');
+      indicator.id = 'bgImportIndicator';
+      indicator.style.cssText = 'position:fixed;top:60px;right:10px;background:var(--bg-raised);border:1px solid var(--coral);border-radius:8px;padding:10px 14px;z-index:9999;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+      document.body.appendChild(indicator);
+    }
+    updateBackgroundImportIndicator();
+  }
+
+  function updateBackgroundImportIndicator(){
+    const indicator = document.getElementById('bgImportIndicator');
+    if(!indicator || !bgImportState) return;
+    const pct = Math.round((bgImportState.completed / bgImportState.total) * 100);
+    indicator.innerHTML = `
+      <div style="font-weight:600;color:var(--coral);margin-bottom:4px;">Importing tracks</div>
+      <div style="margin-bottom:6px;">${bgImportState.completed}/${bgImportState.total}</div>
+      <div style="height:4px;background:var(--bg);border-radius:2px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:var(--coral);transition:width .3s;"></div>
+      </div>`;
+  }
+
+  function hideBackgroundImportIndicator(){
+    const indicator = document.getElementById('bgImportIndicator');
+    if(indicator) indicator.remove();
+    if(bgImportInterval){ clearInterval(bgImportInterval); bgImportInterval = null; }
+  }
+
+  async function runBackgroundImport(){
+    if(!bgImportState || !bgImportState.running) return;
+    const { tracks, completed, total } = bgImportState;
+    const PARALLEL = 8;
+    const batchStart = completed;
+
+    if(batchStart >= total){
+      // Done!
+      bgImportState.running = false;
+      hideBackgroundImportIndicator();
+      localStorage.removeItem('bgImportState');
+      toast(`Import complete! Downloaded ${bgImportState.found} of ${total} tracks`);
+      renderList();
+      return;
+    }
+
+    const batchEnd = Math.min(batchStart + PARALLEL, total);
+    const batch = tracks.slice(batchStart, batchEnd);
+
+    const promises = batch.map((t, i) => searchTrack(t));
+    const results = await Promise.all(promises);
+
+    results.forEach((r, i) => { if(r) bgImportState.found++; });
+    bgImportState.completed = batchEnd;
+    localStorage.setItem('bgImportState', JSON.stringify(bgImportState));
+    updateBackgroundImportIndicator();
+
+    // Check if complete
+    if(bgImportState.completed >= bgImportState.total){
+      bgImportState.running = false;
+      hideBackgroundImportIndicator();
+      localStorage.removeItem('bgImportState');
+      toast(`Import complete! Downloaded ${bgImportState.found} of ${total} tracks`);
+      renderList();
+    } else {
+      // Continue after short delay
+      setTimeout(() => runBackgroundImport(), 100);
+    }
+  }
+
+  async function searchTrack(t){
+    const query = `${t.artist} ${t.title}`;
+    try{
+      const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=1`);
+      if(resp.ok){
+        const data = await resp.json();
+        if(data.results && data.results[0]){
+          const result = data.results[0];
+          const previewUrl = result.previewUrl;
+          if(previewUrl){
+            const audio = new Audio(previewUrl);
+            return new Promise(resolve => {
+              audio.addEventListener('canplaythrough', () => {
+                const newTrack = {
+                  id: 'sp_' + Date.now() + '_' + Math.random().toString(36).substr(2,9),
+                  name: t.title || result.trackName,
+                  artist: t.artist || result.artistName,
+                  album: t.album || result.collectionName,
+                  url: previewUrl,
+                  duration: audio.duration || 30,
+                  dateAdded: Date.now()
+                };
+                allTracks.push(newTrack);
+                queue.push(newTrack.id);
+                persistLibrary();
+                resolve(true);
               });
-            }
+              audio.addEventListener('error', () => resolve(false));
+              audio.load();
+              setTimeout(() => resolve(false), 5000);
+            });
           }
         }
-      }catch(e){}
-      return false;
-    }
-
-    async function processBatch(startIdx){
-      const promises = [];
-      for(let i = 0; i < batchSize && startIdx + i < tracks.length; i++){
-        promises.push(searchTrack(tracks[startIdx + i], startIdx + i));
       }
-      const results = await Promise.all(promises);
-      results.forEach((r, i) => { if(r) found++; });
-      completed += promises.length;
-      searchBtn.textContent = `Searching... ${completed}/${tracks.length}`;
-      return completed;
-    }
-
-    async function runAll(){
-      for(let i = 0; i < tracks.length; i += PARALLEL){
-        await processBatch(i);
-      }
-      document.getElementById('spotifyCSVModal').style.display = 'none';
-      toast(`Downloaded ${found} of ${tracks.length} tracks`);
-      renderList();
-    }
-    runAll();
+    }catch(e){}
+    return false;
   }
   
   function parseSpotifyCSV(content){
