@@ -3972,18 +3972,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '40.2';
+  const APP_VERSION = '40.3';
   const CHANGELOG = [
+    { version: '40.3', date: 'July 25th, 2026 at 8:25 pm EDT', title: 'Export includes all settings and stats', items: [
+      'Export now includes: songs, playlists, listening stats, streaks, theme, EQ, turntable angle, glow settings',
+      'Import restores all settings from backup',
+      'Fixed service worker skipWaiting() timing (preserved from v40.2)',
+    ] },
     { version: '40.2', date: 'July 25th, 2026 at 8:15 pm EDT', title: 'Fix service worker data loss', items: [
       'Fixed skipWaiting() timing - now waits for cache before activating',
       'Prevents race condition that caused data loss on reload',
-      'Preserves all v40.1.5 features with SW working correctly',
     ] },
-    { version: '40.1.5', date: 'July 25th, 2026 at 3:35 pm', title: 'SAFE VERSION - CSV import and timestamps', items: [
-      'Timestamps now show in notification bell changelog (e.g. v40.1.5 · July 25th, 2026 at 3:35 pm)',
-      'Added version guide in Settings → More explaining how the version system works (.0.5, .1, .2, .5, +1, +5)',
-      'Added CSV file support for importing Spotify playlists (export from Spotify as CSV)',
-      'Added "Accepted file types" section in Settings → More showing all supported formats',
+    { version: '40.1.5', date: 'July 25th, 2026 at 3:35 pm', title: 'SAFE VERSION - timestamps and version guide', items: [
+      'Timestamps now show in notification bell changelog',
+      'Added version guide in Settings → More explaining how the version system works',
     ] },
     { version: '40.1', date: 'July 25th, 2026 at 3:05 pm', title: 'Bug fixes for duplicate detection and Unsorted playlist', items: [
       'Fixed duplicate detection to use file size in addition to name/artist/duration for more accurate matching',
@@ -6393,6 +6395,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Full library export/import — bundles actual audio + playlists into one
   // .zip so you can carry your whole library into a newer version of this
   // page (or restore it after clearing browser data), no re-picking needed.
+  // INCLUDES: songs, playlists, listening stats, streaks, theme, EQ, turntable angle, glow settings.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
     showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async () => {
@@ -6401,14 +6404,47 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(btn){ btn.disabled = true; btn.textContent = 'Zipping…'; }
       try{
         const zip = new JSZip();
-        const manifest = { playlists, tracks: [] };
+        const manifest = { playlists, tracks: [], settings: {}, stats: {} };
+        
+        // Export tracks
         allTracks.forEach(t => {
           const fname = (t.file && t.file.name) || t.name || 'track';
           const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
           const zipPath = `audio/${t.id}${ext}`;
-          zip.file(zipPath, t.file);
-          manifest.tracks.push({ id: t.id, name: t.name, artist: t.artist, duration: t.duration, bpm: t.bpm, genre: t.genre, path: zipPath });
+          if(t.file) zip.file(zipPath, t.file);
+          manifest.tracks.push({ id: t.id, name: t.name, artist: t.artist, duration: t.duration, bpm: t.bpm, genre: t.genre, path: t.file ? zipPath : null });
         });
+        
+        // Export settings
+        manifest.settings = {
+          crossfadeSeconds: crossfadeSeconds,
+          eq: globalEQ,
+          themeMode: document.body.className,
+          gaplessMode: $('gaplessToggle')?.textContent === 'On',
+          perPlaylistSort: $('perPlaylistSortToggle')?.textContent === 'On',
+        };
+        
+        // Export turntable angle if available
+        if(window.getTurntableAngle){
+          manifest.settings.turntableAngle = window.getTurntableAngle();
+        }
+        
+        // Export glow settings
+        manifest.settings.glowColor = $('glowColorHex')?.value;
+        manifest.settings.glowStyle = $('glowStyleSelect')?.value;
+        
+        // Export listening stats
+        try{
+          const stats = await dbGet('meta', 'stats');
+          if(stats) manifest.stats = stats.value;
+          const streak = await dbGet('meta', 'streak');
+          if(streak) manifest.stats.streak = streak.value;
+          const listenHistory = await dbGet('meta', 'listenHistory');
+          if(listenHistory) manifest.stats.listenHistory = listenHistory.value;
+          const artistStats = await dbGet('meta', 'artistStats');
+          if(artistStats) manifest.stats.artistStats = artistStats.value;
+        }catch(e){ console.log('Could not export stats:', e); }
+        
         zip.file('manifest.json', JSON.stringify(manifest));
         const blob = await zip.generateAsync({ type: 'blob' });
         const a = document.createElement('a');
@@ -6489,11 +6525,63 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       playlists['All Songs'] = allTracks.map(t => t.id);
       saveMeta();
+      
+      // Restore settings if present in manifest
+      if(manifest.settings){
+        // Restore crossfade
+        if(manifest.settings.crossfadeSeconds !== undefined){
+          crossfadeSeconds = manifest.settings.crossfadeSeconds;
+          $('crossfadeSlider').value = crossfadeSeconds;
+          $('crossfadeValue').textContent = crossfadeSeconds + 's';
+          dbPut('meta', { key: 'crossfadeSeconds', value: crossfadeSeconds });
+        }
+        // Restore EQ
+        if(manifest.settings.eq){
+          globalEQ = manifest.settings.eq;
+          dbPut('meta', { key: 'eq', value: globalEQ });
+        }
+        // Restore turntable angle
+        if(manifest.settings.turntableAngle && window.setTurntableAngle){
+          window.setTurntableAngle(manifest.settings.turntableAngle);
+        }
+        // Restore glow settings
+        if(manifest.settings.glowColor && $('glowColorHex')){
+          $('glowColorHex').value = manifest.settings.glowColor;
+          document.querySelectorAll('.glow-sample').forEach(el => el.style.background = manifest.settings.glowColor);
+          updateCSSGlow();
+          dbPut('meta', { key: 'glowColor', value: manifest.settings.glowColor });
+        }
+        if(manifest.settings.glowStyle && $('glowStyleSelect')){
+          $('glowStyleSelect').value = manifest.settings.glowStyle;
+          dbPut('meta', { key: 'glowStyle', value: manifest.settings.glowStyle });
+        }
+        // Restore theme mode
+        if(manifest.settings.themeMode){
+          applyThemeMode(manifest.settings.themeMode);
+        }
+      }
+      
+      // Restore listening stats if present
+      if(manifest.stats){
+        if(manifest.stats.totalListenSeconds !== undefined){
+          dbPut('meta', { key: 'stats', value: manifest.stats });
+        }
+        if(manifest.stats.streak){
+          dbPut('meta', { key: 'streak', value: manifest.stats.streak });
+        }
+        if(manifest.stats.listenHistory){
+          dbPut('meta', { key: 'listenHistory', value: manifest.stats.listenHistory });
+        }
+        if(manifest.stats.artistStats){
+          dbPut('meta', { key: 'artistStats', value: manifest.stats.artistStats });
+        }
+      }
+      
       $('emptyState').style.display = 'none';
       $('library').style.display = 'flex';
       renderTabs();
       renderList();
-      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}`);
+      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + settings' : ''}`);
     }catch(e){
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
