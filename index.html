@@ -5279,9 +5279,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const indicator = document.getElementById('bgImportIndicator');
     if(!indicator || !bgImportState) return;
     const pct = Math.round((bgImportState.completed / bgImportState.total) * 100);
+    const dups = bgImportState.duplicates || 0;
     indicator.innerHTML = `
       <div style="font-weight:600;color:var(--coral);margin-bottom:4px;">Importing tracks</div>
-      <div style="margin-bottom:6px;">${bgImportState.completed}/${bgImportState.total}</div>
+      <div style="margin-bottom:6px;">${bgImportState.completed}/${bgImportState.total}${dups ? ' (+' + dups + ' skipped)' : ''}</div>
       <div style="height:4px;background:var(--bg);border-radius:2px;overflow:hidden;">
         <div style="height:100%;width:${pct}%;background:var(--coral);transition:width .3s;"></div>
       </div>`;
@@ -5304,7 +5305,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       bgImportState.running = false;
       hideBackgroundImportIndicator();
       localStorage.removeItem('bgImportState');
-      toast(`Import complete! Downloaded ${bgImportState.found} of ${total} tracks`);
+      const dups = bgImportState.duplicates || 0;
+      toast(`Import complete! Added ${bgImportState.found} of ${total} tracks${dups ? ' (' + dups + ' duplicates skipped)' : ''}`);
       renderList();
       return;
     }
@@ -5315,7 +5317,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const promises = batch.map((t, i) => searchTrack(t));
     const results = await Promise.all(promises);
 
-    results.forEach((r, i) => { if(r) bgImportState.found++; });
+    results.forEach((r, i) => { 
+      if(r === true) bgImportState.found++;
+    });
     bgImportState.completed = batchEnd;
     localStorage.setItem('bgImportState', JSON.stringify(bgImportState));
     updateBackgroundImportIndicator();
@@ -5325,7 +5329,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       bgImportState.running = false;
       hideBackgroundImportIndicator();
       localStorage.removeItem('bgImportState');
-      toast(`Import complete! Downloaded ${bgImportState.found} of ${total} tracks`);
+      const dups = bgImportState.duplicates || 0;
+      toast(`Import complete! Added ${bgImportState.found} of ${total} tracks${dups ? ' (' + dups + ' duplicates skipped)' : ''}`);
       renderList();
     } else {
       // Continue after short delay
@@ -5334,6 +5339,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   async function searchTrack(t){
+    // Check for duplicates by artist + title
+    const normArtist = (t.artist || '').toLowerCase().trim();
+    const normTitle = (t.title || '').toLowerCase().trim();
+    const isDup = allTracks.some(existing => {
+      const exArtist = (existing.artist || '').toLowerCase().trim();
+      const exTitle = (existing.name || '').toLowerCase().trim();
+      return exArtist === normArtist && exTitle === normTitle;
+    });
+    if(isDup){
+      bgImportState.duplicates = (bgImportState.duplicates || 0) + 1;
+      return 'duplicate';
+    }
+
     const query = `${t.artist} ${t.title}`;
     try{
       const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=1`);
