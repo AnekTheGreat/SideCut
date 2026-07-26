@@ -5265,49 +5265,70 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function showBackgroundImportIndicator(){
-    let indicator = document.getElementById('bgImportIndicator');
-    if(!indicator){
-      indicator = document.createElement('div');
-      indicator.id = 'bgImportIndicator';
-      indicator.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:2px solid var(--coral);border-radius:12px;padding:12px 20px;z-index:9999;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,0.4);cursor:pointer;';
-      indicator.addEventListener('click', () => {
-        // Click to pause/resume
-        if(bgImportState && bgImportState.running){
-          bgImportState.running = false;
-          updateBackgroundImportIndicator();
-        } else if(bgImportState && !bgImportState.running){
-          bgImportState.running = true;
-          updateBackgroundImportIndicator();
-          runBackgroundImport();
-        }
-      });
-      document.body.appendChild(indicator);
+    // Small dot indicator - always visible during import
+    let dot = document.getElementById('bgImportDot');
+    if(!dot){
+      dot = document.createElement('div');
+      dot.id = 'bgImportDot';
+      dot.style.cssText = 'position:fixed;bottom:20px;right:20px;width:16px;height:16px;background:var(--coral);border-radius:50%;z-index:9999;cursor:pointer;box-shadow:0 0 10px var(--coral);';
+      document.body.appendChild(dot);
     }
-    updateBackgroundImportIndicator();
+    dot.onclick = () => showImportPopup();
+    updateImportDot();
   }
 
-  function updateBackgroundImportIndicator(){
-    const indicator = document.getElementById('bgImportIndicator');
-    if(!indicator || !bgImportState) return;
+  function updateImportDot(){
+    const dot = document.getElementById('bgImportDot');
+    if(!dot) return;
+    if(!bgImportState || bgImportState.completed >= bgImportState.total){
+      dot.style.display = 'none';
+      return;
+    }
+    const pct = (bgImportState.completed / bgImportState.total) * 100;
+    dot.style.display = 'block';
+    dot.style.background = `conic-gradient(var(--coral) ${pct}%, var(--bg) ${pct}%)`;
+  }
+
+  function showImportPopup(){
+    if(!bgImportState) return;
+    let popup = document.getElementById('bgImportPopup');
+    if(!popup){
+      popup = document.createElement('div');
+      popup.id = 'bgImportPopup';
+      popup.style.cssText = 'position:fixed;bottom:80px;right:20px;background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:16px;z-index:9998;min-width:250px;box-shadow:0 4px 20px rgba(0,0,0,0.4);';
+      document.body.appendChild(popup);
+    }
     const pct = Math.round((bgImportState.completed / bgImportState.total) * 100);
     const dups = bgImportState.duplicates || 0;
     const status = bgImportState.running ? '▶ Importing' : '⏸ Paused';
-    indicator.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div style="flex:1;">
-          <div style="font-weight:600;color:var(--coral);margin-bottom:4px;">${status}</div>
-          <div style="margin-bottom:6px;">${bgImportState.completed}/${bgImportState.total}${dups ? ' (' + dups + ' skipped)' : ''}</div>
-          <div style="height:6px;background:var(--bg);border-radius:3px;overflow:hidden;min-width:200px;">
-            <div style="height:100%;width:${pct}%;background:var(--coral);transition:width .3s;"></div>
-          </div>
-        </div>
-        <div style="color:var(--ink-dim);font-size:11px;">click to ${bgImportState.running ? 'pause' : 'resume'}</div>
-      </div>`;
+    popup.innerHTML = `
+      <div style="font-weight:600;color:var(--coral);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+        <span>Track Import</span>
+        <span style="cursor:pointer;color:var(--ink-dim);font-size:18px;" onclick="document.getElementById('bgImportPopup').style.display='none'">×</span>
+      </div>
+      <div style="margin-bottom:8px;">${bgImportState.completed}/${bgImportState.total}${dups ? ' (' + dups + ' skipped)' : ''}</div>
+      <div style="height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin-bottom:12px;">
+        <div style="height:100%;width:${pct}%;background:var(--coral);transition:width .3s;"></div>
+      </div>
+      <button id="importPauseBtn" class="playlist-pick-btn" style="width:100%;text-align:center;">${bgImportState.running ? 'Pause' : 'Resume'}</button>`;
+    popup.style.display = 'block';
+    popup.querySelector('#importPauseBtn').onclick = () => {
+      if(bgImportState.running){
+        bgImportState.running = false;
+      } else {
+        bgImportState.running = true;
+        runBackgroundImport();
+      }
+      showImportPopup();
+      updateImportDot();
+    };
   }
 
   function hideBackgroundImportIndicator(){
-    const indicator = document.getElementById('bgImportIndicator');
-    if(indicator) indicator.remove();
+    const dot = document.getElementById('bgImportDot');
+    const popup = document.getElementById('bgImportPopup');
+    if(dot) dot.remove();
+    if(popup) popup.remove();
     if(bgImportInterval){ clearInterval(bgImportInterval); bgImportInterval = null; }
   }
 
@@ -5339,7 +5360,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
     bgImportState.completed = batchEnd;
     localStorage.setItem('bgImportState', JSON.stringify(bgImportState));
-    updateBackgroundImportIndicator();
+    updateImportDot();
 
     // Check if complete
     if(bgImportState.completed >= bgImportState.total){
@@ -5356,7 +5377,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   async function searchTrack(t){
-    // Check for duplicates by artist + title
+    // Check for duplicates by artist + title (case-insensitive)
     const normArtist = (t.artist || '').toLowerCase().trim();
     const normTitle = (t.title || '').toLowerCase().trim();
     const isDup = allTracks.some(existing => {
@@ -5369,40 +5390,49 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       return 'duplicate';
     }
 
+    // Search iTunes with fallback searches
     const query = `${t.artist} ${t.title}`;
-    try{
-      const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=1`);
-      if(resp.ok){
-        const data = await resp.json();
-        if(data.results && data.results[0]){
-          const result = data.results[0];
-          const previewUrl = result.previewUrl;
-          if(previewUrl){
-            const audio = new Audio(previewUrl);
-            return new Promise(resolve => {
-              audio.addEventListener('canplaythrough', () => {
-                const newTrack = {
-                  id: 'sp_' + Date.now() + '_' + Math.random().toString(36).substr(2,9),
-                  name: t.title || result.trackName,
-                  artist: t.artist || result.artistName,
-                  album: t.album || result.collectionName,
-                  url: previewUrl,
-                  duration: audio.duration || 30,
-                  dateAdded: Date.now()
-                };
-                allTracks.push(newTrack);
-                queue.push(newTrack.id);
-                persistLibrary();
-                resolve(true);
+    const searchQueries = [
+      query,
+      t.title, // Try title only
+      `${t.artist} ${t.title} song` // Add "song" keyword
+    ];
+
+    for(const searchQuery of searchQueries){
+      try{
+        const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(searchQuery)}&media=music&entity=song&limit=3`);
+        if(resp.ok){
+          const data = await resp.json();
+          // Find first result with a preview URL
+          for(const result of (data.results || [])){
+            if(result.previewUrl){
+              const audio = new Audio(result.previewUrl);
+              return new Promise(resolve => {
+                audio.addEventListener('canplaythrough', () => {
+                  const newTrack = {
+                    id: 'sp_' + Date.now() + '_' + Math.random().toString(36).substr(2,9),
+                    name: t.title || result.trackName,
+                    artist: t.artist || result.artistName,
+                    album: t.album || result.collectionName,
+                    url: result.previewUrl,
+                    duration: audio.duration || 30,
+                    dateAdded: Date.now()
+                  };
+                  allTracks.push(newTrack);
+                  queue.push(newTrack.id);
+                  persistLibrary();
+                  resolve(true);
+                });
+                audio.addEventListener('error', () => resolve(false));
+                audio.load();
+                setTimeout(() => resolve(false), 5000);
               });
-              audio.addEventListener('error', () => resolve(false));
-              audio.load();
-              setTimeout(() => resolve(false), 5000);
-            });
+            }
           }
         }
-      }
-    }catch(e){}
+      }catch(e){}
+      await new Promise(r => setTimeout(r, 100)); // Brief delay between searches
+    }
     return false;
   }
   
