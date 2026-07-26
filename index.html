@@ -5269,7 +5269,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!indicator){
       indicator = document.createElement('div');
       indicator.id = 'bgImportIndicator';
-      indicator.style.cssText = 'position:fixed;top:60px;right:10px;background:var(--bg-raised);border:1px solid var(--coral);border-radius:8px;padding:10px 14px;z-index:9999;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+      indicator.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:2px solid var(--coral);border-radius:12px;padding:12px 20px;z-index:9999;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,0.4);cursor:pointer;';
+      indicator.addEventListener('click', () => {
+        // Click to pause/resume
+        if(bgImportState && bgImportState.running){
+          bgImportState.running = false;
+          updateBackgroundImportIndicator();
+        } else if(bgImportState && !bgImportState.running){
+          bgImportState.running = true;
+          updateBackgroundImportIndicator();
+          runBackgroundImport();
+        }
+      });
       document.body.appendChild(indicator);
     }
     updateBackgroundImportIndicator();
@@ -5280,11 +5291,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!indicator || !bgImportState) return;
     const pct = Math.round((bgImportState.completed / bgImportState.total) * 100);
     const dups = bgImportState.duplicates || 0;
+    const status = bgImportState.running ? '▶ Importing' : '⏸ Paused';
     indicator.innerHTML = `
-      <div style="font-weight:600;color:var(--coral);margin-bottom:4px;">Importing tracks</div>
-      <div style="margin-bottom:6px;">${bgImportState.completed}/${bgImportState.total}${dups ? ' (+' + dups + ' skipped)' : ''}</div>
-      <div style="height:4px;background:var(--bg);border-radius:2px;overflow:hidden;">
-        <div style="height:100%;width:${pct}%;background:var(--coral);transition:width .3s;"></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;color:var(--coral);margin-bottom:4px;">${status}</div>
+          <div style="margin-bottom:6px;">${bgImportState.completed}/${bgImportState.total}${dups ? ' (' + dups + ' skipped)' : ''}</div>
+          <div style="height:6px;background:var(--bg);border-radius:3px;overflow:hidden;min-width:200px;">
+            <div style="height:100%;width:${pct}%;background:var(--coral);transition:width .3s;"></div>
+          </div>
+        </div>
+        <div style="color:var(--ink-dim);font-size:11px;">click to ${bgImportState.running ? 'pause' : 'resume'}</div>
       </div>`;
   }
 
