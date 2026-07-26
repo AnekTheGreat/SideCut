@@ -3983,7 +3983,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       'Export now includes: songs, playlists, listening stats, streaks, theme, EQ, turntable angle, glow settings',
       'Import restores all settings from backup',
       'Added "Re-fetch all metadata" button in Settings → More',
-      'Re-download covers and artist info for all songs (fix wrong covers)',
+      'Re-download covers using iTunes fallback (works without external API)',
       'CSV import for Spotify playlists (TuneMyMusic format)',
       'Accepted file types section in Settings → More',
       'Fixed service worker skipWaiting() timing',
@@ -4575,6 +4575,48 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return changed;
   }
 
+  // Fallback: fetch cover from iTunes Search API (free, no auth needed)
+  async function fetchCoverFromITunes(query){
+    try{
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=1&entity=song`;
+      const resp = await fetch(url);
+      if(resp.ok){
+        const data = await resp.json();
+        if(data.results && data.results[0] && data.results[0].artworkUrl100){
+          // Convert 100x100 to 600x600 for better quality
+          return data.results[0].artworkUrl100.replace('100x100', '600x600');
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+
+  // Try to fetch cover for a track using multiple sources
+  async function fetchCoverForTrack(t){
+    if(t.artBlob) return false;
+    const query = enrichQueryFor(t);
+    if(!query) return false;
+    
+    // Try iTunes first (free fallback)
+    const artwork = await fetchCoverFromITunes(query);
+    if(artwork){
+      try{
+        const imgResp = await fetch(artwork);
+        if(imgResp.ok){
+          const blob = await imgResp.blob();
+          if(blob && blob.size > 100){
+            t.artBlob = blob;
+            if(t.artUrl){ try{ URL.revokeObjectURL(t.artUrl); }catch(e){} }
+            t.artUrl = URL.createObjectURL(blob);
+            persistTrackMeta(t);
+            return true;
+          }
+        }
+      }catch(e){}
+    }
+    return false;
+  }
+
   function enrichNotifHtml(){
     if(enrichState.active){
       const pct = enrichState.total ? Math.round((enrichState.done / enrichState.total) * 100) : 0;
@@ -4626,8 +4668,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       for(let j=0;j<chunk.length;j++){
         const t = chunk[j], r = results[j];
         enrichAttemptedIds.add(t.id);
-        try{ if(r && r.found && await applyEnrichment(t, r)) enrichState.updated++; }
+        let updated = false;
+        try{ 
+          if(r && r.found && await applyEnrichment(t, r)) updated = true;
+          // Fallback to iTunes if no cover from main API
+          if(!t.artBlob) {
+            if(await fetchCoverForTrack(t)) updated = true;
+          }
+        }
         catch(e){ enrichState.failed++; }
+        if(updated) enrichState.updated++;
         enrichState.done++;
       }
       saveEnrichAttempted();
