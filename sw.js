@@ -1,13 +1,11 @@
-const CACHE_NAME = 'sidecut-shell-v40.3';
+const CACHE_NAME = 'sidecut-shell-v40.1';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_FILES))
-      .then(() => self.skipWaiting()) // wait for cache before activating
-      .catch(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)).catch(() => {})
   );
+  self.skipWaiting(); // don't wait for old tabs to close — new version takes over right away
 });
 
 self.addEventListener('activate', (event) => {
