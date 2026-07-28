@@ -547,6 +547,28 @@
   #nowPlaying.mini{ padding:0; gap:0; }
   #nowPlaying.mini .np-row, #nowPlaying.mini .seek-row span, #nowPlaying.mini #waveformBar, #nowPlaying.mini #seekBar, #nowPlaying.mini .seek-line-wrap{ display:none; }
   #nowPlaying.mini #miniBar{ display:block; }
+  /* Simplified player: hide turntable elements by default */
+  #nowPlaying #npPlayerStage, #nowPlaying .np-tt-3d, #nowPlaying .np-lid, #nowPlaying .np-tonearm, #nowPlaying .np-tonearm-base,
+  #nowPlaying #shuffleBtn, #nowPlaying #repeatBtn, #nowPlaying .np-lid-glass {
+    display: none !important;
+  }
+  #nowPlaying #npInfo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+  #nowPlaying #npArt {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    background: var(--bg-raised);
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
   #miniBar{
     display:none; height:4px; width:100%; background:var(--line); position:relative; cursor:pointer;
   }
@@ -1407,10 +1429,15 @@ body.sandbox-always-search #searchInput {
     <div class="np-tonearm"><div class="np-tonearm-shaft"></div><div class="np-tonearm-head"><div class="np-tonearm-needle"></div></div></div>
     </div>
     </div>
-    <div id="npInfo"><div class="t" id="npTitle">—</div><div class="a" id="npArtist">—</div>
-      <div class="name-bubble" id="nameBubble" style="display:none;">
-        <div class="bt" id="bubbleTitle">—</div>
-        <div class="ba" id="bubbleArtist">—</div>
+    <div id="npInfo">
+      <div id="npArt"></div>
+      <div class="np-text">
+        <div class="t" id="npTitle">—</div>
+        <div class="a" id="npArtist">—</div>
+        <div class="name-bubble" id="nameBubble" style="display:none;">
+          <div class="bt" id="bubbleTitle">—</div>
+          <div class="ba" id="bubbleArtist">—</div>
+        </div>
       </div>
     </div>
     <div id="npControls">
@@ -3704,12 +3731,25 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsTitle').textContent = `${title} - ${artist}`;
     
     try {
-      // Try LRCLIB API (free, no auth needed)
-      const query = encodeURIComponent(`${artist} ${title}`);
-      const resp = await fetch(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}&duration=${Math.round(track.duration || 0)}`);
+      // Try lyrics.ovh API (simple CORS-friendly API)
+      const resp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
       
       if (resp.ok) {
         const data = await resp.json();
+        if (data && data.lyrics) {
+          $('lyricsLoading').style.display = 'none';
+          $('lyricsText').style.display = 'block';
+          $('lyricsText').textContent = data.lyrics;
+          return;
+        }
+      }
+      
+      // Fallback: try LRCLIB via CORS proxy
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}`)}`;
+      const lrclibResp = await fetch(proxyUrl);
+      
+      if (lrclibResp.ok) {
+        const data = await lrclibResp.json();
         if (data && data.syncedLyrics) {
           $('lyricsLoading').style.display = 'none';
           $('lyricsText').style.display = 'block';
@@ -3720,26 +3760,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           $('lyricsText').style.display = 'block';
           $('lyricsText').textContent = data.plainLyrics;
           return;
-        }
-      }
-      
-      // Fallback: search for any match
-      const searchResp = await fetch(`https://lrclib.net/api/search?q=${query}`);
-      if (searchResp.ok) {
-        const results = await searchResp.json();
-        if (results && results.length > 0) {
-          const best = results[0];
-          if (best.syncedLyrics) {
-            $('lyricsLoading').style.display = 'none';
-            $('lyricsText').style.display = 'block';
-            $('lyricsText').innerHTML = formatSyncedLyrics(best.syncedLyrics);
-            return;
-          } else if (best.plainLyrics) {
-            $('lyricsLoading').style.display = 'none';
-            $('lyricsText').style.display = 'block';
-            $('lyricsText').textContent = best.plainLyrics;
-            return;
-          }
         }
       }
       
@@ -3792,7 +3812,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(!t) return;
     
-    // Populate song info
+    // Populate song info - use npArt for consistency
     const artEl = $('npMenuArt');
     artEl.style.backgroundImage = t.artUrl ? `url('${t.artUrl}')` : '';
     $('npMenuTitle').textContent = t.name;
@@ -4162,8 +4182,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       'Album covers now show in the track list (library view)',
       'Disc label shows fallback gradient if album art fails to load',
       'Service worker improvements for better caching',
-      'New "LYRICS" button fetches song lyrics from LRCLIB database',
+      'New "LYRICS" button fetches song lyrics from lyrics.ovh',
       'Added 3-dot menu in player with quick actions (song info, lyrics, add to playlist, favorites, play next, delete)',
+      'Simplified the now playing bar - cleaner design with album art, removed turntable visualization',
     ] },
     { version: '40.5', date: 'July 25th, 2026 at 10:50 pm EDT', title: 'CSV import improvements and bug fixes', items: [
       'CSV import runs in background with parallel downloads (8 at a time)',
@@ -7230,6 +7251,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function updateNowPlayingArt(t){
     const labelEl = $('npDiscLabel');
     labelEl.style.backgroundImage = t.artUrl ? `url("${t.artUrl}")` : '';
+    const artEl = $('npArt');
+    if(artEl) artEl.style.backgroundImage = t.artUrl ? `url("${t.artUrl}")` : '';
   }
 
   function updateMediaSession(t){
