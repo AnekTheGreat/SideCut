@@ -1419,12 +1419,15 @@ body.sandbox-always-search #searchInput {
       <button id="playPauseBtn"><svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
       <button id="nextBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zm-9.5 6L15 18V6z"/></svg></button>
       <button id="repeatBtn" title="Repeat"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg></button>
-      <button id="backToTopBtn" title="Back to top" onclick="document.getElementById('listPane').scrollTo({top:0,behavior:'smooth'})" style="display:none; background:none; border:1px solid var(--line); color:var(--ink-dim); width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg></button>
+      <button id="npMenuBtn" title="More options" style="background:none; border:none; color:var(--ink-dim); cursor:pointer; padding:4px; display:flex; align-items:center; justify-content:center;">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg>
+      </button>
     </div>
   </div>
   <div class="np-row" style="margin-top:-2px;">
     <span id="mixBadge" style="display:none; font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:1px; color:var(--gold); border:1px solid var(--gold); border-radius:10px; padding:2px 7px;">MIX</span>
     <button id="djModeBtn" title="DJ Mode" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:10px; padding:2px 9px; font-size:9.5px; font-family:'JetBrains Mono',monospace; letter-spacing:1px; cursor:pointer;">DJ MODE</button>
+    <button id="lyricsBtn" title="Lyrics" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:10px; padding:2px 9px; font-size:9.5px; font-family:'JetBrains Mono',monospace; letter-spacing:1px; cursor:pointer;">LYRICS</button>
   </div>
   <div class="seek-row">
     <span id="curTime">0:00</span>
@@ -1919,6 +1922,41 @@ body.sandbox-always-search #searchInput {
     </div>
     <div class="modal-btns">
       <button class="cancel" id="songInfoClose" style="flex:1;">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Now Playing Menu (3-dot) -->
+<div class="modal-backdrop" id="npMenuBackdrop">
+  <div class="modal" style="padding:0; overflow:hidden;">
+    <div id="npMenuSongInfo" style="padding:16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px;">
+      <div id="npMenuArt" style="width:48px; height:48px; border-radius:6px; background:var(--bg-raised); background-size:cover; background-position:center; flex-shrink:0;"></div>
+      <div>
+        <div id="npMenuTitle" style="font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;"></div>
+        <div id="npMenuArtist" style="font-size:12px; color:var(--ink-dim);"></div>
+      </div>
+    </div>
+    <div id="npMenuList" style="padding:8px 0;"></div>
+    <div class="modal-btns">
+      <button class="cancel" id="npMenuClose" style="flex:1;">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lyrics Modal -->
+<div class="modal-backdrop" id="lyricsBackdrop">
+  <div class="modal" style="max-height:80vh; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--line); margin-bottom:12px;">
+      <h3 id="lyricsTitle">Lyrics</h3>
+      <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:24px; cursor:pointer; padding:0; line-height:1;">×</button>
+    </div>
+    <div id="lyricsContent" style="flex:1; overflow-y:auto; font-size:13.5px; line-height:1.7; white-space:pre-wrap; word-wrap:break-word;">
+      <div id="lyricsLoading" style="text-align:center; color:var(--ink-dim); padding:40px 0;">Searching for lyrics…</div>
+      <div id="lyricsText" style="display:none;"></div>
+      <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:40px 0;">
+        <div style="margin-bottom:8px;">No lyrics found</div>
+        <div style="font-size:12px;">Try playing the song to sync lyrics</div>
+      </div>
     </div>
   </div>
 </div>
@@ -3651,6 +3689,145 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('songInfoClose').addEventListener('click', () => { $('songInfoBackdrop').style.display = 'none'; });
   $('songInfoBackdrop').addEventListener('click', e => { if(e.target === $('songInfoBackdrop')) $('songInfoBackdrop').style.display = 'none'; });
 
+  // ---------------- Lyrics ----------------
+  let lyricsCurrentTrack = null;
+  
+  async function fetchLyrics(track) {
+    const title = track.name || '';
+    const artist = track.artist || 'Unknown';
+    
+    // Show loading
+    $('lyricsLoading').style.display = 'block';
+    $('lyricsText').style.display = 'none';
+    $('lyricsNotFound').style.display = 'none';
+    $('lyricsBackdrop').style.display = 'flex';
+    $('lyricsTitle').textContent = `${title} - ${artist}`;
+    
+    try {
+      // Try LRCLIB API (free, no auth needed)
+      const query = encodeURIComponent(`${artist} ${title}`);
+      const resp = await fetch(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}&duration=${Math.round(track.duration || 0)}`);
+      
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.syncedLyrics) {
+          $('lyricsLoading').style.display = 'none';
+          $('lyricsText').style.display = 'block';
+          $('lyricsText').innerHTML = formatSyncedLyrics(data.syncedLyrics);
+          return;
+        } else if (data && data.plainLyrics) {
+          $('lyricsLoading').style.display = 'none';
+          $('lyricsText').style.display = 'block';
+          $('lyricsText').textContent = data.plainLyrics;
+          return;
+        }
+      }
+      
+      // Fallback: search for any match
+      const searchResp = await fetch(`https://lrclib.net/api/search?q=${query}`);
+      if (searchResp.ok) {
+        const results = await searchResp.json();
+        if (results && results.length > 0) {
+          const best = results[0];
+          if (best.syncedLyrics) {
+            $('lyricsLoading').style.display = 'none';
+            $('lyricsText').style.display = 'block';
+            $('lyricsText').innerHTML = formatSyncedLyrics(best.syncedLyrics);
+            return;
+          } else if (best.plainLyrics) {
+            $('lyricsLoading').style.display = 'none';
+            $('lyricsText').style.display = 'block';
+            $('lyricsText').textContent = best.plainLyrics;
+            return;
+          }
+        }
+      }
+      
+      $('lyricsLoading').style.display = 'none';
+      $('lyricsNotFound').style.display = 'block';
+    } catch(e) {
+      console.error('Lyrics fetch error:', e);
+      $('lyricsLoading').style.display = 'none';
+      $('lyricsNotFound').style.display = 'block';
+    }
+  }
+  
+  function formatSyncedLyrics(lrc) {
+    // Parse LRC format and make it scrollable/highlightable
+    const lines = lrc.split('\n').filter(line => line.trim());
+    return lines.map(line => {
+      // Parse [mm:ss.xx]timestamp
+      const match = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/);
+      if (match) {
+        const mins = match[1];
+        const secs = match[2];
+        const ms = match[3];
+        const text = match[4].trim();
+        if (text) {
+          return `<div class="lyric-line" data-time="${parseInt(mins)*60 + parseInt(secs)}">${escapeHtml(text)}</div>`;
+        }
+      }
+      return '';
+    }).join('');
+  }
+  
+  $('lyricsBtn').addEventListener('click', () => {
+    if(queueIndex < 0 || queueIndex >= queue.length) {
+      toast('Play a song first');
+      return;
+    }
+    const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(t) fetchLyrics(t);
+  });
+  
+  $('lyricsClose').addEventListener('click', () => { $('lyricsBackdrop').style.display = 'none'; });
+  $('lyricsBackdrop').addEventListener('click', e => { if(e.target === $('lyricsBackdrop')) $('lyricsBackdrop').style.display = 'none'; });
+
+  // ---------------- Now Playing Menu (3-dot) ----------------
+  function showNpMenu() {
+    if(queueIndex < 0 || queueIndex >= queue.length) {
+      toast('Play a song first');
+      return;
+    }
+    const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(!t) return;
+    
+    // Populate song info
+    const artEl = $('npMenuArt');
+    artEl.style.backgroundImage = t.artUrl ? `url('${t.artUrl}')` : '';
+    $('npMenuTitle').textContent = t.name;
+    $('npMenuArtist').textContent = t.artist;
+    
+    // Build menu items
+    const menuList = $('npMenuList');
+    const menuItems = [
+      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-4h2v2h-2zm0-2h2V7h-2z"/></svg>', label: 'Song info', action: () => { $('npMenuBackdrop').style.display = 'none'; showSongInfo(t); } },
+      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg>', label: 'Lyrics', action: () => { $('npMenuBackdrop').style.display = 'none'; fetchLyrics(t); } },
+      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 6l-1-2H5v17h2v-7h5l1 2h7V6h-6zm4 8h-4l-1-2H7V6h5l1 2h5v6z"/></svg>', label: 'Add to playlist', action: () => { $('npMenuBackdrop').style.display = 'none'; promptAddToPlaylist(t.id); } },
+      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>', label: playlists['Favorites'].includes(t.id) ? 'Remove from Favorites' : 'Add to Favorites', action: () => { $('npMenuBackdrop').style.display = 'none'; toggleFavorite(t.id); } },
+      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h9v6h-9zm6 4h2v2h-2zm3-4h5v2h-5zm0 4h5v2h-5zM4 18h16v2H4z"/></svg>', label: 'Play next', action: () => { $('npMenuBackdrop').style.display = 'none'; playNext(t.id); } },
+      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>', label: 'Delete from library', action: () => { $('npMenuBackdrop').style.display = 'none'; confirmDeleteTrack(t.id); } },
+    ];
+    
+    menuList.innerHTML = menuItems.map(item => `
+      <button class="np-menu-item" style="width:100%; display:flex; align-items:center; gap:14px; padding:14px 20px; background:none; border:none; color:var(--ink); font-size:14px; cursor:pointer; text-align:left;">
+        <span style="width:20px; height:20px; display:flex; align-items:center; justify-content:center; color:var(--ink-dim);">${item.icon}</span>
+        <span>${item.label}</span>
+      </button>
+    `).join('');
+    
+    // Attach click handlers
+    menuList.querySelectorAll('.np-menu-item').forEach((btn, i) => {
+      btn.addEventListener('click', menuItems[i].action);
+    });
+    
+    $('npMenuBackdrop').style.display = 'flex';
+  }
+  
+  $('npMenuBtn').addEventListener('click', showNpMenu);
+  $('npMenuClose').addEventListener('click', () => { $('npMenuBackdrop').style.display = 'none'; });
+  $('npMenuBackdrop').addEventListener('click', e => { if(e.target === $('npMenuBackdrop')) $('npMenuBackdrop').style.display = 'none'; });
+
   // ---------------- Stats page ----------------
   function renderStats(){
     const body = $('statsBody');
@@ -3981,10 +4158,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '41';
   const CHANGELOG = [
-    { version: '41', date: 'July 26th, 2026', title: 'Album cover display fixes', items: [
+    { version: '41', date: 'July 26th, 2026 at 8:30 pm EDT', title: 'Album covers & lyrics', items: [
       'Album covers now show in the track list (library view)',
       'Disc label shows fallback gradient if album art fails to load',
       'Service worker improvements for better caching',
+      'New "LYRICS" button fetches song lyrics from LRCLIB database',
+      'Added 3-dot menu in player with quick actions (song info, lyrics, add to playlist, favorites, play next, delete)',
     ] },
     { version: '40.5', date: 'July 25th, 2026 at 10:50 pm EDT', title: 'CSV import improvements and bug fixes', items: [
       'CSV import runs in background with parallel downloads (8 at a time)',
