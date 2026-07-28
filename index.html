@@ -1830,6 +1830,11 @@ body.sandbox-always-search #searchInput {
       </div>
 
       <div style="margin-top:12px;">
+        <button class="playlist-pick-btn" id="fetchMissingCoversBtn" style="text-align:center;">Fetch missing covers</button>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Fetch iTunes covers for songs without artwork.</div>
+      </div>
+
+      <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="resetAppearanceBtn" style="text-align:center;">Reset appearance to defaults</button>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">If a theme or liquid glass mode ever gets stuck looking wrong, this puts theme and liquid glass back to how they started — nothing else is touched.</div>
       </div>
@@ -4799,6 +4804,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
     }
     toast(`Reset ${count} covers`);
+    renderList();
+  });
+  
+  $('fetchMissingCoversBtn').addEventListener('click', async () => {
+    if(enrichState.active){ toast('Already fetching...'); return; }
+    const needsCover = allTracks.filter(t => !t.artBlob && enrichQueryFor(t));
+    if(!needsCover.length){ toast('No songs need covers'); return; }
+    toast(`Fetching covers for ${needsCover.length} songs...`);
+    let fetched = 0;
+    for(const t of needsCover){
+      if(await fetchCoverForTrack(t)) fetched++;
+      refreshEnrichNotif();
+    }
+    toast(`Fetched ${fetched} cover${fetched>1?'s':''}`);
     renderList();
   });
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
