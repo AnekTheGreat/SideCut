@@ -2013,7 +2013,7 @@ body.sandbox-always-search #searchInput {
       <div id="lyricsText" style="display:none;"></div>
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:40px 0;">
         <div style="margin-bottom:8px;">No lyrics found</div>
-        <div style="font-size:12px;">Try another song or search with different terms</div>
+        <div style="font-size:12px;">This song may not be in our database.<br>Lyrics APIs primarily support English/Western music.</div>
       </div>
     </div>
   </div>
@@ -3771,11 +3771,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       lyricsScrollInterval = null;
     }
     
+    // Clean up artist/title for better API compatibility
+    const cleanArtist = titleCleanup(artist);
+    const cleanTitle = titleCleanup(title);
+    
     try {
       // Try multiple APIs for best coverage
       
-      // 1. LRCLIB (has synced lyrics for many songs)
-      const lrclibUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}&duration=${Math.round(track.duration || 0)}`;
+      // 1. LRCLIB exact match with duration
+      const lrclibUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(cleanArtist)}&track_name=${encodeURIComponent(cleanTitle)}&duration=${Math.round(track.duration || 0)}`;
       const lrclibResp = await fetch(lrclibUrl);
       if (lrclibResp.ok) {
         const data = await lrclibResp.json();
@@ -3785,27 +3789,30 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
       }
       
-      // 2. lyrics.ovh (simple API)
-      const ovhResp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
-      if (ovhResp.ok) {
-        const data = await ovhResp.json();
-        if (data && data.lyrics) {
-          showLyrics(data.lyrics, false);
-          return;
-        }
-      }
-      
-      // 3. Try LRCLIB search for fuzzy match
-      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(artist)} ${encodeURIComponent(title)}`;
+      // 2. LRCLIB search - works better for non-ASCII characters
+      const searchQuery = `${cleanArtist} ${cleanTitle}`;
+      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchQuery)}`;
       const searchResp = await fetch(searchUrl);
       if (searchResp.ok) {
         const results = await searchResp.json();
         if (results && results.length > 0) {
-          const best = results[0];
-          if (best.syncedLyrics || best.plainLyrics) {
-            showLyrics(best.syncedLyrics || best.plainLyrics, !!best.syncedLyrics);
-            return;
+          // Try first result or find best match
+          for (const result of results.slice(0, 5)) {
+            if (result.syncedLyrics || result.plainLyrics) {
+              showLyrics(result.syncedLyrics || result.plainLyrics, !!result.syncedLyrics);
+              return;
+            }
           }
+        }
+      }
+      
+      // 3. lyrics.ovh (simple API)
+      const ovhResp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`);
+      if (ovhResp.ok) {
+        const data = await ovhResp.json();
+        if (data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental') {
+          showLyrics(data.lyrics, false);
+          return;
         }
       }
       
@@ -3816,6 +3823,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       $('lyricsLoading').style.display = 'none';
       $('lyricsNotFound').style.display = 'block';
     }
+  }
+  
+  function titleCleanup(str) {
+    // Remove featuring artists, parenthetical info, etc.
+    return str
+      .replace(/\s*[\(\[].*?[\)\]]\s*/g, ' ')
+      .replace(/\s*[-–—]\s*(feat\.|ft\.|featuring).*$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
   
   function showLyrics(lyrics, isSynced) {
@@ -4312,7 +4328,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '41';
   const CHANGELOG = [
-    { version: '41', date: 'July 26th, 2026 at 6:00 pm EDT', title: 'Album covers & lyrics', items: [
+    { version: '41', date: 'July 26th, 2026 at 6:15 pm EDT', title: 'Album covers & lyrics', items: [
       'Album covers now show in the track list (library view)',
       'Disc label shows fallback gradient if album art fails to load',
       'Service worker improvements for better caching',
@@ -4322,6 +4338,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       'New sandbox option: Compact now bar for smaller player controls',
       'Lyrics now has auto-scroll synced to playback time',
       'Lyrics font size slider (A- to A+) for adjusting text size',
+      'Improved lyrics search with better query cleanup',
     ] },
     { version: '40.5', date: 'July 25th, 2026 at 10:50 pm EDT', title: 'CSV import improvements and bug fixes', items: [
       'CSV import runs in background with parallel downloads (8 at a time)',
