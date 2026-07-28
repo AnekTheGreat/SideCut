@@ -547,15 +547,22 @@
   #nowPlaying.mini{ padding:0; gap:0; }
   #nowPlaying.mini .np-row, #nowPlaying.mini .seek-row span, #nowPlaying.mini #waveformBar, #nowPlaying.mini #seekBar, #nowPlaying.mini .seek-line-wrap{ display:none; }
   #nowPlaying.mini #miniBar{ display:block; }
-  /* Simplified player: hide turntable elements by default (sandbox ON = show full player) */
-  body:not(.sandbox-simplify-player) #nowPlaying #npPlayerStage,
-  body:not(.sandbox-simplify-player) #nowPlaying .np-tt-3d,
-  body:not(.sandbox-simplify-player) #nowPlaying .np-lid,
-  body:not(.sandbox-simplify-player) #nowPlaying .np-tonearm,
-  body:not(.sandbox-simplify-player) #nowPlaying .np-tonearm-base,
-  body:not(.sandbox-simplify-player) #nowPlaying #shuffleBtn,
-  body:not(.sandbox-simplify-player) #nowPlaying #repeatBtn,
-  body:not(.sandbox-simplify-player) #nowPlaying .np-lid-glass {
+  /* Simplified player: hide turntable elements by default (sandbox ON or playerShowTurntable = show full player) */
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying #npPlayerStage,
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying .np-tt-3d,
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying .np-lid,
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying .np-tonearm,
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying .np-tonearm-base,
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying #npMenuBtn,
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying .np-lid-glass {
+    display: none !important;
+  }
+  /* Show turntable button when simplified */
+  body.sandbox-simplify-player #nowPlaying #turntableToggleBtn,
+  body.player-show-turntable #nowPlaying #turntableToggleBtn {
+    display: flex !important;
+  }
+  body:not(.sandbox-simplify-player):not(.player-show-turntable) #nowPlaying #turntableToggleBtn {
     display: none !important;
   }
   #nowPlaying #npInfo {
@@ -1286,13 +1293,6 @@ body.sandbox-large-touch .action-pill {
   min-height: 44px !important;
   padding: 12px 18px !important;
 }
-body.sandbox-simplify-player #nowPlaying .np-lid,
-body.sandbox-simplify-player #nowPlaying #ttPopupBtn,
-body.sandbox-simplify-player #nowPlaying #shuffleBtn,
-body.sandbox-simplify-player #nowPlaying #repeatBtn,
-body.sandbox-simplify-player #nowPlaying .np-lid-glass {
-  display: none !important;
-}
 body.sandbox-always-search #searchInput {
   width: 100% !important;
   opacity: 1 !important;
@@ -1465,6 +1465,9 @@ body.sandbox-always-search #searchInput {
       </div>
     </div>
     <div id="npControls">
+      <button id="turntableToggleBtn" title="Toggle turntable" style="background:none; border:none; color:var(--ink-dim); cursor:pointer; padding:4px; display:none; align-items:center; justify-content:center;">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+      </button>
       <button id="shuffleBtn" title="Shuffle"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg></button>
       <button id="prevBtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
       <button id="playPauseBtn"><svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
@@ -3560,6 +3563,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxShowPlayCount = false;
   let sandboxSimplifyPlayer = true;
   let sandboxAlwaysSearch = false;
+  let playerShowTurntable = false;
 
   function updateSandboxToggles(){
     $('sandboxCompactRows').textContent = sandboxCompactRows ? 'On' : 'Off';
@@ -4202,13 +4206,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '41';
   const CHANGELOG = [
-    { version: '41', date: 'July 26th, 2026 at 4:30 pm EDT', title: 'Album covers & lyrics', items: [
+    { version: '41', date: 'July 26th, 2026 at 5:00 pm EDT', title: 'Album covers & lyrics', items: [
       'Album covers now show in the track list (library view)',
       'Disc label shows fallback gradient if album art fails to load',
       'Service worker improvements for better caching',
       'New "LYRICS" button fetches song lyrics from lyrics.ovh',
       'Added 3-dot menu in player with quick actions (song info, lyrics, add to playlist, favorites, play next, delete)',
-      'Simplified the now playing bar - cleaner design with album art, removed turntable visualization',
+      'Simplified the now playing bar - cleaner design with album art',
+      'Added turntable toggle button to show/hide the 3D record player',
+      'Lyrics now available for any selected song via song actions menu',
     ] },
     { version: '40.5', date: 'July 25th, 2026 at 10:50 pm EDT', title: 'CSV import improvements and bug fixes', items: [
       'CSV import runs in background with parallel downloads (8 at a time)',
@@ -6616,6 +6622,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     vibeBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; openVibePicker(id); });
     list.appendChild(vibeBtn);
 
+    const lyricsBtn = document.createElement('button');
+    lyricsBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg> Lyrics`;
+    lyricsBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; fetchLyrics(t); });
+    list.appendChild(lyricsBtn);
+
     const infoBtn = document.createElement('button');
     infoBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg> Song info`;
     infoBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; showSongInfo(t); });
@@ -7565,6 +7576,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('prevBtn').addEventListener('click', () => {
     if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
     hardAdvance(-1, true);
+  });
+  $('turntableToggleBtn').addEventListener('click', () => {
+    playerShowTurntable = !playerShowTurntable;
+    document.body.classList.toggle('player-show-turntable', playerShowTurntable);
   });
   $('shuffleBtn').addEventListener('click', () => {
     shuffle = !shuffle;
