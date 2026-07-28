@@ -1825,6 +1825,11 @@ body.sandbox-always-search #searchInput {
       </div>
 
       <div style="margin-top:12px;">
+        <button class="playlist-pick-btn" id="resetCoversBtn" style="text-align:center; background:rgba(255,107,107,0.1); border-color:rgba(255,107,107,0.3);">Reset all covers</button>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Remove saved covers and show original embedded covers from audio files.</div>
+      </div>
+
+      <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="resetAppearanceBtn" style="text-align:center;">Reset appearance to defaults</button>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">If a theme or liquid glass mode ever gets stuck looking wrong, this puts theme and liquid glass back to how they started — nothing else is touched.</div>
       </div>
@@ -4768,6 +4773,32 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
     toast('Re-fetching metadata for all songs...');
     runAutoEnrich();
+  });
+  $('resetCoversBtn').addEventListener('click', async () => {
+    if(!confirm('This will remove all saved covers. Original embedded covers from audio files will be shown instead. Continue?')) return;
+    let count = 0;
+    for(const t of allTracks){
+      if(t.artUrl || t.artBlob){
+        count++;
+        if(t.artUrl){ try{ URL.revokeObjectURL(t.artUrl); }catch(e){} }
+        t.artBlob = null;
+        t.artUrl = null;
+        // Try to re-read embedded cover from file
+        if(t.file){
+          try{
+            const buf = await t.file.arrayBuffer();
+            const tags = parseMP3Tags(buf);
+            if(tags.artBlob){
+              t.artBlob = tags.artBlob;
+              t.artUrl = URL.createObjectURL(tags.artBlob);
+            }
+          }catch(e){}
+        }
+        persistTrackMeta(t);
+      }
+    }
+    toast(`Reset ${count} covers`);
+    renderList();
   });
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
   $('updateLogBackdrop').addEventListener('click', e => { if(e.target === $('updateLogBackdrop')) $('updateLogBackdrop').style.display = 'none'; });
