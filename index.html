@@ -1930,6 +1930,35 @@ body.sandbox-always-search #searchInput {
   </div>
 </div>
 
+<!-- Lyrics styles -->
+<style>
+  #lyricsText {
+    padding: 4px 0;
+  }
+  #lyricsText .lyric-line {
+    padding: 6px 8px;
+    margin: 2px 0;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    color: var(--ink-dim);
+  }
+  #lyricsText .lyric-line.current {
+    color: var(--coral);
+    font-weight: 600;
+    background: rgba(255, 107, 107, 0.1);
+  }
+  #lyricsContent::-webkit-scrollbar {
+    width: 6px;
+  }
+  #lyricsContent::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #lyricsContent::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 3px;
+  }
+</style>
+
 <!-- Song info -->
 <div class="modal-backdrop" id="songInfoBackdrop">
   <div class="modal">
@@ -1964,17 +1993,27 @@ body.sandbox-always-search #searchInput {
 
 <!-- Lyrics Modal -->
 <div class="modal-backdrop" id="lyricsBackdrop">
-  <div class="modal" style="max-height:80vh; display:flex; flex-direction:column;">
+  <div class="modal" style="max-height:85vh; display:flex; flex-direction:column;">
     <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--line); margin-bottom:12px;">
       <h3 id="lyricsTitle">Lyrics</h3>
       <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:24px; cursor:pointer; padding:0; line-height:1;">×</button>
     </div>
-    <div id="lyricsContent" style="flex:1; overflow-y:auto; font-size:13.5px; line-height:1.7; white-space:pre-wrap; word-wrap:break-word;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; gap:12px; flex-wrap:wrap;">
+      <button id="lyricsAutoScrollBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+        Auto-scroll: On
+      </button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:11px; color:var(--ink-dim);">A-</span>
+        <input type="range" id="lyricsFontSlider" min="12" max="24" value="16" style="width:80px; accent-color:var(--coral);">
+        <span style="font-size:11px; color:var(--ink-dim);">A+</span>
+      </div>
+    </div>
+    <div id="lyricsContent" style="flex:1; overflow-y:auto; line-height:1.7; white-space:pre-wrap; word-wrap:break-word;">
       <div id="lyricsLoading" style="text-align:center; color:var(--ink-dim); padding:40px 0;">Searching for lyrics…</div>
       <div id="lyricsText" style="display:none;"></div>
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:40px 0;">
         <div style="margin-bottom:8px;">No lyrics found</div>
-        <div style="font-size:12px;">Try playing the song to sync lyrics</div>
+        <div style="font-size:12px;">Try another song or search with different terms</div>
       </div>
     </div>
   </div>
@@ -3710,10 +3749,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   // ---------------- Lyrics ----------------
   let lyricsCurrentTrack = null;
+  let lyricsAutoScroll = true;
+  let lyricsFontSize = 16;
+  let lyricsScrollInterval = null;
   
   async function fetchLyrics(track) {
     const title = track.name || '';
     const artist = track.artist || 'Unknown';
+    lyricsCurrentTrack = track.id;
     
     // Show loading
     $('lyricsLoading').style.display = 'block';
@@ -3722,36 +3765,47 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsBackdrop').style.display = 'flex';
     $('lyricsTitle').textContent = `${title} - ${artist}`;
     
+    // Reset auto-scroll
+    if(lyricsScrollInterval) {
+      clearInterval(lyricsScrollInterval);
+      lyricsScrollInterval = null;
+    }
+    
     try {
-      // Try lyrics.ovh API (simple CORS-friendly API)
-      const resp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+      // Try multiple APIs for best coverage
       
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.lyrics) {
-          $('lyricsLoading').style.display = 'none';
-          $('lyricsText').style.display = 'block';
-          $('lyricsText').textContent = data.lyrics;
+      // 1. LRCLIB (has synced lyrics for many songs)
+      const lrclibUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}&duration=${Math.round(track.duration || 0)}`;
+      const lrclibResp = await fetch(lrclibUrl);
+      if (lrclibResp.ok) {
+        const data = await lrclibResp.json();
+        if (data && (data.syncedLyrics || data.plainLyrics)) {
+          showLyrics(data.syncedLyrics || data.plainLyrics, !!data.syncedLyrics);
           return;
         }
       }
       
-      // Fallback: try LRCLIB via CORS proxy
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}`)}`;
-      const lrclibResp = await fetch(proxyUrl);
+      // 2. lyrics.ovh (simple API)
+      const ovhResp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`);
+      if (ovhResp.ok) {
+        const data = await ovhResp.json();
+        if (data && data.lyrics) {
+          showLyrics(data.lyrics, false);
+          return;
+        }
+      }
       
-      if (lrclibResp.ok) {
-        const data = await lrclibResp.json();
-        if (data && data.syncedLyrics) {
-          $('lyricsLoading').style.display = 'none';
-          $('lyricsText').style.display = 'block';
-          $('lyricsText').innerHTML = formatSyncedLyrics(data.syncedLyrics);
-          return;
-        } else if (data && data.plainLyrics) {
-          $('lyricsLoading').style.display = 'none';
-          $('lyricsText').style.display = 'block';
-          $('lyricsText').textContent = data.plainLyrics;
-          return;
+      // 3. Try LRCLIB search for fuzzy match
+      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(artist)} ${encodeURIComponent(title)}`;
+      const searchResp = await fetch(searchUrl);
+      if (searchResp.ok) {
+        const results = await searchResp.json();
+        if (results && results.length > 0) {
+          const best = results[0];
+          if (best.syncedLyrics || best.plainLyrics) {
+            showLyrics(best.syncedLyrics || best.plainLyrics, !!best.syncedLyrics);
+            return;
+          }
         }
       }
       
@@ -3764,16 +3818,74 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
   }
   
+  function showLyrics(lyrics, isSynced) {
+    $('lyricsLoading').style.display = 'none';
+    $('lyricsText').style.display = 'block';
+    $('lyricsNotFound').style.display = 'none';
+    
+    if (isSynced) {
+      $('lyricsText').innerHTML = formatSyncedLyrics(lyrics);
+      startLyricsAutoScroll();
+    } else {
+      $('lyricsText').textContent = lyrics;
+      $('lyricsText').innerHTML = lyrics.split('\n').map(line => 
+        `<div class="lyric-line">${escapeHtml(line)}</div>`
+      ).join('');
+    }
+    
+    // Apply font size
+    $('lyricsText').style.fontSize = lyricsFontSize + 'px';
+  }
+  
+  function startLyricsAutoScroll() {
+    if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
+    
+    if (!lyricsAutoScroll || !$('lyricsText').querySelector('.lyric-line')) return;
+    
+    lyricsScrollInterval = setInterval(() => {
+      if (!lyricsAutoScroll || !$('lyricsBackdrop') || $('lyricsBackdrop').style.display !== 'flex') {
+        clearInterval(lyricsScrollInterval);
+        return;
+      }
+      
+      const currentTime = activeAudio().currentTime;
+      const lines = $('lyricsText').querySelectorAll('.lyric-line[data-time]');
+      
+      let currentLine = null;
+      lines.forEach(line => {
+        const lineTime = parseInt(line.dataset.time);
+        if (lineTime <= currentTime) {
+          currentLine = line;
+        }
+      });
+      
+      if (currentLine) {
+        // Remove highlight from all lines
+        lines.forEach(l => l.classList.remove('current'));
+        currentLine.classList.add('current');
+        
+        // Scroll to current line
+        const container = $('lyricsText');
+        const lineTop = currentLine.offsetTop;
+        const lineHeight = currentLine.offsetHeight;
+        const containerHeight = container.clientHeight;
+        const scrollTarget = lineTop - (containerHeight / 3);
+        
+        container.scrollTo({
+          top: Math.max(0, scrollTarget),
+          behavior: 'smooth'
+        });
+      }
+    }, 250);
+  }
+  
   function formatSyncedLyrics(lrc) {
-    // Parse LRC format and make it scrollable/highlightable
     const lines = lrc.split('\n').filter(line => line.trim());
     return lines.map(line => {
-      // Parse [mm:ss.xx]timestamp
       const match = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/);
       if (match) {
         const mins = match[1];
         const secs = match[2];
-        const ms = match[3];
         const text = match[4].trim();
         if (text) {
           return `<div class="lyric-line" data-time="${parseInt(mins)*60 + parseInt(secs)}">${escapeHtml(text)}</div>`;
@@ -3792,8 +3904,38 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(t) fetchLyrics(t);
   });
   
-  $('lyricsClose').addEventListener('click', () => { $('lyricsBackdrop').style.display = 'none'; });
-  $('lyricsBackdrop').addEventListener('click', e => { if(e.target === $('lyricsBackdrop')) $('lyricsBackdrop').style.display = 'none'; });
+  $('lyricsClose').addEventListener('click', () => { 
+    $('lyricsBackdrop').style.display = 'none'; 
+    if(lyricsScrollInterval) {
+      clearInterval(lyricsScrollInterval);
+      lyricsScrollInterval = null;
+    }
+  });
+  $('lyricsBackdrop').addEventListener('click', e => { 
+    if(e.target === $('lyricsBackdrop')) {
+      $('lyricsBackdrop').style.display = 'none';
+      if(lyricsScrollInterval) {
+        clearInterval(lyricsScrollInterval);
+        lyricsScrollInterval = null;
+      }
+    }
+  });
+  
+  // Lyrics controls
+  $('lyricsAutoScrollBtn').addEventListener('click', () => {
+    lyricsAutoScroll = !lyricsAutoScroll;
+    $('lyricsAutoScrollBtn').textContent = `Auto-scroll: ${lyricsAutoScroll ? 'On' : 'Off'}`;
+    $('lyricsAutoScrollBtn').style.borderColor = lyricsAutoScroll ? 'var(--coral)' : 'var(--line)';
+    $('lyricsAutoScrollBtn').style.color = lyricsAutoScroll ? 'var(--coral)' : 'var(--ink)';
+    if(lyricsAutoScroll && $('lyricsText').querySelector('.lyric-line[data-time]')) {
+      startLyricsAutoScroll();
+    }
+  });
+  
+  $('lyricsFontSlider').addEventListener('input', (e) => {
+    lyricsFontSize = parseInt(e.target.value);
+    $('lyricsText').style.fontSize = lyricsFontSize + 'px';
+  });
 
   // ---------------- Now Playing Menu (3-dot) ----------------
   function showNpMenu() {
@@ -4170,14 +4312,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '41';
   const CHANGELOG = [
-    { version: '41', date: 'July 26th, 2026 at 5:30 pm EDT', title: 'Album covers & lyrics', items: [
+    { version: '41', date: 'July 26th, 2026 at 6:00 pm EDT', title: 'Album covers & lyrics', items: [
       'Album covers now show in the track list (library view)',
       'Disc label shows fallback gradient if album art fails to load',
       'Service worker improvements for better caching',
-      'New "LYRICS" button fetches song lyrics from lyrics.ovh',
+      'New "LYRICS" button fetches song lyrics from multiple sources',
       'Added 3-dot menu in player with quick actions (song info, lyrics, add to playlist, favorites, play next, delete)',
       'Lyrics now available for any selected song via song actions menu',
       'New sandbox option: Compact now bar for smaller player controls',
+      'Lyrics now has auto-scroll synced to playback time',
+      'Lyrics font size slider (A- to A+) for adjusting text size',
     ] },
     { version: '40.5', date: 'July 25th, 2026 at 10:50 pm EDT', title: 'CSV import improvements and bug fixes', items: [
       'CSV import runs in background with parallel downloads (8 at a time)',
