@@ -4814,10 +4814,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     toast(`Fetching covers for ${needsCover.length} songs...`);
     let fetched = 0;
     for(const t of needsCover){
-      if(await fetchCoverForTrack(t)) fetched++;
-      refreshEnrichNotif();
+      const query = enrichQueryFor(t);
+      const gotCover = await fetchCoverForTrack(t);
+      if(gotCover) fetched++;
     }
-    toast(`Fetched ${fetched} cover${fetched>1?'s':''}`);
+    toast(`Fetched ${fetched}/${needsCover.length} covers`);
     renderList();
   });
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
@@ -4961,7 +4962,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function enrichQueryFor(t){
     const title = (t.name && t.name !== 'Untitled') ? t.name : '';
     const artist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
-    return `${artist} ${title}`.trim();
+    let query = `${artist} ${title}`.trim();
+    // If no good query, try using filename
+    if(!query && t.file){
+      const filename = t.file.name || '';
+      query = filename.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
+    }
+    return query;
   }
 
   // Apply a backend search result to a track — only fills gaps, never overwrites
