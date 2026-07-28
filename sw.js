@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sidecut-shell-v40.5';
+const CACHE_NAME = 'sidecut-shell-v40.6';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -25,13 +25,18 @@ self.addEventListener('activate', (event) => {
 // so it still works offline. Everything cross-origin (fonts, JSZip CDN) just goes to network.
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
+  
+  // Skip non-http(s) requests (blob:, data:, about:, etc.) and cross-origin requests
+  if (!url.protocol.startsWith('http') || url.origin !== self.location.origin) return;
 
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        const copy = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        // Only cache successful responses
+        if (networkResponse.ok) {
+          const copy = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        }
         return networkResponse;
       })
       .catch(() => caches.match(event.request))
