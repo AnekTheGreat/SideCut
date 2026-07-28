@@ -1831,7 +1831,7 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="fetchMissingCoversBtn" style="text-align:center;">Fetch missing covers</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Fetch iTunes covers for songs without artwork.</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Fetch covers from Spotify for songs without artwork.</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -4998,30 +4998,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return changed;
   }
 
-  // Fallback: fetch cover from iTunes Search API (free, no auth needed)
-  async function fetchCoverFromITunes(query){
+  // Fallback: fetch cover from Spotify oEmbed API (free, no auth needed)
+  async function fetchCoverFromSpotify(query){
     try{
-      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=1&entity=song`;
+      const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(query)}`;
+      const url = `https://open.spotify.com/oembed?url=${encodeURIComponent(searchUrl)}`;
       const resp = await fetch(url);
       if(resp.ok){
         const data = await resp.json();
-        if(data.results && data.results[0] && data.results[0].artworkUrl100){
-          // Convert 100x100 to 600x600 for better quality
-          return data.results[0].artworkUrl100.replace('100x100', '600x600');
-        }
+        if(data.thumbnail_url) return data.thumbnail_url;
       }
     }catch(e){}
     return null;
   }
 
-  // Try to fetch cover for a track using multiple sources
+  // Try to fetch cover for a track using Spotify
   async function fetchCoverForTrack(t){
     if(t.artBlob) return false;
     const query = enrichQueryFor(t);
     if(!query) return false;
     
-    // Try iTunes first (free fallback)
-    const artwork = await fetchCoverFromITunes(query);
+    // Try Spotify oEmbed
+    const artwork = await fetchCoverFromSpotify(query);
     if(artwork){
       try{
         const imgResp = await fetch(artwork);
