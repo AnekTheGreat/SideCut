@@ -3654,13 +3654,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!text || !watermarkEnabled || !watermarkPatterns) return text;
     const patterns = watermarkPatterns.split('\n').filter(p => p.trim());
     patterns.forEach(p => {
-      // Simple string replacement, escape special regex chars for safety
       const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       try {
         text = text.replace(new RegExp(escaped, 'gi'), '');
       } catch(e) {}
     });
     return text.trim();
+  }
+
+  function removeNumberPrefix(text){
+    if(!text) return text;
+    // Remove patterns like "1. ", "2. ", up to "50. " from the beginning
+    return text.replace(/^(?:[0-9]|[1-4][0-9]|50)\.\s*/, '');
   }
 
   function updateWatermarkToggle(){
@@ -3671,8 +3676,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function applyWatermarkToAll(){
     allTracks.forEach(t => {
-      if(t.name) t.name = applyWatermarkPatterns(t.name);
-      if(t.artist) t.artist = applyWatermarkPatterns(t.artist);
+      if(t.name) {
+        t.name = applyWatermarkPatterns(t.name);
+        t.name = removeNumberPrefix(t.name);
+      }
+      if(t.artist) {
+        t.artist = applyWatermarkPatterns(t.artist);
+        t.artist = removeNumberPrefix(t.artist);
+      }
     });
     renderList();
     const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
@@ -4515,7 +4526,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       $('watermarkPatterns').value = watermarkPatterns;
       applySandboxStyles();
       updateWatermarkToggle();
-      if(watermarkEnabled) applyWatermarkToAll();
     }catch(e){ /* defaults are fine */ }
   }
 
@@ -10243,6 +10253,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         renderTabs();
         renderList();
+        // Auto-apply watermarks on load if enabled
+        if(watermarkEnabled) applyWatermarkToAll();
         toast(`Welcome back — ${allTracks.length} track${allTracks.length===1?'':'s'} loaded`);
         restorePlaybackState();
       }
