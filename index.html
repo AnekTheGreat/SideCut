@@ -2009,13 +2009,28 @@ body.sandbox-always-search #searchInput {
 <style>
   /* Lyrics floating modal styles */
   .lyrics-floating-modal {
-    max-height: 75vh;
+    max-height: calc(100vh - 120px);
     display: flex;
     flex-direction: column;
     border-radius: 18px;
     background: var(--bg-raised);
     border: 1px solid var(--line);
-    padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important;
+    margin-bottom: 80px;
+  }
+  #lyricsContent {
+    display: flex;
+    gap: 16px;
+  }
+  #lyricsContent > div {
+    flex: 1;
+  }
+  #lyricsText {
+    flex: 1;
+  }
+  #lyricsTranslated {
+    flex: 1;
+    border-left: 1px solid var(--line);
+    padding-left: 16px;
   }
   #lyricsText {
     padding: 4px 0;
@@ -2099,7 +2114,7 @@ body.sandbox-always-search #searchInput {
 </div>
 
 <!-- Lyrics Modal -->
-<div class="modal-backdrop" id="lyricsBackdrop" style="background:linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0) 100%); z-index:55;">
+<div class="modal-backdrop" id="lyricsBackdrop" style="background:linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.7) 40%, rgba(0,0,0,0.2) 70%, rgba(0,0,0,0) 100%);">
   <div class="modal lyrics-floating-modal">
     <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--line); margin-bottom:12px;">
       <h3 id="lyricsTitle">Lyrics</h3>
@@ -2127,6 +2142,10 @@ body.sandbox-always-search #searchInput {
         <div style="margin-bottom:8px;">No lyrics found</div>
         <div style="font-size:12px;">This song may not be in our database.<br>Lyrics APIs primarily support English/Western music.</div>
       </div>
+    </div>
+    <div id="lyricsTranslated" style="display:none; flex:1; overflow-y:auto; line-height:1.7;">
+      <div style="color:var(--coral); font-size:11px; margin-bottom:8px;">Punjabi (ਪੰਜਾਬੀ)</div>
+      <div id="lyricsTranslatedText"></div>
     </div>
   </div>
 </div>
@@ -4295,18 +4314,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
   });
 
-  // Lyrics translate button - Punjabi to English
+  // Lyrics translate button - English to Punjabi
   let originalLyrics = '';
   let currentLyricsTrack = null;
+  let isTranslated = false;
   $('lyricsTranslateBtn').addEventListener('click', async () => {
     const btn = $('lyricsTranslateBtn');
-    if (btn.textContent.includes('Show')) {
-      // Switch back to original lyrics
+    const translatedPanel = $('lyricsTranslated');
+    
+    if (isTranslated) {
+      // Hide translation, show original
+      translatedPanel.style.display = 'none';
       btn.textContent = 'Translate';
       btn.style.borderColor = 'var(--line)';
       btn.style.color = 'var(--ink)';
-      $('lyricsText').innerHTML = originalLyrics;
-      $('lyricsText').style.fontSize = lyricsFontSize + 'px';
+      isTranslated = false;
+      toast('Showing original lyrics');
       return;
     }
     
@@ -4325,19 +4348,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     btn.disabled = true;
     
     try {
-      // Punjabi to English using MyMemory
-      const resp = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.substring(0, 400))}&langpair=pa|en`);
+      // English to Punjabi using MyMemory
+      const resp = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.substring(0, 400))}&langpair=en|pa`);
       
       if (!resp.ok) throw new Error('API error');
       const data = await resp.json();
       
       if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        // Show translation side by side
+        $('lyricsTranslatedText').innerHTML = escapeHtml(data.responseData.translatedText).split('\n').map(line => `<div class="lyric-line">${line || '&nbsp;'}</div>`).join('');
+        translatedPanel.style.display = 'flex';
+        translatedPanel.style.flexDirection = 'column';
         btn.textContent = 'Show Original';
         btn.style.borderColor = 'var(--coral)';
         btn.style.color = 'var(--coral)';
-        $('lyricsText').innerHTML = `<div style="color:var(--coral); font-size:11px; margin-bottom:12px;">English Translation</div>${escapeHtml(data.responseData.translatedText).split('\n').map(line => `<div class="lyric-line">${line || '&nbsp;'}</div>`).join('')}`;
-        $('lyricsText').style.fontSize = lyricsFontSize + 'px';
-        toast('Translated to English');
+        isTranslated = true;
+        toast('Showing Punjabi translation');
       } else {
         toast('Translation failed - try again');
       }
@@ -4354,10 +4380,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     originalShowLyrics(lyrics, isSynced);
     originalLyrics = $('lyricsText').innerHTML;
     currentLyricsTrack = queue[queueIndex];
-    // Reset translate button
+    // Reset translate button and hide translation panel
     $('lyricsTranslateBtn').textContent = 'Translate';
     $('lyricsTranslateBtn').style.borderColor = 'var(--line)';
     $('lyricsTranslateBtn').style.color = 'var(--ink)';
+    $('lyricsTranslated').style.display = 'none';
+    isTranslated = false;
   };
 
   // ---------------- Now Playing Menu (3-dot) ----------------
