@@ -4179,11 +4179,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // Always start interval for highlight tracking (scroll is controlled by flag)
     startLyricsAutoScroll();
   }
+  let lastLyricsIdx = -1;
   function startLyricsAutoScroll() {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
     const container = $('lyricsContent');
     if (!container) return;
+    
+    lastLyricsIdx = -1;
     
     lyricsScrollInterval = setInterval(() => {
       // Check if modal is still open
@@ -4219,16 +4222,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
         });
         
-        if (currentLine) {
+        if (currentLine && currentIdx !== lastLyricsIdx) {
           // Update highlight - remove from all, add to current
           allLines.forEach(l => l.classList.remove('current'));
           currentLine.classList.add('current');
+          lastLyricsIdx = currentIdx;
           
-          // Only scroll if auto-scroll is enabled
-          if (lyricsAutoScroll) {
+          // Only scroll if auto-scroll is enabled AND not on the first line
+          if (lyricsAutoScroll && currentIdx > 0) {
             const lineTop = currentLine.offsetTop;
-            const targetScroll = lineTop - 60;
-            container.scrollTop = Math.max(0, targetScroll);
+            container.scrollTop = lineTop;
           }
         }
       }
@@ -4290,25 +4293,25 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
   });
   
-  // Lyrics skip buttons
+  // Lyrics skip buttons - stay in lyrics
   $('lyricsPrevBtn').addEventListener('click', () => {
-    $('lyricsBackdrop').style.display = 'none';
-    if(lyricsScrollInterval) {
-      clearInterval(lyricsScrollInterval);
-      lyricsScrollInterval = null;
-    }
     const audio = activeAudio();
     if(audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
     hardAdvance(-1, true);
+    // Re-fetch lyrics for new track after a brief delay
+    setTimeout(() => {
+      const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+      if(t) fetchLyrics(t);
+    }, 300);
   });
   
   $('lyricsNextBtn').addEventListener('click', () => {
-    $('lyricsBackdrop').style.display = 'none';
-    if(lyricsScrollInterval) {
-      clearInterval(lyricsScrollInterval);
-      lyricsScrollInterval = null;
-    }
     hardAdvance(1, true);
+    // Re-fetch lyrics for new track after a brief delay
+    setTimeout(() => {
+      const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+      if(t) fetchLyrics(t);
+    }, 300);
   });
 
   // ---------------- Now Playing Menu (3-dot) ----------------
