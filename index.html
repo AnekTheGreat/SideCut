@@ -1874,10 +1874,11 @@ body.sandbox-always-search #searchInput {
           </div>
           <div id="watermarkSection" style="display:none;">
             <textarea id="watermarkPatterns" placeholder="Radio Edit&#10;(feat. X)&#10;- Remix" style="width:100%; height:80px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:4px; padding:8px; font-size:12px; resize:vertical; font-family:inherit; margin-bottom:10px;"></textarea>
-            <div style="display:flex; gap:8px;">
+            <div style="display:flex; gap:8px; margin-bottom:10px;">
               <button class="tab" id="watermarkConfirmBtn" style="flex:1; padding:10px; font-size:13px; font-weight:600;">Apply</button>
               <button class="tab" id="watermarkResetBtn" style="padding:10px; font-size:13px; background:rgba(255,107,107,0.1); border-color:rgba(255,107,107,0.3);">Reset</button>
             </div>
+            <button class="tab" id="refetchCoversBtn" style="width:100%; padding:10px; font-size:13px;">Refetch Missing Covers</button>
           </div>
         </div>
       </div>
@@ -5067,9 +5068,37 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     window.coverFetchState.active = false;
     
     toast(`Fetched ${window.coverFetchState.fetched} covers`);
-    window.coverFetchState = null;
+  });
+
+  $('refetchCoversBtn').addEventListener('click', async () => {
+    if(window.coverFetchState && window.coverFetchState.active){ toast('Already fetching covers...'); return; }
+    if(enrichState.active){ toast('Already fetching...'); return; }
+    // Force re-fetch for all tracks with a query
+    const needsCover = allTracks.filter(t => enrichQueryFor(t));
+    if(!needsCover.length){ toast('No songs to fetch covers for'); return; }
+    
+    window.coverFetchState = { active: true, total: needsCover.length, done: 0, fetched: 0 };
+    const total = needsCover.length;
+    
+    const btn = $('refetchCoversBtn');
+    btn.disabled = true;
+    btn.textContent = 'Fetching...';
+    
+    for(const t of needsCover){
+      const gotCover = await fetchCoverForTrack(t);
+      if(gotCover) window.coverFetchState.fetched++;
+      window.coverFetchState.done++;
+      btn.textContent = `${window.coverFetchState.done}/${total}`;
+    }
+    
+    btn.disabled = false;
+    btn.textContent = 'Refetch Missing Covers';
+    window.coverFetchState.active = false;
+    
     renderList();
-    refreshEnrichNotif();
+    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(cur) updateNpDisplay(cur);
+    toast(`Fetched ${window.coverFetchState.fetched} covers`);
   });
   
   // Batch fetch lyrics for all songs
