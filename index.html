@@ -2007,19 +2007,6 @@ body.sandbox-always-search #searchInput {
 
 <!-- Lyrics styles -->
 <style>
-  #lyricsBackdrop {
-    background: linear-gradient(to bottom, 
-      rgba(0,0,0,0.7) 0%, 
-      rgba(0,0,0,0.6) 60%, 
-      rgba(0,0,0,0) 100%
-    ) !important;
-    align-items: flex-end !important;
-  }
-  #lyricsBackdrop .modal {
-    border-radius: 18px 18px 0 0;
-    max-height: 80vh;
-    padding-bottom: calc(90px + env(safe-area-inset-bottom));
-  }
   #lyricsText {
     padding: 4px 0;
   }
@@ -2033,7 +2020,7 @@ body.sandbox-always-search #searchInput {
   #lyricsText .lyric-line.current {
     color: var(--coral);
     font-weight: 600;
-    background: rgba(255, 107, 107, 0.1);
+    background: rgba(255, 107, 107, 0.15);
   }
   #lyricsContent::-webkit-scrollbar {
     width: 6px;
@@ -2103,10 +2090,15 @@ body.sandbox-always-search #searchInput {
 
 <!-- Lyrics Modal -->
 <div class="modal-backdrop" id="lyricsBackdrop">
-  <div class="modal">
-    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--line); margin-bottom:12px;">
-      <h3 id="lyricsTitle">Lyrics</h3>
-      <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:24px; cursor:pointer; padding:0; line-height:1;">×</button>
+  <div class="modal" style="padding-bottom:0;">
+    <!-- Mini now bar for lyrics -->
+    <div id="lyricsMiniNowBar" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); margin-bottom:10px;">
+      <div id="lyricsNpArt" style="width:40px; height:40px; border-radius:6px; background:var(--bg); background-size:cover; background-position:center; flex-shrink:0;"></div>
+      <div style="flex:1; min-width:0;">
+        <div id="lyricsNpTitle" style="font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+        <div id="lyricsNpArtist" style="font-size:11px; color:var(--ink-dim);"></div>
+      </div>
+      <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:20px; cursor:pointer; padding:4px;">×</button>
     </div>
     <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; gap:8px; flex-wrap:wrap;">
       <button id="lyricsAutoScrollBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
@@ -2118,7 +2110,7 @@ body.sandbox-always-search #searchInput {
         <span style="font-size:11px; color:var(--ink-dim);">A+</span>
       </div>
     </div>
-    <div id="lyricsContent" style="flex:1; overflow-y:auto; line-height:1.7; white-space:pre-wrap; word-wrap:break-word;">
+    <div id="lyricsContent" style="flex:1; overflow-y:auto; line-height:1.7; white-space:pre-wrap; word-wrap:break-word; min-height:200px;">
       <div id="lyricsLoading" style="text-align:center; color:var(--ink-dim); padding:40px 0;">Searching for lyrics…</div>
       <div id="lyricsText" style="display:none;"></div>
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:40px 0;">
@@ -2382,7 +2374,11 @@ body.sandbox-always-search #searchInput {
         <div style="font-size:11.5px; color:var(--ink-dim);">SideCut update</div>
       </div>
     </div>
-    <div id="whatsNewBody" style="display:flex; flex-direction:column; gap:6px; font-size:13.5px; margin-top:4px;"></div>
+    <div id="whatsNewSummary" style="display:flex; flex-direction:column; gap:4px; font-size:13px; margin-top:4px;"></div>
+    <button id="whatsNewExpandBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:8px; padding:8px 16px; font-size:12px; cursor:pointer; margin-top:8px;">
+      Show all updates
+    </button>
+    <div id="whatsNewBody" style="display:none; flex-direction:column; gap:6px; font-size:13px; margin-top:8px; max-height:50vh; overflow-y:auto;"></div>
     <div class="modal-btns">
       <button class="confirm" id="whatsNewClose" style="flex:1;">Got it</button>
     </div>
@@ -4051,12 +4047,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const artist = track.artist || 'Unknown';
     lyricsCurrentTrack = track.id;
     
+    // Populate mini now bar
+    $('lyricsNpArt').style.backgroundImage = track.artUrl ? `url('${track.artUrl}')` : '';
+    $('lyricsNpTitle').textContent = title;
+    $('lyricsNpArtist').textContent = artist;
+    
     // Show loading
     $('lyricsLoading').style.display = 'block';
     $('lyricsText').style.display = 'none';
     $('lyricsNotFound').style.display = 'none';
     $('lyricsBackdrop').style.display = 'flex';
-    $('lyricsTitle').textContent = `${title} - ${artist}`;
     
     // Reset auto-scroll
     if(lyricsScrollInterval) {
@@ -5364,7 +5364,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const entry = CHANGELOG.find(e => e.version === APP_VERSION);
         if(entry){
           $('whatsNewVersion').textContent = `What's new in v${entry.version}`;
+          // Show summary first
+          $('whatsNewSummary').innerHTML = `<div style="color:var(--ink-dim); font-size:12px; margin-bottom:8px;">${escapeHtml(entry.title)}</div>` + entry.items.slice(0, 3).map(i => `
+            <div style="display:flex; gap:8px; align-items:flex-start;">
+              <span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span>
+            </div>
+          `).join('') + (entry.items.length > 3 ? `<div style="color:var(--ink-dim); font-size:11px; margin-top:4px;">...and ${entry.items.length - 3} more</div>` : '');
           $('whatsNewBody').innerHTML = renderWhatsNewBody(entry);
+          $('whatsNewExpandBtn').style.display = 'block';
+          $('whatsNewBody').style.display = 'none';
           $('whatsNewBackdrop').style.display = 'flex';
         } else {
           // No changelog entry for this version for some reason — nothing to show,
@@ -5382,6 +5390,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       updateNotifBadge();
     }catch(e){ /* not critical if this fails */ }
   }
+
+  // What's New expand/collapse
+  $('whatsNewExpandBtn').addEventListener('click', () => {
+    const btn = $('whatsNewExpandBtn');
+    const body = $('whatsNewBody');
+    if(body.style.display === 'none'){
+      body.style.display = 'flex';
+      btn.textContent = 'Show less';
+    } else {
+      body.style.display = 'none';
+      btn.textContent = 'Show all updates';
+    }
+  });
 
   // ---------------- Notification bell: separate from the popup — stays badged
   // until you actually open the bell, even if you already dismissed the popup.
