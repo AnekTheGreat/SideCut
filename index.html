@@ -1420,6 +1420,10 @@ body.sandbox-always-search #searchInput {
     <div id="npPlayerBody">
       <div class="np-platter-mat"></div>
       <div class="disc" id="npDisc"><div class="disc-label" id="npDiscLabel"></div></div>
+      <svg id="discProgressRing" viewBox="0 0 46 46" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; opacity:0.5;">
+        <circle cx="23" cy="23" r="21" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+        <circle id="discProgressArc" cx="23" cy="23" r="21" fill="none" stroke="var(--coral)" stroke-width="1.5" stroke-dasharray="132" stroke-dashoffset="132" stroke-linecap="round" transform="rotate(-90 23 23)"/>
+      </svg>
     </div>
     <div class="np-lid"><div class="np-lid-glass"></div></div>
     <div class="np-tonearm-base"><div class="np-tonearm-counterweight"></div></div>
@@ -1831,11 +1835,13 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="fetchMissingCoversBtn" style="text-align:center;">Fetch missing covers</button>
+        <div id="coverProgressBar" style="display:none; height:4px; background:var(--line); border-radius:2px; margin-top:6px; overflow:hidden;"><div id="coverProgressFill" style="height:100%; background:var(--coral); width:0%; transition:width 0.2s;"></div></div>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Try to fetch covers from Deezer/AudioDB.</div>
       </div>
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="fetchMissingLyricsBtn" style="text-align:center;">Fetch missing lyrics</button>
+        <div id="lyricsProgressBar" style="display:none; height:4px; background:var(--line); border-radius:2px; margin-top:6px; overflow:hidden;"><div id="lyricsProgressFill" style="height:100%; background:var(--coral); width:0%; transition:width 0.2s;"></div></div>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Try to fetch lyrics from LRCLIB for all songs.</div>
       </div>
 
@@ -4842,12 +4848,30 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(enrichState.active){ toast('Already fetching...'); return; }
     const needsCover = allTracks.filter(t => !t.artBlob && enrichQueryFor(t));
     if(!needsCover.length){ toast('No songs need covers'); return; }
-    toast(`Fetching covers for ${needsCover.length} songs...`);
+    
+    enrichState.active = true;
+    const total = needsCover.length;
+    let done = 0;
+    
+    const btn = $('fetchMissingCoversBtn');
+    const bar = $('coverProgressBar');
+    const fill = $('coverProgressFill');
+    
+    btn.disabled = true;
+    bar.style.display = 'block';
+    
     let fetched = 0;
     for(const t of needsCover){
       const gotCover = await fetchCoverForTrack(t);
       if(gotCover) fetched++;
+      done++;
+      fill.style.width = Math.round((done/total)*100) + '%';
     }
+    
+    btn.disabled = false;
+    bar.style.display = 'none';
+    enrichState.active = false;
+    
     toast(`Fetched ${fetched}/${needsCover.length} covers`);
     renderList();
   });
@@ -4901,15 +4925,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!needsLyrics.length){ toast('No songs to fetch lyrics for'); return; }
     
     lyricsFetchActive = true;
-    $('fetchMissingLyricsBtn').textContent = 'Fetching lyrics...';
-    $('fetchMissingLyricsBtn').disabled = true;
+    const total = needsLyrics.length;
+    let done = 0;
     
-    toast(`Fetching lyrics for ${needsLyrics.length} songs...`);
+    const btn = $('fetchMissingLyricsBtn');
+    const bar = $('lyricsProgressBar');
+    const fill = $('lyricsProgressFill');
+    
+    btn.disabled = true;
+    bar.style.display = 'block';
     
     let fetched = 0;
     for(const t of needsLyrics){
-      // Skip if already has lyrics
-      if(t.lyrics) continue;
+      if(t.lyrics) { done++; fill.style.width = Math.round((done/total)*100) + '%'; continue; }
       
       const result = await fetchSingleLyrics(t);
       if(result) {
@@ -4918,14 +4946,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         persistTrackMeta(t);
         fetched++;
       }
-      // Small delay to be nice to the APIs
-      await new Promise(r => setTimeout(r, 200));
+      done++;
+      fill.style.width = Math.round((done/total)*100) + '%';
+      await new Promise(r => setTimeout(r, 100));
     }
     
     lyricsFetchActive = false;
-    $('fetchMissingLyricsBtn').textContent = 'Fetch missing lyrics';
-    $('fetchMissingLyricsBtn').disabled = false;
-    toast(`Found lyrics for ${fetched}/${needsLyrics.length} songs`);
+    btn.disabled = false;
+    bar.style.display = 'none';
+    toast(`Found lyrics for ${fetched} songs`);
   });
   
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
@@ -8021,6 +8050,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function updateSeekDisplay(pct){
     $('seekBar').value = pct;
     updateWaveformDisplay(pct);
+    // Update disc progress ring
+    const arc = $('discProgressArc');
+    if(arc && pct >= 0){
+      const offset = 132 - (pct / 100) * 132;
+      arc.style.strokeDashoffset = offset;
+    }
   }
   async function computeWaveform(track){
     try{
