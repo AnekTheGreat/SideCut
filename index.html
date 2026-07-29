@@ -2049,6 +2049,27 @@ body.sandbox-always-search #searchInput {
   </div>
 </div>
 
+<!-- Edit Song Modal -->
+<div class="modal-backdrop" id="editSongBackdrop">
+  <div class="modal">
+    <h3>Edit song info</h3>
+    <div style="display:flex; flex-direction:column; gap:12px; margin:12px 0;">
+      <div>
+        <label style="display:block; font-size:12px; color:var(--ink-dim); margin-bottom:4px;">Song name</label>
+        <input type="text" id="editSongName" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:14px;" placeholder="Song name">
+      </div>
+      <div>
+        <label style="display:block; font-size:12px; color:var(--ink-dim); margin-bottom:4px;">Artist</label>
+        <input type="text" id="editSongArtist" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:14px;" placeholder="Artist">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="cancel" id="editSongCancel" style="flex:1;">Cancel</button>
+      <button class="confirm" id="editSongSave" style="flex:1;">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Now Playing Menu (3-dot) -->
 <div class="modal-backdrop" id="npMenuBackdrop">
   <div class="modal" style="padding:0; overflow:hidden;">
@@ -3954,6 +3975,40 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
   $('songInfoClose').addEventListener('click', () => { $('songInfoBackdrop').style.display = 'none'; });
   $('songInfoBackdrop').addEventListener('click', e => { if(e.target === $('songInfoBackdrop')) $('songInfoBackdrop').style.display = 'none'; });
+
+  // ---------------- Edit Song Modal ----------------
+  let editSongTrackId = null;
+  
+  function openEditSongModal(t){
+    editSongTrackId = t.id;
+    $('editSongName').value = t.name || '';
+    $('editSongArtist').value = t.artist || '';
+    $('editSongBackdrop').style.display = 'flex';
+  }
+  
+  $('editSongSave').addEventListener('click', () => {
+    if(!editSongTrackId) return;
+    const t = allTracks.find(tr => tr.id === editSongTrackId);
+    if(!t) return;
+    const newName = $('editSongName').value.trim() || 'Untitled';
+    const newArtist = $('editSongArtist').value.trim() || 'Unknown artist';
+    t.name = newName;
+    t.artist = newArtist;
+    persistTrackMeta(t);
+    // Update now playing if this is the current track
+    if(queue[queueIndex] === t.id){
+      $('npTitle').textContent = newName;
+      $('npArtist').textContent = newArtist;
+      updateMediaSession(t);
+    }
+    renderList();
+    $('editSongBackdrop').style.display = 'none';
+    toast('Song info updated');
+    editSongTrackId = null;
+  });
+  
+  $('editSongCancel').addEventListener('click', () => { $('editSongBackdrop').style.display = 'none'; editSongTrackId = null; });
+  $('editSongBackdrop').addEventListener('click', e => { if(e.target === $('editSongBackdrop')) { $('editSongBackdrop').style.display = 'none'; editSongTrackId = null; } });
 
   // ---------------- Lyrics ----------------
   let lyricsCurrentTrack = null;
@@ -7344,8 +7399,32 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     lyricsBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; fetchLyrics(t); });
     list.appendChild(lyricsBtn);
 
+    const editBtn = document.createElement('button');
+    editBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 000-1.41l-2.34-2.34a.996.996 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg> Edit song info`;
+    editBtn.addEventListener('click', () => { 
+      $('songActionsBackdrop').style.display='none';
+      openEditSongModal(t);
+    });
+    list.appendChild(editBtn);
+
+    const fetchCoverBtn = document.createElement('button');
+    fetchCoverBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg> Fetch cover`;
+    fetchCoverBtn.addEventListener('click', async () => { 
+      $('songActionsBackdrop').style.display='none';
+      toast('Fetching cover…');
+      const got = await fetchCoverForTrack(t);
+      if(got){
+        if(queue[queueIndex] === t.id) updateNowPlayingArt(t);
+        renderList();
+        toast('Cover found!');
+      } else {
+        toast('No cover found');
+      }
+    });
+    list.appendChild(fetchCoverBtn);
+
     const coverBtn = document.createElement('button');
-    coverBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg> Set cover image`;
+    coverBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg> Set cover image`;
     coverBtn.addEventListener('click', () => { 
       $('songActionsBackdrop').style.display='none';
       $('coverFileInput').click();
