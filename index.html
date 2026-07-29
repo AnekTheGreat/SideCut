@@ -4176,12 +4176,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       lyricsScrollInterval = null;
     }
     
-    // Start auto scroll if enabled
-    if (lyricsAutoScroll) {
-      startLyricsAutoScroll();
-    }
+    // Always start interval for highlight tracking (scroll is controlled by flag)
+    startLyricsAutoScroll();
   }
-  
   function startLyricsAutoScroll() {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
@@ -4196,8 +4193,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         lyricsScrollInterval = null;
         return;
       }
-      
-      if (!lyricsAutoScroll) return;
       
       const audio = activeAudio();
       if (!audio) return;
@@ -4229,12 +4224,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           allLines.forEach(l => l.classList.remove('current'));
           currentLine.classList.add('current');
           
-          // Scroll to current line - center it with a slight offset so it's visible
-          const lineTop = currentLine.offsetTop;
-          const lineHeight = currentLine.offsetHeight;
-          const containerHeight = container.clientHeight;
-          const targetScroll = lineTop - 60; // Show a bit above the center
-          container.scrollTop = Math.max(0, targetScroll);
+          // Only scroll if auto-scroll is enabled
+          if (lyricsAutoScroll) {
+            const lineTop = currentLine.offsetTop;
+            const targetScroll = lineTop - 60;
+            container.scrollTop = Math.max(0, targetScroll);
+          }
         }
       }
     }, 150);
@@ -4282,15 +4277,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
   });
   
-  // Lyrics controls
+  // Lyrics controls - always keep interval running for highlight
   $('lyricsAutoScrollBtn').addEventListener('click', () => {
     lyricsAutoScroll = !lyricsAutoScroll;
     $('lyricsAutoScrollBtn').textContent = `Auto-scroll: ${lyricsAutoScroll ? 'On' : 'Off'}`;
     $('lyricsAutoScrollBtn').style.borderColor = lyricsAutoScroll ? 'var(--coral)' : 'var(--line)';
     $('lyricsAutoScrollBtn').style.color = lyricsAutoScroll ? 'var(--coral)' : 'var(--ink)';
-    if(lyricsAutoScroll && $('lyricsContent').querySelector('.lyric-line[data-time]')) {
-      startLyricsAutoScroll();
-    }
   });
   
   $('lyricsFontSlider').addEventListener('input', (e) => {
@@ -4305,7 +4297,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       clearInterval(lyricsScrollInterval);
       lyricsScrollInterval = null;
     }
-    skipPrev();
+    const audio = activeAudio();
+    if(audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
+    hardAdvance(-1, true);
   });
   
   $('lyricsNextBtn').addEventListener('click', () => {
@@ -4314,7 +4308,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       clearInterval(lyricsScrollInterval);
       lyricsScrollInterval = null;
     }
-    skipNext();
+    hardAdvance(1, true);
   });
 
   // ---------------- Now Playing Menu (3-dot) ----------------
