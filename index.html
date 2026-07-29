@@ -3668,6 +3668,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return text.replace(/^(?:[0-9]|[1-4][0-9]|50)\.\s*/, '');
   }
 
+  function hasNumberPrefix(text){
+    if(!text) return false;
+    return /^(?:[0-9]|[1-4][0-9]|50)\.\s/.test(text);
+  }
+
   function updateWatermarkToggle(){
     $('watermarkEnabledToggle').textContent = watermarkEnabled ? 'On' : 'Off';
     $('watermarkEnabledToggle').classList.toggle('active', watermarkEnabled);
@@ -3676,14 +3681,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function applyWatermarkToAll(){
     allTracks.forEach(t => {
-      if(t.name) {
-        t.name = applyWatermarkPatterns(t.name);
-        t.name = removeNumberPrefix(t.name);
+      const origName = t.name || '';
+      const origArtist = t.artist || '';
+      
+      // Apply patterns
+      let newName = applyWatermarkPatterns(origName);
+      let newArtist = applyWatermarkPatterns(origArtist);
+      
+      // Remove number prefixes
+      newName = removeNumberPrefix(newName);
+      newArtist = removeNumberPrefix(newArtist);
+      
+      // If artist had number prefix, swap name and artist
+      if(hasNumberPrefix(origArtist) || hasNumberPrefix(origName)) {
+        const temp = newName;
+        newName = newArtist;
+        newArtist = temp;
       }
-      if(t.artist) {
-        t.artist = applyWatermarkPatterns(t.artist);
-        t.artist = removeNumberPrefix(t.artist);
-      }
+      
+      t.name = newName;
+      t.artist = newArtist;
     });
     renderList();
     const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
