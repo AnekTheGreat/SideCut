@@ -1860,6 +1860,27 @@ body.sandbox-always-search #searchInput {
         </div>
       </div>
 
+      <!-- Collapsible: Text Removal -->
+      <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
+        <button id="collapsibleTextRemoval" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+          <span>Text Removal</span><span id="collapseTextRemovalIcon" style="transition:transform 0.2s;">▾</span>
+        </button>
+        <div id="collapsibleTextRemovalContent" style="padding:12px; border-top:1px solid var(--line); display:none;">
+          <div style="margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:13px; color:var(--ink-dim);">Remove text from songs</span>
+              <button class="tab" id="textRemovalEnabledToggle" style="padding:5px 12px; font-size:12px;">Off</button>
+            </div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Remove specific text from all song titles and artist names.</div>
+          </div>
+          <div id="textRemovalSection" style="display:none;">
+            <textarea id="textRemovalPatterns" placeholder="Radio Edit&#10;(feat. X)&#10;- Remix" style="width:100%; height:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:4px; padding:6px; font-size:11px; margin-bottom:6px; resize:vertical; font-family:inherit;"></textarea>
+            <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px;">Type what you want removed, one per line. Applied to all songs in real-time.</div>
+            <button class="playlist-pick-btn" id="resetTextRemovalBtn" style="text-align:center; width:100%;">Reset</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Collapsible: Versions -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
         <button id="collapsibleVersions" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
@@ -1949,14 +1970,6 @@ body.sandbox-always-search #searchInput {
           </div>
         </div>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Adjust the size of the now playing bar (50% - 150%).</div>
-      </div>
-
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-size:13px;">Watermark patterns</span>
-        </div>
-        <textarea id="watermarkPatterns" placeholder="(feat. X)&#10;[Radio Edit]&#10;- Radio Mix" style="width:100%; height:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:4px; padding:6px; font-size:11px; margin-top:6px; resize:vertical; font-family:inherit;"></textarea>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">One pattern per line. Applied to all songs when searching.</div>
       </div>
 
       <div style="margin-bottom:16px;">
@@ -3631,19 +3644,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxCompactNowbar = false;
   let sandboxAlwaysSearch = false;
   let sandboxNowbarSize = 100;
-  let watermarkPatterns = '(feat. X)\n[Radio Edit]\n- Radio Mix\n(Lyric Video)\n(Official Video)\n(Music Video)';
 
-  function applyWatermarkPatterns(text){
-    if(!text || !watermarkPatterns) return text;
-    const patterns = watermarkPatterns.split('\n').filter(p => p.trim());
+  // Text removal: simple plain-text removal from song titles/artists
+  let textRemovalEnabled = false;
+  let textRemovalPatterns = 'Radio Edit\n- Remix\n(Live)\n(feat. X)';
+
+  function applyTextRemoval(text){
+    if(!text || !textRemovalEnabled || !textRemovalPatterns) return text;
+    const patterns = textRemovalPatterns.split('\n').filter(p => p.trim());
     patterns.forEach(p => {
-      // Replace X with any word, handle parentheses/brackets
-      let regex = p.replace(/X/gi, '\\S*').replace(/[()[\]]/g, '\\$&');
+      // Simple string replacement, escape special regex chars for safety
+      const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       try {
-        text = text.replace(new RegExp(regex, 'gi'), '');
+        text = text.replace(new RegExp(escaped, 'gi'), '');
       } catch(e) {}
     });
     return text.trim();
+  }
+
+  function updateTextRemovalToggle(){
+    $('textRemovalEnabledToggle').textContent = textRemovalEnabled ? 'On' : 'Off';
+    $('textRemovalEnabledToggle').classList.toggle('active', textRemovalEnabled);
+    $('textRemovalSection').style.display = textRemovalEnabled ? '' : 'none';
   }
 
   function updateSandboxToggles(){
@@ -3688,17 +3710,43 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('sandboxShowPlayCount').addEventListener('click', () => { sandboxShowPlayCount = !sandboxShowPlayCount; dbPut('meta', { key: 'sandboxShowPlayCount', value: sandboxShowPlayCount }); updateSandboxToggles(); renderList(); });
   $('sandboxCompactNowbar').addEventListener('click', () => { sandboxCompactNowbar = !sandboxCompactNowbar; dbPut('meta', { key: 'sandboxCompactNowbar', value: sandboxCompactNowbar }); updateSandboxToggles(); });
   $('sandboxAlwaysSearch').addEventListener('click', () => { sandboxAlwaysSearch = !sandboxAlwaysSearch; dbPut('meta', { key: 'sandboxAlwaysSearch', value: sandboxAlwaysSearch }); updateSandboxToggles(); });
-  $('watermarkPatterns').addEventListener('input', (e) => {
-    watermarkPatterns = e.target.value;
-    dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
-    // Apply to all songs in real-time
+
+  // Text removal event handlers
+  $('textRemovalPatterns').addEventListener('input', (e) => {
+    textRemovalPatterns = e.target.value;
+    dbPut('meta', { key: 'textRemovalPatterns', value: textRemovalPatterns });
     allTracks.forEach(t => {
-      if(t.name) t.name = applyWatermarkPatterns(t.name);
-      if(t.artist) t.artist = applyWatermarkPatterns(t.artist);
+      if(t.name) t.name = applyTextRemoval(t.name);
+      if(t.artist) t.artist = applyTextRemoval(t.artist);
     });
     renderList();
     const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(cur) updateNpDisplay(cur);
+  });
+  $('textRemovalEnabledToggle').addEventListener('click', () => {
+    textRemovalEnabled = !textRemovalEnabled;
+    dbPut('meta', { key: 'textRemovalEnabled', value: textRemovalEnabled });
+    updateTextRemovalToggle();
+    allTracks.forEach(t => {
+      if(t.name) t.name = applyTextRemoval(t.name);
+      if(t.artist) t.artist = applyTextRemoval(t.artist);
+    });
+    renderList();
+    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(cur) updateNpDisplay(cur);
+  });
+  $('resetTextRemovalBtn').addEventListener('click', () => {
+    textRemovalPatterns = 'Radio Edit\n- Remix\n(Live)\n(feat. X)';
+    $('textRemovalPatterns').value = textRemovalPatterns;
+    dbPut('meta', { key: 'textRemovalPatterns', value: textRemovalPatterns });
+    allTracks.forEach(t => {
+      if(t.name) t.name = applyTextRemoval(t.name);
+      if(t.artist) t.artist = applyTextRemoval(t.artist);
+    });
+    renderList();
+    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(cur) updateNpDisplay(cur);
+    toast('Text removal reset');
   });
 
   // Collapsible sections
@@ -3716,6 +3764,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   setupCollapsible('collapsiblePlayback', 'collapsiblePlaybackContent', 'collapsePlaybackIcon');
   setupCollapsible('collapsibleLibrary', 'collapsibleLibraryContent', 'collapseLibraryIcon');
+  setupCollapsible('collapsibleTextRemoval', 'collapsibleTextRemovalContent', 'collapseTextRemovalIcon');
   setupCollapsible('collapsibleVersions', 'collapsibleVersionsContent', 'collapseVersionsIcon');
 
   $('nowbarSizeUp').addEventListener('click', () => {
@@ -3741,8 +3790,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     sandboxCompactNowbar = false;
     sandboxAlwaysSearch = false;
     sandboxNowbarSize = 100;
-    watermarkPatterns = '(feat. X)\n[Radio Edit]\n- Radio Mix\n(Lyric Video)\n(Official Video)\n(Music Video)';
-    $('watermarkPatterns').value = watermarkPatterns;
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
     dbPut('meta', { key: 'sandboxDurOnTabs', value: false });
@@ -3751,7 +3798,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'sandboxCompactNowbar', value: false });
     dbPut('meta', { key: 'sandboxAlwaysSearch', value: false });
     dbPut('meta', { key: 'sandboxNowbarSize', value: 100 });
-    dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
     updateSandboxToggles();
     toast('Sandbox settings reset');
   });
@@ -3912,8 +3958,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     
     // Clean up artist/title using custom watermark patterns
-    const cleanArtist = applyWatermarkPatterns(artist);
-    const cleanTitle = applyWatermarkPatterns(title);
+    const cleanArtist = applyTextRemoval(artist);
+    const cleanTitle = applyTextRemoval(title);
     
     try {
       // Try multiple APIs for best coverage
@@ -4461,12 +4507,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(sandboxAlwaysSearchRow) sandboxAlwaysSearch = !!sandboxAlwaysSearchRow.value;
       const sandboxNowbarSizeRow = metaRows.find(r => r.key === 'sandboxNowbarSize');
       if(sandboxNowbarSizeRow) sandboxNowbarSize = parseInt(sandboxNowbarSizeRow.value) || 100;
-      const watermarkPatternsRow = metaRows.find(r => r.key === 'watermarkPatterns');
-      if(watermarkPatternsRow && watermarkPatternsRow.value) {
-        watermarkPatterns = watermarkPatternsRow.value;
-        $('watermarkPatterns').value = watermarkPatterns;
+      const textRemovalEnabledRow = metaRows.find(r => r.key === 'textRemovalEnabled');
+      if(textRemovalEnabledRow) textRemovalEnabled = !!textRemovalEnabledRow.value;
+      const textRemovalPatternsRow = metaRows.find(r => r.key === 'textRemovalPatterns');
+      if(textRemovalPatternsRow && textRemovalPatternsRow.value) {
+        textRemovalPatterns = textRemovalPatternsRow.value;
+        $('textRemovalPatterns').value = textRemovalPatterns;
       }
       applySandboxStyles();
+      updateTextRemovalToggle();
     }catch(e){ /* defaults are fine */ }
   }
 
@@ -5003,8 +5052,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const title = track.name || '';
     const artist = track.artist || 'Unknown';
     
-    const cleanArtist = applyWatermarkPatterns(artist);
-    const cleanTitle = applyWatermarkPatterns(title);
+    const cleanArtist = applyTextRemoval(artist);
+    const cleanTitle = applyTextRemoval(title);
     
     try {
       // Try LRCLIB search
@@ -5220,8 +5269,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const rawTitle = (t.name && t.name !== 'Untitled') ? t.name : '';
     const rawArtist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
     // Apply custom watermark patterns
-    const title = applyWatermarkPatterns(rawTitle);
-    const artist = applyWatermarkPatterns(rawArtist);
+    const title = applyTextRemoval(rawTitle);
+    const artist = applyTextRemoval(rawArtist);
     let query = `${artist} ${title}`.trim();
     // If no good query, try using filename
     if(!query && t.file){
