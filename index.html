@@ -4847,13 +4847,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
   
   $('fetchMissingCoversBtn').addEventListener('click', async () => {
+    if(window.coverFetchState && window.coverFetchState.active){ toast('Already fetching covers...'); return; }
     if(enrichState.active){ toast('Already fetching...'); return; }
     const needsCover = allTracks.filter(t => !t.artBlob && enrichQueryFor(t));
     if(!needsCover.length){ toast('No songs need covers'); return; }
     
-    enrichState.active = true;
+    window.coverFetchState = { active: true, total: needsCover.length, done: 0, fetched: 0 };
     const total = needsCover.length;
-    let done = 0;
     
     const btn = $('fetchMissingCoversBtn');
     const bar = $('coverProgressBar');
@@ -4861,21 +4861,24 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     
     btn.disabled = true;
     bar.style.display = 'block';
+    refreshEnrichNotif();
     
-    let fetched = 0;
     for(const t of needsCover){
       const gotCover = await fetchCoverForTrack(t);
-      if(gotCover) fetched++;
-      done++;
-      fill.style.width = Math.round((done/total)*100) + '%';
+      if(gotCover) window.coverFetchState.fetched++;
+      window.coverFetchState.done++;
+      fill.style.width = Math.round((window.coverFetchState.done/total)*100) + '%';
+      refreshEnrichNotif();
     }
     
     btn.disabled = false;
     bar.style.display = 'none';
-    enrichState.active = false;
+    window.coverFetchState.active = false;
     
-    toast(`Fetched ${fetched}/${needsCover.length} covers`);
+    toast(`Fetched ${window.coverFetchState.fetched} covers`);
+    window.coverFetchState = null;
     renderList();
+    refreshEnrichNotif();
   });
   
   // Batch fetch lyrics for all songs
@@ -4921,14 +4924,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   
   $('fetchMissingLyricsBtn').addEventListener('click', async () => {
-    if(lyricsFetchActive){ toast('Already fetching lyrics...'); return; }
+    if(window.lyricsFetchState && window.lyricsFetchState.active){ toast('Already fetching lyrics...'); return; }
     
     const needsLyrics = allTracks.filter(t => enrichQueryFor(t));
     if(!needsLyrics.length){ toast('No songs to fetch lyrics for'); return; }
     
-    lyricsFetchActive = true;
+    window.lyricsFetchState = { active: true, total: needsLyrics.length, done: 0, fetched: 0 };
     const total = needsLyrics.length;
-    let done = 0;
     
     const btn = $('fetchMissingLyricsBtn');
     const bar = $('lyricsProgressBar');
@@ -4936,27 +4938,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     
     btn.disabled = true;
     bar.style.display = 'block';
+    refreshEnrichNotif();
     
-    let fetched = 0;
     for(const t of needsLyrics){
-      if(t.lyrics) { done++; fill.style.width = Math.round((done/total)*100) + '%'; continue; }
+      if(t.lyrics) { window.lyricsFetchState.done++; fill.style.width = Math.round((window.lyricsFetchState.done/total)*100) + '%'; refreshEnrichNotif(); continue; }
       
       const result = await fetchSingleLyrics(t);
       if(result) {
         t.lyrics = result.lyrics;
         t.lyricsSynced = result.isSynced;
         persistTrackMeta(t);
-        fetched++;
+        window.lyricsFetchState.fetched++;
       }
-      done++;
-      fill.style.width = Math.round((done/total)*100) + '%';
+      window.lyricsFetchState.done++;
+      fill.style.width = Math.round((window.lyricsFetchState.done/total)*100) + '%';
+      refreshEnrichNotif();
       await new Promise(r => setTimeout(r, 100));
     }
     
-    lyricsFetchActive = false;
     btn.disabled = false;
     bar.style.display = 'none';
-    toast(`Found lyrics for ${fetched} songs`);
+    toast(`Found lyrics for ${window.lyricsFetchState.fetched} songs`);
+    window.lyricsFetchState = null;
+    refreshEnrichNotif();
   });
   
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
@@ -5248,9 +5252,34 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function enrichNotifHtml(){
+    let html = '';
+    
+    // Cover fetch progress
+    if(window.coverFetchState && window.coverFetchState.active){
+      const pct = window.coverFetchState.total ? Math.round((window.coverFetchState.done / window.coverFetchState.total) * 100) : 0;
+      html += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">Fetching covers…</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Cover art from Deezer/AudioDB — ${window.coverFetchState.done}/${window.coverFetchState.total}</div>
+          <div style="height:6px; background:var(--bg-raised); border-radius:3px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>
+        </div>`;
+    }
+    
+    // Lyrics fetch progress
+    if(window.lyricsFetchState && window.lyricsFetchState.active){
+      const pct = window.lyricsFetchState.total ? Math.round((window.lyricsFetchState.done / window.lyricsFetchState.total) * 100) : 0;
+      html += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">Fetching lyrics…</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Lyrics from LRCLIB — ${window.lyricsFetchState.done}/${window.lyricsFetchState.total}</div>
+          <div style="height:6px; background:var(--bg-raised); border-radius:3px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--gold); transition:width .3s;"></div></div>
+        </div>`;
+    }
+    
+    // Auto enrich progress
     if(enrichState.active){
       const pct = enrichState.total ? Math.round((enrichState.done / enrichState.total) * 100) : 0;
-      return `
+      html += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
           <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">Fetching song details…</div>
           <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Looking up covers &amp; metadata — ${enrichState.done}/${enrichState.total} songs</div>
@@ -5261,13 +5290,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const msg = enrichState.updated > 0
         ? `Updated ${enrichState.updated} song${enrichState.updated>1?'s':''} with covers &amp; metadata.`
         : `Checked ${enrichState.total} song${enrichState.total>1?'s':''} — nothing new to add.`;
-      return `
+      html += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
           <div style="font-weight:600; font-size:13.5px; margin-bottom:6px;">✓ Song details updated</div>
           <div style="font-size:12px; color:var(--ink-dim);">${msg}</div>
         </div>`;
     }
-    return '';
+    return html;
   }
 
   function refreshEnrichNotif(){
