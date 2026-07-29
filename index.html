@@ -1831,14 +1831,7 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="fetchMissingCoversBtn" style="text-align:center;">Fetch missing covers</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Try to fetch covers from Spotify.</div>
-      </div>
-
-      <div style="margin-top:12px;">
-        <div style="font-size:12px; margin-bottom:6px;">Manual cover</div>
-        <input type="file" id="manualCoverFile" accept="image/*" style="display:none;">
-        <button class="playlist-pick-btn" id="selectCoverForSongBtn" style="text-align:center; width:100%;">Set cover for selected song</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Select a song first, then pick an image.</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Try to fetch covers from Deezer/AudioDB.</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -2409,6 +2402,9 @@ body.sandbox-always-search #searchInput {
     </div>
   </div>
 </div>
+
+<!-- Hidden file input for setting cover image -->
+<input type="file" id="coverFileInput" accept="image/*" style="display:none;">
 
 <!-- Long-press choice: select multiple or reorder -->
 <div class="modal-backdrop" id="holdChoiceBackdrop">
@@ -4828,39 +4824,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderList();
   });
   
-  let selectedForCover = null;
-  
-  $('selectCoverForSongBtn').addEventListener('click', () => {
-    if(selectedSongId){
-      selectedForCover = selectedSongId;
-      $('manualCoverFile').click();
-    } else {
-      toast('Select a song first');
-    }
-  });
-  
-  $('manualCoverFile').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file || !selectedForCover) return;
-    e.target.value = '';
-    
-    const t = allTracks.find(s => s.id === selectedForCover);
-    if(!t) return;
-    
-    try{
-      const blob = file;
-      if(t.artUrl){ try{ URL.revokeObjectURL(t.artUrl); }catch(e){} }
-      t.artBlob = blob;
-      t.artUrl = URL.createObjectURL(blob);
-      persistTrackMeta(t);
-      if(queue[queueIndex] === t.id) updateNowPlayingArt(t);
-      toast('Cover set!');
-      renderList();
-    }catch(e){
-      toast('Failed to set cover');
-    }
-    selectedForCover = null;
-  });
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
   $('updateLogBackdrop').addEventListener('click', e => { if(e.target === $('updateLogBackdrop')) $('updateLogBackdrop').style.display = 'none'; });
   $('versionChartClose').addEventListener('click', () => { $('versionChartBackdrop').style.display = 'none'; });
@@ -5155,7 +5118,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         let updated = false;
         try{ 
           if(r && r.found && await applyEnrichment(t, r)) updated = true;
-          // Fallback to iTunes if no cover from main API
+          // Fallback to Deezer if no cover from main API
           if(!t.artBlob) {
             if(await fetchCoverForTrack(t)) updated = true;
           }
@@ -6870,6 +6833,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     lyricsBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; fetchLyrics(t); });
     list.appendChild(lyricsBtn);
 
+    const coverBtn = document.createElement('button');
+    coverBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg> Set cover image`;
+    coverBtn.addEventListener('click', () => { 
+      $('songActionsBackdrop').style.display='none';
+      $('coverFileInput').click();
+      window._coverForId = id;
+    });
+    list.appendChild(coverBtn);
+
     const infoBtn = document.createElement('button');
     infoBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg> Song info`;
     infoBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; showSongInfo(t); });
@@ -6902,6 +6874,30 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   $('songActionsCancel').addEventListener('click', () => { $('songActionsBackdrop').style.display = 'none'; });
   $('songActionsBackdrop').addEventListener('click', e => { if(e.target === $('songActionsBackdrop')) $('songActionsBackdrop').style.display = 'none'; });
+
+  // Handle manual cover file selection
+  $('coverFileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    const id = window._coverForId;
+    e.target.value = '';
+    if(!file || !id) return;
+    
+    const t = allTracks.find(s => s.id === id);
+    if(!t) return;
+    
+    try{
+      if(t.artUrl){ try{ URL.revokeObjectURL(t.artUrl); }catch(e){} }
+      t.artBlob = file;
+      t.artUrl = URL.createObjectURL(file);
+      persistTrackMeta(t);
+      if(queue[queueIndex] === t.id) updateNowPlayingArt(t);
+      toast('Cover set!');
+      renderList();
+    }catch(e){
+      toast('Failed to set cover');
+    }
+    window._coverForId = null;
+  });
 
   // ---------------- Drag-to-reorder via grip handle (opt-in via hold-choice or header toggle) ----------------
   function attachGripDrag(row, handle, id){
