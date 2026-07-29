@@ -2010,11 +2010,29 @@ body.sandbox-always-search #searchInput {
   /* Lyrics backdrop: keep nowPlaying bar visible at bottom */
   #lyricsBackdrop {
     background: linear-gradient(to bottom, 
-      rgba(0,0,0,0.8) 0%, 
-      rgba(0,0,0,0.65) 50%, 
-      rgba(0,0,0,0.25) 80%, 
+      rgba(0,0,0,0.85) 0%, 
+      rgba(0,0,0,0.7) 40%, 
+      rgba(0,0,0,0.3) 75%, 
       rgba(0,0,0,0) 100%
     );
+  }
+  /* Make lyrics modal float above now bar area */
+  #lyricsBackdrop .modal {
+    background: transparent;
+    border: none;
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+  #lyricsBackdrop .modal > div:first-child,
+  #lyricsBackdrop .modal > div:nth-child(2) {
+    background: var(--bg-raised);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  #lyricsContent {
+    background: var(--bg-raised);
+    border-radius: 12px;
+    padding: 16px;
   }
   #lyricsText {
     padding: 4px 0;
@@ -2104,10 +2122,18 @@ body.sandbox-always-search #searchInput {
       <h3 id="lyricsTitle">Lyrics</h3>
       <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:24px; cursor:pointer; padding:0; line-height:1;">×</button>
     </div>
-    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; gap:12px; flex-wrap:wrap;">
-      <button id="lyricsAutoScrollBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
-        Auto-scroll: On
-      </button>
+    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; gap:8px; flex-wrap:wrap;">
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button id="lyricsAutoScrollBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+          Auto-scroll: On
+        </button>
+        <button id="lyricsTranslateBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+          Translate
+        </button>
+        <button id="lyricsSummaryBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+          Summary
+        </button>
+      </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-size:11px; color:var(--ink-dim);">A-</span>
         <input type="range" id="lyricsFontSlider" min="12" max="24" value="16" style="width:80px; accent-color:var(--coral);">
@@ -4142,9 +4168,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     
     if (isSynced) {
       $('lyricsText').innerHTML = formatSyncedLyrics(lyrics);
-      startLyricsAutoScroll();
     } else {
-      $('lyricsText').textContent = lyrics;
       $('lyricsText').innerHTML = lyrics.split('\n').map(line => 
         `<div class="lyric-line">${escapeHtml(line)}</div>`
       ).join('');
@@ -4152,14 +4176,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     
     // Apply font size
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
+    
+    // Start auto scroll for both synced and non-synced lyrics
+    startLyricsAutoScroll();
   }
   
   function startLyricsAutoScroll() {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
-    if (!lyricsAutoScroll || !$('lyricsContent').querySelector('.lyric-line')) return;
+    const container = $('lyricsContent');
+    const lines = container.querySelectorAll('.lyric-line');
+    
+    if (!lyricsAutoScroll || !lines.length) return;
     
     let lastScrollTop = 0;
+    let lastHighlightedIdx = -1;
     
     lyricsScrollInterval = setInterval(() => {
       if (!lyricsAutoScroll || !$('lyricsBackdrop') || $('lyricsBackdrop').style.display !== 'flex') {
@@ -4167,36 +4198,55 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         return;
       }
       
-      const currentTime = activeAudio().currentTime;
-      const container = $('lyricsContent');
-      const lines = container.querySelectorAll('.lyric-line[data-time]');
+      const audio = activeAudio();
+      if (!audio) return;
+      
+      const currentTime = audio.currentTime;
+      const syncedLines = container.querySelectorAll('.lyric-line[data-time]');
+      const allLines = container.querySelectorAll('.lyric-line');
       
       let currentLine = null;
-      lines.forEach(line => {
-        const lineTime = parseInt(line.dataset.time);
-        if (lineTime <= currentTime) {
-          currentLine = line;
-        }
-      });
+      let currentIdx = -1;
       
-      if (currentLine) {
+      // For synced lyrics
+      if (syncedLines.length > 0) {
+        syncedLines.forEach((line, idx) => {
+          const lineTime = parseInt(line.dataset.time);
+          if (lineTime <= currentTime) {
+            currentLine = line;
+            currentIdx = idx;
+          }
+        });
+      } else {
+        // For non-synced lyrics, just highlight and don't scroll
+        // Just show first line as "current" for visual feedback
+        if (allLines.length > 0) {
+          allLines.forEach(l => l.classList.remove('current'));
+          allLines[0].classList.add('current');
+        }
+        return;
+      }
+      
+      if (currentLine && currentIdx !== lastHighlightedIdx) {
         // Remove highlight from all lines
-        lines.forEach(l => l.classList.remove('current'));
+        allLines.forEach(l => l.classList.remove('current'));
         currentLine.classList.add('current');
+        lastHighlightedIdx = currentIdx;
         
-        // Only scroll if line moved significantly
+        // Scroll to center the current line
         const lineTop = currentLine.offsetTop;
         const containerHeight = container.clientHeight;
         const centerPos = containerHeight / 2;
         const scrollTarget = lineTop - centerPos + (currentLine.offsetHeight / 2);
         
-        // Only scroll if the scroll position changed significantly
-        if (Math.abs(scrollTarget - lastScrollTop) > 5) {
-          lastScrollTop = scrollTarget;
-          container.scrollTop = Math.max(0, scrollTarget);
-        }
+        // Smooth scroll
+        container.scrollTo({
+          top: Math.max(0, scrollTarget),
+          behavior: 'smooth'
+        });
+        lastScrollTop = scrollTarget;
       }
-    }, 150);
+    }, 200);
   }
   
   function formatSyncedLyrics(lrc) {
@@ -4256,6 +4306,128 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     lyricsFontSize = parseInt(e.target.value);
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
   });
+
+  // Lyrics translate button
+  let originalLyrics = '';
+  let currentLyricsTrack = null;
+  $('lyricsTranslateBtn').addEventListener('click', async () => {
+    const btn = $('lyricsTranslateBtn');
+    if (btn.textContent.includes('Show')) {
+      // Switch back to original lyrics
+      btn.textContent = 'Translate';
+      btn.style.borderColor = 'var(--line)';
+      btn.style.color = 'var(--ink)';
+      $('lyricsText').innerHTML = originalLyrics;
+      $('lyricsText').style.fontSize = lyricsFontSize + 'px';
+      return;
+    }
+    
+    if (!currentLyricsTrack) {
+      toast('No lyrics to translate');
+      return;
+    }
+    
+    const text = originalLyrics.replace(/<[^>]*>/g, '').trim();
+    if (!text) {
+      toast('No lyrics to translate');
+      return;
+    }
+    
+    btn.textContent = 'Translating...';
+    btn.disabled = true;
+    
+    try {
+      const resp = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.substring(0, 500))}&langpair=en|punjabi`);
+      const data = await resp.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        // Store original and show translated
+        btn.textContent = 'Show Original';
+        btn.style.borderColor = 'var(--coral)';
+        btn.style.color = 'var(--coral)';
+        $('lyricsText').innerHTML = `<div style="color:var(--ink-dim); font-size:11px; margin-bottom:12px;">Punjabi Translation</div>${escapeHtml(data.responseData.translatedText).split('\n').map(line => `<div class="lyric-line">${line || '&nbsp;'}</div>`).join('')}`;
+        $('lyricsText').style.fontSize = lyricsFontSize + 'px';
+        toast('Translated to Punjabi');
+      } else {
+        toast('Translation failed');
+      }
+    } catch(e) {
+      toast('Translation error');
+    }
+    btn.textContent = 'Translate';
+    btn.disabled = false;
+  });
+
+  // Lyrics summary button
+  $('lyricsSummaryBtn').addEventListener('click', async () => {
+    const btn = $('lyricsSummaryBtn');
+    if (!currentLyricsTrack) {
+      toast('No lyrics to summarize');
+      return;
+    }
+    
+    const text = originalLyrics.replace(/<[^>]*>/g, '').trim();
+    if (!text) {
+      toast('No lyrics to summarize');
+      return;
+    }
+    
+    btn.textContent = 'Summarizing...';
+    btn.disabled = true;
+    
+    try {
+      // Simple summarization - extract key lines (lines that appear most often or are longest)
+      const lines = text.split('\n').filter(l => l.trim().length > 10);
+      const wordCount = {};
+      lines.forEach(line => {
+        line.split(' ').forEach(word => {
+          if (word.length > 3) {
+            wordCount[word.toLowerCase()] = (wordCount[word.toLowerCase()] || 0) + 1;
+          }
+        });
+      });
+      
+      // Get top words
+      const topWords = Object.entries(wordCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([word]) => word);
+      
+      // Extract lines containing top words
+      const summaryLines = lines.filter(line => {
+        const lower = line.toLowerCase();
+        return topWords.some(word => lower.includes(word));
+      }).slice(0, 8);
+      
+      if (summaryLines.length > 0) {
+        $('lyricsText').innerHTML = `<div style="color:var(--coral); font-size:11px; margin-bottom:12px;">Summary - Key Lyrics</div>${summaryLines.map(line => `<div class="lyric-line" style="color:var(--ink);">${escapeHtml(line)}</div>`).join('')}`;
+        btn.textContent = 'Show Full';
+        btn.style.borderColor = 'var(--coral)';
+        btn.style.color = 'var(--coral)';
+        toast('Summary shown');
+      } else {
+        toast('Could not generate summary');
+      }
+    } catch(e) {
+      toast('Summary error');
+    }
+    btn.textContent = 'Summary';
+    btn.disabled = false;
+  });
+
+  // Store original lyrics when showing lyrics
+  const originalShowLyrics = showLyrics;
+  showLyrics = function(lyrics, isSynced) {
+    originalShowLyrics(lyrics, isSynced);
+    originalLyrics = $('lyricsText').innerHTML;
+    currentLyricsTrack = queue[queueIndex];
+    // Reset translate/summary buttons
+    $('lyricsTranslateBtn').textContent = 'Translate';
+    $('lyricsTranslateBtn').style.borderColor = 'var(--line)';
+    $('lyricsTranslateBtn').style.color = 'var(--ink)';
+    $('lyricsSummaryBtn').textContent = 'Summary';
+    $('lyricsSummaryBtn').style.borderColor = 'var(--line)';
+    $('lyricsSummaryBtn').style.color = 'var(--ink)';
+  };
 
   // ---------------- Now Playing Menu (3-dot) ----------------
   function showNpMenu() {
@@ -4655,6 +4827,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       'Toast notifications now more visible in DJ mode and other fullscreen views (prominent gold border, glow effect, larger text)',
       'Now Playing bar now visible through the bottom of lyrics backdrop',
       'Playback section in Settings collapsed by default (consistent with other sections)',
+      'Added Translate button in lyrics - translates to Punjabi using MyMemory API',
+      'Added Summary button in lyrics - shows key lyrics extracted from the song',
+      'Fixed lyrics auto-scroll and highlight for both synced and non-synced lyrics',
+      'Lyrics modal redesigned with floating cards and transparent background showing now bar',
     ]},
     { version: '41', date: 'July 28th, 2026 at 6:15 pm EDT', title: 'Album covers & lyrics', items: [
       'Album covers now show in the track list (library view)',
