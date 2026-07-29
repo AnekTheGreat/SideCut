@@ -2007,32 +2007,15 @@ body.sandbox-always-search #searchInput {
 
 <!-- Lyrics styles -->
 <style>
-  /* Lyrics backdrop: keep nowPlaying bar visible at bottom */
-  #lyricsBackdrop {
-    background: linear-gradient(to bottom, 
-      rgba(0,0,0,0.85) 0%, 
-      rgba(0,0,0,0.7) 40%, 
-      rgba(0,0,0,0.3) 75%, 
-      rgba(0,0,0,0) 100%
-    );
-  }
-  /* Make lyrics modal float above now bar area */
-  #lyricsBackdrop .modal {
-    background: transparent;
-    border: none;
-    padding-bottom: calc(80px + env(safe-area-inset-bottom));
-  }
-  #lyricsBackdrop .modal > div:first-child,
-  #lyricsBackdrop .modal > div:nth-child(2) {
+  /* Lyrics floating modal styles */
+  .lyrics-floating-modal {
+    max-height: 75vh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
     background: var(--bg-raised);
-    border-radius: 12px;
-    padding: 12px;
-    margin-bottom: 8px;
-  }
-  #lyricsContent {
-    background: var(--bg-raised);
-    border-radius: 12px;
-    padding: 16px;
+    border: 1px solid var(--line);
+    padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important;
   }
   #lyricsText {
     padding: 4px 0;
@@ -2116,8 +2099,8 @@ body.sandbox-always-search #searchInput {
 </div>
 
 <!-- Lyrics Modal -->
-<div class="modal-backdrop" id="lyricsBackdrop">
-  <div class="modal" style="max-height:85vh; display:flex; flex-direction:column;">
+<div class="modal-backdrop" id="lyricsBackdrop" style="background:linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0) 100%); z-index:55;">
+  <div class="modal lyrics-floating-modal">
     <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid var(--line); margin-bottom:12px;">
       <h3 id="lyricsTitle">Lyrics</h3>
       <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:24px; cursor:pointer; padding:0; line-height:1;">×</button>
@@ -2129,9 +2112,6 @@ body.sandbox-always-search #searchInput {
         </button>
         <button id="lyricsTranslateBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
           Translate
-        </button>
-        <button id="lyricsSummaryBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
-          Summary
         </button>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
@@ -2415,6 +2395,14 @@ body.sandbox-always-search #searchInput {
 <div class="modal-backdrop" id="updateLogBackdrop">
   <div class="modal">
     <h3>Update log</h3>
+    <div style="display:flex; gap:8px; margin-bottom:8px;">
+      <button id="updateLogSummaryBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:4px 12px; font-size:11px; cursor:pointer;">
+        Summary
+      </button>
+      <button id="updateLogFullBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 12px; font-size:11px; cursor:pointer; display:none;">
+        Full changelog
+      </button>
+    </div>
     <div id="updateLogBody" style="display:flex; flex-direction:column; gap:16px; max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
     <div class="modal-btns">
       <button class="cancel" id="updateLogClose" style="flex:1;">Close</button>
@@ -4307,7 +4295,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
   });
 
-  // Lyrics translate button
+  // Lyrics translate button - Punjabi to English
   let originalLyrics = '';
   let currentLyricsTrack = null;
   $('lyricsTranslateBtn').addEventListener('click', async () => {
@@ -4328,7 +4316,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     
     const text = originalLyrics.replace(/<[^>]*>/g, '').trim();
-    if (!text) {
+    if (!text || text.length < 5) {
       toast('No lyrics to translate');
       return;
     }
@@ -4337,80 +4325,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     btn.disabled = true;
     
     try {
-      const resp = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.substring(0, 500))}&langpair=en|punjabi`);
+      // Punjabi to English using MyMemory
+      const resp = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.substring(0, 400))}&langpair=pa|en`);
+      
+      if (!resp.ok) throw new Error('API error');
       const data = await resp.json();
+      
       if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        // Store original and show translated
         btn.textContent = 'Show Original';
         btn.style.borderColor = 'var(--coral)';
         btn.style.color = 'var(--coral)';
-        $('lyricsText').innerHTML = `<div style="color:var(--ink-dim); font-size:11px; margin-bottom:12px;">Punjabi Translation</div>${escapeHtml(data.responseData.translatedText).split('\n').map(line => `<div class="lyric-line">${line || '&nbsp;'}</div>`).join('')}`;
+        $('lyricsText').innerHTML = `<div style="color:var(--coral); font-size:11px; margin-bottom:12px;">English Translation</div>${escapeHtml(data.responseData.translatedText).split('\n').map(line => `<div class="lyric-line">${line || '&nbsp;'}</div>`).join('')}`;
         $('lyricsText').style.fontSize = lyricsFontSize + 'px';
-        toast('Translated to Punjabi');
+        toast('Translated to English');
       } else {
-        toast('Translation failed');
+        toast('Translation failed - try again');
       }
     } catch(e) {
-      toast('Translation error');
+      toast('Translation unavailable - check internet');
     }
     btn.textContent = 'Translate';
-    btn.disabled = false;
-  });
-
-  // Lyrics summary button
-  $('lyricsSummaryBtn').addEventListener('click', async () => {
-    const btn = $('lyricsSummaryBtn');
-    if (!currentLyricsTrack) {
-      toast('No lyrics to summarize');
-      return;
-    }
-    
-    const text = originalLyrics.replace(/<[^>]*>/g, '').trim();
-    if (!text) {
-      toast('No lyrics to summarize');
-      return;
-    }
-    
-    btn.textContent = 'Summarizing...';
-    btn.disabled = true;
-    
-    try {
-      // Simple summarization - extract key lines (lines that appear most often or are longest)
-      const lines = text.split('\n').filter(l => l.trim().length > 10);
-      const wordCount = {};
-      lines.forEach(line => {
-        line.split(' ').forEach(word => {
-          if (word.length > 3) {
-            wordCount[word.toLowerCase()] = (wordCount[word.toLowerCase()] || 0) + 1;
-          }
-        });
-      });
-      
-      // Get top words
-      const topWords = Object.entries(wordCount)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([word]) => word);
-      
-      // Extract lines containing top words
-      const summaryLines = lines.filter(line => {
-        const lower = line.toLowerCase();
-        return topWords.some(word => lower.includes(word));
-      }).slice(0, 8);
-      
-      if (summaryLines.length > 0) {
-        $('lyricsText').innerHTML = `<div style="color:var(--coral); font-size:11px; margin-bottom:12px;">Summary - Key Lyrics</div>${summaryLines.map(line => `<div class="lyric-line" style="color:var(--ink);">${escapeHtml(line)}</div>`).join('')}`;
-        btn.textContent = 'Show Full';
-        btn.style.borderColor = 'var(--coral)';
-        btn.style.color = 'var(--coral)';
-        toast('Summary shown');
-      } else {
-        toast('Could not generate summary');
-      }
-    } catch(e) {
-      toast('Summary error');
-    }
-    btn.textContent = 'Summary';
     btn.disabled = false;
   });
 
@@ -4420,13 +4354,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     originalShowLyrics(lyrics, isSynced);
     originalLyrics = $('lyricsText').innerHTML;
     currentLyricsTrack = queue[queueIndex];
-    // Reset translate/summary buttons
+    // Reset translate button
     $('lyricsTranslateBtn').textContent = 'Translate';
     $('lyricsTranslateBtn').style.borderColor = 'var(--line)';
     $('lyricsTranslateBtn').style.color = 'var(--ink)';
-    $('lyricsSummaryBtn').textContent = 'Summary';
-    $('lyricsSummaryBtn').style.borderColor = 'var(--line)';
-    $('lyricsSummaryBtn').style.color = 'var(--ink)';
   };
 
   // ---------------- Now Playing Menu (3-dot) ----------------
@@ -4827,10 +4758,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       'Toast notifications now more visible in DJ mode and other fullscreen views (prominent gold border, glow effect, larger text)',
       'Now Playing bar now visible through the bottom of lyrics backdrop',
       'Playback section in Settings collapsed by default (consistent with other sections)',
-      'Added Translate button in lyrics - translates to Punjabi using MyMemory API',
-      'Added Summary button in lyrics - shows key lyrics extracted from the song',
+      'Added Translate button in lyrics - translates Punjabi to English for non-Punjabi readers',
       'Fixed lyrics auto-scroll and highlight for both synced and non-synced lyrics',
-      'Lyrics modal redesigned with floating cards and transparent background showing now bar',
+      'Lyrics modal redesigned with floating card and transparent background showing now bar',
+      'Added Summary mode in update log - shows version titles at a glance, toggle to full changelog',
     ]},
     { version: '41', date: 'July 28th, 2026 at 6:15 pm EDT', title: 'Album covers & lyrics', items: [
       'Album covers now show in the track list (library view)',
@@ -5184,21 +5115,45 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       </div>
     `).join('');
   }
+  let updateLogSummaryMode = true;
   function renderUpdateLog(){
     const body = $('updateLogBody');
-    body.innerHTML = CHANGELOG.map(entry => `
-      <div>
-        <div style="font-weight:600; font-size:14px; margin-bottom:6px;">v${entry.version}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''} — ${escapeHtml(entry.title)}</div>
-        <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
-          ${entry.items.map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
+    const summaryBtn = $('updateLogSummaryBtn');
+    const fullBtn = $('updateLogFullBtn');
+    
+    if(updateLogSummaryMode){
+      // Summary mode - just show version titles
+      summaryBtn.style.display = 'none';
+      fullBtn.style.display = 'block';
+      body.innerHTML = CHANGELOG.map(entry => `
+        <div style="padding:8px 0; border-bottom:1px solid var(--line);">
+          <div style="font-weight:600; font-size:14px; color:var(--coral);">v${entry.version}</div>
+          <div style="font-size:13px; margin-top:4px;">${escapeHtml(entry.title)}</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">${entry.date || ''}</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-top:6px;">${entry.items.length} update${entry.items.length !== 1 ? 's' : ''}</div>
         </div>
-      </div>
-    `).join('');
+      `).join('');
+    } else {
+      // Full mode - show all items
+      summaryBtn.style.display = 'block';
+      fullBtn.style.display = 'none';
+      body.innerHTML = CHANGELOG.map(entry => `
+        <div>
+          <div style="font-weight:600; font-size:14px; margin-bottom:6px;">v${entry.version}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''} — ${escapeHtml(entry.title)}</div>
+          <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
+            ${entry.items.map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
   }
   $('viewUpdateLogBtn').addEventListener('click', () => {
+    updateLogSummaryMode = true;
     renderUpdateLog();
     $('updateLogBackdrop').style.display = 'flex';
   });
+  $('updateLogSummaryBtn').addEventListener('click', () => { updateLogSummaryMode = false; renderUpdateLog(); });
+  $('updateLogFullBtn').addEventListener('click', () => { updateLogSummaryMode = true; renderUpdateLog(); });
   $('howToUseBtn').addEventListener('click', () => { $('howToUseBackdrop').style.display = 'flex'; });
   $('howToUseClose').addEventListener('click', () => { $('howToUseBackdrop').style.display = 'none'; dbPut('meta', { key: 'hasSeenOnboarding', value: true }); });
   $('howToUseBackdrop').addEventListener('click', (e) => { if(e.target === $('howToUseBackdrop')){ $('howToUseBackdrop').style.display = 'none'; dbPut('meta', { key: 'hasSeenOnboarding', value: true }); } });
