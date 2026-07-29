@@ -4186,6 +4186,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const container = $('lyricsContent');
     if (!container) return;
     
+    // Start at top
+    container.scrollTop = 0;
     lastLyricsIdx = -1;
     
     lyricsScrollInterval = setInterval(() => {
@@ -4222,20 +4224,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
         });
         
-        if (currentLine && currentIdx !== lastLyricsIdx) {
-          // Update highlight - remove from all, add to current
-          allLines.forEach(l => l.classList.remove('current'));
-          currentLine.classList.add('current');
-          lastLyricsIdx = currentIdx;
+        if (currentLine) {
+          // Always update highlight
+          if (currentIdx !== lastLyricsIdx) {
+            allLines.forEach(l => l.classList.remove('current'));
+            currentLine.classList.add('current');
+            lastLyricsIdx = currentIdx;
+          }
           
-          // Only scroll if auto-scroll is enabled AND not on the first line
-          if (lyricsAutoScroll && currentIdx > 0) {
+          // Keep current line visible (near top)
+          if (lyricsAutoScroll) {
             const lineTop = currentLine.offsetTop;
-            container.scrollTop = lineTop;
+            const lineHeight = currentLine.offsetHeight;
+            const containerHeight = container.clientHeight;
+            const scrollBottom = container.scrollTop + containerHeight;
+            
+            // If current line is below visible area or too close to top, scroll
+            if (lineTop + lineHeight > scrollBottom - 20 || lineTop < container.scrollTop + 10) {
+              container.scrollTop = lineTop - 10;
+            }
           }
         }
       }
-    }, 150);
+    }, 100);
   }
   
   function formatSyncedLyrics(lrc) {
