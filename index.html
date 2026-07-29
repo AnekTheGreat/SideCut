@@ -7909,7 +7909,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         
         // Export tab order
-        manifest.settings.tabOrder = Array.from(tabOrder);
+        manifest.settings.tabOrder = Object.keys(playlists);
         
         // Export listening stats and more
         try{
@@ -8188,8 +8188,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         // Restore tab order
         if(manifest.settings.tabOrder !== undefined && Array.isArray(manifest.settings.tabOrder)){
-          tabOrder = manifest.settings.tabOrder;
-          persistTabOrder();
+          // Rebuild playlists in the order from export
+          const order = manifest.settings.tabOrder;
+          const rebuilt = {};
+          order.forEach(name => { if(playlists[name]) rebuilt[name] = playlists[name]; });
+          // Add any playlists not in the export
+          Object.keys(playlists).forEach(name => { if(!rebuilt[name]) rebuilt[name] = playlists[name]; });
+          playlists = rebuilt;
+          dbPut('meta', { key: 'playlists', value: playlists });
         }
         // Restore UI positions
         if(manifest.settings.activePlaylist && playlists[manifest.settings.activePlaylist]){
