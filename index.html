@@ -1846,7 +1846,7 @@ body.sandbox-always-search #searchInput {
           <div style="margin-bottom:12px;">
             <button class="playlist-pick-btn" id="fetchMissingCoversBtn" style="text-align:center; width:100%;">Fetch missing covers</button>
             <div id="coverProgressBar" style="display:none; height:4px; background:var(--line); border-radius:2px; margin-top:6px; overflow:hidden;"><div id="coverProgressFill" style="height:100%; background:var(--coral); width:0%; transition:width 0.2s;"></div></div>
-            <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Try to fetch covers from Deezer/AudioDB.</div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Try to fetch covers from multiple sources.</div>
           </div>
           <div style="margin-bottom:12px;">
             <button class="playlist-pick-btn" id="fetchMissingLyricsBtn" style="text-align:center; width:100%;">Fetch missing lyrics</button>
@@ -4567,8 +4567,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '41';
+  const APP_VERSION = '42';
   const CHANGELOG = [
+    { version: '42', date: 'July 28th, 2026', title: 'More cover sources & comprehensive exports', items: [
+      'Added more cover art sources: iTunes Search API, MusicBrainz/Cover Art Archive, and Last.fm',
+      'Library export now includes ALL settings (sandbox, seek style, liquid glass, auto volume, playback speed, watermark patterns)',
+      'Library export now includes ALL track metadata (lyrics, notes, BPM, genre, gain, play count)',
+      'Library export now includes cover art images for all tracks',
+      'Library export now includes tab order and active playlist position',
+      'Library export now includes additional stats (listened dates, longest streak)',
+    ]},
     { version: '41', date: 'July 26th, 2026 at 6:15 pm EDT', title: 'Album covers & lyrics', items: [
       'Album covers now show in the track list (library view)',
       'Disc label shows fallback gradient if album art fails to load',
@@ -5392,18 +5400,105 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return null;
   }
 
-  // Fetch cover from Spotify via audiodb or direct search
-  async function fetchCoverFromSpotify(query){
+  // Fetch cover from AudioDB (artist thumbnails)
+  async function fetchCoverFromAudioDB(query){
     try{
       const url = `https://theaudiodb.com/api/v1/json/2/search.php?s=${encodeURIComponent(query)}`;
       const resp = await fetchWithProxy(url);
       if(resp && resp.ok){
         const data = await resp.json();
+        // Try artist thumb first
         if(data.artists && data.artists[0] && data.artists[0].strArtistThumb){
           return data.artists[0].strArtistThumb;
         }
+        // Try artist logo
         if(data.artists && data.artists[0] && data.artists[0].strArtistLogo){
           return data.artists[0].strArtistLogo;
+        }
+        // Try album artwork via track search
+        if(data.artists && data.artists[0] && data.artists[0].idArtist){
+          const albumUrl = `https://theaudiodb.com/api/v1/json/2/album.php?i=${data.artists[0].idArtist}`;
+          const albumResp = await fetchWithProxy(albumUrl);
+          if(albumResp && albumResp.ok){
+            const albumData = await albumResp.json();
+            if(albumData.album && albumData.album[0] && albumData.album[0].strAlbumThumb){
+              return albumData.album[0].strAlbumThumb;
+            }
+          }
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+
+  // Fetch cover from iTunes Search API
+  async function fetchCoverFromITunes(query){
+    try{
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=album&limit=3`;
+      const resp = await fetchWithProxy(url);
+      if(resp && resp.ok){
+        const data = await resp.json();
+        if(data.results && data.results.length > 0){
+          // Find result with artwork
+          for(const result of data.results){
+            if(result.artworkUrl100){
+              // Convert 100x100 to 600x600 for better quality
+              return result.artworkUrl100.replace('/100x100bb.jpg', '/600x600bb.jpg');
+            }
+          }
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+
+  // Fetch cover from MusicBrainz + Cover Art Archive
+  async function fetchCoverFromMusicBrainz(query){
+    try{
+      // First search for the recording
+      const searchUrl = `https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=5`;
+      const resp = await fetchWithProxy(searchUrl);
+      if(resp && resp.ok){
+        const data = await resp.json();
+        if(data.recordings && data.recordings.length > 0){
+          // Find a recording with a release that has cover art
+          for(const rec of data.recordings){
+            if(rec.releases && rec.releases.length > 0){
+              const releaseId = rec.releases[0].id;
+              // Try Cover Art Archive
+              const coverUrl = `https://coverartarchive.org/release/${releaseId}/front-250`;
+              const coverResp = await fetch(coverUrl);
+              if(coverResp && coverResp.ok){
+                return coverUrl;
+              }
+            }
+          }
+        }
+      }
+    }catch(e){}
+    return null;
+  }
+
+  // Fetch cover from Last.fm
+  async function fetchCoverFromLastFM(query){
+    try{
+      // Search for track to get mbid, then get album info
+      const searchUrl = `https://ws.audioscrobbler.com/2.0/?method=track.search&track=${encodeURIComponent(query)}&api_key=3d34c54f3a8d43b59c4f4ebe0992f0a3&format=json&limit=5`;
+      const resp = await fetchWithProxy(searchUrl);
+      if(resp && resp.ok){
+        const data = await resp.json();
+        if(data.results && data.results.trackmatches && data.results.trackmatches.track && data.results.trackmatches.track.length > 0){
+          // Try to get album cover from track results
+          for(const track of data.results.trackmatches.track){
+            if(track.image && track.image.length > 0){
+              // Get largest available image
+              for(let i = track.image.length - 1; i >= 0; i--){
+                if(track.image[i]['#text'] && track.image[i]['#text'].length > 0){
+                  return track.image[i]['#text'];
+                }
+              }
+            }
+          }
         }
       }
     }catch(e){}
@@ -5416,11 +5511,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const query = enrichQueryFor(t);
     if(!query) return false;
     
-    // Try Deezer first (usually best covers)
-    let artwork = await fetchCoverFromDeezer(query);
+    // Try multiple sources in order of preference
+    const sources = [
+      fetchCoverFromDeezer,       // Usually has best quality album covers
+      fetchCoverFromITunes,       // Apple's library
+      fetchCoverFromAudioDB,      // Artist thumbs and album thumbs
+      fetchCoverFromMusicBrainz,  // Open music database with cover art
+      fetchCoverFromLastFM,       // Social music with album art
+    ];
     
-    // Fallback to audiodb
-    if(!artwork) artwork = await fetchCoverFromSpotify(query);
+    let artwork = null;
+    for(const fetchFn of sources){
+      artwork = await fetchFn(query);
+      if(artwork) break;
+      // Small delay between API calls to be polite
+      await new Promise(r => setTimeout(r, 100));
+    }
     
     if(artwork){
       try{
@@ -5449,7 +5555,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       html += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
           <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">Fetching covers…</div>
-          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Cover art from Deezer/AudioDB — ${window.coverFetchState.done}/${window.coverFetchState.total}</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Cover art from multiple sources — ${window.coverFetchState.done}/${window.coverFetchState.total}</div>
           <div style="height:6px; background:var(--bg-raised); border-radius:3px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>
         </div>`;
     }
@@ -7570,7 +7676,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     toast('Zipping songs…', 4000);
     try{
       const zip = new JSZip();
-      const manifest = { playlists: manifestPlaylists || {}, tracks: [] };
+      const manifest = { playlists: manifestPlaylists || {}, tracks: [], version: 2 };
       let missing = 0;
       ids.forEach(id => {
         const t = allTracks.find(tr => tr.id === id);
@@ -7579,7 +7685,27 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
         const zipPath = `audio/${t.id}${ext}`;
         zip.file(zipPath, t.file);
-        manifest.tracks.push({ id: t.id, name: t.name, artist: t.artist, duration: t.duration, bpm: t.bpm, genre: t.genre, path: zipPath });
+        // Export full track metadata including cover art
+        manifest.tracks.push({ 
+          id: t.id, 
+          name: t.name, 
+          artist: t.artist, 
+          duration: t.duration, 
+          bpm: t.bpm, 
+          genre: t.genre, 
+          gain: t.gain,
+          lyrics: t.lyrics,
+          lyricsSynced: t.lyricsSynced,
+          notes: t.notes,
+          vibe: t.vibe,
+          playCount: t.playCount,
+          path: zipPath,
+          hasCover: !!t.artBlob
+        });
+        // Export cover art as separate file
+        if(t.artBlob){
+          zip.file(`covers/${t.id}.jpg`, t.artBlob);
+        }
       });
       zip.file('manifest.json', JSON.stringify(manifest));
       const blob = await zip.generateAsync({ type: 'blob' });
@@ -7607,7 +7733,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Full library export/import — bundles actual audio + playlists into one
   // .zip so you can carry your whole library into a newer version of this
   // page (or restore it after clearing browser data), no re-picking needed.
-  // INCLUDES: songs, playlists, listening stats, streaks, theme, EQ, turntable angle, glow settings.
+  // INCLUDES: songs, playlists, listening stats, streaks, theme, EQ, turntable angle, glow settings,
+  // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
     showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async () => {
@@ -7616,24 +7743,74 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(btn){ btn.disabled = true; btn.textContent = 'Zipping…'; }
       try{
         const zip = new JSZip();
-        const manifest = { playlists, tracks: [], settings: {}, stats: {} };
+        const manifest = { playlists, tracks: [], settings: {}, stats: {}, version: 2 };
         
-        // Export tracks
+        // Export tracks with full metadata
         allTracks.forEach(t => {
           const fname = (t.file && t.file.name) || t.name || 'track';
           const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
           const zipPath = `audio/${t.id}${ext}`;
           if(t.file) zip.file(zipPath, t.file);
-          manifest.tracks.push({ id: t.id, name: t.name, artist: t.artist, duration: t.duration, bpm: t.bpm, genre: t.genre, path: t.file ? zipPath : null });
+          // Export full track metadata
+          manifest.tracks.push({ 
+            id: t.id, 
+            name: t.name, 
+            artist: t.artist, 
+            duration: t.duration, 
+            bpm: t.bpm, 
+            genre: t.genre,
+            gain: t.gain,
+            lyrics: t.lyrics,
+            lyricsSynced: t.lyricsSynced,
+            notes: t.notes,
+            vibe: t.vibe,
+            playCount: t.playCount,
+            path: t.file ? zipPath : null,
+            hasCover: !!t.artBlob
+          });
+          // Export cover art as separate file
+          if(t.artBlob){
+            zip.file(`covers/${t.id}.jpg`, t.artBlob);
+          }
         });
         
-        // Export settings
+        // Export ALL settings comprehensively
         manifest.settings = {
+          // Playback settings
           crossfadeSeconds: crossfadeSeconds,
           eq: globalEQ,
+          gaplessMode: gaplessMode,
+          perPlaylistSortEnabled: perPlaylistSortEnabled,
+          perPlaylistSort: perPlaylistSort,
+          playbackSpeed: playbackSpeed,
+          autoVolumeEnabled: autoVolumeEnabled,
+          seekStyle: seekStyle,
+          liquidGlassEnabled: document.body.classList.contains('liquid-glass-on'),
+          
+          // Display settings
           themeMode: document.body.className,
-          gaplessMode: $('gaplessToggle')?.textContent === 'On',
-          perPlaylistSort: $('perPlaylistSortToggle')?.textContent === 'On',
+          customTheme: customTheme,
+          sandboxCompactRows: sandboxCompactRows,
+          sandboxHideArt: sandboxHideArt,
+          sandboxDurOnTabs: sandboxDurOnTabs,
+          sandboxLargeTouch: sandboxLargeTouch,
+          sandboxShowPlayCount: sandboxShowPlayCount,
+          sandboxCompactNowbar: sandboxCompactNowbar,
+          sandboxAlwaysSearch: sandboxAlwaysSearch,
+          sandboxNowbarSize: sandboxNowbarSize,
+          
+          // Visual effects
+          rgbSpeedSec: rgbSpeedSec,
+          edgeGlowBaseLen: edgeGlowBaseLen,
+          glowColor: $('glowColorHex')?.value,
+          glowStyle: $('glowStyleSelect')?.value,
+          
+          // Watermark patterns
+          watermarkEnabled: watermarkEnabled,
+          watermarkPatterns: watermarkPatterns,
+          
+          // UI positions
+          activePlaylist: activePlaylist,
         };
         
         // Export turntable angle if available
@@ -7641,11 +7818,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           manifest.settings.turntableAngle = window.getTurntableAngle();
         }
         
-        // Export glow settings
-        manifest.settings.glowColor = $('glowColorHex')?.value;
-        manifest.settings.glowStyle = $('glowStyleSelect')?.value;
+        // Export tab order
+        manifest.settings.tabOrder = Array.from(tabOrder);
         
-        // Export listening stats
+        // Export listening stats and more
         try{
           const stats = await dbGet('meta', 'stats');
           if(stats) manifest.stats = stats.value;
@@ -7655,6 +7831,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           if(listenHistory) manifest.stats.listenHistory = listenHistory.value;
           const artistStats = await dbGet('meta', 'artistStats');
           if(artistStats) manifest.stats.artistStats = artistStats.value;
+          const listenedDates = await dbGet('meta', 'listenedDates');
+          if(listenedDates) manifest.stats.listenedDates = listenedDates.value;
+          const longestStreak = await dbGet('meta', 'longestStreak');
+          if(longestStreak) manifest.stats.longestStreak = longestStreak.value;
         }catch(e){ console.log('Could not export stats:', e); }
         
         zip.file('manifest.json', JSON.stringify(manifest));
@@ -7681,6 +7861,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const manifestEntry = zip.file('manifest.json');
       if(!manifestEntry){ toast('That doesn\'t look like a SideCut library file.'); return; }
       const manifest = JSON.parse(await manifestEntry.async('string'));
+      const isV2 = manifest.version === 2;
       let count = 0;
       // Manifest ids (e.g. "t3") come from whatever device/session produced this
       // export and are NOT globally unique — this library's own counter also
@@ -7700,7 +7881,31 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       for(const m of (manifest.tracks || [])){
         const existing = findExistingByContent(m);
-        if(existing){ idRemap[m.id] = existing.id; continue; } // truly already have it
+        if(existing){ 
+          idRemap[m.id] = existing.id; 
+          // Update existing track with additional metadata from v2 export
+          if(isV2){
+            if(m.bpm !== undefined && existing.bpm === undefined) existing.bpm = m.bpm;
+            if(m.genre !== undefined && existing.genre === undefined) existing.genre = m.genre;
+            if(m.gain !== undefined && existing.gain === undefined) existing.gain = m.gain;
+            if(m.lyrics !== undefined && !existing.lyrics) existing.lyrics = m.lyrics;
+            if(m.lyricsSynced !== undefined) existing.lyricsSynced = m.lyricsSynced;
+            if(m.notes !== undefined && !existing.notes) existing.notes = m.notes;
+            if(m.playCount !== undefined && (existing.playCount === undefined || existing.playCount < m.playCount)) existing.playCount = m.playCount;
+            // Import cover art for existing track
+            if(m.hasCover && !existing.artBlob){
+              const coverEntry = zip.file(`covers/${m.id}.jpg`);
+              if(coverEntry){
+                const coverBlob = await coverEntry.async('blob');
+                existing.artBlob = coverBlob;
+                if(existing.artUrl) try{ URL.revokeObjectURL(existing.artUrl); }catch(e){}
+                existing.artUrl = URL.createObjectURL(coverBlob);
+              }
+            }
+            persistTrackMeta(existing);
+          }
+          continue; 
+        }
         const entry = zip.file(m.path);
         if(!entry) continue;
         const blob = await entry.async('blob');
@@ -7709,7 +7914,37 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         // since that id space is only meaningful within the exporting library.
         const localId = 't' + (idCounter++);
         idRemap[m.id] = localId;
-        const track = { id: localId, file: blob, name: m.name || 'Untitled', artist: m.artist || 'Unknown artist', url, duration: m.duration || null, bpm: m.bpm ?? null, genre: m.genre || null, gain: m.gain ?? null, artBlob: null, artUrl: null };
+        
+        // Build track with all metadata from v2 export
+        const track = { 
+          id: localId, 
+          file: blob, 
+          name: m.name || 'Untitled', 
+          artist: m.artist || 'Unknown artist', 
+          url, 
+          duration: m.duration || null, 
+          bpm: m.bpm ?? null, 
+          genre: m.genre || null, 
+          gain: m.gain ?? null, 
+          lyrics: m.lyrics || null,
+          lyricsSynced: m.lyricsSynced || false,
+          notes: m.notes || '',
+          vibe: m.vibe || null,
+          playCount: m.playCount || 0,
+          artBlob: null, 
+          artUrl: null 
+        };
+        
+        // Import cover art from v2 export
+        if(isV2 && m.hasCover){
+          const coverEntry = zip.file(`covers/${m.id}.jpg`);
+          if(coverEntry){
+            const coverBlob = await coverEntry.async('blob');
+            track.artBlob = coverBlob;
+            track.artUrl = URL.createObjectURL(coverBlob);
+          }
+        }
+        
         allTracks.push(track);
         persistTrackMeta(track);
         count++;
@@ -7738,7 +7973,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       playlists['All Songs'] = allTracks.map(t => t.id);
       saveMeta();
       
-      // Restore settings if present in manifest
+      // Restore settings comprehensively (v2 format has more settings)
       if(manifest.settings){
         // Restore crossfade
         if(manifest.settings.crossfadeSeconds !== undefined){
@@ -7771,6 +8006,105 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(manifest.settings.themeMode){
           applyThemeMode(manifest.settings.themeMode);
         }
+        
+        // Restore gapless mode
+        if(manifest.settings.gaplessMode !== undefined){
+          setGaplessMode(manifest.settings.gaplessMode);
+        }
+        // Restore per playlist sort
+        if(manifest.settings.perPlaylistSortEnabled !== undefined){
+          setPerPlaylistSort(manifest.settings.perPlaylistSortEnabled);
+        }
+        if(manifest.settings.perPlaylistSort){
+          perPlaylistSort = manifest.settings.perPlaylistSort;
+          dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
+        }
+        // Restore playback speed
+        if(manifest.settings.playbackSpeed !== undefined){
+          playbackSpeed = manifest.settings.playbackSpeed;
+          dbPut('meta', { key: 'playbackSpeed', value: playbackSpeed });
+        }
+        // Restore auto volume
+        if(manifest.settings.autoVolumeEnabled !== undefined){
+          setAutoVolume(manifest.settings.autoVolumeEnabled);
+        }
+        // Restore seek style
+        if(manifest.settings.seekStyle){
+          setSeekStyle(manifest.settings.seekStyle);
+        }
+        // Restore liquid glass
+        if(manifest.settings.liquidGlassEnabled !== undefined && manifest.settings.liquidGlassEnabled){
+          setLiquidGlass(true);
+        }
+        // Restore sandbox settings
+        if(manifest.settings.sandboxCompactRows !== undefined){
+          sandboxCompactRows = manifest.settings.sandboxCompactRows;
+          dbPut('meta', { key: 'sandboxCompactRows', value: sandboxCompactRows });
+        }
+        if(manifest.settings.sandboxHideArt !== undefined){
+          sandboxHideArt = manifest.settings.sandboxHideArt;
+          dbPut('meta', { key: 'sandboxHideArt', value: sandboxHideArt });
+        }
+        if(manifest.settings.sandboxDurOnTabs !== undefined){
+          sandboxDurOnTabs = manifest.settings.sandboxDurOnTabs;
+          dbPut('meta', { key: 'sandboxDurOnTabs', value: sandboxDurOnTabs });
+        }
+        if(manifest.settings.sandboxLargeTouch !== undefined){
+          sandboxLargeTouch = manifest.settings.sandboxLargeTouch;
+          dbPut('meta', { key: 'sandboxLargeTouch', value: sandboxLargeTouch });
+        }
+        if(manifest.settings.sandboxShowPlayCount !== undefined){
+          sandboxShowPlayCount = manifest.settings.sandboxShowPlayCount;
+          dbPut('meta', { key: 'sandboxShowPlayCount', value: sandboxShowPlayCount });
+        }
+        if(manifest.settings.sandboxCompactNowbar !== undefined){
+          sandboxCompactNowbar = manifest.settings.sandboxCompactNowbar;
+          dbPut('meta', { key: 'sandboxCompactNowbar', value: sandboxCompactNowbar });
+        }
+        if(manifest.settings.sandboxAlwaysSearch !== undefined){
+          sandboxAlwaysSearch = manifest.settings.sandboxAlwaysSearch;
+          dbPut('meta', { key: 'sandboxAlwaysSearch', value: sandboxAlwaysSearch });
+        }
+        if(manifest.settings.sandboxNowbarSize !== undefined){
+          sandboxNowbarSize = manifest.settings.sandboxNowbarSize;
+          dbPut('meta', { key: 'sandboxNowbarSize', value: sandboxNowbarSize });
+        }
+        // Restore visual effects
+        if(manifest.settings.rgbSpeedSec !== undefined){
+          rgbSpeedSec = manifest.settings.rgbSpeedSec;
+          $('rgbSpeedSlider').value = rgbSpeedSec;
+          $('rgbSpeedValue').textContent = rgbSpeedSec + 's';
+          dbPut('meta', { key: 'rgbSpeedSec', value: rgbSpeedSec });
+        }
+        if(manifest.settings.edgeGlowBaseLen !== undefined){
+          edgeGlowBaseLen = manifest.settings.edgeGlowBaseLen;
+          $('edgeGlowLenSlider').value = edgeGlowBaseLen;
+          $('edgeGlowLenValue').textContent = edgeGlowBaseLen + '%';
+          dbPut('meta', { key: 'edgeGlowBaseLen', value: edgeGlowBaseLen });
+        }
+        // Restore watermark patterns
+        if(manifest.settings.watermarkEnabled !== undefined){
+          watermarkEnabled = manifest.settings.watermarkEnabled;
+          dbPut('meta', { key: 'watermarkEnabled', value: watermarkEnabled });
+        }
+        if(manifest.settings.watermarkPatterns !== undefined){
+          watermarkPatterns = manifest.settings.watermarkPatterns;
+          dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
+        }
+        // Restore custom theme
+        if(manifest.settings.customTheme !== undefined){
+          customTheme = manifest.settings.customTheme;
+          if(customTheme) dbPut('meta', { key: 'customTheme', value: customTheme });
+        }
+        // Restore tab order
+        if(manifest.settings.tabOrder !== undefined && Array.isArray(manifest.settings.tabOrder)){
+          tabOrder = manifest.settings.tabOrder;
+          persistTabOrder();
+        }
+        // Restore UI positions
+        if(manifest.settings.activePlaylist && playlists[manifest.settings.activePlaylist]){
+          activePlaylist = manifest.settings.activePlaylist;
+        }
       }
       
       // Restore listening stats if present
@@ -7787,13 +8121,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(manifest.stats.artistStats){
           dbPut('meta', { key: 'artistStats', value: manifest.stats.artistStats });
         }
+        if(manifest.stats.listenedDates){
+          dbPut('meta', { key: 'listenedDates', value: manifest.stats.listenedDates });
+        }
+        if(manifest.stats.longestStreak){
+          dbPut('meta', { key: 'longestStreak', value: manifest.stats.longestStreak });
+        }
       }
+      
+      // Apply sandbox CSS classes
+      applySandboxStyles();
+      updateSandboxToggles();
       
       $('emptyState').style.display = 'none';
       $('library').style.display = 'flex';
       renderTabs();
       renderList();
-      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + settings' : ''}`);
+      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + all settings' : ''}`);
     }catch(e){
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
