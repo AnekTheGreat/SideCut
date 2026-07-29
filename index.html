@@ -1860,23 +1860,24 @@ body.sandbox-always-search #searchInput {
         </div>
       </div>
 
-      <!-- Collapsible: Text Removal -->
+      <!-- Watermark Remover -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
-        <button id="collapsibleTextRemoval" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-          <span>Text Removal</span><span id="collapseTextRemovalIcon" style="transition:transform 0.2s;">▾</span>
+        <button id="collapsibleWatermark" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+          <span>Watermark Remover</span><span id="collapseWatermarkIcon" style="transition:transform 0.2s;">▾</span>
         </button>
-        <div id="collapsibleTextRemovalContent" style="padding:12px; border-top:1px solid var(--line); display:none;">
+        <div id="collapsibleWatermarkContent" style="padding:12px; border-top:1px solid var(--line); display:none;">
           <div style="margin-bottom:12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:13px; color:var(--ink-dim);">Remove text from songs</span>
-              <button class="tab" id="textRemovalEnabledToggle" style="padding:5px 12px; font-size:12px;">Off</button>
+              <span style="font-size:13px; color:var(--ink-dim);">Enabled</span>
+              <button class="tab" id="watermarkEnabledToggle" style="padding:5px 12px; font-size:12px;">Off</button>
             </div>
-            <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Remove specific text from all song titles and artist names.</div>
           </div>
-          <div id="textRemovalSection" style="display:none;">
-            <textarea id="textRemovalPatterns" placeholder="Radio Edit&#10;(feat. X)&#10;- Remix" style="width:100%; height:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:4px; padding:6px; font-size:11px; margin-bottom:6px; resize:vertical; font-family:inherit;"></textarea>
-            <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px;">Type what you want removed, one per line. Applied to all songs in real-time.</div>
-            <button class="playlist-pick-btn" id="resetTextRemovalBtn" style="text-align:center; width:100%;">Reset</button>
+          <div id="watermarkSection" style="display:none;">
+            <textarea id="watermarkPatterns" placeholder="Radio Edit&#10;(feat. X)&#10;- Remix" style="width:100%; height:80px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:4px; padding:8px; font-size:12px; resize:vertical; font-family:inherit; margin-bottom:10px;"></textarea>
+            <div style="display:flex; gap:8px;">
+              <button class="tab" id="watermarkConfirmBtn" style="flex:1; padding:10px; font-size:13px; font-weight:600;">Apply</button>
+              <button class="tab" id="watermarkResetBtn" style="padding:10px; font-size:13px; background:rgba(255,107,107,0.1); border-color:rgba(255,107,107,0.3);">Reset</button>
+            </div>
           </div>
         </div>
       </div>
@@ -3645,13 +3646,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxAlwaysSearch = false;
   let sandboxNowbarSize = 100;
 
-  // Text removal: simple plain-text removal from song titles/artists
-  let textRemovalEnabled = false;
-  let textRemovalPatterns = 'Radio Edit\n- Remix\n(Live)\n(feat. X)';
+  // Watermark remover: simple plain-text removal from song titles/artists
+  let watermarkEnabled = false;
+  let watermarkPatterns = 'Radio Edit\n- Remix\n(Live)\n(feat. X)';
 
-  function applyTextRemoval(text){
-    if(!text || !textRemovalEnabled || !textRemovalPatterns) return text;
-    const patterns = textRemovalPatterns.split('\n').filter(p => p.trim());
+  function applyWatermarkPatterns(text){
+    if(!text || !watermarkEnabled || !watermarkPatterns) return text;
+    const patterns = watermarkPatterns.split('\n').filter(p => p.trim());
     patterns.forEach(p => {
       // Simple string replacement, escape special regex chars for safety
       const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -3662,10 +3663,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return text.trim();
   }
 
-  function updateTextRemovalToggle(){
-    $('textRemovalEnabledToggle').textContent = textRemovalEnabled ? 'On' : 'Off';
-    $('textRemovalEnabledToggle').classList.toggle('active', textRemovalEnabled);
-    $('textRemovalSection').style.display = textRemovalEnabled ? '' : 'none';
+  function updateWatermarkToggle(){
+    $('watermarkEnabledToggle').textContent = watermarkEnabled ? 'On' : 'Off';
+    $('watermarkEnabledToggle').classList.toggle('active', watermarkEnabled);
+    $('watermarkSection').style.display = watermarkEnabled ? '' : 'none';
+  }
+
+  function applyWatermarkToAll(){
+    allTracks.forEach(t => {
+      if(t.name) t.name = applyWatermarkPatterns(t.name);
+      if(t.artist) t.artist = applyWatermarkPatterns(t.artist);
+    });
+    renderList();
+    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(cur) updateNpDisplay(cur);
   }
 
   function updateSandboxToggles(){
@@ -3711,42 +3722,33 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('sandboxCompactNowbar').addEventListener('click', () => { sandboxCompactNowbar = !sandboxCompactNowbar; dbPut('meta', { key: 'sandboxCompactNowbar', value: sandboxCompactNowbar }); updateSandboxToggles(); });
   $('sandboxAlwaysSearch').addEventListener('click', () => { sandboxAlwaysSearch = !sandboxAlwaysSearch; dbPut('meta', { key: 'sandboxAlwaysSearch', value: sandboxAlwaysSearch }); updateSandboxToggles(); });
 
-  // Text removal event handlers
-  $('textRemovalPatterns').addEventListener('input', (e) => {
-    textRemovalPatterns = e.target.value;
-    dbPut('meta', { key: 'textRemovalPatterns', value: textRemovalPatterns });
-    allTracks.forEach(t => {
-      if(t.name) t.name = applyTextRemoval(t.name);
-      if(t.artist) t.artist = applyTextRemoval(t.artist);
-    });
-    renderList();
-    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
-    if(cur) updateNpDisplay(cur);
+  // Watermark remover event handlers
+  $('watermarkPatterns').addEventListener('input', (e) => {
+    watermarkPatterns = e.target.value;
+    dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
   });
-  $('textRemovalEnabledToggle').addEventListener('click', () => {
-    textRemovalEnabled = !textRemovalEnabled;
-    dbPut('meta', { key: 'textRemovalEnabled', value: textRemovalEnabled });
-    updateTextRemovalToggle();
-    allTracks.forEach(t => {
-      if(t.name) t.name = applyTextRemoval(t.name);
-      if(t.artist) t.artist = applyTextRemoval(t.artist);
-    });
-    renderList();
-    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
-    if(cur) updateNpDisplay(cur);
+  $('watermarkEnabledToggle').addEventListener('click', () => {
+    watermarkEnabled = !watermarkEnabled;
+    dbPut('meta', { key: 'watermarkEnabled', value: watermarkEnabled });
+    updateWatermarkToggle();
   });
-  $('resetTextRemovalBtn').addEventListener('click', () => {
-    textRemovalPatterns = 'Radio Edit\n- Remix\n(Live)\n(feat. X)';
-    $('textRemovalPatterns').value = textRemovalPatterns;
-    dbPut('meta', { key: 'textRemovalPatterns', value: textRemovalPatterns });
+  $('watermarkConfirmBtn').addEventListener('click', () => {
+    applyWatermarkToAll();
+    toast('Watermarks removed!');
+  });
+  $('watermarkResetBtn').addEventListener('click', () => {
+    watermarkPatterns = 'Radio Edit\n- Remix\n(Live)\n(feat. X)';
+    $('watermarkPatterns').value = watermarkPatterns;
+    dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
+    // Revert all tracks to original
     allTracks.forEach(t => {
-      if(t.name) t.name = applyTextRemoval(t.name);
-      if(t.artist) t.artist = applyTextRemoval(t.artist);
+      if(t.name) t.name = t.name.replace(/\s+/g, ' ').trim() || t.name;
+      if(t.artist) t.artist = t.artist.replace(/\s+/g, ' ').trim() || t.artist;
     });
     renderList();
     const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(cur) updateNpDisplay(cur);
-    toast('Text removal reset');
+    toast('Watermark patterns reset');
   });
 
   // Collapsible sections
@@ -3764,7 +3766,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   setupCollapsible('collapsiblePlayback', 'collapsiblePlaybackContent', 'collapsePlaybackIcon');
   setupCollapsible('collapsibleLibrary', 'collapsibleLibraryContent', 'collapseLibraryIcon');
-  setupCollapsible('collapsibleTextRemoval', 'collapsibleTextRemovalContent', 'collapseTextRemovalIcon');
+  setupCollapsible('collapsibleWatermark', 'collapsibleWatermarkContent', 'collapseWatermarkIcon');
   setupCollapsible('collapsibleVersions', 'collapsibleVersionsContent', 'collapseVersionsIcon');
 
   $('nowbarSizeUp').addEventListener('click', () => {
@@ -3958,8 +3960,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     
     // Clean up artist/title using custom watermark patterns
-    const cleanArtist = applyTextRemoval(artist);
-    const cleanTitle = applyTextRemoval(title);
+    const cleanArtist = applyWatermarkPatterns(artist);
+    const cleanTitle = applyWatermarkPatterns(title);
     
     try {
       // Try multiple APIs for best coverage
@@ -4507,15 +4509,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(sandboxAlwaysSearchRow) sandboxAlwaysSearch = !!sandboxAlwaysSearchRow.value;
       const sandboxNowbarSizeRow = metaRows.find(r => r.key === 'sandboxNowbarSize');
       if(sandboxNowbarSizeRow) sandboxNowbarSize = parseInt(sandboxNowbarSizeRow.value) || 100;
-      const textRemovalEnabledRow = metaRows.find(r => r.key === 'textRemovalEnabled');
-      if(textRemovalEnabledRow) textRemovalEnabled = !!textRemovalEnabledRow.value;
-      const textRemovalPatternsRow = metaRows.find(r => r.key === 'textRemovalPatterns');
-      if(textRemovalPatternsRow && textRemovalPatternsRow.value) {
-        textRemovalPatterns = textRemovalPatternsRow.value;
-        $('textRemovalPatterns').value = textRemovalPatterns;
+      const watermarkEnabledRow = metaRows.find(r => r.key === 'watermarkEnabled');
+      if(watermarkEnabledRow) watermarkEnabled = !!watermarkEnabledRow.value;
+      const watermarkPatternsRow = metaRows.find(r => r.key === 'watermarkPatterns');
+      if(watermarkPatternsRow && watermarkPatternsRow.value) {
+        watermarkPatterns = watermarkPatternsRow.value;
+        $('watermarkPatterns').value = watermarkPatterns;
       }
       applySandboxStyles();
-      updateTextRemovalToggle();
+      updateWatermarkToggle();
     }catch(e){ /* defaults are fine */ }
   }
 
@@ -5052,8 +5054,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const title = track.name || '';
     const artist = track.artist || 'Unknown';
     
-    const cleanArtist = applyTextRemoval(artist);
-    const cleanTitle = applyTextRemoval(title);
+    const cleanArtist = applyWatermarkPatterns(artist);
+    const cleanTitle = applyWatermarkPatterns(title);
     
     try {
       // Try LRCLIB search
@@ -5269,8 +5271,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const rawTitle = (t.name && t.name !== 'Untitled') ? t.name : '';
     const rawArtist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
     // Apply custom watermark patterns
-    const title = applyTextRemoval(rawTitle);
-    const artist = applyTextRemoval(rawArtist);
+    const title = applyWatermarkPatterns(rawTitle);
+    const artist = applyWatermarkPatterns(rawArtist);
     let query = `${artist} ${title}`.trim();
     // If no good query, try using filename
     if(!query && t.file){
