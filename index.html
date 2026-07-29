@@ -1941,6 +1941,14 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-bottom:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px;">Watermark patterns</span>
+        </div>
+        <textarea id="watermarkPatterns" placeholder="(feat. X)&#10;[Radio Edit]&#10;- Radio Mix" style="width:100%; height:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:4px; padding:6px; font-size:11px; margin-top:6px; resize:vertical; font-family:inherit;"></textarea>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">One pattern per line. Applied to all songs when searching.</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
           <span style="font-size:13px;">Always show search</span>
           <button class="tab" id="sandboxAlwaysSearch" style="padding:5px 12px; font-size:12px;">Off</button>
         </div>
@@ -3611,6 +3619,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxCompactNowbar = false;
   let sandboxAlwaysSearch = false;
   let sandboxNowbarSize = 100;
+  let watermarkPatterns = '(feat. X)\n[Radio Edit]\n- Radio Mix\n(Lyric Video)\n(Official Video)\n(Music Video)';
+
+  function applyWatermarkPatterns(text){
+    if(!text || !watermarkPatterns) return text;
+    const patterns = watermarkPatterns.split('\n').filter(p => p.trim());
+    patterns.forEach(p => {
+      // Replace X with any word, handle parentheses/brackets
+      let regex = p.replace(/X/gi, '\\S*').replace(/[()[\]]/g, '\\$&');
+      try {
+        text = text.replace(new RegExp(regex, 'gi'), '');
+      } catch(e) {}
+    });
+    return text.trim();
+  }
 
   function updateSandboxToggles(){
     $('sandboxCompactRows').textContent = sandboxCompactRows ? 'On' : 'Off';
@@ -3654,16 +3676,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('sandboxShowPlayCount').addEventListener('click', () => { sandboxShowPlayCount = !sandboxShowPlayCount; dbPut('meta', { key: 'sandboxShowPlayCount', value: sandboxShowPlayCount }); updateSandboxToggles(); renderList(); });
   $('sandboxCompactNowbar').addEventListener('click', () => { sandboxCompactNowbar = !sandboxCompactNowbar; dbPut('meta', { key: 'sandboxCompactNowbar', value: sandboxCompactNowbar }); updateSandboxToggles(); });
   $('sandboxAlwaysSearch').addEventListener('click', () => { sandboxAlwaysSearch = !sandboxAlwaysSearch; dbPut('meta', { key: 'sandboxAlwaysSearch', value: sandboxAlwaysSearch }); updateSandboxToggles(); });
+  $('watermarkPatterns').addEventListener('input', (e) => {
+    watermarkPatterns = e.target.value;
+    dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
+  });
   $('nowbarSizeUp').addEventListener('click', () => {
     if(sandboxNowbarSize < 150) {
-      sandboxNowbarSize = Math.min(150, sandboxNowbarSize + 25);
+      sandboxNowbarSize = Math.min(150, sandboxNowbarSize + 5);
       dbPut('meta', { key: 'sandboxNowbarSize', value: sandboxNowbarSize });
       updateSandboxToggles();
     }
   });
   $('nowbarSizeDown').addEventListener('click', () => {
     if(sandboxNowbarSize > 50) {
-      sandboxNowbarSize = Math.max(50, sandboxNowbarSize - 25);
+      sandboxNowbarSize = Math.max(50, sandboxNowbarSize - 5);
       dbPut('meta', { key: 'sandboxNowbarSize', value: sandboxNowbarSize });
       updateSandboxToggles();
     }
@@ -3677,6 +3703,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     sandboxCompactNowbar = false;
     sandboxAlwaysSearch = false;
     sandboxNowbarSize = 100;
+    watermarkPatterns = '(feat. X)\n[Radio Edit]\n- Radio Mix\n(Lyric Video)\n(Official Video)\n(Music Video)';
+    $('watermarkPatterns').value = watermarkPatterns;
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
     dbPut('meta', { key: 'sandboxDurOnTabs', value: false });
@@ -3685,6 +3713,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'sandboxCompactNowbar', value: false });
     dbPut('meta', { key: 'sandboxAlwaysSearch', value: false });
     dbPut('meta', { key: 'sandboxNowbarSize', value: 100 });
+    dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
     updateSandboxToggles();
     toast('Sandbox settings reset');
   });
@@ -3844,9 +3873,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       return;
     }
     
-    // Clean up artist/title for better API compatibility
-    const cleanArtist = titleCleanup(artist);
-    const cleanTitle = titleCleanup(title);
+    // Clean up artist/title using custom watermark patterns
+    const cleanArtist = applyWatermarkPatterns(artist);
+    const cleanTitle = applyWatermarkPatterns(title);
     
     try {
       // Try multiple APIs for best coverage
@@ -4394,6 +4423,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(sandboxAlwaysSearchRow) sandboxAlwaysSearch = !!sandboxAlwaysSearchRow.value;
       const sandboxNowbarSizeRow = metaRows.find(r => r.key === 'sandboxNowbarSize');
       if(sandboxNowbarSizeRow) sandboxNowbarSize = parseInt(sandboxNowbarSizeRow.value) || 100;
+      const watermarkPatternsRow = metaRows.find(r => r.key === 'watermarkPatterns');
+      if(watermarkPatternsRow && watermarkPatternsRow.value) {
+        watermarkPatterns = watermarkPatternsRow.value;
+        $('watermarkPatterns').value = watermarkPatterns;
+      }
       applySandboxStyles();
     }catch(e){ /* defaults are fine */ }
   }
@@ -4931,8 +4965,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const title = track.name || '';
     const artist = track.artist || 'Unknown';
     
-    const cleanArtist = titleCleanup(artist);
-    const cleanTitle = titleCleanup(title);
+    const cleanArtist = applyWatermarkPatterns(artist);
+    const cleanTitle = applyWatermarkPatterns(title);
     
     try {
       // Try LRCLIB search
@@ -5147,9 +5181,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function enrichQueryFor(t){
     const rawTitle = (t.name && t.name !== 'Untitled') ? t.name : '';
     const rawArtist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
-    // Clean watermarks and extra info from title and artist
-    const title = titleCleanup(rawTitle);
-    const artist = titleCleanup(rawArtist);
+    // Apply custom watermark patterns
+    const title = applyWatermarkPatterns(rawTitle);
+    const artist = applyWatermarkPatterns(rawArtist);
     let query = `${artist} ${title}`.trim();
     // If no good query, try using filename
     if(!query && t.file){
