@@ -1835,6 +1835,11 @@ body.sandbox-always-search #searchInput {
       </div>
 
       <div style="margin-top:12px;">
+        <button class="playlist-pick-btn" id="fetchMissingLyricsBtn" style="text-align:center;">Fetch missing lyrics</button>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Try to fetch lyrics from LRCLIB for all songs.</div>
+      </div>
+
+      <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="resetAppearanceBtn" style="text-align:center;">Reset appearance to defaults</button>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">If a theme or liquid glass mode ever gets stuck looking wrong, this puts theme and liquid glass back to how they started — nothing else is touched.</div>
       </div>
@@ -3784,6 +3789,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       lyricsScrollInterval = null;
     }
     
+    // First check if we already have saved lyrics
+    if(track.lyrics) {
+      showLyrics(track.lyrics, !!track.lyricsSynced);
+      return;
+    }
+    
     // Clean up artist/title for better API compatibility
     const cleanArtist = titleCleanup(artist);
     const cleanTitle = titleCleanup(title);
@@ -3797,7 +3808,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if (lrclibResp.ok) {
         const data = await lrclibResp.json();
         if (data && (data.syncedLyrics || data.plainLyrics)) {
-          showLyrics(data.syncedLyrics || data.plainLyrics, !!data.syncedLyrics);
+          const lyrics = data.syncedLyrics || data.plainLyrics;
+          const isSynced = !!data.syncedLyrics;
+          // Save to track
+          track.lyrics = lyrics;
+          track.lyricsSynced = isSynced;
+          persistTrackMeta(track);
+          showLyrics(lyrics, isSynced);
           return;
         }
       }
@@ -3812,7 +3829,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           // Try first result or find best match
           for (const result of results.slice(0, 5)) {
             if (result.syncedLyrics || result.plainLyrics) {
-              showLyrics(result.syncedLyrics || result.plainLyrics, !!result.syncedLyrics);
+              const lyrics = result.syncedLyrics || result.plainLyrics;
+              const isSynced = !!result.syncedLyrics;
+              track.lyrics = lyrics;
+              track.lyricsSynced = isSynced;
+              persistTrackMeta(track);
+              showLyrics(lyrics, isSynced);
               return;
             }
           }
@@ -3824,6 +3846,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if (ovhResp.ok) {
         const data = await ovhResp.json();
         if (data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental') {
+          track.lyrics = data.lyrics;
+          track.lyricsSynced = false;
+          persistTrackMeta(track);
           showLyrics(data.lyrics, false);
           return;
         }
@@ -3869,7 +3894,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function startLyricsAutoScroll() {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
-    if (!lyricsAutoScroll || !$('lyricsText').querySelector('.lyric-line')) return;
+    if (!lyricsAutoScroll || !$('lyricsContent').querySelector('.lyric-line')) return;
     
     lyricsScrollInterval = setInterval(() => {
       if (!lyricsAutoScroll || !$('lyricsBackdrop') || $('lyricsBackdrop').style.display !== 'flex') {
@@ -3878,7 +3903,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       
       const currentTime = activeAudio().currentTime;
-      const lines = $('lyricsText').querySelectorAll('.lyric-line[data-time]');
+      const container = $('lyricsContent');
+      const lines = container.querySelectorAll('.lyric-line[data-time]');
       
       let currentLine = null;
       lines.forEach(line => {
@@ -3894,9 +3920,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         currentLine.classList.add('current');
         
         // Scroll to current line
-        const container = $('lyricsText');
         const lineTop = currentLine.offsetTop;
-        const lineHeight = currentLine.offsetHeight;
         const containerHeight = container.clientHeight;
         const scrollTarget = lineTop - (containerHeight / 3);
         
@@ -3956,7 +3980,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsAutoScrollBtn').textContent = `Auto-scroll: ${lyricsAutoScroll ? 'On' : 'Off'}`;
     $('lyricsAutoScrollBtn').style.borderColor = lyricsAutoScroll ? 'var(--coral)' : 'var(--line)';
     $('lyricsAutoScrollBtn').style.color = lyricsAutoScroll ? 'var(--coral)' : 'var(--ink)';
-    if(lyricsAutoScroll && $('lyricsText').querySelector('.lyric-line[data-time]')) {
+    if(lyricsAutoScroll && $('lyricsContent').querySelector('.lyric-line[data-time]')) {
       startLyricsAutoScroll();
     }
   });
@@ -4824,6 +4848,82 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderList();
   });
   
+  // Batch fetch lyrics for all songs
+  let lyricsFetchActive = false;
+  
+  async function fetchSingleLyrics(track) {
+    const title = track.name || '';
+    const artist = track.artist || 'Unknown';
+    
+    const cleanArtist = titleCleanup(artist);
+    const cleanTitle = titleCleanup(title);
+    
+    try {
+      // Try LRCLIB search
+      const searchQuery = `${cleanArtist} ${cleanTitle}`;
+      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchQuery)}`;
+      const searchResp = await fetch(searchUrl);
+      
+      if (searchResp.ok) {
+        const results = await searchResp.json();
+        if (results && results.length > 0) {
+          // Try first result or find best match by duration
+          for (const result of results.slice(0, 5)) {
+            if (result.syncedLyrics || result.plainLyrics) {
+              const lyrics = result.syncedLyrics || result.plainLyrics;
+              const isSynced = !!result.syncedLyrics;
+              return { lyrics, isSynced };
+            }
+          }
+        }
+      }
+      
+      // Fallback to lyrics.ovh
+      const ovhResp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`);
+      if (ovhResp.ok) {
+        const data = await ovhResp.json();
+        if (data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental') {
+          return { lyrics: data.lyrics, isSynced: false };
+        }
+      }
+    } catch(e) {}
+    return null;
+  }
+  
+  $('fetchMissingLyricsBtn').addEventListener('click', async () => {
+    if(lyricsFetchActive){ toast('Already fetching lyrics...'); return; }
+    
+    const needsLyrics = allTracks.filter(t => enrichQueryFor(t));
+    if(!needsLyrics.length){ toast('No songs to fetch lyrics for'); return; }
+    
+    lyricsFetchActive = true;
+    $('fetchMissingLyricsBtn').textContent = 'Fetching lyrics...';
+    $('fetchMissingLyricsBtn').disabled = true;
+    
+    toast(`Fetching lyrics for ${needsLyrics.length} songs...`);
+    
+    let fetched = 0;
+    for(const t of needsLyrics){
+      // Skip if already has lyrics
+      if(t.lyrics) continue;
+      
+      const result = await fetchSingleLyrics(t);
+      if(result) {
+        t.lyrics = result.lyrics;
+        t.lyricsSynced = result.isSynced;
+        persistTrackMeta(t);
+        fetched++;
+      }
+      // Small delay to be nice to the APIs
+      await new Promise(r => setTimeout(r, 200));
+    }
+    
+    lyricsFetchActive = false;
+    $('fetchMissingLyricsBtn').textContent = 'Fetch missing lyrics';
+    $('fetchMissingLyricsBtn').disabled = false;
+    toast(`Found lyrics for ${fetched} songs`);
+  });
+  
   $('updateLogClose').addEventListener('click', () => { $('updateLogBackdrop').style.display = 'none'; });
   $('updateLogBackdrop').addEventListener('click', e => { if(e.target === $('updateLogBackdrop')) $('updateLogBackdrop').style.display = 'none'; });
   $('versionChartClose').addEventListener('click', () => { $('versionChartBackdrop').style.display = 'none'; });
@@ -5384,6 +5484,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       gain: t.gain ?? null, art: t.artBlob || null, vibe: t.vibe || null,
       waveform: t.waveform || null, playCount: t.playCount || 0,
       notes: t.notes || '',
+      lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
     });
   }
 
@@ -5438,6 +5539,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
             artBlob: r.art || null,
             artUrl: r.art ? URL.createObjectURL(r.art) : null,
+            
+            lyrics: r.lyrics || null,
+            lyricsSynced: r.lyricsSynced || false,
         }));
 
 
