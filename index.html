@@ -5102,8 +5102,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   // Build the search text from whatever the song already has.
   function enrichQueryFor(t){
-    const title = (t.name && t.name !== 'Untitled') ? t.name : '';
-    const artist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
+    const rawTitle = (t.name && t.name !== 'Untitled') ? t.name : '';
+    const rawArtist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
+    // Clean watermarks and extra info from title and artist
+    const title = titleCleanup(rawTitle);
+    const artist = titleCleanup(rawArtist);
     let query = `${artist} ${title}`.trim();
     // If no good query, try using filename
     if(!query && t.file){
@@ -5140,41 +5143,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return changed;
   }
 
-  // Fetch cover using Deezer API (free, no auth)
-  async function fetchCoverFromDeezer(query){
-    try{
-      const url = `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=1`;
-      const resp = await fetch(url);
-      if(resp.ok){
-        const data = await resp.json();
-        if(data.data && data.data[0] && data.data[0].album && data.data[0].album.cover_xl){
-          return data.data[0].album.cover_xl;
-        }
-      }
-    }catch(e){}
-    return null;
-  }
-  
-  // Fetch cover from Spotify via audiodb or direct search
-  async function fetchCoverFromSpotify(query){
-    try{
-      // Try audiodb - free music database
-      const resp = await fetch(`https://theaudiodb.com/api/v1/json/2/search.php?s=${encodeURIComponent(query)}`);
-      if(resp.ok){
-        const data = await resp.json();
-        if(data.artists && data.artists[0] && data.artists[0].strArtistThumb){
-          return data.artists[0].strArtistThumb;
-        }
-        if(data.artists && data.artists[0] && data.artists[0].strArtistLogo){
-          return data.artists[0].strArtistLogo;
-        }
-      }
-    }catch(e){}
-    return null;
-  }
-
-  // Try to fetch cover for a track using multiple sources
-    // CORS proxy helper
+  // CORS proxy helper
   async function fetchWithProxy(url){
     try{
       const resp = await fetch(url);
@@ -5235,8 +5204,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     
     if(artwork){
       try{
-        const imgResp = await fetch(artwork);
-        if(imgResp.ok){
+        const imgResp = await fetchWithProxy(artwork);
+        if(imgResp && imgResp.ok){
           const blob = await imgResp.blob();
           if(blob && blob.size > 100){
             t.artBlob = blob;
