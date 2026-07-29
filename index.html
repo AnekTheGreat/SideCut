@@ -1309,7 +1309,11 @@ body.sandbox-always-search #searchInput {
 <div class="modal-backdrop" id="notifBackdrop">
   <div class="modal">
     <h3>Notifications</h3>
-    <div id="notifBody" style="display:flex; flex-direction:column; gap:10px; max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
+    <div id="notifSummary" style="display:flex; flex-direction:column; gap:8px;"></div>
+    <button id="notifExpandBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:8px; padding:8px 16px; font-size:12px; cursor:pointer;">
+      Show full update history
+    </button>
+    <div id="notifBody" style="display:none; flex-direction:column; gap:10px; max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
     <div class="modal-btns">
       <button class="cancel" id="notifClose" style="flex:1;">Close</button>
     </div>
@@ -4180,12 +4184,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const container = $('lyricsContent');
     if (!container) return;
     
-    // Find all lyric lines
-    const lines = container.querySelectorAll('#lyricsText .lyric-line');
-    if (!lines.length) return;
-    
-    let lastIdx = -1;
-    
     lyricsScrollInterval = setInterval(() => {
       // Check if modal is still open
       const backdrop = $('lyricsBackdrop');
@@ -4195,23 +4193,25 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         return;
       }
       
-      if (!lyricsAutoScroll) {
-        clearInterval(lyricsScrollInterval);
-        lyricsScrollInterval = null;
-        return;
-      }
+      if (!lyricsAutoScroll) return;
       
       const audio = activeAudio();
       if (!audio) return;
       
       const currentTime = audio.currentTime;
-      const syncedLines = container.querySelectorAll('#lyricsText .lyric-line[data-time]');
+      const lyricsText = $('lyricsText');
+      if (!lyricsText) return;
       
-      let currentIdx = -1;
-      let currentLine = null;
+      const allLines = lyricsText.querySelectorAll('.lyric-line');
+      if (!allLines.length) return;
+      
+      const syncedLines = lyricsText.querySelectorAll('.lyric-line[data-time]');
       
       if (syncedLines.length > 0) {
         // Synced lyrics - find current line
+        let currentLine = null;
+        let currentIdx = -1;
+        
         syncedLines.forEach((line, idx) => {
           const lineTime = parseInt(line.dataset.time);
           if (lineTime <= currentTime) {
@@ -4220,11 +4220,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
         });
         
-        if (currentLine && currentIdx !== lastIdx) {
-          // Update highlight
-          lines.forEach(l => l.classList.remove('current'));
+        if (currentLine) {
+          // Update highlight - remove from all, add to current
+          allLines.forEach(l => l.classList.remove('current'));
           currentLine.classList.add('current');
-          lastIdx = currentIdx;
           
           // Scroll to current line
           const lineTop = currentLine.offsetTop;
@@ -4233,7 +4232,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           container.scrollTop = targetScroll;
         }
       }
-    }, 100);
+    }, 150);
   }
   
   function formatSyncedLyrics(lrc) {
@@ -5421,7 +5420,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   function renderNotifPanel(){
     const body = $('notifBody');
+    const summary = $('notifSummary');
     let html = enrichNotifHtml();
+    let summaryHtml = '';
     const dupGroups = (typeof getDuplicateGroups === 'function') ? getDuplicateGroups() : [];
     if(dupGroups.length){
       const totalExtra = dupGroups.reduce((sum,g) => sum + g.length - 1, 0);
@@ -5429,6 +5430,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <div id="notifDupEntry" style="border-bottom:1px solid var(--line); padding-bottom:10px; cursor:pointer;">
           <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">⚠ Duplicate songs found</div>
           <div style="font-size:12px; color:var(--ink-dim);">Found ${dupGroups.length} duplicate song${dupGroups.length>1?'s':''} (${totalExtra} extra cop${totalExtra>1?'ies':'y'}). Tap to review and choose what to delete.</div>
+        </div>
+      `;
+      summaryHtml += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
+          <div style="font-weight:600; font-size:13.5px; color:var(--coral);">⚠ ${dupGroups.length} duplicate song${dupGroups.length>1?'s':''} found</div>
+        </div>
+      `;
+    }
+    // Show latest version as summary
+    const latest = CHANGELOG[0];
+    if(latest){
+      summaryHtml += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
+          <div style="font-weight:600; font-size:14px; color:var(--coral);">v${latest.version}</div>
+          <div style="font-size:13px; margin-top:4px;">${escapeHtml(latest.title)}</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">${latest.items.length} update${latest.items.length>1?'s':''}</div>
         </div>
       `;
     }
@@ -5440,6 +5457,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         </div>
       </div>
     `).join('');
+    summary.innerHTML = summaryHtml;
     body.innerHTML = html;
     const dupEntry = document.getElementById('notifDupEntry');
     if(dupEntry) dupEntry.addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; findDuplicates(); });
@@ -5447,6 +5465,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function openNotif(){
     enrichState.seen = true;
     renderNotifPanel();
+    $('notifSummary').style.display = 'flex';
+    $('notifExpandBtn').style.display = 'block';
+    $('notifBody').style.display = 'none';
+    $('notifExpandBtn').textContent = 'Show full update history';
     $('notifBackdrop').style.display = 'flex';
     notifLastReadVersion = APP_VERSION;
     dbPut('meta', { key: 'notifLastReadVersion', value: APP_VERSION });
@@ -5461,6 +5483,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     e.stopPropagation();
     openNotif();
   }, { passive: false });
+  $('notifExpandBtn').addEventListener('click', () => {
+    const summary = $('notifSummary');
+    const body = $('notifBody');
+    const btn = $('notifExpandBtn');
+    if(body.style.display === 'none'){
+      summary.style.display = 'none';
+      body.style.display = 'flex';
+      btn.textContent = 'Show summary';
+    } else {
+      summary.style.display = 'flex';
+      body.style.display = 'none';
+      btn.textContent = 'Show full update history';
+    }
+  });
   $('notifClose').addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; });
   $('notifBackdrop').addEventListener('click', e => { if(e.target === $('notifBackdrop')) $('notifBackdrop').style.display = 'none'; });
 
