@@ -2112,9 +2112,9 @@ body.sandbox-always-search #searchInput {
 
 <!-- Lyrics Modal -->
 <div class="modal-backdrop" id="lyricsBackdrop">
-  <div class="modal" style="padding-bottom:0;">
+  <div class="modal" style="padding:14px 20px 0 calc(22px + env(safe-area-inset-bottom));">
     <!-- Mini now bar for lyrics -->
-    <div id="lyricsMiniNowBar" style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); margin-bottom:10px;">
+    <div id="lyricsMiniNowBar" style="display:flex; align-items:center; gap:10px; padding:0 0 10px 0; border-bottom:1px solid var(--line); margin-bottom:8px;">
       <div id="lyricsNpArt" style="width:40px; height:40px; border-radius:6px; background:var(--bg); background-size:cover; background-position:center; flex-shrink:0;"></div>
       <div style="flex:1; min-width:0;">
         <div id="lyricsNpTitle" style="font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
@@ -2136,7 +2136,7 @@ body.sandbox-always-search #searchInput {
         <span style="font-size:11px; color:var(--ink-dim);">A+</span>
       </div>
     </div>
-    <div id="lyricsContent" style="flex:1; overflow-y:auto; line-height:1.7; white-space:pre-wrap; word-wrap:break-word; min-height:150px;">
+    <div id="lyricsContent" style="flex:1; overflow-y:auto; line-height:1.7; white-space:pre-wrap; word-wrap:break-word; min-height:150px; padding:0;">
       <div id="lyricsLoading" style="text-align:center; color:var(--ink-dim); padding:20px 0;">Searching for lyrics…</div>
       <div id="lyricsText" style="display:none;"></div>
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:20px 0;">
@@ -2396,7 +2396,7 @@ body.sandbox-always-search #searchInput {
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark" style="width:26px; height:26px;"></div>
       <div>
-        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v42.5.1</h3>
+        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v42.5.1 (updated)</h3>
         <div style="font-size:11.5px; color:var(--ink-dim);">SideCut update</div>
       </div>
     </div>
@@ -3818,6 +3818,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function applyWatermarkToAll(){
     allTracks.forEach(t => {
+      // Skip tracks that have been manually edited
+      if(t.manualOverride) return;
+      
       const origName = t.name || '';
       const origArtist = t.artist || '';
       
@@ -4184,6 +4187,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const newArtist = $('editSongArtist').value.trim() || 'Unknown artist';
     t.name = newName;
     t.artist = newArtist;
+    // Mark as manually overridden - watermark won't touch this track anymore
+    t.manualOverride = true;
     persistTrackMeta(t);
     // Update now playing if this is the current track
     if(queue[queueIndex] === t.id){
@@ -4401,10 +4406,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             const lineHeight = currentLine.offsetHeight;
             const containerHeight = container.clientHeight;
             const scrollBottom = container.scrollTop + containerHeight;
-            const targetPosition = containerHeight * 0.35; // Keep current line at 35% from top
+            const targetPosition = containerHeight * 0.25; // Keep current line at 25% from top (calibration)
             
-            // If current line is below visible area or above visible area, scroll
-            if (lineTop + lineHeight > scrollBottom - 30 || lineTop < container.scrollTop + 20) {
+            // If current line is below visible area or too far above, scroll
+            if (lineTop + lineHeight > scrollBottom - 20 || lineTop < container.scrollTop + 10) {
               container.scrollTo({ top: lineTop - targetPosition, behavior: 'smooth' });
             }
           }
@@ -4903,11 +4908,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '42.5.1';
   const CHANGELOG = [
-    { version: '42.5.1', date: 'July 31st, 2026 at 3:35 am', title: 'Fix watermark pattern matching', items: [
+    { version: '42.5.1', date: 'July 30th, 2026 at 11:55 pm EDT', title: 'Fix watermark pattern matching', items: [
       'Fixed watermark patterns to only match at the start of titles/artists, not anywhere in the text',
       'Manual edits to song names are now preserved (e.g., "7.7 Magnitude" won\'t become "7 Magnitude")',
+      'Added manual override system - once you edit a song\'s name, watermark won\'t overwrite it',
     ]},
-    { version: '42.5', date: 'July 31st, 2026 at 3:30 am', title: 'Download fixes & UI improvements', items: [
+    { version: '42.5', date: 'July 30th, 2026 at 11:50 pm EDT', title: 'Download fixes & UI improvements', items: [
       'Fixed download cancellation - now properly aborts in-progress downloads',
       'Moved "Liquid glass mode" toggle from Glow settings to Theme settings',
       'Updated liquid glass to iOS 27 style with subtler blur and higher transparency',
@@ -6327,6 +6333,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       waveform: t.waveform || null, playCount: t.playCount || 0,
       notes: t.notes || '',
       lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
+      manualOverride: t.manualOverride || false,
     });
   }
 
@@ -6384,6 +6391,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             
             lyrics: r.lyrics || null,
             lyricsSynced: r.lyricsSynced || false,
+            
+            // Track if user manually edited the name/artist - watermark won't override
+            manualOverride: r.manualOverride || false,
         }));
 
 
