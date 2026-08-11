@@ -1554,6 +1554,7 @@ body.sandbox-always-search #searchInput {
     <h3>Settings</h3>
     <div style="display:flex; gap:10px; border-bottom:1px solid var(--line); padding-bottom:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;" id="settingsTabStrip">
       <button class="tab" id="settingsTabTheme" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Theme</button>
+      <button class="tab" id="settingsTabDonate" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Donate</button>
       <button class="tab" id="settingsTabGlow" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Glow</button>
       <button class="tab" id="settingsTabPlayback" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Playback</button>
       <button class="tab" id="settingsTabEQ" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Equalizer</button>
@@ -1621,6 +1622,26 @@ body.sandbox-always-search #searchInput {
         </div>
         <button class="playlist-pick-btn" id="applyCustomTheme" style="margin-top:12px; text-align:center;">Save custom theme</button>
       </div>
+    </div>
+
+    <div id="settingsPaneDonate" style="display:none; padding:6px 0;">
+      <div style="text-align:center; margin-bottom:18px;">
+        <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Support SideCut</div>
+        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5;">SideCut is free and ad-free. If it's made your listening better, a donation helps keep it running and improving. Thank you! 💛</div>
+      </div>
+      <label style="font-size:13px; color:var(--ink-dim); display:block; margin-bottom:6px;">Enter amount (USD)</label>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+        <span style="font-size:18px; font-weight:600; color:var(--coral);">$</span>
+        <input type="number" id="donateAmount" min="1" step="1" value="5" inputmode="decimal" style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:16px;">
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+        <button class="donate-quick" data-amt="3" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$3</button>
+        <button class="donate-quick" data-amt="5" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$5</button>
+        <button class="donate-quick" data-amt="10" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$10</button>
+        <button class="donate-quick" data-amt="25" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$25</button>
+      </div>
+      <button id="donateSubmitBtn" style="width:100%; background:var(--coral); color:#161616; border:none; border-radius:10px; padding:12px; font-size:15px; font-weight:600; cursor:pointer;">Donate</button>
+      <div id="donateMsg" style="text-align:center; font-size:12px; color:var(--ink-dim); margin-top:10px; min-height:16px;"></div>
     </div>
 
     <div id="settingsPaneGlow" style="display:none;">
@@ -3527,8 +3548,58 @@ async function downloadIndividually(tracks, apiBase, state) {
     // Hide cancel button when done
     if (cancelBtn) cancelBtn.style.display = 'none';
 }
+  // ---------------- Donate tab ----------------
+  // Set DONATE_URL to your real donation/checkout link (PayPal, Ko-fi, Stripe,
+  // etc.). It opens in a new tab with the entered amount appended as ?amount=
+  // (most hosted pages ignore unknown params, but it's harmless and keeps the
+  // amount visible). Leave as the placeholder to show a "set up" notice instead.
+  const DONATE_URL = ''; // <-- paste your donation link here
+  function initDonateTab(){
+    const amountInput = $('donateAmount');
+    const submitBtn = $('donateSubmitBtn');
+    const msg = $('donateMsg');
+    if(!amountInput || submitBtn._donateInit) return;
+
+    // Quick-amount buttons fill the field.
+    document.querySelectorAll('.donate-quick').forEach(btn => {
+      btn.addEventListener('click', () => {
+        amountInput.value = btn.dataset.amt;
+        amountInput.dispatchEvent(new Event('input'));
+      });
+    });
+
+    const doDonate = () => {
+      let amt = parseFloat(amountInput.value);
+      if(!amt || amt < 1 || !isFinite(amt)){
+        msg.textContent = 'Please enter an amount of $1 or more.';
+        msg.style.color = 'var(--coral)';
+        return;
+      }
+      amt = Math.round(amt * 100) / 100;
+      if(!DONATE_URL){
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Thank you! Donation links are being set up — check back soon.';
+        return;
+      }
+      msg.style.color = 'var(--ink-dim)';
+      msg.textContent = 'Opening checkout for $' + amt.toFixed(2) + '… thanks for supporting SideCut! 💛';
+      const sep = DONATE_URL.indexOf('?') >= 0 ? '&' : '?';
+      const full = DONATE_URL + sep + 'amount=' + encodeURIComponent(amt.toFixed(2)) + '&currency_code=USD';
+      try {
+        window.open(full, '_blank', 'noopener');
+      } catch(e){
+        window.location.href = full;
+      }
+    };
+    submitBtn.addEventListener('click', doDonate);
+    amountInput.addEventListener('keydown', e => { if(e.key === 'Enter') doDonate(); });
+
+    submitBtn._donateInit = true;
+  }
+
   function showSettingsTab(tab){
     $('settingsPaneTheme').style.display = tab === 'theme' ? '' : 'none';
+    $('settingsPaneDonate').style.display = tab === 'donate' ? '' : 'none';
     $('settingsPaneGlow').style.display = tab === 'glow' ? '' : 'none';
     $('settingsPanePlayback').style.display = tab === 'playback' ? '' : 'none';
     $('settingsPaneEQ').style.display = tab === 'eq' ? '' : 'none';
@@ -3537,6 +3608,7 @@ async function downloadIndividually(tracks, apiBase, state) {
     $('settingsPaneSandbox').style.display = tab === 'sandbox' ? '' : 'none';
     if(tab === 'glow') renderGlowControls();
     $('settingsTabTheme').classList.toggle('active', tab === 'theme');
+    $('settingsTabDonate').classList.toggle('active', tab === 'donate');
     $('settingsTabGlow').classList.toggle('active', tab === 'glow');
     $('settingsTabPlayback').classList.toggle('active', tab === 'playback');
     $('settingsTabEQ').classList.toggle('active', tab === 'eq');
@@ -3545,6 +3617,7 @@ async function downloadIndividually(tracks, apiBase, state) {
     $('settingsTabSandbox').classList.toggle('active', tab === 'sandbox');
     if(tab === 'more') renderVersionSnapshots();
     if(tab === 'sandbox') updateSandboxToggles();
+    if(tab === 'donate') initDonateTab();
     
     // Initialize Spotify input when Download tab is opened
     if(tab === 'download'){
@@ -3579,6 +3652,7 @@ async function downloadIndividually(tracks, apiBase, state) {
     }
 }
 $('settingsTabTheme').addEventListener('click', () => showSettingsTab('theme'));
+$('settingsTabDonate').addEventListener('click', () => showSettingsTab('donate'));
 $('settingsTabGlow').addEventListener('click', () => showSettingsTab('glow'));
 $('settingsTabPlayback').addEventListener('click', () => showSettingsTab('playback'));
 $('settingsTabEQ').addEventListener('click', () => showSettingsTab('eq'));
@@ -4703,33 +4777,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   let lastLyricsScrollTarget = -1;
-  // Scrolls the lyrics container just enough to keep the current line on screen.
-  // The view only moves when the current line has slipped out of the comfortable
-  // viewing band — it parks the line at ~30% from the top and then stays put, so
-  // the lyrics don't crawl/jump on every single line change (which is what made
-  // the old version feel like it "scrolled too much"). It also never scrolls
-  // further than the actual content allows, so there's no dead empty gap at the
-  // bottom once you reach the last lines.
+  // Keeps the current lyric line parked at a consistent spot (~30% from the top of
+  // the lyrics viewport). It tracks EVERY line change with a small, smooth scroll
+  // instead of waiting for the line to drift near the bottom and then jumping —
+  // the old "comfortable band" approach is what skipped past the line you were
+  // supposed to be on. Position is computed off getBoundingClientRect relative to
+  // the scroll container so it's correct regardless of offsetParent quirks.
   function scrollLyricsToLine(container, line) {
     if (!lyricsAutoScroll || !line) return;
     // Honour a recent manual scroll: give the user ~3s of peace before
     // auto-scroll re-acquires the current line, so it can't fight a drag.
     if (Date.now() - manualScrollGrace < 3000) return;
-    const lineHeight = line.offsetHeight || 24;
-    const lineTop = line.offsetTop;
-    const viewTop = container.scrollTop;
     const viewH = container.clientHeight;
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    // Line's top relative to the scroll container's content.
+    const cRect = container.getBoundingClientRect();
+    const lRect = line.getBoundingClientRect();
+    const lineTopInContainer = lRect.top - cRect.top + container.scrollTop;
     // Park the line ~30% down the viewport.
-    const desired = lineTop - viewH * 0.3 + (lineHeight / 2);
+    const desired = lineTopInContainer - viewH * 0.3;
     const clamped = Math.max(0, Math.min(maxScroll, desired));
-    // Comfortable band = roughly the top 70% of the viewport (past lines stay
-    // visible above). Only act when the line has left that band.
-    const lineBottom = lineTop + lineHeight;
-    const bandBottom = viewTop + viewH * 0.7;
-    const stillVisible = lineTop >= viewTop && lineBottom <= bandBottom;
-    if (stillVisible && lineTop >= viewTop) return; // comfortably on screen
-    if (Math.abs(clamped - lastLyricsScrollTarget) < 2) return; // already there
+    // Tiny dead-zone so a line that's already parked doesn't micro-jitter.
+    if (Math.abs(clamped - lastLyricsScrollTarget) < 3) return;
     lastLyricsScrollTarget = clamped;
     isProgrammaticScroll = true;
     container.scrollTo({ top: clamped, behavior: 'smooth' });
