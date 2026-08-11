@@ -62,6 +62,12 @@
   .action-strip.drag-active .action-pill.dragging{ opacity:0.5; cursor:grabbing; }
   .action-strip.drag-active .action-pill.drag-over{ transform: scale(0.95); border-color:var(--coral); }
   .action-strip.drag-active .action-pill.drag-over::before{ content:'⟵'; position:absolute; left:-8px; font-size:10px; color:var(--coral); }
+  /* Pointer-based finger-following drag for action pills. The dragged pill is cloned
+     and rides under the finger; the real pill stays in flow but goes translucent so
+     its slot is preserved, and siblings translate horizontally to make room. */
+  .action-pill.ghost{ position:fixed; z-index:9999; pointer-events:none; opacity:0.95;
+    box-shadow:0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px var(--coral); transform:scale(1.04); }
+  .action-pill.placeholder{ opacity:0.25; }
   .action-pill{
     flex-shrink:0; font-size:12.5px; font-weight:600; padding:10px 14px; border-radius:18px;
     cursor:pointer; white-space:nowrap; border:1px solid var(--line);
@@ -598,8 +604,25 @@
   #miniBar .fill{ height:100%; background:var(--coral); width:0%; }
   .speed-row{ display:flex; align-items:center; gap:8px; }
   .speed-row span{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-dim); flex-shrink:0; }
-  #actionSpeedSlider{ -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; background:var(--line); outline:none; }
-  #actionSpeedSlider::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%; background:var(--gold); }
+  /* Playback-speed slider in the song ⋯ menu — rounded pill track + round thumb
+     with a filled coral portion showing the current speed, plus a subtle thumb
+     glow. Styled for both WebKit (Chromium/Safari) and Firefox. */
+  #actionSpeedSlider{
+    -webkit-appearance:none; appearance:none; height:8px; border-radius:999px; outline:none;
+    background:linear-gradient(to right, var(--coral) 0%, var(--coral) var(--speed-fill,50%), var(--line) var(--speed-fill,50%), var(--line) 100%);
+  }
+  #actionSpeedSlider::-webkit-slider-thumb{
+    -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:var(--coral);
+    border:2px solid #161616; box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent);
+    margin-top:-5px; cursor:pointer; transition:transform 0.1s ease;
+  }
+  #actionSpeedSlider:active::-webkit-slider-thumb{ transform:scale(1.12); }
+  #actionSpeedSlider::-moz-range-thumb{
+    width:18px; height:18px; border-radius:50%; background:var(--coral); border:2px solid #161616;
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent); cursor:pointer;
+  }
+  #actionSpeedSlider::-moz-range-track{ height:8px; border-radius:999px; background:var(--line); }
+  #actionSpeedSlider::-moz-range-progress{ height:8px; border-radius:999px; background:var(--coral); }
   .np-row{ display:flex; align-items:center; gap:12px; }
   #npPlayerStage{ flex-shrink:0; position:relative; width:69px; height:58px; perspective:220px; cursor:grab; touch-action:none; }
   #npPlayerStage.dragging{ cursor:grabbing; }
@@ -968,8 +991,14 @@
   .seek-row{ display:flex; align-items:center; gap:8px; }
   .seek-row span{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-dim); width:32px; flex-shrink:0; }
   .seek-row span:last-child{ text-align:right; }
-  #seekBar{ flex:1; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; background:var(--line); outline:none; }
-  #seekBar::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%; background:var(--coral); }
+  #seekBar{ flex:1; -webkit-appearance:none; appearance:none; height:8px; border-radius:999px; outline:none;
+    background:linear-gradient(to right, var(--coral) 0%, var(--coral) var(--seek-fill,0%), var(--line) var(--seek-fill,0%), var(--line) 100%); }
+  #seekBar::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--coral);
+    border:2px solid #161616; box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 25%, transparent); margin-top:-4px; cursor:pointer; }
+  #seekBar:active::-webkit-slider-thumb{ transform:scale(1.12); }
+  #seekBar::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--coral); border:2px solid #161616; cursor:pointer; }
+  #seekBar::-moz-range-track{ height:8px; border-radius:999px; background:var(--line); }
+  #seekBar::-moz-range-progress{ height:8px; border-radius:999px; background:var(--coral); }
   #waveformBar{ flex:1; height:28px; display:flex; align-items:center; gap:1.5px; cursor:pointer; touch-action:none; }
   .wave-bar{ flex:1; min-width:2px; height:20%; border-radius:2px; background:var(--line); transition: background 0.15s ease, height 0.1s ease; }
 
@@ -1751,6 +1780,10 @@ body.sandbox-always-search #searchInput {
          <!-- Download Music Pane -->
     <div id="settingsPaneDownload" style="display:none;">
       <div class="download-section">
+        <div style="display:flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid color-mix(in srgb, var(--coral) 45%, transparent); background:color-mix(in srgb, var(--coral) 12%, transparent); border-radius:12px; margin:0 0 10px;">
+          <span style="font-size:14px;">⚠️</span>
+          <span style="font-size:12px; color:var(--ink);">Downloads may not work — these services frequently go down or get blocked. If it fails, use a downloader like Spoticatch / Spotisaver and add the files with <b>+ Files</b>.</span>
+        </div>
         <p style="color:var(--ink-dim); font-size:13px; margin:0 0 4px;">
           Paste a Spotify playlist, album, or track link to download MP3 files and add them directly to your library.
         </p>
@@ -2036,16 +2069,21 @@ body.sandbox-always-search #searchInput {
     padding: 4px 0;
   }
   #lyricsText .lyric-line {
-    padding: 6px 8px;
+    padding: 6px 10px;
     margin: 2px 0;
-    border-radius: 4px;
-    transition: all 0.2s ease;
+    border-radius: 8px;
+    transition: color 0.25s ease, transform 0.25s ease, background 0.25s ease;
     color: var(--ink-dim);
   }
   #lyricsText .lyric-line.current {
     color: var(--coral);
     font-weight: 600;
-    background: rgba(255, 107, 107, 0.15);
+    background: color-mix(in srgb, var(--coral) 16%, transparent);
+    transform: scale(1.02);
+  }
+  #lyricsContent {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
   }
   #lyricsContent::-webkit-scrollbar {
     width: 6px;
@@ -2130,9 +2168,14 @@ body.sandbox-always-search #searchInput {
       </div>
     </div>
     <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; gap:8px; flex-wrap:wrap;">
-      <button id="lyricsAutoScrollBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
-        Auto-scroll: On
-      </button>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button id="lyricsAutoScrollBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+          Auto-scroll: On
+        </button>
+        <button id="lyricsTranslateBtn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; display:none;">
+          Translate to English
+        </button>
+      </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-size:11px; color:var(--ink-dim);">A-</span>
         <input type="range" id="lyricsFontSlider" min="12" max="24" value="16" style="width:80px; accent-color:var(--coral);">
@@ -3888,7 +3931,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     else if(sandboxNowbarSize === 150) document.body.classList.add('sandbox-nowbar-size-150');
   }
 
-  // Drag and drop for action pills
+  // Drag and drop for action pills — pointer-based so the pill actually rides
+  // under your finger (HTML5 drag-and-drop doesn't follow the pointer on touch),
+  // and the strip auto-scrolls when your finger nears either edge.
   function applyActionPillDragDrop(){
     const strip = $('actionStrip');
     if(!strip) return;
@@ -3899,47 +3944,131 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
   }
 
-  let dragSrcEl = null;
+  let pillDragRAF = null;
+  let pillAutoScrollRAF = null;
   function initActionPillDragDrop(){
     const strip = $('actionStrip');
     if(!strip) return;
     const pills = strip.querySelectorAll('.action-pill');
     pills.forEach(pill => {
-      pill.setAttribute('draggable', sandboxDragDrop ? 'true' : 'false');
-      pill.addEventListener('dragstart', function(e){
+      pill.setAttribute('draggable', 'false'); // never let the browser's DnD fight our pointer drag
+      pill.addEventListener('pointerdown', function(e){
         if(!sandboxDragDrop) return;
-        dragSrcEl = this;
-        this.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      pill.addEventListener('dragend', function(e){
-        this.classList.remove('dragging');
-        pills.forEach(p => p.classList.remove('drag-over'));
-      });
-      pill.addEventListener('dragover', function(e){
-        if(!sandboxDragDrop || !dragSrcEl || this === dragSrcEl) return;
+        // Only start a drag on a primary pointer; let clicks/long-press do their thing otherwise.
+        if(e.button !== undefined && e.button !== 0) return;
         e.preventDefault();
-        this.classList.add('drag-over');
-      });
-      pill.addEventListener('dragleave', function(e){
-        this.classList.remove('drag-over');
-      });
-      pill.addEventListener('drop', function(e){
-        if(!sandboxDragDrop || !dragSrcEl || this === dragSrcEl) return;
-        e.preventDefault();
-        const srcId = dragSrcEl.id;
-        const targetId = this.id;
-        const srcIdx = actionPillOrder.indexOf(srcId);
-        const targetIdx = actionPillOrder.indexOf(targetId);
-        if(srcIdx > -1 && targetIdx > -1){
-          actionPillOrder.splice(srcIdx, 1);
-          actionPillOrder.splice(targetIdx, 0, srcId);
-          dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
-          reorderActionPills();
-        }
-        pills.forEach(p => p.classList.remove('drag-over'));
+        startActionPillDrag(e, this);
       });
     });
+  }
+
+  function startActionPillDrag(e, sourcePill){
+    const strip = $('actionStrip');
+    const stripRect = strip.getBoundingClientRect();
+    const pillRect = sourcePill.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    // Clone that follows the finger.
+    const ghost = sourcePill.cloneNode(true);
+    ghost.classList.add('ghost');
+    ghost.style.width = pillRect.width + 'px';
+    ghost.style.left = pillRect.left + 'px';
+    ghost.style.top = pillRect.top + 'px';
+    document.body.appendChild(ghost);
+
+    sourcePill.classList.add('dragging');
+    const sourceId = sourcePill.id;
+    const pills = Array.from(strip.querySelectorAll('.action-pill'));
+    const pillWidths = pills.map(p => p.getBoundingClientRect().width);
+    const gap = 8;
+    let fromIndex = actionPillOrder.indexOf(sourceId);
+    let toIndex = fromIndex;
+    let lastPointer = e;
+    if(navigator.vibrate) navigator.vibrate(10);
+
+    function layout(toIdx){
+      // Translate every non-source pill left/right of the source to open/close the gap.
+      pills.forEach((p, i) => {
+        if(p === sourcePill) return;
+        let shift = 0;
+        if(i >= toIdx && i < fromIndex) shift = pillWidths[fromIndex] + gap;
+        else if(i > fromIndex && i <= toIdx) shift = -(pillWidths[fromIndex] + gap);
+        p.style.transition = 'transform 0.18s ease';
+        p.style.transform = shift ? `translateX(${shift}px)` : '';
+      });
+    }
+
+    function onMove(ev){
+      lastPointer = ev;
+      if(pillDragRAF) cancelAnimationFrame(pillDragRAF);
+      pillDragRAF = requestAnimationFrame(() => {
+        const dx = ev.clientX - startX;
+        ghost.style.left = (pillRect.left + dx) + 'px';
+        ghost.style.top = (pillRect.top + (ev.clientY - startY)) + 'px';
+
+        // Map the ghost's center back to a slot in the strip.
+        const ghostCenterX = pillRect.left + dx + pillRect.width / 2;
+        let acc = stripRect.left - strip.scrollLeft + 20; // 20px left padding
+        let idx = 0;
+        for(let i=0;i<pills.length;i++){
+          const center = acc + pillWidths[i] / 2;
+          if(ghostCenterX < center){ idx = i; break; }
+          idx = i + 1;
+          acc += pillWidths[i] + gap;
+        }
+        idx = Math.max(0, Math.min(pills.length - 1, idx));
+        if(idx !== toIndex){ toIndex = idx; layout(toIndex); }
+      });
+
+      // Auto-scroll the strip while the finger holds near either edge.
+      const edge = 40;
+      let dir = 0;
+      if(ev.clientX - stripRect.left < edge) dir = -1;
+      else if(stripRect.right - ev.clientX < edge) dir = 1;
+      if(dir !== 0 && !pillAutoScrollRAF){
+        const step = () => {
+          const p = lastPointer;
+          const r = strip.getBoundingClientRect();
+          let stillIn = false;
+          if(dir < 0 && p && p.clientX - r.left < edge) stillIn = true;
+          if(dir > 0 && p && r.right - p.clientX < edge) stillIn = true;
+          if(!stillIn || strip.scrollLeft <= 0 && dir < 0){ pillAutoScrollRAF = null; return; }
+          strip.scrollLeft += dir * 7;
+          // Re-measure the source slot now that the strip scrolled, so the
+          // gap math + ghost baseline stay accurate.
+          const cur = sourcePill.getBoundingClientRect();
+          pillRect.left = cur.left;
+          pillRect.top = cur.top;
+          pillAutoScrollRAF = requestAnimationFrame(step);
+        };
+        pillAutoScrollRAF = requestAnimationFrame(step);
+      } else if(dir === 0 && pillAutoScrollRAF){
+        cancelAnimationFrame(pillAutoScrollRAF);
+        pillAutoScrollRAF = null;
+      }
+    }
+
+    function onUp(){
+      if(pillDragRAF) cancelAnimationFrame(pillDragRAF);
+      if(pillAutoScrollRAF) cancelAnimationFrame(pillAutoScrollRAF);
+      pillAutoScrollRAF = null;
+      ghost.remove();
+      sourcePill.classList.remove('dragging');
+      pills.forEach(p => { p.style.transform = ''; p.style.transition = ''; });
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      if(toIndex !== fromIndex && fromIndex > -1){
+        actionPillOrder.splice(fromIndex, 1);
+        actionPillOrder.splice(toIndex, 0, sourceId);
+        dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
+        reorderActionPills();
+      }
+    }
+    document.addEventListener('pointermove', (e2) => { lastPointer = e2; onMove(e2); });
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
   }
 
   function reorderActionPills(){
@@ -4326,27 +4455,125 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       .trim();
   }
   
+  // ---------------- English translation for lyrics ----------------
+  let currentLyricsText = '';
+  let currentLyricsSynced = false;
+  let lyricsTranslated = false;
+  let suppressTranslateReset = false; // set while re-rendering from the translate toggle
+  // A line counts as non-Latin if it has a meaningful run of characters outside
+  // the basic Latin range (accents in Latin-1 are allowed, so Spanish/French
+  // lyrics won't trigger a redundant "translate to English" offer).
+  function looksNonEnglish(text){
+    if(!text) return false;
+    let nonLatin = 0, latin = 0;
+    for(const ch of text){
+      const c = ch.codePointAt(0);
+      if(c < 0x0041) continue; // punctuation/space/digits
+      if(c <= 0x024F){ latin++; continue; } // Latin + Latin-1 Supplement + Latin Extended-A/B
+      nonLatin++;
+    }
+    // If a fair share of the letters are outside Latin scripts, offer to translate.
+    return nonLatin > 0 && (nonLatin / (nonLatin + latin)) > 0.15;
+  }
+  async function translateLyricsToEnglish(){
+    const btn = $('lyricsTranslateBtn');
+    if(!btn || !currentLyricsText) return;
+    // Toggle back to the original language if a translation is already shown.
+    if(lyricsTranslated){
+      suppressTranslateReset = true;
+      lyricsTranslated = false;
+      btn.textContent = 'Translate to English';
+      btn.style.borderColor = 'var(--line)';
+      btn.style.color = 'var(--ink-dim)';
+      showLyrics(currentLyricsText, currentLyricsSynced);
+      suppressTranslateReset = false;
+      return;
+    }
+    const original = btn.textContent;
+    btn.textContent = 'Translating…';
+    btn.style.opacity = '0.6';
+    try{
+      const translated = await doLyricsTranslate(currentLyricsText);
+      if(!translated){ throw new Error('empty'); }
+      // Keep the original's line structure so synced timestamps still line up.
+      const origLines = currentLyricsText.split('\n');
+      const trLines = translated.split('\n');
+      // Pair original + translated lines so a translation that came back as one
+      // block still lines up 1:1 with the source where possible.
+      const paired = origLines.map((line, i) => {
+        const tr = (trLines[i] != null ? trLines[i] : trLines[trLines.length - 1]) || '';
+        return { line, tr };
+      });
+      const merged = paired.map(({line, tr}) => tr || line).join('\n');
+      suppressTranslateReset = true;
+      lyricsTranslated = true;
+      btn.textContent = 'Show original';
+      btn.style.borderColor = 'var(--coral)';
+      btn.style.color = 'var(--coral)';
+      showLyrics(merged, currentLyricsSynced);
+      suppressTranslateReset = false;
+    }catch(e){
+      toast('Translation failed — try again in a moment');
+      btn.textContent = original;
+    }finally{
+      btn.style.opacity = '';
+    }
+  }
+  // Uses the unofficial Google Translate endpoint (same one the public widget
+  // uses). It needs no API key and is best-effort; if Google blocks it, the
+  // button reports failure instead of hanging.
+  async function doLyricsTranslate(text){
+    const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=' + encodeURIComponent(text);
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('translate http ' + resp.status);
+    const data = await resp.json();
+    if(!Array.isArray(data) || !Array.isArray(data[0])) throw new Error('bad translate response');
+    // data[0] is an array of [translatedChunk, originalChunk, ...] segments.
+    return data[0].map(seg => (seg && seg[0]) ? seg[0] : '').join('');
+  }
+  // Throttle manual scrolling so the autoscroll doesn't immediately yank the
+  // view back — give the user a short grace window after they scroll by hand.
+  let manualScrollGrace = 0;
+  (function(){
+    const c = $('lyricsContent');
+    if(!c) return;
+    c.addEventListener('scroll', () => { manualScrollGrace = Date.now(); }, { passive: true });
+  })();
+
   function showLyrics(lyrics, isSynced) {
     $('lyricsLoading').style.display = 'none';
     $('lyricsText').style.display = 'block';
     $('lyricsNotFound').style.display = 'none';
-    
+
+    // Reset translation state for a freshly fetched track — but skip the reset
+    // when we're re-rendering with the translated text from the toggle itself.
+    const tBtn = $('lyricsTranslateBtn');
+    if(!suppressTranslateReset){
+      currentLyricsText = lyrics;
+      currentLyricsSynced = isSynced;
+      lyricsTranslated = false;
+      if(tBtn){ tBtn.textContent = 'Translate to English'; tBtn.style.display = 'none'; }
+    }
+
     if (isSynced) {
       $('lyricsText').innerHTML = formatSyncedLyrics(lyrics);
     } else {
-      $('lyricsText').innerHTML = lyrics.split('\n').map(line => 
+      $('lyricsText').innerHTML = lyrics.split('\n').map(line =>
         `<div class="lyric-line">${escapeHtml(line)}</div>`
       ).join('');
     }
-    
+
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
-    
+
+    // Only offer "Translate to English" when the lyrics aren't already English.
+    if(tBtn && !lyricsTranslated && looksNonEnglish(currentLyricsText)) tBtn.style.display = '';
+
     // Stop any existing scroll interval
     if (lyricsScrollInterval) {
       clearInterval(lyricsScrollInterval);
       lyricsScrollInterval = null;
     }
-    
+
     // Always start interval for highlight tracking (scroll is controlled by flag)
     startLyricsAutoScroll();
   }
@@ -4360,6 +4587,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // Start at top
     container.scrollTop = 0;
     lastLyricsIdx = -1;
+    lastLyricsScrollTarget = -1;
     
     lyricsScrollInterval = setInterval(() => {
       // Check if modal is still open
@@ -4383,12 +4611,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const syncedLines = lyricsText.querySelectorAll('.lyric-line[data-time]');
       
       if (syncedLines.length > 0) {
-        // Synced lyrics - find current line
+        // Synced lyrics - find the current line (the last line whose timestamp has passed)
         let currentLine = null;
         let currentIdx = -1;
         
         syncedLines.forEach((line, idx) => {
-          const lineTime = parseInt(line.dataset.time);
+          const lineTime = parseFloat(line.dataset.time);
           if (lineTime <= currentTime) {
             currentLine = line;
             currentIdx = idx;
@@ -4401,37 +4629,60 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             allLines.forEach(l => l.classList.remove('current'));
             currentLine.classList.add('current');
             lastLyricsIdx = currentIdx;
+            scrollLyricsToLine(container, currentLine);
           }
           
-          // Keep current line visible (near top)
+          // Safety net: if the user scrolled away (or a smooth scroll stalled),
+          // nudge the current line back into view without fighting a manual scroll.
           if (lyricsAutoScroll) {
             const lineTop = currentLine.offsetTop;
             const lineHeight = currentLine.offsetHeight;
-            const containerHeight = container.clientHeight;
-            const scrollBottom = container.scrollTop + containerHeight;
-            const targetPosition = containerHeight * 0.25; // Keep current line at 25% from top (calibration)
-            
-            // If current line is below visible area or too far above, scroll
-            if (lineTop + lineHeight > scrollBottom - 20 || lineTop < container.scrollTop + 10) {
-              container.scrollTo({ top: lineTop - targetPosition, behavior: 'smooth' });
+            const viewTop = container.scrollTop;
+            const viewBottom = viewTop + container.clientHeight;
+            // Only re-scroll if the current line has slipped fully out of the
+            // visible band — avoids constantly fighting the user's manual scroll.
+            if (lineTop + lineHeight > viewBottom || lineTop < viewTop) {
+              scrollLyricsToLine(container, currentLine);
             }
           }
         }
       } else {
-        // Unsynced lyrics - scroll based on playback progress
+        // Unsynced lyrics - scroll proportionally to playback progress, but
+        // never let the scroll run ahead of the "current" line. We treat the
+        // line whose proportional position matches the playback progress as
+        // current and keep it on screen, the same way synced lyrics behave.
         if (lyricsAutoScroll && audio.duration > 0) {
-          const progress = currentTime / audio.duration;
-          const scrollTarget = progress * (lyricsText.scrollHeight - container.clientHeight);
-          const currentScroll = container.scrollTop;
-          const diff = Math.abs(scrollTarget - currentScroll);
-          
-          // Only scroll if the difference is significant (more than 20px)
-          if (diff > 20) {
-            container.scrollTo({ top: scrollTarget, behavior: 'smooth' });
+          const progress = Math.min(1, Math.max(0, currentTime / audio.duration));
+          const lineHeight = allLines[0].offsetHeight || 24;
+          const targetIdx = Math.min(allLines.length - 1, Math.floor(progress * allLines.length));
+          if (targetIdx !== lastLyricsIdx) {
+            lastLyricsIdx = targetIdx;
+            allLines.forEach(l => l.classList.remove('current'));
+            allLines[targetIdx].classList.add('current');
+            scrollLyricsToLine(container, allLines[targetIdx]);
           }
         }
       }
     }, 150); // Slightly slower interval for better performance
+  }
+
+  let lastLyricsScrollTarget = -1;
+  // Scrolls the lyrics container so the given line sits ~25% from the top, but
+  // never scrolls past it (i.e. the line stays on screen and nothing below it
+  // is revealed prematurely). Repeated calls for the same line are no-ops so
+  // the 150ms interval can't fight itself or a user's manual scroll.
+  function scrollLyricsToLine(container, line) {
+    if (!lyricsAutoScroll || !line) return;
+    const lineHeight = line.offsetHeight || 24;
+    const targetTop = container.clientHeight * 0.25;
+    // Center the line vertically within the target band instead of pinning its
+    // top edge, so a long (wrapped) line doesn't get its bottom cut off.
+    const desired = line.offsetTop - targetTop + (lineHeight / 2);
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    const clamped = Math.max(0, Math.min(maxScroll, desired));
+    if (Math.abs(clamped - lastLyricsScrollTarget) < 2) return; // already there
+    lastLyricsScrollTarget = clamped;
+    container.scrollTo({ top: clamped, behavior: 'smooth' });
   }
   
   function formatSyncedLyrics(lrc) {
@@ -4482,8 +4733,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsAutoScrollBtn').textContent = `Auto-scroll: ${lyricsAutoScroll ? 'On' : 'Off'}`;
     $('lyricsAutoScrollBtn').style.borderColor = lyricsAutoScroll ? 'var(--coral)' : 'var(--line)';
     $('lyricsAutoScrollBtn').style.color = lyricsAutoScroll ? 'var(--coral)' : 'var(--ink)';
+    if(lyricsAutoScroll){ lastLyricsScrollTarget = -1; lastLyricsIdx = -1; }
   });
-  
+
+  $('lyricsTranslateBtn').addEventListener('click', () => translateLyricsToEnglish());
+
   $('lyricsFontSlider').addEventListener('input', (e) => {
     lyricsFontSize = parseInt(e.target.value);
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
@@ -4909,8 +5163,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '45.6';
+  const APP_VERSION = '46.5';
   const CHANGELOG = [
+    { version: '46.5', date: 'August 10th, 2026 at 10:30 pm EDT', title: 'Finger-follow reordering, lyrics translation & rounded sliders', items: [
+      'Reordering now actually moves with your finger — action pills and playlist tracks drag under your touch instead of snapping, and the list auto-scrolls while you drag so you can reorder long playlists without letting go',
+      'Download tab now warns that downloads may not work, since these services frequently go down or get blocked',
+      'Lyrics auto-scroll fixed — it now reliably tracks the current line and no longer scrolls past the sentence you\'re on',
+      'Added a "Translate to English" button for non-English lyrics (toggle back to the original anytime)',
+      'Playback speed slider in the song ⋯ menu is now rounded with a filled track and a glowing thumb instead of a thin squared bar',
+      'Seek bar rounded to match, with a filled progress portion',
+      'Misc UI polish across lyrics and sliders',
+    ]},
     { version: '45.6', date: 'August 10th, 2026 at 9:50 pm EDT', title: 'Native device font + background playback fix', items: [
       'SideCut now uses your device\'s own system font, so it matches the rest of your OS instead of loading a third-party web font',
       'Fixed playback randomly stopping after about 20 minutes of backgrounded listening',
@@ -7912,6 +8175,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(navigator.vibrate) navigator.vibrate(10);
 
       function onMove(ev){
+        lastGripPointer = ev;
         const dy = ev.clientY - startY;
         row.style.transform = `translateY(${dy}px)`;
 
@@ -7939,8 +8203,46 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             s.style.transform = shift ? `translateY(${shift}px)` : '';
           });
         }
+
+        // Auto-scroll the list when the dragged row nears the top or bottom of
+        // the visible pane, so long playlists can be reordered without letting go.
+        const paneRect = pane.getBoundingClientRect();
+        const edge = 56;
+        let dir = 0;
+        if(ev.clientY - paneRect.top < edge) dir = -1;
+        else if(paneRect.bottom - ev.clientY < edge) dir = 1;
+        if(dir !== 0){
+          if(!gripAutoScrollRAF){
+            const step = () => {
+              const r = pane.getBoundingClientRect();
+              const p = lastGripPointer;
+              let still = false;
+              if(dir < 0 && p && p.clientY - r.top < edge) still = true;
+              if(dir > 0 && p && r.bottom - p.clientY < edge) still = true;
+              if(!still){ gripAutoScrollRAF = null; return; }
+              const before = pane.scrollTop;
+              pane.scrollTop += dir * 8;
+              if(pane.scrollTop === before && dir < 0){ gripAutoScrollRAF = null; return; }
+              // Adjust the drag baseline so the row keeps tracking the finger
+              // instead of jumping when the scroll shifts everything under it.
+              const moved = dir * 8;
+              // Compensate: shift startY by the scroll delta so dy stays consistent
+              // with the row's visual position relative to the finger.
+              startY += moved;
+              row.style.transform = `translateY(${(lastGripPointer.clientY - startY)}px)`;
+              gripAutoScrollRAF = requestAnimationFrame(step);
+            };
+            gripAutoScrollRAF = requestAnimationFrame(step);
+          }
+        } else if(gripAutoScrollRAF){
+          cancelAnimationFrame(gripAutoScrollRAF);
+          gripAutoScrollRAF = null;
+        }
       }
+      let lastGripPointer = ev;
+      let gripAutoScrollRAF = null;
       function onUp(ev){
+        if(gripAutoScrollRAF){ cancelAnimationFrame(gripAutoScrollRAF); gripAutoScrollRAF = null; }
         row.classList.remove('dragging');
         try{ handle.releasePointerCapture(ev.pointerId); }catch(err){}
         handle.removeEventListener('pointermove', onMove);
@@ -7965,6 +8267,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }, 150);
       }
       function onCancel(ev){
+        if(gripAutoScrollRAF){ cancelAnimationFrame(gripAutoScrollRAF); gripAutoScrollRAF = null; }
         // Interrupted mid-drag (backgrounded app, OS gesture taking over, etc.) —
         // bail out cleanly instead of leaving the row stuck at high z-index with
         // a dangling transform sitting on top of (and blocking clicks on) other rows.
@@ -9149,6 +9452,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   function updateSeekDisplay(pct){
     $('seekBar').value = pct;
+    $('seekBar').style.setProperty('--seek-fill', Math.max(0, Math.min(100, pct)) + '%');
     updateWaveformDisplay(pct);
     // Update disc progress ring
     const arc = $('discProgressArc');
@@ -9239,7 +9543,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
   $('seekBar').addEventListener('input', () => {
     const a = activeAudio();
-    if(a.duration) a.currentTime = (($('seekBar').value)/100) * a.duration;
+    if(a.duration){
+      const pct = ($('seekBar').value)/100;
+      a.currentTime = pct * a.duration;
+      $('seekBar').style.setProperty('--seek-fill', (pct * 100) + '%');
+    }
     savePlaybackState(true);
   });
 
@@ -9251,6 +9559,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(actionSlider){
       actionSlider.value = playbackSpeed;
       document.getElementById('actionSpeedValue').textContent = label;
+      // Drive the rounded track's filled portion so it follows the thumb.
+      const min = parseFloat(actionSlider.min) || 0.5;
+      const max = parseFloat(actionSlider.max) || 2;
+      const pct = Math.max(0, Math.min(100, ((playbackSpeed - min) / (max - min)) * 100));
+      actionSlider.style.setProperty('--speed-fill', pct + '%');
     }
   }
   $('miniBar').addEventListener('click', () => { $('nowPlaying').classList.remove('mini'); });
