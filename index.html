@@ -1558,8 +1558,8 @@ body.sandbox-always-search #searchInput {
       <button class="tab" id="settingsTabPlayback" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Playback</button>
       <button class="tab" id="settingsTabEQ" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Equalizer</button>
       <button class="tab" id="settingsTabDownload" style="min-width:120px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Download</button>
-      <button class="tab" id="settingsTabMore" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">More</button>
       <button class="tab" id="settingsTabSandbox" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Sandbox</button>
+      <button class="tab" id="settingsTabMore" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">More</button>
     </div>
 
     <div id="settingsPanesWrap" class="settings-scroll">
@@ -1835,6 +1835,15 @@ body.sandbox-always-search #searchInput {
       </div>
 
       <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
+        <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Works offline</div>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">
+          <div style="margin-bottom:6px;">Once your songs are imported, SideCut keeps running with no connection:</div>
+          <div style="margin-bottom:4px;"><strong>Yes —</strong> playing your library, playlists, shuffle/repeat, EQ, DJ mode, seek, sleep timer, gapless, crossfade, lyrics you've already fetched, and all saved settings.</div>
+          <div><strong>Needs internet —</strong> fetching new lyrics or covers, the built-in Spotify→MP3 download, and update checks. Your actual music files always play straight from this device.</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Accepted file types</div>
         <div style="font-size:11px; color:var(--ink-dim);">
           <div style="margin-bottom:4px;"><strong>Audio:</strong> .mp3, .m4a, .wav, .flac, .ogg, .aac, .wma, .opus, .aiff, .alac</div>
@@ -1951,7 +1960,7 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="viewUpdateLogBtn" style="text-align:center; width:100%;">Update log</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v42.5.1</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v42.8</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -2446,7 +2455,7 @@ body.sandbox-always-search #searchInput {
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark" style="width:26px; height:26px;"></div>
       <div>
-        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v42.5.1 (updated)</h3>
+        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v42.8</h3>
         <div style="font-size:11.5px; color:var(--ink-dim);">SideCut update</div>
       </div>
     </div>
@@ -4686,10 +4695,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   let lastLyricsScrollTarget = -1;
-  // Scrolls the lyrics container so the given line sits ~30% from the top, but
-  // only when the line has actually moved out of the comfortable viewing band —
-  // repeated calls for the same line are no-ops, and we never scroll past the
-  // current line, so nothing below it is revealed prematurely.
+  // Scrolls the lyrics container just enough to keep the current line on screen.
+  // The view only moves when the current line has slipped past the bottom of the
+  // comfortable viewing area — it nudges the line back up to ~30% from the top and
+  // then stays put, so the lyrics don't crawl/jump on every single line change
+  // (which is what made the old version feel like it "scrolled too much"). It also
+  // never scrolls further than the actual content allows, so there's no dead empty
+  // gap left at the bottom once you reach the last lines.
   function scrollLyricsToLine(container, line) {
     if (!lyricsAutoScroll || !line) return;
     // Honour a recent manual scroll: give the user ~3s of peace before
@@ -4700,15 +4712,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const viewTop = container.scrollTop;
     const viewH = container.clientHeight;
     const viewBottom = viewTop + viewH;
-    // Only scroll when the current line has drifted out of the comfortable
-    // middle band — keeps the view stable instead of nudging every line change.
-    const comfyTop = viewTop + viewH * 0.3;
-    const comfyBottom = viewBottom - viewH * 0.3;
-    if (lineTop >= comfyTop && lineTop + lineHeight <= comfyBottom) return;
-    const targetTop = viewH * 0.3;
-    const desired = lineTop - targetTop + (lineHeight / 2);
-    const maxScroll = container.scrollHeight - container.clientHeight;
-    const clamped = Math.max(0, Math.min(maxScroll, desired));
+    // Bring the line to ~30% from the top, but only nudge forward when it has
+    // drifted past the bottom third — past lines are left in place above so the
+    // view doesn't yank upward on every advance. If the user seeks backward and
+    // the current line is now above the viewport, scroll back up to it.
+    const lowerTrigger = viewBottom - viewH * 0.25;
+    const desired = lineTop - viewH * 0.3 + (lineHeight / 2);
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    let clamped;
+    if (lineTop + lineHeight < viewTop) {
+      // Seeked backward past the top — pull the line back into view.
+      clamped = Math.max(0, Math.min(maxScroll, desired));
+    } else if (lineTop > lowerTrigger) {
+      // Line ran past the bottom — nudge down just enough to bring it to 30%.
+      clamped = Math.max(0, Math.min(maxScroll, desired));
+    } else {
+      return; // still comfortably visible, leave it alone
+    }
     if (Math.abs(clamped - lastLyricsScrollTarget) < 2) return; // already there
     lastLyricsScrollTarget = clamped;
     container.scrollTo({ top: clamped, behavior: 'smooth' });
@@ -5201,10 +5221,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '42.8';
   const CHANGELOG = [
-    { version: '42.8', date: 'August 11, 2026 at 12:30 pm EDT', title: 'Reorder fix, calmer lyrics scroll, custom EQ & mini-bar line fix', items: [
-      'Reordering songs in a playlist is fixed — it was silently re-sorting on render whenever a per-playlist sort was set, so reordered tracks snapped right back. Reorder mode now keys off the effective sort and resets it to Playlist order when you enter it',
+    { version: '42.8', date: 'August 11, 2026 at 12:30 pm EDT', title: 'Reorder fix, calmer lyrics scroll, custom EQ, export fix & offline info', items: [
+      'Reordering songs in a playlist is fixed — a typo in the drag handler was throwing before the move/up listeners ever got attached, so grips wouldn\'t drag at all. Reorder mode also now keys off the effective sort and resets it to Playlist order when you enter it',
+      'Lyrics auto-scroll no longer scrolls too much — it only re-centers when the current line drifts past the bottom of the view (or you seek backward), leaves past lines in place, and gives you a few seconds of peace after you scroll by hand. No more dead space at the end either',
       'Equalizer has a new Custom preset: drag the bands to your taste, tap "Save current as Custom", and it persists across reloads — tap Custom anytime to recall it',
-      'Lyrics auto-scroll no longer scrolls too much — it stopped fighting itself and your manual scroll, only re-centers when the current line drifts out of the comfortable middle band, and gives you a few seconds of peace after you scroll by hand',
+      'Export library / playlist / selection is fixed — the download anchor wasn\'t attached to the page, so the click was silently ignored on mobile webviews and the APK shell. It now appends, clicks, and cleans up properly',
+      'Settings → More now spells out exactly what works offline (playing, playlists, EQ, DJ mode, etc.) vs. what needs internet (new lyrics/covers, downloads, updates)',
+      'Settings tab order fixed: "More" now sits after "Sandbox" instead of before it',
       'Removed the extra 1px line running through the now-playing bar above its progress bar in mini mode',
       'Removed the feedback section from the How to use SideCut guide',
     ]},
@@ -7798,6 +7821,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   // ---------------- List rendering ----------------
+  // Shared entry into reorder mode for both the header toggle and the
+  // long-press "Reorder this playlist" choice. Reorder only makes sense in
+  // true playlist order, and the list's effective sort is
+  // perPlaylistSort[activePlaylist] (when that feature is on), NOT currentSort —
+  // so we reset the *effective* sort to 'default', otherwise reordering writes
+  // a new order that getSortedIds immediately re-sorts away on the next render,
+  // making it look like nothing moved (and the grip handles never even show).
+  function enterReorderMode(){
+    const effective = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
+    if(effective !== 'default'){
+      if(perPlaylistSortEnabled){
+        perPlaylistSort[activePlaylist] = 'default';
+        dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
+      }
+      currentSort = 'default';
+      toast('Switched to "Playlist order" to reorder');
+    }
+    reorderMode = true;
+    renderList();
+  }
   function renderList(){
     try{ renderListInner(); }
     catch(e){
@@ -7932,19 +7975,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         // currentSort — so we have to reset the *effective* sort to 'default',
         // otherwise reordering writes a new order that getSortedIds immediately
         // re-sorts away on the next render, making it look like nothing moved.
-        if(!reorderMode){
-          const effective = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
-          if(effective !== 'default'){
-            if(perPlaylistSortEnabled){
-              perPlaylistSort[activePlaylist] = 'default';
-              dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
-            }
-            currentSort = 'default';
-            toast('Switched to "Playlist order" to reorder');
-          }
-        }
-        reorderMode = !reorderMode;
-        renderList();
+        if(!reorderMode) enterReorderMode();
+        else { reorderMode = false; renderList(); }
       });
       $('listMoreBtn').addEventListener('click', () => openListMoreMenu(ids, isAllSongs, canDelete));
     }
@@ -8060,9 +8092,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       reorderBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h2v18H9zm4 0h2v18h-2z"/></svg> Reorder this playlist`;
       reorderBtn.addEventListener('click', () => {
         $('holdChoiceBackdrop').style.display = 'none';
-        currentSort = 'default';
-        reorderMode = true;
-        renderList();
+        enterReorderMode();
       });
       list.appendChild(reorderBtn);
     }
@@ -8295,7 +8325,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           gripAutoScrollRAF = null;
         }
       }
-      let lastGripPointer = ev;
+      let lastGripPointer = e;
       let gripAutoScrollRAF = null;
       function onUp(ev){
         if(gripAutoScrollRAF){ cancelAnimationFrame(gripAutoScrollRAF); gripAutoScrollRAF = null; }
@@ -8545,10 +8575,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       });
       zip.file('manifest.json', JSON.stringify(manifest));
       const blob = await zip.generateAsync({ type: 'blob' });
+      // Anchor must live in the DOM for the click to actually fire a download —
+      // a detached element's .click() is silently ignored by most mobile webviews
+      // (and the APK shell), which is why export "did nothing" before.
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       a.download = filenameBase + '.zip';
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast(missing ? `Exported (${missing} track${missing>1?'s':''} skipped — file missing)` : 'Exported — import this .zip on another device to restore it');
     }catch(e){
       console.error(e);
@@ -8675,10 +8712,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         
         zip.file('manifest.json', JSON.stringify(manifest));
         const blob = await zip.generateAsync({ type: 'blob' });
+        // Anchor must live in the DOM for the click to actually fire a download —
+        // a detached element's .click() is silently ignored by most mobile webviews
+        // (and the APK shell), which is why export "did nothing" before.
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
+        a.href = url;
         a.download = 'sidecut-library.zip';
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
         toast('Library exported — keep this .zip somewhere safe');
       }catch(e){
         console.error(e);
