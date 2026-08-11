@@ -564,7 +564,7 @@
        order — same reasoning as #listPane above. */
     z-index:20;
   }
-  #nowPlaying.mini{ padding:0; gap:0; }
+  #nowPlaying.mini{ padding:0; gap:0; border-top:none; }
   #nowPlaying.mini .np-row, #nowPlaying.mini .seek-row span, #nowPlaying.mini #waveformBar, #nowPlaying.mini #seekBar, #nowPlaying.mini .seek-line-wrap{ display:none; }
   #nowPlaying.mini #miniBar{ display:block; }
   /* Compact now bar */
@@ -1774,8 +1774,12 @@ body.sandbox-always-search #searchInput {
         <button class="tab eq-preset-btn" data-preset="rock" style="padding:5px 12px; font-size:12px;">Rock</button>
         <button class="tab eq-preset-btn" data-preset="electronic" style="padding:5px 12px; font-size:12px;">Electronic</button>
         <button class="tab eq-preset-btn" data-preset="acoustic" style="padding:5px 12px; font-size:12px;">Acoustic</button>
+        <button class="tab eq-preset-btn" data-preset="custom" style="padding:5px 12px; font-size:12px;">Custom</button>
       </div>
-      <div style="font-size:11px; color:var(--ink-dim); margin-top:12px;">Applies to any song without its own Vibe set (see each song's ⋯ menu). Drag any band, or tap a preset to jump straight to it.</div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="tab" id="eqSaveCustomBtn" style="padding:5px 14px; font-size:11.5px;">Save current as Custom</button>
+      </div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-top:12px;">Applies to any song without its own Vibe set (see each song's ⋯ menu). Drag any band, or tap a preset to jump straight to it. Save your own setup as the Custom preset to recall it anytime.</div>
     </div>
          <!-- Download Music Pane -->
     <div id="settingsPaneDownload" style="display:none;">
@@ -2555,10 +2559,6 @@ body.sandbox-always-search #searchInput {
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Long-press a song row to select multiple tracks at once</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Export library</b> anytime to back everything up as a .zip you can restore later</span></div>
         </div>
-      </div>
-
-      <div style="font-size:11px; color:var(--ink-dim); border-top:1px solid var(--line); padding-top:12px;">
-        Stuck on something, or a button not working the way you'd expect? Use the thumbs-down/feedback option where you're chatting with Claude to report it.
       </div>
 
     </div>
@@ -4207,23 +4207,56 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const val = parseInt(e.target.value, 10);
         globalEQ[band] = val;
         e.target.previousElementSibling.textContent = (val > 0 ? '+' : '') + val;
+        // Manual band edits mean the sliders no longer match a named preset,
+        // so drop the active highlight until the user picks a preset again.
+        if(activeEQPreset && !eqMatchesPreset(activeEQPreset)) clearActiveEQPreset();
         saveGlobalEQ();
       });
     });
+    refreshActiveEQHighlight();
+  }
+  // True when every band of globalEQ equals the named preset's values.
+  function eqMatchesPreset(key){
+    if(key === 'custom') return customEQ && EQ_BANDS.every(b => (globalEQ[b.key]||0) === (customEQ[b.key]||0));
+    const p = EQ_PRESETS[key];
+    return p && EQ_BANDS.every(b => (globalEQ[b.key]||0) === (p[b.key]||0));
+  }
+  function clearActiveEQPreset(){
+    activeEQPreset = null;
+    document.querySelectorAll('.eq-preset-btn').forEach(btn => btn.classList.remove('active'));
+  }
+  function refreshActiveEQHighlight(){
+    document.querySelectorAll('.eq-preset-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.preset === activeEQPreset));
   }
   function applyEQPreset(key){
-    const preset = EQ_PRESETS[key];
-    if(!preset) return;
-    globalEQ = { ...flatEQ() };
-    EQ_BANDS.forEach(b => globalEQ[b.key] = preset[b.key] || 0);
+    if(key === 'custom'){
+      if(!customEQ){
+        toast('No Custom preset yet — drag the bands, then "Save current as Custom"');
+        return;
+      }
+      globalEQ = { ...flatEQ() };
+      EQ_BANDS.forEach(b => globalEQ[b.key] = customEQ[b.key] || 0);
+    } else {
+      const preset = EQ_PRESETS[key];
+      if(!preset) return;
+      globalEQ = { ...flatEQ() };
+      EQ_BANDS.forEach(b => globalEQ[b.key] = preset[b.key] || 0);
+    }
+    activeEQPreset = key;
     renderEQSliders();
     saveGlobalEQ();
-    document.querySelectorAll('.eq-preset-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.preset === key));
   }
   document.querySelectorAll('.eq-preset-btn').forEach(btn => {
     btn.addEventListener('click', () => applyEQPreset(btn.dataset.preset));
   });
   $('eqResetBtn').addEventListener('click', () => applyEQPreset('flat'));
+  $('eqSaveCustomBtn').addEventListener('click', () => {
+    customEQ = { ...globalEQ };
+    dbPut('meta', { key: 'customEQ', value: customEQ });
+    activeEQPreset = 'custom';
+    refreshActiveEQHighlight();
+    toast('Custom EQ saved — tap "Custom" to recall it');
+  });
 
   // ---------------- Vibe picker (per-song EQ preset) ----------------
   function openVibePicker(id){
@@ -4631,20 +4664,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             lastLyricsIdx = currentIdx;
             scrollLyricsToLine(container, currentLine);
           }
-          
-          // Safety net: if the user scrolled away (or a smooth scroll stalled),
-          // nudge the current line back into view without fighting a manual scroll.
-          if (lyricsAutoScroll) {
-            const lineTop = currentLine.offsetTop;
-            const lineHeight = currentLine.offsetHeight;
-            const viewTop = container.scrollTop;
-            const viewBottom = viewTop + container.clientHeight;
-            // Only re-scroll if the current line has slipped fully out of the
-            // visible band — avoids constantly fighting the user's manual scroll.
-            if (lineTop + lineHeight > viewBottom || lineTop < viewTop) {
-              scrollLyricsToLine(container, currentLine);
-            }
-          }
         }
       } else {
         // Unsynced lyrics - scroll proportionally to playback progress, but
@@ -4667,17 +4686,27 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   let lastLyricsScrollTarget = -1;
-  // Scrolls the lyrics container so the given line sits ~25% from the top, but
-  // never scrolls past it (i.e. the line stays on screen and nothing below it
-  // is revealed prematurely). Repeated calls for the same line are no-ops so
-  // the 150ms interval can't fight itself or a user's manual scroll.
+  // Scrolls the lyrics container so the given line sits ~30% from the top, but
+  // only when the line has actually moved out of the comfortable viewing band —
+  // repeated calls for the same line are no-ops, and we never scroll past the
+  // current line, so nothing below it is revealed prematurely.
   function scrollLyricsToLine(container, line) {
     if (!lyricsAutoScroll || !line) return;
+    // Honour a recent manual scroll: give the user ~3s of peace before
+    // auto-scroll re-acquires the current line, so it can't fight a drag.
+    if (Date.now() - manualScrollGrace < 3000) return;
     const lineHeight = line.offsetHeight || 24;
-    const targetTop = container.clientHeight * 0.25;
-    // Center the line vertically within the target band instead of pinning its
-    // top edge, so a long (wrapped) line doesn't get its bottom cut off.
-    const desired = line.offsetTop - targetTop + (lineHeight / 2);
+    const lineTop = line.offsetTop;
+    const viewTop = container.scrollTop;
+    const viewH = container.clientHeight;
+    const viewBottom = viewTop + viewH;
+    // Only scroll when the current line has drifted out of the comfortable
+    // middle band — keeps the view stable instead of nudging every line change.
+    const comfyTop = viewTop + viewH * 0.3;
+    const comfyBottom = viewBottom - viewH * 0.3;
+    if (lineTop >= comfyTop && lineTop + lineHeight <= comfyBottom) return;
+    const targetTop = viewH * 0.3;
+    const desired = lineTop - targetTop + (lineHeight / 2);
     const maxScroll = container.scrollHeight - container.clientHeight;
     const clamped = Math.max(0, Math.min(maxScroll, desired));
     if (Math.abs(clamped - lastLyricsScrollTarget) < 2) return; // already there
@@ -5084,6 +5113,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(eqRow && eqRow.value){
         globalEQ = migrateLegacyEQ(eqRow.value);
       }
+      const customEQRow = metaRows.find(r => r.key === 'customEQ');
+      if(customEQRow && customEQRow.value) customEQ = customEQRow.value;
+      // Re-derive which preset the loaded band values match, so the right
+      // preset button is highlighted on startup instead of nothing.
+      activeEQPreset = null;
+      if(customEQ && eqMatchesPreset('custom')) activeEQPreset = 'custom';
+      else for(const k of Object.keys(EQ_PRESETS)){ if(eqMatchesPreset(k)){ activeEQPreset = k; break; } }
       renderEQSliders();
       const statsRow = metaRows.find(r => r.key === 'stats');
       if(statsRow && statsRow.value){
@@ -5165,7 +5201,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '46.5';
   const CHANGELOG = [
-    { version: '46.5', date: 'August 10th, 2026 at 10:30 pm EDT', title: 'Finger-follow reordering, lyrics translation & rounded sliders', items: [
+    { version: '46.5', date: 'August 11, 2026 at 12:30 pm EDT', title: 'Finger-follow reordering, lyrics translation & rounded sliders', items: [
       'Reordering now actually moves with your finger — action pills and playlist tracks drag under your touch instead of snapping, and the list auto-scrolls while you drag so you can reorder long playlists without letting go',
       'Download tab now warns that downloads may not work, since these services frequently go down or get blocked',
       'Lyrics auto-scroll fixed — it now reliably tracks the current line and no longer scrolls past the sentence you\'re on',
@@ -6397,6 +6433,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return o;
   }
   let globalEQ = flatEQ();
+  // User-defined "Custom" EQ preset — saved band values the user keeps around
+  // (tap "Save current as Custom") so it can be recalled like any other preset.
+  let customEQ = null;
+  // Which preset (if any) the live sliders currently match — null when the
+  // user dragged bands by hand and the values no longer match a named preset.
+  let activeEQPreset = null;
   // Old saves only had bass/mid/treble — spread each into the nearest new bands so
   // nobody's existing EQ setting silently resets to flat on upgrade.
   function migrateLegacyEQ(saved){
@@ -7825,6 +7867,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const canDelete = !isAllSongs && activePlaylist !== 'Favorites';
     const header = document.createElement('div');
     header.className = 'pane-header';
+    // The sort actually applied to the list — perPlaylistSort wins over currentSort
+    // when that feature is on, so every reorder check below keys off this, not
+    // currentSort, or reordering can get gated/sorted wrong (see reorderModeBtn).
+    const effectiveSort = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
 
     if(selectMode){
       header.innerHTML = `
@@ -7840,7 +7886,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       $('selectCancelBtn').addEventListener('click', exitSelectMode);
       $('selectExportBtn').addEventListener('click', exportSelected);
       $('selectDeleteBtn').addEventListener('click', deleteSelected);
-    } else if(reorderMode && !isAllSongs && currentSort === 'default'){
+    } else if(reorderMode && !isAllSongs && effectiveSort === 'default'){
       header.innerHTML = `
         <div><h2>Reordering</h2><div class="sub">Drag the ≡ handle to move a song</div></div>
         <div class="pane-header-spacer"></div>
@@ -7883,9 +7929,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       });
       $('mixBtn').addEventListener('click', () => startMix(ids));
       if(!isAllSongs) $('reorderModeBtn').addEventListener('click', () => {
-        if(!reorderMode && currentSort !== 'default'){
-          currentSort = 'default';
-          toast('Switched to "Playlist order" to reorder');
+        // Reorder only makes sense in true playlist order. The list's effective
+        // sort is perPlaylistSort[activePlaylist] (when that feature is on), NOT
+        // currentSort — so we have to reset the *effective* sort to 'default',
+        // otherwise reordering writes a new order that getSortedIds immediately
+        // re-sorts away on the next render, making it look like nothing moved.
+        if(!reorderMode){
+          const effective = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
+          if(effective !== 'default'){
+            if(perPlaylistSortEnabled){
+              perPlaylistSort[activePlaylist] = 'default';
+              dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
+            }
+            currentSort = 'default';
+            toast('Switched to "Playlist order" to reorder');
+          }
         }
         reorderMode = !reorderMode;
         renderList();
@@ -7905,7 +7963,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const t = allTracks.find(tr => tr.id === id);
       if(!t) return;
       const row = document.createElement('div');
-      const showReorder = reorderMode && !isAllSongs && currentSort === 'default';
+      const showReorder = reorderMode && !isAllSongs && effectiveSort === 'default';
       row.className = 'track' + (selectMode && selectedIds.has(id) ? ' selected' : '');
       row.dataset.id = id;
       const artStyle = t.artUrl ? `background-image:url('${t.artUrl}');` : '';
