@@ -1503,7 +1503,7 @@ body.sandbox-always-search #searchInput {
     <span id="curTime">0:00</span>
     <div class="seek-line-wrap" style="position:relative; flex:1; display:flex; align-items:center;">
       <input type="range" id="seekBar" min="0" max="100" value="0" style="width:100%;">
-      <svg id="seekWaveSvg" viewBox="0 0 100 22" preserveAspectRatio="none"><path id="seekWavePath" d="M0,11 L100,11"></path></svg>
+      <svg id="seekWaveSvg" viewBox="0 0 100 22" preserveAspectRatio="none"><path id="seekWavePath" d=""></path></svg>
     </div>
     <div id="waveformBar" style="display:none;"></div>
     <span id="totalTime">0:00</span>
@@ -2176,6 +2176,7 @@ body.sandbox-always-search #searchInput {
       </div>
       <div style="display:flex; gap:4px;">
         <button id="lyricsPrevBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 10px; cursor:pointer; font-size:14px;">⏮</button>
+        <button id="lyricsPlayPauseBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:14px; min-width:38px;">⏸</button>
         <button id="lyricsNextBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 10px; cursor:pointer; font-size:14px;">⏭</button>
         <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:20px; cursor:pointer; padding:4px;">×</button>
       </div>
@@ -2852,7 +2853,7 @@ body.sandbox-always-search #searchInput {
   }
   function flattenSeekWave(){
     const p = $('seekWavePath');
-    if(p) p.setAttribute('d', 'M0,11 L100,11');
+    if(p) p.setAttribute('d', '');
     const svg = $('seekWaveSvg');
     if(svg) svg.classList.remove('live');
   }
@@ -2967,7 +2968,7 @@ body.sandbox-always-search #searchInput {
       }
       if(lineLevel < 0.03){
         svg.classList.remove('live');
-        path.setAttribute('d', 'M0,11 L100,11');
+        path.setAttribute('d', '');
         return;
       }
       svg.classList.add('live');
@@ -4407,6 +4408,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsText').style.display = 'none';
     $('lyricsNotFound').style.display = 'none';
     $('lyricsBackdrop').style.display = 'flex';
+    syncLyricsPlayPauseIcon();
     
     // Reset auto-scroll
     if(lyricsScrollInterval) {
@@ -4575,11 +4577,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   // Throttle manual scrolling so the autoscroll doesn't immediately yank the
   // view back — give the user a short grace window after they scroll by hand.
+  // We must distinguish a *user* scroll from the *programmatic* scrollTo()
+  // autoscroll itself calls, otherwise autoscroll trips its own grace window
+  // and never advances (which is why auto-scroll "didn't work").
   let manualScrollGrace = 0;
+  let isProgrammaticScroll = false;
   (function(){
     const c = $('lyricsContent');
     if(!c) return;
-    c.addEventListener('scroll', () => { manualScrollGrace = Date.now(); }, { passive: true });
+    c.addEventListener('scroll', () => {
+      if (!isProgrammaticScroll) manualScrollGrace = Date.now();
+    }, { passive: true });
   })();
 
   function showLyrics(lyrics, isSynced) {
@@ -4696,12 +4704,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   let lastLyricsScrollTarget = -1;
   // Scrolls the lyrics container just enough to keep the current line on screen.
-  // The view only moves when the current line has slipped past the bottom of the
-  // comfortable viewing area — it nudges the line back up to ~30% from the top and
-  // then stays put, so the lyrics don't crawl/jump on every single line change
-  // (which is what made the old version feel like it "scrolled too much"). It also
-  // never scrolls further than the actual content allows, so there's no dead empty
-  // gap left at the bottom once you reach the last lines.
+  // The view only moves when the current line has slipped out of the comfortable
+  // viewing band — it parks the line at ~30% from the top and then stays put, so
+  // the lyrics don't crawl/jump on every single line change (which is what made
+  // the old version feel like it "scrolled too much"). It also never scrolls
+  // further than the actual content allows, so there's no dead empty gap at the
+  // bottom once you reach the last lines.
   function scrollLyricsToLine(container, line) {
     if (!lyricsAutoScroll || !line) return;
     // Honour a recent manual scroll: give the user ~3s of peace before
@@ -4711,27 +4719,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const lineTop = line.offsetTop;
     const viewTop = container.scrollTop;
     const viewH = container.clientHeight;
-    const viewBottom = viewTop + viewH;
-    // Bring the line to ~30% from the top, but only nudge forward when it has
-    // drifted past the bottom third — past lines are left in place above so the
-    // view doesn't yank upward on every advance. If the user seeks backward and
-    // the current line is now above the viewport, scroll back up to it.
-    const lowerTrigger = viewBottom - viewH * 0.25;
-    const desired = lineTop - viewH * 0.3 + (lineHeight / 2);
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-    let clamped;
-    if (lineTop + lineHeight < viewTop) {
-      // Seeked backward past the top — pull the line back into view.
-      clamped = Math.max(0, Math.min(maxScroll, desired));
-    } else if (lineTop > lowerTrigger) {
-      // Line ran past the bottom — nudge down just enough to bring it to 30%.
-      clamped = Math.max(0, Math.min(maxScroll, desired));
-    } else {
-      return; // still comfortably visible, leave it alone
-    }
+    // Park the line ~30% down the viewport.
+    const desired = lineTop - viewH * 0.3 + (lineHeight / 2);
+    const clamped = Math.max(0, Math.min(maxScroll, desired));
+    // Comfortable band = roughly the top 70% of the viewport (past lines stay
+    // visible above). Only act when the line has left that band.
+    const lineBottom = lineTop + lineHeight;
+    const bandBottom = viewTop + viewH * 0.7;
+    const stillVisible = lineTop >= viewTop && lineBottom <= bandBottom;
+    if (stillVisible && lineTop >= viewTop) return; // comfortably on screen
     if (Math.abs(clamped - lastLyricsScrollTarget) < 2) return; // already there
     lastLyricsScrollTarget = clamped;
+    isProgrammaticScroll = true;
     container.scrollTo({ top: clamped, behavior: 'smooth' });
+    // Clear the flag after the smooth scroll has had time to settle.
+    setTimeout(() => { isProgrammaticScroll = false; }, 600);
   }
   
   function formatSyncedLyrics(lrc) {
@@ -4811,6 +4814,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
       if(t) fetchLyrics(t);
     }, 300);
+  });
+
+  // Play/pause from inside the lyrics modal — mirrors the main now-bar button.
+  function syncLyricsPlayPauseIcon(){
+    const btn = $('lyricsPlayPauseBtn');
+    if(!btn) return;
+    const a = activeAudio();
+    btn.textContent = (a && a.paused) ? '▶' : '⏸';
+  }
+  $('lyricsPlayPauseBtn').addEventListener('click', () => {
+    const a = activeAudio();
+    if(!a) return;
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+    a.paused ? a.play().catch(() => recoverAudio(a, 'lyrics play failed')) : a.pause();
+    syncLyricsPlayPauseIcon();
   });
 
   // ---------------- Now Playing Menu (3-dot) ----------------
@@ -9334,6 +9352,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();
     startMediaSessionHeartbeat();
     requestWakeLock();
+    syncLyricsPlayPauseIcon();
   }
   function onPauseEvt(e){
     if(e.target !== activeAudio()) return;
@@ -9346,6 +9365,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();
     stopMediaSessionHeartbeat();
     releaseWakeLock();
+    syncLyricsPlayPauseIcon();
   }
   // ---------------- Background keep-alive: stop the 20-min drop + earbud takeover ----------------
   // Mobile browsers (especially Android Chrome) will, after a stretch of backgrounded
