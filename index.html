@@ -994,7 +994,7 @@
   #seekBar{ flex:1; -webkit-appearance:none; appearance:none; height:8px; border-radius:999px; outline:none;
     background:linear-gradient(to right, var(--coral) 0%, var(--coral) var(--seek-fill,0%), var(--line) var(--seek-fill,0%), var(--line) 100%); }
   #seekBar::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--coral);
-    border:2px solid #161616; box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 25%, transparent); margin-top:-4px; cursor:pointer; }
+    border:2px solid #161616; box-sizing:border-box; box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 25%, transparent); margin-top:-4px; cursor:pointer; }
   #seekBar:active::-webkit-slider-thumb{ transform:scale(1.12); }
   #seekBar::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--coral); border:2px solid #161616; cursor:pointer; }
   #seekBar::-moz-range-track{ height:8px; border-radius:999px; background:var(--line); }
@@ -1370,6 +1370,18 @@ body.sandbox-always-search #searchInput {
   </div>
 </div>
 
+<!-- Roll back confirmation modal -->
+<div class="modal-backdrop" id="rollbackConfirmBackdrop">
+  <div class="modal">
+    <h3>Roll back app?</h3>
+    <div id="rollbackConfirmBody" style="font-size:13.5px; color:var(--ink-dim); text-align:left; padding:10px 0; line-height:1.5;"></div>
+    <div class="modal-btns">
+      <button class="cancel" id="rollbackConfirmCancel" style="flex:1;">Cancel</button>
+      <button class="confirm" id="rollbackConfirmOk" style="flex:1; background:#ff6b6b;">Roll back</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add-to-playlist modal (buttons, no typing) -->
 <div class="modal-backdrop" id="addToPlaylistBackdrop">
   <div class="modal">
@@ -1650,13 +1662,6 @@ body.sandbox-always-search #searchInput {
       </div>
 
       <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
-        <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Where to get music</div>
-        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">
-          SideCut doesn't download music for you — it plays files you already have. To get songs, open your playlist, album, or track in Spotify, tap <b>Share → Copy link</b>, then paste it into a Spotify-to-MP3 downloader like <b>Spoticatch</b>, <b>Spotisaver</b>, or any other downloader. Once you have the MP3 files, tap <b>+ Files</b> in SideCut and import them — they'll be stored locally on your device.
-        </div>
-      </div>
-
-      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Works offline</div>
         <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">
           <div style="margin-bottom:6px;">Once your songs are imported, SideCut keeps running with no connection:</div>
@@ -1771,7 +1776,11 @@ body.sandbox-always-search #searchInput {
           <span>Roll back app</span><span id="collapseVersionsIcon" style="transition:transform 0.2s;">▾</span>
         </button>
         <div id="collapsibleVersionsContent" style="padding:12px; border-top:1px solid var(--line); display:none;">
-          <div style="font-size:11px; color:var(--ink-dim); margin-bottom:10px;">Every version you've opened is saved on this device. Tap one to switch to it — your library stays put.</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-bottom:10px;">Rolling back swaps the app to a saved copy of an older version that lives as a separate, self-contained snapshot on this device — the actual SideCut app installed on your device (and its cached shell) stays exactly as it is; only what this tab shows changes. Your library and settings live in their own storage, untouched by the switch.</div>
+          <div style="font-size:11px; color:#ff6b6b; background:rgba(255,107,107,0.08); border:1px solid rgba(255,107,107,0.3); border-radius:8px; padding:10px; margin-bottom:10px; line-height:1.5;">
+            <div style="font-weight:600; margin-bottom:4px;">⚠ Before you roll back</div>
+            Older versions can have side effects: <b>data loss</b> or a <b>broken app</b> that won't open or run correctly. If that happens you'll need to <b>clear app data</b> to recover, which wipes your library. <b>Back up your library first</b> — use <b>Export library</b> to save a .zip you can restore after clearing data. Don't roll back without a backup.
+          </div>
           <div id="versionSnapshotList" style="display:flex; flex-direction:column; gap:6px;"></div>
         </div>
       </div>
@@ -1782,7 +1791,7 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="viewUpdateLogBtn" style="text-align:center; width:100%;">Update log</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v42.8</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v43</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -1998,7 +2007,10 @@ body.sandbox-always-search #searchInput {
       </div>
       <div style="display:flex; gap:4px;">
         <button id="lyricsPrevBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 10px; cursor:pointer; font-size:14px;">⏮</button>
-        <button id="lyricsPlayPauseBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:14px; min-width:38px;">⏸</button>
+        <button id="lyricsPlayPauseBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 10px; cursor:pointer; display:flex; align-items:center; justify-content:center; width:38px; height:32px; transition: color 0.25s ease, border-color 0.25s ease;" title="Play/Pause" aria-label="Play/Pause">
+          <svg id="lyricsPauseIcon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+          <svg id="lyricsPlayIcon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:none;"><path d="M8 5v14l11-7z"/></svg>
+        </button>
         <button id="lyricsNextBtn" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:6px 10px; cursor:pointer; font-size:14px;">⏭</button>
         <button id="lyricsClose" style="background:none; border:none; color:var(--ink-dim); font-size:20px; cursor:pointer; padding:4px;">×</button>
       </div>
@@ -4297,11 +4309,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
 
   // Play/pause from inside the lyrics modal — mirrors the main now-bar button.
+  // Low-key SVG icons that match the rest of the lyrics mini-bar (ink + line
+  // border) instead of a loud coral/emoji button — keeps the focus on lyrics.
   function syncLyricsPlayPauseIcon(){
     const btn = $('lyricsPlayPauseBtn');
     if(!btn) return;
     const a = activeAudio();
-    btn.textContent = (a && a.paused) ? '▶' : '⏸';
+    const paused = !a || a.paused;
+    const playIcon = $('lyricsPlayIcon'), pauseIcon = $('lyricsPauseIcon');
+    if(playIcon) playIcon.style.display = paused ? '' : 'none';
+    if(pauseIcon) pauseIcon.style.display = paused ? 'none' : '';
   }
   $('lyricsPlayPauseBtn').addEventListener('click', () => {
     const a = activeAudio();
@@ -4717,8 +4734,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '42.8';
+  const APP_VERSION = '43';
+  // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
+  // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
+  function compareVersions(a, b){
+    const pa = String(a).split('.'), pb = String(b).split('.');
+    const len = Math.max(pa.length, pb.length);
+    for(let i=0;i<len;i++){
+      const na = parseInt(pa[i] || '0', 10), nb = parseInt(pb[i] || '0', 10);
+      if(na !== nb) return na > nb ? 1 : -1;
+    }
+    return 0;
+  }
   const CHANGELOG = [
+    { version: '43', date: 'August 12, 2026 at 11:53 am EDT', title: 'Export overhaul, scrubber fix, rollback warning & cleanup', items: [
+      'Exporting a .zip is fixed — it was failing with an arraybuffer error on some devices because JSZip was trying to read IndexedDB-resurrected Blobs whose .arrayBuffer() was missing/broken in the webview. Each audio file and cover is now read into an ArrayBuffer up front (with a FileReader fallback), so the zip builds reliably every time',
+      'Export now shows live progress in the notification bell: a progress bar plus an estimated time remaining, with separate phases for bundling songs and compressing the .zip. It also tells you up front that you can keep playing music in SideCut while the export runs in the background',
+      'The now-playing scrubber handle (the circle on the line that shows the song playing) is re-centered — it sat slightly too low because the thumb border wasn\'t box-sizing aware. It now lines up perfectly with the track',
+      'Removed the "Where to get music" section from Settings → More, since that\'s already covered in the Download tab',
+      'Roll back app now works as a separate, self-contained version snapshot on your device — the actual installed SideCut app and its cached shell stay exactly as they are; only what this tab shows switches. Your library and settings live in their own storage and are never touched by a switch',
+      'Rolling back now asks you to confirm first and shows a warning: older versions can cause data loss or a broken app that won\'t open, and recovering may require clearing app data (which wipes your library). It tells you to back up your library with Export library to a .zip before attempting a rollback',
+      'Update log and rollback version list are backed by the same on-device snapshot store, so both reflect the real saved versions available to switch to',
+      'The play/pause button in the lyrics view is now low-key and matches the theme — clean inline SVG icons with the same ink color and line border as the rest of the lyrics mini-bar, instead of the loud coral pause emoji it was before',
+    ]},
     { version: '42.8', date: 'August 11, 2026 at 12:30 pm EDT', title: 'Reorder fix, calmer lyrics scroll, custom EQ, export fix & offline info', items: [
       'Reordering songs in a playlist is fixed — a typo in the drag handler was throwing before the move/up listeners ever got attached, so grips wouldn\'t drag at all. Reorder mode also now keys off the effective sort and resets it to Playlist order when you enter it',
       'Lyrics auto-scroll no longer scrolls too much — it only re-centers when the current line drifts past the bottom of the view (or you seek backward), leaves past lines in place, and gives you a few seconds of peace after you scroll by hand. No more dead space at the end either',
@@ -5186,15 +5224,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       btn.addEventListener('click', async () => {
         const row = rows.find(r => r.key === btn.dataset.snapKey);
         if(!row) return;
-        // One tap, works in either direction, any number of times: pins the version you
-        // want, then does a real reload. The freshly-loaded (always latest) code checks
-        // that pin first thing and swaps itself to the pinned version — so you're never
-        // stuck without a way back, no matter which version you're currently viewing.
-        // Your library and settings live in IndexedDB, completely separate from this.
-        window.__SIDECUT_PIN_SWITCHING__ = true;
-        await dbPut('meta', { key: 'pinnedVersion', value: row.value.version });
-        toast(`Switching to v${row.value.version}…`);
-        setTimeout(() => window.location.reload(), 300);
+        const isNewer = compareVersions(row.value.version, APP_VERSION) > 0;
+        // Confirm before switching — rolling to an older build can break the app or
+        // cause data loss, and recovering may require clearing app data (wiping the
+        // library). The snapshot itself is a separate, self-contained copy on this
+        // device; the installed SideCut app and your library storage are never
+        // modified by the switch — only what this tab shows changes.
+        const warn = isNewer
+          ? `Switch from v${APP_VERSION} to v${row.value.version}? This loads that version's saved snapshot in this tab. Your library stays put.`
+          : `<b>⚠ Rolling back to v${row.value.version} can have side effects: data loss, or a broken app that won't open or run correctly.</b> If that happens you'll need to <b>clear app data</b> to recover, which wipes your library. <b>Back up your library first</b> — use Export library to save a .zip you can restore after clearing data. Your library and the installed SideCut app itself are not changed by this switch; only this tab loads the older version.`;
+        showRollbackConfirm(warn, async () => {
+          // One tap, works in either direction, any number of times: pins the version you
+          // want, then does a real reload. The freshly-loaded (always latest) code checks
+          // that pin first thing and swaps itself to the pinned version — so you're never
+          // stuck without a way back, no matter which version you're currently viewing.
+          // Your library and settings live in IndexedDB, completely separate from this.
+          window.__SIDECUT_PIN_SWITCHING__ = true;
+          await dbPut('meta', { key: 'pinnedVersion', value: row.value.version });
+          toast(`Switching to v${row.value.version}…`);
+          setTimeout(() => window.location.reload(), 300);
+        });
       });
     });
   }
@@ -5485,12 +5534,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!badge) return;
     const hasDupAlert = typeof getDuplicateGroups === 'function' && getDuplicateGroups().length > 0;
     const hasEnrichAlert = enrichState.active || (enrichState.finishedAt && !enrichState.seen);
-    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert) ? 'block' : 'none';
+    const hasExportAlert = exportState.active || (exportState.finishedAt && !exportState.seen);
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert) ? 'block' : 'none';
   }
   function renderNotifPanel(){
     const body = $('notifBody');
     const summary = $('notifSummary');
-    let html = enrichNotifHtml();
+    let html = exportNotifHtml() + enrichNotifHtml();
     let summaryHtml = '';
     const dupGroups = (typeof getDuplicateGroups === 'function') ? getDuplicateGroups() : [];
     if(dupGroups.length){
@@ -5533,6 +5583,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   function openNotif(){
     enrichState.seen = true;
+    exportState.seen = true;
     renderNotifPanel();
     $('notifSummary').style.display = 'flex';
     $('notifExpandBtn').style.display = 'block';
@@ -5579,6 +5630,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   const ENRICH_BATCH = 20;
   let enrichAttemptedIds = new Set();
   let enrichState = { active:false, total:0, done:0, updated:0, failed:0, finishedAt:0, seen:true };
+
+  // Export (zip) progress state — surfaced live in the notification bell. Reads each
+  // track's file into an ArrayBuffer up front (see doExportTracks/exportLibrary) so the
+  // zip step never has to coerce a possibly-stale IndexedDB Blob on its own — that
+  // coercion is exactly what threw "arrayBuffer is not a function" on some webviews and
+  // aborted the whole export. Doing the read ourselves also gives us per-file progress.
+  // Exports run fully async and never touch the audio element, so playback keeps going.
+  let exportState = { active:false, phase:'idle', kind:'', total:0, done:0,
+    bytesDone:0, totalBytes:0, startedAt:0, finishedAt:0, seen:true, lastErr:'' };
 
   async function loadEnrichState(){
     try{
@@ -5811,6 +5871,72 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }catch(e){}
     }
     return false;
+  }
+
+  function exportNotifHtml(){
+    if(!exportState.active && !exportState.finishedAt) return '';
+    let html = '';
+    if(exportState.active){
+      const pct = exportState.phase === 'compressing'
+        ? Math.round(exportState.compressPct || 0)
+        : (exportState.total ? Math.round((exportState.done / exportState.total) * 100) : 0);
+      const label = exportState.phase === 'compressing'
+        ? `Compressing the .zip — ${pct}%`
+        : `Bundling songs — ${exportState.done}/${exportState.total}`;
+      const eta = exportEtaText();
+      html += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">📦 Exporting ${exportState.kind || 'library'}</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">${label}${eta ? ' · ~' + eta : ''}</div>
+          <div style="height:6px; background:var(--bg-raised); border-radius:3px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:6px;">You can keep playing music in SideCut while this runs — exports run in the background.</div>
+        </div>`;
+    } else if(exportState.finishedAt){
+      const ok = !exportState.lastErr;
+      const msg = ok
+        ? `Finished exporting ${exportState.kind || 'library'} — ${exportState.total} song${exportState.total===1?'':'s'} bundled into a .zip.`
+        : `Export failed: ${exportState.lastErr || 'unknown error'}.`;
+      html += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:${ok ? 'var(--coral)' : '#ff6b6b'};">${ok ? '✓ Export complete' : '✗ Export failed'}</div>
+          <div style="font-size:12px; color:var(--ink-dim);">${escapeHtml(msg)}</div>
+        </div>`;
+    }
+    return html;
+  }
+
+  function exportEtaText(){
+    if(exportState.phase !== 'compressing' && exportState.done <= 0) return '';
+    if(exportState.phase === 'compressing'){
+      const pct = exportState.compressPct || 0;
+      if(pct <= 0) return '';
+      // Compression phase starts at compressStartedAt
+      const cs = exportState.compressStartedAt || exportState.startedAt;
+      const ce = (Date.now() - cs) / 1000;
+      if(pct >= 99 || ce < 0.5) return 'a few seconds';
+      const remaining = ce * (100 - pct) / pct;
+      return fmtDuration(remaining);
+    }
+    const elapsed = (Date.now() - exportState.startedAt) / 1000;
+    if(exportState.done <= 0 || elapsed < 0.5) return '';
+    const rate = exportState.done / elapsed;
+    if(rate <= 0) return '';
+    const remaining = (exportState.total - exportState.done) / rate;
+    return fmtDuration(remaining);
+  }
+
+  function fmtDuration(sec){
+    sec = Math.max(0, Math.round(sec));
+    if(sec < 60) return sec + 's';
+    const m = Math.floor(sec / 60), s = sec % 60;
+    if(m < 60) return m + 'm ' + (s ? s + 's' : '');
+    const h = Math.floor(m / 60), mm = m % 60;
+    return h + 'h ' + (mm ? mm + 'm' : '');
+  }
+
+  function refreshExportNotif(){
+    updateNotifBadge();
+    if($('notifBackdrop') && $('notifBackdrop').style.display === 'flex') renderNotifPanel();
   }
 
   function enrichNotifHtml(){
@@ -8021,11 +8147,59 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
   });
 
+  // Roll back confirmation — reinforces the data-loss / broken-app warning and
+  // reminds the user to back up their library to a .zip first. The actual switch
+  // (pin + reload) only fires from here, so nobody rolls back by accident.
+  let pendingRollback = null;
+  function showRollbackConfirm(message, onConfirm){
+    $('rollbackConfirmBody').innerHTML = message;
+    pendingRollback = onConfirm;
+    $('rollbackConfirmBackdrop').style.display = 'flex';
+  }
+  $('rollbackConfirmCancel').addEventListener('click', () => {
+    $('rollbackConfirmBackdrop').style.display = 'none';
+    pendingRollback = null;
+  });
+  $('rollbackConfirmOk').addEventListener('click', () => {
+    $('rollbackConfirmBackdrop').style.display = 'none';
+    if(pendingRollback) pendingRollback();
+    pendingRollback = null;
+  });
+  $('rollbackConfirmBackdrop').addEventListener('click', e => {
+    if(e.target === $('rollbackConfirmBackdrop')){
+      $('rollbackConfirmBackdrop').style.display = 'none';
+      pendingRollback = null;
+    }
+  });
+
   async function exportPlaylist(){
     const ids = playlists[activePlaylist] || [];
     if(!ids.length){ toast('Nothing to export yet.'); return; }
     showExportConfirm(`Export "${activePlaylist}" (${ids.length} song${ids.length>1?'s':''}) as a .zip file?`, async () => {
-      await doExportTracks(ids, activePlaylist.replace(/[^a-z0-9]/gi,'_'), { [activePlaylist]: ids });
+      await doExportTracks(ids, activePlaylist.replace(/[^a-z0-9]/gi,'_'), { [activePlaylist]: ids }, `"${activePlaylist}"`);
+    });
+  }
+
+  // Read a Blob/File into an ArrayBuffer in a way that never throws on webviews
+  // missing Blob.prototype.arrayBuffer — falls back to FileReader. This is the fix
+  // for "export zip array buffer fails": JSZip's own blob-to-arraybuffer path can
+  // hit a non-function .arrayBuffer on stale IndexedDB-resurrected Blobs in some
+  // Android webviews and abort the whole export. We feed it ready ArrayBuffers.
+  function blobToArrayBuffer(blob){
+    return new Promise((resolve, reject) => {
+      if(blob && typeof blob.arrayBuffer === 'function'){
+        blob.arrayBuffer().then(resolve, () => fallback());
+      } else {
+        fallback();
+      }
+      function fallback(){
+        try{
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.onerror = () => reject(fr.error || new Error('Could not read file'));
+          fr.readAsArrayBuffer(blob);
+        }catch(e){ reject(e); }
+      }
     });
   }
 
@@ -8034,61 +8208,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // select mode). manifestPlaylists, if given, is included so importing the
   // zip elsewhere restores that playlist grouping too; omit it for a plain
   // bundle of tracks with no playlist association (e.g. an ad-hoc selection).
-  async function doExportTracks(ids, filenameBase, manifestPlaylists){
+  async function doExportTracks(ids, filenameBase, manifestPlaylists, kindLabel){
     if(!ids.length){ toast('Nothing to export yet.'); return; }
     if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
-    toast('Zipping songs…', 4000);
-    try{
-      const zip = new JSZip();
-      const manifest = { playlists: manifestPlaylists || {}, tracks: [], version: 2 };
-      let missing = 0;
-      ids.forEach(id => {
-        const t = allTracks.find(tr => tr.id === id);
-        if(!t){ missing++; return; }
-        const fname = (t.file && t.file.name) || t.name || 'track';
-        const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
-        const zipPath = `audio/${t.id}${ext}`;
-        zip.file(zipPath, t.file);
-        // Export full track metadata including cover art
-        manifest.tracks.push({ 
-          id: t.id, 
-          name: t.name, 
-          artist: t.artist, 
-          duration: t.duration, 
-          bpm: t.bpm, 
-          genre: t.genre, 
-          gain: t.gain,
-          lyrics: t.lyrics,
-          lyricsSynced: t.lyricsSynced,
-          notes: t.notes,
-          vibe: t.vibe,
-          playCount: t.playCount,
-          path: zipPath,
-          hasCover: !!t.artBlob
-        });
-        // Export cover art as separate file
-        if(t.artBlob){
-          zip.file(`covers/${t.id}.jpg`, t.artBlob);
-        }
-      });
-      zip.file('manifest.json', JSON.stringify(manifest));
-      const blob = await zip.generateAsync({ type: 'blob' });
-      // Anchor must live in the DOM for the click to actually fire a download —
-      // a detached element's .click() is silently ignored by most mobile webviews
-      // (and the APK shell), which is why export "did nothing" before.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filenameBase + '.zip';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast(missing ? `Exported (${missing} track${missing>1?'s':''} skipped — file missing)` : 'Exported — import this .zip on another device to restore it');
-    }catch(e){
-      console.error(e);
-      toast('Export failed: ' + (e.message || 'see console for details'));
-    }
+    const tracks = ids.map(id => allTracks.find(tr => tr.id === id)).filter(Boolean);
+    if(!tracks.length){ toast('Nothing to export yet.'); return; }
+    await runZipExport({
+      kindLabel: kindLabel || 'selection',
+      tracks,
+      manifest: { playlists: manifestPlaylists || {}, tracks: [], version: 2 },
+      filename: filenameBase + '.zip',
+      toastOk: 'Exported — import this .zip on another device to restore it',
+    });
   }
 
   function exportSelected(){
@@ -8097,8 +8228,114 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const isAllSongsCtx = activePlaylist === 'All Songs' || activePlaylist === UNSORTED_VIEW;
     const manifestPlaylists = isAllSongsCtx ? undefined : { [activePlaylist]: ids };
     showExportConfirm(`Export ${ids.length} selected song${ids.length>1?'s':''} as a .zip file?`, async () => {
-      await doExportTracks(ids, `sidecut-selection-${ids.length}`, manifestPlaylists);
+      await doExportTracks(ids, `sidecut-selection-${ids.length}`, manifestPlaylists, 'selection');
     });
+  }
+
+  // Core export runner shared by library + playlist/selection exports. Reads each
+  // audio file + cover into an ArrayBuffer up front (robust against webviews whose
+  // Blob.arrayBuffer() is missing/broken), reports live progress + ETA to the
+  // notification bell, and streams the zip compression with an onUpdate percent.
+  // Runs entirely async — playback is never interrupted, so you can keep listening.
+  async function runZipExport(opts){
+    const { tracks, manifest, filename, kindLabel } = opts;
+    if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
+    const btn = $('exportLibBtn');
+    exportState = { active:true, phase:'reading', kind: kindLabel || 'library',
+      total: tracks.length, done:0, bytesDone:0, totalBytes:0, compressPct:0,
+      startedAt: Date.now(), compressStartedAt:0, finishedAt:0, seen:false, lastErr:'' };
+    // Pre-count total bytes for the ETA/progress, then surface the bell badge.
+    tracks.forEach(t => {
+      if(t.file) exportState.totalBytes += t.file.size || 0;
+      if(t.artBlob) exportState.totalBytes += t.artBlob.size || 0;
+    });
+    refreshExportNotif();
+    toast('Exporting — keep playing music! See progress in the bell 🔔', 4000);
+    if(btn){ btn.disabled = true; btn.textContent = 'Zipping…'; }
+    try{
+      const zip = new JSZip();
+      let missing = 0;
+      for(let i=0; i<tracks.length; i++){
+        const t = tracks[i];
+        if(!t){ missing++; exportState.done++; refreshExportNotif(); continue; }
+        const fname = (t.file && t.file.name) || t.name || 'track';
+        const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
+        const zipPath = `audio/${t.id}${ext}`;
+        if(t.file){
+          // Read here, not inside JSZip, so a broken Blob.arrayBuffer on the
+          // device never aborts the whole export.
+          const buf = await blobToArrayBuffer(t.file);
+          zip.file(zipPath, buf);
+          exportState.bytesDone += (t.file.size || buf.byteLength || 0);
+        } else {
+          missing++;
+        }
+        manifest.tracks.push({
+          id: t.id, name: t.name, artist: t.artist, duration: t.duration,
+          bpm: t.bpm, genre: t.genre, gain: t.gain, lyrics: t.lyrics,
+          lyricsSynced: t.lyricsSynced, notes: t.notes, vibe: t.vibe,
+          playCount: t.playCount, path: t.file ? zipPath : null, hasCover: !!t.artBlob
+        });
+        if(t.artBlob){
+          const coverBuf = await blobToArrayBuffer(t.artBlob);
+          zip.file(`covers/${t.id}.jpg`, coverBuf);
+          exportState.bytesDone += (t.artBlob.size || coverBuf.byteLength || 0);
+        }
+        exportState.done++;
+        refreshExportNotif();
+      }
+      // Optional settings/stats (library export only) injected by the caller.
+      if(opts.attachManifestExtras) await opts.attachManifestExtras(manifest);
+      zip.file('manifest.json', JSON.stringify(manifest));
+
+      exportState.phase = 'compressing';
+      exportState.compressStartedAt = Date.now();
+      exportState.compressPct = 0;
+      refreshExportNotif();
+      const blob = await zip.generateAsync({ type: 'blob' }, (meta) => {
+        if(meta && typeof meta.percent === 'number'){
+          exportState.compressPct = Math.min(99, Math.round(meta.percent));
+          // Throttle notif refresh to avoid hammering the DOM on big libraries.
+          if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
+            exportState._lastCompressTick = Date.now();
+            refreshExportNotif();
+          }
+        }
+      });
+      exportState.compressPct = 100;
+
+      // Anchor must live in the DOM for the click to actually fire a download —
+      // a detached element's .click() is silently ignored by most mobile webviews
+      // (and the APK shell), which is why export "did nothing" before.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      exportState.active = false;
+      exportState.phase = 'done';
+      exportState.finishedAt = Date.now();
+      exportState.seen = false;
+      const okMsg = opts.toastOk
+        ? (missing ? `Exported (${missing} track${missing>1?'s':''} skipped — file missing)` : opts.toastOk)
+        : 'Exported';
+      toast(okMsg);
+      refreshExportNotif();
+    }catch(e){
+      console.error('Export failed', e);
+      exportState.active = false;
+      exportState.phase = 'error';
+      exportState.finishedAt = Date.now();
+      exportState.lastErr = (e && e.message) ? e.message : String(e);
+      exportState.seen = false;
+      toast('Export failed: ' + (exportState.lastErr || 'see console for details'));
+      refreshExportNotif();
+    }finally{
+      if(btn){ btn.disabled = false; btn.textContent = 'Export library'; }
+    }
   }
 
   // Full library export/import — bundles actual audio + playlists into one
@@ -8110,124 +8347,73 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
     showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
-      const btn = $('exportLibBtn');
-      if(btn){ btn.disabled = true; btn.textContent = 'Zipping…'; }
-      try{
-        const zip = new JSZip();
-        const manifest = { playlists, tracks: [], settings: {}, stats: {}, version: 2 };
-        
-        // Export tracks with full metadata
-        allTracks.forEach(t => {
-          const fname = (t.file && t.file.name) || t.name || 'track';
-          const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
-          const zipPath = `audio/${t.id}${ext}`;
-          if(t.file) zip.file(zipPath, t.file);
-          // Export full track metadata
-          manifest.tracks.push({ 
-            id: t.id, 
-            name: t.name, 
-            artist: t.artist, 
-            duration: t.duration, 
-            bpm: t.bpm, 
-            genre: t.genre,
-            gain: t.gain,
-            lyrics: t.lyrics,
-            lyricsSynced: t.lyricsSynced,
-            notes: t.notes,
-            vibe: t.vibe,
-            playCount: t.playCount,
-            path: t.file ? zipPath : null,
-            hasCover: !!t.artBlob
-          });
-          // Export cover art as separate file
-          if(t.artBlob){
-            zip.file(`covers/${t.id}.jpg`, t.artBlob);
+      await runZipExport({
+        kindLabel: 'library',
+        tracks: allTracks.slice(),
+        manifest: { playlists, tracks: [], settings: {}, stats: {}, version: 2 },
+        filename: 'sidecut-library.zip',
+        toastOk: 'Library exported — keep this .zip somewhere safe',
+        attachManifestExtras: async (manifest) => {
+          manifest.settings = {
+            // Playback settings
+            crossfadeSeconds: crossfadeSeconds,
+            eq: globalEQ,
+            gaplessMode: gaplessMode,
+            perPlaylistSortEnabled: perPlaylistSortEnabled,
+            perPlaylistSort: perPlaylistSort,
+            playbackSpeed: playbackSpeed,
+            autoVolumeEnabled: autoVolumeEnabled,
+            seekStyle: seekStyle,
+            liquidGlassEnabled: document.body.classList.contains('liquid-glass-on'),
+
+            // Display settings
+            themeMode: document.body.className,
+            customTheme: customTheme,
+            sandboxCompactRows: sandboxCompactRows,
+            sandboxHideArt: sandboxHideArt,
+            sandboxDurOnTabs: sandboxDurOnTabs,
+            sandboxLargeTouch: sandboxLargeTouch,
+            sandboxShowPlayCount: sandboxShowPlayCount,
+            sandboxCompactNowbar: sandboxCompactNowbar,
+            sandboxAlwaysSearch: sandboxAlwaysSearch,
+            sandboxNowbarSize: sandboxNowbarSize,
+
+            // Visual effects
+            rgbSpeedSec: rgbSpeedSec,
+            edgeGlowBaseLen: edgeGlowBaseLen,
+            glowColor: $('glowColorHex')?.value,
+            glowStyle: $('glowStyleSelect')?.value,
+
+            // Watermark patterns
+            watermarkEnabled: watermarkEnabled,
+            watermarkPatterns: watermarkPatterns,
+
+            // UI positions
+            activePlaylist: activePlaylist,
+          };
+          // Export turntable angle if available
+          if(window.getTurntableAngle){
+            manifest.settings.turntableAngle = window.getTurntableAngle();
           }
-        });
-        
-        // Export ALL settings comprehensively
-        manifest.settings = {
-          // Playback settings
-          crossfadeSeconds: crossfadeSeconds,
-          eq: globalEQ,
-          gaplessMode: gaplessMode,
-          perPlaylistSortEnabled: perPlaylistSortEnabled,
-          perPlaylistSort: perPlaylistSort,
-          playbackSpeed: playbackSpeed,
-          autoVolumeEnabled: autoVolumeEnabled,
-          seekStyle: seekStyle,
-          liquidGlassEnabled: document.body.classList.contains('liquid-glass-on'),
-          
-          // Display settings
-          themeMode: document.body.className,
-          customTheme: customTheme,
-          sandboxCompactRows: sandboxCompactRows,
-          sandboxHideArt: sandboxHideArt,
-          sandboxDurOnTabs: sandboxDurOnTabs,
-          sandboxLargeTouch: sandboxLargeTouch,
-          sandboxShowPlayCount: sandboxShowPlayCount,
-          sandboxCompactNowbar: sandboxCompactNowbar,
-          sandboxAlwaysSearch: sandboxAlwaysSearch,
-          sandboxNowbarSize: sandboxNowbarSize,
-          
-          // Visual effects
-          rgbSpeedSec: rgbSpeedSec,
-          edgeGlowBaseLen: edgeGlowBaseLen,
-          glowColor: $('glowColorHex')?.value,
-          glowStyle: $('glowStyleSelect')?.value,
-          
-          // Watermark patterns
-          watermarkEnabled: watermarkEnabled,
-          watermarkPatterns: watermarkPatterns,
-          
-          // UI positions
-          activePlaylist: activePlaylist,
-        };
-        
-        // Export turntable angle if available
-        if(window.getTurntableAngle){
-          manifest.settings.turntableAngle = window.getTurntableAngle();
-        }
-        
-        // Export tab order
-        manifest.settings.tabOrder = Object.keys(playlists);
-        
-        // Export listening stats and more
-        try{
-          const stats = await dbGet('meta', 'stats');
-          if(stats) manifest.stats = stats.value;
-          const streak = await dbGet('meta', 'streak');
-          if(streak) manifest.stats.streak = streak.value;
-          const listenHistory = await dbGet('meta', 'listenHistory');
-          if(listenHistory) manifest.stats.listenHistory = listenHistory.value;
-          const artistStats = await dbGet('meta', 'artistStats');
-          if(artistStats) manifest.stats.artistStats = artistStats.value;
-          const listenedDates = await dbGet('meta', 'listenedDates');
-          if(listenedDates) manifest.stats.listenedDates = listenedDates.value;
-          const longestStreak = await dbGet('meta', 'longestStreak');
-          if(longestStreak) manifest.stats.longestStreak = longestStreak.value;
-        }catch(e){ console.log('Could not export stats:', e); }
-        
-        zip.file('manifest.json', JSON.stringify(manifest));
-        const blob = await zip.generateAsync({ type: 'blob' });
-        // Anchor must live in the DOM for the click to actually fire a download —
-        // a detached element's .click() is silently ignored by most mobile webviews
-        // (and the APK shell), which is why export "did nothing" before.
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'sidecut-library.zip';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        toast('Library exported — keep this .zip somewhere safe');
-      }catch(e){
-        console.error(e);
-        toast('Export failed: ' + (e.message || 'see console for details'));
-      }finally{
-        if(btn){ btn.disabled = false; btn.textContent = 'Export library'; }
-      }
+          // Export tab order
+          manifest.settings.tabOrder = Object.keys(playlists);
+          // Export listening stats and more
+          try{
+            const stats = await dbGet('meta', 'stats');
+            if(stats) manifest.stats = stats.value;
+            const streak = await dbGet('meta', 'streak');
+            if(streak) manifest.stats.streak = streak.value;
+            const listenHistory = await dbGet('meta', 'listenHistory');
+            if(listenHistory) manifest.stats.listenHistory = listenHistory.value;
+            const artistStats = await dbGet('meta', 'artistStats');
+            if(artistStats) manifest.stats.artistStats = artistStats.value;
+            const listenedDates = await dbGet('meta', 'listenedDates');
+            if(listenedDates) manifest.stats.listenedDates = listenedDates.value;
+            const longestStreak = await dbGet('meta', 'longestStreak');
+            if(longestStreak) manifest.stats.longestStreak = longestStreak.value;
+          }catch(e){ console.log('Could not export stats:', e); }
+        },
+      });
     });
   }
 
