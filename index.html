@@ -1791,7 +1791,7 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="viewUpdateLogBtn" style="text-align:center; width:100%;">Update log</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v43</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v43.5</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -3889,7 +3889,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let lyricsAutoScroll = true;
   let lyricsFontSize = 16;
   let lyricsScrollInterval = null;
-  
+
+  // When the current song changes (next/prev/crossfade/gapless/auto-advance), an
+  // already-open lyrics panel has to follow it — otherwise the mini now-bar
+  // (title/artist) and the lyric text stay stuck on the previous track. Every
+  // song-switch path funnels through updateNowPlayingUI, which calls this.
+  function refreshLyricsIfOpen(track){
+    const backdrop = $('lyricsBackdrop');
+    if(!backdrop || backdrop.style.display !== 'flex') return;
+    if(!track || lyricsCurrentTrack === track.id) return;
+    fetchLyrics(track);
+  }
+
   async function fetchLyrics(track) {
     const title = track.name || '';
     const artist = track.artist || 'Unknown';
@@ -4734,7 +4745,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '43';
+  const APP_VERSION = '43.5';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -4747,6 +4758,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '43.5', date: 'August 14, 2026 at 10:40 pm UTC', title: 'Lyrics & lock screen follow the song again', items: [
+      'When the song changed — next/prev, crossfade, gapless, or auto-advance — an already-open lyrics panel stayed stuck on the previous track: the lyric text and the little title/artist bar at the top of the lyrics view never switched over. The panel now refreshes to the new song the moment it changes, instead of only updating when you reopened it or tapped the in-panel skip buttons',
+      'The lock screen and media notification could keep showing the previous song\'s title, artist, and artwork after a track change — the metadata was set a touch too early, before Android\'s notification refreshed itself off the playing audio. It\'s now re-asserted exactly when the new track actually starts, so the lock screen matches what\'s playing',
+    ]},
     { version: '43', date: 'August 12, 2026 at 11:53 am EDT', title: 'Export overhaul, scrubber fix, rollback warning & cleanup', items: [
       'Exporting a .zip is fixed — it was failing with an arraybuffer error on some devices because JSZip was trying to read IndexedDB-resurrected Blobs whose .arrayBuffer() was missing/broken in the webview. Each audio file and cover is now read into an ArrayBuffer up front (with a FileReader fallback), so the zip builds reliably every time',
       'Export now shows live progress in the notification bell: a progress bar plus an estimated time remaining, with separate phases for bundling songs and compressing the .zip. It also tells you up front that you can keep playing music in SideCut while the export runs in the background',
@@ -8766,6 +8781,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     highlightPlaying(t.id);
     updateNowPlayingArt(t);
     updateMediaSession(t);
+    refreshLyricsIfOpen(t);
     loadWaveformFor(t);
     recordPlay(t);
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();
@@ -9014,6 +9030,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('npPlayerBody').classList.add('playing');
     $('playIcon').innerHTML = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
     if('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    // Re-assert lock-screen / notification metadata the moment the new track
+    // actually starts. Setting it in updateNowPlayingUI (right after swapping the
+    // src) is sometimes too early for Android's media notification, which refreshes
+    // its title/artist/artwork off the <audio> element when playback begins — so it
+    // could keep showing the previous song's names on the lock screen. Re-setting
+    // MediaMetadata here, against the track that's genuinely playing now, forces a
+    // refresh exactly when the OS is paying attention.
+    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(cur) updateMediaSession(cur);
     if(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus) startGlowSync();
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();
     startMediaSessionHeartbeat();
