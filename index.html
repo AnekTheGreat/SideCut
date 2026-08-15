@@ -1174,7 +1174,7 @@ body.sandbox-always-search #searchInput {
 .discover-card{
   display:flex; align-items:center; gap:12px; padding:10px; border-radius:12px;
   background:var(--bg-raised); border:1px solid var(--line); transition: border-color 0.2s ease;
-  flex-wrap:nowrap;
+  flex-wrap:wrap;
 }
 .discover-card:hover{ border-color:var(--coral); }
 .discover-art{ width:52px; height:52px; border-radius:8px; background:var(--bg); background-size:cover; background-position:center; flex-shrink:0; }
@@ -1195,6 +1195,12 @@ body.sandbox-always-search #searchInput {
   white-space:nowrap; touch-action:manipulation; transition: background 0.2s ease, color 0.2s ease;
 }
 .discover-dl-btn:active{ background:var(--coral); color:#161616; }
+.discover-dl-hint{
+  width:100%; margin-top:8px; padding:9px 11px; border-radius:9px;
+  font-size:11.5px; line-height:1.55; color:var(--ink-dim);
+  background:rgba(255,255,255,0.03); border:1px solid var(--line);
+}
+.discover-dl-hint b{ color:var(--coral); }
 #discoverPreviewAudio{ display:none; }
 /* On narrow screens, stack the action buttons under the meta so nothing overlaps. */
 @media (max-width: 380px){
@@ -1309,8 +1315,8 @@ body.sandbox-always-search #searchInput {
 
 <div class="action-strip" id="actionStrip">
   <button id="homeBtn" class="action-pill primary">Home</button>
-  <button id="discoverBtn" class="action-pill">Discover</button>
   <button id="libraryBtn" class="action-pill">Playlists</button>
+  <button id="discoverBtn" class="action-pill">Discover</button>
   <div id="addSongsWrap" class="add-songs-wrap">
     <button id="addSongsToggle" class="action-pill">+ Add songs ▾</button>
     <div id="addSongsMenu" class="add-songs-menu">
@@ -12350,12 +12356,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const dlBtn = document.createElement('button');
     dlBtn.className = 'discover-dl-btn';
     dlBtn.textContent = 'Get song';
-    dlBtn.title = 'Open this song in Spotify — copy its link, then paste into SpotiCatch';
+    dlBtn.title = 'Open this song in Spotify + SpotiCatch to download it';
     dlBtn.addEventListener('click', () => {
       const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent((r.trackName || '') + ' ' + (r.artistName || ''))}`;
-      toast('Opening the song in Spotify — copy its link, then come back and open SpotiCatch.', 5000);
-      // Open the song in Spotify first so the user lands on it and can copy its link.
+      // Open both synchronously inside the user gesture so neither popup is blocked.
       try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){}
+      try{ window.open(SPOTICATCH_URL, '_blank', 'noopener'); }catch(e){}
+      // Show the next-step instructions inline under the button, not as a toast.
+      let hint = card.querySelector('.discover-dl-hint');
+      if(!hint){
+        hint = document.createElement('div');
+        hint.className = 'discover-dl-hint';
+        card.appendChild(hint);
+      }
+      hint.innerHTML = `<b>1.</b> In the Spotify tab, copy this song's link (Share → Copy link).<br><b>2.</b> In the SpotiCatch tab, paste it and hit Convert & download.<br><b>3.</b> Come back here, tap <b>+ Add songs ▾ → + Files</b> to import the MP3.`;
     });
     actions.appendChild(dlBtn);
 
