@@ -78,9 +78,9 @@
   .action-pill:active{ transform: scale(0.95); }
   .action-pill{ transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1), background 0.2s ease; }
   .action-pill.primary{ background: var(--coral); color:#161616; border-color:var(--coral); }
-  /* Discover pill lights up (solid accent) while the Discover view is open, so it's
-     clear which view you're in — same affordance as a selected tab. */
-  #discoverBtn.active{ background: var(--coral); color:#161616; border-color:var(--coral); }
+  /* The active nav pill lights up (solid accent) so it's clear which view you're in —
+     same affordance as a selected tab. Home/Playlists/Discover all use it. */
+  #discoverBtn.active, #libraryBtn.active, #homeBtn.active{ background: var(--coral); color:#161616; border-color:var(--coral); }
 
   /* ---------- Empty state ---------- */
   #emptyState{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center; }
@@ -1173,9 +1173,10 @@ body.sandbox-always-search #searchInput {
 #discoverResults{ display:flex; flex-direction:column; gap:8px; }
 .discover-card{
   display:flex; align-items:center; gap:12px; padding:10px; border-radius:12px;
-  background:var(--bg-raised); border:1px solid var(--line); transition: border-color 0.2s ease;
-  flex-wrap:wrap;
+  background:var(--bg-raised); border:1px solid var(--line); transition: border-color 0.2s ease, transform 0.15s ease;
+  flex-wrap:wrap; cursor:pointer;
 }
+.discover-card:active{ transform: scale(0.985); }
 .discover-card:hover{ border-color:var(--coral); }
 .discover-art{ width:52px; height:52px; border-radius:8px; background:var(--bg); background-size:cover; background-position:center; flex-shrink:0; }
 .discover-meta{ flex:1; min-width:0; }
@@ -1359,7 +1360,7 @@ body.sandbox-always-search #searchInput {
 
 
 <div class="action-strip" id="actionStrip">
-  <button id="homeBtn" class="action-pill primary">Home</button>
+  <button id="homeBtn" class="action-pill">Home</button>
   <button id="libraryBtn" class="action-pill">Playlists</button>
   <button id="discoverBtn" class="action-pill">Discover</button>
   <div id="addSongsWrap" class="add-songs-wrap">
@@ -5300,14 +5301,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '44.5', date: 'August 15, 2026 at 7:53 pm EDT', title: 'Home bubble dashboard, Playlists button, cleaner Discover + Add songs menu', items: [
-      'New Home page (tap Home in the top strip) is now an immersive bubble dashboard. Each stat is a tappable bubble — time listened, songs played, library size, day streak, recently played, top artists, playlists, and quick actions. Tap any bubble and it expands into a full spring-in panel over a blurred backdrop with the details inside',
-      'Home greeting changes by time of day (Good morning / afternoon / evening / Late night listening). The Recently played bubble expands to your last 12 tracks, each tappable to play instantly. The Top artists bubble ranks your most-played artists',
+    { version: '44.5', date: 'August 15, 2026 at 5:42 pm EDT', title: 'Home bubble dashboard, Playlists button, cleaner Discover + Add songs menu', items: [
+      'New Home page (tap Home in the top strip) is now an immersive bubble dashboard. Each feature is a tappable bubble — listening stats, library, now playing, recently played, most played, top artists, favorites, playlists, and quick actions. Tap any bubble and it expands into a full spring-in panel over a blurred backdrop with the details inside',
+      'Home greeting changes by time of day (Good morning / afternoon / evening / Late night listening). Listening stats are now a single combined bubble that opens a panel with time listened, songs played, library size, day streak, and average per active day',
+      'New bubbles on Home: Now playing (jump to the current track), Most played (your top 12 by play count), and Favorites (your ❤ tracks, with a button to open the Favorites playlist)',
       'Removed the "Not played in a while" section — it wasn\'t populating reliably, so it\'s gone from Home',
       'The old library view is now behind a Playlists button in the top strip, and a new Home button sits first. You no longer tap Discover again to get back — just hit Home',
+      'Tapping the Playlists button now opens your most recently played playlist instead of always landing on All Songs — so you drop back into whatever you were just listening to',
+      'Playlists button now highlights (lights up coral) when active, the same way Discover does — so it\'s always clear which view you\'re in',
       'Top strip reordered: Home, Playlists, Discover come first, then an Add songs ▾ collapsible menu that holds Add folder, + Files, Import library, and Export library',
       'Fixed the Add songs ▾ dropdown showing nothing — the action strip\'s horizontal scroll was clipping the menu. It now opens correctly as a dropdown over the page',
       'Discover genre chips (Top hits, Pop, Hip-hop, etc.) now wrap instead of being cut off in a single row — you no longer have to scroll sideways to see a category name',
+      'Tapping anywhere on a Discover song card now triggers the download flow and shows the inline instructions popup — you don\'t have to hit the Get song button specifically. The "Get song" button still works too',
       'Discover download flow is clearer: the "Get song" button now opens both Spotify and SpotiCatch in the same tap (SpotiCatch had stopped opening entirely). Step-by-step instructions appear inline under the tapped card instead of as a toast — copy the link in Spotify, paste it in SpotiCatch, convert, then import the MP3 back here',
       'Track play now records a last-played timestamp (synced via library export/import) so Home\'s Recently played list is accurate. Adding files or importing a library now drops you on the library view automatically',
       'Discover cards no longer overlap the fixed now-playing bar (extra bottom padding) and the search input shrinks cleanly on narrow screens',
@@ -12197,7 +12202,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   $('homeBtn').addEventListener('click', () => navigate('home'));
-  $('libraryBtn').addEventListener('click', () => navigate('library'));
+  $('libraryBtn').addEventListener('click', () => {
+    // Land on the most recently played playlist if we have one, otherwise All Songs.
+    const recent = lastPlaybackState && lastPlaybackState.sourcePlaylist && playlists[lastPlaybackState.sourcePlaylist]
+      ? lastPlaybackState.sourcePlaylist : 'All Songs';
+    activePlaylist = recent;
+    navigate('library');
+    renderTabs();
+    renderList();
+  });
   $('discoverBtn').addEventListener('click', () => {
     // Discover is a premium feature. If not unlocked, send the user to the Premium
     // tab instead of opening the catalog.
@@ -12273,32 +12286,49 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const topArtists = Object.entries(artistCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
     const topArtistPreview = topArtists.length ? escapeHtml(topArtists[0][0]) : '—';
 
+    // Most played song (preview).
+    const mostPlayed = playedTracks.slice().sort((a,b)=>(b.playCount||0)-(a.playCount||0))[0];
+    const mostPlayedPreview = mostPlayed ? escapeHtml(mostPlayed.name) : '—';
+
+    // Favorites count.
+    const favCount = (playlists['Favorites'] || []).length;
+
+    // Currently playing track.
+    const nowPlaying = allTracks.find(t => t.id === queue[queueIndex]);
+    const nowPlayingPreview = nowPlaying ? escapeHtml(nowPlaying.name) : 'Nothing playing';
+
     bubbles.innerHTML = `
-      <div class="home-bubble" data-bubble="stats">
-        <div class="hb-glow"></div><div class="hb-ico">⏱</div>
-        <div class="hb-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="hb-label">Time listened</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble" data-bubble="stats">
-        <div class="hb-glow"></div><div class="hb-ico">▶</div>
-        <div class="hb-value">${totalPlays}</div><div class="hb-label">Songs played</div><div class="hb-hint">⤢</div>
+      <div class="home-bubble wide" data-bubble="stats">
+        <div class="hb-glow"></div><div class="hb-ico">📊</div>
+        <div class="hb-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="hb-label">Listening stats — ${totalPlays} plays · 🔥 ${streak}d streak</div><div class="hb-hint">⤢</div>
       </div>
       <div class="home-bubble gold-bubble" data-bubble="library">
         <div class="hb-glow"></div><div class="hb-ico gold">🎵</div>
         <div class="hb-value gold">${totalTracks}</div><div class="hb-label">In your library</div><div class="hb-hint">⤢</div>
       </div>
-      <div class="home-bubble gold-bubble" data-bubble="stats">
-        <div class="hb-glow"></div><div class="hb-ico gold">🔥</div>
-        <div class="hb-value gold">${streak}</div><div class="hb-label">Day streak${streak===1?'':'s'}</div><div class="hb-hint">⤢</div>
+      <div class="home-bubble" data-bubble="nowplaying">
+        <div class="hb-glow"></div><div class="hb-ico">▶</div>
+        <div class="hb-value" style="font-size:14px;">Now playing</div>
+        <div class="hb-label">${nowPlayingPreview}</div><div class="hb-hint">⤢</div>
       </div>
-      <div class="home-bubble tall" data-bubble="recent">
+      <div class="home-bubble" data-bubble="recent">
         <div class="hb-glow"></div><div class="hb-ico">🕘</div>
-        <div class="hb-value" style="font-size:15px;">Recently played</div>
+        <div class="hb-value" style="font-size:14px;">Recently played</div>
         <div class="hb-label">${recentPreviewText(playedTracks)}</div><div class="hb-hint">⤢</div>
       </div>
-      <div class="home-bubble" data-bubble="artists">
+      <div class="home-bubble tall" data-bubble="topsong">
+        <div class="hb-glow"></div><div class="hb-ico">🏆</div>
+        <div class="hb-value" style="font-size:14px;">Most played</div>
+        <div class="hb-label">${mostPlayedPreview}${mostPlayed ? ' · ' + (mostPlayed.playCount||0) + '×' : ''}</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble tall" data-bubble="artists">
         <div class="hb-glow"></div><div class="hb-ico">🎤</div>
-        <div class="hb-value" style="font-size:15px;">Top artists</div>
+        <div class="hb-value" style="font-size:14px;">Top artists</div>
         <div class="hb-label">${topArtistPreview}</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble" data-bubble="favorites">
+        <div class="hb-glow"></div><div class="hb-ico">❤</div>
+        <div class="hb-value gold">${favCount}</div><div class="hb-label">Favorites</div><div class="hb-hint">⤢</div>
       </div>
       <div class="home-bubble" data-bubble="playlists">
         <div class="hb-glow"></div><div class="hb-ico">📑</div>
@@ -12306,8 +12336,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       </div>
       <div class="home-bubble wide" data-bubble="shortcuts">
         <div class="hb-glow"></div><div class="hb-ico">✨</div>
-        <div class="hb-value" style="font-size:15px;">Quick actions</div>
-        <div class="hb-label">Settings · Discover · Playlists</div><div class="hb-hint">⤢</div>
+        <div class="hb-value" style="font-size:14px;">Quick actions</div>
+        <div class="hb-label">Settings · Discover · Playlists · Add songs</div><div class="hb-hint">⤢</div>
       </div>
     `;
 
@@ -12384,6 +12414,39 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         ? recent.map(t => hbTrackRowHTML(t, timeAgo(t.lastPlayedAt))).join('')
         : `<div class="hb-empty">Nothing played yet — tap a song in Playlists to start.</div>`;
       wireHbTrackRows(body);
+    }
+    else if(kind === 'nowplaying'){
+      ico.textContent = '▶'; title.textContent = 'Now playing';
+      const cur = allTracks.find(t => t.id === queue[queueIndex]);
+      if(!cur){
+        body.innerHTML = `<div class="hb-empty">Nothing is playing right now. Tap a song in Playlists to start.</div>`;
+      } else {
+        body.innerHTML = hbTrackRowHTML(cur, 'playing') + `<button class="hb-cta" id="hbCtaNowPlaying">Jump to now playing</button>`;
+        wireHbTrackRows(body);
+        $('hbCtaNowPlaying').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+      }
+    }
+    else if(kind === 'topsong'){
+      ico.textContent = '🏆'; title.textContent = 'Most played songs';
+      const top = allTracks.filter(t=>(t.playCount||0)>0).slice().sort((a,b)=>(b.playCount||0)-(a.playCount||0)).slice(0, 12);
+      body.innerHTML = top.length
+        ? top.map(t => hbTrackRowHTML(t, (t.playCount||0) + '×')).join('')
+        : `<div class="hb-empty">Play some songs to see your most-played tracks here.</div>`;
+      wireHbTrackRows(body);
+    }
+    else if(kind === 'favorites'){
+      ico.classList.add('gold'); ico.textContent = '❤'; title.textContent = 'Your Favorites';
+      const favIds = playlists['Favorites'] || [];
+      const favTracks = favIds.map(id => allTracks.find(t => t.id === id)).filter(Boolean);
+      body.innerHTML = favTracks.length
+        ? favTracks.map(t => hbTrackRowHTML(t, '❤')).join('') + `<button class="hb-cta" id="hbCtaFav" style="background:transparent; color:var(--gold); border:1px solid var(--gold);">Open Favorites playlist</button>`
+        : `<div class="hb-empty">No favorites yet — tap the heart on a song's menu to add it here.</div><button class="hb-cta" id="hbCtaFav" style="background:transparent; color:var(--gold); border:1px solid var(--gold);">Open Playlists</button>`;
+      wireHbTrackRows(body);
+      $('hbCtaFav').addEventListener('click', () => {
+        closeHomeBubble();
+        activePlaylist = 'Favorites';
+        navigate('library'); renderTabs(); renderList();
+      });
     }
     else if(kind === 'artists'){
       ico.textContent = '🎤'; title.textContent = 'Top artists';
@@ -12520,24 +12583,33 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dlBtn.className = 'discover-dl-btn';
     dlBtn.textContent = 'Get song';
     dlBtn.title = 'Open this song in Spotify + SpotiCatch to download it';
-    dlBtn.addEventListener('click', () => {
-      const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent((r.trackName || '') + ' ' + (r.artistName || ''))}`;
-      // Open both synchronously inside the user gesture so neither popup is blocked.
-      try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){}
-      try{ window.open(SPOTICATCH_URL, '_blank', 'noopener'); }catch(e){}
-      // Show the next-step instructions inline under the button, not as a toast.
-      let hint = card.querySelector('.discover-dl-hint');
-      if(!hint){
-        hint = document.createElement('div');
-        hint.className = 'discover-dl-hint';
-        card.appendChild(hint);
-      }
-      hint.innerHTML = `<b>1.</b> In the Spotify tab, copy this song's link (Share → Copy link).<br><b>2.</b> In the SpotiCatch tab, paste it and hit Convert & download.<br><b>3.</b> Come back here, tap <b>+ Add songs ▾ → + Files</b> to import the MP3.`;
+    dlBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerDiscoverDownload(card, r);
     });
     actions.appendChild(dlBtn);
 
+    // Tapping anywhere on the card (not just the Get song button) starts the
+    // download flow + shows the inline instructions popup.
+    card.addEventListener('click', () => triggerDiscoverDownload(card, r));
+
     card.appendChild(art); card.appendChild(meta); card.appendChild(actions);
     return card;
+  }
+
+  function triggerDiscoverDownload(card, r){
+    const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent((r.trackName || '') + ' ' + (r.artistName || ''))}`;
+    // Open both synchronously inside the user gesture so neither popup is blocked.
+    try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){}
+    try{ window.open(SPOTICATCH_URL, '_blank', 'noopener'); }catch(e){}
+    // Show the next-step instructions inline under the card, not as a toast.
+    let hint = card.querySelector('.discover-dl-hint');
+    if(!hint){
+      hint = document.createElement('div');
+      hint.className = 'discover-dl-hint';
+      card.appendChild(hint);
+    }
+    hint.innerHTML = `<b>1.</b> In the Spotify tab, copy this song's link (Share → Copy link).<br><b>2.</b> In the SpotiCatch tab, paste it and hit Convert & download.<br><b>3.</b> Come back here, tap <b>+ Add songs ▾ → + Files</b> to import the MP3.`;
   }
 
   function toggleDiscoverPreview(url, btn){
