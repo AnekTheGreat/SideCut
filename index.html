@@ -1160,7 +1160,7 @@ body.sandbox-always-search #searchInput {
   border-radius:20px; padding:9px 14px; font-size:13.5px; font-family:var(--font-ui);
 }
 #discoverSearch::placeholder{ color:var(--ink-dim); }
-#discoverChips{ display:flex; gap:8px; padding:0 0 14px; overflow-x:auto; }
+#discoverChips{ display:flex; flex-wrap:wrap; gap:8px; padding:0 0 14px; }
 #discoverChips::-webkit-scrollbar{ display:none; }
 .discover-chip{
   flex-shrink:0; font-size:12px; font-weight:600; padding:8px 14px; border-radius:18px;
@@ -1202,6 +1202,52 @@ body.sandbox-always-search #searchInput {
   .discover-meta{ width:calc(100% - 64px); }
   .discover-actions{ width:100%; justify-content:flex-end; padding-top:2px; }
 }
+
+/* ─────────────── Add-songs collapsible menu ─────────────── */
+.add-songs-wrap{ position:relative; flex-shrink:0; }
+.add-songs-menu{
+  display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:60;
+  min-width:200px; padding:6px; gap:4px; flex-direction:column;
+  background:var(--bg-raised); border:1px solid var(--line); border-radius:14px;
+  box-shadow:0 12px 32px rgba(0,0,0,0.45);
+}
+.add-songs-menu.open{ display:flex; }
+.add-songs-menu .action-pill{ width:100%; justify-content:flex-start; border-radius:10px; }
+.add-songs-backdrop{ display:none; position:fixed; inset:0; z-index:55; background:transparent; }
+.add-songs-backdrop.open{ display:block; }
+
+/* ─────────────── Home page ─────────────── */
+#homeView{ display:none; flex:1; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 20px 170px; }
+#homeView.active{ display:flex; }
+.home-section{ margin-bottom:22px; }
+.home-section-title{ font-size:13px; font-weight:600; color:var(--ink-dim); margin-bottom:10px; letter-spacing:0.3px; text-transform:uppercase; }
+.home-stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.home-stat{
+  background:var(--bg-raised); border:1px solid var(--line); border-radius:12px; padding:14px;
+  display:flex; flex-direction:column; gap:2px;
+}
+.home-stat-value{ font-size:22px; font-weight:700; color:var(--coral); }
+.home-stat-value.gold{ color:var(--gold); }
+.home-stat-label{ font-size:11.5px; color:var(--ink-dim); }
+.home-track-row{
+  display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px;
+  background:var(--bg-raised); border:1px solid var(--line); cursor:pointer; transition:border-color 0.2s ease;
+}
+.home-track-row:hover{ border-color:var(--coral); }
+.home-track-row + .home-track-row{ margin-top:6px; }
+.home-track-art{ width:40px; height:40px; border-radius:8px; background:var(--bg); background-size:cover; background-position:center; flex-shrink:0; }
+.home-track-meta{ flex:1; min-width:0; }
+.home-track-title{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.home-track-sub{ font-size:11px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+.home-track-badge{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--gold); flex-shrink:0; }
+.home-empty{ font-size:12.5px; color:var(--ink-dim); padding:14px; background:var(--bg-raised); border:1px dashed var(--line); border-radius:10px; text-align:center; }
+.home-shortcut-row{ display:flex; gap:8px; flex-wrap:wrap; }
+.home-shortcut{
+  flex:1; min-width:120px; padding:12px; border-radius:12px; border:1px solid var(--line);
+  background:var(--bg-raised); color:var(--ink); font-size:12.5px; font-weight:600; cursor:pointer; text-align:center;
+  transition:border-color 0.2s ease, background 0.2s ease;
+}
+.home-shortcut:hover{ border-color:var(--coral); }
 
 
 </style>
@@ -1262,17 +1308,49 @@ body.sandbox-always-search #searchInput {
 
 
 <div class="action-strip" id="actionStrip">
-  <button id="addFolderBtn" class="action-pill primary">+ Add folder</button>
-  <button id="addBtn" class="action-pill">+ Files</button>
+  <button id="homeBtn" class="action-pill primary">Home</button>
   <button id="discoverBtn" class="action-pill">Discover</button>
-  <button id="exportLibBtn" class="action-pill">Export library</button>
-  <button id="importLibBtn" class="action-pill">Import library</button>
+  <button id="libraryBtn" class="action-pill">Playlists</button>
+  <div id="addSongsWrap" class="add-songs-wrap">
+    <button id="addSongsToggle" class="action-pill">+ Add songs ▾</button>
+    <div id="addSongsMenu" class="add-songs-menu">
+      <button id="addFolderBtn" class="action-pill primary" style="width:100%; justify-content:flex-start;">+ Add folder</button>
+      <button id="addBtn" class="action-pill" style="width:100%; justify-content:flex-start;">+ Files</button>
+      <button id="importLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Import library</button>
+      <button id="exportLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export library</button>
+    </div>
+  </div>
 </div>
+<div id="addSongsBackdrop" class="add-songs-backdrop"></div>
 <input type="file" id="importLibInput" accept=".zip">
 <input type="file" id="importIntoPlaylistInput" accept=".zip">
 <input type="file" id="addFilesToPlaylistInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
 
 <div class="toast" id="toast"></div>
+
+<!-- Home: stats preview, shortcuts, recent + forgotten tracks -->
+<div id="homeView">
+  <div class="home-section">
+    <div class="home-section-title">Your listening</div>
+    <div class="home-stat-grid" id="homeStatGrid"></div>
+  </div>
+  <div class="home-section">
+    <div class="home-section-title">Quick actions</div>
+    <div class="home-shortcut-row">
+      <button class="home-shortcut" id="homeShortcutSettings">⚙ Settings</button>
+      <button class="home-shortcut" id="homeShortcutDiscover">🔎 Discover</button>
+      <button class="home-shortcut" id="homeShortcutPlaylists">🎵 Playlists</button>
+    </div>
+  </div>
+  <div class="home-section">
+    <div class="home-section-title">Recently played</div>
+    <div id="homeRecent"></div>
+  </div>
+  <div class="home-section">
+    <div class="home-section-title">Not played in a while</div>
+    <div id="homeForgotten"></div>
+  </div>
+</div>
 
 <div id="emptyState">
   <div class="disc" id="emptyDisc"></div>
@@ -1314,8 +1392,16 @@ body.sandbox-always-search #searchInput {
   <div id="discoverStatus">Search for any song or tap a category to start browsing.</div>
   <div id="discoverResults"></div>
   <audio id="discoverPreviewAudio" preload="none"></audio>
-  <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-top:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
-    <b>How downloading works:</b> Previews stream from Apple's catalog. To get the full MP3, tap <b>Download</b> on a song — it opens <b>Spotisaver</b> (and the song's Spotify search so you can grab its link). Paste that link into Spotisaver to save the file, then use <b>+ Files</b> above to import it into your library.
+  <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-top:16px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
+    <b style="color:var(--coral);">How to download a song</b><br>
+    1. Tap <b>Get song</b> on any track — it opens that song in <b>Spotify</b>.<br>
+    2. Copy the song's link (Share → Copy link).<br>
+    3. Come back here and tap <b>Open SpotiCatch</b> below.<br>
+    4. Paste your link into SpotiCatch and download the MP3.<br>
+    5. Use <b>+ Add songs ▾ → + Files</b> above to import it into your library.
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      <a id="spoticatchLink" href="#" target="_blank" rel="noopener" style="display:inline-block; padding:8px 14px; border-radius:10px; background:var(--coral); color:#161616; font-size:12px; font-weight:600; text-decoration:none;">Open SpotiCatch</a>
+    </div>
   </div>
 </div>
 
@@ -3225,10 +3311,9 @@ function getApiHeaders() {
   function clearPremium(){
     localStorage.removeItem(PREMIUM_STORAGE_KEY);
     refreshPremiumUI();
-    // If Discover is open while premium is revoked, close it back to the library.
+    // If Discover is open while premium is revoked, send the user Home.
     if($('discoverView').classList.contains('active')){
-      showDiscover(false);
-      $('discoverBtn').classList.remove('active');
+      navigate('home');
     }
     toast('Premium removed. Discover is locked again.');
   }
@@ -5155,7 +5240,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '44.2';
+  const APP_VERSION = '44.5';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5168,6 +5253,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '44.5', date: 'August 15, 2026 at 7:53 pm EDT', title: 'Home page, Playlists button, cleaner Discover + Add songs menu', items: [
+      'New Home page (tap Home in the top strip) gives you a preview of your listening: time listened, songs played, library size, and day streak — plus quick shortcuts to Settings, Discover, and Playlists',
+      'Home shows your Recently played tracks (with "how long ago") and Not played in a while — songs you haven\'t touched in a long time — each tappable to play instantly. Tap a song on Home and it starts playing right away',
+      'The old library view is now behind a Playlists button in the top strip, and a new Home button sits first. You no longer tap Discover again to get back — just hit Home',
+      'Top strip reordered: Home, Discover, Playlists come first, then an Add songs ▾ collapsible menu that holds Add folder, + Files, Import library, and Export library. The strip is much less crowded now',
+      'Discover genre chips (Top hits, Pop, Hip-hop, etc.) now wrap instead of being cut off in a single row — you no longer have to scroll sideways to see a category name',
+      'Discover download flow is clearer: the button is now "Get song" and opens that song directly in Spotify so you can copy its link. A step-by-step "How to download a song" box explains the flow, with an Open SpotiCatch button to paste the link and download the MP3',
+      'Track play now records a last-played timestamp (synced via library export/import) so Recently played and Not played in a while are accurate. Adding files or importing a library now drops you on the library view automatically',
+      'Discover cards no longer overlap the fixed now-playing bar (extra bottom padding) and the search input shrinks cleanly on narrow screens',
+    ]},
     { version: '44.2', date: 'August 15, 2026 at 4:00 pm EDT', title: 'Discover toggle fix, action-strip wrap, shorter redeem codes', items: [
       'Fixed Discover not returning to your library when toggled off — turning it off now restores your library view exactly where you left it',
       'Action strip buttons (Add folder, Files, Discover, Export, Import) now wrap instead of getting cut off, so every button name is fully visible without scrolling',
@@ -6750,6 +6845,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       duration: t.duration, bpm: t.bpm, genre: t.genre,
       gain: t.gain ?? null, art: t.artBlob || null, vibe: t.vibe || null,
       waveform: t.waveform || null, playCount: t.playCount || 0,
+      lastPlayedAt: t.lastPlayedAt || null,
       notes: t.notes || '',
       lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
       manualOverride: t.manualOverride || false,
@@ -6803,6 +6899,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             waveform: r.waveform || null,
 
             playCount: r.playCount || 0,
+            lastPlayedAt: r.lastPlayedAt || null,
             notes: r.notes || '',
 
             artBlob: r.art || null,
@@ -7387,8 +7484,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(skippedDup) msg += ` · skipped ${skippedDup} duplicate${skippedDup>1?'s':''}`;
       if(skippedType) msg += ` · skipped ${skippedType} non-audio file${skippedType>1?'s':''}`;
       toast(msg);
-      $('emptyState').style.display = 'none';
-      $('library').style.display = 'flex';
+      navigate('library');
       renderTabs();
       renderList();
       // Read durations lazily
@@ -8789,7 +8885,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           id: t.id, name: t.name, artist: t.artist, duration: t.duration,
           bpm: t.bpm, genre: t.genre, gain: t.gain, lyrics: t.lyrics,
           lyricsSynced: t.lyricsSynced, notes: t.notes, vibe: t.vibe,
-          playCount: t.playCount, path: t.file ? zipPath : null, hasCover: !!t.artBlob
+          playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, path: t.file ? zipPath : null, hasCover: !!t.artBlob
         });
         if(t.artBlob){
           const coverBuf = await blobToArrayBuffer(t.artBlob);
@@ -8974,6 +9070,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(m.lyricsSynced !== undefined) existing.lyricsSynced = m.lyricsSynced;
             if(m.notes !== undefined && !existing.notes) existing.notes = m.notes;
             if(m.playCount !== undefined && (existing.playCount === undefined || existing.playCount < m.playCount)) existing.playCount = m.playCount;
+            if(m.lastPlayedAt !== undefined && (existing.lastPlayedAt === undefined || existing.lastPlayedAt < m.lastPlayedAt)) existing.lastPlayedAt = m.lastPlayedAt;
             // Import cover art for existing track
             if(m.hasCover && !existing.artBlob){
               const coverEntry = zip.file(`covers/${m.id}.jpg`);
@@ -9013,6 +9110,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           notes: m.notes || '',
           vibe: m.vibe || null,
           playCount: m.playCount || 0,
+          lastPlayedAt: m.lastPlayedAt || null,
           artBlob: null, 
           artUrl: null 
         };
@@ -9227,7 +9325,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       updateSandboxToggles();
       
       $('emptyState').style.display = 'none';
-      $('library').style.display = 'flex';
+      navigate('library');
       renderTabs();
       renderList();
       toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + all settings' : ''}`);
@@ -9342,10 +9440,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(lastRecordedTrackId === t.id) return; // avoid double-counting the same track (e.g. re-render calls)
     lastRecordedTrackId = t.id;
     t.playCount = (t.playCount || 0) + 1;
+    t.lastPlayedAt = Date.now();
     totalPlays++;
     persistTrackMeta(t);
     dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
     recordListeningDay();
+    // Keep Home recent/forgotten lists fresh if Home is visible.
+    if($('homeView').classList.contains('active')) renderHome();
   }
   setInterval(() => {
     if(activeAudio() && !activeAudio().paused){
@@ -11860,8 +11961,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       await loadSavedTheme();
       const loaded = await loadFromDB();
       if(loaded){
-        $('emptyState').style.display = 'none';
-        $('library').style.display = 'flex';
         // Reopen on whichever playlist the last-playing song came from, not always All Songs
         if(lastPlaybackState && lastPlaybackState.sourcePlaylist && playlists[lastPlaybackState.sourcePlaylist]){
           activePlaylist = lastPlaybackState.sourcePlaylist;
@@ -11877,6 +11976,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // once the library/UI has settled, rather than flashing in instantly
       // alongside other boot toasts and getting dismissed on reflex.
       setTimeout(() => { checkForUpdatePopup(); }, 900);
+
+      // Land on Home by default — the library/emptyState visibility is handled by navigate().
+      navigate(loaded ? 'home' : 'home');
 
       // Auto-fill missing covers/metadata in the background once the library
       // has settled (each song is only ever attempted once).
@@ -11979,14 +12081,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
   }
 
-  // ---------------- Discover: browse the Spotify catalog online, preview, download via Spotisaver ----------------
+  // ---------------- Discover: browse the Spotify catalog online, preview, download via SpotiCatch ----------------
   // SideCut itself has no backend and Spotify's Web API needs OAuth, so browsing is powered
   // by the iTunes Search API (CORS-friendly, no auth — same source already used for cover art
   // and song previews elsewhere in the app). Each result shows artwork, title/artist/album and
-  // a 30-second preview you can play inline. The Download button hands off to Spotisaver, a
-  // Spotify-to-MP3 downloader, where you paste the song's Spotify link to save the MP3 and then
-  // import it with + Files.
-  const SPOTISAVER_URL = 'https://spotisaver.net/en1';
+  // a 30-second preview you can play inline. The "Get song" button opens the song directly in
+  // Spotify so you can copy its link, then come back and paste it into SpotiCatch to download
+  // the MP3 and import it with + Files.
+  const SPOTICATCH_URL = 'https://spoticatch.com/';
+  const SPOTISAVER_URL = SPOTICATCH_URL;
   const DISCOVER_CHIPS = [
     { label: 'Top hits', term: 'top hits 2026' },
     { label: 'Pop', term: 'pop hits' },
@@ -12005,10 +12108,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function showDiscover(on){
     $('discoverView').classList.toggle('active', on);
-    // Library's CSS default is display:none; it's shown elsewhere with display='flex'.
-    // Turning Discover off must restore that flex display, not '' (which would hide it).
-    $('library').style.display = on ? 'none' : 'flex';
-    $('emptyState').style.display = on ? 'none' : $('emptyState').style.display;
     if(on){
       if(!discoverActiveChip && !$('discoverResults').children.length){
         runDiscoverSearch(DISCOVER_CHIPS[0].term, DISCOVER_CHIPS[0].label, 0);
@@ -12017,18 +12116,164 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       stopDiscoverPreview();
     }
   }
+
+  // Unified top-level navigation: only one of Home / Discover / Library is visible at a time.
+  // The active action-strip pill is highlighted to match.
+  function navigate(view){
+    const isHome = view === 'home';
+    const isDiscover = view === 'discover';
+    const isLibrary = view === 'library';
+    // Sections
+    $('homeView').classList.toggle('active', isHome);
+    $('discoverView').classList.toggle('active', isDiscover);
+    // Library + emptyState share visibility (emptyState shows when library is empty).
+    $('library').style.display = isLibrary ? 'flex' : 'none';
+    if(isLibrary){
+      $('emptyState').style.display = allTracks.length ? 'none' : 'flex';
+    } else {
+      $('emptyState').style.display = 'none';
+    }
+    // Pill highlights
+    $('homeBtn').classList.toggle('active', isHome);
+    $('discoverBtn').classList.toggle('active', isDiscover);
+    $('libraryBtn').classList.toggle('active', isLibrary);
+    // Section side effects
+    if(isDiscover && !discoverActiveChip && !$('discoverResults').children.length){
+      runDiscoverSearch(DISCOVER_CHIPS[0].term, DISCOVER_CHIPS[0].label, 0);
+    }
+    if(!isDiscover) stopDiscoverPreview();
+    if(isHome) renderHome();
+    // Close the add-songs menu whenever we navigate.
+    closeAddSongsMenu();
+  }
+
+  $('homeBtn').addEventListener('click', () => navigate('home'));
+  $('libraryBtn').addEventListener('click', () => navigate('library'));
   $('discoverBtn').addEventListener('click', () => {
     // Discover is a premium feature. If not unlocked, send the user to the Premium
     // tab instead of opening the catalog.
-    if(!$('discoverView').classList.contains('active') && !isPremiumActive()){
+    if(!isPremiumActive()){
       toast('Discover is a premium feature — unlock it in Settings.');
       openPremiumSettings();
       return;
     }
-    const turningOn = !$('discoverView').classList.contains('active');
-    showDiscover(turningOn);
-    $('discoverBtn').classList.toggle('active', turningOn);
+    // Toggle: if Discover is already active, go Home; otherwise open Discover.
+    navigate($('discoverView').classList.contains('active') ? 'home' : 'discover');
   });
+
+  // ---- Add-songs collapsible menu ----
+  function openAddSongsMenu(){
+    $('addSongsMenu').classList.add('open');
+    $('addSongsBackdrop').classList.add('open');
+  }
+  function closeAddSongsMenu(){
+    $('addSongsMenu').classList.remove('open');
+    $('addSongsBackdrop').classList.remove('open');
+  }
+  $('addSongsToggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if($('addSongsMenu').classList.contains('open')) closeAddSongsMenu();
+    else openAddSongsMenu();
+  });
+  $('addSongsBackdrop').addEventListener('click', closeAddSongsMenu);
+  // Close the menu after picking an action (the underlying handlers do the work).
+  ['addFolderBtn','addBtn','importLibBtn','exportLibBtn'].forEach(id => {
+    const el = $(id);
+    if(el) el.addEventListener('click', closeAddSongsMenu, { capture: true });
+  });
+
+  // ---- SpotiCatch link in the Discover help box ----
+  const spoticatchLink = $('spoticatchLink');
+  if(spoticatchLink) spoticatchLink.href = SPOTICATCH_URL;
+
+  // ---- Home page rendering ----
+  function timeAgo(ts){
+    if(!ts) return '';
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if(s < 60) return 'just now';
+    if(s < 3600) return Math.floor(s/60) + 'm ago';
+    if(s < 86400) return Math.floor(s/3600) + 'h ago';
+    return Math.floor(s/86400) + 'd ago';
+  }
+  function fmtHomeDuration(totalSec){
+    if(!totalSec || totalSec < 1) return '0m';
+    const h = Math.floor(totalSec/3600), m = Math.floor((totalSec%3600)/60);
+    if(h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+  function renderHome(){
+    const grid = $('homeStatGrid');
+    const recentBox = $('homeRecent');
+    const forgottenBox = $('homeForgotten');
+    if(!grid) return;
+
+    const totalTracks = allTracks.length;
+    const playedTracks = allTracks.filter(t => (t.playCount || 0) > 0);
+    const streak = computeStreak();
+
+    grid.innerHTML = `
+      <div class="home-stat"><div class="home-stat-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="home-stat-label">Time listened</div></div>
+      <div class="home-stat"><div class="home-stat-value">${totalPlays}</div><div class="home-stat-label">Songs played</div></div>
+      <div class="home-stat"><div class="home-stat-value gold">${totalTracks}</div><div class="home-stat-label">In your library</div></div>
+      <div class="home-stat"><div class="home-stat-value gold">🔥 ${streak}</div><div class="home-stat-label">Day streak${streak===1?'':'s'}</div></div>
+    `;
+
+    // Recently played: by lastPlayedAt desc, fallback to playCount.
+    const recent = playedTracks.slice().sort((a,b) => (b.lastPlayedAt||0) - (a.lastPlayedAt||0)).slice(0, 6);
+    if(!recent.length){
+      recentBox.innerHTML = `<div class="home-empty">Nothing played yet — tap a song in Playlists to start.</div>`;
+    } else {
+      recentBox.innerHTML = recent.map(t => homeTrackRowHTML(t, timeAgo(t.lastPlayedAt))).join('');
+    }
+
+    // Not played in a while: played at least once, oldest lastPlayedAt first.
+    const forgotten = playedTracks
+      .filter(t => t.lastPlayedAt)
+      .slice().sort((a,b) => (a.lastPlayedAt||0) - (b.lastPlayedAt||0))
+      .slice(0, 6);
+    if(!forgotten.length){
+      forgottenBox.innerHTML = `<div class="home-empty">No dusty tracks yet — once you've played a few songs, the ones you haven't touched in a while show up here.</div>`;
+    } else {
+      forgottenBox.innerHTML = forgotten.map(t => homeTrackRowHTML(t, timeAgo(t.lastPlayedAt))).join('');
+    }
+
+    // Wire row clicks to play the track.
+    [recentBox, forgottenBox].forEach(box => {
+      box.querySelectorAll('.home-track-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const id = row.dataset.trackId;
+          if(!allTracks.some(t => t.id === id)) return;
+          // Play from the full library, starting at the tapped track.
+          const prevPlaylist = activePlaylist;
+          activePlaylist = 'All Songs';
+          playFromList(allTracks.map(t => t.id), id);
+          activePlaylist = prevPlaylist;
+          navigate('library');
+        });
+      });
+    });
+  }
+  function homeTrackRowHTML(t, when){
+    const art = t.artUrl ? `<div class="home-track-art" style="background-image:url('${t.artUrl}')"></div>` : `<div class="home-track-art"></div>`;
+    return `
+      <div class="home-track-row" data-track-id="${t.id}">
+        ${art}
+        <div class="home-track-meta">
+          <div class="home-track-title">${escapeHtml(t.name)}</div>
+          <div class="home-track-sub">${escapeHtml(t.artist || '')}</div>
+        </div>
+        <div class="home-track-badge">${when}</div>
+      </div>
+    `;
+  }
+
+  // Home quick-action shortcuts.
+  $('homeShortcutSettings').addEventListener('click', () => { renderThemeOptions(); populateStartFromOptions(); showSettingsTab(_settingsFirstOpen ? 'premium' : 'theme'); _settingsFirstOpen = false; $('themeBackdrop').style.display = 'flex'; });
+  $('homeShortcutDiscover').addEventListener('click', () => {
+    if(!isPremiumActive()){ toast('Discover is a premium feature — unlock it in Settings.'); openPremiumSettings(); return; }
+    navigate('discover');
+  });
+  $('homeShortcutPlaylists').addEventListener('click', () => navigate('library'));
 
   function renderDiscoverChips(){
     const wrap = $('discoverChips');
@@ -12104,16 +12349,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
     const dlBtn = document.createElement('button');
     dlBtn.className = 'discover-dl-btn';
-    dlBtn.textContent = 'Download';
-    dlBtn.title = 'Open Spotisaver to download this song';
+    dlBtn.textContent = 'Get song';
+    dlBtn.title = 'Open this song in Spotify — copy its link, then paste into SpotiCatch';
     dlBtn.addEventListener('click', () => {
       const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent((r.trackName || '') + ' ' + (r.artistName || ''))}`;
-      toast('Opening Spotisaver — paste the song\'s Spotify link to download.');
-      // Spotisaver expects a pasted Spotify link. Open it as the primary target (the actual
-      // download happens there), then open the Spotify search in a second tab so the link is
-      // one tap away to copy and paste back into Spotisaver.
-      try{ window.open(SPOTISAVER_URL, '_blank', 'noopener'); }catch(e){}
-      setTimeout(() => { try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){} }, 150);
+      toast('Opening the song in Spotify — copy its link, then come back and open SpotiCatch.', 5000);
+      // Open the song in Spotify first so the user lands on it and can copy its link.
+      try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){}
     });
     actions.appendChild(dlBtn);
 

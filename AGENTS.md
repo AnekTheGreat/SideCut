@@ -13,7 +13,13 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - PAID FEATURES module ~line 3160: `PAYMENT_CONFIG` (checkout/donation links),
   `PREMIUM_PUBKEY_B64`, `isPremiumActive()`, `verifyPremiumCode()`, `initPremiumTab()`,
   `initDonateTab()`, `openPremiumSettings()`. All inside the main IIFE (2599→12131).
-- Discover: `showDiscover(on)` ~line 11720, `discoverBtn` click handler ~11985 (gated on premium).
+- Top-level navigation (v44.5): `navigate(view)` ~line 12113 switches between
+  Home / Discover / Library (`#homeView`, `#discoverView`, `#library`). Only one is visible;
+  `#emptyState` shows when library is empty. Landing view on boot is Home. The action strip
+  is: Home, Discover, Playlists, then an `+ Add songs ▾` collapsible menu (`#addSongsMenu`)
+  holding Add folder / + Files / Import / Export. `showDiscover(on)` now only toggles the
+  discover view's active class — use `navigate()` for full view switching.
+- Discover: `showDiscover(on)` ~line 12100, `discoverBtn` click handler ~12143 (gated on premium).
 - `toast(msg, ms)` helper ~line 2552.
 
 ## Premium / dev code system (v44.1; codes shortened in v44.2)
@@ -31,10 +37,15 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   and update it in index.html AND dev/premium-private-key.pem together.
 
 ## Gotchas / past bugs
-- `#library` CSS default is `display:none`; it's shown elsewhere via `display='flex'`.
-  So toggling Discover off must restore `'flex'`, NOT `''` (which hides it). Done in v44.2.
-- `.action-strip` needs `flex-wrap:wrap` so action-pill names aren't clipped (pills are
-  `flex-shrink:0; white-space:nowrap`). Done in v44.2.
+- `#library` CSS default is `display:none`; visibility is driven by `navigate('library')`,
+  which sets `display:flex` and shows `#emptyState` when empty. Don't set library display
+  directly — use `navigate()`.
+- `.action-strip` uses `overflow-x:auto` (single scrollable row, no `flex-wrap`) — the v44.2
+  flex-wrap was reverted; the strip is now less crowded because the add/import/export buttons
+  moved into the `+ Add songs ▾` collapsible menu (v44.5).
+- Track play now stamps `t.lastPlayedAt = Date.now()` in `recordPlay()` (v44.5), persisted via
+  `persistTrackMeta` and synced through library export/import. Home's Recently played /
+  Not played in a while depend on it. Older libraries without it just sort by playCount.
 
 ## Verification tips
 - Parse-check all inline scripts: `node -e` with a regex extracting `<script>` blocks (no src)
