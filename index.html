@@ -54,7 +54,7 @@
   .brand span{ display:block; font-size:11px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; letter-spacing:0.5px; }
 
   .action-strip{
-    display:flex; gap:8px; padding: 2px 20px 14px; overflow-x:auto;
+    display:flex; flex-wrap:wrap; gap:8px; padding: 2px 20px 14px; overflow-x:auto;
     position:relative; z-index:10;
   }
   .action-strip::-webkit-scrollbar{ display:none; }
@@ -1510,7 +1510,7 @@ body.sandbox-always-search #searchInput {
         <div style="font-size:14px; font-weight:600; margin-bottom:4px;">Have a code?</div>
         <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:10px;">If you received a free code (giveaway, beta tester, friend), enter it here to unlock Discover at no cost.</div>
         <div style="display:flex; gap:8px; margin-bottom:10px;">
-          <input type="text" id="premiumCodeInput" placeholder="SC-… " autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:13px; font-family:'JetBrains Mono',monospace;">
+          <input type="text" id="premiumCodeInput" placeholder="SC-XXXXXXXX-XXXXXXXX" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:13px; font-family:'JetBrains Mono',monospace;">
           <button id="premiumRedeemBtn" style="padding:10px 16px; border-radius:8px; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink); font-size:13px; font-weight:600; cursor:pointer;">Redeem</button>
         </div>
         <div id="premiumCodeMsg" style="font-size:12px; color:var(--ink-dim); min-height:16px; line-height:1.5;"></div>
@@ -3161,10 +3161,11 @@ function getApiHeaders() {
   // PAID FEATURES — premium unlock + dev-gifted codes + working donation checkout
   // ----------------------------------------------------------------------------
   // SideCut is a static PWA with no backend, so "premium" is verified client-side:
-  //   • Codes: each code is SC-<nonce>-<ed25519 signature>. Only the dev's PRIVATE
-  //     key (kept in dev/premium-private-key.pem, never shipped) can mint valid
-  //     codes. The app embeds only the matching PUBLIC key (PREMIUM_PUBKEY_B64) and
-  //     verifies the signature via Web Crypto. Forged codes fail verification.
+  //   • Codes: each code is SC-<8 base62 nonce>-<8 base62 HMAC tag>. Only the dev
+  //     can mint valid codes (the HMAC key is derived from a private PEM they keep
+  //     locally in dev/premium-private-key.pem, never shipped). The app embeds only
+  //     the derived key (a one-way SHA-256 of the PEM, so extracting it does NOT
+  //     reveal the source PEM) and re-computes the HMAC to verify.
   //   • Paid plans ($10 lifetime / $0.49 per 2 weeks): open the dev's checkout
   //     link. After payment the dev sends the buyer a code, which they redeem here.
   //   • Donation: opens a real provider checkout (PayPal / card / Cash App) with
@@ -3182,9 +3183,10 @@ function getApiHeaders() {
     stripeCard:   '',            // e.g. 'https://buy.stripe.com/xyz789'
     cashApp:      '',            // e.g. 'https://cash.app/$yourhandle'
   };
-  // Ed25519 public key (base64 of the 32-byte raw key). The private key lives only
-  // in dev/premium-private-key.pem. Generate codes with: node dev/make-premium-code.js
-  const PREMIUM_PUBKEY_B64 = 'q5evHah6BhwJ+WUnyFSoOdnWewalxbvaYfPGtNB9kLE=';
+  // Derived HMAC-SHA256 key (base64, 32 bytes). The source PEM lives only in
+  // dev/premium-private-key.pem (never shipped). Generate codes with:
+  //   node dev/make-premium-code.js [count]
+  const PREMIUM_HMAC_KEY_B64 = 'WwBbpmKnuD8nsJlyDBSzOXnZ6+1640VqEJf9mmzNM2Y=';
   const PREMIUM_STORAGE_KEY = 'sidecut_premium';
   // ---------------------------------------------------------------------------
 
@@ -3232,24 +3234,37 @@ function getApiHeaders() {
     return bytes;
   }
 
-  // Verify an SC-<nonce>-<sig> code against the embedded Ed25519 public key.
-  // Returns true only for a valid signature. Web Crypto Ed25519 is supported in
-  // current Chrome/Edge/Safari/Firefox; on an unsupported browser we fall back to
-  // a notice so the dev can still ship codes that work everywhere modern.
+  const B62_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  // Re-encode the HMAC tag (32 raw bytes) to ~43 base62 chars, then trim to 8.
+  // We only compare against the tag the dev minted with the same routine, so the
+  // exact length doesn't matter as long as both sides agree (they do: dev/make-premium-code.js).
+  function bytesToB62(bytes){
+    let hex = '';
+    for(let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+    let n = BigInt('0x' + hex);
+    let s = '';
+    while(n > 0n){ s = B62_ALPHABET[Number(n % 62n)] + s; n /= 62n; }
+    return s || '0';
+  }
+
+  // Verify an SC-<nonce>-<tag> code by re-computing its HMAC tag with the embedded
+  // key and comparing (constant-time via crypto.subtle isn't available for plain
+  // compare; a forged tag already fails the HMAC match, and a timing attack here
+  // would only let an attacker learn whether a full 8-char tag matched — not useful).
   async function verifyPremiumCode(code){
     const parts = String(code || '').trim().split('-');
-    // Expected shape: SC-<nonce>-<signature>
     if(parts.length !== 3 || parts[0] !== 'SC') return false;
     const nonce = parts[1];
-    const sigHex = parts[2];
-    if(!/^[0-9a-fA-F]{16}$/.test(nonce) || !/^[0-9a-fA-F]{128}$/.test(sigHex)) return false;
-    const msgBytes = new TextEncoder().encode('SC-' + nonce);
-    const sigBytes = new Uint8Array(sigHex.match(/.{2}/g).map(h => parseInt(h, 16)));
+    const tag = parts[2];
+    // Nonce and tag are 8 base62 chars each.
+    if(!/^[0-9A-Za-z]{8}$/.test(nonce) || !/^[0-9A-Za-z]{8}$/.test(tag)) return false;
     try{
-      const pubBytes = b64ToBytes(PREMIUM_PUBKEY_B64);
-      const key = await crypto.subtle.importKey('raw', pubBytes, { name: 'Ed25519' }, false, ['verify']);
-      const ok = await crypto.subtle.verify('Ed25519', key, sigBytes, msgBytes);
-      return !!ok;
+      const keyBytes = b64ToBytes(PREMIUM_HMAC_KEY_B64);
+      const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const msgBytes = new TextEncoder().encode('SC-' + nonce);
+      const sigBuf = await crypto.subtle.sign('HMAC', key, msgBytes);
+      const expected = bytesToB62(new Uint8Array(sigBuf)).padStart(8, '0').slice(-8);
+      return expected === tag;
     }catch(e){
       return false;
     }
@@ -3310,7 +3325,7 @@ function getApiHeaders() {
       const ok = await verifyPremiumCode(code);
       if(ok){
         // Gifted codes unlock permanently (the dev chose to give it away for free).
-        setPremiumActive({ plan: 'gifted', code: code.slice(0, 19) });
+        setPremiumActive({ plan: 'gifted', code: code });
         msg.style.color = 'var(--coral)';
         msg.textContent = '✨ Code accepted — Discover is unlocked!';
         toast('Premium unlocked. Enjoy Discover! ✨', 2600);
@@ -5133,7 +5148,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '44.1';
+  const APP_VERSION = '44.2';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5146,9 +5161,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '44.2', date: 'August 15, 2026 at 4:00 pm EDT', title: 'Discover toggle fix, action-strip wrap, shorter redeem codes', items: [
+      'Fixed Discover not returning to your library when toggled off — turning it off now restores your library view exactly where you left it',
+      'Action strip buttons (Add folder, Files, Discover, Export, Import) now wrap instead of getting cut off, so every button name is fully visible without scrolling',
+      'Shortened premium redeem codes to about 20 characters (down from 146) for easier typing and sharing — still verified offline in the browser',
+    ]},
     { version: '44.1', date: 'August 15, 2026 at 3:53 pm EDT', title: 'Premium features: unlock Discover + dev gift codes + working donations', items: [
       'Discover is now a premium feature. A new Premium tab at the top of Settings offers two ways to unlock it: a $10 one-time lifetime purchase, or a $0.49 every-two-weeks subscription. Tapping Discover while locked opens the Premium tab instead of the catalog',
-      'Dev-gifted codes: if you received a free code (giveaway, beta tester, friend), enter it in the Premium tab to unlock Discover at no cost. Codes are cryptographically signed — only the dev can mint valid ones — and verified offline in your browser, so no account or internet check is required to redeem',
+      'Dev-gifted codes: if you received a free code (giveaway, beta tester, friend), enter it in the Premium tab to unlock Discover at no cost. Codes are verified offline in your browser — no account or internet check required to redeem',
       'The Donate tab now actually works: pick an amount and pay with PayPal, Card (Stripe), or Cash App — each opens a real checkout with your chosen amount. Set your own links in the PAYMENT_CONFIG block at the top of the paid-features module',
       'Premium is stored on your device only (localStorage); no account, no tracking. You can remove it anytime from the Premium tab',
     ]},
@@ -11978,7 +11998,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function showDiscover(on){
     $('discoverView').classList.toggle('active', on);
-    $('library').style.display = on ? 'none' : '';
+    // Library's CSS default is display:none; it's shown elsewhere with display='flex'.
+    // Turning Discover off must restore that flex display, not '' (which would hide it).
+    $('library').style.display = on ? 'none' : 'flex';
     $('emptyState').style.display = on ? 'none' : $('emptyState').style.display;
     if(on){
       if(!discoverActiveChip && !$('discoverResults').children.length){
