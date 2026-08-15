@@ -54,7 +54,7 @@
   .brand span{ display:block; font-size:11px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; letter-spacing:0.5px; }
 
   .action-strip{
-    display:flex; gap:8px; padding: 2px 20px 14px; overflow-x:auto;
+    display:flex; gap:8px; padding: 2px 20px 14px; overflow:visible;
     position:relative; z-index:10;
   }
   .action-strip::-webkit-scrollbar{ display:none; }
@@ -1222,38 +1222,83 @@ body.sandbox-always-search #searchInput {
 .add-songs-backdrop{ display:none; position:fixed; inset:0; z-index:55; background:transparent; }
 .add-songs-backdrop.open{ display:block; }
 
-/* ─────────────── Home page ─────────────── */
-#homeView{ display:none; flex:1; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 20px 170px; }
+/* ─────────────── Home page — immersive bubbles ─────────────── */
+#homeView{ display:none; flex:1; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 16px 170px; }
 #homeView.active{ display:flex; }
-.home-section{ margin-bottom:22px; }
-.home-section-title{ font-size:13px; font-weight:600; color:var(--ink-dim); margin-bottom:10px; letter-spacing:0.3px; text-transform:uppercase; }
-.home-stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.home-stat{
-  background:var(--bg-raised); border:1px solid var(--line); border-radius:12px; padding:14px;
-  display:flex; flex-direction:column; gap:2px;
+.home-greeting{ font-size:15px; font-weight:600; color:var(--ink); margin:6px 4px 2px; }
+.home-greeting-sub{ font-size:12px; color:var(--ink-dim); margin:0 4px 18px; }
+
+#homeBubbles{ display:flex; flex-wrap:wrap; gap:10px; align-content:flex-start; }
+.home-bubble{
+  position:relative; flex:1 1 140px; min-width:130px; min-height:118px;
+  border-radius:22px; border:1px solid var(--line); cursor:pointer; overflow:hidden;
+  display:flex; flex-direction:column; justify-content:flex-end; padding:12px;
+  background:linear-gradient(150deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 70%, #000));
+  transition: transform 0.18s cubic-bezier(0.2,0.8,0.2,1), border-color 0.2s ease, box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.home-stat-value{ font-size:22px; font-weight:700; color:var(--coral); }
-.home-stat-value.gold{ color:var(--gold); }
-.home-stat-label{ font-size:11.5px; color:var(--ink-dim); }
-.home-track-row{
-  display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px;
-  background:var(--bg-raised); border:1px solid var(--line); cursor:pointer; transition:border-color 0.2s ease;
+.home-bubble:active{ transform: scale(0.96); }
+.home-bubble:hover{ border-color:var(--coral); box-shadow:0 6px 22px rgba(227,178,60,0.10); }
+.home-bubble.wide{ flex-basis:100%; min-height:96px; }
+.home-bubble.tall{ min-height:158px; }
+.home-bubble .hb-ico{ position:absolute; top:12px; left:12px; width:30px; height:30px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; font-size:15px;
+  background:color-mix(in srgb, var(--coral) 22%, transparent); color:var(--coral); }
+.home-bubble .hb-ico.gold{ background:color-mix(in srgb, var(--gold) 24%, transparent); color:var(--gold); }
+.home-bubble .hb-value{ font-size:23px; font-weight:700; color:var(--ink); line-height:1.1; }
+.home-bubble .hb-value.gold{ color:var(--gold); }
+.home-bubble .hb-label{ font-size:11.5px; color:var(--ink-dim); margin-top:3px; }
+.home-bubble .hb-glow{ position:absolute; width:120px; height:120px; right:-34px; top:-34px; border-radius:50%;
+  background:radial-gradient(circle, color-mix(in srgb, var(--coral) 20%, transparent), transparent 70%); pointer-events:none; }
+.home-bubble.gold-bubble .hb-glow{ background:radial-gradient(circle, color-mix(in srgb, var(--gold) 22%, transparent), transparent 70%); }
+.home-bubble .hb-hint{ position:absolute; bottom:10px; right:12px; font-size:18px; opacity:0.35; color:var(--ink); }
+
+/* Expanded bubble overlay — feels immersive: blurred backdrop + spring-in panel */
+#homeBubbleOverlay{ display:none; position:fixed; inset:0; z-index:80; align-items:center; justify-content:center; padding:20px; }
+#homeBubbleOverlay.open{ display:flex; }
+#homeBubbleBackdrop{ position:absolute; inset:0; background:rgba(6,10,28,0.6); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); opacity:0; transition:opacity 0.25s ease; }
+#homeBubbleOverlay.open #homeBubbleBackdrop{ opacity:1; }
+#homeBubblePanel{
+  position:relative; width:100%; max-width:460px; max-height:80vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  background:linear-gradient(160deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 80%, #000));
+  border:1px solid var(--line); border-radius:24px; padding:20px;
+  transform: scale(0.82) translateY(12px); opacity:0;
+  transition: transform 0.32s cubic-bezier(0.18,0.9,0.28,1.1), opacity 0.25s ease;
+  box-shadow:0 24px 60px rgba(0,0,0,0.5);
 }
-.home-track-row:hover{ border-color:var(--coral); }
-.home-track-row + .home-track-row{ margin-top:6px; }
-.home-track-art{ width:40px; height:40px; border-radius:8px; background:var(--bg); background-size:cover; background-position:center; flex-shrink:0; }
-.home-track-meta{ flex:1; min-width:0; }
-.home-track-title{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.home-track-sub{ font-size:11px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
-.home-track-badge{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--gold); flex-shrink:0; }
-.home-empty{ font-size:12.5px; color:var(--ink-dim); padding:14px; background:var(--bg-raised); border:1px dashed var(--line); border-radius:10px; text-align:center; }
-.home-shortcut-row{ display:flex; gap:8px; flex-wrap:wrap; }
-.home-shortcut{
-  flex:1; min-width:120px; padding:12px; border-radius:12px; border:1px solid var(--line);
-  background:var(--bg-raised); color:var(--ink); font-size:12.5px; font-weight:600; cursor:pointer; text-align:center;
-  transition:border-color 0.2s ease, background 0.2s ease;
+#homeBubbleOverlay.open #homeBubblePanel{ transform: scale(1) translateY(0); opacity:1; }
+.hb-panel-head{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+.hb-panel-ico{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px;
+  background:color-mix(in srgb, var(--coral) 22%, transparent); color:var(--coral); flex-shrink:0; }
+.hb-panel-ico.gold{ background:color-mix(in srgb, var(--gold) 24%, transparent); color:var(--gold); }
+.hb-panel-title{ font-size:17px; font-weight:700; color:var(--ink); }
+.hb-panel-close{ margin-left:auto; width:32px; height:32px; border-radius:50%; border:1px solid var(--line);
+  background:transparent; color:var(--ink-dim); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.hb-panel-close:active{ background:var(--line); }
+
+.hb-stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.hb-stat{ background:var(--bg); border:1px solid var(--line); border-radius:14px; padding:14px; display:flex; flex-direction:column; gap:3px; }
+.hb-stat-value{ font-size:24px; font-weight:700; color:var(--coral); }
+.hb-stat-value.gold{ color:var(--gold); }
+.hb-stat-label{ font-size:11.5px; color:var(--ink-dim); }
+.hb-track-row{
+  display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:12px;
+  background:var(--bg); border:1px solid var(--line); cursor:pointer; transition:border-color 0.2s ease;
 }
-.home-shortcut:hover{ border-color:var(--coral); }
+.hb-track-row:hover{ border-color:var(--coral); }
+.hb-track-row + .hb-track-row{ margin-top:7px; }
+.hb-track-art{ width:42px; height:42px; border-radius:9px; background:var(--bg-raised); background-size:cover; background-position:center; flex-shrink:0; }
+.hb-track-meta{ flex:1; min-width:0; }
+.hb-track-title{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.hb-track-sub{ font-size:11px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+.hb-track-badge{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--gold); flex-shrink:0; }
+.hb-list-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 2px; border-bottom:1px solid var(--line); gap:10px; }
+.hb-list-row:last-child{ border-bottom:none; }
+.hb-list-name{ font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
+.hb-list-count{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--gold); flex-shrink:0; }
+.hb-empty{ font-size:13px; color:var(--ink-dim); padding:18px; text-align:center; background:var(--bg); border:1px dashed var(--line); border-radius:12px; }
+.hb-cta{ display:block; width:100%; margin-top:14px; padding:13px; border-radius:14px; border:none;
+  background:var(--coral); color:#161616; font-size:14px; font-weight:700; cursor:pointer; }
 
 
 </style>
@@ -1334,27 +1379,23 @@ body.sandbox-always-search #searchInput {
 
 <div class="toast" id="toast"></div>
 
-<!-- Home: stats preview, shortcuts, recent + forgotten tracks -->
+<!-- Home: immersive bubble dashboard -->
 <div id="homeView">
-  <div class="home-section">
-    <div class="home-section-title">Your listening</div>
-    <div class="home-stat-grid" id="homeStatGrid"></div>
-  </div>
-  <div class="home-section">
-    <div class="home-section-title">Quick actions</div>
-    <div class="home-shortcut-row">
-      <button class="home-shortcut" id="homeShortcutSettings">⚙ Settings</button>
-      <button class="home-shortcut" id="homeShortcutDiscover">🔎 Discover</button>
-      <button class="home-shortcut" id="homeShortcutPlaylists">🎵 Playlists</button>
+  <div class="home-greeting" id="homeGreeting">Welcome back</div>
+  <div class="home-greeting-sub" id="homeGreetingSub">Tap any bubble to expand it.</div>
+  <div id="homeBubbles"></div>
+</div>
+
+<!-- Expanded bubble overlay (immersive: blurred backdrop + spring-in panel) -->
+<div id="homeBubbleOverlay">
+  <div id="homeBubbleBackdrop"></div>
+  <div id="homeBubblePanel">
+    <div class="hb-panel-head">
+      <div class="hb-panel-ico" id="hbPanelIco"></div>
+      <div class="hb-panel-title" id="hbPanelTitle"></div>
+      <button class="hb-panel-close" id="hbPanelClose">✕</button>
     </div>
-  </div>
-  <div class="home-section">
-    <div class="home-section-title">Recently played</div>
-    <div id="homeRecent"></div>
-  </div>
-  <div class="home-section">
-    <div class="home-section-title">Not played in a while</div>
-    <div id="homeForgotten"></div>
+    <div id="hbPanelBody"></div>
   </div>
 </div>
 
@@ -5259,14 +5300,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '44.5', date: 'August 15, 2026 at 7:53 pm EDT', title: 'Home page, Playlists button, cleaner Discover + Add songs menu', items: [
-      'New Home page (tap Home in the top strip) gives you a preview of your listening: time listened, songs played, library size, and day streak — plus quick shortcuts to Settings, Discover, and Playlists',
-      'Home shows your Recently played tracks (with "how long ago") and Not played in a while — songs you haven\'t touched in a long time — each tappable to play instantly. Tap a song on Home and it starts playing right away',
+    { version: '44.5', date: 'August 15, 2026 at 7:53 pm EDT', title: 'Home bubble dashboard, Playlists button, cleaner Discover + Add songs menu', items: [
+      'New Home page (tap Home in the top strip) is now an immersive bubble dashboard. Each stat is a tappable bubble — time listened, songs played, library size, day streak, recently played, top artists, playlists, and quick actions. Tap any bubble and it expands into a full spring-in panel over a blurred backdrop with the details inside',
+      'Home greeting changes by time of day (Good morning / afternoon / evening / Late night listening). The Recently played bubble expands to your last 12 tracks, each tappable to play instantly. The Top artists bubble ranks your most-played artists',
+      'Removed the "Not played in a while" section — it wasn\'t populating reliably, so it\'s gone from Home',
       'The old library view is now behind a Playlists button in the top strip, and a new Home button sits first. You no longer tap Discover again to get back — just hit Home',
-      'Top strip reordered: Home, Discover, Playlists come first, then an Add songs ▾ collapsible menu that holds Add folder, + Files, Import library, and Export library. The strip is much less crowded now',
+      'Top strip reordered: Home, Playlists, Discover come first, then an Add songs ▾ collapsible menu that holds Add folder, + Files, Import library, and Export library',
+      'Fixed the Add songs ▾ dropdown showing nothing — the action strip\'s horizontal scroll was clipping the menu. It now opens correctly as a dropdown over the page',
       'Discover genre chips (Top hits, Pop, Hip-hop, etc.) now wrap instead of being cut off in a single row — you no longer have to scroll sideways to see a category name',
-      'Discover download flow is clearer: the button is now "Get song" and opens that song directly in Spotify so you can copy its link. A step-by-step "How to download a song" box explains the flow, with an Open SpotiCatch button to paste the link and download the MP3',
-      'Track play now records a last-played timestamp (synced via library export/import) so Recently played and Not played in a while are accurate. Adding files or importing a library now drops you on the library view automatically',
+      'Discover download flow is clearer: the "Get song" button now opens both Spotify and SpotiCatch in the same tap (SpotiCatch had stopped opening entirely). Step-by-step instructions appear inline under the tapped card instead of as a toast — copy the link in Spotify, paste it in SpotiCatch, convert, then import the MP3 back here',
+      'Track play now records a last-played timestamp (synced via library export/import) so Home\'s Recently played list is accurate. Adding files or importing a library now drops you on the library view automatically',
       'Discover cards no longer overlap the fixed now-playing bar (extra bottom padding) and the search input shrinks cleanly on narrow screens',
     ]},
     { version: '44.2', date: 'August 15, 2026 at 4:00 pm EDT', title: 'Discover toggle fix, action-strip wrap, shorter redeem codes', items: [
@@ -12208,78 +12251,198 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return m + 'm';
   }
   function renderHome(){
-    const grid = $('homeStatGrid');
-    const recentBox = $('homeRecent');
-    const forgottenBox = $('homeForgotten');
-    if(!grid) return;
+    const bubbles = $('homeBubbles');
+    if(!bubbles) return;
 
     const totalTracks = allTracks.length;
     const playedTracks = allTracks.filter(t => (t.playCount || 0) > 0);
     const streak = computeStreak();
+    const totalPlaylists = Object.keys(playlists).filter(n => n !== 'All Songs' && n !== 'Favorites').length;
 
-    grid.innerHTML = `
-      <div class="home-stat"><div class="home-stat-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="home-stat-label">Time listened</div></div>
-      <div class="home-stat"><div class="home-stat-value">${totalPlays}</div><div class="home-stat-label">Songs played</div></div>
-      <div class="home-stat"><div class="home-stat-value gold">${totalTracks}</div><div class="home-stat-label">In your library</div></div>
-      <div class="home-stat"><div class="home-stat-value gold">🔥 ${streak}</div><div class="home-stat-label">Day streak${streak===1?'':'s'}</div></div>
+    // Greeting by time of day.
+    const hr = new Date().getHours();
+    const greet = hr < 5 ? 'Late night listening' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+    $('homeGreeting').textContent = totalTracks ? greet : 'Welcome to SideCut';
+    $('homeGreetingSub').textContent = totalTracks
+      ? `You have ${totalTracks} song${totalTracks===1?'':'s'} in your library — tap any bubble to expand it.`
+      : 'Tap + Add songs ▾ above to import your music, then this page fills up with your stats.';
+
+    // Top artists (preview: top 1).
+    const artistCounts = {};
+    allTracks.forEach(t => { if(t.artist && t.playCount) artistCounts[t.artist] = (artistCounts[t.artist]||0) + t.playCount; });
+    const topArtists = Object.entries(artistCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topArtistPreview = topArtists.length ? escapeHtml(topArtists[0][0]) : '—';
+
+    bubbles.innerHTML = `
+      <div class="home-bubble" data-bubble="stats">
+        <div class="hb-glow"></div><div class="hb-ico">⏱</div>
+        <div class="hb-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="hb-label">Time listened</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble" data-bubble="stats">
+        <div class="hb-glow"></div><div class="hb-ico">▶</div>
+        <div class="hb-value">${totalPlays}</div><div class="hb-label">Songs played</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble gold-bubble" data-bubble="library">
+        <div class="hb-glow"></div><div class="hb-ico gold">🎵</div>
+        <div class="hb-value gold">${totalTracks}</div><div class="hb-label">In your library</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble gold-bubble" data-bubble="stats">
+        <div class="hb-glow"></div><div class="hb-ico gold">🔥</div>
+        <div class="hb-value gold">${streak}</div><div class="hb-label">Day streak${streak===1?'':'s'}</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble tall" data-bubble="recent">
+        <div class="hb-glow"></div><div class="hb-ico">🕘</div>
+        <div class="hb-value" style="font-size:15px;">Recently played</div>
+        <div class="hb-label">${recentPreviewText(playedTracks)}</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble" data-bubble="artists">
+        <div class="hb-glow"></div><div class="hb-ico">🎤</div>
+        <div class="hb-value" style="font-size:15px;">Top artists</div>
+        <div class="hb-label">${topArtistPreview}</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble" data-bubble="playlists">
+        <div class="hb-glow"></div><div class="hb-ico">📑</div>
+        <div class="hb-value gold">${totalPlaylists}</div><div class="hb-label">Playlists</div><div class="hb-hint">⤢</div>
+      </div>
+      <div class="home-bubble wide" data-bubble="shortcuts">
+        <div class="hb-glow"></div><div class="hb-ico">✨</div>
+        <div class="hb-value" style="font-size:15px;">Quick actions</div>
+        <div class="hb-label">Settings · Discover · Playlists</div><div class="hb-hint">⤢</div>
+      </div>
     `;
 
-    // Recently played: by lastPlayedAt desc, fallback to playCount.
-    const recent = playedTracks.slice().sort((a,b) => (b.lastPlayedAt||0) - (a.lastPlayedAt||0)).slice(0, 6);
-    if(!recent.length){
-      recentBox.innerHTML = `<div class="home-empty">Nothing played yet — tap a song in Playlists to start.</div>`;
-    } else {
-      recentBox.innerHTML = recent.map(t => homeTrackRowHTML(t, timeAgo(t.lastPlayedAt))).join('');
-    }
-
-    // Not played in a while: played at least once, oldest lastPlayedAt first.
-    const forgotten = playedTracks
-      .filter(t => t.lastPlayedAt)
-      .slice().sort((a,b) => (a.lastPlayedAt||0) - (b.lastPlayedAt||0))
-      .slice(0, 6);
-    if(!forgotten.length){
-      forgottenBox.innerHTML = `<div class="home-empty">No dusty tracks yet — once you've played a few songs, the ones you haven't touched in a while show up here.</div>`;
-    } else {
-      forgottenBox.innerHTML = forgotten.map(t => homeTrackRowHTML(t, timeAgo(t.lastPlayedAt))).join('');
-    }
-
-    // Wire row clicks to play the track.
-    [recentBox, forgottenBox].forEach(box => {
-      box.querySelectorAll('.home-track-row').forEach(row => {
-        row.addEventListener('click', () => {
-          const id = row.dataset.trackId;
-          if(!allTracks.some(t => t.id === id)) return;
-          // Play from the full library, starting at the tapped track.
-          const prevPlaylist = activePlaylist;
-          activePlaylist = 'All Songs';
-          playFromList(allTracks.map(t => t.id), id);
-          activePlaylist = prevPlaylist;
-          navigate('library');
-        });
-      });
+    bubbles.querySelectorAll('.home-bubble').forEach(b => {
+      b.addEventListener('click', () => openHomeBubble(b.dataset.bubble));
     });
   }
-  function homeTrackRowHTML(t, when){
-    const art = t.artUrl ? `<div class="home-track-art" style="background-image:url('${t.artUrl}')"></div>` : `<div class="home-track-art"></div>`;
-    return `
-      <div class="home-track-row" data-track-id="${t.id}">
-        ${art}
-        <div class="home-track-meta">
-          <div class="home-track-title">${escapeHtml(t.name)}</div>
-          <div class="home-track-sub">${escapeHtml(t.artist || '')}</div>
+
+  function recentPreviewText(playedTracks){
+    if(!playedTracks.length) return 'Nothing yet';
+    const top = playedTracks.slice().sort((a,b)=>(b.lastPlayedAt||0)-(a.lastPlayedAt||0))[0];
+    return escapeHtml(top.name || '—');
+  }
+
+  // ---- Expanded bubble overlay ----
+  function openHomeBubble(kind){
+    const overlay = $('homeBubbleOverlay');
+    const ico = $('hbPanelIco');
+    const title = $('hbPanelTitle');
+    const body = $('hbPanelBody');
+    ico.className = 'hb-panel-ico';
+    ico.classList.toggle('gold', kind === 'library' || kind === 'playlists');
+
+    if(kind === 'stats'){
+      ico.textContent = '📊'; title.textContent = 'Your listening stats';
+      const streak = computeStreak();
+      const avgPerDay = listenedDates.size > 0 ? totalListenSeconds / listenedDates.size : 0;
+      body.innerHTML = `
+        <div class="hb-stat-grid">
+          <div class="hb-stat"><div class="hb-stat-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="hb-stat-label">Time listened</div></div>
+          <div class="hb-stat"><div class="hb-stat-value">${totalPlays}</div><div class="hb-stat-label">Songs played</div></div>
+          <div class="hb-stat"><div class="hb-stat-value gold">${allTracks.length}</div><div class="hb-stat-label">In your library</div></div>
+          <div class="hb-stat"><div class="hb-stat-value gold">🔥 ${streak}</div><div class="hb-stat-label">Day streak${streak===1?'':'s'}</div></div>
+          <div class="hb-stat" style="grid-column:span 2;"><div class="hb-stat-value">${fmtHomeDuration(avgPerDay)}</div><div class="hb-stat-label">Average per active day</div></div>
         </div>
-        <div class="home-track-badge">${when}</div>
+        <button class="hb-cta" id="hbCtaStats">See full stats</button>
+      `;
+      $('hbCtaStats').addEventListener('click', () => { closeHomeBubble(); renderStats(); $('statsBackdrop').style.display = 'flex'; });
+    }
+    else if(kind === 'library'){
+      ico.textContent = '🎵'; title.textContent = 'Your library';
+      body.innerHTML = `
+        <div class="hb-stat-grid">
+          <div class="hb-stat"><div class="hb-stat-value gold">${allTracks.length}</div><div class="hb-stat-label">Songs</div></div>
+          <div class="hb-stat"><div class="hb-stat-value gold">${Object.keys(playlists).filter(n=>n!=='All Songs'&&n!=='Favorites').length}</div><div class="hb-stat-label">Playlists</div></div>
+        </div>
+        <button class="hb-cta" id="hbCtaLibrary">Open Playlists</button>
+      `;
+      $('hbCtaLibrary').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+    }
+    else if(kind === 'playlists'){
+      ico.textContent = '📑'; title.textContent = 'Your playlists';
+      const names = Object.keys(playlists).filter(n => n !== 'All Songs' && n !== 'Favorites');
+      if(!names.length){
+        body.innerHTML = `<div class="hb-empty">No playlists yet — create one from the Playlists view.</div><button class="hb-cta" id="hbCtaPlaylists">Open Playlists</button>`;
+      } else {
+        body.innerHTML = names.map(n => {
+          const count = (playlists[n] || []).length;
+          return `<div class="hb-list-row" data-playlist="${escapeHtml(n)}"><span class="hb-list-name">${escapeHtml(n)}</span><span class="hb-list-count">${count}</span></div>`;
+        }).join('') + `<button class="hb-cta" id="hbCtaPlaylists">Open Playlists</button>`;
+        body.querySelectorAll('.hb-list-row').forEach(row => {
+          row.addEventListener('click', () => {
+            activePlaylist = row.dataset.playlist;
+            closeHomeBubble(); navigate('library'); renderTabs(); renderList();
+          });
+        });
+      }
+      $('hbCtaPlaylists').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+    }
+    else if(kind === 'recent'){
+      ico.textContent = '🕘'; title.textContent = 'Recently played';
+      const recent = allTracks.filter(t=>t.playCount>0).slice().sort((a,b)=>(b.lastPlayedAt||0)-(a.lastPlayedAt||0)).slice(0, 12);
+      body.innerHTML = recent.length
+        ? recent.map(t => hbTrackRowHTML(t, timeAgo(t.lastPlayedAt))).join('')
+        : `<div class="hb-empty">Nothing played yet — tap a song in Playlists to start.</div>`;
+      wireHbTrackRows(body);
+    }
+    else if(kind === 'artists'){
+      ico.textContent = '🎤'; title.textContent = 'Top artists';
+      const artistCounts = {};
+      allTracks.forEach(t => { if(t.artist && t.playCount) artistCounts[t.artist] = (artistCounts[t.artist]||0) + t.playCount; });
+      const topArtists = Object.entries(artistCounts).sort((a,b)=>b[1]-a[1]).slice(0, 12);
+      body.innerHTML = topArtists.length
+        ? topArtists.map(([a,c],i) => `<div class="hb-list-row"><span class="hb-list-name">${i+1}. ${escapeHtml(a)}</span><span class="hb-list-count">${c}×</span></div>`).join('')
+        : `<div class="hb-empty">Play some songs to see your top artists here.</div>`;
+    }
+    else if(kind === 'shortcuts'){
+      ico.textContent = '✨'; title.textContent = 'Quick actions';
+      body.innerHTML = `
+        <button class="hb-cta" id="hbCtaSettings" style="margin-top:0;">⚙ Open Settings</button>
+        <button class="hb-cta" id="hbCtaDiscover" style="background:transparent; color:var(--coral); border:1px solid var(--coral);">🔎 Open Discover</button>
+        <button class="hb-cta" id="hbCtaPlaylists2" style="background:transparent; color:var(--gold); border:1px solid var(--gold);">🎵 Open Playlists</button>
+      `;
+      $('hbCtaSettings').addEventListener('click', () => { closeHomeBubble(); renderThemeOptions(); populateStartFromOptions(); showSettingsTab(_settingsFirstOpen ? 'premium' : 'theme'); _settingsFirstOpen = false; $('themeBackdrop').style.display = 'flex'; });
+      $('hbCtaDiscover').addEventListener('click', () => {
+        closeHomeBubble();
+        if(!isPremiumActive()){ toast('Discover is a premium feature — unlock it in Settings.'); openPremiumSettings(); return; }
+        navigate('discover');
+      });
+      $('hbCtaPlaylists2').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+    }
+
+    overlay.classList.add('open');
+  }
+  function closeHomeBubble(){ $('homeBubbleOverlay').classList.remove('open'); }
+  $('hbPanelClose').addEventListener('click', closeHomeBubble);
+  $('homeBubbleBackdrop').addEventListener('click', closeHomeBubble);
+
+  function hbTrackRowHTML(t, when){
+    const art = t.artUrl ? `<div class="hb-track-art" style="background-image:url('${t.artUrl}')"></div>` : `<div class="hb-track-art"></div>`;
+    return `
+      <div class="hb-track-row" data-track-id="${t.id}">
+        ${art}
+        <div class="hb-track-meta">
+          <div class="hb-track-title">${escapeHtml(t.name)}</div>
+          <div class="hb-track-sub">${escapeHtml(t.artist || '')}</div>
+        </div>
+        <div class="hb-track-badge">${when}</div>
       </div>
     `;
   }
-
-  // Home quick-action shortcuts.
-  $('homeShortcutSettings').addEventListener('click', () => { renderThemeOptions(); populateStartFromOptions(); showSettingsTab(_settingsFirstOpen ? 'premium' : 'theme'); _settingsFirstOpen = false; $('themeBackdrop').style.display = 'flex'; });
-  $('homeShortcutDiscover').addEventListener('click', () => {
-    if(!isPremiumActive()){ toast('Discover is a premium feature — unlock it in Settings.'); openPremiumSettings(); return; }
-    navigate('discover');
-  });
-  $('homeShortcutPlaylists').addEventListener('click', () => navigate('library'));
+  function wireHbTrackRows(container){
+    container.querySelectorAll('.hb-track-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const id = row.dataset.trackId;
+        if(!allTracks.some(t => t.id === id)) return;
+        const prev = activePlaylist;
+        activePlaylist = 'All Songs';
+        playFromList(allTracks.map(t => t.id), id);
+        activePlaylist = prev;
+        closeHomeBubble();
+        navigate('library');
+      });
+    });
+  }
 
   function renderDiscoverChips(){
     const wrap = $('discoverChips');
