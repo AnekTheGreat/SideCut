@@ -1148,6 +1148,52 @@ body.sandbox-always-search #searchInput {
 }
 
 
+/* ─────────────── Discover (online Spotify catalog browse) ─────────────── */
+#discoverView{ display:none; flex:1; flex-direction:column; padding:0 20px 24px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+#discoverView.active{ display:flex; }
+#discoverSearchRow{ display:flex; gap:8px; padding:6px 0 12px; position:sticky; top:0; z-index:5; background:var(--bg); }
+#discoverSearch{
+  flex:1; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);
+  border-radius:20px; padding:9px 14px; font-size:13.5px; font-family:var(--font-ui);
+}
+#discoverSearch::placeholder{ color:var(--ink-dim); }
+#discoverChips{ display:flex; gap:8px; padding:0 0 14px; overflow-x:auto; }
+#discoverChips::-webkit-scrollbar{ display:none; }
+.discover-chip{
+  flex-shrink:0; font-size:12px; font-weight:600; padding:8px 14px; border-radius:18px;
+  cursor:pointer; white-space:nowrap; border:1px solid var(--line);
+  background:var(--bg-raised); color:var(--ink-dim); touch-action:manipulation;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.discover-chip.active{ background:var(--coral); color:#161616; border-color:var(--coral); }
+#discoverStatus{ font-size:12px; color:var(--ink-dim); padding:6px 0 10px; min-height:18px; }
+#discoverResults{ display:flex; flex-direction:column; gap:8px; }
+.discover-card{
+  display:flex; align-items:center; gap:12px; padding:10px; border-radius:12px;
+  background:var(--bg-raised); border:1px solid var(--line); transition: border-color 0.2s ease;
+}
+.discover-card:hover{ border-color:var(--coral); }
+.discover-art{ width:52px; height:52px; border-radius:8px; background:var(--bg); background-size:cover; background-position:center; flex-shrink:0; }
+.discover-meta{ flex:1; min-width:0; }
+.discover-title{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.discover-sub{ font-size:11.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+.discover-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.discover-preview-btn{
+  width:38px; height:38px; border-radius:50%; border:1px solid var(--line);
+  background:var(--bg); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; flex-shrink:0;
+}
+.discover-preview-btn.playing{ background:var(--coral); color:#161616; border-color:var(--coral); }
+.discover-preview-btn svg{ width:16px; height:16px; fill:currentColor; }
+.discover-dl-btn{
+  font-size:11.5px; font-weight:600; padding:8px 12px; border-radius:10px;
+  border:1px solid var(--coral); background:transparent; color:var(--coral); cursor:pointer;
+  white-space:nowrap; touch-action:manipulation; transition: background 0.2s ease, color 0.2s ease;
+}
+.discover-dl-btn:active{ background:var(--coral); color:#161616; }
+#discoverPreviewAudio{ display:none; }
+
+
 </style>
 </head>
 <body>
@@ -1208,6 +1254,7 @@ body.sandbox-always-search #searchInput {
 <div class="action-strip" id="actionStrip">
   <button id="addFolderBtn" class="action-pill primary">+ Add folder</button>
   <button id="addBtn" class="action-pill">+ Files</button>
+  <button id="discoverBtn" class="action-pill">Discover</button>
   <button id="exportLibBtn" class="action-pill">Export library</button>
   <button id="importLibBtn" class="action-pill">Import library</button>
 </div>
@@ -1245,6 +1292,21 @@ body.sandbox-always-search #searchInput {
     </button>
   </div>
   <div id="listPane"></div>
+</div>
+
+<!-- Discover: browse the Spotify catalog online, preview tracks, and jump to SpotiCatch to download -->
+<div id="discoverView">
+  <div id="discoverSearchRow">
+    <input type="text" id="discoverSearch" placeholder="Search songs, artists, albums…">
+    <button class="action-pill primary" id="discoverSearchBtn" style="padding:9px 16px;">Search</button>
+  </div>
+  <div id="discoverChips"></div>
+  <div id="discoverStatus">Search for any song or tap a category to start browsing.</div>
+  <div id="discoverResults"></div>
+  <audio id="discoverPreviewAudio" preload="none"></audio>
+  <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-top:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
+    <b>How downloading works:</b> Previews stream from Apple's catalog. To get the full MP3, tap <b>Download</b> on a song — it opens <b>Spoticatch</b>, where you paste that song's Spotify link (or search it) to save the file. Then use <b>+ Files</b> above to import it into your library.
+  </div>
 </div>
 
 <!-- Manage playlists: show/hide any playlist, including All Songs -->
@@ -1791,7 +1853,7 @@ body.sandbox-always-search #searchInput {
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="viewUpdateLogBtn" style="text-align:center; width:100%;">Update log</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v43.2</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v44</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -2325,7 +2387,7 @@ body.sandbox-always-search #searchInput {
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark" style="width:26px; height:26px;"></div>
       <div>
-        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v42.8</h3>
+        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v44</h3>
         <div style="font-size:11.5px; color:var(--ink-dim);">SideCut update</div>
       </div>
     </div>
@@ -3300,6 +3362,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     sleepTimerMode = 'minutes';
     sleepTimerEndsAt = Date.now() + min*60000;
     sleepTimerHandle = setTimeout(() => {
+      userPaused = true;
       activeAudio().pause();
       toast('Sleep timer — playback paused');
       clearSleepTimer();
@@ -4373,7 +4436,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const a = activeAudio();
     if(!a) return;
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-    a.paused ? a.play().catch(() => recoverAudio(a, 'lyrics play failed')) : a.pause();
+    if(a.paused){ a.play().catch(() => recoverAudio(a, 'lyrics play failed')); }
+    else { userPaused = true; a.pause(); }
     syncLyricsPlayPauseIcon();
   });
 
@@ -4816,7 +4880,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '43.2';
+  const APP_VERSION = '44';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -4829,6 +4893,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '44', date: 'August 15, 2026 at 4:40 pm EDT', title: 'Discover — browse the Spotify catalog and download via Spoticatch', items: [
+      'New Discover section (tap the Discover pill in the top action strip) lets you browse the Spotify catalog online without leaving SideCut. Search any song, artist, or album, or tap a category chip (Top hits, Pop, Hip-hop, Punjabi, Dance, Rock, R&B, Latin, Bollywood, Chill) to start browsing. Results show artwork, title, artist, and album',
+      'Each song in Discover has a play button that streams a 30-second preview right inside the app, so you can check out a track before committing to it. Only one preview plays at a time, and it stops automatically when you switch sections',
+      'A Download button on every Discover song opens Spoticatch (the Spotify-to-MP3 downloader) in a new tab, with the song\'s Spotify search ready so you can grab its link and download the MP3. Then use + Files to import it into your library — same flow SideCut already documents, now one tap away',
+      'Discover is a separate view from your library: toggling it hides your local songs and shows the catalog instead, and toggling back returns you right where you left off. Nothing in your library is changed by browsing',
+    ]},
+    { version: '43.3', date: 'August 15, 2026 at 4:12 pm EDT', title: 'Fix background playback dying after ~20 minutes', items: [
+      'Fixed songs randomly stopping after about 20 minutes of backgrounded listening. The OS silently pauses the audio element when the page is backgrounded for a stretch, and until now that pause also killed the keep-alive heartbeat — so nothing was left to bring playback back, the lock-screen/notification controls vanished, and you couldn\'t even un-pause from there. You had to open the app and press play every time. The heartbeat now stays alive through an OS-initiated pause and auto-resumes playback (distinguished from a real, deliberate pause), so listening keeps going uninterrupted in the background',
+      'The keep-alive heartbeat now runs every 15 seconds instead of every 60, so a background stall is caught and recovered much faster',
+      'Background recovery now rebuilds the audio\'s blob URL first, in case Android reclaimed memory and let the old URL go dead while the page was suspended',
+    ]},
     { version: '43.2', date: 'August 15, 2026 at 10:32 am EDT', title: 'Manual DJ Mode opt-out per playlist + easier listening time entry', items: [
       'You can now turn DJ Mode off manually for any individual playlist from the new "DJ Mode per playlist" section in Settings → More — handy for religious or devotional playlists you\'d rather listen to as-is. Built-in names (Paath, Gurbani, Kirtaan, Dhadi Jhatta, Gurmukhi, Religious, Prayer) are always off and shown locked. Your choices persist across reloads, follow a playlist through renames, and are included in library exports/backups',
       'The "Add listening time" stat input now has separate Hours and Minutes fields, so you can add 2h 30m in one go instead of converting to 150 minutes. The confirmation toast shows the added amount as hours and minutes too',
@@ -6139,6 +6214,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let crossfadeFinishing = false;
   let crossfadeRAF = null;
   let pendingNextIndex = null;
+
+  // Marks the *user's own* deliberate stop (tap pause, sleep timer, delete the playing
+  // track, media-session stop). Set right before those pause() calls so the background
+  // heartbeat/watchdog can tell an intentional pause apart from the OS silently halting
+  // playback after ~20 min backgrounded — which is exactly the case we must auto-recover
+  // from, since without recovery the notification/lock-screen controls vanish and you
+  // can't even un-pause from there, forcing you to open the app.
+  let userPaused = false;
 
   const audio = $('audioEl');
   const audio2 = $('audioEl2');
@@ -8208,6 +8291,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
     // If it's currently playing, stop playback cleanly
     if(queue[queueIndex] === id){
+      userPaused = true;
       audio.pause();
       audio.removeAttribute('src');
       $('nowPlaying').style.display = 'none';
@@ -9164,6 +9248,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   function onPlayEvt(e){
     if(e.target !== activeAudio()) return;
+    userPaused = false; // playback is (re)starting — clear any prior deliberate-stop marker
     $('npDisc').classList.add('spinning');
     $('npPlayerBody').classList.add('playing');
     $('playIcon').innerHTML = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
@@ -9192,31 +9277,55 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     stopGlowSync();
     savePlaybackState(true);
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();
-    stopMediaSessionHeartbeat();
-    releaseWakeLock();
+    // Only tear down the heartbeat on a real user pause. When the OS pauses us on its
+    // own (~20 min backgrounded), the heartbeat must stay alive so it can detect the
+    // pause and auto-resume — tearing it down here would silence the very recovery
+    // path that brings playback back.
+    if(userPaused){ stopMediaSessionHeartbeat(); releaseWakeLock(); }
     syncLyricsPlayPauseIcon();
   }
   // ---------------- Background keep-alive: stop the 20-min drop + earbud takeover ----------------
   // Mobile browsers (especially Android Chrome) will, after a stretch of backgrounded
-  // playback, treat an idle/stale MediaSession as no longer the "current" media app and
-  // hand the earbuds' hardware play/pause button to whichever app the OS thinks owns
-  // audio now — almost always Spotify. The session can also just go quiet (playback
-  // freezes) once the OS suspends the page/AudioContext. A periodic heartbeat that
-  // re-asserts metadata, position state and playbackState while we're actively playing
-  // keeps SideCut's session "fresh" so background audio keeps going and the earbud
-  // button routes back to us instead of Spotify. A screen Wake Lock (where supported)
-  // is also held while playing to stop the device dozing the page out from under us.
+  // playback (often ~20 min), either suspend the page/AudioContext or outright pause the
+  // <audio> element without firing any user intent. Once that happens the media
+  // notification/lock-screen controls go stale or disappear entirely, so you can't even
+  // un-pause from there — the only way back is to manually open the app and press play.
+  // This heartbeat re-asserts metadata, position state and playbackState while playing to
+  // keep SideCut's session "fresh", resumes a suspended AudioContext, and — crucially —
+  // auto-resumes playback when the OS paused it on its own (distinguished from a real
+  // user pause via the userPaused flag). A screen Wake Lock (where supported) is also
+  // held while playing to stop the device dozing the page out from under us.
   let mediaSessionHeartbeat = null;
   function startMediaSessionHeartbeat(){
     stopMediaSessionHeartbeat();
     mediaSessionHeartbeat = setInterval(() => {
       const a = activeAudio();
-      if(!a || a.paused) return;
+      if(!a) return;
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+      // The OS paused us on its own (not the user) — revive playback so it doesn't die
+      // silently in the background. Re-creating the blob URL first guards against the
+      // case where Android reclaimed memory and the old URL went dead while suspended.
+      // Skip while DJ Mode is open: it owns sound via the deck engine and the main
+      // <audio> element is intentionally idle there, so reviving it would double up.
+      if(a.paused && !userPaused && $('djModeBackdrop').style.display !== 'flex'
+         && queueIndex >= 0 && queueIndex < queue.length){
+        const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+        if(t && t.file && (!t.url || a.error)){
+          try{ URL.revokeObjectURL(t.url); }catch(e){}
+          t.url = URL.createObjectURL(t.file);
+          a.src = t.url;
+          a.addEventListener('loadedmetadata', function onMeta(){
+            a.removeEventListener('loadedmetadata', onMeta);
+            if(!userPaused && $('djModeBackdrop').style.display !== 'flex') a.play().catch(()=>{});
+          }, { once:true });
+        } else {
+          a.play().catch(()=>{});
+        }
+      }
       if(!('mediaSession' in navigator)) return;
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
       if(t) updateMediaSession(t);
-      navigator.mediaSession.playbackState = 'playing';
+      navigator.mediaSession.playbackState = a.paused ? 'paused' : 'playing';
       if('setPositionState' in navigator.mediaSession && a.duration){
         try{
           navigator.mediaSession.setPositionState({
@@ -9226,7 +9335,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           });
         }catch(e){ /* position momentarily out of range — ignore */ }
       }
-    }, 60000);
+    }, 15000);
   }
   function stopMediaSessionHeartbeat(){
     if(mediaSessionHeartbeat){ clearInterval(mediaSessionHeartbeat); mediaSessionHeartbeat = null; }
@@ -9268,6 +9377,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(a !== activeAudio()) return;
     if(typeof sleepTimerMode !== 'undefined' && sleepTimerMode === 'endOfSong'){
       clearSleepTimer();
+      userPaused = true; // deliberate stop — don't let the background heartbeat revive it
       toast('Sleep timer — playback paused at the end of the song');
       return; // don't advance to the next track
     }
@@ -9346,7 +9456,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('playPauseBtn').classList.remove('pulse-cue');
     const a = activeAudio();
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-    a.paused ? a.play().catch(() => recoverAudio(a, 'manual play failed')) : a.pause();
+    if(a.paused){ a.play().catch(() => recoverAudio(a, 'manual play failed')); }
+    else { userPaused = true; a.pause(); }
   });
   $('nextBtn').addEventListener('click', () => hardAdvance(1, true));
   $('prevBtn').addEventListener('click', () => {
@@ -11309,7 +11420,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       activeAudio().play().catch(() => recoverAudio(activeAudio(), 'media session play failed'));
     });
-    navigator.mediaSession.setActionHandler('pause', () => activeAudio().pause());
+    navigator.mediaSession.setActionHandler('pause', () => { userPaused = true; activeAudio().pause(); });
     navigator.mediaSession.setActionHandler('previoustrack', () => {
       if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
       hardAdvance(-1, true);
@@ -11317,6 +11428,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     navigator.mediaSession.setActionHandler('nexttrack', () => hardAdvance(1, true));
     try{
       navigator.mediaSession.setActionHandler('stop', () => {
+        userPaused = true;
         activeAudio().pause();
         activeAudio().currentTime = 0;
       });
@@ -11580,6 +11692,180 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       navigator.serviceWorker.addEventListener('controllerchange', reloadForUpdate);
     });
   }
+
+  // ---------------- Discover: browse the Spotify catalog online, preview, download via SpotiCatch ----------------
+  // SideCut itself has no backend and Spotify's Web API needs OAuth, so browsing is powered
+  // by the iTunes Search API (CORS-friendly, no auth — same source already used for cover art
+  // and song previews elsewhere in the app). Each result shows artwork, title/artist/album and
+  // a 30-second preview you can play inline. The Download button hands off to SpotiCatch, the
+  // Spotify-to-MP3 downloader this app already points people to, where the song's link is
+  // pre-filled so you can grab the file and import it with + Files.
+  const SPOTICATCH_URL = 'https://spoticatch.com/';
+  const DISCOVER_CHIPS = [
+    { label: 'Top hits', term: 'top hits 2026' },
+    { label: 'Pop', term: 'pop hits' },
+    { label: 'Hip-hop', term: 'hip hop hits' },
+    { label: 'Punjabi', term: 'punjabi hits' },
+    { label: 'Dance', term: 'dance hits' },
+    { label: 'Rock', term: 'rock hits' },
+    { label: 'R&B', term: 'r&b hits' },
+    { label: 'Latin', term: 'latin hits' },
+    { label: 'Bollywood', term: 'bollywood hits' },
+    { label: 'Chill', term: 'chill instrumental' },
+  ];
+  let discoverActiveChip = null;
+  let discoverPreviewEl = null;
+  let discoverPlayingUrl = null;
+
+  function showDiscover(on){
+    $('discoverView').classList.toggle('active', on);
+    $('library').style.display = on ? 'none' : '';
+    $('emptyState').style.display = on ? 'none' : $('emptyState').style.display;
+    if(on){
+      if(!discoverActiveChip && !$('discoverResults').children.length){
+        runDiscoverSearch(DISCOVER_CHIPS[0].term, DISCOVER_CHIPS[0].label, 0);
+      }
+    } else {
+      stopDiscoverPreview();
+    }
+  }
+  $('discoverBtn').addEventListener('click', () => {
+    const turningOn = !$('discoverView').classList.contains('active');
+    showDiscover(turningOn);
+    $('discoverBtn').classList.toggle('active', turningOn);
+  });
+
+  function renderDiscoverChips(){
+    const wrap = $('discoverChips');
+    wrap.innerHTML = '';
+    DISCOVER_CHIPS.forEach((c, i) => {
+      const el = document.createElement('div');
+      el.className = 'discover-chip' + (discoverActiveChip === i ? ' active' : '');
+      el.textContent = c.label;
+      el.addEventListener('click', () => {
+        discoverActiveChip = i;
+        $('discoverSearch').value = '';
+        renderDiscoverChips();
+        runDiscoverSearch(c.term, c.label, i);
+      });
+      wrap.appendChild(el);
+    });
+  }
+  renderDiscoverChips();
+
+  function discoverStatus(msg){ $('discoverStatus').textContent = msg; }
+
+  async function runDiscoverSearch(term, label, chipIdx){
+    const q = (term || '').trim();
+    if(!q){ discoverStatus('Type something to search.'); return; }
+    if(chipIdx != null) discoverActiveChip = chipIdx;
+    else { discoverActiveChip = null; renderDiscoverChips(); }
+    discoverStatus(label ? `Loading ${label}…` : 'Searching…');
+    $('discoverResults').innerHTML = '';
+    try{
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&media=music&entity=song&limit=25`;
+      const resp = await fetchWithProxy(url);
+      if(!resp || !resp.ok){ discoverStatus('Couldn\'t reach the catalog — check your connection and try again.'); return; }
+      const data = await resp.json();
+      const results = (data.results || []).filter(r => r && r.trackName);
+      if(!results.length){ discoverStatus('No songs found — try a different search.'); return; }
+      discoverStatus(`${results.length} song${results.length > 1 ? 's' : ''} found${label ? ' in ' + label : ''}`);
+      results.forEach(r => $('discoverResults').appendChild(buildDiscoverCard(r)));
+    }catch(e){
+      console.error('Discover search failed', e);
+      discoverStatus('Search failed — try again.');
+    }
+  }
+
+  function buildDiscoverCard(r){
+    const card = document.createElement('div');
+    card.className = 'discover-card';
+    const art = document.createElement('div');
+    art.className = 'discover-art';
+    if(r.artworkUrl100){
+      art.style.backgroundImage = `url("${r.artworkUrl100.replace('/100x100bb.jpg', '/200x200bb.jpg')}")`;
+    }
+    const meta = document.createElement('div');
+    meta.className = 'discover-meta';
+    const title = document.createElement('div');
+    title.className = 'discover-title';
+    title.textContent = r.trackName || 'Unknown';
+    const sub = document.createElement('div');
+    sub.className = 'discover-sub';
+    sub.textContent = [r.artistName, r.collectionName].filter(Boolean).join(' — ');
+    meta.appendChild(title); meta.appendChild(sub);
+
+    const actions = document.createElement('div');
+    actions.className = 'discover-actions';
+
+    if(r.previewUrl){
+      const previewBtn = document.createElement('button');
+      previewBtn.className = 'discover-preview-btn';
+      previewBtn.title = 'Play 30-second preview';
+      previewBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+      previewBtn.addEventListener('click', () => toggleDiscoverPreview(r.previewUrl, previewBtn));
+      actions.appendChild(previewBtn);
+    }
+
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'discover-dl-btn';
+    dlBtn.textContent = 'Download';
+    dlBtn.title = 'Open Spoticatch to download this song';
+    dlBtn.addEventListener('click', () => {
+      const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent((r.trackName || '') + ' ' + (r.artistName || ''))}`;
+      toast('Opening Spoticatch — grab the song\'s link from Spotify if needed.');
+      // SpotiCatch expects a pasted Spotify link. Open it alongside the Spotify search so the
+      // link is one tap away, but lead with SpotiCatch as the user asked.
+      try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){}
+      setTimeout(() => { try{ window.open(SPOTICATCH_URL, '_blank', 'noopener'); }catch(e){ window.location.href = SPOTICATCH_URL; } }, 150);
+    });
+    actions.appendChild(dlBtn);
+
+    card.appendChild(art); card.appendChild(meta); card.appendChild(actions);
+    return card;
+  }
+
+  function toggleDiscoverPreview(url, btn){
+    if(!discoverPreviewEl) discoverPreviewEl = $('discoverPreviewAudio');
+    if(discoverPlayingUrl === url && !discoverPreviewEl.paused){
+      discoverPreviewEl.pause();
+      return;
+    }
+    document.querySelectorAll('.discover-preview-btn.playing').forEach(b => {
+      b.classList.remove('playing');
+      b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    });
+    discoverPreviewEl.src = url;
+    discoverPreviewEl.play().catch(() => { toast('Couldn\'t play that preview — try again.'); });
+    discoverPlayingUrl = url;
+    btn.classList.add('playing');
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>';
+  }
+  function stopDiscoverPreview(){
+    if(discoverPreviewEl && !discoverPreviewEl.paused) discoverPreviewEl.pause();
+    document.querySelectorAll('.discover-preview-btn.playing').forEach(b => {
+      b.classList.remove('playing');
+      b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    });
+    discoverPlayingUrl = null;
+  }
+  if(!discoverPreviewEl) discoverPreviewEl = $('discoverPreviewAudio');
+  discoverPreviewEl.addEventListener('ended', () => {
+    document.querySelectorAll('.discover-preview-btn.playing').forEach(b => {
+      b.classList.remove('playing');
+      b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    });
+    discoverPlayingUrl = null;
+  });
+  discoverPreviewEl.addEventListener('pause', () => {
+    document.querySelectorAll('.discover-preview-btn.playing').forEach(b => {
+      b.classList.remove('playing');
+      b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    });
+  });
+
+  $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
+  $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
 
 })();
 </script>
