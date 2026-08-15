@@ -43,6 +43,29 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - `.action-strip` uses `overflow-x:auto` (single scrollable row, no `flex-wrap`) — the v44.2
   flex-wrap was reverted; the strip is now less crowded because the add/import/export buttons
   moved into the `+ Add songs ▾` collapsible menu (v44.5).
+- The `+ Add songs ▾` menu is a centered modal (v45.0): `#addSongsMenu` is `position:fixed`
+  centered z-index:200, `#addSongsBackdrop` z-index:199 sits INSIDE `#addSongsWrap` (not a
+  body sibling). Because `.action-strip` is `position:relative; z-index:10` (a stacking
+  context), the fixed children would be trapped under higher page layers — so
+  `openAddSongsMenu()` adds `.menu-open` to `.action-strip` raising it to `z-index:300`
+  while open. Action buttons close the menu via a bubble-phase `queueMicrotask(closeAddSongsMenu)`
+  so the real click handler (file picker etc.) fires first, inside the user gesture.
+- Playlist memory (v45.0): `lastUsedPlaylist` (persisted meta key `lastUsedPlaylist`) tracks
+  the last *real* playlist (never 'All Songs'/Unsorted) the user played from or tapped a tab
+  for. `rememberPlaylist(name)` is called in `playFromList`, the mix-start path, the playlist
+  tab click handler, and on rename. The `libraryBtn` handler's `pickReal()` lands on it
+  (never All Songs unless no real playlist exists). Playing from All Songs does NOT update it.
+  Boot restore prefers `lastUsedPlaylist` over `lastPlaybackState.sourcePlaylist`.
+- Sandbox is premium-only (v45.0): `showSettingsTab('sandbox')` redirects non-premium users
+  to the Premium tab with a toast. `refreshPremiumUI()` shows `#premiumManageBox` ("Remove
+  premium from this device") only when `plan === 'sub'` (subscriptions); gifted/lifetime
+  codes hide it. The box is the last child of the premium pane.
+- Sandbox "Accessibility & display" group (v45.0): Reduce motion, High-contrast text, Big
+  seek bar, Invert colors — all body-class toggles (`sandbox-reduce-motion` etc.) that persist
+  via meta and reset with the other sandbox settings.
+- Discover (v45.0): no Spotidown/Spoticatch/Spotisaver links (all dead domains → 404s).
+  `triggerDiscoverDownload()` only opens the Spotify search/track URL; how-to instructions
+  are at the top of `#discoverView`. "Get song" opens the track in Spotify.
 - Track play now stamps `t.lastPlayedAt = Date.now()` in `recordPlay()` (v44.5), persisted via
   `persistTrackMeta` and synced through library export/import. Home's Recently played /
   Not played in a while depend on it. Older libraries without it just sort by playCount.

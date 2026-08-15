@@ -57,6 +57,7 @@
     display:flex; gap:8px; padding: 2px 20px 14px; overflow:visible;
     position:relative; z-index:10;
   }
+  .action-strip.menu-open{ z-index:300; }
   .action-strip::-webkit-scrollbar{ display:none; }
   .action-strip.drag-active .action-pill{ cursor:grab; }
   .action-strip.drag-active .action-pill.dragging{ opacity:0.5; cursor:grabbing; }
@@ -1149,6 +1150,43 @@ body.sandbox-always-search #searchInput {
   width: 100% !important;
   opacity: 1 !important;
 }
+/* Reduce motion: kill all transitions/animations for users who want stillness. */
+body.sandbox-reduce-motion *{
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+}
+/* High-contrast: bump text weight/opacity so labels read sharper. */
+body.sandbox-high-contrast{
+  --ink-dim: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+body.sandbox-high-contrast .track-title,
+body.sandbox-high-contrast .discover-title,
+body.sandbox-high-contrast .hb-track-title,
+body.sandbox-high-contrast .tab{
+  font-weight: 700;
+}
+/* Big seek bar: taller, easier to grab. */
+body.sandbox-big-seek #seekBar,
+body.sandbox-big-seek #npSeekBar{
+  height: 14px !important;
+  border-radius: 8px !important;
+}
+body.sandbox-big-seek #seekBar .seek-thumb,
+body.sandbox-big-seek #npSeekBar .seek-thumb{
+  width: 20px !important; height: 20px !important;
+}
+/* Invert colors: a full color inversion (accessibility night-mode style). */
+body.sandbox-invert-colors{
+  filter: invert(1) hue-rotate(180deg);
+}
+body.sandbox-invert-colors img,
+body.sandbox-invert-colors .track-art,
+body.sandbox-invert-colors .discover-art,
+body.sandbox-invert-colors .hb-track-art,
+body.sandbox-invert-colors .brand-mark{
+  filter: invert(1) hue-rotate(180deg);
+}
 
 
 /* ─────────────── Discover (online Spotify catalog browse) ─────────────── */
@@ -1214,22 +1252,16 @@ body.sandbox-always-search #searchInput {
 /* ─────────────── Add-songs collapsible menu ─────────────── */
 .add-songs-wrap{ position:relative; flex-shrink:0; }
 .add-songs-menu{
-  display:none; position:absolute; top:calc(100% + 6px); right:0; z-index:60;
-  min-width:200px; padding:6px; gap:4px; flex-direction:column;
-  background:var(--bg-raised); border:1px solid var(--line); border-radius:14px;
-  box-shadow:0 12px 32px rgba(0,0,0,0.45);
+  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200;
+  min-width:240px; max-width:calc(100vw - 32px); padding:10px; gap:6px; flex-direction:column;
+  background:var(--bg-raised); border:1px solid var(--line); border-radius:16px;
+  box-shadow:0 18px 48px rgba(0,0,0,0.6);
 }
 .add-songs-menu.open{ display:flex; }
+.add-songs-menu .add-songs-title{ font-size:13px; font-weight:600; color:var(--ink); padding:2px 6px 8px; border-bottom:1px solid var(--line); margin-bottom:4px; }
 .add-songs-menu .action-pill{ width:100%; justify-content:flex-start; border-radius:10px; }
-.add-songs-backdrop{ display:none; position:fixed; inset:0; z-index:55; background:transparent; }
+.add-songs-backdrop{ display:none; position:fixed; inset:0; z-index:199; background:rgba(0,0,0,0.55); backdrop-filter:blur(2px); }
 .add-songs-backdrop.open{ display:block; }
-
-/* Premium roadmap "coming soon" items */
-.premium-soon-item{
-  font-size:12.5px; line-height:1.5; color:var(--ink); padding:10px 12px;
-  border:1px solid var(--line); border-radius:10px; background:var(--bg);
-}
-.premium-soon-item b{ color:var(--ink); }
 
 /* ─────────────── Home page — immersive bubbles ─────────────── */
 #homeView{ display:none; flex:1; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 16px 170px; }
@@ -1334,7 +1366,6 @@ body.sandbox-always-search #searchInput {
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
       <span id="notifBadge" style="display:none; position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:var(--coral); box-shadow:0 0 0 2px var(--bg);"></span>
     </button>
-    <button class="icon-btn" id="statsBtn" title="Stats"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg></button>
     <button class="icon-btn" id="themeBtn" title="Settings"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 00.12-.61l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 00-.6.22L2.66 8.87a.5.5 0 00.12.61l2.03 1.58c-.05.3-.08.61-.08.94s.02.64.07.94l-2.03 1.58a.5.5 0 00-.12.61l1.92 3.32c.12.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.61l-2.03-1.58zM12 15.6a3.6 3.6 0 110-7.2 3.6 3.6 0 010 7.2z"/></svg></button>
   </div>
 </header>
@@ -1374,7 +1405,9 @@ body.sandbox-always-search #searchInput {
   <button id="discoverBtn" class="action-pill">Discover</button>
   <div id="addSongsWrap" class="add-songs-wrap">
     <button id="addSongsToggle" class="action-pill">+ Add songs ▾</button>
+    <div id="addSongsBackdrop" class="add-songs-backdrop"></div>
     <div id="addSongsMenu" class="add-songs-menu">
+      <div class="add-songs-title">Add songs</div>
       <button id="addFolderBtn" class="action-pill primary" style="width:100%; justify-content:flex-start;">+ Add folder</button>
       <button id="addBtn" class="action-pill" style="width:100%; justify-content:flex-start;">+ Files</button>
       <button id="importLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Import library</button>
@@ -1382,7 +1415,6 @@ body.sandbox-always-search #searchInput {
     </div>
   </div>
 </div>
-<div id="addSongsBackdrop" class="add-songs-backdrop"></div>
 <input type="file" id="importLibInput" accept=".zip">
 <input type="file" id="importIntoPlaylistInput" accept=".zip">
 <input type="file" id="addFilesToPlaylistInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
@@ -1439,7 +1471,7 @@ body.sandbox-always-search #searchInput {
   <div id="listPane"></div>
 </div>
 
-<!-- Discover: browse the Spotify catalog online, preview tracks, and jump to SpotiCatch to download -->
+<!-- Discover: browse the Spotify catalog online, preview tracks, and grab the MP3 -->
 <div id="discoverView">
   <div id="discoverSearchRow">
     <input type="text" id="discoverSearch" placeholder="Search songs, artists, albums…">
@@ -1447,19 +1479,14 @@ body.sandbox-always-search #searchInput {
   </div>
   <div id="discoverChips"></div>
   <div id="discoverStatus">Search for any song or tap a category to start browsing.</div>
+  <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
+    <b style="color:var(--coral);">How to get a song</b><br>
+    1. Tap <b>Get song</b> on any track — it opens that song in <b>Spotify</b>.<br>
+    2. Go to a <b>Spotify-to-MP3</b> downloader and paste the song's link (Share → Copy link in Spotify).<br>
+    3. Download the MP3, then use <b>+ Add songs ▾ → + Files</b> above to import it into your library.
+  </div>
   <div id="discoverResults"></div>
   <audio id="discoverPreviewAudio" preload="none"></audio>
-  <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-top:16px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
-    <b style="color:var(--coral);">How to download a song</b><br>
-    1. Tap <b>Get song</b> on any track — it opens that song in <b>Spotify</b>.<br>
-    2. Copy the song's link (Share → Copy link).<br>
-    3. Come back here and tap <b>Open Spotidown</b> below.<br>
-    4. Paste your link into Spotidown and download the MP3.<br>
-    5. Use <b>+ Add songs ▾ → + Files</b> above to import it into your library.
-    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-      <a id="spoticatchLink" href="#" target="_blank" rel="noopener" style="display:inline-block; padding:8px 14px; border-radius:10px; background:var(--coral); color:#161616; font-size:12px; font-weight:600; text-decoration:none;">Open Spotidown</a>
-    </div>
-  </div>
 </div>
 
 <!-- Manage playlists: show/hide any playlist, including All Songs -->
@@ -1669,22 +1696,6 @@ body.sandbox-always-search #searchInput {
       <!-- Manage / remove premium -->
       <div id="premiumManageBox" style="display:none; border-top:1px solid var(--line); padding-top:14px; margin-top:16px;">
         <button id="premiumRemoveBtn" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink-dim); border-radius:8px; padding:10px; font-size:12px; cursor:pointer;">Remove premium from this device</button>
-      </div>
-
-      <!-- More premium features coming soon -->
-      <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:18px;">
-        <div style="font-size:14px; font-weight:600; margin-bottom:4px;">More premium features coming soon</div>
-        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Premium keeps growing. Here's what's on the way — your unlock covers all of it.</div>
-        <div id="premiumRoadmap" style="display:flex; flex-direction:column; gap:8px;">
-          <div class="premium-soon-item">🎧 <b>Gapless &amp; crossfade playback</b> — seamless transitions between every track.</div>
-          <div class="premium-soon-item">📜 <b>Live synced lyrics</b> — karaoke-style lyrics that scroll with the music.</div>
-          <div class="premium-soon-item">🎚️ <b>Advanced EQ &amp; audio presets</b> — custom curves, bass boost, and per-genre profiles.</div>
-          <div class="premium-soon-item">🌙 <b>Smart sleep timer &amp; fade-out</b> — drift off with music that gently fades and stops.</div>
-          <div class="premium-soon-item">🔁 <b>Auto-mix &amp; smart shuffle</b> — DJ-style transitions that blend your library.</div>
-          <div class="premium-soon-item">📊 <b>Deep listening stats</b> — yearly rewinds, top genres, and listening trends.</div>
-          <div class="premium-soon-item">🎨 <b>Exclusive themes &amp; glow effects</b> — premium-only visual packs.</div>
-          <div class="premium-soon-item">☁️ <b>Cloud sync &amp; backup</b> — keep your library and playlists across devices.</div>
-        </div>
       </div>
     </div>
 
@@ -2182,6 +2193,38 @@ body.sandbox-always-search #searchInput {
           <button class="tab" id="sandboxAlwaysSearch" style="padding:5px 12px; font-size:12px;">Off</button>
         </div>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Keeps the search bar always expanded instead of collapsing.</div>
+      </div>
+
+      <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:8px;">
+        <h3 style="font-size:14px; margin-bottom:12px;">Accessibility & display</h3>
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px;">Reduce motion</span>
+            <button class="tab" id="sandboxReduceMotion" style="padding:5px 12px; font-size:12px;">Off</button>
+          </div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Disables all animations and transitions across the app.</div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px;">High-contrast text</span>
+            <button class="tab" id="sandboxHighContrast" style="padding:5px 12px; font-size:12px;">Off</button>
+          </div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Bolds titles and brightens dim labels for easier reading.</div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px;">Big seek bar</span>
+            <button class="tab" id="sandboxBigSeek" style="padding:5px 12px; font-size:12px;">Off</button>
+          </div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Makes the seek bar taller and its handle bigger for precise scrubbing.</div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px;">Invert colors</span>
+            <button class="tab" id="sandboxInvertColors" style="padding:5px 12px; font-size:12px;">Off</button>
+          </div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Flips the whole color scheme (album art stays normal) — a night-mode style inversion.</div>
+        </div>
       </div>
 
       <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:8px;">
@@ -2785,6 +2828,9 @@ body.sandbox-always-search #searchInput {
   let playlists = { 'All Songs': [], 'Favorites': [] }; // name -> array of track ids
   const UNSORTED_VIEW = '__unsorted__'; // virtual tab: tracks not in any real playlist besides All Songs
   let activePlaylist = 'All Songs';
+  // The most recent *real* playlist (never 'All Songs'/'Unsorted') the user played
+  // from or selected. The Playlists tab lands here instead of defaulting to All Songs.
+  let lastUsedPlaylist = '';
   let hiddenPlaylists = new Set();
   let djDisabledPlaylists = new Set(); // playlists the user has manually opted out of DJ Mode for
   let hiddenUnsorted = false; // whether the Unsorted tab is hidden
@@ -3444,8 +3490,12 @@ function getApiHeaders() {
     if(!statusBox) return;
     const active = isPremiumActive();
     const info = getPremiumInfo();
+    const isSubscription = active && info && info.plan === 'sub';
     statusBox.style.display = active ? 'block' : 'none';
-    manageBox.style.display = active ? 'block' : 'none';
+    // The "Remove premium" button only makes sense for subscriptions (a recurring
+    // plan the user may want to cancel). Gifted/lifetime codes are one-time unlocks
+    // with nothing to cancel, so we hide the button for them.
+    manageBox.style.display = isSubscription ? 'block' : 'none';
     if(buyLifetime) buyLifetime.style.display = active ? 'none' : '';
     if(buySub) buySub.style.display = active ? 'none' : '';
     if(active){
@@ -3574,6 +3624,11 @@ function getApiHeaders() {
   }
 
   function showSettingsTab(tab){
+    // Sandbox is premium-only; redirect locked users to the Premium tab.
+    if(tab === 'sandbox' && !isPremiumActive()){
+      toast('Sandbox is a premium feature — unlock it to access experimental tweaks.');
+      tab = 'premium';
+    }
     $('settingsPanePremium').style.display = tab === 'premium' ? '' : 'none';
     $('settingsPaneTheme').style.display = tab === 'theme' ? '' : 'none';
     $('settingsPaneDonate').style.display = tab === 'donate' ? '' : 'none';
@@ -3608,7 +3663,15 @@ $('settingsTabPlayback').addEventListener('click', () => showSettingsTab('playba
 $('settingsTabEQ').addEventListener('click', () => showSettingsTab('eq'));
 $('settingsTabDownload').addEventListener('click', () => showSettingsTab('download'));
 $('settingsTabMore').addEventListener('click', () => showSettingsTab('more'));
-$('settingsTabSandbox').addEventListener('click', () => showSettingsTab('sandbox'));
+$('settingsTabSandbox').addEventListener('click', () => {
+  // Sandbox is a premium-only feature set.
+  if(!isPremiumActive()){
+    toast('Sandbox is a premium feature — unlock it to access experimental tweaks.');
+    openPremiumSettings();
+    return;
+  }
+  showSettingsTab('sandbox');
+});
 // Settings opens to Premium first (so paid features lead the settings list), but
 // only the first time the user opens settings each session — after that, respect
 // whatever tab they last chose.
@@ -3848,6 +3911,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxAlwaysSearch = false;
   let sandboxNowbarSize = 100;
   let sandboxDragDrop = false;
+  let sandboxReduceMotion = false;
+  let sandboxHighContrast = false;
+  let sandboxBigSeek = false;
+  let sandboxInvertColors = false;
   let actionPillOrder = ['addFolder', 'add', 'exportLib', 'importLib']; // IDs in default order
 
   // Watermark remover: simple plain-text removal from song titles/artists
@@ -3949,6 +4016,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('sandboxAlwaysSearch').classList.toggle('active', sandboxAlwaysSearch);
     $('sandboxDragDrop').textContent = sandboxDragDrop ? 'On' : 'Off';
     $('sandboxDragDrop').classList.toggle('active', sandboxDragDrop);
+    $('sandboxReduceMotion').textContent = sandboxReduceMotion ? 'On' : 'Off';
+    $('sandboxReduceMotion').classList.toggle('active', sandboxReduceMotion);
+    $('sandboxHighContrast').textContent = sandboxHighContrast ? 'On' : 'Off';
+    $('sandboxHighContrast').classList.toggle('active', sandboxHighContrast);
+    $('sandboxBigSeek').textContent = sandboxBigSeek ? 'On' : 'Off';
+    $('sandboxBigSeek').classList.toggle('active', sandboxBigSeek);
+    $('sandboxInvertColors').textContent = sandboxInvertColors ? 'On' : 'Off';
+    $('sandboxInvertColors').classList.toggle('active', sandboxInvertColors);
     $('nowbarSizeValue').textContent = sandboxNowbarSize + '%';
     applySandboxStyles();
     applyActionPillDragDrop();
@@ -3962,6 +4037,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     document.body.classList.toggle('sandbox-show-playcount', sandboxShowPlayCount);
     document.body.classList.toggle('sandbox-compact-nowbar', sandboxCompactNowbar);
     document.body.classList.toggle('sandbox-always-search', sandboxAlwaysSearch);
+    document.body.classList.toggle('sandbox-reduce-motion', sandboxReduceMotion);
+    document.body.classList.toggle('sandbox-high-contrast', sandboxHighContrast);
+    document.body.classList.toggle('sandbox-big-seek', sandboxBigSeek);
+    document.body.classList.toggle('sandbox-invert-colors', sandboxInvertColors);
     // Remove all nowbar size classes
     document.body.classList.remove('sandbox-nowbar-size-50', 'sandbox-nowbar-size-75', 'sandbox-nowbar-size-125', 'sandbox-nowbar-size-150');
     if(sandboxNowbarSize === 50) document.body.classList.add('sandbox-nowbar-size-50');
@@ -4129,6 +4208,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('sandboxCompactNowbar').addEventListener('click', () => { sandboxCompactNowbar = !sandboxCompactNowbar; dbPut('meta', { key: 'sandboxCompactNowbar', value: sandboxCompactNowbar }); updateSandboxToggles(); });
   $('sandboxAlwaysSearch').addEventListener('click', () => { sandboxAlwaysSearch = !sandboxAlwaysSearch; dbPut('meta', { key: 'sandboxAlwaysSearch', value: sandboxAlwaysSearch }); updateSandboxToggles(); });
   $('sandboxDragDrop').addEventListener('click', () => { sandboxDragDrop = !sandboxDragDrop; dbPut('meta', { key: 'sandboxDragDrop', value: sandboxDragDrop }); updateSandboxToggles(); initActionPillDragDrop(); });
+  $('sandboxReduceMotion').addEventListener('click', () => { sandboxReduceMotion = !sandboxReduceMotion; dbPut('meta', { key: 'sandboxReduceMotion', value: sandboxReduceMotion }); updateSandboxToggles(); });
+  $('sandboxHighContrast').addEventListener('click', () => { sandboxHighContrast = !sandboxHighContrast; dbPut('meta', { key: 'sandboxHighContrast', value: sandboxHighContrast }); updateSandboxToggles(); });
+  $('sandboxBigSeek').addEventListener('click', () => { sandboxBigSeek = !sandboxBigSeek; dbPut('meta', { key: 'sandboxBigSeek', value: sandboxBigSeek }); updateSandboxToggles(); });
+  $('sandboxInvertColors').addEventListener('click', () => { sandboxInvertColors = !sandboxInvertColors; dbPut('meta', { key: 'sandboxInvertColors', value: sandboxInvertColors }); updateSandboxToggles(); });
 
   // Watermark remover event handlers
   $('watermarkPatterns').addEventListener('input', (e) => {
@@ -4200,6 +4283,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     sandboxAlwaysSearch = false;
     sandboxNowbarSize = 100;
     sandboxDragDrop = false;
+    sandboxReduceMotion = false;
+    sandboxHighContrast = false;
+    sandboxBigSeek = false;
+    sandboxInvertColors = false;
     actionPillOrder = ['addFolder', 'add', 'exportLib', 'importLib'];
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
@@ -4210,6 +4297,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'sandboxAlwaysSearch', value: false });
     dbPut('meta', { key: 'sandboxNowbarSize', value: 100 });
     dbPut('meta', { key: 'sandboxDragDrop', value: false });
+    dbPut('meta', { key: 'sandboxReduceMotion', value: false });
+    dbPut('meta', { key: 'sandboxHighContrast', value: false });
+    dbPut('meta', { key: 'sandboxBigSeek', value: false });
+    dbPut('meta', { key: 'sandboxInvertColors', value: false });
     dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
     updateSandboxToggles();
     initActionPillDragDrop();
@@ -5158,7 +5249,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderStats();
     popStatTile(cfg.tileId);
   }
-  $('statsBtn').addEventListener('click', () => { renderStats(); $('statsBackdrop').style.display = 'flex'; });
+  if($('statsBtn')) $('statsBtn').addEventListener('click', () => { renderStats(); $('statsBackdrop').style.display = 'flex'; });
   $('statsClose').addEventListener('click', () => { $('statsBackdrop').style.display = 'none'; });
   $('statsBackdrop').addEventListener('click', e => { if(e.target === $('statsBackdrop')) $('statsBackdrop').style.display = 'none'; });
 
@@ -5219,6 +5310,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       const hiddenRow = metaRows.find(r => r.key === 'hiddenPlaylists');
       if(hiddenRow && Array.isArray(hiddenRow.value)) hiddenPlaylists = new Set(hiddenRow.value);
+      const lastUsedRow = metaRows.find(r => r.key === 'lastUsedPlaylist');
+      if(lastUsedRow && lastUsedRow.value && playlists[lastUsedRow.value]) lastUsedPlaylist = lastUsedRow.value;
       const djDisabledRow = metaRows.find(r => r.key === 'djDisabledPlaylists');
       if(djDisabledRow && Array.isArray(djDisabledRow.value)) djDisabledPlaylists = new Set(djDisabledRow.value);
       const hiddenUnsortedRow = metaRows.find(r => r.key === 'hiddenUnsorted');
@@ -5274,6 +5367,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(sandboxNowbarSizeRow) sandboxNowbarSize = parseInt(sandboxNowbarSizeRow.value) || 100;
       const sandboxDragDropRow = metaRows.find(r => r.key === 'sandboxDragDrop');
       if(sandboxDragDropRow) sandboxDragDrop = !!sandboxDragDropRow.value;
+      const sandboxReduceMotionRow = metaRows.find(r => r.key === 'sandboxReduceMotion');
+      if(sandboxReduceMotionRow) sandboxReduceMotion = !!sandboxReduceMotionRow.value;
+      const sandboxHighContrastRow = metaRows.find(r => r.key === 'sandboxHighContrast');
+      if(sandboxHighContrastRow) sandboxHighContrast = !!sandboxHighContrastRow.value;
+      const sandboxBigSeekRow = metaRows.find(r => r.key === 'sandboxBigSeek');
+      if(sandboxBigSeekRow) sandboxBigSeek = !!sandboxBigSeekRow.value;
+      const sandboxInvertColorsRow = metaRows.find(r => r.key === 'sandboxInvertColors');
+      if(sandboxInvertColorsRow) sandboxInvertColors = !!sandboxInvertColorsRow.value;
       const actionPillOrderRow = metaRows.find(r => r.key === 'actionPillOrder');
       if(actionPillOrderRow && Array.isArray(actionPillOrderRow.value) && actionPillOrderRow.value.length > 0) {
         actionPillOrder = actionPillOrderRow.value;
@@ -5313,7 +5414,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '44.6';
+  const APP_VERSION = '45.0';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5326,6 +5427,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '45.0', date: 'August 15, 2026 at 6:55 pm EDT', title: 'Premium-only Sandbox, cleaner Discover, modal Add songs, playlist memory, more sandbox tools', items: [
+      'Sandbox is now a premium-only feature set — locked users are sent to the Premium tab when they try to open it',
+      'Removed the "More premium features coming soon" roadmap block from the Premium pane',
+      'The "Remove premium from this device" button now only appears for subscriptions (a recurring plan you might cancel) — gifted/lifetime codes have nothing to cancel, so the button is hidden for them, and it sits at the absolute bottom of the Premium pane',
+      'Discover: removed the Spotidown/"Open downloader" link and the per-song download hint. The how-to instructions now live at the top of Discover. "Get song" opens the track directly in Spotify; step 2 tells you to take it to a Spotify-to-MP3 downloader yourself',
+      'Add songs ▾ is now a proper centered modal: an opaque, blurred backdrop blocks interaction with everything else while it\'s open, the menu is more opaque so the buttons are clearly readable, and the actions reliably fire before the menu closes',
+      'Playlists tab now lands on your most recently used real playlist — never All Songs by default (All Songs only if you have no real playlists yet). It remembers the last playlist you played from or tapped, even if that playlist is hidden, and survives going to Discover and back. Renaming a playlist updates the memory too',
+      'Removed the listening-stats icon from the header — stats are reached via the Home stats bubble instead. Added a Notifications bubble to the Home dashboard (the bell still lives in the header too)',
+      'Added four working Sandbox toggles under a new "Accessibility & display" group: Reduce motion (kills all animations/transitions), High-contrast text (bolds titles, brightens dim labels), Big seek bar (taller bar + bigger handle), and Invert colors (full night-mode-style color flip, album art excluded). All persist and reset with the other sandbox settings',
+    ]},
     { version: '44.6', date: 'August 15, 2026 at 6:44 pm EDT', title: 'Fix Get song 404, keep Add songs menu in frame, always show the now bar, premium coming-soon roadmap', items: [
       'Fixed the Discover "Get song" downloader returning a 404: SpotiCatch (spoticatch.com) and Spotisaver (spotisaver.com) are both dead/parked domains. The downloader now points to Spotidown (spotidown.com), which is live. All help text, the "Open downloader" button, and the Get song flow were updated to match',
       'Fixed the Add songs ▾ dropdown opening out of frame — it was anchored to the button\'s left edge and spilled off the right side of the screen on mobile. It now anchors to the right edge and opens inward, so the whole menu stays on screen',
@@ -7823,6 +7934,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       el.addEventListener('click', () => {
         if(el.dataset.justDragged){ delete el.dataset.justDragged; return; }
         activePlaylist = name;
+        rememberPlaylist(name);
         reorderMode = false;
         if(shuffle) regenerateShuffleOrder();
         renderTabs();
@@ -8071,6 +8183,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
     }
     if(activePlaylist === oldName) activePlaylist = newName;
+    if(lastUsedPlaylist === oldName){ lastUsedPlaylist = newName; dbPut('meta', { key: 'lastUsedPlaylist', value: newName }); }
     saveMeta();
     renderManagePlaylistsList();
     renderTabs();
@@ -9422,11 +9535,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   // ---------------- Playback (with crossfade) ----------------
+  // Remember the last real playlist the user engaged with (played from or tapped).
+  // 'All Songs' / Unsorted are intentionally excluded so the Playlists tab never
+  // dumps the user back onto All Songs after visiting Discover, etc.
+  function rememberPlaylist(name){
+    if(!name || name === 'All Songs' || name === UNSORTED_VIEW) return;
+    if(!playlists[name]) return;
+    if(lastUsedPlaylist === name) return;
+    lastUsedPlaylist = name;
+    dbPut('meta', { key: 'lastUsedPlaylist', value: name });
+  }
+
   function playFromList(ids, startId){
     isMixMode = false;
     queue = ids.slice(); // ids already reflect the currently shown order (shuffled or sorted)
     queueIndex = queue.indexOf(startId);
     queueSourcePlaylist = activePlaylist;
+    rememberPlaylist(activePlaylist);
     cancelCrossfade();
     playCurrent(true);
   }
@@ -11992,6 +12117,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       queue = ordered.map(t => t.id);
       queueIndex = 0;
       queueSourcePlaylist = activePlaylist;
+      rememberPlaylist(activePlaylist);
       cancelCrossfade();
       playCurrent(true);
       toast('Mix started — tracks will blend into each other');
@@ -12044,8 +12170,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       await loadSavedTheme();
       const loaded = await loadFromDB();
       if(loaded){
-        // Reopen on whichever playlist the last-playing song came from, not always All Songs
-        if(lastPlaybackState && lastPlaybackState.sourcePlaylist && playlists[lastPlaybackState.sourcePlaylist]){
+        // Reopen on the last playlist the user engaged with — never default to All Songs.
+        // Preference order: a real last-used playlist, then the source of the last-playing
+        // song, otherwise leave All Songs (only because there's no real playlist yet).
+        if(lastUsedPlaylist && playlists[lastUsedPlaylist]){
+          activePlaylist = lastUsedPlaylist;
+        } else if(lastPlaybackState && lastPlaybackState.sourcePlaylist && playlists[lastPlaybackState.sourcePlaylist] && lastPlaybackState.sourcePlaylist !== 'All Songs'){
           activePlaylist = lastPlaybackState.sourcePlaylist;
         }
         renderTabs();
@@ -12169,10 +12299,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // by the iTunes Search API (CORS-friendly, no auth — same source already used for cover art
   // and song previews elsewhere in the app). Each result shows artwork, title/artist/album and
   // a 30-second preview you can play inline. The "Get song" button opens the song directly in
-  // Spotify so you can copy its link, then come back and paste it into SpotiCatch to download
-  // the MP3 and import it with + Files.
-  const SPOTICATCH_URL = 'https://spotidown.com/';
-  const SPOTISAVER_URL = SPOTICATCH_URL;
+  // Spotify so the user can copy its link and take it to any Spotify-to-MP3 downloader.
   const DISCOVER_CHIPS = [
     { label: 'Top hits', term: 'top hits 2026' },
     { label: 'Pop', term: 'pop hits' },
@@ -12232,15 +12359,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   $('homeBtn').addEventListener('click', () => navigate('home'));
   $('libraryBtn').addEventListener('click', () => {
-    // Land on the most recently played playlist if we have one, otherwise All Songs.
-    // Prefer the live queue source (updated every time a song plays) over the
-    // stale snapshot loaded once at boot — that way the tab always reflects what
-    // you were just listening to.
-    const recent = (queueSourcePlaylist && playlists[queueSourcePlaylist])
-      ? queueSourcePlaylist
-      : (lastPlaybackState && lastPlaybackState.sourcePlaylist && playlists[lastPlaybackState.sourcePlaylist]
-          ? lastPlaybackState.sourcePlaylist : 'All Songs');
-    activePlaylist = recent;
+    // Land on the most recently used real playlist — never All Songs by default.
+    // Preference: the live last-used playlist (updated on every play/tab pick),
+    // then the last playback's source playlist, then the first real playlist.
+    // All Songs is only used as a last resort when no real playlist exists yet.
+    const pickReal = () => {
+      if(lastUsedPlaylist && playlists[lastUsedPlaylist]) return lastUsedPlaylist;
+      const src = lastPlaybackState && lastPlaybackState.sourcePlaylist;
+      if(src && src !== 'All Songs' && playlists[src]) return src;
+      const real = Object.keys(playlists).find(n => n !== 'All Songs' && n !== 'Favorites' && playlists[n].length);
+      if(real) return real;
+      return 'All Songs';
+    };
+    activePlaylist = pickReal();
     navigate('library');
     renderTabs();
     renderList();
@@ -12261,10 +12392,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function openAddSongsMenu(){
     $('addSongsMenu').classList.add('open');
     $('addSongsBackdrop').classList.add('open');
+    // Raise the action strip above all other page layers while the modal is open so
+    // the fixed backdrop+menu cover the now-bar and everything else.
+    const strip = document.querySelector('.action-strip');
+    if(strip) strip.classList.add('menu-open');
   }
   function closeAddSongsMenu(){
     $('addSongsMenu').classList.remove('open');
     $('addSongsBackdrop').classList.remove('open');
+    const strip = document.querySelector('.action-strip');
+    if(strip) strip.classList.remove('menu-open');
   }
   $('addSongsToggle').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -12272,15 +12409,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     else openAddSongsMenu();
   });
   $('addSongsBackdrop').addEventListener('click', closeAddSongsMenu);
-  // Close the menu after picking an action (the underlying handlers do the work).
+  // Close the menu after picking an action. We listen on the bubble phase so the
+  // action's own click handler (file/folder/import/export) runs first, inside the
+  // user gesture — then the menu closes. Deferring the close with a microtask keeps
+  // the file-picker open() call safely within the original click gesture.
   ['addFolderBtn','addBtn','importLibBtn','exportLibBtn'].forEach(id => {
     const el = $(id);
-    if(el) el.addEventListener('click', closeAddSongsMenu, { capture: true });
+    if(el) el.addEventListener('click', () => { queueMicrotask(closeAddSongsMenu); });
   });
-
-  // ---- SpotiCatch link in the Discover help box ----
-  const spoticatchLink = $('spoticatchLink');
-  if(spoticatchLink) spoticatchLink.href = SPOTICATCH_URL;
 
   // ---- Home page rendering ----
   function timeAgo(ts){
@@ -12336,6 +12472,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <div class="hb-glow"></div><div class="hb-ico">📊</div>
         <div class="hb-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="hb-label">Listening stats — ${totalPlays} plays · 🔥 ${streak}d streak</div><div class="hb-hint">⤢</div>
       </div>
+      <div class="home-bubble" data-bubble="notifications">
+        <div class="hb-glow"></div><div class="hb-ico">🔔</div>
+        <div class="hb-value" style="font-size:14px;">Notifications</div>
+        <div class="hb-label">${notifPreviewText()}</div><div class="hb-hint">⤢</div>
+      </div>
       <div class="home-bubble gold-bubble" data-bubble="library">
         <div class="hb-glow"></div><div class="hb-ico gold">🎵</div>
         <div class="hb-value gold">${totalTracks}</div><div class="hb-label">In your library</div><div class="hb-hint">⤢</div>
@@ -12386,6 +12527,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return escapeHtml(top.name || '—');
   }
 
+  function notifPreviewText(){
+    const unread = ($('notifBadge') && $('notifBadge').style.display !== 'none');
+    return unread ? 'New updates — tap to read' : 'All caught up';
+  }
+
   // ---- Expanded bubble overlay ----
   function openHomeBubble(kind){
     const overlay = $('homeBubbleOverlay');
@@ -12410,6 +12556,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <button class="hb-cta" id="hbCtaStats">See full stats</button>
       `;
       $('hbCtaStats').addEventListener('click', () => { closeHomeBubble(); renderStats(); $('statsBackdrop').style.display = 'flex'; });
+    }
+    else if(kind === 'notifications'){
+      ico.textContent = '🔔'; title.textContent = 'Notifications';
+      body.innerHTML = `<div class="hb-empty" style="margin-bottom:12px;">See what's new in SideCut — updates, fixes, and tips.</div><button class="hb-cta" id="hbCtaNotif">Open notifications</button>`;
+      $('hbCtaNotif').addEventListener('click', () => { closeHomeBubble(); openNotif(); });
     }
     else if(kind === 'library'){
       ico.textContent = '🎵'; title.textContent = 'Your library';
@@ -12632,18 +12783,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function triggerDiscoverDownload(card, r){
-    const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent((r.trackName || '') + ' ' + (r.artistName || ''))}`;
-    // Open both synchronously inside the user gesture so neither popup is blocked.
+    // Open the song directly in Spotify so the user can copy its link, then take it
+    // to any Spotify-to-MP3 downloader themselves (instructions are at the top of Discover).
+    const q = (r.trackName || '') + ' ' + (r.artistName || '');
+    const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent(q)}`;
     try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){}
-    try{ window.open(SPOTICATCH_URL, '_blank', 'noopener'); }catch(e){}
-    // Show the next-step instructions inline under the card, not as a toast.
-    let hint = card.querySelector('.discover-dl-hint');
-    if(!hint){
-      hint = document.createElement('div');
-      hint.className = 'discover-dl-hint';
-      card.appendChild(hint);
-    }
-    hint.innerHTML = `<b>1.</b> In the Spotify tab, copy this song's link (Share → Copy link).<br><b>2.</b> In the downloader tab, paste it and hit Download.<br><b>3.</b> Come back here, tap <b>+ Add songs ▾ → + Files</b> to import the MP3.`;
+    toast('Opened in Spotify — copy the link, then use a Spotify-to-MP3 downloader.', 3200);
   }
 
   function toggleDiscoverPreview(url, btn){
