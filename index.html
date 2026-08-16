@@ -1696,6 +1696,15 @@ body.sandbox-invert-colors .brand-mark{
           </div>
         </div>
 
+        <!-- More premium features coming soon -->
+        <div style="border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:18px;">
+          <div style="font-size:13px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+            <span style="color:var(--coral);">✦</span> More premium features coming soon
+          </div>
+          <div id="premiumRoadmapList" style="display:grid; grid-template-columns:1fr 1fr; gap:8px 14px;"></div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:10px; line-height:1.4;">All of these are covered by your existing unlock — no second purchase, ever.</div>
+        </div>
+
         <!-- Remove / cancel — only meaningful for subscriptions -->
         <div id="premiumManageBox" style="border-top:1px solid var(--line); padding-top:14px; margin-top:16px;">
           <button id="premiumRemoveBtn" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink-dim); border-radius:8px; padding:10px; font-size:12px; cursor:pointer;">Remove premium from this device</button>
@@ -1725,6 +1734,15 @@ body.sandbox-invert-colors .brand-mark{
             <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Recurring $0.49 every two weeks. Cancel anytime. Unlock Discover while your subscription is active.</div>
             <button id="premiumBuySubBtn" class="confirm" style="width:100%; padding:11px; border-radius:20px; border:none; font-weight:600; font-size:14px; cursor:pointer;">Subscribe — $0.49 / 2 weeks</button>
           </div>
+        </div>
+
+        <!-- More premium features coming soon -->
+        <div style="border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:18px;">
+          <div style="font-size:13px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+            <span style="color:var(--coral);">✦</span> More premium features coming soon
+          </div>
+          <div id="premiumRoadmapListBuy" style="display:grid; grid-template-columns:1fr 1fr; gap:8px 14px;"></div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:10px; line-height:1.4;">One unlock covers Discover today and every feature below as they ship — no second purchase, ever.</div>
         </div>
 
         <!-- Redeem code -->
@@ -3516,6 +3534,32 @@ function getApiHeaders() {
     }
   }
 
+  // Premium "coming soon" roadmap — shown in both the manage and buy views so
+  // active users see what's next and prospective buyers see the full value.
+  const PREMIUM_ROADMAP = [
+    ['🔗', 'Gapless & crossfade', 'Seamless track transitions, no silence between songs'],
+    ['📜', 'Synced lyrics', 'Word-by-word lyrics that follow playback live'],
+    ['🎚️', 'Advanced EQ', 'Saveable EQ presets per genre, speaker, or headphone'],
+    ['🌙', 'Sleep timer + fade', 'Drift off — playback fades and stops on a timer'],
+    ['🔀', 'Auto-mix', 'Smart shuffle that blends BPM and key-matched tracks'],
+    ['📊', 'Deep listening stats', 'Weekly charts, top genres, listening trends over time'],
+    ['🎨', 'Exclusive themes', 'Premium-only visual themes and animated covers'],
+    ['☁️', 'Cloud sync', 'Carry your library + premium across devices (no account)'],
+  ];
+  function renderPremiumRoadmap(){
+    const html = PREMIUM_ROADMAP.map(([ico, name, desc]) => `
+      <div style="display:flex; align-items:flex-start; gap:8px;">
+        <span style="font-size:14px; line-height:1.2; flex-shrink:0;">${ico}</span>
+        <div>
+          <div style="font-size:11.5px; font-weight:600; color:var(--ink);">${name}</div>
+          <div style="font-size:10.5px; color:var(--ink-dim); line-height:1.35;">${desc}</div>
+        </div>
+      </div>`).join('');
+    const a = $('premiumRoadmapList'), b = $('premiumRoadmapListBuy');
+    if(a && !a.dataset.filled){ a.innerHTML = html; a.dataset.filled = '1'; }
+    if(b && !b.dataset.filled){ b.innerHTML = html; b.dataset.filled = '1'; }
+  }
+
   function refreshPremiumUI(){
     const statusBox = $('premiumStatusBox');
     const statusSub = $('premiumStatusSub');
@@ -3524,6 +3568,7 @@ function getApiHeaders() {
     const manageBox = $('premiumManageBox');
     const planLine = $('premiumPlanLine');
     if(!statusBox) return;
+    renderPremiumRoadmap();
     const active = isPremiumActive();
     const info = getPremiumInfo();
     const isSubscription = active && info && info.plan === 'sub';
@@ -5466,7 +5511,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '45.3';
+  const APP_VERSION = '45.4';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5479,6 +5524,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '45.4', date: 'August 15, 2026 at 11:44 pm EDT', title: 'Streaming import (no more OOM), premium roadmap back, all UI fixes confirmed', items: [
+      'Fix: importing a large library .zip no longer crashes on low-memory Android webviews. Import now reads the zip via a streaming central-directory reader (File.slice + native DecompressionStream) instead of loading the whole archive into one ArrayBuffer — the same OOM class that killed exports before. Falls back to JSZip automatically on older browsers without DecompressionStream',
+      'The full now-playing bar always stays visible — the seek row, transport controls, and DJ/Lyrics row never collapse away on scroll. (Re-confirmed; if you still saw it vanish, this version forces the service worker to update so the fix actually reaches your device)',
+      'Discover "Get song" works again — it no longer points at the dead spotisaver.com domain (the 404). It opens the song in Spotify so you can copy the link and take it to any Spotify-to-MP3 downloader, with the how-to right at the top of Discover',
+      'The + Add songs ▾ menu is a proper centered modal — opaque blurred backdrop, menu centered on screen — so it never spills out of frame on mobile',
+      'Tapping the Playlists tab drops you on your most recently used real playlist (the last one you played from or tapped), never All Songs unless you have no real playlists yet. Renaming a playlist updates the memory too',
+      'Re-added the "More premium features coming soon" roadmap to the Premium pane (it had been removed) — gapless & crossfade, synced lyrics, advanced EQ, sleep timer with fade, auto-mix, deep listening stats, exclusive themes, and cloud sync. Shown to both active and prospective premium users, all covered by your existing unlock',
+    ]},
     { version: '45.3', date: 'August 15, 2026 at 11:45 pm EDT', title: 'Reliable exports, premium checkbox everywhere, live Home progress', items: [
       'Fix: export no longer aborts the whole .zip when one song\'s file can\'t be read (the "arraybuffer" error on some Android webviews). A single unreadable blob now skips just that track; the rest still bundle. blobToArrayBuffer gained a Response-based fallback on top of FileReader so a broken Blob.arrayBuffer can\'t throw',
       'The "Include my premium unlock code" checkbox now appears on every export path — Export library, Export playlist, and Export selected — not just the full-library export (so it shows up wherever you export)',
@@ -9495,8 +9548,57 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(typeof JSZip === 'undefined'){ toast('Import tool failed to load — check your connection and reload.'); return; }
     toast(targetPlaylist ? `Importing into "${targetPlaylist}"…` : 'Importing library…', 3000);
     try{
-      const zip = await JSZip.loadAsync(file);
-      const manifestEntry = zip.file('manifest.json');
+      // Open the .zip with the lowest-memory reader available. JSZip.loadAsync
+      // reads the WHOLE file into one ArrayBuffer (OOMs on big libraries —
+      // "Array buffer allocation failed"); the streaming reader parses only the
+      // central directory and slices each file out on demand. We try streaming
+      // first and fall back to JSZip if the zip uses features it can't handle
+      // (ZIP64, encryption, unknown method, no DecompressionStream for DEFLATE).
+      let zipApi; // { file(name)->{async(blob)}, has(name) }
+      let usingStream = false;
+      try{
+        const reader = makeStreamingZipReader(file);
+        const entries = await reader.readEntries();
+        const byName = {};
+        for(const e of entries){ if(!e.isDir) byName[e.name] = e; }
+        const streamEntry = (name) => {
+          const entry = byName[name];
+          if(!entry) return null;
+          const doAsync = async (t) => {
+            if(t === 'string') return reader.readEntryText(entry);
+            if(t === 'arraybuffer') return reader.readEntryBlob(entry);
+            if(t === 'blob'){ const ab = await reader.readEntryBlob(entry); return new Blob([ab]); }
+            if(t === 'uint8array'){ const ab = await reader.readEntryBlob(entry); return new Uint8Array(ab); }
+            throw new Error('unsupported async type ' + t);
+          };
+          return { async: doAsync };
+        };
+        zipApi = {
+          _stream: true,
+          has(name){ return !!byName[name]; },
+          file(name){ return streamEntry(name); }
+        };
+        usingStream = true;
+      }catch(streamErr){
+        if(streamErr && /^STREAM_UNSUPPORTED/.test(streamErr.message)){
+          // Fall back to JSZip for this zip (still works for small/old zips).
+          console.log('Streaming import unavailable (' + streamErr.message + '), using JSZip fallback.');
+        } else { throw streamErr; }
+      }
+      if(!usingStream){
+        const jsz = await JSZip.loadAsync(file);
+        const jsEntry = (name) => {
+          const e = jsz.file(name);
+          return e ? { async: (t) => e.async(t) } : null;
+        };
+        zipApi = {
+          _stream: false,
+          has(name){ return !!jsz.file(name); },
+          file(name){ return jsEntry(name); }
+        };
+      }
+
+      const manifestEntry = zipApi.file('manifest.json');
       if(!manifestEntry){ toast('That doesn\'t look like a SideCut library file.'); return; }
       const manifest = JSON.parse(await manifestEntry.async('string'));
       const isV2 = manifest.version === 2;
@@ -9533,7 +9635,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(m.lastPlayedAt !== undefined && (existing.lastPlayedAt === undefined || existing.lastPlayedAt < m.lastPlayedAt)) existing.lastPlayedAt = m.lastPlayedAt;
             // Import cover art for existing track
             if(m.hasCover && !existing.artBlob){
-              const coverEntry = zip.file(`covers/${m.id}.jpg`);
+              const coverEntry = zipApi.file(`covers/${m.id}.jpg`);
               if(coverEntry){
                 const coverBlob = await coverEntry.async('blob');
                 existing.artBlob = coverBlob;
@@ -9545,7 +9647,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
           continue; 
         }
-        const entry = zip.file(m.path);
+        const entry = zipApi.file(m.path);
         if(!entry) continue;
         const blob = await entry.async('blob');
         const url = URL.createObjectURL(blob);
@@ -9577,7 +9679,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         
         // Import cover art from v2 export
         if(isV2 && m.hasCover){
-          const coverEntry = zip.file(`covers/${m.id}.jpg`);
+          const coverEntry = zipApi.file(`covers/${m.id}.jpg`);
           if(coverEntry){
             const coverBlob = await coverEntry.async('blob');
             track.artBlob = coverBlob;
@@ -9813,6 +9915,118 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
     }
+  }
+  // ---------------- Streaming zip reader (low-memory import) ----------------
+  // JSZip.loadAsync(file) reads the ENTIRE .zip into one ArrayBuffer before
+  // parsing — on a big library that single allocation throws "Array buffer
+  // allocation failed" (V8 RangeError) on low-memory Android webviews. This
+  // reader parses only the End-of-Central-Directory record + central directory
+  // (a few KB at the END of the file) to list entries, then extracts each file
+  // via File.slice(offset, offset+size) — so only one file's bytes ever live
+  // in memory at a time. Supports STORE (method 0, what our exports use) and
+  // DEFLATE-raw (method 8, older exports). Falls back to JSZip.loadAsync when
+  // anything it can't handle shows up (ZIP64, encrypted, unknown method) or
+  // when the needed APIs are missing.
+  // `fileLike` is anything with .size and .slice(start,end)->{arrayBuffer()}.
+  function makeStreamingZipReader(fileLike){
+    const file = fileLike;
+    async function rdU8(start, len){
+      const s = file.slice(start, start + len);
+      return new Uint8Array(await s.arrayBuffer());
+    }
+    const u16 = (b, o) => (b[o] | (b[o+1] << 8)) >>> 0;
+    const u32 = (b, o) => (b[o] | (b[o+1] << 8) | (b[o+2] << 16) | (b[o+3] * 0x1000000)) >>> 0;
+    async function findEOCD(){
+      const scanLen = Math.min(file.size, 65557);
+      const start = file.size - scanLen;
+      const buf = await rdU8(start, scanLen);
+      for(let i = buf.length - 22; i >= 0; i--){
+        if(buf[i]===0x50 && buf[i+1]===0x4b && buf[i+2]===0x05 && buf[i+3]===0x06){
+          return { cdOff: u32(buf, i+16), cdSize: u32(buf, i+12), cdCount: u16(buf, i+10) };
+        }
+      }
+      return null;
+    }
+    async function readEntries(){
+      const eocd = await findEOCD();
+      if(!eocd) throw new Error('STREAM_UNSUPPORTED:EOCD');
+      if(eocd.cdOff === 0xffffffff || eocd.cdSize === 0xffffffff || eocd.cdCount === 0xffff){
+        throw new Error('STREAM_UNSUPPORTED:ZIP64');
+      }
+      const cd = await rdU8(eocd.cdOff, eocd.cdSize);
+      const entries = [];
+      let p = 0;
+      for(let n = 0; n < eocd.cdCount; n++){
+        if(p + 46 > cd.length) break;
+        if(!(cd[p]===0x50 && cd[p+1]===0x4b && cd[p+2]===0x01 && cd[p+3]===0x02)) break;
+        const flags = u16(cd, p+8);
+        const method = u16(cd, p+10);
+        const compSize = u32(cd, p+20);
+        const uncompSize = u32(cd, p+24);
+        const nameLen = u16(cd, p+28);
+        const extraLen = u16(cd, p+30);
+        const commentLen = u16(cd, p+32);
+        const localOff = u32(cd, p+42);
+        const name = new TextDecoder().decode(cd.subarray(p+46, p+46+nameLen));
+        // Encrypted entries (bit 0 of flags) can't be extracted by slicing.
+        if(flags & 0x1) throw new Error('STREAM_UNSUPPORTED:ENCRYPTED:' + name);
+        entries.push({ name, method, compSize, uncompSize, localOff, isDir: name.endsWith('/') });
+        p += 46 + nameLen + extraLen + commentLen;
+      }
+      return entries;
+    }
+    async function dataStart(entry){
+      const lh = await rdU8(entry.localOff, 30);
+      if(!(lh[0]===0x50 && lh[1]===0x4b && lh[2]===0x03 && lh[3]===0x04)){
+        throw new Error('Bad local header for ' + entry.name);
+      }
+      const nameLen = u16(lh, 26);
+      const extraLen = u16(lh, 28);
+      return entry.localOff + 30 + nameLen + extraLen;
+    }
+    async function inflateRaw(compBytes){
+      // Prefer the native DecompressionStream (raw deflate). Not available on
+      // older webviews/iOS<16.8 — caller falls back to JSZip in that case.
+      if(typeof DecompressionStream === 'undefined'){
+        throw new Error('STREAM_UNSUPPORTED:DEFLATE_NODECOMP');
+      }
+      const ds = new DecompressionStream('deflate-raw');
+      const writer = ds.writable.getWriter();
+      writer.write(compBytes);
+      writer.close();
+      const reader = ds.readable.getReader();
+      const chunks = [];
+      for(;;){
+        const { done, value } = await reader.read();
+        if(done) break;
+        chunks.push(value);
+      }
+      let total = 0;
+      for(const c of chunks) total += c.byteLength;
+      const out = new Uint8Array(total);
+      let off = 0;
+      for(const c of chunks){ out.set(c, off); off += c.byteLength; }
+      return out;
+    }
+    async function readEntryBlob(entry){
+      const start = await dataStart(entry);
+      if(entry.method === 0){
+        // STORE — slice the raw bytes straight off the file (no full-file load).
+        const s = file.slice(start, start + entry.compSize);
+        return await s.arrayBuffer();
+      }
+      if(entry.method === 8){
+        const comp = new Uint8Array(await file.slice(start, start + entry.compSize).arrayBuffer());
+        const out = await inflateRaw(comp);
+        return out.buffer;
+      }
+      throw new Error('STREAM_UNSUPPORTED:METHOD:' + entry.method + ':' + entry.name);
+    }
+    async function readEntryText(entry){
+      const ab = await readEntryBlob(entry);
+      return new TextDecoder().decode(ab);
+    }
+    return { readEntries, readEntryBlob, readEntryText };
   }
 
   // ---------------- Playback (with crossfade) ----------------

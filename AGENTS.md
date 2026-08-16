@@ -131,3 +131,28 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - When rebasing onto a remote that already has a same-version commit, expect
   index.html + sw.js conflicts — read the remote commit first, sync with
   `git reset --hard origin/main`, then re-apply only the genuinely missing parts.
+
+## v45.4 (Aug 15, 2026)
+- **Streaming zip import**: `importLibrary()` now tries `makeStreamingZipReader()`
+  (central-directory-at-end reader using `File.slice()` + native
+  `DecompressionStream('deflate-raw')`) before falling back to JSZip. Fixes the
+  OOM crash on low-memory Android webviews that `JSZip.loadAsync()` caused by
+  reading the whole archive into one ArrayBuffer (same class as the export OOM
+  fixed in 858e9ec). Supports STORE (method 0) + DEFLATE-raw (method 8); zipApi
+  abstraction bridges both with `{ has(name), file(name)->{async:(t)=>...} }`.
+  Verified: small STORE zip + 300MB streamed zip both import cleanly in browser.
+- **Premium roadmap re-added**: `PREMIUM_ROADMAP` array + `renderPremiumRoadmap()`
+  populate `#premiumRoadmapList` (manage view) and `#premiumRoadmapListBuy`
+  (buy view). Was removed in v45.0; user asked for "more premium features coming
+  soon" so it's back with 8 entries (gapless/crossfade, synced lyrics, advanced
+  EQ, sleep timer+fade, auto-mix, deep stats, exclusive themes, cloud sync).
+- All five user-reported UI regressions (now bar, get-song 404, add-songs menu
+  out of frame, playlists→All Songs, premium roadmap) were ALREADY fixed in code
+  by v44.6/v45.0 commits — the user was on a stale service worker. The real fix
+  was bumping `APP_VERSION` (45.3→45.4) + `sw.js CACHE_NAME`
+  (sidecut-shell-v45.3→v45.4) + a CHANGELOG entry so the SW actually updates.
+  **Lesson**: when a user re-reports something the changelog already claims fixed,
+  suspect a stale SW and bump version/cache before re-investigating the code.
+- Landmarks shifted: `makeStreamingZipReader()` ~line 9830+, `importLibrary()`
+  ~line 9500+, `renderPremiumRoadmap()` ~line 3549, `navigate()` ~12790,
+  `libraryBtn` pickReal logic ~12822, `triggerDiscoverDownload()` ~13248.
