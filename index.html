@@ -1804,21 +1804,15 @@ body.sandbox-invert-colors .brand-mark{
     <div id="settingsPaneDonate" style="display:none; padding:6px 0;">
       <div style="text-align:center; margin-bottom:18px;">
         <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Support SideCut</div>
-        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5;">SideCut is free and ad-free. If it's made your listening better, a donation helps keep it running and improving. Thank you! 💛</div>
+        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5;">SideCut is free and ad-free. If it's made your listening better, a tip helps keep it running and improving — processed through Google Play. Thank you! 💛</div>
       </div>
-      <label style="font-size:13px; color:var(--ink-dim); display:block; margin-bottom:6px;">Enter amount (USD)</label>
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
-        <span style="font-size:18px; font-weight:600; color:var(--coral);">$</span>
-        <input type="number" id="donateAmount" min="1" step="1" value="5" inputmode="decimal" style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:16px;">
-      </div>
+      <div style="font-size:12px; color:var(--ink-dim); margin-bottom:12px; text-align:center;">Pick an amount — Google Play handles the payment.</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
-        <button class="donate-quick" data-amt="3" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$3</button>
-        <button class="donate-quick" data-amt="5" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$5</button>
-        <button class="donate-quick" data-amt="10" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$10</button>
-        <button class="donate-quick" data-amt="25" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$25</button>
+        <button class="donate-quick" data-amt="3" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">Tip $3</button>
+        <button class="donate-quick" data-amt="5" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">Tip $5</button>
+        <button class="donate-quick" data-amt="10" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">Tip $10</button>
+        <button class="donate-quick" data-amt="25" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">Tip $25</button>
       </div>
-
-      <!-- Pay buttons removed in v45.1 — only the amount field remains -->
       <div id="donateMsg" style="text-align:center; font-size:12px; color:var(--ink-dim); margin-top:6px; min-height:16px; line-height:1.5;"></div>
     </div>
 
@@ -3426,10 +3420,6 @@ function getApiHeaders() {
     // the fallback for plain browsers/PWAs: open the listing to install it.
     // (Package: com.SideCut.myapp; matches .well-known/assetlinks.json.)
     playStoreListing: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',
-    // Donation providers. Leave a handle/URL empty and that button shows a notice.
-    paypal:       '',            // e.g. 'https://www.paypal.com/donate?hosted_button_id=XXXX' or 'https://paypal.me/yourhandle'
-    stripeCard:   '',            // e.g. 'https://buy.stripe.com/xyz789'
-    cashApp:      '',            // e.g. 'https://cash.app/$yourhandle'
   };
   // Derived HMAC-SHA256 key (base64, 32 bytes). The source PEM lives only in
   // dev/premium-private-key.pem (never shipped). Generate codes with:
@@ -3488,6 +3478,9 @@ function getApiHeaders() {
   // Product IDs from Google Play Console (Monetize → Products).
   const PLAY_SUBSCRIPTION_PRODUCT_ID = 'sidecutsub';
   const PLAY_LIFETIME_PRODUCT_ID = 'lifetime';
+  // Tip tiers for the Donate tab (consumable one-time products). Keys are the
+  // dollar amounts shown in the UI; values are the Play Console product IDs.
+  const PLAY_TIP_PRODUCTS = { 3: 'tip3', 5: 'tip5', 10: 'tip10', 25: 'tip25' };
   // On-device grace window between Play entitlement checks. Play's listPurchases
   // is the source of truth; this just keeps the app unlocked while offline or
   // backgrounded between checks, and it's refreshed on every sync.
@@ -3542,7 +3535,7 @@ function getApiHeaders() {
   // the Payment Request API with 'https://play.google.com/billing' as the
   // payment method. Returns 'purchased' | 'cancelled' | 'unavailable' |
   // 'not-found' | 'error'.
-  async function purchasePlayItem(sku){
+  async function purchasePlayItem(sku, consumable){
     const service = await getPlayBillingService();
     if(!service || typeof PaymentRequest !== 'function') return 'unavailable';
     // Verify the SKU exists and is active before opening the billing sheet. An
@@ -3559,7 +3552,11 @@ function getApiHeaders() {
       const response = await request.show();
       const token = response.details && (response.details.purchaseToken || response.details.token);
       await response.complete(token ? 'success' : 'fail');
-      return token ? 'purchased' : 'error';
+      if(!token) return 'error';
+      // Consumables must be consumed after purchase — that also acknowledges
+      // them (avoiding the 72-hour auto-refund) and lets the user tip again.
+      if(consumable){ try{ await service.consume(token); }catch(e){} }
+      return 'purchased';
     }catch(e){
       // AbortError/NotAllowedError mean the user dismissed the billing sheet.
       if(e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return 'cancelled';
@@ -3573,6 +3570,10 @@ function getApiHeaders() {
 
   async function purchasePlayLifetime(){
     return purchasePlayItem(PLAY_LIFETIME_PRODUCT_ID);
+  }
+
+  async function purchasePlayTip(sku){
+    return purchasePlayItem(sku, true);
   }
 
   // base64 → Uint8Array
@@ -3786,59 +3787,52 @@ function getApiHeaders() {
   }
 
   // ---------------- Donate tab ----------------
-  // Each provider opens a real checkout with the chosen amount appended. Set the
-  // handles/URLs in PAYMENT_CONFIG above; an empty one shows a friendly notice.
+  // Tips go through Play Billing (consumable products) inside the Play-installed
+  // app; there is no external payment provider.
   function initDonateTab(){
-    const amountInput = $('donateAmount');
+    const pane = $('settingsPaneDonate');
     const msg = $('donateMsg');
-    if(!amountInput || amountInput._donateInit) return;
+    if(!pane || pane._donateInit) return;
 
-    // Quick-amount buttons fill the field.
-    document.querySelectorAll('.donate-quick').forEach(btn => {
-      btn.addEventListener('click', () => {
-        amountInput.value = btn.dataset.amt;
-        amountInput.dispatchEvent(new Event('input'));
+    pane.querySelectorAll('.donate-quick').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const amt = parseInt(btn.dataset.amt, 10) || 0;
+        const sku = PLAY_TIP_PRODUCTS[amt];
+        if(!sku){
+          msg.style.color = 'var(--coral)';
+          msg.textContent = 'This tip tier isn\'t set up yet — check back soon.';
+          return;
+        }
+        msg.style.color = 'var(--ink-dim)';
+        msg.textContent = 'Opening Google Play billing…';
+        const result = await purchasePlayTip(sku);
+        if(result === 'purchased'){
+          msg.style.color = 'var(--coral)';
+          msg.textContent = 'Thanks for the tip! You help keep SideCut ad-free. 💛';
+          return;
+        }
+        if(result === 'cancelled'){
+          msg.style.color = 'var(--ink-dim)';
+          msg.textContent = 'Tip cancelled — thanks for considering it!';
+          return;
+        }
+        if(result === 'not-found'){
+          msg.style.color = 'var(--coral)';
+          msg.textContent = 'This tip tier isn\'t active in Play Console yet (product ID "' + sku + '"). Activate it under Monetize → Products, then try again.';
+          return;
+        }
+        if(result === 'error'){
+          msg.style.color = 'var(--coral)';
+          msg.textContent = 'Google Play billing didn\'t complete — try again.';
+          return;
+        }
+        // 'unavailable' (not a Play TWA): tips only work in the installed app.
+        msg.style.color = 'var(--ink-dim)';
+        msg.textContent = 'Tips are processed through Google Play and only work inside the SideCut app installed from Play.';
       });
     });
 
-    const getAmount = () => {
-      let amt = parseFloat(amountInput.value);
-      if(!amt || amt < 1 || !isFinite(amt)) return null;
-      return Math.round(amt * 100) / 100;
-    };
-
-    // Build a provider checkout URL with the amount appended where the provider
-    // accepts it (PayPal me/donate, Stripe, Cash App all tolerate ?amount=).
-    const buildUrl = (base, amt) => {
-      if(!base) return '';
-      const sep = base.indexOf('?') >= 0 ? '&' : '?';
-      return base + sep + 'amount=' + encodeURIComponent(amt.toFixed(2)) + '&currency_code=USD';
-    };
-
-    const payWith = (key, label) => {
-      const amt = getAmount();
-      if(amt === null){
-        msg.style.color = 'var(--coral)';
-        msg.textContent = 'Please enter an amount of $1 or more.';
-        return;
-      }
-      const base = PAYMENT_CONFIG[key];
-      if(!base){
-        msg.style.color = 'var(--coral)';
-        msg.textContent = label + ' isn’t set up yet — try another option, or check back soon.';
-        return;
-      }
-      msg.style.color = 'var(--ink-dim)';
-      msg.textContent = 'Opening ' + label + ' for $' + amt.toFixed(2) + '… thanks for supporting SideCut! 💛';
-      const full = buildUrl(base, amt);
-      try { window.open(full, '_blank', 'noopener'); } catch(e){ window.location.href = full; }
-    };
-
-    // v45.1: PayPal / Card / Cash App buttons were removed from the Donate tab.
-    // No pay handlers are wired up — the amount field + quick picks remain for
-    // reference until a real provider is configured.
-
-    amountInput._donateInit = true;
+    pane._donateInit = true;
   }
 
   function showSettingsTab(tab){
