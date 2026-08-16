@@ -2,7 +2,7 @@
 <html lang="en">
 <head> 
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>SideCut — your files, your player</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0E1B1F" id="themeColorMeta">
@@ -41,6 +41,7 @@
     background: var(--bg); color: var(--ink); font-family: var(--font-ui);
     min-height:100dvh; display:flex; flex-direction:column; overflow-x:hidden;
     padding-top: env(safe-area-inset-top);
+    touch-action: manipulation;
   }
   ::selection{ background: var(--coral); color:#161616; }
   h1,h2,h3{ font-family: var(--font-ui); font-weight:600; margin:0; }
@@ -1696,15 +1697,6 @@ body.sandbox-invert-colors .brand-mark{
           </div>
         </div>
 
-        <!-- More premium features coming soon -->
-        <div style="border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:18px;">
-          <div style="font-size:13px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
-            <span style="color:var(--coral);">✦</span> More premium features coming soon
-          </div>
-          <div id="premiumRoadmapList" style="display:grid; grid-template-columns:1fr 1fr; gap:8px 14px;"></div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:10px; line-height:1.4;">All of these are covered by your existing unlock — no second purchase, ever.</div>
-        </div>
-
         <!-- Remove / cancel — only meaningful for subscriptions -->
         <div id="premiumManageBox" style="border-top:1px solid var(--line); padding-top:14px; margin-top:16px;">
           <button id="premiumRemoveBtn" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink-dim); border-radius:8px; padding:10px; font-size:12px; cursor:pointer;">Remove premium from this device</button>
@@ -1734,15 +1726,6 @@ body.sandbox-invert-colors .brand-mark{
             <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Recurring $0.49 every two weeks. Cancel anytime. Unlock Discover while your subscription is active.</div>
             <button id="premiumBuySubBtn" class="confirm" style="width:100%; padding:11px; border-radius:20px; border:none; font-weight:600; font-size:14px; cursor:pointer;">Subscribe — $0.49 / 2 weeks</button>
           </div>
-        </div>
-
-        <!-- More premium features coming soon -->
-        <div style="border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:18px;">
-          <div style="font-size:13px; font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
-            <span style="color:var(--coral);">✦</span> More premium features coming soon
-          </div>
-          <div id="premiumRoadmapListBuy" style="display:grid; grid-template-columns:1fr 1fr; gap:8px 14px;"></div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:10px; line-height:1.4;">One unlock covers Discover today and every feature below as they ship — no second purchase, ever.</div>
         </div>
 
         <!-- Redeem code -->
@@ -3534,32 +3517,6 @@ function getApiHeaders() {
     }
   }
 
-  // Premium "coming soon" roadmap — shown in both the manage and buy views so
-  // active users see what's next and prospective buyers see the full value.
-  const PREMIUM_ROADMAP = [
-    ['🔗', 'Gapless & crossfade', 'Seamless track transitions, no silence between songs'],
-    ['📜', 'Synced lyrics', 'Word-by-word lyrics that follow playback live'],
-    ['🎚️', 'Advanced EQ', 'Saveable EQ presets per genre, speaker, or headphone'],
-    ['🌙', 'Sleep timer + fade', 'Drift off — playback fades and stops on a timer'],
-    ['🔀', 'Auto-mix', 'Smart shuffle that blends BPM and key-matched tracks'],
-    ['📊', 'Deep listening stats', 'Weekly charts, top genres, listening trends over time'],
-    ['🎨', 'Exclusive themes', 'Premium-only visual themes and animated covers'],
-    ['☁️', 'Cloud sync', 'Carry your library + premium across devices (no account)'],
-  ];
-  function renderPremiumRoadmap(){
-    const html = PREMIUM_ROADMAP.map(([ico, name, desc]) => `
-      <div style="display:flex; align-items:flex-start; gap:8px;">
-        <span style="font-size:14px; line-height:1.2; flex-shrink:0;">${ico}</span>
-        <div>
-          <div style="font-size:11.5px; font-weight:600; color:var(--ink);">${name}</div>
-          <div style="font-size:10.5px; color:var(--ink-dim); line-height:1.35;">${desc}</div>
-        </div>
-      </div>`).join('');
-    const a = $('premiumRoadmapList'), b = $('premiumRoadmapListBuy');
-    if(a && !a.dataset.filled){ a.innerHTML = html; a.dataset.filled = '1'; }
-    if(b && !b.dataset.filled){ b.innerHTML = html; b.dataset.filled = '1'; }
-  }
-
   function refreshPremiumUI(){
     const statusBox = $('premiumStatusBox');
     const statusSub = $('premiumStatusSub');
@@ -3568,7 +3525,6 @@ function getApiHeaders() {
     const manageBox = $('premiumManageBox');
     const planLine = $('premiumPlanLine');
     if(!statusBox) return;
-    renderPremiumRoadmap();
     const active = isPremiumActive();
     const info = getPremiumInfo();
     const isSubscription = active && info && info.plan === 'sub';
@@ -13253,12 +13209,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const actions = document.createElement('div');
     actions.className = 'discover-actions';
 
+    let previewBtn = null;
     if(r.previewUrl){
-      const previewBtn = document.createElement('button');
+      previewBtn = document.createElement('button');
       previewBtn.className = 'discover-preview-btn';
       previewBtn.title = 'Play 30-second preview';
       previewBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
-      previewBtn.addEventListener('click', () => toggleDiscoverPreview(r.previewUrl, previewBtn));
+      previewBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDiscoverPreview(r.previewUrl, previewBtn);
+      });
       actions.appendChild(previewBtn);
     }
 
@@ -13272,9 +13232,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
     actions.appendChild(dlBtn);
 
-    // Tapping anywhere on the card (not just the Get song button) starts the
-    // download flow + shows the inline instructions popup.
-    card.addEventListener('click', () => triggerDiscoverDownload(card, r));
+    // Tapping anywhere on the card plays the 30-second preview inside SideCut.
+    // Only the "Get song" button sends the user out to Spotify.
+    card.addEventListener('click', () => {
+      if(r.previewUrl && previewBtn){
+        toggleDiscoverPreview(r.previewUrl, previewBtn);
+      } else {
+        toast('No preview available — use Get song to open it in Spotify.');
+      }
+    });
 
     card.appendChild(art); card.appendChild(meta); card.appendChild(actions);
     return card;
@@ -13393,6 +13359,18 @@ document.addEventListener('pointerdown', (e) => {
     if(typeof toast === 'function') toast('Closed a stuck popup.');
   }
 }, true);
+
+// ---------------- Zoom lock ----------------
+// SideCut is meant to stay pinned at 1x: block pinch-zoom on touch screens and
+// ctrl+wheel / ctrl +/- zoom on desktop so the app never zooms in or out.
+document.addEventListener('gesturestart', (e) => { e.preventDefault(); });
+document.addEventListener('touchmove', (e) => {
+  if(e.touches && e.touches.length > 1) e.preventDefault();
+}, { passive:false });
+window.addEventListener('wheel', (e) => { if(e.ctrlKey) e.preventDefault(); }, { passive:false });
+document.addEventListener('keydown', (e) => {
+  if((e.ctrlKey || e.metaKey) && ['+', '-', '=', '_', '0'].includes(e.key)) e.preventDefault();
+});
 
 </script></body>
 </html>
