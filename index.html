@@ -1776,13 +1776,7 @@ body.sandbox-invert-colors .brand-mark{
         <button class="donate-quick" data-amt="25" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">$25</button>
       </div>
 
-      <!-- Pay with… — picks the provider and opens a real checkout with the chosen amount -->
-      <div style="font-size:13px; color:var(--ink-dim); margin-bottom:8px;">Pay with</div>
-      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
-        <button id="donatePayPalBtn" style="flex:1; min-width:90px; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:11px 8px; font-size:13px; font-weight:600; cursor:pointer;">PayPal</button>
-        <button id="donateCardBtn" style="flex:1; min-width:90px; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:11px 8px; font-size:13px; font-weight:600; cursor:pointer;">Card</button>
-        <button id="donateCashAppBtn" style="flex:1; min-width:90px; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:11px 8px; font-size:13px; font-weight:600; cursor:pointer;">Cash App</button>
-      </div>
+      <!-- Pay buttons removed in v45.1 — only the amount field remains -->
       <div id="donateMsg" style="text-align:center; font-size:12px; color:var(--ink-dim); margin-top:6px; min-height:16px; line-height:1.5;"></div>
     </div>
 
@@ -3525,8 +3519,17 @@ function getApiHeaders() {
       msg.textContent = 'Opening ' + label + ' checkout… after paying, email the dev to receive your unlock code.';
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     };
+
+    // v45.1: Subscribe activates a 14-day on-device subscription unlock directly,
+    // so Discover works immediately without waiting on an external checkout.
+    subBtn.addEventListener('click', () => {
+      const expires = Date.now() + 14 * 24 * 60 * 60 * 1000;
+      setPremiumActive({ plan: 'sub', expires });
+      msg.style.color = 'var(--ink-dim)';
+      msg.textContent = 'Subscription active — Discover is unlocked for 2 weeks. Renew anytime.';
+      toast('Premium unlocked (subscription, 2 weeks).');
+    });
     lifetimeBtn.addEventListener('click', () => openCheckout(PAYMENT_CONFIG.lifetimeCheckout, 'Lifetime ($10)'));
-    subBtn.addEventListener('click', () => openCheckout(PAYMENT_CONFIG.subscriptionCheckout, 'Subscription ($0.49 / 2 weeks)'));
 
     const doRedeem = async () => {
       const code = input.value.trim();
@@ -3615,10 +3618,9 @@ function getApiHeaders() {
       try { window.open(full, '_blank', 'noopener'); } catch(e){ window.location.href = full; }
     };
 
-    $('donatePayPalBtn').addEventListener('click', () => payWith('paypal', 'PayPal'));
-    $('donateCardBtn').addEventListener('click', () => payWith('stripeCard', 'card checkout'));
-    $('donateCashAppBtn').addEventListener('click', () => payWith('cashApp', 'Cash App'));
-    amountInput.addEventListener('keydown', e => { if(e.key === 'Enter') payWith('paypal', 'PayPal'); });
+    // v45.1: PayPal / Card / Cash App buttons were removed from the Donate tab.
+    // No pay handlers are wired up — the amount field + quick picks remain for
+    // reference until a real provider is configured.
 
     amountInput._donateInit = true;
   }
@@ -5414,7 +5416,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '45.0';
+  const APP_VERSION = '45.1';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5427,6 +5429,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '45.1', date: 'August 15, 2026 at 7:42 pm EDT', title: 'Donate pay buttons removed, Subscribe activates subscription unlock', items: [
+      'Removed the Cash App, PayPal, and Card pay buttons from the Donate settings tab — only the amount field and quick-pick chips remain',
+      'The Subscribe button now activates a 14-day on-device subscription unlock directly (plan:"sub", expires in 2 weeks) instead of opening an external checkout — Discover works immediately, and the "Remove premium from this device" button then appears because it recognizes the subscription',
+    ]},
     { version: '45.0', date: 'August 15, 2026 at 6:55 pm EDT', title: 'Premium-only Sandbox, cleaner Discover, modal Add songs, playlist memory, more sandbox tools', items: [
       'Sandbox is now a premium-only feature set — locked users are sent to the Premium tab when they try to open it',
       'Removed the "More premium features coming soon" roadmap block from the Premium pane',
