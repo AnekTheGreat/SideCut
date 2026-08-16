@@ -3540,16 +3540,18 @@ function getApiHeaders() {
   // Starts a Play Billing purchase. Digital Goods API v2 removed the old
   // service.purchase()/service.acknowledge() methods — purchases now go through
   // the Payment Request API with 'https://play.google.com/billing' as the
-  // payment method. Returns 'purchased' | 'cancelled' | 'unavailable' | 'error'.
+  // payment method. Returns 'purchased' | 'cancelled' | 'unavailable' |
+  // 'not-found' | 'error'.
   async function purchasePlayItem(sku){
     const service = await getPlayBillingService();
     if(!service || typeof PaymentRequest !== 'function') return 'unavailable';
-    // Verify the SKU exists and is active before opening the billing sheet; an
-    // empty result means the product ID doesn't match Play Console.
+    // Verify the SKU exists and is active before opening the billing sheet. An
+    // empty result means the product ID isn't active/matching in Play Console —
+    // that's a Play Console config problem, not a "browser fallback" situation.
     try{
       const details = await service.getDetails([sku]);
-      if(!Array.isArray(details) || !details.length) return 'unavailable';
-    }catch(e){ return 'unavailable'; }
+      if(!Array.isArray(details) || !details.length) return 'not-found';
+    }catch(e){ return 'error'; }
     try{
       const paymentMethods = [{ supportedMethods: 'https://play.google.com/billing', data: { sku: sku } }];
       const paymentDetails = { total: { label: 'Total', amount: { currency: 'USD', value: '0' } } };
@@ -3689,6 +3691,11 @@ function getApiHeaders() {
         msg.textContent = 'Google Play billing didn\'t complete — try again, or redeem a code if you have one.';
         return;
       }
+      if(result === 'not-found'){
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'This subscription isn\'t active in Play Console yet (product ID "sidecutsub"). Activate it under Monetize → Subscriptions, then try again.';
+        return;
+      }
       // 'unavailable' (not a Play TWA): open the Play Store listing instead.
       const url = PAYMENT_CONFIG.playStoreListing;
       if(!url){
@@ -3697,7 +3704,7 @@ function getApiHeaders() {
         return;
       }
       msg.style.color = 'var(--ink-dim)';
-      msg.textContent = 'Opening the Google Play Store — subscribe there, then it unlocks automatically.';
+      msg.textContent = 'Play billing only works inside the SideCut app installed from Google Play. Opening the Play Store so you can install it.';
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
     // Lifetime uses Play Billing when running as a Play-installed TWA; outside a
@@ -3723,6 +3730,11 @@ function getApiHeaders() {
         msg.textContent = 'Google Play billing did not complete — try again, or redeem a code if you have one.';
         return;
       }
+      if(result === 'not-found'){
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Lifetime isn\'t active in Play Console yet (product ID "lifetime"). Activate it under Monetize → Products, then try again.';
+        return;
+      }
       // 'unavailable' (not a Play TWA): open the Play Store listing instead.
       const url = PAYMENT_CONFIG.playStoreListing;
       if(!url){
@@ -3731,7 +3743,7 @@ function getApiHeaders() {
         return;
       }
       msg.style.color = 'var(--ink-dim)';
-      msg.textContent = 'Opening the Google Play Store — buy lifetime there, then it unlocks automatically.';
+      msg.textContent = 'Play billing only works inside the SideCut app installed from Google Play. Opening the Play Store so you can install it.';
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
 
