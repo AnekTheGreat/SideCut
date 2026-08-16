@@ -1270,6 +1270,12 @@ body.sandbox-invert-colors .brand-mark{
 .home-greeting{ font-size:15px; font-weight:600; color:var(--ink); margin:6px 4px 2px; }
 .home-greeting-sub{ font-size:12px; color:var(--ink-dim); margin:0 4px 18px; }
 
+#homeExportPopup{
+  border:1px solid var(--line); border-radius:18px; padding:12px 14px; margin:0 4px 14px;
+  background:linear-gradient(150deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 70%, #000));
+  box-shadow:0 6px 18px rgba(0,0,0,.18);
+}
+
 #homeBubbles{ display:flex; flex-wrap:wrap; gap:10px; align-content:flex-start; }
 .home-bubble{
   position:relative; flex:1 1 140px; min-width:130px; min-height:118px;
@@ -1425,6 +1431,7 @@ body.sandbox-invert-colors .brand-mark{
 <div id="homeView">
   <div class="home-greeting" id="homeGreeting">Welcome back</div>
   <div class="home-greeting-sub" id="homeGreetingSub">Tap any bubble to expand it.</div>
+  <div id="homeExportPopup" style="display:none;"></div>
   <div id="homeBubbles"></div>
 </div>
 
@@ -5459,7 +5466,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '45.2';
+  const APP_VERSION = '45.3';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5472,6 +5479,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '45.3', date: 'August 15, 2026 at 11:45 pm EDT', title: 'Reliable exports, premium checkbox everywhere, live Home progress', items: [
+      'Fix: export no longer aborts the whole .zip when one song\'s file can\'t be read (the "arraybuffer" error on some Android webviews). A single unreadable blob now skips just that track; the rest still bundle. blobToArrayBuffer gained a Response-based fallback on top of FileReader so a broken Blob.arrayBuffer can\'t throw',
+      'The "Include my premium unlock code" checkbox now appears on every export path — Export library, Export playlist, and Export selected — not just the full-library export (so it shows up wherever you export)',
+      'New: a live progress card on Home, below the listening-stats bubbles, shows the export bundling + compressing percent and ETA in real time, then a done/failed state that auto-hides. You can keep playing music while it runs',
+    ]},
     { version: '45.2', date: 'August 15, 2026 at 10:45 pm EDT', title: 'Carry your premium unlock in a library export', items: [
       'Export library now has an opt-in "Include my premium unlock code" checkbox (only shown when you have premium). The code rides along in the backup .zip so you can restore premium on a new device just by importing it — no account, no server',
       'Import restores premium from the backup automatically: it re-verifies the code client-side (so a tampered manifest can\'t activate a bogus code) and never overwrites premium that\'s already active on the device',
@@ -6736,6 +6748,65 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function refreshExportNotif(){
     updateNotifBadge();
     if($('notifBackdrop') && $('notifBackdrop').style.display === 'flex') renderNotifPanel();
+    renderHomeExportPopup();
+  }
+
+  // Live export progress card on the Home view, shown just below the listening
+  // stats bubbles while an export runs (and briefly after it finishes/errors).
+  // Driven by refreshExportNotif(), which runZipExport calls on every tick.
+  let homeExportHideTimer = null;
+  function renderHomeExportPopup(){
+    const el = $('homeExportPopup');
+    if(!el) return;
+    // Only show on the Home view (the popup lives inside #homeView).
+    const onHome = $('homeView') && $('homeView').classList.contains('active');
+    if(!exportState.active && !exportState.finishedAt){
+      el.style.display = 'none';
+      return;
+    }
+    if(!onHome){ return; } // don't render when Home isn't visible
+    let inner = '';
+    if(exportState.active){
+      const pct = exportState.phase === 'compressing'
+        ? Math.round(exportState.compressPct || 0)
+        : (exportState.total ? Math.round((exportState.done / exportState.total) * 100) : 0);
+      const label = exportState.phase === 'compressing'
+        ? `Compressing the .zip — ${pct}%`
+        : `Bundling songs — ${exportState.done}/${exportState.total}`;
+      const eta = exportEtaText();
+      inner = `
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:18px;">📦</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Exporting ${escapeHtml(exportState.kind || 'library')}</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${escapeHtml(label)}${eta ? ' · ~' + eta : ''}</div>
+          </div>
+        </div>
+        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>
+        <div style="font-size:10.5px; color:var(--ink-dim); margin-top:6px;">Keep playing — exports run in the background.</div>`;
+    } else if(exportState.finishedAt){
+      const ok = !exportState.lastErr;
+      const msg = ok
+        ? `Done — ${exportState.total} song${exportState.total===1?'':'s'} bundled into a .zip.`
+        : `Export failed: ${exportState.lastErr || 'unknown error'}.`;
+      inner = `
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:18px;">${ok ? '✓' : '✗'}</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:${ok ? 'var(--coral)' : '#ff6b6b'};">${ok ? 'Export complete' : 'Export failed'}</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${escapeHtml(msg)}</div>
+          </div>
+        </div>`;
+      // Auto-hide the finished state shortly after it appears.
+      if(homeExportHideTimer){ clearTimeout(homeExportHideTimer); }
+      homeExportHideTimer = setTimeout(() => {
+        exportState.seen = true;
+        const p = $('homeExportPopup'); if(p) p.style.display = 'none';
+        updateNotifBadge();
+      }, 6000);
+    }
+    el.innerHTML = inner;
+    el.style.display = inner ? 'block' : 'none';
   }
 
   function enrichNotifHtml(){
@@ -9063,30 +9134,49 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   async function exportPlaylist(){
     const ids = playlists[activePlaylist] || [];
     if(!ids.length){ toast('Nothing to export yet.'); return; }
-    showExportConfirm(`Export "${activePlaylist}" (${ids.length} song${ids.length>1?'s':''}) as a .zip file?`, async () => {
-      await doExportTracks(ids, activePlaylist.replace(/[^a-z0-9]/gi,'_'), { [activePlaylist]: ids }, `"${activePlaylist}"`);
-    });
+    showExportConfirm(`Export "${activePlaylist}" (${ids.length} song${ids.length>1?'s':''}) as a .zip file?`, async (includePremium) => {
+      const premiumPayload = includePremium ? (() => {
+        const info = getPremiumInfo();
+        return info && info.code ? { code: info.code, plan: info.plan || 'gifted' } : null;
+      })() : null;
+      await doExportTracks(ids, activePlaylist.replace(/[^a-z0-9]/gi,'_'), { [activePlaylist]: ids }, `"${activePlaylist}"`, premiumPayload);
+    }, { allowPremium: true });
   }
 
   // Read a Blob/File into an ArrayBuffer in a way that never throws on webviews
-  // missing Blob.prototype.arrayBuffer — falls back to FileReader. This is the fix
-  // for "export zip array buffer fails": JSZip's own blob-to-arraybuffer path can
-  // hit a non-function .arrayBuffer on stale IndexedDB-resurrected Blobs in some
-  // Android webviews and abort the whole export. We feed it ready ArrayBuffers.
+  // missing Blob.prototype.arrayBuffer — falls back to FileReader, then to a
+  // Response-based read. This is the fix for "export zip array buffer fails":
+  // JSZip's own blob-to-arraybuffer path can hit a non-function .arrayBuffer on
+  // stale IndexedDB-resurrected Blobs in some Android webviews and abort the
+  // whole export. We feed it ready ArrayBuffers and never let one bad blob throw.
   function blobToArrayBuffer(blob){
-    return new Promise((resolve, reject) => {
-      if(blob && typeof blob.arrayBuffer === 'function'){
-        blob.arrayBuffer().then(resolve, () => fallback());
-      } else {
-        fallback();
-      }
-      function fallback(){
+    if(!blob) return Promise.resolve(null);
+    // Already an ArrayBuffer / typed array — pass through.
+    if(blob instanceof ArrayBuffer || ArrayBuffer.isView(blob)){
+      return Promise.resolve(blob instanceof ArrayBuffer ? blob : blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength));
+    }
+    return new Promise((resolve) => {
+      const fail = () => {
+        // Last resort: stream through a Response object (works even when both
+        // Blob.arrayBuffer and FileReader are broken/unavailable).
+        try{
+          if(typeof Response !== 'undefined'){
+            new Response(blob).arrayBuffer().then(resolve, () => resolve(null));
+          } else { resolve(null); }
+        }catch(e){ resolve(null); }
+      };
+      const fileReaderFallback = () => {
         try{
           const fr = new FileReader();
           fr.onload = () => resolve(fr.result);
-          fr.onerror = () => reject(fr.error || new Error('Could not read file'));
+          fr.onerror = () => fail();
           fr.readAsArrayBuffer(blob);
-        }catch(e){ reject(e); }
+        }catch(e){ fail(); }
+      };
+      if(blob && typeof blob.arrayBuffer === 'function'){
+        blob.arrayBuffer().then(resolve, () => fileReaderFallback());
+      } else {
+        fileReaderFallback();
       }
     });
   }
@@ -9096,7 +9186,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // select mode). manifestPlaylists, if given, is included so importing the
   // zip elsewhere restores that playlist grouping too; omit it for a plain
   // bundle of tracks with no playlist association (e.g. an ad-hoc selection).
-  async function doExportTracks(ids, filenameBase, manifestPlaylists, kindLabel){
+  async function doExportTracks(ids, filenameBase, manifestPlaylists, kindLabel, premiumPayload){
     if(!ids.length){ toast('Nothing to export yet.'); return; }
     if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
     const tracks = ids.map(id => allTracks.find(tr => tr.id === id)).filter(Boolean);
@@ -9106,7 +9196,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       tracks,
       manifest: { playlists: manifestPlaylists || {}, tracks: [], version: 2 },
       filename: filenameBase + '.zip',
-      toastOk: 'Exported — import this .zip on another device to restore it',
+      premium: premiumPayload,
+      toastOk: premiumPayload
+        ? 'Exported + premium code — import this .zip on another device to restore it'
+        : 'Exported — import this .zip on another device to restore it',
     });
   }
 
@@ -9115,9 +9208,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!ids.length) return;
     const isAllSongsCtx = activePlaylist === 'All Songs' || activePlaylist === UNSORTED_VIEW;
     const manifestPlaylists = isAllSongsCtx ? undefined : { [activePlaylist]: ids };
-    showExportConfirm(`Export ${ids.length} selected song${ids.length>1?'s':''} as a .zip file?`, async () => {
-      await doExportTracks(ids, `sidecut-selection-${ids.length}`, manifestPlaylists, 'selection');
-    });
+    showExportConfirm(`Export ${ids.length} selected song${ids.length>1?'s':''} as a .zip file?`, async (includePremium) => {
+      const premiumPayload = includePremium ? (() => {
+        const info = getPremiumInfo();
+        return info && info.code ? { code: info.code, plan: info.plan || 'gifted' } : null;
+      })() : null;
+      await doExportTracks(ids, `sidecut-selection-${ids.length}`, manifestPlaylists, 'selection', premiumPayload);
+    }, { allowPremium: true });
   }
 
   // Core export runner shared by library + playlist/selection exports. Reads each
@@ -9142,7 +9239,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(t.artBlob) exportState.totalBytes += t.artBlob.size || 0;
     });
     refreshExportNotif();
-    toast('Exporting — keep playing music! See progress in the bell 🔔', 4000);
+    toast('Exporting — keep playing music! Progress shows on Home 📦', 4000);
     if(btn){ btn.disabled = true; btn.textContent = 'Zipping…'; }
     try{
       const zip = new JSZip();
@@ -9154,11 +9251,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
         const zipPath = `audio/${t.id}${ext}`;
         if(t.file){
-          // Read here, not inside JSZip, so a broken Blob.arrayBuffer on the
-          // device never aborts the whole export.
-          const buf = await blobToArrayBuffer(t.file);
-          zip.file(zipPath, buf);
-          exportState.bytesDone += (t.file.size || buf.byteLength || 0);
+          // Per-track try/catch: a single unreadable blob (broken arrayBuffer on
+          // a stale IndexedDB-resurrected Blob) skips just this track instead of
+          // aborting the whole export. blobToArrayBuffer resolves null on total
+          // failure, so we treat null as "skip" too.
+          try{
+            const buf = await blobToArrayBuffer(t.file);
+            if(buf && buf.byteLength){
+              zip.file(zipPath, buf);
+              exportState.bytesDone += (t.file.size || buf.byteLength || 0);
+            } else {
+              missing++;
+            }
+          }catch(e){
+            console.log('Skipping unreadable track during export:', t.name, e);
+            missing++;
+          }
         } else {
           missing++;
         }
@@ -9169,9 +9277,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, path: t.file ? zipPath : null, hasCover: !!t.artBlob
         });
         if(t.artBlob){
-          const coverBuf = await blobToArrayBuffer(t.artBlob);
-          zip.file(`covers/${t.id}.jpg`, coverBuf);
-          exportState.bytesDone += (t.artBlob.size || coverBuf.byteLength || 0);
+          try{
+            const coverBuf = await blobToArrayBuffer(t.artBlob);
+            if(coverBuf && coverBuf.byteLength){
+              zip.file(`covers/${t.id}.jpg`, coverBuf);
+              exportState.bytesDone += (t.artBlob.size || coverBuf.byteLength || 0);
+            }
+          }catch(e){ /* cover missing is non-fatal */ }
         }
         exportState.done++;
         refreshExportNotif();
@@ -12461,7 +12573,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       runDiscoverSearch(DISCOVER_CHIPS[0].term, DISCOVER_CHIPS[0].label, 0);
     }
     if(!isDiscover) stopDiscoverPreview();
-    if(isHome) renderHome();
+    if(isHome){
+      renderHome();
+      renderHomeExportPopup();
+    }
     // Close the add-songs menu whenever we navigate.
     closeAddSongsMenu();
   }

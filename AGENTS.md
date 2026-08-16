@@ -66,17 +66,28 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - Discover (v45.0): no Spotidown/Spoticatch/Spotisaver links (all dead domains → 404s).
   `triggerDiscoverDownload()` only opens the Spotify search/track URL; how-to instructions
   are at the top of `#discoverView`. "Get song" opens the track in Spotify.
-- Premium-in-export (v45.2): `exportLibrary` passes `{allowPremium:true}` to
-  `showExportConfirm`, which shows the `#exportPremiumOpt` checkbox ONLY when
-  `isPremiumActive()`. On confirm, `exportLibrary(includePremium)` builds
-  `premiumPayload={code,plan}` from `getPremiumInfo()` and hands it to `runZipExport`
+- Premium-in-export (v45.2; on all paths v45.3): `exportLibrary`, `exportPlaylist`,
+  and `exportSelected` all pass `{allowPremium:true}` to `showExportConfirm`, which
+  shows the `#exportPremiumOpt` checkbox ONLY when `isPremiumActive()`. On confirm,
+  the callback receives `includePremium(bool)`; library/playlist/selection build
+  `premiumPayload={code,plan}` from `getPremiumInfo()` and hand it to `runZipExport`
   via `opts.premium`, which writes `manifest.premium`. On import, after settings/stats
   restore, `importLibrary` re-verifies the code via `verifyPremiumCode` (so a tampered
   manifest can't activate a bogus code) and `setPremiumActive`s it — but never overwrites
   premium already active on the device. `showExportConfirm(message,onConfirm,opts)` now
-  passes `includePremium(bool)` to onConfirm; playlist/selection callers ignore it (no
-  allowPremium). Checkbox is off by default with a sharing warning. No server, no accounts;
-  the code is the same reusable recovery credential already in localStorage.
+  passes `includePremium(bool)` to onConfirm. Checkbox is off by default with a sharing
+  warning. No server, no accounts; the code is the same reusable recovery credential
+  already in localStorage.
+- Export robustness (v45.3): `blobToArrayBuffer` has three tiers — `Blob.arrayBuffer()`,
+  then `FileReader.readAsArrayBuffer`, then `new Response(blob).arrayBuffer()` — and
+  never throws (resolves null on total failure; null/empty inputs resolve null). The
+  export loop wraps each track + cover read in its own try/catch and skips (counts as
+  `missing`) on failure, so one unreadable blob no longer aborts the whole .zip.
+- Export progress on Home (v45.3): `#homeExportPopup` (inside `#homeView`, below the
+  greeting) is driven by `renderHomeExportPopup()`, called from `refreshExportNotif()`
+  on every export tick and from `navigate('home')`. Shows bundling/compressing % + ETA
+  while active, a done/failed card that auto-hides after 6s. Only renders when Home is
+  the active view.
 - Track play now stamps `t.lastPlayedAt = Date.now()` in `recordPlay()` (v44.5), persisted via
   `persistTrackMeta` and synced through library export/import. Home's Recently played /
   Not played in a while depend on it. Older libraries without it just sort by playCount.
