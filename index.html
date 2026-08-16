@@ -3424,8 +3424,9 @@ function getApiHeaders() {
     // Stripe Payment Link / PayPal link for the one-time $10 lifetime plan.
     // Append ?amount=10&currency_code=USD works for PayPal me/checkout links.
     lifetimeCheckout: '',        // e.g. 'https://www.paypal.com/checkoutnow?amount=10'
-    // Google Play listing — the $1.25 / month subscription is sold there
-    // (package: com.SideCut.myapp; matches .well-known/assetlinks.json).
+    // Fallback Play Store listing for the $1.25 / month subscription — used when
+    // Play Billing (Digital Goods API) isn't available, e.g. a plain browser/PWA.
+    // (Package: com.SideCut.myapp; matches .well-known/assetlinks.json.)
     subscriptionCheckout: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',
     // Donation providers. Leave a handle/URL empty and that button shows a notice.
     paypal:       '',            // e.g. 'https://www.paypal.com/donate?hosted_button_id=XXXX' or 'https://paypal.me/yourhandle'
@@ -3472,6 +3473,75 @@ function getApiHeaders() {
       navigate('home');
     }
     toast('Premium removed. Discover is locked again.');
+  }
+
+  function clearPremiumQuietly(){
+    localStorage.removeItem(PREMIUM_STORAGE_KEY);
+    refreshPremiumUI();
+  }
+
+  // ---------------- Google Play billing (Digital Goods API) ----------------
+  // When SideCut runs as a Play-installed Trusted Web Activity, the Digital Goods
+  // API lets the web app use Play Billing directly: the user subscribes in a Play
+  // billing sheet and the app re-checks the entitlement — no manual unlock code
+  // needed. Outside a TWA (plain browser/PWA) the API is absent, so the Subscribe
+  // button falls back to opening the Play Store listing.
+  const PLAY_BILLING_URL = 'https://play.google.com/billing';
+  // Set this to the exact subscription product ID you created in Google Play
+  // Console (Monetize → Products → Subscriptions).
+  const PLAY_SUBSCRIPTION_PRODUCT_ID = 'sidecut_premium_monthly';
+  // On-device grace window between Play entitlement checks. Play's listPurchases
+  // is the source of truth; this just keeps the app unlocked while offline or
+  // backgrounded between checks, and it's refreshed on every sync.
+  const PLAY_SUB_GRACE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  let playBillingService = null; // null = not queried yet; undefined = unavailable
+
+  async function getPlayBillingService(){
+    if(playBillingService !== null) return playBillingService;
+    playBillingService = undefined;
+    if(typeof getDigitalGoodsService !== 'function') return undefined;
+    try{ playBillingService = await getDigitalGoodsService(PLAY_BILLING_URL); }
+    catch(e){ playBillingService = undefined; }
+    return playBillingService;
+  }
+
+  // Mirrors the Play subscription state into on-device premium.
+  // Returns 'active' | 'inactive' | 'unavailable'.
+  async function syncPlaySubscription(){
+    const service = await getPlayBillingService();
+    if(!service) return 'unavailable';
+    try{
+      const purchases = await service.listPurchases();
+      const hasSub = Array.isArray(purchases) && purchases.some(p => p && p.itemId === PLAY_SUBSCRIPTION_PRODUCT_ID);
+      const info = getPremiumInfo();
+      if(hasSub){
+        if(!info || info.plan !== 'sub' || !isPremiumActive()){
+          setPremiumActive({ plan: 'sub', expires: Date.now() + PLAY_SUB_GRACE_MS });
+        }
+        return 'active';
+      }
+      // Only revoke Play subs we granted; never touch gifted/lifetime unlocks.
+      if(info && info.plan === 'sub') clearPremiumQuietly();
+      return 'inactive';
+    }catch(e){
+      return 'unavailable';
+    }
+  }
+
+  // Starts a Play Billing subscription purchase. Returns
+  // 'purchased' | 'cancelled' | 'unavailable' | 'error'.
+  async function purchasePlaySubscription(){
+    const service = await getPlayBillingService();
+    if(!service) return 'unavailable';
+    try{
+      const details = await service.getDetails([PLAY_SUBSCRIPTION_PRODUCT_ID]);
+      if(!Array.isArray(details) || !details.length) return 'unavailable';
+      const purchase = await service.purchase(PLAY_SUBSCRIPTION_PRODUCT_ID);
+      return purchase ? 'purchased' : 'cancelled';
+    }catch(e){
+      return 'error';
+    }
   }
 
   // base64 → Uint8Array
@@ -3577,18 +3647,39 @@ function getApiHeaders() {
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     };
 
-    // Subscribe opens the Google Play listing for the $1.25 / month subscription.
-    // It must NOT grant premium for free on click (that was a v45.1 glitch);
-    // premium activates after subscribing, via a dev-issued code.
-    subBtn.addEventListener('click', () => {
+    // Subscribe uses Play Billing when running as a Play-installed TWA (Digital
+    // Goods API); outside a TWA it falls back to the Play Store listing. It must
+    // NOT grant premium for free on click (that was a v45.1 glitch).
+    subBtn.addEventListener('click', async () => {
+      msg.style.color = 'var(--ink-dim)';
+      msg.textContent = 'Opening Google Play billing…';
+      const result = await purchasePlaySubscription();
+      if(result === 'purchased'){
+        await syncPlaySubscription();
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Subscribed — Discover is unlocked. Thanks for supporting SideCut! ✨';
+        toast('Premium unlocked. Enjoy Discover! ✨', 2600);
+        return;
+      }
+      if(result === 'cancelled'){
+        msg.style.color = 'var(--ink-dim)';
+        msg.textContent = 'Purchase cancelled — subscribe anytime to unlock Discover.';
+        return;
+      }
+      if(result === 'error'){
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Google Play billing didn\'t complete — try again, or redeem a code if you have one.';
+        return;
+      }
+      // 'unavailable' (not a Play TWA): open the Play Store listing instead.
       const url = PAYMENT_CONFIG.subscriptionCheckout;
       if(!url){
         msg.style.color = 'var(--coral)';
-        msg.textContent = 'Subscription link is being set up — check back soon, or redeem a code if you have one.';
+        msg.textContent = 'Subscription is being set up — check back soon, or redeem a code if you have one.';
         return;
       }
       msg.style.color = 'var(--ink-dim)';
-      msg.textContent = 'Opening the Google Play Store — subscribe there, then redeem your unlock code below.';
+      msg.textContent = 'Opening the Google Play Store — subscribe there, then it unlocks automatically.';
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
     lifetimeBtn.addEventListener('click', () => openCheckout(PAYMENT_CONFIG.lifetimeCheckout, 'Lifetime ($10)'));
@@ -13307,6 +13398,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
+
+  // Play Billing: re-verify the subscription on launch and whenever the app
+  // regains focus (e.g. after returning from the Play billing sheet).
+  syncPlaySubscription();
+  window.addEventListener('focus', () => syncPlaySubscription());
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) syncPlaySubscription(); });
 
 })();
 </script>
