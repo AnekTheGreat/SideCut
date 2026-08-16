@@ -1697,7 +1697,7 @@ body.sandbox-invert-colors .brand-mark{
           </div>
         </div>
 
-        <!-- Remove / cancel — only meaningful for subscriptions -->
+        <!-- Remove premium from this device (works for any plan) -->
         <div id="premiumManageBox" style="border-top:1px solid var(--line); padding-top:14px; margin-top:16px;">
           <button id="premiumRemoveBtn" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink-dim); border-radius:8px; padding:10px; font-size:12px; cursor:pointer;">Remove premium from this device</button>
         </div>
@@ -3630,16 +3630,14 @@ function getApiHeaders() {
     if(!statusBox) return;
     const active = isPremiumActive();
     const info = getPremiumInfo();
-    const isSubscription = active && info && info.plan === 'sub';
     statusBox.style.display = active ? 'block' : 'none';
     // When premium is active, swap the whole pane to the "Manage premium" view
     // (plan summary + unlocked features + cancel). When inactive, show buy/redeem.
     if(manageView) manageView.style.display = active ? 'block' : 'none';
     if(buyView) buyView.style.display = active ? 'none' : 'block';
-    // The "Remove premium" button only makes sense for subscriptions (a recurring
-    // plan the user may want to cancel). Gifted/lifetime codes are one-time unlocks
-    // with nothing to cancel, so we hide the button for them.
-    manageBox.style.display = isSubscription ? 'block' : 'none';
+    // Show the "Remove premium" button for every active plan (subscription,
+    // lifetime, or gifted code) so any unlock can be cleared from this device.
+    manageBox.style.display = active ? 'block' : 'none';
     if(active){
       const plan = info && info.plan === 'sub' ? 'subscription' : (info && info.plan === 'lifetime' ? 'lifetime' : 'gifted');
       statusSub.textContent = plan === 'subscription'
@@ -3773,7 +3771,7 @@ function getApiHeaders() {
     redeemBtn.addEventListener('click', doRedeem);
     input.addEventListener('keydown', e => { if(e.key === 'Enter') doRedeem(); });
     removeBtn.addEventListener('click', () => {
-      if(confirm('Remove premium from this device? Discover will lock again. You can re-redeem a code anytime.')) clearPremium();
+      if(confirm('Remove premium from this device? Discover will lock again.')) clearPremium();
     });
 
     redeemBtn._init = true;
