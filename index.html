@@ -3497,6 +3497,23 @@ function getApiHeaders() {
     return playBillingService;
   }
 
+  // Why is Play Billing unavailable right now? Returns a human-readable reason,
+  // or null when it should be available. Turns the generic "only works in the
+  // Play app" fallback into an actionable message.
+  async function playBillingUnavailableReason(){
+    if(typeof getDigitalGoodsService !== 'function'){
+      return 'Play Billing isn\'t available here — make sure you\'re in the SideCut app installed from Google Play (not a browser), with Digital Asset Links verified.';
+    }
+    const svc = await getPlayBillingService();
+    if(!svc){
+      return 'Play Billing is disabled in this app build — the TWA needs the "playBilling" feature enabled (Bubblewrap twa-manifest.json), then rebuilt and re-uploaded to Play.';
+    }
+    if(typeof PaymentRequest !== 'function'){
+      return 'The Payment Request API isn\'t available on this device.';
+    }
+    return null;
+  }
+
   // Mirrors Play purchase state (one-time lifetime + monthly subscription) into
   // on-device premium. Returns 'lifetime' | 'active' | 'inactive' | 'unavailable'.
   async function syncPlayEntitlement(){
@@ -3824,9 +3841,11 @@ function getApiHeaders() {
           msg.textContent = 'Google Play billing didn\'t complete — try again.';
           return;
         }
-        // 'unavailable' (not a Play TWA): tips only work in the installed app.
+        // 'unavailable': the Digital Goods / Payment Request API isn't
+        // available. Report the specific reason instead of a generic fallback.
+        const reason = await playBillingUnavailableReason();
         msg.style.color = 'var(--ink-dim)';
-        msg.textContent = 'Tips are processed through Google Play and only work inside the SideCut app installed from Play.';
+        msg.textContent = reason || 'Tips are processed through Google Play and only work inside the SideCut app installed from Play.';
       });
     });
 
