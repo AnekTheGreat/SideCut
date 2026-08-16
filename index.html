@@ -9282,36 +9282,99 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       exportState.compressStartedAt = Date.now();
       exportState.compressPct = 0;
       refreshExportNotif();
-      // STORE (no compression): audio files are already compressed (mp3/m4a/etc),
-      // so DEFLATE only burns CPU and allocates extra buffers for no size gain —
-      // and those extra buffers are what tips big libraries over the allocation
-      // limit. STORE streams the bytes through with minimal extra memory.
-      const blob = await zip.generateAsync(
-        { type: 'blob', compression: 'STORE' },
-        (meta) => {
-          if(meta && typeof meta.percent === 'number'){
-            exportState.compressPct = Math.min(99, Math.round(meta.percent));
-            // Throttle notif refresh to avoid hammering the DOM on big libraries.
-            if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
-              exportState._lastCompressTick = Date.now();
-              refreshExportNotif();
+
+      // Generate the .zip. The output is written incrementally so a big library
+      // never materializes as one giant in-memory buffer (the cause of
+      // "Array buffer allocation failed" — V8 refuses a single allocation past
+      // its limit, which is low on Android webviews).
+      //
+      // Preferred path: File System Access API (showSaveFilePicker). We stream
+      // JSZip's chunks straight to a file on disk — only one ~64KB chunk + the
+      // file being read live in memory at a time. Supported in recent
+      // Chrome/Edge (desktop + Android).
+      //
+      // Fallback: in-memory generateAsync → Blob → anchor download (older
+      // webviews / iOS Safari / the APK shell). On a RangeError there we tell
+      // the user to export a smaller batch.
+      const hasFSA = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
+      let streamedToFile = false;
+      if(hasFSA){
+        try{
+          let handle;
+          try{
+            handle = await window.showSaveFilePicker({
+              suggestedName: filename,
+              types: [{ description: 'Zip archive', accept: { 'application/zip': ['.zip'] } }]
+            });
+          }catch(pickErr){
+            // User cancelled the save dialog — abort the export cleanly.
+            if(pickErr && pickErr.name === 'AbortError'){ exportState.active=false; exportState.phase='done'; exportState.seen=true; return; }
+            throw pickErr;
+          }
+          const writable = await handle.createWritable();
+          // JSZip's internal stream emits chunks as Uint8Array; write each to
+          // the file handle and release it, so peak memory stays tiny.
+          await new Promise((resolve, reject) => {
+            const stream = zip.generateInternalStream({ type: 'uint8array', compression: 'STORE', streamFiles: true });
+            let written = 0;
+            stream.on('data', (data) => {
+              // data may be a Uint8Array view over a larger buffer; slice to the
+              // exact bytes so we don't keep the whole backing buffer alive.
+              const chunk = data.buffer && data.byteLength < data.buffer.byteLength
+                ? new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength))
+                : data;
+              writable.write(chunk);
+              written += chunk.byteLength;
+              if(exportState.totalBytes){
+                exportState.compressPct = Math.min(99, Math.round((written / exportState.totalBytes) * 100));
+                if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
+                  exportState._lastCompressTick = Date.now();
+                  refreshExportNotif();
+                }
+              }
+            });
+            stream.on('end', () => { writable.close().then(resolve, reject); });
+            stream.on('error', (e) => { writable.abort().then(() => reject(e), () => reject(e)); });
+            stream.resume();
+          });
+          exportState.compressPct = 100;
+          streamedToFile = true;
+        }catch(fsaErr){
+          // FSA path failed (permission, unsupported despite feature check,
+          // interrupted) — fall through to the in-memory path as a last resort
+          // rather than failing the whole export.
+          console.warn('Streaming export to file failed, falling back to in-memory blob:', fsaErr);
+          streamedToFile = false;
+        }
+      }
+
+      if(!streamedToFile){
+        // In-memory fallback: build one Blob, then download via an anchor.
+        const blob = await zip.generateAsync(
+          { type: 'blob', compression: 'STORE' },
+          (meta) => {
+            if(meta && typeof meta.percent === 'number'){
+              exportState.compressPct = Math.min(99, Math.round(meta.percent));
+              if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
+                exportState._lastCompressTick = Date.now();
+                refreshExportNotif();
+              }
             }
           }
-        }
-      );
-      exportState.compressPct = 100;
-
-      // Anchor must live in the DOM for the click to actually fire a download —
-      // a detached element's .click() is silently ignored by most mobile webviews
-      // (and the APK shell), which is why export "did nothing" before.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+        );
+        exportState.compressPct = 100;
+        // Anchor must live in the DOM for the click to actually fire a download —
+        // a detached element's .click() is silently ignored by most mobile
+        // webviews (and the APK shell), which is why export "did nothing" before.
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
       exportState.active = false;
       exportState.phase = 'done';
       exportState.finishedAt = Date.now();
@@ -9330,8 +9393,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       exportState.lastErr = msg;
       exportState.seen = false;
       // "Array buffer allocation failed" / RangeError means the library is too
-      // big to build in memory in one go — guide the user to export in batches
-      // (a playlist or a selection) instead of the whole library at once.
+      // big to build in memory in one go (the in-memory fallback path) — guide
+      // the user to export in batches (a playlist or a selection) instead.
       const isAlloc = /alloc|memory|range|size/i.test(msg);
       toast(isAlloc
         ? 'Library too big to export at once — try exporting a playlist or fewer songs.'

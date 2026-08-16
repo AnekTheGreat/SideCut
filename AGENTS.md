@@ -78,16 +78,22 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   `setPremiumActive`s it — but never overwrites premium already active on the device.
   No server, no accounts; the code is the same reusable recovery credential
   already in localStorage.
-- Export memory (post-v45.3, no version bump): the export loop passes the Blob
-  directly to JSZip (`zip.file(path, t.file)`) instead of pre-reading each file into
-  an ArrayBuffer — holding a full ArrayBuffer copy of every song alongside its Blob
-  is what threw "Array buffer allocation failed" (V8 RangeError) on big libraries.
-  JSZip reads Blobs lazily during generation, so no second copy is materialized.
-  `generateAsync` uses `{compression:'STORE'}` (audio is already compressed; DEFLATE
-  only burned CPU + extra buffers). On a RangeError/allocation failure, the toast
-  suggests exporting a playlist or fewer songs. `blobToArrayBuffer` is still present
-  (used by other code paths like the DJ-mode mix recorder and watermark remover) with
-  its three-tier fallback.
+- Export memory (post-v45.3, no version bump): the export streams the .zip
+  directly to a file on disk via the **File System Access API**
+  (`showSaveFilePicker` + `createWritable`), piping JSZip's
+  `generateInternalStream({type:'uint8array', streamFiles:true})` chunks to the
+  `FileSystemWritableStream`. Only one ~64KB chunk + the file being read live in
+  memory at a time — this is the real fix for "Array buffer allocation failed"
+  (V8 RangeError when a single allocation exceeds its limit, low on Android
+  webviews). `generateAsync` builds the whole output in one buffer, which is what
+  threw; streaming avoids ever materializing the whole archive. Inputs are passed
+  as Blobs directly to JSZip (no pre-read into ArrayBuffers). `generateAsync` uses
+  `{compression:'STORE'}` (audio is already compressed). **Fallback** when
+  `showSaveFilePicker` is unavailable (iOS Safari, older Android webview, APK
+  shell): in-memory `generateAsync` → Blob → anchor download, and on RangeError
+  the toast suggests exporting a playlist or fewer songs. `blobToArrayBuffer`
+  remains for other paths (DJ mix recorder, watermark remover) with its 3-tier
+  fallback.
 - Export progress on Home (v45.3): `#homeExportPopup` (inside `#homeView`, below the
   greeting) is driven by `renderHomeExportPopup()`, called from `refreshExportNotif()`
   on every export tick and from `navigate('home')`. Shows bundling/compressing % + ETA
