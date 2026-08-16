@@ -3421,8 +3421,8 @@ function getApiHeaders() {
   //
   // ---- DEV CONFIG: paste your real links/handles here ------------------------
   const PAYMENT_CONFIG = {
-    // Stripe Payment Link / PayPal link for the one-time $10 lifetime plan.
-    // Append ?amount=10&currency_code=USD works for PayPal me/checkout links.
+    // Fallback web checkout for the one-time $10 lifetime plan — Play Billing
+    // (Digital Goods API) handles it in-app; this covers non-TWA browsers.
     lifetimeCheckout: '',        // e.g. 'https://www.paypal.com/checkoutnow?amount=10'
     // Fallback Play Store listing for the $1.25 / month subscription — used when
     // Play Billing (Digital Goods API) isn't available, e.g. a plain browser/PWA.
@@ -3487,9 +3487,9 @@ function getApiHeaders() {
   // needed. Outside a TWA (plain browser/PWA) the API is absent, so the Subscribe
   // button falls back to opening the Play Store listing.
   const PLAY_BILLING_URL = 'https://play.google.com/billing';
-  // Set this to the exact subscription product ID you created in Google Play
-  // Console (Monetize → Products → Subscriptions).
+  // Product IDs from Google Play Console (Monetize → Products).
   const PLAY_SUBSCRIPTION_PRODUCT_ID = 'sidecutsub';
+  const PLAY_LIFETIME_PRODUCT_ID = 'lifetime';
   // On-device grace window between Play entitlement checks. Play's listPurchases
   // is the source of truth; this just keeps the app unlocked while offline or
   // backgrounded between checks, and it's refreshed on every sync.
@@ -3506,23 +3506,33 @@ function getApiHeaders() {
     return playBillingService;
   }
 
-  // Mirrors the Play subscription state into on-device premium.
-  // Returns 'active' | 'inactive' | 'unavailable'.
-  async function syncPlaySubscription(){
+  // Mirrors Play purchase state (one-time lifetime + monthly subscription) into
+  // on-device premium. Returns 'lifetime' | 'active' | 'inactive' | 'unavailable'.
+  async function syncPlayEntitlement(){
     const service = await getPlayBillingService();
     if(!service) return 'unavailable';
     try{
       const purchases = await service.listPurchases();
-      const hasSub = Array.isArray(purchases) && purchases.some(p => p && p.itemId === PLAY_SUBSCRIPTION_PRODUCT_ID);
+      const list = Array.isArray(purchases) ? purchases : [];
       const info = getPremiumInfo();
-      if(hasSub){
+
+      // A one-time lifetime purchase is permanent and wins over a subscription.
+      if(list.some(p => p && p.itemId === PLAY_LIFETIME_PRODUCT_ID)){
+        if(!info || info.plan !== 'lifetime' || !isPremiumActive()){
+          setPremiumActive({ plan: 'lifetime' });
+        }
+        return 'lifetime';
+      }
+
+      if(list.some(p => p && p.itemId === PLAY_SUBSCRIPTION_PRODUCT_ID)){
         if(!info || info.plan !== 'sub' || !isPremiumActive()){
           setPremiumActive({ plan: 'sub', expires: Date.now() + PLAY_SUB_GRACE_MS });
         }
         return 'active';
       }
-      // Only revoke Play subs we granted; never touch gifted/lifetime unlocks.
-      if(info && info.plan === 'sub') clearPremiumQuietly();
+
+      // Only revoke Play-billed unlocks we granted; never touch gifted codes.
+      if(info && (info.plan === 'sub' || info.plan === 'lifetime')) clearPremiumQuietly();
       return 'inactive';
     }catch(e){
       return 'unavailable';
@@ -3539,6 +3549,23 @@ function getApiHeaders() {
       if(!Array.isArray(details) || !details.length) return 'unavailable';
       const purchase = await service.purchase(PLAY_SUBSCRIPTION_PRODUCT_ID);
       return purchase ? 'purchased' : 'cancelled';
+    }catch(e){
+      return 'error';
+    }
+  }
+
+  // Starts a Play Billing one-time lifetime purchase. One-time products must be
+  // acknowledged or Play auto-refunds them after 3 days. Same statuses as above.
+  async function purchasePlayLifetime(){
+    const service = await getPlayBillingService();
+    if(!service) return 'unavailable';
+    try{
+      const details = await service.getDetails([PLAY_LIFETIME_PRODUCT_ID]);
+      if(!Array.isArray(details) || !details.length) return 'unavailable';
+      const purchase = await service.purchase(PLAY_LIFETIME_PRODUCT_ID);
+      if(!purchase) return 'cancelled';
+      try{ await service.acknowledge(purchase.purchaseToken); }catch(e){}
+      return 'purchased';
     }catch(e){
       return 'error';
     }
@@ -3655,7 +3682,7 @@ function getApiHeaders() {
       msg.textContent = 'Opening Google Play billing…';
       const result = await purchasePlaySubscription();
       if(result === 'purchased'){
-        await syncPlaySubscription();
+        await syncPlayEntitlement();
         msg.style.color = 'var(--coral)';
         msg.textContent = 'Subscribed — Discover is unlocked. Thanks for supporting SideCut! ✨';
         toast('Premium unlocked. Enjoy Discover! ✨', 2600);
@@ -3682,7 +3709,32 @@ function getApiHeaders() {
       msg.textContent = 'Opening the Google Play Store — subscribe there, then it unlocks automatically.';
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
-    lifetimeBtn.addEventListener('click', () => openCheckout(PAYMENT_CONFIG.lifetimeCheckout, 'Lifetime ($10)'));
+    // Lifetime uses Play Billing when running as a Play-installed TWA; outside a
+    // TWA it falls back to the (optional) web checkout link in PAYMENT_CONFIG.
+    lifetimeBtn.addEventListener('click', async () => {
+      msg.style.color = 'var(--ink-dim)';
+      msg.textContent = 'Opening Google Play billing…';
+      const result = await purchasePlayLifetime();
+      if(result === 'purchased'){
+        await syncPlayEntitlement();
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Lifetime unlocked — Discover is yours forever. Thanks for supporting SideCut! ✨';
+        toast('Premium unlocked. Enjoy Discover! ✨', 2600);
+        return;
+      }
+      if(result === 'cancelled'){
+        msg.style.color = 'var(--ink-dim)';
+        msg.textContent = 'Purchase cancelled — unlock anytime.';
+        return;
+      }
+      if(result === 'error'){
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Google Play billing did not complete — try again, or redeem a code if you have one.';
+        return;
+      }
+      // 'unavailable' (not a Play TWA): fall back to the web checkout, if set.
+      openCheckout(PAYMENT_CONFIG.lifetimeCheckout, 'Lifetime ($10)');
+    });
 
     const doRedeem = async () => {
       const code = input.value.trim();
@@ -13399,11 +13451,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
 
-  // Play Billing: re-verify the subscription on launch and whenever the app
-  // regains focus (e.g. after returning from the Play billing sheet).
-  syncPlaySubscription();
-  window.addEventListener('focus', () => syncPlaySubscription());
-  document.addEventListener('visibilitychange', () => { if(!document.hidden) syncPlaySubscription(); });
+  // Play Billing: re-verify purchases on launch and whenever the app regains
+  // focus (e.g. after returning from the Play billing sheet).
+  syncPlayEntitlement();
+  window.addEventListener('focus', () => syncPlayEntitlement());
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) syncPlayEntitlement(); });
 
 })();
 </script>
