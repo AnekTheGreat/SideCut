@@ -83,3 +83,18 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - Remote: https://github.com/AnekTheGreat/SideCut.git, branch `main`.
 - Commit with `Co-authored-by: openhands <openhands@all-hands.dev>`.
 - The user generally says "push" — they want commits pushed to main.
+
+## v45.x state (Aug 15, 2026)
+- Two parallel sessions both produced v45 changes. v45.0 (remote commit 7b7742c)
+  landed: sandbox premium-only, modal Add songs, playlist memory (`lastUsedPlaylist`,
+  persisted), removed premium roadmap, removed Spotidown/Catch/Saver dead links,
+  Get song → Spotify only, notif bubble + stats icon removed from header, sandbox
+  "Accessibility & display" group (reduce motion, high-contrast, big seek bar,
+  invert colors). v45.1 (local d486e2b) added on top: Donate pay buttons removed,
+  Subscribe activates 14-day on-device sub unlock (`plan:'sub', expires`).
+- Premium sub unlock: `setPremiumActive({ plan:'sub', expires: Date.now()+14d })`.
+  `isPremiumActive()` honors `expires`. `refreshPremiumUI()` shows
+  `#premiumManageBox` / `#premiumRemoveBtn` only when `info.plan === 'sub'`.
+- When rebasing onto a remote that already has a same-version commit, expect
+  index.html + sw.js conflicts — read the remote commit first, sync with
+  `git reset --hard origin/main`, then re-apply only the genuinely missing parts.
