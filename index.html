@@ -1605,6 +1605,13 @@ body.sandbox-invert-colors .brand-mark{
   <div class="modal">
     <h3>Export</h3>
     <div id="exportConfirmBody" style="font-size:13.5px; color:var(--ink-dim); text-align:center; padding:10px 0;"></div>
+    <label id="exportPremiumOpt" style="display:none; align-items:flex-start; gap:8px; margin:6px 2px 10px; padding:10px; border:1px solid var(--line); border-radius:10px; cursor:pointer; text-align:left;">
+      <input type="checkbox" id="exportPremiumChk" style="margin-top:3px;">
+      <span style="font-size:12px; color:var(--ink-dim); line-height:1.4;">
+        <strong style="color:var(--ink);">Include my premium unlock code</strong><br>
+        Lets you restore premium on a new device when you import this backup. Anyone you share this .zip with can use the code, so only check this for your own backups.
+      </span>
+    </label>
     <div class="modal-btns">
       <button class="cancel" id="exportConfirmCancel" style="flex:1;">Cancel</button>
       <button class="confirm" id="exportConfirmOk" style="flex:1;">Export</button>
@@ -5452,7 +5459,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '45.1';
+  const APP_VERSION = '45.2';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5465,6 +5472,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '45.2', date: 'August 15, 2026 at 10:45 pm EDT', title: 'Carry your premium unlock in a library export', items: [
+      'Export library now has an opt-in "Include my premium unlock code" checkbox (only shown when you have premium). The code rides along in the backup .zip so you can restore premium on a new device just by importing it — no account, no server',
+      'Import restores premium from the backup automatically: it re-verifies the code client-side (so a tampered manifest can\'t activate a bogus code) and never overwrites premium that\'s already active on the device',
+      'The checkbox is off by default and warns that anyone you share the .zip with could use the code, so only check it for your own backups',
+    ]},
     { version: '45.1', date: 'August 15, 2026 at 7:55 pm EDT (upd)', title: 'Donate pay buttons removed, Subscribe fixed', items: [
       'Removed the Cash App, PayPal, and Card pay buttons from the Donate settings tab — only the amount field and quick-pick chips remain',
       'Fix: the Subscribe button no longer grants premium for free on click (v45.1 glitch). It now opens the real external checkout — premium only activates after payment, via a dev-issued code',
@@ -8987,8 +8999,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Export confirmation modal helpers
   let pendingExport = null;
   
-  function showExportConfirm(message, onConfirm) {
+  // opts = { allowPremium: true } — surfaces the "include my premium code" checkbox
+  // (only when the user currently has premium). onConfirm receives includePremium(bool).
+  function showExportConfirm(message, onConfirm, opts) {
     $('exportConfirmBody').innerHTML = message;
+    const showOpt = opts && opts.allowPremium && isPremiumActive();
+    const opt = $('exportPremiumOpt');
+    if(opt){
+      opt.style.display = showOpt ? 'flex' : 'none';
+      const chk = $('exportPremiumChk');
+      if(chk) chk.checked = false;
+    }
     pendingExport = onConfirm;
     $('exportConfirmBackdrop').style.display = 'flex';
   }
@@ -9000,7 +9021,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   
   $('exportConfirmOk').addEventListener('click', () => {
     $('exportConfirmBackdrop').style.display = 'none';
-    if(pendingExport) pendingExport();
+    if(pendingExport){
+      const chk = $('exportPremiumChk');
+      pendingExport(!!(chk && chk.checked));
+    }
     pendingExport = null;
   });
   
@@ -9108,6 +9132,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     exportState = { active:true, phase:'reading', kind: kindLabel || 'library',
       total: tracks.length, done:0, bytesDone:0, totalBytes:0, compressPct:0,
       startedAt: Date.now(), compressStartedAt:0, finishedAt:0, seen:false, lastErr:'' };
+    // Embed the user's premium unlock code into the manifest when requested, so an
+    // import on a new device can restore it. The code is the same reusable recovery
+    // code the user already holds; nothing secret (key/PEM) leaves the app.
+    if(opts.premium) manifest.premium = opts.premium;
     // Pre-count total bytes for the ETA/progress, then surface the bell badge.
     tracks.forEach(t => {
       if(t.file) exportState.totalBytes += t.file.size || 0;
@@ -9209,14 +9237,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async () => {
+    showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async (includePremium) => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
+      const premiumPayload = includePremium ? (() => {
+        const info = getPremiumInfo();
+        return info && info.code ? { code: info.code, plan: info.plan || 'gifted' } : null;
+      })() : null;
       await runZipExport({
         kindLabel: 'library',
         tracks: allTracks.slice(),
         manifest: { playlists, tracks: [], settings: {}, stats: {}, version: 2 },
         filename: 'sidecut-library.zip',
-        toastOk: 'Library exported — keep this .zip somewhere safe',
+        premium: premiumPayload,
+        toastOk: premiumPayload
+          ? 'Library + premium code exported — keep this .zip somewhere safe'
+          : 'Library exported — keep this .zip somewhere safe',
         attachManifestExtras: async (manifest) => {
           manifest.settings = {
             // Playback settings
@@ -9573,6 +9608,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
       }
       
+      // Restore premium from a backup that included the unlock code. The code is
+      // re-verified client-side (same HMAC path as manual redemption) so a tampered
+      // manifest can't activate a bogus code. We never overwrite an already-active
+      // premium on this device — only restore when there's nothing to lose.
+      if(manifest.premium && manifest.premium.code){
+        if(isPremiumActive()){
+          toast('Premium already active on this device — kept as-is.');
+        } else {
+          try{
+            const ok = await verifyPremiumCode(manifest.premium.code);
+            if(ok){
+              setPremiumActive({ plan: manifest.premium.plan || 'gifted', code: manifest.premium.code });
+              toast('Premium restored from your backup. ✨', 3200);
+            } else {
+              toast('Backup had a premium code, but it didn’t verify — ignoring it.');
+            }
+          }catch(e){ console.log('Premium restore skipped:', e); }
+        }
+      }
+
       // Apply sandbox CSS classes
       applySandboxStyles();
       updateSandboxToggles();

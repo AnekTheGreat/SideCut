@@ -66,6 +66,17 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - Discover (v45.0): no Spotidown/Spoticatch/Spotisaver links (all dead domains → 404s).
   `triggerDiscoverDownload()` only opens the Spotify search/track URL; how-to instructions
   are at the top of `#discoverView`. "Get song" opens the track in Spotify.
+- Premium-in-export (v45.2): `exportLibrary` passes `{allowPremium:true}` to
+  `showExportConfirm`, which shows the `#exportPremiumOpt` checkbox ONLY when
+  `isPremiumActive()`. On confirm, `exportLibrary(includePremium)` builds
+  `premiumPayload={code,plan}` from `getPremiumInfo()` and hands it to `runZipExport`
+  via `opts.premium`, which writes `manifest.premium`. On import, after settings/stats
+  restore, `importLibrary` re-verifies the code via `verifyPremiumCode` (so a tampered
+  manifest can't activate a bogus code) and `setPremiumActive`s it — but never overwrites
+  premium already active on the device. `showExportConfirm(message,onConfirm,opts)` now
+  passes `includePremium(bool)` to onConfirm; playlist/selection callers ignore it (no
+  allowPremium). Checkbox is off by default with a sharing warning. No server, no accounts;
+  the code is the same reusable recovery credential already in localStorage.
 - Track play now stamps `t.lastPlayedAt = Date.now()` in `recordPlay()` (v44.5), persisted via
   `persistTrackMeta` and synced through library export/import. Home's Recently played /
   Not played in a while depend on it. Older libraries without it just sort by playCount.
