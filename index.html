@@ -9070,17 +9070,24 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Export confirmation modal helpers
   let pendingExport = null;
   
-  // opts = { allowPremium: true } — surfaces the "include my premium code" checkbox
-  // (only when the user currently has premium). onConfirm receives includePremium(bool).
-  function showExportConfirm(message, onConfirm, opts) {
+  // Build the premium payload for an export when the user has premium active —
+  // returns {code, plan} or null. Auto-included in every export (library,
+  // playlist, selection) so the unlock code is always in the user's own backups;
+  // there's no opt-in checkbox anymore.
+  function buildPremiumPayload(){
+    if(!isPremiumActive()) return null;
+    const info = getPremiumInfo();
+    return info && info.code ? { code: info.code, plan: info.plan || 'gifted' } : null;
+  }
+  
+  // Premium is auto-included in every export when the user has it active — no
+  // opt-in checkbox anymore (the user always wants their unlock code in their
+  // own backups). Each export function builds the premium payload itself from
+  // isPremiumActive()/getPremiumInfo(), so onConfirm takes no arguments.
+  function showExportConfirm(message, onConfirm) {
     $('exportConfirmBody').innerHTML = message;
-    const showOpt = opts && opts.allowPremium && isPremiumActive();
     const opt = $('exportPremiumOpt');
-    if(opt){
-      opt.style.display = showOpt ? 'flex' : 'none';
-      const chk = $('exportPremiumChk');
-      if(chk) chk.checked = false;
-    }
+    if(opt) opt.style.display = 'none';
     pendingExport = onConfirm;
     $('exportConfirmBackdrop').style.display = 'flex';
   }
@@ -9092,10 +9099,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   
   $('exportConfirmOk').addEventListener('click', () => {
     $('exportConfirmBackdrop').style.display = 'none';
-    if(pendingExport){
-      const chk = $('exportPremiumChk');
-      pendingExport(!!(chk && chk.checked));
-    }
+    if(pendingExport) pendingExport();
     pendingExport = null;
   });
   
@@ -9134,13 +9138,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   async function exportPlaylist(){
     const ids = playlists[activePlaylist] || [];
     if(!ids.length){ toast('Nothing to export yet.'); return; }
-    showExportConfirm(`Export "${activePlaylist}" (${ids.length} song${ids.length>1?'s':''}) as a .zip file?`, async (includePremium) => {
-      const premiumPayload = includePremium ? (() => {
-        const info = getPremiumInfo();
-        return info && info.code ? { code: info.code, plan: info.plan || 'gifted' } : null;
-      })() : null;
+    showExportConfirm(`Export "${activePlaylist}" (${ids.length} song${ids.length>1?'s':''}) as a .zip file?`, async () => {
+      const premiumPayload = buildPremiumPayload();
       await doExportTracks(ids, activePlaylist.replace(/[^a-z0-9]/gi,'_'), { [activePlaylist]: ids }, `"${activePlaylist}"`, premiumPayload);
-    }, { allowPremium: true });
+    });
   }
 
   // Read a Blob/File into an ArrayBuffer in a way that never throws on webviews
@@ -9208,13 +9209,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!ids.length) return;
     const isAllSongsCtx = activePlaylist === 'All Songs' || activePlaylist === UNSORTED_VIEW;
     const manifestPlaylists = isAllSongsCtx ? undefined : { [activePlaylist]: ids };
-    showExportConfirm(`Export ${ids.length} selected song${ids.length>1?'s':''} as a .zip file?`, async (includePremium) => {
-      const premiumPayload = includePremium ? (() => {
-        const info = getPremiumInfo();
-        return info && info.code ? { code: info.code, plan: info.plan || 'gifted' } : null;
-      })() : null;
+    showExportConfirm(`Export ${ids.length} selected song${ids.length>1?'s':''} as a .zip file?`, async () => {
+      const premiumPayload = buildPremiumPayload();
       await doExportTracks(ids, `sidecut-selection-${ids.length}`, manifestPlaylists, 'selection', premiumPayload);
-    }, { allowPremium: true });
+    });
   }
 
   // Core export runner shared by library + playlist/selection exports. Reads each
@@ -9251,22 +9249,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
         const zipPath = `audio/${t.id}${ext}`;
         if(t.file){
-          // Per-track try/catch: a single unreadable blob (broken arrayBuffer on
-          // a stale IndexedDB-resurrected Blob) skips just this track instead of
-          // aborting the whole export. blobToArrayBuffer resolves null on total
-          // failure, so we treat null as "skip" too.
-          try{
-            const buf = await blobToArrayBuffer(t.file);
-            if(buf && buf.byteLength){
-              zip.file(zipPath, buf);
-              exportState.bytesDone += (t.file.size || buf.byteLength || 0);
-            } else {
-              missing++;
-            }
-          }catch(e){
-            console.log('Skipping unreadable track during export:', t.name, e);
-            missing++;
-          }
+          // Pass the Blob directly to JSZip instead of pre-reading it into an
+          // ArrayBuffer. Holding a full ArrayBuffer copy of every song alongside
+          // its Blob is what blew past the engine's allocation limit ("Array
+          // buffer allocation failed") on big libraries — JSZip reads Blobs
+          // lazily during generation, so we never materialize a second copy of
+          // each file in the JS heap at once.
+          zip.file(zipPath, t.file);
+          exportState.bytesDone += (t.file.size || 0);
         } else {
           missing++;
         }
@@ -9277,13 +9267,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, path: t.file ? zipPath : null, hasCover: !!t.artBlob
         });
         if(t.artBlob){
-          try{
-            const coverBuf = await blobToArrayBuffer(t.artBlob);
-            if(coverBuf && coverBuf.byteLength){
-              zip.file(`covers/${t.id}.jpg`, coverBuf);
-              exportState.bytesDone += (t.artBlob.size || coverBuf.byteLength || 0);
-            }
-          }catch(e){ /* cover missing is non-fatal */ }
+          // Covers are tiny; still pass the Blob directly to avoid extra copies.
+          zip.file(`covers/${t.id}.jpg`, t.artBlob);
+          exportState.bytesDone += (t.artBlob.size || 0);
         }
         exportState.done++;
         refreshExportNotif();
@@ -9296,16 +9282,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       exportState.compressStartedAt = Date.now();
       exportState.compressPct = 0;
       refreshExportNotif();
-      const blob = await zip.generateAsync({ type: 'blob' }, (meta) => {
-        if(meta && typeof meta.percent === 'number'){
-          exportState.compressPct = Math.min(99, Math.round(meta.percent));
-          // Throttle notif refresh to avoid hammering the DOM on big libraries.
-          if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
-            exportState._lastCompressTick = Date.now();
-            refreshExportNotif();
+      // STORE (no compression): audio files are already compressed (mp3/m4a/etc),
+      // so DEFLATE only burns CPU and allocates extra buffers for no size gain —
+      // and those extra buffers are what tips big libraries over the allocation
+      // limit. STORE streams the bytes through with minimal extra memory.
+      const blob = await zip.generateAsync(
+        { type: 'blob', compression: 'STORE' },
+        (meta) => {
+          if(meta && typeof meta.percent === 'number'){
+            exportState.compressPct = Math.min(99, Math.round(meta.percent));
+            // Throttle notif refresh to avoid hammering the DOM on big libraries.
+            if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
+              exportState._lastCompressTick = Date.now();
+              refreshExportNotif();
+            }
           }
         }
-      });
+      );
       exportState.compressPct = 100;
 
       // Anchor must live in the DOM for the click to actually fire a download —
@@ -9333,9 +9326,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       exportState.active = false;
       exportState.phase = 'error';
       exportState.finishedAt = Date.now();
-      exportState.lastErr = (e && e.message) ? e.message : String(e);
+      const msg = (e && e.message) ? e.message : String(e);
+      exportState.lastErr = msg;
       exportState.seen = false;
-      toast('Export failed: ' + (exportState.lastErr || 'see console for details'));
+      // "Array buffer allocation failed" / RangeError means the library is too
+      // big to build in memory in one go — guide the user to export in batches
+      // (a playlist or a selection) instead of the whole library at once.
+      const isAlloc = /alloc|memory|range|size/i.test(msg);
+      toast(isAlloc
+        ? 'Library too big to export at once — try exporting a playlist or fewer songs.'
+        : 'Export failed: ' + (msg || 'see console for details'));
       refreshExportNotif();
     }finally{
       if(btn){ btn.disabled = false; btn.textContent = 'Export library'; }
@@ -9349,12 +9349,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async (includePremium) => {
+    showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
-      const premiumPayload = includePremium ? (() => {
-        const info = getPremiumInfo();
-        return info && info.code ? { code: info.code, plan: info.plan || 'gifted' } : null;
-      })() : null;
+      const premiumPayload = buildPremiumPayload();
       await runZipExport({
         kindLabel: 'library',
         tracks: allTracks.slice(),
