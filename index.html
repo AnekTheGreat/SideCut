@@ -3421,13 +3421,11 @@ function getApiHeaders() {
   //
   // ---- DEV CONFIG: paste your real links/handles here ------------------------
   const PAYMENT_CONFIG = {
-    // Fallback web checkout for the one-time $10 lifetime plan — Play Billing
-    // (Digital Goods API) handles it in-app; this covers non-TWA browsers.
-    lifetimeCheckout: '',        // e.g. 'https://www.paypal.com/checkoutnow?amount=10'
-    // Fallback Play Store listing for the $1.25 / month subscription — used when
-    // Play Billing (Digital Goods API) isn't available, e.g. a plain browser/PWA.
+    // Play Store listing for the SideCut TWA. In-app purchases (Digital Goods
+    // API / Play Billing) only work inside the Play-installed app, so this is
+    // the fallback for plain browsers/PWAs: open the listing to install it.
     // (Package: com.SideCut.myapp; matches .well-known/assetlinks.json.)
-    subscriptionCheckout: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',
+    playStoreListing: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',
     // Donation providers. Leave a handle/URL empty and that button shows a notice.
     paypal:       '',            // e.g. 'https://www.paypal.com/donate?hosted_button_id=XXXX' or 'https://paypal.me/yourhandle'
     stripeCard:   '',            // e.g. 'https://buy.stripe.com/xyz789'
@@ -3539,36 +3537,40 @@ function getApiHeaders() {
     }
   }
 
-  // Starts a Play Billing subscription purchase. Returns
-  // 'purchased' | 'cancelled' | 'unavailable' | 'error'.
-  async function purchasePlaySubscription(){
+  // Starts a Play Billing purchase. Digital Goods API v2 removed the old
+  // service.purchase()/service.acknowledge() methods — purchases now go through
+  // the Payment Request API with 'https://play.google.com/billing' as the
+  // payment method. Returns 'purchased' | 'cancelled' | 'unavailable' | 'error'.
+  async function purchasePlayItem(sku){
     const service = await getPlayBillingService();
-    if(!service) return 'unavailable';
+    if(!service || typeof PaymentRequest !== 'function') return 'unavailable';
+    // Verify the SKU exists and is active before opening the billing sheet; an
+    // empty result means the product ID doesn't match Play Console.
     try{
-      const details = await service.getDetails([PLAY_SUBSCRIPTION_PRODUCT_ID]);
+      const details = await service.getDetails([sku]);
       if(!Array.isArray(details) || !details.length) return 'unavailable';
-      const purchase = await service.purchase(PLAY_SUBSCRIPTION_PRODUCT_ID);
-      return purchase ? 'purchased' : 'cancelled';
+    }catch(e){ return 'unavailable'; }
+    try{
+      const paymentMethods = [{ supportedMethods: 'https://play.google.com/billing', data: { sku: sku } }];
+      const paymentDetails = { total: { label: 'Total', amount: { currency: 'USD', value: '0' } } };
+      const request = new PaymentRequest(paymentMethods, paymentDetails);
+      const response = await request.show();
+      const token = response.details && (response.details.purchaseToken || response.details.token);
+      await response.complete(token ? 'success' : 'fail');
+      return token ? 'purchased' : 'error';
     }catch(e){
+      // AbortError/NotAllowedError mean the user dismissed the billing sheet.
+      if(e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return 'cancelled';
       return 'error';
     }
   }
 
-  // Starts a Play Billing one-time lifetime purchase. One-time products must be
-  // acknowledged or Play auto-refunds them after 3 days. Same statuses as above.
+  async function purchasePlaySubscription(){
+    return purchasePlayItem(PLAY_SUBSCRIPTION_PRODUCT_ID);
+  }
+
   async function purchasePlayLifetime(){
-    const service = await getPlayBillingService();
-    if(!service) return 'unavailable';
-    try{
-      const details = await service.getDetails([PLAY_LIFETIME_PRODUCT_ID]);
-      if(!Array.isArray(details) || !details.length) return 'unavailable';
-      const purchase = await service.purchase(PLAY_LIFETIME_PRODUCT_ID);
-      if(!purchase) return 'cancelled';
-      try{ await service.acknowledge(purchase.purchaseToken); }catch(e){}
-      return 'purchased';
-    }catch(e){
-      return 'error';
-    }
+    return purchasePlayItem(PLAY_LIFETIME_PRODUCT_ID);
   }
 
   // base64 → Uint8Array
@@ -3663,17 +3665,6 @@ function getApiHeaders() {
     const subBtn = $('premiumBuySubBtn');
     if(!input || redeemBtn._init) return;
 
-    const openCheckout = (url, label) => {
-      if(!url){
-        msg.style.color = 'var(--coral)';
-        msg.textContent = label + ' checkout is being set up — check back soon, or redeem a code if you have one.';
-        return;
-      }
-      msg.style.color = 'var(--ink-dim)';
-      msg.textContent = 'Opening ' + label + ' checkout… after paying, email the dev to receive your unlock code.';
-      try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
-    };
-
     // Subscribe uses Play Billing when running as a Play-installed TWA (Digital
     // Goods API); outside a TWA it falls back to the Play Store listing. It must
     // NOT grant premium for free on click (that was a v45.1 glitch).
@@ -3699,7 +3690,7 @@ function getApiHeaders() {
         return;
       }
       // 'unavailable' (not a Play TWA): open the Play Store listing instead.
-      const url = PAYMENT_CONFIG.subscriptionCheckout;
+      const url = PAYMENT_CONFIG.playStoreListing;
       if(!url){
         msg.style.color = 'var(--coral)';
         msg.textContent = 'Subscription is being set up — check back soon, or redeem a code if you have one.';
@@ -3710,7 +3701,7 @@ function getApiHeaders() {
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
     // Lifetime uses Play Billing when running as a Play-installed TWA; outside a
-    // TWA it falls back to the (optional) web checkout link in PAYMENT_CONFIG.
+    // TWA it falls back to the Play Store listing.
     lifetimeBtn.addEventListener('click', async () => {
       msg.style.color = 'var(--ink-dim)';
       msg.textContent = 'Opening Google Play billing…';
@@ -3732,8 +3723,16 @@ function getApiHeaders() {
         msg.textContent = 'Google Play billing did not complete — try again, or redeem a code if you have one.';
         return;
       }
-      // 'unavailable' (not a Play TWA): fall back to the web checkout, if set.
-      openCheckout(PAYMENT_CONFIG.lifetimeCheckout, 'Lifetime ($10)');
+      // 'unavailable' (not a Play TWA): open the Play Store listing instead.
+      const url = PAYMENT_CONFIG.playStoreListing;
+      if(!url){
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Lifetime is being set up — check back soon, or redeem a code if you have one.';
+        return;
+      }
+      msg.style.color = 'var(--ink-dim)';
+      msg.textContent = 'Opening the Google Play Store — buy lifetime there, then it unlocks automatically.';
+      try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
 
     const doRedeem = async () => {
