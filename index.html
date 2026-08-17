@@ -3487,6 +3487,9 @@ function getApiHeaders() {
   const PLAY_SUB_GRACE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
   let playBillingService = null; // null = not queried yet; undefined = unavailable
+  // Last Play Billing failure detail, set when purchasePlayItem returns 'error' so
+  // the UI can show which step failed (product lookup / billing sheet / token).
+  let playLastErrorDetail = '';
 
   async function getPlayBillingService(){
     if(playBillingService !== null) return playBillingService;
@@ -3553,6 +3556,7 @@ function getApiHeaders() {
   // payment method. Returns 'purchased' | 'cancelled' | 'unavailable' |
   // 'not-found' | 'error'.
   async function purchasePlayItem(sku, consumable){
+    playLastErrorDetail = '';
     const service = await getPlayBillingService();
     if(!service || typeof PaymentRequest !== 'function') return 'unavailable';
     // Verify the SKU exists and is active before opening the billing sheet. An
@@ -3561,7 +3565,10 @@ function getApiHeaders() {
     try{
       const details = await service.getDetails([sku]);
       if(!Array.isArray(details) || !details.length) return 'not-found';
-    }catch(e){ return 'error'; }
+    }catch(e){
+      playLastErrorDetail = 'couldn\'t load the product from Play: ' + (e && (e.message || e.name) ? (e.message || e.name) : String(e));
+      return 'error';
+    }
     try{
       const paymentMethods = [{ supportedMethods: 'https://play.google.com/billing', data: { sku: sku } }];
       const paymentDetails = { total: { label: 'Total', amount: { currency: 'USD', value: '0' } } };
@@ -3569,7 +3576,10 @@ function getApiHeaders() {
       const response = await request.show();
       const token = response.details && (response.details.purchaseToken || response.details.token);
       await response.complete(token ? 'success' : 'fail');
-      if(!token) return 'error';
+      if(!token){
+        playLastErrorDetail = 'payment went through but no purchase token was returned';
+        return 'error';
+      }
       // Consumables must be consumed after purchase — that also acknowledges
       // them (avoiding the 72-hour auto-refund) and lets the user tip again.
       if(consumable){ try{ await service.consume(token); }catch(e){} }
@@ -3577,6 +3587,7 @@ function getApiHeaders() {
     }catch(e){
       // AbortError/NotAllowedError mean the user dismissed the billing sheet.
       if(e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return 'cancelled';
+      playLastErrorDetail = (e && e.name ? e.name : 'error') + (e && e.message ? ': ' + e.message : '');
       return 'error';
     }
   }
@@ -3704,7 +3715,7 @@ function getApiHeaders() {
       }
       if(result === 'error'){
         msg.style.color = 'var(--coral)';
-        msg.textContent = 'Google Play billing didn\'t complete — try again, or redeem a code if you have one.';
+        msg.textContent = 'Google Play billing didn\'t complete' + (playLastErrorDetail ? ' (' + playLastErrorDetail + ')' : '') + ' — try again, or redeem a code if you have one.';
         return;
       }
       if(result === 'not-found'){
@@ -3743,7 +3754,7 @@ function getApiHeaders() {
       }
       if(result === 'error'){
         msg.style.color = 'var(--coral)';
-        msg.textContent = 'Google Play billing did not complete — try again, or redeem a code if you have one.';
+        msg.textContent = 'Google Play billing did not complete' + (playLastErrorDetail ? ' (' + playLastErrorDetail + ')' : '') + ' — try again, or redeem a code if you have one.';
         return;
       }
       if(result === 'not-found'){
@@ -3838,7 +3849,7 @@ function getApiHeaders() {
         }
         if(result === 'error'){
           msg.style.color = 'var(--coral)';
-          msg.textContent = 'Google Play billing didn\'t complete — try again.';
+          msg.textContent = 'Google Play billing didn\'t complete' + (playLastErrorDetail ? ' (' + playLastErrorDetail + ')' : '') + ' — try again.';
           return;
         }
         // 'unavailable': the Digital Goods / Payment Request API isn't
