@@ -326,3 +326,21 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   order they're added. Home page layout reordering (drag via `initLinearDrag`
   on `.home-layout-row` + ▲/▼ buttons) is unaffected. Version 46.5 → 46.6 (SW
   sidecut-shell-v46.5 → v46.6). Date Aug 17 4:04 pm EDT.
+
+## Post-v46.6 follow-up (no version bump)
+- **Home layout editor drag removed too**: the last press-and-hold reorder in
+  Sandbox — dragging `.home-layout-row` in the Home page layout editor — is
+  gone. The whole generic drag engine (`initLinearDrag`, `onDragPointerDown`,
+  `activeDrag`, click-suppress guard) and its CSS (`.action-pill.ghost`,
+  `.home-layout-row.dragging`, `.hl-grip`, `touch-action:none`) were deleted.
+  Reordering in the editor now happens only via the ▲/▼ move buttons; rows use
+  `touch-action:manipulation` so the pane scrolls normally.
+- **Save button**: Sandbox now has "💾 Save all sandbox changes"
+  (`#saveSandboxBtn` → `persistSandboxMeta()`), which re-persists every sandbox
+  meta key (toggles, nowbar size, actionPillOrder, customQuickActions, homeOrder,
+  homeSlots, homeHidden, homeBubbleSize), reapplies styles, and toasts. Changes
+  still auto-save on each toggle; the button is an explicit confirm.
+- **Visible settings scrollbar**: `.settings-scroll` scrollbar widened 6→10px,
+  height 52vh→62vh, thumb/track now have solid rgba fallbacks before
+  `color-mix` (color-mix silently fails on older Android WebViews, leaving the
+  thumb transparent/invisible).

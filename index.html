@@ -60,12 +60,6 @@
   }
   .action-strip.menu-open{ z-index:300; }
   .action-strip::-webkit-scrollbar{ display:none; }
-  /* Pointer-based finger-following drag for action pills. The dragged pill is cloned
-     and rides under the finger; the real pill stays in flow but goes translucent so
-     its slot is preserved, and siblings translate horizontally to make room. */
-  .action-pill.ghost{ position:fixed; z-index:9999; pointer-events:none; opacity:0.95;
-    box-shadow:0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px var(--coral); transform:scale(1.04); }
-  .action-pill.placeholder{ opacity:0.25; }
   .action-pill{
     flex-shrink:0; font-size:12.5px; font-weight:600; padding:10px 14px; border-radius:18px;
     cursor:pointer; white-space:nowrap; border:1px solid var(--line);
@@ -1072,29 +1066,31 @@
 
 /* ─── Settings pane scrollbar ─── */
 .settings-scroll {
-  height: 52vh;
+  height: 62vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
-  padding-right: 6px;
+  padding-right: 10px;
 }
 .settings-scroll::-webkit-scrollbar {
-  width: 6px;
+  width: 10px;
 }
 .settings-scroll::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 3px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 5px;
 }
 .settings-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--coral) 35%, transparent);
-  border-radius: 3px;
+  background: rgba(255,107,107,0.4);
+  background: color-mix(in srgb, var(--coral) 45%, transparent);
+  border-radius: 5px;
 }
 .settings-scroll::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--coral) 55%, transparent);
+  background: rgba(255,107,107,0.6);
+  background: color-mix(in srgb, var(--coral) 65%, transparent);
 }
 .settings-scroll {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--coral) 35%, transparent) transparent;
+  scrollbar-color: rgba(255,107,107,0.45) rgba(255,255,255,0.07);
 }
 
 /* Settings tab buttons polish */
@@ -1176,10 +1172,8 @@ body.sandbox-big-art .track-art{
 .home-layout-row{
   display:flex; align-items:center; gap:10px; padding:10px 12px;
   border:1px solid var(--line); border-radius:10px; background:var(--bg);
-  touch-action:none; cursor:grab;
+  touch-action:manipulation; cursor:default;
 }
-.home-layout-row.dragging{ opacity:0.5; }
-.home-layout-row .hl-grip{ color:var(--ink-dim); font-size:13px; flex-shrink:0; }
 .home-layout-row .hl-name{ font-size:12.5px; font-weight:600; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .custom-action-list-row{
   display:flex; align-items:center; gap:8px; padding:8px 10px;
@@ -2399,6 +2393,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       </div>
 
       <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:8px;">
+        <button class="playlist-pick-btn" id="saveSandboxBtn" style="text-align:center; background:rgba(255,199,90,0.12); border-color:rgba(255,199,90,0.35); margin-bottom:10px;">💾 Save all sandbox changes</button>
         <button class="playlist-pick-btn" id="resetSandboxBtn" style="text-align:center; background:rgba(255,107,107,0.1); border-color:rgba(255,107,107,0.3);">Reset all sandbox settings</button>
       </div>
 
@@ -4485,156 +4480,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     else if(sandboxNowbarSize === 150) document.body.classList.add('sandbox-nowbar-size-150');
   }
 
-  // ---- Generic 1D pointer drag-reorder ----
-  // Movement-based: a quick tap still clicks normally; moving the pointer past a
-  // small threshold starts the drag. A ghost rides centered under the finger,
-  // siblings shift out of the way smoothly, and on drop the new order is handed
-  // to the onDrop callback. Works for the action strip (horizontal) and the
-  // sandbox home-layout editor (vertical).
-  let suppressClickAfterDrag = false;
-  let activeDrag = null;
-  let dragClickGuard = null;
-
-  document.addEventListener('click', (e) => {
-    if(suppressClickAfterDrag && dragClickGuard && dragClickGuard.contains(e.target)){
-      suppressClickAfterDrag = false;
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }, true);
-
-  function initLinearDrag(container, itemSel, opts){
-    if(!container) return;
-    Array.from(container.children).forEach(el => {
-      if(!el.matches || !el.matches(itemSel)) return;
-      if(el._ldBound) return;
-      el._ldBound = true;
-      el.setAttribute('draggable', 'false');
-      el.addEventListener('pointerdown', (e) => onDragPointerDown(e, container, itemSel, opts));
-    });
-  }
-
-  function onDragPointerDown(e, container, itemSel, opts){
-    if(opts && opts.isActive && !opts.isActive()) return;
-    if(e.button !== undefined && e.button !== 0) return;
-    if(activeDrag) return; // one drag at a time
-    const source = e.currentTarget;
-    const startX = e.clientX, startY = e.clientY;
-    let began = false;
-
-    function begin(ev){
-      began = true;
-      if(ev.cancelable) ev.preventDefault();
-      const items = Array.from(container.children).filter(el => el.matches(itemSel));
-      const rect = source.getBoundingClientRect();
-      const fromIndex = items.indexOf(source);
-      if(fromIndex < 0) return;
-      const axis = (opts && opts.axis) || 'x';
-      const gap = (opts && opts.gap) || 8;
-      const sizes = items.map(el => axis === 'x' ? el.getBoundingClientRect().width : el.getBoundingClientRect().height);
-
-      const ghost = source.cloneNode(true);
-      ghost.classList.add('ghost');
-      ghost.style.position = 'fixed';
-      ghost.style.zIndex = '9999';
-      ghost.style.pointerEvents = 'none';
-      ghost.style.margin = '0';
-      ghost.style.opacity = '0.92';
-      ghost.style.boxShadow = '0 10px 28px rgba(0,0,0,0.5), 0 0 0 1px var(--coral)';
-      ghost.style.width = rect.width + 'px';
-      ghost.style.left = (ev.clientX - rect.width / 2) + 'px';
-      ghost.style.top = (ev.clientY - rect.height / 2) + 'px';
-      const ghostMenu = ghost.querySelector('.add-songs-menu');
-      const ghostBackdrop = ghost.querySelector('.add-songs-backdrop');
-      if(ghostMenu) ghostMenu.style.display = 'none';
-      if(ghostBackdrop) ghostBackdrop.style.display = 'none';
-      document.body.appendChild(ghost);
-
-      source.classList.add('dragging');
-      if(navigator.vibrate) navigator.vibrate(10);
-
-      let toIndex = fromIndex;
-
-      function slotFromPointer(ev){
-        const cRect = container.getBoundingClientRect();
-        const padKey = axis === 'x' ? 'paddingLeft' : 'paddingTop';
-        const pad = parseFloat(getComputedStyle(container)[padKey]) || 0;
-        const center = axis === 'x' ? ev.clientX : ev.clientY;
-        let acc = (axis === 'x' ? cRect.left : cRect.top) + pad;
-        let idx = 0;
-        for(let i = 0; i < items.length; i++){
-          if(center < acc + sizes[i] / 2){ idx = i; break; }
-          idx = i + 1;
-          acc += sizes[i] + gap;
-        }
-        return Math.max(0, Math.min(items.length - 1, idx));
-      }
-
-      function layout(toIdx){
-        items.forEach((el, i) => {
-          if(el === source) return;
-          let shift = 0;
-          if(i >= toIdx && i < fromIndex) shift = sizes[fromIndex] + gap;
-          else if(i > fromIndex && i <= toIdx) shift = -(sizes[fromIndex] + gap);
-          el.style.transition = 'transform 0.16s cubic-bezier(0.2,0.8,0.2,1)';
-          el.style.transform = shift ? (axis === 'x' ? 'translateX(' + shift + 'px)' : 'translateY(' + shift + 'px)') : '';
-        });
-      }
-
-      function onMove(ev){
-        if(ev.cancelable) ev.preventDefault();
-        ghost.style.left = (ev.clientX - rect.width / 2) + 'px';
-        ghost.style.top = (ev.clientY - rect.height / 2) + 'px';
-        const idx = slotFromPointer(ev);
-        if(idx !== toIndex){ toIndex = idx; layout(toIndex); }
-      }
-
-      function finish(){
-        document.removeEventListener('pointermove', onMove);
-        document.removeEventListener('pointerup', finish);
-        document.removeEventListener('pointercancel', finish);
-        ghost.remove();
-        source.classList.remove('dragging');
-        items.forEach(el => { el.style.transform = ''; el.style.transition = ''; });
-        activeDrag = null;
-        if(toIndex !== fromIndex){
-          items.splice(fromIndex, 1);
-          items.splice(toIndex, 0, source);
-          const ids = items.map(el => el.id || el.dataset.orderId || '').filter(Boolean);
-          if(opts && opts.onDrop) opts.onDrop(ids);
-        }
-      }
-
-      document.addEventListener('pointermove', onMove);
-      document.addEventListener('pointerup', finish);
-      document.addEventListener('pointercancel', finish);
-      activeDrag = { container: container, source: source, ghost: ghost };
-      dragClickGuard = container;
-
-      suppressClickAfterDrag = true;
-      setTimeout(() => { dragClickGuard = null; suppressClickAfterDrag = false; }, 600);
-    }
-
-    function onMove(ev){
-      if(began) return;
-      if(Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 6){
-        document.removeEventListener('pointermove', onMove);
-        document.removeEventListener('pointerup', onUp);
-        document.removeEventListener('pointercancel', onUp);
-        begin(ev);
-      }
-    }
-    function onUp(){
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      document.removeEventListener('pointercancel', onUp);
-    }
-
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onUp);
-  }
-
   // ---- Action strip order (applies saved order; drag & drop reordering removed in v46.6) ----
   function getStripItems(){
     const strip = $('actionStrip');
@@ -4861,22 +4706,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         ? escapeHtml(((customQuickActions.find(x => 'custom-' + x.id === k) || {}).label || 'Custom action')) + ' <span style="opacity:.55; font-size:10px;">(custom)</span>'
         : (HOME_BUBBLE_LABELS[k] || k);
       rows += '<div class="home-layout-row' + (hidden ? ' home-layout-hidden' : '') + '" data-order-id="' + k + '">' +
-        '<span class="hl-grip">⠿</span><span class="hl-name">' + name + '</span>' +
+        '<span class="hl-name">' + name + '</span>' +
         '<button class="hl-move" data-move-ca="' + i + '" data-move-dir="-1" title="Move up" style="background:none; border:1px solid var(--line); border-radius:6px; padding:2px 7px; font-size:11px; cursor:pointer; color:var(--ink-dim);">▲</button>' +
         '<button class="hl-move" data-move-ca="' + i + '" data-move-dir="1" title="Move down" style="background:none; border:1px solid var(--line); border-radius:6px; padding:2px 7px; font-size:11px; cursor:pointer; color:var(--ink-dim);">▼</button>' +
         '<button class="hl-toggle" data-bubble-toggle="' + k + '" style="margin-left:auto; background:none; border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer; color:' + (hidden ? 'var(--coral)' : 'var(--ink-dim)') + ';">' + (hidden ? 'Hidden · show' : 'Hide') + '</button></div>';
     });
     list.innerHTML = rows;
-    initLinearDrag(list, '.home-layout-row:not(.home-layout-hidden)', {
-      axis: 'y',
-      gap: 6,
-      onDrop: (kinds) => {
-        homeOrder = normalizeHomeOrder(kinds);
-        dbPut('meta', { key: 'homeOrder', value: homeOrder });
-        renderHomeLayoutEditor();
-        renderHome();
-      }
-    });
     list.querySelectorAll('[data-bubble-toggle]').forEach(btn => {
       btn.addEventListener('click', () => toggleHomeBubble(btn.dataset.bubbleToggle));
     });
@@ -5055,6 +4890,24 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       dbPut('meta', { key: 'sandboxNowbarSize', value: sandboxNowbarSize });
       updateSandboxToggles();
     }
+  });
+  function persistSandboxMeta(){
+    const bools = { sandboxCompactRows, sandboxHideArt, sandboxDurOnTabs, sandboxLargeTouch, sandboxShowPlayCount, sandboxCompactNowbar, sandboxAlwaysSearch, sandboxReduceMotion, sandboxHighContrast, sandboxBigSeek, sandboxInvertColors, sandboxCompactHeader, sandboxBigArt, sandboxShowAlbum };
+    Object.keys(bools).forEach(k => dbPut('meta', { key: k, value: !!bools[k] }));
+    dbPut('meta', { key: 'sandboxNowbarSize', value: sandboxNowbarSize });
+    dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
+    dbPut('meta', { key: 'customQuickActions', value: customQuickActions });
+    dbPut('meta', { key: 'homeOrder', value: homeOrder });
+    dbPut('meta', { key: 'homeSlots', value: homeSlots });
+    dbPut('meta', { key: 'homeHidden', value: homeHidden });
+    dbPut('meta', { key: 'homeBubbleSize', value: homeBubbleSize });
+  }
+  $('saveSandboxBtn').addEventListener('click', () => {
+    persistSandboxMeta();
+    applySandboxStyles();
+    updateSandboxToggles();
+    renderHome();
+    toast('Sandbox settings saved');
   });
   $('resetSandboxBtn').addEventListener('click', () => {
     sandboxCompactRows = false;
