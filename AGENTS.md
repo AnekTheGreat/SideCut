@@ -261,7 +261,7 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   through the shared `runTip()`; if the product doesn't exist yet the message
   tells the user exactly which ID to create in Play Console. Play Console still
   needs matching products created (Monetize → Products). v46.2 → 46.3 (SW
-  sidecut-shell-v46.2 → v46.3). Date Aug 17 6:06 pm EDT.
+  sidecut-shell-v46.2 → v46.3). Date Aug 17 2:06 pm EDT.
 
 ## v46.4 (Aug 17, 2026)
 - **Home bubble size + reorder fix**: Sandbox → Home page layout gained a bubble
@@ -278,4 +278,4 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   tab (`openPremiumSettings()`) instead of applying. Reset never touches themes;
   premium themes restore like any other saved theme on boot.
 - Version 46.3 → 46.4 (SW sidecut-shell-v46.3 → sidecut-shell-v46.4). Date Aug
-  17 6:12 pm EDT.
+  17 2:12 pm EDT.
