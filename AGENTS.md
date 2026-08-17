@@ -238,3 +238,17 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   phone's notification media player can't open the app; lyrics auto-scroll may drift.
 - **Lyrics view**: "Auto-scroll may not be perfectly accurate" note under the toggle.
 - Version 45.7 → 46 (SW cache sidecut-shell-v45.7 → sidecut-shell-v46). Date Aug 17 4:26 pm EDT.
+
+## v46.1 (Aug 17, 2026)
+- **Quick-action placement**: custom quick actions carry `placement` (`'strip'` default |
+  `'home'` | `'both'`), picked in the Sandbox add form (`#customActionPlacement`) and
+  changeable per-row via a small select in `renderCustomActionList` (`data-pl-ca`).
+  `renderCustomActions()` (strip pills) filters out `placement === 'home'`. `renderHome()`
+  appends `customActionBubbleHTML(a)` bubbles for `home`/`both` actions with
+  `data-bubble="custom-<id>"`; bubble taps route to `runCustomAction` (click handler checks
+  the `custom-` prefix before `openHomeBubble`). The Home layout editor shows custom bubbles
+  as `.home-layout-custom` rows (hide/show via `homeHidden['custom-<id>']`, excluded from
+  the drag selector `.home-layout-row:not(.home-layout-hidden):not(.home-layout-custom)`;
+  they stay appended after the built-in order — not part of `homeOrder`/slots). Deleting an
+  action prunes its `custom-<id>` from `homeHidden`. Version 46 → 46.1 (SW
+  sidecut-shell-v46 → sidecut-shell-v46.1). Date Aug 17 5:48 pm EDT.
