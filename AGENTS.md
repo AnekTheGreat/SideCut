@@ -362,3 +362,16 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   — SideCut is compatible with 144/165/185/200/240 Hz displays (all
   animations are rAF/CSS driven and scale with the display's refresh rate;
   nothing is locked to 60 Hz).
+
+## Post-v46.6 follow-up (no version bump)
+- **Refresh rate settings tab** (after Donate): `#settingsPaneRefresh` /
+  `#settingsTabRefresh` with `renderRefreshRateOptions()` filling
+  `#refreshRateOptions` — choices: Max device refresh rate (default) or a
+  60/90/120/144/165/185/200/240 Hz cap, persisted in meta `refreshRate`.
+  The cap is applied to the RGB hue-cycling loop (`startRgbAnimation` now
+  schedules via a rate-limited `frame` wrapper using `frameRateIntervalMs()`);
+  glow/other loops were already self-throttled. Changing it restarts the RGB
+  loop if the theme is RGB; boot restore reads `refreshRate` and restarts the
+  loop with the cap. `SETTINGS_TABS` + Home quick-settings grid gained
+  `'refresh'` (⚡ Refresh) so custom actions and the Quick actions bubble can
+  open it too. Changelog item added to the v46.6 entry; no version bump.
