@@ -344,3 +344,21 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   height 52vh→62vh, thumb/track now have solid rgba fallbacks before
   `color-mix` (color-mix silently fails on older Android WebViews, leaving the
   thumb transparent/invisible).
+
+## Post-v46.6 follow-up (no version bump)
+- **Now-playing bubble play button**: every Home track row (`.hb-track-row`)
+  now has a round `.hb-play` button — shows ⏸ when it's the current playing
+  track (tap pauses in place, no navigation), ▶ otherwise (plays that track
+  and jumps to Library, like tapping the row). Wired in `wireHbTrackRows`
+  with stopPropagation so the row's own click handler doesn't also fire.
+- **Quick settings on Home**: the "Quick actions" bubble (kind `shortcuts`)
+  now renders a `.hb-quick-grid` of all `SETTINGS_TABS` (Premium, Theme,
+  Donate, Glow, Playback, EQ, Download, More, Sandbox) via `openSettingsTo()`
+  — so you can jump straight to e.g. Themes or Sandbox from Home.
+- **Spotidown name dropped**: tutorial + Discover "Where to get music" now
+  say "any Spotify-to-MP3 converter" instead of naming Spotidown (which was
+  only ever a suggestion, and domains have a habit of dying).
+- **High refresh rate note**: changelog entry added to the v46.6 patch notes
+  — SideCut is compatible with 144/165/185/200/240 Hz displays (all
+  animations are rAF/CSS driven and scale with the display's refresh rate;
+  nothing is locked to 60 Hz).
