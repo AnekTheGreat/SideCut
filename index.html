@@ -60,10 +60,6 @@
   }
   .action-strip.menu-open{ z-index:300; }
   .action-strip::-webkit-scrollbar{ display:none; }
-  .action-strip.drag-active .action-pill{ cursor:grab; }
-  .action-strip.drag-active .action-pill.dragging{ opacity:0.5; cursor:grabbing; }
-  .action-strip.drag-active .action-pill.drag-over{ transform: scale(0.95); border-color:var(--coral); }
-  .action-strip.drag-active .action-pill.drag-over::before{ content:'⟵'; position:absolute; left:-8px; font-size:10px; color:var(--coral); }
   /* Pointer-based finger-following drag for action pills. The dragged pill is cloned
      and rides under the finger; the real pill stays in flow but goes translucent so
      its slot is preserved, and siblings translate horizontally to make room. */
@@ -2110,7 +2106,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Works offline</div>
         <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">
           <div style="margin-bottom:6px;">Once your songs are imported, SideCut keeps running with no connection:</div>
-          <div style="margin-bottom:4px;"><strong>Yes —</strong> playing your library, playlists, shuffle/repeat, EQ, DJ mode, seek, sleep timer, gapless, crossfade, lyrics you've already fetched, all saved settings, and every Sandbox tweak (drag &amp; drop order, custom quick actions, Home layout).</div>
+          <div style="margin-bottom:4px;"><strong>Yes —</strong> playing your library, playlists, shuffle/repeat, EQ, DJ mode, seek, sleep timer, gapless, crossfade, lyrics you've already fetched, all saved settings, and every Sandbox tweak (custom quick actions, Home layout).</div>
           <div><strong>Needs internet —</strong> Discover song search and previews, fetching new lyrics or covers, and update checks. Your actual music files always play straight from this device.</div>
         </div>
       </div>
@@ -2407,19 +2403,12 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       </div>
 
       <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:16px;">
-        <h3 style="font-size:14px; margin-bottom:12px;">Drag & Drop UI</h3>
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:13px;">Enable drag & drop</span>
-            <button class="tab" id="sandboxDragDrop" style="padding:5px 12px; font-size:12px;">Off</button>
-          </div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Grab any top button and drag it to reorder — taps still click normally. Custom quick actions can be dragged into place too.</div>
-        </div>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">The top bar keeps its default order — drag & drop reordering was removed in v46.6. Custom quick actions appear in the top bar in the order you add them.</div>
       </div>
 
       <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:16px;">
         <h3 style="font-size:14px; margin-bottom:4px;">Custom quick actions</h3>
-        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Add your own buttons — open a link, jump to a view or playlist, open a settings page, or control playback. Pick where each one lives: the top bar, its own Home bubble, or both. Strip actions can be dragged around with Drag &amp; Drop; bubble actions appear on Home and can be hidden from the Home page layout editor.</div>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Add your own buttons — open a link, jump to a view or playlist, open a settings page, or control playback. Pick where each one lives: the top bar, its own Home bubble, or both. Strip actions appear in the top bar in the order you add them; bubble actions appear on Home and can be hidden from the Home page layout editor.</div>
         <div style="display:flex; gap:8px; margin-bottom:8px;">
           <input type="text" id="customActionLabel" placeholder="Label (e.g. Chill mix)" autocomplete="off" style="flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
         </div>
@@ -4343,7 +4332,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxCompactNowbar = false;
   let sandboxAlwaysSearch = false;
   let sandboxNowbarSize = 100;
-  let sandboxDragDrop = false;
   let sandboxReduceMotion = false;
   let sandboxHighContrast = false;
   let sandboxBigSeek = false;
@@ -4457,8 +4445,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('sandboxCompactNowbar').classList.toggle('active', sandboxCompactNowbar);
     $('sandboxAlwaysSearch').textContent = sandboxAlwaysSearch ? 'On' : 'Off';
     $('sandboxAlwaysSearch').classList.toggle('active', sandboxAlwaysSearch);
-    $('sandboxDragDrop').textContent = sandboxDragDrop ? 'On' : 'Off';
-    $('sandboxDragDrop').classList.toggle('active', sandboxDragDrop);
     $('sandboxReduceMotion').textContent = sandboxReduceMotion ? 'On' : 'Off';
     $('sandboxReduceMotion').classList.toggle('active', sandboxReduceMotion);
     $('sandboxHighContrast').textContent = sandboxHighContrast ? 'On' : 'Off';
@@ -4475,7 +4461,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('sandboxShowAlbum').classList.toggle('active', sandboxShowAlbum);
     $('nowbarSizeValue').textContent = sandboxNowbarSize + '%';
     applySandboxStyles();
-    applyActionPillDragDrop();
   }
 
   function applySandboxStyles(){
@@ -4650,36 +4635,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     document.addEventListener('pointercancel', onUp);
   }
 
-  // ---- Action strip drag & drop ----
+  // ---- Action strip order (applies saved order; drag & drop reordering removed in v46.6) ----
   function getStripItems(){
     const strip = $('actionStrip');
     if(!strip) return [];
     return Array.from(strip.children).filter(el => el.classList.contains('action-pill') || el.id === 'addSongsWrap');
-  }
-
-  function applyActionPillDragDrop(){
-    const strip = $('actionStrip');
-    if(!strip) return;
-    strip.classList.toggle('drag-active', sandboxDragDrop);
-  }
-
-  function initActionPillDragDrop(){
-    const strip = $('actionStrip');
-    if(!strip) return;
-    getStripItems().forEach(item => {
-      // While the toggle is on, own the whole gesture so dragging never scrolls the page.
-      item.style.touchAction = sandboxDragDrop ? 'none' : 'manipulation';
-    });
-    initLinearDrag(strip, '.action-pill, #addSongsWrap', {
-      isActive: () => sandboxDragDrop,
-      axis: 'x',
-      gap: 8,
-      onDrop: (ids) => {
-        actionPillOrder = ids;
-        dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
-        reorderActionPills();
-      }
-    });
   }
 
   function reorderActionPills(){
@@ -4710,7 +4670,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       btn.addEventListener('click', () => runCustomAction(a));
       strip.appendChild(btn);
     });
-    initActionPillDragDrop();
     reorderActionPills();
   }
 
@@ -5028,7 +4987,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('sandboxShowPlayCount').addEventListener('click', () => { sandboxShowPlayCount = !sandboxShowPlayCount; dbPut('meta', { key: 'sandboxShowPlayCount', value: sandboxShowPlayCount }); updateSandboxToggles(); renderList(); });
   $('sandboxCompactNowbar').addEventListener('click', () => { sandboxCompactNowbar = !sandboxCompactNowbar; dbPut('meta', { key: 'sandboxCompactNowbar', value: sandboxCompactNowbar }); updateSandboxToggles(); });
   $('sandboxAlwaysSearch').addEventListener('click', () => { sandboxAlwaysSearch = !sandboxAlwaysSearch; dbPut('meta', { key: 'sandboxAlwaysSearch', value: sandboxAlwaysSearch }); updateSandboxToggles(); });
-  $('sandboxDragDrop').addEventListener('click', () => { sandboxDragDrop = !sandboxDragDrop; dbPut('meta', { key: 'sandboxDragDrop', value: sandboxDragDrop }); updateSandboxToggles(); initActionPillDragDrop(); });
   $('sandboxReduceMotion').addEventListener('click', () => { sandboxReduceMotion = !sandboxReduceMotion; dbPut('meta', { key: 'sandboxReduceMotion', value: sandboxReduceMotion }); updateSandboxToggles(); });
   $('sandboxHighContrast').addEventListener('click', () => { sandboxHighContrast = !sandboxHighContrast; dbPut('meta', { key: 'sandboxHighContrast', value: sandboxHighContrast }); updateSandboxToggles(); });
   $('sandboxBigSeek').addEventListener('click', () => { sandboxBigSeek = !sandboxBigSeek; dbPut('meta', { key: 'sandboxBigSeek', value: sandboxBigSeek }); updateSandboxToggles(); });
@@ -5107,7 +5065,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     sandboxCompactNowbar = false;
     sandboxAlwaysSearch = false;
     sandboxNowbarSize = 100;
-    sandboxDragDrop = false;
     sandboxReduceMotion = false;
     sandboxHighContrast = false;
     sandboxBigSeek = false;
@@ -5132,7 +5089,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'sandboxCompactNowbar', value: false });
     dbPut('meta', { key: 'sandboxAlwaysSearch', value: false });
     dbPut('meta', { key: 'sandboxNowbarSize', value: 100 });
-    dbPut('meta', { key: 'sandboxDragDrop', value: false });
     dbPut('meta', { key: 'sandboxReduceMotion', value: false });
     dbPut('meta', { key: 'sandboxHighContrast', value: false });
     dbPut('meta', { key: 'sandboxBigSeek', value: false });
@@ -5148,7 +5104,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderCustomActionList();
     renderHomeLayoutEditor();
     updateSandboxToggles();
-    initActionPillDragDrop();
     reorderActionPills();
     renderHome();
     toast('Sandbox settings reset');
@@ -6201,8 +6156,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(sandboxAlwaysSearchRow) sandboxAlwaysSearch = !!sandboxAlwaysSearchRow.value;
       const sandboxNowbarSizeRow = metaRows.find(r => r.key === 'sandboxNowbarSize');
       if(sandboxNowbarSizeRow) sandboxNowbarSize = parseInt(sandboxNowbarSizeRow.value) || 100;
-      const sandboxDragDropRow = metaRows.find(r => r.key === 'sandboxDragDrop');
-      if(sandboxDragDropRow) sandboxDragDrop = !!sandboxDragDropRow.value;
       const sandboxReduceMotionRow = metaRows.find(r => r.key === 'sandboxReduceMotion');
       if(sandboxReduceMotionRow) sandboxReduceMotion = !!sandboxReduceMotionRow.value;
       const sandboxHighContrastRow = metaRows.find(r => r.key === 'sandboxHighContrast');
@@ -6242,8 +6195,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       renderHomeLayoutEditor();
       renderCustomActionList();
       applySandboxStyles();
-      applyActionPillDragDrop();
-      initActionPillDragDrop();
       reorderActionPills();
       renderHome();
       updateWatermarkToggle();
@@ -6270,7 +6221,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '46.5';
+  const APP_VERSION = '46.6';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6283,6 +6234,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '46.6', date: 'August 17, 2026 at 8:04 pm EDT', title: 'Sandbox drag & drop (hold to reorder) removed', items: [
+      'The top strip can no longer be reordered by dragging — the Sandbox \u201cDrag & Drop UI\u201d toggle is gone; the strip keeps its default order (or your previously saved order) and custom quick actions appear in the order you add them',
+      'Home page layout reordering (drag or the \u25b2/\u25bc buttons) is unaffected',
+    ]},
     { version: '46.5', date: 'August 17, 2026 at 7:54 pm EDT', title: 'Custom donations removed', items: [
       'Donate tab now only offers the fixed tip tiers — the custom-amount field is gone (Play Billing can only charge fixed products anyway)',
     ]},
