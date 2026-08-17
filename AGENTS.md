@@ -156,3 +156,15 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - Landmarks shifted: `makeStreamingZipReader()` ~line 9830+, `importLibrary()`
   ~line 9500+, `renderPremiumRoadmap()` ~line 3549, `navigate()` ~12790,
   `libraryBtn` pickReal logic ~12822, `triggerDiscoverDownload()` ~13248.
+
+## v45.5 (Aug 17, 2026)
+- **Premium pane Sandbox description corrected**: the "Your unlocked features"
+  Sandbox card claimed "bass boost, mono, vocal isolation, night mode" — none of
+  which exist. Now lists the real toggles (compact rows, hide album art,
+  duration on tabs, larger tap targets, play counts, compact now bar,
+  always-show search, accessibility & display, drag & drop).
+- **Note: the roadmap is NOT actually in the code.** The v45.4 changelog/AGENTS
+  entry claimed `PREMIUM_ROADMAP` + `renderPremiumRoadmap()` were re-added, but
+  the current tree has no roadmap array, renderer, or `#premiumRoadmapList`
+  elements — that change was lost in the v45.4 rebase. If "coming soon" features
+  are wanted again, it must be re-added from scratch.
