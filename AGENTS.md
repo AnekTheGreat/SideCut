@@ -279,3 +279,29 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   premium themes restore like any other saved theme on boot.
 - Version 46.3 → 46.4 (SW sidecut-shell-v46.3 → sidecut-shell-v46.4). Date Aug
   17 2:12 pm EDT.
+
+## v46.4 follow-up (no version bump)
+- **Theme picker split**: `renderThemeOptions()` now renders two native
+  `<details class="theme-group">` collapsibles — Static themes (open by default)
+  and Dynamic themes (animated), which includes RGB, RGB+ and every `dynamic`
+  theme. Lock badge (🔒) on premium themes only shows when premium is NOT
+  active.
+- **Custom theme builder removed**: the "Or build your own" section (customBg /
+  customCoral / customGold + applyCustomTheme + populateStartFromOptions) is
+  gone from the theme pane and the JS; boot restore/reset no longer touch
+  `THEMES.custom`. `customTheme` meta may still round-trip through exports but
+  is unused. Tutorial text updated.
+- **Dynamic themes improved + 2 more**: animated backgrounds now use a fixed
+  `body.theme-dyn-<key>::before` layer (`inset:-30%`, `z-index:-1`) with
+  wandering multi-blob radial gradients (`sd-dyn-drift` keyframes); added
+  `cyberpunk` and `glacier` (7 premium dynamic themes total). Reduce-motion
+  kills the pseudo-element animation explicitly.
+- **Tips restored**: `PLAY_TIP_PRODUCTS` now covers 1,2,3,5,7,10,15,25,50,75,100
+  (tip3/tip5/tip10/tip25 are back alongside the new tiers).
+- **Custom bubbles reorderable**: `normalizeHomeOrder()` preserves `custom-<id>`
+  entries (dropping ones whose action was deleted or switched to strip, and
+  appending missing ones), so custom bubbles now sit inside the same `homeOrder`
+  as built-ins — draggable in the editor, ordered on Home, and storable in
+  slots. The editor also gained per-row ▲/▼ move buttons
+  (`[data-move-ca]/[data-move-dir]`). `renderHome()` renders custom ids inline;
+  boot restore of `homeHidden` now keeps `custom-*` ids.
