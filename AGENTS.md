@@ -375,3 +375,43 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   loop with the cap. `SETTINGS_TABS` + Home quick-settings grid gained
   `'refresh'` (⚡ Refresh) so custom actions and the Quick actions bubble can
   open it too. Changelog item added to the v46.6 entry; no version bump.
+
+## Post-v46.6 follow-up #2 (no version bump)
+- **Theme picker both groups collapsed by default**: `themeGroupHTML()` now
+  passes `startOpen=false` for BOTH Static and Dynamic themes (Static was
+  `true`, so it auto-unfolded on every open + after every theme switch since
+  the click handler calls `renderThemeOptions()` again). Now both stay
+  collapsed unless the user taps the summary; switching a theme re-renders
+  them collapsed. (Note: a stale SW can still show the old always-open
+  behavior — bump APP_VERSION/CACHE if a user re-reports it.)
+- **Dynamic themes actually dynamic + bug fix**: `applyTheme()` was missing
+  `theme-dyn-cyberpunk` and `theme-dyn-glacier` in its `classList.remove(...)`
+  call, so switching away from cyberpunk/glacier left their `::before` layer
+  stuck on. Fixed to remove all 7 dynamic classes. The drift keyframe gained
+  rotation + wider translate/scale, and a new `sd-dyn-hue` keyframe
+  (hue-rotate + saturate) is now layered onto every `theme-dyn-*::before`
+  (animation: drift + hue, two separate durations). Per-theme durations
+  shortened so motion is clearly visible. Reduce-motion still kills it.
+- **Now-playing bubble mini play button**: the Home `nowplaying` bubble now
+  has a `.hb-miniplay` round button (bottom-right) that toggles play/pause
+  IN PLACE — it does NOT open the expanded overlay (the bubble's own click is
+  ignored when the tap lands on the play button via `e.target.closest`). It
+  shows play idle / pause playing and adds `.playing` (gold) + `.is-playing`
+  (coral border + pulsing glow) to the bubble. `renderHome()` re-runs on
+  `onPlayEvt`/`onPauseEvt` (guarded on Home being the active view) so the
+  icon/state stay in sync; the miniplay handler also defers a `renderHome`
+  60ms after toggling. The now bar reflects playing state via
+  `npPlayerBody.playing` + spinning disc.
+- **Home bubble icons -> theme-matched SVG**: emoji icons in Home bubbles
+  replaced with `HB_ICONS` (hoisted const near `HOME_BUBBLE_KINDS`) — inline
+  SVGs whose `path` uses `fill:currentColor`, so each icon tints with the
+  bubble's `--coral`/`--gold`. CSS added: `.home-bubble .hb-ico svg` sizing +
+  `.hb-panel-ico svg` (expanded overlay head icon) — the nowplaying overlay
+  now uses `ico.innerHTML = HB_ICONS.play` instead of `ico.textContent`.
+- **Hold-to-delete Home bubbles (3.5s)**: long-press any Home bubble for 3.5s
+  opens `#homeBubbleConfirm` ("Hide this bubble?" / "Remove this custom
+  action?" with Delete / Cancel). `wireHomeBubbleHold()` uses pointer events
+  with a 12px move-cancel (so a scroll/drag aborts) and ignores presses that
+  start on the mini play button. Built-in bubbles get added to `homeHidden`
+  (re-addable from Sandbox -> Home page layout); custom-<id> bubbles delete
+  the custom action. The held bubble gets `.hb-hold-confirm` (coral ring).
