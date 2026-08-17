@@ -1170,6 +1170,28 @@ body.sandbox-big-art .track-art{
   width: 58px !important;
   height: 58px !important;
 }
+/* Sandbox: custom quick action pills + home layout editor rows */
+.custom-action{
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--line)) !important;
+}
+#homeLayoutList{
+  user-select: none;
+}
+.home-layout-row{
+  display:flex; align-items:center; gap:10px; padding:10px 12px;
+  border:1px solid var(--line); border-radius:10px; background:var(--bg);
+  touch-action:manipulation; cursor:grab;
+}
+.home-layout-row.dragging{ opacity:0.5; }
+.home-layout-row .hl-grip{ color:var(--ink-dim); font-size:13px; flex-shrink:0; }
+.home-layout-row .hl-name{ font-size:12.5px; font-weight:600; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.custom-action-list-row{
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  border:1px solid var(--line); border-radius:8px; margin-bottom:6px;
+}
+.custom-action-list-row .ca-label{ flex:1; font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.custom-action-list-row .ca-type{ font-size:10px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; }
+.custom-action-list-row button{ background:none; border:none; color:var(--ink-dim); font-size:15px; cursor:pointer; padding:2px 6px; }
 /* Reduce motion: kill all transitions/animations for users who want stillness. */
 body.sandbox-reduce-motion *{
   transition: none !important;
@@ -2311,7 +2333,45 @@ body.sandbox-invert-colors .brand-mark{
             <span style="font-size:13px;">Enable drag & drop</span>
             <button class="tab" id="sandboxDragDrop" style="padding:5px 12px; font-size:12px;">Off</button>
           </div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Long-press and drag action pills to reorder them.</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Grab any top button and drag it to reorder — taps still click normally. Custom quick actions can be dragged into place too.</div>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:16px;">
+        <h3 style="font-size:14px; margin-bottom:4px;">Custom quick actions</h3>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Add your own buttons to the top strip. Tap one to open a link or jump to a playlist — and they can be dragged around with Drag &amp; Drop too.</div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input type="text" id="customActionLabel" placeholder="Label (e.g. Chill mix)" autocomplete="off" style="flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <select id="customActionType" style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
+            <option value="url">Open link</option>
+            <option value="playlist">Open playlist</option>
+            <option value="play">Play playlist</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <input type="text" id="customActionValue" placeholder="https://… or playlist name" autocomplete="off" style="flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
+          <button id="addCustomActionBtn" class="tab" style="padding:9px 14px; font-size:12.5px;">Add</button>
+        </div>
+        <div id="customActionsList"></div>
+      </div>
+
+      <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:16px;">
+        <h3 style="font-size:14px; margin-bottom:4px;">Home page layout</h3>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Drag the sections to rearrange your Home page, then save the arrangement to a slot. Slots let you keep a couple of different layouts and switch between them.</div>
+        <div id="homeLayoutList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;"></div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <button class="tab" id="homeSlotA" style="flex:1; padding:8px 6px; font-size:12px;">Slot A</button>
+          <button class="tab" id="homeSlotB" style="flex:1; padding:8px 6px; font-size:12px;">Slot B</button>
+          <button class="tab" id="homeSlotC" style="flex:1; padding:8px 6px; font-size:12px;">Slot C</button>
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <button id="saveHomeSlotBtn" class="tab" style="flex:1; padding:8px 6px; font-size:12px;">💾 Save to slot</button>
+          <button id="loadHomeSlotBtn" class="tab" style="flex:1; padding:8px 6px; font-size:12px;">📂 Load slot</button>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button id="resetHomeOrderBtn" class="tab" style="flex:1; padding:8px 6px; font-size:12px;">↺ Reset order</button>
         </div>
       </div>
     </div>
@@ -4242,6 +4302,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxBigArt = false;
   let sandboxShowAlbum = false;
   let actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle']; // strip items in default order
+  let customQuickActions = []; // {id, label, type, value} — type: 'url' | 'playlist' | 'play'
+  const HOME_BUBBLE_KINDS = ['stats','notifications','library','nowplaying','recent','topsong','artists','favorites','playlists','shortcuts'];
+  let homeOrder = HOME_BUBBLE_KINDS.slice();
+  let homeSlots = { A: null, B: null, C: null };
+  let homeSlotSel = 'A';
 
   // Watermark remover: simple plain-text removal from song titles/artists
   let watermarkEnabled = false;
@@ -4383,20 +4448,157 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     else if(sandboxNowbarSize === 150) document.body.classList.add('sandbox-nowbar-size-150');
   }
 
-  // Drag and drop for action pills — pointer-based so the pill actually rides
-  // under your finger (HTML5 drag-and-drop doesn't follow the pointer on touch).
-  // A long-press arms the drag so a quick tap still clicks the button normally;
-  // the new order is saved to meta and restored on the next launch.
-  let pillDragTimer = null;
-  let suppressPillClick = false;
+  // ---- Generic 1D pointer drag-reorder ----
+  // Movement-based: a quick tap still clicks normally; moving the pointer past a
+  // small threshold starts the drag. A ghost rides centered under the finger,
+  // siblings shift out of the way smoothly, and on drop the new order is handed
+  // to the onDrop callback. Works for the action strip (horizontal) and the
+  // sandbox home-layout editor (vertical).
+  let suppressClickAfterDrag = false;
+  let activeDrag = null;
+  let dragClickGuard = null;
+
   document.addEventListener('click', (e) => {
-    if(suppressPillClick && e.target.closest && e.target.closest('#actionStrip')){
-      suppressPillClick = false;
+    if(suppressClickAfterDrag && dragClickGuard && dragClickGuard.contains(e.target)){
+      suppressClickAfterDrag = false;
       e.preventDefault();
       e.stopPropagation();
     }
   }, true);
 
+  function initLinearDrag(container, itemSel, opts){
+    if(!container) return;
+    Array.from(container.children).forEach(el => {
+      if(!el.matches || !el.matches(itemSel)) return;
+      if(el._ldBound) return;
+      el._ldBound = true;
+      el.setAttribute('draggable', 'false');
+      el.addEventListener('pointerdown', (e) => onDragPointerDown(e, container, itemSel, opts));
+    });
+  }
+
+  function onDragPointerDown(e, container, itemSel, opts){
+    if(opts && opts.isActive && !opts.isActive()) return;
+    if(e.button !== undefined && e.button !== 0) return;
+    if(activeDrag) return; // one drag at a time
+    const source = e.currentTarget;
+    const startX = e.clientX, startY = e.clientY;
+    let began = false;
+
+    function begin(ev){
+      began = true;
+      if(ev.cancelable) ev.preventDefault();
+      const items = Array.from(container.children).filter(el => el.matches(itemSel));
+      const rect = source.getBoundingClientRect();
+      const fromIndex = items.indexOf(source);
+      if(fromIndex < 0) return;
+      const axis = (opts && opts.axis) || 'x';
+      const gap = (opts && opts.gap) || 8;
+      const sizes = items.map(el => axis === 'x' ? el.getBoundingClientRect().width : el.getBoundingClientRect().height);
+
+      const ghost = source.cloneNode(true);
+      ghost.classList.add('ghost');
+      ghost.style.position = 'fixed';
+      ghost.style.zIndex = '9999';
+      ghost.style.pointerEvents = 'none';
+      ghost.style.margin = '0';
+      ghost.style.opacity = '0.92';
+      ghost.style.boxShadow = '0 10px 28px rgba(0,0,0,0.5), 0 0 0 1px var(--coral)';
+      ghost.style.width = rect.width + 'px';
+      ghost.style.left = (ev.clientX - rect.width / 2) + 'px';
+      ghost.style.top = (ev.clientY - rect.height / 2) + 'px';
+      const ghostMenu = ghost.querySelector('.add-songs-menu');
+      const ghostBackdrop = ghost.querySelector('.add-songs-backdrop');
+      if(ghostMenu) ghostMenu.style.display = 'none';
+      if(ghostBackdrop) ghostBackdrop.style.display = 'none';
+      document.body.appendChild(ghost);
+
+      source.classList.add('dragging');
+      if(navigator.vibrate) navigator.vibrate(10);
+
+      let toIndex = fromIndex;
+
+      function slotFromPointer(ev){
+        const cRect = container.getBoundingClientRect();
+        const padKey = axis === 'x' ? 'paddingLeft' : 'paddingTop';
+        const pad = parseFloat(getComputedStyle(container)[padKey]) || 0;
+        const center = axis === 'x' ? ev.clientX : ev.clientY;
+        let acc = (axis === 'x' ? cRect.left : cRect.top) + pad;
+        let idx = 0;
+        for(let i = 0; i < items.length; i++){
+          if(center < acc + sizes[i] / 2){ idx = i; break; }
+          idx = i + 1;
+          acc += sizes[i] + gap;
+        }
+        return Math.max(0, Math.min(items.length - 1, idx));
+      }
+
+      function layout(toIdx){
+        items.forEach((el, i) => {
+          if(el === source) return;
+          let shift = 0;
+          if(i >= toIdx && i < fromIndex) shift = sizes[fromIndex] + gap;
+          else if(i > fromIndex && i <= toIdx) shift = -(sizes[fromIndex] + gap);
+          el.style.transition = 'transform 0.16s cubic-bezier(0.2,0.8,0.2,1)';
+          el.style.transform = shift ? (axis === 'x' ? 'translateX(' + shift + 'px)' : 'translateY(' + shift + 'px)') : '';
+        });
+      }
+
+      function onMove(ev){
+        if(ev.cancelable) ev.preventDefault();
+        ghost.style.left = (ev.clientX - rect.width / 2) + 'px';
+        ghost.style.top = (ev.clientY - rect.height / 2) + 'px';
+        const idx = slotFromPointer(ev);
+        if(idx !== toIndex){ toIndex = idx; layout(toIndex); }
+      }
+
+      function finish(){
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', finish);
+        document.removeEventListener('pointercancel', finish);
+        ghost.remove();
+        source.classList.remove('dragging');
+        items.forEach(el => { el.style.transform = ''; el.style.transition = ''; });
+        activeDrag = null;
+        if(toIndex !== fromIndex){
+          items.splice(fromIndex, 1);
+          items.splice(toIndex, 0, source);
+          const ids = items.map(el => el.id || el.dataset.orderId || '').filter(Boolean);
+          if(opts && opts.onDrop) opts.onDrop(ids);
+        }
+      }
+
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', finish);
+      document.addEventListener('pointercancel', finish);
+      activeDrag = { container: container, source: source, ghost: ghost };
+      dragClickGuard = container;
+
+      suppressClickAfterDrag = true;
+      setTimeout(() => { dragClickGuard = null; suppressClickAfterDrag = false; }, 600);
+    }
+
+    function onMove(ev){
+      if(began) return;
+      if(Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 6){
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        begin(ev);
+      }
+    }
+    function onUp(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+    }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+
+  // ---- Action strip drag & drop ----
   function getStripItems(){
     const strip = $('actionStrip');
     if(!strip) return [];
@@ -4410,123 +4612,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function initActionPillDragDrop(){
-    getStripItems().forEach(item => {
-      if(item._pillDragBound) return;
-      item._pillDragBound = true;
-      item.setAttribute('draggable', 'false'); // never let the browser's DnD fight our pointer drag
-      item.addEventListener('pointerdown', onPillPointerDown);
-    });
-  }
-
-  function onPillPointerDown(e){
-    if(!sandboxDragDrop) return;
-    if(e.button !== undefined && e.button !== 0) return;
-    const item = e.currentTarget;
-    const startX = e.clientX, startY = e.clientY;
-
-    function disarm(){
-      clearTimeout(pillDragTimer);
-      pillDragTimer = null;
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      document.removeEventListener('pointercancel', onUp);
-    }
-    function onMove(ev){
-      // Moving before the long-press fires means scroll/pan intent — let it be.
-      if(Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 8) disarm();
-    }
-    function onUp(){ disarm(); }
-
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onUp);
-
-    pillDragTimer = setTimeout(() => {
-      disarm();
-      if(!sandboxDragDrop) return;
-      startActionPillDrag(e, item);
-    }, 260);
-  }
-
-  function startActionPillDrag(e, sourceItem){
     const strip = $('actionStrip');
-    const stripRect = strip.getBoundingClientRect();
-    const itemRect = sourceItem.getBoundingClientRect();
-    const startX = e.clientX, startY = e.clientY;
-    suppressPillClick = true;
-    setTimeout(() => { suppressPillClick = false; }, 500);
-
-    const ghost = sourceItem.cloneNode(true);
-    ghost.classList.add('ghost');
-    ghost.style.position = 'fixed';
-    ghost.style.zIndex = '9999';
-    ghost.style.pointerEvents = 'none';
-    ghost.style.opacity = '0.95';
-    ghost.style.boxShadow = '0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px var(--coral)';
-    ghost.style.width = itemRect.width + 'px';
-    ghost.style.left = itemRect.left + 'px';
-    ghost.style.top = itemRect.top + 'px';
-    const ghostMenu = ghost.querySelector('.add-songs-menu');
-    const ghostBackdrop = ghost.querySelector('.add-songs-backdrop');
-    if(ghostMenu) ghostMenu.style.display = 'none';
-    if(ghostBackdrop) ghostBackdrop.style.display = 'none';
-    document.body.appendChild(ghost);
-
-    sourceItem.classList.add('dragging');
-    const items = getStripItems();
-    const widths = items.map(it => it.getBoundingClientRect().width);
-    const gap = 8;
-    let fromIndex = items.indexOf(sourceItem);
-    let toIndex = fromIndex;
-    if(navigator.vibrate) navigator.vibrate(10);
-
-    function layout(toIdx){
-      items.forEach((it, i) => {
-        if(it === sourceItem) return;
-        let shift = 0;
-        if(i >= toIdx && i < fromIndex) shift = widths[fromIndex] + gap;
-        else if(i > fromIndex && i <= toIdx) shift = -(widths[fromIndex] + gap);
-        it.style.transition = 'transform 0.18s ease';
-        it.style.transform = shift ? 'translateX(' + shift + 'px)' : '';
-      });
-    }
-
-    function onMove(ev){
-      const dx = ev.clientX - startX;
-      ghost.style.left = (itemRect.left + dx) + 'px';
-      ghost.style.top = (itemRect.top + (ev.clientY - startY)) + 'px';
-
-      const ghostCenterX = itemRect.left + dx + itemRect.width / 2;
-      let acc = stripRect.left + 20;
-      let idx = 0;
-      for(let i = 0; i < items.length; i++){
-        const center = acc + widths[i] / 2;
-        if(ghostCenterX < center){ idx = i; break; }
-        idx = i + 1;
-        acc += widths[i] + gap;
-      }
-      idx = Math.max(0, Math.min(items.length - 1, idx));
-      if(idx !== toIndex){ toIndex = idx; layout(toIndex); }
-    }
-
-    function onUp(){
-      ghost.remove();
-      sourceItem.classList.remove('dragging');
-      items.forEach(it => { it.style.transform = ''; it.style.transition = ''; });
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      document.removeEventListener('pointercancel', onUp);
-      if(toIndex !== fromIndex && fromIndex > -1){
-        items.splice(fromIndex, 1);
-        items.splice(toIndex, 0, sourceItem);
-        actionPillOrder = items.map(it => it.id).filter(Boolean);
+    if(!strip) return;
+    getStripItems().forEach(item => {
+      // While the toggle is on, own the whole gesture so dragging never scrolls the page.
+      item.style.touchAction = sandboxDragDrop ? 'none' : 'manipulation';
+    });
+    initLinearDrag(strip, '.action-pill, #addSongsWrap', {
+      isActive: () => sandboxDragDrop,
+      axis: 'x',
+      gap: 8,
+      onDrop: (ids) => {
+        actionPillOrder = ids;
         dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
         reorderActionPills();
       }
-    }
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onUp);
+    });
   }
 
   function reorderActionPills(){
@@ -4537,12 +4638,175 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const el = $(id);
       if(el && el.parentNode === strip) fragment.appendChild(el);
     });
-    // Anything not in the saved order keeps its relative position at the end.
     getStripItems().forEach(el => {
       if(!actionPillOrder.includes(el.id)) fragment.appendChild(el);
     });
     strip.appendChild(fragment);
   }
+
+  // ---- Sandbox: custom quick actions ----
+  function renderCustomActions(){
+    const strip = $('actionStrip');
+    if(!strip) return;
+    strip.querySelectorAll('.custom-action').forEach(el => el.remove());
+    customQuickActions.forEach(a => {
+      const btn = document.createElement('button');
+      btn.id = 'ca_' + a.id;
+      btn.className = 'action-pill custom-action';
+      btn.textContent = a.label || 'Action';
+      btn.title = a.type === 'url' ? 'Open ' + a.value : (a.type === 'play' ? 'Play ' + a.value : 'Open ' + a.value);
+      btn.addEventListener('click', () => runCustomAction(a));
+      strip.appendChild(btn);
+    });
+    initActionPillDragDrop();
+    reorderActionPills();
+  }
+
+  function runCustomAction(a){
+    if(!a) return;
+    if(a.type === 'url' && a.value){
+      try{ window.open(a.value, '_blank', 'noopener'); }catch(e){}
+      return;
+    }
+    if((a.type === 'playlist' || a.type === 'play') && a.value){
+      const ids = playlists[a.value];
+      if(!ids || !ids.length){
+        toast('Playlist "' + a.value + '" not found');
+        return;
+      }
+      activePlaylist = a.value;
+      rememberPlaylist(a.value);
+      navigate('library'); renderTabs(); renderList();
+      if(a.type === 'play') playFromList(ids.slice(), ids[0]);
+    }
+  }
+
+  function renderCustomActionList(){
+    const wrap = $('customActionsList');
+    if(!wrap) return;
+    if(!customQuickActions.length){
+      wrap.innerHTML = '<div style="font-size:11px; color:var(--ink-dim);">No custom actions yet — add one above.</div>';
+      return;
+    }
+    let rows = '';
+    customQuickActions.forEach((a, i) => {
+      const typeLabel = a.type === 'url' ? 'link' : a.type === 'play' ? 'play' : 'playlist';
+      rows += '<div class="custom-action-list-row"><span class="ca-label">' + escapeHtml(a.label) + '</span><span class="ca-type">' + typeLabel + '</span><button data-del-ca="' + i + '" title="Remove">✕</button></div>';
+    });
+    wrap.innerHTML = rows;
+    wrap.querySelectorAll('[data-del-ca]').forEach(b => {
+      b.addEventListener('click', () => {
+        customQuickActions.splice(parseInt(b.dataset.delCa, 10), 1);
+        dbPut('meta', { key: 'customQuickActions', value: customQuickActions });
+        renderCustomActions();
+        renderCustomActionList();
+      });
+    });
+  }
+
+  // ---- Sandbox: Home page layout + slots ----
+  const HOME_BUBBLE_LABELS = {
+    stats: 'Listening stats',
+    notifications: 'Notifications',
+    library: 'In your library',
+    nowplaying: 'Now playing',
+    recent: 'Recently played',
+    topsong: 'Most played',
+    artists: 'Top artists',
+    favorites: 'Favorites',
+    playlists: 'Playlists',
+    shortcuts: 'Quick actions'
+  };
+
+  function normalizeHomeOrder(order){
+    const out = [];
+    (Array.isArray(order) ? order : []).forEach(k => {
+      if(HOME_BUBBLE_KINDS.indexOf(k) > -1 && out.indexOf(k) === -1) out.push(k);
+    });
+    HOME_BUBBLE_KINDS.forEach(k => { if(out.indexOf(k) === -1) out.push(k); });
+    return out;
+  }
+
+  function renderHomeLayoutEditor(){
+    const list = $('homeLayoutList');
+    if(!list) return;
+    homeOrder = normalizeHomeOrder(homeOrder);
+    let rows = '';
+    homeOrder.forEach(k => {
+      rows += '<div class="home-layout-row" data-order-id="' + k + '"><span class="hl-grip">⠿</span><span class="hl-name">' + (HOME_BUBBLE_LABELS[k] || k) + '</span></div>';
+    });
+    list.innerHTML = rows;
+    initLinearDrag(list, '.home-layout-row', {
+      axis: 'y',
+      gap: 6,
+      onDrop: (kinds) => {
+        homeOrder = normalizeHomeOrder(kinds);
+        dbPut('meta', { key: 'homeOrder', value: homeOrder });
+        renderHomeLayoutEditor();
+        renderHome();
+      }
+    });
+    ['homeSlotA', 'homeSlotB', 'homeSlotC'].forEach(id => {
+      const el = $(id);
+      if(el) el.classList.toggle('active', homeSlotSel === id.charAt(id.length - 1));
+    });
+  }
+
+  ['homeSlotA', 'homeSlotB', 'homeSlotC'].forEach(id => {
+    const el = $(id);
+    if(el) el.addEventListener('click', () => {
+      homeSlotSel = id.charAt(id.length - 1);
+      renderHomeLayoutEditor();
+    });
+  });
+  $('saveHomeSlotBtn').addEventListener('click', () => {
+    homeSlots[homeSlotSel] = normalizeHomeOrder(homeOrder);
+    dbPut('meta', { key: 'homeSlots', value: homeSlots });
+    toast('Saved Home layout to slot ' + homeSlotSel);
+  });
+  $('loadHomeSlotBtn').addEventListener('click', () => {
+    const saved = homeSlots[homeSlotSel];
+    if(!saved || !saved.length){
+      toast('Slot ' + homeSlotSel + ' is empty — save a layout to it first');
+      return;
+    }
+    homeOrder = normalizeHomeOrder(saved);
+    dbPut('meta', { key: 'homeOrder', value: homeOrder });
+    renderHomeLayoutEditor();
+    renderHome();
+    toast('Loaded Home layout from slot ' + homeSlotSel);
+  });
+  $('resetHomeOrderBtn').addEventListener('click', () => {
+    homeOrder = HOME_BUBBLE_KINDS.slice();
+    dbPut('meta', { key: 'homeOrder', value: homeOrder });
+    renderHomeLayoutEditor();
+    renderHome();
+    toast('Home layout reset to default');
+  });
+  $('customActionType').addEventListener('change', () => {
+    const t = $('customActionType').value;
+    $('customActionValue').placeholder = t === 'url' ? 'https://…'
+      : t === 'play' ? 'Playlist name to play'
+      : 'Playlist name to open';
+  });
+  $('addCustomActionBtn').addEventListener('click', () => {
+    const label = $('customActionLabel').value.trim();
+    const type = $('customActionType').value;
+    const value = $('customActionValue').value.trim();
+    if(!label){ toast('Give the action a label first'); return; }
+    if(!value){ toast('Enter a ' + (type === 'url' ? 'link' : 'playlist name') + ' for the action'); return; }
+    if(type !== 'url' && !playlists[value]){
+      toast('No playlist named "' + value + '"');
+      return;
+    }
+    customQuickActions.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), label: label, type: type, value: value });
+    dbPut('meta', { key: 'customQuickActions', value: customQuickActions });
+    renderCustomActions();
+    renderCustomActionList();
+    $('customActionLabel').value = '';
+    $('customActionValue').value = '';
+    toast('Added "' + label + '" to the top strip');
+  });
 
   $('sandboxCompactRows').addEventListener('click', () => { sandboxCompactRows = !sandboxCompactRows; dbPut('meta', { key: 'sandboxCompactRows', value: sandboxCompactRows }); updateSandboxToggles(); renderList(); });
   $('sandboxHideArt').addEventListener('click', () => { sandboxHideArt = !sandboxHideArt; dbPut('meta', { key: 'sandboxHideArt', value: sandboxHideArt }); updateSandboxToggles(); renderList(); });
@@ -4638,6 +4902,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     sandboxBigArt = false;
     sandboxShowAlbum = false;
     actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle'];
+    customQuickActions = [];
+    homeOrder = HOME_BUBBLE_KINDS.slice();
+    homeSlots = { A: null, B: null, C: null };
+    homeSlotSel = 'A';
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
     dbPut('meta', { key: 'sandboxDurOnTabs', value: false });
@@ -4655,9 +4923,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'sandboxBigArt', value: false });
     dbPut('meta', { key: 'sandboxShowAlbum', value: false });
     dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
+    dbPut('meta', { key: 'customQuickActions', value: [] });
+    dbPut('meta', { key: 'homeOrder', value: homeOrder });
+    dbPut('meta', { key: 'homeSlots', value: homeSlots });
+    renderCustomActions();
+    renderCustomActionList();
+    renderHomeLayoutEditor();
     updateSandboxToggles();
     initActionPillDragDrop();
     reorderActionPills();
+    renderHome();
     toast('Sandbox settings reset');
   });
 
@@ -5738,6 +6013,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(actionPillOrderRow && Array.isArray(actionPillOrderRow.value) && actionPillOrderRow.value.length > 0) {
         actionPillOrder = actionPillOrderRow.value;
       }
+      const customQuickActionsRow = metaRows.find(r => r.key === 'customQuickActions');
+      if(customQuickActionsRow && Array.isArray(customQuickActionsRow.value)) customQuickActions = customQuickActionsRow.value;
+      const homeOrderRow = metaRows.find(r => r.key === 'homeOrder');
+      if(homeOrderRow && Array.isArray(homeOrderRow.value) && homeOrderRow.value.length) homeOrder = normalizeHomeOrder(homeOrderRow.value);
+      const homeSlotsRow = metaRows.find(r => r.key === 'homeSlots');
+      if(homeSlotsRow && homeSlotsRow.value && typeof homeSlotsRow.value === 'object') homeSlots = Object.assign({ A: null, B: null, C: null }, homeSlotsRow.value);
       const watermarkEnabledRow = metaRows.find(r => r.key === 'watermarkEnabled');
       if(watermarkEnabledRow) watermarkEnabled = !!watermarkEnabledRow.value;
       const watermarkPatternsRow = metaRows.find(r => r.key === 'watermarkPatterns');
@@ -5745,10 +6026,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         watermarkPatterns = watermarkPatternsRow.value;
       }
       $('watermarkPatterns').value = watermarkPatterns;
+      renderCustomActions();
+      renderHomeLayoutEditor();
+      renderCustomActionList();
       applySandboxStyles();
       applyActionPillDragDrop();
       initActionPillDragDrop();
       reorderActionPills();
+      renderHome();
       updateWatermarkToggle();
     }catch(e){ /* defaults are fine */ }
   }
@@ -5773,7 +6058,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '45.5';
+  const APP_VERSION = '45.6';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -5786,7 +6071,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '45.5', date: 'August 16, 2026 at 11:59 pm EDT', title: 'Sandbox: working drag & drop + three new toggles, accurate premium copy', items: [
+    { version: '45.6', date: 'August 16, 2026 at 11:59 pm EDT', title: 'Sandbox: rebuilt drag & drop, custom quick actions, Home layout slots', items: [
+      'Sandbox Drag & Drop rebuilt: the drag starts the moment you move your finger (no long-press timing), the pill rides centered under your finger with smooth sibling animation, and quick taps still click normally',
+      'Sandbox → Custom quick actions: add your own buttons to the top strip — open a link, open a playlist, or start playing a playlist. They persist, and can be dragged into place with the other buttons',
+      'Sandbox → Home page layout: drag the Home sections into your preferred order and save it to one of three slots (A/B/C) — keep a couple of different layouts and switch between them anytime',
+    ]},
+    { version: '45.5', date: 'August 16, 2026 at 11:45 pm EDT', title: 'Sandbox: working drag & drop + three new toggles, accurate premium copy', items: [
       'Fix: the Premium pane\'s Sandbox card claimed \"bass boost, mono, vocal isolation, night mode\" — none of which exist. It now lists the real Sandbox tweaks: compact song rows, hide album art, duration on tabs, larger tap targets, play counts, compact now bar, always-show search, accessibility & display options (reduce motion, high contrast, big seek bar, invert colors), and drag & drop',
       'Sandbox \u2192 Drag & Drop now actually works: long-press any top-strip button (Home, Playlists, Discover, + Add songs) and drag it to reorder — quick taps still click normally, and the order sticks across relaunches',
       'Three new Sandbox toggles: Compact header (tighter top bar, hides the subtitle), Bigger album art (larger track thumbnails), and Show album names (album shown under each song\'s artist)',
@@ -13232,54 +13522,58 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const nowPlaying = allTracks.find(t => t.id === queue[queueIndex]);
     const nowPlayingPreview = nowPlaying ? escapeHtml(nowPlaying.name) : 'Nothing playing';
 
-    bubbles.innerHTML = `
-      <div class="home-bubble wide" data-bubble="stats">
+    // Home sections render in the order chosen in Sandbox → Home page layout.
+    const homeTemplates = {
+      stats: `      <div class="home-bubble wide" data-bubble="stats">
         <div class="hb-glow"></div><div class="hb-ico">📊</div>
         <div class="hb-value">${fmtHomeDuration(totalListenSeconds)}</div><div class="hb-label">Listening stats — ${totalPlays} plays · 🔥 ${streak}d streak</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble" data-bubble="notifications">
+      </div>`,
+      notifications: `      <div class="home-bubble" data-bubble="notifications">
         <div class="hb-glow"></div><div class="hb-ico">🔔</div>
         <div class="hb-value" style="font-size:14px;">Notifications</div>
         <div class="hb-label">${notifPreviewText()}</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble gold-bubble" data-bubble="library">
+      </div>`,
+      library: `      <div class="home-bubble gold-bubble" data-bubble="library">
         <div class="hb-glow"></div><div class="hb-ico gold">🎵</div>
         <div class="hb-value gold">${totalTracks}</div><div class="hb-label">In your library</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble" data-bubble="nowplaying">
+      </div>`,
+      nowplaying: `      <div class="home-bubble" data-bubble="nowplaying">
         <div class="hb-glow"></div><div class="hb-ico">▶</div>
         <div class="hb-value" style="font-size:14px;">Now playing</div>
         <div class="hb-label">${nowPlayingPreview}</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble" data-bubble="recent">
+      </div>`,
+      recent: `      <div class="home-bubble" data-bubble="recent">
         <div class="hb-glow"></div><div class="hb-ico">🕘</div>
         <div class="hb-value" style="font-size:14px;">Recently played</div>
         <div class="hb-label">${recentPreviewText(playedTracks)}</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble tall" data-bubble="topsong">
+      </div>`,
+      topsong: `      <div class="home-bubble tall" data-bubble="topsong">
         <div class="hb-glow"></div><div class="hb-ico">🏆</div>
         <div class="hb-value" style="font-size:14px;">Most played</div>
         <div class="hb-label">${mostPlayedPreview}${mostPlayed ? ' · ' + (mostPlayed.playCount||0) + '×' : ''}</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble tall" data-bubble="artists">
+      </div>`,
+      artists: `      <div class="home-bubble tall" data-bubble="artists">
         <div class="hb-glow"></div><div class="hb-ico">🎤</div>
         <div class="hb-value" style="font-size:14px;">Top artists</div>
         <div class="hb-label">${topArtistPreview}</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble" data-bubble="favorites">
+      </div>`,
+      favorites: `      <div class="home-bubble" data-bubble="favorites">
         <div class="hb-glow"></div><div class="hb-ico">❤</div>
         <div class="hb-value gold">${favCount}</div><div class="hb-label">Favorites</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble" data-bubble="playlists">
+      </div>`,
+      playlists: `      <div class="home-bubble" data-bubble="playlists">
         <div class="hb-glow"></div><div class="hb-ico">📑</div>
         <div class="hb-value gold">${totalPlaylists}</div><div class="hb-label">Playlists</div><div class="hb-hint">⤢</div>
-      </div>
-      <div class="home-bubble wide" data-bubble="shortcuts">
+      </div>`,
+      shortcuts: `      <div class="home-bubble wide" data-bubble="shortcuts">
         <div class="hb-glow"></div><div class="hb-ico">✨</div>
         <div class="hb-value" style="font-size:14px;">Quick actions</div>
         <div class="hb-label">Settings · Discover · Playlists · Add songs</div><div class="hb-hint">⤢</div>
       </div>
-    `;
+    `
+    };
+    const homeOrderNow = normalizeHomeOrder(homeOrder);
+    bubbles.innerHTML = homeOrderNow.map(k => homeTemplates[k] || '').join('');
 
     bubbles.querySelectorAll('.home-bubble').forEach(b => {
       b.addEventListener('click', () => openHomeBubble(b.dataset.bubble));

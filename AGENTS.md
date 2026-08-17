@@ -178,3 +178,20 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   names (rendered under each track's artist when on). All persist and reset like
   the other sandbox settings.
 - No version bump for this change — still 45.5 (user asked).
+
+
+## v45.6 (Aug 16, 2026)
+- **Drag & Drop rebuilt** (movement-based, not long-press): the drag starts the
+  instant the finger moves past a small threshold, the pill rides centered under
+  the finger with a smooth sibling-shift animation, and quick taps still click.
+  One generic 1D pointer-drag engine (`initLinearDrag`) now powers both the
+  action strip (horizontal) and the sandbox home-layout editor (vertical).
+- **Custom quick actions (Sandbox)**: add your own buttons to the top strip —
+  open a link, open a playlist, or start playing a playlist. Persisted in meta
+  `customQuickActions`, rendered as `.custom-action` pills, and draggable with
+  the other buttons.
+- **Home page layout (Sandbox)**: `homeOrder` (meta) drives the Home bubble
+  order; the sandbox editor lets you drag sections into place and save/load
+  arrangements from three slots (A/B/C, meta `homeSlots`). Reset restores
+  default order and clears slots.
+- Version 45.5 → 45.6 (SW cache sidecut-shell-v45.5 → v45.6). Date Aug 16 EDT.
