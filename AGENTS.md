@@ -313,7 +313,7 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   ($1/$2/$3/$5/$7/$10/$15/$25/$50/$75/$100) remain, since Play Billing can
   only charge fixed products anyway. `PLAY_TIP_PRODUCTS` and `runTip()` are
   unchanged. Version 46.4 → 46.5 (SW sidecut-shell-v46.4 → v46.5). Date Aug 17
-  7:54 pm EDT.
+  3:54 pm EDT.
 
 ## v46.6 (Aug 17, 2026)
 - **Sandbox drag & drop (hold to reorder) removed**: the "Drag & Drop UI"
@@ -325,4 +325,4 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   kept for that). Custom quick actions now simply appear in the top bar in the
   order they're added. Home page layout reordering (drag via `initLinearDrag`
   on `.home-layout-row` + ▲/▼ buttons) is unaffected. Version 46.5 → 46.6 (SW
-  sidecut-shell-v46.5 → v46.6). Date Aug 17 8:04 pm EDT.
+  sidecut-shell-v46.5 → v46.6). Date Aug 17 4:04 pm EDT.
