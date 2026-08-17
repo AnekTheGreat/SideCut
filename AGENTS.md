@@ -305,3 +305,12 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   slots. The editor also gained per-row ▲/▼ move buttons
   (`[data-move-ca]/[data-move-dir]`). `renderHome()` renders custom ids inline;
   boot restore of `homeHidden` now keeps `custom-*` ids.
+
+## v46.5 (Aug 17, 2026)
+- **Custom donations removed**: the Donate tab no longer has the custom-amount
+  field (`#donateCustomAmt` / `#donateCustomBtn`) or the "custom amounts need
+  their own Play product" helper note — only the fixed quick tiers
+  ($1/$2/$3/$5/$7/$10/$15/$25/$50/$75/$100) remain, since Play Billing can
+  only charge fixed products anyway. `PLAY_TIP_PRODUCTS` and `runTip()` are
+  unchanged. Version 46.4 → 46.5 (SW sidecut-shell-v46.4 → v46.5). Date Aug 17
+  7:54 pm EDT.
