@@ -2339,19 +2339,26 @@ body.sandbox-invert-colors .brand-mark{
 
       <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:16px;">
         <h3 style="font-size:14px; margin-bottom:4px;">Custom quick actions</h3>
-        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Add your own buttons to the top strip. Tap one to open a link or jump to a playlist — and they can be dragged around with Drag &amp; Drop too.</div>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5; margin-bottom:12px;">Add your own buttons to the top strip — open a link, jump to a view or playlist, open a settings page, or control playback. They can be dragged around with Drag &amp; Drop too.</div>
         <div style="display:flex; gap:8px; margin-bottom:8px;">
           <input type="text" id="customActionLabel" placeholder="Label (e.g. Chill mix)" autocomplete="off" style="flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
         </div>
         <div style="display:flex; gap:8px; margin-bottom:8px;">
           <select id="customActionType" style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
             <option value="url">Open link</option>
+            <option value="view">Open view</option>
             <option value="playlist">Open playlist</option>
             <option value="play">Play playlist</option>
+            <option value="settings">Open settings page</option>
+            <option value="add">Open Add songs menu</option>
+            <option value="playpause">Play / pause</option>
+            <option value="next">Next track</option>
+            <option value="prev">Previous track</option>
+            <option value="shuffle">Toggle shuffle</option>
           </select>
         </div>
-        <div style="display:flex; gap:8px; margin-bottom:10px;">
-          <input type="text" id="customActionValue" placeholder="https://… or playlist name" autocomplete="off" style="flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
+        <div style="display:flex; gap:8px; margin-bottom:10px;" id="customActionValueRow">
+          <input type="text" id="customActionValue" placeholder="https://…" autocomplete="off" style="flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:12.5px;">
           <button id="addCustomActionBtn" class="tab" style="padding:9px 14px; font-size:12.5px;">Add</button>
         </div>
         <div id="customActionsList"></div>
@@ -4654,7 +4661,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       btn.id = 'ca_' + a.id;
       btn.className = 'action-pill custom-action';
       btn.textContent = a.label || 'Action';
-      btn.title = a.type === 'url' ? 'Open ' + a.value : (a.type === 'play' ? 'Play ' + a.value : 'Open ' + a.value);
+      btn.title = actionTitle(a);
       btn.addEventListener('click', () => runCustomAction(a));
       strip.appendChild(btn);
     });
@@ -4662,10 +4669,79 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     reorderActionPills();
   }
 
+  function actionTitle(a){
+    if(!a) return '';
+    switch(a.type){
+      case 'url': return 'Open ' + a.value;
+      case 'view': return 'Open ' + a.value;
+      case 'playlist': return 'Open playlist ' + a.value;
+      case 'play': return 'Play playlist ' + a.value;
+      case 'settings': return 'Open settings: ' + a.value;
+      case 'add': return 'Open the Add songs menu';
+      case 'playpause': return 'Play / pause';
+      case 'next': return 'Next track';
+      case 'prev': return 'Previous track';
+      case 'shuffle': return 'Toggle shuffle';
+      default: return a.label || 'Action';
+    }
+  }
+
+  function openSettingsTo(tab){
+    renderThemeOptions(); populateStartFromOptions();
+    showSettingsTab(tab);
+    $('themeBackdrop').style.display = 'flex';
+  }
+
   function runCustomAction(a){
     if(!a) return;
     if(a.type === 'url' && a.value){
       try{ window.open(a.value, '_blank', 'noopener'); }catch(e){}
+      return;
+    }
+    if(a.type === 'view' && a.value && VIEWS.indexOf(a.value) !== -1){
+      navigate(a.value);
+      return;
+    }
+    if(a.type === 'settings' && a.value && SETTINGS_TABS.indexOf(a.value) !== -1){
+      openSettingsTo(a.value);
+      return;
+    }
+    if(a.type === 'add'){
+      navigate('home');
+      openAddSongsMenu();
+      return;
+    }
+    if(a.type === 'playpause'){
+      const audio = activeAudio();
+      if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+      if(audio.paused){ audio.play().catch(() => recoverAudio(audio, 'manual play failed')); }
+      else { userPaused = true; audio.pause(); }
+      return;
+    }
+    if(a.type === 'next'){ hardAdvance(1, true); return; }
+    if(a.type === 'prev'){
+      if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
+      hardAdvance(-1, true);
+      return;
+    }
+    if(a.type === 'shuffle'){
+      shuffle = !shuffle;
+      $('shuffleBtn').classList.toggle('active', shuffle);
+      if(shuffle){
+        regenerateShuffleOrder();
+        if(queue.length && queueIndex >= 0){
+          const curId = queue[queueIndex];
+          queue = shuffledOrderCache.ids.slice();
+          const newIdx = queue.indexOf(curId);
+          queueIndex = newIdx >= 0 ? newIdx : 0;
+        }
+        toast('Shuffle on — list reordered');
+      } else {
+        shuffledOrderCache = null;
+        toast('Shuffle off — original order restored');
+      }
+      renderList();
+      savePlaybackState(true);
       return;
     }
     if((a.type === 'playlist' || a.type === 'play') && a.value){
@@ -4690,7 +4766,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     let rows = '';
     customQuickActions.forEach((a, i) => {
-      const typeLabel = a.type === 'url' ? 'link' : a.type === 'play' ? 'play' : 'playlist';
+      const typeLabel = CUSTOM_ACTION_TYPE_LABELS[a.type] || a.type;
       rows += '<div class="custom-action-list-row"><span class="ca-label">' + escapeHtml(a.label) + '</span><span class="ca-type">' + typeLabel + '</span><button data-del-ca="' + i + '" title="Remove">✕</button></div>';
     });
     wrap.innerHTML = rows;
@@ -4783,10 +4859,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderHome();
     toast('Home layout reset to default');
   });
+  const SETTINGS_TABS = ['premium', 'theme', 'donate', 'glow', 'playback', 'eq', 'download', 'more', 'sandbox'];
+  const VIEWS = ['home', 'discover', 'library'];
+  const NO_VALUE_TYPES = ['add', 'playpause', 'next', 'prev', 'shuffle'];
+  const CUSTOM_ACTION_TYPE_LABELS = { url: 'link', view: 'view', playlist: 'playlist', play: 'play', settings: 'settings', add: 'add songs', playpause: 'play/pause', next: 'next', prev: 'prev', shuffle: 'shuffle' };
   $('customActionType').addEventListener('change', () => {
     const t = $('customActionType').value;
+    $('customActionValueRow').style.display = NO_VALUE_TYPES.indexOf(t) !== -1 ? 'none' : 'flex';
     $('customActionValue').placeholder = t === 'url' ? 'https://…'
+      : t === 'view' ? 'home, discover or library'
       : t === 'play' ? 'Playlist name to play'
+      : t === 'settings' ? 'premium, theme, donate, glow, playback, eq, download, more or sandbox'
       : 'Playlist name to open';
   });
   $('addCustomActionBtn').addEventListener('click', () => {
@@ -4794,8 +4877,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const type = $('customActionType').value;
     const value = $('customActionValue').value.trim();
     if(!label){ toast('Give the action a label first'); return; }
-    if(!value){ toast('Enter a ' + (type === 'url' ? 'link' : 'playlist name') + ' for the action'); return; }
-    if(type !== 'url' && !playlists[value]){
+    const needsValue = NO_VALUE_TYPES.indexOf(type) === -1;
+    if(needsValue && !value){ toast('Enter a value for the action'); return; }
+    if(type === 'url' && !/^https?:\/\//i.test(value)){ toast('Link must start with https://'); return; }
+    if(type === 'view' && VIEWS.indexOf(value) === -1){ toast('View must be home, discover or library'); return; }
+    if(type === 'settings' && SETTINGS_TABS.indexOf(value) === -1){ toast('Pick a settings page: premium, theme, donate, glow, playback, eq, download, more or sandbox'); return; }
+    if((type === 'playlist' || type === 'play') && !playlists[value]){
       toast('No playlist named "' + value + '"');
       return;
     }
@@ -6058,7 +6145,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '45.6';
+  const APP_VERSION = '45.7';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6071,6 +6158,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '45.7', date: 'August 17, 2026 at 1:05 pm EDT', title: 'Sandbox: quick actions can now do anything in the app', items: [
+      'Sandbox → Custom quick actions are no longer just links and playlists: add a button that opens a view (Home / Discover / Library), opens any settings page (premium, theme, donate, glow, playback, EQ, download, more or sandbox), opens the Add songs menu, or controls playback (play/pause, next track, previous track, toggle shuffle)',
+      'Actions that need no value — Add songs, play/pause, next, previous, shuffle — hide the value field and fire on a single tap; link/view/settings actions validate what you type before saving',
+    ]},
     { version: '45.6', date: 'August 16, 2026 at 11:59 pm EDT', title: 'Sandbox: rebuilt drag & drop, custom quick actions, Home layout slots', items: [
       'Sandbox Drag & Drop rebuilt: the drag starts the moment you move your finger (no long-press timing), the pill rides centered under your finger with smooth sibling animation, and quick taps still click normally',
       'Sandbox → Custom quick actions: add your own buttons to the top strip — open a link, open a playlist, or start playing a playlist. They persist, and can be dragged into place with the other buttons',

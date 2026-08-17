@@ -195,3 +195,20 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   arrangements from three slots (A/B/C, meta `homeSlots`). Reset restores
   default order and clears slots.
 - Version 45.5 → 45.6 (SW cache sidecut-shell-v45.5 → v45.6). Date Aug 16 EDT.
+
+## v45.7 (Aug 17, 2026)
+- **Custom quick actions do anything now**: besides `url`/`playlist`/`play`,
+  action types are `view` (home/discover/library via `navigate()`), `settings`
+  (opens the settings modal to a tab via `openSettingsTo(tab)` — same pattern as
+  the themeBtn handler), `add` (`openAddSongsMenu()`), and playback controls
+  `playpause`/`next`/`prev`/`shuffle` (mirrors the now-bar button handlers;
+  shuffle uses `regenerateShuffleOrder()` + `savePlaybackState(true)`).
+- Consts `SETTINGS_TABS` / `VIEWS` / `NO_VALUE_TYPES` (add/playpause/next/prev/
+  shuffle need no value) / `CUSTOM_ACTION_TYPE_LABELS` live right before the
+  `customActionType` change handler (~line 4862); `#customActionValueRow` is
+  hidden for no-value types, and add-side validation checks URL/view/settings
+  values. `actionTitle(a)` builds pill tooltips; `openSettingsTo()` opens the
+  modal. Note: `runCustomAction`/`renderCustomActions` reference the consts
+  which are declared later in the IIFE — safe because they only run on clicks
+  or boot-restore (which runs after the IIFE body finishes).
+- Version 45.6 → 45.7 (SW cache sidecut-shell-v45.6 → v45.7). Date Aug 17 1:05 pm EDT.
