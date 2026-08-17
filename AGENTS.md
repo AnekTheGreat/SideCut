@@ -252,3 +252,13 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   they stay appended after the built-in order — not part of `homeOrder`/slots). Deleting an
   action prunes its `custom-<id>` from `homeHidden`. Version 46 → 46.1 (SW
   sidecut-shell-v46 → sidecut-shell-v46.1). Date Aug 17 5:48 pm EDT.
+
+## v46.3 (Aug 17, 2026)
+- **Donate tiers**: `PLAY_TIP_PRODUCTS` is now `{1:'tip1', 2:'tip2', 7:'tip7',
+  15:'tip15', 50:'tip50', 75:'tip75', 100:'tip100'}` (was 3/5/10/25). Donate tab
+  renders seven quick buttons plus a custom amount field (`#donateCustomAmt` +
+  `#donateCustomBtn`): any whole-dollar amount maps to SKU `tip<amt>` and runs
+  through the shared `runTip()`; if the product doesn't exist yet the message
+  tells the user exactly which ID to create in Play Console. Play Console still
+  needs matching products created (Monetize → Products). v46.2 → 46.3 (SW
+  sidecut-shell-v46.2 → v46.3). Date Aug 17 6:06 pm EDT.
