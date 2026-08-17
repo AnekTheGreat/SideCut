@@ -262,3 +262,20 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   tells the user exactly which ID to create in Play Console. Play Console still
   needs matching products created (Monetize → Products). v46.2 → 46.3 (SW
   sidecut-shell-v46.2 → v46.3). Date Aug 17 6:06 pm EDT.
+
+## v46.4 (Aug 17, 2026)
+- **Home bubble size + reorder fix**: Sandbox → Home page layout gained a bubble
+  size slider (`#homeBubbleSizeSlider`, 70–130%, meta `homeBubbleSize`, default
+  100) applied via `--hb-s` on `#homeBubbles` (all `.home-bubble` dimensions and
+  fonts are `calc(... * var(--hb-s, 1))`). Reordering rows in the editor now
+  works on touch: `.home-layout-row` is `touch-action:none` (was `manipulation`,
+  which let the browser hijack vertical drags as scroll).
+- **5 premium dynamic themes**: `aurora`/`synthwave`/`ocean`/`ember`/`galaxy`
+  added to `THEMES` with `premium:true, dynamic:'<key>'`. `applyTheme` toggles a
+  `body.theme-dyn-<key>` class whose CSS animates an oversized gradient
+  (`sd-bg-drift` keyframes) plus a subtle `hb-glow` pulse (`sd-glow-pulse`).
+  `renderThemeOptions` shows a 🔒 badge and redirects free users to the Premium
+  tab (`openPremiumSettings()`) instead of applying. Reset never touches themes;
+  premium themes restore like any other saved theme on boot.
+- Version 46.3 → 46.4 (SW sidecut-shell-v46.3 → sidecut-shell-v46.4). Date Aug
+  17 6:12 pm EDT.
