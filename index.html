@@ -1151,6 +1151,25 @@ body.sandbox-always-search #searchInput {
   width: 100% !important;
   opacity: 1 !important;
 }
+/* Compact header: tighter top bar, hides the small brand subtitle. */
+body.sandbox-compact-header header{
+  padding: 8px 20px 4px !important;
+}
+body.sandbox-compact-header .brand-mark{
+  width: 24px !important;
+  height: 24px !important;
+}
+body.sandbox-compact-header .brand h1{
+  font-size: 16px !important;
+}
+body.sandbox-compact-header .brand span{
+  display: none !important;
+}
+/* Bigger album art in the track list. */
+body.sandbox-big-art .track-art{
+  width: 58px !important;
+  height: 58px !important;
+}
 /* Reduce motion: kill all transitions/animations for users who want stillness. */
 body.sandbox-reduce-motion *{
   transition: none !important;
@@ -2223,6 +2242,30 @@ body.sandbox-invert-colors .brand-mark{
           <button class="tab" id="sandboxAlwaysSearch" style="padding:5px 12px; font-size:12px;">Off</button>
         </div>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Keeps the search bar always expanded instead of collapsing.</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px;">Compact header</span>
+          <button class="tab" id="sandboxCompactHeader" style="padding:5px 12px; font-size:12px;">Off</button>
+        </div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Tightens the top bar and hides the small subtitle.</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px;">Bigger album art</span>
+          <button class="tab" id="sandboxBigArt" style="padding:5px 12px; font-size:12px;">Off</button>
+        </div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Shows larger artwork thumbnails in the track list.</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px;">Show album names</span>
+          <button class="tab" id="sandboxShowAlbum" style="padding:5px 12px; font-size:12px;">Off</button>
+        </div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Appends the album name under each song's artist.</div>
       </div>
 
       <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:8px;">
@@ -4195,7 +4238,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxHighContrast = false;
   let sandboxBigSeek = false;
   let sandboxInvertColors = false;
-  let actionPillOrder = ['addFolder', 'add', 'exportLib', 'importLib']; // IDs in default order
+  let sandboxCompactHeader = false;
+  let sandboxBigArt = false;
+  let sandboxShowAlbum = false;
+  let actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle']; // strip items in default order
 
   // Watermark remover: simple plain-text removal from song titles/artists
   let watermarkEnabled = false;
@@ -4304,6 +4350,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('sandboxBigSeek').classList.toggle('active', sandboxBigSeek);
     $('sandboxInvertColors').textContent = sandboxInvertColors ? 'On' : 'Off';
     $('sandboxInvertColors').classList.toggle('active', sandboxInvertColors);
+    $('sandboxCompactHeader').textContent = sandboxCompactHeader ? 'On' : 'Off';
+    $('sandboxCompactHeader').classList.toggle('active', sandboxCompactHeader);
+    $('sandboxBigArt').textContent = sandboxBigArt ? 'On' : 'Off';
+    $('sandboxBigArt').classList.toggle('active', sandboxBigArt);
+    $('sandboxShowAlbum').textContent = sandboxShowAlbum ? 'On' : 'Off';
+    $('sandboxShowAlbum').classList.toggle('active', sandboxShowAlbum);
     $('nowbarSizeValue').textContent = sandboxNowbarSize + '%';
     applySandboxStyles();
     applyActionPillDragDrop();
@@ -4321,6 +4373,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     document.body.classList.toggle('sandbox-high-contrast', sandboxHighContrast);
     document.body.classList.toggle('sandbox-big-seek', sandboxBigSeek);
     document.body.classList.toggle('sandbox-invert-colors', sandboxInvertColors);
+    document.body.classList.toggle('sandbox-compact-header', sandboxCompactHeader);
+    document.body.classList.toggle('sandbox-big-art', sandboxBigArt);
     // Remove all nowbar size classes
     document.body.classList.remove('sandbox-nowbar-size-50', 'sandbox-nowbar-size-75', 'sandbox-nowbar-size-125', 'sandbox-nowbar-size-150');
     if(sandboxNowbarSize === 50) document.body.classList.add('sandbox-nowbar-size-50');
@@ -4330,141 +4384,147 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   // Drag and drop for action pills — pointer-based so the pill actually rides
-  // under your finger (HTML5 drag-and-drop doesn't follow the pointer on touch),
-  // and the strip auto-scrolls when your finger nears either edge.
+  // under your finger (HTML5 drag-and-drop doesn't follow the pointer on touch).
+  // A long-press arms the drag so a quick tap still clicks the button normally;
+  // the new order is saved to meta and restored on the next launch.
+  let pillDragTimer = null;
+  let suppressPillClick = false;
+  document.addEventListener('click', (e) => {
+    if(suppressPillClick && e.target.closest && e.target.closest('#actionStrip')){
+      suppressPillClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+
+  function getStripItems(){
+    const strip = $('actionStrip');
+    if(!strip) return [];
+    return Array.from(strip.children).filter(el => el.classList.contains('action-pill') || el.id === 'addSongsWrap');
+  }
+
   function applyActionPillDragDrop(){
     const strip = $('actionStrip');
     if(!strip) return;
-    if(sandboxDragDrop){
-      strip.classList.add('drag-active');
-    } else {
-      strip.classList.remove('drag-active');
-    }
+    strip.classList.toggle('drag-active', sandboxDragDrop);
   }
 
-  let pillDragRAF = null;
-  let pillAutoScrollRAF = null;
   function initActionPillDragDrop(){
-    const strip = $('actionStrip');
-    if(!strip) return;
-    const pills = strip.querySelectorAll('.action-pill');
-    pills.forEach(pill => {
-      pill.setAttribute('draggable', 'false'); // never let the browser's DnD fight our pointer drag
-      pill.addEventListener('pointerdown', function(e){
-        if(!sandboxDragDrop) return;
-        // Only start a drag on a primary pointer; let clicks/long-press do their thing otherwise.
-        if(e.button !== undefined && e.button !== 0) return;
-        e.preventDefault();
-        startActionPillDrag(e, this);
-      });
+    getStripItems().forEach(item => {
+      if(item._pillDragBound) return;
+      item._pillDragBound = true;
+      item.setAttribute('draggable', 'false'); // never let the browser's DnD fight our pointer drag
+      item.addEventListener('pointerdown', onPillPointerDown);
     });
   }
 
-  function startActionPillDrag(e, sourcePill){
+  function onPillPointerDown(e){
+    if(!sandboxDragDrop) return;
+    if(e.button !== undefined && e.button !== 0) return;
+    const item = e.currentTarget;
+    const startX = e.clientX, startY = e.clientY;
+
+    function disarm(){
+      clearTimeout(pillDragTimer);
+      pillDragTimer = null;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+    }
+    function onMove(ev){
+      // Moving before the long-press fires means scroll/pan intent — let it be.
+      if(Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 8) disarm();
+    }
+    function onUp(){ disarm(); }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+
+    pillDragTimer = setTimeout(() => {
+      disarm();
+      if(!sandboxDragDrop) return;
+      startActionPillDrag(e, item);
+    }, 260);
+  }
+
+  function startActionPillDrag(e, sourceItem){
     const strip = $('actionStrip');
     const stripRect = strip.getBoundingClientRect();
-    const pillRect = sourcePill.getBoundingClientRect();
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const itemRect = sourceItem.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY;
+    suppressPillClick = true;
+    setTimeout(() => { suppressPillClick = false; }, 500);
 
-    // Clone that follows the finger.
-    const ghost = sourcePill.cloneNode(true);
+    const ghost = sourceItem.cloneNode(true);
     ghost.classList.add('ghost');
-    ghost.style.width = pillRect.width + 'px';
-    ghost.style.left = pillRect.left + 'px';
-    ghost.style.top = pillRect.top + 'px';
+    ghost.style.position = 'fixed';
+    ghost.style.zIndex = '9999';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.opacity = '0.95';
+    ghost.style.boxShadow = '0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px var(--coral)';
+    ghost.style.width = itemRect.width + 'px';
+    ghost.style.left = itemRect.left + 'px';
+    ghost.style.top = itemRect.top + 'px';
+    const ghostMenu = ghost.querySelector('.add-songs-menu');
+    const ghostBackdrop = ghost.querySelector('.add-songs-backdrop');
+    if(ghostMenu) ghostMenu.style.display = 'none';
+    if(ghostBackdrop) ghostBackdrop.style.display = 'none';
     document.body.appendChild(ghost);
 
-    sourcePill.classList.add('dragging');
-    const sourceId = sourcePill.id;
-    const pills = Array.from(strip.querySelectorAll('.action-pill'));
-    const pillWidths = pills.map(p => p.getBoundingClientRect().width);
+    sourceItem.classList.add('dragging');
+    const items = getStripItems();
+    const widths = items.map(it => it.getBoundingClientRect().width);
     const gap = 8;
-    let fromIndex = actionPillOrder.indexOf(sourceId);
+    let fromIndex = items.indexOf(sourceItem);
     let toIndex = fromIndex;
-    let lastPointer = e;
     if(navigator.vibrate) navigator.vibrate(10);
 
     function layout(toIdx){
-      // Translate every non-source pill left/right of the source to open/close the gap.
-      pills.forEach((p, i) => {
-        if(p === sourcePill) return;
+      items.forEach((it, i) => {
+        if(it === sourceItem) return;
         let shift = 0;
-        if(i >= toIdx && i < fromIndex) shift = pillWidths[fromIndex] + gap;
-        else if(i > fromIndex && i <= toIdx) shift = -(pillWidths[fromIndex] + gap);
-        p.style.transition = 'transform 0.18s ease';
-        p.style.transform = shift ? `translateX(${shift}px)` : '';
+        if(i >= toIdx && i < fromIndex) shift = widths[fromIndex] + gap;
+        else if(i > fromIndex && i <= toIdx) shift = -(widths[fromIndex] + gap);
+        it.style.transition = 'transform 0.18s ease';
+        it.style.transform = shift ? 'translateX(' + shift + 'px)' : '';
       });
     }
 
     function onMove(ev){
-      lastPointer = ev;
-      if(pillDragRAF) cancelAnimationFrame(pillDragRAF);
-      pillDragRAF = requestAnimationFrame(() => {
-        const dx = ev.clientX - startX;
-        ghost.style.left = (pillRect.left + dx) + 'px';
-        ghost.style.top = (pillRect.top + (ev.clientY - startY)) + 'px';
+      const dx = ev.clientX - startX;
+      ghost.style.left = (itemRect.left + dx) + 'px';
+      ghost.style.top = (itemRect.top + (ev.clientY - startY)) + 'px';
 
-        // Map the ghost's center back to a slot in the strip.
-        const ghostCenterX = pillRect.left + dx + pillRect.width / 2;
-        let acc = stripRect.left - strip.scrollLeft + 20; // 20px left padding
-        let idx = 0;
-        for(let i=0;i<pills.length;i++){
-          const center = acc + pillWidths[i] / 2;
-          if(ghostCenterX < center){ idx = i; break; }
-          idx = i + 1;
-          acc += pillWidths[i] + gap;
-        }
-        idx = Math.max(0, Math.min(pills.length - 1, idx));
-        if(idx !== toIndex){ toIndex = idx; layout(toIndex); }
-      });
-
-      // Auto-scroll the strip while the finger holds near either edge.
-      const edge = 40;
-      let dir = 0;
-      if(ev.clientX - stripRect.left < edge) dir = -1;
-      else if(stripRect.right - ev.clientX < edge) dir = 1;
-      if(dir !== 0 && !pillAutoScrollRAF){
-        const step = () => {
-          const p = lastPointer;
-          const r = strip.getBoundingClientRect();
-          let stillIn = false;
-          if(dir < 0 && p && p.clientX - r.left < edge) stillIn = true;
-          if(dir > 0 && p && r.right - p.clientX < edge) stillIn = true;
-          if(!stillIn || strip.scrollLeft <= 0 && dir < 0){ pillAutoScrollRAF = null; return; }
-          strip.scrollLeft += dir * 7;
-          // Re-measure the source slot now that the strip scrolled, so the
-          // gap math + ghost baseline stay accurate.
-          const cur = sourcePill.getBoundingClientRect();
-          pillRect.left = cur.left;
-          pillRect.top = cur.top;
-          pillAutoScrollRAF = requestAnimationFrame(step);
-        };
-        pillAutoScrollRAF = requestAnimationFrame(step);
-      } else if(dir === 0 && pillAutoScrollRAF){
-        cancelAnimationFrame(pillAutoScrollRAF);
-        pillAutoScrollRAF = null;
+      const ghostCenterX = itemRect.left + dx + itemRect.width / 2;
+      let acc = stripRect.left + 20;
+      let idx = 0;
+      for(let i = 0; i < items.length; i++){
+        const center = acc + widths[i] / 2;
+        if(ghostCenterX < center){ idx = i; break; }
+        idx = i + 1;
+        acc += widths[i] + gap;
       }
+      idx = Math.max(0, Math.min(items.length - 1, idx));
+      if(idx !== toIndex){ toIndex = idx; layout(toIndex); }
     }
 
     function onUp(){
-      if(pillDragRAF) cancelAnimationFrame(pillDragRAF);
-      if(pillAutoScrollRAF) cancelAnimationFrame(pillAutoScrollRAF);
-      pillAutoScrollRAF = null;
       ghost.remove();
-      sourcePill.classList.remove('dragging');
-      pills.forEach(p => { p.style.transform = ''; p.style.transition = ''; });
+      sourceItem.classList.remove('dragging');
+      items.forEach(it => { it.style.transform = ''; it.style.transition = ''; });
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
       if(toIndex !== fromIndex && fromIndex > -1){
-        actionPillOrder.splice(fromIndex, 1);
-        actionPillOrder.splice(toIndex, 0, sourceId);
+        items.splice(fromIndex, 1);
+        items.splice(toIndex, 0, sourceItem);
+        actionPillOrder = items.map(it => it.id).filter(Boolean);
         dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
         reorderActionPills();
       }
     }
-    document.addEventListener('pointermove', (e2) => { lastPointer = e2; onMove(e2); });
+    document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
     document.addEventListener('pointercancel', onUp);
   }
@@ -4474,8 +4534,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!strip) return;
     const fragment = document.createDocumentFragment();
     actionPillOrder.forEach(id => {
-      const pill = $(id);
-      if(pill) fragment.appendChild(pill);
+      const el = $(id);
+      if(el && el.parentNode === strip) fragment.appendChild(el);
+    });
+    // Anything not in the saved order keeps its relative position at the end.
+    getStripItems().forEach(el => {
+      if(!actionPillOrder.includes(el.id)) fragment.appendChild(el);
     });
     strip.appendChild(fragment);
   }
@@ -4492,6 +4556,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('sandboxHighContrast').addEventListener('click', () => { sandboxHighContrast = !sandboxHighContrast; dbPut('meta', { key: 'sandboxHighContrast', value: sandboxHighContrast }); updateSandboxToggles(); });
   $('sandboxBigSeek').addEventListener('click', () => { sandboxBigSeek = !sandboxBigSeek; dbPut('meta', { key: 'sandboxBigSeek', value: sandboxBigSeek }); updateSandboxToggles(); });
   $('sandboxInvertColors').addEventListener('click', () => { sandboxInvertColors = !sandboxInvertColors; dbPut('meta', { key: 'sandboxInvertColors', value: sandboxInvertColors }); updateSandboxToggles(); });
+  $('sandboxCompactHeader').addEventListener('click', () => { sandboxCompactHeader = !sandboxCompactHeader; dbPut('meta', { key: 'sandboxCompactHeader', value: sandboxCompactHeader }); updateSandboxToggles(); });
+  $('sandboxBigArt').addEventListener('click', () => { sandboxBigArt = !sandboxBigArt; dbPut('meta', { key: 'sandboxBigArt', value: sandboxBigArt }); updateSandboxToggles(); renderList(); });
+  $('sandboxShowAlbum').addEventListener('click', () => { sandboxShowAlbum = !sandboxShowAlbum; dbPut('meta', { key: 'sandboxShowAlbum', value: sandboxShowAlbum }); updateSandboxToggles(); renderList(); });
 
   // Watermark remover event handlers
   $('watermarkPatterns').addEventListener('input', (e) => {
@@ -4567,7 +4634,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     sandboxHighContrast = false;
     sandboxBigSeek = false;
     sandboxInvertColors = false;
-    actionPillOrder = ['addFolder', 'add', 'exportLib', 'importLib'];
+    sandboxCompactHeader = false;
+    sandboxBigArt = false;
+    sandboxShowAlbum = false;
+    actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle'];
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
     dbPut('meta', { key: 'sandboxDurOnTabs', value: false });
@@ -4581,6 +4651,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'sandboxHighContrast', value: false });
     dbPut('meta', { key: 'sandboxBigSeek', value: false });
     dbPut('meta', { key: 'sandboxInvertColors', value: false });
+    dbPut('meta', { key: 'sandboxCompactHeader', value: false });
+    dbPut('meta', { key: 'sandboxBigArt', value: false });
+    dbPut('meta', { key: 'sandboxShowAlbum', value: false });
     dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
     updateSandboxToggles();
     initActionPillDragDrop();
@@ -5655,6 +5728,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(sandboxBigSeekRow) sandboxBigSeek = !!sandboxBigSeekRow.value;
       const sandboxInvertColorsRow = metaRows.find(r => r.key === 'sandboxInvertColors');
       if(sandboxInvertColorsRow) sandboxInvertColors = !!sandboxInvertColorsRow.value;
+      const sandboxCompactHeaderRow = metaRows.find(r => r.key === 'sandboxCompactHeader');
+      if(sandboxCompactHeaderRow) sandboxCompactHeader = !!sandboxCompactHeaderRow.value;
+      const sandboxBigArtRow = metaRows.find(r => r.key === 'sandboxBigArt');
+      if(sandboxBigArtRow) sandboxBigArt = !!sandboxBigArtRow.value;
+      const sandboxShowAlbumRow = metaRows.find(r => r.key === 'sandboxShowAlbum');
+      if(sandboxShowAlbumRow) sandboxShowAlbum = !!sandboxShowAlbumRow.value;
       const actionPillOrderRow = metaRows.find(r => r.key === 'actionPillOrder');
       if(actionPillOrderRow && Array.isArray(actionPillOrderRow.value) && actionPillOrderRow.value.length > 0) {
         actionPillOrder = actionPillOrderRow.value;
@@ -5707,8 +5786,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '45.5', date: 'August 17, 2026 at 10:00 am EDT', title: 'Premium pane now describes what Sandbox actually does', items: [
+    { version: '45.5', date: 'August 16, 2026 at 11:59 pm EDT', title: 'Sandbox: working drag & drop + three new toggles, accurate premium copy', items: [
       'Fix: the Premium pane\'s Sandbox card claimed \"bass boost, mono, vocal isolation, night mode\" — none of which exist. It now lists the real Sandbox tweaks: compact song rows, hide album art, duration on tabs, larger tap targets, play counts, compact now bar, always-show search, accessibility & display options (reduce motion, high contrast, big seek bar, invert colors), and drag & drop',
+      'Sandbox \u2192 Drag & Drop now actually works: long-press any top-strip button (Home, Playlists, Discover, + Add songs) and drag it to reorder — quick taps still click normally, and the order sticks across relaunches',
+      'Three new Sandbox toggles: Compact header (tighter top bar, hides the subtitle), Bigger album art (larger track thumbnails), and Show album names (album shown under each song\'s artist)',
     ]},
     { version: '45.4', date: 'August 15, 2026 at 11:44 pm EDT', title: 'Streaming import (no more OOM), premium roadmap back, all UI fixes confirmed', items: [
       'Fix: importing a large library .zip no longer crashes on low-memory Android webviews. Import now reads the zip via a streaming central-directory reader (File.slice + native DecompressionStream) instead of loading the whole archive into one ArrayBuffer — the same OOM class that killed exports before. Falls back to JSZip automatically on older browsers without DecompressionStream',
@@ -8799,7 +8880,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <div class="track-art" style="${artStyle}"></div>
         <div class="track-info">
           <div class="t">${escapeHtml(t.name)}</div>
-          <div class="a">${escapeHtml(t.artist)}</div>
+          <div class="a">${escapeHtml(t.artist)}${sandboxShowAlbum && t.album ? ' • ' + escapeHtml(t.album) : ''}</div>
         </div>
         ${!selectMode && !showReorder ? `<div class="dur">${t.duration ? fmtTime(t.duration) : '--:--'}</div>` : ''}
         ${!selectMode && !showReorder && t.genre ? `<div class="genre-tag">${escapeHtml(t.genre)}</div>` : ''}

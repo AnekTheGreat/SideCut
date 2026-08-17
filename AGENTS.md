@@ -157,7 +157,7 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   ~line 9500+, `renderPremiumRoadmap()` ~line 3549, `navigate()` ~12790,
   `libraryBtn` pickReal logic ~12822, `triggerDiscoverDownload()` ~13248.
 
-## v45.5 (Aug 17, 2026)
+## v45.5 (Aug 16, 2026)
 - **Premium pane Sandbox description corrected**: the "Your unlocked features"
   Sandbox card claimed "bass boost, mono, vocal isolation, night mode" — none of
   which exist. Now lists the real toggles (compact rows, hide album art,
@@ -168,3 +168,13 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   the current tree has no roadmap array, renderer, or `#premiumRoadmapList`
   elements — that change was lost in the v45.4 rebase. If "coming soon" features
   are wanted again, it must be re-added from scratch.
+- **Sandbox → Drag & Drop actually works now**: long-press any top-strip button
+  (Home / Playlists / Discover / + Add songs) and drag to reorder; quick taps still
+  click normally. Order is saved to meta as `actionPillOrder` (real element ids:
+  homeBtn/libraryBtn/discoverBtn/addSongsToggle) and restored on boot. The old
+  code had wrong default ids, an instant-drag-on-pointerdown that made the strip
+  buttons unclickable, and never applied the saved order.
+- **Three new Sandbox toggles**: Compact header, Bigger album art, Show album
+  names (rendered under each track's artist when on). All persist and reset like
+  the other sandbox settings.
+- No version bump for this change — still 45.5 (user asked).
