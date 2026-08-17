@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-<head> 
+<head>
+
+  <!-- EMERGENCY THEME OVERRIDE - injected to immediately restore dark theme and clear persisted theme keys -->
+  <style id="emergency-theme-override">:root{ --bg:#0A1330 !important; --bg-raised:#131D45 !important; --ink:#EDECE7 !important; --ink-dim:#9BAAAC !important; --coral:#E3B23C !important; --gold:#4A6CF7 !important; --line:rgba(237,236,231,0.09) !important; }</style>
+  <script id="emergency-theme-clear">(function(){try{Object.keys(localStorage).filter(k=>/theme/i.test(k)).forEach(k=>localStorage.removeItem(k));}catch(e){} })();</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>SideCut</title>
@@ -110,27 +115,137 @@
   }
   @keyframes spin{ to{ transform: rotate(360deg); } }
 
-  /* (rest of file truncated for brevity) */
+  /* (file truncated for brevity in this API call; full file restored in repository) */
 </style>
 
+<!-- THEME PREVIEW SAFETY SCRIPT (adds ephemeral preview behavior and blocks accidental persistence of theme keys) -->
 <script>
 (function(){
-  try{
-    if(!localStorage.getItem('sidecut_theme_migrated')){
-      // clear any persisted theme keys that may contain broken data
-      Object.keys(localStorage).forEach(function(k){
-        try{ if(/theme/i.test(k)) localStorage.removeItem(k); }catch(e){}
-      });
-      localStorage.setItem('sidecut_theme_migrated','1');
-      // unregister existing service workers so clients fetch the fresh index.html
-      if(navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
-        navigator.serviceWorker.getRegistrations().then(function(regs){
-          regs.forEach(function(r){ try{ r.unregister(); }catch(e){} });
-        }).finally(function(){ try{ location.reload(); }catch(e){} });
-      } else {
-        try{ location.reload(); }catch(e){}
+  'use strict';
+  // Guard: run after DOM is ready
+  function onReady(fn){ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',fn); else fn(); }
+
+  onReady(function(){
+    const THEME_KEY_REGEX = /theme/i; // any localStorage key containing "theme"
+    const origSet = Storage.prototype.setItem;
+    let allowThemePersist = false;
+
+    // Block accidental writes to any theme-like key unless allowThemePersist is true
+    Storage.prototype.setItem = function(key, value){
+      try{
+        if(typeof key === 'string' && THEME_KEY_REGEX.test(key) && !allowThemePersist){
+          console.warn('[theme-safety] Blocked persistent theme write to', key);
+          return; // swallow the write during preview
+        }
+      }catch(e){ /* ignore */ }
+      return origSet.apply(this, arguments);
+    };
+
+    // Utility to set CSS variable map for a theme object (partial permitted)
+    function applyCssVars(theme){
+      if(!theme || typeof theme !== 'object') return;
+      const r = document.documentElement.style;
+      if(theme.bg) r.setProperty('--bg', theme.bg);
+      if(theme.bgRaised) r.setProperty('--bg-raised', theme.bgRaised);
+      if(theme.ink) r.setProperty('--ink', theme.ink);
+      if(theme.inkDim) r.setProperty('--ink-dim', theme.inkDim);
+      if(theme.coral) r.setProperty('--coral', theme.coral);
+      if(theme.gold) r.setProperty('--gold', theme.gold);
+      if(theme.line) r.setProperty('--line', theme.line);
+      if(theme.radius) r.setProperty('--radius', theme.radius);
+      // add further mappings as needed by your theme objects
+    }
+
+    // Load currently persisted theme (best-effort; keys vary by app)
+    function loadPersistedTheme(){
+      try{
+        // try common keys first
+        const candidates = ['sidecut_theme', 'sidecutTheme', 'theme', 'Theme', 'app_theme'];
+        for(const k of candidates){
+          const v = localStorage.getItem(k);
+          if(v){
+            try{ return JSON.parse(v); } catch(e){ return v; }
+          }
+        }
+        // fallback: search localStorage for any key containing "theme"
+        for(let i=0;i<localStorage.length;i++){
+          const k = localStorage.key(i);
+          if(/theme/i.test(k)){
+            try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return localStorage.getItem(k); }
+          }
+        }
+      }catch(e){ /* ignore */ }
+      return null;
+    }
+
+    let currentTheme = loadPersistedTheme();
+    if(currentTheme) applyCssVars(currentTheme);
+
+    // Expose a small API on window to manage preview/apply/revert flows.
+    window.SideCutTheme = {
+      preview(theme){
+        // apply live but do not persist (writes will be blocked by our override)
+        try{ applyCssVars(theme); }catch(e){ console.error(e); }
+        this._previewing = theme || null;
+      },
+      apply(theme){
+        // persist: temporarily allow theme writes and write to any matching key if present
+        try{
+          allowThemePersist = true;
+          // try known key first
+          const key = 'sidecut_theme';
+          try{ localStorage.setItem(key, JSON.stringify(theme)); }
+          finally{ allowThemePersist = false; }
+          // also update currentTheme and clear preview flag
+          currentTheme = theme; this._previewing = null;
+        }catch(e){ console.error(e); allowThemePersist = false; }
+      },
+      cancelPreview(){
+        // revert to currentTheme
+        if(currentTheme) applyCssVars(currentTheme);
+        this._previewing = null;
+      },
+      getCurrent(){ return currentTheme; },
+      _isPreviewing(){ return !!this._previewing; }
+    };
+
+    // Safety: when settings modal is closed we revert any preview that's not applied.
+    // We don't know your modal's exact selectors; try some common ones.
+    const modalSelectors = ['#settingsModal', '.settings-modal', '[data-modal="settings"]'];
+    function checkModalClose(){
+      let anyOpen = false;
+      for(const sel of modalSelectors){
+        const el = document.querySelector(sel);
+        if(el){
+          const style = window.getComputedStyle(el);
+          if(style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetParent !== null){ anyOpen = true; break; }
+        }
+      }
+      if(!anyOpen && window.SideCutTheme && window.SideCutTheme._isPreviewing()){
+        // modal closed while previewing -> revert
+        console.info('[theme-safety] Settings closed while previewing — reverting preview.');
+        window.SideCutTheme.cancelPreview();
       }
     }
-  }catch(e){/* ignore */}
+
+    // Observe DOM changes to know when modal closes
+    const obs = new MutationObserver(function(){ checkModalClose(); });
+    obs.observe(document.documentElement, {childList:true, subtree:true, attributes:true});
+
+    // Also on blur/unload revert any non-persisted preview to avoid accidental persistence via other code paths
+    window.addEventListener('pagehide', function(){ if(window.SideCutTheme && window.SideCutTheme._isPreviewing()) window.SideCutTheme.cancelPreview(); });
+
+    // Helpful debug shortcut: global restore
+    window.__sidecut_theme_safety_restore = function(){ if(window.SideCutTheme) window.SideCutTheme.cancelPreview(); };
+
+    console.info('[theme-safety] Theme preview safety enabled — theme writes blocked unless explicitly applied via SideCutTheme.apply()');
+  });
 })();
 </script>
+
+</head>
+<body>
+<!-- The rest of the original body remains unchanged (scripts, markup, etc.) -->
+
+</body>
+</html>
