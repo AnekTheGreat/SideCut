@@ -3601,8 +3601,20 @@ function getApiHeaders() {
       const request = new PaymentRequest(paymentMethods, paymentDetails);
       const response = await request.show();
       const token = response.details && (response.details.purchaseToken || response.details.token);
-      await response.complete(token ? 'success' : 'fail');
+      // complete() failing doesn't necessarily mean the purchase failed — Play
+      // may have recorded it server-side anyway — so verify before giving up.
+      try{ await response.complete(token ? 'success' : 'fail'); }catch(ce){}
       if(!token){
+        // Payment UI closed without a token: check whether the purchase actually
+        // landed server-side (e.g. complete() threw after payment succeeded).
+        try{
+          const purchases = await playCallWithRetry(() => service.listPurchases());
+          const bought = Array.isArray(purchases) ? purchases.find(p => p && p.itemId === sku) : null;
+          if(bought){
+            if(consumable && bought.purchaseToken){ try{ await service.consume(bought.purchaseToken); }catch(e){} }
+            return 'purchased';
+          }
+        }catch(_){}
         playLastErrorDetail = 'payment went through but no purchase token was returned';
         return 'error';
       }
@@ -3613,7 +3625,9 @@ function getApiHeaders() {
     }catch(e){
       // AbortError/NotAllowedError mean the user dismissed the billing sheet.
       if(e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return 'cancelled';
-      playLastErrorDetail = (e && e.name ? e.name : 'error') + (e && e.message ? ': ' + e.message : '');
+      const desc = (e && (e.message || e.name)) ? (e.message || e.name) : String(e);
+      playLastErrorDetail = (e && e.name ? e.name : 'error') + (e && e.message ? ': ' + e.message : '')
+        + (/clientAppUnavailable/i.test(String(desc)) ? ' — if this keeps happening, fully close SideCut and reopen it.' : '');
       return 'error';
     }
   }
