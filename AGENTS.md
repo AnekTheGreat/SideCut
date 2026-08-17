@@ -212,3 +212,29 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   which are declared later in the IIFE — safe because they only run on clicks
   or boot-restore (which runs after the IIFE body finishes).
 - Version 45.6 → 45.7 (SW cache sidecut-shell-v45.6 → v45.7). Date Aug 17 1:05 pm EDT.
+
+## v46 (Aug 17, 2026)
+- **Record is a circle now**: the mini record player in the now bar was rendered in a 3D
+  perspective tilt (default rx 52° / ry -34°) that squashed the disc into an oval. Defaults
+  are now face-on (rx 12° / ry 0°) in BOTH CSS fallbacks and the JS angle state + Turntable
+  popup `DEFAULT_ANGLE`. Users with a saved `npTurntableAngle` keep their own tilt.
+- **Crossfade now beats Gapless**: `onTimeUpdate` used to let `gaplessMode` override
+  crossfade entirely, so turning Gapless on silently killed audible blends. Now
+  `crossfadeSeconds > 0` takes priority (audible fade); gapless preload/cut only applies
+  when crossfade is 0s. Same change in `onEnded` (`crossfadeSeconds === 0` guard).
+- **Home bubbles merged**: `HOME_BUBBLE_KINDS` no longer has `'recent'` — Now playing and
+  Recently played are one `'nowplaying'` bubble (preview shows current track, or recent if
+  idle; the expanded overlay shows the current track + the recently-played list). Old saved
+  `homeOrder` entries with `'recent'` are dropped by `normalizeHomeOrder` and the orphaned
+  `openHomeBubble('recent')` branch was removed.
+- **Sandbox Home layout editor can remove/add bubbles**: each row in the editor has a
+  Hide / "Hidden · show" toggle; hidden kinds persist in meta `homeHidden` (filtered in
+  `renderHome`, restored on boot, cleared on sandbox reset). Hidden rows are excluded from
+  the drag selector so they can't be dragged while hidden.
+- **Settings → More**: the guide button is now "🎓 Replay tutorial" with a text
+  **Tutorial summary** collapsible; first-run tutorial teaches tapping the record to jump
+  to the playing song. "Works offline" now lists Sandbox tweaks and marks Discover as
+  needing internet. New "Things to know" bullets: record-tap jumps to now playing; the
+  phone's notification media player can't open the app; lyrics auto-scroll may drift.
+- **Lyrics view**: "Auto-scroll may not be perfectly accurate" note under the toggle.
+- Version 45.7 → 46 (SW cache sidecut-shell-v45.7 → sidecut-shell-v46). Date Aug 17 4:26 pm EDT.
