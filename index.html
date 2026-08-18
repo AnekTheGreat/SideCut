@@ -10685,7 +10685,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             liquidGlassEnabled: document.body.classList.contains('liquid-glass-on'),
 
             // Display settings
-            themeMode: document.body.className,
+            themeKey: currentTheme,
+            themeMode: document.body.className, // legacy — body classes, restored best-effort below
             customTheme: customTheme,
             sandboxCompactRows: sandboxCompactRows,
             sandboxHideArt: sandboxHideArt,
@@ -10942,9 +10943,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           $('glowStyleSelect').value = manifest.settings.glowStyle;
           dbPut('meta', { key: 'glowStyle', value: manifest.settings.glowStyle });
         }
-        // Restore theme mode
-        if(manifest.settings.themeMode){
-          applyThemeMode(manifest.settings.themeMode);
+        // Restore theme — prefer the theme key (applyTheme expects a THEMES key
+        // like 'rosegold'); fall back to the legacy body-class string only for
+        // matching it against known themes. Never call the undefined applyThemeMode.
+        if(manifest.settings.themeKey && THEMES[manifest.settings.themeKey]){
+          applyTheme(manifest.settings.themeKey);
+        } else if(manifest.settings.themeMode){
+          // Legacy backup: themeMode held document.body.className. Try to map
+          // a known dynamic theme class back to its key; otherwise leave the
+          // current theme as-is (the 'theme' meta row restores it on next boot).
+          const dynMatch = Object.keys(THEMES).find(k => {
+            const t = THEMES[k]; return t && t.dynamic && ('theme-dyn-' + t.dynamic) === manifest.settings.themeMode;
+          });
+          if(dynMatch) applyTheme(dynMatch);
         }
         
         // Restore gapless mode
