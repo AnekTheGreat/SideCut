@@ -1345,7 +1345,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 .discover-chip.active{ background:var(--coral); color:#161616; border-color:var(--coral); }
-#discoverGenres[open] #genreChevron{ transform:rotate(90deg); }
+#discoverNewReleasesDropdown .hb-track-row,
+#discoverNewReleasesDropdown .nr-row{ padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,0.03); cursor:pointer; margin-bottom:6px; display:flex; align-items:center; gap:10px; }
+#discoverNewReleasesDropdown .hb-track-row:active{ background:rgba(255,255,255,0.06); }
 #discoverStatus{ font-size:12px; color:var(--ink-dim); padding:6px 0 12px; min-height:18px; }
 #discoverResults{ display:flex; flex-direction:column; gap:8px; }
 .discover-card{
@@ -1696,17 +1698,23 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   </div>
   <div style="display:flex; gap:8px; margin-bottom:10px;">
       <button id="discoverNewReleasesBtn" class="action-pill" style="flex:1; padding:10px 14px; font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
-        <span style="font-size:15px;">🆕</span> New Releases
+        <span style="font-size:15px;">🆕</span> New Releases <span id="nrDropdownChevron" style="margin-left:4px; font-size:11px;">▾</span>
+      </button>
+      <button id="discoverGenresBtn" class="action-pill" style="flex:1; padding:10px 14px; font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
+        <span style="font-size:15px;">🎵</span> Genres <span id="genreDropdownChevron" style="margin-left:4px; font-size:11px;">▾</span>
       </button>
     </div>
-    <details id="discoverGenres" style="margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); overflow:hidden;">
-      <summary style="padding:10px 14px; font-size:13.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px; list-style:none; user-select:none;">
-        <span style="font-size:15px;">🎵</span>
-        <span style="flex:1;">Genres</span>
-        <span id="genreChevron" style="transition:transform 0.2s; font-size:12px;">▸</span>
-      </summary>
-      <div id="discoverChips" style="padding:4px 14px 14px; display:flex; flex-direction:column; gap:6px;"></div>
-    </details>
+    <div id="discoverNewReleasesDropdown" style="display:none; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); max-height:50vh; overflow-y:auto;">
+      <div style="padding:10px 14px; font-size:13.5px; font-weight:600; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;">
+        <span style="font-size:15px;">🆕</span> New Releases
+      </div>
+      <div id="discoverNewReleasesList" style="padding:10px 14px;">
+        <div style="font-size:12px; color:var(--ink-dim);">Tap to check for new music from your pinned artists.</div>
+      </div>
+    </div>
+    <div id="discoverGenresDropdown" style="display:none; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); padding:4px 14px 14px;">
+      <div id="discoverChips" style="display:flex; flex-direction:column; gap:6px;"></div>
+    </div>
   <div id="discoverStatus">Search for any song or tap a category to start browsing.</div>
   <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
     <b style="color:var(--coral);">How to get a song</b><br>
@@ -4545,7 +4553,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxShowAlbum = false;
   let actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle']; // strip items in default order
   let customQuickActions = []; // {id, label, type, value} — type: 'url' | 'playlist' | 'play'
-  const HOME_BUBBLE_KINDS = ['stats','notifications','pinnedartists','library','nowplaying','topsong','artists','favorites','playlists','shortcuts'];
+  const HOME_BUBBLE_KINDS = ['stats','notifications','newreleases','pinnedartists','library','nowplaying','topsong','artists','favorites','playlists','shortcuts'];
   let homeOrder = HOME_BUBBLE_KINDS.slice();
   let homeSlots = { A: null, B: null, C: null };
   let homeSlotSel = 'A';
@@ -4911,7 +4919,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     artists: 'Top artists',
     favorites: 'Favorites',
     playlists: 'Playlists',
-    shortcuts: 'Quick actions'
+    shortcuts: 'Quick actions',
+    newreleases: 'New releases'
   };
   // Theme-matched SVG icons for Home bubbles (currentColor = the bubble's coral/gold tint).
   const HB_ICONS = {
@@ -4927,6 +4936,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     shortcuts: '<svg viewBox="0 0 24 24"><path d="M13 3l1.5 5.5L20 10l-5.5 1.5L13 17l-1.5-5.5L6 10l5.5-1.5z"/></svg>',
     pin:       '<svg viewBox="0 0 24 24"><path d="M17 4v7l2 3v2h-6v5l-1 1-1-1v-5H5v-2l2-3V4c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2zM9 4v7.75L7.5 14h9L15 11.75V4H9z"/></svg>',
     headphones:'<svg viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0118 0v6h2v6h-5v-4a1 1 0 00-1-1h-4a1 1 0 00-1 1v4H3v-6h2zm16 0h-2v4h3v-4zM5 18h2v4H5v-4z"/></svg>',
+    newreleases: '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>',
     custom:    '<svg viewBox="0 0 24 24"><path d="M13 3l1.5 5.5L20 10l-5.5 1.5L13 17l-1.5-5.5L6 10l5.5-1.5z"/></svg>'
   };
 
@@ -6396,7 +6406,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '47.1';
+  const APP_VERSION = '47.2';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6409,27 +6419,27 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '47.1', date: 'August 18, 2026 at 8:10 pm EDT', title: 'Premium features: word-by-word lyrics, pinned artists Home bubble, theme fixes', items: [
+    { version: '47.1', date: 'August 18, 2026 at 4:10 pm EDT', title: 'Premium features: word-by-word lyrics, pinned artists Home bubble, theme fixes', items: [
       'Word-by-word synced lyrics (premium only): each word highlights in gold as the music plays, with gap handling that keeps the last line visible during instrumental sections',
       'Pinned artists now appear on the Home page as a movable bubble (premium only) — in addition to their existing spot below the Discover search bar',
       'Pinned artists Home bubble is gated on premium: non-premium users see an Unlock prompt',
       'Theme picker: collapsible sections (Static / Dynamic) now preserve their open/close state across theme selections instead of resetting',
       'Theme picker: all 7 dynamic theme body classes are now properly removed when switching themes (cyberpunk and glacier were previously stuck)',
       'Premium feature description updated to mention word-by-word lyrics, pinned artists, and Sandbox customization',
-    ]},    { version: '47', date: 'August 17, 2026 at 7:30 pm EDT', title: 'Bk-47 — theme picker settles to collapsed + Discover downloader, pinned artists, auto-clean imports, Home progress', items: [
+    ]},    { version: '47', date: 'August 17, 2026 at 3:30 pm EDT', title: 'Bk-47 — theme picker settles to collapsed + Discover downloader, pinned artists, auto-clean imports, Home progress', items: [
       'Theme picker no longer stays open after you pick a theme — the Static and Dynamic groups render collapsed, open only when you tap the summary, and collapse back after every switch (so the list never sits auto-opened)',
       'Discover now has an in-app downloader sheet: tap "Get song" on any track and it opens a Spotify-to-MP3 converter with the link pre-filled, with a copy-link and open-in-new-tab fallback when a converter blocks embedding',
       'Pin your favorite artists in Discover — a 📌 Pinned artists section shows your picks, and a "New from your artists" check surfaces recent releases (stored locally, no account)',
       'Watermark cleaning now runs automatically on import — numbered prefixes ("1."), radio-edit/live/remix tags, and "(feat. X)" are stripped from titles/artists as songs come in, even with the Watermark Remover toggle off (it still only touches the literal patterns you configured)',
       'Home now shows progress for every background task — export, cover fetch, lyrics fetch, metadata re-fetch, and CSV import each get a live card while running, stay if you navigate away and come back, and auto-hide when done',
     ]},
-    { version: '46.7.5', date: 'August 17, 2026 at 7:30 pm EDT', title: 'Home progress + playlist-context playback + icon fixes', items: [
+    { version: '46.7.5', date: 'August 17, 2026 at 3:30 pm EDT', title: 'Home progress + playlist-context playback + icon fixes', items: [
       'Listening stats bubble icon was invisible (its bar-chart path was open strokes with fill, which renders nothing) — now solid filled bars that actually show',
       'Background-task progress (export, cover fetch, lyrics fetch, metadata re-fetch, CSV import) now always appears as a card on the Home page while running, and stays there if you navigate away and come back — previously only export progress showed on Home',
       'Tapping a song from a Home bubble (now playing / most played / favorites) used to dump your whole library into the play queue, so the next track felt random — it now plays within the song\'s own playlist (and honors shuffle), so songs actually follow the playlist',
       'Playlists bubble icon (open lines + circle) was partly invisible for the same fill reason — now a solid playlist icon',
     ]},
-    { version: '46.7', date: 'August 17, 2026 at 7:30 pm EDT', title: 'Better playlist reordering + choose where imported songs land', items: [
+    { version: '46.7', date: 'August 17, 2026 at 3:30 pm EDT', title: 'Better playlist reordering + choose where imported songs land', items: [
       'Reorder mode now has per-row ▲/▼ buttons — tap to actually move a song up or down one slot, no dragging required (the drag grip is still there too)',
       'When you add files, import a .zip, or add a song to a playlist, you now pick where it goes: beginning, end, or tap a song to insert right after it (instead of always dumping new songs at the bottom)',
       'The now playing bubble\'s per-song play/pause buttons now use theme-matched SVG icons instead of plain ▶/⏸ text characters',
@@ -14397,6 +14407,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <div class="hb-value" style="font-size:14px;">Quick actions</div>
         <div class="hb-label">Settings · Discover · Playlists · Add songs</div><div class="hb-hint">⤢</div>
       </div>`,
+      newreleases: `      <div class="home-bubble" data-bubble="newreleases">
+        <div class="hb-glow"></div><div class="hb-ico">${HB_ICONS.newreleases}</div>
+        <div class="hb-value gold">${(() => { const all = []; Object.keys(pinnedReleases).forEach(a => (pinnedReleases[a]||[]).forEach(r => { if(!r.seen) all.push(r); })); return all.length; })()}</div><div class="hb-label">New releases</div><div class="hb-hint">⤢</div>
+      </div>`,
       pinnedartists: `      <div class="home-bubble" data-bubble="pinnedartists">
         <div class="hb-glow"></div><div class="hb-ico">${HB_ICONS.pin}</div>
         <div class="hb-value gold">${pinnedArtists.length}</div><div class="hb-label">Pinned artists</div><div class="hb-hint">⤢</div>
@@ -14608,6 +14622,35 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         });
       }
       $('hbCtaPlaylists').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+    }
+    else if(kind === 'newreleases'){
+      ico.innerHTML = HB_ICONS.newreleases; title.textContent = 'New releases from pinned artists';
+      const all = [];
+      Object.keys(pinnedReleases).forEach(artist => {
+        (pinnedReleases[artist] || []).forEach(rel => { if(!rel.seen) all.push({ ...rel, artist }); });
+      });
+      all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+      if(!all.length){
+        body.innerHTML = '<div class="hb-empty">No new releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
+      } else {
+        body.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">' + all.length + ' new release' + (all.length>1?'s':'') + '</div>' +
+          all.slice(0, 20).map(rel => {
+            const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
+            const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+            return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
+          }).join('') +
+          '<button class="hb-cta" id="hbCtaMarkSeen">Mark all as seen</button>';
+        body.querySelectorAll('.hb-track-row').forEach(row => {
+          row.addEventListener('click', () => {
+            const q = (row.dataset.releaseTitle||'') + ' ' + (row.dataset.releaseArtist||'');
+            closeHomeBubble();
+            navigate('discover');
+            $('discoverSearch').value = q;
+            runDiscoverSearch(q);
+          });
+        });
+        $('hbCtaMarkSeen').addEventListener('click', () => { markReleasesSeen(); closeHomeBubble(); });
+      }
     }
     else if(kind === 'nowplaying'){
       ico.innerHTML = HB_ICONS.play; title.textContent = 'Now playing & recently played';
@@ -15022,7 +15065,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     savePinnedArtists();
     renderNewReleases();
     if(totalNew > 0){
-      toast(`New release${totalNew>1?'s':''} from your pinned artist${totalNew>1?'s':''} — see Discover.`, 4000);
+      renderHome(); // Updates the new releases bubble count
     }
     renderHomeExportPopup();
     updateNotifBadge();
@@ -15039,13 +15082,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const wrap = $('discoverChips');
     wrap.innerHTML = '';
     // Chevron rotation
-    const det = $('discoverGenres');
-    if(det){
-      det.addEventListener('toggle', () => {
-        const ch = $('genreChevron');
-        if(ch) ch.textContent = det.open ? '▾' : '▸';
-      });
-    }
+
     DISCOVER_CHIPS.forEach((c, i) => {
       const el = document.createElement('div');
       el.className = 'discover-chip' + (discoverActiveChip === i ? ' active' : '');
@@ -15213,23 +15250,79 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
   });
 
-    // New Releases button — check for new releases from all pinned artists
+    // New Releases dropdown toggle
   $('discoverNewReleasesBtn').addEventListener('click', () => {
     if(!isPremiumActive()){
       openPremiumSettings();
       toast('Premium feature — unlock to see new releases.', 3500);
       return;
     }
+    const dd = $('discoverNewReleasesDropdown');
+    const chev = $('nrDropdownChevron');
+    const isOpen = dd.style.display !== 'none';
+    // Close genres if open
+    $('discoverGenresDropdown').style.display = 'none';
+    if($('genreDropdownChevron')) $('genreDropdownChevron').textContent = '▾';
+    if(isOpen){
+      dd.style.display = 'none';
+      if(chev) chev.textContent = '▾';
+    } else {
+      dd.style.display = 'block';
+      if(chev) chev.textContent = '▴';
+      renderNewReleasesDropdown();
+    }
+  });
+  // Genres dropdown toggle
+  $('discoverGenresBtn').addEventListener('click', () => {
+    const dd = $('discoverGenresDropdown');
+    const chev = $('genreDropdownChevron');
+    const isOpen = dd.style.display !== 'none';
+    // Close new releases if open
+    $('discoverNewReleasesDropdown').style.display = 'none';
+    if($('nrDropdownChevron')) $('nrDropdownChevron').textContent = '▾';
+    if(isOpen){
+      dd.style.display = 'none';
+      if(chev) chev.textContent = '▾';
+    } else {
+      dd.style.display = 'block';
+      if(chev) chev.textContent = '▴';
+    }
+  });
+  // Render new releases into the dropdown
+  function renderNewReleasesDropdown(){
+    const list = $('discoverNewReleasesList');
+    if(!list) return;
     if(!pinnedArtists.length){
-      toast('Pin some artists first — search for an artist, tap a card, and hit Pin.', 4000);
+      list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">Pin artists in Discover to see their new releases here.</div>';
       return;
     }
-    checkPinnedArtistReleases().then(() => {
-      renderNewReleases();
-      const sec = $('newReleasesSection');
-      if(sec && sec.style.display !== 'none') sec.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    const all = [];
+    Object.keys(pinnedReleases).forEach(artist => {
+      (pinnedReleases[artist] || []).forEach(rel => { if(!rel.seen) all.push({ ...rel, artist }); });
     });
-  });
+    all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+    if(!all.length){
+      list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">No new releases yet — checking for new music from your pinned artists.</div>';
+      checkPinnedArtistReleases().then(() => { renderNewReleasesDropdown(); renderNewReleases(); });
+      return;
+    }
+    list.innerHTML = all.slice(0, 20).map(rel => {
+      const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
+      const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+      return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
+    }).join('') +
+    '<button class="hb-cta" style="margin-top:8px;" id="ddMarkSeen">Mark all as seen</button>';
+    list.querySelectorAll('.hb-track-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const q = (row.dataset.releaseTitle||'') + ' ' + (row.dataset.releaseArtist||'');
+        $('discoverNewReleasesDropdown').style.display = 'none';
+        $('discoverSearch').value = q;
+        runDiscoverSearch(q);
+      });
+    });
+    const markBtn = $('ddMarkSeen');
+    if(markBtn) markBtn.addEventListener('click', () => { markReleasesSeen(); renderNewReleasesDropdown(); renderNewReleases(); });
+  }
 
   $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });

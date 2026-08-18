@@ -577,3 +577,22 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   sets `newReleasesSection.open = true` (was the outer details). Commit
   2b27a88. No version bump — SW still sidecut-shell-v47, so a user on a
   stale SW won't see this until they unregister/clear cache.
+
+## v47.2 (Aug 18, 2026)
+- **Discover buttons with dropdowns**: New Releases and Genres are now side-by-side
+  buttons at the top of Discover. Each toggles a dropdown panel — New Releases shows
+  unseen releases from pinned artists (with a "Mark all as seen" button); Genres shows
+  the category list (Pop, Hip-hop, etc.) in a vertical list with themed icons.
+- **New releases Home bubble**: added `newreleases` to `HOME_BUBBLE_KINDS` — shows a
+  gold count of unseen releases, expands to a list where tapping a release searches for
+  it in Discover. "Mark all as seen" clears the badge. No more toast notifications on
+  new releases — the bubble is the discreet indicator.
+- **Pinned artists: primary-only pinning**: `primaryArtistName()` strips collaboration
+  partners ("The Weeknd, Ariana Grande" → "The Weeknd") so each artist is pinned once.
+  Existing duplicate pins are deduplicated on load.
+- **Now-playing bubble icon**: replaced the play-triangle decorative icon (which looked
+  like a second play button) with a headphones icon. Only the miniplay button is a
+  real play/pause control.
+- **Changelog times shifted 4 hours earlier** for the last 4 entries.
+- Version 47.1 → 47.2 (SW sidecut-shell-v47.1 → sidecut-shell-v47.2). Date Aug 18
+  4:10 pm EDT.
