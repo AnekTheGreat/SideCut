@@ -596,3 +596,22 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - **Changelog times shifted 4 hours earlier** for the last 4 entries.
 - Version 47.1 → 47.2 (SW sidecut-shell-v47.1 → sidecut-shell-v47.2). Date Aug 18
   4:10 pm EDT.
+
+## v47.3 (Aug 18, 2026)
+- **Discover buttons fixed**: New Releases and Genres buttons now use inline `onclick`
+  handlers calling `window._toggleNR()` / `window._toggleGenres()` defined at the end
+  of the IIFE. Previous `addEventListener` + `setTimeout` fallback approaches silently
+  failed on Android WebViews where `overflow-y:auto` on the parent could swallow touch
+  events. Version bumped from v47.2 → v47.3 to bust the stale SW.
+- **Undo unpinned artists**: `toastWithUndo()` shows an Undo button in the toast when
+  an artist is unpinned. Restores the artist + their release snapshot within 6 seconds.
+- **Primary-only pinning**: `primaryArtistName()` strips collab partners so each artist
+  is pinned once. Existing duplicates are deduplicated on load.
+- **New Releases Home bubble**: `newreleases` bubble shows a gold count of unseen releases;
+  tap to expand, "Mark all as seen" clears the badge. No more toast notifications.
+- **Now-playing bubble icon**: headphones instead of play triangle (only the miniplay
+  button is a real play/pause control).
+- **Discover dropdowns**: New Releases and Genres are side-by-side buttons that toggle
+  dropdown panels.
+- Version 47.2 → 47.3 (SW sidecut-shell-v47.2 → sidecut-shell-v47.3). Date Aug 18
+  6:47 pm EDT.
