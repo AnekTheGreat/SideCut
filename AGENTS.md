@@ -561,14 +561,19 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   from their Discover card's Pin button.
 
 ## v47 follow-up #3 (no version bump, Aug 18, 2026)
-- **Pinned artists section at top + expanded by default + visible chevron**:
-  `#pinnedArtistsDetails` moved to right after `#discoverSearchRow` (top of
-  Discover) and gained the `open` attribute so the artist list is visible on
-  load instead of collapsed. The `<summary>` uses `list-style:none`, which
-  strips the browser's default disclosure triangle — so there was no visual
-  cue it could expand. Added an SVG chevron (`#pinnedArtistsChevron`) in the
-  summary that rotates 90deg (open) / 0deg (closed) via a `toggle` listener
-  wired right after the `pinnedArtistsHelp` handler (~line 14841). Commit
-  3b9191b. No version bump (per user request) — note the SW is still
-  sidecut-shell-v47, so a user on a stale SW won't see this until they
-  unregister/clear cache; the user is aware.
+- **Pinned artists always visible; only new-releases is a dropdown**: the
+  whole pinned-artists block is no longer a `<details>` —
+  `#pinnedArtistsDetails` is now a plain `<div>` and the artist list
+  (`#pinnedArtistsList`) is ALWAYS visible at the top of Discover (no
+  dropdown to expand). Only the new-releases sub-block is a collapsible
+  `<details id="newReleasesSection">` with its own `#newReleasesChevron`
+  (rotates 90deg open / 0deg closed via a `toggle` listener).
+  `renderNewReleases()` still drives `newReleasesSection.style.display`
+  (none when no releases), and sets `sec.open = true` on first render
+  unless the user already toggled it (`data-toggled` attribute). The
+  Check-now button (`#newReleasesRefresh`) lives inside that summary and
+  calls stopPropagation+preventDefault so clicking it runs the release
+  check without collapsing the panel. The release-check success path now
+  sets `newReleasesSection.open = true` (was the outer details). Commit
+  2b27a88. No version bump — SW still sidecut-shell-v47, so a user on a
+  stale SW won't see this until they unregister/clear cache.
