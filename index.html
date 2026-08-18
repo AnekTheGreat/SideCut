@@ -14885,6 +14885,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const primary = name.split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i)[0].trim();
     return primary || name;
   }
+    let lastUnpinned = null; // {name, art, addedAt} for undo
     function isPinnedArtist(name){
     if(!name) return false;
     const n = primaryArtistName(name).toLowerCase().trim();
@@ -14895,9 +14896,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // Normalize to primary artist so collabs don't create duplicates
     const primary = primaryArtistName(name);
     if(isPinnedArtist(primary)){
+      lastUnpinned = pinnedArtists.find(a => primaryArtistName(a.name).toLowerCase().trim() === primary.toLowerCase().trim()) || { name: primary, art: art || null, addedAt: Date.now() };
       pinnedArtists = pinnedArtists.filter(a => primaryArtistName(a.name).toLowerCase().trim() !== primary.toLowerCase().trim());
       delete pinnedReleases[primary];
-      toast(`Unpinned ${primary}`);
+      toastWithUndo(`Unpinned ${primary}`, () => {
+        if(lastUnpinned){
+          pinnedArtists.push(lastUnpinned);
+          pinnedReleases[lastUnpinned.name] = [];
+          lastUnpinned = null;
+          savePinnedArtists();
+          renderPinnedArtists();
+          renderNewReleases();
+          toast(`Re-pinned ${primary}`);
+        }
+      });
     } else {
       pinnedArtists.push({ name: primary, art: art || null, addedAt: Date.now() });
       // Seed an empty snapshot so the FIRST check reports everything as new
