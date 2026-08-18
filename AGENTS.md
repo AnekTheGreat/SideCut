@@ -556,6 +556,19 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   match: 1. Get song → opens in Spotify, 2. Share → Copy link → paste into any
   Spotify-to-MP3 converter, 3. + Files to import.
 - **Pinned artists note**: the "📌 Your artists" collapsible in Discover is
-  always in the DOM (collapsed by default); when empty it shows a "Pin artists
-  you love — search, tap a card, hit Pin" hint. Tap the 📌 summary to expand.
-  Pin any artist from their Discover card's Pin button.
+  always in the DOM; when empty it shows a "Pin artists you love — search,
+  tap a card, hit Pin" hint. Tap the 📌 summary to expand. Pin any artist
+  from their Discover card's Pin button.
+
+## v47 follow-up #3 (no version bump, Aug 18, 2026)
+- **Pinned artists section at top + expanded by default + visible chevron**:
+  `#pinnedArtistsDetails` moved to right after `#discoverSearchRow` (top of
+  Discover) and gained the `open` attribute so the artist list is visible on
+  load instead of collapsed. The `<summary>` uses `list-style:none`, which
+  strips the browser's default disclosure triangle — so there was no visual
+  cue it could expand. Added an SVG chevron (`#pinnedArtistsChevron`) in the
+  summary that rotates 90deg (open) / 0deg (closed) via a `toggle` listener
+  wired right after the `pinnedArtistsHelp` handler (~line 14841). Commit
+  3b9191b. No version bump (per user request) — note the SW is still
+  sidecut-shell-v47, so a user on a stale SW won't see this until they
+  unregister/clear cache; the user is aware.
