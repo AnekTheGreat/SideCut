@@ -1684,14 +1684,18 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <button id="pinnedArtistsHelp" style="background:none; border:none; color:var(--ink-dim); font-size:12px; cursor:pointer; padding:0;">?</button>
       </div>
       <div id="pinnedArtistsList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
-      <details id="newReleasesSection" style="display:none;">
-        <summary style="display:flex; align-items:center; gap:6px; margin-bottom:8px; margin-top:4px; cursor:pointer; list-style:none; font-size:12px; color:var(--ink-dim);">
-          <svg id="newReleasesChevron" viewBox="0 0 24 24" style="width:14px; height:14px; transition:transform .2s; transform:rotate(0deg);"><path fill="currentColor" d="M9 6l6 6-6 6V6z"/></svg>
-          <span style="flex:1;">🆕 New from your artists</span>
-          <button id="newReleasesRefresh" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer;">Check now</button>
-        </summary>
-        <div id="newReleasesList" style="display:flex; flex-direction:column; gap:8px;"></div>
-      </details>
+      <div id="newReleasesSection" style="display:none;">
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px; margin-top:4px;">
+          <details id="newReleasesDetails" style="flex:1;">
+            <summary style="display:flex; align-items:center; gap:6px; cursor:pointer; list-style:none; font-size:12px; color:var(--ink-dim);">
+              <svg id="newReleasesChevron" viewBox="0 0 24 24" style="width:14px; height:14px; transition:transform .2s; transform:rotate(0deg);"><path fill="currentColor" d="M9 6l6 6-6 6V6z"/></svg>
+              <span>🆕 New from your artists</span>
+            </summary>
+            <div id="newReleasesList" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
+          </details>
+          <button id="newReleasesRefresh" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer; flex-shrink:0;">Check now</button>
+        </div>
+      </div>
     </div>
   </div>
   <div id="discoverChips"></div>
@@ -14703,6 +14707,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function renderNewReleases(){
     const sec = $('newReleasesSection');
+    const det = $('newReleasesDetails');
     const list = $('newReleasesList');
     if(!sec || !list) return;
     // Flatten recent releases across all pinned artists, newest first.
@@ -14719,7 +14724,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     if(!recent.length){ sec.style.display = 'none'; return; }
     sec.style.display = 'block';
-    if(!sec.hasAttribute('data-toggled')) sec.open = true; // expand by default until the user collapses it
+    if(det && !det.hasAttribute('data-toggled')) det.open = true; // expand by default until the user collapses it
     list.innerHTML = recent.map(rel => {
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date + 'T00:00:00Z').getTime())/86400000) : null;
       const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
@@ -14826,8 +14831,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     savePinnedArtists();
     renderNewReleases();
     if(totalNew > 0){
-      const sec = $('newReleasesSection');
-      if(sec){ sec.open = true; sec.setAttribute('data-toggled', '1'); }  // reveal the new releases the check just found
+      const det = $('newReleasesDetails');
+      if(det){ det.open = true; det.setAttribute('data-toggled', '1'); }  // reveal the new releases the check just found
       toast(`New release${totalNew>1?'s':''} from your pinned artist${totalNew>1?'s':''} — see Discover.`, 4000);
     }
     renderHomeExportPopup();
@@ -14842,7 +14847,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Rotate the "New from your artists" chevron to match its <details> state,
   // and mark it user-toggled so a refresh no longer forces it open.
   (function(){
-    const det = $('newReleasesSection');
+    const det = $('newReleasesDetails');
     const chev = $('newReleasesChevron');
     if(!det || !chev) return;
     const sync = () => {
@@ -14852,10 +14857,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(det.open) chev.style.transform = 'rotate(90deg)';
     det.addEventListener('toggle', sync);
   })();
-  $('newReleasesRefresh').addEventListener('click', (e) => {
-    e.preventDefault(); e.stopPropagation();  // it lives inside the <summary>
-    checkPinnedArtistReleases();
-  });
+  $('newReleasesRefresh').addEventListener('click', () => checkPinnedArtistReleases());
 
   function renderDiscoverChips(){
     const wrap = $('discoverChips');
