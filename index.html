@@ -14801,6 +14801,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const pr = rows.find(r => r.key === 'pinnedReleases');
       pinnedReleases = (pr && pr.value && typeof pr.value === 'object') ? pr.value : {};
     }catch(e){ pinnedArtists = []; pinnedReleases = {}; }
+    // Deduplicate: keep the first entry per primary artist name
+    const _seenPrimary = new Set();
+    pinnedArtists = pinnedArtists.filter(a => {
+      const p = primaryArtistName(a.name).toLowerCase().trim();
+      if(_seenPrimary.has(p)) return false;
+      _seenPrimary.add(p);
+      return true;
+    });
     renderPinnedArtists();
     renderNewReleases();
     updateNotifBadge();
@@ -14809,22 +14817,35 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'pinnedArtists', value: pinnedArtists });
     dbPut('meta', { key: 'pinnedReleases', value: pinnedReleases });
   }
-  function isPinnedArtist(name){
+    // Extract the primary/lead artist from a collaboration string.
+  // "The Weeknd, Ariana Grande" → "The Weeknd"
+  // "Drake & Future" → "Drake"
+  // "Post Malone ft. Swae Lee" → "Post Malone"
+  // Single artists pass through unchanged.
+  function primaryArtistName(name){
+    if(!name) return name;
+    // Split on common collab separators: comma, ampersand, feat., ft., vs., x, X
+    const primary = name.split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i)[0].trim();
+    return primary || name;
+  }
+    function isPinnedArtist(name){
     if(!name) return false;
-    const n = name.toLowerCase().trim();
-    return pinnedArtists.some(a => (a.name||'').toLowerCase().trim() === n);
+    const n = primaryArtistName(name).toLowerCase().trim();
+    return pinnedArtists.some(a => primaryArtistName(a.name).toLowerCase().trim() === n);
   }
   function togglePinArtist(name, art){
     if(!name) return;
-    if(isPinnedArtist(name)){
-      pinnedArtists = pinnedArtists.filter(a => (a.name||'').toLowerCase().trim() !== name.toLowerCase().trim());
-      delete pinnedReleases[name];
-      toast(`Unpinned ${name}`);
+    // Normalize to primary artist so collabs don't create duplicates
+    const primary = primaryArtistName(name);
+    if(isPinnedArtist(primary)){
+      pinnedArtists = pinnedArtists.filter(a => primaryArtistName(a.name).toLowerCase().trim() !== primary.toLowerCase().trim());
+      delete pinnedReleases[primary];
+      toast(`Unpinned ${primary}`);
     } else {
-      pinnedArtists.push({ name, art: art || null, addedAt: Date.now() });
+      pinnedArtists.push({ name: primary, art: art || null, addedAt: Date.now() });
       // Seed an empty snapshot so the FIRST check reports everything as new
       // (the user just pinned — they want to see what's recent now).
-      pinnedReleases[name] = [];
+      pinnedReleases[primary] = [];
       toast(`Pinned ${name} — we'll watch for new releases`);
     }
     savePinnedArtists();
@@ -14933,13 +14954,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Query iTunes for an artist's recent tracks and merge into the snapshot.
   // Returns the list of newly-discovered releases (empty array if none/failed).
   async function fetchArtistReleases(artist){
+    // Use primary name for iTunes lookup (cleaner results)
     try{
       const url = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=song&limit=50`;
       const resp = await fetchWithProxy(url);
       if(!resp || !resp.ok) return [];
       const data = await resp.json();
       const results = (data.results || []).filter(r => r && r.trackName &&
-        (r.artistName || '').toLowerCase().trim() === artist.toLowerCase().trim());
+        primaryArtistName(r.artistName || '').toLowerCase().trim() === primaryArtistName(artist).toLowerCase().trim());
       const prev = pinnedReleases[artist] || [];
       const prevKeys = new Set(prev.map(r => (r.title||'').toLowerCase().trim() + '|' + (r.date||'')));
       const fresh = [];
@@ -14995,7 +15017,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // The notification bell surfaces "new releases" alongside the existing
   // enrich/export/duplicate alerts.
   $('pinnedArtistsHelp').addEventListener('click', () => {
-    toast('Pin artists from any Discover card. SideCut checks iTunes for their newest songs and shows new ones here + on the bell.', 5000);
+    toast('Pin artists from any Discover card — collab partners are filtered to just the main artist. SideCut checks for new releases.', 5000);
   });
   $('newReleasesRefresh').addEventListener('click', () => checkPinnedArtistReleases());
 
@@ -15090,7 +15112,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     pinBtn.className = 'discover-pin-btn';
     pinBtn.style.cssText = 'padding:6px 10px; font-size:11px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink-dim); cursor:pointer;';
     const refreshPinBtn = () => {
-      const pinned = isPinnedArtist(r.artistName);
+      const pinned = isPinnedArtist(primaryArtistName(r.artistName));
       pinBtn.textContent = pinned ? '✓ Pinned' : '📌 Pin';
       pinBtn.style.color = pinned ? 'var(--coral)' : 'var(--ink-dim)';
       pinBtn.style.borderColor = pinned ? 'var(--coral)' : 'var(--line)';
@@ -15099,7 +15121,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     pinBtn.title = 'Pin this artist — SideCut tells you when they release new music';
     pinBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      togglePinArtist(r.artistName, r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : null);
+      togglePinArtist(primaryArtistName(r.artistName), r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : null);
       refreshPinBtn();
     });
     actions.appendChild(pinBtn);
