@@ -541,3 +541,21 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - All verified live in the browser (Discover collapsed "Your artists", Get song
   sheet with Spotisaver + big iframe + song link, fallback message, Spotisaver
   in the how-to text). No version bump per user request (still v47 / Bk-47).
+
+## v47 follow-up #2 (no version bump, Aug 17, 2026)
+- **Scrapped the embedded downloader sheet entirely.** The in-app "Get this
+  song" modal (`#downloaderBackdrop` + iframe + converter list + copy-link) is
+  gone — HTML, `openDownloaderSheet()`, `getDownloaderHosts()`/`downloaderHosts`,
+  `downloaderEmbedUrl`, and the close/backdrop/copy event listeners all removed.
+  Spotisaver (and every other Spotify-to-MP3 converter) sends `X-Frame-Options:
+  DENY` so the iframe was always falling back to a button anyway — it was
+  dead weight. "Get song" now just opens the track in Spotify (`window.open`)
+  with a toast telling the user to copy the link there and take it to any
+  converter themselves, exactly the pre-sheet flow. Same for new-release row
+  clicks. The "How to get a song" box at the top of Discover was rewritten to
+  match: 1. Get song → opens in Spotify, 2. Share → Copy link → paste into any
+  Spotify-to-MP3 converter, 3. + Files to import.
+- **Pinned artists note**: the "📌 Your artists" collapsible in Discover is
+  always in the DOM (collapsed by default); when empty it shows a "Pin artists
+  you love — search, tap a card, hit Pin" hint. Tap the 📌 summary to expand.
+  Pin any artist from their Discover card's Pin button.

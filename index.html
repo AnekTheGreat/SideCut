@@ -1697,8 +1697,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   </details>
   <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
     <b style="color:var(--coral);">How to get a song</b><br>
-    1. Tap <b>Get song</b> on any track — it opens the downloader with a copyable Spotify link.<br>
-    2. Paste it into <b>Spotisaver</b>, download the MP3, then use <b>+ Add songs ▾ → + Files</b> to import it into your library.
+    1. Tap <b>Get song</b> on any track — it opens the song in Spotify.<br>
+    2. In Spotify, tap <b>Share → Copy link</b>, then paste it into any Spotify-to-MP3 converter and download the MP3.<br>
+    3. Use <b>+ Add songs ▾ → + Files</b> to import the MP3 into your library.
   </div>
   <div id="discoverResults"></div>
   <audio id="discoverPreviewAudio" preload="none"></audio>
@@ -3019,36 +3020,6 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="updateLogBody" style="display:flex; flex-direction:column; gap:16px; max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
     <div class="modal-btns">
       <button class="cancel" id="updateLogClose" style="flex:1;">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- In-app downloader sheet: opens a Spotify-to-MP3 converter with the song's
-     link/term pre-filled. We try an embedded <iframe> first; many converter
-     sites send X-Frame-Options: DENY and refuse to load inside another site, so
-     the iframe is wrapped with an onError/onLoad fallback that reveals an
-     "Open in new tab" button + a copyable Spotify link. -->
-<div class="modal-backdrop" id="downloaderBackdrop">
-  <div class="modal" style="max-width:760px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <h3 style="margin:0;">Get this song</h3>
-      <button id="downloaderClose" class="cancel" style="padding:4px 10px;">Close</button>
-    </div>
-    <div id="downloaderTrackInfo" style="display:flex; gap:10px; align-items:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:10px; margin-bottom:12px;"></div>
-    <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.55; margin-bottom:10px;">
-      SideCut can't host or fetch MP3s itself. <b>Copy the song link below</b>, open Spotisaver, paste it into the box and hit Load. After the MP3 downloads, use <b>+ Add songs ▾ → + Files</b> to import it into your library.
-    </div>
-    <div id="downloaderConverters" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
-    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-      <input type="text" id="downloaderLinkInput" readonly style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:8px 10px; font-size:12px;">
-      <button id="downloaderCopyBtn" class="action-pill" style="padding:8px 14px; font-size:12px;">Copy link</button>
-    </div>
-    <div id="downloaderEmbedWrap" style="display:none; border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:6px; position:relative;">
-      <iframe id="downloaderFrame" style="width:100%; height:70vh; min-height:460px; border:0; background:var(--bg);"></iframe>
-      <div id="downloaderEmbedFallback" style="display:none; position:absolute; inset:0; background:var(--bg-raised); flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; text-align:center;">
-        <div style="font-size:14px; color:var(--ink);">Spotisaver blocks embedded loading — it needs to open on its own page.</div>
-        <button id="downloaderEmbedOpenBtn" class="action-pill primary" style="padding:10px 20px; font-size:14px;">Open Spotisaver in new tab</button>
-      </div>
     </div>
   </div>
 </div>
@@ -14773,17 +14744,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     list.querySelectorAll('.new-release-row').forEach(row => row.addEventListener('click', (e) => {
       if(e.target.closest('.nr-play')) return;
       const q = row.dataset.title + ' ' + row.dataset.artist;
-      // The "song to download" link: prefer the track's own Spotify URL when the
-      // iTunes lookup returned one, else a Spotify search for the song.
+      // Just open the song in Spotify — copy the link, then take it to any
+      // Spotify-to-MP3 converter yourself. SideCut no longer embeds a converter.
       const raw = row.dataset.link || '';
       const songLink = /spotify\.com/i.test(raw) ? raw : `https://open.spotify.com/search/${encodeURIComponent(q)}`;
-      openDownloaderSheet({
-        title: row.dataset.title,
-        artist: row.dataset.artist,
-        art: null,
-        link: songLink,
-        searchQuery: q,
-      });
+      try{ window.open(songLink, '_blank', 'noopener'); }catch(e){}
+      toast('Opened in Spotify — copy the song link, then paste it into any Spotify-to-MP3 converter.', 4500);
     }));
     updateNotifBadge();
   }
@@ -14952,7 +14918,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const dlBtn = document.createElement('button');
     dlBtn.className = 'discover-dl-btn';
     dlBtn.textContent = 'Get song';
-    dlBtn.title = 'Open this song in Spotify + the downloader to get its MP3';
+    dlBtn.title = 'Open this song in Spotify to copy its link';
     dlBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       triggerDiscoverDownload(card, r);
@@ -14992,96 +14958,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return card;
   }
 
-  // Spotify-to-MP3 converter. SideCut only opens it (it can't host or fetch
-  // audio itself). Default is Spotisaver (spotisaver.net) — the user's pick.
-  // Note: Spotisaver sends X-Frame-Options: DENY, so it can't be embedded in
-  // the iframe; the sheet falls back to an "Open in new tab" button for it.
-  // The list is editable (sidecut_downloaderHosts in localStorage) so power
-  // users can add converters that DO allow framing — those will render in the
-  // big iframe. Each entry's url(q) builds the converter URL from the search
-  // term; Spotisaver ignores the query (no deep-link support), so it just opens
-  // its home page and you paste the song's Spotify link (copied via the sheet).
-  let downloaderHosts = null;
-  function getDownloaderHosts(){
-    if(downloaderHosts) return downloaderHosts;
-    const def = [
-      { name:'Spotisaver', url:(q)=>'https://spotisaver.net/en' },
-    ];
-    try{
-      const stored = localStorage.getItem('sidecut_downloaderHosts');
-      if(stored){ const arr = JSON.parse(stored); if(Array.isArray(arr) && arr.length) downloaderHosts = arr; }
-    }catch(e){}
-    if(!downloaderHosts) downloaderHosts = def;
-    return downloaderHosts;
-  }
-
   function triggerDiscoverDownload(card, r){
-    // Open the in-app downloader sheet for this track. The "song to download"
-    // link copied into the sheet is a real Spotify link the user pastes into
-    // Spotisaver: prefer the track's own Spotify URL (r.trackViewUrl from the
-    // iTunes lookup), else fall back to a Spotify search URL for the song.
+    // "Get song" just opens the track in Spotify so the user can copy its link,
+    // then take it to any Spotify-to-MP3 converter themselves. SideCut doesn't
+    // embed or host any converter (they all block framing or go dead regularly).
     const q = (r.trackName || '') + ' ' + (r.artistName || '');
     const songLink = (r.trackViewUrl && /spotify\.com/i.test(r.trackViewUrl))
       ? r.trackViewUrl
       : `https://open.spotify.com/search/${encodeURIComponent(q)}`;
-    openDownloaderSheet({
-      title: r.trackName || 'Unknown',
-      artist: r.artistName || '',
-      art: r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg', '/200x200bb.jpg') : null,
-      link: songLink,
-      searchQuery: q,
-    });
-    toast('Opened the downloader — copy the song link, paste into Spotisaver, then import the MP3 with + Files.', 3600);
-  }
-
-  let downloaderEmbedUrl = '';
-  function openDownloaderSheet(opts){
-    const info = $('downloaderTrackInfo');
-    info.innerHTML = '';
-    if(opts.art){
-      const artEl = document.createElement('div');
-      artEl.style.cssText = 'width:48px; height:48px; border-radius:8px; background-size:cover; background-position:center; background-image:url("'+opts.art+'"); flex-shrink:0;';
-      info.appendChild(artEl);
-    }
-    const meta = document.createElement('div');
-    meta.style.cssText = 'flex:1; min-width:0;';
-    meta.innerHTML = `<div style="font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(opts.title)}</div>
-      <div style="font-size:12px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(opts.artist)}</div>`;
-    info.appendChild(meta);
-
-    $('downloaderLinkInput').value = opts.link;
-
-    const convWrap = $('downloaderConverters');
-    convWrap.innerHTML = '';
-    const hosts = getDownloaderHosts();
-    hosts.forEach((h, i) => {
-      const url = h.url(opts.searchQuery);
-      const btn = document.createElement('button');
-      btn.className = 'action-pill' + (i === 0 ? ' primary' : '');
-      btn.style.cssText = 'padding:9px 14px; font-size:13px; justify-content:space-between;';
-      btn.innerHTML = `<span>Open ${escapeHtml(h.name)}</span><span style="font-size:11px; color:var(--ink-dim);">new tab →</span>`;
-      btn.addEventListener('click', () => { try{ window.open(url, '_blank', 'noopener'); }catch(e){} });
-      convWrap.appendChild(btn);
-    });
-
-    // Try embedding the first converter; many refuse framing → show fallback.
-    const first = hosts[0];
-    downloaderEmbedUrl = first ? first.url(opts.searchQuery) : opts.link;
-    const frame = $('downloaderFrame');
-    const fallback = $('downloaderEmbedFallback');
-    const wrap = $('downloaderEmbedWrap');
-    fallback.style.display = 'none';
-    $('downloaderEmbedOpenBtn').onclick = () => { try{ window.open(downloaderEmbedUrl, '_blank', 'noopener'); }catch(e){} };
-    wrap.style.display = 'block';
-    let loaded = false;
-    frame.onload = () => { loaded = true; };
-    // If onLoad doesn't fire promptly the site is almost certainly blocking
-    // framing (X-Frame-Options/CSP) — reveal the fallback button.
-    setTimeout(() => { if(!loaded){ fallback.style.display = 'flex'; } }, 2500);
-    frame.onerror = () => { fallback.style.display = 'flex'; };
-    frame.src = downloaderEmbedUrl;
-
-    $('downloaderBackdrop').style.display = 'flex';
+    try{ window.open(songLink, '_blank', 'noopener'); }catch(e){}
+    toast('Opened in Spotify — copy the song link, then paste it into any Spotify-to-MP3 converter.', 4500);
   }
 
   function toggleDiscoverPreview(url, btn){
@@ -15125,13 +15011,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
-
-  $('downloaderClose').addEventListener('click', () => { $('downloaderBackdrop').style.display = 'none'; const f=$('downloaderFrame'); f.src='about:blank'; });
-  $('downloaderBackdrop').addEventListener('click', (e) => { if(e.target === $('downloaderBackdrop')){ $('downloaderBackdrop').style.display='none'; const f=$('downloaderFrame'); f.src='about:blank'; } });
-  $('downloaderCopyBtn').addEventListener('click', () => {
-    const inp = $('downloaderLinkInput'); inp.select(); inp.setSelectionRange(0, 99999);
-    try{ navigator.clipboard.writeText(inp.value); toast('Spotify link copied'); }catch(e){ document.execCommand('copy'); toast('Copied'); }
-  });
 
   // Play Billing: re-verify purchases on launch and whenever the app regains
   // focus (e.g. after returning from the Play billing sheet).
