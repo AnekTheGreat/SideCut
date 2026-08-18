@@ -1932,7 +1932,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <!-- Buy / redeem view: shown only when premium is NOT active -->
       <div id="premiumBuyView">
         <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Unlock Discover</div>
-        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:16px;">Discover — SideCut's built-in Spotify catalog browser with song previews and one-tap download — is a premium feature. Word-by-word synced lyrics, pinned artists tracking, and Sandbox customization are also premium features. Pick a plan below, or redeem a code.</div>
+        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:16px;">Discover — SideCut's built-in Spotify catalog browser with song previews and one-tap download — is a premium feature. Word-by-word synced lyrics (tap the button in the lyrics view to enable), pinned artists tracking, and Sandbox customization are also premium features. Pick a plan below, or redeem a code.</div>
 
         <!-- Plan cards -->
         <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
@@ -2641,6 +2641,10 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     color: var(--gold);
     font-weight: 700;
   }
+  #lyricsWordBtn.active {
+    border-color: var(--coral);
+    color: var(--coral);
+  }
   #lyricsContent {
     scrollbar-width: thin;
     scrollbar-color: var(--line) transparent;
@@ -2737,6 +2741,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
           Auto-scroll: On
         </button>
         <span style="font-size:10px; color:var(--ink-dim); align-self:center;">Auto-scroll may not be perfectly accurate</span>
+        <button id="lyricsWordBtn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; display:none;">
+          Word-by-word: Off
+        </button>
         <button id="lyricsTranslateBtn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; display:none;">
           Translate to English
         </button>
@@ -2748,6 +2755,10 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       </div>
     </div>
     <div id="lyricsContent" style="flex:1; overflow-y:auto; line-height:1.7; white-space:pre-wrap; word-wrap:break-word; min-height:150px; padding:0;">
+      <details id="lyricsWwInfo" style="display:none; margin-bottom:8px; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:8px; font-size:11px; color:var(--ink-dim); line-height:1.5;">
+        <summary style="cursor:pointer; font-weight:600; color:var(--coral);">Word-by-word lyrics (premium)</summary>
+        <p style="margin:6px 0 0;">Each word highlights as the music plays. Timing is estimated based on word length, so fast passages may feel slightly off. Tap the button above to toggle.</p>
+      </details>
       <div id="lyricsLoading" style="text-align:center; color:var(--ink-dim); padding:20px 0;">Searching for lyrics…</div>
       <div id="lyricsText" style="display:none;"></div>
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:20px 0;">
@@ -5405,6 +5416,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // ---------------- Lyrics ----------------
   let lyricsCurrentTrack = null;
   let lyricsAutoScroll = true;
+  let lyricsWordByWord = false;
+  (async () => { try { const r = await dbGet('meta','lyricsWordByWord'); if(r) lyricsWordByWord = !!r.value; }catch(e){} })();
   let lyricsFontSize = 16;
   let lyricsScrollInterval = null;
 
@@ -5629,6 +5642,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       currentLyricsSynced = isSynced;
       lyricsTranslated = false;
       if(tBtn){ tBtn.textContent = 'Translate to English'; tBtn.style.display = 'none'; }
+      if(isPremiumActive()){
+        $('lyricsWordBtn').style.display = '';
+        $('lyricsWordBtn').textContent = 'Word-by-word: ' + (lyricsWordByWord ? 'On' : 'Off');
+        $('lyricsWordBtn').classList.toggle('active', lyricsWordByWord);
+        $('lyricsWwInfo').style.display = lyricsWordByWord ? '' : 'none';
+      } else {
+        $('lyricsWordBtn').style.display = 'none';
+        $('lyricsWwInfo').style.display = 'none';
+      }
     }
 
     if (isSynced) {
@@ -5711,16 +5733,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             scrollLyricsToLine(container, currentLine);
           }
           // Word-by-word highlighting within the current line (premium)
-          if (isPremiumActive() && currentLine.dataset.wordline) {
+          if (lyricsWordByWord && currentLine.dataset.wordline) {
             const words = currentLine.querySelectorAll('.lyric-word');
             if (words.length > 0) {
               const nextLine = syncedLines[currentIdx + 1];
               const nextTime = nextLine ? parseFloat(nextLine.dataset.time) : Infinity;
-              const lineDuration = Math.max(0.3, nextTime - parseFloat(currentLine.dataset.time));
-              const wordDuration = lineDuration / words.length;
+              const lineTime = parseFloat(currentLine.dataset.time);
+              const lineDuration = Math.max(0.3, nextTime - lineTime);
+              // Weight word duration by character count for more natural pacing
+              let totalWeight = 0;
+              const wordWeights = [];
+              words.forEach(w => { const wt = Math.max(1, w.textContent.length); wordWeights.push(wt); totalWeight += wt; });
+              let accumulated = 0;
               words.forEach((w, wi) => {
-                const wordStart = parseFloat(currentLine.dataset.time) + wi * wordDuration;
-                const wordEnd = wordStart + wordDuration;
+                const wordStart = lineTime + (accumulated / totalWeight) * lineDuration;
+                accumulated += wordWeights[wi];
+                const wordEnd = lineTime + (accumulated / totalWeight) * lineDuration;
                 w.classList.toggle('current', currentTime >= wordStart && currentTime < wordEnd);
               });
             }
@@ -5831,6 +5859,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
   
   // Lyrics controls - always keep interval running for highlight
+  $('lyricsWordBtn').addEventListener('click', () => {
+    if(!isPremiumActive()){ toast('Word-by-word lyrics is a premium feature.'); return; }
+    lyricsWordByWord = !lyricsWordByWord;
+    $('lyricsWordBtn').textContent = 'Word-by-word: ' + (lyricsWordByWord ? 'On' : 'Off');
+    $('lyricsWordBtn').classList.toggle('active', lyricsWordByWord);
+    dbPut('meta', { key: 'lyricsWordByWord', value: lyricsWordByWord });
+    $('lyricsWwInfo').style.display = lyricsWordByWord ? '' : 'none';
+  });
   $('lyricsAutoScrollBtn').addEventListener('click', () => {
     lyricsAutoScroll = !lyricsAutoScroll;
     $('lyricsAutoScrollBtn').textContent = `Auto-scroll: ${lyricsAutoScroll ? 'On' : 'Off'}`;
