@@ -1910,7 +1910,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <!-- Buy / redeem view: shown only when premium is NOT active -->
       <div id="premiumBuyView">
         <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Unlock Discover</div>
-        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:16px;">Discover — SideCut's built-in Spotify catalog browser with song previews and one-tap download — is a premium feature. Pick a plan below, or redeem a code.</div>
+        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:16px;">Discover — SideCut's built-in Spotify catalog browser with song previews and one-tap download — is a premium feature. Word-by-word synced lyrics, pinned artists tracking, and Sandbox customization are also premium features. Pick a plan below, or redeem a code.</div>
 
         <!-- Plan cards -->
         <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
@@ -2609,6 +2609,15 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     font-weight: 600;
     background: color-mix(in srgb, var(--coral) 16%, transparent);
     transform: scale(1.02);
+  }
+  #lyricsText .lyric-line .lyric-word {
+    display: inline;
+    transition: color 0.15s ease;
+    color: inherit;
+  }
+  #lyricsText .lyric-line .lyric-word.current {
+    color: var(--gold);
+    font-weight: 700;
   }
   #lyricsContent {
     scrollbar-width: thin;
@@ -5671,10 +5680,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if (currentLine) {
           // Always update highlight
           if (currentIdx !== lastLyricsIdx) {
-            allLines.forEach(l => l.classList.remove('current'));
+            allLines.forEach(l => {
+              l.classList.remove('current');
+              l.querySelectorAll('.lyric-word').forEach(w => w.classList.remove('current'));
+            });
             currentLine.classList.add('current');
             lastLyricsIdx = currentIdx;
             scrollLyricsToLine(container, currentLine);
+          }
+          // Word-by-word highlighting within the current line (premium)
+          if (isPremiumActive() && currentLine.dataset.wordline) {
+            const words = currentLine.querySelectorAll('.lyric-word');
+            if (words.length > 0) {
+              const nextLine = syncedLines[currentIdx + 1];
+              const nextTime = nextLine ? parseFloat(nextLine.dataset.time) : Infinity;
+              const lineDuration = Math.max(0.3, nextTime - parseFloat(currentLine.dataset.time));
+              const wordDuration = lineDuration / words.length;
+              words.forEach((w, wi) => {
+                const wordStart = parseFloat(currentLine.dataset.time) + wi * wordDuration;
+                const wordEnd = wordStart + wordDuration;
+                w.classList.toggle('current', currentTime >= wordStart && currentTime < wordEnd);
+              });
+            }
           }
         }
       } else {
@@ -5729,6 +5756,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   
   function formatSyncedLyrics(lrc) {
     const lines = lrc.split('\n').filter(line => line.trim());
+    const isWordSync = isPremiumActive();
     return lines.map(line => {
       const match = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/);
       if (match) {
@@ -5736,11 +5764,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const secs = match[2];
         const text = match[4].trim();
         if (text) {
-          return `<div class="lyric-line" data-time="${parseInt(mins)*60 + parseInt(secs)}">${escapeHtml(text)}</div>`;
+          const time = parseInt(mins)*60 + parseInt(secs);
+          if (isWordSync) {
+            // Generate synthetic word timestamps evenly distributed across the line
+            // We'll assign each word a time that's evenly spaced within this line's duration
+            const words = text.split(/(\s+)/);
+            const wordSpans = words.map((w, i) => {
+              if (/^\s+$/.test(w)) return escapeHtml(w);
+              return '<span class="lyric-word" data-word="1">' + escapeHtml(w) + '</span>';
+            }).join('');
+            return '<div class="lyric-line" data-time="' + time + '" data-wordline="1">' + wordSpans + '</div>';
+          }
+          return '<div class="lyric-line" data-time="' + time + '">' + escapeHtml(text) + '</div>';
         }
       }
       return '';
-    }).filter(html => html !== '').join(''); // Filter out empty strings from non-lyric lines
+    }).filter(html => html !== '').join('');
   }
   
   $('lyricsBtn').addEventListener('click', () => {
@@ -14283,7 +14322,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <div class="hb-value gold">${pinnedArtists.length}</div><div class="hb-label">Pinned artists</div><div class="hb-hint">⤢</div>
       </div>`
     };
-    const homeOrderNow = normalizeHomeOrder(homeOrder).filter(k => homeHidden.indexOf(k) === -1);
+    const homeOrderNow = normalizeHomeOrder(homeOrder).filter(k => homeHidden.indexOf(k) === -1 && (k !== 'pinnedartists' || isPremiumActive()));
     bubbles.style.setProperty('--hb-s', (homeBubbleSize / 100).toFixed(2));
     bubbles.innerHTML = homeOrderNow.map(k => {
       if(k.indexOf('custom-') === 0){
@@ -14540,6 +14579,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         : `<div class="hb-empty">Play some songs to see your top artists here.</div>`;
     }
     else if(kind === 'pinnedartists'){
+      if(!isPremiumActive()){
+        ico.textContent = '\u{1F512}'; title.textContent = 'Premium feature';
+        body.innerHTML = '<div class="hb-empty">Pinned artists is a premium feature. Unlock it in Settings to track your favorite artists.</div><button class="hb-cta" id="hbCtaUnlockPA" style="background:transparent; color:var(--coral); border:1px solid var(--coral);">Unlock Premium</button>';
+        $('hbCtaUnlockPA').addEventListener('click', () => { closeHomeBubble(); openPremiumSettings(); });
+        return;
+      }
       ico.textContent = '\u{1F4CC}'; title.textContent = 'Your pinned artists';
       if(!pinnedArtists.length){
         body.innerHTML = '<div class="hb-empty">No pinned artists yet \u2014 search for an artist in Discover, tap their card, and hit Pin.</div><button class="hb-cta" id="hbCtaDiscoverPA" style="background:transparent; color:var(--coral); border:1px solid var(--coral);">Open Discover</button>';
