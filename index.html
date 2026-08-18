@@ -1685,16 +1685,11 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       </div>
       <div id="pinnedArtistsList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
       <div id="newReleasesSection" style="display:none;">
-        <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px; margin-top:4px;">
-          <details id="newReleasesDetails" style="flex:1;">
-            <summary style="display:flex; align-items:center; gap:6px; cursor:pointer; list-style:none; font-size:12px; color:var(--ink-dim);">
-              <svg id="newReleasesChevron" viewBox="0 0 24 24" style="width:14px; height:14px; transition:transform .2s; transform:rotate(0deg);"><path fill="currentColor" d="M9 6l6 6-6 6V6z"/></svg>
-              <span>🆕 New from your artists</span>
-            </summary>
-            <div id="newReleasesList" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
-          </details>
+        <div style="display:flex; align-items:center; gap:6px; margin:6px 0 8px;">
+          <span style="flex:1; font-size:12px; color:var(--ink-dim);">🆕 New from your artists</span>
           <button id="newReleasesRefresh" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer; flex-shrink:0;">Check now</button>
         </div>
+        <div id="newReleasesList" style="display:flex; flex-direction:column; gap:8px;"></div>
       </div>
     </div>
   </div>
@@ -14718,7 +14713,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function renderNewReleases(){
     const sec = $('newReleasesSection');
-    const det = $('newReleasesDetails');
     const list = $('newReleasesList');
     if(!sec || !list) return;
     // Flatten recent releases across all pinned artists, newest first.
@@ -14734,8 +14728,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       badge.style.display = hasUnseen ? 'inline-block' : 'none';
     }
     if(!recent.length){ sec.style.display = 'none'; return; }
-    sec.style.display = 'block';
-    if(det && !det.hasAttribute('data-toggled')) det.open = true; // expand by default until the user collapses it
+    sec.style.display = 'block'; // always visible when there are releases — no toggle/dropdown
     list.innerHTML = recent.map(rel => {
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date + 'T00:00:00Z').getTime())/86400000) : null;
       const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
@@ -14842,8 +14835,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     savePinnedArtists();
     renderNewReleases();
     if(totalNew > 0){
-      const det = $('newReleasesDetails');
-      if(det){ det.open = true; det.setAttribute('data-toggled', '1'); }  // reveal the new releases the check just found
       toast(`New release${totalNew>1?'s':''} from your pinned artist${totalNew>1?'s':''} — see Discover.`, 4000);
     }
     renderHomeExportPopup();
@@ -14855,19 +14846,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('pinnedArtistsHelp').addEventListener('click', () => {
     toast('Pin artists from any Discover card. SideCut checks iTunes for their newest songs and shows new ones here + on the bell.', 5000);
   });
-  // Rotate the "New from your artists" chevron to match its <details> state,
-  // and mark it user-toggled so a refresh no longer forces it open.
-  (function(){
-    const det = $('newReleasesDetails');
-    const chev = $('newReleasesChevron');
-    if(!det || !chev) return;
-    const sync = () => {
-      chev.style.transform = det.open ? 'rotate(90deg)' : 'rotate(0deg)';
-      det.setAttribute('data-toggled', '1');
-    };
-    if(det.open) chev.style.transform = 'rotate(90deg)';
-    det.addEventListener('toggle', sync);
-  })();
   $('newReleasesRefresh').addEventListener('click', () => checkPinnedArtistReleases());
 
   function renderDiscoverChips(){
