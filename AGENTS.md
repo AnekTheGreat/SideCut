@@ -501,3 +501,43 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   popup subtitle (the changelog entry title renders there). Bundles the
   earlier-session work (Discover downloader, pinned artists + release check,
   auto-clean-on-import, unified Home progress card) into the same release.
+
+## v47 follow-up (no version bump, Aug 17, 2026)
+- **Discover "Get song" → Spotisaver only**: the converter list
+  (`getDownloaderHosts()` ~line 14969) was trimmed from three (SpotifyMate /
+  Spotify-downloader.com / spotify-downloader.net) to just **Spotisaver**
+  (`https://spotisaver.net/en`). Spotisaver sends `X-Frame-Options: DENY` so it
+  can't be iframed — the sheet's fallback ("Spotisaver blocks embedded loading
+  — it needs to open on its own page." + "Open Spotisaver in new tab") handles
+  it. The list is still editable via `sidecut_downloaderHosts` in localStorage
+  for power users who want a frameable converter.
+- **Big iframe**: downloader iframe grew from 340px → `height:70vh;
+  min-height:460px`; modal max-width 560px → 760px. (Won't help Spotisaver
+  itself, but any frameable converter a user adds now has usable real estate.)
+- **Copy-link is the song's Spotify link**: `triggerDiscoverDownload` (~14982)
+  and the new-release row handler now pass a real Spotify URL — prefer the
+  track's own `trackViewUrl` (when the iTunes lookup returned one), else a
+  Spotify search URL built from title+artist. The "Copy link" field holds THAT
+  (what the user pastes into Spotisaver), not a generic Spotify search page.
+- **Pinned artists moved into a sleek collapsible**: the 📌 Pinned artists +
+  🆕 New releases sections used to sit bluntly in the middle of Discover. They
+  are now one `<details id="pinnedArtistsDetails">` ("📌 Your artists",
+  ~line 1676) collapsed by default, with a count ("N pinned") and a NEW badge
+  that appears when there are unseen releases. Auto-opens (`det.open = true`)
+  when a release check finds new songs so the user actually sees them.
+- **30s preview on new releases**: `fetchArtistReleases` now stores
+  `previewUrl` on each release; `renderNewReleases` (~14731) renders a round ▶
+  play button per row that calls `toggleDiscoverPreview(url, btn)` (reuses the
+  existing Discover preview audio + play/pause icon swap). stopPropagation so
+  the row's own click (open downloader) doesn't fire.
+- **Watermark remover no longer runs on every refresh**: removed the
+  `if(watermarkEnabled) applyWatermarkToAll();` call on the boot path
+  (~line 13951) that re-cleaned the whole library every load, churning the DB
+  + firing the "Cleaned N songs" toast every single reload. Watermark cleaning
+  now happens ONLY when a new song is imported (`cleanOnImport` on the three
+  import paths: ~8760, ~8886, ~10882) or when the user taps Apply/Reset in
+  Settings → More → Watermark. Matches the user's intent: "only do that when a
+  new song comes in."
+- All verified live in the browser (Discover collapsed "Your artists", Get song
+  sheet with Spotisaver + big iframe + song link, fallback message, Spotisaver
+  in the how-to text). No version bump per user request (still v47 / Bk-47).
