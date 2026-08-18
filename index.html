@@ -3609,7 +3609,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       root.setProperty('--gold', th.gold);
     }
     currentTheme = key;
-    document.body.classList.remove('theme-dyn-aurora', 'theme-dyn-synthwave', 'theme-dyn-ocean', 'theme-dyn-ember', 'theme-dyn-galaxy', 'theme-dyn-cyberpunk', 'theme-dyn-glacier');
+    document.body.classList.remove(...[...document.body.classList].filter(c => c.startsWith('theme-dyn-')));
     if(th.dynamic) document.body.classList.add('theme-dyn-' + th.dynamic);
     if(th.rgbPlus){
       const a = activeAudio();
@@ -3624,6 +3624,10 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 
   function renderThemeOptions(){
     const container = $('themeOptions');
+    // Save collapsible open/close state before re-render
+    const prevDetails = container.querySelectorAll('details.theme-group');
+    const prevOpen = new Set();
+    prevDetails.forEach(d => { if(d.open) prevOpen.add(d.querySelector('summary')?.textContent?.trim()); });
     container.innerHTML = '';
     const groups = { static: [], dynamic: [] };
     Object.keys(THEMES).forEach(key => {
@@ -3631,13 +3635,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       const th = THEMES[key];
       (th.rgb || th.dynamic ? groups.dynamic : groups.static).push(key);
     });
-    // Both groups render collapsed; they only open when the user taps the
-    // summary. Selecting a theme rebuilds the list, which recreates both
-    // groups closed — the picker always settles back to its default
-    // collapsed state after every switch. (Setting .open/removeAttribute
-    // from inside the click handler does NOT reliably close a <details>
-    // the user opened; only replacing the element works.)
-    container.innerHTML = themeGroupHTML('Static themes', groups.static, false) + themeGroupHTML('Dynamic themes (animated)', groups.dynamic, false);
+    // Static starts open, Dynamic collapsed — but user can toggle either.
+    // State is restored after re-render so the sections stay as the user left them.
+    container.innerHTML = themeGroupHTML('Static themes', groups.static, true) + themeGroupHTML('Dynamic themes (animated)', groups.dynamic, false);
+    // Restore collapsible open/close state
+    container.querySelectorAll('details.theme-group').forEach(d => {
+      const summaryText = d.querySelector('summary')?.textContent?.trim();
+      if(prevOpen.has(summaryText)) d.open = true;
+    });
     container.querySelectorAll('[data-theme-key]').forEach(btn => {
       btn.addEventListener('click', () => {
         const key = btn.dataset.themeKey;
