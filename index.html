@@ -1671,28 +1671,6 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <input type="text" id="discoverSearch" placeholder="Search songs, artists, albums…">
     <button class="action-pill primary" id="discoverSearchBtn" style="padding:9px 16px;">Search</button>
   </div>
-  <div id="pinnedArtistsDetails" style="margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); overflow:hidden;">
-    <div style="padding:10px 14px; font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:8px;">
-      <span style="font-size:15px;">📌</span>
-      <span style="flex:1;">Your artists</span>
-      <span id="pinnedArtistsCount" style="font-size:11px; color:var(--ink-dim); font-weight:400;"></span>
-      <span id="pinnedArtistsNewBadge" style="display:none; font-size:10px; color:var(--bg); background:var(--coral); border-radius:8px; padding:1px 6px; font-weight:600;">NEW</span>
-    </div>
-    <div style="padding:10px 14px 12px; border-top:1px solid var(--line);">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-        <span style="font-size:12px; color:var(--ink-dim);">Pinned artists</span>
-        <button id="pinnedArtistsHelp" style="background:none; border:none; color:var(--ink-dim); font-size:12px; cursor:pointer; padding:0;">?</button>
-      </div>
-      <div id="pinnedArtistsList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
-      <div id="newReleasesSection" style="display:none;">
-        <div style="display:flex; align-items:center; gap:6px; margin:6px 0 8px;">
-          <span style="flex:1; font-size:12px; color:var(--ink-dim);">🆕 New from your artists</span>
-          <button id="newReleasesRefresh" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer; flex-shrink:0;">Check now</button>
-        </div>
-        <div id="newReleasesList" style="display:flex; flex-direction:column; gap:8px;"></div>
-      </div>
-    </div>
-  </div>
   <div id="discoverChips"></div>
   <div id="discoverStatus">Search for any song or tap a category to start browsing.</div>
   <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
@@ -4512,7 +4490,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let sandboxShowAlbum = false;
   let actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle']; // strip items in default order
   let customQuickActions = []; // {id, label, type, value} — type: 'url' | 'playlist' | 'play'
-  const HOME_BUBBLE_KINDS = ['stats','notifications','library','nowplaying','topsong','artists','favorites','playlists','shortcuts'];
+  const HOME_BUBBLE_KINDS = ['stats','notifications','pinnedartists','library','nowplaying','topsong','artists','favorites','playlists','shortcuts'];
   let homeOrder = HOME_BUBBLE_KINDS.slice();
   let homeSlots = { A: null, B: null, C: null };
   let homeSlotSel = 'A';
@@ -4892,6 +4870,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     fav:       '<svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3.2 1.2 4 2.5.8-1.3 2-2.5 4-2.5 3.5 0 5 3.5 3.5 6.5C19 16.5 12 21 12 21z"/></svg>',
     playlists: '<svg viewBox="0 0 24 24"><path d="M4 5h16v3H4zm0 5.5h16v3H4zm0 5.5h10v3H4zm12-1a3 3 0 100 6 3 3 0 000-6z"/></svg>',
     shortcuts: '<svg viewBox="0 0 24 24"><path d="M13 3l1.5 5.5L20 10l-5.5 1.5L13 17l-1.5-5.5L6 10l5.5-1.5z"/></svg>',
+    pin:       '<svg viewBox="0 0 24 24"><path d="M17 4v7l2 3v2h-6v5l-1 1-1-1v-5H5v-2l2-3V4c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2zM9 4v7.75L7.5 14h9L15 11.75V4H9z"/></svg>',
     custom:    '<svg viewBox="0 0 24 24"><path d="M13 3l1.5 5.5L20 10l-5.5 1.5L13 17l-1.5-5.5L6 10l5.5-1.5z"/></svg>'
   };
 
@@ -14130,8 +14109,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       // Always re-render the pinned-artists + new-releases sections when Discover
       // opens, so they're never left empty even if the boot render was missed.
-      if(typeof renderPinnedArtists === 'function') renderPinnedArtists();
-      if(typeof renderNewReleases === 'function') renderNewReleases();
+      // Pinned artists are now a Home bubble
     }
     if(!isDiscover) stopDiscoverPreview();
     if(isHome){
@@ -14299,8 +14277,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <div class="hb-glow"></div><div class="hb-ico">${HB_ICONS.shortcuts}</div>
         <div class="hb-value" style="font-size:14px;">Quick actions</div>
         <div class="hb-label">Settings · Discover · Playlists · Add songs</div><div class="hb-hint">⤢</div>
-      </div>
-    `
+      </div>`,
+      pinnedartists: `      <div class="home-bubble" data-bubble="pinnedartists">
+        <div class="hb-glow"></div><div class="hb-ico">${HB_ICONS.pin}</div>
+        <div class="hb-value gold">${pinnedArtists.length}</div><div class="hb-label">Pinned artists</div><div class="hb-hint">⤢</div>
+      </div>`
     };
     const homeOrderNow = normalizeHomeOrder(homeOrder).filter(k => homeHidden.indexOf(k) === -1);
     bubbles.style.setProperty('--hb-s', (homeBubbleSize / 100).toFixed(2));
@@ -14558,6 +14539,31 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         ? topArtists.map(([a,c],i) => `<div class="hb-list-row"><span class="hb-list-name">${i+1}. ${escapeHtml(a)}</span><span class="hb-list-count">${c}×</span></div>`).join('')
         : `<div class="hb-empty">Play some songs to see your top artists here.</div>`;
     }
+    else if(kind === 'pinnedartists'){
+      ico.textContent = '\u{1F4CC}'; title.textContent = 'Your pinned artists';
+      if(!pinnedArtists.length){
+        body.innerHTML = '<div class="hb-empty">No pinned artists yet \u2014 search for an artist in Discover, tap their card, and hit Pin.</div><button class="hb-cta" id="hbCtaDiscoverPA" style="background:transparent; color:var(--coral); border:1px solid var(--coral);">Open Discover</button>';
+        $('hbCtaDiscoverPA').addEventListener('click', () => { closeHomeBubble(); navigate('discover'); });
+      } else {
+        body.innerHTML = pinnedArtists.map(a => {
+          const bg = a.art ? 'background-image:url("' + escapeHtml(a.art) + '");' : 'background:var(--bg-raised);';
+          return '<div class="hb-list-row pinned-artist-row" data-name="' + escapeHtml(a.name) + '" style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">' +
+            '<div style="width:34px; height:34px; border-radius:50%; background-size:cover; background-position:center; flex-shrink:0; ' + bg + '"></div>' +
+            '<span style="flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(a.name) + '</span>' +
+            '<button class="unpin-artist" data-name="' + escapeHtml(a.name) + '" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer;">Unpin</button>' +
+            '</div>';
+        }).join('') + '<button class="hb-cta" id="hbCtaDiscoverPA" style="background:transparent; color:var(--coral); border:1px solid var(--coral); margin-top:12px;">Open Discover</button>';
+        body.querySelectorAll('.unpin-artist').forEach(b => b.addEventListener('click', () => { togglePinArtist(b.dataset.name); openHomeBubble('pinnedartists'); }));
+        body.querySelectorAll('.pinned-artist-row').forEach(row => {
+          row.addEventListener('click', (e) => {
+            if(e.target.classList.contains('unpin-artist')) return;
+            closeHomeBubble(); navigate('discover');
+            setTimeout(() => runDiscoverSearch(row.dataset.name, row.dataset.name, null), 100);
+          });
+        });
+        $('hbCtaDiscoverPA').addEventListener('click', () => { closeHomeBubble(); navigate('discover'); });
+      }
+    }
     else if(kind === 'shortcuts'){
       ico.textContent = '✨'; title.textContent = 'Quick actions';
       body.innerHTML = `
@@ -14711,7 +14717,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       toast(`Pinned ${name} — we'll watch for new releases`);
     }
     savePinnedArtists();
-    renderPinnedArtists();
+    // Re-render the Home bubble if it's open, else just refresh Home
+    if($('homeBubbleOverlay').classList.contains('open')){
+      openHomeBubble('pinnedartists');
+    }
+    renderHome();
     updateNotifBadge();
   }
 
