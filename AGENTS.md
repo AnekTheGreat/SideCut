@@ -474,3 +474,30 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   `activePlaylist` to it, and renders tabs/list so the user lands on it.
 - Version 46.7 → 46.7.5 (SW cache sidecut-shell-v46.7 → sidecut-shell-v46.7.5).
   Date Aug 17 7:30 pm EDT.
+
+## Theme picker collapse (no version bump → bumped to v47, Aug 17, 2026)
+- The theme picker (`renderThemeOptions()` ~line 3628) already does what users
+  ask: both Static and Dynamic `<details>` render collapsed
+  (`themeGroupHTML(..., false)`), open only when the user taps the summary, and
+  collapse after picking a theme (the click handler calls `renderThemeOptions()`
+  again, which rebuilds both groups closed). Verified in-browser on the live
+  v47 build (Static → pick Violet → collapsed; Dynamic → pick Aurora →
+  collapsed; both-open → pick static → both collapsed).
+- **Non-obvious gotcha**: you CANNOT collapse a user-opened `<details>` from
+  inside the button's click handler via `d.open = false` /
+  `d.removeAttribute('open')` — it silently fails to close, even when deferred
+  via `requestAnimationFrame`. The checkmark-in-place update succeeds but the
+  group stays open. Only REPLACING the `<details>` element (i.e. rebuilding
+  `container.innerHTML`) reliably collapses it. So the rebuild-on-select
+  approach is mandatory; don't "optimize" it to an in-place checkmark move +
+  `removeAttribute` — it looks like it should work and doesn't.
+- **Version bump to v47 (codename "Bk-47", after the song) to bust the stale
+  SW** that was serving the pre-v46.4-followup shell (older code had
+  `themeGroupHTML('Static themes', groups.static, true)` — open by default,
+  click handler didn't rebuild). `APP_VERSION` 46.7.5 → 47, `sw.js CACHE_NAME`
+  sidecut-shell-v46.7.5 → sidecut-shell-v47, CHANGELOG entry titled
+  "Bk-47 — ...". The "Bk-47" codename also shows in the version label
+  (`#currentVersionLabel` → "SideCut v47 · Bk-47") and as the What's-New
+  popup subtitle (the changelog entry title renders there). Bundles the
+  earlier-session work (Discover downloader, pinned artists + release check,
+  auto-clean-on-import, unified Home progress card) into the same release.

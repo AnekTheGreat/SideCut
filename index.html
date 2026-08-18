@@ -1673,11 +1673,24 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   </div>
   <div id="discoverChips"></div>
   <div id="discoverStatus">Search for any song or tap a category to start browsing.</div>
+  <div id="pinnedArtistsSection" style="margin-bottom:16px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+      <h3 style="margin:0; font-size:15px;">📌 Pinned artists</h3>
+      <button id="pinnedArtistsHelp" style="background:none; border:none; color:var(--ink-dim); font-size:12px; cursor:pointer; padding:0;">?</button>
+    </div>
+    <div id="pinnedArtistsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
+  <div id="newReleasesSection" style="display:none; margin-bottom:16px;">
+    <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+      <h3 style="margin:0; font-size:15px;">🆕 New from your artists</h3>
+      <button id="newReleasesRefresh" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:2px 8px; font-size:11px; cursor:pointer;">Check now</button>
+    </div>
+    <div id="newReleasesList" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
   <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
     <b style="color:var(--coral);">How to get a song</b><br>
-    1. Tap <b>Get song</b> on any track — it opens that song in <b>Spotify</b>.<br>
-    2. Go to a <b>Spotify-to-MP3</b> downloader and paste the song's link (Share → Copy link in Spotify).<br>
-    3. Download the MP3, then use <b>+ Add songs ▾ → + Files</b> above to import it into your library.
+    1. Tap <b>Get song</b> on any track — it opens the in-app downloader with a Spotify-to-MP3 converter.<br>
+    2. Download the MP3, then use <b>+ Add songs ▾ → + Files</b> above to import it into your library.
   </div>
   <div id="discoverResults"></div>
   <audio id="discoverPreviewAudio" preload="none"></audio>
@@ -2307,7 +2320,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="viewUpdateLogBtn" style="text-align:center; width:100%;">Update log</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v44</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v47 · Bk-47</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -2968,7 +2981,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="brand-mark" style="width:26px; height:26px;"></div>
       <div>
-        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v44</h3>
+        <h3 id="whatsNewVersion" style="font-size:17px;">What's new in v47</h3>
         <div style="font-size:11.5px; color:var(--ink-dim);">SideCut update</div>
       </div>
     </div>
@@ -2998,6 +3011,36 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="updateLogBody" style="display:flex; flex-direction:column; gap:16px; max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
     <div class="modal-btns">
       <button class="cancel" id="updateLogClose" style="flex:1;">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- In-app downloader sheet: opens a Spotify-to-MP3 converter with the song's
+     link/term pre-filled. We try an embedded <iframe> first; many converter
+     sites send X-Frame-Options: DENY and refuse to load inside another site, so
+     the iframe is wrapped with an onError/onLoad fallback that reveals an
+     "Open in new tab" button + a copyable Spotify link. -->
+<div class="modal-backdrop" id="downloaderBackdrop">
+  <div class="modal" style="max-width:560px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h3 style="margin:0;">Get this song</h3>
+      <button id="downloaderClose" class="cancel" style="padding:4px 10px;">Close</button>
+    </div>
+    <div id="downloaderTrackInfo" style="display:flex; gap:10px; align-items:center; padding:10px; background:rgba(255,255,255,0.03); border-radius:10px; margin-bottom:12px;"></div>
+    <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.55; margin-bottom:10px;">
+      SideCut can't host or fetch MP3s itself. Pick a converter below — it opens in a new tab with this song's link filled in. After it finishes, use <b>+ Add songs ▾ → + Files</b> to import the MP3.
+    </div>
+    <div id="downloaderConverters" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+      <input type="text" id="downloaderLinkInput" readonly style="flex:1; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:8px 10px; font-size:12px;">
+      <button id="downloaderCopyBtn" class="action-pill" style="padding:8px 14px; font-size:12px;">Copy link</button>
+    </div>
+    <div id="downloaderEmbedWrap" style="display:none; border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:6px; position:relative;">
+      <iframe id="downloaderFrame" style="width:100%; height:340px; border:0; background:var(--bg);"></iframe>
+      <div id="downloaderEmbedFallback" style="display:none; position:absolute; inset:0; background:var(--bg-raised); flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:16px; text-align:center;">
+        <div style="font-size:13px; color:var(--ink);">This converter blocks embedded loading.</div>
+        <button id="downloaderEmbedOpenBtn" class="action-pill primary" style="padding:8px 16px; font-size:13px;">Open in new tab</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3591,6 +3634,12 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       const th = THEMES[key];
       (th.rgb || th.dynamic ? groups.dynamic : groups.static).push(key);
     });
+    // Both groups render collapsed; they only open when the user taps the
+    // summary. Selecting a theme rebuilds the list, which recreates both
+    // groups closed — the picker always settles back to its default
+    // collapsed state after every switch. (Setting .open/removeAttribute
+    // from inside the click handler does NOT reliably close a <details>
+    // the user opened; only replacing the element works.)
     container.innerHTML = themeGroupHTML('Static themes', groups.static, false) + themeGroupHTML('Dynamic themes (animated)', groups.dynamic, false);
     container.querySelectorAll('[data-theme-key]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -4508,6 +4557,36 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return text.replace(/^(?:[0-9]|[1-4][0-9]|50)\.\s*/, '');
   }
 
+  // ALWAYS-on import cleaner: strips the obvious "watermark" cruft Spotify-to-MP3
+  // downloads and CSV exports leave in filenames/titles — numbered prefixes
+  // ("1.", "2."), radio-edit/live/remix tags, "(feat. X)" — so songs land in the
+  // library with clean names even when the watermark remover toggle is off. Uses
+  // the user's saved patterns (which ship with sensible defaults) so it stays
+  // configurable from the Sandbox → Watermark section. Returns {name, artist}
+  // so callers can update both fields at once and detect whether anything changed.
+  function cleanOnImport(rawName, rawArtist){
+    let name = (rawName || '').trim();
+    let artist = (rawArtist || '').trim();
+    let changed = false;
+    // Always strip leading numbered prefixes from both fields.
+    const strippedName = removeNumberPrefix(name);
+    const strippedArtist = removeNumberPrefix(artist);
+    if(strippedName !== name){ name = strippedName; changed = true; }
+    if(strippedArtist !== artist){ artist = strippedArtist; changed = true; }
+    // Run the configured watermark patterns regardless of the toggle — they're
+    // the user's own list and only touch the literal tags listed there.
+    const cleanedName = applyWatermarkPatterns(name, false);
+    const cleanedArtist = applyWatermarkPatterns(artist, true);
+    if(cleanedName !== name){ name = cleanedName; changed = true; }
+    if(cleanedArtist !== artist){ artist = cleanedArtist; changed = true; }
+    // If the artist came in with a number prefix the title/artist were likely
+    // swapped (track number lived in the artist slot) — flip them back.
+    if(hasNumberPrefix(rawArtist || '') && name && artist){
+      const tmp = name; name = artist; artist = tmp; changed = true;
+    }
+    return { name: name || rawName || 'Untitled', artist: artist || 'Unknown artist', changed };
+  }
+
   function hasNumberPrefix(text){
     if(!text) return false;
     return /^(?:[0-9]|[1-4][0-9]|50)\.\s/.test(text);
@@ -4520,34 +4599,42 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function applyWatermarkToAll(){
-    allTracks.forEach(t => {
-      // Skip tracks that have been manually edited
-      if(t.manualOverride) return;
-      
-      const origName = t.name || '';
-      const origArtist = t.artist || '';
-      
-      // Apply patterns (artist patterns include number prefixes, title patterns don't)
-      let newName = applyWatermarkPatterns(origName, false);
-      let newArtist = applyWatermarkPatterns(origArtist, true);
-      
-      // Remove number prefixes
-      newName = removeNumberPrefix(newName);
-      newArtist = removeNumberPrefix(newArtist);
-      
-      // If artist had number prefix, swap name and artist
-      if(hasNumberPrefix(origArtist) || hasNumberPrefix(origName)) {
-        const temp = newName;
-        newName = newArtist;
-        newArtist = temp;
+    // Run as an async, cancellable-ish loop so the per-track progress is
+    // surfaced on the Home background-task card (watermarkCleanState).
+    const targets = allTracks.filter(t => !t.manualOverride);
+    watermarkCleanState = { active:true, total:targets.length, done:0, changed:0, finishedAt:0, seen:false };
+    renderHomeExportPopup();
+    // Yield every ~25 tracks so the UI/progress card repaint and we don't
+    // block playback on a huge library.
+    (async () => {
+      for(let i=0;i<targets.length;i++){
+        const t = targets[i];
+        const origName = t.name || '';
+        const origArtist = t.artist || '';
+        let newName = applyWatermarkPatterns(origName, false);
+        let newArtist = applyWatermarkPatterns(origArtist, true);
+        newName = removeNumberPrefix(newName);
+        newArtist = removeNumberPrefix(newArtist);
+        if(hasNumberPrefix(origArtist) || hasNumberPrefix(origName)) {
+          const temp = newName; newName = newArtist; newArtist = temp;
+        }
+        if(newName !== origName || newArtist !== origArtist || hasNumberPrefix(origArtist) || hasNumberPrefix(origName)){
+          t.name = newName; t.artist = newArtist;
+          watermarkCleanState.changed++;
+          persistTrackMeta(t);
+        }
+        watermarkCleanState.done++;
+        if(i % 25 === 0){ renderHomeExportPopup(); await new Promise(r=>setTimeout(r,0)); }
       }
-      
-      t.name = newName;
-      t.artist = newArtist;
-    });
-    renderList();
-    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
-    if(cur) updateNpDisplay(cur);
+      renderList();
+      const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
+      if(cur) updateNpDisplay(cur);
+      saveMeta();
+      watermarkCleanState.active = false;
+      watermarkCleanState.finishedAt = Date.now();
+      toast(`Cleaned ${watermarkCleanState.changed} track${watermarkCleanState.changed===1?'':'s'}`);
+      renderHomeExportPopup();
+    })();
   }
 
   function updateSandboxToggles(){
@@ -6216,7 +6303,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '46.7.5';
+  const APP_VERSION = '47';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6229,6 +6316,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '47', date: 'August 17, 2026 at 7:30 pm EDT', title: 'Bk-47 — theme picker settles to collapsed + Discover downloader, pinned artists, auto-clean imports, Home progress', items: [
+      'Theme picker no longer stays open after you pick a theme — the Static and Dynamic groups render collapsed, open only when you tap the summary, and collapse back after every switch (so the list never sits auto-opened)',
+      'Discover now has an in-app downloader sheet: tap "Get song" on any track and it opens a Spotify-to-MP3 converter with the link pre-filled, with a copy-link and open-in-new-tab fallback when a converter blocks embedding',
+      'Pin your favorite artists in Discover — a 📌 Pinned artists section shows your picks, and a "New from your artists" check surfaces recent releases (stored locally, no account)',
+      'Watermark cleaning now runs automatically on import — numbered prefixes ("1."), radio-edit/live/remix tags, and "(feat. X)" are stripped from titles/artists as songs come in, even with the Watermark Remover toggle off (it still only touches the literal patterns you configured)',
+      'Home now shows progress for every background task — export, cover fetch, lyrics fetch, metadata re-fetch, and CSV import each get a live card while running, stay if you navigate away and come back, and auto-hide when done',
+    ]},
     { version: '46.7.5', date: 'August 17, 2026 at 7:30 pm EDT', title: 'Home progress + playlist-context playback + icon fixes', items: [
       'Listening stats bubble icon was invisible (its bar-chart path was open strokes with fill, which renders nothing) — now solid filled bars that actually show',
       'Background-task progress (export, cover fetch, lyrics fetch, metadata re-fetch, CSV import) now always appears as a card on the Home page while running, and stays there if you navigate away and come back — previously only export progress showed on Home',
@@ -7172,7 +7266,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const hasDupAlert = typeof getDuplicateGroups === 'function' && getDuplicateGroups().length > 0;
     const hasEnrichAlert = enrichState.active || (enrichState.finishedAt && !enrichState.seen);
     const hasExportAlert = exportState.active || (exportState.finishedAt && !exportState.seen);
-    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert) ? 'block' : 'none';
+    const hasReleasesAlert = (typeof hasUnseenReleases === 'function') && hasUnseenReleases();
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || hasReleasesAlert) ? 'block' : 'none';
   }
   function renderNotifPanel(){
     const body = $('notifBody');
@@ -7191,6 +7286,30 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       summaryHtml += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
           <div style="font-weight:600; font-size:13.5px; color:var(--coral);">⚠ ${dupGroups.length} duplicate song${dupGroups.length>1?'s':''} found</div>
+        </div>
+      `;
+    }
+    // Pinned-artist new releases — the freshest 8, across all pinned artists.
+    if((typeof hasUnseenReleases === 'function') && hasUnseenReleases()){
+      const all = [];
+      Object.keys(pinnedReleases).forEach(artist => {
+        (pinnedReleases[artist] || []).forEach(r => { if(!r.seen) all.push({ ...r, artist }); });
+      });
+      all.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+      const fresh = all.slice(0, 8);
+      summaryHtml += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
+          <div style="font-weight:600; font-size:13.5px; color:var(--coral);">🆕 ${fresh.length} new release${fresh.length>1?'s':''} from pinned artists</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-top:4px;">${escapeHtml(fresh.map(r => r.artist).filter((v,i,a)=>a.indexOf(v)===i).slice(0,3).join(', '))}${all.length>3?'…':''}</div>
+        </div>
+      `;
+      html += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">🆕 New from your pinned artists</div>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            ${fresh.map(r => `<div style="font-size:12px; color:var(--ink-dim);"><b style="color:var(--ink);">${escapeHtml(r.title)}</b> — ${escapeHtml(r.artist)}${r.date ? ' · ' + r.date : ''}</div>`).join('')}
+          </div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:6px;">Tap Discover → New from your artists to get any of these.</div>
         </div>
       `;
     }
@@ -7221,6 +7340,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function openNotif(){
     enrichState.seen = true;
     exportState.seen = true;
+    if(typeof markReleasesSeen === 'function') markReleasesSeen();
     renderNotifPanel();
     $('notifSummary').style.display = 'flex';
     $('notifExpandBtn').style.display = 'block';
@@ -7276,6 +7396,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Exports run fully async and never touch the audio element, so playback keeps going.
   let exportState = { active:false, phase:'idle', kind:'', total:0, done:0,
     bytesDone:0, totalBytes:0, startedAt:0, finishedAt:0, seen:true, lastErr:'' };
+
+  // Watermark-clean progress (manual "Apply" in Sandbox → Watermark, and the
+  // bulk re-clean). Kept small because cleaning is in-process and fast, but the
+  // user asked for it to show on Home — so it's a tracked background task.
+  let watermarkCleanState = { active:false, total:0, done:0, changed:0, finishedAt:0, seen:true };
 
   async function loadEnrichState(){
     try{
@@ -7646,6 +7771,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           </div>
         </div>`);
     }
+    if(typeof watermarkCleanState !== 'undefined' && watermarkCleanState && watermarkCleanState.active){
+      const pct = watermarkCleanState.total ? Math.round((watermarkCleanState.done / watermarkCleanState.total) * 100) : 0;
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:18px;">🧽</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Removing watermarks</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${watermarkCleanState.done}/${watermarkCleanState.total} songs${watermarkCleanState.changed ? ' · ' + watermarkCleanState.changed + ' cleaned' : ''}</div>
+          </div>
+        </div>
+        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
+    }
+    if(typeof watermarkCleanState !== 'undefined' && watermarkCleanState && watermarkCleanState.finishedAt && !watermarkCleanState.seen){
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:18px; color:var(--coral);">✓</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Watermarks removed</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">Cleaned ${watermarkCleanState.changed} song${watermarkCleanState.changed===1?'':'s'}.</div>
+          </div>
+        </div>`);
+    }
     if(bgImportState && bgImportState.total && bgImportState.completed < bgImportState.total){
       const pct = bgImportState.total ? Math.round((bgImportState.completed / bgImportState.total) * 100) : 0;
       const dups = bgImportState.duplicates || 0;
@@ -7658,6 +7805,30 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           </div>
         </div>
         <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
+    }
+    // Pinned-artist new-release check (covers "importing anything" — we treat the
+    // periodic catalog check as a background task so it shows on Home too).
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active){
+      const pct = pinnedCheckState.total ? Math.round((pinnedCheckState.done / pinnedCheckState.total) * 100) : 0;
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:18px;">📌</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Checking pinned artists for new releases</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${pinnedCheckState.done}/${pinnedCheckState.total} artists</div>
+          </div>
+        </div>
+        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
+    }
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.finishedAt && !pinnedCheckState.seen && pinnedCheckState.newCount > 0){
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:18px; color:var(--coral);">🆕</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">New releases found</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${pinnedCheckState.newCount} new song${pinnedCheckState.newCount>1?'s':''} from your pinned artists — see Discover.</div>
+          </div>
+        </div>`);
     }
 
     if(!tasks.length){
@@ -8578,14 +8749,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               const audio = new Audio(result.previewUrl);
               return new Promise(resolve => {
                 audio.addEventListener('canplaythrough', () => {
+                  const cleaned = cleanOnImport(t.title || result.trackName, t.artist || result.artistName);
                   const newTrack = {
                     id: 'sp_' + Date.now() + '_' + Math.random().toString(36).substr(2,9),
-                    name: t.title || result.trackName,
-                    artist: t.artist || result.artistName,
+                    name: cleaned.name,
+                    artist: cleaned.artist,
                     album: t.album || result.collectionName,
                     url: result.previewUrl,
                     duration: audio.duration || 30,
-                    dateAdded: Date.now()
+                    dateAdded: Date.now(),
+                    watermarkCleaned: cleaned.changed
                   };
                   allTracks.push(newTrack);
                   queue.push(newTrack.id);
@@ -8700,12 +8873,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const hasKnownNonAudioExt = /\.(txt|jpg|jpeg|png|gif|pdf|zip|doc|docx|mov|mp4|avi)$/i.test(file.name);
       if(!isAudioType && !isAudioExt && hasKnownNonAudioExt){ skippedType++; return; }
       const meta = guessMeta(file.name);
-      const key = dupKey(file.size, meta.title, meta.artist, 0, file.lastModified);
+      // Always strip watermark cruft (numbered prefixes, radio-edit tags, etc.)
+      // from the guessed title/artist on the way in — see cleanOnImport.
+      const cleaned = cleanOnImport(meta.title, meta.artist);
+      const key = dupKey(file.size, cleaned.name, cleaned.artist, 0, file.lastModified);
       if(seenKeys.has(key)){ skippedDup++; return; }
       seenKeys.add(key);
       const id = 't' + (idCounter++);
       const url = URL.createObjectURL(file);
-      const track = { id, file, name: meta.title, artist: meta.artist, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null };
+      const track = { id, file, name: cleaned.name, artist: cleaned.artist, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null, watermarkCleaned: cleaned.changed };
       allTracks.push(track);
       playlists['All Songs'].push(id);
       // New imports land in All Songs AND Unsorted — Unsorted is now independent,
@@ -10546,6 +10722,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             watermarkEnabled: watermarkEnabled,
             watermarkPatterns: watermarkPatterns,
 
+            // Pinned artists (Discover) + their last-known release snapshots
+            pinnedArtists: pinnedArtists,
+            pinnedReleases: pinnedReleases,
+
             // UI positions
             activePlaylist: activePlaylist,
 
@@ -10691,24 +10871,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         idRemap[m.id] = localId;
         
         // Build track with all metadata from v2 export
-        const track = { 
-          id: localId, 
-          file: blob, 
-          name: m.name || 'Untitled', 
-          artist: m.artist || 'Unknown artist', 
-          url, 
-          duration: m.duration || null, 
-          bpm: m.bpm ?? null, 
-          genre: m.genre || null, 
-          gain: m.gain ?? null, 
+        const cleaned = cleanOnImport(m.name || 'Untitled', m.artist || 'Unknown artist');
+        const track = {
+          id: localId,
+          file: blob,
+          name: cleaned.name,
+          artist: cleaned.artist,
+          url,
+          duration: m.duration || null,
+          bpm: m.bpm ?? null,
+          genre: m.genre || null,
+          gain: m.gain ?? null,
           lyrics: m.lyrics || null,
           lyricsSynced: m.lyricsSynced || false,
           notes: m.notes || '',
           vibe: m.vibe || null,
           playCount: m.playCount || 0,
           lastPlayedAt: m.lastPlayedAt || null,
-          artBlob: null, 
-          artUrl: null 
+          artBlob: null,
+          artUrl: null,
+          watermarkCleaned: cleaned.changed
         };
         
         // Import cover art from v2 export
@@ -10864,6 +11046,24 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(manifest.settings.watermarkPatterns !== undefined){
           watermarkPatterns = manifest.settings.watermarkPatterns;
           dbPut('meta', { key: 'watermarkPatterns', value: watermarkPatterns });
+        }
+        // Restore pinned artists + their release snapshots (Discover). Merge
+        // rather than overwrite so pins made on this device aren't lost when
+        // importing a backup from another device.
+        if(Array.isArray(manifest.settings.pinnedArtists)){
+          const have = new Set(pinnedArtists.map(a => (a.name||'').toLowerCase().trim()));
+          manifest.settings.pinnedArtists.forEach(a => {
+            if(a && a.name && !have.has(a.name.toLowerCase().trim())) pinnedArtists.push(a);
+          });
+          dbPut('meta', { key: 'pinnedArtists', value: pinnedArtists });
+          if(manifest.settings.pinnedReleases && typeof manifest.settings.pinnedReleases === 'object'){
+            Object.keys(manifest.settings.pinnedReleases).forEach(name => {
+              if(!pinnedReleases[name]) pinnedReleases[name] = manifest.settings.pinnedReleases[name];
+            });
+            dbPut('meta', { key: 'pinnedReleases', value: pinnedReleases });
+          }
+          renderPinnedArtists();
+          renderNewReleases();
         }
         // Restore custom theme
         if(manifest.settings.customTheme !== undefined){
@@ -13722,7 +13922,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           return;
         }
       }
-      $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
+      $('currentVersionLabel').textContent = `SideCut v${APP_VERSION} · Bk-47`;
       requestPersistentStorage();
       await loadNotifReadState();
       updateNotifBadge();
@@ -13755,7 +13955,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // Auto-fill missing covers/metadata in the background once the library
       // has settled (each song is only ever attempted once).
       await loadEnrichState();
+      await loadPinnedArtists();
       if(loaded) setTimeout(() => { runAutoEnrich(); }, 2500);
+      if(loaded) setTimeout(() => { checkPinnedArtistReleases(); }, 5000);
     }catch(e){
       console.error('Auto-load failed', e);
     }
@@ -14442,6 +14644,199 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderList();
   }
 
+  // ---------------- Pinned artists + new-release watcher ----------------
+  // Pin an artist from any Discover card (or by name) and SideCut periodically
+  // checks iTunes for that artist's newest songs. Tracks we haven't seen before
+  // (by title+date, since the last snapshot) are surfaced as a "New from your
+  // artists" card on Discover + a notification-badge bump. Uses only the public
+  // iTunes catalog (no Spotify auth, no piracy); a release is "new" when its
+  // release date is newer than anything in that artist's stored snapshot.
+  let pinnedArtists = [];
+  let pinnedReleases = {}; // { [artistName]: [{ title, date, url, art }] }
+  let pinnedCheckState = { active:false, total:0, done:0, newCount:0, finishedAt:0, seen:true };
+
+  async function loadPinnedArtists(){
+    try{
+      const rows = await dbGetAll('meta');
+      const pa = rows.find(r => r.key === 'pinnedArtists');
+      pinnedArtists = Array.isArray(pa && pa.value) ? pa.value : [];
+      const pr = rows.find(r => r.key === 'pinnedReleases');
+      pinnedReleases = (pr && pr.value && typeof pr.value === 'object') ? pr.value : {};
+    }catch(e){ pinnedArtists = []; pinnedReleases = {}; }
+    renderPinnedArtists();
+    renderNewReleases();
+    updateNotifBadge();
+  }
+  function savePinnedArtists(){
+    dbPut('meta', { key: 'pinnedArtists', value: pinnedArtists });
+    dbPut('meta', { key: 'pinnedReleases', value: pinnedReleases });
+  }
+  function isPinnedArtist(name){
+    if(!name) return false;
+    const n = name.toLowerCase().trim();
+    return pinnedArtists.some(a => (a.name||'').toLowerCase().trim() === n);
+  }
+  function togglePinArtist(name, art){
+    if(!name) return;
+    if(isPinnedArtist(name)){
+      pinnedArtists = pinnedArtists.filter(a => (a.name||'').toLowerCase().trim() !== name.toLowerCase().trim());
+      delete pinnedReleases[name];
+      toast(`Unpinned ${name}`);
+    } else {
+      pinnedArtists.push({ name, art: art || null, addedAt: Date.now() });
+      // Seed an empty snapshot so the FIRST check reports everything as new
+      // (the user just pinned — they want to see what's recent now).
+      pinnedReleases[name] = [];
+      toast(`Pinned ${name} — we'll watch for new releases`);
+    }
+    savePinnedArtists();
+    renderPinnedArtists();
+    updateNotifBadge();
+  }
+
+  function renderPinnedArtists(){
+    const list = $('pinnedArtistsList');
+    if(!list) return;
+    if(!pinnedArtists.length){
+      list.innerHTML = `<div style="font-size:12.5px; color:var(--ink-dim); padding:10px 12px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px dashed var(--line);">
+        Pin artists you love — search for them above, tap a card, and hit <b>Pin</b>. SideCut checks for new releases and tells you when they drop.
+      </div>`;
+      return;
+    }
+    list.innerHTML = pinnedArtists.map(a => {
+      const bg = a.art ? `background-image:url("${a.art}");` : 'background:var(--bg-raised);';
+      return `<div class="pinned-artist-row" data-name="${escapeHtml(a.name)}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
+        <div style="width:34px; height:34px; border-radius:50%; background-size:cover; background-position:center; flex-shrink:0; ${bg}"></div>
+        <div style="flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(a.name)}</div>
+        <button class="unpin-artist" data-name="${escapeHtml(a.name)}" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer;">Unpin</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.unpin-artist').forEach(b => b.addEventListener('click', () => togglePinArtist(b.dataset.name)));
+    list.querySelectorAll('.pinned-artist-row').forEach(row => row.addEventListener('click', (e) => {
+      if(e.target.classList.contains('unpin-artist')) return;
+      runDiscoverSearch(row.dataset.name, row.dataset.name, null);
+    }));
+  }
+
+  function renderNewReleases(){
+    const sec = $('newReleasesSection');
+    const list = $('newReleasesList');
+    if(!sec || !list) return;
+    // Flatten recent releases across all pinned artists, newest first.
+    const all = [];
+    Object.keys(pinnedReleases).forEach(artist => {
+      (pinnedReleases[artist] || []).forEach(rel => all.push({ ...rel, artist }));
+    });
+    all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+    const recent = all.slice(0, 12);
+    if(!recent.length){ sec.style.display = 'none'; return; }
+    sec.style.display = 'block';
+    list.innerHTML = recent.map(rel => {
+      const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date + 'T00:00:00Z').getTime())/86400000) : null;
+      const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
+      const bg = rel.art ? `background-image:url("${rel.art}");` : 'background:var(--bg-raised);';
+      return `<div class="new-release-row" data-title="${escapeHtml(rel.title)}" data-artist="${escapeHtml(rel.artist)}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line); cursor:pointer;">
+        <div style="width:38px; height:38px; border-radius:8px; background-size:cover; background-position:center; flex-shrink:0; ${bg}"></div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(rel.title)}</div>
+          <div style="font-size:11.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(rel.artist)}${when ? ' · ' + when : ''}</div>
+        </div>
+        <span style="font-size:11px; color:var(--coral); flex-shrink:0;">Get song</span>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.new-release-row').forEach(row => row.addEventListener('click', () => {
+      const q = row.dataset.title + ' ' + row.dataset.artist;
+      openDownloaderSheet({
+        title: row.dataset.title,
+        artist: row.dataset.artist,
+        art: null,
+        link: `https://open.spotify.com/search/${encodeURIComponent(q)}`,
+        searchQuery: q,
+      });
+    }));
+    updateNotifBadge();
+  }
+
+  // Returns true if there are unseen new releases (drives the notif badge).
+  function hasUnseenReleases(){
+    return Object.keys(pinnedReleases).some(artist =>
+      (pinnedReleases[artist] || []).some(r => !r.seen));
+  }
+  function markReleasesSeen(){
+    Object.keys(pinnedReleases).forEach(artist => {
+      (pinnedReleases[artist] || []).forEach(r => { r.seen = true; });
+    });
+    savePinnedArtists();
+    renderNewReleases();
+    updateNotifBadge();
+  }
+
+  // Query iTunes for an artist's recent tracks and merge into the snapshot.
+  // Returns the list of newly-discovered releases (empty array if none/failed).
+  async function fetchArtistReleases(artist){
+    try{
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=song&limit=50`;
+      const resp = await fetchWithProxy(url);
+      if(!resp || !resp.ok) return [];
+      const data = await resp.json();
+      const results = (data.results || []).filter(r => r && r.trackName &&
+        (r.artistName || '').toLowerCase().trim() === artist.toLowerCase().trim());
+      const prev = pinnedReleases[artist] || [];
+      const prevKeys = new Set(prev.map(r => (r.title||'').toLowerCase().trim() + '|' + (r.date||'')));
+      const fresh = [];
+      results.forEach(r => {
+        const key = (r.trackName||'').toLowerCase().trim() + '|' + (r.releaseDate||'').slice(0,10);
+        if(!prevKeys.has(key)){
+          fresh.push({
+            title: r.trackName,
+            date: (r.releaseDate||'').slice(0,10),
+            art: r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : null,
+            url: r.trackViewUrl || null,
+            seen: false,
+          });
+        }
+      });
+      // Keep the snapshot capped so it doesn't grow forever — newest 40.
+      const merged = prev.concat(fresh)
+        .sort((a,b) => (b.date||'').localeCompare(a.date||''))
+        .slice(0, 40);
+      pinnedReleases[artist] = merged;
+      return fresh;
+    }catch(e){ return []; }
+  }
+
+  // Check every pinned artist for new releases. Runs on boot, on focus, and on
+  // the "Check now" button. Surfaces a toast for any genuinely new finds.
+  async function checkPinnedArtistReleases(){
+    if(pinnedCheckState.active) return;
+    if(!pinnedArtists.length) return;
+    if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    pinnedCheckState = { active:true, total:pinnedArtists.length, done:0, newCount:0, finishedAt:0, seen:false };
+    renderHomeExportPopup();
+    let totalNew = 0;
+    for(const a of pinnedArtists){
+      const fresh = await fetchArtistReleases(a.name);
+      totalNew += fresh.length;
+      pinnedCheckState.done++;
+      renderHomeExportPopup();
+    }
+    pinnedCheckState.active = false;
+    pinnedCheckState.finishedAt = Date.now();
+    pinnedCheckState.newCount = totalNew;
+    savePinnedArtists();
+    renderNewReleases();
+    if(totalNew > 0) toast(`New release${totalNew>1?'s':''} from your pinned artist${totalNew>1?'s':''} — see Discover.`, 4000);
+    renderHomeExportPopup();
+    updateNotifBadge();
+  }
+
+  // The notification bell surfaces "new releases" alongside the existing
+  // enrich/export/duplicate alerts.
+  $('pinnedArtistsHelp').addEventListener('click', () => {
+    toast('Pin artists from any Discover card. SideCut checks iTunes for their newest songs and shows new ones here + on the bell.', 5000);
+  });
+  $('newReleasesRefresh').addEventListener('click', () => checkPinnedArtistReleases());
+
   function renderDiscoverChips(){
     const wrap = $('discoverChips');
     wrap.innerHTML = '';
@@ -14528,6 +14923,25 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
     actions.appendChild(dlBtn);
 
+    // Pin/unpin the artist — SideCut watches pinned artists for new releases.
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'discover-pin-btn';
+    pinBtn.style.cssText = 'padding:6px 10px; font-size:11px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink-dim); cursor:pointer;';
+    const refreshPinBtn = () => {
+      const pinned = isPinnedArtist(r.artistName);
+      pinBtn.textContent = pinned ? '✓ Pinned' : '📌 Pin';
+      pinBtn.style.color = pinned ? 'var(--coral)' : 'var(--ink-dim)';
+      pinBtn.style.borderColor = pinned ? 'var(--coral)' : 'var(--line)';
+    };
+    refreshPinBtn();
+    pinBtn.title = 'Pin this artist — SideCut tells you when they release new music';
+    pinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePinArtist(r.artistName, r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : null);
+      refreshPinBtn();
+    });
+    actions.appendChild(pinBtn);
+
     // Tapping anywhere on the card plays the 30-second preview inside SideCut.
     // Only the "Get song" button sends the user out to Spotify.
     card.addEventListener('click', () => {
@@ -14542,13 +14956,92 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return card;
   }
 
+  // Spotify-to-MP3 converters. These are third-party, user-supplied services —
+  // SideCut only opens them (it can't host or fetch audio itself). Each entry
+  // builds its URL from the song's Spotify/iTunes search term. Domains here die
+  // often, so this list is editable from the Sandbox (downloaderHosts meta) and
+  // ships with a few current ones; missing/dead ones are simply skipped.
+  let downloaderHosts = null;
+  function getDownloaderHosts(){
+    if(downloaderHosts) return downloaderHosts;
+    const def = [
+      { name:'SpotifyMate', url:(q)=>`https://spotifymate.com/?s=${encodeURIComponent(q)}` },
+      { name:'Spotify Downloader', url:(q)=>`https://spotify-downloader.com/?q=${encodeURIComponent(q)}` },
+      { name:'Spotify-downloader', url:(q)=>`https://spotify-downloader.net/?url=${encodeURIComponent('https://open.spotify.com/search/'+q)}` },
+    ];
+    try{
+      const stored = localStorage.getItem('sidecut_downloaderHosts');
+      if(stored){ const arr = JSON.parse(stored); if(Array.isArray(arr) && arr.length) downloaderHosts = arr; }
+    }catch(e){}
+    if(!downloaderHosts) downloaderHosts = def;
+    return downloaderHosts;
+  }
+
   function triggerDiscoverDownload(card, r){
-    // Open the song directly in Spotify so the user can copy its link, then take it
-    // to any Spotify-to-MP3 downloader themselves (instructions are at the top of Discover).
+    // Open the in-app downloader sheet for this track. Builds the Spotify search
+    // link from the track/artist, lists converter buttons, and tries embedding
+    // the first converter in an iframe (falling back to "open in new tab" when
+    // the site refuses to be framed — most do).
     const q = (r.trackName || '') + ' ' + (r.artistName || '');
     const spotifySearch = `https://open.spotify.com/search/${encodeURIComponent(q)}`;
-    try{ window.open(spotifySearch, '_blank', 'noopener'); }catch(e){}
-    toast('Opened in Spotify — copy the link, then use a Spotify-to-MP3 downloader.', 3200);
+    openDownloaderSheet({
+      title: r.trackName || 'Unknown',
+      artist: r.artistName || '',
+      art: r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg', '/200x200bb.jpg') : null,
+      link: spotifySearch,
+      searchQuery: q,
+    });
+    toast('Opened the downloader — pick a converter, then import the MP3 with + Files.', 3200);
+  }
+
+  let downloaderEmbedUrl = '';
+  function openDownloaderSheet(opts){
+    const info = $('downloaderTrackInfo');
+    info.innerHTML = '';
+    if(opts.art){
+      const artEl = document.createElement('div');
+      artEl.style.cssText = 'width:48px; height:48px; border-radius:8px; background-size:cover; background-position:center; background-image:url("'+opts.art+'"); flex-shrink:0;';
+      info.appendChild(artEl);
+    }
+    const meta = document.createElement('div');
+    meta.style.cssText = 'flex:1; min-width:0;';
+    meta.innerHTML = `<div style="font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(opts.title)}</div>
+      <div style="font-size:12px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(opts.artist)}</div>`;
+    info.appendChild(meta);
+
+    $('downloaderLinkInput').value = opts.link;
+
+    const convWrap = $('downloaderConverters');
+    convWrap.innerHTML = '';
+    const hosts = getDownloaderHosts();
+    hosts.forEach((h, i) => {
+      const url = h.url(opts.searchQuery);
+      const btn = document.createElement('button');
+      btn.className = 'action-pill' + (i === 0 ? ' primary' : '');
+      btn.style.cssText = 'padding:9px 14px; font-size:13px; justify-content:space-between;';
+      btn.innerHTML = `<span>Open ${escapeHtml(h.name)}</span><span style="font-size:11px; color:var(--ink-dim);">new tab →</span>`;
+      btn.addEventListener('click', () => { try{ window.open(url, '_blank', 'noopener'); }catch(e){} });
+      convWrap.appendChild(btn);
+    });
+
+    // Try embedding the first converter; many refuse framing → show fallback.
+    const first = hosts[0];
+    downloaderEmbedUrl = first ? first.url(opts.searchQuery) : opts.link;
+    const frame = $('downloaderFrame');
+    const fallback = $('downloaderEmbedFallback');
+    const wrap = $('downloaderEmbedWrap');
+    fallback.style.display = 'none';
+    $('downloaderEmbedOpenBtn').onclick = () => { try{ window.open(downloaderEmbedUrl, '_blank', 'noopener'); }catch(e){} };
+    wrap.style.display = 'block';
+    let loaded = false;
+    frame.onload = () => { loaded = true; };
+    // If onLoad doesn't fire promptly the site is almost certainly blocking
+    // framing (X-Frame-Options/CSP) — reveal the fallback button.
+    setTimeout(() => { if(!loaded){ fallback.style.display = 'flex'; } }, 2500);
+    frame.onerror = () => { fallback.style.display = 'flex'; };
+    frame.src = downloaderEmbedUrl;
+
+    $('downloaderBackdrop').style.display = 'flex';
   }
 
   function toggleDiscoverPreview(url, btn){
@@ -14593,11 +15086,24 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
 
+  $('downloaderClose').addEventListener('click', () => { $('downloaderBackdrop').style.display = 'none'; const f=$('downloaderFrame'); f.src='about:blank'; });
+  $('downloaderBackdrop').addEventListener('click', (e) => { if(e.target === $('downloaderBackdrop')){ $('downloaderBackdrop').style.display='none'; const f=$('downloaderFrame'); f.src='about:blank'; } });
+  $('downloaderCopyBtn').addEventListener('click', () => {
+    const inp = $('downloaderLinkInput'); inp.select(); inp.setSelectionRange(0, 99999);
+    try{ navigator.clipboard.writeText(inp.value); toast('Spotify link copied'); }catch(e){ document.execCommand('copy'); toast('Copied'); }
+  });
+
   // Play Billing: re-verify purchases on launch and whenever the app regains
   // focus (e.g. after returning from the Play billing sheet).
   syncPlayEntitlement();
   window.addEventListener('focus', () => syncPlayEntitlement());
   document.addEventListener('visibilitychange', () => { if(!document.hidden) syncPlayEntitlement(); });
+  // Re-check pinned artists for new releases when the user returns to the app
+  // (throttled to once per 10 minutes so focus cycling doesn't spam iTunes).
+  let lastPinnedCheck = 0;
+  window.addEventListener('focus', () => {
+    if(Date.now() - lastPinnedCheck > 10*60*1000){ lastPinnedCheck = Date.now(); checkPinnedArtistReleases(); }
+  });
 
 })();
 </script>
