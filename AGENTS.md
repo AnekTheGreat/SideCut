@@ -415,3 +415,62 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   start on the mini play button. Built-in bubbles get added to `homeHidden`
   (re-addable from Sandbox -> Home page layout); custom-<id> bubbles delete
   the custom action. The held bubble gets `.hb-hold-confirm` (coral ring).
+
+## v46.7 (Aug 17, 2026)
+- **Reorder now has ▲/▼ buttons**: reorder mode (`reorderMode` + effective
+  sort `default`, real playlist only) renders per-row up/down buttons next to
+  the grip handle. `moveSongInPlaylist(id, dir)` splices
+  `playlists[activePlaylist]` one slot; first row's ▲ and last row's ▼ are
+  `disabled`. The drag grip (`attachGripDrag`) still works too.
+- **Insert-position picker on add/import into a playlist**: adding files via
+  a playlist's "Add audio files to …", importing a .zip into a playlist, or
+  adding a single song via the kebab "Add to playlist" no longer dumps new
+  tracks at the end. A new `#insertPosBackdrop` modal offers Beginning /
+  End / Pick a spot… `promptInsertPosition(name, label, onChoose)` returns
+  the index (or `'__pick__'`). Pick mode sets `insertMode` via
+  `enterInsertPickMode()` (forces sort `default` + clears search so the
+  displayed index == real insertion index); `renderListInner` then shows a
+  yellow banner + "Insert at the very top" bar and each row tap calls
+  `onCommit(i+1)`. `handleAudioFiles` gained an `opts.deferPosition` path
+  (new songs are pulled out of Unsorted but NOT pushed to the target until
+  the user picks); `importLibrary` collects `importTargetIds` and defers the
+  same way. Cancelling leaves the songs in the library (All Songs) but not
+  the target playlist — acceptable.
+- **Lyrics-not-found copy**: the lyrics view now says "Lyrics could not be
+  found." instead of "this song may not be in our database."
+- **Now-playing bubble play buttons are themed SVGs**: `.hb-play` in
+  `hbTrackRowHTML` used ▶/⏸ text characters — now uses `HB_ICONS.play` /
+  `HB_ICONS.pause` (new) inline SVGs (16px, `fill:var(--coral)`), matching
+  the rest of the Home bubble icons. The pause-on-tap handler swaps to
+  `HB_ICONS.play` via `innerHTML`.
+- Version 46.6 → 46.7 (SW cache sidecut-shell-v46.6 → sidecut-shell-v46.7).
+  Date Aug 17 7:30 pm EDT.
+
+## v46.7.5 (Aug 17, 2026)
+- **Stats bubble icon was invisible**: `HB_ICONS.stats` was an open-stroke
+  bar-chart path (`M4 20V10M10 20V4...`) but the CSS only sets
+  `fill:currentColor` (no `stroke`), and open line segments render nothing
+  when filled. Replaced with a solid filled-bars path. Same fix applied to
+  `HB_ICONS.playlists` (was open lines + a circle that had no fill rule) →
+  solid playlist-bars-with-note icon. `HB_ICONS.library` (open note-stem
+  lines) → solid two-note icon.
+- **Home shows ALL background-task progress, always**: `renderHomeExportPopup`
+  was export-only. It's now a unified card that also renders cover-fetch
+  (`coverFetchState`), lyrics-fetch (`lyricsFetchState`), metadata enrich
+  (`enrichState`), and CSV import (`bgImportState`) progress, each with its
+  own bordered sub-card when several run at once. `refreshEnrichNotif()` and
+  the import loop's tick now call `renderHomeExportPopup()`, and the cover
+  refetch loop got `refreshEnrichNotif()` calls added at start/per-tick/end.
+  `navigate('home')` already called it, so returning to Home during a task
+  shows the live card. Finished cards only show while `!seen` and auto-clear
+  `finishedAt` after the 6s hide so they don't reappear on the next Home visit.
+- **Home bubble song taps now follow the playlist**: `wireHbTrackRows` used
+  `playFromList(allTracks.map(t=>t.id), id)` — the whole library in insertion
+  order — so the track after the tapped one felt "random". New
+  `playTrackInPlaylistContext(id)` picks the real playlist the track belongs
+  to (prefers the active one if it contains it, else the first real playlist
+  that does, else All Songs), builds the queue from that playlist's
+  `getSortedIds` (or the cached shuffle order when shuffle is on), sets
+  `activePlaylist` to it, and renders tabs/list so the user lands on it.
+- Version 46.7 → 46.7.5 (SW cache sidecut-shell-v46.7 → sidecut-shell-v46.7.5).
+  Date Aug 17 7:30 pm EDT.

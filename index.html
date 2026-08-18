@@ -1502,6 +1502,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 .hb-play{ flex-shrink:0; width:34px; height:34px; margin-left:8px; border-radius:50%;
   border:1px solid var(--line); background:var(--bg-raised); color:var(--coral);
   font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.hb-play svg{ width:16px; height:16px; fill:var(--coral); }
 .hb-play:active{ transform:scale(0.92); }
 .hb-quick-grid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:12px; }
 .hb-quick{ background:var(--bg); border:1px solid var(--line); color:var(--ink);
@@ -1831,6 +1832,22 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="addToPlaylistButtons" style="display:flex; flex-direction:column; gap:8px; max-height:40vh; overflow-y:auto;"></div>
     <div class="modal-btns">
       <button class="cancel" id="addToPlaylistDone" style="flex:1;">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Insert position picker: where to drop songs being added/imported into a playlist -->
+<div class="modal-backdrop" id="insertPosBackdrop">
+  <div class="modal">
+    <h3 id="insertPosTitle">Where to add?</h3>
+    <div id="insertPosCount" style="font-size:12px; color:var(--ink-dim); margin-bottom:10px;"></div>
+    <div class="action-sheet">
+      <button class="playlist-pick-btn" id="insertPosTop" style="text-align:center;">⬆ Add to beginning</button>
+      <button class="playlist-pick-btn" id="insertPosEnd" style="text-align:center;">⬇ Add to end</button>
+      <button class="playlist-pick-btn" id="insertPosPick" style="text-align:center;">📍 Pick a spot in the list…</button>
+    </div>
+    <div class="modal-btns">
+      <button class="cancel" id="insertPosCancel" style="flex:1;">Cancel</button>
     </div>
   </div>
 </div>
@@ -2686,7 +2703,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <div id="lyricsText" style="display:none;"></div>
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:20px 0;">
         <div style="margin-bottom:8px;">No lyrics found</div>
-        <div style="font-size:12px;">This song may not be in our database.<br>Lyrics APIs primarily support English/Western music.</div>
+        <div style="font-size:12px;">Lyrics could not be found. Lyrics APIs primarily support English/Western music.</div>
       </div>
     </div>
   </div>
@@ -4776,14 +4793,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   };
   // Theme-matched SVG icons for Home bubbles (currentColor = the bubble's coral/gold tint).
   const HB_ICONS = {
-    stats:     '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+    stats:     '<svg viewBox="0 0 24 24"><path d="M4 10h2v10H4zm5-6h2v16H9zm5 9h2v7h-2zm5-7h2v14h-2zM3 20h18v2H3z"/></svg>',
     notif:     '<svg viewBox="0 0 24 24"><path d="M12 22a2 2 0 002-2h-4a2 2 0 002 2zm6-6V11a6 6 0 10-12 0v5l-2 2v1h16v-1l-2-2z"/></svg>',
-    library:   '<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
+    library:   '<svg viewBox="0 0 24 24"><path d="M9 17a3 3 0 11-6 0 3 3 0 016 0V5l12-2v9a3 3 0 11-2 2.83V8.2l-8 1.33V17zm-3-1a1 1 0 100 2 1 1 0 000-2zm12-1a1 1 0 100 2 1 1 0 000-2z"/></svg>',
     play:      '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    pause:     '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
     topsong:   '<svg viewBox="0 0 24 24"><path d="M5 4h14v3h-7l5 6-5 6h7v3H5v-3h7l-5-6 5-6H5z"/></svg>',
     artists:   '<svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5z"/></svg>',
     fav:       '<svg viewBox="0 0 24 24"><path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3.2 1.2 4 2.5.8-1.3 2-2.5 4-2.5 3.5 0 5 3.5 3.5 6.5C19 16.5 12 21 12 21z"/></svg>',
-    playlists: '<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="3"/></svg>',
+    playlists: '<svg viewBox="0 0 24 24"><path d="M4 5h16v3H4zm0 5.5h16v3H4zm0 5.5h10v3H4zm12-1a3 3 0 100 6 3 3 0 000-6z"/></svg>',
     shortcuts: '<svg viewBox="0 0 24 24"><path d="M13 3l1.5 5.5L20 10l-5.5 1.5L13 17l-1.5-5.5L6 10l5.5-1.5z"/></svg>',
     custom:    '<svg viewBox="0 0 24 24"><path d="M13 3l1.5 5.5L20 10l-5.5 1.5L13 17l-1.5-5.5L6 10l5.5-1.5z"/></svg>'
   };
@@ -6198,7 +6216,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '46.6';
+  const APP_VERSION = '46.7.5';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6211,6 +6229,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '46.7.5', date: 'August 17, 2026 at 7:30 pm EDT', title: 'Home progress + playlist-context playback + icon fixes', items: [
+      'Listening stats bubble icon was invisible (its bar-chart path was open strokes with fill, which renders nothing) — now solid filled bars that actually show',
+      'Background-task progress (export, cover fetch, lyrics fetch, metadata re-fetch, CSV import) now always appears as a card on the Home page while running, and stays there if you navigate away and come back — previously only export progress showed on Home',
+      'Tapping a song from a Home bubble (now playing / most played / favorites) used to dump your whole library into the play queue, so the next track felt random — it now plays within the song\'s own playlist (and honors shuffle), so songs actually follow the playlist',
+      'Playlists bubble icon (open lines + circle) was partly invisible for the same fill reason — now a solid playlist icon',
+    ]},
+    { version: '46.7', date: 'August 17, 2026 at 7:30 pm EDT', title: 'Better playlist reordering + choose where imported songs land', items: [
+      'Reorder mode now has per-row ▲/▼ buttons — tap to actually move a song up or down one slot, no dragging required (the drag grip is still there too)',
+      'When you add files, import a .zip, or add a song to a playlist, you now pick where it goes: beginning, end, or tap a song to insert right after it (instead of always dumping new songs at the bottom)',
+      'The now playing bubble\'s per-song play/pause buttons now use theme-matched SVG icons instead of plain ▶/⏸ text characters',
+      'Lyrics that can\'t be fetched now say "Lyrics could not be found" instead of "this song may not be in our database"',
+    ]},
     { version: '46.6', date: 'August 17, 2026 at 4:04 pm EDT', title: 'Sandbox drag & drop (hold to reorder) removed', items: [
       'The top strip can no longer be reordered by dragging — the Sandbox \u201cDrag & Drop UI\u201d toggle is gone; the strip keeps its default order (or your previously saved order) and custom quick actions appear in the order you add them',
       'Home page layout reordering (drag or the \u25b2/\u25bc buttons) is unaffected',
@@ -6953,17 +6983,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const btn = $('refetchCoversBtn');
     btn.disabled = true;
     btn.textContent = 'Fetching...';
+    refreshEnrichNotif();
     
     for(const t of needsCover){
       const gotCover = await fetchCoverForTrack(t);
       if(gotCover) window.coverFetchState.fetched++;
       window.coverFetchState.done++;
       btn.textContent = `${window.coverFetchState.done}/${total}`;
+      refreshEnrichNotif();
     }
     
     btn.disabled = false;
     btn.textContent = 'Refetch Missing Covers';
     window.coverFetchState.active = false;
+    refreshEnrichNotif();
     
     renderList();
     const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
@@ -7544,20 +7577,127 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     renderHomeExportPopup();
   }
 
-  // Live export progress card on the Home view, shown just below the listening
-  // stats bubbles while an export runs (and briefly after it finishes/errors).
-  // Driven by refreshExportNotif(), which runZipExport calls on every tick.
+  // Live background-task progress card on the Home view, shown just below the
+  // listening stats bubbles while an export / cover-fetch / lyrics-fetch /
+  // metadata enrich / CSV import runs (and briefly after it finishes/errors).
+  // Driven by refreshExportNotif() + refreshEnrichNotif() + the import loop,
+  // each of which calls renderHomeExportPopup() on every tick. navigate('home')
+  // also calls it so a returning user immediately sees what's running.
   let homeExportHideTimer = null;
   function renderHomeExportPopup(){
     const el = $('homeExportPopup');
     if(!el) return;
-    // Only show on the Home view (the popup lives inside #homeView).
     const onHome = $('homeView') && $('homeView').classList.contains('active');
-    if(!exportState.active && !exportState.finishedAt){
+
+    // Gather every active (or freshly-finished) background task.
+    const tasks = [];
+    if(exportState.active || (exportState.finishedAt && !exportState.seen)){
+      tasks.push(buildHomeExportCard());
+    }
+    if(window.coverFetchState && window.coverFetchState.active){
+      const s = window.coverFetchState;
+      const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:18px;">🎨</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Fetching covers</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${s.done}/${s.total} songs${s.fetched ? ' · ' + s.fetched + ' found' : ''}</div>
+          </div>
+        </div>
+        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
+    }
+    if(window.lyricsFetchState && window.lyricsFetchState.active){
+      const s = window.lyricsFetchState;
+      const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:18px;">🎤</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--gold);">Fetching lyrics</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${s.done}/${s.total} songs</div>
+          </div>
+        </div>
+        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--gold); transition:width .3s;"></div></div>`);
+    }
+    if(enrichState.active){
+      const pct = enrichState.total ? Math.round((enrichState.done / enrichState.total) * 100) : 0;
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:18px;">🔎</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Fetching song details</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${enrichState.done}/${enrichState.total} songs</div>
+          </div>
+        </div>
+        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
+    }
+    if(enrichState.finishedAt && !enrichState.seen){
+      const ok = enrichState.updated > 0;
+      const msg = ok
+        ? `Updated ${enrichState.updated} song${enrichState.updated>1?'s':''} with covers & metadata.`
+        : `Checked ${enrichState.total} song${enrichState.total>1?'s':''} — nothing new to add.`;
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:18px; color:${ok ? 'var(--coral)' : 'var(--ink-dim)'};">${ok ? '✓' : '—'}</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:${ok ? 'var(--coral)' : 'var(--ink-dim)'};">${ok ? 'Song details updated' : 'Nothing to update'}</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${escapeHtml(msg)}</div>
+          </div>
+        </div>`);
+    }
+    if(bgImportState && bgImportState.total && bgImportState.completed < bgImportState.total){
+      const pct = bgImportState.total ? Math.round((bgImportState.completed / bgImportState.total) * 100) : 0;
+      const dups = bgImportState.duplicates || 0;
+      tasks.push(`
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <span style="font-size:18px;">📥</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Importing tracks</div>
+            <div style="font-size:11.5px; color:var(--ink-dim);">${bgImportState.completed}/${bgImportState.total}${dups ? ' · ' + dups + ' skipped' : ''}${bgImportState.running ? '' : ' · paused'}</div>
+          </div>
+        </div>
+        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
+    }
+
+    if(!tasks.length){
       el.style.display = 'none';
+      el.innerHTML = '';
       return;
     }
     if(!onHome){ return; } // don't render when Home isn't visible
+    // When more than one task is running, give each its own bordered card.
+    const sep = tasks.length > 1
+      ? '<div style="border-bottom:1px solid var(--line); margin:0 0 10px; padding-bottom:10px;">'
+      : '';
+    const sepClose = tasks.length > 1 ? '</div>' : '';
+    const inner = (sep ? '<div style="font-weight:700; font-size:13px; color:var(--ink-dim); margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px;">Background tasks</div>' : '')
+      + tasks.map(t => sep + t + sepClose).join('');
+    el.innerHTML = inner;
+    el.style.display = 'block';
+
+    // If only freshly-finished (no active) tasks remain, auto-hide shortly.
+    const anyActive = exportState.active
+      || (window.coverFetchState && window.coverFetchState.active)
+      || (window.lyricsFetchState && window.lyricsFetchState.active)
+      || enrichState.active
+      || (bgImportState && bgImportState.running && bgImportState.completed < bgImportState.total);
+    if(!anyActive){
+      if(homeExportHideTimer){ clearTimeout(homeExportHideTimer); }
+      homeExportHideTimer = setTimeout(() => {
+        exportState.seen = true;
+        exportState.finishedAt = 0;
+        enrichState.seen = true;
+        enrichState.finishedAt = 0;
+        const p = $('homeExportPopup'); if(p){ p.style.display = 'none'; p.innerHTML = ''; }
+        updateNotifBadge();
+      }, 6000);
+    } else if(homeExportHideTimer){
+      clearTimeout(homeExportHideTimer); homeExportHideTimer = null;
+    }
+  }
+
+  function buildHomeExportCard(){
     let inner = '';
     if(exportState.active){
       const pct = exportState.phase === 'compressing'
@@ -7590,16 +7730,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             <div style="font-size:11.5px; color:var(--ink-dim);">${escapeHtml(msg)}</div>
           </div>
         </div>`;
-      // Auto-hide the finished state shortly after it appears.
-      if(homeExportHideTimer){ clearTimeout(homeExportHideTimer); }
-      homeExportHideTimer = setTimeout(() => {
-        exportState.seen = true;
-        const p = $('homeExportPopup'); if(p) p.style.display = 'none';
-        updateNotifBadge();
-      }, 6000);
     }
-    el.innerHTML = inner;
-    el.style.display = inner ? 'block' : 'none';
+    return inner;
   }
 
   function enrichNotifHtml(){
@@ -7653,6 +7785,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function refreshEnrichNotif(){
     updateNotifBadge();
     if($('notifBackdrop') && $('notifBackdrop').style.display === 'flex') renderNotifPanel();
+    renderHomeExportPopup();
   }
 
   async function runAutoEnrich(){
@@ -8186,7 +8319,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return (size || 0) + '_' + (title || '').toLowerCase().trim() + '_' + (artist || '').toLowerCase().trim() + '_' + Math.round(duration || 0) + '_' + (lastModified || 0);
   }
 
-  function handleFiles(fileList, targetPlaylist){
+  function handleFiles(fileList, targetPlaylist, opts){
     // Check if any CSV files are included - handle Spotify playlist imports
     const csvFiles = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.csv'));
     if(csvFiles.length > 0){
@@ -8196,13 +8329,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // Remove CSV files from the list and process remaining audio files
       const audioFiles = Array.from(fileList).filter(f => !f.name.toLowerCase().endsWith('.csv'));
       if(audioFiles.length > 0){
-        handleAudioFiles(audioFiles, targetPlaylist);
+        handleAudioFiles(audioFiles, targetPlaylist, opts);
       }
       return;
     }
     
     // Process regular audio files
-    handleAudioFiles(Array.from(fileList), targetPlaylist);
+    handleAudioFiles(Array.from(fileList), targetPlaylist, opts);
   }
   
   function handleCSVFile(csvFile){
@@ -8395,6 +8528,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     bgImportState.completed = batchEnd;
     localStorage.setItem('bgImportState', JSON.stringify(bgImportState));
     updateImportDot();
+    renderHomeExportPopup();
 
     // Check if complete
     if(bgImportState.completed >= bgImportState.total){
@@ -8404,6 +8538,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const dups = bgImportState.duplicates || 0;
       toast(`Import complete! Added ${bgImportState.found} of ${total} tracks${dups ? ' (' + dups + ' duplicates skipped)' : ''}`);
       renderList();
+      renderHomeExportPopup();
     } else {
       // Continue after short delay
       setTimeout(() => runBackgroundImport(), 100);
@@ -8546,7 +8681,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return result;
   }
   
-  function handleAudioFiles(fileList, targetPlaylist){
+  function handleAudioFiles(fileList, targetPlaylist, opts){
+    opts = opts || {};
+    const deferPosition = !!opts.deferPosition; // caller will prompt for position
     const added = [];
     let skippedDup = 0, skippedType = 0;
     const seenKeys = new Set(allTracks.map(t => dupKey((t.file && t.file.size) || 0, t.name, t.artist, t.duration, t.file && t.file.lastModified)));
@@ -8583,7 +8720,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // and removing those tracks later could desync a playlist's stored order
       // from what was on screen, making an unrelated song look like it "vanished"
       // on delete. Explicit target only, never an implicit "current tab" guess.
-      if(targetPlaylist && targetPlaylist !== 'All Songs' && targetPlaylist !== UNSORTED_VIEW){
+      // When deferPosition is set, the caller wants to choose WHERE in the
+      // playlist these land, so we skip the end-push here and prompt after.
+      if(targetPlaylist && targetPlaylist !== 'All Songs' && targetPlaylist !== UNSORTED_VIEW && !deferPosition){
         if(!playlists[targetPlaylist]) playlists[targetPlaylist] = [];
         playlists[targetPlaylist].push(id);
         // Adding to a playlist removes it from Unsorted
@@ -8594,6 +8733,42 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
     if(added.length){
       saveMeta();
+      // If a real playlist target was given with position-defer, prompt the user
+      // for where to insert the freshly-added songs (beginning / end / pick spot).
+      if(deferPosition && targetPlaylist && targetPlaylist !== 'All Songs' && targetPlaylist !== UNSORTED_VIEW){
+        const newIds = added.map(t => t.id);
+        // Make sure the target playlist exists and the newly-added songs are
+        // pulled out of Unsorted (they're "claimed" by this import either way).
+        if(!playlists[targetPlaylist]) playlists[targetPlaylist] = [];
+        playlists['Unsorted'] = playlists['Unsorted'].filter(pid => !newIds.includes(pid));
+        saveMeta();
+        const label = `Pick where to add ${newIds.length} song${newIds.length===1?'':'s'}`;
+        navigate('library');
+        activePlaylist = targetPlaylist;
+        renderTabs();
+        renderList();
+        promptInsertPosition(targetPlaylist, `${newIds.length} song${newIds.length===1?'':'s'}`, (idx) => {
+          if(idx === '__pick__'){
+            enterInsertPickMode(targetPlaylist, newIds, label, (insertIdx) => {
+              const at = Math.max(0, Math.min(insertIdx, playlists[targetPlaylist].length));
+              newIds.forEach(nid => { if(!playlists[targetPlaylist].includes(nid)) playlists[targetPlaylist].splice(at, 0, nid); });
+              saveMeta();
+              toast(`Added ${newIds.length} song${newIds.length===1?'':'s'} to "${targetPlaylist}"`);
+              exitInsertPickMode();
+            });
+          } else {
+            const at = Math.max(0, Math.min(idx, playlists[targetPlaylist].length));
+            newIds.forEach(nid => { if(!playlists[targetPlaylist].includes(nid)) playlists[targetPlaylist].splice(at, 0, nid); });
+            saveMeta();
+            toast(`Added ${newIds.length} song${newIds.length===1?'':'s'} to "${targetPlaylist}"`);
+            renderList();
+          }
+        });
+        // Kick off lazy duration/tag reads for the new tracks regardless.
+        added.forEach(t => readLazyMeta(t));
+        setTimeout(() => { runAutoEnrich(); }, 4000);
+        return;
+      }
       let msg = `Added ${added.length} track${added.length>1?'s':''} to your library`;
       if(targetPlaylist && targetPlaylist !== 'All Songs' && targetPlaylist !== UNSORTED_VIEW) msg += ` and "${targetPlaylist}"`;
       if(skippedDup) msg += ` · skipped ${skippedDup} duplicate${skippedDup>1?'s':''}`;
@@ -8603,26 +8778,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       renderTabs();
       renderList();
       // Read durations lazily
-      added.forEach(t => {
-        const a = new Audio();
-        a.preload = 'metadata';
-        a.src = t.url;
-        a.addEventListener('loadedmetadata', () => {
-          t.duration = a.duration;
-          persistTrackMeta(t);
-          renderList();
-        });
-        // Read genre + embedded album art automatically, no user action needed
-        extractTags(t).then(({ genre, artBlob }) => {
-          let changed = false;
-          if(genre){ t.genre = genre; changed = true; }
-          if(artBlob){ t.artBlob = artBlob; t.artUrl = URL.createObjectURL(artBlob); changed = true; }
-          if(!changed) return;
-          persistTrackMeta(t);
-          renderList();
-          if(queue[queueIndex] === t.id) updateNowPlayingArt(t);
-        });
-      });
+      added.forEach(t => readLazyMeta(t));
       // Once local tag extraction has had a moment to fill in what it can,
       // look up covers/metadata for anything still missing them.
       setTimeout(() => { runAutoEnrich(); }, 4000);
@@ -8635,6 +8791,27 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     } else {
       toast('No audio files found in that selection.');
     }
+  }
+
+  // Lazy duration + tag/art extraction shared by both import paths.
+  function readLazyMeta(t){
+    const a = new Audio();
+    a.preload = 'metadata';
+    a.src = t.url;
+    a.addEventListener('loadedmetadata', () => {
+      t.duration = a.duration;
+      persistTrackMeta(t);
+      renderList();
+    });
+    extractTags(t).then(({ genre, artBlob }) => {
+      let changed = false;
+      if(genre){ t.genre = genre; changed = true; }
+      if(artBlob){ t.artBlob = artBlob; t.artUrl = URL.createObjectURL(artBlob); changed = true; }
+      if(!changed) return;
+      persistTrackMeta(t);
+      renderList();
+      if(queue[queueIndex] === t.id) updateNowPlayingArt(t);
+    });
   }
 
   function openListMoreMenu(ids, isAllSongs, canDelete){
@@ -8811,7 +8988,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
   $('addFilesToPlaylistInput').addEventListener('change', e => {
     const targetPlaylist = activePlaylist;
-    handleFiles(e.target.files, targetPlaylist);
+    handleFiles(e.target.files, targetPlaylist, { deferPosition: true });
     e.target.value = '';
   });
 
@@ -9192,6 +9369,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     reorderMode = true;
     renderList();
   }
+  // Move a song one slot up (dir=-1) or down (dir=1) in the active playlist.
+  // The tap-the-arrow path for reordering — the drag grip is the other path.
+  function moveSongInPlaylist(id, dir){
+    const arr = playlists[activePlaylist];
+    if(!arr) return;
+    const i = arr.indexOf(id);
+    if(i < 0) return;
+    const j = i + dir;
+    if(j < 0 || j >= arr.length) return;
+    const [moved] = arr.splice(i, 1);
+    arr.splice(j, 0, moved);
+    saveMeta();
+    renderList();
+  }
   function renderList(){
     try{ renderListInner(); }
     catch(e){
@@ -9340,6 +9531,24 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       return;
     }
 
+    // Insert-pick mode: the user chose "Pick a spot…" — show a banner and an
+    // "insert at top" bar above the first row. Each row, when tapped, inserts
+    // the pending songs immediately AFTER that row.
+    const inInsertPick = !!(insertMode && activePlaylist === insertMode._playlist && !isAllSongs && effectiveSort === 'default');
+    if(inInsertPick){
+      const banner = document.createElement('div');
+      banner.style.cssText = 'padding:10px 14px; background:rgba(255,199,90,0.12); border:1px solid rgba(255,199,90,0.35); border-radius:10px; font-size:12.5px; color:var(--ink); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;';
+      banner.innerHTML = `<span>📍 ${insertMode.label || 'Pick where to insert'} — tap a song to insert after it.</span><button id="insertPickCancel" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 10px; font-size:11px; cursor:pointer;">Cancel</button>`;
+      pane.appendChild(banner);
+      $('insertPickCancel').addEventListener('click', exitInsertPickMode);
+      const topBar = document.createElement('button');
+      topBar.className = 'playlist-pick-btn';
+      topBar.style.cssText = 'width:100%; text-align:center; margin-bottom:8px; border-color:var(--coral); color:var(--coral);';
+      topBar.textContent = '⬆ Insert at the very top';
+      topBar.addEventListener('click', () => { insertMode.onCommit(0); });
+      pane.appendChild(topBar);
+    }
+
     ids.forEach((id, i) => {
       const t = allTracks.find(tr => tr.id === id);
       if(!t) return;
@@ -9358,17 +9567,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         ${!selectMode && !showReorder ? `<div class="dur">${t.duration ? fmtTime(t.duration) : '--:--'}</div>` : ''}
         ${!selectMode && !showReorder && t.genre ? `<div class="genre-tag">${escapeHtml(t.genre)}</div>` : ''}
         ${!selectMode && !showReorder ? `<button class="kebab-btn" data-kebab="${id}" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>` : ''}
+        ${showReorder ? `<div class="reorder-btns"><button class="reorder-up" title="Move up" disabled><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14l5-5 5 5z"/></svg></button><button class="reorder-down" title="Move down" disabled><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button></div>` : ''}
         ${showReorder ? `<button class="grip-handle" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg></button>` : ''}
       `;
       row.addEventListener('click', (e) => {
-        if(e.target.closest('.kebab-btn') || e.target.closest('.grip-handle')) return;
+        if(e.target.closest('.kebab-btn') || e.target.closest('.grip-handle') || e.target.closest('.reorder-btns')) return;
+        if(inInsertPick){
+          // Insert the pending songs immediately AFTER this row.
+          insertMode.onCommit(i + 1);
+          return;
+        }
         if(selectMode){ toggleSelect(id); return; }
         if(showReorder) return;
         playFromList(fullIds, id);
       });
       pane.appendChild(row);
 
-      if(!selectMode && !showReorder){
+      if(!selectMode && !showReorder && !inInsertPick){
         attachLongPressChoice(row, id);
         row.querySelector('[data-kebab]').addEventListener('click', (e) => {
           e.stopPropagation();
@@ -9376,6 +9591,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         });
       }
       if(showReorder){
+        // Enable/disable the up/down buttons based on position, and wire them
+        // so a tap actually moves the song one slot (the drag grip alone was
+        // the only way to reorder before, which is fiddly on a touchscreen).
+        const upBtn = row.querySelector('.reorder-up');
+        const downBtn = row.querySelector('.reorder-down');
+        if(i === 0) upBtn.disabled = true;
+        if(i === ids.length - 1) downBtn.disabled = true;
+        if(upBtn && !upBtn.disabled){
+          upBtn.addEventListener('click', (e) => { e.stopPropagation(); moveSongInPlaylist(id, -1); });
+        }
+        if(downBtn && !downBtn.disabled){
+          downBtn.addEventListener('click', (e) => { e.stopPropagation(); moveSongInPlaylist(id, 1); });
+        }
         attachGripDrag(row, row.querySelector('.grip-handle'), id);
       }
     });
@@ -9836,12 +10064,31 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         btn.textContent = (already ? '✓ ' : '') + name;
         btn.addEventListener('click', () => {
           if(playlists[name].includes(trackId)){
+            // Already in — tap removes it (unchanged behavior).
             playlists[name] = playlists[name].filter(x => x !== trackId);
+            saveMeta();
+            promptAddToPlaylist(trackId); // refresh checkmarks
           } else {
-            playlists[name].push(trackId);
+            // Not in yet — ask where to insert it before adding.
+            $('addToPlaylistBackdrop').style.display = 'none';
+            const t = allTracks.find(tr => tr.id === trackId);
+            promptInsertPosition(name, `1 song — ${t ? t.name : 'this track'}`, (idx) => {
+              if(idx === '__pick__'){
+                enterInsertPickMode(name, [trackId], 'Pick where to add this song', (insertIdx) => {
+                  if(!playlists[name].includes(trackId)){
+                    playlists[name].splice(Math.max(0, Math.min(insertIdx, playlists[name].length)), 0, trackId);
+                    saveMeta();
+                    toast(`Added to "${name}"`);
+                  }
+                  exitInsertPickMode();
+                });
+              } else {
+                playlists[name].splice(Math.max(0, Math.min(idx, playlists[name].length)), 0, trackId);
+                saveMeta();
+                toast(`Added to "${name}"`);
+              }
+            });
           }
-          saveMeta();
-          promptAddToPlaylist(trackId); // refresh checkmarks
         });
         container.appendChild(btn);
       });
@@ -9850,6 +10097,53 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   $('addToPlaylistDone').addEventListener('click', () => { $('addToPlaylistBackdrop').style.display = 'none'; renderList(); });
   $('addToPlaylistBackdrop').addEventListener('click', e => { if(e.target === $('addToPlaylistBackdrop')){ $('addToPlaylistBackdrop').style.display='none'; renderList(); } });
+
+  // ---------------- Insert position picker ----------------
+  // When songs are added/imported INTO a specific playlist, the user can choose
+  // where they land instead of always at the end. onChoose(index) is called with
+  // the insertion index ('top' -> 0, 'end' -> arr.length, or the row tapped in
+  // pick mode). The chosen callback owns pushing the ids and saving.
+  let insertMode = null; // { ids:[], label, onCommit:(index)=>{} }
+  function promptInsertPosition(playlistName, countLabel, onChoose){
+    $('insertPosTitle').textContent = `Add to "${playlistName}"`;
+    $('insertPosCount').textContent = countLabel;
+    $('insertPosBackdrop').style.display = 'flex';
+    const close = () => { $('insertPosBackdrop').style.display = 'none'; };
+    const top = $('insertPosTop'), end = $('insertPosEnd'), pick = $('insertPosPick');
+    const handler = (fn) => (e) => { e.stopPropagation(); close(); fn(); };
+    // Replace nodes to drop prior listeners (this modal is reused).
+    const fresh = (el, fn) => { const n = el.cloneNode(true); el.replaceWith(n); n.addEventListener('click', handler(fn)); return n; };
+    fresh(top, () => onChoose(0));
+    fresh(end, () => onChoose((playlists[playlistName] || []).length));
+    fresh(pick, () => { onChoose('__pick__'); });
+  }
+  $('insertPosCancel').addEventListener('click', () => { $('insertPosBackdrop').style.display = 'none'; });
+  $('insertPosBackdrop').addEventListener('click', e => { if(e.target === $('insertPosBackdrop')) $('insertPosBackdrop').style.display = 'none'; });
+
+  // Enter "tap a row to insert after it" mode. `pendingIds` are the track ids to
+  // insert; onCommit(index) finalizes. Renders a banner + an insert-at-top bar.
+  function enterInsertPickMode(playlistName, pendingIds, label, onCommit){
+    insertMode = { _playlist: playlistName, ids: pendingIds, label, onCommit };
+    activePlaylist = playlistName;
+    // Insert-pick reads true playlist order, so reset any active sort to default
+    // (same reason enterReorderMode does) — otherwise the tapped row's index
+    // won't match the real insertion index.
+    const eff = (perPlaylistSortEnabled && perPlaylistSort[playlistName]) || currentSort;
+    if(eff !== 'default'){
+      if(perPlaylistSortEnabled){ perPlaylistSort[playlistName] = 'default'; dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort }); }
+      currentSort = 'default';
+    }
+    reorderMode = false;
+    selectMode = false;
+    if(searchQuery){ searchQuery = ''; const si = $('searchInput'); if(si) si.value = ''; }
+    navigate('library');
+    renderTabs();
+    renderList();
+  }
+  function exitInsertPickMode(){
+    insertMode = null;
+    renderList();
+  }
 
   function deleteActivePlaylist(){
     if(!confirm(`Delete "${activePlaylist}"? This won't delete the songs themselves.`)) return;
@@ -10440,17 +10734,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         });
       });
       // If importing straight into a specific playlist (e.g. dropping a .zip
-      // onto an existing playlist's "More options" menu), add every track
-      // this import touched — newly-added or matched-existing — into that
-      // playlist too, regardless of what the manifest's own playlist names
-      // were. This is on top of the manifest's own merge above, not instead
-      // of it, so importing a full library export into a playlist still
-      // preserves that export's original playlist structure as well.
+      // onto an existing playlist's "More options" menu), the imported tracks
+      // need to land in that playlist. We collect their ids here and, instead
+      // of always dumping them at the end, defer to the insert-position picker
+      // so the user can choose beginning/end/pick-spot. The manifest's own
+      // playlist structure (merged above) is preserved either way.
+      let importTargetIds = [];
       if(targetPlaylist){
         if(!playlists[targetPlaylist]) playlists[targetPlaylist] = [];
-        Object.values(idRemap).forEach(id => {
-          if(!playlists[targetPlaylist].includes(id)) playlists[targetPlaylist].push(id);
-        });
+        importTargetIds = Object.values(idRemap).filter(id => !playlists[targetPlaylist].includes(id));
       }
       playlists['All Songs'] = allTracks.map(t => t.id);
       saveMeta();
@@ -10647,10 +10939,39 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       updateSandboxToggles();
       
       $('emptyState').style.display = 'none';
-      navigate('library');
-      renderTabs();
-      renderList();
-      toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + all settings' : ''}`);
+      // If importing into a specific playlist with tracks to place, ask where
+      // they go instead of always appending to the end.
+      if(targetPlaylist && importTargetIds && importTargetIds.length){
+        const tp = targetPlaylist;
+        const ids = importTargetIds.slice();
+        activePlaylist = tp;
+        navigate('library');
+        renderTabs();
+        renderList();
+        const label = `Pick where to add ${ids.length} song${ids.length===1?'':'s'}`;
+        promptInsertPosition(tp, `${ids.length} song${ids.length===1?'':'s'} imported`, (idx) => {
+          if(idx === '__pick__'){
+            enterInsertPickMode(tp, ids, label, (insertIdx) => {
+              const at = Math.max(0, Math.min(insertIdx, playlists[tp].length));
+              ids.forEach(nid => { if(!playlists[tp].includes(nid)) playlists[tp].splice(at, 0, nid); });
+              saveMeta();
+              toast(`Imported ${ids.length} song${ids.length===1?'':'s'} into "${tp}"`);
+              exitInsertPickMode();
+            });
+          } else {
+            const at = Math.max(0, Math.min(idx, playlists[tp].length));
+            ids.forEach(nid => { if(!playlists[tp].includes(nid)) playlists[tp].splice(at, 0, nid); });
+            saveMeta();
+            toast(`Imported ${ids.length} song${ids.length===1?'':'s'} into "${tp}"`);
+            renderList();
+          }
+        });
+      } else {
+        navigate('library');
+        renderTabs();
+        renderList();
+        toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + all settings' : ''}`);
+      }
     }catch(e){
       console.error(e);
       toast('Import failed: ' + (e.message || 'is that a valid SideCut .zip?'));
@@ -14051,7 +14372,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const art = t.artUrl ? `<div class="hb-track-art" style="background-image:url('${t.artUrl}')"></div>` : `<div class="hb-track-art"></div>`;
     const isCur = t.id === queue[queueIndex];
     const playing = isCur && activeAudio() && !activeAudio().paused;
-    const playIcon = playing ? '⏸' : '▶';
+    const playIcon = playing ? HB_ICONS.pause : HB_ICONS.play;
     return `
       <div class="hb-track-row" data-track-id="${t.id}">
         ${art}
@@ -14069,10 +14390,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       row.addEventListener('click', () => {
         const id = row.dataset.trackId;
         if(!allTracks.some(t => t.id === id)) return;
-        const prev = activePlaylist;
-        activePlaylist = 'All Songs';
-        playFromList(allTracks.map(t => t.id), id);
-        activePlaylist = prev;
+        playTrackInPlaylistContext(id);
         closeHomeBubble();
         navigate('library');
       });
@@ -14085,17 +14403,43 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const a = activeAudio();
         if(id === queue[queueIndex] && a && !a.paused){
           a.pause();
-          btn.textContent = '▶';
+          btn.innerHTML = HB_ICONS.play;
           return;
         }
-        const prev = activePlaylist;
-        activePlaylist = 'All Songs';
-        playFromList(allTracks.map(t => t.id), id);
-        activePlaylist = prev;
+        playTrackInPlaylistContext(id);
         closeHomeBubble();
         navigate('library');
       });
     });
+  }
+
+  // Tapping a song from a Home bubble (now playing / most played / favorites)
+  // should keep playing within that song's playlist — not dump the whole library
+  // into the queue, which made the next track feel "random". Pick the real
+  // playlist the track belongs to (prefer the currently active one if it has it),
+  // fall back to All Songs only when no real playlist contains it.
+  function playTrackInPlaylistContext(id){
+    let ctx = null;
+    if(activePlaylist && activePlaylist !== 'All Songs' && activePlaylist !== 'Favorites' && (playlists[activePlaylist] || []).includes(id)){
+      ctx = activePlaylist;
+    }
+    if(!ctx){
+      const real = Object.keys(playlists).find(n =>
+        n !== 'All Songs' && n !== 'Favorites' && (playlists[n] || []).includes(id));
+      if(real) ctx = real;
+    }
+    activePlaylist = ctx || 'All Songs';
+    let ids = ctx ? (playlists[ctx] || []).slice() : allTracks.map(t => t.id);
+    if(shuffle){
+      if(!shuffledOrderCache || shuffledOrderCache.playlist !== activePlaylist) regenerateShuffleOrder();
+      const validSet = new Set(ids);
+      ids = shuffledOrderCache.ids.filter(x => validSet.has(x));
+    } else {
+      ids = getSortedIds(ids);
+    }
+    playFromList(ids, id);
+    renderTabs();
+    renderList();
   }
 
   function renderDiscoverChips(){
