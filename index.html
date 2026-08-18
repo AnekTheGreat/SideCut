@@ -1696,7 +1696,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       </div>
     </div>
   </div>
-  <div style="display:flex; gap:8px; margin-bottom:10px;">
+  <div style="display:flex; gap:8px; margin-bottom:10px; touch-action:manipulation; position:relative; z-index:5;">
       <button id="discoverNewReleasesBtn" class="action-pill" style="flex:1; padding:10px 14px; font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
         <span style="font-size:15px;">🆕</span> New Releases <span id="nrDropdownChevron" style="margin-left:4px; font-size:11px;">▾</span>
       </button>
@@ -15326,6 +15326,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
+  // Mobile fallback: pointerdown events are more reliable than click on Android WebViews
+  // where overflow-y:auto can swallow touch events.
+  function _toggleNR(){
+    if(!isPremiumActive()){ openPremiumSettings(); toast('Premium feature — unlock to see new releases.', 3500); return; }
+    const dd = $('discoverNewReleasesDropdown'); const chev = $('nrDropdownChevron');
+    const isOpen = dd.style.display !== 'none';
+    $('discoverGenresDropdown').style.display = 'none'; if($('genreDropdownChevron')) $('genreDropdownChevron').textContent = '\u25be';
+    if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
+    else { dd.style.display = 'block'; if(chev) chev.textContent = '\u25b4'; renderNewReleasesDropdown(); }
+  }
+  function _toggleGenres(){
+    const dd = $('discoverGenresDropdown'); const chev = $('genreDropdownChevron');
+    const isOpen = dd.style.display !== 'none';
+    $('discoverNewReleasesDropdown').style.display = 'none'; if($('nrDropdownChevron')) $('nrDropdownChevron').textContent = '\u25be';
+    if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
+    else { dd.style.display = 'block'; if(chev) chev.textContent = '\u25b4'; }
+  }
+  // Rebind via onclick (overwrites addEventListener if it silently failed)
+  setTimeout(() => {
+    const nr = $('discoverNewReleasesBtn'); const gn = $('discoverGenresBtn');
+    if(nr) nr.onclick = _toggleNR;
+    if(gn) gn.onclick = _toggleGenres;
+  }, 100);
 
   // Play Billing: re-verify purchases on launch and whenever the app regains
   // focus (e.g. after returning from the Play billing sheet).
