@@ -14436,7 +14436,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         this.textContent = '⏳ Checking...'; this.disabled = true;
         try{ await checkPinnedArtistReleases(); }catch(e){}
         this.textContent = '🔄 Fetch latest from pinned artists'; this.disabled = false;
-        renderPinnedArtists(); renderNewReleases(); renderNewReleasesDropdown();
+        renderPinnedArtists(); renderNewReleases();
+        // Open the New Releases dropdown so results appear there
+        var dd = $('discoverNewReleasesDropdown');
+        if(dd){ dd.style.display = 'block'; var ch = $('nrDropdownChevron'); if(ch) ch.textContent = '\u25b4'; }
+        renderNewReleasesDropdown();
         toast('Checked for new releases!');
       };
       // Last Year button: search iTunes for each pinned artist's songs from the past year
@@ -14444,10 +14448,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(lyBtn) lyBtn.onclick = async function(){
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         this.textContent = '⏳ Searching...'; this.disabled = true;
-        $('discoverResults').innerHTML = '';
         const yearAgo = new Date(); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
         const minDate = yearAgo.toISOString().slice(0,10);
         let totalFound = 0;
+        let html = '';
         for(const a of pinnedArtists){
           try{
             const url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=song&limit=50';
@@ -14455,11 +14459,33 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(!resp || !resp.ok) continue;
             const data = await resp.json();
             const results = (data.results||[]).filter(r => r && r.trackName && r.releaseDate && r.releaseDate >= minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim());
-            results.forEach(r => { $('discoverResults').appendChild(buildDiscoverCard(r)); totalFound++; });
+            results.forEach(r => {
+              const daysAgo = r.releaseDate ? Math.floor((Date.now() - new Date(r.releaseDate).getTime())/86400000) : null;
+              const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+              const art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+              html += '<div class="hb-track-row" style="cursor:pointer;" data-ly-title="' + escapeHtml(r.trackName) + '" data-ly-artist="' + escapeHtml(r.artistName) + '" data-ly-preview="' + escapeHtml(r.previewUrl||'') + '" data-ly-link="' + escapeHtml(r.trackViewUrl||'') + '"><div style="width:34px;height:34px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(\'' + escapeHtml(art) + '\');' : 'background:var(--bg-raised);') + '"></div><div class="hb-track-meta"><div class="hb-track-title">' + escapeHtml(r.trackName) + '</div><div class="hb-track-sub">' + escapeHtml(r.artistName) + (when ? ' · ' + when : '') + '</div></div></div>';
+              totalFound++;
+            });
           }catch(e){}
         }
         this.textContent = '📅 Songs from last year'; this.disabled = false;
-        discoverStatus(totalFound + ' song' + (totalFound!==1?'s':'') + ' from pinned artists in the last year');
+        // Open the NR dropdown and populate it with the results
+        var dd = $('discoverNewReleasesDropdown');
+        if(dd){ dd.style.display = 'block'; var ch = $('nrDropdownChevron'); if(ch) ch.textContent = '\u25b4'; }
+        var countEl = $('nrReleaseCount');
+        if(countEl) countEl.textContent = totalFound + ' song' + (totalFound!==1?'s':'') + ' from last year';
+        var list = $('discoverNewReleasesList');
+        if(list){
+          list.innerHTML = html || '<div style="font-size:12px;color:var(--ink-dim);">No songs found from the last year.</div>';
+          list.querySelectorAll('.hb-track-row').forEach(row => {
+            row.addEventListener('click', function(){
+              var q = (this.dataset.lyTitle||'') + ' ' + (this.dataset.lyArtist||'');
+              $('discoverNewReleasesDropdown').style.display = 'none';
+              $('discoverSearch').value = q;
+              runDiscoverSearch(q);
+            });
+          });
+        }
       };
     }
     if(!isDiscover) stopDiscoverPreview();
