@@ -615,3 +615,11 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   dropdown panels.
 - Version 47.2 → 47.3 (SW sidecut-shell-v47.2 → sidecut-shell-v47.3). Date Aug 18
   6:47 pm EDT.
+
+## v47.4 (Aug 19, 2026)
+- **Discover buttons REALLY fixed — root cause finally found.** The v47.2/v47.3 "fixes" (inline onclick, window-level toggles) were all correctly wired — but they never ran because `renderDiscoverChips()` is called at top level near the end of the main IIFE (was ~line 15120) and referenced `DISCOVER_CHIP_ICONS`, a const that was **never defined** (added in the v47.2 rewrite, lost in the rebase). That boot-time ReferenceError killed the whole IIFE, so the `window._toggleNR`/`_toggleGenres` assignments right after it never executed → tapping the buttons threw a silent `ReferenceError: _toggleNR is not defined`. **Lesson: parse-checking is NOT enough — boot crashes hide in plain sight. Run the IIFE under a DOM mock to find them.** `dev/_boottest.js` (Node + `vm` + stub DOM/IDB/AudioContext) executes the main inline script and prints the first runtime error; keep it for future edits.
+- **`DISCOVER_CHIP_ICONS` re-added** (10 genres, themed emoji) right after `DISCOVER_CHIPS` (~line 14208).
+- **`toastWithUndo()` was also never defined** — `togglePinArtist` called it for the Unpin undo toast (shipped in 87b2ed3), so Unpin silently crashed behind the click-freeze safety net. Now defined next to `toast()` (~line 3217): reuses `#toastEl`, appends an Undo button, 6s auto-dismiss.
+- **Media Session hardened**: `if('mediaSession' in navigator)` is now `&& typeof navigator.mediaSession.setActionHandler === 'function'` so old WebViews can't kill the IIFE at the lock-screen-controls init.
+- **Known benign boot noise**: `dbGet` calls made before `let dbPromise = null` executes (e.g. the lyrics `lyricsWordByWord` restore async IIFE ~line 5468) hit a caught TDZ ReferenceError → log "Storage get failed", return null. Harmless (caught), but the word-by-word restore defaults to off on first boot.
+- Version 47.3 → 47.4 (SW cache sidecut-shell-v47.3 → sidecut-shell-v47.4). Date Aug 19 12:50 am EDT.

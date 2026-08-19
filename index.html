@@ -3215,6 +3215,30 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     clearTimeout(toastEl._t);
     toastEl._t = setTimeout(()=> toastEl.style.display='none', ms);
   }
+  // Toast with an inline Undo action (used by unpin). Reuses the #toast element,
+  // keeps the message + Undo button up for 6 seconds, then clears itself.
+  function toastWithUndo(msg, onUndo){
+    toastEl.textContent = '';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    const undoBtn = document.createElement('button');
+    undoBtn.textContent = 'Undo';
+    undoBtn.style.cssText = 'margin-left:10px; background:none; border:1px solid var(--coral); color:var(--coral); border-radius:14px; padding:3px 12px; font-size:12.5px; font-weight:600; cursor:pointer; flex-shrink:0;';
+    undoBtn.addEventListener('click', () => {
+      clearTimeout(toastEl._t);
+      toastEl.textContent = '';
+      toastEl.style.display = 'none';
+      if(typeof onUndo === 'function') onUndo();
+    });
+    toastEl.appendChild(span);
+    toastEl.appendChild(undoBtn);
+    toastEl.style.display = 'block';
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(() => {
+      toastEl.textContent = '';
+      toastEl.style.display = 'none';
+    }, 6000);
+  }
 
   // In-memory library, backed by IndexedDB so it survives reloads —
   // once you've imported your files the first time, they auto-load
@@ -6406,7 +6430,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '47.3';
+  const APP_VERSION = '47.4';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6418,7 +6442,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     return 0;
   }
-  const CHANGELOG = [    { version: '47.3', date: 'August 18, 2026 at 6:47 pm EDT', title: 'Discover buttons fix + undo pins + artist dedup', items: [
+  const CHANGELOG = [    { version: '47.4', date: 'August 19, 2026 at 12:50 am EDT', title: 'Discover buttons truly fixed — root cause found', items: [
+      'The real bug: renderDiscoverChips() read DISCOVER_CHIP_ICONS, a constant that was never defined. That boot-time crash killed the entire app script, so the New Releases / Genres buttons never received their handlers and taps silently did nothing',
+      'Added the missing DISCOVER_CHIP_ICONS map — the Genres dropdown now renders all 10 category chips with their themed icons',
+      'Added the missing toastWithUndo() helper so Unpin shows the Undo button it was always supposed to show',
+      'Hardened Media Session init — WebViews without setActionHandler can no longer crash the app at boot',
+    ]},
+    { version: '47.3', date: 'August 18, 2026 at 6:47 pm EDT', title: 'Discover buttons fix + undo pins + artist dedup', items: [
       'Discover buttons (New Releases + Genres) now use inline onclick handlers — fixed the Android WebView issue where addEventListener silently failed',
       'New Releases button opens a dropdown of unseen releases from pinned artists',
       'Genres button opens a collapsible dropdown with the category list',
@@ -13899,7 +13929,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
 
   // ---------------- Media Session: lock screen / notification controls ----------------
-  if('mediaSession' in navigator){
+  if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
     navigator.mediaSession.setActionHandler('play', () => {
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       activeAudio().play().catch(() => recoverAudio(activeAudio(), 'media session play failed'));
@@ -14204,6 +14234,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     { label: 'Bollywood', term: 'bollywood hits' },
     { label: 'Chill', term: 'chill instrumental' },
   ];
+  // Themed icons per genre, rendered next to each chip in the Genres dropdown.
+  // Defined next to DISCOVER_CHIPS — renderDiscoverChips() reads it at boot, so a
+  // missing const here used to throw a ReferenceError that killed the whole IIFE
+  // (silently breaking every Discover button + dropdown).
+  const DISCOVER_CHIP_ICONS = {
+    'Top hits': '🔥',
+    'Pop': '🎤',
+    'Hip-hop': '🎧',
+    'Punjabi': '🪘',
+    'Dance': '💃',
+    'Rock': '🎸',
+    'R&B': '🎷',
+    'Latin': '🥁',
+    'Bollywood': '🪩',
+    'Chill': '🌙',
+  };
   let discoverActiveChip = null;
   let discoverPreviewEl = null;
   let discoverPlayingUrl = null;
