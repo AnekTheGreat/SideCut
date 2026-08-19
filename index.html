@@ -1711,7 +1711,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     </div>
     <div id="discoverNewReleasesDropdown" style="display:none; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); max-height:50vh; overflow-y:auto;">
       <div style="padding:10px 14px; font-size:13.5px; font-weight:600; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;">
-        <span style="font-size:15px;">🆕</span> New Releases
+        <span style="font-size:15px;">🆕</span> New Releases <span id="nrReleaseCount" style="font-size:11px; font-weight:400; color:var(--ink-dim); margin-left:auto;"></span>
       </div>
       <div id="discoverNewReleasesList" style="padding:10px 14px;">
         <div style="font-size:12px; color:var(--ink-dim);">Tap to check for new music from your pinned artists.</div>
@@ -2380,7 +2380,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 
       <div style="margin-top:12px;">
         <button class="playlist-pick-btn" id="viewUpdateLogBtn" style="text-align:center; width:100%;">Update log</button>
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v47 · Bk-47</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;" id="currentVersionLabel">SideCut v47.7</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -6476,7 +6476,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '47.6';
+  const APP_VERSION = '47.7';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6498,6 +6498,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       'Notifications gained a Mark all as read button that clears the badge and marks new releases as seen',
       'The New Releases dropdown and the Home bubble now show ALL saved releases from pinned artists instead of only the newest 20',
       'Word-by-word lyrics is now listed as a premium feature in Settings → Premium',
+    ]},
+    { version: '47.7', date: 'August 19, 2026 at 8:55 am EDT', title: 'New Releases dropdown fix + all releases shown', items: [
+      'New Releases dropdown in Discover now auto-refreshes when you navigate to Discover — the list is always up to date with the latest data from your pinned artists',
+      'If the dropdown has no cached releases yet it shows a "Checking..." message and auto-fetches, then re-renders when done',
+      'Visible release count shown in the dropdown header so you can confirm data is loaded',
+      'Removed the 40-per-artist release cap — all fetched releases (up to 50 per artist from iTunes) are now kept and shown',
     ]},
     { version: '47.5.1', date: 'August 19, 2026 at 2:10 am EDT', title: 'New Releases dropdown shows releases again', items: [
       'The What\'s-New popup was silently marking every pinned-artist release as "seen" whenever it opened (including automatically on a version bump), which emptied the New Releases dropdown and the Home bubble list',
@@ -14390,6 +14396,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // opens, so they're never left empty even if the boot render was missed.
       try{ if(typeof renderPinnedArtists === 'function') renderPinnedArtists(); }catch(e){ console.error('renderPinnedArtists failed', e); }
       try{ if(typeof renderNewReleases === 'function') renderNewReleases(); }catch(e){ console.error('renderNewReleases failed', e); }
+      try{ if(typeof renderNewReleasesDropdown === 'function') renderNewReleasesDropdown(); }catch(e){}
     }
     if(!isDiscover) stopDiscoverPreview();
     if(isHome){
@@ -15460,6 +15467,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
     const unseenCount = all.filter(r => !r.seen).length;
     console.log('[NR dropdown] all releases:', all.length, 'unseen:', unseenCount);
+    const _nrCount = $('nrReleaseCount');
+    if(_nrCount) _nrCount.textContent = all.length ? all.length + ' release' + (all.length>1?'s':'') + (unseenCount ? ' · ' + unseenCount + ' new' : '') : '';
     if(!all.length){
       // No releases cached yet — kick off a check so data populates
       list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); padding:8px 0;">Checking for new releases from your pinned artists...</div>';
