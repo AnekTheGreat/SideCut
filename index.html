@@ -15230,10 +15230,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           });
         }
       });
-      // Keep the snapshot capped so it doesn't grow forever — newest 40.
+      // Keep all fetched releases (up to 50 per iTunes query) so nothing is lost.
       const merged = prev.concat(fresh)
-        .sort((a,b) => (b.date||'').localeCompare(a.date||''))
-        .slice(0, 40);
+        .sort((a,b) => (b.date||'').localeCompare(a.date||''));
       pinnedReleases[artist] = merged;
       return fresh;
     }catch(e){ return []; }
@@ -15449,6 +15448,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function renderNewReleasesDropdown(){
     const list = $('discoverNewReleasesList');
     if(!list) return;
+    console.log('[NR dropdown] pinnedArtists:', pinnedArtists.length, 'pinnedReleases keys:', Object.keys(pinnedReleases).length);
     if(!pinnedArtists.length){
       list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">Pin artists in Discover to see their new releases here.</div>';
       return;
@@ -15459,8 +15459,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
     all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
     const unseenCount = all.filter(r => !r.seen).length;
+    console.log('[NR dropdown] all releases:', all.length, 'unseen:', unseenCount);
     if(!all.length){
-      list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">No releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
+      // No releases cached yet — kick off a check so data populates
+      list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); padding:8px 0;">Checking for new releases from your pinned artists...</div>';
+      checkPinnedArtistReleases().then(() => {
+        // Re-render once the check completes
+        const list2 = $('discoverNewReleasesList');
+        if(list2) renderNewReleasesDropdown();
+      });
       return;
     }
     list.innerHTML = all.map(rel => {
