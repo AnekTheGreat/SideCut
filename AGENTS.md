@@ -655,3 +655,19 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
   troubleshooting.
 - Version 47.6 → 47.7 (SW cache sidecut-shell-v47.6 → sidecut-shell-v47.7).
   Date Aug 19 8:55 am EDT.
+
+## v47.7 consolidated (Aug 19, 2026)
+All v47.7/v47.8/v47.9 changes rolled into a single v47.7 entry:
+- **New Releases dropdown** in Discover auto-refreshes on open, shows
+  all releases (no 40-per-artist cap), visible count in header, and
+  auto-fetches when opened with empty cache
+- **Discover flash fix**: `loadPinnedArtists()` catch block no longer
+  wipes `pinnedArtists`/`pinnedReleases` to `[]` on IDB errors
+- **Support tab** in Settings (before More): sidecutsupport@gmail.com,
+  48-hour response time
+- **Lifetime no-refunds**: "No refunds — all sales are final" on plan card
+- **Premium transfer**: Manage premium shows Export → Import flow for
+  moving to a new device
+- **Discover buttons**: Fetch Latest + Songs From Last Year for pinned
+  artists
+- SW cache: sidecut-shell-v47.7 (unchanged from prior push)
