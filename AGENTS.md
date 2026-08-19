@@ -641,3 +641,17 @@ change. The user prefers version bumps of .1 (patch) and dates in EDT.
 - **All releases shown**: removed the `.slice(0, 20)` caps in `renderNewReleasesDropdown()` and the Home `newreleases` bubble overlay (per-artist snapshot still capped at 40 in `fetchArtistReleases`).
 - **Premium pane**: `#premiumFeatureList` gained a Word-by-word lyrics row (🎤).
 - Version 47.5.1 → 47.6 (SW cache sidecut-shell-v47.5.1 → sidecut-shell-v47.6). Date Aug 19 2:39 am EDT.
+
+## v47.7 (Aug 19, 2026)
+- **New Releases dropdown fix**: the dropdown in Discover now auto-renders when
+  you navigate to Discover (not just on button tap), so the release list is always
+  up to date. If opened with no cached releases, it shows "Checking..." and
+  auto-fetches, then re-renders when done. A visible release count in the
+  dropdown header confirms data is loaded.
+- **All releases shown**: removed the 40-per-artist release cap in
+  `fetchArtistReleases` — all fetched releases (up to 50 per artist from iTunes)
+  are now kept and shown in both the Home bubble and the Discover dropdown.
+- Debug `console.log` traces in `renderNewReleasesDropdown` for on-device
+  troubleshooting.
+- Version 47.6 → 47.7 (SW cache sidecut-shell-v47.6 → sidecut-shell-v47.7).
+  Date Aug 19 8:55 am EDT.
