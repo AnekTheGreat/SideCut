@@ -6464,7 +6464,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '47.5';
+  const APP_VERSION = '47.5.1';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6477,6 +6477,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '47.5.1', date: 'August 19, 2026 at 2:10 am EDT', title: 'New Releases dropdown shows releases again', items: [
+      'The What's-New popup was silently marking every pinned-artist release as "seen" whenever it opened (including automatically on a version bump), which emptied the New Releases dropdown and the Home bubble list',
+      'The popup no longer touches your releases — only the "Mark all as seen" buttons in the dropdown and the Home bubble do that now',
+      'The New Releases dropdown and Home bubble now show your recent releases even after you've seen them, with a NEW badge on anything unseen, so the list is never empty while you have releases',
+    ]},
     { version: '47.5', date: 'August 19, 2026 at 1:45 am EDT', title: 'Discover dropdowns finally open — duplicate handlers + freeze loop removed', items: [
       'Removed the duplicate dropdown listeners: a single tap was firing BOTH the inline onclick and an old addEventListener, so the dropdown opened and instantly closed again — it looked like the button did nothing',
       'Killed the release-check freeze loop: opening the New Releases dropdown with no unseen releases used to re-trigger a full release check on every render, looping forever; it now just shows the empty state and relies on the automatic checks (boot, app focus, Check-now)',
@@ -7528,7 +7533,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function openNotif(){
     enrichState.seen = true;
     exportState.seen = true;
-    if(typeof markReleasesSeen === 'function') markReleasesSeen();
     renderNotifPanel();
     $('notifSummary').style.display = 'flex';
     $('notifExpandBtn').style.display = 'block';
@@ -14729,19 +14733,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       ico.innerHTML = HB_ICONS.newreleases; title.textContent = 'New releases from pinned artists';
       const all = [];
       Object.keys(pinnedReleases).forEach(artist => {
-        (pinnedReleases[artist] || []).forEach(rel => { if(!rel.seen) all.push({ ...rel, artist }); });
+        (pinnedReleases[artist] || []).forEach(rel => all.push({ ...rel, artist }));
       });
       all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+      const unseenCount = all.filter(r => !r.seen).length;
       if(!all.length){
-        body.innerHTML = '<div class="hb-empty">No new releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
+        body.innerHTML = '<div class="hb-empty">No releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
       } else {
-        body.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">' + all.length + ' new release' + (all.length>1?'s':'') + '</div>' +
+        body.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">' + all.length + ' recent release' + (all.length>1?'s':'') + (unseenCount ? ' · ' + unseenCount + ' new' : '') + '</div>' +
           all.slice(0, 20).map(rel => {
             const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
             const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
-            return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
+            return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
           }).join('') +
-          '<button class="hb-cta" id="hbCtaMarkSeen">Mark all as seen</button>';
+          (unseenCount ? '<button class="hb-cta" id="hbCtaMarkSeen">Mark all as seen</button>' : '');
         body.querySelectorAll('.hb-track-row').forEach(row => {
           row.addEventListener('click', () => {
             const q = (row.dataset.releaseTitle||'') + ' ' + (row.dataset.releaseArtist||'');
@@ -15374,19 +15379,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     const all = [];
     Object.keys(pinnedReleases).forEach(artist => {
-      (pinnedReleases[artist] || []).forEach(rel => { if(!rel.seen) all.push({ ...rel, artist }); });
+      (pinnedReleases[artist] || []).forEach(rel => all.push({ ...rel, artist }));
     });
     all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+    const unseenCount = all.filter(r => !r.seen).length;
     if(!all.length){
-      list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">No new releases yet. SideCut checks your pinned artists automatically — reopen this later, or check again from Discover.</div>';
+      list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">No releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
       return;
     }
     list.innerHTML = all.slice(0, 20).map(rel => {
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
       const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
-      return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
+      return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
     }).join('') +
-    '<button class="hb-cta" style="margin-top:8px;" id="ddMarkSeen">Mark all as seen</button>';
+    (unseenCount ? '<button class="hb-cta" style="margin-top:8px;" id="ddMarkSeen">Mark all as seen</button>' : '');
     list.querySelectorAll('.hb-track-row').forEach(row => {
       row.addEventListener('click', () => {
         const q = (row.dataset.releaseTitle||'') + ' ' + (row.dataset.releaseArtist||'');
