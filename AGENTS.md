@@ -671,3 +671,11 @@ All v47.7/v47.8/v47.9 changes rolled into a single v47.7 entry:
 - **Discover buttons**: Fetch Latest + Songs From Last Year for pinned
   artists
 - SW cache: sidecut-shell-v47.7 (unchanged from prior push)
+
+## v48 (Aug 19, 2026)
+- **Album History** in Discover: new button that fetches all albums from
+  pinned artists released in the last 20 years via iTunes. Collapsible
+  drill-down: tap artist → see albums → tap album → see every track with
+  duration. Album artwork, year, and track count shown. Tapping a track
+  searches for it in Discover. Songs are lazy-loaded on first expand.
+- SW cache: sidecut-shell-v48. Date Aug 19 10:30 am EDT.
