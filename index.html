@@ -5935,7 +5935,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   
   function formatSyncedLyrics(lrc) {
     const lines = lrc.split('\n').filter(line => line.trim());
-    const isWordSync = isPremiumActive();
+    const isWordSync = true; // always generate word spans — button visibility gates premium
     return lines.map(line => {
       const match = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/);
       if (match) {
@@ -5995,6 +5995,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('lyricsWordBtn').classList.toggle('active', lyricsWordByWord);
     dbPut('meta', { key: 'lyricsWordByWord', value: lyricsWordByWord });
     $('lyricsWwInfo').style.display = lyricsWordByWord ? '' : 'none';
+    // Re-render lyrics so word spans appear/disappear immediately
+    if(currentLyricsText){
+      const container = $('lyricsContent');
+      const scrollTop = container ? container.scrollTop : 0;
+      if(currentLyricsSynced){ $('lyricsText').innerHTML = formatSyncedLyrics(currentLyricsText); }
+      else { $('lyricsText').innerHTML = currentLyricsText.split('\n').map(line => '<div class="lyric-line">' + escapeHtml(line) + '</div>').join(''); }
+      if(container) container.scrollTop = scrollTop;
+      lastLyricsIdx = -1;
+    }
   });
   $('lyricsAutoScrollBtn').addEventListener('click', () => {
     lyricsAutoScroll = !lyricsAutoScroll;
@@ -15698,12 +15707,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function renderNewReleasesDropdown(){
     const list = $('discoverNewReleasesList');
     if(!list) return;
-    console.log('[NR dropdown] pinnedArtists:', pinnedArtists.length, 'pinnedReleases keys:', Object.keys(pinnedReleases).length);
     // Visible debug — shows data state right in the dropdown
-    const _dArtists = pinnedArtists.map(a => a.name || '?').join(', ');
-    const _dKeys = Object.keys(pinnedReleases).join(', ');
-    const _dCounts = Object.keys(pinnedReleases).map(k => k + ':' + (pinnedReleases[k]||[]).length).join(' ');
-    console.log('[NR dropdown] artists:', _dArtists, '| keys:', _dKeys, '| counts:', _dCounts);
     if(!pinnedArtists.length){
       list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">Pin artists in Discover to see their new releases here.</div>';
       return;
@@ -15714,11 +15718,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
     all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
     const unseenCount = all.filter(r => !r.seen).length;
-    console.log('[NR dropdown] all releases:', all.length, 'unseen:', unseenCount);
-    // Inject debug info into the header count area
-    const _dc = $('nrReleaseCount');
-    if(_dc) _dc.textContent = all.length + ' releases | artists: ' + Object.keys(pinnedReleases).length + ' groups';
-    const _nrCount = $('nrReleaseCount');
+    const _nrCount = document.getElementById('nrReleaseCount');
     if(_nrCount) _nrCount.textContent = all.length ? all.length + ' release' + (all.length>1?'s':'') + (unseenCount ? ' · ' + unseenCount + ' new' : '') : '';
     if(!all.length){
       // No releases cached yet — kick off a check so data populates
