@@ -3203,6 +3203,40 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 <script>
 (function(){
   const $ = id => document.getElementById(id);
+
+  // Discover dropdown toggles, defined EARLY so no later boot failure can ever
+  // remove them. The inline onclick handlers on the Discover buttons call these
+  // as globals; everything they use (isPremiumActive, openPremiumSettings, toast,
+  // renderNewReleasesDropdown) is a hoisted function declaration, and the toggles
+  // only touch the DOM when the user actually taps a button.
+  window._toggleNR = function(){
+    try{
+      if(!isPremiumActive()){ openPremiumSettings(); toast('Premium feature — unlock to see new releases.', 3500); return; }
+      var dd = document.getElementById('discoverNewReleasesDropdown');
+      var chev = document.getElementById('nrDropdownChevron');
+      var isOpen = dd && dd.style.display !== 'none';
+      var genDd = document.getElementById('discoverGenresDropdown');
+      var genChev = document.getElementById('genreDropdownChevron');
+      if(genDd) genDd.style.display = 'none';
+      if(genChev) genChev.textContent = '\u25be';
+      if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
+      else { dd.style.display = 'block'; if(chev) chev.textContent = '\u25b4'; renderNewReleasesDropdown(); }
+    }catch(e){ console.error('_toggleNR failed', e); if(typeof toast === 'function') toast('Something went wrong — try again.'); }
+  };
+  window._toggleGenres = function(){
+    try{
+      var dd = document.getElementById('discoverGenresDropdown');
+      var chev = document.getElementById('genreDropdownChevron');
+      var isOpen = dd && dd.style.display !== 'none';
+      var nrDd = document.getElementById('discoverNewReleasesDropdown');
+      var nrChev = document.getElementById('nrDropdownChevron');
+      if(nrDd) nrDd.style.display = 'none';
+      if(nrChev) nrChev.textContent = '\u25be';
+      if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
+      else { dd.style.display = 'block'; if(chev) chev.textContent = '\u25b4'; }
+    }catch(e){ console.error('_toggleGenres failed', e); if(typeof toast === 'function') toast('Something went wrong — try again.'); }
+  };
+
   // Captured before any script-driven DOM mutation, so it's a clean copy of the shipped shell —
   // used by the in-app version rollback feature below.
   const SHELL_SNAPSHOT_HTML = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
@@ -14251,6 +14285,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     'Chill': '🌙',
   };
   let discoverActiveChip = null;
+  let discoverBootSearched = false; // auto-search only once per session (spares the network on repeated opens)
   let discoverPreviewEl = null;
   let discoverPlayingUrl = null;
 
@@ -14287,13 +14322,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     $('libraryBtn').classList.toggle('active', isLibrary);
     // Section side effects
     if(isDiscover){
-      if(!discoverActiveChip && !$('discoverResults').children.length){
-        runDiscoverSearch(DISCOVER_CHIPS[0].term, DISCOVER_CHIPS[0].label, 0);
+      // Auto-search runs once per session (guarded so a slow/failed catalog call
+      // can't re-fire on every open and stall the view).
+      if(!discoverBootSearched){
+        discoverBootSearched = true;
+        try{
+          if(!discoverActiveChip && !$('discoverResults').children.length){
+            runDiscoverSearch(DISCOVER_CHIPS[0].term, DISCOVER_CHIPS[0].label, 0);
+          }
+        }catch(e){ console.error('Discover auto-search failed', e); }
       }
       // Always re-render the pinned-artists + new-releases sections when Discover
       // opens, so they're never left empty even if the boot render was missed.
-      if(typeof renderPinnedArtists === 'function') renderPinnedArtists();
-      if(typeof renderNewReleases === 'function') renderNewReleases();
+      try{ if(typeof renderPinnedArtists === 'function') renderPinnedArtists(); }catch(e){ console.error('renderPinnedArtists failed', e); }
+      try{ if(typeof renderNewReleases === 'function') renderNewReleases(); }catch(e){ console.error('renderNewReleases failed', e); }
     }
     if(!isDiscover) stopDiscoverPreview();
     if(isHome){
@@ -15406,30 +15448,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(Date.now() - lastPinnedCheck > 10*60*1000){ lastPinnedCheck = Date.now(); checkPinnedArtistReleases(); }
   });
 
-  // Global toggle functions for Discover dropdown buttons (onclick in HTML)
-  window._toggleNR = function(){
-    if(!isPremiumActive()){ openPremiumSettings(); toast('Premium feature — unlock to see new releases.', 3500); return; }
-    var dd = document.getElementById('discoverNewReleasesDropdown');
-    var chev = document.getElementById('nrDropdownChevron');
-    var isOpen = dd && dd.style.display !== 'none';
-    var genDd = document.getElementById('discoverGenresDropdown');
-    var genChev = document.getElementById('genreDropdownChevron');
-    if(genDd) genDd.style.display = 'none';
-    if(genChev) genChev.textContent = '\u25be';
-    if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
-    else { dd.style.display = 'block'; if(chev) chev.textContent = '\u25b4'; renderNewReleasesDropdown(); }
-  };
-  window._toggleGenres = function(){
-    var dd = document.getElementById('discoverGenresDropdown');
-    var chev = document.getElementById('genreDropdownChevron');
-    var isOpen = dd && dd.style.display !== 'none';
-    var nrDd = document.getElementById('discoverNewReleasesDropdown');
-    var nrChev = document.getElementById('nrDropdownChevron');
-    if(nrDd) nrDd.style.display = 'none';
-    if(nrChev) nrChev.textContent = '\u25be';
-    if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
-    else { dd.style.display = 'block'; if(chev) chev.textContent = '\u25b4'; }
-  };
+
 
 })();
 </script>

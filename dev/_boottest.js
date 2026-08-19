@@ -64,6 +64,30 @@ function makeEl(tag) {
 // ---------------- IDB mock ----------------
 function makeIDB() {
   const stores = { tracks: new Map(), meta: new Map() };
+  // Seed realistic user data so data-dependent boot crashes surface too.
+  const meta = stores.meta;
+  meta.set('pinnedArtists', { key: 'pinnedArtists', value: [
+    { name: 'The Weeknd', art: 'https://example.com/w.jpg', addedAt: 1755000000000 },
+    { name: 'Drake', art: 'https://example.com/d.jpg', addedAt: 1755000000000 },
+    { name: 'Post Malone', art: 'https://example.com/p.jpg', addedAt: 1755000000000 },
+    { name: 'Taylor Swift', art: 'https://example.com/t.jpg', addedAt: 1755000000000 },
+  ] });
+  meta.set('pinnedReleases', { key: 'pinnedReleases', value: {
+    'The Weeknd': [
+      { title: 'Dancing In The Flames', date: '2026-08-10', art: 'https://example.com/a.jpg', url: 'https://open.spotify.com/track/1', previewUrl: null, seen: false },
+      { title: 'Open Hearts', date: '2026-07-01', art: 'https://example.com/b.jpg', url: 'https://open.spotify.com/track/2', previewUrl: null, seen: true },
+    ],
+    'Drake': [ { title: 'Somebody Loves Me', date: '2026-08-01', art: null, url: null, previewUrl: null, seen: false } ],
+  } });
+  meta.set('homeOrder', { key: 'homeOrder', value: ['nowplaying', 'shortcuts', 'pinnedartists', 'newreleases', 'playlists', 'stats', 'library', 'custom-1'] });
+  meta.set('homeHidden', { key: 'homeHidden', value: {} });
+  meta.set('homeBubbleSize', { key: 'homeBubbleSize', value: 100 });
+  meta.set('refreshRate', { key: 'refreshRate', value: 'max' });
+  meta.set('customQuickActions', { key: 'customQuickActions', value: [] });
+  meta.set('actionPillOrder', { key: 'actionPillOrder', value: ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle'] });
+  meta.set('playlists', { key: 'playlists', value: { 'All Songs': [], 'Favorites': [] } });
+  meta.set('idCounter', { key: 'idCounter', value: 0 });
+  meta.set('lyricsWordByWord', { key: 'lyricsWordByWord', value: true });
   function storeOf(name) { if (!stores[name]) stores[name] = new Map(); return stores[name]; }
   return {
     open() {
@@ -147,7 +171,7 @@ const doc = {
 sandbox.document = doc;
 
 sandbox.localStorage = {
-  _m: new Map(),
+  _m: new Map([['sidecut_premium', JSON.stringify({ active: true, granted: true, plan: 'gift', code: 'SC-xxxxxxxx-xxxxxxxx' })]]),
   getItem(k) { return this._m.has(k) ? this._m.get(k) : null; },
   setItem(k, v) { this._m.set(k, String(v)); },
   removeItem(k) { this._m.delete(k); },
