@@ -1701,6 +1701,10 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       </div>
     </div>
   </div>
+  <div id="pinnedArtistsActions" style="display:flex; gap:8px; margin-bottom:10px;">
+      <button id="discoverFetchLatest" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🔄 Fetch latest from pinned artists</button>
+      <button id="discoverLastYear" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Songs from last year</button>
+  </div>
   <div style="display:flex; gap:8px; margin-bottom:10px; touch-action:manipulation; position:relative; z-index:5;">
       <button id="discoverNewReleasesBtn" class="action-pill" onclick="_toggleNR()" style="flex:1; padding:10px 14px; font-size:13px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
         <span style="font-size:15px;">🆕</span> New Releases <span id="nrDropdownChevron" style="margin-left:4px; font-size:11px;">▾</span>
@@ -14416,6 +14420,38 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       try{ if(typeof renderPinnedArtists === 'function') renderPinnedArtists(); }catch(e){ console.error('renderPinnedArtists failed', e); }
       try{ if(typeof renderNewReleases === 'function') renderNewReleases(); }catch(e){ console.error('renderNewReleases failed', e); }
       try{ if(typeof renderNewReleasesDropdown === 'function') renderNewReleasesDropdown(); }catch(e){}
+      // Fetch Latest button: trigger a release check for pinned artists
+      const flBtn = $('discoverFetchLatest');
+      if(flBtn) flBtn.onclick = async function(){
+        if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
+        this.textContent = '⏳ Checking...'; this.disabled = true;
+        try{ await checkPinnedArtistReleases(); }catch(e){}
+        this.textContent = '🔄 Fetch latest from pinned artists'; this.disabled = false;
+        renderPinnedArtists(); renderNewReleases(); renderNewReleasesDropdown();
+        toast('Checked for new releases!');
+      };
+      // Last Year button: search iTunes for each pinned artist's songs from the past year
+      const lyBtn = $('discoverLastYear');
+      if(lyBtn) lyBtn.onclick = async function(){
+        if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
+        this.textContent = '⏳ Searching...'; this.disabled = true;
+        $('discoverResults').innerHTML = '';
+        const yearAgo = new Date(); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+        const minDate = yearAgo.toISOString().slice(0,10);
+        let totalFound = 0;
+        for(const a of pinnedArtists){
+          try{
+            const url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=song&limit=50';
+            const resp = await fetchWithProxy(url);
+            if(!resp || !resp.ok) continue;
+            const data = await resp.json();
+            const results = (data.results||[]).filter(r => r && r.trackName && r.releaseDate && r.releaseDate >= minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim());
+            results.forEach(r => { $('discoverResults').appendChild(buildDiscoverCard(r)); totalFound++; });
+          }catch(e){}
+        }
+        this.textContent = '📅 Songs from last year'; this.disabled = false;
+        discoverStatus(totalFound + ' song' + (totalFound!==1?'s':'') + ' from pinned artists in the last year');
+      };
     }
     if(!isDiscover) stopDiscoverPreview();
     if(isHome){
