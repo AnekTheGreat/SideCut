@@ -1453,6 +1453,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 .home-bubble.is-playing{ border-color:var(--coral); }
 .home-bubble.is-playing .hb-glow{ animation: sd-glow-pulse 4s ease-in-out infinite; }
 .home-bubble.hb-hold-confirm{ border-color:var(--coral); box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent); }
+.home-bubble.hb-dragging{ position:fixed; z-index:999; margin:0; pointer-events:none; opacity:.95;
+  box-shadow:0 16px 44px rgba(0,0,0,.45); border-color:var(--coral); }
 
 /* Expanded bubble overlay — feels immersive: blurred backdrop + spring-in panel */
 #homeBubbleOverlay{ display:none; position:fixed; inset:0; z-index:80; align-items:center; justify-content:center; padding:20px; }
@@ -1561,6 +1563,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="notifSummary" style="display:flex; flex-direction:column; gap:8px;"></div>
     <button id="notifExpandBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:8px; padding:8px 16px; font-size:12px; cursor:pointer;">
       Show full update history
+    </button>
+    <button id="notifMarkRead" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 16px; font-size:12px; cursor:pointer; margin-top:6px;">
+      ✓ Mark all as read
     </button>
     <div id="notifBody" style="display:none; flex-direction:column; gap:10px; max-height:60vh; overflow-y:auto; -webkit-overflow-scrolling:touch;"></div>
     <div class="modal-btns">
@@ -1941,6 +1946,13 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
               <div style="font-size:11px; color:var(--ink-dim); line-height:1.4;">Experimental UI &amp; accessibility tweaks: compact rows, hide album art, bigger tap targets, high-contrast text, invert colors &amp; more</div>
             </div>
           </div>
+          <div style="display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:10px; padding:12px;">
+            <span style="font-size:16px;">🎤</span>
+            <div>
+              <div style="font-size:13px; font-weight:600;">Word-by-word lyrics</div>
+              <div style="font-size:11px; color:var(--ink-dim); line-height:1.4;">Karaoke-style word highlighting in the lyrics view — tap the word-by-word button while a song with lyrics is open</div>
+            </div>
+          </div>
         </div>
 
         <!-- Remove premium from this device (works for any plan) -->
@@ -2225,7 +2237,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">
           <div style="margin-bottom:6px;">Once your songs are imported, SideCut keeps running with no connection:</div>
           <div style="margin-bottom:4px;"><strong>Yes —</strong> playing your library, playlists, shuffle/repeat, EQ, DJ mode, seek, sleep timer, gapless, crossfade, lyrics you've already fetched, all saved settings, and every Sandbox tweak (custom quick actions, Home layout).</div>
-          <div><strong>Needs internet —</strong> Discover song search and previews, fetching new lyrics or covers, and update checks. Your actual music files always play straight from this device.</div>
+          <div><strong>Needs internet —</strong> <b>Discover</b> (song search, previews, pinned artists, new-release checks), fetching new lyrics or covers, and update checks. Your actual music files always play straight from this device.</div>
         </div>
       </div>
 
@@ -6464,7 +6476,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '47.5.1';
+  const APP_VERSION = '47.6';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6477,6 +6489,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '47.6', date: 'August 19, 2026 at 2:39 am EDT', title: 'Long-press Home bubble reorder + Discover + pinned artists polish', items: [
+      'Long-press any Home bubble (~1/3 second) and drag it to reorder the Home layout — the bubble floats under your finger and the others slide out of the way; drop to save. The old 3.5s hold-to-hide is gone (hide bubbles from Sandbox → Home page layout instead)',
+      'Discover search now falls back through multiple CORS relays, so songs appear even when the direct iTunes fetch or one proxy is blocked',
+      'Settings → More now clearly labels Discover as an online feature in Works offline (song search, previews, pinned artists, new-release checks all need internet)',
+      'Pinned artists and their release snapshots stay saved across refreshes and version updates — they live in your library data and a library import merges rather than overwrites them',
+      'The New releases found card on Home now disappears when you tap it or after 6 seconds',
+      'Notifications gained a Mark all as read button that clears the badge and marks new releases as seen',
+      'The New Releases dropdown and the Home bubble now show ALL saved releases from pinned artists instead of only the newest 20',
+      'Word-by-word lyrics is now listed as a premium feature in Settings → Premium',
+    ]},
     { version: '47.5.1', date: 'August 19, 2026 at 2:10 am EDT', title: 'New Releases dropdown shows releases again', items: [
       'The What\'s-New popup was silently marking every pinned-artist release as "seen" whenever it opened (including automatically on a version bump), which emptied the New Releases dropdown and the Home bubble list',
       'The popup no longer touches your releases — only the "Mark all as seen" buttons in the dropdown and the Home bubble do that now',
@@ -7566,6 +7588,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       btn.textContent = 'Show full update history';
     }
   });
+  $('notifMarkRead').addEventListener('click', () => {
+    notifLastReadVersion = APP_VERSION;
+    dbPut('meta', { key: 'notifLastReadVersion', value: APP_VERSION });
+    if(typeof markReleasesSeen === 'function') markReleasesSeen();
+    renderNotifPanel();
+    updateNotifBadge();
+    toast('Marked as read');
+  });
   $('notifClose').addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; });
   $('notifBackdrop').addEventListener('click', e => { if(e.target === $('notifBackdrop')) $('notifBackdrop').style.display = 'none'; });
 
@@ -7652,17 +7682,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return changed;
   }
 
-  // CORS proxy helper
+  // CORS proxy helper — tries the direct fetch first, then a few public CORS
+  // relays, so Discover keeps working even when one relay is down or blocked.
   async function fetchWithProxy(url){
-    try{
-      const resp = await fetch(url);
-      if(resp.ok) return resp;
-    }catch(e){}
-    try{
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-      const resp = await fetch(proxyUrl);
-      if(resp.ok) return resp;
-    }catch(e){}
+    const attempts = [
+      () => fetch(url),
+      () => fetch('https://corsproxy.io/?' + encodeURIComponent(url)),
+      () => fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url)),
+      () => fetch('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url))
+    ];
+    for(const a of attempts){
+      try{
+        const resp = await a();
+        if(resp.ok) return resp;
+      }catch(e){}
+    }
     return null;
   }
 
@@ -8014,7 +8048,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.finishedAt && !pinnedCheckState.seen && pinnedCheckState.newCount > 0){
       tasks.push(`
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div data-dismiss="pinned" style="display:flex; align-items:center; gap:10px; cursor:pointer;" title="Tap to dismiss">
           <span style="font-size:18px; color:var(--coral);">🆕</span>
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:13.5px; color:var(--coral);">New releases found</div>
@@ -8038,13 +8072,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       + tasks.map(t => sep + t + sepClose).join('');
     el.innerHTML = inner;
     el.style.display = 'block';
+    // Tapping a finished background-task card dismisses it immediately.
+    el.querySelectorAll('[data-dismiss]').forEach(card => {
+      card.addEventListener('click', () => {
+        if(card.dataset.dismiss === 'pinned' && typeof pinnedCheckState !== 'undefined' && pinnedCheckState){
+          pinnedCheckState.seen = true;
+        }
+        renderHomeExportPopup();
+      });
+    });
 
     // If only freshly-finished (no active) tasks remain, auto-hide shortly.
     const anyActive = exportState.active
       || (window.coverFetchState && window.coverFetchState.active)
       || (window.lyricsFetchState && window.lyricsFetchState.active)
       || enrichState.active
-      || (bgImportState && bgImportState.running && bgImportState.completed < bgImportState.total);
+      || (bgImportState && bgImportState.running && bgImportState.completed < bgImportState.total)
+      || (typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active);
     if(!anyActive){
       if(homeExportHideTimer){ clearTimeout(homeExportHideTimer); }
       homeExportHideTimer = setTimeout(() => {
@@ -8052,6 +8096,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         exportState.finishedAt = 0;
         enrichState.seen = true;
         enrichState.finishedAt = 0;
+        if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState) pinnedCheckState.seen = true;
         const p = $('homeExportPopup'); if(p){ p.style.display = 'none'; p.innerHTML = ''; }
         updateNotifBadge();
       }, 6000);
@@ -14536,6 +14581,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // Quick tap → open the bubble (or run custom action). The mini play button
       // on the now-playing bubble intercepts the tap so it only toggles playback.
       b.addEventListener('click', (e) => {
+        if(window.__hbDragSuppressClick){ window.__hbDragSuppressClick = false; return; }
         const kind = b.dataset.bubble;
         if(e.target.closest('[data-miniplay]')) return; // play button handles its own click
         if(kind && kind.indexOf('custom-') === 0){
@@ -14561,91 +14607,121 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           setTimeout(renderHome, 60);
         });
       }
-      // Hold a bubble for 3.5s → confirm delete (hide) / cancel.
-      wireHomeBubbleHold(b);
+      // Long-press a bubble → drag to reorder the Home layout.
+      wireHomeBubbleDrag(b);
     });
   }
 
-  // ---- Hold-to-delete on Home bubbles (3.5s long-press) ----
-  let homeBubbleHoldTimer = null;
-  let homeBubbleHoldTarget = null;
-  let homeBubbleHoldStartXY = null;
-  function wireHomeBubbleHold(b){
-    const start = (x, y) => {
-      clearTimeout(homeBubbleHoldTimer);
-      homeBubbleHoldTarget = b;
-      homeBubbleHoldStartXY = [x, y];
-      b.classList.add('hb-hold-confirm');
-      homeBubbleHoldTimer = setTimeout(() => {
-        // Only fire the confirm if the finger hasn't wandered off (treat as a tap otherwise).
-        openHomeBubbleConfirm(b);
-      }, 3500);
-    };
-    const cancel = () => {
-      clearTimeout(homeBubbleHoldTimer);
-      homeBubbleHoldTimer = null;
-      if(homeBubbleHoldTarget) homeBubbleHoldTarget.classList.remove('hb-hold-confirm');
-      homeBubbleHoldTarget = null;
-      homeBubbleHoldStartXY = null;
+  // ---- Long-press drag to reorder Home bubbles ----
+  // Press a bubble and hold ~350ms, then drag — it floats under your finger and
+  // the others shift out of the way. Drop to save the new order (meta homeOrder).
+  // Quick taps still open the bubble; scrolling aborts the hold.
+  let homeBubbleDragTimer = null;
+  let homeBubbleDragStartXY = null;
+  let hbDrag = null; // active drag session
+  function wireHomeBubbleDrag(b){
+    const cancelStart = () => {
+      clearTimeout(homeBubbleDragTimer);
+      homeBubbleDragTimer = null;
+      homeBubbleDragStartXY = null;
     };
     b.addEventListener('pointerdown', (e) => {
-      if(e.target.closest('[data-miniplay]')) return; // don't trigger hold from the play button
-      start(e.clientX, e.clientY);
+      if(e.target.closest('[data-miniplay]')) return; // don't drag from the play button
+      cancelStart();
+      homeBubbleDragStartXY = [e.clientX, e.clientY];
+      homeBubbleDragTimer = setTimeout(() => {
+        beginHomeBubbleDrag(b, e.pointerId, e.clientX, e.clientY);
+      }, 350);
     });
     b.addEventListener('pointermove', (e) => {
-      if(!homeBubbleHoldTimer || !homeBubbleHoldStartXY) return;
-      const dx = e.clientX - homeBubbleHoldStartXY[0];
-      const dy = e.clientY - homeBubbleHoldStartXY[1];
-      if(Math.abs(dx) > 12 || Math.abs(dy) > 12) cancel(); // moved → it's a scroll/drag, abort
+      if(!homeBubbleDragTimer || !homeBubbleDragStartXY) return;
+      const dx = e.clientX - homeBubbleDragStartXY[0];
+      const dy = e.clientY - homeBubbleDragStartXY[1];
+      if(Math.abs(dx) > 14 || Math.abs(dy) > 14) cancelStart(); // moved → scroll, abort
     });
-    b.addEventListener('pointerup', cancel);
-    b.addEventListener('pointercancel', cancel);
-    b.addEventListener('pointerleave', cancel);
-    b.addEventListener('blur', cancel, true);
+    b.addEventListener('pointerup', cancelStart);
+    b.addEventListener('pointercancel', cancelStart);
+    b.addEventListener('blur', cancelStart, true);
   }
-  function openHomeBubbleConfirm(b){
-    const kind = b.dataset.bubble;
-    const isCustom = kind && kind.indexOf('custom-') === 0;
-    $('hbConfirmTitle').textContent = isCustom ? 'Remove this custom action?' : 'Hide this bubble?';
-    $('hbConfirmDesc').textContent = isCustom
-      ? 'This will delete the custom action from your Home page and top bar. This cannot be undone.'
-      : 'It will be hidden from your Home page. You can re-add it anytime from Sandbox → Home page layout.';
-    const dlg = $('homeBubbleConfirm');
-    dlg.classList.add('open');
-    const del = () => { cleanup(); doDeleteHomeBubble(kind); };
-    const can = () => { cleanup(); };
-    function cleanup(){
-      dlg.classList.remove('open');
-      $('hbConfirmDelete').removeEventListener('click', del);
-      $('hbConfirmCancel').removeEventListener('click', can);
-      if(homeBubbleHoldTarget) homeBubbleHoldTarget.classList.remove('hb-hold-confirm');
-      homeBubbleHoldTarget = null;
-    }
-    $('hbConfirmDelete').addEventListener('click', del);
-    $('hbConfirmCancel').addEventListener('click', can);
+  function beginHomeBubbleDrag(el, pointerId, x, y){
+    clearTimeout(homeBubbleDragTimer); homeBubbleDragTimer = null; homeBubbleDragStartXY = null;
+    const wrap = $('homeBubbles');
+    if(!wrap) return;
+    const rect = el.getBoundingClientRect();
+    hbDrag = { el, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, moved: false };
+    window.__hbDragSuppressClick = true; // the upcoming click must not open the bubble
+    el.classList.add('hb-dragging');
+    el.style.position = 'fixed';
+    el.style.left = '0'; el.style.top = '0';
+    el.style.width = rect.width + 'px';
+    el.style.height = rect.height + 'px';
+    el.style.margin = '0';
+    el.style.transition = 'none';
+    const wrapRect = wrap.getBoundingClientRect();
+    el.style.transform = 'translate(' + ((x - wrapRect.left) - hbDrag.offsetX) + 'px,' + ((y - wrapRect.top) - hbDrag.offsetY) + 'px) scale(1.06)';
+    window.addEventListener('pointermove', onHomeBubbleDragMove, true);
+    window.addEventListener('pointerup', endHomeBubbleDrag, true);
+    window.addEventListener('pointercancel', endHomeBubbleDrag, true);
   }
-  function doDeleteHomeBubble(kind){
-    if(!kind) return;
-    if(kind.indexOf('custom-') === 0){
-      const id = kind.slice('custom-'.length);
-      const i = customQuickActions.findIndex(a => String(a.id) === String(id));
-      if(i > -1){
-        customQuickActions.splice(i, 1);
-        homeHidden = homeHidden.filter(k => k !== 'custom-' + id);
-        saveHomeHidden();
-        dbPut('meta', { key: 'customQuickActions', value: customQuickActions });
-        renderCustomActions();
-        renderCustomActionList();
-        renderHomeLayoutEditor();
-        toast('Custom action removed');
-      }
+  function onHomeBubbleDragMove(e){
+    if(!hbDrag || e.pointerId !== hbDrag.pointerId) return;
+    e.preventDefault();
+    const wrap = $('homeBubbles');
+    if(!wrap) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    hbDrag.el.style.transform = 'translate(' + ((e.clientX - wrapRect.left) - hbDrag.offsetX) + 'px,' + ((e.clientY - wrapRect.top) - hbDrag.offsetY) + 'px) scale(1.06)';
+    // Find the bubble nearest the finger and slide the dragged one into that slot.
+    const bubbles = [...wrap.querySelectorAll('.home-bubble')].filter(b => b !== hbDrag.el);
+    let best = null, bestD = Infinity;
+    bubbles.forEach(b => {
+      const r = b.getBoundingClientRect();
+      const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+      if(d < bestD){ bestD = d; best = b; }
+    });
+    if(!best) return;
+    const r = best.getBoundingClientRect();
+    const insertBeforeBest = (e.clientX < r.left + r.width / 2) || (e.clientY < r.top + r.height / 2);
+    const before = [...wrap.querySelectorAll('.home-bubble')].filter(b => b !== hbDrag.el);
+    const rects = new Map(before.map(b => [b, b.getBoundingClientRect()]));
+    if(insertBeforeBest){ wrap.insertBefore(hbDrag.el, best); }
+    else if(best.nextSibling){ wrap.insertBefore(hbDrag.el, best.nextSibling); }
+    else { wrap.appendChild(hbDrag.el); }
+    hbDrag.moved = true;
+    // FLIP: siblings animate from their old spots to their new ones.
+    [...wrap.querySelectorAll('.home-bubble')].forEach(b => {
+      if(b === hbDrag.el) return;
+      const old = rects.get(b); if(!old) return;
+      const nr = b.getBoundingClientRect();
+      const dx = old.left - nr.left, dy = old.top - nr.top;
+      if(!dx && !dy) return;
+      b.style.transition = 'none';
+      b.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      requestAnimationFrame(() => { b.style.transition = ''; b.style.transform = ''; });
+    });
+  }
+  function endHomeBubbleDrag(e){
+    if(!hbDrag || e.pointerId !== hbDrag.pointerId) return;
+    const el = hbDrag.el;
+    const moved = hbDrag.moved;
+    el.classList.remove('hb-dragging');
+    el.style.position = ''; el.style.left = ''; el.style.top = '';
+    el.style.width = ''; el.style.height = ''; el.style.margin = '';
+    el.style.transform = ''; el.style.transition = '';
+    window.removeEventListener('pointermove', onHomeBubbleDragMove, true);
+    window.removeEventListener('pointerup', endHomeBubbleDrag, true);
+    window.removeEventListener('pointercancel', endHomeBubbleDrag, true);
+    hbDrag = null;
+    if(moved){
+      const wrap = $('homeBubbles');
+      const ids = wrap ? [...wrap.querySelectorAll('.home-bubble')].map(b => b.dataset.bubble).filter(Boolean) : [];
+      homeOrder = normalizeHomeOrder(ids);
+      dbPut('meta', { key: 'homeOrder', value: homeOrder });
+      if(typeof renderHomeLayoutEditor === 'function') renderHomeLayoutEditor();
+      renderHome();
+      toast('Home layout updated');
     } else {
-      if(homeHidden.indexOf(kind) === -1) homeHidden.push(kind);
-      saveHomeHidden();
-      renderHomeLayoutEditor();
-      toast('Bubble hidden — re-add it from Sandbox → Home page layout');
+      renderHome(); // reset any visual state from the aborted hold
     }
-    renderHome();
   }
 
   function customActionBubbleHTML(a){
@@ -14741,7 +14817,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         body.innerHTML = '<div class="hb-empty">No releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
       } else {
         body.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">' + all.length + ' recent release' + (all.length>1?'s':'') + (unseenCount ? ' · ' + unseenCount + ' new' : '') + '</div>' +
-          all.slice(0, 20).map(rel => {
+          all.map(rel => {
             const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
             const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
             return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
@@ -15387,7 +15463,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim);">No releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
       return;
     }
-    list.innerHTML = all.slice(0, 20).map(rel => {
+    list.innerHTML = all.map(rel => {
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
       const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
       return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
