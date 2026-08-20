@@ -14522,7 +14522,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         var releases = Object.values(pinnedReleases).flat().sort((a,b) => (b.releaseDate||'').localeCompare(a.releaseDate||''));
         var seen = (typeof seenReleaseIds === 'object') ? seenReleaseIds : {};
         var html = '';
-        if(!releases.length){ html = '<div class="dp-empty">No releases found yet. Check again in a minute.</div>'; }
+        if(!releases.length){ if(navigator.onLine === false && loadCachedDiscoverPopup('\ud83c\udf81 New Releases')){ this.textContent = '\ud83d\udd04 Fetch latest from pinned artists'; this.disabled = false; return; } html = '<div class="dp-empty">No releases found yet. Check again in a minute.</div>'; }
         else { releases.forEach(function(r){
           var isNew = r.id && !seen[r.id];
           var when = r.releaseDate ? r.releaseDate.slice(0,10) : '';
@@ -14575,7 +14575,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }catch(e){}
         }
         this.textContent = '📅 Songs from last year'; this.disabled = false;
-        if(!html) html = '<div class="dp-empty">No songs found from the last year.</div>';
+        if(!html){ if(navigator.onLine === false && loadCachedDiscoverPopup('\ud83d\udcc5 Songs From Last Year')){ this.textContent = '\ud83d\udcc5 Songs from last year'; this.disabled = false; return; } html = '<div class="dp-empty">No songs found from the last year.</div>'; }
         openDiscoverPopup('📅 Songs From Last Year', html, totalFound + ' song' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
         document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
           row.addEventListener('click', function(){
@@ -14614,7 +14614,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         this.textContent = '📀 Album history'; this.disabled = false;
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
-        if(!totalAlbums){ openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from the last 20 years.</div>', subtitle); return; }
+        if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from the last 20 years.</div>', subtitle); return; }
         // Build collapsible: artist → albums → tracks (lazy-loaded)
         var html = '';
         var artistKeys = Object.keys(artistAlbums).sort();
@@ -14737,7 +14737,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }catch(e){}
         }
         this.textContent = '🎵 Singles'; this.disabled = false;
-        if(!html) html = '<div class="dp-empty">No singles found from pinned artists.</div>';
+        if(!html){ if(navigator.onLine === false && loadCachedDiscoverPopup('\ud83c\udfb5 Singles')){ this.textContent = '\ud83c\udfb5 Singles'; this.disabled = false; return; } html = '<div class="dp-empty">No singles found from pinned artists.</div>'; }
         openDiscoverPopup('🎵 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
         document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
           row.addEventListener('click', function(){
@@ -15927,23 +15927,29 @@ document.addEventListener('pointerdown', (e) => {
 
 // --- Discover popup helpers ---
 function openDiscoverPopup(title, bodyHTML, subtitle){
-  console.log("[POPUP] openDiscoverPopup called with:", title, "body length:", (bodyHTML||"").length);
   var ov = document.getElementById('discPopupOverlay');
-  console.log("[POPUP] overlay element:", ov);
   var tEl = document.getElementById('discPopupTitle');
   var sEl = document.getElementById('discPopupSub');
   var bEl = document.getElementById('discPopupBody');
-  console.log("[POPUP] body element:", bEl);
   if(!ov){ console.error("[POPUP] OVERLAY NOT FOUND!"); return; }
   if(tEl) tEl.textContent = title || '';
   if(sEl){ if(subtitle){ sEl.textContent = subtitle; sEl.style.display='block'; } else { sEl.style.display='none'; } }
   if(bEl) bEl.innerHTML = bodyHTML || '';
   ov.style.display = 'flex';
-  console.log("[POPUP] overlay display set to flex, computed:", getComputedStyle(ov).display);
+  try{ if(title && bodyHTML){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
 }
 function closeDiscoverPopup(){
   var ov = document.getElementById('discPopupOverlay');
   if(ov) ov.style.display = 'none';
+}
+function loadCachedDiscoverPopup(key){
+  try{
+    var raw = localStorage.getItem('discPopupCache_' + key);
+    if(!raw) return false;
+    var d = JSON.parse(raw);
+    if(d && d.title && d.body){ openDiscoverPopup(d.title, d.body, d.subtitle); return true; }
+  }catch(e){}
+  return false;
 }
 
 // ---------------- Zoom lock ----------------
