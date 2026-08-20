@@ -14585,26 +14585,24 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           });
         });
       };
-    // Album History: fetch all albums from pinned artists (last 20 years), show in popup
+    // Album History: fetch all albums from pinned artists (all time), show in popup
     {
       const ahBtn = $('discoverAlbumHistory');
       if(ahBtn) ahBtn.onclick = async function(){
         if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         this.textContent = '⏳ Fetching albums...'; this.disabled = true;
-        var twentyYearsAgo = new Date();
-        twentyYearsAgo.setFullYear(twentyYearsAgo.getFullYear() - 20);
-        var minDate = twentyYearsAgo.toISOString().slice(0,10);
+        var minDate = '1900-01-01';
         var artistAlbums = {};
         var totalAlbums = 0;
         for(var ai=0; ai<pinnedArtists.length; ai++){
           var a = pinnedArtists[ai];
           try{
-            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=50';
+            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=200';
             var resp = await fetchWithProxy(url);
             if(!resp || !resp.ok) continue;
             var data = await resp.json();
-            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && r.releaseDate >= minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim() && (!r.trackCount || r.trackCount > 1) && !/\b(single)\b/i.test(r.collectionName); });
+            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim() && (!r.trackCount || r.trackCount > 1) && !/\b(single)\b/i.test(r.collectionName); });
             if(albums.length){
               albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
               artistAlbums[a.name] = albums;
@@ -14614,7 +14612,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         this.textContent = '📀 Album history'; this.disabled = false;
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
-        if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from the last 20 years.</div>', subtitle); return; }
+        if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from pinned artists.</div>', subtitle); return; }
         // Build collapsible: artist → albums → tracks (lazy-loaded)
         var html = '';
         var artistKeys = Object.keys(artistAlbums).sort();
@@ -14717,7 +14715,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         for(var si=0; si<pinnedArtists.length; si++){
           var sa = pinnedArtists[si];
           try{
-            var surl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(sa.name + ' single') + '&media=music&entity=song&limit=25';
+            var surl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(sa.name) + '&media=music&entity=song&limit=200';
             var sresp = await fetchWithProxy(surl);
             if(!sresp || !sresp.ok) continue;
             var sdata = await sresp.json();
