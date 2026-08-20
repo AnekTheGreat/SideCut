@@ -2724,6 +2724,29 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     background: var(--line);
     border-radius: 3px;
   }
+
+  .disc-popup-overlay{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:70; animation:discPopFade 0.2s ease; }
+  @keyframes discPopFade{ from{background:rgba(0,0,0,0)} to{background:rgba(0,0,0,0.55)} }
+  .disc-popup{ background:var(--bg-raised); border:1px solid var(--line); border-radius:18px; width:92%; max-width:420px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; animation:discPopSlide 0.25s cubic-bezier(0.16,1,0.3,1); }
+  @keyframes discPopSlide{ from{transform:translateY(24px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .disc-popup-header{ display:flex; align-items:center; gap:8px; padding:16px 18px 12px; border-bottom:1px solid var(--line); }
+  .disc-popup-header h3{ margin:0; font-size:16px; flex:1; }
+  .disc-popup-close{ background:none; border:none; color:var(--ink-dim); font-size:20px; cursor:pointer; padding:4px 8px; border-radius:8px; }
+  .disc-popup-close:active{ background:rgba(255,255,255,0.06); }
+  .disc-popup-sub{ font-size:11px; color:var(--ink-dim); padding:0 18px 8px; }
+  .disc-popup-body{ flex:1; overflow-y:auto; padding:10px 18px 18px; -webkit-overflow-scrolling:touch; }
+  .disc-popup-body .dp-track{ display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,0.03); cursor:pointer; margin-bottom:6px; }
+  .disc-popup-body .dp-track:active{ background:rgba(255,255,255,0.06); }
+  .disc-popup-body .dp-empty{ font-size:12px; color:var(--ink-dim); text-align:center; padding:20px 0; }
+  .dp-ah-artist-hdr{ display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); cursor:pointer; background:rgba(255,255,255,0.03); margin-bottom:6px; }
+  .dp-ah-artist-hdr:active{ background:rgba(255,255,255,0.06); }
+  .dp-ah-chevron{ font-size:11px; color:var(--ink-dim); transition:transform 0.2s; }
+  .dp-ah-album{ margin-left:16px; margin-bottom:4px; }
+  .dp-ah-album-hdr{ display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer; }
+  .dp-ah-album-hdr:active{ background:rgba(255,255,255,0.06); }
+  .dp-ah-track{ display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; font-size:12px; margin-left:40px; }
+  .dp-ah-track:active{ opacity:0.6; }
+
 </style>
 
 <!-- Song info -->
@@ -6520,7 +6543,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '48';
+  const APP_VERSION = '48.1';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -14452,200 +14475,198 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       try{ if(typeof renderPinnedArtists === 'function') renderPinnedArtists(); }catch(e){ console.error('renderPinnedArtists failed', e); }
       try{ if(typeof renderNewReleases === 'function') renderNewReleases(); }catch(e){ console.error('renderNewReleases failed', e); }
       try{ if(typeof renderNewReleasesDropdown === 'function') renderNewReleasesDropdown(); }catch(e){}
-      // Fetch Latest button: trigger a release check for pinned artists
+      // Fetch Latest button: check for new releases, show in popup
       const flBtn = $('discoverFetchLatest');
       if(flBtn) flBtn.onclick = async function(){
+        if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); showSettings(); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         this.textContent = '⏳ Checking...'; this.disabled = true;
         try{ await checkPinnedArtistReleases(); }catch(e){}
         this.textContent = '🔄 Fetch latest from pinned artists'; this.disabled = false;
         renderPinnedArtists(); renderNewReleases();
-        // Open the New Releases dropdown so results appear there
-        var dd = $('discoverNewReleasesDropdown');
-        if(dd){ dd.style.display = 'block'; var ch = $('nrDropdownChevron'); if(ch) ch.textContent = '\u25b4'; }
-        renderNewReleasesDropdown();
+        // Build popup content from pinnedReleases
+        var releases = Object.values(pinnedReleases).flat().sort((a,b) => (b.releaseDate||'').localeCompare(a.releaseDate||''));
+        var seen = (typeof seenReleaseIds === 'object') ? seenReleaseIds : {};
+        var html = '';
+        if(!releases.length){ html = '<div class="dp-empty">No releases found yet. Check again in a minute.</div>'; }
+        else { releases.forEach(function(r){
+          var isNew = r.id && !seen[r.id];
+          var when = r.releaseDate ? r.releaseDate.slice(0,10) : '';
+          var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+          html += '<div class="dp-track" data-search="' + escapeHtml((r.trackName||r.collectionName||'') + ' ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.trackViewUrl||r.collectionViewUrl||'') + '">';
+          html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
+          html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName||r.collectionName||'Unknown') + (isNew ? ' <span style="color:var(--coral);font-size:10px;font-weight:700;">NEW</span>' : '') + '</div>';
+          html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName||'') + (when ? ' · ' + when : '') + '</div></div></div>';
+        }); }
+        openDiscoverPopup('🆕 New Releases', html, releases.length + ' release' + (releases.length!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+        // Wire up clicks
+        document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
+          row.addEventListener('click', function(){
+            var link = this.dataset.link;
+            if(link){ window.open(link, '_blank'); }
+            else { $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup(); }
+          });
+        });
         toast('Checked for new releases!');
       };
-      // Last Year button: search iTunes for each pinned artist's songs from the past year
+      // Last Year button: search iTunes for songs from past year, show in popup
       const lyBtn = $('discoverLastYear');
       if(lyBtn) lyBtn.onclick = async function(){
+        if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); showSettings(); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         this.textContent = '⏳ Searching...'; this.disabled = true;
-        const yearAgo = new Date(); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-        const minDate = yearAgo.toISOString().slice(0,10);
-        let totalFound = 0;
-        let html = '';
-        for(const a of pinnedArtists){
+        var yearAgo = new Date(); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+        var minDate = yearAgo.toISOString().slice(0,10);
+        var totalFound = 0;
+        var html = '';
+        for(var ai=0; ai<pinnedArtists.length; ai++){
+          var a = pinnedArtists[ai];
           try{
-            const url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=song&limit=50';
-            const resp = await fetchWithProxy(url);
+            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=song&limit=50';
+            var resp = await fetchWithProxy(url);
             if(!resp || !resp.ok) continue;
-            const data = await resp.json();
-            const results = (data.results||[]).filter(r => r && r.trackName && r.releaseDate && r.releaseDate >= minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim());
-            results.forEach(r => {
-              const daysAgo = r.releaseDate ? Math.floor((Date.now() - new Date(r.releaseDate).getTime())/86400000) : null;
-              const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
-              const art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
-              html += '<div class="hb-track-row" style="cursor:pointer;" data-ly-title="' + escapeHtml(r.trackName) + '" data-ly-artist="' + escapeHtml(r.artistName) + '" data-ly-preview="' + escapeHtml(r.previewUrl||'') + '" data-ly-link="' + escapeHtml(r.trackViewUrl||'') + '"><div style="width:34px;height:34px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(\'' + escapeHtml(art) + '\');' : 'background:var(--bg-raised);') + '"></div><div class="hb-track-meta"><div class="hb-track-title">' + escapeHtml(r.trackName) + '</div><div class="hb-track-sub">' + escapeHtml(r.artistName) + (when ? ' · ' + when : '') + '</div></div></div>';
+            var data = await resp.json();
+            var results = (data.results||[]).filter(function(r){ return r && r.trackName && r.releaseDate && r.releaseDate >= minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim(); });
+            for(var ri=0; ri<results.length; ri++){
+              var r = results[ri];
+              var daysAgo = r.releaseDate ? Math.floor((Date.now() - new Date(r.releaseDate).getTime())/86400000) : null;
+              var when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+              var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+              html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '">';
+              html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
+              html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName) + '</div>';
+              html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + (when ? ' · ' + when : '') + '</div></div></div>';
               totalFound++;
-            });
+            }
           }catch(e){}
         }
         this.textContent = '📅 Songs from last year'; this.disabled = false;
-        // Open the NR dropdown and populate it with the results
-        var dd = $('discoverNewReleasesDropdown');
-        if(dd){ dd.style.display = 'block'; var ch = $('nrDropdownChevron'); if(ch) ch.textContent = '\u25b4'; }
-        var countEl = $('nrReleaseCount');
-        if(countEl) countEl.textContent = totalFound + ' song' + (totalFound!==1?'s':'') + ' from last year';
-        var list = $('discoverNewReleasesList');
-        if(list){
-          list.innerHTML = html || '<div style="font-size:12px;color:var(--ink-dim);">No songs found from the last year.</div>';
-          list.querySelectorAll('.hb-track-row').forEach(row => {
-            row.addEventListener('click', function(){
-              var q = (this.dataset.lyTitle||'') + ' ' + (this.dataset.lyArtist||'');
-              $('discoverNewReleasesDropdown').style.display = 'none';
-              $('discoverSearch').value = q;
-              runDiscoverSearch(q);
-            });
+        if(!html) html = '<div class="dp-empty">No songs found from the last year.</div>';
+        openDiscoverPopup('📅 Songs From Last Year', html, totalFound + ' song' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+        document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
+          row.addEventListener('click', function(){
+            var link = this.dataset.link;
+            if(link){ window.open(link, '_blank'); }
+            else { $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup(); }
           });
-        }
+        });
       };
-    // Album History: fetch all albums from pinned artists (last 20 years)
+    // Album History: fetch all albums from pinned artists (last 20 years), show in popup
     {
       const ahBtn = $('discoverAlbumHistory');
       if(ahBtn) ahBtn.onclick = async function(){
+        if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); showSettings(); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         this.textContent = '⏳ Fetching albums...'; this.disabled = true;
-        const container = $('albumHistoryContainer');
-        const list = $('albumHistoryList');
-        const countEl = $('albumHistoryCount');
-        if(container) container.style.display = 'block';
-        if(list) list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); padding:8px 0;">Searching iTunes for albums...</div>';
-        const twentyYearsAgo = new Date();
+        var twentyYearsAgo = new Date();
         twentyYearsAgo.setFullYear(twentyYearsAgo.getFullYear() - 20);
-        const minDate = twentyYearsAgo.toISOString().slice(0,10);
-        const artistAlbums = {};
-        let totalAlbums = 0;
-        for(const a of pinnedArtists){
+        var minDate = twentyYearsAgo.toISOString().slice(0,10);
+        var artistAlbums = {};
+        var totalAlbums = 0;
+        for(var ai=0; ai<pinnedArtists.length; ai++){
+          var a = pinnedArtists[ai];
           try{
-            const url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=50';
-            const resp = await fetchWithProxy(url);
+            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=50';
+            var resp = await fetchWithProxy(url);
             if(!resp || !resp.ok) continue;
-            const data = await resp.json();
-            const albums = (data.results||[]).filter(r => r && r.collectionName && r.releaseDate && r.releaseDate >= minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim());
+            var data = await resp.json();
+            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && r.releaseDate >= minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim(); });
             if(albums.length){
-              artistAlbums[a.name] = albums.sort((x,y) => (y.releaseDate||'').localeCompare(x.releaseDate||''));
+              albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
+              artistAlbums[a.name] = albums;
               totalAlbums += albums.length;
             }
           }catch(e){}
         }
         this.textContent = '📀 Album history'; this.disabled = false;
-        if(countEl) countEl.textContent = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
-        if(!list) return;
-        if(!totalAlbums){ list.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); padding:8px 0;">No albums found.</div>'; return; }
-        // Render collapsible: artist → albums → songs
-        let html = '';
-        Object.keys(artistAlbums).sort().forEach(artist => {
-          const albums = artistAlbums[artist];
-          const artistId = 'ah_' + artist.replace(/[^a-z0-9]/gi,'').toLowerCase();
-          html += '<div class="ah-artist" style="margin-bottom:8px;">';
-          html += '<div class="ah-artist-header" data-target="' + artistId + '" style="display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); cursor:pointer; background:rgba(255,255,255,0.03); user-select:none;">';
-          html += '<span class="ah-chevron" style="font-size:11px; color:var(--ink-dim); transition:transform 0.2s;">▸</span>';
-          html += '<span style="font-size:13px; font-weight:600; flex:1;">' + escapeHtml(artist) + '</span>';
-          html += '<span style="font-size:11px; color:var(--ink-dim);">' + albums.length + ' album' + (albums.length!==1?'s':'') + '</span>';
+        var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
+        if(!totalAlbums){ openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from the last 20 years.</div>', subtitle); return; }
+        // Build collapsible: artist → albums → tracks (lazy-loaded)
+        var html = '';
+        var artistKeys = Object.keys(artistAlbums).sort();
+        for(var ki=0; ki<artistKeys.length; ki++){
+          var artist = artistKeys[ki];
+          var albums = artistAlbums[artist];
+          var artistId = 'dpa_' + ki;
+          html += '<div class="dp-ah-artist">';
+          html += '<div class="dp-ah-artist-hdr" data-target="' + artistId + '">';
+          html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
+          html += '<span style="font-size:13px;font-weight:600;flex:1;">' + escapeHtml(artist) + '</span>';
+          html += '<span style="font-size:11px;color:var(--ink-dim);">' + albums.length + ' album' + (albums.length!==1?'s':'') + '</span>';
           html += '</div>';
-          html += '<div id="' + artistId + '" class="ah-artist-albums" style="display:none; padding:4px 0 0 16px;">';
-          albums.forEach(album => {
-            const albumId = artistId + '_' + (album.collectionName||'').replace(/[^a-z0-9]/gi,'').toLowerCase();
-            const art = album.artworkUrl100 ? album.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
-            const year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
-            const trackCount = album.trackCount || '?';
-            html += '<div class="ah-album" style="margin-bottom:4px;">';
-            html += '<div class="ah-album-header" data-target="' + albumId + '" style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer; user-select:none;">';
-            html += '<div style="width:32px; height:32px; border-radius:4px; background-size:cover; background-position:center; flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg-raised);') + '"></div>';
-            html += '<div style="flex:1; min-width:0;">';
-            html += '<div style="font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
-            html += '<div style="font-size:10px; color:var(--ink-dim);">' + year + ' · ' + trackCount + ' tracks</div>';
+          html += '<div id="' + artistId + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
+          for(var bj=0; bj<albums.length; bj++){
+            var album = albums[bj];
+            var albumId = artistId + '_a' + bj;
+            var art = album.artworkUrl100 ? album.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+            var year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
+            var trackCount = album.trackCount || '?';
+            html += '<div class="dp-ah-album">';
+            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '">';
+            html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
+            html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
+            html += '<div style="font-size:10px;color:var(--ink-dim);">' + year + ' · ' + trackCount + ' tracks</div></div>';
+            html += '<span class="dp-ah-chevron" style="font-size:10px;transition:transform 0.2s;">▸</span>';
             html += '</div>';
-            html += '<span class="ah-album-chevron" style="font-size:10px; color:var(--ink-dim); transition:transform 0.2s;">▸</span>';
+            html += '<div id="' + albumId + '" class="dp-ah-songs" style="display:none;padding:2px 0 4px 40px;"></div>';
             html += '</div>';
-            html += '<div id="' + albumId + '" class="ah-album-songs" style="display:none; padding:2px 0 4px 40px;"></div>';
-            html += '</div>';
-          });
+          }
           html += '</div></div>';
-        });
-        list.innerHTML = html;
-        // Wire up artist headers (toggle album list)
-        list.querySelectorAll('.ah-artist-header').forEach(h => {
-          h.addEventListener('click', function(){
-            const target = document.getElementById(this.dataset.target);
-            const chevron = this.querySelector('.ah-chevron');
-            if(!target) return;
-            const open = target.style.display !== 'none';
-            target.style.display = open ? 'none' : 'block';
-            if(chevron) chevron.style.transform = open ? '' : 'rotate(90deg)';
-            // If opening an artist, fetch albums for any that haven't been loaded yet
-            if(!open){
-              target.querySelectorAll('.ah-album-header').forEach(ah => {
-                const songContainer = document.getElementById(ah.dataset.target);
-                if(songContainer && !songContainer.dataset.loaded){
-                  songContainer.dataset.loaded = '1';
-                  // Find the album info from the parent data
-                  const albumName = ah.querySelector('div > div:first-child');
-                  if(albumName) fetchAlbumSongs(artist, albumName.textContent, songContainer);
-                }
-              });
-            }
-          });
-        });
-        // Wire up album headers (toggle song list, lazy-load)
-        list.querySelectorAll('.ah-album-header').forEach(h => {
-          h.addEventListener('click', function(){
-            const target = document.getElementById(this.dataset.target);
-            const chevron = this.querySelector('.ah-album-chevron');
-            if(!target) return;
-            const open = target.style.display !== 'none';
-            target.style.display = open ? 'none' : 'block';
-            if(chevron) chevron.style.transform = open ? '' : 'rotate(90deg)';
-            // Lazy-load songs on first expand
-            if(!open && !target.dataset.loaded){
-              target.dataset.loaded = '1';
-              const albumNameEl = this.querySelector('div > div:first-child');
-              // Find parent artist name
-              const artistHeader = this.closest('.ah-artist').querySelector('.ah-artist-header');
-              const artistName = artistHeader ? artistHeader.querySelector('span:nth-child(2)').textContent : '';
-              if(albumNameEl) fetchAlbumSongs(artistName, albumNameEl.textContent, target);
-            }
-          });
-        });
-
-        async function fetchAlbumSongs(artistName, albumName, container){
-          container.innerHTML = '<div style="font-size:11px; color:var(--ink-dim); padding:4px 0;">Loading tracks...</div>';
-          try{
-            const url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
-            const resp = await fetchWithProxy(url);
-            if(!resp || !resp.ok){ container.innerHTML = '<div style="font-size:11px; color:var(--ink-dim);">Could not load tracks.</div>'; return; }
-            const data = await resp.json();
-            const tracks = (data.results||[]).filter(r => r && r.trackName && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim()).sort((a,b) => (a.trackNumber||0) - (b.trackNumber||0));
-            if(!tracks.length){ container.innerHTML = '<div style="font-size:11px; color:var(--ink-dim);">No tracks found.</div>'; return; }
-            let h = '';
-            tracks.forEach(r => {
-              const dur = r.trackTimeMillis ? Math.floor(r.trackTimeMillis/60000) + ':' + String(Math.floor((r.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
-              h += '<div class="ah-track" style="display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; font-size:12px;" data-search="' + escapeHtml((r.trackName||'') + ' ' + (r.artistName||'')) + '">';
-              h += '<span style="color:var(--ink-dim); min-width:18px; text-align:right;">' + (r.trackNumber||'') + '</span>';
-              h += '<span style="flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(r.trackName||'') + '</span>';
-              h += '<span style="color:var(--ink-dim); font-size:11px;">' + dur + '</span>';
-              h += '</div>';
-            });
-            container.innerHTML = h;
-            container.querySelectorAll('.ah-track').forEach(row => {
-              row.addEventListener('click', function(){
-                $('discoverSearch').value = this.dataset.search;
-                runDiscoverSearch(this.dataset.search);
-              });
-            });
-          }catch(e){ container.innerHTML = '<div style="font-size:11px; color:var(--ink-dim);">Error loading tracks.</div>'; }
         }
+        openDiscoverPopup('📀 Album History', html, subtitle);
+        // Wire up artist headers
+        document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
+          h.addEventListener('click', function(){
+            var tgt = document.getElementById(this.dataset.target);
+            var chv = this.querySelector('.dp-ah-chevron');
+            if(!tgt) return;
+            var isOpen = tgt.style.display !== 'none';
+            tgt.style.display = isOpen ? 'none' : 'block';
+            if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
+          });
+        });
+        // Wire up album headers (lazy-load tracks)
+        document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
+          h.addEventListener('click', function(){
+            var tgt = document.getElementById(this.dataset.target);
+            var chv = this.querySelector('.dp-ah-chevron');
+            if(!tgt) return;
+            var isOpen = tgt.style.display !== 'none';
+            tgt.style.display = isOpen ? 'none' : 'block';
+            if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
+            if(!isOpen && !tgt.dataset.loaded){
+              tgt.dataset.loaded = '1';
+              var artistName = this.dataset.artist;
+              var albumName = this.dataset.album;
+              var container = tgt;
+              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Loading tracks...</div>';
+              fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200')
+                .then(function(r){ return r.ok ? r.json() : {results:[]}; })
+                .then(function(data){
+                  var tracks = (data.results||[]).filter(function(r){ return r && r.trackName && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim(); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+                  if(!tracks.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
+                  var h2 = '';
+                  for(var ti=0; ti<tracks.length; ti++){
+                    var tr = tracks[ti];
+                    var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
+                    h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '">';
+                    h2 += '<span style="color:var(--ink-dim);min-width:18px;text-align:right;">' + (tr.trackNumber||'') + '</span>';
+                    h2 += '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(tr.trackName) + '</span>';
+                    h2 += '<span style="color:var(--ink-dim);font-size:11px;">' + dur + '</span></div>';
+                  }
+                  container.innerHTML = h2;
+                  container.querySelectorAll('.dp-ah-track').forEach(function(row){
+                    row.addEventListener('click', function(){
+                      $('discoverSearch').value = this.dataset.search;
+                      runDiscoverSearch(this.dataset.search);
+                      closeDiscoverPopup();
+                    });
+                  });
+                })
+                .catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
+            }
+          });
+        });
       };
     }
 
@@ -15827,6 +15848,23 @@ document.addEventListener('pointerdown', (e) => {
     if(typeof toast === 'function') toast('Closed a stuck popup.');
   }
 }, true);
+
+// --- Discover popup helpers ---
+function openDiscoverPopup(title, bodyHTML, subtitle){
+  var ov = document.getElementById('discPopupOverlay');
+  var tEl = document.getElementById('discPopupTitle');
+  var sEl = document.getElementById('discPopupSub');
+  var bEl = document.getElementById('discPopupBody');
+  if(!ov) return;
+  if(tEl) tEl.textContent = title || '';
+  if(sEl){ if(subtitle){ sEl.textContent = subtitle; sEl.style.display='block'; } else { sEl.style.display='none'; } }
+  if(bEl) bEl.innerHTML = bodyHTML || '';
+  ov.style.display = 'flex';
+}
+function closeDiscoverPopup(){
+  var ov = document.getElementById('discPopupOverlay');
+  if(ov) ov.style.display = 'none';
+}
 
 // ---------------- Zoom lock ----------------
 // SideCut is meant to stay pinned at 1x: block pinch-zoom on touch screens and
