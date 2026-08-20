@@ -1725,6 +1725,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button id="discoverFetchLatest" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🔄 Fetch latest from pinned artists</button>
       <button id="discoverLastYear" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Songs from last year</button>
       <button id="discoverAlbumHistory" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📀 Album history</button>
+      <button id="discoverSingles" style="padding:8px 14px;font-size:12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap;">🎵 Singles</button>
   </div>
   <div id="albumHistoryContainer" style="display:none; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); overflow:hidden;">
     <div style="padding:10px 14px; font-size:13.5px; font-weight:600; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;">
@@ -6564,7 +6565,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '48';
+  const APP_VERSION = '48.2';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6577,6 +6578,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '48.2', date: 'August 20, 2026 at 12:00 pm EDT', title: 'Discover Singles + release dates + polish', items: [
+      'New Singles button in Discover \u2014 fetches singles from all pinned artists and shows them in a popup (premium)',
+      'All Discover popups now show the specific release date for each song and album',
+      'Album History shows full release date instead of just the year',
+    ]},
+
     { version: '48', date: 'August 19, 2026 at 10:30 am EDT', title: 'Discover popups + Album History + premium gates', items: [
       'All three Discover buttons (Fetch Latest, Songs From Last Year, Album History) now open in proper popup modals instead of inline dropdowns',
       'Album History in a popup: three-level collapsible drill-down — Artist → Album → Tracks (lazy-loaded on first expand)',
@@ -14504,7 +14511,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       try{ if(typeof renderNewReleasesDropdown === 'function') renderNewReleasesDropdown(); }catch(e){}
       // Fetch Latest button: check for new releases, show in popup
       const flBtn = $('discoverFetchLatest');
-      if(flBtn) flBtn.onclick = async function(){ console.log("[FL] clicked"); try{
+      if(flBtn) flBtn.onclick = async function(){try{
         if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         this.textContent = '⏳ Checking...'; this.disabled = true;
@@ -14523,7 +14530,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           html += '<div class="dp-track" data-search="' + escapeHtml((r.trackName||r.collectionName||'') + ' ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.trackViewUrl||r.collectionViewUrl||'') + '">';
           html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
           html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName||r.collectionName||'Unknown') + (isNew ? ' <span style="color:var(--coral);font-size:10px;font-weight:700;">NEW</span>' : '') + '</div>';
-          html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName||'') + (when ? ' · ' + when : '') + '</div></div></div>';
+          html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName||'') + (when ? ' · ' + when : '') + (r.releaseDate ? ' (' + r.releaseDate.slice(0,10) + ')' : '') + '</div></div></div>';
         }); }
         openDiscoverPopup('🆕 New Releases', html, releases.length + ' release' + (releases.length!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
         // Wire up clicks
@@ -14534,7 +14541,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             else { $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup(); }
           });
         });
-        toast('Checked for new releases!'); console.log('[FL] done'); } catch(err){ console.error('[FL] handler error:', err); }
+        toast('Checked for new releases!'); } catch(err){ console.error('[FL] handler error:', err); }
       };
       // Last Year button: search iTunes for songs from past year, show in popup
       const lyBtn = $('discoverLastYear');
@@ -14562,7 +14569,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '">';
               html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
               html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName) + '</div>';
-              html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + (when ? ' · ' + when : '') + '</div></div></div>';
+              html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + (when ? ' · ' + when : '') + (r.releaseDate ? ' (' + r.releaseDate.slice(0,10) + ')' : '') + '</div></div></div>';
               totalFound++;
             }
           }catch(e){}
@@ -14632,7 +14639,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '">';
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
-            html += '<div style="font-size:10px;color:var(--ink-dim);">' + year + ' · ' + trackCount + ' tracks</div></div>';
+            html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks</div></div>';
             html += '<span class="dp-ah-chevron" style="font-size:10px;transition:transform 0.2s;">▸</span>';
             html += '</div>';
             html += '<div id="' + albumId + '" class="dp-ah-songs" style="display:none;padding:2px 0 4px 40px;"></div>';
@@ -14698,7 +14705,49 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
 
     }
-    if(!isDiscover) stopDiscoverPreview();
+    
+      // Singles button: search for singles from pinned artists, show in popup
+      var siBtn = document.getElementById('discoverSingles');
+      if(siBtn) siBtn.onclick = async function(){
+        if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
+        if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
+        this.textContent = '⏳ Searching...'; this.disabled = true;
+        var totalFound = 0;
+        var html = '';
+        for(var si=0; si<pinnedArtists.length; si++){
+          var sa = pinnedArtists[si];
+          try{
+            var surl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(sa.name + ' single') + '&media=music&entity=song&limit=25';
+            var sresp = await fetchWithProxy(surl);
+            if(!sresp || !sresp.ok) continue;
+            var sdata = await sresp.json();
+            var sresults = (sdata.results||[]).filter(function(sr){ return sr && sr.trackName && primaryArtistName(sr.artistName||'').toLowerCase().trim() === primaryArtistName(sa.name).toLowerCase().trim(); });
+            for(var sri=0; sri<sresults.length; sri++){
+              var sr = sresults[sri];
+              var srelDate = sr.releaseDate ? sr.releaseDate.slice(0,10) : '';
+              var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
+              var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
+              var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+              html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-link="' + escapeHtml(sr.trackViewUrl||'') + '">';
+              html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (sart ? 'background-image:url(' + escapeHtml(sart) + ');' : 'background:var(--bg);') + '"></div>';
+              html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
+              html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.artistName) + (swhen ? ' · ' + swhen : '') + (srelDate ? ' (' + srelDate + ')' : '') + '</div></div></div>';
+              totalFound++;
+            }
+          }catch(e){}
+        }
+        this.textContent = '🎵 Singles'; this.disabled = false;
+        if(!html) html = '<div class="dp-empty">No singles found from pinned artists.</div>';
+        openDiscoverPopup('🎵 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+        document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
+          row.addEventListener('click', function(){
+            var smlink = this.dataset.link;
+            if(smlink){ window.open(smlink, '_blank'); }
+            else { $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup(); }
+          });
+        });
+      };
+if(!isDiscover) stopDiscoverPreview();
     if(isHome){
       renderHome();
       renderHomeExportPopup();
