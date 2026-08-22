@@ -1743,8 +1743,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   <div id="discoverStatus">Search for any song or tap a category to start browsing.</div>
   <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
     <b style="color:var(--coral);">How to get a song</b><br>
-    1. Tap <b>Get song</b> on any track — it opens the song in Spotify.<br>
-    2. In Spotify, tap <b>Share → Copy link</b>, then paste it into any Spotify-to-MP3 converter and download the MP3.<br>
+    1. Tap <b>Get song</b> on any track — the full Spotify URL is copied to your clipboard.<br>
+    2. Open any Spotify-to-MP3 converter in your browser and paste the link to download the MP3.<br>
     3. Use <b>+ Add songs ▾ → + Files</b> to import the MP3 into your library.
   </div>
   <div id="discoverResults"></div>
@@ -14396,8 +14396,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // SideCut itself has no backend and Spotify's Web API needs OAuth, so browsing is powered
   // by the iTunes Search API (CORS-friendly, no auth — same source already used for cover art
   // and song previews elsewhere in the app). Each result shows artwork, title/artist/album and
-  // a 30-second preview you can play inline. The "Get song" button opens the song directly in
-  // Spotify so the user can copy its link and take it to any Spotify-to-MP3 downloader.
+  // a 30-second preview you can play inline. The "Get song" button copies the full Spotify URL
+  // to your clipboard so you can paste it into any Spotify-to-MP3 converter.
   const DISCOVER_CHIPS = [
     { label: 'Top hits', term: 'top hits 2026' },
     { label: 'Pop', term: 'pop hits' },
@@ -15711,7 +15711,7 @@ if(!isDiscover) stopDiscoverPreview();
     const dlBtn = document.createElement('button');
     dlBtn.className = 'discover-dl-btn';
     dlBtn.textContent = 'Get song';
-    dlBtn.title = 'Open this song in Spotify to copy its link';
+    dlBtn.title = 'Copy the full Spotify URL to your clipboard';
     dlBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       triggerDiscoverDownload(card, r);
@@ -15743,7 +15743,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(r.previewUrl && previewBtn){
         toggleDiscoverPreview(r.previewUrl, previewBtn);
       } else {
-        toast('No preview available — use Get song to open it in Spotify.');
+        toast('No preview available — tap Get song to copy the link.');
       }
     });
 
@@ -15752,16 +15752,13 @@ if(!isDiscover) stopDiscoverPreview();
   }
 
   function triggerDiscoverDownload(card, r){
-    // "Get song" opens the track in Spotify and copies the link to clipboard
-    // so the user can paste it directly into any Spotify-to-MP3 converter.
+    // "Get song" copies the full Spotify track URL to clipboard.
+    // No need to open Spotify — user pastes the link into any MP3 converter.
     const q = (r.trackName || '') + ' ' + (r.artistName || '');
     const songLink = (r.trackViewUrl && /spotify\.com/i.test(r.trackViewUrl))
-      ? r.trackViewUrl
+      ? (r.trackViewUrl || '')
       : `https://open.spotify.com/search/${encodeURIComponent(q)}`;
-    // Copy to clipboard so shortened links aren't needed — user gets the full URL
-    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(songLink); } }catch(e){}
-    try{ window.open(songLink, '_blank', 'noopener'); }catch(e){}
-    toast('Link copied! Paste it into any Spotify-to-MP3 converter. Shortened links may not work — the full link is now in your clipboard.', 5500);
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(songLink); toast('Link copied! Paste it into any Spotify-to-MP3 converter to download.', 4500); } else { toast('Copy this link: ' + songLink, 6000); } }catch(e){ toast('Copy this link: ' + songLink, 6000); }
   }
 
   function toggleDiscoverPreview(url, btn){
