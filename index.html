@@ -14618,7 +14618,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var resp = await fetchWithProxy(url);
             if(!resp || !resp.ok) continue;
             var data = await resp.json();
-            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && (function(){ var _a = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _b = primaryArtistName(a.name).toLowerCase().trim(); return _a === _b || _a.indexOf(_b) === 0 || _b.indexOf(_a) === 0; })() && (!r.trackCount || r.trackCount > 1) && !/\b(single)\b/i.test(r.collectionName); });
+            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && (function(){ var _a = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _b = primaryArtistName(a.name).toLowerCase().trim(); return _a === _b || _a.indexOf(_b) === 0 || _b.indexOf(_a) === 0; })() && (!r.trackCount || r.trackCount > 1) && !/\b(single|greatest hits|best of|essentials|hits|playlist|deluxe edition|collector|anthology|complete|ultimate|now that|very best|number one|decade|chapter|collection|mixtape|unreleased|bootleg|tribute)\b/i.test(r.collectionName); });
             if(albums.length){
               albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
               artistAlbums[a.name] = albums;
@@ -14688,7 +14688,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               var albumName = this.dataset.album;
               var container = tgt;
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Loading tracks...</div>';
-              fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200')
+              fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200')
                 .then(function(r){ return r.ok ? r.json() : {results:[]}; })
                 .then(function(data){
                   var tracks = (data.results||[]).filter(function(r){ return r && r.trackName && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim(); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
@@ -14735,7 +14735,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var sresp = await fetchWithProxy(surl);
             if(!sresp || !sresp.ok) continue;
             var sdata = await sresp.json();
-            var sresults = (sdata.results||[]).filter(function(sr){ return sr && sr.trackName && primaryArtistName(sr.artistName||'').toLowerCase().trim() === primaryArtistName(sa.name).toLowerCase().trim(); });
+            var sresults = (sdata.results||[]).filter(function(sr){
+              if(!sr || !sr.trackName) return false;
+              if(primaryArtistName(sr.artistName||'').toLowerCase().trim() !== primaryArtistName(sa.name).toLowerCase().trim()) return false;
+              // Only include actual singles: trackCount <= 3 (single/EP), or collectionName contains "Single",
+              // or the collection name matches the track name (standalone single release)
+              var tc = sr.trackCount || 0;
+              var cn = (sr.collectionName || '').toLowerCase();
+              var tn = (sr.trackName || '').toLowerCase();
+              if(tc <= 3) return true;  // single or short EP
+              if(/\bsingle\b/.test(cn)) return true;  // explicitly marked as single
+              if(cn === tn) return true;  // standalone single (collection = track)
+              return false;  // skip album tracks
+            });
             if(sresults.length){
               sresults.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
               artistSingles[sa.name] = sresults;
@@ -15870,17 +15882,25 @@ if(!isDiscover) stopDiscoverPreview();
       var data = await resp.json();
       var trackTitle = data.title || '';
       if(url.match(/\/s\//)){
-        var expandedUrl = url;
+        // Short link: fetch the page HTML via proxy and extract og:url for the canonical track URL
+        var fullTrackUrl = url;
         try{
-          var redirResp = await fetchWithProxy(url);
-          if(redirResp && redirResp.url && redirResp.url !== url){
-            expandedUrl = redirResp.url;
+          var htmlResp = await fetchWithProxy(url);
+          if(htmlResp && htmlResp.ok){
+            var htmlText = await htmlResp.text();
+            // Try og:url meta tag
+            var ogMatch = htmlText.match(/<meta[^>]+property="og:url"[^>]+content="([^"]+)"/i);
+            if(!ogMatch) ogMatch = htmlText.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:url"/i);
+            if(!ogMatch) ogMatch = htmlText.match(/<link[^>]+rel="canonical"[^>]+href="([^"]+)"/i);
+            if(ogMatch && ogMatch[1]){
+              var resolved = ogMatch[1];
+              var tid = resolved.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
+              if(tid) fullTrackUrl = 'https://open.spotify.com/track/' + tid[1];
+            }
           }
         }catch(_){}
-        var trackMatch = expandedUrl.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
-        var fullTrackUrl = trackMatch ? 'https://open.spotify.com/track/' + trackMatch[1] : url;
         resultEl.innerHTML = '<div style="color:var(--ink); font-weight:600; margin-bottom:4px;">' + (trackTitle || 'Unknown track') + '</div>' +
-          '<div style="margin-bottom:6px; font-size:11px; color:var(--ink-dim);">Short link verified! Copy the URL below:</div>' +
+          '<div style="margin-bottom:6px; font-size:11px; color:var(--ink-dim);">Short link resolved! Copy the full track URL below:</div>' +
           '<div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; font-size:11px; word-break:break-all; color:var(--ink); cursor:pointer;" onclick="try{navigator.clipboard.writeText(this.textContent);toast(&quot;Copied!&quot;,2500);}catch(e){}">' + fullTrackUrl + '</div>' +
           '<div style="margin-top:6px; font-size:11px; color:var(--ink-dim);">Tap the URL above to copy it, then paste into any Spotify-to-MP3 converter.</div>';
       } else {
