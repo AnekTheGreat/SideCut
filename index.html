@@ -3952,6 +3952,16 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
 const SPOTIFY_API_BASE = (function() {
     const stored = localStorage.getItem('sidecut_api_base');
     return stored || 'https://sidecut-backend-tlpa.onrender.com';
+// --- Album History hidden albums (localStorage) ---
+function getHiddenAlbums(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]'); }catch(e){ return []; } }
+function hideAlbum(collectionId, collectionName){
+  var h = getHiddenAlbums();
+  if(h.indexOf(collectionId) === -1) h.push(collectionId);
+  localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h));
+  toast('Removed "' + collectionName + '" from Album History.', 3000);
+}
+function isAlbumHidden(collectionId){ return getHiddenAlbums().indexOf(collectionId) !== -1; }
+
 })();
 
 const API_KEY = (function() {
@@ -11725,6 +11735,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function updateNowPlayingUI(t){
+    window._npHasTrack = true;
     $('nowPlaying').style.display = 'flex';
     $('npTitle').textContent = t.name;
     $('npArtist').textContent = t.artist;
@@ -14491,6 +14502,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const isHome = view === 'home';
     const isDiscover = view === 'discover';
     const isLibrary = view === 'library';
+    // Hide now bar on Discover only
+    if(isDiscover){ $('nowPlaying').style.display = 'none'; }
+    else if((isHome || isLibrary) && window._npHasTrack){ $('nowPlaying').style.display = 'flex'; }
     // Sections
     $('homeView').classList.toggle('active', isHome);
     $('discoverView').classList.toggle('active', isDiscover);
@@ -16035,16 +16049,6 @@ function loadCachedDiscoverPopup(key){
   }catch(e){}
   return false;
 }
-
-// --- Album History hidden albums (localStorage) ---
-function getHiddenAlbums(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]'); }catch(e){ return []; } }
-function hideAlbum(collectionId, collectionName){
-  var h = getHiddenAlbums();
-  if(h.indexOf(collectionId) === -1) h.push(collectionId);
-  localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h));
-  toast('Removed "' + collectionName + '" from Album History.', 3000);
-}
-function isAlbumHidden(collectionId){ return getHiddenAlbums().indexOf(collectionId) !== -1; }
 
 // ---------------- Zoom lock ----------------
 // SideCut is meant to stay pinned at 1x: block pinch-zoom on touch screens and
