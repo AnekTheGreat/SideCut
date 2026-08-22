@@ -14564,7 +14564,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         for(var ai=0; ai<pinnedArtists.length; ai++){
           var a = pinnedArtists[ai];
           try{
-            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=200';
+            // Step 1: find artist ID via search
+            var sUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=musicArtist&limit=5';
+            var sResp = await fetchWithProxy(sUrl);
+            var artistId = null;
+            if(sResp && sResp.ok){ var sData = await sResp.json(); var match = (sData.results||[]).find(function(r){ return r && r.artistId && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim(); }); if(match) artistId = match.artistId; }
+            // Step 2: lookup all albums by artist ID
+            var url;
+            if(artistId){ url = 'https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200'; }
+            else { url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=200'; }
             var resp = await fetchWithProxy(url);
             if(!resp || !resp.ok) continue;
             var data = await resp.json();
@@ -15744,15 +15752,16 @@ if(!isDiscover) stopDiscoverPreview();
   }
 
   function triggerDiscoverDownload(card, r){
-    // "Get song" just opens the track in Spotify so the user can copy its link,
-    // then take it to any Spotify-to-MP3 converter themselves. SideCut doesn't
-    // embed or host any converter (they all block framing or go dead regularly).
+    // "Get song" opens the track in Spotify and copies the link to clipboard
+    // so the user can paste it directly into any Spotify-to-MP3 converter.
     const q = (r.trackName || '') + ' ' + (r.artistName || '');
     const songLink = (r.trackViewUrl && /spotify\.com/i.test(r.trackViewUrl))
       ? r.trackViewUrl
       : `https://open.spotify.com/search/${encodeURIComponent(q)}`;
+    // Copy to clipboard so shortened links aren't needed — user gets the full URL
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(songLink); } }catch(e){}
     try{ window.open(songLink, '_blank', 'noopener'); }catch(e){}
-    toast('Opened in Spotify — copy the song link, then paste it into any Spotify-to-MP3 converter.', 4500);
+    toast('Link copied! Paste it into any Spotify-to-MP3 converter. Shortened links may not work — the full link is now in your clipboard.', 5500);
   }
 
   function toggleDiscoverPreview(url, btn){
