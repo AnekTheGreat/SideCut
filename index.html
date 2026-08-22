@@ -552,7 +552,7 @@
 
   /* ---------- Now playing bar ---------- */
   #nowPlaying{
-    position:fixed; left:0; right:0; bottom:0; background: var(--bg-raised); border-top:2px solid var(--coral);
+    position:fixed; left:0; right:0; bottom:0; background: var(--bg-raised); border-top:2px solid var(--coral); min-height:60px;
     padding:10px 16px calc(10px + env(safe-area-inset-bottom)); display:none; flex-direction:column; gap:8px;
     transition: padding 0.3s cubic-bezier(0.4,0,0.2,1), gap 0.3s cubic-bezier(0.4,0,0.2,1), background 0.3s ease, backdrop-filter 0.3s ease;
     /* Explicit now instead of relying on landing after the glow divs in DOM
@@ -16064,9 +16064,21 @@ function hideAlbum(collectionId, collectionName){
   var h = getHiddenAlbums();
   if(h.indexOf(collectionId) === -1) h.push(collectionId);
   localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h));
-  toast('Removed "' + collectionName + '" from Album History.', 3000);
+  if(typeof toastWithUndo === 'function'){
+    toastWithUndo('Removed "' + collectionName + '" from Album History.', function(){
+      var h2 = getHiddenAlbums();
+      var idx2 = h2.indexOf(collectionId);
+      if(idx2 !== -1) h2.splice(idx2, 1);
+      localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h2));
+      var ahBtn2 = document.getElementById('discoverAlbumHistory');
+      if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
+      toast('Album restored.', 2000);
+    });
+  } else {
+    toast('Removed "' + collectionName + '" from Album History.', 3000);
+  }
 }
-function isAlbumHidden(collectionId){ return getHiddenAlbums().indexOf(collectionId) !== -1; }
+function isAlbumHidden(collectionId){ var h = getHiddenAlbums(); for(var i=0;i<h.length;i++){ if(String(h[i]) === String(collectionId)) return true; } return false; }
 
 })();
 </script>
