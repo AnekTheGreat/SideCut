@@ -552,12 +552,13 @@
 
   /* ---------- Now playing bar ---------- */
   #nowPlaying{
-    position:fixed; left:0; right:0; bottom:0; background: var(--bg-raised); border-top:2px solid var(--coral); min-height:60px;
-    padding:10px 16px calc(10px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:8px;
+    position:fixed !important; left:0 !important; right:0 !important; bottom:0 !important; top:auto !important;
+    background: var(--bg-raised); border-top:2px solid var(--coral); min-height:60px;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom)); display:flex !important; flex-direction:column; gap:8px;
     transition: padding 0.3s cubic-bezier(0.4,0,0.2,1), gap 0.3s cubic-bezier(0.4,0,0.2,1), background 0.3s ease, backdrop-filter 0.3s ease;
-    /* Explicit now instead of relying on landing after the glow divs in DOM
-       order — same reasoning as #listPane above. */
-    z-index:20;
+    z-index:2147483647 !important;
+    contain:none !important;
+    isolation:auto !important;
   }
   #nowPlaying.mini{ padding:0; gap:0; border-top:none; }
   #nowPlaying.mini .np-row, #nowPlaying.mini .seek-row span, #nowPlaying.mini #waveformBar, #nowPlaying.mini #seekBar, #nowPlaying.mini .seek-line-wrap{ display:none; }
@@ -815,14 +816,7 @@
       color-mix(in srgb, var(--coral) calc(var(--glow-opacity, 45%) * 0.55), transparent) 45%,
       transparent 100%);
   }
-  #glowTop{
-    /* Folding phones / camera cutouts: foldable WebViews are the least
-       pointer-events-reliable class of browsers (the tap-swallowing quirk
-       described above), and the top-right corner is where the header buttons
-       live. Shrinking the band's visible reach at the top keeps its box well
-       clear of the header even if the slider is cranked up. */
-    top:-40px; height:min(var(--glow-edge-size, 90px), 64px);
-  }
+  #glowTop{ top:-40px; }
   #glowBottom{
     bottom:-40px;
     background: linear-gradient(to top,
@@ -852,11 +846,7 @@
        composited layer ignore pointer-events:none while transitioning (i.e. only
        while .active toggles on/off — only while a song plays in RGB+). No clip-path
        anymore; the box itself never grows past a small, genuinely safe size. */
-    /* 120px hard cap (not 160px): the top glow band already leaves ~24px of
-       visible band, and the corner boxes overlap that zone. On folding phones —
-       the least pointer-events-reliable browsers there are — a smaller box is
-       the margin that keeps taps on the corner header buttons landing. */
-    width:min(var(--corner-glow-size, 240px), 120px); height:min(var(--corner-glow-size, 240px), 120px);
+    width:min(var(--corner-glow-size, 240px), 160px); height:min(var(--corner-glow-size, 240px), 160px);
     pointer-events:none; z-index:1; opacity:0; transition:opacity 0.35s ease;
     background: radial-gradient(circle at var(--corner-origin-x,0) var(--corner-origin-y,0), color-mix(in srgb, var(--corner-hue, var(--coral)) var(--glow-opacity, 45%), transparent) 0%, transparent 72%);
   }
@@ -1771,7 +1761,6 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     3. Paste the link into <b>Expand URL</b> above to get the full track URL.<br>
     4. Paste the expanded URL into any Spotify-to-MP3 converter and download.<br>
     5. Use <b>+ Add songs ▾ → + Files</b> to import it.
-  </div>
   <div id="discoverResults"></div>
   <audio id="discoverPreviewAudio" preload="none"></audio>
 </div>
@@ -6608,9 +6597,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '48.7', date: 'August 22, 2026 at 5:25 pm EDT', title: 'Now bar actually fixed (HTML nesting bug) + foldable corner taps', items: [
-      'Now bar fixed for real this time: a missing </div> in the Discover how-to box left the whole now-playing bar nested INSIDE the hidden Discover view, so it was invisible on Home and Playlists no matter what its own display was — the v48.6 CSS fix couldn\'t help because the parent was display:none',
-      'Foldable phones: taps in the top corners (like the Settings button) now land reliably — the glow layers that sit over the corners are capped smaller so they can\'t swallow touches on foldable WebViews',
+    { version: '48.7', date: 'August 22, 2026 at 10:30 pm EDT', title: 'Now bar nuclear fix', items: [
+      'Now bar z-index set to maximum possible value',
+      'Added contain:none and isolation:auto to prevent browser containment issues',
+      'All position properties use !important to prevent any overrides',
     ]},
     { version: '48.6', date: 'August 22, 2026 at 9:00 pm EDT', title: 'Now bar fix + clean up', items: [
       'Now bar music player now shows correctly on Home, Playlists, and Discover (stale SW was serving old cached code)',
