@@ -14682,7 +14682,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
           html += '</div></div>';
         }
+        html = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button></div>' + html;
         openDiscoverPopup('📀 Album History', html, subtitle);
+        // Wire up refetch button
+        var refetchBtn = document.getElementById('ahRefetchBtn');
+        if(refetchBtn){ refetchBtn.addEventListener('click', function(){ this.textContent = 'Refetching...'; this.disabled = true; document.getElementById('discoverAlbumHistory').click(); }); }
         // Wire up artist headers
         document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
           h.addEventListener('click', function(){
@@ -14745,17 +14749,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
     }
     
-      // Long-press on album headers to remove album from history
-      var _ahHoldTimer = null;
+      // Hold-to-remove on album headers with visible red progress bar
       document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
-        hdr.addEventListener('pointerdown', function(e){
-          var self = this;
-          _ahHoldTimer = setTimeout(function(){
-            _ahHoldTimer = null;
-            var cid = self.dataset.collectionId;
-            var cname = self.dataset.album || 'this album';
+        var holdBar = null;
+        var holdTimer = null;
+        function startHold(){
+          holdBar = document.createElement('div');
+          holdBar.style.cssText = 'position:absolute;top:0;left:0;height:100%;background:rgba(255,80,80,0.25);border-radius:6px;width:0%;pointer-events:none;z-index:1;transition:width 0.6s linear;';
+          hdr.style.position = 'relative';
+          hdr.appendChild(holdBar);
+          requestAnimationFrame(function(){ if(holdBar) holdBar.style.width = '100%'; });
+          holdTimer = setTimeout(function(){
+            holdTimer = null;
+            if(holdBar){ holdBar.remove(); holdBar = null; }
+            var cid = hdr.dataset.collectionId;
+            var cname = hdr.dataset.album || 'this album';
             if(!cid) return;
-            // Show small confirmation popup
             var pop = document.createElement('div');
             pop.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:14px 18px;z-index:300;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);max-width:280px;';
             pop.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">Remove from Album History?</div>' +
@@ -14772,21 +14781,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               var ahBtn2 = document.getElementById('discoverAlbumHistory');
               if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
             });
-            // Close on backdrop tap
             var backdrop = document.createElement('div');
             backdrop.style.cssText = 'position:fixed;inset:0;z-index:299;';
             backdrop.addEventListener('click', function(){ backdrop.remove(); pop.remove(); });
             document.body.appendChild(backdrop);
-          }, 500);
-        });
-        hdr.addEventListener('pointerup', function(){ if(_ahHoldTimer){ clearTimeout(_ahHoldTimer); _ahHoldTimer = null; } });
-        hdr.addEventListener('pointercancel', function(){ if(_ahHoldTimer){ clearTimeout(_ahHoldTimer); _ahHoldTimer = null; } });
-        hdr.addEventListener('pointermove', function(e){
-          // Cancel if finger moves too far
-          if(_ahHoldTimer && (Math.abs(e.movementX) > 5 || Math.abs(e.movementY) > 5)){
-            clearTimeout(_ahHoldTimer); _ahHoldTimer = null;
-          }
-        });
+          }, 600);
+        }
+        function cancelHold(){
+          if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+          if(holdBar){ holdBar.remove(); holdBar = null; }
+        }
+        hdr.addEventListener('pointerdown', startHold);
+        hdr.addEventListener('pointerup', cancelHold);
+        hdr.addEventListener('pointercancel', cancelHold);
+        hdr.addEventListener('pointerleave', cancelHold);
       });
 
       // Singles button: search for singles from pinned artists, show in popup
