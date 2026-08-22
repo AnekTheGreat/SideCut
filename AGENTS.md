@@ -1,5 +1,24 @@
 # SideCut — repository memory
 
+## v48.7 (Aug 22, 2026)
+- **Now bar missing on Home/Playlists — ROOT CAUSE was an unclosed `<div>`**, not
+  CSS or the SW. The Discover how-to box (~line 1756) lost its closing `</div>`
+  during the v48.5 Expand-URL edit, so `#discoverResults`, `#discoverPreviewAudio`,
+  and everything after them — including `#nowPlaying` (~line 1811) — parsed as
+  children of `#discoverView`. Home/Playlists set `#discoverView{display:none}`,
+  which hid the now bar regardless of its own `display:flex`. The v48.6 "fix"
+  (CSS default display:flex) couldn't work because the PARENT was display:none.
+  **Lesson: when a fixed element renders at 0×0 with correct computed styles,
+  check its parent chain first (`el.parentElement` up to body) — browser
+  auto-recovery of unclosed divs silently re-nests later top-level elements.**
+  Diagnosed with a temporary on-page overlay that dumps getComputedStyle +
+  getBoundingClientRect + parent chain (title-based reporting is unreliable in
+  the embedded browser; use a fixed overlay div + screenshot).
+- **Foldable corner taps**: `#glowTop` band capped at `min(var(--glow-edge-size), 64px)`
+  and `.corner-glow` boxes capped 160→120px so the animated glow layers keep a
+  safe margin from the top-corner header buttons on foldable WebViews.
+- The settings gear (`#themeBtn`) opens `#themeBackdrop` via `openSettingsTo()`.
+
 ## What this is
 SideCut is a single-file PWA music player (`index.html`) + a service worker (`sw.js`).
 Everything (HTML/CSS/JS) lives in `index.html`. Versioning: `APP_VERSION` + `CHANGELOG`
