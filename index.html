@@ -6596,7 +6596,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '48.9';
+  const APP_VERSION = '49';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6609,6 +6609,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '49', date: 'August 22, 2026 at 6:15 pm EDT', title: 'Album History shows every album now', items: [
+      'Album History no longer hides albums just for having words like "Deluxe", "Collection" or "Vol." in the title — the old filter was silently dropping real releases (After Hours (Deluxe), Donda (Deluxe)...)',
+      'Deluxe/standard/video editions of the same album are merged into one entry — the edition with the most tracks, so no more duplicate rows',
+      'Collab albums are back: albums where your pinned artist is a co-credit (Watch the Throne, KIDS SEE GHOSTS, VULTURES, Her Loss...) now appear in their Album History',
+      'Still hidden on purpose: karaoke/tribute/bootleg releases, multi-track "Single" packages, remix bundles, and Apple-curated playlists — the actual non-album noise',
+    ]},
     { version: '48.9', date: 'August 22, 2026 at 6:00 pm EDT', title: 'Changelog time corrections', items: [
       'Corrected the release times on v48.3 through v48.7 — they were stamped 4 hours too late',
     ]},
@@ -14670,7 +14676,41 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var resp = await fetchWithProxy(url);
             if(!resp || !resp.ok) continue;
             var data = await resp.json();
-            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && (function(){ var _a = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _b = primaryArtistName(a.name).toLowerCase().trim(); return _a === _b; })() && (!r.trackCount || r.trackCount > 1) && !/\b(single|greatest|best of|essentials|hits|playlist|deluxe|collector|anthology|complete|ultimate|now that|very best|number one|decade|chapter|collection|mixtape|unreleased|bootleg|tribute|soundtrack|karaoke|vol\.?|volume)\b/i.test(r.collectionName) && !isAlbumHidden(r.collectionId); });
+            // iTunes returns every store edition of the same album (explicit/clean,
+            // standard/deluxe, video album, regional) as separate entries — the old
+            // keyword blocklist dropped REAL albums (anything with "deluxe",
+            // "collection", "vol."... in the title) while still letting duplicates
+            // through. Now: keep every multi-track album, then dedupe by normalized
+            // title, preferring the edition with the most tracks (the full one).
+            var wantArtist = primaryArtistName(a.name).toLowerCase().trim();
+            var normTitle = function(n){
+              return (n||'').toLowerCase()
+                .replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+                .replace(/\s*[\(\[][^\)\]]*(deluxe|edition|version|video|explicit|clean|remastered?|bonus|expanded|anniversary|re-?issue|special|target|international|single)[^\)\]]*[\)\]]/gi, '')
+                .replace(/\s*[-–—]\s*(deluxe|single|ep|video album|remastered?|explicit|clean)$/gi, '')
+                .replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+            };
+            // Genuine non-album noise: karaoke/tribute/bootleg, video albums,
+            // " - Single" packages (multi-track singles), remix bundles, and
+            // Apple-curated focus "collections" — everything else stays.
+            var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remix(es| bundle)?\b|focus collection)\b|\s[-–—]\s*single\b/i;
+            var seen = {};
+            (data.results||[]).forEach(function(r){
+              if(!r || !r.collectionName || !r.releaseDate) return;
+              // Accept the album when the pinned artist is ANY member of the
+              // credited artist list — collab albums (Watch the Throne,
+              // KIDS SEE GHOSTS, VULTURES...) credit "A & B", not just A.
+              var credited = (r.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(s){ return s.trim(); });
+              if(credited.indexOf(wantArtist) === -1) return;
+              if(!r.trackCount || r.trackCount <= 1) return;
+              if(noise.test(r.collectionName)) return;
+              if(/\(video album\)/i.test(r.collectionName)) return;
+              if(isAlbumHidden(r.collectionId)) return;
+              var key = normTitle(r.collectionName);
+              if(!key) return;
+              if(!seen[key] || (r.trackCount||0) > (seen[key].trackCount||0)) seen[key] = r;
+            });
+            var albums = Object.keys(seen).map(function(k){ return seen[k]; });
             if(albums.length){
               albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
               artistAlbums[a.name] = albums;

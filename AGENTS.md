@@ -1,5 +1,27 @@
 # SideCut — repository memory
 
+## v49 (Aug 22, 2026)
+- **Album History rewrite of the album filter** (~line 14673, in the
+  `discoverAlbumHistory` onclick). The old keyword blocklist
+  (`single|greatest|best of|...|deluxe|...|collection|...|vol.?|volume`)
+  dropped REAL albums (After Hours (Deluxe), Donda (Deluxe)) while still
+  letting duplicate store editions through. New logic: (1) accept when the
+  pinned artist is ANY member of the credited artist list
+  (`artistName` split on `, ; & feat. ft. vs. x` — collab albums like
+  Watch the Throne / KIDS SEE GHOSTS / VULTURES / Her Loss credit "A & B");
+  (2) drop only true noise: karaoke/tribute/bootleg/unreleased,
+  `video album`, `remix(es| bundle)`, `focus collection`, trailing
+  ` - Single` (multi-track single packages); (3) dedupe by normalized
+  title (`normTitle()` strips edition parentheticals + LRM/RLM marks)
+  keeping the edition with the MOST tracks (full/deluxe). Verified against
+  live iTunes data: The Weeknd 21 (was 39 w/ dupes + missing deluxe),
+  Kanye 16 (incl. all 3 collab albums), Drake 21 (incl. Her Loss).
+- **Lesson**: test Discover filter changes against REAL iTunes API data
+  (`itunes.apple.com/lookup?id=<artistId>&entity=album&limit=200`) in
+  Node — the raw payload is full of duplicates, `- Single` packages with
+  2–5 tracks, video albums, and smart-quote/whitespace variants that
+  hand-written regexes always miss.
+
 ## v48.8 (Aug 22, 2026)
 - **A parallel Codebuff session reverted the v48.7 nesting fix (remote
   commit 42a7097, "nuclear z-index/!important")** because it worked from a
