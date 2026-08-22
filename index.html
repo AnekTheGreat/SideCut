@@ -1544,6 +1544,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 #discPopupBody .dp-ah-album{border-bottom:1px solid var(--line);}
 #discPopupBody .dp-ah-album-hdr{display:flex;align-items:center;gap:8px;padding:8px 16px;cursor:pointer;}
 #discPopupBody .dp-ah-album-hdr:hover{background:var(--line);}
+#discPopupBody .dp-ah-rm:hover{background:rgba(255,80,80,0.2);color:var(--coral);}
 #discPopupBody .dp-ah-track{display:flex;align-items:center;gap:8px;padding:6px 16px;cursor:pointer;font-size:12px;}
 #discPopupBody .dp-ah-track:hover{background:var(--line);}
 
@@ -14675,6 +14676,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
             html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks</div></div>';
+            html += '<button class="dp-ah-rm" data-cid="' + (album.collectionId||'') + '" data-cname="' + escapeHtml(album.collectionName||'') + '" style="width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>';
             html += '<span class="dp-ah-chevron" style="font-size:10px;transition:transform 0.2s;">▸</span>';
             html += '</div>';
             html += '<div id="' + albumId + '" class="dp-ah-songs" style="display:none;padding:2px 0 4px 40px;"></div>';
@@ -14699,7 +14701,31 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           });
         });
         // Wire up album headers (lazy-load tracks)
-        document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
+        // Wire up remove buttons on album headers
+      document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.stopPropagation();
+          var cid = this.dataset.cid;
+          var cname = this.dataset.cname || 'this album';
+          if(!cid) return;
+          var pop = document.createElement('div');
+          pop.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:14px 18px;z-index:300;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);max-width:280px;';
+          pop.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px;">Remove from Album History?</div><div style="font-size:11px;color:var(--ink-dim);margin-bottom:12px;">' + cname + '</div><div style="display:flex;gap:8px;"><button style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;" class="pop-cancel">Cancel</button><button style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;" class="pop-confirm">Remove</button></div>';
+          document.body.appendChild(pop);
+          pop.querySelector('.pop-cancel').addEventListener('click', function(){ pop.remove(); });
+          pop.querySelector('.pop-confirm').addEventListener('click', function(){
+            pop.remove();
+            hideAlbum(cid, cname);
+            var ahBtn2 = document.getElementById('discoverAlbumHistory');
+            if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
+          });
+          var bd = document.createElement('div');
+          bd.style.cssText = 'position:fixed;inset:0;z-index:299;';
+          bd.addEventListener('click', function(){ bd.remove(); pop.remove(); });
+          document.body.appendChild(bd);
+        });
+      });
+      document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
           h.addEventListener('click', function(){
             var tgt = document.getElementById(this.dataset.target);
             var chv = this.querySelector('.dp-ah-chevron');
