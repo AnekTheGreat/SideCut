@@ -1,5 +1,16 @@
 # SideCut — repository memory
 
+## v49.5 (Aug 22, 2026)
+- **Album History pre-2008 fix**: the v49 noise regex `\bremix(es| bundle)?\b`
+  treated ANY bare "Remix" as a remix album — including edition tags like
+  "[2019 Remix & Remaster]" — which wiped out classic catalog (Beatles had
+  31 pre-2008 entries dropped, Madonna 53). Now "remix" is noise only as a
+  release-type descriptor: `remixes`, `remix bundle`, or trailing
+  ` - Remix`. Also added `mix` to normTitle's stripped edition tags so
+  different mix years of one album merge into a single row. Verified:
+  Beatles 39 albums (23 pre-2008, incl. Please Please Me 1963), Madonna
+  45 (25 pre-2008), Weeknd unchanged at 21.
+
 ## v49 (Aug 22, 2026)
 - **Album History rewrite of the album filter** (~line 14673, in the
   `discoverAlbumHistory` onclick). The old keyword blocklist

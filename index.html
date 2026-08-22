@@ -6596,7 +6596,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '49';
+  const APP_VERSION = '49.5';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6609,6 +6609,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '49.5', date: 'August 22, 2026 at 6:30 pm EDT', title: 'Album History: old albums are back', items: [
+      'Pre-2008 albums now show again — the noise filter treated the word "Remix" inside edition tags like "[2019 Remix & Remaster]" as a remix album, which wiped out classic catalog (Beatles, Madonna, etc. — their old albums are mostly reissued as remix/remaster editions)',
+      'Different mix years of the same album (Abbey Road 2019 Mix, Super Deluxe, Remastered) merge into one row — the edition with the most tracks',
+    ]},
     { version: '49', date: 'August 22, 2026 at 6:15 pm EDT', title: 'Album History shows every album now', items: [
       'Album History no longer hides albums just for having words like "Deluxe", "Collection" or "Vol." in the title — the old filter was silently dropping real releases (After Hours (Deluxe), Donda (Deluxe)...)',
       'Deluxe/standard/video editions of the same album are merged into one entry — the edition with the most tracks, so no more duplicate rows',
@@ -14686,14 +14690,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var normTitle = function(n){
               return (n||'').toLowerCase()
                 .replace(/[\u200e\u200f\u202a-\u202e]/g, '')
-                .replace(/\s*[\(\[][^\)\]]*(deluxe|edition|version|video|explicit|clean|remastered?|bonus|expanded|anniversary|re-?issue|special|target|international|single)[^\)\]]*[\)\]]/gi, '')
+                .replace(/\s*[\(\[][^\)\]]*(deluxe|edition|version|video|explicit|clean|remastered?|remix|mix|bonus|expanded|anniversary|re-?issue|special|target|international|single)[^\)\]]*[\)\]]/gi, '')
                 .replace(/\s*[-–—]\s*(deluxe|single|ep|video album|remastered?|explicit|clean)$/gi, '')
                 .replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
             };
             // Genuine non-album noise: karaoke/tribute/bootleg, video albums,
-            // " - Single" packages (multi-track singles), remix bundles, and
-            // Apple-curated focus "collections" — everything else stays.
-            var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remix(es| bundle)?\b|focus collection)\b|\s[-–—]\s*single\b/i;
+            // " - Single" packages (multi-track singles), remix albums/bundles,
+            // and Apple-curated focus "collections" — everything else stays.
+            // "remix" only counts as noise when it's a release-type descriptor
+            // ((Remixes), "- Remix", "Remix Bundle") — a bare "Remix" inside an
+            // edition tag like "[2019 Remix & Remaster]" is a real album.
+            var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection)\b|\s[-–—]\s*(single|remix)\b/i;
             var seen = {};
             (data.results||[]).forEach(function(r){
               if(!r || !r.collectionName || !r.releaseDate) return;
