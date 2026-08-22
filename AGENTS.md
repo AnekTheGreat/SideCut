@@ -1,6 +1,12 @@
 # SideCut — repository memory
 
-## v48.7 (Aug 22, 2026)
+## v48.8 (Aug 22, 2026)
+- **A parallel Codebuff session reverted the v48.7 nesting fix (remote
+  commit 42a7097, "nuclear z-index/!important")** because it worked from a
+  pre-fix checkout — always `git fetch` and read the remote head before
+  re-applying. The nuclear CSS was also harmful: the bar rendered above
+  modals, and `display:flex !important` defeated the legit `display:none`
+  when the playing track is deleted. Restored to sane `z-index:20`.
 - **Now bar missing on Home/Playlists — ROOT CAUSE was an unclosed `<div>`**, not
   CSS or the SW. The Discover how-to box (~line 1756) lost its closing `</div>`
   during the v48.5 Expand-URL edit, so `#discoverResults`, `#discoverPreviewAudio`,
