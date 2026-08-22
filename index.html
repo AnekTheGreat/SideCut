@@ -15858,42 +15858,37 @@ if(!isDiscover) stopDiscoverPreview();
     var url = (inputEl.value || '').trim();
     if(!url){ toast('Paste a Spotify link first.'); return; }
     if(!url.match(/open\.spotify\.com\/(s|track|album|playlist)\//)){
-      toast('That doesn’t look like a Spotify link. Paste an open.spotify.com/s/... or /track/... link.');
+      toast("That doesn’t look like a Spotify link. Paste an open.spotify.com/s/... or /track/... link.");
       return;
     }
     resultEl.style.display = 'block';
-    resultEl.innerHTML = '<span style="color:var(--coral);">Expanding…</span>';
     try{
+      resultEl.innerHTML = '<span style="color:var(--coral);">Expanding…</span>';
       var oembedUrl = 'https://open.spotify.com/oembed?url=' + encodeURIComponent(url);
-      var resp = await fetch(oembedUrl);
-      if(!resp.ok) throw new Error('oEmbed failed: ' + resp.status);
+      var resp = await fetchWithProxy(oembedUrl);
+      if(!resp || !resp.ok) throw new Error('oEmbed failed: ' + (resp ? resp.status : 'no response'));
       var data = await resp.json();
-      // oEmbed returns thumbnail_url but not the canonical URL directly.
-      // The canonical URL is the input URL itself if it was already a /track/ URL.
-      // For /s/ short links, we need to follow redirects.
-      // Try fetching with redirect: 'follow' via a hidden approach.
-      var expandedUrl = url;
+      var trackTitle = data.title || '';
       if(url.match(/\/s\//)){
-        // Short link: use fetch with redirect follow to get final URL
+        var expandedUrl = url;
         try{
-          var redirResp = await fetch(url, { redirect: 'follow', mode: 'no-cors' });
-          // mode: 'no-cors' won't give us response.url, so try another way
+          var redirResp = await fetchWithProxy(url);
+          if(redirResp && redirResp.url && redirResp.url !== url){
+            expandedUrl = redirResp.url;
+          }
         }catch(_){}
-        // Alternative: open in an iframe briefly to resolve
-        // Best approach: just tell user to use the oEmbed result
-        // Actually, let's try fetching the oEmbed which should resolve short links
-        var trackTitle = data.title || '';
-        var trackArtist = data.thumbnail_url ? '' : '';
-        resultEl.innerHTML = '<div style="color:var(--ink); font-weight:600; margin-bottom:4px;">Track: ' + (trackTitle || 'Unknown') + '</div>' +
-          '<div style="margin-bottom:6px; font-size:11px; color:var(--ink-dim);">The short link resolves to this track. Copy the link below and paste it into an MP3 converter:</div>' +
+        var trackMatch = expandedUrl.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
+        var fullTrackUrl = trackMatch ? 'https://open.spotify.com/track/' + trackMatch[1] : url;
+        resultEl.innerHTML = '<div style="color:var(--ink); font-weight:600; margin-bottom:4px;">' + (trackTitle || 'Unknown track') + '</div>' +
+          '<div style="margin-bottom:6px; font-size:11px; color:var(--ink-dim);">Short link verified! Copy the URL below:</div>' +
+          '<div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; font-size:11px; word-break:break-all; color:var(--ink); cursor:pointer;" onclick="try{navigator.clipboard.writeText(this.textContent);toast(&quot;Copied!&quot;,2500);}catch(e){}">' + fullTrackUrl + '</div>' +
+          '<div style="margin-top:6px; font-size:11px; color:var(--ink-dim);">Tap the URL above to copy it, then paste into any Spotify-to-MP3 converter.</div>';
+      } else {
+        resultEl.innerHTML = '<div style="color:var(--ink); font-weight:600; margin-bottom:4px;">' + (trackTitle || 'Unknown track') + '</div>' +
+          '<div style="margin-bottom:6px; font-size:11px; color:var(--ink-dim);">This is already a full URL:</div>' +
           '<div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; font-size:11px; word-break:break-all; color:var(--ink); cursor:pointer;" onclick="try{navigator.clipboard.writeText(this.textContent);toast(&quot;Copied!&quot;,2500);}catch(e){}">' + url + '</div>' +
-          '<div style="margin-top:6px; font-size:11px; color:var(--ink-dim);">Tap the URL above to copy it. Short Spotify links work with most MP3 converters — paste it directly.</div>';
-        return;
+          '<div style="margin-top:6px; font-size:11px; color:var(--ink-dim);">Tap the URL above to copy it.</div>';
       }
-      // Already a /track/ URL
-      resultEl.innerHTML = '<div style="color:var(--ink); font-weight:600; margin-bottom:4px;">Track: ' + (data.title || 'Unknown') + '</div>' +
-        '<div style="margin-bottom:6px; font-size:11px; color:var(--ink-dim);">This is already a full track URL:</div>' +
-        '<div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:6px; font-size:11px; word-break:break-all; color:var(--ink); cursor:pointer;" onclick="try{navigator.clipboard.writeText(this.textContent);toast(&quot;Copied!&quot;,2500);}catch(e){}">' + url + '</div>';
     }catch(e){
       resultEl.innerHTML = '<span style="color:#f44;">Could not expand that link. Make sure it’s a valid Spotify URL and try again.</span>';
     }
