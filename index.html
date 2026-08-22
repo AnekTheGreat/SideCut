@@ -14650,7 +14650,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
             var trackCount = album.trackCount || '?';
             html += '<div class="dp-ah-album">';
-            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '">';
+            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '">';
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
             html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks</div></div>';
@@ -14688,10 +14688,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               var albumName = this.dataset.album;
               var container = tgt;
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Loading tracks...</div>';
-              fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200')
+              var collectionId = h.dataset.collectionId;
+              var trackUrl = collectionId
+                ? 'https://itunes.apple.com/lookup?id=' + collectionId + '&entity=song&limit=200'
+                : 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
+              fetchWithProxy(trackUrl)
                 .then(function(r){ return r.ok ? r.json() : {results:[]}; })
                 .then(function(data){
-                  var tracks = (data.results||[]).filter(function(r){ return r && r.trackName && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim(); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+                  var tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
                   if(!tracks.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
                   var h2 = '';
                   for(var ti=0; ti<tracks.length; ti++){
@@ -14738,15 +14742,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var sresults = (sdata.results||[]).filter(function(sr){
               if(!sr || !sr.trackName) return false;
               if(primaryArtistName(sr.artistName||'').toLowerCase().trim() !== primaryArtistName(sa.name).toLowerCase().trim()) return false;
-              // Only include actual singles: trackCount <= 3 (single/EP), or collectionName contains "Single",
-              // or the collection name matches the track name (standalone single release)
-              var tc = sr.trackCount || 0;
               var cn = (sr.collectionName || '').toLowerCase();
               var tn = (sr.trackName || '').toLowerCase();
-              if(tc <= 3) return true;  // single or short EP
-              if(/\bsingle\b/.test(cn)) return true;  // explicitly marked as single
-              if(cn === tn) return true;  // standalone single (collection = track)
-              return false;  // skip album tracks
+              var tc = sr.trackCount || 0;
+              // Definitely a single if:
+              if(/\bsingle\b/.test(cn)) return true;  // collection is literally called "...Single..."
+              if(cn === tn) return true;  // standalone single (collection name = track name)
+              // Small release (1-2 tracks) with a collection name that looks like a single
+              if(tc <= 2 && !/\b(album|deluxe|edition|vol|volume|greatest|best|essential|playlist|collection|hits|anthology|chapter|decade|complete|live|remix|unreleased|interview|bonus)\b/.test(cn)) return true;
+              // Skip everything else (album tracks, compilations, etc.)
+              return false;
             });
             if(sresults.length){
               sresults.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
