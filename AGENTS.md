@@ -1,6 +1,6 @@
 # SideCut — repository memory
 
-## v49.5 (Aug 22, 2026)
+## v49.0.5 (Aug 22, 2026)
 - **Album History pre-2008 fix**: the v49 noise regex `\bremix(es| bundle)?\b`
   treated ANY bare "Remix" as a remix album — including edition tags like
   "[2019 Remix & Remaster]" — which wiped out classic catalog (Beatles had
