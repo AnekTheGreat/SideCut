@@ -1546,6 +1546,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 #discPopupBody .dp-ah-album-hdr:hover{background:var(--line);}
 #discPopupBody .dp-ah-track{display:flex;align-items:center;gap:8px;padding:6px 16px;cursor:pointer;font-size:12px;}
 #discPopupBody .dp-ah-track:hover{background:var(--line);}
+#discPopupBody .dp-ah-remove{width:22px;height:22px;border-radius:50%;border:none;background:rgba(255,80,80,0.15);color:#f66;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;padding:0;margin-left:auto;}
+#discPopupBody .dp-ah-remove:hover{background:rgba(255,80,80,0.35);}
 #discPopupBody .dp-ah-chevron{font-size:12px;color:var(--ink-dim);transition:transform 0.2s;}
 </style>
 </head>
@@ -14616,7 +14618,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var resp = await fetchWithProxy(url);
             if(!resp || !resp.ok) continue;
             var data = await resp.json();
-            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && (function(){ var _a = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _b = primaryArtistName(a.name).toLowerCase().trim(); return _a === _b; })() && (!r.trackCount || r.trackCount > 1) && !/\b(single|greatest|best of|essentials|hits|playlist|deluxe|collector|anthology|complete|ultimate|now that|very best|number one|decade|chapter|collection|mixtape|unreleased|bootleg|tribute|soundtrack|karaoke|vol\.?|volume)\b/i.test(r.collectionName); });
+            var albums = (data.results||[]).filter(function(r){ return r && r.collectionName && r.releaseDate && (function(){ var _a = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _b = primaryArtistName(a.name).toLowerCase().trim(); return _a === _b; })() && (!r.trackCount || r.trackCount > 1) && !/\b(single|greatest|best of|essentials|hits|playlist|deluxe|collector|anthology|complete|ultimate|now that|very best|number one|decade|chapter|collection|mixtape|unreleased|bootleg|tribute|soundtrack|karaoke|vol\.?|volume)\b/i.test(r.collectionName) && !isAlbumHidden(r.collectionId); });
             if(albums.length){
               albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
               artistAlbums[a.name] = albums;
@@ -14652,6 +14654,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
             html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks</div></div>';
+            html += '<button class="dp-ah-remove" data-collection-id="' + (album.collectionId||'') + '" data-collection-name="' + escapeHtml(album.collectionName||'') + '" title="Remove">×</button>';
             html += '<span class="dp-ah-chevron" style="font-size:10px;transition:transform 0.2s;">▸</span>';
             html += '</div>';
             html += '<div id="' + albumId + '" class="dp-ah-songs" style="display:none;padding:2px 0 4px 40px;"></div>';
@@ -14722,6 +14725,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
     }
     
+      // Wire up remove buttons for albums
+      document.querySelectorAll('#discPopupBody .dp-ah-remove').forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.stopPropagation();
+          var cid = this.dataset.collectionId;
+          var cname = this.dataset.collectionName;
+          if(cid) hideAlbum(cid, cname);
+          var ahBtn2 = document.getElementById('discoverAlbumHistory');
+          if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
+        });
+      });
+
       // Singles button: search for singles from pinned artists, show in popup
       var siBtn = document.getElementById('discoverSingles');
       if(siBtn) siBtn.onclick = async function(){
@@ -16017,6 +16032,16 @@ function loadCachedDiscoverPopup(key){
   }catch(e){}
   return false;
 }
+
+// --- Album History hidden albums (localStorage) ---
+function getHiddenAlbums(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]'); }catch(e){ return []; } }
+function hideAlbum(collectionId, collectionName){
+  var h = getHiddenAlbums();
+  if(h.indexOf(collectionId) === -1) h.push(collectionId);
+  localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h));
+  toast('Removed "' + collectionName + '" from Album History.', 3000);
+}
+function isAlbumHidden(collectionId){ return getHiddenAlbums().indexOf(collectionId) !== -1; }
 
 // ---------------- Zoom lock ----------------
 // SideCut is meant to stay pinned at 1x: block pinch-zoom on touch screens and
