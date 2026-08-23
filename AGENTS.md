@@ -1,5 +1,35 @@
 # SideCut — repository memory
 
+## v49.5.1 (Aug 23, 2026)
+- **Manual Home bubble sizes**: every bubble gets a `.hb-expand` chip
+  (bottom-left, expand-arrows SVG) appended in `renderHome()`; each tap
+  runs `cycleHomeBubbleSize(kind)` cycling `small → null(auto) → tall →
+  wide → full`. State lives in `homeBubbleSizes` (meta key
+  `homeBubbleSizes`), applied by `applyHomeBubbleSizes()` via
+  `hb-size-*` classes (defined next to `.home-bubble.wide/tall`). Chip
+  clicks stopPropagation + the reorder-hold `pointerdown` ignores
+  `[data-expand]` (same pattern as `[data-miniplay]`). Pruned on custom
+  action delete; cleared by `resetHomeOrderBtn` + sandbox reset.
+- **Flicker-free expand animation**: the overlay panel now uses
+  single-run KEYFRAME animations (`hb-panel-up`/`hb-panel-down`,
+  ease-out, no overshoot) instead of class-flip transitions — the old
+  `cubic-bezier(0.18,0.9,0.28,1.1)` spring settle + opacity transition
+  was the visible flicker. `closeHomeBubble()` adds `.closing`, waits
+  250ms, then removes `.open`. `openHomeBubble` does a reflow
+  (`void overlay.offsetWidth`) so rapid reopens restart the keyframes.
+  Panel docks to the bottom on ≤560px screens (sheet style).
+- **Panel drag-to-resize**: `#hbPanelGrip` (first child of
+  `#homeBubblePanel`) pointer-drags the panel height 40–92vh; persisted
+  as meta `homePanelHeight`, applied in `openHomeBubble`.
+- **Glow pulse calmed**: `sd-glow-pulse` was `opacity 0.65→1.3` — over-1
+  opacity clips hard and reads as flicker. Now 0.55→0.9, and the
+  is-playing glow runs at 6s (was 4s).
+- **Gotcha**: `renderHome()` re-runs on every play/pause/stats event
+  while Home is active and rebuilds `bubbles.innerHTML` — any infinite
+  CSS animation on a bubble restarts then (potential strobe). Keep
+  bubble animations slow/subtle, and never animate the overlay panel
+  with re-triggerable transitions.
+
 ## Bk-47 cleanup + converter recommendation (no bump, Aug 23, 2026)
 - The "Bk-47" codename (v47 changelog title + `#currentVersionLabel`) is
   removed — it was a one-off for that release. If a codename is wanted for
