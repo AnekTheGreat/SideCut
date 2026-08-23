@@ -1,5 +1,15 @@
 # SideCut — repository memory
 
+## v49.5.2 (Aug 23, 2026)
+- **The reorder-flicker fix never reached users — the version/cache bump was
+  forgotten.** Commit 06e5ff4 removed the wiggle but left APP_VERSION at
+  49.5.1 and CACHE_NAME at sidecut-shell-v49.5.1, so the cache-first SW kept
+  serving the old flickering shell and the user re-reported the bug.
+  Bumped APP_VERSION → 49.5.2, CACHE_NAME → sidecut-shell-v49.5.2, added a
+  CHANGELOG entry, pushed. **Lesson: "no version bump" fixes are invisible to
+  users on a stale SW — if the user will re-test the deployed app, ALWAYS
+  bump APP_VERSION + CACHE_NAME together, even for "no bump" changes.**
+
 ## Reorder-bubble flicker fix (no version bump, Aug 23, 2026)
 - **Wiggle/glow animation removed from reorder mode — photosensitive risk.** In
   `#homeBubbles.reorder-mode` bubbles used to run `hb-wiggle 0.3s infinite`
