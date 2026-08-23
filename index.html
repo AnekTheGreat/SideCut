@@ -1465,6 +1465,21 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 .home-bubble.hb-hold-confirm{ border-color:var(--coral); box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent); }
 .home-bubble.hb-dragging{ position:fixed; z-index:999; margin:0; pointer-events:none; opacity:.95;
   box-shadow:0 16px 44px rgba(0,0,0,.45); border-color:var(--coral); }
+/* Reorder mode: bubbles wiggle, finger grabs any bubble instantly, a dashed
+   placeholder marks the drop slot, and a Done pill exits. touch-action:none is
+   what stops the browser stealing vertical drags as page scrolls. */
+#homeBubbles.reorder-mode .home-bubble:not(.hb-drag-placeholder){ touch-action:none; cursor:grab; animation:hb-wiggle 0.3s ease-in-out infinite; }
+#homeBubbles.reorder-mode .home-bubble:nth-child(2n){ animation-delay:0.08s; }
+#homeBubbles.reorder-mode .home-bubble:nth-child(3n){ animation-delay:0.15s; }
+#homeBubbles.reorder-mode .home-bubble.hb-dragging{ animation:none; cursor:grabbing; }
+#homeBubbles.reorder-mode.hb-reorder-dragging .home-bubble{ animation:none; }
+@keyframes hb-wiggle{ 0%,100%{ transform:rotate(-1.2deg); } 50%{ transform:rotate(1.2deg); } }
+.home-bubble.hb-drag-placeholder{ flex:0 0 auto; border-style:dashed; border-color:color-mix(in srgb, var(--coral) 45%, transparent);
+  background:color-mix(in srgb, var(--coral) 8%, transparent); box-shadow:none; }
+#hbReorderDone{ display:none; position:fixed; left:50%; bottom:calc(100px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  z-index:40; padding:12px 28px; border-radius:999px; border:none; background:var(--coral); color:#161616;
+  font-weight:700; font-size:14px; font-family:var(--font-ui); box-shadow:0 10px 30px rgba(0,0,0,0.4); cursor:pointer; }
+#hbReorderDone.show{ display:block; }
 
 /* Expanded bubble overlay — feels immersive: blurred backdrop + spring-in panel */
 #homeBubbleOverlay{ display:none; position:fixed; inset:0; z-index:80; align-items:center; justify-content:center; padding:20px; }
@@ -1945,6 +1960,19 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     </div>
   </div>
 </div>
+
+<!-- Reorder Home bubbles confirm -->
+<div class="modal-backdrop" id="hbReorderBackdrop" style="align-items:center;">
+  <div class="modal" style="max-width:340px; border-radius:18px; border-top:none; text-align:center;">
+    <h3>↕ Reorder bubbles?</h3>
+    <div style="font-size:13px; color:var(--ink-dim); margin-top:-6px;">Would you like to reorder your Home bubbles?</div>
+    <div class="modal-btns">
+      <button class="cancel" id="hbReorderCancel">Cancel</button>
+      <button class="confirm" id="hbReorderGo">Continue</button>
+    </div>
+  </div>
+</div>
+<button id="hbReorderDone">✓ Done</button>
 
 <!-- Theme picker modal -->
 <div class="modal-backdrop" id="themeBackdrop">
@@ -15194,6 +15222,7 @@ if(!isDiscover) stopDiscoverPreview();
       // on the now-playing bubble intercepts the tap so it only toggles playback.
       b.addEventListener('click', (e) => {
         if(window.__hbDragSuppressClick){ window.__hbDragSuppressClick = false; return; }
+        if(hbReorderMode) return; // reorder mode: taps don't open bubbles
         const kind = b.dataset.bubble;
         if(e.target.closest('[data-miniplay]')) return; // play button handles its own click
         if(kind && kind.indexOf('custom-') === 0){
@@ -15209,6 +15238,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(mp){
         mp.addEventListener('click', (e) => {
           e.stopPropagation();
+          if(hbReorderMode) return; // reorder mode: play button is inert
           const a = activeAudio();
           if(!a || !queue.length){ toast('Nothing to play yet — add songs first.'); return; }
           if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
@@ -15224,13 +15254,16 @@ if(!isDiscover) stopDiscoverPreview();
     });
   }
 
-  // ---- Long-press drag to reorder Home bubbles ----
-  // Press a bubble and hold ~350ms, then drag — it floats under your finger and
-  // the others shift out of the way. Drop to save the new order (meta homeOrder).
-  // Quick taps still open the bubble; scrolling aborts the hold.
+  // ---- Reorder Home bubbles ----
+  // Hold a bubble ~300ms → a confirm popup asks "Would you like to reorder your
+  // bubbles?" → Continue enters reorder mode: bubbles wiggle, and any bubble
+  // follows your finger the moment it moves (no second hold). A dashed
+  // placeholder marks the drop slot; the "✓ Done" pill exits. Quick taps
+  // outside reorder mode still open bubbles normally.
   let homeBubbleDragTimer = null;
   let homeBubbleDragStartXY = null;
   let hbDrag = null; // active drag session
+  let hbReorderMode = false;
   function wireHomeBubbleDrag(b){
     const cancelStart = () => {
       clearTimeout(homeBubbleDragTimer);
@@ -15238,12 +15271,34 @@ if(!isDiscover) stopDiscoverPreview();
       homeBubbleDragStartXY = null;
     };
     b.addEventListener('pointerdown', (e) => {
-      if(e.target.closest('[data-miniplay]')) return; // don't drag from the play button
+      if(hbReorderMode){
+        // Reorder mode: the grab starts the instant the finger moves a few px.
+        const pid = e.pointerId, sx = e.clientX, sy = e.clientY;
+        const dropListeners = () => {
+          window.removeEventListener('pointermove', moveStart, true);
+          window.removeEventListener('pointerup', upStart, true);
+          window.removeEventListener('pointercancel', upStart, true);
+        };
+        const moveStart = (ev) => {
+          if(ev.pointerId !== pid) return;
+          if(Math.hypot(ev.clientX - sx, ev.clientY - sy) > 7){
+            dropListeners();
+            beginHomeBubbleDrag(b, pid, ev.clientX, ev.clientY);
+          }
+        };
+        const upStart = (ev) => { if(ev.pointerId === pid) dropListeners(); };
+        window.addEventListener('pointermove', moveStart, true);
+        window.addEventListener('pointerup', upStart, true);
+        window.addEventListener('pointercancel', upStart, true);
+        return;
+      }
+      if(e.target.closest('[data-miniplay]')) return; // don't hold from the play button
       cancelStart();
       homeBubbleDragStartXY = [e.clientX, e.clientY];
       homeBubbleDragTimer = setTimeout(() => {
-        beginHomeBubbleDrag(b, e.pointerId, e.clientX, e.clientY);
-      }, 350);
+        cancelStart();
+        openHbReorderConfirm();
+      }, 300);
     });
     b.addEventListener('pointermove', (e) => {
       if(!homeBubbleDragTimer || !homeBubbleDragStartXY) return;
@@ -15255,86 +15310,127 @@ if(!isDiscover) stopDiscoverPreview();
     b.addEventListener('pointercancel', cancelStart);
     b.addEventListener('blur', cancelStart, true);
   }
+
+  function openHbReorderConfirm(){
+    window.__hbDragSuppressClick = true; // the click after the hold must not open the bubble
+    if(navigator.vibrate) try{ navigator.vibrate(10); }catch(_){}
+    $('hbReorderBackdrop').style.display = 'flex';
+  }
+  function closeHbReorderConfirm(){ $('hbReorderBackdrop').style.display = 'none'; }
+  function enterBubbleReorderMode(){
+    hbReorderMode = true;
+    const wrap = $('homeBubbles');
+    if(wrap) wrap.classList.add('reorder-mode');
+    $('hbReorderDone').classList.add('show');
+    toast('Drag bubbles to rearrange — tap Done when finished', 2600);
+  }
+  function exitBubbleReorderMode(){
+    hbReorderMode = false;
+    const wrap = $('homeBubbles');
+    if(wrap) wrap.classList.remove('reorder-mode', 'hb-reorder-dragging');
+    $('hbReorderDone').classList.remove('show');
+    toast('Home layout saved');
+  }
+
+  function positionHbDrag(x, y){
+    // The dragged bubble is position:fixed with left/top 0, so its translate
+    // takes raw viewport coords — anything else makes it jump out from under
+    // the finger (the old wrapRect-relative math did exactly that).
+    hbDrag.el.style.transform = 'translate(' + (x - hbDrag.offsetX) + 'px,' + (y - hbDrag.offsetY) + 'px) scale(1.05)';
+  }
   function beginHomeBubbleDrag(el, pointerId, x, y){
-    clearTimeout(homeBubbleDragTimer); homeBubbleDragTimer = null; homeBubbleDragStartXY = null;
     const wrap = $('homeBubbles');
     if(!wrap) return;
     const rect = el.getBoundingClientRect();
-    hbDrag = { el, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, moved: false };
-    window.__hbDragSuppressClick = true; // the upcoming click must not open the bubble
+    // A placeholder keeps the grid from collapsing while the bubble is fixed.
+    const ph = document.createElement('div');
+    ph.className = 'home-bubble hb-drag-placeholder';
+    ph.style.width = rect.width + 'px';
+    ph.style.height = rect.height + 'px';
+    ph.style.minWidth = rect.width + 'px';
+    ph.style.minHeight = rect.height + 'px';
+    wrap.insertBefore(ph, el);
+    hbDrag = { el, ph, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, moved: false };
+    window.__hbDragSuppressClick = true; // the click after the drop must not open the bubble
     el.classList.add('hb-dragging');
-    el.style.position = 'fixed';
     el.style.left = '0'; el.style.top = '0';
     el.style.width = rect.width + 'px';
     el.style.height = rect.height + 'px';
-    el.style.margin = '0';
-    el.style.transition = 'none';
-    const wrapRect = wrap.getBoundingClientRect();
-    el.style.transform = 'translate(' + ((x - wrapRect.left) - hbDrag.offsetX) + 'px,' + ((y - wrapRect.top) - hbDrag.offsetY) + 'px) scale(1.06)';
+    el.style.transition = 'none'; // no lag — the bubble must stick to the finger
+    wrap.classList.add('hb-reorder-dragging'); // pause the wiggle while dragging
+    if(navigator.vibrate) try{ navigator.vibrate(6); }catch(_){}
+    positionHbDrag(x, y);
     window.addEventListener('pointermove', onHomeBubbleDragMove, true);
     window.addEventListener('pointerup', endHomeBubbleDrag, true);
     window.addEventListener('pointercancel', endHomeBubbleDrag, true);
   }
+  function placeHbPlaceholder(x, y){
+    // Pick the absolute slot under the point: insert the placeholder before
+    // the first sibling whose center comes after the point in reading order.
+    // No sibling shift animation here — mid-animation rects made slot picks
+    // jittery, and the floating bubble + dashed placeholder already carry
+    // the visual feedback. Reflow is instant and reading rects stays exact.
+    const wrap = $('homeBubbles');
+    if(!wrap || !hbDrag) return;
+    const sibs = [...wrap.children].filter(c => c.classList.contains('home-bubble') && c !== hbDrag.el && c !== hbDrag.ph);
+    // "Before X" / "after last": index math among sibs only — the dragged el
+    // stays in the DOM between ph and siblings, so DOM-adjacency checks like
+    // ph.nextSibling lie. Filtered indexes ignore el and stay truthful.
+    let sibsBeforePh = 0;
+    for(const c of wrap.children){
+      if(c === hbDrag.ph) break;
+      if(c !== hbDrag.el && c.classList.contains('home-bubble')) sibsBeforePh++;
+    }
+    let target = null;
+    for(const b of sibs){
+      const r = b.getBoundingClientRect();
+      const cy = r.top + r.height / 2;
+      if(y < cy - r.height / 2 || (Math.abs(y - cy) <= r.height / 2 && x < r.left + r.width / 2)){
+        target = b;
+        break;
+      }
+    }
+    const targetIndex = target ? sibs.indexOf(target) : sibs.length;
+    if(targetIndex === sibsBeforePh) return;
+    if(target){ wrap.insertBefore(hbDrag.ph, target); }
+    else { wrap.appendChild(hbDrag.ph); }
+    hbDrag.moved = true;
+  }
   function onHomeBubbleDragMove(e){
     if(!hbDrag || e.pointerId !== hbDrag.pointerId) return;
     e.preventDefault();
-    const wrap = $('homeBubbles');
-    if(!wrap) return;
-    const wrapRect = wrap.getBoundingClientRect();
-    hbDrag.el.style.transform = 'translate(' + ((e.clientX - wrapRect.left) - hbDrag.offsetX) + 'px,' + ((e.clientY - wrapRect.top) - hbDrag.offsetY) + 'px) scale(1.06)';
-    // Find the bubble nearest the finger and slide the dragged one into that slot.
-    const bubbles = [...wrap.querySelectorAll('.home-bubble')].filter(b => b !== hbDrag.el);
-    let best = null, bestD = Infinity;
-    bubbles.forEach(b => {
-      const r = b.getBoundingClientRect();
-      const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
-      if(d < bestD){ bestD = d; best = b; }
-    });
-    if(!best) return;
-    const r = best.getBoundingClientRect();
-    const insertBeforeBest = (e.clientX < r.left + r.width / 2) || (e.clientY < r.top + r.height / 2);
-    const before = [...wrap.querySelectorAll('.home-bubble')].filter(b => b !== hbDrag.el);
-    const rects = new Map(before.map(b => [b, b.getBoundingClientRect()]));
-    if(insertBeforeBest){ wrap.insertBefore(hbDrag.el, best); }
-    else if(best.nextSibling){ wrap.insertBefore(hbDrag.el, best.nextSibling); }
-    else { wrap.appendChild(hbDrag.el); }
-    hbDrag.moved = true;
-    // FLIP: siblings animate from their old spots to their new ones.
-    [...wrap.querySelectorAll('.home-bubble')].forEach(b => {
-      if(b === hbDrag.el) return;
-      const old = rects.get(b); if(!old) return;
-      const nr = b.getBoundingClientRect();
-      const dx = old.left - nr.left, dy = old.top - nr.top;
-      if(!dx && !dy) return;
-      b.style.transition = 'none';
-      b.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
-      requestAnimationFrame(() => { b.style.transition = ''; b.style.transform = ''; });
-    });
+    positionHbDrag(e.clientX, e.clientY);
+    placeHbPlaceholder(e.clientX, e.clientY);
   }
   function endHomeBubbleDrag(e){
     if(!hbDrag || e.pointerId !== hbDrag.pointerId) return;
+    placeHbPlaceholder(e.clientX, e.clientY); // the release point decides the final slot
     const el = hbDrag.el;
+    const ph = hbDrag.ph;
     const moved = hbDrag.moved;
+    const wrap = $('homeBubbles');
+    if(wrap && ph.parentNode === wrap) wrap.insertBefore(el, ph); // settle into the slot
+    if(ph.parentNode) ph.parentNode.removeChild(ph);
     el.classList.remove('hb-dragging');
-    el.style.position = ''; el.style.left = ''; el.style.top = '';
-    el.style.width = ''; el.style.height = ''; el.style.margin = '';
+    el.style.left = ''; el.style.top = '';
+    el.style.width = ''; el.style.height = '';
     el.style.transform = ''; el.style.transition = '';
+    if(wrap) wrap.classList.remove('hb-reorder-dragging');
     window.removeEventListener('pointermove', onHomeBubbleDragMove, true);
     window.removeEventListener('pointerup', endHomeBubbleDrag, true);
     window.removeEventListener('pointercancel', endHomeBubbleDrag, true);
     hbDrag = null;
-    if(moved){
-      const wrap = $('homeBubbles');
-      const ids = wrap ? [...wrap.querySelectorAll('.home-bubble')].map(b => b.dataset.bubble).filter(Boolean) : [];
+    if(moved && wrap){
+      const ids = [...wrap.querySelectorAll('.home-bubble')].map(b => b.dataset.bubble).filter(Boolean);
       homeOrder = normalizeHomeOrder(ids);
       dbPut('meta', { key: 'homeOrder', value: homeOrder });
       if(typeof renderHomeLayoutEditor === 'function') renderHomeLayoutEditor();
-      renderHome();
-      toast('Home layout updated');
-    } else {
-      renderHome(); // reset any visual state from the aborted hold
     }
   }
+
+  $('hbReorderCancel').addEventListener('click', closeHbReorderConfirm);
+  $('hbReorderGo').addEventListener('click', () => { closeHbReorderConfirm(); enterBubbleReorderMode(); });
+  $('hbReorderDone').addEventListener('click', exitBubbleReorderMode);
 
   function customActionBubbleHTML(a){
     const typeLabel = CUSTOM_ACTION_TYPE_LABELS[a.type] || a.type;

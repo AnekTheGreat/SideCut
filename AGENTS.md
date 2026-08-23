@@ -1,5 +1,49 @@
 # SideCut — repository memory
 
+## Home bubble reorder UX (no version bump, Aug 23, 2026)
+- **Flow**: hold a Home bubble ~300ms → `#hbReorderBackdrop` popup
+  ("Would you like to reorder your bubbles?" Cancel/Continue) →
+  `enterBubbleReorderMode()`: `#homeBubbles.reorder-mode` wiggles bubbles
+  (hb-wiggle keyframes), a "✓ Done" pill (`#hbReorderDone`) exits via
+  `exitBubbleReorderMode()`. In reorder mode ANY bubble grabs on first
+  7px of movement (no second hold) via a pointerdown-scoped window
+  pointermove listener; taps don't open bubbles (click handlers gate on
+  `hbReorderMode`, mini-play is inert too).
+- **Bugs fixed vs the old long-press drag** (each cost a debugging round,
+  don't reintroduce):
+  1. Fixed-position jump: the old code translated by `x - wrapRect.left`
+     while the element was `position:fixed` (viewport coords) — the bubble
+     leapt away from the finger. `positionHbDrag()` now uses raw viewport
+     coords (`x - offsetX`).
+  2. Lag: the 0.18s `.home-bubble` transform transition wasn't disabled
+     during drag — now `el.style.transition = 'none'` at grab.
+  3. Browser stealing vertical drags as scroll: reorder mode sets
+     `touch-action:none` on bubbles.
+  4. Popup self-close race: a backdrop-tap-close listener made the
+     synthesized click on hold-release instantly close the popup — the
+     popup has NO backdrop-close now, only Cancel/Continue.
+  5. Slot-pick instability: mid-FLIP-animation sibling rects made the
+     drop-slot choice wander/ping-pong. Removed sibling FLIP entirely —
+     `placeHbPlaceholder()` picks the slot from CLEAN rects (instant
+     reflow + dashed `.hb-drag-placeholder` is enough feedback).
+  6. The dragged el STAYS in the DOM (removeChild makes it invisible),
+     which means DOM-adjacency checks (ph.nextSibling) LIE — slot math
+     counts el-excluded indexes instead (`sibsBeforePh` loop).
+  7. Drop-slot convention: row-major scan, "before the first sibling
+     whose center comes after the point"; dropping exactly ON a bubble's
+     center counts as AFTER (takes its slot).
+  8. Pointermove events lag the finger — `endHomeBubbleDrag()` re-runs
+     `placeHbPlaceholder()` with the pointerup coords so the release
+     point always gets the final say.
+- **Testing gotcha**: the app SELF-RELOADS ~1.2s after first boot in
+  automation (SW registers on localhost → controllerchange →
+  reloadForUpdate). Browser tests must wait ~3.5s before interacting or
+  the context silently swaps mid-test.
+- Puppeteer test harness lives in /tmp/hbtest (NOT in repo): test.js
+  covers popup open, cancel, reorder entry, fixed-position drag, finger
+  tracking, swap, drag-to-end, Done exit, IDB homeOrder persistence,
+  reload survival, normal-tap regression. All green 6/6 runs.
+
 ## v49.0.5 (Aug 22, 2026)
 - **Album History pre-2008 fix**: the v49 noise regex `\bremix(es| bundle)?\b`
   treated ANY bare "Remix" as a remix album — including edition tags like
