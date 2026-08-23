@@ -52,8 +52,23 @@
   scrollTop advances; TEST12 asserts the margin strip + scrollability.
 - Puppeteer test harness lives in /tmp/hbtest (NOT in repo): test.js
   covers popup open, cancel, reorder entry, fixed-position drag, finger
-  tracking, swap, drag-to-end, auto-scroll, scroll strip, Done exit, IDB
-  homeOrder persistence, reload survival, normal-tap regression. All green.
+  tracking, before/after split convention, drag-to-end (aims below last
+  bubble), auto-scroll, scroll strip, Done exit, IDB persistence,
+  reload survival, normal-tap regression. All green 6/6 runs.
+- **Gap fix follow-up (Aug 23, 2026)**: the original `#homeBubbles` was
+  `display:flex; flex-wrap:wrap` with `flex:1 1 140px` — after any
+  reorder the row got weird stretch/wrap behavior and a big empty space
+  opened. Now `display:grid; grid-template-columns:1fr 1fr` so the grid
+  never stretches; `wide` spans both columns via `grid-column:1/-1`;
+  `tall` is just a taller min-height. `placeHbPlaceholder()` also got a
+  row-band guard (a sibling is targetable only when the point is within
+  its own row band, or above it and horizontally near it) so a full-width
+  bubble can't soak up drops meant for the two-column row above it; tall
+  bubbles cap their band to one row height. The no-op bail compares to
+  the drag's startIndex (not penultimate position) so returning to the
+  original slot correctly persists/nops. Tests re-aim in live code using
+  fresh rects fetched after the grab (the grid reflows when the drag
+  starts; stale rect aims always miss).
 
 ## v49.0.5 (Aug 22, 2026)
 - **Album History pre-2008 fix**: the v49 noise regex `\bremix(es| bundle)?\b`

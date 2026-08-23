@@ -1426,9 +1426,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   box-shadow:0 6px 18px rgba(0,0,0,.18);
 }
 
-#homeBubbles{ display:flex; flex-wrap:wrap; gap:10px; align-content:flex-start; }
+#homeBubbles{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .home-bubble{
-  position:relative; flex:1 1 calc(140px * var(--hb-s, 1)); min-width:calc(130px * var(--hb-s, 1)); min-height:calc(118px * var(--hb-s, 1));
+  position:relative; min-width:0; min-height:calc(118px * var(--hb-s, 1));
   border-radius:22px; border:1px solid var(--line); cursor:pointer; overflow:hidden;
   display:flex; flex-direction:column; justify-content:flex-end; padding:12px;
   background:linear-gradient(150deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 70%, #000));
@@ -1437,7 +1437,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 }
 .home-bubble:active{ transform: scale(0.96); }
 .home-bubble:hover{ border-color:var(--coral); box-shadow:0 6px 22px rgba(227,178,60,0.10); }
-.home-bubble.wide{ flex-basis:100%; min-height:calc(96px * var(--hb-s, 1)); }
+/* wide spans both columns; tall is one grid row taller. Row heights are
+   content-driven, so no row ever opens a big empty gap after a reorder. */
+.home-bubble.wide{ grid-column:1 / -1; min-height:calc(96px * var(--hb-s, 1)); }
 .home-bubble.tall{ min-height:calc(158px * var(--hb-s, 1)); }
 .home-bubble .hb-ico{ position:absolute; top:calc(12px * var(--hb-s, 1)); left:calc(12px * var(--hb-s, 1)); width:calc(30px * var(--hb-s, 1)); height:calc(30px * var(--hb-s, 1)); border-radius:50%;
   display:flex; align-items:center; justify-content:center; font-size:15px;
@@ -1477,7 +1479,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 #homeBubbles.reorder-mode .home-bubble.hb-dragging{ animation:none; cursor:grabbing; }
 #homeBubbles.reorder-mode.hb-reorder-dragging .home-bubble{ animation:none; }
 @keyframes hb-wiggle{ 0%,100%{ transform:rotate(-1.2deg); } 50%{ transform:rotate(1.2deg); } }
-.home-bubble.hb-drag-placeholder{ flex:0 0 auto; border-style:dashed; border-color:color-mix(in srgb, var(--coral) 45%, transparent);
+.home-bubble.hb-drag-placeholder{ border-style:dashed; border-color:color-mix(in srgb, var(--coral) 45%, transparent);
   background:color-mix(in srgb, var(--coral) 8%, transparent); box-shadow:none; }
 #hbReorderDone{ display:none; position:fixed; left:50%; bottom:calc(100px + env(safe-area-inset-bottom)); transform:translateX(-50%);
   z-index:40; padding:12px 28px; border-radius:999px; border:none; background:var(--coral); color:#161616;
@@ -15383,7 +15385,8 @@ if(!isDiscover) stopDiscoverPreview();
     ph.style.minWidth = rect.width + 'px';
     ph.style.minHeight = rect.height + 'px';
     wrap.insertBefore(ph, el);
-    hbDrag = { el, ph, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, lastX: x, lastY: y, moved: false };
+    hbDrag = { el, ph, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, lastX: x, lastY: y, moved: false,
+      startIndex: [...wrap.children].filter(c => c.classList.contains('home-bubble')).indexOf(el) };
     window.__hbDragSuppressClick = true; // the click after the drop must not open the bubble
     el.classList.add('hb-dragging');
     el.style.left = '0'; el.style.top = '0';
@@ -15419,13 +15422,30 @@ if(!isDiscover) stopDiscoverPreview();
     for(const b of sibs){
       const r = b.getBoundingClientRect();
       const cy = r.top + r.height / 2;
+      // Row-major scan, but a sibling can only be the target when the point
+      // is within its own row band (otherwise a full-width bubble would soak
+      // up drops meant for the two-column row above it) or the point is
+      // above it AND the point is horizontally near it. A tall item's band
+      // is clipped to one normal row height so the lower sliver of its row
+      // still belongs to the next row.
+      const rowBand = Math.min(r.height, 130 * (parseFloat(getComputedStyle($('homeBubbles')).getPropertyValue('--hb-s')) || 1));
+      const withinBand = y >= r.top - 6 && y <= r.top + rowBand + 6;
+      const nearX = x >= r.left - 30 && x <= r.left + r.width + 30;
+      if(!withinBand && !(y < r.top && nearX)) continue;
       if(y < cy - r.height / 2 || (Math.abs(y - cy) <= r.height / 2 && x < r.left + r.width / 2)){
         target = b;
         break;
       }
     }
     const targetIndex = target ? sibs.indexOf(target) : sibs.length;
-    if(targetIndex === sibsBeforePh) return;
+    // No-op bail: only skip the DOM move when the placeholder would sit at the
+    // same sibling index. Moved-status compares against the drag's start index,
+    // not the penultimate position, so an aim that returns the bubble to its
+    // original slot is correctly a no-op while any other final slot persists.
+    if(targetIndex === sibsBeforePh){
+      if(targetIndex !== hbDrag.startIndex) hbDrag.moved = true;
+      return;
+    }
     if(target){ wrap.insertBefore(hbDrag.ph, target); }
     else { wrap.appendChild(hbDrag.ph); }
     hbDrag.moved = true;
