@@ -1,5 +1,40 @@
 # SideCut — repository memory
 
+## Reorder-bubble flicker fix (no version bump, Aug 23, 2026)
+- **Wiggle/glow animation removed from reorder mode — photosensitive risk.** In
+  `#homeBubbles.reorder-mode` bubbles used to run `hb-wiggle 0.3s infinite`
+  (±1.2° rotation, staggered) plus the `sd-glow-pulse` glow — a strobing grid.
+  Now reorder mode shows a STATIC dashed outline
+  (`outline:2px dashed coral 45%`) + `cursor:grab`; the `.hb-glow` animation is
+  forced to `animation:none`; `@keyframes hb-wiggle` deleted. `hb-dragging` keeps
+  `cursor:grabbing` and drops the outline.
+- **renderHome() skips the grid while in reorder mode.** It rebuilds
+  `bubbles.innerHTML` on every play/pause/stats event while Home is active, and
+  each rebuild restarted the infinite animations (visible strobe) AND destroyed
+  any in-progress drag element. Guard: `if(bubbles.classList.contains('reorder-mode')) return;`
+  (class check, not `hbReorderMode`, to avoid TDZ on early boot calls).
+  `exitBubbleReorderMode()` now calls `renderHome()` once after Done to re-sync
+  skipped play/pause updates.
+- **No :hover/:active pops in reorder mode** (follow-up, same day): the dragged
+  bubble is `pointer-events:none`, so every bubble the finger passes over
+  flashed the coral hover border + box-shadow, and every finger-down briefly
+  scaled the bubble 0.96. Reorder mode now forces
+  `border-color:var(--line); box-shadow:none` on `:hover` and `transform:none`
+  on `:active`.
+- **Slot-pick hysteresis** (follow-up, same day): `placeHbPlaceholder(x, y,
+  force)` skips re-picking unless the point moved ≥4px since the last
+  successful pick (`hbDrag.placeXY`) — a finger parked on a slot boundary or
+  the auto-scroll loop re-reading shifted rects could oscillate the placeholder
+  between two slots (visible twitch). `endHomeBubbleDrag` passes `force=true`
+  so the release point always lands.
+- **Gotcha: this fix sat UNCOMMITTED for a session — the user re-tested the
+  deployed build and saw the old wiggle.** Commit + push before telling the
+  user it's fixed.
+- Test: `/tmp/hbtest/test-flicker.js` — hold→popup→reorder entry, zero CSS
+  animations on bubbles + glow, static outline, renderHome skip, hover-flash
+  suppression, full drag swaps slots + persists, Done re-render, tap
+  regression. 11/11 green.
+
 ## v49.5.1 (Aug 23, 2026)
 - **Manual Home bubble sizes**: every bubble gets a `.hb-expand` chip
   (discreet top-right icon, expand-arrows SVG, opacity 0.32 — no border/
