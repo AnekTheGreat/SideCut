@@ -1,5 +1,14 @@
 # SideCut — repository memory
 
+## Bk-47 cleanup + converter recommendation (no bump, Aug 23, 2026)
+- The "Bk-47" codename (v47 changelog title + `#currentVersionLabel`) is
+  removed — it was a one-off for that release. If a codename is wanted for
+  a specific version, flag it in CHANGELOG and the label together.
+- Discover how-to box now has a collapsed `<details>` ("💡 Converter
+  recommendation") naming Spotisaver as management's Spotify-to-MP3 pick.
+  Keep it name-only (no hard URL) — converter domains die constantly
+  (spotidown/spoticatch/spotisaver.com/spotify-downloader all came and went).
+
 ## Home bubble reorder UX (no version bump, Aug 23, 2026)
 - **Flow**: hold a Home bubble ~300ms → `#hbReorderBackdrop` popup
   ("Would you like to reorder your bubbles?" Cancel/Continue) →
