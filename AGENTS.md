@@ -39,10 +39,21 @@
   automation (SW registers on localhost → controllerchange →
   reloadForUpdate). Browser tests must wait ~3.5s before interacting or
   the context silently swaps mid-test.
+- **Scrolling while reordering** (follow-up, same day): every bubble is
+  `touch-action:none` in reorder mode, so the page itself can't be dragged
+  to scroll. Two ways out: (1) `#homeBubbles.reorder-mode{ margin-right:26px }`
+  leaves a slim touch strip at the grid's right edge that still scrolls;
+  (2) `tickHbAutoScroll()` — an rAF loop running for the whole drag — scrolls
+  `#homeView` when the finger parks within 72px of the scroller's top/bottom
+  edge (quadratic ramp up to 14px/frame), re-running `positionHbDrag` +
+  `placeHbPlaceholder` each frame from `hbDrag.lastX/lastY` (the pointer's
+  last seen viewport coords, updated in `onHomeBubbleDragMove`). Stopped in
+  `endHomeBubbleDrag`. Tests: TEST11 parks at the bottom edge and asserts
+  scrollTop advances; TEST12 asserts the margin strip + scrollability.
 - Puppeteer test harness lives in /tmp/hbtest (NOT in repo): test.js
   covers popup open, cancel, reorder entry, fixed-position drag, finger
-  tracking, swap, drag-to-end, Done exit, IDB homeOrder persistence,
-  reload survival, normal-tap regression. All green 6/6 runs.
+  tracking, swap, drag-to-end, auto-scroll, scroll strip, Done exit, IDB
+  homeOrder persistence, reload survival, normal-tap regression. All green.
 
 ## v49.0.5 (Aug 22, 2026)
 - **Album History pre-2008 fix**: the v49 noise regex `\bremix(es| bundle)?\b`

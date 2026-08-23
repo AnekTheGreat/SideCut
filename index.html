@@ -1467,7 +1467,10 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   box-shadow:0 16px 44px rgba(0,0,0,.45); border-color:var(--coral); }
 /* Reorder mode: bubbles wiggle, finger grabs any bubble instantly, a dashed
    placeholder marks the drop slot, and a Done pill exits. touch-action:none is
-   what stops the browser stealing vertical drags as page scrolls. */
+   what stops the browser stealing vertical drags as page scrolls. The margin
+   leaves a slim touch strip at the right edge of the grid that stays
+   scrollable, and auto-scroll handles moving past the screen edges mid-drag. */
+#homeBubbles.reorder-mode{ margin-right:26px; }
 #homeBubbles.reorder-mode .home-bubble:not(.hb-drag-placeholder){ touch-action:none; cursor:grab; animation:hb-wiggle 0.3s ease-in-out infinite; }
 #homeBubbles.reorder-mode .home-bubble:nth-child(2n){ animation-delay:0.08s; }
 #homeBubbles.reorder-mode .home-bubble:nth-child(3n){ animation-delay:0.15s; }
@@ -15338,6 +15341,36 @@ if(!isDiscover) stopDiscoverPreview();
     // the finger (the old wrapRect-relative math did exactly that).
     hbDrag.el.style.transform = 'translate(' + (x - hbDrag.offsetX) + 'px,' + (y - hbDrag.offsetY) + 'px) scale(1.05)';
   }
+  function updateHbDragPosition(){
+    positionHbDrag(hbDrag.lastX, hbDrag.lastY);
+  }
+  // Auto-scroll: hold the dragged bubble near the top/bottom screen edge and
+  // the page scrolls under your finger at an accelerating pace. The loop
+  // re-places the placeholder against the shifting layout each frame.
+  let hbAutoScrollRaf = null;
+  function tickHbAutoScroll(){
+    hbAutoScrollRaf = null;
+    if(!hbDrag) return;
+    const v = $('homeView');
+    if(!v) return;
+    const r = v.getBoundingClientRect();
+    const EDGE = 72;
+    const topGap = hbDrag.lastY - r.top;
+    const bottomGap = r.bottom - hbDrag.lastY;
+    let delta = 0;
+    if(topGap < EDGE) delta = -Math.ceil(Math.pow((EDGE - Math.max(topGap, 0)) / EDGE, 2) * 14);
+    else if(bottomGap < EDGE) delta = Math.ceil(Math.pow((EDGE - Math.max(bottomGap, 0)) / EDGE, 2) * 14);
+    if(delta !== 0 && (delta > 0 ? v.scrollTop < v.scrollHeight - v.clientHeight : v.scrollTop > 0)){
+      v.scrollTop += delta;
+      updateHbDragPosition();
+      placeHbPlaceholder(hbDrag.lastX, hbDrag.lastY);
+      hbDrag.moved = true;
+    }
+    if(hbDrag) hbAutoScrollRaf = requestAnimationFrame(tickHbAutoScroll);
+  }
+  function stopHbAutoScroll(){
+    if(hbAutoScrollRaf){ cancelAnimationFrame(hbAutoScrollRaf); hbAutoScrollRaf = null; }
+  }
   function beginHomeBubbleDrag(el, pointerId, x, y){
     const wrap = $('homeBubbles');
     if(!wrap) return;
@@ -15350,7 +15383,7 @@ if(!isDiscover) stopDiscoverPreview();
     ph.style.minWidth = rect.width + 'px';
     ph.style.minHeight = rect.height + 'px';
     wrap.insertBefore(ph, el);
-    hbDrag = { el, ph, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, moved: false };
+    hbDrag = { el, ph, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, lastX: x, lastY: y, moved: false };
     window.__hbDragSuppressClick = true; // the click after the drop must not open the bubble
     el.classList.add('hb-dragging');
     el.style.left = '0'; el.style.top = '0';
@@ -15363,6 +15396,7 @@ if(!isDiscover) stopDiscoverPreview();
     window.addEventListener('pointermove', onHomeBubbleDragMove, true);
     window.addEventListener('pointerup', endHomeBubbleDrag, true);
     window.addEventListener('pointercancel', endHomeBubbleDrag, true);
+    if(!hbAutoScrollRaf) hbAutoScrollRaf = requestAnimationFrame(tickHbAutoScroll);
   }
   function placeHbPlaceholder(x, y){
     // Pick the absolute slot under the point: insert the placeholder before
@@ -15399,11 +15433,14 @@ if(!isDiscover) stopDiscoverPreview();
   function onHomeBubbleDragMove(e){
     if(!hbDrag || e.pointerId !== hbDrag.pointerId) return;
     e.preventDefault();
+    hbDrag.lastX = e.clientX;
+    hbDrag.lastY = e.clientY;
     positionHbDrag(e.clientX, e.clientY);
     placeHbPlaceholder(e.clientX, e.clientY);
   }
   function endHomeBubbleDrag(e){
     if(!hbDrag || e.pointerId !== hbDrag.pointerId) return;
+    stopHbAutoScroll();
     placeHbPlaceholder(e.clientX, e.clientY); // the release point decides the final slot
     const el = hbDrag.el;
     const ph = hbDrag.ph;
