@@ -1,5 +1,22 @@
 # SideCut — repository memory
 
+## Settings: Download tab removed, Expand URL → Get Songs (no version bump, Aug 23, 2026)
+- **Settings Download section fully removed**: `#settingsTabDownload` button,
+  `#settingsPaneDownload` div, both `showSettingsTab` display/active lines, the
+  click listener, the `<option value="download">` in `#customActionSettingsSel`,
+  `'download'` in `SETTINGS_TABS`, its toast string, and the `download` entry in
+  `hbQuickMeta` (Home "Quick actions" grid). Saved custom actions with value
+  `download` now fail the `SETTINGS_TABS.indexOf` guard in `runCustomAction` and
+  do nothing — acceptable (inert), no migration added.
+- **Expand URL renamed to Get Songs in settings only**: tab label +
+  `#settingsPaneExpand` heading changed; ids (`settingsTabExpand`,
+  `settingsPaneExpand`, tab key `'expand'`) untouched, and Discover's own
+  "🔗 Expand URL" box is deliberately NOT renamed. The pane's inner button is
+  still labeled "Expand" (it describes the action, not the section name).
+- **No version bump** (user request, still v49.5.2 / sidecut-shell-v49.5.2) —
+  remember: users on a stale SW won't see it until the next bump; bump
+  APP_VERSION + CACHE_NAME together if this gets re-reported.
+
 ## v49.5.2 (Aug 23, 2026)
 - **The reorder-flicker fix never reached users — the version/cache bump was
   forgotten.** Commit 06e5ff4 removed the wiggle but left APP_VERSION at
