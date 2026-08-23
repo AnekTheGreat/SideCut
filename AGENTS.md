@@ -2,7 +2,8 @@
 
 ## v49.5.1 (Aug 23, 2026)
 - **Manual Home bubble sizes**: every bubble gets a `.hb-expand` chip
-  (bottom-left, expand-arrows SVG) appended in `renderHome()`; each tap
+  (discreet top-right icon, expand-arrows SVG, opacity 0.32 — no border/
+  background; `.sized` state tints coral) appended in `renderHome()`; each tap
   runs `cycleHomeBubbleSize(kind)` cycling `small → null(auto) → tall →
   wide → full`. State lives in `homeBubbleSizes` (meta key
   `homeBubbleSizes`), applied by `applyHomeBubbleSizes()` via
