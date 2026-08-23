@@ -1255,9 +1255,11 @@ body.sandbox-invert-colors .brand-mark{
   50%{ filter: hue-rotate(28deg) saturate(1.3); }
   100%{ filter: hue-rotate(0deg) saturate(1.1); }
 }
+/* Gentle 6s glow breathe — opacity never exceeds 1 (values over 1 clip hard
+   and read as flicker) and the amplitude stays subtle so it can't strobe. */
 @keyframes sd-glow-pulse{
-  0%, 100%{ opacity:.65; }
-  50%{ opacity:1.3; }
+  0%, 100%{ opacity:.55; }
+  50%{ opacity:.9; }
 }
 body.theme-dyn-aurora::before, body.theme-dyn-synthwave::before, body.theme-dyn-ocean::before,
 body.theme-dyn-ember::before, body.theme-dyn-galaxy::before, body.theme-dyn-cyberpunk::before,
@@ -1452,6 +1454,27 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   background:radial-gradient(circle, color-mix(in srgb, var(--coral) 20%, transparent), transparent 70%); pointer-events:none; }
 .home-bubble.gold-bubble .hb-glow{ background:radial-gradient(circle, color-mix(in srgb, var(--gold) 22%, transparent), transparent 70%); }
 .home-bubble .hb-hint{ position:absolute; bottom:10px; right:12px; font-size:18px; opacity:0.35; color:var(--ink); }
+/* Expand handle — bottom-left corner chip; each tap cycles the bubble through
+   manual sizes (small → normal → tall → wide → full → small). stopPropagation
+   keeps it from opening the bubble's overlay. */
+.home-bubble .hb-expand{
+  position:absolute; bottom:8px; left:8px; width:30px; height:30px; border-radius:50%;
+  border:1px solid var(--line); background:color-mix(in srgb, var(--bg-raised) 82%, transparent);
+  color:var(--ink-dim); display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:2;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-bubble .hb-expand svg{ width:13px; height:13px; }
+.home-bubble .hb-expand svg path{ fill:currentColor; }
+.home-bubble .hb-expand:active{ transform:scale(0.88); }
+.home-bubble .hb-expand.sized{ color:var(--coral); border-color:color-mix(in srgb, var(--coral) 45%, transparent); }
+/* Manual per-bubble sizes — applied only when the user picks one via the
+   handle; otherwise bubbles keep their automatic template size. Grid row span
+   + min-height animate smoothly through the grid layout change. */
+.home-bubble.hb-size-small{ min-height:calc(84px * var(--hb-s, 1)); }
+.home-bubble.hb-size-tall{ min-height:calc(158px * var(--hb-s, 1)); }
+.home-bubble.hb-size-wide{ grid-column:1 / -1; min-height:calc(96px * var(--hb-s, 1)); }
+.home-bubble.hb-size-full{ grid-column:1 / -1; min-height:calc(200px * var(--hb-s, 1)); }
 .home-bubble .hb-ico svg{ width:calc(18px * var(--hb-s, 1)); height:calc(18px * var(--hb-s, 1)); }
 .home-bubble .hb-ico svg path{ fill:currentColor; }
 .home-bubble .hb-miniplay{ position:absolute; bottom:10px; right:12px; width:calc(34px * var(--hb-s, 1)); height:calc(34px * var(--hb-s, 1)); border-radius:50%;
@@ -1463,7 +1486,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 .home-bubble .hb-miniplay svg path{ fill:currentColor; }
 .home-bubble .hb-miniplay.playing{ border-color:color-mix(in srgb, var(--gold) 50%, transparent); background:color-mix(in srgb, var(--gold) 22%, transparent); color:var(--gold); }
 .home-bubble.is-playing{ border-color:var(--coral); }
-.home-bubble.is-playing .hb-glow{ animation: sd-glow-pulse 4s ease-in-out infinite; }
+.home-bubble.is-playing .hb-glow{ animation: sd-glow-pulse 6s ease-in-out infinite; }
 .home-bubble.hb-hold-confirm{ border-color:var(--coral); box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent); }
 .home-bubble.hb-dragging{ position:fixed; z-index:999; margin:0; pointer-events:none; opacity:.95;
   box-shadow:0 16px 44px rgba(0,0,0,.45); border-color:var(--coral); }
@@ -1486,20 +1509,39 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   font-weight:700; font-size:14px; font-family:var(--font-ui); box-shadow:0 10px 30px rgba(0,0,0,0.4); cursor:pointer; }
 #hbReorderDone.show{ display:block; }
 
-/* Expanded bubble overlay — feels immersive: blurred backdrop + spring-in panel */
+/* Expanded bubble overlay — blurred backdrop + a single-run slide-up panel.
+   Flicker-safety: the open/close motion is a keyframe ANIMATION that runs
+   exactly once (forwards fill, ease-out, no overshoot) — never a transition
+   re-triggered by class flips or re-renders, so it can never strobe. The
+   panel fades to a steady 0.32s backdrop fade and sits still afterwards. */
 #homeBubbleOverlay{ display:none; position:fixed; inset:0; z-index:80; align-items:center; justify-content:center; padding:20px; }
 #homeBubbleOverlay.open{ display:flex; }
-#homeBubbleBackdrop{ position:absolute; inset:0; background:rgba(6,10,28,0.6); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); opacity:0; transition:opacity 0.25s ease; }
-#homeBubbleOverlay.open #homeBubbleBackdrop{ opacity:1; }
+#homeBubbleBackdrop{ position:absolute; inset:0; background:rgba(6,10,28,0.6); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); opacity:0; }
+#homeBubbleOverlay.open #homeBubbleBackdrop{ animation:hb-backdrop-in 0.32s ease-out forwards; }
+#homeBubbleOverlay.closing #homeBubbleBackdrop{ animation:hb-backdrop-out 0.24s ease-in forwards; }
+@keyframes hb-backdrop-in{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes hb-backdrop-out{ from{ opacity:1; } to{ opacity:0; } }
 #homeBubblePanel{
-  position:relative; width:100%; max-width:460px; max-height:80vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  position:relative; width:100%; max-width:460px; height:min(84vh, 720px); overflow-y:auto; -webkit-overflow-scrolling:touch;
   background:linear-gradient(160deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 80%, #000));
   border:1px solid var(--line); border-radius:24px; padding:20px;
-  transform: scale(0.82) translateY(12px); opacity:0;
-  transition: transform 0.32s cubic-bezier(0.18,0.9,0.28,1.1), opacity 0.25s ease;
   box-shadow:0 24px 60px rgba(0,0,0,0.5);
+  will-change:transform;
 }
-#homeBubbleOverlay.open #homeBubblePanel{ transform: scale(1) translateY(0); opacity:1; }
+#homeBubbleOverlay.open #homeBubblePanel{ animation:hb-panel-up 0.38s cubic-bezier(0.22,0.8,0.26,1) both; }
+#homeBubbleOverlay.closing #homeBubblePanel{ animation:hb-panel-down 0.26s cubic-bezier(0.5,0,0.75,0) both; }
+@keyframes hb-panel-up{ from{ transform:translateY(56px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+@keyframes hb-panel-down{ from{ transform:translateY(0); opacity:1; } to{ transform:translateY(64px); opacity:0; } }
+/* Drag handle — pull it up/down to size the panel manually. */
+.hb-panel-grip{ display:flex; align-items:center; justify-content:center; padding:2px 0 10px; margin:-8px 0 4px; cursor:ns-resize; touch-action:none; }
+.hb-panel-grip::before{ content:''; width:44px; height:5px; border-radius:99px; background:color-mix(in srgb, var(--ink-dim) 55%, transparent); }
+.hb-panel-grip:active::before{ background:var(--coral); }
+/* On phones the panel docks to the bottom like a sheet — the slide-up reads
+   naturally and the grip is thumb-reachable. */
+@media (max-width:560px){
+  #homeBubbleOverlay{ align-items:flex-end; padding:0; }
+  #homeBubblePanel{ max-width:none; width:100%; height:82vh; border-radius:24px 24px 0 0; border-bottom:none; padding-bottom:calc(20px + env(safe-area-inset-bottom)); }
+}
 .hb-panel-head{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }
 .hb-panel-ico{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px;
   background:color-mix(in srgb, var(--coral) 22%, transparent); color:var(--coral); flex-shrink:0; }
@@ -1674,6 +1716,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 <div id="homeBubbleOverlay">
   <div id="homeBubbleBackdrop"></div>
   <div id="homeBubblePanel">
+    <div class="hb-panel-grip" id="hbPanelGrip" title="Drag to resize"></div>
     <div class="hb-panel-head">
       <div class="hb-panel-ico" id="hbPanelIco"></div>
       <div class="hb-panel-title" id="hbPanelTitle"></div>
@@ -4780,6 +4823,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   let homeSlots = { A: null, B: null, C: null };
   let homeSlotSel = 'A';
   let homeHidden = []; // bubble kinds hidden from the Home page (Sandbox editor)
+  // Manual per-bubble sizes picked via the expand handle (⤢ chip, bottom-left).
+  // Absent key = automatic template size. Values: small|tall|wide|full.
+  let homeBubbleSizes = {};
+  const HB_SIZE_CLASSES = ['hb-size-small', 'hb-size-tall', 'hb-size-wide', 'hb-size-full'];
+  const HB_SIZE_CYCLE = ['small', null, 'tall', 'wide', 'full']; // null = back to automatic
+  function applyHomeBubbleSizes(){
+    const wrap = $('homeBubbles');
+    if(!wrap) return;
+    wrap.querySelectorAll('.home-bubble').forEach(b => {
+      HB_SIZE_CLASSES.forEach(c => b.classList.remove(c));
+      const sz = homeBubbleSizes[b.dataset.bubble];
+      if(sz && HB_SIZE_CLASSES.indexOf('hb-size-' + sz) > -1) b.classList.add('hb-size-' + sz);
+      const chip = b.querySelector('.hb-expand');
+      if(chip) chip.classList.toggle('sized', !!sz);
+    });
+  }
+  function cycleHomeBubbleSize(kind){
+    const cur = homeBubbleSizes[kind] || null;
+    const next = HB_SIZE_CYCLE[(HB_SIZE_CYCLE.indexOf(cur) + 1) % HB_SIZE_CYCLE.length];
+    if(next) homeBubbleSizes[kind] = next; else delete homeBubbleSizes[kind];
+    dbPut('meta', { key: 'homeBubbleSizes', value: homeBubbleSizes });
+    applyHomeBubbleSizes();
+  }
   let homeBubbleSize = 100; // % scale for Home bubbles (Sandbox editor slider)
 
   // Watermark remover: simple plain-text removal from song titles/artists
@@ -5109,6 +5175,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(!act) return;
         customQuickActions.splice(i, 1);
         homeHidden = homeHidden.filter(k => k !== 'custom-' + act.id);
+        delete homeBubbleSizes['custom-' + act.id];
+        dbPut('meta', { key: 'homeBubbleSizes', value: homeBubbleSizes });
         saveHomeHidden();
         dbPut('meta', { key: 'customQuickActions', value: customQuickActions });
         renderCustomActions();
@@ -5252,7 +5320,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
   $('resetHomeOrderBtn').addEventListener('click', () => {
     homeOrder = HOME_BUBBLE_KINDS.slice();
+    homeBubbleSizes = {};
     dbPut('meta', { key: 'homeOrder', value: homeOrder });
+    dbPut('meta', { key: 'homeBubbleSizes', value: {} });
     renderHomeLayoutEditor();
     renderHome();
     toast('Home layout reset to default');
@@ -5397,6 +5467,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     dbPut('meta', { key: 'homeSlots', value: homeSlots });
     dbPut('meta', { key: 'homeHidden', value: homeHidden });
     dbPut('meta', { key: 'homeBubbleSize', value: homeBubbleSize });
+    dbPut('meta', { key: 'homeBubbleSizes', value: homeBubbleSizes });
+    dbPut('meta', { key: 'homePanelHeight', value: homePanelHeight });
   }
   $('saveSandboxBtn').addEventListener('click', () => {
     persistSandboxMeta();
@@ -5428,8 +5500,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     homeSlotSel = 'A';
     homeHidden = [];
     homeBubbleSize = 100;
+    homeBubbleSizes = {};
+    homePanelHeight = null;
     dbPut('meta', { key: 'homeHidden', value: [] });
     dbPut('meta', { key: 'homeBubbleSize', value: 100 });
+    dbPut('meta', { key: 'homeBubbleSizes', value: {} });
+    dbPut('meta', { key: 'homePanelHeight', value: null });
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
     dbPut('meta', { key: 'sandboxDurOnTabs', value: false });
@@ -6597,6 +6673,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(homeSlotsRow && homeSlotsRow.value && typeof homeSlotsRow.value === 'object') homeSlots = Object.assign({ A: null, B: null, C: null }, homeSlotsRow.value);
       const hbSizeRow = metaRows.find(r => r.key === 'homeBubbleSize');
       if(hbSizeRow && typeof hbSizeRow.value === 'number') homeBubbleSize = hbSizeRow.value;
+      const hbSizesRow = metaRows.find(r => r.key === 'homeBubbleSizes');
+      if(hbSizesRow && hbSizesRow.value && typeof hbSizesRow.value === 'object') homeBubbleSizes = hbSizesRow.value;
+      const hbPanelHRow = metaRows.find(r => r.key === 'homePanelHeight');
+      if(hbPanelHRow && typeof hbPanelHRow.value === 'string') homePanelHeight = hbPanelHRow.value;
       const watermarkEnabledRow = metaRows.find(r => r.key === 'watermarkEnabled');
       if(watermarkEnabledRow) watermarkEnabled = !!watermarkEnabledRow.value;
       const refreshRateRow = metaRows.find(r => r.key === 'refreshRate');
@@ -6637,7 +6717,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '49.5';
+  const APP_VERSION = '49.5.1';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6650,6 +6730,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '49.5.1', date: 'August 23, 2026 at 10:45 am EDT', title: 'Resize any Home bubble yourself + a calmer, flicker-free expand', items: [
+      'Every Home bubble now has a small resize chip (bottom-left corner) — tap it to cycle that bubble through manual sizes: small → normal → tall → wide → full-width, and back to automatic. Your choices are saved per bubble',
+      'The expanded bubble panel can be sized manually too: drag the grip bar at the top of the panel up or down — your height is remembered',
+      'The expand animation was rebuilt to be seizure-safe: it now slides up and fades in exactly once with a gentle ease (no more overshoot spring), then stays perfectly still — the old version could visibly flicker as it settled',
+      'The close animation matches: one smooth slide back down',
+      'On phones the expanded panel now docks to the bottom like a sheet, so the resize grip is thumb-reachable',
+      'The playing-bubble glow now breathes gently instead of pulsing hard (it previously spiked past full opacity, which read as flicker)',
+    ]},
     { version: '49.5', date: 'August 22, 2026 at 6:45 pm EDT', title: 'Tutorial teaches the Expand URL flow', items: [
       'The first-run tutorial now shows the actual free way to get songs: Spotify → Share → Copy link → Expand URL → any Spotify-to-MP3 converter → + Add songs → + Files (was the old playlist-link flow)',
       'Settings → Expand URL now walks through the same full flow end-to-end, including the import step',
@@ -15226,6 +15314,24 @@ if(!isDiscover) stopDiscoverPreview();
       return homeTemplates[k] || '';
     }).join('');
 
+    // Expand handle on every bubble — each tap cycles that bubble through
+    // manual sizes (small → normal → tall → wide → full → small). The tap is
+    // stopped here so it never opens the bubble or starts a reorder hold.
+    bubbles.querySelectorAll('.home-bubble').forEach(b => {
+      const chip = document.createElement('button');
+      chip.className = 'hb-expand';
+      chip.dataset.expand = '1';
+      chip.title = 'Resize bubble';
+      chip.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>';
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(hbReorderMode) return;
+        cycleHomeBubbleSize(b.dataset.bubble);
+      });
+      b.appendChild(chip);
+    });
+    applyHomeBubbleSizes();
+
     bubbles.querySelectorAll('.home-bubble').forEach(b => {
       // Quick tap → open the bubble (or run custom action). The mini play button
       // on the now-playing bubble intercepts the tap so it only toggles playback.
@@ -15302,6 +15408,7 @@ if(!isDiscover) stopDiscoverPreview();
         return;
       }
       if(e.target.closest('[data-miniplay]')) return; // don't hold from the play button
+      if(e.target.closest('[data-expand]')) return; // don't hold from the resize chip either
       cancelStart();
       homeBubbleDragStartXY = [e.clientX, e.clientY];
       homeBubbleDragTimer = setTimeout(() => {
@@ -15515,6 +15622,8 @@ if(!isDiscover) stopDiscoverPreview();
   }
 
   // ---- Expanded bubble overlay ----
+  let hbCloseTimer = null;
+  let homePanelHeight = null; // manual panel height from the drag grip (persisted)
   function openHomeBubble(kind){
     const overlay = $('homeBubbleOverlay');
     const ico = $('hbPanelIco');
@@ -15711,11 +15820,52 @@ if(!isDiscover) stopDiscoverPreview();
       });
     }
 
+    // Re-trigger the single-run slide-up cleanly even on rapid reopens. The
+    // animation (not a transition) plays exactly once and then holds still —
+    // nothing re-renders inside the panel, so it can never flicker or strobe.
+    clearTimeout(hbCloseTimer);
+    overlay.classList.remove('open', 'closing');
+    void overlay.offsetWidth; // reflow so the keyframes restart
+    $('homeBubblePanel').style.height = homePanelHeight || '';
     overlay.classList.add('open');
   }
-  function closeHomeBubble(){ $('homeBubbleOverlay').classList.remove('open'); }
+  // Animated close: slide the panel back down once, then hide the overlay.
+  function closeHomeBubble(){
+    const overlay = $('homeBubbleOverlay');
+    if(!overlay.classList.contains('open') || overlay.classList.contains('closing')) return;
+    overlay.classList.add('closing');
+    clearTimeout(hbCloseTimer);
+    hbCloseTimer = setTimeout(() => { overlay.classList.remove('open', 'closing'); }, 250);
+  }
   $('hbPanelClose').addEventListener('click', closeHomeBubble);
   $('homeBubbleBackdrop').addEventListener('click', closeHomeBubble);
+
+  // Drag the panel's top grip to size it manually (40vh–92vh); the chosen
+  // height persists and applies to every bubble panel afterwards.
+  (function(){
+    const grip = $('hbPanelGrip');
+    const panel = $('homeBubblePanel');
+    if(!grip || !panel) return;
+    let drag = null;
+    grip.addEventListener('pointerdown', (e) => {
+      drag = { y: e.clientY, h: panel.getBoundingClientRect().height };
+      try{ grip.setPointerCapture(e.pointerId); }catch(_){}
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if(!drag) return;
+      const vh = window.innerHeight || 800;
+      panel.style.height = Math.min(vh * 0.92, Math.max(vh * 0.4, drag.h + (drag.y - e.clientY))) + 'px';
+    });
+    const end = () => {
+      if(!drag) return;
+      drag = null;
+      homePanelHeight = panel.style.height || null;
+      dbPut('meta', { key: 'homePanelHeight', value: homePanelHeight });
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  })();
 
   function hbTrackRowHTML(t, when){
     const art = t.artUrl ? `<div class="hb-track-art" style="background-image:url('${t.artUrl}')"></div>` : `<div class="hb-track-art"></div>`;
