@@ -15194,7 +15194,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var seenCids = {};
             var addAlbum = function(r, srcCountry){
               if(!r || !r.collectionName || !r.releaseDate) return;
-              if(!r._dz && (!r.trackCount || r.trackCount <= 1)) return;
+              if(!r._dz && !r._mb && (!r.trackCount || r.trackCount <= 1)) return;
               if(noise.test(r.collectionName)) return;
               if(/\(video album\)/i.test(r.collectionName)) return;
               if(isAlbumHidden(r.collectionId)) return;
@@ -17130,31 +17130,98 @@ function closeDiscoverPopup(){
 document.addEventListener('click', function(e){
   if(e.target && e.target.id === 'discPopupOverlay') closeDiscoverPopup();
 }, false);
-// Global refetch handler: clicking a refetch button inside any popup triggers the matching Discover button
+// Standalone Singles refetch — called by the refetch button in the popup
+window.__refetchSingles = async function(){
+  if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
+  if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
+  var siBtn = document.getElementById('discoverSingles');
+  if(siBtn){ siBtn.textContent = '⏳ Searching...'; siBtn.disabled = true; }
+  var artistSingles = {};
+  var totalFound = 0;
+  for(var si=0; si<pinnedArtists.length; si++){
+    var sa = pinnedArtists[si];
+    try{
+      var surl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(sa.name) + '&media=music&entity=song&limit=200';
+      var sresp = await fetchWithProxy(surl);
+      if(!sresp || !sresp.ok) continue;
+      var sdata = await sresp.json();
+      var sresults = (sdata.results||[]).filter(function(sr){
+        if(!sr || !sr.trackName) return false;
+        if(primaryArtistName(sr.artistName||'').toLowerCase().trim() !== primaryArtistName(sa.name).toLowerCase().trim()) return false;
+        var cn = (sr.collectionName || '').toLowerCase();
+        var tn = (sr.trackName || '').toLowerCase();
+        var tc = sr.trackCount || 0;
+        if(/\bsingle\b/.test(cn)) return true;
+        if(cn === tn && tc <= 1) return true;
+        if(tc === 1 && cn.length < 80) return true;
+        return false;
+      });
+      if(sresults.length){
+        sresults.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
+        artistSingles[sa.name] = sresults;
+        totalFound += sresults.length;
+      }
+    }catch(e){}
+  }
+  if(siBtn){ siBtn.textContent = '\u2728 Singles'; siBtn.disabled = false; }
+  if(!totalFound){ openDiscoverPopup('\u2728 Singles', '<div class="dp-empty">No singles found from pinned artists.</div>', ''); return; }
+  var html = '';
+  var artistKeys = Object.keys(artistSingles).sort();
+  for(var ki=0; ki<artistKeys.length; ki++){
+    var artist = artistKeys[ki];
+    var singles = artistSingles[artist];
+    var sid = 'dps_r_' + ki;
+    html += '<div class="dp-ah-artist">';
+    html += '<div class="dp-ah-artist-hdr" data-target="' + sid + '">';
+    html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
+    html += '<span style="font-size:13px;font-weight:600;flex:1;">' + escapeHtml(artist) + '</span>';
+    html += '<span style="font-size:11px;color:var(--ink-dim);">' + singles.length + ' single' + (singles.length!==1?'s':'') + '</span>';
+    html += '</div>';
+    html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
+    for(var sri=0; sri<singles.length; sri++){
+      var sr = singles[sri];
+      var srelDate = sr.releaseDate ? sr.releaseDate.slice(0,10) : '';
+      var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
+      var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
+      var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+      html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '">';
+      html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (sart ? 'background-image:url(' + escapeHtml(sart) + ');' : 'background:var(--bg);') + '"></div>';
+      html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
+      html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' \u00b7 ' + swhen : '') + '</div></div></div>';
+    }
+    html += '</div></div>';
+  }
+  html = '<div style="text-align:center;padding:4px 0 6px;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button></div>' + html;
+  openDiscoverPopup('\u2728 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+  // Wire up artist headers
+  document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
+    h.addEventListener('click', function(){
+      var tgt = document.getElementById(this.dataset.target);
+      var chv = this.querySelector('.dp-ah-chevron');
+      if(!tgt) return;
+      var isOpen = tgt.style.display !== 'none';
+      tgt.style.display = isOpen ? 'none' : 'block';
+      if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
+    });
+  });
+  // Wire up track clicks
+  document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
+    row.addEventListener('click', function(){
+      $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
+    });
+  });
+};
+
+// Global refetch handler: clicking the refetch button in Singles popup re-runs the search
 document.addEventListener('click', function(e){
   var t = e.target;
   if(!t || !t.id) return;
   if(t.id === 'singlesRefetchBtn'){
     e.stopPropagation();
     e.preventDefault();
-    var sb = document.getElementById('discoverSingles');
-    if(sb && typeof sb.onclick === 'function'){
-      // Close popup first, then trigger the refetch so the search starts fresh
-      closeDiscoverPopup();
-      setTimeout(function(){ sb.onclick(); }, 100);
-    } else {
-      // Handler not wired yet — navigate to Discover to wire it, then retry
-      navigate('discover');
-      setTimeout(function(){
-        sb = document.getElementById('discoverSingles');
-        if(sb && typeof sb.onclick === 'function'){
-          closeDiscoverPopup();
-          setTimeout(function(){ sb.onclick(); }, 100);
-        } else { toast('Tap Singles again to refetch.'); }
-      }, 200);
-    }
+    closeDiscoverPopup();
+    setTimeout(function(){ window.__refetchSingles(); }, 200);
   }
-
 }, true);
 function loadCachedDiscoverPopup(key){
   try{
