@@ -6728,9 +6728,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   const CHANGELOG = [
     { version: '49.5.7', date: 'August 23, 2026 at 11:45 pm EDT', title: 'Album History gets a backup source + a cleanup', items: [
       'Album History now also pulls from Deezer when an artist\'s Apple catalog hits its limit — albums Apple simply doesn\'t stock (like Diljit Dosanjh\'s "Dil" from 2008) now appear, marked with a small "Deezer" tag',
+      'Fixed: expanding an album loaded tracks slowly or not at all — it was trying every region/edition ID the album was ever found under (dozens of lookups through a relay) instead of just the album\'s own ID with a country fallback, the way it used to',
       'Cleaned up Album History: DJ "Non Stop" mixes, mashup albums, party/workout playlists and "Best Of"-style compilations by other people are filtered out, and "Various Artists" compilations are never added from song credits anymore',
       'Soundtrack duplicates merged — an album and its "(Original Motion Picture Soundtrack)" edition now show as one row instead of two',
-      'Albums that showed a track count but expanded to nothing now try every edition/storefront the album was found under (and Deezer) before giving up, instead of just one',
       'Top Hits and the genre lists in Discover now refresh on their own every 3 days, load instantly in between, and still show the last list when you\'re offline (typing a search yourself always goes live)',
     ]},
     { version: '49.5.6', date: 'August 23, 2026 at 11:09 pm EDT', title: 'New releases check only when you say so', items: [
@@ -14867,7 +14867,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             // the artist-credited original instead of listing both.
             var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup)\b|\s[-–—]\s*(single|remix)\b/i;
             var seen = {};
-            var seenIds = {};
+            var seenCids = {};
             var addAlbum = function(r, srcCountry){
               if(!r || !r.collectionName || !r.releaseDate) return;
               if(!r._dz && (!r.trackCount || r.trackCount <= 1)) return;
@@ -14876,10 +14876,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               if(isAlbumHidden(r.collectionId)) return;
               var key = normTitle(r.collectionName);
               if(!key) return;
-              seenIds[key] = seenIds[key] || [];
-              if(r.collectionId && !seenIds[key].some(function(e){ return e.id === r.collectionId; })){
-                seenIds[key].push(r._dz ? { id: r.collectionId, dz: true } : { id: r.collectionId, country: srcCountry || null });
-              }
               // Prefer the ORIGINAL (earliest) edition so pre-2008 albums show
               // their real year instead of a 2009+ remaster date; on a tie keep
               // the edition with the most tracks (full/deluxe). Deezer entries
@@ -14890,6 +14886,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 r._country = srcCountry || null;
                 seen[key] = r;
               }
+              if(r.collectionId) seenCids[r.collectionId] = 1;
             };
             var filterInto = function(results, srcCountry){
               (results||[]).forEach(function(r){
@@ -14971,10 +14968,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                   (collIds[s.collectionId] = collIds[s.collectionId] || {})[s.trackId] = 1;
                 });
                 var candidates = Object.keys(collIds).filter(function(cid){
-                  for(var k in seenIds){
-                    if(seenIds[k].some(function(e){ return String(e.id) === String(cid); })) return false;
-                  }
-                  return true;
+                  return !seenCids[cid];
                 });
                 for(var tc=0; tc<candidates.length; tc+=8){
                   await Promise.all(candidates.slice(tc, tc+8).map(function(cid){
@@ -15057,8 +15051,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                     artworkUrl100: (x.cover_medium || x.cover_big || x.cover || '').replace('http://','https://'),
                     trackCount: x.nb_tracks || null
                   };
-                  seenIds[dzKey] = seenIds[dzKey] || [];
-                  if(x.id) seenIds[dzKey].push({ id: x.id, dz: true });
                 };
                 dzRows.forEach(function(x){ dzAdd(x, a.name); });
                 var dzTrackHits = {};
@@ -15088,7 +15080,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               }catch(e){}
             }
             var albums = Object.keys(seen).map(function(k){ return seen[k]; });
-            albums.forEach(function(al){ al._ids = seenIds[normTitle(al.collectionName||'')] || []; });
             if(albums.length){
               albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
               artistAlbums[a.name] = albums;
@@ -15119,9 +15110,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var art = album.artworkUrl100 ? album.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
             var year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
             var trackCount = album.trackCount || '?';
-            var idList = JSON.stringify(album._ids || (album.collectionId ? [{ id: album.collectionId, country: album._country || null, dz: !!album._dz }] : []));
             html += '<div class="dp-ah-album">';
-            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '" data-country="' + (album._country||'') + '" data-ids="' + escapeHtml(idList) + '"' + (album._dz ? ' data-dz="1"' : '') + '>';
+            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '" data-country="' + (album._country||'') + '"' + (album._dz ? ' data-dz="1"' : '') + '>';
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
             html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks' + (album._dz ? ' · Deezer' : '') + '</div></div>';
@@ -15199,27 +15189,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Loading tracks...</div>';
               var collectionId = h.dataset.collectionId;
               var albumCountry = h.dataset.country || '';
-              // Every storefront/edition ID the title was seen under is tried
-              // in turn (data-ids) — a region-locked album returns zero songs
-              // from the default storefront, and the winning entry's edition
-              // can itself be region-locked while a sibling edition is not.
-              // Deezer IDs resolve through Deezer's own endpoint instead.
-              var idEntries = [];
-              try{ idEntries = JSON.parse(h.dataset.ids || '[]') || []; }catch(e){}
-              var trackSources = [];
-              idEntries.forEach(function(e){
-                if(e && e.dz){
-                  trackSources.push({ kind: 'dz', url: 'https://api.deezer.com/album/' + e.id + '/tracks?limit=100' });
-                }else if(e){
-                  [e.country, albumCountry, 'GB', 'IN', 'US', ''].filter(function(c, i, arr){ return arr.indexOf(c) === i; })
-                    .forEach(function(c){ trackSources.push({ kind: 'it', url: 'https://itunes.apple.com/lookup?id=' + e.id + '&entity=song&limit=200' + (c ? '&country=' + c : '') }); });
-                }
-              });
-              if(!trackSources.length){
-                trackSources.push({ kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200' });
+              // A region-locked album (e.g. a GB-only release) returns zero
+              // songs from the default storefront, so the track lookup tries
+              // the album's own storefront first and falls back through the
+              // other big ones until one actually returns songs. Deezer albums
+              // go through Deezer's own endpoint instead.
+              var trackSources;
+              if(h.dataset.dz){
+                trackSources = [{ kind: 'dz', url: 'https://api.deezer.com/album/' + collectionId + '/tracks?limit=100' }];
+              }else{
+                trackSources = (collectionId
+                  ? [albumCountry, 'GB', 'IN', 'US', ''].filter(function(c, i, arr){ return arr.indexOf(c) === i; })
+                    .map(function(c){ return 'https://itunes.apple.com/lookup?id=' + collectionId + '&entity=song&limit=200' + (c ? '&country=' + c : ''); })
+                  : ['https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200'])
+                  .map(function(u){ return { kind: 'it', url: u }; });
               }
-              var seenSrc = {};
-              trackSources = trackSources.filter(function(s){ if(seenSrc[s.url]) return false; seenSrc[s.url] = 1; return true; });
               (function fetchTracks(sources){
                 if(!sources.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return null; }
                 var src = sources[0];
@@ -15232,7 +15216,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                       return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
                     });
                   }else{
-                    tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId && !h.dataset.dz ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+                    tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
                   }
                   if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
                   var h2 = '<div style="text-align:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">Remove from Album History</button></div>';
