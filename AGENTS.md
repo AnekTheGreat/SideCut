@@ -1,5 +1,21 @@
 # SideCut — repository memory
 
+## v49.5.7 follow-up #4 — Album History collapsibles dead on cached loads (commit cd0efec)
+- Root causes: (1) the track-fetch IIFE call passed the stale `trackUrls` name
+  instead of `trackSources` (ReferenceError -> "Error loading tracks." on every
+  album expand); (2) cached popups from `loadCachedDiscoverPopup` restore RAW
+  HTML with zero listeners, so expand/collapse, remove ✕, hold-to-remove and
+  the refetch button were all dead on cache hits.
+- Fix: the whole wire-up block is now `window.__wireAH = function(){ ... }`,
+  called after a fresh build AND after `loadCachedDiscoverPopup(...)`; the
+  cache-hit branch additionally requires `typeof window.__wireAH === 'function'`
+  so the first tap after a page reload falls through to a fresh build (which
+  assigns it) instead of serving a dead cached popup.
+- Changelog item appended to the existing 49.5.7 entry. No version bump.
+- WARN: extracting a long inline block into a named function in index.html via
+  python substring wraps is error-prone — always brace-check per-line and
+  parse-check with acorn/`new Function` immediately after.
+
 ## v49.5.7 follow-up #3 — 24h popup cache for Album History + Old songs
 - **User: "why does fetching albums have to refetch everytime, same with old
   songs."** Both handlers now consult the existing `discPopupCache_<title>`
