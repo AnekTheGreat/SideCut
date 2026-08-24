@@ -6787,7 +6787,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '49.6';
+  const APP_VERSION = '49.7';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6800,6 +6800,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '49.7', date: 'August 24, 2026', title: 'Album History background fetch + track fixes', items: [
+      'Album History refetch runs in the background — tap and do other things while it works, with toast progress and a Cancel button',
+      'Album History refetch is incremental — only new or missing artists are fetched, existing data is kept',
+      'Fixed: album removal now persists — data cache cleared so removed albums don\'t reappear',
+      'Fixed: "?" track count on Deezer/MusicBrainz albums auto-fetches the real count',
+      'Fixed: failed album track loads show a "Retry" link',
+      'Lyrics show a "♪ playing..." indicator after the last line when the song continues',
+    ]},
     { version: '49.6', date: 'August 24, 2026 at 11:30 pm EDT', title: 'Refetch singles + quick settings rename', items: [
       'Added Refetch button to Singles popup — re-fetches singles from all pinned artists',
       'Quick Settings home bubble now shows "Get Songs" instead of the old truncated label',
@@ -15044,7 +15052,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(!sources.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return null; }
             var src = sources[0];
             var finishTracks = function(tracks){
-              if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
+              if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:8px 0;">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>'; return; }
               var h2 = '<div style="text-align:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">Remove from Album History</button></div>';
               for(var ti=0; ti<tracks.length; ti++){
                 var tr = tracks[ti];
@@ -15055,6 +15063,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 h2 += '<span style="color:var(--ink-dim);font-size:11px;">' + dur + '</span></div>';
               }
               container.innerHTML = h2;
+              // Update track count in the album header
+              var hdrEl = h.closest('.dp-ah-album');
+              if(hdrEl){
+                var infoDiv = hdrEl.querySelector('.dp-ah-album-hdr > div:last-child > div:last-child');
+                if(infoDiv){
+                  var oldText = infoDiv.textContent;
+                  var m = oldText.match(/(\d+|\?) tracks/);
+                  if(m) infoDiv.textContent = oldText.replace(m[0], tracks.length + ' tracks');
+                }
+              }
               container.querySelectorAll('.dp-ah-track').forEach(function(row){
                 row.addEventListener('click', function(){
                   $('discoverSearch').value = this.dataset.search;
@@ -15619,6 +15637,8 @@ window.__ahCancelled = false;
             var art = album.artworkUrl100 ? album.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
             var year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
             var trackCount = album.trackCount || '?';
+          // For albums with unknown track count, mark for async fetch
+          var needsTrackCount = !album.trackCount && (album._dz || album._mb);
             html += '<div class="dp-ah-album">';
             html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '" data-country="' + (album._country||'') + '"' + (album._dz ? ' data-dz="1"' : '') + (album._mb ? ' data-mb="1"' : '') + '>';
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
@@ -15637,6 +15657,30 @@ window.__ahCancelled = false;
         if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
         
         window.__wireAH();
+        // Async fetch track counts for albums showing "?" 
+        document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
+          var infoDiv = hdr.querySelector('div:last-child div:last-child');
+          if(!infoDiv) return;
+          var txt = infoDiv.textContent;
+          if(txt.indexOf('? tracks') === -1) return;
+          var cid = hdr.dataset.collectionId;
+          var isDz = hdr.dataset.dz;
+          var isMb = hdr.dataset.mb;
+          if(!cid) return;
+          var url;
+          if(isDz) url = 'https://api.deezer.com/album/' + cid;
+          else if(isMb) return; // MB track count requires release-group lookup, skip
+          else url = 'https://itunes.apple.com/lookup?id=' + cid + '&entity=album';
+          if(!url) return;
+          fetchWithProxy(url).then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
+            var tc;
+            if(isDz) tc = d.nb_tracks;
+            else { var al = (d.results||[])[0]; tc = al && al.trackCount; }
+            if(tc && tc > 0){
+              infoDiv.textContent = infoDiv.textContent.replace('? tracks', tc + ' tracks');
+            }
+          }).catch(function(){});
+        });
 };
 
         // Album History: fetch all albums from pinned artists (all time), show in popup
