@@ -15302,13 +15302,15 @@ window.__refetchArtistAlbums = async function(artistName){
           if(rgData && rgData['release-groups']){
             rgData['release-groups'].forEach(function(rg){
               if(!rg || !rg.title) return;
-              // Skip non-official and secondary types: compilations, soundtracks,
-              // DJ mixes, mixtapes, live albums, etc.
+              // Skip clearly non-album types but allow compilations
+              // (old studio albums are often tagged "Compilation" on MB)
               var secTypes = (rg['secondary-types'] || []);
               var priType = rg['primary-type'] || '';
               if(priType !== 'Album' && priType !== 'EP') return;
-              if(secTypes.length > 0) return;
-              // Only accept Official status
+              // Only reject soundtrack, dj-mix, mixtape — allow compilation, live, remix, etc.
+              var mbBadSec = secTypes.filter(function(s){ return /soundtrack|dj-?mix|mixtape/i.test(s); });
+              if(mbBadSec.length > 0) return;
+              // Only reject if status exists and is NOT Official (skip check if status missing — old releases often lack it)
               if(rg['first-release-date-status'] && rg['first-release-date-status'] !== 'Official') return;
               // Apply noise filter to titles
               if(dzNoise.test(rg.title)) return;
@@ -15720,7 +15722,7 @@ if(typeof toast === 'function') toastWithCancel();
                 // silently drop the whole inc list, which kills the credit
                 // check below. Keep this inc list exactly as-is.
                 var mbRGRes = await mbGet('https://musicbrainz.org/ws/2/release-group/?artist=' + mbMatch.id + '&type=album&fmt=json&limit=100&inc=artist-credits');
-                var mbBad = /^(Compilation|DJ-mix|Live|Remix|Interview|Spokenword|Audiobook|Audio drama|Demo|Field recording)/;
+                var mbBad = /^(DJ-mix|Live|Remix|Interview|Spokenword|Audiobook|Audio drama|Demo|Field recording)/;
                 var mbGroups = ((mbRGRes && mbRGRes['release-groups']) || []).filter(function(rg){
                   if(!rg || !rg.title || !rg['first-release-date']) return false;
                   var st = rg['secondary-types'] || [];
