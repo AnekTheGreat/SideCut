@@ -6726,6 +6726,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   const CHANGELOG = [
     { version: '49.5.4', date: 'August 23, 2026 at 8:15 pm EDT', title: 'Older albums, older songs, and a new default record look', items: [
+      'Album History now also checks other countries\' iTunes stores when an artist\'s catalog is big enough to hit the entry limit — older albums that are only licensed abroad (like Diljit Dosanjh\'s "Over Exposure" from 2005) were invisible to the default store and now show up',
       'Album History now actually reaches pre-2008 albums: the artist search checks 25 candidates (was 5) so the complete-discography lookup is used far more often, and when iTunes\'s 200-entry cap is hit — or the artist match comes back wrong — SideCut keeps fetching extra search pages so the oldest albums don\'t get cut off',
       'The "Refetch albums" button now visibly works: the popup shows a "Refetching…" state while it re-downloads every pinned artist\'s catalog, then confirms with a toast — before, it rebuilt the list silently and collapsed what you had open, so it looked like it did nothing',
       'Album History also shows each album\'s ORIGINAL release year now — an album first out in 1963 shows 1963, not the year of a later remaster',
@@ -14876,6 +14877,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(artistId){
               var resp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200');
               if(resp && resp.ok){ var data = await resp.json(); var lResults = data.results||[]; lookupCount = lResults.length; filterInto(lResults); }
+            }
+            // Region-locked catalog: iTunes serves a different catalog per
+            // storefront, and older albums are often licensed only in certain
+            // countries (Diljit Dosanjh's Over Exposure (2005) exists only in
+            // the UK/EU stores — the US/IN lookups don't return it at all).
+            // When the default lookup hits the 200-entry cap, merge a few
+            // other major storefronts so region-locked old albums aren't
+            // missed. Dedupe by normalized title keeps each album once.
+            if(artistId && lookupCount >= 200){
+              var STOREFRONTS = ['GB','IN','CA','AU'];
+              for(var sf=0; sf<STOREFRONTS.length; sf++){
+                try{
+                  var cResp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200&country=' + STOREFRONTS[sf]);
+                  if(cResp && cResp.ok) filterInto(((await cResp.json()).results)||[]);
+                }catch(e){}
+              }
             }
             if(!artistId || lookupCount >= 200 || Object.keys(seen).length === 0){
               for(var pg=0; pg<3; pg++){
