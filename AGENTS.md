@@ -1,5 +1,42 @@
 # SideCut — repository memory
 
+## v49.5.7 (Aug 23, 2026) — Deezer backup + comp cleanup + 3-day genre cache
+- **User follow-ups**: (1) find a backup album source, (2) "random albums not
+  made by him" showing, (3) albums with a track count but no tracks when
+  expanded, (4) manifest JSON / TWA question, (5) Top Hits + genres should
+  refresh periodically.
+- **Deezer backup pass (~line 14996, inside the capped-lookup block)**:
+  Deezer's public API (`api.deezer.com`) is CORS-blocked → goes through
+  `fetchWithProxy` like iTunes. Two sources: the artist's own
+  `/artist/{id}/albums` pages, and a track search `artist:"<name>"` (Deezer
+  honors the `artist:"..."` filter; search caps at 100/page → 3 pages via
+  `index=`) where an album qualifies at >=2 track-hits, then `/album/{id}`
+  resolves date/contributors. Deezer rows carry `_dz:true` + null trackCount
+  (list rows lack `nb_tracks`); `dzAdd` applies a STRICTER `dzNoise` list
+  (adds best of/top hits/workout/party/collaborations/playlist/essentials/
+  greatest/trailing-mix) because Deezer artist pages mix in editorial comps
+  the artist merely appears on. Verified: Diljit 35→41 (adds "Dil" 2008, the
+  Jihne Mera Dil Luteya soundtrack), comps killed, Weeknd untouched.
+- **Random-album fixes**: `noise` regex gained `non.?stop` + `mashup`;
+  `normTitle` strips `soundtrack` tags (merges "(Original Motion Picture
+  Soundtrack)" dupes); track-credit pass now rejects `artistName === 'Various
+  Artists'` collections (Des Hoya Pardes-type comps).
+- **Empty-track fix round 2**: `seenCids` became `seenIds` — every dedupe key
+  accumulates ALL candidate IDs (`{id, country}` iTunes / `{id, dz:true}`
+  Deezer); albums carry `_ids`; the header gets `data-ids` JSON; the lazy
+  track fetch tries iTunes lookups for every ID × storefronts then Deezer
+  `/album/{id}/tracks` (normalized into trackName/trackTimeMillis/trackNumber).
+- **3-day chip cache**: `runDiscoverSearch` caches chip searches (chipIdx !=
+  null only — manual searches always live) in localStorage
+  `sidecut_discoverChipCache` keyed by term, TTL 3 days, with stale-cache
+  offline fallback; status line shows "(updated Aug 23)" when cached.
+- **Manifest/TWA answer (no change needed)**: manifest.json is valid
+  (standalone, icons, start_url). "Running in Chrome" on install means Chrome
+  couldn't verify the TWA's Digital Asset Links (assetlinks.json on the
+  origin doesn't match the APK's signing key) so it falls back to a plain
+  webapp install — that's Play Console/assetlinks config, NOT this repo.
+- Version 49.5.6 → 49.5.7 (SW sidecut-shell-v49.5.6 → v49.5.7).
+
 ## v49.5.6 (Aug 23, 2026) — manual-only release checks
 - **User asked: don't auto-fetch new releases — only on button tap.** Removed
   the boot-time auto-check (`setTimeout(checkPinnedArtistReleases, 5000)` after
