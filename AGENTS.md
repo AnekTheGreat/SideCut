@@ -1,5 +1,39 @@
 # SideCut — repository memory
 
+## v49.5.5 (Aug 23, 2026) — track-credit discovery + storefront-aware tracks + added date
+- **User follow-up on the multi-storefront merge**: "old albums have no songs
+  in them" + "albums from 2002–2008 still missing" + "song info should show
+  when the song was added".
+- **Track-credit discovery (~line 14928)**: after the capped-lookup path, one
+  artistTerm SONG search (offset is IGNORED for song searches — pages repeat,
+  verified — so a single page; the default page + a `country=IN` page are
+  unioned because the 200-entry page is relevance-ranked and non-deterministic)
+  finds collections whose TRACKS credit the pinned artist. Verified against
+  live data: a collection qualifies with as few as ONE track hit (the `>=3`
+  threshold dropped it — "Smile" fluctuated between 1 and 3 hits across
+  identical requests). Candidate album lookups run in batches of 8 in parallel;
+  an album is added only when the artist fronts a MAJORITY of its tracks
+  (`hisTracks > totalTracks/2`) — keeps modern one-feature soundtracks (Crew,
+  Soorma) out while catching Punjabi director-credited albums (Smile→Sukhpal
+  Sukh, The Lion of Punjab→Anand Raj Anand). Live result: Diljit 25→35 albums,
+  Gurdas Maan 63→69 (54 pre-2008), Weeknd unchanged at 21 (pass skipped for
+  under-cap artists). Still unreachable: Diljit's 2004–2006 originals (Ishq Da
+  Uda Ada, Dil, Ishq Ho Gaya) — Apple only stocks director-credited
+  re-recordings whose tracks don't surface in his song-search pages at all.
+  If reported again: Apple catalog gap, not code.
+- **Empty track list fixed**: filterInto now tags each kept album with
+  `r._country` (storefront of origin); the album header carries
+  `data-country`, and the lazy track fetch tries `[albumCountry, GB, IN, US,
+  default]` (deduped) until one returns songs — a GB-only album (Over
+  Exposure) returned 0 tracks from the default storefront. `fetchTracks(urls)`
+  is a recursive promise chain with a single trailing .catch.
+- **Song info "Added" row**: `dateAdded` stamped at file import (~9456),
+  round-trips through persistTrackMeta (~8840), boot restore (~8895), export
+  manifest (~11104), import (~11466, defaults to now for old exports), and
+  merge (~11425). Old libraries show 'Unknown' (only imports ever stamped it).
+- Version 49.5.4 → 49.5.5 (SW sidecut-shell-v49.5.4 → v49.5.5). User explicitly
+  asked for the bump this time.
+
 ## Album History multi-storefront merge (no version bump, Aug 24, 2026)
 - **User re-reported: "Old Diljit Dosanjh albums before 2008 still don't fetch".**
   Root cause is NOT the cap/paging — it's REGION LOCKING. iTunes serves a
