@@ -14988,6 +14988,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(refetchBtn){ refetchBtn.addEventListener('click', function(){
       window.__refetchAlbums(true);
     }); }
+    // Wire up per-artist refetch buttons
+    document.querySelectorAll('#discPopupBody .dp-ah-artist-rm').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var artistName = this.dataset.artist;
+        if(artistName && typeof window.__refetchArtistAlbums === 'function'){
+          window.__refetchArtistAlbums(artistName);
+        }
+      });
+    });
     // Wire up artist headers
     document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
       h.addEventListener('click', function(){
@@ -15142,6 +15152,177 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   };
 // Background Album History fetch — runs independently of popup
+// Per-artist album refetch — fetches albums for just one artist
+window.__refetchArtistAlbums = async function(artistName){
+  if(window.__ahFetching){ if(typeof toast === 'function') toast('Already fetching albums…'); return; }
+  if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
+  window.__ahFetching = true;
+  window.__ahCancelled = false;
+  try {
+    if(typeof toast === 'function') toast('📀 Fetching albums for ' + artistName + '…', 3000);
+    // Load existing data, then re-fetch just this artist
+    var artistAlbums = {};
+    var totalAlbums = 0;
+    try{
+      var ahDataCache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+      if(ahDataCache && ahDataCache.artists && ahDataCache.ts && (Date.now() - ahDataCache.ts) < 24*3600*1000){
+        artistAlbums = ahDataCache.artists;
+        totalAlbums = ahDataCache.total || 0;
+      }
+    }catch(e){}
+    // Find the artist object
+    var targetArtist = null;
+    for(var pi=0; pi<pinnedArtists.length; pi++){
+      if(pinnedArtists[pi].name === artistName){ targetArtist = pinnedArtists[pi]; break; }
+    }
+    if(!targetArtist){ toast('Artist not found in pinned artists.', 2000); window.__ahFetching = false; return; }
+    // Clear this artist's cached data to force re-fetch
+    delete artistAlbums[artistName];
+    // Re-fetch using the same logic as __refetchAlbums but for one artist
+    var mbChain = Promise.resolve();
+    var mbGet = function(u){
+      var p = mbChain.then(async function(){
+        await new Promise(function(r){ setTimeout(r, 550); });
+        try{
+          var rr = await fetchWithProxy(u);
+          if(!rr || !rr.ok) return null;
+          return await rr.json();
+        }catch(e){ return null; }
+      });
+      mbChain = p.catch(function(){});
+      return p;
+    };
+    // Fetch logic for one artist (same as fetchOneArtist in __refetchAlbums)
+    var a = targetArtist;
+    try{
+      var artistTerm = a.name;
+      var lookupCount = 0;
+      var seenCids = {};
+      var seenTitles = {};
+      var noise = /best\s+of|greatest|hits|now\s+that|playlist|top\s+hits|workout|party|collaboration|essentials|anthology|complete|collection|mix|mashup|non.?stop|deluxe|edition|karaoke|tribute|covers|remix/i;
+      var normTitle = function(t){ return (t||'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/\s*[-–—]\s*(deluxe|expanded|special|bonus|explicit|clean|remastered|remaster|re.?recorded|version).*$/i,'').replace(/\b(soundtrack|original motion picture soundtrack)\b/gi,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim(); };
+      var filterInto = function(results){
+        var artistLower = primaryArtistName(a.name).toLowerCase().trim();
+        results.forEach(function(r){
+          if(!r || !r.collectionName) return;
+          var collectionId = r.collectionId;
+          var trackCount = r.trackCount || 0;
+          var relDate = r.releaseDate || '';
+          if(trackCount <= 0) return;
+          if(seenCids[collectionId]) return;
+          var tNorm = normTitle(r.collectionName);
+          if(seenTitles[tNorm]) return;
+          if(noise.test(r.collectionName)) return;
+          var rArtist = primaryArtistName(r.artistName || '').toLowerCase().trim();
+          if(rArtist !== artistLower && rArtist.indexOf(artistLower) === -1 && artistLower.indexOf(rArtist) === -1) return;
+          seenCids[collectionId] = 1;
+          seenTitles[tNorm] = 1;
+          if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
+          artistAlbums[a.name].push({
+            collectionId: collectionId, collectionName: r.collectionName,
+            artworkUrl100: r.artworkUrl100 || null, releaseDate: relDate,
+            trackCount: trackCount, _country: r._country || ''
+          });
+          totalAlbums++;
+        });
+      };
+      // Artist ID lookup
+      var arUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&entity=musicArtist&limit=5';
+      var arResp = await fetchWithProxy(arUrl);
+      var arData = arResp && arResp.ok ? await arResp.json() : { results: [] };
+      var artistId = null;
+      (arData.results||[]).forEach(function(r){
+        if(r.artistName && primaryArtistName(r.artistName).toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim()) artistId = r.artistId;
+      });
+      // Lookup albums
+      if(artistId){
+        var stores = ['', 'GB', 'IN', 'CA'];
+        for(var si=0; si<stores.length; si++){
+          var lkUrl = 'https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200' + (stores[si] ? '&country=' + stores[si] : '');
+          var lkResp = await fetchWithProxy(lkUrl);
+          var lkData = lkResp && lkResp.ok ? await lkResp.json() : { results: [] };
+          filterInto(lkData.results||[]);
+          lookupCount += (lkData.results||[]).length;
+        }
+      }
+      // Term search fallback
+      var searchUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&entity=album&limit=200';
+      var sResp = await fetchWithProxy(searchUrl);
+      var sData = sResp && sResp.ok ? await sResp.json() : { results: [] };
+      filterInto(sData.results||[]);
+      // Deezer backup
+      try{
+        var dzUrl = 'https://api.deezer.com/search/artist?q=' + encodeURIComponent(a.name);
+        var dzResp = await fetchWithProxy(dzUrl);
+        var dzData = dzResp && dzResp.ok ? await dzResp.json() : { data: [] };
+        var dzArtist = (dzData.data||[])[0];
+        if(dzArtist && dzArtist.id){
+          var dzAlbumsUrl = 'https://api.deezer.com/artist/' + dzArtist.id + '/albums?limit=100';
+          var dzAResp = await fetchWithProxy(dzAlbumsUrl);
+          var dzAData = dzAResp && dzAResp.ok ? await dzAResp.json() : { data: [] };
+          (dzAData.data||[]).forEach(function(alb){
+            if(!alb || !alb.title) return;
+            if(seenTitles[normTitle(alb.title)]) return;
+            if(noise.test(alb.title)) return;
+            var collectionId = String(alb.id);
+            if(seenCids[collectionId]) return;
+            seenCids[collectionId] = 1;
+            seenTitles[normTitle(alb.title)] = 1;
+            if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
+            artistAlbums[a.name].push({
+              collectionId: collectionId, collectionName: alb.title,
+              artworkUrl100: alb.cover_medium || alb.cover_big || alb.cover || null,
+              releaseDate: alb.release_date || '', trackCount: alb.nb_tracks || null, _dz: true
+            });
+            totalAlbums++;
+          });
+        }
+      }catch(e){}
+      // MusicBrainz backup
+      try{
+        var mbUrl = 'https://musicbrainz.org/ws/2/artist/?query=' + encodeURIComponent(a.name) + '&fmt=json&limit=1';
+        var mbData = await mbGet(mbUrl);
+        if(mbData && mbData.artists && mbData.artists[0]){
+          var mbId = mbData.artists[0].id;
+          var rgUrl = 'https://musicbrainz.org/ws/2/release-group?artist=' + mbId + '&type=album&fmt=json&limit=100';
+          var rgData = await mbGet(rgUrl);
+          if(rgData && rgData['release-groups']){
+            rgData['release-groups'].forEach(function(rg){
+              if(!rg || !rg.title) return;
+              if(seenTitles[normTitle(rg.title)]) return;
+              var collectionId = rg.id;
+              if(seenCids[collectionId]) return;
+              seenCids[collectionId] = 1;
+              seenTitles[normTitle(rg.title)] = 1;
+              if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
+              artistAlbums[a.name].push({
+                collectionId: collectionId, collectionName: rg.title,
+                artworkUrl100: null, releaseDate: rg['first-release-date'] || '',
+                trackCount: null, _mb: true
+              });
+              totalAlbums++;
+            });
+          }
+        }
+      }catch(e){}
+    }catch(e){}
+    // Sort albums by date
+    if(artistAlbums[a.name]) artistAlbums[a.name].sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
+    // Save and re-render
+    try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
+    // Clear popup cache so next open shows fresh data
+    try{ localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History'); }catch(e){}
+    try{ localStorage.removeItem('discPopupCache_' + '\ud83d\udcc0 Album History'); }catch(e){}
+    if(typeof toast === 'function') toast('📀 ' + artistName + ' refreshed — ' + (artistAlbums[a.name]||[]).length + ' albums', 3000);
+    // Re-open album history
+    window.__ahFetching = false;
+    window.__refetchAlbums(false);
+  }catch(e){
+    window.__ahFetching = false;
+    if(typeof toast === 'function') toast('Error fetching albums for ' + artistName, 3000);
+  }
+};
+
 window.__ahFetching = false;
 window.__ahCancelled = false;
 window.__refetchAlbums = async function(wasRefetch){
@@ -15172,13 +15353,16 @@ if(typeof toast === 'function') toastWithCancel();
         var totalAlbums = 0;
         // Load existing cached album data to avoid re-fetching artists
         // that were already fetched. Only NEW or changed artists get fetched.
-        try{
-          var ahDataCache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
-          if(ahDataCache && ahDataCache.artists && ahDataCache.ts && (Date.now() - ahDataCache.ts) < 24*3600*1000){
-            artistAlbums = ahDataCache.artists;
-            totalAlbums = ahDataCache.total || 0;
-          }
-        }catch(e){}
+        // When wasRefetch is true, skip cache so all artists get re-fetched.
+        if(!wasRefetch){
+          try{
+            var ahDataCache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+            if(ahDataCache && ahDataCache.artists && ahDataCache.ts && (Date.now() - ahDataCache.ts) < 24*3600*1000){
+              artistAlbums = ahDataCache.artists;
+              totalAlbums = ahDataCache.total || 0;
+            }
+          }catch(e){}
+        }
         // MusicBrainz rate-limits to ~1 request/second per client, and the
         // 4-worker pool below would otherwise fire concurrent MB requests and
         // get 503s. Serialize all MB calls through one chain with a gap.
@@ -15589,6 +15773,7 @@ if(typeof toast === 'function') toastWithCancel();
           html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
           html += '<span style="font-size:13px;font-weight:600;flex:1;">' + escapeHtml(artist) + '</span>';
           html += '<span style="font-size:11px;color:var(--ink-dim);">' + albums.length + ' album' + (albums.length!==1?'s':'') + '</span>';
+          html += '<button class="dp-ah-artist-rm" data-artist="' + escapeHtml(artist) + '" style="background:none;border:1px solid var(--line);color:var(--ink-dim);border-radius:6px;padding:2px 6px;font-size:10px;cursor:pointer;flex-shrink:0;" title="Refetch this artist">↻</button>';
           html += '</div>';
           html += '<div id="' + artistId + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
           for(var bj=0; bj<albums.length; bj++){
