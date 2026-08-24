@@ -1,5 +1,32 @@
 # SideCut — repository memory
 
+## v49.5.7 follow-up #2 — Old songs window + Get Songs quick-action label
+- **"Old songs" (renamed from "Songs from last year")**: the user's complaint
+  was everything shown was 1000+ days old. Root cause: the single
+  `entity=song&limit=50` search page holds the artist's ~50 MOST POPULAR
+  tracks (relevance-ranked), and a 1–3-year-old hit is rarely in that set —
+  so an "over 365 days" filter only matched the ancient entries on the page.
+  Now per pinned artist the handler unions 3 entity queries (song, album,
+  musicVideo — each limit 50), dedupes by track+artist key, and filters to a
+  real WINDOW `365d <= age <= 3*365d` of the CURRENT date (no `minDate`
+  var — that's dead in this one). Button label, popup title, empty message,
+  and offline-cache key all renamed to "Old songs". Version stays 49.5.7;
+  changelog bullet inserted at the head of the existing 49.5.7 entry. SW
+  cache already at 49.5.7 — any fix that's pushed needs SOME way to reach
+  users: if a same-version fix gets re-reported as not visible, bump.
+- **Quick-action labels for the expand→Get Songs rename**: a custom quick
+  action of type `settings` rendered its TOOLTIP as `Open settings: expand`
+  (raw key) and the Sandbox add form's settings-select had NO expand/Get
+  Songs option at all (only 8 of the 10 live tabs; refresh also missing).
+  Added `SETTINGS_TAB_LABELS` map next to SETTINGS_TABS (expand:'Get Songs'),
+  `actionTitle` uses it, and both missing options added to
+  `#customActionSettingsSel`. hbQuickMeta (Home quick-actions grid) does NOT
+  include expand on purpose (grid is quick-settings shortcuts; expand is the
+  Get Songs form, matches SETTINGS_TABS grid Meta keys conceptually… update
+  only if the user asks for it in the grid — it also lacks 'refresh' on
+  purpose? No: it HAS refresh; expand is deliberately not a quick-jump since
+  the grid predates the rename — leave unless asked).
+
 ## v49.5.7 follow-up (same day) — REVERTED the multi-ID track fetch
 - **User immediately re-reported: "tracks now just don't load."** The
   `seenIds`/`data-ids` design (every dedupe key accumulating every edition ID,
