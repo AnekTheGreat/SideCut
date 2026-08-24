@@ -6759,10 +6759,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '49.6', date: 'August 24, 2026 at 11:30 pm EDT', title: 'Phone call pause + refetch buttons + quick settings rename', items: [
+    { version: '49.6', date: 'August 24, 2026 at 11:30 pm EDT', title: 'Phone call pause + refetch singles + quick settings rename', items: [
       'Music now automatically pauses when you receive a phone call, switch apps, or get an alarm',
       'Added Refetch button to Singles popup — re-fetches singles from all pinned artists',
-      'Added Refetch button to New Releases popup — re-fetches latest releases from pinned artists',
       'Quick Settings home bubble now shows "Get Songs" instead of the old truncated label',
       'After a version update, simply hit the Play button on any track to restore your home bubbles and pinned artists data',
     ]},
@@ -14836,7 +14835,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.title||'Unknown title') + (isNew ? ' <span style="color:var(--coral);font-size:10px;font-weight:700;">NEW</span>' : '') + '</div>';
           html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName||'') + (when ? ' · ' + when : '') + (r.date ? ' (' + r.date.slice(0,10) + ')' : '') + '</div></div></div>';
         }); }
-        html = '<div style="text-align:center;padding:4px 0 6px;"><button id="nrRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch latest</button></div>' + html;
         openDiscoverPopup('🆕 New Releases', html, releases.length + ' release' + (releases.length!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
 
         // Wire up clicks
@@ -17138,16 +17136,25 @@ document.addEventListener('click', function(e){
   if(!t || !t.id) return;
   if(t.id === 'singlesRefetchBtn'){
     e.stopPropagation();
+    e.preventDefault();
     var sb = document.getElementById('discoverSingles');
-    if(sb && typeof sb.onclick === 'function'){ sb.onclick(); }
-    else { toast('Tap Singles again to refetch.'); }
+    if(sb && typeof sb.onclick === 'function'){
+      // Close popup first, then trigger the refetch so the search starts fresh
+      closeDiscoverPopup();
+      setTimeout(function(){ sb.onclick(); }, 100);
+    } else {
+      // Handler not wired yet — navigate to Discover to wire it, then retry
+      navigate('discover');
+      setTimeout(function(){
+        sb = document.getElementById('discoverSingles');
+        if(sb && typeof sb.onclick === 'function'){
+          closeDiscoverPopup();
+          setTimeout(function(){ sb.onclick(); }, 100);
+        } else { toast('Tap Singles again to refetch.'); }
+      }, 200);
+    }
   }
-  if(t.id === 'nrRefetchBtn'){
-    e.stopPropagation();
-    var fb = document.getElementById('discoverFetchLatest');
-    if(fb && typeof fb.onclick === 'function'){ fb.onclick(); }
-    else { toast('Tap Fetch latest again to refetch.'); }
-  }
+
 }, true);
 function loadCachedDiscoverPopup(key){
   try{
