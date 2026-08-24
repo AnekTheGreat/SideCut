@@ -6086,6 +6086,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         });
         
         if (currentLine) {
+          // Remove any playing indicator from previous cycle
+          var playingInd = lyricsText.querySelector('.lyric-playing-indicator');
+          if (playingInd) playingInd.remove();
           // Always update highlight
           if (currentIdx !== lastLyricsIdx) {
             allLines.forEach(l => {
@@ -6118,6 +6121,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             }
           }
         }
+        // After last lyric line: show "♪ playing..." indicator
+        if (currentIdx === syncedLines.length - 1 && currentTime > parseFloat(currentLine.dataset.time) + 1) {
+          if (!lyricsText.querySelector('.lyric-playing-indicator')) {
+            var playingDiv = document.createElement('div');
+            playingDiv.className = 'lyric-playing-indicator';
+            playingDiv.style.cssText = 'text-align:center;padding:16px 0;font-size:14px;color:var(--coral);opacity:0.7;animation:pulse 1.5s ease-in-out infinite;';
+            playingDiv.textContent = '\u266a playing...';
+            currentLine.parentNode.insertBefore(playingDiv, currentLine.nextSibling);
+            scrollLyricsToLine(container, playingDiv);
+          }
+        }
       } else {
         // Unsynced lyrics - scroll proportionally to playback progress, but
         // never let the scroll run ahead of the "current" line. We treat the
@@ -6132,6 +6146,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             allLines.forEach(l => l.classList.remove('current'));
             allLines[targetIdx].classList.add('current');
             scrollLyricsToLine(container, allLines[targetIdx]);
+          }
+          // At end of song: show playing indicator after last line
+          var playingInd2 = lyricsText.querySelector('.lyric-playing-indicator');
+          if (progress >= 0.99) {
+            if (!playingInd2) {
+              var pi = document.createElement('div');
+              pi.className = 'lyric-playing-indicator';
+              pi.style.cssText = 'text-align:center;padding:16px 0;font-size:14px;color:var(--coral);opacity:0.7;animation:pulse 1.5s ease-in-out infinite;';
+              pi.textContent = '\u266a playing...';
+              allLines[allLines.length - 1].parentNode.appendChild(pi);
+              scrollLyricsToLine(container, pi);
+            }
+          } else if (playingInd2) {
+            playingInd2.remove();
           }
         }
       }
@@ -14966,6 +14994,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       pop.querySelector('.pop-confirm').addEventListener('click', function(){
         pop.remove();
         hideAlbum(cid, cname);
+        // Clear AH data cache so removed album doesn't reappear
+        try{ localStorage.removeItem('sidecut_ahArtistData'); }catch(e){}
+        try{ localStorage.removeItem('discPopupCache_\u{1F3F8} Album History'); }catch(e){}
         var ahBtn2 = document.getElementById('discoverAlbumHistory');
         if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
       });
@@ -15037,7 +15068,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 e.stopPropagation();
                 var cid = this.dataset.cid;
                 var cname = this.dataset.cname;
-                if(cid){ hideAlbum(cid, cname); var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
+                if(cid){ hideAlbum(cid, cname); try{ localStorage.removeItem('sidecut_ahArtistData'); }catch(e){} var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
               }); }
             };
             return fetchWithProxy(src.url)
