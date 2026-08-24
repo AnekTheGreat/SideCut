@@ -15156,6 +15156,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   };
 // Background Album History fetch — runs independently of popup
 window.__ahFetching = false;
+window.__ahCancelled = false;
 window.__refetchAlbums = async function(wasRefetch){
   if(window.__ahFetching){ if(typeof toast === 'function') toast('Already fetching albums…'); return; }
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
@@ -15185,7 +15186,8 @@ window.__refetchAlbums = async function(wasRefetch){
     }catch(e){}
   }
   window.__ahFetching = true;
-if(typeof toast === 'function') toast('📀 Checking for new albums…', 3000);
+window.__ahCancelled = false;
+if(typeof toast === 'function') toastWithCancel();
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
         var totalAlbums = 0;
@@ -15580,17 +15582,18 @@ if(typeof toast === 'function') toast('📀 Checking for new albums…', 3000);
         var ahQueue = pinnedArtists.slice();
         var ahDone = 0;
                 var runAhWorker = async function(){
-          while(ahQueue.length){
+          while(ahQueue.length && !window.__ahCancelled){
             var aNext = ahQueue.shift();
             await fetchOneArtist(aNext);
             ahDone++;
-            if(typeof toast === 'function') if(typeof toast === 'function') toast('📀 Checking ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ')', 2000);
+            if(typeof toast === 'function') toast('📀 Checking ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ') — tap to cancel', 2500);
           }
         };
         var ahWorkers = [];
         for(var ahW=0; ahW<Math.min(6, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
         await Promise.all(ahWorkers);
         window.__ahFetching = false;
+window.__ahCancelled = false;
         // Save structured data for incremental refetch
         try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
         if(typeof toast === 'function') toast('📀 Album History refreshed!', 3000);
@@ -17318,6 +17321,28 @@ function loadCachedDiscoverPopup(key){
   }catch(e){}
   return false;
 }
+
+
+window.toastWithCancel = function(){
+  // Show a toast with a cancel link
+  var td = document.getElementById('toast');
+  if(!td){ toast('📀 Checking for new albums…', 3000); return; }
+  td.innerHTML = '📀 Fetching albums… <span id="ahCancelBtn" style="color:var(--coral);cursor:pointer;font-weight:700;text-decoration:underline;margin-left:6px;">Cancel</span>';
+  td.style.display = 'block';
+  td.style.opacity = '1';
+  clearTimeout(td._timer);
+  td._timer = setTimeout(function(){ td.style.display = 'none'; }, 8000);
+  var cb = document.getElementById('ahCancelBtn');
+  if(cb) cb.addEventListener('click', function(e){ e.stopPropagation(); window.__ahCancelToast(); });
+};
+
+// Cancel album history fetch on any tap during fetching
+window.__ahCancelToast = function(){
+  if(!window.__ahFetching) return;
+  window.__ahCancelled = true;
+  window.__ahFetching = false;
+  if(typeof toast === 'function') toast('📀 Fetch cancelled.', 2000);
+};
 
 // ---------------- Zoom lock ----------------
 // SideCut is meant to stay pinned at 1x: block pinch-zoom on touch screens and
