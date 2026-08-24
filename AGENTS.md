@@ -1,5 +1,17 @@
 # SideCut — repository memory
 
+## v49.5.7 follow-up (same day) — REVERTED the multi-ID track fetch
+- **User immediately re-reported: "tracks now just don't load."** The
+  `seenIds`/`data-ids` design (every dedupe key accumulating every edition ID,
+  expand trying ID × 5 storefronts) was OVER-ENGINEERED: capped artists had
+  ~10+ IDs per title → 20-40 sequential proxy lookups before any tracks
+  rendered — reads as "nothing loads." Reverted to the v49.5.5 behavior:
+  ONE iTunes lookup with the album's own collectionId + country fallback
+  ([_country, GB, IN, US, default]), and one Deezer /album/{id}/tracks call for
+  _dz albums. `seenIds`/`data-ids`/`_ids` are GONE; `seenCids` is back.
+  **Lesson: don't batch dozens of sequential network lookups on a tap path —
+  keep tap-lazy fetches to ~5 max, and never multiply ID×storefront.**
+
 ## v49.5.7 (Aug 23, 2026) — Deezer backup + comp cleanup + 3-day genre cache
 - **User follow-ups**: (1) find a backup album source, (2) "random albums not
   made by him" showing, (3) albums with a track count but no tracks when
