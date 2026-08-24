@@ -1,5 +1,32 @@
 # SideCut — repository memory
 
+## Album History multi-storefront merge (no version bump, Aug 24, 2026)
+- **User re-reported: "Old Diljit Dosanjh albums before 2008 still don't fetch".**
+  Root cause is NOT the cap/paging — it's REGION LOCKING. iTunes serves a
+  different catalog per storefront: the US/IN lookups for artistId 423087540
+  have ZERO pre-2008 albums, but the GB storefront has "Over Exposure"
+  (2005-08-25, 9 tracks) — also ES/NL/SE/NO/DK. Fix (~line 14880): when the
+  default lookup hits the 200-entry cap (`lookupCount >= 200`), also merge
+  `lookup?id=...&country=GB/IN/CA/AU` through the same `filterInto` (dedupe by
+  normalized title handles cross-store dupes; earliest releaseDate wins).
+  Verified live: Diljit 25→31 albums (1 pre-2008), Gurdas Maan 57→63
+  (50 pre-2008, oldest 1982), Beatles 39/26 pre-2008 unchanged (no cap → no
+  extra fetches), Weeknd 21 unchanged.
+- **Hard limit discovered: Diljit's 2004–2006 albums (Ishq Da Uda Ada, Dil,
+  Smile, Ishq Ho Gaya) are NOT on iTunes under his name in ANY storefront.**
+  Apple only carries 2008 re-recordings credited to the MUSIC DIRECTORS
+  (Ishq Da Uda Ada→Bablu Mahendra, Smile→Sukhpal Sukh, Ishq Ho Gaya→Sachin
+  Ahuja — track-level credits ARE Diljit, album-level isn't). These never
+  appear in term/artistTerm search pages for "Diljit Dosanjh" (checked 600+
+  results), so no fetch pipeline can surface them under his name. If the user
+  asks again: it's an Apple catalog gap, not a code bug.
+- **iTunes search offset gotcha**: for "Diljit Dosanjh" entity=album, offset
+  pages 200/400 returned the SAME 200 entries as page 0 (offset is unreliable
+  on some queries). Don't assume paged search always goes deeper.
+- Changelog item added to the EXISTING 49.5.4 entry — NO version bump per
+  user (APP_VERSION + CACHE_NAME stay 49.5.4). Stale-SW users won't see it
+  until the next bump — bump both together if re-reported.
+
 ## Album History refetch + pre-2008 follow-up (no version bump, Aug 24, 2026)
 - **User re-reported: "Refetch albums doesn't do anything" + "pre-2008 albums
   aren't showing" after v49.5.4.** Live browser testing showed v49.5.4 already
