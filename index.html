@@ -15329,6 +15329,7 @@ window.__refetchArtistAlbums = async function(artistName){
     if(artistAlbums[a.name]) artistAlbums[a.name].sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
     // Save and re-render
     try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
+    try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
     // Clear popup cache so next open shows fresh data
     try{ localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History'); }catch(e){}
     try{ localStorage.removeItem('discPopupCache_' + '\ud83d\udcc0 Album History'); }catch(e){}
@@ -15344,6 +15345,45 @@ window.__refetchArtistAlbums = async function(artistName){
 
 window.__ahFetching = false;
 window.__ahCancelled = false;
+
+// Resume album fetch if it was interrupted (page killed, backgrounded, etc.)
+// Checks for pending artists in localStorage and continues from where it left off.
+window.__resumeAlbumFetch = async function(){
+  try{
+    var pending = JSON.parse(localStorage.getItem('sidecut_ahPending') || 'null');
+    if(!pending || !pending.length) return;
+    if(window.__ahFetching) return;
+    // Check if cached data exists (partial results from interrupted fetch)
+    var ahData = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+    if(!ahData || !ahData.artists) return;
+    if(typeof toast === 'function') toast('\ud83d\udcc0 Resuming album fetch\u2026 (' + pending.length + ' artists remaining)', 3000);
+    // Trigger a background refetch — it will skip already-fetched artists
+    window.__refetchAlbums(false);
+  }catch(e){}
+};
+
+// Auto-resume on page load if there was an interrupted fetch
+setTimeout(function(){
+  try{
+    var pending = JSON.parse(localStorage.getItem('sidecut_ahPending') || 'null');
+    if(pending && pending.length){
+      // Small delay to let the app initialize
+      setTimeout(function(){ window.__resumeAlbumFetch(); }, 2000);
+    }
+  }catch(e){}
+}, 1000);
+
+// Also resume when app comes back to foreground (visibilitychange)
+document.addEventListener('visibilitychange', function(){
+  if(!document.hidden && !window.__ahFetching){
+    try{
+      var pending = JSON.parse(localStorage.getItem('sidecut_ahPending') || 'null');
+      if(pending && pending.length){
+        window.__resumeAlbumFetch();
+      }
+    }catch(e){}
+  }
+});
 window.__refetchAlbums = async function(wasRefetch){
   if(window.__ahFetching){ if(typeof toast === 'function') toast('Already fetching albums…'); return; }
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
@@ -15768,6 +15808,9 @@ if(typeof toast === 'function') toastWithCancel();
             var aNext = ahQueue.shift();
             await fetchOneArtist(aNext);
             ahDone++;
+            // Incremental save: persist progress after each artist
+            try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
+            try{ localStorage.setItem('sidecut_ahPending', JSON.stringify(ahQueue.map(function(x){ return x.name; }))); }catch(e){}
             if(typeof toast === 'function') toast('📀 Checking ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ') — tap to cancel', 2500);
           }
         };
@@ -15777,6 +15820,8 @@ if(typeof toast === 'function') toastWithCancel();
         } finally { window.__ahFetching = false; window.__ahCancelled = false; }
         // Save structured data for incremental refetch
         try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
+        // Clear pending list — fetch completed successfully
+        try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
         if(typeof toast === 'function') toast('📀 Album History refreshed!', 3000);
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
         if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from pinned artists.</div>', subtitle); return; }
