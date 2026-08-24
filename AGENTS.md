@@ -1,5 +1,16 @@
 # SideCut — repository memory
 
+## v49.5.3 (Aug 23, 2026)
+- **Converter recommendation duplicated into Settings → Get Songs**: the
+  collapsed 💡 Converter recommendation `<details>` (Spotisaver, name-only —
+  no URL) from Discover's how-to box now also sits in `#settingsPaneExpand`
+  between the how-to text and the expand input. Same copy, kept as a native
+  `<details>`. Version bumped 49.5.2 → 49.5.3 (SW sidecut-shell-v49.5.3).
+- `_toggleNR` is INTENTIONALLY gone (New Releases dropdown removed from
+  Discover) — `dev/_boottest.js` still smoke-tests it and reports
+  "not a function"; that's stale test code, not a bug. `_toggleGenres` is
+  the live one.
+
 ## Settings: Download tab removed, Expand URL → Get Songs (no version bump, Aug 23, 2026)
 - **Settings Download section fully removed**: `#settingsTabDownload` button,
   `#settingsPaneDownload` div, both `showSettingsTab` display/active lines, the
