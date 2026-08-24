@@ -15004,7 +15004,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         hideAlbum(cid, cname);
         // Clear AH data cache so removed album doesn't reappear
         try{ localStorage.removeItem('sidecut_ahArtistData'); }catch(e){}
-        try{ localStorage.removeItem('discPopupCache_\u{1F3F8} Album History'); }catch(e){}
+        try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(e){}
         var ahBtn2 = document.getElementById('discoverAlbumHistory');
         if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
       });
@@ -15147,18 +15147,10 @@ window.__refetchAlbums = async function(wasRefetch){
             }
           }catch(e){}
         }
-  if(!wasRefetch){
-    try{
-      var ahCached = JSON.parse(localStorage.getItem('discPopupCache_📀 Album History') || 'null');
-      if(ahCached && ahCached.ts && (Date.now() - ahCached.ts) < 24*3600*1000 && typeof window.__wireAH === 'function'){
-        loadCachedDiscoverPopup('📀 Album History');
-        window.__wireAH();
-        return;
-      }
-    }catch(e){}
-  }
   window.__ahFetching = true;
 window.__ahCancelled = false;
+        // Safety: if fetching takes >120s, auto-reset the flag
+        setTimeout(function(){ if(window.__ahFetching){ window.__ahFetching = false; window.__ahCancelled = false; } }, 120000);
 if(typeof toast === 'function') toastWithCancel();
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
@@ -15624,12 +15616,13 @@ window.__ahCancelled = false;
           if(!cid) return;
           var url;
           if(isDz) url = 'https://api.deezer.com/album/' + cid;
-          else if(isMb) return; // MB track count requires release-group lookup, skip
+          else if(isMb) url = 'https://musicbrainz.org/ws/2/release-group/' + cid + '?inc=releases&fmt=json'
           else url = 'https://itunes.apple.com/lookup?id=' + cid + '&entity=album';
           if(!url) return;
           fetchWithProxy(url).then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
             var tc;
             if(isDz) tc = d.nb_tracks;
+            else if(isMb){ var rels = (d.releases||[]).filter(function(r){ return r.status === 'Official'; }); var rel = rels[0] || (d.releases||[])[0]; tc = rel && rel['track-count']; }
             else { var al = (d.results||[])[0]; tc = al && al.trackCount; }
             if(tc && tc > 0){
               infoDiv.textContent = infoDiv.textContent.replace('? tracks', tc + ' tracks');
