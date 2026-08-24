@@ -1,5 +1,19 @@
 # SideCut — repository memory
 
+## v49.5.7 follow-up #5b — the ACTUAL wireAH scope bug (commit 626a0de)
+- **The real wireAH bug**: the assignment `window.__wireAH = function(){...}`
+  sits INSIDE `ahBtn.onclick`, but the CALL
+  `if(typeof window.__wireAH === 'function') window.__wireAH();` was OUTSIDE
+  that onclick body. It ran once at page boot — before the assignment —
+  so nothing was ever actually wired. Follow-up #4 incorrectly claimed
+  the call was "after a fresh build AND after loadCachedDiscoverPopup" —
+  only the cached-load branch was guarded correctly.
+  **Lesson**: when a user reports "X works but Y never runs", the wiring
+  may be syntactically valid yet *scopally dead* — always grep for BOTH
+  the assignment AND every call site, and verify each reach. Fix: call
+  `window.__wireAH();` INSIDE ahBtn.onclick, immediately after
+  `window.__wireAH = function(){...};`.
+
 ## v49.5.7 follow-up #4 — Album History collapsibles dead on cached loads (commit cd0efec)
 - Root causes: (1) the track-fetch IIFE call passed the stale `trackUrls` name
   instead of `trackSources` (ReferenceError -> "Error loading tracks." on every
