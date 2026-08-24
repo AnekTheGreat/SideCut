@@ -14935,10 +14935,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     window.__wireAH = function(){
     var refetchBtn = document.getElementById('ahRefetchBtn');
     if(refetchBtn){ refetchBtn.addEventListener('click', function(){
-      var ahBtn2 = document.getElementById('discoverAlbumHistory');
-      if(!ahBtn2 || !ahBtn2.onclick) return;
-      ahBtn2._isRefetch = true;
-      ahBtn2.onclick();
+      window.__refetchAlbums(true);
     }); }
     // Wire up artist headers
     document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
@@ -15126,11 +15123,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       hdr.addEventListener('pointerleave', cancelHold);
     });
   };
-    // Album History: fetch all albums from pinned artists (all time), show in popup
-    {
-      const ahBtn = $('discoverAlbumHistory');
-      if(ahBtn) ahBtn.onclick = async function(){
-        if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
+// Background Album History fetch — runs independently of popup
+window.__ahFetching = false;
+window.__refetchAlbums = async function(wasRefetch){
+  if(window.__ahFetching){ if(typeof toast === 'function') toast('Already fetching albums…'); return; }
+  if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         var wasRefetch = !!this._isRefetch; this._isRefetch = false;
         // Serve the cached popup when it was built <24h ago — tapping the
@@ -15146,7 +15143,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             }
           }catch(e){}
         }
-        this.textContent = '⏳ Fetching albums...'; this.disabled = true;
+  if(!wasRefetch){
+    try{
+      var ahCached = JSON.parse(localStorage.getItem('discPopupCache_📀 Album History') || 'null');
+      if(ahCached && ahCached.ts && (Date.now() - ahCached.ts) < 24*3600*1000 && typeof window.__wireAH === 'function'){
+        loadCachedDiscoverPopup('📀 Album History');
+        window.__wireAH();
+        return;
+      }
+    }catch(e){}
+  }
+  window.__ahFetching = true;
+if(typeof toast === 'function') toast('📀 Fetching albums in background…', 3000);
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
         var totalAlbums = 0;
@@ -15529,19 +15537,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         // and a strictly serial loop over 10+ pinned artists took minutes.
         var ahQueue = pinnedArtists.slice();
         var ahDone = 0;
-        var ahBtnRef = this;
-        var runAhWorker = async function(){
+                var runAhWorker = async function(){
           while(ahQueue.length){
             var aNext = ahQueue.shift();
             await fetchOneArtist(aNext);
             ahDone++;
-            ahBtnRef.textContent = '⏳ ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ')';
+            if(typeof toast === 'function') toast('📀 ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ')', 2000);
           }
         };
         var ahWorkers = [];
         for(var ahW=0; ahW<Math.min(6, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
         await Promise.all(ahWorkers);
-        this.textContent = '📀 Album history'; this.disabled = false;
+        window.__ahFetching = false;
+        if(typeof toast === 'function') toast('📀 Album History refreshed!', 3000);
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
         if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from pinned artists.</div>', subtitle); return; }
         // Build collapsible: artist → albums → tracks (lazy-loaded)
@@ -15582,7 +15590,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
         
         window.__wireAH();
-    }
+};
+
+        // Album History: fetch all albums from pinned artists (all time), show in popup
+    {
+      const ahBtn = $('discoverAlbumHistory');
+      if(ahBtn)     ahBtn.onclick = function(){
+        window.__refetchAlbums(!!this._isRefetch && (this._isRefetch = false, true));
+    };
 
     }
     
