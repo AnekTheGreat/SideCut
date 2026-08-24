@@ -1,5 +1,17 @@
 # SideCut — repository memory
 
+## v49.5.7 follow-up #3 — 24h popup cache for Album History + Old songs
+- **User: "why does fetching albums have to refetch everytime, same with old
+  songs."** Both handlers now consult the existing `discPopupCache_<title>`
+  localStorage slot FIRST and serve it when `ts < 24h` — bypassing the entire
+  network pipeline (for Album History: up to ~4+ lookups/artist + Deezer
+  passes). The "🔄 Refetch albums" button sets `_isRefetch` which skips the
+  cache — the escape hatch for genuinely new content. Old songs has no
+  in-popup refetch (no room in the row), so it self-rolls on the 24h expiry.
+  Cache keys: `discPopupCache_📀 Album History` / `discPopupCache_📅 Old
+  songs` — keep the exact title strings consistent (emoji included).
+- Also added to the head of the 49.5.7 changelog entry.
+
 ## v49.5.7 follow-up #2 — Old songs window + Get Songs quick-action label
 - **"Old songs" (renamed from "Songs from last year")**: the user's complaint
   was everything shown was 1000+ days old. Root cause: the single
