@@ -1,5 +1,31 @@
 # SideCut — repository memory
 
+## v49.5.4 (Aug 23, 2026)
+- **Album History pre-2008 fetch** (`discoverAlbumHistory` onclick ~14800):
+  artist search `entity=musicArtist` limit 5 → 25 (exact-name match was being
+  crowded off the first page, dropping to the relevance-ranked term search
+  where old albums are buried); when a response hits the 200-entry iTunes cap,
+  extra pages are fetched via the SEARCH endpoint with `offset=200/400`
+  (lookup does NOT support offset, search does — verified); dedupe now prefers
+  the EARLIEST releaseDate per normalized title (tie-break: most tracks) so
+  pre-2008 albums show their original year instead of a 2009+ remaster date.
+  Verified vs live iTunes: Beatles 26 pre-2008 (was 23), Madonna 26 (was 25),
+  Miles Davis 117 (was 115), Weeknd still 21. The unused `minDate='1900-01-01'`
+  leftover was removed.
+- **Songs From Last Year flipped to "over 365 days old"** (~14773): filter is
+  now `releaseDate < minDate` (minDate = exactly 1 year ago), results sorted
+  releaseDate-desc per artist; empty message "No songs over 365 days old
+  found." Button label/title unchanged ("Songs from last year").
+- **New default turntable angle: TILT 5 / SPIN -88 / ROLL 117** (sliders are
+  -180..180; values estimated from a user screenshot of desired settings).
+  Changed in FOUR places that must stay in sync: `.np-tt-3d` CSS fallback
+  (~628), `body.sandbox-compact-nowbar` fallback (~579), JS `let rx/ry/rz`
+  initial (~3528), popup `DEFAULT_ANGLE` (~3572). Saved `npTurntableAngle`
+  meta still wins for existing users.
+- **Things to know top bullet**: long-press the mini record player →
+  Turntable angle popup (TILT/SPIN/ROLL, Reset restores default).
+- Version 49.5.3 → 49.5.4 (SW sidecut-shell-v49.5.4).
+
 ## v49.5.3 (Aug 23, 2026)
 - **Converter recommendation duplicated into Settings → Get Songs**: the
   collapsed 💡 Converter recommendation `<details>` (Spotisaver, name-only —
