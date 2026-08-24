@@ -1804,7 +1804,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   </div>
   <div id="pinnedArtistsActions" style="display:flex; gap:8px; margin-bottom:10px;">
       <button id="discoverFetchLatest" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🔄 Fetch latest from pinned artists</button>
-      <button id="discoverLastYear" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Songs from last year</button>
+      <button id="discoverLastYear" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Old songs</button>
       <button id="discoverAlbumHistory" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📀 Album history</button>
       <button id="discoverSingles" style="padding:8px 14px;font-size:12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap;">🎵 Singles</button>
   </div>
@@ -2752,6 +2752,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
             <option value="theme">Theme</option>
             <option value="premium">Premium</option>
             <option value="donate">Donate</option>
+            <option value="expand">Get Songs</option>
+            <option value="refresh">Refresh</option>
             <option value="glow">Glow</option>
             <option value="playback">Playback</option>
             <option value="eq">Equalizer</option>
@@ -5063,7 +5065,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       case 'view': return 'Open ' + a.value;
       case 'playlist': return 'Open playlist ' + a.value;
       case 'play': return 'Play playlist ' + a.value;
-      case 'settings': return 'Open settings: ' + a.value;
+      case 'settings': return 'Open settings: ' + (SETTINGS_TAB_LABELS[a.value] || a.value);
       case 'add': return 'Open the Add songs menu';
       case 'playpause': return 'Play / pause';
       case 'next': return 'Next track';
@@ -5333,6 +5335,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     });
   }
   const SETTINGS_TABS = ['premium', 'expand', 'theme', 'donate', 'refresh', 'glow', 'playback', 'eq', 'more', 'sandbox'];
+  // Labels for a settings-tab quick action's tooltip (v48+: was raw key text,
+  // so the 'expand' tab showed up as 'expand'. expand = Get Songs).
+  const SETTINGS_TAB_LABELS = { premium: 'Premium', expand: 'Get Songs', theme: 'Theme', donate: 'Donate', refresh: 'Refresh', glow: 'Glow', playback: 'Playback', eq: 'Equalizer', more: 'More', sandbox: 'Sandbox' };
   const VIEWS = ['home', 'discover', 'library'];
   const NO_VALUE_TYPES = ['add', 'playpause', 'next', 'prev', 'shuffle'];
   const CUSTOM_ACTION_TYPE_LABELS = { url: 'link', view: 'view', playlist: 'playlist', play: 'play', settings: 'settings', add: 'add songs', playpause: 'play/pause', next: 'next', prev: 'prev', shuffle: 'shuffle' };
@@ -6727,6 +6732,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   const CHANGELOG = [
     { version: '49.5.7', date: 'August 23, 2026 at 11:45 pm EDT', title: 'Album History gets a backup source + a cleanup', items: [
+      '"Songs from last year" is now "Old songs" and only lists tracks that are 1–3 years old — before, it mixed in songs from 15+ years ago because the search page only had room for the artist\'s most popular (usually oldest) tracks. It now checks three search angles per artist so recent tracks actually show up',
       'Album History now also pulls from Deezer when an artist\'s Apple catalog hits its limit — albums Apple simply doesn\'t stock (like Diljit Dosanjh\'s "Dil" from 2008) now appear, marked with a small "Deezer" tag',
       'Fixed: expanding an album loaded tracks slowly or not at all — it was trying every region/edition ID the album was ever found under (dozens of lookups through a relay) instead of just the album\'s own ID with a country fallback, the way it used to',
       'Cleaned up Album History: DJ "Non Stop" mixes, mashup albums, party/workout playlists and "Best Of"-style compilations by other people are filtered out, and "Various Artists" compilations are never added from song credits anymore',
@@ -14781,41 +14787,62 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         });
         toast('Checked for new releases!'); } catch(err){ console.error('[FL] handler error:', err); }
       };
-      // Last Year button: search iTunes for songs from past year, show in popup
+      // Old songs: tracks from each pinned artist that are 1–3 years old.
+      // The iTunes search page is relevance-ranked — a single entity=song query
+      // returns the artist's ~50 most popular tracks, which skews ancient — so
+      // song + album + musicVideo queries are unioned to get decent recent
+      // coverage without paging forever.
       const lyBtn = $('discoverLastYear');
       if(lyBtn) lyBtn.onclick = async function(){
         if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         this.textContent = '⏳ Searching...'; this.disabled = true;
-        var yearAgo = new Date(); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-        var minDate = yearAgo.toISOString().slice(0,10);
+        var now = Date.now();
+        var minMs = 365*86400000;       // at least 1 year old
+        var maxMs = 3*365*86400000;     // but not ancient — at most ~3 years old
         var totalFound = 0;
         var html = '';
         for(var ai=0; ai<pinnedArtists.length; ai++){
           var a = pinnedArtists[ai];
-          try{
-            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=song&limit=50';
-            var resp = await fetchWithProxy(url);
-            if(!resp || !resp.ok) continue;
-            var data = await resp.json();
-            var results = (data.results||[]).filter(function(r){ return r && r.trackName && r.releaseDate && r.releaseDate < minDate && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim(); });
-            results.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
-            for(var ri=0; ri<results.length; ri++){
-              var r = results[ri];
-              var daysAgo = r.releaseDate ? Math.floor((Date.now() - new Date(r.releaseDate).getTime())/86400000) : null;
-              var when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
-              var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
-              html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '">';
-              html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
-              html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName) + '</div>';
-              html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + (when ? ' · ' + when : '') + (r.releaseDate ? ' (' + r.releaseDate.slice(0,10) + ')' : '') + '</div></div></div>';
-              totalFound++;
-            }
-          }catch(e){}
+          var seenTracks = {};
+          var merged = [];
+          for(var ent=0; ent<3; ent++){
+            var entity = ['song','album','musicVideo'][ent];
+            try{
+              var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=' + entity + '&limit=50';
+              var resp = await fetchWithProxy(url);
+              if(!resp || !resp.ok) continue;
+              var data = await resp.json();
+              (data.results||[]).forEach(function(r){
+                if(!r || !r.trackName || !r.releaseDate) return;
+                if(primaryArtistName(r.artistName||'').toLowerCase().trim() !== primaryArtistName(a.name).toLowerCase().trim()) return;
+                var t = new Date(r.releaseDate).getTime();
+                if(isNaN(t)) return;
+                var age = now - t;
+                if(age < minMs || age > maxMs) return;
+                var key = (r.trackName + '|' + (r.artistName||'')).toLowerCase();
+                if(seenTracks[key]) return;
+                seenTracks[key] = 1;
+                merged.push(r);
+              });
+            }catch(e){}
+          }
+          merged.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
+          for(var ri=0; ri<merged.length; ri++){
+            var r = merged[ri];
+            var daysAgo = Math.floor((now - new Date(r.releaseDate).getTime())/86400000);
+            var when = daysAgo + 'd ago';
+            var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+            html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '">';
+            html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
+            html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName) + '</div>';
+            html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + ' · ' + when + (r.releaseDate ? ' (' + r.releaseDate.slice(0,10) + ')' : '') + '</div></div></div>';
+            totalFound++;
+          }
         }
-        this.textContent = '📅 Songs from last year'; this.disabled = false;
-        if(!html){ if(navigator.onLine === false && loadCachedDiscoverPopup('\ud83d\udcc5 Songs From Last Year')){ this.textContent = '\ud83d\udcc5 Songs from last year'; this.disabled = false; return; } html = '<div class="dp-empty">No songs over 365 days old found.</div>'; }
-        openDiscoverPopup('📅 Songs From Last Year', html, totalFound + ' song' + (totalFound!==1?'s':'') + ' over a year old from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+        this.textContent = '📅 Old songs'; this.disabled = false;
+        if(!html){ if(navigator.onLine === false && loadCachedDiscoverPopup('📅 Old songs')){ this.textContent = '📅 Old songs'; this.disabled = false; return; } html = '<div class="dp-empty">No songs between 1 and 3 years old found.</div>'; }
+        openDiscoverPopup('📅 Old songs', html, totalFound + ' song' + (totalFound!==1?'s':'') + ' from 1–3 years ago across ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
         document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
           row.addEventListener('click', function(){
             $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
