@@ -6733,6 +6733,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   const CHANGELOG = [
     { version: '49.5.7', date: 'August 23, 2026 at 11:45 pm EDT', title: 'Album History gets a backup source + a cleanup', items: [
       'Album History and Old songs no longer refetch on every tap — the popup is cached for 24 hours (the "🔄 Refetch albums" button inside Album History forces a fresh pull)',
+      'Fixed: Album History expand/collapse and remove buttons went dead when the popup loaded from the 24-hour cache — the clicks are now re-attached on every load, cached or fresh, and a track-name typo that broke "Error loading tracks" got fixed too',
       '"Songs from last year" is now "Old songs" and only lists tracks that are 1–3 years old — before, it mixed in songs from 15+ years ago because the search page only had room for the artist\'s most popular (usually oldest) tracks. It now checks three search angles per artist so recent tracks actually show up',
       'Album History now also pulls from Deezer when an artist\'s Apple catalog hits its limit — albums Apple simply doesn\'t stock (like Diljit Dosanjh\'s "Dil" from 2008) now appear, marked with a small "Deezer" tag',
       'Fixed: expanding an album loaded tracks slowly or not at all — it was trying every region/edition ID the album was ever found under (dozens of lookups through a relay) instead of just the album\'s own ID with a country fallback, the way it used to',
@@ -14872,8 +14873,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(!wasRefetch){
           try{
             var ahCached = JSON.parse(localStorage.getItem('discPopupCache_📀 Album History') || 'null');
-            if(ahCached && ahCached.ts && (Date.now() - ahCached.ts) < 24*3600*1000){
+            if(ahCached && ahCached.ts && (Date.now() - ahCached.ts) < 24*3600*1000 && typeof window.__wireAH === 'function'){
               loadCachedDiscoverPopup('📀 Album History');
+              window.__wireAH();
               return;
             }
           }catch(e){}
@@ -15175,7 +15177,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         html = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button></div>' + html;
         openDiscoverPopup('📀 Album History', html, subtitle);
         if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
-        // Wire up refetch button
+        window.__wireAH = function(){
         var refetchBtn = document.getElementById('ahRefetchBtn');
         if(refetchBtn){ refetchBtn.addEventListener('click', function(){
           var ahBtn2 = document.getElementById('discoverAlbumHistory');
@@ -15294,7 +15296,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                     if(cid){ hideAlbum(cid, cname); var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
                   }); }
                 });
-              })(trackUrls).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
+              })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
             }
           });
         });
@@ -15350,6 +15352,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         hdr.addEventListener('pointercancel', cancelHold);
         hdr.addEventListener('pointerleave', cancelHold);
       });
+        };
+        window.__wireAH();
 
       // Singles button: search for singles from pinned artists, show in popup
       var siBtn = document.getElementById('discoverSingles');
