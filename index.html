@@ -6759,9 +6759,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '49.5.9', date: 'August 24, 2026 at 11:00 pm EDT', title: 'Refetch buttons for Singles + New Releases', items: [
+    { version: '49.5.9', date: 'August 24, 2026 at 11:00 pm EDT', title: 'Refetch buttons + home bubble restore tip', items: [
       'Added Refetch button to Singles popup — re-fetches singles from all pinned artists',
       'Added Refetch button to New Releases popup — re-fetches latest releases from pinned artists',
+      'After a version update, simply hit the Play button on any track to restore your home bubbles and pinned artists data',
     ]},
     { version: '49.5.8', date: 'August 24, 2026 at 9:35 am EDT', title: 'MusicBrainz backup source, search clear button, release dates', items: [
       'Album History now also pulls from MusicBrainz — the community-run music database — so albums that Apple and Deezer simply don\'t stock finally appear. Diljit Dosanjh\'s 2003–2006 originals (Ishq Da Uda Ada, Dil, Smile) show up with their full track lists, marked with a small "MusicBrainz" tag',
@@ -14825,9 +14826,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }); }
         html = '<div style="text-align:center;padding:4px 0 6px;"><button id="nrRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch latest</button></div>' + html;
         openDiscoverPopup('🆕 New Releases', html, releases.length + ' release' + (releases.length!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
-        // Wire up refetch button
-        var nrRefBtn = document.getElementById('nrRefetchBtn');
-        if(nrRefBtn) nrRefBtn.addEventListener('click', function(){ document.getElementById('discoverFetchLatest').click(); });
+
         // Wire up clicks
         document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
           row.addEventListener('click', function(){
@@ -15624,9 +15623,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         html = '<div style="text-align:center;padding:4px 0 6px;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button></div>' + html;
         openDiscoverPopup('🎵 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
-        // Wire up refetch button
-        var sRefBtn = document.getElementById('singlesRefetchBtn');
-        if(sRefBtn) sRefBtn.addEventListener('click', function(){ document.getElementById('discoverSingles').click(); });
+
         // Wire up artist headers
         document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
           h.addEventListener('click', function(){
@@ -16342,7 +16339,7 @@ if(!isDiscover) stopDiscoverPreview();
         navigate('discover');
       });
       $('hbCtaPlaylists2').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
-      const hbQuickMeta = { premium:['👑','Premium'], theme:['🎨','Theme'], donate:['💛','Donate'], refresh:['⚡','Refresh'], glow:['✨','Glow'], playback:['▶','Playback'], eq:['🎚','EQ'], more:['⋯','More'], sandbox:['🧪','Sandbox'] };
+      const hbQuickMeta = { premium:['👑','Premium'], expand:['🔗','Get Songs'], theme:['🎨','Theme'], donate:['💛','Donate'], refresh:['⚡','Refresh'], glow:['✨','Glow'], playback:['▶','Playback'], eq:['🎚','EQ'], more:['⋯','More'], sandbox:['🧪','Sandbox'] };
       const qGrid = $('hbQuickSettings');
       qGrid.innerHTML = SETTINGS_TABS.map(k => {
         const m = hbQuickMeta[k] || [k, k];
@@ -17123,6 +17120,23 @@ function closeDiscoverPopup(){
 document.addEventListener('click', function(e){
   if(e.target && e.target.id === 'discPopupOverlay') closeDiscoverPopup();
 }, false);
+// Global refetch handler: clicking a refetch button inside any popup triggers the matching Discover button
+document.addEventListener('click', function(e){
+  var t = e.target;
+  if(!t || !t.id) return;
+  if(t.id === 'singlesRefetchBtn'){
+    e.stopPropagation();
+    var sb = document.getElementById('discoverSingles');
+    if(sb && typeof sb.onclick === 'function'){ sb.onclick(); }
+    else { toast('Tap Singles again to refetch.'); }
+  }
+  if(t.id === 'nrRefetchBtn'){
+    e.stopPropagation();
+    var fb = document.getElementById('discoverFetchLatest');
+    if(fb && typeof fb.onclick === 'function'){ fb.onclick(); }
+    else { toast('Tap Fetch latest again to refetch.'); }
+  }
+}, true);
 function loadCachedDiscoverPopup(key){
   try{
     var raw = localStorage.getItem('discPopupCache_' + key);
