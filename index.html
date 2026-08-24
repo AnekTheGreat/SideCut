@@ -15118,7 +15118,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 e.stopPropagation();
                 var cid = this.dataset.cid;
                 var cname = this.dataset.cname;
-                if(cid){ hideAlbum(cid, cname); try{ localStorage.removeItem('sidecut_ahArtistData'); }catch(e){} var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
+                if(cid){ hideAlbum(cid, cname); closeDiscoverPopup(); }
               }); }
             };
             return fetchWithProxy(src.url)
@@ -15215,10 +15215,7 @@ window.__refetchArtistAlbums = async function(artistName){
           var collectionId = r.collectionId;
           var trackCount = r.trackCount || 0;
           var relDate = r.releaseDate || '';
-          if(trackCount <= 1) return;
-          // Reject singles: iTunes marks them as wrapperType 'track' or collectionName ends with ' - Single'
-          if(r.wrapperType === 'track') return;
-          if(/\s*[-–—]\s*Single$/i.test(r.collectionName || '')) return;
+          if(trackCount <= 0) return;
           if(seenCids[collectionId]) return;
           var tNorm = normTitle(r.collectionName);
           if(seenTitles[tNorm]) return;
@@ -15276,7 +15273,7 @@ window.__refetchArtistAlbums = async function(artistName){
             if(!alb || !alb.title) return;
             if(seenTitles[normTitle(alb.title)]) return;
             if(noise.test(alb.title)) return;
-            if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep') return;
+            if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep' && alb.record_type !== 'single') return;
             var collectionId = String(alb.id);
             if(seenCids[collectionId]) return;
             seenCids[collectionId] = 1;
@@ -15487,9 +15484,7 @@ if(typeof toast === 'function') toastWithCancel();
             var seenCids = {};
             var addAlbum = function(r, srcCountry){
               if(!r || !r.collectionName || !r.releaseDate) return;
-              if(!r._dz && !r._mb && (!r.trackCount || r.trackCount <= 1)) return;
-              // Reject iTunes singles: wrapperType 'track' or title ends with ' - Single'
-              if(!r._dz && !r._mb && (r.wrapperType === 'track' || /\s*[-–—]\s*Single$/i.test(r.collectionName || ''))) return;
+              if(!r._dz && !r._mb && (!r.trackCount || r.trackCount <= 0)) return;
               if(noise.test(r.collectionName)) return;
               if(/\(video album\)/i.test(r.collectionName)) return;
               if(isAlbumHidden(r.collectionId)) return;
@@ -15598,7 +15593,7 @@ if(typeof toast === 'function') toastWithCancel();
                         var tResults = ((await tResp.json()).results)||[];
                         var tColl = tResults.find(function(r){ return r && r.wrapperType === 'collection'; });
                         var tTracks = tResults.filter(function(r){ return r && r.wrapperType === 'track'; });
-                        if(!tColl || !tColl.trackCount || tColl.trackCount <= 1) return;
+                        if(!tColl || !tColl.trackCount || tColl.trackCount <= 0) return;
                         var hisTracks = tTracks.filter(function(s){
                           var sCredited = (s.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(x){ return x.trim(); });
                           return sCredited.indexOf(wantArtist) !== -1;
@@ -15656,7 +15651,7 @@ if(typeof toast === 'function') toastWithCancel();
                 // passed the credit gates).
                 var dzAdd = function(x, creditedName){
                   if(!x) return;
-                  if(x.record_type && x.record_type !== 'album' && x.record_type !== 'ep') return;
+                  if(x.record_type && x.record_type !== 'album' && x.record_type !== 'ep' && x.record_type !== 'single') return;
                   if(!x.release_date || !x.title) return;
                   if(noise.test(x.title) || dzNoise.test(x.title)) return;
                   var dzKey = normTitle(x.title);
@@ -17399,9 +17394,7 @@ function hideAlbum(collectionId, collectionName){
       var idx2 = h2.indexOf(collectionId);
       if(idx2 !== -1) h2.splice(idx2, 1);
       localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h2));
-      var ahBtn2 = document.getElementById('discoverAlbumHistory');
-      if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
-      toast('Album restored.', 2000);
+      toast('Album restored. Tap 📀 Album History to see it.', 3000);
     });
   } else {
     toast('Removed "' + collectionName + '" from Album History.', 3000);
