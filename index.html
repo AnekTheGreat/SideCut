@@ -15154,10 +15154,19 @@ window.__refetchAlbums = async function(wasRefetch){
     }catch(e){}
   }
   window.__ahFetching = true;
-if(typeof toast === 'function') toast('📀 Fetching albums in background…', 3000);
+if(typeof toast === 'function') toast('📀 Checking for new albums…', 3000);
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
         var totalAlbums = 0;
+        // Load existing cached album data to avoid re-fetching artists
+        // that were already fetched. Only NEW or changed artists get fetched.
+        try{
+          var ahDataCache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+          if(ahDataCache && ahDataCache.artists && ahDataCache.ts && (Date.now() - ahDataCache.ts) < 24*3600*1000){
+            artistAlbums = ahDataCache.artists;
+            totalAlbums = ahDataCache.total || 0;
+          }
+        }catch(e){}
         // MusicBrainz rate-limits to ~1 request/second per client, and the
         // 4-worker pool below would otherwise fire concurrent MB requests and
         // get 503s. Serialize all MB calls through one chain with a gap.
@@ -15175,6 +15184,8 @@ if(typeof toast === 'function') toast('📀 Fetching albums in background…', 3
           return p;
         };
         var fetchOneArtist = async function(a){
+          // Skip artists we already have cached data for
+          if(artistAlbums[a.name] && artistAlbums[a.name].length > 0) return;
           try{
             // Step 1: find artist ID via search (limit 25 — the exact-name match
             // must not be crowded out of the first page, or we fall back to the
@@ -15542,13 +15553,15 @@ if(typeof toast === 'function') toast('📀 Fetching albums in background…', 3
             var aNext = ahQueue.shift();
             await fetchOneArtist(aNext);
             ahDone++;
-            if(typeof toast === 'function') toast('📀 ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ')', 2000);
+            if(typeof toast === 'function') if(typeof toast === 'function') toast('📀 Checking ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ')', 2000);
           }
         };
         var ahWorkers = [];
         for(var ahW=0; ahW<Math.min(6, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
         await Promise.all(ahWorkers);
         window.__ahFetching = false;
+        // Save structured data for incremental refetch
+        try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
         if(typeof toast === 'function') toast('📀 Album History refreshed!', 3000);
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
         if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from pinned artists.</div>', subtitle); return; }
