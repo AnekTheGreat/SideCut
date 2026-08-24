@@ -15145,17 +15145,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 window.__ahFetching = false;
 window.__ahCancelled = false;
 window.__refetchAlbums = async function(wasRefetch){
-  // One-time cleanup: remove stale popup cache that still has source watermarks
-  try{
-    var _stale = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
-    if(_stale && (_stale.indexOf('MusicBrainz') !== -1 || _stale.indexOf('Deezer') !== -1)){
-      localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History');
-    }
-  }catch(e){}
   if(window.__ahFetching){ if(typeof toast === 'function') toast('Already fetching albums…'); return; }
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
-        var wasRefetch = !!this._isRefetch; this._isRefetch = false;
+        // wasRefetch comes from the function parameter (set by caller)
         // Serve the cached popup when it was built <24h ago — tapping the
         // button no longer refetches over the network every time. The
         // "Refetch albums" button inside the popup bypasses the cache.
@@ -15171,8 +15164,8 @@ window.__refetchAlbums = async function(wasRefetch){
         }
   window.__ahFetching = true;
 window.__ahCancelled = false;
-        // Safety: if fetching takes >120s, auto-reset the flag
-        setTimeout(function(){ if(window.__ahFetching){ window.__ahFetching = false; window.__ahCancelled = false; } }, 120000);
+        try {
+
 if(typeof toast === 'function') toastWithCancel();
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
@@ -15578,8 +15571,7 @@ if(typeof toast === 'function') toastWithCancel();
         var ahWorkers = [];
         for(var ahW=0; ahW<Math.min(6, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
         await Promise.all(ahWorkers);
-        window.__ahFetching = false;
-window.__ahCancelled = false;
+        } finally { window.__ahFetching = false; window.__ahCancelled = false; }
         // Save structured data for incremental refetch
         try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
         if(typeof toast === 'function') toast('📀 Album History refreshed!', 3000);
