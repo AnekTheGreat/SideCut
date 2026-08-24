@@ -1,5 +1,14 @@
 # SideCut — repository memory
 
+## v49.5.6 (Aug 23, 2026) — manual-only release checks
+- **User asked: don't auto-fetch new releases — only on button tap.** Removed
+  the boot-time auto-check (`setTimeout(checkPinnedArtistReleases, 5000)` after
+  auto-enrich) and the window-focus check (10-min throttle). The only remaining
+  call sites are the manual "Fetch latest" big button in Discover and the
+  pinned-section "Check now" (`newRelesRefresh` → `checkPinnedArtistReleases`).
+  `renderNewReleases()`/`renderPinnedArtists()` only DISPLAY cached IDB data —
+  they don't fetch. Version 49.5.5 → 49.5.6 (SW sidecut-shell-v49.5.5 → v49.5.6).
+
 ## v49.5.5 (Aug 23, 2026) — track-credit discovery + storefront-aware tracks + added date
 - **User follow-up on the multi-storefront merge**: "old albums have no songs
   in them" + "albums from 2002–2008 still missing" + "song info should show
