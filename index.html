@@ -15216,6 +15216,9 @@ window.__refetchArtistAlbums = async function(artistName){
           var trackCount = r.trackCount || 0;
           var relDate = r.releaseDate || '';
           if(trackCount <= 1) return;
+          // Reject singles: iTunes marks them as wrapperType 'track' or collectionName ends with ' - Single'
+          if(r.wrapperType === 'track') return;
+          if(/\s*[-–—]\s*Single$/i.test(r.collectionName || '')) return;
           if(seenCids[collectionId]) return;
           var tNorm = normTitle(r.collectionName);
           if(seenTitles[tNorm]) return;
@@ -15273,7 +15276,7 @@ window.__refetchArtistAlbums = async function(artistName){
             if(!alb || !alb.title) return;
             if(seenTitles[normTitle(alb.title)]) return;
             if(noise.test(alb.title)) return;
-            if(alb.record_type && alb.record_type !== 'album') return;
+            if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep') return;
             var collectionId = String(alb.id);
             if(seenCids[collectionId]) return;
             seenCids[collectionId] = 1;
@@ -15303,7 +15306,7 @@ window.__refetchArtistAlbums = async function(artistName){
               // DJ mixes, mixtapes, live albums, etc.
               var secTypes = (rg['secondary-types'] || []);
               var priType = rg['primary-type'] || '';
-              if(priType !== 'Album') return;
+              if(priType !== 'Album' && priType !== 'EP') return;
               if(secTypes.length > 0) return;
               // Only accept Official status
               if(rg['first-release-date-status'] && rg['first-release-date-status'] !== 'Official') return;
@@ -15483,6 +15486,8 @@ if(typeof toast === 'function') toastWithCancel();
             var addAlbum = function(r, srcCountry){
               if(!r || !r.collectionName || !r.releaseDate) return;
               if(!r._dz && !r._mb && (!r.trackCount || r.trackCount <= 1)) return;
+              // Reject iTunes singles: wrapperType 'track' or title ends with ' - Single'
+              if(!r._dz && !r._mb && (r.wrapperType === 'track' || /\s*[-–—]\s*Single$/i.test(r.collectionName || ''))) return;
               if(noise.test(r.collectionName)) return;
               if(/\(video album\)/i.test(r.collectionName)) return;
               if(isAlbumHidden(r.collectionId)) return;
@@ -15649,7 +15654,7 @@ if(typeof toast === 'function') toastWithCancel();
                 // passed the credit gates).
                 var dzAdd = function(x, creditedName){
                   if(!x) return;
-                  if(x.record_type && x.record_type !== 'album') return;
+                  if(x.record_type && x.record_type !== 'album' && x.record_type !== 'ep') return;
                   if(!x.release_date || !x.title) return;
                   if(noise.test(x.title) || dzNoise.test(x.title)) return;
                   var dzKey = normTitle(x.title);
@@ -17371,6 +17376,21 @@ function hideAlbum(collectionId, collectionName){
   var h = getHiddenAlbums();
   if(h.indexOf(collectionId) === -1) h.push(collectionId);
   localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h));
+  // Also remove from artist data cache so refetch doesn't re-add it
+  try{
+    var ad = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+    if(ad && ad.artists){
+      Object.keys(ad.artists).forEach(function(name){
+        var before = ad.artists[name].length;
+        ad.artists[name] = ad.artists[name].filter(function(a){ return String(a.collectionId) !== String(collectionId); });
+        ad.total = (ad.total || 0) - (before - ad.artists[name].length);
+      });
+      localStorage.setItem('sidecut_ahArtistData', JSON.stringify(ad));
+    }
+  }catch(e){}
+  // Clear popup cache so the removed album doesn't reappear
+  try{ localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History'); }catch(e){}
+  try{ localStorage.removeItem('discPopupCache_' + '\ud83d\udcc0 Album History'); }catch(e){}
   if(typeof toastWithUndo === 'function'){
     toastWithUndo('Removed "' + collectionName + '" from Album History.', function(){
       var h2 = getHiddenAlbums();
