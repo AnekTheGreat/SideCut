@@ -1778,6 +1778,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 <div id="discoverView">
   <div id="discoverSearchRow">
     <input type="text" id="discoverSearch" placeholder="Search songs, artists, albums…">
+    <button id="discoverSearchClear" title="Clear" style="padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:12px; cursor:pointer;">x</button>
     <button class="action-pill primary" id="discoverSearchBtn" style="padding:9px 16px;">Search</button>
   </div>
   <div id="pinnedArtistsDetails" style="margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); overflow:hidden;">
@@ -5656,6 +5657,32 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // ---------------- Song info ----------------
   let songNotesSaveTimer = null;
   let songNotesCurrentTrackId = null;
+  const releaseDateFetchIds = new Set();
+  // Lazily look up a song's release date (one iTunes song search, cached on
+  // the track afterwards) and update the open info panel in place.
+  function fetchReleaseDateForTrack(t){
+    if(!t || t.releaseDate || releaseDateFetchIds.has(t.id)) return;
+    const q = enrichQueryFor(t);
+    if(!q) return;
+    releaseDateFetchIds.add(t.id);
+    fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(q) + '&media=music&entity=song&limit=5')
+      .then(function(r){ return r && r.ok ? r.json() : null; })
+      .then(function(data){
+        const results = (data && data.results) || [];
+        const norm = function(s){ return (s||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim(); };
+        const wantT = norm(t.name);
+        const m = results.find(function(r){ return r && r.releaseDate && norm(r.trackName) === wantT; })
+               || results.find(function(r){ return r && r.releaseDate; });
+        if(!m) return;
+        t.releaseDate = m.releaseDate;
+        persistTrackMeta(t);
+        const el = $('songInfoReleasedVal');
+        if(el && songNotesCurrentTrackId === t.id && $('songInfoBackdrop').style.display === 'flex'){
+          el.textContent = new Date(m.releaseDate).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+        }
+      })
+      .catch(function(){});
+  }
   function showSongInfo(t){
     const body = $('songInfoBody');
     const rows = [
@@ -5667,17 +5694,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       ['Album art', t.artUrl ? 'Found' : 'Not found in file'],
       ['Vibe', VIBES[t.vibe] ? VIBES[t.vibe].name : 'Off'],
       ['Play count', t.playCount || 0],
-      ['Added', t.dateAdded ? new Date(t.dateAdded).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : 'Unknown'],
+      ['Released', t.releaseDate ? new Date(t.releaseDate).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : 'Unknown'],
       ['File size', t.file ? (t.file.size/1024/1024).toFixed(1) + ' MB' : 'Unknown'],
     ];
     body.innerHTML = rows.map(([k,v]) => `
       <div style="display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid var(--line); padding-bottom:6px;">
-        <span style="color:var(--ink-dim);">${k}</span><span style="text-align:right; word-break:break-word;">${escapeHtml(String(v))}</span>
+        <span style="color:var(--ink-dim);">${k}</span><span ${k === 'Released' ? 'id="songInfoReleasedVal" ' : ''}style="text-align:right; word-break:break-word;">${escapeHtml(String(v))}</span>
       </div>
     `).join('');
     songNotesCurrentTrackId = t.id;
     $('songNotesInput').value = t.notes || '';
     $('songInfoBackdrop').style.display = 'flex';
+    if(!t.releaseDate) fetchReleaseDateForTrack(t);
   }
   $('songNotesInput').addEventListener('input', (e) => {
     const trackId = songNotesCurrentTrackId;
@@ -6718,7 +6746,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '49.5.7';
+  const APP_VERSION = '49.5.8';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6731,6 +6759,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '49.5.8', date: 'August 24, 2026 at 9:35 am EDT', title: 'MusicBrainz backup source, search clear button, release dates', items: [
+      'Album History now also pulls from MusicBrainz — the community-run music database — so albums that Apple and Deezer simply don\'t stock finally appear. Diljit Dosanjh\'s 2003–2006 originals (Ishq Da Uda Ada, Dil, Smile) show up with their full track lists, marked with a small "MusicBrainz" tag',
+      'Discover\'s search box now has an x button to clear the text in one tap, just like the one in Get Songs',
+      'Song info now shows the song\'s actual RELEASE date ("Released") instead of the date you added it to your library — it\'s looked up automatically the first time you open a song\'s info and remembered from then on',
+    ]},
     { version: '49.5.7', date: 'August 23, 2026 at 11:45 pm EDT', title: 'Album History gets a backup source + a cleanup', items: [
       'Album History and Old songs no longer refetch on every tap — the popup is cached for 24 hours (the "🔄 Refetch albums" button inside Album History forces a fresh pull)',
       'Fixed: Album History collapsible menus and expand/collapse works on both fresh and 24-hour-cache loads — the wire-up function was defined but never actually called when the popup loaded',
@@ -8864,6 +8897,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       waveform: t.waveform || null, playCount: t.playCount || 0,
       lastPlayedAt: t.lastPlayedAt || null,
       dateAdded: t.dateAdded || null,
+      releaseDate: t.releaseDate || null,
       notes: t.notes || '',
       lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
       manualOverride: t.manualOverride || false,
@@ -8919,6 +8953,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             playCount: r.playCount || 0,
             lastPlayedAt: r.lastPlayedAt || null,
             dateAdded: r.dateAdded || null,
+            releaseDate: r.releaseDate || null,
             notes: r.notes || '',
 
             artBlob: r.art || null,
@@ -11127,7 +11162,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           id: t.id, name: t.name, artist: t.artist, duration: t.duration,
           bpm: t.bpm, genre: t.genre, gain: t.gain, lyrics: t.lyrics,
           lyricsSynced: t.lyricsSynced, notes: t.notes, vibe: t.vibe,
-          playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, dateAdded: t.dateAdded || null, path: t.file ? zipPath : null, hasCover: !!t.artBlob
+          playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, dateAdded: t.dateAdded || null, releaseDate: t.releaseDate || null, path: t.file ? zipPath : null, hasCover: !!t.artBlob
         });
         if(t.artBlob){
           // Covers are tiny; still pass the Blob directly to avoid extra copies.
@@ -11449,6 +11484,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(m.playCount !== undefined && (existing.playCount === undefined || existing.playCount < m.playCount)) existing.playCount = m.playCount;
             if(m.lastPlayedAt !== undefined && (existing.lastPlayedAt === undefined || existing.lastPlayedAt < m.lastPlayedAt)) existing.lastPlayedAt = m.lastPlayedAt;
             if(m.dateAdded !== undefined && !existing.dateAdded) existing.dateAdded = m.dateAdded;
+            if(m.releaseDate !== undefined && !existing.releaseDate) existing.releaseDate = m.releaseDate;
             // Import cover art for existing track
             if(m.hasCover && !existing.artBlob){
               const coverEntry = zipApi.file(`covers/${m.id}.jpg`);
@@ -11491,6 +11527,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           playCount: m.playCount || 0,
           lastPlayedAt: m.lastPlayedAt || null,
           dateAdded: m.dateAdded || Date.now(),
+          releaseDate: m.releaseDate || null,
           artBlob: null,
           artUrl: null,
           watermarkCleaned: cleaned.changed
@@ -14934,7 +14971,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           // other big ones until one actually returns songs. Deezer albums
           // go through Deezer's own endpoint instead.
           var trackSources;
-          if(h.dataset.dz){
+          if(h.dataset.mb){
+            trackSources = [{ kind: 'mb', url: 'https://musicbrainz.org/ws/2/release-group/' + collectionId + '?inc=releases&fmt=json' }];
+          }else if(h.dataset.dz){
             trackSources = [{ kind: 'dz', url: 'https://api.deezer.com/album/' + collectionId + '/tracks?limit=100' }];
           }else{
             trackSources = (collectionId
@@ -14946,17 +14985,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           (function fetchTracks(sources){
             if(!sources.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return null; }
             var src = sources[0];
-            return fetchWithProxy(src.url)
-            .then(function(r){ return r.ok ? r.json() : {}; })
-            .then(function(data){
-              var tracks;
-              if(src.kind === 'dz'){
-                tracks = ((data.data)||[]).map(function(t, ix){
-                  return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
-                });
-              }else{
-                tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
-              }
+            var finishTracks = function(tracks){
               if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
               var h2 = '<div style="text-align:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">Remove from Album History</button></div>';
               for(var ti=0; ti<tracks.length; ti++){
@@ -14983,6 +15012,37 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 var cname = this.dataset.cname;
                 if(cid){ hideAlbum(cid, cname); var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
               }); }
+            };
+            return fetchWithProxy(src.url)
+            .then(function(r){ return r && r.ok ? r.json() : {}; })
+            .then(function(data){
+              if(src.kind === 'mb'){
+                // MusicBrainz track lists are one level down: release-group →
+                // pick its official release → that release's recordings.
+                var rels = (data && data.releases) || [];
+                var rel = rels.find(function(x){ return x.status === 'Official'; }) || rels[0];
+                if(!rel) return finishTracks([]);
+                return fetchWithProxy('https://musicbrainz.org/ws/2/release/' + rel.id + '?inc=recordings&fmt=json')
+                .then(function(r2){ return r2 && r2.ok ? r2.json() : {}; })
+                .then(function(relData){
+                  var mbTracks = [];
+                  ((relData && relData.media) || []).forEach(function(med){
+                    (med.tracks || []).forEach(function(tr){
+                      mbTracks.push({ trackName: tr.title, artistName: artistName, trackTimeMillis: tr.length || 0, trackNumber: tr.position || (mbTracks.length + 1) });
+                    });
+                  });
+                  return finishTracks(mbTracks);
+                });
+              }
+              var tracks;
+              if(src.kind === 'dz'){
+                tracks = ((data.data)||[]).map(function(t, ix){
+                  return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
+                });
+              }else{
+                tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+              }
+              return finishTracks(tracks);
             });
           })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
         }
@@ -15060,6 +15120,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
         var totalAlbums = 0;
+        // MusicBrainz rate-limits to ~1 request/second per client, and the
+        // 4-worker pool below would otherwise fire concurrent MB requests and
+        // get 503s. Serialize all MB calls through one chain with a gap.
+        var mbChain = Promise.resolve();
+        var mbGet = function(u){
+          var p = mbChain.then(async function(){
+            await new Promise(function(r){ setTimeout(r, 1100); });
+            try{
+              var rr = await fetchWithProxy(u);
+              if(!rr || !rr.ok) return null;
+              return await rr.json();
+            }catch(e){ return null; }
+          });
+          mbChain = p.catch(function(){});
+          return p;
+        };
         var fetchOneArtist = async function(a){
           try{
             // Step 1: find artist ID via search (limit 25 — the exact-name match
@@ -15092,6 +15168,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             // "The Lion of Punjab (Original Motion Picture Soundtrack)" with
             // the artist-credited original instead of listing both.
             var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup)\b|\s[-–—]\s*(single|remix)\b/i;
+            // Stricter list for rows coming from backup sources (Deezer artist
+            // pages and MusicBrainz mix in editorial comps/DJ mixes the artist
+            // merely appears on). Hoisted here so the MusicBrainz pass below
+            // can share it.
+            var dzNoise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|best of|top hits|workout|party mix|dance party|party songs|collaborations|playlist|essentials?|greatest)\b|\s[-–—]?\s*mix(es)?$/i;
             var seen = {};
             var seenCids = {};
             var addAlbum = function(r, srcCountry){
@@ -15258,9 +15339,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 }
                 // Deezer's artist page also lists editorial comps/DJ mixes he
                 // merely appears on ("Punjabi Mix", "Best Of Indian Pop 2018",
-                // party/workout playlists) — this stricter list applies ONLY to
-                // Deezer additions (iTunes rows already passed the credit gates).
-                var dzNoise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|best of|top hits|workout|party mix|dance party|party songs|collaborations|playlist|essentials?|greatest)\b|\s[-–—]?\s*mix(es)?$/i;
+                // party/workout playlists) — the stricter hoisted dzNoise list
+                // applies ONLY to backup-source additions (iTunes rows already
+                // passed the credit gates).
                 var dzAdd = function(x, creditedName){
                   if(!x) return;
                   if(x.record_type && x.record_type !== 'album' && x.record_type !== 'ep') return;
@@ -15305,6 +15386,93 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 }
               }catch(e){}
             }
+            // Backup source #3: MusicBrainz. Apple's catalog has gaps that no
+            // storefront merge or track-credit scan can fill — Diljit Dosanjh's
+            // 2003–2006 originals (Ishq Da Uda Ada, Dil, Smile) aren't on
+            // iTunes under his name in ANY country and Deezer only carries the
+            // 2008 re-recordings. MusicBrainz is community-maintained and DOES
+            // carry them, with full track lists and cover art. Two requests
+            // per artist (artist lookup → release-group browse), serialized
+            // through mbGet because MusicBrainz rate-limits aggressively.
+            // Runs for every artist, not just capped ones.
+            try{
+              var mbArtistRes = await mbGet('https://musicbrainz.org/ws/2/artist/?query=artist:' + encodeURIComponent('"' + a.name.replace(/"/g,'') + '"') + '&fmt=json&limit=5');
+              var mbCandidates = (mbArtistRes && mbArtistRes.artists) || [];
+              var mbMatch = mbCandidates.find(function(x){ return (x.name||'').toLowerCase().trim() === wantArtist; })
+                || mbCandidates.find(function(x){ return (x.score||0) >= 80 && (x.name||'').toLowerCase().indexOf(wantArtist) !== -1; });
+              if(mbMatch){
+                // inc=artist-credits is REQUIRED — the browse endpoint omits
+                // credits by default. Note the credit display name can differ
+                // from the canonical artist name ("Diljit" vs "Diljit
+                // Dosanjh"), so the credit check looks at both.
+                // NOTE: /ws/2/release-group only supports inc=artist-credits
+                // (per the MB API docs). Asking for releases too makes MB
+                // silently drop the whole inc list, which kills the credit
+                // check below. Keep this inc list exactly as-is.
+                var mbRGRes = await mbGet('https://musicbrainz.org/ws/2/release-group/?artist=' + mbMatch.id + '&type=album&fmt=json&limit=100&inc=artist-credits');
+                var mbBad = /^(Compilation|DJ-mix|Live|Remix|Interview|Spokenword|Audiobook|Audio drama|Demo|Field recording)/;
+                var mbGroups = ((mbRGRes && mbRGRes['release-groups']) || []).filter(function(rg){
+                  if(!rg || !rg.title || !rg['first-release-date']) return false;
+                  var st = rg['secondary-types'] || [];
+                  // MusicBrainz's artist page mixes in compilations, DJ mixes,
+                  // live albums, remix sets, demos and spoken word — none of
+                  // those belong in a studio discography. Mixtape/Street is
+                  // KEPT on purpose: real discographies include them (The
+                  // Weeknd's House of Balloons/Thursday/Echoes of Silence are
+                  // official mixtapes).
+                  for(var sti=0; sti<st.length; sti++){ if(mbBad.test(st[sti])) return false; }
+                  if(noise.test(rg.title) || dzNoise.test(rg.title)) return false;
+                  var mbKey = normTitle(rg.title);
+                  if(!mbKey) return false;
+                  var matchNames = [];
+                  (rg['artist-credit']||[]).forEach(function(ac){
+                    if(!ac) return;
+                    if(ac.name) matchNames.push(ac.name);
+                    if(ac.artist && ac.artist.name) matchNames.push(ac.artist.name);
+                  });
+                  if(!matchNames.some(function(n){ return n.toLowerCase().trim() === wantArtist; })) return false;
+                  if(isAlbumHidden(rg.id)) return false;
+                  return true;
+                });
+                // Fan-uploaded bootlegs ("Before Kiss Land", "The Best Weeknd
+                // Ever", "XO The Collection"...) survive the type/credit gates
+                // because they're mistyped as Album with the artist credited.
+                // The browse endpoint can't disclose release statuses (it only
+                // supports inc=artist-credits), so for every candidate that
+                // isn't already covered by iTunes/Deezer, one release-group
+                // LOOKUP (which does support inc=releases) checks the group
+                // has at least one Official release. Serialized through mbGet
+                // (rate limit); capped at 30 groups so the worst case stays
+                // bounded. Real official albums pass in one request each.
+                var mbKept = 0;
+                for(var mgi=0; mgi<mbGroups.length && mbKept<30; mgi++){
+                  var rg = mbGroups[mgi];
+                  var mbKey = normTitle(rg.title);
+                  var rgDate = rg['first-release-date'];
+                  var mbDate = rgDate.length === 4 ? rgDate + '-01-01' : (rgDate.length === 7 ? rgDate + '-01' : rgDate);
+                  // Same rule as the iTunes dedupe: the ORIGINAL (earliest)
+                  // edition wins, so a 2004 MB original replaces a 2008
+                  // re-recording iTunes surfaced. Equal dates keep the
+                  // existing row (iTunes/Deezer rows have better art + counts).
+                  if(seen[mbKey] && (seen[mbKey].releaseDate || '') <= mbDate) continue;
+                  var rgDetail = await mbGet('https://musicbrainz.org/ws/2/release-group/' + rg.id + '?inc=releases&fmt=json');
+                  var rgRels = (rgDetail && rgDetail.releases) || [];
+                  if(rgRels.length && !rgRels.some(function(rel){ return rel && rel.status === 'Official'; })) continue;
+                  mbKept++;
+                  var displayNames = [];
+                  (rg['artist-credit']||[]).forEach(function(ac){ if(ac && ac.name) displayNames.push(ac.name); });
+                  seen[mbKey] = {
+                    _mb: true,
+                    collectionId: rg.id,
+                    collectionName: rg.title,
+                    artistName: displayNames.join(', ') || a.name,
+                    releaseDate: mbDate,
+                    artworkUrl100: 'https://coverartarchive.org/release-group/' + rg.id + '/front-250',
+                    trackCount: null
+                  };
+                }
+              }
+            }catch(e){}
             var albums = Object.keys(seen).map(function(k){ return seen[k]; });
             if(albums.length){
               albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
@@ -15353,10 +15521,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
             var trackCount = album.trackCount || '?';
             html += '<div class="dp-ah-album">';
-            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '" data-country="' + (album._country||'') + '"' + (album._dz ? ' data-dz="1"' : '') + '>';
+            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '" data-country="' + (album._country||'') + '"' + (album._dz ? ' data-dz="1"' : '') + (album._mb ? ' data-mb="1"' : '') + '>';
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
-            html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks' + (album._dz ? ' · Deezer' : '') + '</div></div>';
+            html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks' + (album._dz ? ' · Deezer' : '') + (album._mb ? ' · MusicBrainz' : '') + '</div></div>';
             html += '<button class="dp-ah-rm" data-cid="' + (album.collectionId||'') + '" data-cname="' + escapeHtml(album.collectionName||'') + '" style="width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>';
             html += '<span class="dp-ah-chevron" style="font-size:10px;transition:transform 0.2s;">▸</span>';
             html += '</div>';
@@ -16744,6 +16912,8 @@ if(!isDiscover) stopDiscoverPreview();
   // Render new releases into the dropdown
   $('discoverSearchBtn').addEventListener('click', () => runDiscoverSearch($('discoverSearch').value));
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
+  var discSearchClearBtn = $('discoverSearchClear');
+  if(discSearchClearBtn) discSearchClearBtn.addEventListener('click', () => { $('discoverSearch').value = ''; $('discoverSearch').focus(); });
 
   // Play Billing: re-verify purchases on launch and whenever the app regains
   // focus (e.g. after returning from the Play billing sheet).
