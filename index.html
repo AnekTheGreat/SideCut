@@ -6734,6 +6734,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     { version: '49.5.7', date: 'August 23, 2026 at 11:45 pm EDT', title: 'Album History gets a backup source + a cleanup', items: [
       'Album History and Old songs no longer refetch on every tap — the popup is cached for 24 hours (the "🔄 Refetch albums" button inside Album History forces a fresh pull)',
       'Fixed: Album History collapsible menus and expand/collapse works on both fresh and 24-hour-cache loads — the wire-up function was defined but never actually called when the popup loaded',
+      'Fixed: Album History refetched from scratch after every app update — the click wiring was only defined during the first-ever fetch, so the 24-hour cache was unreachable on the first tap of each load. The wiring is now defined at page load, so the cache serves instantly even right after an update',
+      'Album History fetch is faster — pinned artists are looked up 4 at a time instead of strictly one-by-one, and the button shows live progress ("Fetching albums… 3/12") while it works',
       '"Songs from last year" is now "Old songs" and only lists tracks that are 1–3 years old — before, it mixed in songs from 15+ years ago because the search page only had room for the artist\'s most popular (usually oldest) tracks. It now checks three search angles per artist so recent tracks actually show up',
       'Album History now also pulls from Deezer when an artist\'s Apple catalog hits its limit — albums Apple simply doesn\'t stock (like Diljit Dosanjh\'s "Dil" from 2008) now appear, marked with a small "Deezer" tag',
       'Fixed: expanding an album loaded tracks slowly or not at all — it was trying every region/edition ID the album was ever found under (dozens of lookups through a relay) instead of just the album\'s own ID with a country fallback, the way it used to',
@@ -14860,6 +14862,180 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           });
         });
       };
+    // Album History click wiring, defined at page load (not during the first fetch),
+    // so the 24-hour popup cache is servable on the very first tap after any reload
+    // — including right after an app update. It only touches the DOM when called.
+    window.__wireAH = function(){
+    var refetchBtn = document.getElementById('ahRefetchBtn');
+    if(refetchBtn){ refetchBtn.addEventListener('click', function(){
+      var ahBtn2 = document.getElementById('discoverAlbumHistory');
+      if(!ahBtn2 || !ahBtn2.onclick) return;
+      ahBtn2._isRefetch = true;
+      ahBtn2.onclick();
+    }); }
+    // Wire up artist headers
+    document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
+      h.addEventListener('click', function(){
+        var tgt = document.getElementById(this.dataset.target);
+        var chv = this.querySelector('.dp-ah-chevron');
+        if(!tgt) return;
+        var isOpen = tgt.style.display !== 'none';
+        tgt.style.display = isOpen ? 'none' : 'block';
+        if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
+      });
+    });
+    // Wire up remove buttons on album headers
+  document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var cid = this.dataset.cid;
+      var cname = this.dataset.cname || 'this album';
+      console.log('[AH-RM] clicked:', cid, cname);
+      this.style.background = 'var(--coral)';
+      this.style.color = '#fff';
+      if(!cid){ toast('No album ID found', 2000); return; }
+      var pop = document.createElement('div');
+      pop.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:14px 18px;z-index:300;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);max-width:280px;';
+      pop.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px;">Remove from Album History?</div><div style="font-size:11px;color:var(--ink-dim);margin-bottom:12px;">' + cname + '</div><div style="display:flex;gap:8px;"><button style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;" class="pop-cancel">Cancel</button><button style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;" class="pop-confirm">Remove</button></div>';
+      document.body.appendChild(pop);
+      pop.querySelector('.pop-cancel').addEventListener('click', function(){ pop.remove(); });
+      pop.querySelector('.pop-confirm').addEventListener('click', function(){
+        pop.remove();
+        hideAlbum(cid, cname);
+        var ahBtn2 = document.getElementById('discoverAlbumHistory');
+        if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
+      });
+      var bd = document.createElement('div');
+      bd.style.cssText = 'position:fixed;inset:0;z-index:249;';
+      bd.addEventListener('click', function(){ bd.remove(); pop.remove(); });
+      document.body.appendChild(bd);
+    });
+  });
+    // Wire up album headers (lazy-load tracks)
+  document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
+      h.addEventListener('click', function(){
+        var tgt = document.getElementById(this.dataset.target);
+        var chv = this.querySelector('.dp-ah-chevron');
+        if(!tgt) return;
+        var isOpen = tgt.style.display !== 'none';
+        tgt.style.display = isOpen ? 'none' : 'block';
+        if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
+        if(!isOpen && !tgt.dataset.loaded){
+          tgt.dataset.loaded = '1';
+          var artistName = this.dataset.artist;
+          var albumName = this.dataset.album;
+          var container = tgt;
+          container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Loading tracks...</div>';
+          var collectionId = h.dataset.collectionId;
+          var albumCountry = h.dataset.country || '';
+          // A region-locked album (e.g. a GB-only release) returns zero
+          // songs from the default storefront, so the track lookup tries
+          // the album's own storefront first and falls back through the
+          // other big ones until one actually returns songs. Deezer albums
+          // go through Deezer's own endpoint instead.
+          var trackSources;
+          if(h.dataset.dz){
+            trackSources = [{ kind: 'dz', url: 'https://api.deezer.com/album/' + collectionId + '/tracks?limit=100' }];
+          }else{
+            trackSources = (collectionId
+              ? [albumCountry, 'GB', 'IN', 'US', ''].filter(function(c, i, arr){ return arr.indexOf(c) === i; })
+                .map(function(c){ return 'https://itunes.apple.com/lookup?id=' + collectionId + '&entity=song&limit=200' + (c ? '&country=' + c : ''); })
+              : ['https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200'])
+              .map(function(u){ return { kind: 'it', url: u }; });
+          }
+          (function fetchTracks(sources){
+            if(!sources.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return null; }
+            var src = sources[0];
+            return fetchWithProxy(src.url)
+            .then(function(r){ return r.ok ? r.json() : {}; })
+            .then(function(data){
+              var tracks;
+              if(src.kind === 'dz'){
+                tracks = ((data.data)||[]).map(function(t, ix){
+                  return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
+                });
+              }else{
+                tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+              }
+              if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
+              var h2 = '<div style="text-align:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">Remove from Album History</button></div>';
+              for(var ti=0; ti<tracks.length; ti++){
+                var tr = tracks[ti];
+                var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
+                h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '">';
+                h2 += '<span style="color:var(--ink-dim);min-width:18px;text-align:right;">' + (tr.trackNumber||'') + '</span>';
+                h2 += '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(tr.trackName) + '</span>';
+                h2 += '<span style="color:var(--ink-dim);font-size:11px;">' + dur + '</span></div>';
+              }
+              container.innerHTML = h2;
+              container.querySelectorAll('.dp-ah-track').forEach(function(row){
+                row.addEventListener('click', function(){
+                  $('discoverSearch').value = this.dataset.search;
+                  runDiscoverSearch(this.dataset.search);
+                  closeDiscoverPopup();
+                });
+              });
+              // Wire up remove album button
+              var rmBtn = container.querySelector('.ah-remove-album-btn');
+              if(rmBtn){ rmBtn.addEventListener('click', function(e){
+                e.stopPropagation();
+                var cid = this.dataset.cid;
+                var cname = this.dataset.cname;
+                if(cid){ hideAlbum(cid, cname); var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
+              }); }
+            });
+          })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
+        }
+      });
+    });
+    // Hold-to-remove on album headers with visible red progress bar
+    document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
+      var holdBar = null;
+      var holdTimer = null;
+      function startHold(){
+        holdBar = document.createElement('div');
+        holdBar.style.cssText = 'position:absolute;top:0;left:0;height:100%;background:rgba(255,80,80,0.25);border-radius:6px;width:0%;pointer-events:none;z-index:1;transition:width 0.6s linear;';
+        hdr.style.position = 'relative';
+        hdr.appendChild(holdBar);
+        requestAnimationFrame(function(){ if(holdBar) holdBar.style.width = '100%'; });
+        holdTimer = setTimeout(function(){
+          holdTimer = null;
+          if(holdBar){ holdBar.remove(); holdBar = null; }
+          var cid = hdr.dataset.collectionId;
+          var cname = hdr.dataset.album || 'this album';
+          if(!cid) return;
+          var pop = document.createElement('div');
+          pop.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:14px 18px;z-index:300;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);max-width:280px;';
+          pop.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">Remove from Album History?</div>' +
+            '<div style="font-size:11px;color:var(--ink-dim);margin-bottom:12px;">' + cname + '</div>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<button class="cancel" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>' +
+            '<button class="confirm" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Remove</button>' +
+            '</div>';
+          document.body.appendChild(pop);
+          pop.querySelector('.cancel').addEventListener('click', function(){ pop.remove(); });
+          pop.querySelector('.confirm').addEventListener('click', function(){
+            pop.remove();
+            hideAlbum(cid, cname);
+            var ahBtn2 = document.getElementById('discoverAlbumHistory');
+            if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
+          });
+          var backdrop = document.createElement('div');
+          backdrop.style.cssText = 'position:fixed;inset:0;z-index:299;';
+          backdrop.addEventListener('click', function(){ backdrop.remove(); pop.remove(); });
+          document.body.appendChild(backdrop);
+        }, 600);
+      }
+      function cancelHold(){
+        if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+        if(holdBar){ holdBar.remove(); holdBar = null; }
+      }
+      hdr.addEventListener('pointerdown', startHold);
+      hdr.addEventListener('pointerup', cancelHold);
+      hdr.addEventListener('pointercancel', cancelHold);
+      hdr.addEventListener('pointerleave', cancelHold);
+    });
+  };
     // Album History: fetch all albums from pinned artists (all time), show in popup
     {
       const ahBtn = $('discoverAlbumHistory');
@@ -14884,8 +15060,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
         var totalAlbums = 0;
-        for(var ai=0; ai<pinnedArtists.length; ai++){
-          var a = pinnedArtists[ai];
+        var fetchOneArtist = async function(a){
           try{
             // Step 1: find artist ID via search (limit 25 — the exact-name match
             // must not be crowded out of the first page, or we fall back to the
@@ -15137,7 +15312,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               totalAlbums += albums.length;
             }
           }catch(e){}
-        }
+        };
+        // Fan out across artists (4 at a time): per-artist lookups are independent,
+        // and a strictly serial loop over 10+ pinned artists took minutes.
+        var ahQueue = pinnedArtists.slice();
+        var ahDone = 0;
+        var ahBtnRef = this;
+        var runAhWorker = async function(){
+          while(ahQueue.length){
+            var aNext = ahQueue.shift();
+            await fetchOneArtist(aNext);
+            ahDone++;
+            ahBtnRef.textContent = '⏳ Fetching albums… ' + ahDone + '/' + pinnedArtists.length;
+          }
+        };
+        var ahWorkers = [];
+        for(var ahW=0; ahW<Math.min(4, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
+        await Promise.all(ahWorkers);
         this.textContent = '📀 Album history'; this.disabled = false;
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
         if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from pinned artists.</div>', subtitle); return; }
@@ -15177,182 +15368,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         html = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button></div>' + html;
         openDiscoverPopup('📀 Album History', html, subtitle);
         if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
-        window.__wireAH = function(){
-        var refetchBtn = document.getElementById('ahRefetchBtn');
-        if(refetchBtn){ refetchBtn.addEventListener('click', function(){
-          var ahBtn2 = document.getElementById('discoverAlbumHistory');
-          if(!ahBtn2 || !ahBtn2.onclick) return;
-          ahBtn2._isRefetch = true;
-          ahBtn2.onclick();
-        }); }
-        // Wire up artist headers
-        document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
-          h.addEventListener('click', function(){
-            var tgt = document.getElementById(this.dataset.target);
-            var chv = this.querySelector('.dp-ah-chevron');
-            if(!tgt) return;
-            var isOpen = tgt.style.display !== 'none';
-            tgt.style.display = isOpen ? 'none' : 'block';
-            if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
-          });
-        });
-        // Wire up album headers (lazy-load tracks)
-        // Wire up remove buttons on album headers
-      document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(btn){
-        btn.addEventListener('click', function(e){
-          e.stopPropagation();
-          var cid = this.dataset.cid;
-          var cname = this.dataset.cname || 'this album';
-          console.log('[AH-RM] clicked:', cid, cname);
-          this.style.background = 'var(--coral)';
-          this.style.color = '#fff';
-          if(!cid){ toast('No album ID found', 2000); return; }
-          var pop = document.createElement('div');
-          pop.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:14px 18px;z-index:300;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);max-width:280px;';
-          pop.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px;">Remove from Album History?</div><div style="font-size:11px;color:var(--ink-dim);margin-bottom:12px;">' + cname + '</div><div style="display:flex;gap:8px;"><button style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;" class="pop-cancel">Cancel</button><button style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;" class="pop-confirm">Remove</button></div>';
-          document.body.appendChild(pop);
-          pop.querySelector('.pop-cancel').addEventListener('click', function(){ pop.remove(); });
-          pop.querySelector('.pop-confirm').addEventListener('click', function(){
-            pop.remove();
-            hideAlbum(cid, cname);
-            var ahBtn2 = document.getElementById('discoverAlbumHistory');
-            if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
-          });
-          var bd = document.createElement('div');
-          bd.style.cssText = 'position:fixed;inset:0;z-index:249;';
-          bd.addEventListener('click', function(){ bd.remove(); pop.remove(); });
-          document.body.appendChild(bd);
-        });
-      });
-      document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
-          h.addEventListener('click', function(){
-            var tgt = document.getElementById(this.dataset.target);
-            var chv = this.querySelector('.dp-ah-chevron');
-            if(!tgt) return;
-            var isOpen = tgt.style.display !== 'none';
-            tgt.style.display = isOpen ? 'none' : 'block';
-            if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
-            if(!isOpen && !tgt.dataset.loaded){
-              tgt.dataset.loaded = '1';
-              var artistName = this.dataset.artist;
-              var albumName = this.dataset.album;
-              var container = tgt;
-              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Loading tracks...</div>';
-              var collectionId = h.dataset.collectionId;
-              var albumCountry = h.dataset.country || '';
-              // A region-locked album (e.g. a GB-only release) returns zero
-              // songs from the default storefront, so the track lookup tries
-              // the album's own storefront first and falls back through the
-              // other big ones until one actually returns songs. Deezer albums
-              // go through Deezer's own endpoint instead.
-              var trackSources;
-              if(h.dataset.dz){
-                trackSources = [{ kind: 'dz', url: 'https://api.deezer.com/album/' + collectionId + '/tracks?limit=100' }];
-              }else{
-                trackSources = (collectionId
-                  ? [albumCountry, 'GB', 'IN', 'US', ''].filter(function(c, i, arr){ return arr.indexOf(c) === i; })
-                    .map(function(c){ return 'https://itunes.apple.com/lookup?id=' + collectionId + '&entity=song&limit=200' + (c ? '&country=' + c : ''); })
-                  : ['https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200'])
-                  .map(function(u){ return { kind: 'it', url: u }; });
-              }
-              (function fetchTracks(sources){
-                if(!sources.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return null; }
-                var src = sources[0];
-                return fetchWithProxy(src.url)
-                .then(function(r){ return r.ok ? r.json() : {}; })
-                .then(function(data){
-                  var tracks;
-                  if(src.kind === 'dz'){
-                    tracks = ((data.data)||[]).map(function(t, ix){
-                      return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
-                    });
-                  }else{
-                    tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
-                  }
-                  if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
-                  var h2 = '<div style="text-align:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">Remove from Album History</button></div>';
-                  for(var ti=0; ti<tracks.length; ti++){
-                    var tr = tracks[ti];
-                    var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
-                    h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '">';
-                    h2 += '<span style="color:var(--ink-dim);min-width:18px;text-align:right;">' + (tr.trackNumber||'') + '</span>';
-                    h2 += '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(tr.trackName) + '</span>';
-                    h2 += '<span style="color:var(--ink-dim);font-size:11px;">' + dur + '</span></div>';
-                  }
-                  container.innerHTML = h2;
-                  container.querySelectorAll('.dp-ah-track').forEach(function(row){
-                    row.addEventListener('click', function(){
-                      $('discoverSearch').value = this.dataset.search;
-                      runDiscoverSearch(this.dataset.search);
-                      closeDiscoverPopup();
-                    });
-                  });
-                  // Wire up remove album button
-                  var rmBtn = container.querySelector('.ah-remove-album-btn');
-                  if(rmBtn){ rmBtn.addEventListener('click', function(e){
-                    e.stopPropagation();
-                    var cid = this.dataset.cid;
-                    var cname = this.dataset.cname;
-                    if(cid){ hideAlbum(cid, cname); var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
-                  }); }
-                });
-              })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
-            }
-          });
-        });
-      };
+        
         window.__wireAH();
     }
 
     }
     
-      // Hold-to-remove on album headers with visible red progress bar
-      document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
-        var holdBar = null;
-        var holdTimer = null;
-        function startHold(){
-          holdBar = document.createElement('div');
-          holdBar.style.cssText = 'position:absolute;top:0;left:0;height:100%;background:rgba(255,80,80,0.25);border-radius:6px;width:0%;pointer-events:none;z-index:1;transition:width 0.6s linear;';
-          hdr.style.position = 'relative';
-          hdr.appendChild(holdBar);
-          requestAnimationFrame(function(){ if(holdBar) holdBar.style.width = '100%'; });
-          holdTimer = setTimeout(function(){
-            holdTimer = null;
-            if(holdBar){ holdBar.remove(); holdBar = null; }
-            var cid = hdr.dataset.collectionId;
-            var cname = hdr.dataset.album || 'this album';
-            if(!cid) return;
-            var pop = document.createElement('div');
-            pop.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:14px 18px;z-index:300;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);max-width:280px;';
-            pop.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">Remove from Album History?</div>' +
-              '<div style="font-size:11px;color:var(--ink-dim);margin-bottom:12px;">' + cname + '</div>' +
-              '<div style="display:flex;gap:8px;">' +
-              '<button class="cancel" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>' +
-              '<button class="confirm" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Remove</button>' +
-              '</div>';
-            document.body.appendChild(pop);
-            pop.querySelector('.cancel').addEventListener('click', function(){ pop.remove(); });
-            pop.querySelector('.confirm').addEventListener('click', function(){
-              pop.remove();
-              hideAlbum(cid, cname);
-              var ahBtn2 = document.getElementById('discoverAlbumHistory');
-              if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
-            });
-            var backdrop = document.createElement('div');
-            backdrop.style.cssText = 'position:fixed;inset:0;z-index:299;';
-            backdrop.addEventListener('click', function(){ backdrop.remove(); pop.remove(); });
-            document.body.appendChild(backdrop);
-          }, 600);
-        }
-        function cancelHold(){
-          if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
-          if(holdBar){ holdBar.remove(); holdBar = null; }
-        }
-        hdr.addEventListener('pointerdown', startHold);
-        hdr.addEventListener('pointerup', cancelHold);
-        hdr.addEventListener('pointercancel', cancelHold);
-        hdr.addEventListener('pointerleave', cancelHold);
-      });
+
+// NOTE: the lone "};" below compensates for a surplus opener deeper in this
+// section — deleting it breaks the script parse. The guarded call after it is
+// a no-op at boot (popup is empty); the real wiring happens inside
+// ahBtn.onclick via the unguarded call above.
         };
         if(typeof window.__wireAH === 'function') window.__wireAH();
 
