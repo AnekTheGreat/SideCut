@@ -5662,6 +5662,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       ['Album art', t.artUrl ? 'Found' : 'Not found in file'],
       ['Vibe', VIBES[t.vibe] ? VIBES[t.vibe].name : 'Off'],
       ['Play count', t.playCount || 0],
+      ['Added', t.dateAdded ? new Date(t.dateAdded).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : 'Unknown'],
       ['File size', t.file ? (t.file.size/1024/1024).toFixed(1) + ' MB' : 'Unknown'],
     ];
     body.innerHTML = rows.map(([k,v]) => `
@@ -6712,7 +6713,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '49.5.4';
+  const APP_VERSION = '49.5.5';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6725,6 +6726,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '49.5.5', date: 'August 23, 2026 at 10:56 pm EDT', title: 'Old albums get their missing companions back', items: [
+      'Album History finds albums where the artist is credited on the SONGS but not the album itself — a common Punjabi-catalog quirk credits the music director on the album, so neither the discography lookup nor the album search could ever surface them (Diljit Dosanjh\'s early albums that live under his composers\' names now appear)',
+      'Fixed: albums pulled in from another country\'s iTunes store showed "No tracks found" when expanded — SideCut now knows which storefront each album came from and asks for the songs there (with fallbacks)',
+      'Song info now shows the date the song was added to your library — new imports stamp it from now on, and it round-trips through exports/imports',
+    ]},
     { version: '49.5.4', date: 'August 23, 2026 at 8:15 pm EDT', title: 'Older albums, older songs, and a new default record look', items: [
       'Album History now also checks other countries\' iTunes stores when an artist\'s catalog is big enough to hit the entry limit — older albums that are only licensed abroad (like Diljit Dosanjh\'s "Over Exposure" from 2005) were invisible to the default store and now show up',
       'Album History now actually reaches pre-2008 albums: the artist search checks 25 candidates (was 5) so the complete-discography lookup is used far more often, and when iTunes\'s 200-entry cap is hit — or the artist match comes back wrong — SideCut keeps fetching extra search pages so the oldest albums don\'t get cut off',
@@ -8837,6 +8843,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       gain: t.gain ?? null, art: t.artBlob || null, vibe: t.vibe || null,
       waveform: t.waveform || null, playCount: t.playCount || 0,
       lastPlayedAt: t.lastPlayedAt || null,
+      dateAdded: t.dateAdded || null,
       notes: t.notes || '',
       lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
       manualOverride: t.manualOverride || false,
@@ -8891,6 +8898,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
             playCount: r.playCount || 0,
             lastPlayedAt: r.lastPlayedAt || null,
+            dateAdded: r.dateAdded || null,
             notes: r.notes || '',
 
             artBlob: r.art || null,
@@ -9453,7 +9461,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       seenKeys.add(key);
       const id = 't' + (idCounter++);
       const url = URL.createObjectURL(file);
-      const track = { id, file, name: cleaned.name, artist: cleaned.artist, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null, watermarkCleaned: cleaned.changed };
+      const track = { id, file, name: cleaned.name, artist: cleaned.artist, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null, watermarkCleaned: cleaned.changed, dateAdded: Date.now() };
       allTracks.push(track);
       playlists['All Songs'].push(id);
       // New imports land in All Songs AND Unsorted — Unsorted is now independent,
@@ -11099,7 +11107,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           id: t.id, name: t.name, artist: t.artist, duration: t.duration,
           bpm: t.bpm, genre: t.genre, gain: t.gain, lyrics: t.lyrics,
           lyricsSynced: t.lyricsSynced, notes: t.notes, vibe: t.vibe,
-          playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, path: t.file ? zipPath : null, hasCover: !!t.artBlob
+          playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, dateAdded: t.dateAdded || null, path: t.file ? zipPath : null, hasCover: !!t.artBlob
         });
         if(t.artBlob){
           // Covers are tiny; still pass the Blob directly to avoid extra copies.
@@ -11420,6 +11428,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(m.notes !== undefined && !existing.notes) existing.notes = m.notes;
             if(m.playCount !== undefined && (existing.playCount === undefined || existing.playCount < m.playCount)) existing.playCount = m.playCount;
             if(m.lastPlayedAt !== undefined && (existing.lastPlayedAt === undefined || existing.lastPlayedAt < m.lastPlayedAt)) existing.lastPlayedAt = m.lastPlayedAt;
+            if(m.dateAdded !== undefined && !existing.dateAdded) existing.dateAdded = m.dateAdded;
             // Import cover art for existing track
             if(m.hasCover && !existing.artBlob){
               const coverEntry = zipApi.file(`covers/${m.id}.jpg`);
@@ -11461,6 +11470,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           vibe: m.vibe || null,
           playCount: m.playCount || 0,
           lastPlayedAt: m.lastPlayedAt || null,
+          dateAdded: m.dateAdded || Date.now(),
           artBlob: null,
           artUrl: null,
           watermarkCleaned: cleaned.changed
@@ -14846,7 +14856,27 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             // edition tag like "[2019 Remix & Remaster]" is a real album.
             var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection)\b|\s[-–—]\s*(single|remix)\b/i;
             var seen = {};
-            var filterInto = function(results){
+            var seenCids = {};
+            var addAlbum = function(r, srcCountry){
+              if(!r || !r.collectionName || !r.releaseDate) return;
+              if(!r.trackCount || r.trackCount <= 1) return;
+              if(noise.test(r.collectionName)) return;
+              if(/\(video album\)/i.test(r.collectionName)) return;
+              if(isAlbumHidden(r.collectionId)) return;
+              var key = normTitle(r.collectionName);
+              if(!key) return;
+              // Prefer the ORIGINAL (earliest) edition so pre-2008 albums show
+              // their real year instead of a 2009+ remaster date; on a tie keep
+              // the edition with the most tracks (full/deluxe). Entries still
+              // carry their storefront of origin so the track fetch can hit the
+              // right country (a GB-only album returns no songs from the US).
+              if(!seen[key] || (r.releaseDate||'') < (seen[key].releaseDate||'') || ((r.releaseDate||'') === (seen[key].releaseDate||'') && (r.trackCount||0) > (seen[key].trackCount||0))){
+                r._country = srcCountry || null;
+                seen[key] = r;
+              }
+              if(r.collectionId) seenCids[r.collectionId] = 1;
+            };
+            var filterInto = function(results, srcCountry){
               (results||[]).forEach(function(r){
                 if(!r || !r.collectionName || !r.releaseDate) return;
                 // Accept the album when the pinned artist is ANY member of the
@@ -14854,16 +14884,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 // KIDS SEE GHOSTS, VULTURES...) credit "A & B", not just A.
                 var credited = (r.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(s){ return s.trim(); });
                 if(credited.indexOf(wantArtist) === -1) return;
-                if(!r.trackCount || r.trackCount <= 1) return;
-                if(noise.test(r.collectionName)) return;
-                if(/\(video album\)/i.test(r.collectionName)) return;
-                if(isAlbumHidden(r.collectionId)) return;
-                var key = normTitle(r.collectionName);
-                if(!key) return;
-                // Prefer the ORIGINAL (earliest) edition so pre-2008 albums show
-                // their real year instead of a 2009+ remaster date; on a tie keep
-                // the edition with the most tracks (full/deluxe).
-                if(!seen[key] || (r.releaseDate||'') < (seen[key].releaseDate||'') || ((r.releaseDate||'') === (seen[key].releaseDate||'') && (r.trackCount||0) > (seen[key].trackCount||0))) seen[key] = r;
+                addAlbum(r, srcCountry);
               });
             };
             // Step 2: fetch the catalog. Preferred path is the complete-catalog
@@ -14890,7 +14911,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               for(var sf=0; sf<STOREFRONTS.length; sf++){
                 try{
                   var cResp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200&country=' + STOREFRONTS[sf]);
-                  if(cResp && cResp.ok) filterInto(((await cResp.json()).results)||[]);
+                  if(cResp && cResp.ok) filterInto(((await cResp.json()).results)||[], STOREFRONTS[sf]);
                 }catch(e){}
               }
             }
@@ -14904,6 +14925,59 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                   if(pResults.length < 200) break;
                 }catch(e){ break; }
               }
+              // Track-credit discovery: some catalogs credit the artist only at
+              // the TRACK level, not the album level (Punjabi albums often credit
+              // the music director — Diljit's early albums sit under Sukhpal Sukh,
+              // Sachin Ahuja, Bablu Mahendra...), so neither lookup nor album
+              // search ever returns them. Song searches (artistTerm; iTunes
+              // ignores offset for song searches, and the 200-entry page is
+              // relevance-ranked and non-deterministic) find collections whose
+              // tracks name the artist — even a single hit counts — and a full
+              // track lookup then confirms a majority before the album is added.
+              try{
+                var sResults = [];
+                var seenTrack = {};
+                for(var sq=0; sq<2; sq++){
+                  try{
+                    var qUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=song&attribute=artistTerm&limit=200' + (sq === 1 ? '&country=IN' : '');
+                    var sResp = await fetchWithProxy(qUrl);
+                    if(!sResp || !sResp.ok) continue;
+                    (((await sResp.json()).results)||[]).forEach(function(s){
+                      if(s && s.trackId && !seenTrack[s.trackId]){ seenTrack[s.trackId] = 1; sResults.push(s); }
+                    });
+                  }catch(e){}
+                }
+                var collIds = {};
+                sResults.forEach(function(s){
+                  if(!s.collectionId || !s.collectionName || !s.trackId) return;
+                  var sCredited = (s.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(x){ return x.trim(); });
+                  if(sCredited.indexOf(wantArtist) === -1) return;
+                  if(noise.test(s.collectionName)) return;
+                  (collIds[s.collectionId] = collIds[s.collectionId] || {})[s.trackId] = 1;
+                });
+                var candidates = Object.keys(collIds).filter(function(cid){
+                  return !seenCids[cid];
+                });
+                for(var tc=0; tc<candidates.length; tc+=8){
+                  await Promise.all(candidates.slice(tc, tc+8).map(function(cid){
+                    return (async function(){
+                      try{
+                        var tResp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + cid + '&entity=song&limit=200');
+                        if(!tResp || !tResp.ok) return;
+                        var tResults = ((await tResp.json()).results)||[];
+                        var tColl = tResults.find(function(r){ return r && r.wrapperType === 'collection'; });
+                        var tTracks = tResults.filter(function(r){ return r && r.wrapperType === 'track'; });
+                        if(!tColl || !tColl.trackCount || tColl.trackCount <= 1) return;
+                        var hisTracks = tTracks.filter(function(s){
+                          var sCredited = (s.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(x){ return x.trim(); });
+                          return sCredited.indexOf(wantArtist) !== -1;
+                        }).length;
+                        if(hisTracks > (tTracks.length || tColl.trackCount) / 2) addAlbum(tColl);
+                      }catch(e){}
+                    })();
+                  }));
+                }
+              }catch(e){}
             }
             var albums = Object.keys(seen).map(function(k){ return seen[k]; });
             if(albums.length){
@@ -14937,7 +15011,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
             var trackCount = album.trackCount || '?';
             html += '<div class="dp-ah-album">';
-            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '">';
+            html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '" data-country="' + (album._country||'') + '">';
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
             html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks</div></div>';
@@ -15014,14 +15088,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               var container = tgt;
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Loading tracks...</div>';
               var collectionId = h.dataset.collectionId;
-              var trackUrl = collectionId
-                ? 'https://itunes.apple.com/lookup?id=' + collectionId + '&entity=song&limit=200'
-                : 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
-              fetchWithProxy(trackUrl)
+              var albumCountry = h.dataset.country || '';
+              // A region-locked album (e.g. a GB-only release) returns zero
+              // songs from the default storefront, so the track lookup tries
+              // the album's own storefront first and falls back through the
+              // other big ones until one actually returns songs.
+              var trackUrls = collectionId
+                ? [albumCountry, 'GB', 'IN', 'US', ''].filter(function(c, i, arr){ return arr.indexOf(c) === i; })
+                  .map(function(c){ return 'https://itunes.apple.com/lookup?id=' + collectionId + '&entity=song&limit=200' + (c ? '&country=' + c : ''); })
+                : ['https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200'];
+              (function fetchTracks(urls){
+                if(!urls.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return null; }
+                return fetchWithProxy(urls[0])
                 .then(function(r){ return r.ok ? r.json() : {results:[]}; })
                 .then(function(data){
                   var tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
-                  if(!tracks.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
+                  if(!tracks.length){ if(urls.length > 1) return fetchTracks(urls.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return; }
                   var h2 = '<div style="text-align:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">Remove from Album History</button></div>';
                   for(var ti=0; ti<tracks.length; ti++){
                     var tr = tracks[ti];
@@ -15047,8 +15129,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                     var cname = this.dataset.cname;
                     if(cid){ hideAlbum(cid, cname); var ahBtn2 = document.getElementById('discoverAlbumHistory'); if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick(); }
                   }); }
-                })
-                .catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
+                });
+              })(trackUrls).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
             }
           });
         });
