@@ -6803,6 +6803,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '49.7';
+  // Invalidate any cached Album History popup that still has watermark text
+  try{
+    var _ahCache = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
+    if(_ahCache && (_ahCache.indexOf('MusicBrainz') !== -1 || _ahCache.indexOf('\u00b7 Deezer') !== -1)){
+      localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History');
+    }
+  }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -15291,6 +15298,16 @@ window.__refetchArtistAlbums = async function(artistName){
           if(rgData && rgData['release-groups']){
             rgData['release-groups'].forEach(function(rg){
               if(!rg || !rg.title) return;
+              // Skip non-official and secondary types: compilations, soundtracks,
+              // DJ mixes, mixtapes, live albums, etc.
+              var secTypes = (rg['secondary-types'] || []);
+              var priType = rg['primary-type'] || '';
+              if(priType !== 'Album') return;
+              if(secTypes.length > 0) return;
+              // Only accept Official status
+              if(rg['first-release-date-status'] && rg['first-release-date-status'] !== 'Official') return;
+              // Apply noise filter to titles
+              if(dzNoise.test(rg.title)) return;
               if(seenTitles[normTitle(rg.title)]) return;
               var collectionId = rg.id;
               if(seenCids[collectionId]) return;
