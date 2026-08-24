@@ -12,6 +12,23 @@
   so the first tap after a page reload falls through to a fresh build (which
   assigns it) instead of serving a dead cached popup.
 - Changelog item appended to the existing 49.5.7 entry. No version bump.
+
+## v49.5.7 follow-up #5 — second unguarded __wireAH call was KILLING boot (commit 770c3e5)
+- The same follow-up-added wire-up has a SECOND call site: at the end of the
+  fresh-build path right after `wireAHRef/window.__wireAH = function(){...}`
+  is assigned, it also calls `window.__wireAH();` (warm-up). That call was
+  UNguarded — unlike the cached-load branch, it would throw when run before
+  the assignment. Worse: it sits right after navigate() in the boot chain,
+  so this TypeError ("window.__wireAH is not a function") killed the whole
+  boot sequence (Auto-load failed) and left every Home bubble at its
+  placeholder/0 state even though the library data was fine.
+- Fix: both call sites now `if(typeof window.__wireAH === 'function')
+  window.__wireAH();`. App boots clean; bubbles populate on reload again.
+- Boot-crash lesson: a stray throw *inside the auto-load async chain* aborts
+  before `boot()` finishes, which kills renderHome/pinned artists/library
+  stats — but only SOME bubbles empty (favorites/playlists rendered from
+  independent listeners anyway). "Some bubbles empty" is a diagnostic hint
+  for an async boot-throw, not a data issue.
 - WARN: extracting a long inline block into a named function in index.html via
   python substring wraps is error-prone — always brace-check per-line and
   parse-check with acorn/`new Function` immediately after.
