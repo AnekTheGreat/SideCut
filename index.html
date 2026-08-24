@@ -15199,7 +15199,7 @@ window.__refetchArtistAlbums = async function(artistName){
       var lookupCount = 0;
       var seenCids = {};
       var seenTitles = {};
-      var noise = /best\s+of|greatest|hits|now\s+that|playlist|top\s+hits|workout|party|collaboration|essentials|anthology|complete|collection|mix|mashup|non.?stop|deluxe|edition|karaoke|tribute|covers|remix/i;
+      var noise = /best\s+of|greatest|hits|now\s+that|playlist|top\s+hits|workout|party|collaboration|essentials|anthology|complete|collection|mix|mashup|non.?stop|deluxe|edition|karaoke|tribute|covers|remix|soundtrack|original motion picture|various artists|multiple artists|compilation|dance|fitness|workout|40\s+hits|50\s+hits|100\s+hits|mega|now\s+that|mo\s+bebops|intro|outro/i;
       var normTitle = function(t){ return (t||'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/\s*[-–—]\s*(deluxe|expanded|special|bonus|explicit|clean|remastered|remaster|re.?recorded|version).*$/i,'').replace(/\b(soundtrack|original motion picture soundtrack)\b/gi,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim(); };
       var filterInto = function(results){
         var artistLower = primaryArtistName(a.name).toLowerCase().trim();
@@ -15214,7 +15214,9 @@ window.__refetchArtistAlbums = async function(artistName){
           if(seenTitles[tNorm]) return;
           if(noise.test(r.collectionName)) return;
           var rArtist = primaryArtistName(r.artistName || '').toLowerCase().trim();
-          if(rArtist !== artistLower && rArtist.indexOf(artistLower) === -1 && artistLower.indexOf(rArtist) === -1) return;
+          if(!rArtist || rArtist === 'various artists') return;
+          // Strict match: album artist must be exactly the pinned artist, or start with it
+          if(rArtist !== artistLower && !rArtist.startsWith(artistLower) && !artistLower.startsWith(rArtist)) return;
           seenCids[collectionId] = 1;
           seenTitles[tNorm] = 1;
           if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
@@ -15447,7 +15449,7 @@ if(typeof toast === 'function') toastWithCancel();
                 // credited artist list — collab albums (Watch the Throne,
                 // KIDS SEE GHOSTS, VULTURES...) credit "A & B", not just A.
                 var credited = (r.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(s){ return s.trim(); });
-                if(!credited.some(function(c){ return c === wantArtist || c.indexOf(wantArtist) !== -1 || wantArtist.indexOf(c) !== -1; })) return;
+                if(!credited.some(function(c){ return c === wantArtist || c.startsWith(wantArtist) || wantArtist.startsWith(c); })) return;
                 addAlbum(r, srcCountry);
               });
             };
