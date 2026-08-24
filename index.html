@@ -15156,7 +15156,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         var mbChain = Promise.resolve();
         var mbGet = function(u){
           var p = mbChain.then(async function(){
-            await new Promise(function(r){ setTimeout(r, 1100); });
+            await new Promise(function(r){ setTimeout(r, 550); });
             try{
               var rr = await fetchWithProxy(u);
               if(!rr || !rr.ok) return null;
@@ -15475,31 +15475,45 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 // (rate limit); capped at 30 groups so the worst case stays
                 // bounded. Real official albums pass in one request each.
                 var mbKept = 0;
-                for(var mgi=0; mgi<mbGroups.length && mbKept<30; mgi++){
-                  var rg = mbGroups[mgi];
-                  var mbKey = normTitle(rg.title);
-                  var rgDate = rg['first-release-date'];
-                  var mbDate = rgDate.length === 4 ? rgDate + '-01-01' : (rgDate.length === 7 ? rgDate + '-01' : rgDate);
-                  // Same rule as the iTunes dedupe: the ORIGINAL (earliest)
-                  // edition wins, so a 2004 MB original replaces a 2008
-                  // re-recording iTunes surfaced. Equal dates keep the
-                  // existing row (iTunes/Deezer rows have better art + counts).
-                  if(seen[mbKey] && (seen[mbKey].releaseDate || '') <= mbDate) continue;
-                  var rgDetail = await mbGet('https://musicbrainz.org/ws/2/release-group/' + rg.id + '?inc=releases&fmt=json');
-                  var rgRels = (rgDetail && rgDetail.releases) || [];
-                  if(rgRels.length && !rgRels.some(function(rel){ return rel && rel.status === 'Official'; })) continue;
-                  mbKept++;
-                  var displayNames = [];
-                  (rg['artist-credit']||[]).forEach(function(ac){ if(ac && ac.name) displayNames.push(ac.name); });
-                  seen[mbKey] = {
-                    _mb: true,
-                    collectionId: rg.id,
-                    collectionName: rg.title,
-                    artistName: displayNames.join(', ') || a.name,
-                    releaseDate: mbDate,
-                    artworkUrl100: 'https://coverartarchive.org/release-group/' + rg.id + '/front-250',
-                    trackCount: null
-                  };
+                // Pre-filter: only MB groups that could add new albums
+                var mbCandidates = mbGroups.filter(function(rg){
+                  var mk = normTitle(rg.title);
+                  var rd = rg['first-release-date'];
+                  var md = rd.length === 4 ? rd + '-01-01' : (rd.length === 7 ? rd + '-01' : rd);
+                  // Skip if already seen with same or earlier date (iTunes/Deezer already has it)
+                  if(seen[mk] && (seen[mk].releaseDate || '') <= md) return false;
+                  return true;
+                });
+                // Batch-verify in groups of 5 for speed (MB rate limit is 1/sec;
+                // 5 concurrent + 550ms gap = ~1 call/sec per worker)
+                for(var mgi=0; mgi<mbCandidates.length && mbKept<30; mgi+=5){
+                  var batch = mbCandidates.slice(mgi, mgi+5);
+                  var batchResults = await Promise.all(batch.map(function(rg){
+                    return mbGet('https://musicbrainz.org/ws/2/release-group/' + rg.id + '?inc=releases&fmt=json').then(function(rgDetail){
+                      return { rg: rg, detail: rgDetail };
+                    });
+                  }));
+                  for(var bri=0; bri<batchResults.length && mbKept<30; bri++){
+                    var rg = batchResults[bri].rg;
+                    var rgDetail = batchResults[bri].detail;
+                    var mbKey = normTitle(rg.title);
+                    var rgDate = rg['first-release-date'];
+                    var mbDate = rgDate.length === 4 ? rgDate + '-01-01' : (rgDate.length === 7 ? rgDate + '-01' : rgDate);
+                    var rgRels = (rgDetail && rgDetail.releases) || [];
+                    if(rgRels.length && !rgRels.some(function(rel){ return rel && rel.status === 'Official'; })) continue;
+                    mbKept++;
+                    var displayNames = [];
+                    (rg['artist-credit']||[]).forEach(function(ac){ if(ac && ac.name) displayNames.push(ac.name); });
+                    seen[mbKey] = {
+                      _mb: true,
+                      collectionId: rg.id,
+                      collectionName: rg.title,
+                      artistName: displayNames.join(', ') || a.name,
+                      releaseDate: mbDate,
+                      artworkUrl100: 'https://coverartarchive.org/release-group/' + rg.id + '/front-250',
+                      trackCount: null
+                    };
+                  }
                 }
               }
             }catch(e){}
@@ -15521,11 +15535,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var aNext = ahQueue.shift();
             await fetchOneArtist(aNext);
             ahDone++;
-            ahBtnRef.textContent = '⏳ Fetching albums… ' + ahDone + '/' + pinnedArtists.length;
+            ahBtnRef.textContent = '⏳ ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ')';
           }
         };
         var ahWorkers = [];
-        for(var ahW=0; ahW<Math.min(4, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
+        for(var ahW=0; ahW<Math.min(6, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
         await Promise.all(ahWorkers);
         this.textContent = '📀 Album history'; this.disabled = false;
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
