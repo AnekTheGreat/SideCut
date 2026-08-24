@@ -1,5 +1,23 @@
 # SideCut — repository memory
 
+## v49.5.7 follow-up #5c — why every update forced an AH refetch (commit 38f6002)
+- The popup cache lives in `localStorage['discPopupCache_<title>']` (24h TTL),
+  so version updates were NOT inherently wiping it. The real bug:
+  `window.__wireAH = function(){...}` was defined INSIDE `ahBtn.onclick` at
+  the end of the first-ever fresh fetch, and the cache branch guards on
+  `typeof window.__wireAH === 'function'` — on the first tap after ANY page
+  load (e.g. right after an update) the guard failed → full refetch. Fix:
+  hoist the assignment to page top-level so the cached popup is servable on
+  the first tap of every load. The stray `};` + guarded call leftovers in
+  that section are LOAD-BEARING (the section's original closers) — removing
+  them breaks the parse; there's a NOTE comment on-site.
+- Fetch speed: the per-artist pipeline (artist-ID search → lookup →
+  optional storefronts → paged search → song-credit scan → Deezer) is
+  ~15-25 hops; 10+ pinned artists run serially = minutes. Artists now run
+  through a 4-worker pool with progress text ("⏳ Fetching albums… 3/12").
+  Verified: cache-tap ~220ms post-reload; parallel timing test seeds
+  Madonna/Beatles/Weeknd.
+
 ## v49.5.7 follow-up #5b — the ACTUAL wireAH scope bug (commit 626a0de)
 - **The real wireAH bug**: the assignment `window.__wireAH = function(){...}`
   sits INSIDE `ahBtn.onclick`, but the CALL
