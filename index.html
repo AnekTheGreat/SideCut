@@ -6726,7 +6726,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   const CHANGELOG = [
     { version: '49.5.4', date: 'August 23, 2026 at 8:15 pm EDT', title: 'Older albums, older songs, and a new default record look', items: [
-      'Album History now actually reaches pre-2008 albums: the artist search checks 25 candidates (was 5) so the complete-discography lookup is used far more often, and when iTunes\'s 200-entry cap is hit SideCut keeps fetching extra pages so the oldest albums don\'t get cut off',
+      'Album History now actually reaches pre-2008 albums: the artist search checks 25 candidates (was 5) so the complete-discography lookup is used far more often, and when iTunes\'s 200-entry cap is hit — or the artist match comes back wrong — SideCut keeps fetching extra search pages so the oldest albums don\'t get cut off',
+      'The "Refetch albums" button now visibly works: the popup shows a "Refetching…" state while it re-downloads every pinned artist\'s catalog, then confirms with a toast — before, it rebuilt the list silently and collapsed what you had open, so it looked like it did nothing',
       'Album History also shows each album\'s ORIGINAL release year now — an album first out in 1963 shows 1963, not the year of a later remaster',
       'Songs From Last Year now lists songs that are over 365 days old (it used to show songs released within the past year), newest of the old ones first',
       'The mini record player has a new default angle (TILT 5° / SPIN −88° / ROLL 117°) — fresh installs and the Turntable popup\'s Reset button now use it. If you saved your own angle, nothing changes for you',
@@ -14807,7 +14808,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if(ahBtn) ahBtn.onclick = async function(){
         if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
+        var wasRefetch = !!this._isRefetch; this._isRefetch = false;
         this.textContent = '⏳ Fetching albums...'; this.disabled = true;
+        if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
         var totalAlbums = 0;
         for(var ai=0; ai<pinnedArtists.length; ai++){
@@ -14820,37 +14823,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var sResp = await fetchWithProxy(sUrl);
             var artistId = null;
             if(sResp && sResp.ok){ var sData = await sResp.json(); var match = (sData.results||[]).find(function(r){ return r && r.artistId && primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim(); }); if(match) artistId = match.artistId; }
-            // Step 2: lookup all albums by artist ID. iTunes caps a response at
-            // 200 entries, and duplicate store editions (explicit/clean, deluxe,
-            // remasters) can eat the whole cap — truncating the OLDEST albums.
-            // When the cap is hit, keep paging the search endpoint (which honors
-            // `offset`; lookup doesn't) to fetch the pre-2008 tail.
-            var url;
-            if(artistId){ url = 'https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200'; }
-            else { url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=200'; }
-            var resp = await fetchWithProxy(url);
-            if(!resp || !resp.ok) continue;
-            var data = await resp.json();
-            var allResults = (data.results||[]).slice();
-            if(allResults.length >= 200){
-              for(var pg=1; pg<=2; pg++){
-                try{
-                  var pUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=200&offset=' + (pg*200);
-                  var pResp = await fetchWithProxy(pUrl);
-                  if(!pResp || !pResp.ok) break;
-                  var pData = await pResp.json();
-                  var pResults = pData.results||[];
-                  allResults = allResults.concat(pResults);
-                  if(pResults.length < 200) break;
-                }catch(e){ break; }
-              }
-            }
             // iTunes returns every store edition of the same album (explicit/clean,
             // standard/deluxe, video album, regional) as separate entries — the old
             // keyword blocklist dropped REAL albums (anything with "deluxe",
             // "collection", "vol."... in the title) while still letting duplicates
             // through. Now: keep every multi-track album, then dedupe by normalized
-            // title, preferring the edition with the most tracks (the full one).
+            // title, preferring the ORIGINAL edition (earliest release date).
             var wantArtist = primaryArtistName(a.name).toLowerCase().trim();
             var normTitle = function(n){
               return (n||'').toLowerCase()
@@ -14867,24 +14845,49 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             // edition tag like "[2019 Remix & Remaster]" is a real album.
             var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection)\b|\s[-–—]\s*(single|remix)\b/i;
             var seen = {};
-            allResults.forEach(function(r){
-              if(!r || !r.collectionName || !r.releaseDate) return;
-              // Accept the album when the pinned artist is ANY member of the
-              // credited artist list — collab albums (Watch the Throne,
-              // KIDS SEE GHOSTS, VULTURES...) credit "A & B", not just A.
-              var credited = (r.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(s){ return s.trim(); });
-              if(credited.indexOf(wantArtist) === -1) return;
-              if(!r.trackCount || r.trackCount <= 1) return;
-              if(noise.test(r.collectionName)) return;
-              if(/\(video album\)/i.test(r.collectionName)) return;
-              if(isAlbumHidden(r.collectionId)) return;
-              var key = normTitle(r.collectionName);
-              if(!key) return;
-              // Prefer the ORIGINAL (earliest) edition so pre-2008 albums show
-              // their real year instead of a 2009+ remaster date; on a tie keep
-              // the edition with the most tracks (full/deluxe).
-              if(!seen[key] || (r.releaseDate||'') < (seen[key].releaseDate||'') || ((r.releaseDate||'') === (seen[key].releaseDate||'') && (r.trackCount||0) > (seen[key].trackCount||0))) seen[key] = r;
-            });
+            var filterInto = function(results){
+              (results||[]).forEach(function(r){
+                if(!r || !r.collectionName || !r.releaseDate) return;
+                // Accept the album when the pinned artist is ANY member of the
+                // credited artist list — collab albums (Watch the Throne,
+                // KIDS SEE GHOSTS, VULTURES...) credit "A & B", not just A.
+                var credited = (r.artistName||'').toLowerCase().split(/\s*[,;&]|\s+feat\.?\s+|\s+ft\.?\s+|\s+vs\.?\s+|\s+x\s+/i).map(function(s){ return s.trim(); });
+                if(credited.indexOf(wantArtist) === -1) return;
+                if(!r.trackCount || r.trackCount <= 1) return;
+                if(noise.test(r.collectionName)) return;
+                if(/\(video album\)/i.test(r.collectionName)) return;
+                if(isAlbumHidden(r.collectionId)) return;
+                var key = normTitle(r.collectionName);
+                if(!key) return;
+                // Prefer the ORIGINAL (earliest) edition so pre-2008 albums show
+                // their real year instead of a 2009+ remaster date; on a tie keep
+                // the edition with the most tracks (full/deluxe).
+                if(!seen[key] || (r.releaseDate||'') < (seen[key].releaseDate||'') || ((r.releaseDate||'') === (seen[key].releaseDate||'') && (r.trackCount||0) > (seen[key].trackCount||0))) seen[key] = r;
+              });
+            };
+            // Step 2: fetch the catalog. Preferred path is the complete-catalog
+            // lookup by artist ID — but iTunes caps a response at 200 entries
+            // (dupe editions can eat the whole cap, truncating the OLDEST
+            // albums), lookup ignores `offset`, and a wrong-ID match filters to
+            // zero albums (silently dropping the artist). The paged term search
+            // below — search DOES honor `offset` — covers all three cases:
+            // the cap tail, the no-ID fallback, and the wrong-ID fallback.
+            var lookupCount = 0;
+            if(artistId){
+              var resp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200');
+              if(resp && resp.ok){ var data = await resp.json(); var lResults = data.results||[]; lookupCount = lResults.length; filterInto(lResults); }
+            }
+            if(!artistId || lookupCount >= 200 || Object.keys(seen).length === 0){
+              for(var pg=0; pg<3; pg++){
+                try{
+                  var pResp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=200&offset=' + (pg*200));
+                  if(!pResp || !pResp.ok) break;
+                  var pResults = ((await pResp.json()).results)||[];
+                  filterInto(pResults);
+                  if(pResults.length < 200) break;
+                }catch(e){ break; }
+              }
+            }
             var albums = Object.keys(seen).map(function(k){ return seen[k]; });
             if(albums.length){
               albums.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
@@ -14931,9 +14934,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         html = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button></div>' + html;
         openDiscoverPopup('📀 Album History', html, subtitle);
+        if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
         // Wire up refetch button
         var refetchBtn = document.getElementById('ahRefetchBtn');
-        if(refetchBtn){ refetchBtn.addEventListener('click', function(){ this.textContent = 'Refetching...'; this.disabled = true; document.getElementById('discoverAlbumHistory').click(); }); }
+        if(refetchBtn){ refetchBtn.addEventListener('click', function(){
+          var ahBtn2 = document.getElementById('discoverAlbumHistory');
+          if(!ahBtn2 || !ahBtn2.onclick) return;
+          ahBtn2._isRefetch = true;
+          ahBtn2.onclick();
+        }); }
         // Wire up artist headers
         document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
           h.addEventListener('click', function(){

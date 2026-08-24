@@ -1,5 +1,28 @@
 # SideCut — repository memory
 
+## Album History refetch + pre-2008 follow-up (no version bump, Aug 24, 2026)
+- **User re-reported: "Refetch albums doesn't do anything" + "pre-2008 albums
+  aren't showing" after v49.5.4.** Live browser testing showed v49.5.4 already
+  worked for well-matched artists (Beatles 26 pre-2008) and refetch DID re-run
+  — but silently (rebuilt the popup + collapsed the expanded list with zero
+  feedback → reads as "does nothing").
+- **Real remaining bug found via live test with Gurdas Maan**: the
+  `entity=musicArtist` search returned an artistId whose lookup albums ALL
+  failed the credited-artist filter (wrong-ID match) → the artist silently
+  showed ZERO albums. The old code only used the term-search fallback when
+  artistId was null, never when the ID resolved wrong. Fix: the filter is now
+  a reusable `filterInto(results)` pass; the paged term search (offsets
+  0/200/400) runs whenever `!artistId || lookupCount >= 200 || seen is empty`.
+  Verified live: Gurdas Maan 0 → 57 albums (45 pre-2008, oldest 1982).
+- **Refetch is now unmissable**: refetch sets `ahBtn._isRefetch = true` and
+  calls `ahBtn.onclick()` directly (same pattern as the remove-album flow);
+  the handler captures `wasRefetch` after the premium/pins guards, paints
+  "⏳ Refetching albums — hang tight…" into `#discPopupBody`, and toasts
+  "📀 Refreshed — N albums across M artists" after the popup rebuilds.
+- Changelog updated in the EXISTING 49.5.4 entry — NO version bump per user
+  (APP_VERSION + CACHE_NAME stay 49.5.4). **Note: users on a stale SW won't
+  see this until the next bump — if re-reported, bump both together.**
+
 ## v49.5.4 (Aug 23, 2026)
 - **Album History pre-2008 fetch** (`discoverAlbumHistory` onclick ~14800):
   artist search `entity=musicArtist` limit 5 → 25 (exact-name match was being
