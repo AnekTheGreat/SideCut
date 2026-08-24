@@ -6713,7 +6713,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '49.5.5';
+  const APP_VERSION = '49.5.6';
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -6726,6 +6726,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '49.5.6', date: 'August 23, 2026 at 11:09 pm EDT', title: 'New releases check only when you say so', items: [
+      'SideCut no longer checks for new releases from your pinned artists on its own — no more automatic check on app start or when you switch back to the app. It only runs when you tap "Fetch latest" in Discover (or "Check now" beside your pinned artists)',
+    ]},
     { version: '49.5.5', date: 'August 23, 2026 at 10:56 pm EDT', title: 'Old albums get their missing companions back', items: [
       'Album History finds albums where the artist is credited on the SONGS but not the album itself — a common Punjabi-catalog quirk credits the music director on the album, so neither the discography lookup nor the album search could ever surface them (Diljit Dosanjh\'s early albums that live under his composers\' names now appear)',
       'Fixed: albums pulled in from another country\'s iTunes store showed "No tracks found" when expanded — SideCut now knows which storefront each album came from and asks for the songs there (with fallbacks)',
@@ -14551,7 +14554,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       await loadEnrichState();
       await loadPinnedArtists();
       if(loaded) setTimeout(() => { runAutoEnrich(); }, 2500);
-      if(loaded) setTimeout(() => { checkPinnedArtistReleases(); }, 5000);
     }catch(e){
       console.error('Auto-load failed', e);
     }
@@ -16524,12 +16526,8 @@ if(!isDiscover) stopDiscoverPreview();
   syncPlayEntitlement();
   window.addEventListener('focus', () => syncPlayEntitlement());
   document.addEventListener('visibilitychange', () => { if(!document.hidden) syncPlayEntitlement(); });
-  // Re-check pinned artists for new releases when the user returns to the app
-  // (throttled to once per 10 minutes so focus cycling doesn't spam iTunes).
-  let lastPinnedCheck = 0;
-  window.addEventListener('focus', () => {
-    if(Date.now() - lastPinnedCheck > 10*60*1000){ lastPinnedCheck = Date.now(); checkPinnedArtistReleases(); }
-  });
+  // New-release checks only run when the user asks for them — via the Discover
+  // "Fetch latest" / pinned-section "Check now" buttons (no boot/focus auto-checks).
 
 
   // --- Expand Spotify URL ---
