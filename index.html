@@ -6281,17 +6281,112 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   $('lyricsTranslateBtn').addEventListener('click', () => translateLyricsToEnglish());
 
-  // Refetch lyrics button: clear cached lyrics and re-fetch
+  // Refetch lyrics button: show a manual search form so the user can correct the search terms
   $('lyricsRefetchBtn').addEventListener('click', async () => {
     var t = currentTrack;
     if(!t) return;
-    // Clear cached lyrics
-    t.lyrics = null;
-    t.lyricsSynced = null;
-    t.lyricsLines = null;
-    persistTrackMeta(t);
-    toast('Refetching lyrics...', 2000);
-    fetchLyrics(t);
+    // Show a mini search form over the lyrics text
+    var container = $('lyricsContent');
+    var existingForm = document.getElementById('lyricsRefetchForm');
+    if(existingForm){ existingForm.remove(); return; }
+    var form = document.createElement('div');
+    form.id = 'lyricsRefetchForm';
+    form.style.cssText = 'padding:12px;background:var(--bg-raised);border-radius:12px;margin:12px;border:1px solid var(--line);';
+    form.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">Search lyrics for:</div>' +
+      '<input id="lrArtist" type="text" value="' + (t.artist||'').replace(/"/g,'&quot;') + '" placeholder="Artist" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:6px;box-sizing:border-box;" />' +
+      '<input id="lrTitle" type="text" value="' + (t.name||'').replace(/"/g,'&quot;') + '" placeholder="Song title" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:8px;box-sizing:border-box;" />' +
+      '<div style="display:flex;gap:6px;">' +
+      '<button id="lrSearch" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Search</button>' +
+      '<button id="lrCancel" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>' +
+      '</div>';
+    container.insertBefore(form, container.firstChild);
+    // Hide the current lyrics while searching
+    $('lyricsText').style.display = 'none';
+    $('lyricsNotFound').style.display = 'none';
+    $('lyricsLoading').style.display = 'none';
+    document.getElementById('lrCancel').addEventListener('click', function(){
+      form.remove();
+      // Re-show current lyrics if any
+      if(currentLyricsText) $('lyricsText').style.display = 'block';
+      else $('lyricsNotFound').style.display = 'block';
+    });
+    document.getElementById('lrSearch').addEventListener('click', async function(){
+      var searchArtist = document.getElementById('lrArtist').value.trim() || t.artist;
+      var searchTitle = document.getElementById('lrTitle').value.trim() || t.name;
+      // Clear cached lyrics with the search terms
+      t.lyrics = null;
+      t.lyricsSynced = null;
+      t.lyricsLines = null;
+      t._lyricsSearchArtist = searchArtist;
+      t._lyricsSearchTitle = searchTitle;
+      persistTrackMeta(t);
+      form.remove();
+      $('lyricsLoading').style.display = 'block';
+      $('lyricsText').style.display = 'none';
+      try {
+        // Try LRCLIB first with custom search terms
+        var lrclibUrl = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(searchArtist) + '&track_name=' + encodeURIComponent(searchTitle) + '&duration=' + Math.round(t.duration || 0);
+        var lrclibResp = await fetch(lrclibUrl);
+        if(lrclibResp.ok){
+          var data = await lrclibResp.json();
+          if(data && (data.syncedLyrics || data.plainLyrics)){
+            var lyrics = data.syncedLyrics || data.plainLyrics;
+            var isSynced = !!data.syncedLyrics;
+            t.lyrics = lyrics;
+            t.lyricsSynced = isSynced;
+            persistTrackMeta(t);
+            showLyrics(lyrics, isSynced);
+            toast('Lyrics found!', 2000);
+            return;
+          }
+        }
+        // Try LRCLIB search
+        var searchUrl = 'https://lrclib.net/api/search?q=' + encodeURIComponent(searchArtist + ' ' + searchTitle);
+        var searchResp = await fetch(searchUrl);
+        if(searchResp.ok){
+          var results = await searchResp.json();
+          if(results && results.length > 0){
+            for(var ri = 0; ri < Math.min(results.length, 5); ri++){
+              var result = results[ri];
+              if(result.syncedLyrics || result.plainLyrics){
+                var lyrics = result.syncedLyrics || result.plainLyrics;
+                var isSynced = !!result.syncedLyrics;
+                t.lyrics = lyrics;
+                t.lyricsSynced = isSynced;
+                persistTrackMeta(t);
+                showLyrics(lyrics, isSynced);
+                toast('Lyrics found!', 2000);
+                return;
+              }
+            }
+          }
+        }
+        // Try lyrics.ovh
+        var ovhResp = await fetch('https://api.lyrics.ovh/v1/' + encodeURIComponent(searchArtist) + '/' + encodeURIComponent(searchTitle));
+        if(ovhResp.ok){
+          var data = await ovhResp.json();
+          if(data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental'){
+            t.lyrics = data.lyrics;
+            t.lyricsSynced = false;
+            persistTrackMeta(t);
+            showLyrics(data.lyrics, false);
+            toast('Lyrics found!', 2000);
+            return;
+          }
+        }
+        // Nothing found
+        $('lyricsLoading').style.display = 'none';
+        $('lyricsNotFound').style.display = 'block';
+        toast('No lyrics found for "' + searchTitle + '" by ' + searchArtist + '.', 3000);
+      } catch(e) {
+        console.error('Lyrics refetch error:', e);
+        $('lyricsLoading').style.display = 'none';
+        $('lyricsNotFound').style.display = 'block';
+        toast('Error fetching lyrics. Check your connection.', 3000);
+      }
+    });
+    // Focus the title field
+    setTimeout(function(){ var tf = document.getElementById('lrTitle'); if(tf) tf.focus(); }, 100);
   });
 
   $('lyricsFontSlider').addEventListener('input', (e) => {
