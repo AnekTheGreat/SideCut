@@ -10505,12 +10505,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function enterReorderMode(){
     const effective = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
     if(effective !== 'default'){
-      if(perPlaylistSortEnabled){
-        perPlaylistSort[activePlaylist] = 'default';
-        dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
+      const arr = playlists[activePlaylist];
+      if(arr){
+        const sorted = getSortedIds(arr);
+        playlists[activePlaylist] = sorted;
+        if(perPlaylistSortEnabled){
+          perPlaylistSort[activePlaylist] = 'default';
+          dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
+        }
+        currentSort = 'default';
+        saveMeta();
       }
-      currentSort = 'default';
-      toast('Switched to "Playlist order" to reorder');
     }
     reorderMode = true;
     renderList();
@@ -10681,7 +10686,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // Insert-pick mode: the user chose "Pick a spot…" — show a banner and an
     // "insert at top" bar above the first row. Each row, when tapped, inserts
     // the pending songs immediately AFTER that row.
-    const inInsertPick = !!(insertMode && activePlaylist === insertMode._playlist && !isAllSongs && effectiveSort === 'default');
+    const inInsertPick = !!(insertMode && activePlaylist === insertMode._playlist && !isAllSongs);
     if(inInsertPick){
       const banner = document.createElement('div');
       banner.style.cssText = 'padding:10px 14px; background:rgba(255,199,90,0.12); border:1px solid rgba(255,199,90,0.35); border-radius:10px; font-size:12.5px; color:var(--ink); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;';
@@ -10700,7 +10705,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const t = allTracks.find(tr => tr.id === id);
       if(!t) return;
       const row = document.createElement('div');
-      const showReorder = reorderMode && !isAllSongs && effectiveSort === 'default';
+      const showReorder = reorderMode && !isAllSongs;
       row.className = 'track' + (selectMode && selectedIds.has(id) ? ' selected' : '');
       row.dataset.id = id;
       const artStyle = t.artUrl ? `background-image:url('${t.artUrl}');` : '';
@@ -15481,18 +15486,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:8px 0;">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>'; return; }
               // Build download/search link for the album
               var dlLink = 'https://open.spotify.com/search/' + encodeURIComponent(artistName + ' ' + albumName);
-              var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><a href="' + dlLink + '" target="_blank" rel="noopener" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;">⬇ Download Album</a><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
+              var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-dl-album-btn" data-album="' + escapeHtml(artistName + ' - ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">⬇ Download Album</button><a href="' + dlLink + '" target="_blank" rel="noopener" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;">✨ Find on Spotify</a><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
               for(var ti=0; ti<tracks.length; ti++){
                 var tr = tracks[ti];
                 var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
                 // Get album art from the header's art div
                 var albumArtUrl = '';
                 try{ var artDiv = h.querySelector('div:first-child'); if(artDiv) albumArtUrl = artDiv.getAttribute('data-art-url') || ''; }catch(e){}
-                h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '">';
+                h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '" data-preview="' + escapeHtml(tr.previewUrl || '') + '" data-trackname="' + escapeHtml(tr.trackName) + '">';
                 if(albumArtUrl){ h2 += '<div style="width:28px;height:28px;border-radius:3px;background-size:cover;background-position:center;flex-shrink:0;background-image:url(' + escapeHtml(albumArtUrl) + ');"></div>'; }
                 h2 += '<span style="color:var(--ink-dim);min-width:18px;text-align:right;">' + (tr.trackNumber||'') + '</span>';
                 h2 += '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(tr.trackName) + '</span>';
-                h2 += '<span style="color:var(--ink-dim);font-size:11px;">' + dur + '</span></div>';
+                h2 += '<span style="color:var(--ink-dim);font-size:11px;">' + dur + '</span><span class="ah-dl-track" style="color:var(--coral);font-size:10px;cursor:pointer;padding:2px 4px;flex-shrink:0;" title="Download preview">⬇</span></div>';
               }
               container.innerHTML = h2;
               // Update track count in the album header
@@ -15506,12 +15511,53 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 }
               }
               container.querySelectorAll('.dp-ah-track').forEach(function(row){
-                row.addEventListener('click', function(){
+                row.addEventListener('click', function(e){
+                  if(e.target.closest('.ah-dl-track')){
+                    var pv = row.dataset.preview;
+                    if(pv){
+                      var tn = row.dataset.trackname || 'track';
+                      toast('\u2b07 Downloading: ' + tn, 2000);
+                      fetch(pv).then(function(r){ return r.blob(); }).then(function(blob){
+                        var a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = tn.replace(/[^a-zA-Z0-9 _-]/g,'').trim() + '.m4a';
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                        URL.revokeObjectURL(a.href);
+                        toast('\u2705 Downloaded: ' + tn, 2000);
+                      }).catch(function(){ toast('Download failed.', 3000); });
+                    }
+                    return;
+                  }
                   $('discoverSearch').value = this.dataset.search;
                   runDiscoverSearch(this.dataset.search);
                   closeDiscoverPopup();
                 });
               });
+              // Wire up download album button
+              var dlAlbumBtn = container.querySelector('.ah-dl-album-btn');
+              if(dlAlbumBtn){ dlAlbumBtn.addEventListener('click', function(e){
+                e.stopPropagation();
+                var rows = container.querySelectorAll('.dp-ah-track');
+                var items = [];
+                rows.forEach(function(r){
+                  var pv = r.dataset.preview;
+                  if(pv) items.push({ url: pv, name: r.dataset.trackname || 'track' });
+                });
+                if(!items.length){ toast('No previews available.', 3000); return; }
+                toast('\u2b07 Downloading ' + items.length + ' tracks...', 5000);
+                var done = 0, fail = 0;
+                items.forEach(function(it){
+                  fetch(it.url).then(function(r){ return r.blob(); }).then(function(blob){
+                    var a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = it.name.replace(/[^a-zA-Z0-9 _-]/g,'').trim() + '.m4a';
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    URL.revokeObjectURL(a.href);
+                    done++;
+                    if(done + fail === items.length) toast('\u2705 Downloaded ' + done + ' of ' + items.length + (fail ? ' (' + fail + ' failed)' : ''), 3000);
+                  }).catch(function(){ fail++; if(done + fail === items.length) toast('\u2705 Downloaded ' + done + ' of ' + items.length + (fail ? ' (' + fail + ' failed)' : ''), 3000); });
+                });
+              }); }
               // Wire up remove album button
               var rmBtn = container.querySelector('.ah-remove-album-btn');
               if(rmBtn){ rmBtn.addEventListener('click', function(e){
