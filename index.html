@@ -15000,6 +15000,59 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(refetchBtn){ refetchBtn.addEventListener('click', function(){
       window.__refetchAlbums(true);
     }); }
+    // Select/delete mode
+    window.__ahSelectMode = false;
+    var selectBtn = document.getElementById('ahSelectBtn');
+    if(selectBtn){ selectBtn.addEventListener('click', function(){
+      window.__ahSelectMode = !window.__ahSelectMode;
+      if(window.__ahSelectMode){
+        // Show checkboxes, hide ✕ buttons, add delete bar
+        document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display='none'; });
+        document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
+          if(!h.querySelector('.dp-ah-cb')){
+            var cb = document.createElement('input');
+            cb.type='checkbox'; cb.className='dp-ah-cb'; cb.dataset.cid=h.dataset.collectionId||'';
+            cb.style.cssText='width:18px;height:18px;flex-shrink:0;accent-color:var(--coral);';
+            h.insertBefore(cb, h.querySelector('.dp-ah-chevron'));
+          }
+        });
+        var bar = document.createElement('div');
+        bar.id='ahDeleteBar';
+        bar.style.cssText='text-align:center;padding:6px 0;border-bottom:1px solid var(--line);margin-bottom:4px;';
+        bar.innerHTML='<button id="ahDeleteSelBtn" style="padding:6px 14px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:11px;font-weight:600;cursor:pointer;">Delete selected</button> <button id="ahCancelSelBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Cancel</button>';
+        var refetchParent = selectBtn.parentElement;
+        if(refetchParent) refetchParent.before(bar);
+        document.getElementById('ahDeleteSelBtn').addEventListener('click', function(){
+          var cbs = document.querySelectorAll('#discPopupBody .dp-ah-cb:checked');
+          if(!cbs.length){ toast('No albums selected.', 2000); return; }
+          cbs.forEach(function(cb){
+            var cid = cb.dataset.cid;
+            if(cid){
+              hideAlbum(cid, '');
+              var hdr = cb.closest('.dp-ah-album-hdr');
+              if(hdr){ var al = hdr.closest('.dp-ah-album'); if(al) al.remove(); }
+            }
+          });
+          window.__ahSelectMode = false;
+          var db = document.getElementById('ahDeleteBar'); if(db) db.remove();
+          document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; });
+          toast('Deleted ' + cbs.length + ' album' + (cbs.length!==1?'s':'') + '.', 2000);
+        });
+        document.getElementById('ahCancelSelBtn').addEventListener('click', function(){
+          window.__ahSelectMode = false;
+          var db = document.getElementById('ahDeleteBar'); if(db) db.remove();
+          document.querySelectorAll('#discPopupBody .dp-ah-cb').forEach(function(cb){ cb.remove(); });
+          document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; });
+        });
+        selectBtn.textContent='\u2714 Done';
+      } else {
+        // Exit select mode
+        document.querySelectorAll('#discPopupBody .dp-ah-cb').forEach(function(cb){ cb.remove(); });
+        document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; });
+        var db = document.getElementById('ahDeleteBar'); if(db) db.remove();
+        selectBtn.textContent='\u2610 Select';
+      }
+    }); }
     // Wire up per-artist refetch buttons
     document.querySelectorAll('#discPopupBody .dp-ah-artist-rm').forEach(function(btn){
       btn.addEventListener('click', function(e){
@@ -15221,7 +15274,7 @@ window.__refetchArtistAlbums = async function(artistName){
           var collectionId = r.collectionId;
           var trackCount = r.trackCount || 0;
           var relDate = r.releaseDate || '';
-          if(trackCount <= 0) return;
+          if(trackCount <= 1) return; // skip singles
           if(seenCids[collectionId]) return;
           var tNorm = normTitle(r.collectionName);
           if(seenTitles[tNorm]) return;
@@ -15279,7 +15332,7 @@ window.__refetchArtistAlbums = async function(artistName){
             if(!alb || !alb.title) return;
             if(seenTitles[normTitle(alb.title)]) return;
             if(noise.test(alb.title)) return;
-            if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep' && alb.record_type !== 'single') return;
+            if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep') return;
             var collectionId = String(alb.id);
             if(seenCids[collectionId]) return;
             seenCids[collectionId] = 1;
@@ -15490,7 +15543,7 @@ if(typeof toast === 'function') toastWithCancel();
             var seenCids = {};
             var addAlbum = function(r, srcCountry){
               if(!r || !r.collectionName || !r.releaseDate) return;
-              if(!r._dz && !r._mb && (!r.trackCount || r.trackCount <= 0)) return;
+              if(!r._dz && !r._mb && (!r.trackCount || r.trackCount <= 1)) return;
               if(noise.test(r.collectionName)) return;
               if(/\(video album\)/i.test(r.collectionName)) return;
               if(isAlbumHidden(r.collectionId)) return;
@@ -15608,6 +15661,7 @@ if(typeof toast === 'function') toastWithCancel();
                         // couldn't be bothered to credit people (the row would
                         // read like a compilation anyone could be in).
                         if((tColl.artistName||'').toLowerCase() === 'various artists') return;
+                        if(tColl.trackCount && tColl.trackCount <= 1) return; // skip singles
                         if(hisTracks > (tTracks.length || tColl.trackCount) / 2) addAlbum(tColl);
                       }catch(e){}
                     })();
@@ -15657,7 +15711,7 @@ if(typeof toast === 'function') toastWithCancel();
                 // passed the credit gates).
                 var dzAdd = function(x, creditedName){
                   if(!x) return;
-                  if(x.record_type && x.record_type !== 'album' && x.record_type !== 'ep' && x.record_type !== 'single') return;
+                  if(x.record_type && x.record_type !== 'album' && x.record_type !== 'ep') return;
                   if(!x.release_date || !x.title) return;
                   if(noise.test(x.title) || dzNoise.test(x.title)) return;
                   var dzKey = normTitle(x.title);
@@ -15723,7 +15777,7 @@ if(typeof toast === 'function') toastWithCancel();
                 // silently drop the whole inc list, which kills the credit
                 // check below. Keep this inc list exactly as-is.
                 var mbRGRes = await mbGet('https://musicbrainz.org/ws/2/release-group/?artist=' + mbMatch.id + '&type=album&fmt=json&limit=100&inc=artist-credits');
-                var mbBad = /^(DJ-mix|Live|Remix|Interview|Spokenword|Audiobook|Audio drama|Demo|Field recording)/;
+                var mbBad = /^(DJ-mix|Live|Remix|Interview|Spokenword|Audiobook|Audio drama|Demo|Field recording|Single)/;
                 var mbGroups = ((mbRGRes && mbRGRes['release-groups']) || []).filter(function(rg){
                   if(!rg || !rg.title || !rg['first-release-date']) return false;
                   var st = rg['secondary-types'] || [];
@@ -15863,7 +15917,7 @@ if(typeof toast === 'function') toastWithCancel();
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
             html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks</div></div>';
-            html += '<button class="dp-ah-rm" data-cid="' + (album.collectionId||'') + '" data-cname="' + escapeHtml(album.collectionName||'') + '" style="width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>';
+            html += window.__ahSelectMode ? '<input type="checkbox" class="dp-ah-cb" data-cid="' + (album.collectionId||'') + '" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--coral);" />' : '<button class="dp-ah-rm" data-cid="' + (album.collectionId||'') + '" data-cname="' + escapeHtml(album.collectionName||'') + '" style="width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>';
             html += '<span class="dp-ah-chevron" style="font-size:10px;transition:transform 0.2s;">▸</span>';
             html += '</div>';
             html += '<div id="' + albumId + '" class="dp-ah-songs" style="display:none;padding:2px 0 4px 40px;"></div>';
@@ -15871,7 +15925,7 @@ if(typeof toast === 'function') toastWithCancel();
           }
           html += '</div></div>';
         }
-        html = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button></div>' + html;
+        html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button><button id="ahSelectBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u2610 Select</button></div>' + html;
         openDiscoverPopup('📀 Album History', html, subtitle);
         if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
         
