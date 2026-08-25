@@ -6281,20 +6281,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   $('lyricsTranslateBtn').addEventListener('click', () => translateLyricsToEnglish());
 
+  // Refetch lyrics button: clear cached lyrics and re-fetch
+  $('lyricsRefetchBtn').addEventListener('click', async () => {
+    var t = currentTrack;
+    if(!t) return;
+    // Clear cached lyrics
+    t.lyrics = null;
+    t.lyricsSynced = null;
+    t.lyricsLines = null;
+    persistTrackMeta(t);
+    toast('Refetching lyrics...', 2000);
+    fetchLyrics(t);
+  });
+
   $('lyricsFontSlider').addEventListener('input', (e) => {
     lyricsFontSize = parseInt(e.target.value);
-    // Refetch lyrics button: clear cached lyrics and re-fetch
-    $('lyricsRefetchBtn').addEventListener('click', async () => {
-      var t = currentTrack;
-      if(!t) return;
-      // Clear cached lyrics
-      t.lyrics = null;
-      t.lyricsSynced = null;
-      t.lyricsLines = null;
-      persistTrackMeta(t);
-      toast('Refetching lyrics...', 2000);
-      fetchLyrics(t);
-    });
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
   });
   
@@ -15034,11 +15035,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       pop.querySelector('.pop-confirm').addEventListener('click', function(){
         pop.remove();
         hideAlbum(cid, cname);
-        // Clear AH data cache so removed album doesn't reappear
-        try{ localStorage.removeItem('sidecut_ahArtistData'); }catch(e){}
-        try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(e){}
-        var ahBtn2 = document.getElementById('discoverAlbumHistory');
-        if(ahBtn2 && ahBtn2.onclick) ahBtn2.onclick();
+        closeDiscoverPopup();
       });
       var bd = document.createElement('div');
       bd.style.cssText = 'position:fixed;inset:0;z-index:249;';
@@ -17612,6 +17609,7 @@ window.__ahCancelToast = function(){
   if(!window.__ahFetching) return;
   window.__ahCancelled = true;
   window.__ahFetching = false;
+  try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
   if(typeof toast === 'function') toast('📀 Fetch cancelled.', 2000);
 };
 
