@@ -15257,6 +15257,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
         if(!isOpen && !tgt.dataset.loaded){
           tgt.dataset.loaded = '1';
+          window._mbFallbackDone = false;
           var artistName = this.dataset.artist;
           var albumName = this.dataset.album;
           var container = tgt;
@@ -15281,7 +15282,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               .map(function(u){ return { kind: 'it', url: u }; });
           }
           (function fetchTracks(sources){
-            if(!sources.length){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found.</div>'; return null; }
+            if(!sources.length){
+              // If all sources failed and this is an MB album, try iTunes as last resort
+              if(!window._mbFallbackDone && h.dataset.mb){
+                window._mbFallbackDone = true;
+                var itUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
+                trackSources = [{ kind: 'it', url: itUrl }];
+                return fetchTracks(trackSources);
+              }
+              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>';
+              return null;
+            }
             var src = sources[0];
             var finishTracks = function(tracks){
               if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:8px 0;">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>'; return; }
@@ -15325,8 +15336,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 if(cid){ hideAlbum(cid, cname); try{ this.closest('.dp-ah-album').remove(); }catch(_){} if(typeof toast === 'function') toast('Removed \"' + cname + '\"', 2000); }
               }); }
             };
-            return fetchWithProxy(src.url)
-            .then(function(r){ return r && r.ok ? r.json() : {}; })
+            var _trackTimeout = new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 10000); });
+            var _trackFetch = fetchWithProxy(src.url)
+            .then(function(r){ return r && r.ok ? r.json() : {}; });
+            return Promise.race([_trackFetch, _trackTimeout])
             .then(function(data){
               if(src.kind === 'mb'){
                 // MusicBrainz track lists are one level down: release-group →
@@ -15356,7 +15369,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               }
               return finishTracks(tracks);
             });
-          })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks.</div>'; });
+          })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>'; });
         }
       });
     });
@@ -16093,13 +16106,21 @@ if(typeof toast === 'function') toastWithCancel();
           else if(isMb) url = 'https://musicbrainz.org/ws/2/release-group/' + cid + '?inc=releases&fmt=json'
           else url = 'https://itunes.apple.com/lookup?id=' + cid + '&entity=album';
           if(!url) return;
-          fetchWithProxy(url).then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
+          var _tcTimeout = new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 8000); });
+          Promise.race([fetchWithProxy(url).then(function(r){ return r && r.ok ? r.json() : {}; }), _tcTimeout]).then(function(d){
             var tc;
             if(isDz) tc = d.nb_tracks;
             else if(isMb){ var rels = (d.releases||[]).filter(function(r){ return r.status === 'Official'; }); var rel = rels[0] || (d.releases||[])[0]; tc = rel && rel['track-count']; }
             else { var al = (d.results||[])[0]; tc = al && al.trackCount; }
             if(tc && tc > 0){
               infoDiv.textContent = infoDiv.textContent.replace('? tracks', tc + ' tracks');
+            } else if(isMb) {
+              // MB track count failed — try iTunes search as fallback
+              var itUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(hdr.dataset.artist + ' ' + hdr.dataset.album) + '&media=music&entity=song&limit=200';
+              fetchWithProxy(itUrl).then(function(r2){ return r2 && r2.ok ? r2.json() : {}; }).then(function(d2){
+                var tracks = (d2.results||[]).filter(function(r){ return r && r.trackName; });
+                if(tracks.length > 0) infoDiv.textContent = infoDiv.textContent.replace('? tracks', tracks.length + ' tracks');
+              }).catch(function(){});
             }
           }).catch(function(){});
         });
