@@ -2847,8 +2847,21 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     padding: 6px 10px;
     margin: 2px 0;
     border-radius: 8px;
-    transition: color 0.25s ease, transform 0.25s ease, background 0.25s ease;
+    transition: color 0.25s ease, transform 0.25s ease, background 0.25s ease, filter 0.3s ease;
     color: var(--ink-dim);
+    cursor: pointer;
+  }
+  #lyricsText .lyric-line:active {
+    transform: scale(0.98);
+  }
+  #lyricsText .lyric-word {
+    cursor: pointer;
+    padding: 1px 0;
+    border-radius: 4px;
+    transition: color 0.15s ease, background 0.15s ease, filter 0.3s ease;
+  }
+  #lyricsText .lyric-word:active {
+    background: rgba(255,255,255,0.05);
   }
   #lyricsText .lyric-line.current {
     color: var(--coral);
@@ -6086,6 +6099,49 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
     // Always start interval for highlight tracking (scroll is controlled by flag)
     startLyricsAutoScroll();
+
+    // Wire up tap-to-seek on lyrics lines and words (delegated)
+    if (!$('lyricsText')._seekWired) {
+      $('lyricsText')._seekWired = true;
+      $('lyricsText').addEventListener('click', function(ev) {
+        var audio = activeAudio();
+        if (!audio) return;
+        // Try word first (more precise), then line
+        var word = ev.target.closest('.lyric-word');
+        var line = ev.target.closest('.lyric-line');
+        if (word && word.dataset.wordStart != null) {
+          var lineEl = word.closest('.lyric-line');
+          var lineTime = parseFloat(lineEl.dataset.time) || 0;
+          var offset = word.dataset.wordOffset || '';
+          var parts = offset.split('/');
+          if (parts.length === 2) {
+            var wIdx = parseInt(parts[0]) || 0;
+            var wTotal = parseInt(parts[1]) || 1;
+            // Find next line time for duration
+            var syncedLines = $('lyricsText').querySelectorAll('.lyric-line[data-time]');
+            var lineIdx = Array.from(syncedLines).indexOf(lineEl);
+            var nextTime = (lineIdx < syncedLines.length - 1) ? parseFloat(syncedLines[lineIdx + 1].dataset.time) : (lineTime + 3);
+            var dur = Math.max(0.3, nextTime - lineTime);
+            var wordTime = lineTime + (wIdx / wTotal) * dur;
+            audio.currentTime = wordTime;
+          } else {
+            audio.currentTime = lineTime;
+          }
+        } else if (line && line.dataset.time != null) {
+          audio.currentTime = parseFloat(line.dataset.time) || 0;
+        }
+        // Reset highlight tracking so it picks up immediately
+        lastLyricsIdx = -1;
+        manualScrollGrace = 0;
+        // Brief tap feedback
+        var target = word || line;
+        if (target) {
+          target.style.transition = 'none';
+          target.style.filter = 'brightness(1.5)';
+          setTimeout(function() { target.style.transition = 'filter 0.3s'; target.style.filter = ''; }, 100);
+        }
+      });
+    }
   }
   let lastLyricsIdx = -1;
   function startLyricsAutoScroll() {
@@ -6265,7 +6321,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             const words = text.split(/(\s+)/);
             const wordSpans = words.map((w, i) => {
               if (/^\s+$/.test(w)) return escapeHtml(w);
-              return '<span class="lyric-word" data-word="1">' + escapeHtml(w) + '</span>';
+              var wIdx = words.slice(0, i+1).filter(function(x){return !/^\s+$/.test(x);}).length - 1;
+              var wTotal = words.filter(function(x){return !/^\s+$/.test(x);}).length;
+              return '<span class="lyric-word" data-word="1" data-word-start="' + time + '" data-word-offset="' + wIdx + '/' + wTotal + '">' + escapeHtml(w) + '</span>';
             }).join('');
             return '<div class="lyric-line" data-time="' + time + '" data-wordline="1">' + wordSpans + '</div>';
           }
