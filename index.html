@@ -6094,12 +6094,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const container = $('lyricsContent');
     if (!container) return;
     
-    // Start at top
+    // Start at top — suppress scroll event so it doesn't set manualScrollGrace
+    isProgrammaticScroll = true;
     container.scrollTop = 0;
+    setTimeout(() => { isProgrammaticScroll = false; }, 100);
     lastLyricsIdx = -1;
     lastLyricsScrollTarget = -1;
     
     lyricsScrollInterval = setInterval(() => {
+      try {
       // Check if modal is still open
       const backdrop = $('lyricsBackdrop');
       if (!backdrop || backdrop.style.display !== 'flex') {
@@ -6211,6 +6214,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
         }
       }
+      } catch(_e) { console.error('Lyrics sync error:', _e); }
     }, 150); // Slightly slower interval for better performance
   }
 
@@ -6225,7 +6229,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if (!lyricsAutoScroll || !line) return;
     // Honour a recent manual scroll: give the user ~3s of peace before
     // auto-scroll re-acquires the current line, so it can't fight a drag.
-    if (Date.now() - manualScrollGrace < 3000) return;
+    if (Date.now() - manualScrollGrace < 1500) return;
     const viewH = container.clientHeight;
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
     // Line's top relative to the scroll container's content.
@@ -18283,84 +18287,6 @@ function closeDiscoverPopup(){
 document.addEventListener('click', function(e){
   if(e.target && e.target.id === 'discPopupOverlay') closeDiscoverPopup();
 }, false);
-
-      // Full Albums: fetch complete discography for each pinned artist
-      const alBtn = $('discoverAlbums');
-      if(alBtn) alBtn.onclick = async function(){try{
-        if(!isPremiumActive()){ toast('Premium feature \u2014 unlock in Settings!'); openSettingsTo('premium'); return; }
-        if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
-        this.textContent = '⏳ Searching...'; this.disabled = true;
-        var artistAlbums = {};
-        var totalAlbums = 0;
-        for(var ai=0; ai<pinnedArtists.length; ai++){
-          var a = pinnedArtists[ai];
-          try{
-            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=50';
-            var resp = await fetchWithProxy(url);
-            if(!resp || !resp.ok) continue;
-            var data = await resp.json();
-            var results = (data.results||[]).filter(function(r){
-              if(!r || !r.collectionName) return false;
-              var rn = primaryArtistName(r.artistName||'').toLowerCase().trim();
-              var an = primaryArtistName(a.name).toLowerCase().trim();
-              return rn === an || rn.indexOf(an) !== -1 || an.indexOf(rn) !== -1;
-            });
-            if(results.length){
-              results.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
-              artistAlbums[a.name] = results;
-              totalAlbums += results.length;
-            }
-          }catch(e){}
-        }
-        this.textContent = '📚 Albums'; this.disabled = false;
-        if(!totalAlbums){ openDiscoverPopup('📚 Albums', '<div class="dp-empty">No albums found for pinned artists.</div>', ''); return; }
-        var html = '';
-        var artistKeys = Object.keys(artistAlbums).sort();
-        for(var ki=0; ki<artistKeys.length; ki++){
-          var artist = artistKeys[ki];
-          var albums = artistAlbums[artist];
-          var sid = 'dba_r_' + ki;
-          html += '<div class="dp-ah-artist">';
-          html += '<div class="dp-ah-artist-hdr" data-target="' + sid + '">';
-          html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
-          html += '<span style="font-size:13px;font-weight:600;flex:1;">' + escapeHtml(artist) + '</span>';
-          html += '<span style="font-size:11px;color:var(--ink-dim);">' + albums.length + ' album' + (albums.length!==1?'s':'') + '</span>';
-          html += '</div>';
-          html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
-          for(var ri=0; ri<albums.length; ri++){
-            var r = albums[ri];
-            var relDate = r.releaseDate ? r.releaseDate.slice(0,10) : '';
-            var daysAgo = r.releaseDate ? Math.floor((Date.now() - new Date(r.releaseDate).getTime())/86400000) : null;
-            var when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
-            var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : '';
-            var tc = r.trackCount || '?';
-            html += '<div class="dp-track" data-search="' + escapeHtml((r.collectionName||'') + ' ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.collectionViewUrl||'') + '">';
-            html += '<div style="width:44px;height:44px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
-            html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.collectionName||'') + '</div>';
-            html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (relDate ? relDate : '') + (when ? ' \u00b7 ' + when : '') + ' \u00b7 ' + tc + ' tracks</div></div></div>';
-          }
-          html += '</div></div>';
-        }
-        openDiscoverPopup('📚 Albums', html, totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
-        // Wire up artist headers
-        document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
-          h.addEventListener('click', function(){
-            var tgt = document.getElementById(this.dataset.target);
-            var chv = this.querySelector('.dp-ah-chevron');
-            if(!tgt) return;
-            var isOpen = tgt.style.display !== 'none';
-            tgt.style.display = isOpen ? 'none' : 'block';
-            if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
-          });
-        });
-        // Wire up track clicks
-        document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
-          row.addEventListener('click', function(){
-            $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
-          });
-        });
-      }catch(err){ console.error('[Albums] handler error:', err); }};
-
 
 // Standalone Singles refetch — called by the refetch button in the popup
 window.__refetchSingles = async function(){
