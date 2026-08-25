@@ -5859,7 +5859,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if (searchResp.ok) {
         const results = await searchResp.json();
         if (results && results.length > 0) {
-          // Try first result or find best match
+          // First try artist-matched results to avoid wrong-language lyrics
+          const _sArtist = cleanArtist.toLowerCase().trim();
+          const stripNonAlnum = s => s.replace(/[^a-z0-9 ]/g, '');
+          const _sNorm = stripNonAlnum(_sArtist);
+          for (const result of results.slice(0, 10)) {
+            const rArtist = (result.artistName || '').toLowerCase().trim();
+            const _rNorm = stripNonAlnum(rArtist);
+            const artistMatch = rArtist === _sArtist || rArtist.indexOf(_sArtist) !== -1 || _sArtist.indexOf(rArtist) !== -1 || _sNorm.indexOf(_rNorm) !== -1 || _rNorm.indexOf(_sNorm) !== -1;
+            if (!artistMatch) continue;
+            if (result.syncedLyrics || result.plainLyrics) {
+              const lyrics = result.syncedLyrics || result.plainLyrics;
+              const isSynced = !!result.syncedLyrics;
+              track.lyrics = lyrics;
+              track.lyricsSynced = isSynced;
+              persistTrackMeta(track);
+              showLyrics(lyrics, isSynced);
+              return;
+            }
+          }
+          // Fallback: any result without artist filter
           for (const result of results.slice(0, 5)) {
             if (result.syncedLyrics || result.plainLyrics) {
               const lyrics = result.syncedLyrics || result.plainLyrics;
@@ -6326,8 +6345,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       try {
         // Try LRCLIB first with custom search terms
         var lrclibUrl = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(searchArtist) + '&track_name=' + encodeURIComponent(searchTitle) + '&duration=' + Math.round(t.duration || 0);
-        var lrclibResp = await fetch(lrclibUrl);
-        if(lrclibResp.ok){
+        var lrclibResp = await fetchWithProxy(lrclibUrl);
+        if(lrclibResp && lrclibResp.ok){
           var data = await lrclibResp.json();
           if(data && (data.syncedLyrics || data.plainLyrics)){
             var lyrics = data.syncedLyrics || data.plainLyrics;
@@ -6340,14 +6359,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             return;
           }
         }
-        // Try LRCLIB search
+        // Try LRCLIB search - filter by matching artist to avoid wrong-language results
         var searchUrl = 'https://lrclib.net/api/search?q=' + encodeURIComponent(searchArtist + ' ' + searchTitle);
-        var searchResp = await fetch(searchUrl);
-        if(searchResp.ok){
+        var searchResp = await fetchWithProxy(searchUrl);
+        if(searchResp && searchResp.ok){
           var results = await searchResp.json();
           if(results && results.length > 0){
-            for(var ri = 0; ri < Math.min(results.length, 5); ri++){
+            var _sA = searchArtist.toLowerCase().trim();
+            for(var ri = 0; ri < Math.min(results.length, 10); ri++){
               var result = results[ri];
+              var rA = (result.artistName || '').toLowerCase().trim();
+              // Only accept if artist name matches (fuzzy: contains or is contained)
+              var artistMatch = rA === _sA || rA.indexOf(_sA) !== -1 || _sA.indexOf(rA) !== -1;
+              if(!artistMatch && rA.replace(/[^a-z0-9 ]/g,'').indexOf(_sA.replace(/[^a-z0-9 ]/g,'')) === -1 && _sA.replace(/[^a-z0-9 ]/g,'').indexOf(rA.replace(/[^a-z0-9 ]/g,'')) === -1) continue;
               if(result.syncedLyrics || result.plainLyrics){
                 var lyrics = result.syncedLyrics || result.plainLyrics;
                 var isSynced = !!result.syncedLyrics;
@@ -6359,11 +6383,25 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 return;
               }
             }
+            // If no artist-matched result, try any result as last resort
+            for(var ri2 = 0; ri2 < Math.min(results.length, 5); ri2++){
+              var result2 = results[ri2];
+              if(result2.syncedLyrics || result2.plainLyrics){
+                var lyrics = result2.syncedLyrics || result2.plainLyrics;
+                var isSynced = !!result2.syncedLyrics;
+                t.lyrics = lyrics;
+                t.lyricsSynced = isSynced;
+                persistTrackMeta(t);
+                showLyrics(lyrics, isSynced);
+                toast('Lyrics found (different artist match).', 2000);
+                return;
+              }
+            }
           }
         }
         // Try lyrics.ovh
-        var ovhResp = await fetch('https://api.lyrics.ovh/v1/' + encodeURIComponent(searchArtist) + '/' + encodeURIComponent(searchTitle));
-        if(ovhResp.ok){
+        var ovhResp = await fetchWithProxy('https://api.lyrics.ovh/v1/' + encodeURIComponent(searchArtist) + '/' + encodeURIComponent(searchTitle));
+        if(ovhResp && ovhResp.ok){
           var data = await ovhResp.json();
           if(data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental'){
             t.lyrics = data.lyrics;
@@ -6377,7 +6415,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         // Nothing found
         $('lyricsLoading').style.display = 'none';
         $('lyricsNotFound').style.display = 'block';
-        toast('No lyrics found for "' + searchTitle + '" by ' + searchArtist + '.', 3000);
+        toast('No lyrics found for "' + searchTitle + '" by ' + searchArtist + '. Try editing the search terms.', 3000);
       } catch(e) {
         console.error('Lyrics refetch error:', e);
         $('lyricsLoading').style.display = 'none';
