@@ -1808,6 +1808,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button id="discoverLastYear" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Old songs</button>
       <button id="discoverAlbumHistory" style="flex:1; padding:8px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📀 Album history</button>
       <button id="discoverSingles" style="padding:8px 14px;font-size:12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap;">🎵 Singles</button>
+      <button id="discoverAlbums" style="padding:8px 14px;font-size:12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap;">📚 Albums</button>
   </div>
   <div id="albumHistoryContainer" style="display:none; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); overflow:hidden;">
     <div style="padding:10px 14px; font-size:13.5px; font-weight:600; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;">
@@ -6961,7 +6962,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.0';
+  const APP_VERSION = '50.0.1';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
@@ -6981,6 +6982,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.0.1', date: 'August 25, 2026', title: 'Full Albums in Discover + Album sort for Playlists', items: [
+      'New 📚 Albums button in Discover — browse full discography for each pinned artist, grouped by artist with expandable album lists',
+      'New "By album" sort option in Playlists — sorts songs by artist, then album, for natural grouping',
+      'Album History: long-press album art to set a custom cover from an image URL'
+    ]},
     { version: '50.0', date: 'August 25, 2026', title: 'AI Assistant + lyrics fixes + album history improvements', items: [
       'New 🤖 AI Assistant in Settings — offline knowledge base with 50+ Q&As covering every SideCut feature, with Gemini AI fallback for advanced questions',
       'Fixed lyrics refetch — now filters by artist match to prevent wrong-language lyrics, uses fetchWithProxy for mobile reliability',
@@ -10406,6 +10412,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       arr.sort((a,b) => (allTracks.find(t=>t.id===a)?.name||'').localeCompare(allTracks.find(t=>t.id===b)?.name||''));
     } else if(sortKey === 'artist'){
       arr.sort((a,b) => (allTracks.find(t=>t.id===a)?.artist||'').localeCompare(allTracks.find(t=>t.id===b)?.artist||''));
+    } else if(sortKey === 'album'){
+      arr.sort((a,b) => {
+        const ta = allTracks.find(t=>t.id===a) || {};
+        const tb = allTracks.find(t=>t.id===b) || {};
+        const artistCmp = (ta.artist||'').localeCompare(tb.artist||'');
+        if(artistCmp !== 0) return artistCmp;
+        return (ta.album||'').localeCompare(tb.album||'');
+      });
     } else if(sortKey === 'genre'){
       arr.sort((a,b) => {
         const ga = allTracks.find(t=>t.id===a)?.genre || 'zzz_Unknown';
@@ -10561,6 +10575,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             <option value="default">Playlist order</option>
             <option value="alpha">A–Z</option>
             <option value="artist">By artist</option>
+            <option value="album">By album</option>
             <option value="genre">By genre</option>
             <option value="recent">Recently added</option>
           </select>
@@ -15273,6 +15288,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         selectBtn.textContent='\u2610 Select';
       }
     }); }
+
+    // Wire up long-press on album art to set custom cover
+    document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
+      var artDiv = hdr.querySelector('div:first-child');
+      if(!artDiv || artDiv._ahCoverWired) return;
+      artDiv._ahCoverWired = true;
+      var lpTimer = null;
+      var didLongPress = false;
+      artDiv.addEventListener('pointerdown', function(e){
+        didLongPress = false;
+        lpTimer = setTimeout(function(){
+          didLongPress = true;
+          _ahSetCover(hdr.dataset.artist||'', hdr.dataset.album||'', hdr.dataset.collectionId||'');
+        }, 500);
+      });
+      artDiv.addEventListener('pointerup', function(){ clearTimeout(lpTimer); });
+      artDiv.addEventListener('pointercancel', function(){ clearTimeout(lpTimer); });
+      artDiv.addEventListener('pointermove', function(){ clearTimeout(lpTimer); });
+    });
+
     // Wire up per-artist refetch buttons
     document.querySelectorAll('#discPopupBody .dp-ah-artist-rm').forEach(function(btn){
       btn.addEventListener('click', function(e){
@@ -17709,12 +17744,65 @@ function hideAlbum(collectionId, collectionName){
 }
 function isAlbumHidden(collectionId){ var h = getHiddenAlbums(); for(var i=0;i<h.length;i++){ if(String(h[i]) === String(collectionId)) return true; } return false; }
 // Async artwork resolver for albums with missing/broken covers
+// Set custom album cover — triggered by long-pressing album art
+function _ahSetCover(artistName, albumName, collectionId) {
+  var coverKey = (artistName + '|' + albumName).toLowerCase().trim();
+  var covers = {};
+  try { covers = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); } catch(e) {}
+  var currentCover = covers[coverKey] || '';
+  var formHtml = '<div style="padding:12px;border-bottom:1px solid var(--line);margin-bottom:4px;" id="ahCoverForm">';
+  formHtml += '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">Set cover for "' + escapeHtml(albumName) + '"</div>';
+  formHtml += '<input id="ahCoverUrl" type="text" value="' + escapeHtml(currentCover) + '" placeholder="Paste image URL" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:6px;box-sizing:border-box;" />';
+  formHtml += '<div style="display:flex;gap:6px;">';
+  formHtml += '<button id="ahCoverSave" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Save</button>';
+  formHtml += '<button id="ahCoverClear" style="flex:0;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Clear</button>';
+  formHtml += '<button id="ahCoverCancel" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>';
+  formHtml += '</div></div>';
+  var oldForm = document.getElementById('ahCoverForm'); if(oldForm) oldForm.remove();
+  var body = document.getElementById('discPopupBody');
+  if(body) body.insertAdjacentHTML('afterbegin', formHtml);
+  document.getElementById('ahCoverCancel').addEventListener('click', function(){ var f = document.getElementById('ahCoverForm'); if(f) f.remove(); });
+  document.getElementById('ahCoverClear').addEventListener('click', function(){
+    delete covers[coverKey];
+    localStorage.setItem('sidecut_ahCovers', JSON.stringify(covers));
+    toast('Cover cleared.', 1500);
+    var f = document.getElementById('ahCoverForm'); if(f) f.remove();
+    // Re-render
+    window.__refetchAlbums(false);
+  });
+  document.getElementById('ahCoverSave').addEventListener('click', function(){
+    var url = (document.getElementById('ahCoverUrl').value || '').trim();
+    if(!url) { toast('Please enter an image URL.', 2000); return; }
+    covers[coverKey] = url;
+    localStorage.setItem('sidecut_ahCovers', JSON.stringify(covers));
+    toast('Cover set!', 1500);
+    var f = document.getElementById('ahCoverForm'); if(f) f.remove();
+    // Update the art div immediately
+    document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
+      if((hdr.dataset.artist || '').toLowerCase().trim() === artistName.toLowerCase().trim() &&
+         (hdr.dataset.album || '').toLowerCase().trim() === albumName.toLowerCase().trim()){
+        var ad = hdr.querySelector('div:first-child');
+        if(ad) ad.style.backgroundImage = 'url(' + url + ')';
+      }
+    });
+  });
+}
+
 function __ahResolveArtworks(){
   var PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect width='32' height='32' rx='4' fill='%231e3a42'/%3E%3Ctext x='16' y='21' text-anchor='middle' fill='%236a9aaa' font-size='16'%3E%E2%99%AA%3C/text%3E%3C/svg%3E";
-  // Only resolve MusicBrainz albums — iTunes/Deezer artwork already works
+  // Apply custom covers first
+  var covers = {};
+  try { covers = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); } catch(e) {}
   document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
     var artDiv = hdr.querySelector('div:first-child');
     if(!artDiv) return;
+    var aName = (hdr.dataset.artist || '').toLowerCase().trim();
+    var alName = (hdr.dataset.album || '').toLowerCase().trim();
+    var cKey = aName + '|' + alName;
+    if(covers[cKey]){
+      artDiv.style.backgroundImage = 'url(' + covers[cKey] + ')';
+      return; // Skip resolver — custom cover takes precedence
+    }
     var bg = artDiv.style.backgroundImage || '';
     // If already has a real image (not placeholder), just verify it loads
     if(bg && bg !== 'none' && bg.indexOf('url(') !== -1 && bg.indexOf(PLACEHOLDER) === -1){
@@ -18195,6 +18283,85 @@ function closeDiscoverPopup(){
 document.addEventListener('click', function(e){
   if(e.target && e.target.id === 'discPopupOverlay') closeDiscoverPopup();
 }, false);
+
+      // Full Albums: fetch complete discography for each pinned artist
+      const alBtn = $('discoverAlbums');
+      if(alBtn) alBtn.onclick = async function(){try{
+        if(!isPremiumActive()){ toast('Premium feature \u2014 unlock in Settings!'); openSettingsTo('premium'); return; }
+        if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
+        this.textContent = '\u23f3 Searching...'; this.disabled = true;
+        var artistAlbums = {};
+        var totalAlbums = 0;
+        for(var ai=0; ai<pinnedArtists.length; ai++){
+          var a = pinnedArtists[ai];
+          try{
+            var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&media=music&entity=album&limit=50';
+            var resp = await fetchWithProxy(url);
+            if(!resp || !resp.ok) continue;
+            var data = await resp.json();
+            var results = (data.results||[]).filter(function(r){
+              if(!r || !r.collectionName) return false;
+              var rn = primaryArtistName(r.artistName||'').toLowerCase().trim();
+              var an = primaryArtistName(a.name).toLowerCase().trim();
+              return rn === an || rn.indexOf(an) !== -1 || an.indexOf(rn) !== -1;
+            });
+            if(results.length){
+              results.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
+              artistAlbums[a.name] = results;
+              totalAlbums += results.length;
+            }
+          }catch(e){}
+        }
+        this.textContent = '\U0001f4da Albums'; this.disabled = false;
+        if(!totalAlbums){ openDiscoverPopup('\U0001f4da Albums', '<div class="dp-empty">No albums found for pinned artists.</div>', ''); return; }
+        var html = '';
+        var artistKeys = Object.keys(artistAlbums).sort();
+        for(var ki=0; ki<artistKeys.length; ki++){
+          var artist = artistKeys[ki];
+          var albums = artistAlbums[artist];
+          var sid = 'dba_r_' + ki;
+          html += '<div class="dp-ah-artist">';
+          html += '<div class="dp-ah-artist-hdr" data-target="' + sid + '">';
+          html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
+          html += '<span style="font-size:13px;font-weight:600;flex:1;">' + escapeHtml(artist) + '</span>';
+          html += '<span style="font-size:11px;color:var(--ink-dim);">' + albums.length + ' album' + (albums.length!==1?'s':'') + '</span>';
+          html += '</div>';
+          html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
+          for(var ri=0; ri<albums.length; ri++){
+            var r = albums[ri];
+            var relDate = r.releaseDate ? r.releaseDate.slice(0,10) : '';
+            var daysAgo = r.releaseDate ? Math.floor((Date.now() - new Date(r.releaseDate).getTime())/86400000) : null;
+            var when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+            var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : '';
+            var tc = r.trackCount || '?';
+            html += '<div class="dp-track" data-search="' + escapeHtml((r.collectionName||'') + ' ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.collectionViewUrl||'') + '">';
+            html += '<div style="width:44px;height:44px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
+            html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.collectionName||'') + '</div>';
+            html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (relDate ? relDate : '') + (when ? ' \u00b7 ' + when : '') + ' \u00b7 ' + tc + ' tracks</div></div></div>';
+          }
+          html += '</div></div>';
+        }
+        openDiscoverPopup('\U0001f4da Albums', html, totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+        // Wire up artist headers
+        document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
+          h.addEventListener('click', function(){
+            var tgt = document.getElementById(this.dataset.target);
+            var chv = this.querySelector('.dp-ah-chevron');
+            if(!tgt) return;
+            var isOpen = tgt.style.display !== 'none';
+            tgt.style.display = isOpen ? 'none' : 'block';
+            if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
+          });
+        });
+        // Wire up track clicks
+        document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
+          row.addEventListener('click', function(){
+            $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
+          });
+        });
+      }catch(err){ console.error('[Albums] handler error:', err); }};
+
+
 // Standalone Singles refetch — called by the refetch button in the popup
 window.__refetchSingles = async function(){
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
