@@ -15493,7 +15493,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 // Get album art from the header's art div
                 var albumArtUrl = '';
                 try{ var artDiv = h.querySelector('div:first-child'); if(artDiv) albumArtUrl = artDiv.getAttribute('data-art-url') || ''; }catch(e){}
-                h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '" data-preview="' + escapeHtml(tr.previewUrl || '') + '" data-trackname="' + escapeHtml(tr.trackName) + '">';
+                h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '" data-preview="' + escapeHtml(tr.previewUrl || '') + '" data-trackname="' + escapeHtml(tr.trackName) + '" data-artist="' + escapeHtml(tr.artistName || artistName) + '" data-albumname="' + escapeHtml(albumName) + '" data-art="' + escapeHtml(albumArtUrl) + '" data-tracknum="' + (tr.trackNumber||ti+1) + '">';
                 if(albumArtUrl){ h2 += '<div style="width:28px;height:28px;border-radius:3px;background-size:cover;background-position:center;flex-shrink:0;background-image:url(' + escapeHtml(albumArtUrl) + ');"></div>'; }
                 h2 += '<span style="color:var(--ink-dim);min-width:18px;text-align:right;">' + (tr.trackNumber||'') + '</span>';
                 h2 += '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(tr.trackName) + '</span>';
@@ -15515,15 +15515,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                   if(e.target.closest('.ah-dl-track')){
                     var pv = row.dataset.preview;
                     if(pv){
-                      var tn = row.dataset.trackname || 'track';
-                      toast('\u2b07 Downloading: ' + tn, 2000);
+                      var meta = { name: row.dataset.trackname||'track', artist: row.dataset.artist||artistName, album: row.dataset.albumname||albumName, art: row.dataset.art||'', num: parseInt(row.dataset.tracknum)||0 };
+                      toast('\u2b07 Downloading: ' + meta.name, 2000);
                       fetch(pv).then(function(r){ return r.blob(); }).then(function(blob){
+                        return tagMp4WithMeta(blob, meta);
+                      }).then(function(blob){
                         var a = document.createElement('a');
                         a.href = URL.createObjectURL(blob);
-                        a.download = tn.replace(/[^a-zA-Z0-9 _-]/g,'').trim() + '.m4a';
+                        a.download = meta.name.replace(/[^a-zA-Z0-9 _-]/g,'').trim() + '.m4a';
                         document.body.appendChild(a); a.click(); document.body.removeChild(a);
                         URL.revokeObjectURL(a.href);
-                        toast('\u2705 Downloaded: ' + tn, 2000);
+                        toast('\u2705 Downloaded: ' + meta.name, 2000);
                       }).catch(function(){ toast('Download failed.', 3000); });
                     }
                     return;
@@ -15539,15 +15541,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 e.stopPropagation();
                 var rows = container.querySelectorAll('.dp-ah-track');
                 var items = [];
-                rows.forEach(function(r){
+                rows.forEach(function(r, ri){
                   var pv = r.dataset.preview;
-                  if(pv) items.push({ url: pv, name: r.dataset.trackname || 'track' });
+                  if(pv) items.push({ url: pv, name: r.dataset.trackname||'track', artist: r.dataset.artist||artistName, album: r.dataset.albumname||albumName, art: r.dataset.art||'', num: parseInt(r.dataset.tracknum)||ri+1 });
                 });
                 if(!items.length){ toast('No previews available.', 3000); return; }
                 toast('\u2b07 Downloading ' + items.length + ' tracks...', 5000);
                 var done = 0, fail = 0;
                 items.forEach(function(it){
                   fetch(it.url).then(function(r){ return r.blob(); }).then(function(blob){
+                    return tagMp4WithMeta(blob, { name: it.name, artist: it.artist, album: it.album, art: it.art, num: it.num });
+                  }).then(function(blob){
                     var a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
                     a.download = it.name.replace(/[^a-zA-Z0-9 _-]/g,'').trim() + '.m4a';
@@ -18380,6 +18384,147 @@ document.addEventListener('pointerdown', (e) => {
     if(typeof toast === 'function') toast('Closed a stuck popup.');
   }
 }, true);
+
+
+// ---- MP4/iTunes metadata tagger for downloaded previews ----
+// Injects name, artist, album, artwork, and track number into M4A blobs
+// using native MP4 atom parsing (no external dependencies).
+async function tagMp4WithMeta(blob, meta) {
+  try {
+    var buf = await blob.arrayBuffer();
+    var u8 = new Uint8Array(buf);
+    // Parse top-level atoms
+    var atoms = [], pos = 0;
+    while (pos < u8.length - 8) {
+      var sz = (u8[pos] << 24 | u8[pos+1] << 16 | u8[pos+2] << 8 | u8[pos+3]) >>> 0;
+      var tp = String.fromCharCode(u8[pos+4], u8[pos+5], u8[pos+6], u8[pos+7]);
+      if (sz < 8) { atoms.push(u8.slice(pos, pos + (u8.length - pos))); break; }
+      if (pos + sz > u8.length) { atoms.push(u8.slice(pos, pos + (u8.length - pos))); break; }
+      atoms.push(u8.slice(pos, pos + sz));
+      pos += sz;
+    }
+    if (pos < u8.length) atoms.push(u8.slice(pos));
+
+    // Build ilst payload (concatenated metadata items)
+    var ilstParts = [];
+    // Name atom: \u00a9nam
+    if (meta.name) {
+      var d = new TextEncoder().encode(meta.name);
+      ilstParts.push(buildMetaAtom('\u00a9nam', 1, d));
+    }
+    // Artist atom: \u00a9ART
+    if (meta.artist) {
+      var d = new TextEncoder().encode(meta.artist);
+      ilstParts.push(buildMetaAtom('\u00a9ART', 1, d));
+    }
+    // Album atom: \u00a9alb
+    if (meta.album) {
+      var d = new TextEncoder().encode(meta.album);
+      ilstParts.push(buildMetaAtom('\u00a9alb', 1, d));
+    }
+    // Track number: trkn
+    if (meta.num) {
+      var d = new Uint8Array([0, meta.num, 0, 0]);
+      ilstParts.push(buildMetaAtom('trkn', 0, d));
+    }
+    // Artwork: covr (fetch from URL)
+    if (meta.art) {
+      try {
+        var artResp = await fetch(meta.art.replace('/100x100bb.jpg', '/600x600bb.jpg'));
+        if (artResp.ok) {
+          var artBuf = await artResp.arrayBuffer();
+          var artType = (meta.art.match(/\.png/i)) ? 14 : 13;
+          ilstParts.push(buildMetaAtom('covr', artType, new Uint8Array(artBuf)));
+        }
+      } catch(e) {}
+    }
+
+    if (!ilstParts.length) return blob;
+
+    // Build ilst atom
+    var ilstData = concatBytes(ilstParts);
+    var ilstAtom = buildAtom('ilst', ilstData);
+
+    // Build meta atom (contains ilst + required mdhd/free spaces)
+    var mdhd = buildAtom('mdhd', new Uint8Array(12)); // empty placeholder
+    var hdlr = buildAtom('hdlr', new Uint8Array([0,0,0,0,0,0,0,0, 115,111,117,110, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0])); // sound handler
+    var metaInner = concatBytes([mdhd, hdlr, ilstAtom]);
+    var metaAtom = buildAtom('meta', metaInner);
+
+    // Build udta atom
+    var udtaAtom = buildAtom('udta', metaAtom);
+
+    // Now rebuild the file: insert udta after moov atom
+    var outParts = [];
+    var foundMoov = false;
+    for (var i = 0; i < atoms.length; i++) {
+      var tp2 = getAtomType(atoms[i]);
+      outParts.push(atoms[i]);
+      if (tp2 === 'moov') {
+        // Insert udta as last child of moov (rebuild moov with udta appended)
+        var moovInner = atoms[i].slice(8);
+        var newMoov = buildAtom('moov', concatBytes([moovInner, udtaAtom]));
+        // Replace the last pushed moov
+        outParts[outParts.length - 1] = newMoov;
+        foundMoov = true;
+      }
+    }
+    if (!foundMoov) return blob;
+
+    return new Blob([concatBytes(outParts)], { type: 'audio/mp4' });
+  } catch(e) {
+    console.error('tagMp4WithMeta failed:', e);
+    return blob;
+  }
+}
+
+function buildAtom(type, data) {
+  var size = 8 + data.length;
+  var h = new Uint8Array(8);
+  h[0] = (size >>> 24) & 0xff; h[1] = (size >>> 16) & 0xff;
+  h[2] = (size >>> 8) & 0xff; h[3] = size & 0xff;
+  h[4] = type.charCodeAt(0); h[5] = type.charCodeAt(1);
+  h[6] = type.charCodeAt(2); h[7] = type.charCodeAt(3);
+  return concatBytes([h, data]);
+}
+
+function buildMetaAtom(type, dataType, data) {
+  // Full atom: [size][type][flags(3)] + [data_atom: size(4) + "data"(4) + data_type(4) + locale(4) + payload]
+  var innerSize = 8 + 4 + data.length; // data atom header + data type + locale + payload
+  var fullSize = 8 + innerSize; // outer atom
+  var buf = new Uint8Array(fullSize);
+  // Outer header
+  buf[0] = (fullSize >>> 24) & 0xff; buf[1] = (fullSize >>> 16) & 0xff;
+  buf[2] = (fullSize >>> 8) & 0xff; buf[3] = fullSize & 0xff;
+  buf[4] = type.charCodeAt(0); buf[5] = type.charCodeAt(1);
+  buf[6] = type.charCodeAt(2); buf[7] = type.charCodeAt(3);
+  // Flags (0)
+  buf[8] = 0; buf[9] = 0; buf[10] = 0;
+  // Data atom
+  buf[11] = (innerSize >>> 24) & 0xff; buf[12] = (innerSize >>> 16) & 0xff;
+  buf[13] = (innerSize >>> 8) & 0xff; buf[14] = innerSize & 0xff;
+  buf[15] = 100; buf[16] = 97; buf[17] = 116; buf[18] = 97; // "data"
+  buf[19] = (dataType >>> 24) & 0xff; buf[20] = (dataType >>> 16) & 0xff;
+  buf[21] = (dataType >>> 8) & 0xff; buf[22] = dataType & 0xff;
+  buf[23] = 0; buf[24] = 0; buf[25] = 0; buf[26] = 0; // locale
+  buf.set(data, 27);
+  return buf;
+}
+
+function getAtomType(bytes) {
+  if (bytes.length < 8) return '';
+  return String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+}
+
+function concatBytes(arrays) {
+  var total = 0;
+  for (var i = 0; i < arrays.length; i++) total += arrays[i].length;
+  var out = new Uint8Array(total);
+  var off = 0;
+  for (var i = 0; i < arrays.length; i++) { out.set(arrays[i], off); off += arrays[i].length; }
+  return out;
+}
+
 
 // --- Discover popup helpers ---
 function openDiscoverPopup(title, bodyHTML, subtitle){
