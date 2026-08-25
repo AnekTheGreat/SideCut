@@ -17470,26 +17470,53 @@ function __ahResolveArtworks(){
     var artDiv = hdr.querySelector('div:first-child');
     if(!artDiv) return;
     var bg = artDiv.style.backgroundImage || '';
-    if(!bg || bg === 'none' || bg.indexOf(PLACEHOLDER) !== -1) return;
-    var url = bg.replace(/^url\(["']?/, '').replace(/["']?\)$/, '');
-    if(!url || url.indexOf('data:') === 0) return;
-    var img = new Image();
-    img.onload = function(){};
-    img.onerror = function(){
-      // Image failed — try Deezer lookup as fallback for MB albums
-      var cid = hdr.dataset.collectionId;
-      var isMb = hdr.dataset.mb;
-      if(isMb && cid){
-        fetchWithProxy('https://api.deezer.com/album/' + cid).then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
-          if(d && d.cover_medium){ artDiv.style.backgroundImage = 'url(' + d.cover_medium + ')'; }
-          else { artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')'; }
-        }).catch(function(){ artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')'; });
-      } else {
-        artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')';
+    var hasImage = bg && bg !== 'none' && bg.indexOf('url(') !== -1;
+    // For albums with an image URL, test if it loads
+    if(hasImage && bg.indexOf(PLACEHOLDER) === -1){
+      var url = bg.replace(/^url\(["']?/, '').replace(/["']?\)$/, '');
+      if(url && url.indexOf('data:') !== 0){
+        var img = new Image();
+        img.onerror = function(){
+          // Image failed — fetch artwork from Deezer as fallback
+          __ahFetchArtFallback(hdr, artDiv, PLACEHOLDER);
+        };
+        img.src = url;
+        return;
       }
-    };
-    img.src = url;
+    }
+    // For albums with NO background-image at all, fetch artwork
+    if(!hasImage){
+      __ahFetchArtFallback(hdr, artDiv, PLACEHOLDER);
+    }
   });
+}
+function __ahFetchArtFallback(hdr, artDiv, PLACEHOLDER){
+  var cid = hdr.dataset.collectionId;
+  var artistName = hdr.dataset.artist || '';
+  var albumName = hdr.dataset.album || '';
+  // Try Deezer first (by album ID for MB albums, by search for others)
+  var isMb = hdr.dataset.mb;
+  var isDz = hdr.dataset.dz;
+  if(isMb && cid){
+    fetchWithProxy('https://api.deezer.com/album/' + cid).then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
+      if(d && d.cover_medium){ artDiv.style.backgroundImage = 'url(' + d.cover_medium + ')'; }
+      else { __ahFetchArtFromSearch(artistName, albumName, artDiv, PLACEHOLDER); }
+    }).catch(function(){ __ahFetchArtFromSearch(artistName, albumName, artDiv, PLACEHOLDER); });
+  } else {
+    __ahFetchArtFromSearch(artistName, albumName, artDiv, PLACEHOLDER);
+  }
+}
+function __ahFetchArtFromSearch(artist, album, artDiv, PLACEHOLDER){
+  if(!artist || !album){ artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')'; return; }
+  var term = encodeURIComponent(artist + ' ' + album);
+  fetchWithProxy('https://itunes.apple.com/search?term=' + term + '&media=music&entity=album&limit=1').then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
+    var al = (d.results||[])[0];
+    if(al && al.artworkUrl100){
+      artDiv.style.backgroundImage = 'url(' + al.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') + ')';
+    } else {
+      artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')';
+    }
+  }).catch(function(){ artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')'; });
 }
 
 })();
