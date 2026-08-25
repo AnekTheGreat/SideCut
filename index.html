@@ -15362,6 +15362,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         didLongPress = false;
         lpTimer = setTimeout(function(){
           didLongPress = true;
+          // Only show cover form if album has no cover already
+          var hasCover = false;
+          var bgImg = artDiv.style.backgroundImage || '';
+          if(bgImg && bgImg !== 'none' && bgImg.indexOf('data:image/svg') === -1) hasCover = true;
+          // Also check custom covers in localStorage
+          var aKey = (hdr.dataset.artist||'').toLowerCase().trim() + '|' + (hdr.dataset.album||'').toLowerCase().trim();
+          try { var cvrs = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); if(cvrs[aKey]) hasCover = true; } catch(e){}
+          if(hasCover){ toast('Album already has a cover.', 1500); return; }
           _ahSetCover(hdr.dataset.artist||'', hdr.dataset.album||'', hdr.dataset.collectionId||'');
         }, 500);
       });
@@ -17822,11 +17830,11 @@ function _ahSetCover(artistName, albumName, collectionId) {
   try { covers = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); } catch(e) {}
   var currentCover = covers[coverKey] || '';
   var formHtml = '<div style="padding:12px;border-bottom:1px solid var(--line);margin-bottom:4px;" id="ahCoverForm">';
-  formHtml += '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">Set cover for "' + escapeHtml(albumName) + '"</div>';
+  formHtml += '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">Add album cover for "' + escapeHtml(albumName) + '"</div>';
   formHtml += '<input id="ahCoverUrl" type="text" value="' + escapeHtml(currentCover) + '" placeholder="Paste image URL" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:6px;box-sizing:border-box;" />';
   formHtml += '<div style="display:flex;gap:6px;">';
-  formHtml += '<button id="ahCoverSave" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Save</button>';
-  formHtml += '<button id="ahCoverClear" style="flex:0;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Clear</button>';
+  formHtml += '<button id="ahCoverSave" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Add cover</button>';
+  formHtml += '<button id="ahCoverClear" style="flex:0;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Remove</button>';
   formHtml += '<button id="ahCoverCancel" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>';
   formHtml += '</div></div>';
   var oldForm = document.getElementById('ahCoverForm'); if(oldForm) oldForm.remove();
