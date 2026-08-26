@@ -5951,51 +5951,43 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         var rtn = _strip(rt);
         return rt===_sTitle||rtn===_sTN||rt.indexOf(_sTitle)!==-1||_sTitle.indexOf(rt)!==-1||rtn.indexOf(_sTN)!==-1||_sTN.indexOf(rtn)!==-1;
       }
+      function _hasWrongScriptLyrics(lyrics, origTitle) {
+        // If the original title is Latin, reject lyrics that are mostly non-Latin (Portuguese/etc)
+        var isOrigLatin = /^[a-zA-Z0-9 \-']+$/.test((origTitle||'').replace(/\s+/g,' '));
+        if (!isOrigLatin) return false;
+        var sample = (lyrics || '').substring(0, 500);
+        var nonLatin = (sample.match(/[\u00C0-\u024F\u1E00-\u1EFF]/g) || []).length;
+        var total = sample.replace(/\s/g,'').length;
+        if (total > 10 && nonLatin / total > 0.15) return true;
+        return false;
+      }
       function _matchResults(results) {
         if (!results || results.length === 0) return false;
-        // P1: exact artist + close title
+        // P1: exact artist + close title (strict)
         for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
           var rA = (results[ri].artistName||'').toLowerCase().trim();
           var rN = _strip(rA);
           if (rA!==_sArtist && rN!==_sN) continue;
           if (!_tClose(results[ri].trackName)) continue;
-          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
-            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
-            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
-            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
-            return true;
-          }
+          var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+          if (!l) continue;
+          if (_hasWrongScriptLyrics(l, cleanTitle)) continue;
+          track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
+          persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
+          return true;
         }
-        // P2: fuzzy artist + close title
-        for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
-          var rA = (results[ri].artistName||'').toLowerCase().trim();
-          var rN = _strip(rA);
-          var fA = rA===_sArtist||rA.indexOf(_sArtist)!==-1||_sArtist.indexOf(rA)!==-1||rN.indexOf(_sN)!==-1||_sN.indexOf(rN)!==-1;
-          if (!fA) continue;
-          if (!_tClose(results[ri].trackName)) continue;
-          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
+        // P2: fuzzy artist + close title (only if both are 3+ chars)
+        if (_sArtist.length >= 3) {
+          for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
+            var rA = (results[ri].artistName||'').toLowerCase().trim();
+            var rN = _strip(rA);
+            if (rA.length < 3) continue;
+            var fA = rA===_sArtist||rA.indexOf(_sArtist)!==-1||_sArtist.indexOf(rA)!==-1||rN.indexOf(_sN)!==-1||_sN.indexOf(rN)!==-1;
+            if (!fA) continue;
+            if (!_tClose(results[ri].trackName)) continue;
             var l = results[ri].syncedLyrics || results[ri].plainLyrics;
-            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
-            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
-            return true;
-          }
-        }
-        // P3: exact artist only
-        for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
-          var rA = (results[ri].artistName||'').toLowerCase().trim();
-          var rN = _strip(rA);
-          if (rA!==_sArtist && rN!==_sN) continue;
-          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
-            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
-            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
-            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
-            return true;
-          }
-        }
-        // P4: any result
-        for (var ri = 0; ri < Math.min(results.length, 5); ri++) {
-          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
-            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+            if (!l) continue;
+            if (_hasWrongScriptLyrics(l, cleanTitle)) continue;
             track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
             persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
             return true;
@@ -6579,6 +6571,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           var rtn = rt.replace(/[^a-z0-9 ]/g,'').trim();
           return rt===_rsT||rtn===_rsTn||rt.indexOf(_rsT)!==-1||_rsT.indexOf(rt)!==-1||rtn.indexOf(_rsTn)!==-1||_rsTn.indexOf(rtn)!==-1;
         }
+        function _rHasWrongScript(lyrics, origTitle) {
+          var isOrigLatin = /^[a-zA-Z0-9 \-']+$/.test((origTitle||'').replace(/\s+/g,' '));
+          if (!isOrigLatin) return false;
+          var sample = (lyrics || '').substring(0, 500);
+          var nonLatin = (sample.match(/[\u00C0-\u024F\u1E00-\u1EFF]/g) || []).length;
+          var total = sample.replace(/\s/g,'').length;
+          if (total > 10 && nonLatin / total > 0.15) return true;
+          return false;
+        }
         function _rMatchResults(results) {
           if(!results || results.length === 0) return false;
           // P1: exact artist + title
@@ -6587,35 +6588,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
             if(rA !== _rsA && rAn !== _rsAn) continue;
             if(!_rrtClose(results[ri].trackName)) continue;
-            if(results[ri].syncedLyrics || results[ri].plainLyrics){
-              var l = results[ri].syncedLyrics || results[ri].plainLyrics;
-              t.lyrics = l; t.lyricsSynced = !!results[ri].syncedLyrics;
-              persistTrackMeta(t); showLyrics(l, !!results[ri].syncedLyrics);
-              toast('Lyrics found!', 2000);
-              return true;
-            }
+            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+            if (!l) continue;
+            if (_rHasWrongScript(l, searchTitle)) continue;
+            t.lyrics = l; t.lyricsSynced = !!results[ri].syncedLyrics;
+            persistTrackMeta(t); showLyrics(l, !!results[ri].syncedLyrics);
+            toast('Lyrics found!', 2000);
+            return true;
           }
-          // P2: fuzzy artist + title
-          for(var ri2 = 0; ri2 < Math.min(results.length, 10); ri2++){
-            var rA = (results[ri2].artistName||'').toLowerCase().trim();
-            var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
-            var fA = rA===_rsA||rA.indexOf(_rsA)!==-1||_rsA.indexOf(rA)!==-1||rAn.indexOf(_rsAn)!==-1||_rsAn.indexOf(rAn)!==-1;
-            if(!fA) continue;
-            if(results[ri2].syncedLyrics || results[ri2].plainLyrics){
+          // P2: fuzzy artist + title (only if artist 3+ chars)
+          if (_rsA.length >= 3) {
+            for(var ri2 = 0; ri2 < Math.min(results.length, 10); ri2++){
+              var rA = (results[ri2].artistName||'').toLowerCase().trim();
+              var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
+              if (rA.length < 3) continue;
+              var fA = rA===_rsA||rA.indexOf(_rsA)!==-1||_rsA.indexOf(rA)!==-1||rAn.indexOf(_rsAn)!==-1||_rsAn.indexOf(rAn)!==-1;
+              if(!fA) continue;
+              if(!_rrtClose(results[ri2].trackName)) continue;
               var l = results[ri2].syncedLyrics || results[ri2].plainLyrics;
+              if (!l) continue;
+              if (_rHasWrongScript(l, searchTitle)) continue;
               t.lyrics = l; t.lyricsSynced = !!results[ri2].syncedLyrics;
               persistTrackMeta(t); showLyrics(l, !!results[ri2].syncedLyrics);
               toast('Lyrics found!', 2000);
-              return true;
-            }
-          }
-          // P3: any result
-          for(var ri3 = 0; ri3 < Math.min(results.length, 5); ri3++){
-            if(results[ri3].syncedLyrics || results[ri3].plainLyrics){
-              var l = results[ri3].syncedLyrics || results[ri3].plainLyrics;
-              t.lyrics = l; t.lyricsSynced = !!results[ri3].syncedLyrics;
-              persistTrackMeta(t); showLyrics(l, !!results[ri3].syncedLyrics);
-              toast('Lyrics found (different artist).', 2000);
               return true;
             }
           }
