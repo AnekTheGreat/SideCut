@@ -18112,7 +18112,7 @@ function _ahSetCover(artistName, albumName, collectionId) {
   formHtml += '<input type="file" id="ahCoverFile" accept="image/*" style="display:none;" />';
   formHtml += '<button id="ahCoverPick" style="width:100%;padding:10px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px;">📷 Choose Photo</button>';
   // Paste hint — form listens for paste globally
-  formHtml += '<div id="ahCoverPaste" contenteditable="true" style="width:100%;padding:8px;border-radius:8px;border:2px dashed var(--line);text-align:center;color:var(--ink-dim);font-size:11px;margin-bottom:6px;outline:none;min-height:18px;" data-placeholder="📋 Tap here and paste an image">📋 Tap here and paste an image</div>';
+  formHtml += '<button id="ahCoverPasteBtn" style="width:100%;padding:10px;border-radius:8px;border:2px dashed var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;margin-bottom:6px;">📋 Paste from clipboard</button>';
   // Collapsible URL fallback
   formHtml += '<div style="font-size:10px;color:var(--ink-dim);text-align:center;margin-bottom:6px;cursor:pointer;" id="ahCoverUrlToggle">or paste a URL ↓</div>';
   formHtml += '<div id="ahCoverUrlWrap" style="display:none;">';
@@ -18142,29 +18142,57 @@ function _ahSetCover(artistName, albumName, collectionId) {
     }
   });
 
-  // Paste listener on the contenteditable div — works on mobile with long-press paste
-  var pasteTarget = document.getElementById('ahCoverPaste');
-  if(pasteTarget){
-    pasteTarget.addEventListener('focus', function(){ this.textContent = ''; this.style.color = 'var(--ink)'; });
-    pasteTarget.addEventListener('blur', function(){ if(!this.textContent.trim()) this.style.color = 'var(--ink-dim)'; });
-  }
-  var pasteSource = pasteTarget || document.getElementById('ahCoverForm');
-  pasteSource.addEventListener('paste', function(e){
-    e.preventDefault();
-    var items = (e.clipboardData || e.originalEvent.clipboardData).items;
-    for(var i = 0; i < items.length; i++){
-      if(items[i].type.startsWith('image/')){
-        var file = items[i].getAsFile();
-        _ahFileToDataURL(file).then(function(dataUrl){
-          var preview = document.getElementById('ahCoverPreview');
-          if(preview) preview.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;" />';
-          _ahSaveCover(dataUrl);
-        }).catch(function(){ toast('Could not read pasted image.', 2000); });
-        return;
+  // Clipboard paste button — uses navigator.clipboard.read() to grab image from clipboard
+  var pasteBtn = document.getElementById('ahCoverPasteBtn');
+  if(pasteBtn){
+    pasteBtn.addEventListener('click', function(){
+      if(navigator.clipboard && navigator.clipboard.read){
+        navigator.clipboard.read().then(function(clipItems){
+          for(var ci = 0; ci < clipItems.length; ci++){
+            var clipItem = clipItems[ci];
+            var imageTypes = clipItem.types.filter(function(t){ return t.startsWith('image/'); });
+            if(imageTypes.length > 0){
+              clipItem.getType(imageTypes[0]).then(function(blob){
+                _ahFileToDataURL(blob).then(function(dataUrl){
+                  var preview = document.getElementById('ahCoverPreview');
+                  if(preview) preview.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;" />';
+                  _ahSaveCover(dataUrl);
+                }).catch(function(){ toast('Could not read clipboard image.', 2000); });
+              });
+              return;
+            }
+          }
+          toast('No image in clipboard — copy a photo first.', 2500);
+        }).catch(function(err){
+          // Fallback: try keyboard paste event approach
+          toast('Clipboard access denied — try Ctrl+V instead.', 2500);
+        });
+      } else {
+        toast('Clipboard API not supported — try Ctrl+V or choose a photo.', 2500);
       }
-    }
-    toast('No image found in clipboard.', 2000);
-  });
+    });
+  }
+  // Also listen for keyboard paste (Ctrl+V / Cmd+V) on the form
+  var formEl = document.getElementById('ahCoverForm');
+  if(formEl){
+    formEl.addEventListener('paste', function(e){
+      e.preventDefault();
+      var items = (e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData) || {items:[]}).items;
+      for(var i = 0; i < items.length; i++){
+        if(items[i].type && items[i].type.startsWith('image/')){
+          var file = items[i].getAsFile();
+          if(file){
+            _ahFileToDataURL(file).then(function(dataUrl){
+              var preview = document.getElementById('ahCoverPreview');
+              if(preview) preview.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;" />';
+              _ahSaveCover(dataUrl);
+            }).catch(function(){ toast('Could not read pasted image.', 2000); });
+          }
+          return;
+        }
+      }
+    });
+  }
 
   // URL toggle
   document.getElementById('ahCoverUrlToggle').addEventListener('click', function(){
