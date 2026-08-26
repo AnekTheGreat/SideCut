@@ -18112,7 +18112,7 @@ function _ahSetCover(artistName, albumName, collectionId) {
   formHtml += '<input type="file" id="ahCoverFile" accept="image/*" style="display:none;" />';
   formHtml += '<button id="ahCoverPick" style="width:100%;padding:10px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px;">📷 Choose Photo</button>';
   // Paste hint — form listens for paste globally
-  formHtml += '<div style="width:100%;padding:8px;border-radius:8px;border:2px dashed var(--line);text-align:center;color:var(--ink-dim);font-size:11px;margin-bottom:6px;">📋 Paste an image anywhere (Ctrl+V)</div>';
+  formHtml += '<div id="ahCoverPaste" contenteditable="true" style="width:100%;padding:8px;border-radius:8px;border:2px dashed var(--line);text-align:center;color:var(--ink-dim);font-size:11px;margin-bottom:6px;outline:none;min-height:18px;" data-placeholder="📋 Tap here and paste an image">📋 Tap here and paste an image</div>';
   // Collapsible URL fallback
   formHtml += '<div style="font-size:10px;color:var(--ink-dim);text-align:center;margin-bottom:6px;cursor:pointer;" id="ahCoverUrlToggle">or paste a URL ↓</div>';
   formHtml += '<div id="ahCoverUrlWrap" style="display:none;">';
@@ -18142,10 +18142,14 @@ function _ahSetCover(artistName, albumName, collectionId) {
     }
   });
 
-  // Listen for paste on the entire form — user can paste anywhere
-  var formEl = document.getElementById('ahCoverForm');
-  formEl.setAttribute('tabindex', '0');
-  formEl.addEventListener('paste', function(e){
+  // Paste listener on the contenteditable div — works on mobile with long-press paste
+  var pasteTarget = document.getElementById('ahCoverPaste');
+  if(pasteTarget){
+    pasteTarget.addEventListener('focus', function(){ this.textContent = ''; this.style.color = 'var(--ink)'; });
+    pasteTarget.addEventListener('blur', function(){ if(!this.textContent.trim()) this.style.color = 'var(--ink-dim)'; });
+  }
+  var pasteSource = pasteTarget || document.getElementById('ahCoverForm');
+  pasteSource.addEventListener('paste', function(e){
     e.preventDefault();
     var items = (e.clipboardData || e.originalEvent.clipboardData).items;
     for(var i = 0; i < items.length; i++){
