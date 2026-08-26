@@ -15535,34 +15535,25 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
     }); }
 
-    // Wire up long-press on album art to set custom cover
+    // Wire up long-press on album header row to set/replace custom cover
     document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
-      var artDiv = hdr.querySelector('div:first-child');
-      if(!artDiv || artDiv._ahCoverWired) return;
-      artDiv._ahCoverWired = true;
+      if(hdr._ahCoverWired) return;
+      hdr._ahCoverWired = true;
       var lpTimer = null;
       var didLongPress = false;
       var lpStartX = 0, lpStartY = 0;
-      artDiv.addEventListener('pointerdown', function(e){
+      hdr.addEventListener('pointerdown', function(e){
         didLongPress = false;
         lpStartX = e.clientX || 0;
         lpStartY = e.clientY || 0;
         lpTimer = setTimeout(function(){
           didLongPress = true;
-          // Only show cover form if album has no cover already
-          var hasCover = false;
-          var bgImg = artDiv.style.backgroundImage || '';
-          if(bgImg && bgImg !== 'none' && bgImg.indexOf('data:image/svg') === -1) hasCover = true;
-          // Also check custom covers in localStorage
-          var aKey = (hdr.dataset.artist||'').toLowerCase().trim() + '|' + (hdr.dataset.album||'').toLowerCase().trim();
-          try { var cvrs = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); if(cvrs[aKey]) hasCover = true; } catch(e){}
-          if(hasCover){ toast('Album already has a cover.', 1500); return; }
           _ahSetCover(hdr.dataset.artist||'', hdr.dataset.album||'', hdr.dataset.collectionId||'');
         }, 500);
       });
-      artDiv.addEventListener('pointerup', function(e){ clearTimeout(lpTimer); if(didLongPress){ e.stopPropagation(); didLongPress = false; }});
-      artDiv.addEventListener('pointercancel', function(){ clearTimeout(lpTimer); didLongPress = false; });
-      artDiv.addEventListener('pointermove', function(e){
+      hdr.addEventListener('pointerup', function(e){ clearTimeout(lpTimer); if(didLongPress){ e.stopPropagation(); didLongPress = false; }});
+      hdr.addEventListener('pointercancel', function(){ clearTimeout(lpTimer); didLongPress = false; });
+      hdr.addEventListener('pointermove', function(e){
         var dx = (e.clientX||0) - lpStartX;
         var dy = (e.clientY||0) - lpStartY;
         if(Math.abs(dx) > 10 || Math.abs(dy) > 10) { clearTimeout(lpTimer); }
