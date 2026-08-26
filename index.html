@@ -1622,7 +1622,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 #discPopupBody .dp-ah-artist-hdr{display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:pointer;}
 #discPopupBody .dp-ah-artist-hdr:hover{background:var(--line);}
 #discPopupBody .dp-ah-album{border-bottom:1px solid var(--line);}
-#discPopupBody .dp-ah-album-hdr{display:flex;align-items:center;gap:8px;padding:8px 16px;cursor:pointer;touch-action:none;-webkit-touch-callout:none;}
+#discPopupBody .dp-ah-album-hdr{display:flex;align-items:center;gap:8px;padding:8px 16px;cursor:pointer;-webkit-touch-callout:none;}
 #discPopupBody .dp-ah-album-hdr:hover{background:var(--line);}
 #discPopupBody .dp-ah-rm:hover{background:rgba(255,80,80,0.2);color:var(--coral);}
 #discPopupBody .dp-ah-track{display:flex;align-items:center;gap:8px;padding:6px 16px;cursor:pointer;font-size:12px;}
@@ -15542,28 +15542,43 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       var lpTimer = null;
       var didLongPress = false;
       var lpStartX = 0, lpStartY = 0;
+      var moved = false;
       function onDown(ex, ey){
-        didLongPress = false;
+        didLongPress = false; moved = false;
         lpStartX = ex; lpStartY = ey;
         clearTimeout(lpTimer);
         lpTimer = setTimeout(function(){
-          didLongPress = true;
-          _ahSetCover(hdr.dataset.artist||'', hdr.dataset.album||'', hdr.dataset.collectionId||'');
+          if(!moved){
+            didLongPress = true;
+            // Haptic feedback if available
+            if(navigator.vibrate) navigator.vibrate(30);
+            _ahSetCover(hdr.dataset.artist||'', hdr.dataset.album||'', hdr.dataset.collectionId||'');
+          }
         }, 500);
       }
-      function onUp(e){ clearTimeout(lpTimer); if(didLongPress){ e.preventDefault(); e.stopPropagation(); didLongPress = false; }}
+      function onUp(e){
+        clearTimeout(lpTimer);
+        if(didLongPress){
+          try{ e.preventDefault(); }catch(ex){}
+          try{ e.stopPropagation(); }catch(ex){}
+        }
+        didLongPress = false;
+      }
       function onMove(ex, ey){
         var dx = ex - lpStartX, dy = ey - lpStartY;
-        if(Math.abs(dx) > 10 || Math.abs(dy) > 10) { clearTimeout(lpTimer); }
+        if(Math.abs(dx) > 8 || Math.abs(dy) > 8) { moved = true; clearTimeout(lpTimer); }
       }
-      // Use both pointer and touch events for max compat
+      function onCancel(){ clearTimeout(lpTimer); didLongPress = false; }
+      // Pointer events (desktop + some mobile)
       hdr.addEventListener('pointerdown', function(e){ onDown(e.clientX||0, e.clientY||0); });
       hdr.addEventListener('pointerup', onUp);
-      hdr.addEventListener('pointercancel', function(){ clearTimeout(lpTimer); didLongPress = false; });
+      hdr.addEventListener('pointercancel', onCancel);
       hdr.addEventListener('pointermove', function(e){ onMove(e.clientX||0, e.clientY||0); });
-      hdr.addEventListener('touchstart', function(e){ var t=e.touches[0]; onDown(t.clientX, t.clientY); }, {passive:true});
-      hdr.addEventListener('touchend', function(e){ if(didLongPress){ e.preventDefault(); e.stopPropagation(); } clearTimeout(lpTimer); didLongPress=false; }, {passive:false});
+      // Touch events (mobile — primary path for long-press)
+      hdr.addEventListener('touchstart', function(e){ var t=e.touches[0]; if(t) onDown(t.clientX, t.clientY); }, {passive:true});
+      hdr.addEventListener('touchend', function(e){ onUp(e); }, {passive:false});
       hdr.addEventListener('touchmove', function(e){ var t=e.touches[0]; if(t) onMove(t.clientX, t.clientY); }, {passive:true});
+      hdr.addEventListener('touchcancel', onCancel);
     });
 
     // Wire up per-artist refetch buttons
