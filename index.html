@@ -7196,7 +7196,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.0.2';
+  const APP_VERSION = '50.0.3';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
@@ -7216,6 +7216,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.0.3', date: 'August 26, 2026 at 3:15 am EDT', title: 'PWA registration fix + overlapping audio fix', items: [
+      'Fixed Play Console registration — app now registers as SideCut instead of showing GitHub link (added manifest id field)',
+      'Fixed overlapping audio bug — two tracks no longer play simultaneously when switching songs (safety pause on both audio elements before playback)',
+      'Fixed gapless transition to explicitly pause outgoing audio before starting next track',
+      'Fixed delete track to properly stop both audio elements'
+    ]},
     { version: '50.0.2', date: 'August 26, 2026 at 2:33 am EDT', title: 'Better lyrics search + genre field + language filtering', items: [
       'Improved lyrics search for Punjabi/Indian songs — Gurmukhi & Devanagari romanization with multiple search variants',
       'Added Genius API as fallback lyrics source (better coverage for Indian/Punjabi music)',
@@ -11362,8 +11368,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // If it's currently playing, stop playback cleanly
     if(queue[queueIndex] === id){
       userPaused = true;
-      audio.pause();
-      audio.removeAttribute('src');
+      audios.forEach(function(_a){ try{ _a.pause(); _a.removeAttribute('src'); }catch(_){} });
       $('nowPlaying').style.display = 'none';
     }
     queue = queue.filter(x => x !== id);
@@ -12502,6 +12507,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(!t) return;
     if(hardSwitch) cancelCrossfade();
+    // Safety: stop BOTH audio elements so two tracks can never overlap
+    try{ audio.pause(); audio2.pause(); }catch(_){}
     const a = activeAudio();
     a.src = t.url;
     a.currentTime = 0;
@@ -12917,11 +12924,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const nextTrack = allTracks.find(tr => tr.id === queue[nextIndex]);
       if(nextTrack){
         const nxt = inactiveAudio();
+        const cur = activeAudio();
         activeIdx = 1 - activeIdx;
         queueIndex = nextIndex;
         gaplessPreloadedFor = null;
         nxt.currentTime = 0;
         applyNormalizedGain(nextTrack, activeIdx); applyEQ(nextTrack, activeIdx);
+        // Explicitly pause the outgoing audio to prevent overlap
+        try{ cur.pause(); cur.currentTime = 0; }catch(_){}
         nxt.play().then(() => onPlayEvt({ target: nxt })).catch(() => recoverAudio(nxt, 'gapless play failed'));
         updateNowPlayingUI(nextTrack);
         savePlaybackState(true);
