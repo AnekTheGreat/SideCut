@@ -5898,14 +5898,54 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       if (searchResp.ok) {
         const results = await searchResp.json();
         if (results && results.length > 0) {
-          // Priority 1: EXACT artist match only (no loose fuzzy)
+          // Priority 1: EXACT artist + title match
           const _sArtist = cleanArtist.toLowerCase().trim();
+          const _sTitle = cleanTitle.toLowerCase().trim();
           const stripNonAlnum = s => s.replace(/[^a-z0-9 ]/g, '');
           const _sNorm = stripNonAlnum(_sArtist);
+          const _sTitleNorm = stripNonAlnum(_sTitle);
+          function _titleClose(rTitle) {
+            var rt = (rTitle || '').toLowerCase().trim();
+            var rtN = stripNonAlnum(rt);
+            return rt === _sTitle || rtN === _sTitleNorm || rt.indexOf(_sTitle) !== -1 || _sTitle.indexOf(rt) !== -1 || rtN.indexOf(_sTitleNorm) !== -1 || _sTitleNorm.indexOf(rtN) !== -1;
+          }
           for (const result of results.slice(0, 10)) {
             const rArtist = (result.artistName || '').toLowerCase().trim();
             const _rNorm = stripNonAlnum(rArtist);
-            // Strict: exact match or normalized exact match only
+            const artistExact = rArtist === _sArtist || _rNorm === _sNorm;
+            if (!artistExact) continue;
+            if (!_titleClose(result.trackName)) continue;
+            if (result.syncedLyrics || result.plainLyrics) {
+              const lyrics = result.syncedLyrics || result.plainLyrics;
+              const isSynced = !!result.syncedLyrics;
+              track.lyrics = lyrics;
+              track.lyricsSynced = isSynced;
+              persistTrackMeta(track);
+              showLyrics(lyrics, isSynced);
+              return;
+            }
+          }
+          // Priority 2: fuzzy artist + title match
+          for (const result of results.slice(0, 10)) {
+            const rArtist = (result.artistName || '').toLowerCase().trim();
+            const _rNorm = stripNonAlnum(rArtist);
+            const fuzzyArtist = rArtist === _sArtist || rArtist.indexOf(_sArtist) !== -1 || _sArtist.indexOf(rArtist) !== -1 || _rNorm.indexOf(_sNorm) !== -1 || _sNorm.indexOf(_rNorm) !== -1;
+            if (!fuzzyArtist) continue;
+            if (!_titleClose(result.trackName)) continue;
+            if (result.syncedLyrics || result.plainLyrics) {
+              const lyrics = result.syncedLyrics || result.plainLyrics;
+              const isSynced = !!result.syncedLyrics;
+              track.lyrics = lyrics;
+              track.lyricsSynced = isSynced;
+              persistTrackMeta(track);
+              showLyrics(lyrics, isSynced);
+              return;
+            }
+          }
+          // Priority 3: exact artist match only (no title check)
+          for (const result of results.slice(0, 10)) {
+            const rArtist = (result.artistName || '').toLowerCase().trim();
+            const _rNorm = stripNonAlnum(rArtist);
             const artistExact = rArtist === _sArtist || _rNorm === _sNorm;
             if (!artistExact) continue;
             if (result.syncedLyrics || result.plainLyrics) {
@@ -5915,26 +5955,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               track.lyricsSynced = isSynced;
               persistTrackMeta(track);
               showLyrics(lyrics, isSynced);
+              toast('Lyrics found (artist match only).', 2000);
               return;
             }
           }
-          // Priority 2: fuzzy artist match (contains/substring)
-          for (const result of results.slice(0, 10)) {
-            const rArtist = (result.artistName || '').toLowerCase().trim();
-            const _rNorm = stripNonAlnum(rArtist);
-            const fuzzyArtist = rArtist === _sArtist || rArtist.indexOf(_sArtist) !== -1 || _sArtist.indexOf(rArtist) !== -1 || _rNorm.indexOf(_sNorm) !== -1 || _sNorm.indexOf(_rNorm) !== -1;
-            if (!fuzzyArtist) continue;
-            if (result.syncedLyrics || result.plainLyrics) {
-              const lyrics = result.syncedLyrics || result.plainLyrics;
-              const isSynced = !!result.syncedLyrics;
-              track.lyrics = lyrics;
-              track.lyricsSynced = isSynced;
-              persistTrackMeta(track);
-              showLyrics(lyrics, isSynced);
-              return;
-            }
-          }
-          // Priority 3: any result without artist filter
+          // Priority 4: any result without artist filter
           for (const result of results.slice(0, 5)) {
             if (result.syncedLyrics || result.plainLyrics) {
               const lyrics = result.syncedLyrics || result.plainLyrics;
@@ -6472,13 +6497,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           if(results && results.length > 0){
             var _sA = searchArtist.toLowerCase().trim();
             var _sAn = _sA.replace(/[^a-z0-9 ]/g,'').trim();
-            // Priority 1: EXACT artist match
+            var _sT = searchTitle.toLowerCase().trim();
+            var _sTn = _sT.replace(/[^a-z0-9 ]/g,'').trim();
+            function _rtClose(rt){
+              rt = (rt||'').toLowerCase().trim();
+              var rtn = rt.replace(/[^a-z0-9 ]/g,'').trim();
+              return rt===_sT||rtn===_sTn||rt.indexOf(_sT)!==-1||_sT.indexOf(rt)!==-1||rtn.indexOf(_sTn)!==-1||_sTn.indexOf(rtn)!==-1;
+            }
+            // Priority 1: EXACT artist + title match
             for(var ri = 0; ri < Math.min(results.length, 10); ri++){
               var result = results[ri];
               var rA = (result.artistName || '').toLowerCase().trim();
               var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
               var artistExact = rA === _sA || rAn === _sAn;
               if(!artistExact) continue;
+              if(!_rtClose(result.trackName)) continue;
               if(result.syncedLyrics || result.plainLyrics){
                 var lyrics = result.syncedLyrics || result.plainLyrics;
                 var isSynced = !!result.syncedLyrics;
