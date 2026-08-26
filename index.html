@@ -18080,41 +18080,112 @@ function _ahSetCover(artistName, albumName, collectionId) {
   var covers = {};
   try { covers = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); } catch(e) {}
   var currentCover = covers[coverKey] || '';
+
+  function _ahSaveCover(dataUrl){
+    covers[coverKey] = dataUrl;
+    localStorage.setItem('sidecut_ahCovers', JSON.stringify(covers));
+    toast('Cover added!', 1500);
+    var f = document.getElementById('ahCoverForm'); if(f) f.remove();
+    document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
+      if((hdr.dataset.artist||'').toLowerCase().trim() === artistName.toLowerCase().trim() &&
+         (hdr.dataset.album||'').toLowerCase().trim() === albumName.toLowerCase().trim()){
+        var ad = hdr.querySelector('div:first-child');
+        if(ad) ad.style.backgroundImage = 'url(' + dataUrl + ')';
+      }
+    });
+  }
+  function _ahFileToDataURL(file){
+    return new Promise(function(resolve, reject){
+      if(!file || !file.type.startsWith('image/')){ reject('Not an image'); return; }
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(reader.result); };
+      reader.onerror = function(){ reject('Read failed'); };
+      reader.readAsDataURL(file);
+    });
+  }
+
   var formHtml = '<div style="padding:12px;border-bottom:1px solid var(--line);margin-bottom:4px;" id="ahCoverForm">';
-  formHtml += '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">Add album cover for "' + escapeHtml(albumName) + '"</div>';
-  formHtml += '<input id="ahCoverUrl" type="text" value="' + escapeHtml(currentCover) + '" placeholder="Paste image URL" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:6px;box-sizing:border-box;" />';
+  formHtml += '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:10px;">Add album cover for "' + escapeHtml(albumName) + '"</div>';
+  // Preview area
+  formHtml += '<div id="ahCoverPreview" style="width:80px;height:80px;border-radius:8px;margin:0 auto 10px;overflow:hidden;border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;background:var(--bg);">' + (currentCover ? '<img src="' + escapeHtml(currentCover) + '" style="width:100%;height:100%;object-fit:cover;" />' : '<span style="font-size:24px;color:var(--ink-dim);">📷</span>') + '</div>';
+  // Pick from gallery button (primary)
+  formHtml += '<input type="file" id="ahCoverFile" accept="image/*" style="display:none;" />';
+  formHtml += '<button id="ahCoverPick" style="width:100%;padding:10px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px;">📷 Choose Photo</button>';
+  // Paste area
+  formHtml += '<div id="ahCoverPaste" style="width:100%;padding:10px;border-radius:8px;border:2px dashed var(--line);text-align:center;color:var(--ink-dim);font-size:11px;margin-bottom:6px;cursor:pointer;">Tap here then paste an image (Ctrl+V)</div>';
+  // Collapsible URL fallback
+  formHtml += '<div style="font-size:10px;color:var(--ink-dim);text-align:center;margin-bottom:6px;cursor:pointer;" id="ahCoverUrlToggle">or paste a URL ↓</div>';
+  formHtml += '<div id="ahCoverUrlWrap" style="display:none;">';
+  formHtml += '<input id="ahCoverUrl" type="text" value="' + escapeHtml(currentCover) + '" placeholder="Image URL" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:6px;box-sizing:border-box;" />';
+  formHtml += '</div>';
+  // Bottom buttons
   formHtml += '<div style="display:flex;gap:6px;">';
-  formHtml += '<button id="ahCoverSave" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Add cover</button>';
-  formHtml += '<button id="ahCoverClear" style="flex:0;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Remove</button>';
+  formHtml += '<button id="ahCoverClear" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Remove</button>';
   formHtml += '<button id="ahCoverCancel" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>';
   formHtml += '</div></div>';
+
   var oldForm = document.getElementById('ahCoverForm'); if(oldForm) oldForm.remove();
   var body = document.getElementById('discPopupBody');
   if(body) body.insertAdjacentHTML('afterbegin', formHtml);
-  document.getElementById('ahCoverCancel').addEventListener('click', function(){ var f = document.getElementById('ahCoverForm'); if(f) f.remove(); });
+
+  // File picker
+  var fileInput = document.getElementById('ahCoverFile');
+  document.getElementById('ahCoverPick').addEventListener('click', function(){ fileInput.click(); });
+  fileInput.addEventListener('change', function(){
+    if(fileInput.files && fileInput.files[0]){
+      _ahFileToDataURL(fileInput.files[0]).then(function(dataUrl){
+        var preview = document.getElementById('ahCoverPreview');
+        if(preview) preview.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;" />';
+        // Auto-save immediately on pick
+        _ahSaveCover(dataUrl);
+      }).catch(function(){ toast('Could not read image.', 2000); });
+    }
+  });
+
+  // Paste area — click to focus, then Ctrl+V / Cmd+V
+  var pasteArea = document.getElementById('ahCoverPaste');
+  pasteArea.addEventListener('click', function(){ pasteArea.focus(); pasteArea.style.borderColor = 'var(--coral)'; });
+  pasteArea.addEventListener('paste', function(e){
+    e.preventDefault();
+    var items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for(var i = 0; i < items.length; i++){
+      if(items[i].type.startsWith('image/')){
+        var file = items[i].getAsFile();
+        _ahFileToDataURL(file).then(function(dataUrl){
+          var preview = document.getElementById('ahCoverPreview');
+          if(preview) preview.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;" />';
+          _ahSaveCover(dataUrl);
+        }).catch(function(){ toast('Could not read pasted image.', 2000); });
+        return;
+      }
+    }
+    toast('No image found in clipboard.', 2000);
+  });
+
+  // URL toggle
+  document.getElementById('ahCoverUrlToggle').addEventListener('click', function(){
+    var wrap = document.getElementById('ahCoverUrlWrap');
+    if(wrap) wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+  });
+
+  // URL save (fallback)
+  document.getElementById('ahCoverUrl').addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      var url = (this.value || '').trim();
+      if(url){ _ahSaveCover(url); }
+    }
+  });
+
+  // Remove cover
   document.getElementById('ahCoverClear').addEventListener('click', function(){
     delete covers[coverKey];
     localStorage.setItem('sidecut_ahCovers', JSON.stringify(covers));
-    toast('Cover cleared.', 1500);
+    toast('Cover removed.', 1500);
     var f = document.getElementById('ahCoverForm'); if(f) f.remove();
-    // Re-render
     window.__refetchAlbums(false);
   });
-  document.getElementById('ahCoverSave').addEventListener('click', function(){
-    var url = (document.getElementById('ahCoverUrl').value || '').trim();
-    if(!url) { toast('Please enter an image URL.', 2000); return; }
-    covers[coverKey] = url;
-    localStorage.setItem('sidecut_ahCovers', JSON.stringify(covers));
-    toast('Cover set!', 1500);
+  document.getElementById('ahCoverCancel').addEventListener('click', function(){
     var f = document.getElementById('ahCoverForm'); if(f) f.remove();
-    // Update the art div immediately
-    document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
-      if((hdr.dataset.artist || '').toLowerCase().trim() === artistName.toLowerCase().trim() &&
-         (hdr.dataset.album || '').toLowerCase().trim() === albumName.toLowerCase().trim()){
-        var ad = hdr.querySelector('div:first-child');
-        if(ad) ad.style.backgroundImage = 'url(' + url + ')';
-      }
-    });
   });
 }
 
