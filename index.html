@@ -5838,6 +5838,54 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     fetchLyrics(track);
   }
 
+
+  // --- Romanize non-Latin scripts (Gurmukhi, Devanagari, etc.) for lyrics search ---
+  var _gurmukhiMap = {'ਂ':'n','ਃ':'h','ਅ':'a','ਆ':'aa','ਇ':'i','ਈ':'ee','ਉ':'u','ਊ':'oo','ਏ':'e','ਐ':'ai','ਓ':'o','ਔ':'au','ਕ':'k','ਖ':'kh','ਗ':'g','ਘ':'gh','ਙ':'ng','ਚ':'ch','ਛ':'chh','ਜ':'j','ਝ':'jh','ਞ':'ny','ਟ':'t','ਠ':'th','ਡ':'d','ਢ':'dh','ਣ':'n','ਤ':'t','ਥ':'th','ਦ':'d','ਧ':'dh','ਨ':'n','ਪ':'p','ਫ':'ph','ਬ':'b','ਭ':'bh','ਮ':'m','ਯ':'y','ਰ':'r','ਲ':'v','ਲ਼':'l','ਵ':'v','ਸ਼':'sh','ਸ':'s','ਹ':'h','ਾ':'aa','ਿ':'i','ੀ':'ee','ੁ':'u','ੂ':'oo','ੇ':'e','ੈ':'ai','ੋ':'o','ੌ':'au','੍':'','ੰ':'eng','ੱ':'gh'};
+  var _devanagariMap = {'ं':'n','ः':'h','अ':'a','आ':'aa','इ':'i','ई':'ee','उ':'u','ऊ':'oo','ए':'e','ऐ':'ai','ओ':'o','औ':'au','क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'ng','च':'ch','छ':'chh','ज':'j','झ':'jh','ञ':'ny','ट':'t','ठ':'th','ड':'d','ढ':'dh','ण':'n','त':'t','थ':'th','द':'d','ध':'dh','न':'n','प':'p','फ':'ph','ब':'b','भ':'bh','म':'m','य':'y','र':'r','ल':'l','व':'v','श':'sh','ष':'sh','स':'s','ह':'h','ा':'aa','ि':'i','ी':'ee','ु':'u','ू':'oo','े':'e','ै':'ai','ो':'o','ौ':'au','्':'','ॎ':'ri','ॏ':'oo'};
+  function romanizeText(text) {
+    if (!text) return '';
+    var hasNonLatin = /[਀-੿ऀ-ॿ]/.test(text);
+    if (!hasNonLatin) return '';
+    var map = /[਀-੿]/.test(text) ? _gurmukhiMap : _devanagariMap;
+    var result = '';
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (map[ch]) result += map[ch];
+      else if (/[a-zA-Z0-9 ]/.test(ch)) result += ch;
+      else result += '';
+    }
+    // Clean up double vowels and consonant clusters
+    result = result.replace(/aa+/g, 'a').replace(/ee+/g, 'ee').replace(/oo+/g, 'oo');
+    result = result.replace(/  +/g, ' ').trim();
+    return result;
+  }
+  function getSearchVariants(artist, title) {
+    var variants = [];
+    // Always try original
+    variants.push({artist: artist, title: title});
+    // If non-Latin, try romanized
+    var romanArtist = romanizeText(artist);
+    var romanTitle = romanizeText(title);
+    if (romanArtist || romanTitle) {
+      if (romanArtist && romanTitle) variants.push({artist: romanArtist, title: romanTitle});
+      if (romanTitle) variants.push({artist: artist, title: romanTitle});
+      if (romanArtist) variants.push({artist: romanArtist, title: title});
+    }
+    // Common Punjabi transliteration variants
+    var titleLower = (title || '').toLowerCase();
+    var artistLower = (artist || '').toLowerCase();
+    // Try with/without common suffixes
+    if (titleLower.endsWith(' (feat. various artists)')) {
+      variants.push({artist: artist, title: title.replace(/\s*\(feat\. various artists\)/i, '')});
+    }
+    // Try partial title (first 3 words)
+    var words = title.split(/\s+/);
+    if (words.length > 3) {
+      variants.push({artist: artist, title: words.slice(0, 3).join(' ')});
+    }
+    return variants;
+  }
+
   async function fetchLyrics(track) {
     const title = track.name || '';
     const artist = track.artist || 'Unknown';
@@ -5891,87 +5939,80 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
       }
       
-      // 2. LRCLIB search - works better for non-ASCII characters
-      const searchQuery = `${cleanArtist} ${cleanTitle}`;
-      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchQuery)}`;
-      const searchResp = await fetch(searchUrl);
-      if (searchResp.ok) {
-        const results = await searchResp.json();
-        if (results && results.length > 0) {
-          // Priority 1: EXACT artist + title match
-          const _sArtist = cleanArtist.toLowerCase().trim();
-          const _sTitle = cleanTitle.toLowerCase().trim();
-          const stripNonAlnum = s => s.replace(/[^a-z0-9 ]/g, '');
-          const _sNorm = stripNonAlnum(_sArtist);
-          const _sTitleNorm = stripNonAlnum(_sTitle);
-          function _titleClose(rTitle) {
-            var rt = (rTitle || '').toLowerCase().trim();
-            var rtN = stripNonAlnum(rt);
-            return rt === _sTitle || rtN === _sTitleNorm || rt.indexOf(_sTitle) !== -1 || _sTitle.indexOf(rt) !== -1 || rtN.indexOf(_sTitleNorm) !== -1 || _sTitleNorm.indexOf(rtN) !== -1;
-          }
-          for (const result of results.slice(0, 10)) {
-            const rArtist = (result.artistName || '').toLowerCase().trim();
-            const _rNorm = stripNonAlnum(rArtist);
-            const artistExact = rArtist === _sArtist || _rNorm === _sNorm;
-            if (!artistExact) continue;
-            if (!_titleClose(result.trackName)) continue;
-            if (result.syncedLyrics || result.plainLyrics) {
-              const lyrics = result.syncedLyrics || result.plainLyrics;
-              const isSynced = !!result.syncedLyrics;
-              track.lyrics = lyrics;
-              track.lyricsSynced = isSynced;
-              persistTrackMeta(track);
-              showLyrics(lyrics, isSynced);
-              return;
-            }
-          }
-          // Priority 2: fuzzy artist + title match
-          for (const result of results.slice(0, 10)) {
-            const rArtist = (result.artistName || '').toLowerCase().trim();
-            const _rNorm = stripNonAlnum(rArtist);
-            const fuzzyArtist = rArtist === _sArtist || rArtist.indexOf(_sArtist) !== -1 || _sArtist.indexOf(rArtist) !== -1 || _rNorm.indexOf(_sNorm) !== -1 || _sNorm.indexOf(_rNorm) !== -1;
-            if (!fuzzyArtist) continue;
-            if (!_titleClose(result.trackName)) continue;
-            if (result.syncedLyrics || result.plainLyrics) {
-              const lyrics = result.syncedLyrics || result.plainLyrics;
-              const isSynced = !!result.syncedLyrics;
-              track.lyrics = lyrics;
-              track.lyricsSynced = isSynced;
-              persistTrackMeta(track);
-              showLyrics(lyrics, isSynced);
-              return;
-            }
-          }
-          // Priority 3: exact artist match only (no title check)
-          for (const result of results.slice(0, 10)) {
-            const rArtist = (result.artistName || '').toLowerCase().trim();
-            const _rNorm = stripNonAlnum(rArtist);
-            const artistExact = rArtist === _sArtist || _rNorm === _sNorm;
-            if (!artistExact) continue;
-            if (result.syncedLyrics || result.plainLyrics) {
-              const lyrics = result.syncedLyrics || result.plainLyrics;
-              const isSynced = !!result.syncedLyrics;
-              track.lyrics = lyrics;
-              track.lyricsSynced = isSynced;
-              persistTrackMeta(track);
-              showLyrics(lyrics, isSynced);
-              toast('Lyrics found (artist match only).', 2000);
-              return;
-            }
-          }
-          // Priority 4: any result without artist filter
-          for (const result of results.slice(0, 5)) {
-            if (result.syncedLyrics || result.plainLyrics) {
-              const lyrics = result.syncedLyrics || result.plainLyrics;
-              const isSynced = !!result.syncedLyrics;
-              track.lyrics = lyrics;
-              track.lyricsSynced = isSynced;
-              persistTrackMeta(track);
-              showLyrics(lyrics, isSynced);
-              return;
-            }
+      // 2. LRCLIB search with variant queries (handles Punjabi/Devanagari/Gurmukhi)
+      var _variants = getSearchVariants(cleanArtist, cleanTitle);
+      var _sArtist = cleanArtist.toLowerCase().trim();
+      var _sTitle = cleanTitle.toLowerCase().trim();
+      var _strip = function(s){ return s.replace(/[^a-z0-9 ]/g,''); };
+      var _sN = _strip(_sArtist);
+      var _sTN = _strip(_sTitle);
+      function _tClose(rt) {
+        rt = (rt||'').toLowerCase().trim();
+        var rtn = _strip(rt);
+        return rt===_sTitle||rtn===_sTN||rt.indexOf(_sTitle)!==-1||_sTitle.indexOf(rt)!==-1||rtn.indexOf(_sTN)!==-1||_sTN.indexOf(rtn)!==-1;
+      }
+      function _matchResults(results) {
+        if (!results || results.length === 0) return false;
+        // P1: exact artist + close title
+        for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
+          var rA = (results[ri].artistName||'').toLowerCase().trim();
+          var rN = _strip(rA);
+          if (rA!==_sArtist && rN!==_sN) continue;
+          if (!_tClose(results[ri].trackName)) continue;
+          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
+            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
+            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
+            return true;
           }
         }
+        // P2: fuzzy artist + close title
+        for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
+          var rA = (results[ri].artistName||'').toLowerCase().trim();
+          var rN = _strip(rA);
+          var fA = rA===_sArtist||rA.indexOf(_sArtist)!==-1||_sArtist.indexOf(rA)!==-1||rN.indexOf(_sN)!==-1||_sN.indexOf(rN)!==-1;
+          if (!fA) continue;
+          if (!_tClose(results[ri].trackName)) continue;
+          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
+            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
+            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
+            return true;
+          }
+        }
+        // P3: exact artist only
+        for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
+          var rA = (results[ri].artistName||'').toLowerCase().trim();
+          var rN = _strip(rA);
+          if (rA!==_sArtist && rN!==_sN) continue;
+          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
+            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
+            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
+            return true;
+          }
+        }
+        // P4: any result
+        for (var ri = 0; ri < Math.min(results.length, 5); ri++) {
+          if (results[ri].syncedLyrics || results[ri].plainLyrics) {
+            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
+            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
+            return true;
+          }
+        }
+        return false;
+      }
+      for (var vi = 0; vi < _variants.length; vi++) {
+        var v = _variants[vi];
+        var sUrl = 'https://lrclib.net/api/search?q=' + encodeURIComponent(v.artist + ' ' + v.title);
+        try {
+          var sResp = await fetch(sUrl);
+          if (sResp.ok) {
+            var sData = await sResp.json();
+            if (_matchResults(sData)) return;
+          }
+        } catch(_e) {}
       }
       
       // 3. lyrics.ovh (simple API)
@@ -5986,6 +6027,40 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           return;
         }
       }
+      
+      // 4. Genius search fallback (good for Punjabi/Indian music)
+      try {
+        for (var _gi = 0; _gi < _variants.length; _gi++) {
+          var gv = _variants[_gi];
+          var gUrl = 'https://genius.com/api/search?q=' + encodeURIComponent(gv.artist + ' ' + gv.title);
+          var gResp = await fetchWithProxy(gUrl);
+          if (gResp && gResp.ok) {
+            var gData = await gResp.json();
+            if (gData && gData.response && gData.response.hits && gData.response.hits.length > 0) {
+              var hit = gData.response.hits[0];
+              if (hit.result && hit.result.url) {
+                // Try to get lyrics from Genius page
+                var pageResp = await fetchWithProxy(hit.result.url);
+                if (pageResp && pageResp.ok) {
+                  var html = await pageResp.text();
+                  // Extract lyrics from Genius page HTML
+                  var match = html.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/i);
+                  if (match) {
+                    var gLyrics = match[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+                    if (gLyrics && gLyrics.length > 20) {
+                      track.lyrics = gLyrics;
+                      track.lyricsSynced = false;
+                      persistTrackMeta(track);
+                      showLyrics(gLyrics, false);
+                      return;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch(_ge) { /* Genius fallback failed, continue */ }
       
       $('lyricsLoading').style.display = 'none';
       $('lyricsNotFound').style.display = 'block';
@@ -6492,73 +6567,70 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             return;
           }
         }
-        // Try LRCLIB search - filter by matching artist to avoid wrong-language results
-        var searchUrl = 'https://lrclib.net/api/search?q=' + encodeURIComponent(searchArtist + ' ' + searchTitle + (searchGenre ? ' ' + searchGenre : ''));
-        var searchResp = await fetchWithProxy(searchUrl);
-        if(searchResp && searchResp.ok){
-          var results = await searchResp.json();
-          if(results && results.length > 0){
-            var _sA = searchArtist.toLowerCase().trim();
-            var _sAn = _sA.replace(/[^a-z0-9 ]/g,'').trim();
-            var _sT = searchTitle.toLowerCase().trim();
-            var _sTn = _sT.replace(/[^a-z0-9 ]/g,'').trim();
-            function _rtClose(rt){
-              rt = (rt||'').toLowerCase().trim();
-              var rtn = rt.replace(/[^a-z0-9 ]/g,'').trim();
-              return rt===_sT||rtn===_sTn||rt.indexOf(_sT)!==-1||_sT.indexOf(rt)!==-1||rtn.indexOf(_sTn)!==-1||_sTn.indexOf(rtn)!==-1;
-            }
-            // Priority 1: EXACT artist + title match
-            for(var ri = 0; ri < Math.min(results.length, 10); ri++){
-              var result = results[ri];
-              var rA = (result.artistName || '').toLowerCase().trim();
-              var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
-              var artistExact = rA === _sA || rAn === _sAn;
-              if(!artistExact) continue;
-              if(!_rtClose(result.trackName)) continue;
-              if(result.syncedLyrics || result.plainLyrics){
-                var lyrics = result.syncedLyrics || result.plainLyrics;
-                var isSynced = !!result.syncedLyrics;
-                t.lyrics = lyrics;
-                t.lyricsSynced = isSynced;
-                persistTrackMeta(t);
-                showLyrics(lyrics, isSynced);
-                toast('Lyrics found!', 2000);
-                return;
-              }
-            }
-            // Priority 2: fuzzy artist match (contains/substring)
-            for(var ri2 = 0; ri2 < Math.min(results.length, 10); ri2++){
-              var result2 = results[ri2];
-              var rA2 = (result2.artistName || '').toLowerCase().trim();
-              var rAn2 = rA2.replace(/[^a-z0-9 ]/g,'').trim();
-              var fuzzyArtist = rA2 === _sA || rA2.indexOf(_sA) !== -1 || _sA.indexOf(rA2) !== -1 || rAn2.indexOf(_sAn) !== -1 || _sAn.indexOf(rAn2) !== -1;
-              if(!fuzzyArtist) continue;
-              if(result2.syncedLyrics || result2.plainLyrics){
-                var lyrics = result2.syncedLyrics || result2.plainLyrics;
-                var isSynced = !!result2.syncedLyrics;
-                t.lyrics = lyrics;
-                t.lyricsSynced = isSynced;
-                persistTrackMeta(t);
-                showLyrics(lyrics, isSynced);
-                toast('Lyrics found (fuzzy match).', 2000);
-                return;
-              }
-            }
-            // Priority 3: any result as last resort (no artist filter)
-            for(var ri3 = 0; ri3 < Math.min(results.length, 5); ri3++){
-              var result3 = results[ri3];
-              if(result3.syncedLyrics || result3.plainLyrics){
-                var lyrics = result3.syncedLyrics || result3.plainLyrics;
-                var isSynced = !!result3.syncedLyrics;
-                t.lyrics = lyrics;
-                t.lyricsSynced = isSynced;
-                persistTrackMeta(t);
-                showLyrics(lyrics, isSynced);
-                toast('Lyrics found (different artist).', 2000);
-                return;
-              }
+        // Try LRCLIB search with variants (handles romanized Punjabi/etc)
+        var _rVariants = getSearchVariants(searchArtist, searchTitle);
+        if(searchGenre) _rVariants.push({artist: searchArtist, title: searchTitle + ' ' + searchGenre});
+        var _rsA = searchArtist.toLowerCase().trim();
+        var _rsAn = _rsA.replace(/[^a-z0-9 ]/g,'').trim();
+        var _rsT = searchTitle.toLowerCase().trim();
+        var _rsTn = _rsT.replace(/[^a-z0-9 ]/g,'').trim();
+        function _rrtClose(rt){
+          rt = (rt||'').toLowerCase().trim();
+          var rtn = rt.replace(/[^a-z0-9 ]/g,'').trim();
+          return rt===_rsT||rtn===_rsTn||rt.indexOf(_rsT)!==-1||_rsT.indexOf(rt)!==-1||rtn.indexOf(_rsTn)!==-1||_rsTn.indexOf(rtn)!==-1;
+        }
+        function _rMatchResults(results) {
+          if(!results || results.length === 0) return false;
+          // P1: exact artist + title
+          for(var ri = 0; ri < Math.min(results.length, 10); ri++){
+            var rA = (results[ri].artistName||'').toLowerCase().trim();
+            var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
+            if(rA !== _rsA && rAn !== _rsAn) continue;
+            if(!_rrtClose(results[ri].trackName)) continue;
+            if(results[ri].syncedLyrics || results[ri].plainLyrics){
+              var l = results[ri].syncedLyrics || results[ri].plainLyrics;
+              t.lyrics = l; t.lyricsSynced = !!results[ri].syncedLyrics;
+              persistTrackMeta(t); showLyrics(l, !!results[ri].syncedLyrics);
+              toast('Lyrics found!', 2000);
+              return true;
             }
           }
+          // P2: fuzzy artist + title
+          for(var ri2 = 0; ri2 < Math.min(results.length, 10); ri2++){
+            var rA = (results[ri2].artistName||'').toLowerCase().trim();
+            var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
+            var fA = rA===_rsA||rA.indexOf(_rsA)!==-1||_rsA.indexOf(rA)!==-1||rAn.indexOf(_rsAn)!==-1||_rsAn.indexOf(rAn)!==-1;
+            if(!fA) continue;
+            if(results[ri2].syncedLyrics || results[ri2].plainLyrics){
+              var l = results[ri2].syncedLyrics || results[ri2].plainLyrics;
+              t.lyrics = l; t.lyricsSynced = !!results[ri2].syncedLyrics;
+              persistTrackMeta(t); showLyrics(l, !!results[ri2].syncedLyrics);
+              toast('Lyrics found!', 2000);
+              return true;
+            }
+          }
+          // P3: any result
+          for(var ri3 = 0; ri3 < Math.min(results.length, 5); ri3++){
+            if(results[ri3].syncedLyrics || results[ri3].plainLyrics){
+              var l = results[ri3].syncedLyrics || results[ri3].plainLyrics;
+              t.lyrics = l; t.lyricsSynced = !!results[ri3].syncedLyrics;
+              persistTrackMeta(t); showLyrics(l, !!results[ri3].syncedLyrics);
+              toast('Lyrics found (different artist).', 2000);
+              return true;
+            }
+          }
+          return false;
+        }
+        for(var rvi = 0; rvi < _rVariants.length; rvi++){
+          var rv = _rVariants[rvi];
+          var rSearchUrl = 'https://lrclib.net/api/search?q=' + encodeURIComponent(rv.artist + ' ' + rv.title);
+          try {
+            var rSearchResp = await fetchWithProxy(rSearchUrl);
+            if(rSearchResp && rSearchResp.ok){
+              var rResults = await rSearchResp.json();
+              if(_rMatchResults(rResults)) return;
+            }
+          } catch(_re) {}
         }
         // Try lyrics.ovh
         var ovhResp = await fetchWithProxy('https://api.lyrics.ovh/v1/' + encodeURIComponent(searchArtist) + '/' + encodeURIComponent(searchTitle));
@@ -6573,6 +6645,38 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             return;
           }
         }
+        // Try Genius (good for Indian/Punjabi music)
+        try {
+          for(var _gvi = 0; _gvi < _rVariants.length; _gvi++){
+            var gv = _rVariants[_gvi];
+            var gUrl = 'https://genius.com/api/search?q=' + encodeURIComponent(gv.artist + ' ' + gv.title);
+            var gResp = await fetchWithProxy(gUrl);
+            if(gResp && gResp.ok){
+              var gData = await gResp.json();
+              if(gData && gData.response && gData.response.hits && gData.response.hits.length > 0){
+                var hit = gData.response.hits[0];
+                if(hit.result && hit.result.url){
+                  var pageResp = await fetchWithProxy(hit.result.url);
+                  if(pageResp && pageResp.ok){
+                    var pageHtml = await pageResp.text();
+                    var match = pageHtml.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/i);
+                    if(match){
+                      var gLyrics = match[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+                      if(gLyrics && gLyrics.length > 20){
+                        t.lyrics = gLyrics;
+                        t.lyricsSynced = false;
+                        persistTrackMeta(t);
+                        showLyrics(gLyrics, false);
+                        toast('Lyrics found via Genius!', 2000);
+                        return;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch(_gErr) {}
         // Nothing found
         $('lyricsLoading').style.display = 'none';
         $('lyricsNotFound').style.display = 'block';
