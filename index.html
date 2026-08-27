@@ -15697,7 +15697,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
         if(!isOpen && !tgt.dataset.loaded){
           tgt.dataset.loaded = '1';
-          window._mbFallbackDone = false;
+          tgt.dataset.mbFallbackDone = '';
           var artistName = this.dataset.artist;
           var albumName = this.dataset.album;
           var container = tgt;
@@ -15724,8 +15724,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           (function fetchTracks(sources){
             if(!sources.length){
               // If all sources failed and this is an MB album, try iTunes as last resort
-              if(!window._mbFallbackDone && h.dataset.mb){
-                window._mbFallbackDone = true;
+              if(!container.dataset.mbFallbackDone && h.dataset.mb){
+                container.dataset.mbFallbackDone = '1';
                 var itUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
                 trackSources = [{ kind: 'it', url: itUrl }];
                 return fetchTracks(trackSources);
@@ -16537,6 +16537,9 @@ if(typeof toast === 'function') toastWithCancel();
         // Build collapsible: artist → albums → tracks (lazy-loaded)
         var html = '';
         var artistKeys = Object.keys(artistAlbums).sort();
+        // Parse custom covers ONCE before the loop (not per-album)
+        var _ahAllCovers = {};
+        try { _ahAllCovers = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); } catch(_ahCvErr) {}
         for(var ki=0; ki<artistKeys.length; ki++){
           var artist = artistKeys[ki];
           var albums = artistAlbums[artist];
@@ -16554,11 +16557,10 @@ if(typeof toast === 'function') toastWithCancel();
             if(album.collectionId && isAlbumHidden(album.collectionId)) continue;
             var albumId = artistId + '_a' + bj;
             var art = album.artworkUrl100 ? album.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect width='32' height='32' rx='4' fill='%231e3a42'/%3E%3Ctext x='16' y='21' text-anchor='middle' fill='%236a9aaa' font-size='16'%3E%E2%99%AA%3C/text%3E%3C/svg%3E";
-            // Check for a user-set custom cover
+            // Check for a user-set custom cover (uses pre-parsed _ahAllCovers)
             try {
-              var _ahCv = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}');
               var _ahCvKey = ((artist||'') + '|' + (album.collectionName||'')).toLowerCase().trim();
-              if(_ahCv[_ahCvKey]) art = _ahCv[_ahCvKey];
+              if(_ahAllCovers[_ahCvKey]) art = _ahAllCovers[_ahCvKey];
             } catch(_ahCvErr) {}
             var year = album.releaseDate ? album.releaseDate.slice(0,4) : '';
             var trackCount = album.trackCount || '?';
@@ -16586,36 +16588,52 @@ if(typeof toast === 'function') toastWithCancel();
         setTimeout(__ahResolveArtworks, 500);
         // Async fetch track counts for albums showing "?" 
         document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
-          var infoDiv = hdr.querySelector('div:last-child div:last-child');
+          // Find the info line containing "? tracks" — walk all divs inside the header
+          var infoDiv = null;
+          hdr.querySelectorAll('div').forEach(function(d){
+            if(d.textContent.indexOf('? tracks') !== -1 && !infoDiv) infoDiv = d;
+          });
           if(!infoDiv) return;
-          var txt = infoDiv.textContent;
-          if(txt.indexOf('? tracks') === -1) return;
           var cid = hdr.dataset.collectionId;
           var isDz = hdr.dataset.dz;
           var isMb = hdr.dataset.mb;
-          if(!cid) return;
-          var url;
-          if(isDz) url = 'https://api.deezer.com/album/' + cid;
-          else if(isMb) url = 'https://musicbrainz.org/ws/2/release-group/' + cid + '?inc=releases&fmt=json'
-          else url = 'https://itunes.apple.com/lookup?id=' + cid + '&entity=album';
-          if(!url) return;
-          var _tcTimeout = new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 8000); });
-          Promise.race([fetchWithProxy(url).then(function(r){ return r && r.ok ? r.json() : {}; }), _tcTimeout]).then(function(d){
-            var tc;
-            if(isDz) tc = d.nb_tracks;
-            else if(isMb){ var rels = (d.releases||[]).filter(function(r){ return r.status === 'Official'; }); var rel = rels[0] || (d.releases||[])[0]; tc = rel && rel['track-count']; }
-            else { var al = (d.results||[])[0]; tc = al && al.trackCount; }
-            if(tc && tc > 0){
-              infoDiv.textContent = infoDiv.textContent.replace('? tracks', tc + ' tracks');
-            } else if(isMb) {
-              // MB track count failed — try iTunes search as fallback
-              var itUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(hdr.dataset.artist + ' ' + hdr.dataset.album) + '&media=music&entity=song&limit=200';
-              fetchWithProxy(itUrl).then(function(r2){ return r2 && r2.ok ? r2.json() : {}; }).then(function(d2){
-                var tracks = (d2.results||[]).filter(function(r){ return r && r.trackName; });
-                if(tracks.length > 0) infoDiv.textContent = infoDiv.textContent.replace('? tracks', tracks.length + ' tracks');
-              }).catch(function(){});
-            }
-          }).catch(function(){});
+          if(!cid && !isMb) return;
+          function _applyTrackCount(tc){
+            if(tc && tc > 0) infoDiv.textContent = infoDiv.textContent.replace('? tracks', tc + ' tracks');
+          }
+          function _tryItunesSearch(){
+            var itUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(hdr.dataset.artist + ' ' + hdr.dataset.album) + '&media=music&entity=album&limit=5';
+            return fetchWithProxy(itUrl).then(function(r2){ return r2 && r2.ok ? r2.json() : {}; }).then(function(d2){
+              // Find the best matching album by name similarity
+              var target = (hdr.dataset.album||'').toLowerCase();
+              var results = (d2.results||[]).filter(function(r){ return r && r.trackCount; });
+              var best = results.find(function(r){ return (r.collectionName||'').toLowerCase() === target; }) || results[0];
+              if(best) _applyTrackCount(best.trackCount);
+            }).catch(function(){});
+          }
+          var _tcTimeout = new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 10000); });
+          var fetchPromise;
+          if(isDz){
+            fetchPromise = fetchWithProxy('https://api.deezer.com/album/' + cid).then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
+              _applyTrackCount(d.nb_tracks);
+            });
+          } else if(isMb){
+            // MB: try release-group first, then fall back to iTunes search
+            fetchPromise = fetchWithProxy('https://musicbrainz.org/ws/2/release-group/' + cid + '?inc=releases&fmt=json').then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
+              var rels = (d.releases||[]).filter(function(r){ return r.status === 'Official'; });
+              var rel = rels[0] || (d.releases||[])[0];
+              var tc = rel && rel['track-count'];
+              if(tc) _applyTrackCount(tc);
+              else return _tryItunesSearch();
+            }).catch(function(){ return _tryItunesSearch(); });
+          } else {
+            fetchPromise = fetchWithProxy('https://itunes.apple.com/lookup?id=' + cid + '&entity=album').then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
+              var al = (d.results||[])[0];
+              _applyTrackCount(al && al.trackCount);
+              if(!al || !al.trackCount) return _tryItunesSearch();
+            }).catch(function(){ return _tryItunesSearch(); });
+          }
+          Promise.race([fetchPromise, _tcTimeout]).catch(function(){});
         });
 };
 
