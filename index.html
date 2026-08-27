@@ -7313,7 +7313,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.0.8';
+  const APP_VERSION = '50.0.9';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
@@ -7333,6 +7333,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.0.9', date: 'August 27, 2026 at 9:00 pm EDT', title: 'Smart auto-update + album fetch cancel button', items: [
+      'Cancel button inside Album History popup during fetching',
+      'Auto-update defers when audio is playing — applies on pause or song end instead',
+      'Auto-update applies immediately when user is idle (no song playing)',
+      'System/lock-screen pause also triggers deferred update',
+    ]},
     { version: '50.0.8', date: 'August 27, 2026 at 8:00 pm EDT', title: 'Album History popup always accessible during fetch', items: [
       'Album History popup always shows during fetch \u2014 clicking it during a fetch now shows cached data with loading indicator instead of blocking',
       'Popup opens immediately on fresh fetch with loading state so user always sees feedback',
@@ -12975,6 +12981,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // pause and auto-resume — tearing it down here would silence the very recovery
     // path that brings playback back.
     if(userPaused){ stopMediaSessionHeartbeat(); releaseWakeLock(); }
+    if(window.__pendingSWReload){
+      window.__pendingSWReload = false;
+      toast('Applying update…');
+      setTimeout(function(){ window.location.reload(); }, 600);
+    }
     syncLyricsPlayPauseIcon();
     if($('homeView').classList.contains('active')) renderHome();
   }
@@ -15435,6 +15446,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             $('whatsNewBackdrop').addEventListener('click', (e) => { if(e.target === $('whatsNewBackdrop')) window.location.reload(); }, { once:true });
             return;
           }
+          var _a = null;
+          try { _a = activeAudio(); } catch(_ae) {}
+          if(_a && !_a.paused){
+            window.__pendingSWReload = true;
+            toast('Update ready — will apply when the song pauses or ends', 4000);
+            return;
+          }
           toast('Updating to the latest version…');
           setTimeout(() => window.location.reload(), 600);
         }, 1300);
@@ -16303,8 +16321,10 @@ if(typeof toast === 'function') toastWithCancel();
         // Open the popup immediately with a loading state so the user always
         // sees feedback. When wasRefetch is true, the popup is already open.
         if(!wasRefetch){
-          var _ldBody = '<div class="dp-empty" style="padding:30px 12px;">\u23f3 Fetching albums from pinned artists\u2026<br><span style="font-size:11px;color:var(--ink-dim);">This may take a minute for many artists</span></div>';
+          var _ldBody = '<div class="dp-empty" style="padding:30px 12px;">\u23f3 Fetching albums from pinned artists\u2026<br><span style="font-size:11px;color:var(--ink-dim);">This may take a minute for many artists</span></div><button id="ahPopupCancelBtn" style="margin-top:12px;padding:8px 20px;border-radius:8px;border:1px solid var(--coral);background:rgba(255,80,80,0.08);color:var(--coral);font-size:12px;font-weight:600;cursor:pointer;">\u2716 Cancel</button>';
           openDiscoverPopup('\ud83d\udcc0 Album History', _ldBody, '');
+        var _ahPopCancel = document.getElementById('ahPopupCancelBtn');
+        if(_ahPopCancel){ _ahPopCancel.onclick = function(){ window.__ahCancelled = true; toast('\ud83d\udcc0 Cancelling\u2026', 2000); }; }
         }
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
