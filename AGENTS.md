@@ -1,5 +1,31 @@
 # SideCut — repository memory
 
+## Post-v50.0.10 follow-up (Aug 27, 2026, commit d76bc12) — "Fetching albums" popup stuck/auto-every-time
+- **User: "the popup opens in album history but it just says everytime fetching albums from pinned artists automatically"** +
+  remove the "update will hit when song pauses" toast. ROOT CAUSE (found via real-browser storage dump):
+  1. **`_getManualCount` / `_promptManualCount` were referenced but NEVER defined** (since commit 603bf40 "manual
+     album/track count overrides"). The Album History render (`__refetchAlbums`'s completion block, ~16942/16966)
+     calls `_getManualCount` per artist/album → `ReferenceError` on the first row → the big `try{}` skips straight
+     to `finally{}`, the popup stays frozen on "Fetching albums from pinned artists…" forever, and
+     **`openDiscoverPopup` (which writes `discPopupCache_📀 Album History`) never runs** → no cache → every tap
+     re-fetches. Lesson: a `ReferenceError` in a render pipeline shows as a *stuck loading state*, not a crash.
+  2. The 24h popup-cache expiry made any >24h-old cache re-fetch from the network on open.
+- **Fix (no version bump, no sw.js — user explicitly requested):**
+  - Defined `_getManualCount(artist,album,field)` + `_promptManualCount(...)` right before `__refetchAlbums`,
+    backed by `localStorage['sidecut_ahManualCounts']` (key `artist\u0001album\u0001field`).
+  - Cache branch now serves the popup cache at **ANY age** (`ahCached.title && ahCached.body`, dropped the
+    `ts < 24h` check) — opening Album History is instant/offline forever; the **only** network trigger is the
+    in-popup "Refetch albums" button (`wasRefetch=true`). No auto-fetch on Discover open, on load, or on tap.
+  - Removed `toast('Update ready — will apply when the song pauses or ends', 4000)` (~15584) — `__pendingSWReload`
+    still set, update still applies on pause silently.
+- **Verification DONE in a real browser**: seeded pins → Discover → tap 📀 Albums → after my fix the fetch
+  completed and `discPopupCache_📀 Album History` was written with a fully rendered album list (The Weeknd 21
+  albums w/ artwork + track counts). Before the fix the same harness left only `sidecut_ahArtistData` (incremental
+  saves inside the worker loop, BEFORE the render) and NO popup cache — the bogus "render works" signal.
+- **Gotcha**: don't trust `sidecut_ahArtistData` existing as proof the popup renders — it's saved incrementally
+  per-artist inside `runAhWorker` (16878), which runs before the final render. The final render (and the popup
+  cache write) is what actually proves the flow works.
+
 ## v50.0.10 (Aug 27, 2026) — Album History works again; fetch is tap-only
 - **The disable was an over-correction.** A previous session's "Album History infinite
   auto-fetch" complaint led to commit 4144e0a, which stubbed `__refetchAlbums` to show
