@@ -11632,16 +11632,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(!isPremiumActive()) return null;
     const info = getPremiumInfo();
     if(!info || !info.code) return null;
-    // Tie premium to this device: generate a device fingerprint hash
-    // so imports on other devices can detect it's not the original.
-    try {
-      const fp = (navigator.userAgent || '') + '|' + (screen.width + 'x' + screen.height) + '|' + (navigator.language || '');
-      let h = 0;
-      for(let i = 0; i < fp.length; i++){ h = ((h << 5) - h + fp.charCodeAt(i)) | 0; }
-      return { code: info.code, plan: info.plan || 'gifted', deviceHash: Math.abs(h).toString(36) };
-    } catch(e) {
-      return { code: info.code, plan: info.plan || 'gifted' };
-    }
+    // Premium code is verified on import — no device binding, so you can
+    // transfer premium to a new phone by importing your backup .zip.
+    return { code: info.code, plan: info.plan || 'gifted' };
   }
   
   // Premium is auto-included in every export when the user has it active — no
@@ -12439,19 +12432,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           toast('Premium already active on this device — kept as-is.');
         } else {
           try{
-            // Device-bound premium: only activate if imported on the same device type
-            var _isSameDevice = true;
-            try {
-              if(manifest.premium.deviceHash){
-                const fp = (navigator.userAgent || '') + '|' + (screen.width + 'x' + screen.height) + '|' + (navigator.language || '');
-                let h = 0; for(let i = 0; i < fp.length; i++){ h = ((h << 5) - h + fp.charCodeAt(i)) | 0; }
-                _isSameDevice = (Math.abs(h).toString(36) === manifest.premium.deviceHash);
-              }
-            } catch(e) {}
-            if(!_isSameDevice){
-              toast('Premium is tied to the original device — importing data only.', 4000);
-            }
-            const ok = _isSameDevice ? await verifyPremiumCode(manifest.premium.code) : false;
+            // Verify the premium code from the backup — works on any device
+            // so you can transfer premium to a new phone.
+            const ok = await verifyPremiumCode(manifest.premium.code);
             if(ok){
               setPremiumActive({ plan: manifest.premium.plan || 'gifted', code: manifest.premium.code });
               toast('Premium restored from your backup. ✨', 3200);
