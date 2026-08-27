@@ -8750,6 +8750,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // CORS proxy helper — tries the direct fetch first, then a few public CORS
   // relays, so Discover keeps working even when one relay is down or blocked.
   async function fetchWithProxy(url){
+    // If Album History fetch was cancelled, abort immediately
+    if(window.__ahCancelled) return null;
     const attempts = [
       (opts) => fetch(url, opts),
       (opts) => fetch('https://corsproxy.io/?' + encodeURIComponent(url), opts),
@@ -8757,9 +8759,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       (opts) => fetch('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url), opts)
     ];
     for(const a of attempts){
+      // Check cancel between each proxy attempt
+      if(window.__ahCancelled) return null;
       try{
         const ctrl = new AbortController();
-        const timer = setTimeout(function(){ ctrl.abort(); }, 10000);
+        const timer = setTimeout(function(){ ctrl.abort(); }, 8000);
         const resp = await a({ signal: ctrl.signal });
         clearTimeout(timer);
         if(resp.ok) return resp;
@@ -16331,7 +16335,7 @@ if(typeof toast === 'function') toastWithCancel();
         var _ahPopCancel = document.getElementById('ahPopupCancelBtn');
         if(_ahPopCancel){ _ahPopCancel.onclick = function(){ window.__ahCancelled = true; toast('\ud83d\udcc0 Cancelling\u2026', 2000); }; }
         }
-        if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
+        if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums…</div><button id="ahPopupCancelBtn" style="margin-top:12px;padding:8px 20px;border-radius:8px;border:1px solid var(--coral);background:rgba(255,80,80,0.08);color:var(--coral);font-size:12px;font-weight:600;cursor:pointer;">✖ Cancel</button>'; var _rpc = document.getElementById('ahPopupCancelBtn'); if(_rpc){ _rpc.onclick = function(){ window.__ahCancelled = true; toast('📀 Cancelling…', 2000); }; } }
         var artistAlbums = {};
         var totalAlbums = 0;
         // Load existing cached album data to avoid re-fetching artists
@@ -16369,7 +16373,7 @@ if(typeof toast === 'function') toastWithCancel();
           var _artistDone = false;
           var _artistTimeout = setTimeout(function(){ _artistDone = true; }, 20000);
           try{
-            if(_artistDone) return;
+            if(_artistDone || window.__ahCancelled) return;
             // Step 1: find artist ID via search (limit 25 — the exact-name match
             // must not be crowded out of the first page, or we fall back to the
             // relevance-ranked term search where pre-2008 albums get buried)
@@ -16438,6 +16442,7 @@ if(typeof toast === 'function') toastWithCancel();
                 addAlbum(r, srcCountry);
               });
             };
+            if(_artistDone || window.__ahCancelled) { clearTimeout(_artistTimeout); return; }
             // Step 2: fetch the catalog. Preferred path is the complete-catalog
             // lookup by artist ID — but iTunes caps a response at 200 entries
             // (dupe editions can eat the whole cap, truncating the OLDEST
@@ -16450,6 +16455,7 @@ if(typeof toast === 'function') toastWithCancel();
               var resp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200');
               if(resp && resp.ok){ var data = await resp.json(); var lResults = data.results||[]; lookupCount = lResults.length; filterInto(lResults); }
             }
+            if(_artistDone || window.__ahCancelled) { clearTimeout(_artistTimeout); return; }
             // Region-locked catalog: iTunes serves a different catalog per
             // storefront, and older albums are often licensed only in certain
             // countries (Diljit Dosanjh's Over Exposure (2005) exists only in
@@ -16476,6 +16482,7 @@ if(typeof toast === 'function') toastWithCancel();
                   if(pResults.length < 200) break;
                 }catch(e){ break; }
               }
+              if(_artistDone || window.__ahCancelled) { clearTimeout(_artistTimeout); return; }
               // Track-credit discovery: some catalogs credit the artist only at
               // the TRACK level, not the album level (Punjabi albums often credit
               // the music director — Diljit's early albums sit under Sukhpal Sukh,
@@ -16534,6 +16541,7 @@ if(typeof toast === 'function') toastWithCancel();
                   }));
                 }
               }catch(e){}
+              if(_artistDone || window.__ahCancelled) { clearTimeout(_artistTimeout); return; }
               // Backup source: Deezer. iTunes doesn't stock a lot of Punjabi
               // catalog (Diljit's "Dil" 2008 exists on Deezer but not Apple),
               // and old originals sit under the music director there too.
@@ -16619,6 +16627,7 @@ if(typeof toast === 'function') toastWithCancel();
                 }
               }catch(e){}
             }
+            if(_artistDone || window.__ahCancelled) { clearTimeout(_artistTimeout); return; }
             // Backup source #3: MusicBrainz. Apple's catalog has gaps that no
             // storefront merge or track-credit scan can fill — Diljit Dosanjh's
             // 2003–2006 originals (Ishq Da Uda Ada, Dil, Smile) aren't on
@@ -19415,25 +19424,15 @@ window.toastWithCancel = function(){
     ecb.innerHTML = '\u2716 Cancel album fetch';
     ecb.onclick = function(){
       window.__ahCancelled = true;
-      window.__ahFetching = false;
-      window.__ahFetchingStartedAt = 0;
-      try{ localStorage.removeItem('sidecut_ahPending'); }catch(ex){}
       ecb.style.display = 'none';
-      // Close the popup if open
-      var ov = document.getElementById('discPopupOverlay');
-      if(ov) ov.style.display = 'none';
-      toast('\ud83d\udcc0 Album fetch cancelled.', 2000);
+      toast('\ud83d\udcc0 Cancelling\u2026', 2000);
     };
   }
 };
 
 window.__ahCancelToast = function(){
   window.__ahCancelled = true;
-  window.__ahFetching = false;
-  try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
-  var ic = document.getElementById('ahInlineCancel');
-  if(ic) ic.remove();
-  if(typeof toast === 'function') toast('\ud83d\udcc0 Fetch cancelled.', 2000);
+  if(typeof toast === 'function') toast('\ud83d\udcc0 Cancelling\u2026', 2000);
 };
 
 // ---------------- Zoom lock ----------------
