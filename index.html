@@ -1828,6 +1828,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button id="discoverFetchLatest" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🔄 Fetch latest <span class="online-badge">ONLINE</span></button>
       <button id="discoverLastYear" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Old songs</button>
       <button id="discoverAlbumHistory" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📀 Albums</button>
+      <button id="ahExternalCancel" style="display:none; grid-column:1/-1; padding:8px 16px; font-size:12px; font-weight:600; border:1px solid var(--coral); border-radius:10px; background:rgba(255,80,80,0.08); color:var(--coral); cursor:pointer; text-align:center;">✖ Cancel album fetch</button>
       <button id="discoverSingles" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🎵 Singles <span class="online-badge">ONLINE</span></button>
   </div>
   <div id="albumHistoryContainer" style="display:none; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); overflow:hidden;">
@@ -7312,7 +7313,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.0.6';
+  const APP_VERSION = '50.0.7';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
@@ -7332,6 +7333,18 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.0.7', date: 'August 27, 2026 at 5:55 am EDT', title: 'Discover fixes + album history + singles undo', items: [
+      'Fixed ALL Discover buttons broken by truncated __ahCancelToast function',
+      'Fixed infinite album refetching — per-artist ↻ no longer triggers full refetch of all artists',
+      'Singles delete now shows undo toast for 5 seconds instead of permanent delete',
+      'Cancel button in Album History now visible and functional (inserted into popup card)',
+      'fetchWithProxy has 10s timeouts with proper abort signal — no more infinite loading',
+      'Per-artist 20s timeout + 90s overall timeout for album fetching',
+      'Album History popup opens with loading state before fetch starts',
+      'Discover card tap no longer auto-plays preview',
+      'Auto-resume removed — no more constant "fetching albums" toast',
+      'Premium transfer works on any device (removed device fingerprint)',
+    ]},
     { version: '50.0.6', date: 'August 26, 2026 at 10:15 pm EDT', title: 'Free home reorder + premium transfer fix + settings scroll', items: [
       'Home page bubble reordering is now free (no premium required)',
       'Premium transfer exploit fixed: exports are device-bound, won\'t activate on a different device',
@@ -16682,7 +16695,8 @@ if(typeof toast === 'function') toastWithCancel();
         var _fetchTimeout = setTimeout(function(){ window.__ahCancelled = true; }, 90000);
         await Promise.all(ahWorkers);
         clearTimeout(_fetchTimeout);
-        } finally { window.__ahFetching = false; window.__ahCancelled = false; }
+        } finally { window.__ahFetching = false; window.__ahCancelled = false;
+    var _ecb = document.getElementById('ahExternalCancel'); if(_ecb) _ecb.style.display = 'none'; }
         // Save structured data for incremental refetch
         try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
         // Clear pending list — fetch completed successfully
@@ -16741,6 +16755,7 @@ if(typeof toast === 'function') toastWithCancel();
         html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button><button id="ahAddAlbumBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">+ Add album</button><button id="ahSelectBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u2610 Select</button></div>' + html;
         openDiscoverPopup('📀 Album History', html, subtitle);
         if(typeof toast === 'function') toast('\ud83d\udcc0 Album History refreshed!', 3000);
+        var _ecb2 = document.getElementById('ahExternalCancel'); if(_ecb2) _ecb2.style.display = 'none';
         if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
         
         window.__wireAH();
@@ -19330,27 +19345,23 @@ function loadCachedDiscoverPopup(key){
 window.toastWithCancel = function(){
   var td = document.getElementById('toast');
   if(td){ td.style.display = 'none'; clearTimeout(td._timer); }
-  var old = document.getElementById('ahInlineCancel');
-  if(old) old.remove();
-  // Insert into discPopupCard — NOT discPopupBody — so the cancel bar
-  // survives when openDiscoverPopup replaces innerHTML after the fetch.
-  var card = document.getElementById('discPopupCard');
-  if(!card) return;
-  var bar = document.createElement('div');
-  bar.id = 'ahInlineCancel';
-  bar.style.cssText = 'text-align:center;padding:12px 16px;background:var(--card,#1a2c33);border-top:1px solid var(--line);flex-shrink:0;';
-  bar.innerHTML = '<span id="ahCancelProgress" style="font-size:12px;color:var(--ink-dim);">\ud83d\udcc0 Fetching albums\u2026</span> <button id="ahCancelBtnInline" style="padding:6px 18px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:12px;font-weight:600;cursor:pointer;margin-left:8px;">\u2716 Cancel</button>';
-  card.appendChild(bar);
-  var btn = document.getElementById('ahCancelBtnInline');
-  if(btn) btn.onclick = function(e){
-    e.preventDefault(); e.stopPropagation();
-    window.__ahCancelled = true;
-    window.__ahFetching = false;
-    try{ localStorage.removeItem('sidecut_ahPending'); }catch(ex){}
-    var ic = document.getElementById('ahInlineCancel');
-    if(ic) ic.remove();
-    toast('\ud83d\udcc0 Fetch cancelled.', 2000);
-  };
+  // Show the external cancel button below the Albums button
+  var ecb = document.getElementById('ahExternalCancel');
+  if(ecb){
+    ecb.style.display = 'block';
+    ecb.innerHTML = '\u2716 Cancel album fetch';
+    ecb.onclick = function(){
+      window.__ahCancelled = true;
+      window.__ahFetching = false;
+      window.__ahFetchingStartedAt = 0;
+      try{ localStorage.removeItem('sidecut_ahPending'); }catch(ex){}
+      ecb.style.display = 'none';
+      // Close the popup if open
+      var ov = document.getElementById('discPopupOverlay');
+      if(ov) ov.style.display = 'none';
+      toast('\ud83d\udcc0 Album fetch cancelled.', 2000);
+    };
+  }
 };
 
 window.__ahCancelToast = function(){
