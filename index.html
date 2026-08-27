@@ -15581,7 +15581,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           try { _a = activeAudio(); } catch(_ae) {}
           if(_a && !_a.paused){
             window.__pendingSWReload = true;
-            toast('Update ready — will apply when the song pauses or ends', 4000);
             return;
           }
           toast('Updating to the latest version…');
@@ -16398,6 +16397,29 @@ window.__ahCancelled = false;
 
 setTimeout(function(){ try{ localStorage.removeItem('sidecut_ahPending'); window.__ahFetching = false; window.__ahCancelled = false; }catch(e){} }, 500);
 
+// Manual count overrides for Album History (albums + tracks). Stored in
+// sidecut_ahManualCounts keyed by "artist\u0001album\u0001field".
+function _getManualCount(artist, album, field){
+  try{
+    var mc = JSON.parse(localStorage.getItem('sidecut_ahManualCounts') || '{}');
+    var v = mc[(artist||'') + '\u0001' + (album||'') + '\u0001' + field];
+    return (typeof v === 'number' && v > 0) ? v : null;
+  }catch(e){ return null; }
+}
+function _promptManualCount(artist, album, field, cur, onSave){
+  var item = album ? ('"' + album + '" track count') : ('"' + artist + '" album count');
+  var input = prompt('Set ' + item + ':', (cur != null && cur !== '?') ? String(cur) : '');
+  if(input === null) return;
+  var num = parseInt(String(input).replace(/[^0-9]/g, ''), 10);
+  if(isNaN(num) || num <= 0){ toast('Count must be a positive number.', 2500); return; }
+  try{
+    var mc = JSON.parse(localStorage.getItem('sidecut_ahManualCounts') || '{}');
+    mc[(artist||'') + '\u0001' + (album||'') + '\u0001' + field] = num;
+    localStorage.setItem('sidecut_ahManualCounts', JSON.stringify(mc));
+  }catch(e){}
+  if(typeof onSave === 'function') onSave(num);
+}
+
 window.__refetchAlbums = async function(wasRefetch){
   // Safety: if __ahFetching got stuck from a crashed previous session, force-reset
   // after 60 seconds so the user isn't locked out forever
@@ -16429,14 +16451,15 @@ window.__refetchAlbums = async function(wasRefetch){
   }
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
-        // wasRefetch comes from the function parameter (set by caller)
-        // Serve the cached popup when it was built <24h ago — tapping the
-        // button no longer refetches over the network every time. The
-        // "Refetch albums" button inside the popup bypasses the cache.
+        // wasRefetch comes from the function parameter (set by caller).
+        // Opening Album History NEVER triggers a network fetch on its own —
+        // it always serves whatever data is already on device (any age). The
+        // only way to fetch is the explicit "Refetch albums" button inside the
+        // popup (which sets wasRefetch=true).
         if(!wasRefetch){
           try{
             var ahCached = JSON.parse(localStorage.getItem('discPopupCache_📀 Album History') || 'null');
-            if(ahCached && ahCached.ts && (Date.now() - ahCached.ts) < 24*3600*1000 && typeof window.__wireAH === 'function'){
+            if(ahCached && ahCached.title && ahCached.body && typeof window.__wireAH === 'function'){
               loadCachedDiscoverPopup('📀 Album History');
               window.__wireAH();
               return;
