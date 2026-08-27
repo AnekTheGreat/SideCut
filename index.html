@@ -16711,10 +16711,12 @@ if(typeof toast === 'function') toastWithCancel();
             var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
             var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
             var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
-            html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-link="' + escapeHtml(sr.trackViewUrl||'') + '">';
+            html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-link="' + escapeHtml(sr.trackViewUrl||'') + '" data-si="' + ki + '-' + sri + '">';
             html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (sart ? 'background-image:url(' + escapeHtml(sart) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
-            html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' · ' + swhen : '') + '</div></div></div>';
+            html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' · ' + swhen : '') + '</div></div>';
+            html += '<span class="dp-ah-x" data-si="' + ki + '-' + sri + '" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
+            html += '</div>';
           }
           html += '</div></div>';
         }
@@ -16734,8 +16736,39 @@ if(typeof toast === 'function') toastWithCancel();
         });
         // Wire up track clicks
         document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
-          row.addEventListener('click', function(){
+          row.addEventListener('click', function(e){
+            if(e.target && e.target.classList.contains('dp-ah-x')) return;
             $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
+          });
+        });
+        // Wire up remove (X) buttons on singles
+        document.querySelectorAll('#discPopupBody .dp-ah-x').forEach(function(xbtn){
+          xbtn.addEventListener('click', function(e){
+            e.stopPropagation();
+            var si = this.dataset.si;
+            if(!si) return;
+            var parts = si.split('-');
+            var aIdx = parseInt(parts[0]);
+            var sIdx = parseInt(parts[1]);
+            var aKey = Object.keys(artistSingles).sort()[aIdx];
+            if(!aKey || isNaN(sIdx)) return;
+            artistSingles[aKey].splice(sIdx, 1);
+            if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
+            totalFound--;
+            var row = this.closest('.dp-track');
+            if(row) row.remove();
+            // Update counts
+            document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
+              var tgt = document.getElementById(h.dataset.target);
+              if(!tgt) return;
+              var cnt = tgt.querySelectorAll('.dp-track').length;
+              var cntSpan = h.querySelector('span:last-child');
+              if(cntSpan) cntSpan.textContent = cnt + ' single' + (cnt!==1?'s':'');
+              if(cnt === 0) { var pa = h.closest('.dp-ah-artist'); if(pa) pa.remove(); }
+            });
+            var sub = document.getElementById('discPopupSub');
+            if(sub) sub.textContent = totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + Object.keys(artistSingles).length + ' artist' + (Object.keys(artistSingles).length!==1?'s':'');
+            toast('Removed single', 1500);
           });
         });
       };
@@ -18216,29 +18249,37 @@ function _ahSetCover(artistName, albumName, collectionId) {
   var pasteBtn = document.getElementById('ahCoverPasteBtn');
   if(pasteBtn){
     pasteBtn.addEventListener('click', function(){
-      if(navigator.clipboard && navigator.clipboard.read){
-        navigator.clipboard.read().then(function(clipItems){
-          for(var ci = 0; ci < clipItems.length; ci++){
-            var clipItem = clipItems[ci];
-            var imageTypes = clipItem.types.filter(function(t){ return t.startsWith('image/'); });
-            if(imageTypes.length > 0){
-              clipItem.getType(imageTypes[0]).then(function(blob){
-                _ahFileToDataURL(blob).then(function(dataUrl){
-                  var preview = document.getElementById('ahCoverPreview');
-                  if(preview) preview.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;" />';
-                  _ahSaveCover(dataUrl);
-                }).catch(function(){ toast('Could not read clipboard image.', 2000); });
-              });
-              return;
+      try {
+        if(navigator.clipboard && navigator.clipboard.read){
+          var _clipTimeout = setTimeout(function(){ toast('Clipboard read timed out — try choosing a photo.', 3000); }, 5000);
+          navigator.clipboard.read().then(function(clipItems){
+            clearTimeout(_clipTimeout);
+            for(var ci = 0; ci < clipItems.length; ci++){
+              var clipItem = clipItems[ci];
+              try {
+                var imageTypes = clipItem.types.filter(function(t){ return t.startsWith('image/'); });
+                if(imageTypes.length > 0){
+                  clipItem.getType(imageTypes[0]).then(function(blob){
+                    _ahFileToDataURL(blob).then(function(dataUrl){
+                      var preview = document.getElementById('ahCoverPreview');
+                      if(preview) preview.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;" />';
+                      _ahSaveCover(dataUrl);
+                    }).catch(function(){ toast('Could not read clipboard image.', 2000); });
+                  }).catch(function(){ toast('Could not read clipboard image.', 2000); });
+                  return;
+                }
+              } catch(clipErr) { /* skip clipItem */ }
             }
-          }
-          toast('No image in clipboard — copy a photo first.', 2500);
-        }).catch(function(err){
-          // Fallback: try keyboard paste event approach
-          toast('Clipboard access denied — try Ctrl+V instead.', 2500);
-        });
-      } else {
-        toast('Clipboard API not supported — try Ctrl+V or choose a photo.', 2500);
+            toast('No image in clipboard — copy a photo first.', 2500);
+          }).catch(function(err){
+            clearTimeout(_clipTimeout);
+            toast('Clipboard access denied — try choosing a photo.', 2500);
+          });
+        } else {
+          toast('Clipboard API not supported — try choosing a photo.', 2500);
+        }
+      } catch(e) {
+        toast('Paste not available — try choosing a photo.', 2500);
       }
     });
   }
@@ -18982,10 +19023,12 @@ window.__refetchSingles = async function(){
       var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
       var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
       var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
-      html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '">';
+      html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-si="' + ki + '-' + sri + '">';
       html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (sart ? 'background-image:url(' + escapeHtml(sart) + ');' : 'background:var(--bg);') + '"></div>';
       html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
-      html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' \u00b7 ' + swhen : '') + '</div></div></div>';
+      html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' \u00b7 ' + swhen : '') + '</div></div>';
+      html += '<span class="dp-ah-x" data-si="' + ki + '-' + sri + '" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
+      html += '</div>';
     }
     html += '</div></div>';
   }
@@ -19004,8 +19047,44 @@ window.__refetchSingles = async function(){
   });
   // Wire up track clicks
   document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
-    row.addEventListener('click', function(){
+    row.addEventListener('click', function(e){
+      if(e.target && e.target.classList.contains('dp-ah-x')) return;
       $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
+    });
+  });
+  // Wire up remove (X) buttons
+  document.querySelectorAll('#discPopupBody .dp-ah-x').forEach(function(xbtn){
+    xbtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var si = this.dataset.si;
+      if(!si) return;
+      var parts = si.split('-');
+      var aKey = artistKeys[parseInt(parts[0])];
+      var sIdx = parseInt(parts[1]);
+      if(!aKey || isNaN(sIdx)) return;
+      // Remove from the data
+      artistSingles[aKey].splice(sIdx, 1);
+      if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
+      totalFound--;
+      // Remove the row from DOM
+      var row = this.closest('.dp-track');
+      if(row) row.remove();
+      // Update count badge
+      var hdrs = document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr');
+      hdrs.forEach(function(h){
+        var tgt = h.dataset.target;
+        if(!tgt) return;
+        var container = document.getElementById(tgt);
+        if(!container) return;
+        var cnt = container.querySelectorAll('.dp-track').length;
+        var cntSpan = h.querySelector('span:last-child');
+        if(cntSpan && cnt >= 0) cntSpan.textContent = cnt + ' single' + (cnt!==1?'s':'');
+        if(cnt === 0) h.closest('.dp-ah-artist').remove();
+      });
+      // Update subtitle
+      var sub = document.getElementById('discPopupSub');
+      if(sub && totalFound >= 0) sub.textContent = totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + Object.keys(artistSingles).length + ' artist' + (Object.keys(artistSingles).length!==1?'s':'');
+      toast('Removed "' + (parts.length > 1 ? 'single' : 'track') + '"', 1500);
     });
   });
 };
