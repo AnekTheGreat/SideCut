@@ -1048,6 +1048,16 @@
     padding:0; transition:background .15s, color .15s;
   }
   .stat-add-btn:active{ background:var(--coral); color:#161616; }
+  .stat-del-btn{
+    position:absolute; top:6px; right:6px;
+    width:22px; height:22px; border-radius:50%;
+    border:1px solid var(--line); background:none;
+    color:var(--ink-dim); font-size:14px; font-weight:700;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background 0.15s;
+  }
+  .stat-del-btn:hover{ background:rgba(255,255,255,0.08); }
+  .stat-del-btn:active{ background:var(--coral); color:#161616; }
   .stat-pop{ animation: statPop 0.5s cubic-bezier(0.34,1.56,0.64,1); display:inline-block; }
   @keyframes statPop{
     0%{ transform:scale(1); }
@@ -6821,12 +6831,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     html += `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
         <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; position:relative;">
-          <button class="stat-add-btn" data-stat="time" title="Add listening time">+</button>
+          <button class="stat-add-btn" data-stat="time" title="Add listening time">+</button><button class="stat-del-btn" data-stat="time" title="Subtract listening time">−</button>
           <div id="statTimeValue" style="font-size:22px; font-weight:700; color:var(--coral);">${fmtDurationLong(totalListenSeconds)}</div>
           <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Total listening time</div>
         </div>
         <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; position:relative;">
-          <button class="stat-add-btn" data-stat="plays" title="Add songs played">+</button>
+          <button class="stat-add-btn" data-stat="plays" title="Add songs played">+</button><button class="stat-del-btn" data-stat="plays" title="Subtract songs played">−</button>
           <div id="statPlaysValue" style="font-size:22px; font-weight:700; color:var(--coral);">${totalPlays}</div>
           <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Songs played</div>
         </div>
@@ -6839,7 +6849,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Playlists</div>
         </div>
         <div style="background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; position:relative;">
-          <button class="stat-add-btn" data-stat="streak" title="Add streak days">+</button>
+          <button class="stat-add-btn" data-stat="streak" title="Add streak days">+</button><button class="stat-del-btn" data-stat="streak" title="Subtract streak days">−</button>
           <div id="statStreakValue" style="font-size:22px; font-weight:700; color:var(--coral);">🔥 ${currentStreak}</div>
           <div style="font-size:11.5px; color:var(--ink-dim); margin-top:2px;">Day streak${currentStreak===1?'':'s'}</div>
         </div>
@@ -6907,6 +6917,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         promptAddStat(btn.dataset.stat);
+      });
+    });
+    // Subtract buttons for stats
+    body.querySelectorAll('.stat-del-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        promptSubtractStat(btn.dataset.stat);
       });
     });
   }
@@ -7020,6 +7037,88 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     renderStats();
     popStatTile(cfg.tileId);
+  }
+  // Subtract stat values — mirrors promptAddStat but removes instead
+  const STAT_SUB_CFG = {
+    time:   { title: 'Subtract listening time', label: 'Minutes' },
+    plays:  { title: 'Subtract songs played', label: 'Plays to remove' },
+    streak: { title: 'Subtract streak days', label: 'Days to remove' },
+  };
+  async function promptSubtractStat(stat){
+    const cfg = STAT_SUB_CFG[stat];
+    if(!cfg) return;
+    // Reuse the same in-app dialog but with subtract config
+    const dual = (stat === 'time');
+    $('statInputTitle').textContent = cfg.title;
+    const hoursRow = $('statInputHoursRow');
+    const singleField = $('statInputSingle');
+    const minutesField = $('statInputField');
+    const hoursField = $('statInputHours');
+    if(dual){
+      hoursRow.style.display = 'flex';
+      singleField.style.display = 'none';
+      $('statInputLabel').textContent = cfg.label;
+      hoursField.value = ''; minutesField.value = '';
+      setTimeout(() => hoursField.focus(), 50);
+    }else{
+      hoursRow.style.display = 'none';
+      singleField.style.display = '';
+      singleField.placeholder = cfg.label;
+      singleField.value = '';
+      setTimeout(() => singleField.focus(), 50);
+    }
+    $('statInputBackdrop').style.display = 'flex';
+    const raw = await new Promise((resolve) => {
+      function cleanup(result){
+        $('statInputBackdrop').style.display = 'none';
+        $('statInputConfirm').removeEventListener('click', onConfirm);
+        $('statInputCancel').removeEventListener('click', onCancel);
+        resolve(result);
+      }
+      function onConfirm(){
+        if(dual) resolve({ hours: hoursField.value, minutes: minutesField.value });
+        else resolve(singleField.value);
+      }
+      function onCancel(){ cleanup(null); }
+      function onBackdrop(e){ if(e.target === $('statInputBackdrop')) cleanup(null); }
+      function onKeydown(e){ if(e.key === 'Enter') onConfirm(); else if(e.key === 'Escape') cleanup(null); }
+      $('statInputConfirm').addEventListener('click', onConfirm);
+      $('statInputCancel').addEventListener('click', onCancel);
+      $('statInputBackdrop').addEventListener('click', onBackdrop);
+      hoursField.addEventListener('keydown', onKeydown);
+      minutesField.addEventListener('keydown', onKeydown);
+      singleField.addEventListener('keydown', onKeydown);
+    });
+    if(raw === null) return;
+    const addCfg = STAT_ADD_CFG[stat];
+    if(stat === 'time'){
+      const h = parseInt(raw.hours, 10) || 0;
+      const m = parseInt(raw.minutes, 10) || 0;
+      const totalMin = h * 60 + m;
+      if(totalMin <= 0){ toast('Enter hours or minutes greater than 0.'); return; }
+      totalListenSeconds = Math.max(0, totalListenSeconds - totalMin * 60);
+      dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
+      toast('Removed ' + fmtDurationLong(totalMin * 60) + ' from listening time');
+    } else {
+      const n = parseInt(raw, 10);
+      if(!Number.isFinite(n) || n <= 0){ toast('Enter a whole number greater than 0.'); return; }
+      if(stat === 'plays'){
+        totalPlays = Math.max(0, totalPlays - n);
+        dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
+        toast('Removed ' + n + ' play' + (n===1?'':'s') + ' from songs played');
+      } else if(stat === 'streak'){
+        // Remove the N most recent listened days
+        const sorted = Array.from(listenedDates).sort().reverse();
+        for(let i = 0; i < Math.min(n, sorted.length); i++){
+          listenedDates.delete(sorted[i]);
+        }
+        dbPut('meta', { key: 'listenedDates', value: Array.from(listenedDates) });
+        const streak = computeStreak();
+        toast('Removed ' + n + ' day' + (n===1?'':'s') + ' — streak now at \ud83d\udd25 ' + streak);
+      }
+    }
+    renderStats();
+    popStatTile(addCfg.tileId);
   }
   if($('statsBtn')) $('statsBtn').addEventListener('click', () => { renderStats(); $('statsBackdrop').style.display = 'flex'; });
   $('statsClose').addEventListener('click', () => { $('statsBackdrop').style.display = 'none'; });
@@ -7199,7 +7298,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.0.4';
+  const APP_VERSION = '50.0.5';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
@@ -7219,6 +7318,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.0.5', date: 'August 26, 2026 at 10:00 pm EDT', title: 'Stats delete buttons + inline cancel + artist-specific refetch', items: [
+      'Listening stats now have \u2212 (minus) buttons to subtract time, plays, or streak days',
+      'Album History fetch cancel button now shows inline below the album count, not in a toast',
+      'Per-artist \u21bb refetch only updates that artist and shows inline cancel',
+    ]},
     { version: '50.0.4', date: 'August 26, 2026 at 9:45 pm EDT', title: 'Album covers persist + track count fix + Discover clear + Singles remove', items: [
       'Manual album covers in Album History now persist correctly across reloads',
       'Albums with unknown track count (\u201c? tracks\u201d) now fetch the real count via iTunes search fallback',
@@ -15882,7 +15986,15 @@ window.__refetchArtistAlbums = async function(artistName){
   window.__ahFetching = true;
   window.__ahCancelled = false;
   try {
-    if(typeof toast === 'function') toast('📀 Fetching albums for ' + artistName + '…', 3000);
+    // Show inline cancel below subtitle
+    var _sub = document.getElementById('discPopupSub');
+    if(_sub && !document.getElementById('ahInlineCancel')){
+      var _cb = document.createElement('div');
+      _cb.id = 'ahInlineCancel'; _cb.style.cssText = 'text-align:center;padding:4px 0 2px;';
+      _cb.innerHTML = '<span style="font-size:11px;color:var(--ink-dim);">\U0001F4C0 Fetching ' + artistName + '\u2026</span> <button id="ahCancelBtnInline" style="padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;margin-left:6px;">Cancel</button>';
+      _sub.parentNode.insertBefore(_cb, _sub.nextSibling);
+      document.getElementById('ahCancelBtnInline').addEventListener('click', function(e){ e.stopPropagation(); window.__ahCancelled = true; window.__ahFetching = false; var _x = document.getElementById('ahInlineCancel'); if(_x) _x.remove(); toast('\U0001F4C0 Fetch cancelled.', 2000); });
+    }
     // Load existing data, then re-fetch just this artist
     var artistAlbums = {};
     var totalAlbums = 0;
@@ -19166,16 +19278,23 @@ function loadCachedDiscoverPopup(key){
 
 
 window.toastWithCancel = function(){
-  // Show a toast with a cancel link
+  // Show inline cancel button below the popup subtitle
   var td = document.getElementById('toast');
-  if(!td){ toast('📀 Checking for new albums…', 3000); return; }
-  td.innerHTML = '📀 Fetching albums… <span id="ahCancelBtn" style="color:var(--coral);cursor:pointer;font-weight:700;text-decoration:underline;margin-left:6px;">Cancel</span>';
-  td.style.display = 'block';
-  td.style.opacity = '1';
-  clearTimeout(td._timer);
-  td._timer = setTimeout(function(){ td.style.display = 'none'; }, 8000);
-  var cb = document.getElementById('ahCancelBtn');
-  if(cb) cb.addEventListener('click', function(e){ e.stopPropagation(); window.__ahCancelToast(); });
+  if(td){ td.style.display = 'none'; clearTimeout(td._timer); }
+  var sub = document.getElementById('discPopupSub');
+  if(sub){
+    var existingCancel = document.getElementById('ahInlineCancel');
+    if(!existingCancel){
+      var cancelWrap = document.createElement('div');
+      cancelWrap.id = 'ahInlineCancel';
+      cancelWrap.style.cssText = 'text-align:center;padding:4px 0 2px;';
+      cancelWrap.innerHTML = '<span style="font-size:11px;color:var(--ink-dim);">📀 Fetching albums\u2026</span> <button id="ahCancelBtnInline" style="padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;margin-left:6px;">Cancel</button>';
+      sub.parentNode.insertBefore(cancelWrap, sub.nextSibling);
+      document.getElementById('ahCancelBtnInline').addEventListener('click', function(e){ e.stopPropagation(); window.__ahCancelToast(); });
+    }
+  } else {
+    toast('📀 Fetching albums\u2026', 3000);
+  }
 };
 
 // Cancel album history fetch on any tap during fetching
@@ -19184,6 +19303,8 @@ window.__ahCancelToast = function(){
   window.__ahCancelled = true;
   window.__ahFetching = false;
   try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
+  var ic = document.getElementById('ahInlineCancel');
+  if(ic) ic.remove();
   if(typeof toast === 'function') toast('📀 Fetch cancelled.', 2000);
 };
 
