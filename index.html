@@ -16298,7 +16298,11 @@ if(typeof toast === 'function') toastWithCancel();
         var fetchOneArtist = async function(a){
           // Skip artists we already have cached data for
           if(artistAlbums[a.name] && artistAlbums[a.name].length > 0) return;
+          // 20s per-artist timeout so one slow artist doesn't block the queue
+          var _artistDone = false;
+          var _artistTimeout = setTimeout(function(){ _artistDone = true; }, 20000);
           try{
+            if(_artistDone) return;
             // Step 1: find artist ID via search (limit 25 — the exact-name match
             // must not be crowded out of the first page, or we fall back to the
             // relevance-ranked term search where pre-2008 albums get buried)
@@ -16656,6 +16660,7 @@ if(typeof toast === 'function') toastWithCancel();
               totalAlbums += albums.length;
             }
           }catch(e){}
+          clearTimeout(_artistTimeout);
         };
         // Fan out across artists (4 at a time): per-artist lookups are independent,
         // and a strictly serial loop over 10+ pinned artists took minutes.
@@ -16674,7 +16679,10 @@ if(typeof toast === 'function') toastWithCancel();
         };
         var ahWorkers = [];
         for(var ahW=0; ahW<Math.min(6, ahQueue.length); ahW++) ahWorkers.push(runAhWorker());
+        // Overall 90s timeout so the fetch can never hang forever
+        var _fetchTimeout = setTimeout(function(){ window.__ahCancelled = true; }, 90000);
         await Promise.all(ahWorkers);
+        clearTimeout(_fetchTimeout);
         } finally { window.__ahFetching = false; window.__ahCancelled = false; }
         // Save structured data for incremental refetch
         try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
