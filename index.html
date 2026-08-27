@@ -7313,7 +7313,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.1.1';
+  const APP_VERSION = '50.1.2';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
@@ -7333,6 +7333,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.1.2', date: 'August 27, 2026 at 10:30 pm EDT', title: 'Fix Album History stuck fetching + compact now bar default', items: [
+      'Album History now purges stale cached popups that contained loading/spinner HTML',
+      'Album History always shows cached data or clean empty state \u2014 never stuck on fetching',
+      'openDiscoverPopup no longer caches loading/spinner content to localStorage',
+      'Compact now bar is ON by default for new users',
+    ]},
     { version: '50.0.10', date: 'August 27, 2026 at 7:00 pm EDT', title: 'Album History works again — fetches only when you tap it', items: [
       'Album History button re-enabled: tap 📀 Albums to fetch your pinned artists\u2019 discographies',
       'Fetching only ever runs from an explicit tap \u2014 no auto-fetch on load, no resume loops',
@@ -16423,17 +16429,25 @@ window.__refetchAlbums = async function(wasRefetch){
   if(!isPremiumActive()){ toast('Premium feature \u2014 unlock in Settings!'); openSettingsTo('premium'); return; }
   if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
   // Always try to load cached popup (even stale >24h) so the user sees data
+  // Always try to load cached popup (even stale >24h) so the user sees data
   if(!wasRefetch){
     try{
-      var ahCached = JSON.parse(localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History') || 'null');
-      if(ahCached && ahCached.ts && typeof window.__wireAH === 'function'){
-        loadCachedDiscoverPopup('\ud83d\udcc0 Album History');
-        window.__wireAH();
-        return;
+      var ahRaw = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
+      if(ahRaw){
+        var ahCached = JSON.parse(ahRaw);
+        // Purge stale caches that contain loading/spinner HTML from old bugs
+        if(ahCached && ahCached.body && /fetching|loading|spinner|⏳/i.test(ahCached.body)){
+          localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History');
+          console.log('[AH] Purged stale cached popup with loading text');
+        } else if(ahCached && ahCached.ts && typeof window.__wireAH === 'function'){
+          loadCachedDiscoverPopup('\ud83d\udcc0 Album History');
+          window.__wireAH();
+          return;
+        }
       }
     }catch(e){}
   }
-  // No cache at all — show a clean empty state
+  // No valid cache — show a clean empty state
   openDiscoverPopup('\ud83d\udcc0 Album History', '<div class="dp-empty" style="padding:30px 12px;">No album history yet.<br><span style="font-size:11px;color:var(--ink-dim);">Albums will appear here after a future update.</span></div>', '');
   return;
 };
@@ -18804,7 +18818,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       });
     }
   } catch(_e) {}
-  try{ if(title && bodyHTML){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
+  try{ if(title && bodyHTML && !/fetching|loading|spinner|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
 }
 function closeDiscoverPopup(){
   var ov = document.getElementById('discPopupOverlay');
