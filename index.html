@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SideCut">
+<meta name="application-name" content="SideCut">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
@@ -1846,6 +1847,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <summary style="cursor:pointer; color:var(--gold); font-size:11px; font-weight:600;">💡 Converter recommendation</summary>
       <div style="margin-top:5px; font-size:11px;">Management's personal picks for Spotify-to-MP3: <b>Spotisaver</b> and <b>SpotMate</b> — a very versatile all-rounder Spotify-to-MP3 downloader that's also compatible with other music apps.</div>
     </details>
+  </div>
+  <div id="discoverClearRow" style="display:none;text-align:center;padding:4px 0 8px;">
+    <button id="discoverClearResults" style="padding:5px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">× Clear results</button>
   </div>
   <div id="discoverResults"></div>
   <audio id="discoverPreviewAudio" preload="none"></audio>
@@ -7195,7 +7199,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.0.3';
+  const APP_VERSION = '50.0.4';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
@@ -7215,6 +7219,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.0.4', date: 'August 27, 2026 at 9:45 pm EDT', title: 'Album covers persist + track count fix + Discover clear + Singles remove', items: [
+      'Manual album covers in Album History now persist correctly across reloads',
+      'Albums with unknown track count (\u201c? tracks\u201d) now fetch the real count via iTunes search fallback',
+      'Singles tracks now have an \u00d7 remove button like Album History',
+      'Discover search has a \u00d7 Clear results button to reset and browse chips again',
+      'Fixed clipboard paste crash in album cover form (wrapped in try/catch with timeout)',
+      'Added application-name meta tag for proper PWA name on Android',
+    ]},
     { version: '50.0.3', date: 'August 26, 2026 at 6:10 pm EDT', title: 'PWA registration fix + overlapping audio fix', items: [
       'Fixed Play Console registration — app now registers as SideCut instead of showing GitHub link (added manifest id field)',
       'Fixed overlapping audio bug — two tracks no longer play simultaneously when switching songs (safety pause on both audio elements before playback)',
@@ -16585,7 +16597,20 @@ if(typeof toast === 'function') toastWithCancel();
         
         window.__wireAH();
         // Resolve broken artwork (Cover Art Archive 404s for old albums)
-        setTimeout(__ahResolveArtworks, 500);
+        setTimeout(function(){
+          __ahResolveArtworks();
+          // Re-apply custom covers after resolver to override any fetch race
+          try {
+            var _ahCv = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}');
+            document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
+              var k = ((hdr.dataset.artist||'') + '|' + (hdr.dataset.album||'')).toLowerCase().trim();
+              if(_ahCv[k]){
+                var ad = hdr.querySelector('div:first-child');
+                if(ad) ad.style.backgroundImage = 'url(' + _ahCv[k] + ')';
+              }
+            });
+          } catch(_e) {}
+        }, 600);
         // Async fetch track counts for albums showing "?" 
         document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
           // Find the info line containing "? tracks" — walk all divs inside the header
@@ -16597,7 +16622,8 @@ if(typeof toast === 'function') toastWithCancel();
           var cid = hdr.dataset.collectionId;
           var isDz = hdr.dataset.dz;
           var isMb = hdr.dataset.mb;
-          if(!cid && !isMb) return;
+          // Allow fallback search even without collectionId
+          if(!cid && !isMb){ return _tryItunesSearch().catch(function(){}); }
           function _applyTrackCount(tc){
             if(tc && tc > 0) infoDiv.textContent = infoDiv.textContent.replace('? tracks', tc + ' tracks');
           }
@@ -17887,6 +17913,7 @@ if(!isDiscover) stopDiscoverPreview();
     var renderResults = function(results, fromCache){
       discoverStatus(`${results.length} song${results.length > 1 ? 's' : ''} found${label ? ' in ' + label : ''}${fromCache ? ' (updated ' + new Date(fromCache).toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ')' : ''}`);
       results.forEach(r => $('discoverResults').appendChild(buildDiscoverCard(r)));
+      if($('discoverResults').children.length > 0) $('discoverClearRow').style.display = '';
     };
     var readCache = function(allowStale){
       try{
@@ -18055,6 +18082,18 @@ if(!isDiscover) stopDiscoverPreview();
   $('discoverSearch').addEventListener('keydown', (e) => { if(e.key === 'Enter') runDiscoverSearch($('discoverSearch').value); });
   var discSearchClearBtn = $('discoverSearchClear');
   if(discSearchClearBtn) discSearchClearBtn.addEventListener('click', () => { $('discoverSearch').value = ''; $('discoverSearch').focus(); });
+  // Clear results button — resets Discover to show chips again
+  var discClearResultsBtn = $('discoverClearResults');
+  if(discClearResultsBtn) discClearResultsBtn.addEventListener('click', function(){
+    $('discoverSearch').value = '';
+    $('discoverResults').innerHTML = '';
+    $('discoverClearRow').style.display = 'none';
+    discoverActiveChip = null;
+    // Re-show chips
+    var chipRow = document.querySelector('#discoverView .disc-chip-row');
+    if(chipRow) chipRow.style.display = '';
+    renderDiscoverChips();
+  });
 
   // Play Billing: re-verify purchases on launch and whenever the app regains
   // focus (e.g. after returning from the Play billing sheet).
