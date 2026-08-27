@@ -7313,11 +7313,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.1.4';
+  const APP_VERSION = '50.1.5';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
-    if(_ahCache && (_ahCache.indexOf('MusicBrainz') !== -1 || _ahCache.indexOf('\u00b7 Deezer') !== -1)){
+    if(_ahCache && (_ahCache.indexOf('MusicBrainz') !== -1 || _ahCache.indexOf('\u00b7 Deezer') !== -1 || _ahCache.indexOf('dp-empty') !== -1 || _ahCache.indexOf('No albums found') !== -1)){
       localStorage.removeItem('discPopupCache_📀 Album History');
     }
   }catch(e){}
@@ -16426,15 +16426,20 @@ window.__refetchAlbums = async function(wasRefetch){
   // Try cached popup first (non-refetch only)
   if(!wasRefetch){
     try{
-      var ahRaw = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
+      var ahRaw = localStorage.getItem('discPopupCache_📀 Album History');
       if(ahRaw){
         var ahCached = JSON.parse(ahRaw);
         if(ahCached && ahCached.body && /fetching|loading|spinner|\u23f3/i.test(ahCached.body)){
-          localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History');
+          localStorage.removeItem('discPopupCache_📀 Album History');
         } else if(ahCached && ahCached.body && ahCached.ts){
-          openDiscoverPopup('\ud83d\udcc0 Album History', ahCached.body, ahCached.subtitle || '');
-          if(typeof window.__wireAH === 'function') window.__wireAH();
-          return;
+          // Skip cached empty states — always re-fetch fresh data
+          if(!/dp-empty|No albums found/i.test(ahCached.body)){
+            openDiscoverPopup('📀 Album History', ahCached.body, ahCached.subtitle || '');
+            if(typeof window.__wireAH === 'function') window.__wireAH();
+            return;
+          } else {
+            localStorage.removeItem('discPopupCache_📀 Album History');
+          }
         }
       }
     }catch(e){}
@@ -16458,7 +16463,7 @@ window.__refetchAlbums = async function(wasRefetch){
   window.__ahCancelled = false;
   // Show loading popup immediately
   var loadingHtml = '<div style="text-align:center;padding:20px 12px;"><div style="font-size:16px;margin-bottom:8px;">\u23f3</div><div style="font-size:13px;color:var(--ink-dim);" id="ahProgressText">Fetching albums from pinned artists\u2026 0/' + pinnedArtists.length + '</div><button id="ahCancelBtn" style="margin-top:12px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u2716 Cancel</button></div>';
-  openDiscoverPopup('\ud83d\udcc0 Album History', loadingHtml, 'Fetching\u2026');
+  openDiscoverPopup('📀 Album History', loadingHtml, 'Fetching\u2026');
   var cancelBtn = document.getElementById('ahCancelBtn');
   if(cancelBtn) cancelBtn.onclick = function(){ window.__ahCancelled = true; window.__ahFetching = false; toast('\ud83d\udcc0 Cancelling\u2026', 2000); };
   // Load existing data to merge into
@@ -16617,13 +16622,13 @@ window.__refetchAlbums = async function(wasRefetch){
   try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now()})); }catch(e){}
   try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
   // Clear old popup cache
-  try{ localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History'); }catch(e){}
+  try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(e){}
   // Render results
   if(Object.keys(artistAlbums).length > 0){
     _renderAhFromData(artistAlbums);
     toast('\ud83d\udcc0 ' + totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' from ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':''), 3000);
   } else {
-    openDiscoverPopup('\ud83d\udcc0 Album History', '<div class="dp-empty" style="padding:30px 12px;">No albums found.<br><span style="font-size:11px;color:var(--ink-dim);">Try pinning some artists first.</span></div>', '');
+    openDiscoverPopup('📀 Album History', '<div class="dp-empty" style="padding:30px 12px;">No albums found.<br><span style="font-size:11px;color:var(--ink-dim);">Try pinning some artists first.</span></div>', '');
   }
 };
 
@@ -16662,7 +16667,7 @@ function _renderAhFromData(artistAlbums){
     ahHtml += '</div></div>';
   }
   ahHtml = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch albums</button></div>' + ahHtml;
-  openDiscoverPopup('\ud83d\udcc0 Album History', ahHtml, ahTotal+' album'+(ahTotal!==1?'s':'')+' from '+ahArtistKeys.length+' artist'+(ahArtistKeys.length!==1?'s':''));
+  openDiscoverPopup('📀 Album History', ahHtml, ahTotal+' album'+(ahTotal!==1?'s':'')+' from '+ahArtistKeys.length+' artist'+(ahArtistKeys.length!==1?'s':''));
   if(typeof window.__wireAH==='function') window.__wireAH();
 }
 
@@ -19032,7 +19037,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       });
     }
   } catch(_e) {}
-  try{ if(title && bodyHTML && !/fetching|loading|spinner|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
+  try{ if(title && bodyHTML && !/fetching|loading|spinner|dp-empty|No albums found|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
 }
 function closeDiscoverPopup(){
   var ov = document.getElementById('discPopupOverlay');
