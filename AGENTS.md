@@ -1,5 +1,34 @@
 # SideCut — repository memory
 
+## v50.0.10 (Aug 27, 2026) — Album History works again; fetch is tap-only
+- **The disable was an over-correction.** A previous session's "Album History infinite
+  auto-fetch" complaint led to commit 4144e0a, which stubbed `__refetchAlbums` to show
+  "Fetching is temporarily disabled". But the ACTUAL auto-fetch loop (`__resumeAlbumFetch`,
+  load + visibilitychange auto-resume) was already removed in 6e69b23 — the disable shipped a
+  dead button for a bug that was already fixed. Re-enabled the fetch pipeline in
+  `__refetchAlbums` (index.html ~16441) + bumped APP_VERSION 50.0.9→50.0.10, SW cache
+  v51.62→v51.63 (the bump is what makes the fix reach SW-served users).
+- **All `__refetchAlbums(true/false)` callers are explicit user actions** (grep-verified): the
+  main `ahBtn.onclick` (📀 Albums), the popup's "Refetch albums" button, the `wasRefetch` variant,
+  plus a couple of internal no-op guards — every entry requires a tap. No boot/interval/visibility
+  trigger exists anymore. Per-artist refetch (`__refetchArtistAlbums`) explicitly does NOT re-run
+  the full fetch (see its "Don't refetch ALL artists" comment + cache-clear at ~16387).
+- **KEY GOTCHA — album wiring lives INSIDE navigate()'s if(isDiscover) branch**: `__wireAH`,
+  `__refetchAlbums`, the discoverAlbumHistory/discoverSingles onclick assignments, and the
+  boot `if(typeof window.__wireAH==='function') window.__wireAH()` call (index.html lines
+  ~15797-17043) are all nested in the `navigate()` function's `isDiscover` block (line 15674).
+  They only execute when the user OPENS Discover. If you probe `window.__refetchAlbums` while
+  Home/Library is active, it's legitimately `undefined` — not a bug. Users only ever hit Albums
+  from Discover, so it works for them.
+- **Why the earlier "undefined in browser" investigation was misleading**: probing globals
+  right after load (Home active) showed `__refetchAlbums`/`__wireAH`/`navigate` undefined and
+  block 0 appeared to "abort" silently — but it was just the isDiscover guard. Always navigate
+  to Discover before assuming the fetch pipeline is missing.
+- Browser E2E via same-origin harness (dev/ files deleted after): seed pinnedArtists into
+  IndexedDB (meta store, `{name, art, addedAt}`), switch to Discover, click 📀 Albums →
+  `sidecut_ahArtistData` written with real iTunes albums (The Weeknd: 21 albums w/ track counts).
+- Version 50.0.9 → 50.0.10 (SW sidecut-shell-v51.62 → v51.63). Changelog entry at head of 50.0.10.
+
 ## v49.5.7 follow-up #5c — why every update forced an AH refetch (commit 38f6002)
 - The popup cache lives in `localStorage['discPopupCache_<title>']` (24h TTL),
   so version updates were NOT inherently wiping it. The real bug:
