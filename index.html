@@ -18998,6 +18998,21 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
   if(sEl){ if(subtitle){ sEl.textContent = subtitle; sEl.style.display='block'; } else { sEl.style.display='none'; } }
   if(bEl) bEl.innerHTML = bodyHTML || '';
   ov.style.display = 'flex';
+  // Re-apply custom album covers from localStorage — the cached popup HTML
+  // may have been saved before the user set a cover, so covers won't be in
+  // the DOM even though they exist in localStorage.
+  try {
+    var _cvMap = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}');
+    if(Object.keys(_cvMap).length){
+      (bEl || ov).querySelectorAll('.dp-ah-album-hdr').forEach(function(_h){
+        var _ck = ((_h.dataset.artist||'') + '|' + (_h.dataset.album||'')).toLowerCase().trim();
+        if(_cvMap[_ck]){
+          var _ad = _h.querySelector('div:first-child');
+          if(_ad) _ad.style.backgroundImage = 'url(' + _cvMap[_ck] + ')';
+        }
+      });
+    }
+  } catch(_e) {}
   try{ if(title && bodyHTML){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
 }
 function closeDiscoverPopup(){
