@@ -12968,6 +12968,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   [audio, audio2].forEach(a => {
     a.addEventListener('play', onPlayEvt);
     a.addEventListener('pause', onPauseEvt);
+    a.addEventListener('ended', function(){
+      if(window.__pendingSWReload){
+        window.__pendingSWReload = false;
+        toast('Applying update…');
+        setTimeout(function(){ window.location.reload(); }, 600);
+      }
+    });
     a.addEventListener('timeupdate', onTimeUpdate);
     a.addEventListener('ended', onEnded);
     a.addEventListener('error', () => recoverAudio(a, 'media error'));
@@ -13023,6 +13030,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
     if(a.paused){ a.play().catch(() => recoverAudio(a, 'manual play failed')); }
     else { userPaused = true; a.pause(); }
+    // Check for pending SW update — if user paused, apply it
+    if(window.__pendingSWReload && a.paused){
+      window.__pendingSWReload = false;
+      toast('Applying update…');
+      setTimeout(() => window.location.reload(), 600);
+    }
   });
   $('nextBtn').addEventListener('click', () => hardAdvance(1, true));
   $('prevBtn').addEventListener('click', () => {
@@ -15268,6 +15281,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       navigator.serviceWorker.addEventListener('controllerchange', reloadForUpdate);
     });
   }
+
+  // Deferred SW update: when an update is queued but held because audio was
+  // playing, apply it the moment the user pauses or the song ends.
+  window.__pendingSWReload = window.__pendingSWReload || false;
 
   // ---------------- Discover: browse the Spotify catalog online, preview, download via SpotiCatch ----------------
   // SideCut itself has no backend and Spotify's Web API needs OAuth, so browsing is powered
