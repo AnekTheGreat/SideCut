@@ -7313,7 +7313,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.0.7';
+  const APP_VERSION = '50.0.8';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
@@ -7333,6 +7333,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.0.8', date: 'August 27, 2026 at 8:00 pm EDT', title: 'Album History popup always accessible during fetch', items: [
+      'Album History popup always shows during fetch \u2014 clicking it during a fetch now shows cached data with loading indicator instead of blocking',
+      'Popup opens immediately on fresh fetch with loading state so user always sees feedback',
+      'Incremental progress updates in popup body as each artist finishes fetching',
+    ]},
     { version: '50.0.7', date: 'August 27, 2026 at 5:55 am EDT', title: 'Discover fixes + album history + singles undo', items: [
       'Fixed ALL Discover buttons broken by truncated __ahCancelToast function',
       'Fixed infinite album refetching — per-artist ↻ no longer triggers full refetch of all artists',
@@ -16251,7 +16256,26 @@ window.__refetchAlbums = async function(wasRefetch){
     if(window.__ahFetchingStartedAt && (Date.now() - window.__ahFetchingStartedAt) > 60000){
       window.__ahFetching = false;
     } else {
-      if(typeof toast === 'function') toast('Already fetching albums…'); return;
+      // Show whatever cached popup exists (even stale) with a loading indicator
+      // so the user can always access the popup during a fetch.
+      try{
+        var _staleAh = JSON.parse(localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History') || 'null');
+        if(_staleAh && _staleAh.title && _staleAh.body){
+          var _ov = document.getElementById('discPopupOverlay');
+          var _bEl = document.getElementById('discPopupBody');
+          if(_ov && _bEl){
+            var _tEl = document.getElementById('discPopupTitle');
+            var _sEl = document.getElementById('discPopupSub');
+            if(_tEl) _tEl.textContent = _staleAh.title;
+            if(_sEl){ _sEl.textContent = 'Albums still fetching \u2014 showing cached data\u2026'; _sEl.style.display='block'; }
+            _bEl.innerHTML = '<div class="dp-empty" style="padding:20px 12px;">Albums are being fetched\u2026 results update when done.</div>' + _staleAh.body;
+            _ov.style.display = 'flex';
+            if(typeof window.__wireAH === 'function') window.__wireAH();
+          }
+        }
+      }catch(e){}
+      if(typeof toast === 'function') toast('Albums still fetching \u2014 showing cached data\u2026', 2500);
+      return;
     }
   }
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
@@ -16276,6 +16300,12 @@ window.__ahCancelled = false;
         try {
 
 if(typeof toast === 'function') toastWithCancel();
+        // Open the popup immediately with a loading state so the user always
+        // sees feedback. When wasRefetch is true, the popup is already open.
+        if(!wasRefetch){
+          var _ldBody = '<div class="dp-empty" style="padding:30px 12px;">\u23f3 Fetching albums from pinned artists\u2026<br><span style="font-size:11px;color:var(--ink-dim);">This may take a minute for many artists</span></div>';
+          openDiscoverPopup('\ud83d\udcc0 Album History', _ldBody, '');
+        }
         if(wasRefetch){ var ldEl = document.getElementById('discPopupBody'); if(ldEl) ldEl.innerHTML = '<div class="dp-empty" style="padding:30px 12px;">⏳ Refetching albums — hang tight…</div>'; }
         var artistAlbums = {};
         var totalAlbums = 0;
@@ -16685,6 +16715,14 @@ if(typeof toast === 'function') toastWithCancel();
             ahDone++;
             // Incremental save: persist progress after each artist
             try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
+            // Update the popup body with incremental progress
+            try{
+              var _progBody = '<div class="dp-empty" style="padding:20px 12px;">\u23f3 Fetched ' + ahDone + '/' + pinnedArtists.length + ' artists\u2026 (' + totalAlbums + ' albums so far)</div>';
+              var _progBEl = document.getElementById('discPopupBody');
+              if(_progBEl) _progBEl.innerHTML = _progBody;
+              var _progS = document.getElementById('discPopupSub');
+              if(_progS) _progS.textContent = 'Fetching\u2026 ' + ahDone + '/' + pinnedArtists.length;
+            }catch(e){}
             try{ localStorage.setItem('sidecut_ahPending', JSON.stringify(ahQueue.map(function(x){ return x.name; }))); }catch(e){}
             if(typeof toast === 'function') toast('📀 Checking ' + (aNext.name||'') + '… (' + ahDone + '/' + pinnedArtists.length + ') — tap to cancel', 2500);
           }
