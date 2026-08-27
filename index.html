@@ -12849,10 +12849,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           a.src = t.url;
           a.addEventListener('loadedmetadata', function onMeta(){
             a.removeEventListener('loadedmetadata', onMeta);
-            if(!userPaused && $('djModeBackdrop').style.display !== 'flex') a.play().catch(()=>{});
+            if(!userPaused && $('djModeBackdrop').style.display !== 'flex'){
+              a.play().catch(()=>{
+                // First play failed — retry once more after a short delay
+                setTimeout(()=>{
+                  if(!userPaused && $('djModeBackdrop').style.display !== 'flex' && a.paused){
+                    a.play().catch(()=>{});
+                  }
+                }, 2000);
+              });
+            }
           }, { once:true });
         } else {
-          a.play().catch(()=>{});
+          a.play().catch(()=>{
+            // First play failed — retry once more after a short delay
+            setTimeout(()=>{
+              if(!userPaused && $('djModeBackdrop').style.display !== 'flex' && a.paused){
+                a.play().catch(()=>{});
+              }
+            }, 2000);
+          });
         }
       }
       if(!('mediaSession' in navigator)) return;
@@ -12962,10 +12978,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     a.addEventListener('stalled', () => {
       const stalledAt = a.currentTime;
       setTimeout(() => {
-        if(a === activeAudio() && !a.paused && a.currentTime === stalledAt && !crossfadeTriggered){
+        if(a === activeAudio() && !a.paused && a.currentTime === stalledAt && !crossfadeTriggered && !document.hidden){
           recoverAudio(a, 'stalled');
         }
-      }, 1500);
+      }, 3000);
     });
   });
 
@@ -12977,9 +12993,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     if(isScratching || crossfadeTriggered) { stuckTicks = 0; lastWatchdogTime = -1; return; } // a crossfade intentionally pauses the outgoing track — not a stall
     const a = activeAudio();
     if(a.paused || !a.duration) { stuckTicks = 0; lastWatchdogTime = -1; return; }
+    // If there's still buffered data ahead of the playhead, the browser is
+    // likely just buffering — don't treat it as stuck.
+    let hasBufferAhead = false;
+    try {
+      for(let bi = 0; bi < a.buffered.length; bi++){
+        if(a.buffered.end(bi) > a.currentTime + 1){ hasBufferAhead = true; break; }
+      }
+    } catch(_){}
     if(a.currentTime === lastWatchdogTime){
       stuckTicks++;
-      if(stuckTicks >= 3) { // ~6 seconds of no progress while "playing"
+      // 15 ticks × 2s = 30 seconds of zero progress before recovery.
+      // Also skip recovery if there's buffer ahead (normal buffering pause)
+      // or if the page is backgrounded (OS may throttle JS timers).
+      const pageHidden = document.hidden || document.visibilityState !== 'visible';
+      if(stuckTicks >= 15 && !hasBufferAhead && !pageHidden) {
         stuckTicks = 0;
         recoverAudio(a, 'stalled progress');
       }
