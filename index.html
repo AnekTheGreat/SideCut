@@ -16676,7 +16676,6 @@ if(typeof toast === 'function') toastWithCancel();
         try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
         // Clear pending list — fetch completed successfully
         try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
-        if(typeof toast === 'function') toast('📀 Album History refreshed!', 3000);
         var subtitle = totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' across ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':'');
         if(!totalAlbums){ if(navigator.onLine===false && loadCachedDiscoverPopup('📀 Album History')){ this.textContent='📀 Album history'; this.disabled=false; return; } openDiscoverPopup('📀 Album History', '<div class="dp-empty">No albums found from pinned artists.</div>', subtitle); return; }
         // Build collapsible: artist → albums → tracks (lazy-loaded)
@@ -16730,6 +16729,7 @@ if(typeof toast === 'function') toastWithCancel();
         }
         html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\ud83d\udd04 Refetch albums</button><button id="ahAddAlbumBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">+ Add album</button><button id="ahSelectBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u2610 Select</button></div>' + html;
         openDiscoverPopup('📀 Album History', html, subtitle);
+        if(typeof toast === 'function') toast('\ud83d\udcc0 Album History refreshed!', 3000);
         if(wasRefetch) toast('📀 Refreshed — ' + subtitle);
         
         window.__wireAH();
@@ -19302,34 +19302,37 @@ function loadCachedDiscoverPopup(key){
 
 
 window.toastWithCancel = function(){
-  // Show inline cancel button below the popup subtitle
   var td = document.getElementById('toast');
   if(td){ td.style.display = 'none'; clearTimeout(td._timer); }
-  var sub = document.getElementById('discPopupSub');
-  if(sub){
-    var existingCancel = document.getElementById('ahInlineCancel');
-    if(!existingCancel){
-      var cancelWrap = document.createElement('div');
-      cancelWrap.id = 'ahInlineCancel';
-      cancelWrap.style.cssText = 'text-align:center;padding:4px 0 2px;';
-      cancelWrap.innerHTML = '<span style="font-size:11px;color:var(--ink-dim);">📀 Fetching albums\u2026</span> <button id="ahCancelBtnInline" style="padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;margin-left:6px;">Cancel</button>';
-      sub.parentNode.insertBefore(cancelWrap, sub.nextSibling);
-      document.getElementById('ahCancelBtnInline').addEventListener('click', function(e){ e.stopPropagation(); window.__ahCancelToast(); });
-    }
-  } else {
-    toast('📀 Fetching albums\u2026', 3000);
-  }
+  var old = document.getElementById('ahInlineCancel');
+  if(old) old.remove();
+  var target = document.getElementById('discPopupBody') || document.getElementById('discPopupSub');
+  if(!target) return;
+  var bar = document.createElement('div');
+  bar.id = 'ahInlineCancel';
+  bar.style.cssText = 'text-align:center;padding:10px 16px;background:rgba(0,0,0,0.15);border-top:1px solid var(--line);position:sticky;bottom:0;z-index:10;';
+  bar.innerHTML = '<span style="font-size:12px;color:var(--ink-dim);">\ud83d\udcc0 Fetching albums\u2026</span> <button id="ahCancelBtnInline" style="padding:6px 18px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:12px;font-weight:600;cursor:pointer;margin-left:8px;">\u2716 Cancel</button>';
+  if(target.id === 'discPopupSub') target.parentNode.insertBefore(bar, target.nextSibling);
+  else target.appendChild(bar);
+  var btn = document.getElementById('ahCancelBtnInline');
+  if(btn) btn.onclick = function(e){
+    e.preventDefault(); e.stopPropagation();
+    window.__ahCancelled = true;
+    window.__ahFetching = false;
+    try{ localStorage.removeItem('sidecut_ahPending'); }catch(ex){}
+    var ic = document.getElementById('ahInlineCancel');
+    if(ic) ic.remove();
+    toast('\ud83d\udcc0 Fetch cancelled.', 2000);
+  };
 };
 
-// Cancel album history fetch on any tap during fetching
 window.__ahCancelToast = function(){
-  if(!window.__ahFetching) return;
   window.__ahCancelled = true;
   window.__ahFetching = false;
   try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
   var ic = document.getElementById('ahInlineCancel');
   if(ic) ic.remove();
-  if(typeof toast === 'function') toast('📀 Fetch cancelled.', 2000);
+  toast('\ud83d\udcc0 Fetch cancelled.', 2000);
 };
 
 // ---------------- Zoom lock ----------------
