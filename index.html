@@ -16018,7 +16018,7 @@ window.__refetchArtistAlbums = async function(artistName){
       _cb.id = 'ahInlineCancel'; _cb.style.cssText = 'text-align:center;padding:4px 0 2px;';
       _cb.innerHTML = '<span style="font-size:11px;color:var(--ink-dim);">\U0001F4C0 Fetching ' + artistName + '\u2026</span> <button id="ahCancelBtnInline" style="padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;margin-left:6px;">Cancel</button>';
       _sub.parentNode.insertBefore(_cb, _sub.nextSibling);
-      document.getElementById('ahCancelBtnInline').addEventListener('click', function(e){ e.stopPropagation(); window.__ahCancelled = true; window.__ahFetching = false; var _x = document.getElementById('ahInlineCancel'); if(_x) _x.remove(); toast('\U0001F4C0 Fetch cancelled.', 2000); });
+      document.getElementById('ahCancelBtnInline').onclick = function(e){ e.preventDefault(); e.stopPropagation(); window.__ahCancelled = true; window.__ahFetching = false; var _x = document.getElementById('ahInlineCancel'); if(_x) _x.remove(); toast('\u{1F4C0} Fetch cancelled.', 2000); };
     }
     // Load existing data, then re-fetch just this artist
     var artistAlbums = {};
@@ -16697,7 +16697,9 @@ if(typeof toast === 'function') toastWithCancel();
           html += '<div class="dp-ah-artist-hdr" data-target="' + artistId + '">';
           html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
           html += '<span style="font-size:13px;font-weight:600;flex:1;">' + escapeHtml(artist) + '</span>';
-          html += '<span style="font-size:11px;color:var(--ink-dim);">' + albums.length + ' album' + (albums.length!==1?'s':'') + '</span>';
+          var manualAC = _getManualCount(artist, '', 'albums');
+          var displayAC = manualAC || albums.length;
+          html += '<span style="font-size:11px;color:var(--ink-dim);cursor:pointer;text-decoration:underline dotted;" onclick="event.stopPropagation();_promptManualCount(\'' + escapeHtml(artist).replace(/'/g, "\\'") + '\',\'\',\'albums\',\'' + displayAC + '\',function(){location.reload();})">' + displayAC + ' album' + (displayAC!==1?'s':'') + '</span>';
           html += '<button class="dp-ah-artist-rm" data-artist="' + escapeHtml(artist) + '" style="background:none;border:1px solid var(--line);color:var(--ink-dim);border-radius:6px;padding:2px 6px;font-size:10px;cursor:pointer;flex-shrink:0;" title="Refetch this artist">↻</button>';
           html += '</div>';
           html += '<div id="' + artistId + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
@@ -16719,7 +16721,9 @@ if(typeof toast === 'function') toastWithCancel();
             html += '<div class="dp-ah-album-hdr" data-target="' + albumId + '" data-artist="' + escapeHtml(artist) + '" data-album="' + escapeHtml(album.collectionName||'') + '" data-collection-id="' + (album.collectionId||'') + '" data-country="' + (album._country||'') + '"' + (album._dz ? ' data-dz="1"' : '') + (album._mb ? ' data-mb="1"' : '') + '>';
             html += '<div style="width:32px;height:32px;border-radius:4px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '" data-art-url="' + escapeHtml(art || '') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(album.collectionName||'') + '</div>';
-            html += '<div style="font-size:10px;color:var(--ink-dim);">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · ' + trackCount + ' tracks</div></div>';
+            var manualTC = _getManualCount(artist, album.collectionName, 'tracks');
+            var displayTC = manualTC || trackCount;
+            html += '<div style="font-size:10px;color:var(--ink-dim);cursor:pointer;" onclick="event.stopPropagation();_promptManualCount(\'' + escapeHtml(artist).replace(/'/g, "\\'") + '\',\'' + escapeHtml(album.collectionName||'').replace(/'/g, "\\'") + '\',\'tracks\',\'' + displayTC + '\',function(){location.reload();})">' + (album.releaseDate ? album.releaseDate.slice(0,10) : year) + ' · <span style="text-decoration:underline dotted;cursor:pointer;">' + displayTC + ' tracks</span></div></div>';
             html += window.__ahSelectMode ? '<input type="checkbox" class="dp-ah-cb" data-cid="' + (album.collectionId||'') + '" style="width:18px;height:18px;flex-shrink:0;accent-color:var(--coral);" />' : '<button class="dp-ah-rm" data-cid="' + (album.collectionId||'') + '" data-cname="' + escapeHtml(album.collectionName||'') + '" style="width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;" title="Remove">✕</button>';
             html += '<span class="dp-ah-chevron" style="font-size:10px;transition:transform 0.2s;">▸</span>';
             html += '</div>';
