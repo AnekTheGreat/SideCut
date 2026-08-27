@@ -7313,7 +7313,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.1.3';
+  const APP_VERSION = '50.1.4';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
@@ -7333,16 +7333,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '50.1.3', date: 'August 28, 2026 at 12:15 am EDT', title: 'Fix auto-playing audio on button clicks', items: [
-      'Audio recovery (stall/error) no longer auto-starts playback when user has paused',
-      'recoverAudio() now respects userPaused flag — prevents surprise audio after taps',
-    ]},
-    { version: '50.1.2', date: 'August 27, 2026 at 10:30 pm EDT', title: 'Fix Album History stuck fetching + compact now bar default', items: [
-      'Album History now purges stale cached popups that contained loading/spinner HTML',
-      'Album History always shows cached data or clean empty state \u2014 never stuck on fetching',
-      'openDiscoverPopup no longer caches loading/spinner content to localStorage',
-      'Compact now bar is ON by default for new users',
-    ]},
     { version: '50.0.10', date: 'August 27, 2026 at 7:00 pm EDT', title: 'Album History works again — fetches only when you tap it', items: [
       'Album History button re-enabled: tap 📀 Albums to fetch your pinned artists\u2019 discographies',
       'Fetching only ever runs from an explicit tap \u2014 no auto-fetch on load, no resume loops',
@@ -13173,7 +13163,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               });
             }
           }, { once:true });
-        } else {
+        } else if(!userPaused) {
           a.play().catch(()=>{
             // First play failed — retry once more after a short delay
             setTimeout(()=>{
@@ -16429,34 +16419,252 @@ function _promptManualCount(artist, album, field, cur, onSave){
 }
 
 window.__refetchAlbums = async function(wasRefetch){
-  // Reset stuck flags from previous sessions
   window.__ahFetching = false;
   window.__ahCancelled = false;
   if(!isPremiumActive()){ toast('Premium feature \u2014 unlock in Settings!'); openSettingsTo('premium'); return; }
   if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
-  // Always try to load cached popup (even stale >24h) so the user sees data
-  // Always try to load cached popup (even stale >24h) so the user sees data
+  // Try cached popup first (non-refetch only)
   if(!wasRefetch){
     try{
       var ahRaw = localStorage.getItem('discPopupCache_\ud83d\udcc0 Album History');
       if(ahRaw){
         var ahCached = JSON.parse(ahRaw);
-        // Purge stale caches that contain loading/spinner HTML from old bugs
-        if(ahCached && ahCached.body && /fetching|loading|spinner|⏳/i.test(ahCached.body)){
+        if(ahCached && ahCached.body && /fetching|loading|spinner|\u23f3/i.test(ahCached.body)){
           localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History');
-          console.log('[AH] Purged stale cached popup with loading text');
-        } else if(ahCached && ahCached.ts && typeof window.__wireAH === 'function'){
-          loadCachedDiscoverPopup('\ud83d\udcc0 Album History');
-          window.__wireAH();
+        } else if(ahCached && ahCached.body && ahCached.ts){
+          openDiscoverPopup('\ud83d\udcc0 Album History', ahCached.body, ahCached.subtitle || '');
+          if(typeof window.__wireAH === 'function') window.__wireAH();
           return;
         }
       }
     }catch(e){}
   }
-  // No valid cache — show a clean empty state
-  openDiscoverPopup('\ud83d\udcc0 Album History', '<div class="dp-empty" style="padding:30px 12px;">No album history yet.<br><span style="font-size:11px;color:var(--ink-dim);">Albums will appear here after a future update.</span></div>', '');
-  return;
+  // Try IDB artist data cache (non-refetch only)
+  if(!wasRefetch){
+    try{
+      var ahADRaw = localStorage.getItem('sidecut_ahArtistData');
+      if(ahADRaw){
+        var ahAD = JSON.parse(ahADRaw);
+        if(ahAD && ahAD.artists && Object.keys(ahAD.artists).length > 0){
+          _renderAhFromData(ahAD.artists);
+          return;
+        }
+      }
+    }catch(e){}
+  }
+  // --- Actually fetch from iTunes/Deezer/MusicBrainz ---
+  window.__ahFetching = true;
+  window.__ahFetchingStartedAt = Date.now();
+  window.__ahCancelled = false;
+  // Show loading popup immediately
+  var loadingHtml = '<div style="text-align:center;padding:20px 12px;"><div style="font-size:16px;margin-bottom:8px;">\u23f3</div><div style="font-size:13px;color:var(--ink-dim);" id="ahProgressText">Fetching albums from pinned artists\u2026 0/' + pinnedArtists.length + '</div><button id="ahCancelBtn" style="margin-top:12px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u2716 Cancel</button></div>';
+  openDiscoverPopup('\ud83d\udcc0 Album History', loadingHtml, 'Fetching\u2026');
+  var cancelBtn = document.getElementById('ahCancelBtn');
+  if(cancelBtn) cancelBtn.onclick = function(){ window.__ahCancelled = true; window.__ahFetching = false; toast('\ud83d\udcc0 Cancelling\u2026', 2000); };
+  // Load existing data to merge into
+  var artistAlbums = {};
+  var totalAlbums = 0;
+  try{
+    var cache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+    if(cache && cache.artists){ artistAlbums = cache.artists; totalAlbums = cache.total || 0; }
+  }catch(e){}
+  // MusicBrainz rate-limited chain
+  var mbChain = Promise.resolve();
+  var mbGet = function(u){
+    var p = mbChain.then(async function(){
+      await new Promise(function(r){ setTimeout(r, 550); });
+      try{ var rr = await fetchWithProxy(u); if(!rr||!rr.ok) return null; return await rr.json(); }catch(e){ return null; }
+    });
+    mbChain = p.catch(function(){});
+    return p;
+  };
+  var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup)\b|\s[\u2013\u2014]\s*(single|remix)\b/i;
+  var dzNoise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|best of|top hits|workout|party mix|dance party|party songs|collaborations|playlist|essentials?|greatest)\b|\s[\u2013\u2014]?\s*mix(es)?$/i;
+  var normTitle = function(t){ return (t||'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/\s*[\u2013\u2014]\s*(deluxe|expanded|special|bonus|explicit|clean|remastered|remaster|re.?recorded|version).*$/i,'').replace(/\b(soundtrack|original motion picture soundtrack)\b/gi,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim(); };
+  var filterInto = function(results, artistName){
+    var artistLower = primaryArtistName(artistName).toLowerCase().trim();
+    results.forEach(function(r){
+      if(!r || !r.collectionName) return;
+      var cid = r.collectionId; var tc = r.trackCount || 0;
+      if(tc <= 1) return;
+      if(!artistAlbums[artistName]) artistAlbums[artistName] = [];
+      var seenC = {}; artistAlbums[artistName].forEach(function(x){ seenC[x.collectionId]=1; });
+      if(seenC[cid]) return;
+      var tN = normTitle(r.collectionName);
+      var seenT = {}; artistAlbums[artistName].forEach(function(x){ seenT[normTitle(x.collectionName)]=1; });
+      if(seenT[tN]) return;
+      if(noise.test(r.collectionName)) return;
+      var rA = primaryArtistName(r.artistName||'').toLowerCase().trim();
+      if(!rA || rA === 'various artists') return;
+      if(rA !== artistLower && !rA.startsWith(artistLower) && !artistLower.startsWith(rA)) return;
+      artistAlbums[artistName].push({ collectionId:cid, collectionName:r.collectionName, artworkUrl100:r.artworkUrl100||null, releaseDate:r.releaseDate||'', trackCount:tc, _country:r._country||'' });
+      totalAlbums++;
+    });
+  };
+  // Fetch all artists with 4-worker pool
+  var artistsDone = 0;
+  var workerCount = Math.min(4, pinnedArtists.length);
+  var artistQueue = pinnedArtists.slice();
+  async function fetchOneArtist(a){
+    if(window.__ahCancelled) return;
+    try{
+      // iTunes artist lookup
+      var arUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&entity=musicArtist&limit=5';
+      var arResp = await fetchWithProxy(arUrl);
+      var arData = arResp && arResp.ok ? await arResp.json() : {results:[]};
+      var artistId = null;
+      (arData.results||[]).forEach(function(r){ if(r.artistName && primaryArtistName(r.artistName).toLowerCase().trim() === primaryArtistName(a.name).toLowerCase().trim()) artistId = r.artistId; });
+      // Lookup albums from multiple storefronts
+      if(artistId){
+        var stores = ['','GB','IN','CA'];
+        for(var si=0; si<stores.length; si++){
+          if(window.__ahCancelled) return;
+          var lkUrl = 'https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200' + (stores[si] ? '&country='+stores[si] : '');
+          var lkResp = await fetchWithProxy(lkUrl);
+          var lkData = lkResp && lkResp.ok ? await lkResp.json() : {results:[]};
+          filterInto(lkData.results||[], a.name);
+        }
+      }
+      // Term search fallback
+      if(window.__ahCancelled) return;
+      var sUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(a.name) + '&entity=album&limit=200';
+      var sResp = await fetchWithProxy(sUrl);
+      var sData = sResp && sResp.ok ? await sResp.json() : {results:[]};
+      filterInto(sData.results||[], a.name);
+      // Deezer backup
+      if(window.__ahCancelled) return;
+      try{
+        var dzUrl = 'https://api.deezer.com/search/artist?q=' + encodeURIComponent(a.name);
+        var dzResp = await fetchWithProxy(dzUrl);
+        var dzData = dzResp && dzResp.ok ? await dzResp.json() : {data:[]};
+        var dzA = (dzData.data||[])[0];
+        if(dzA && dzA.id){
+          var dzAUrl = 'https://api.deezer.com/artist/' + dzA.id + '/albums?limit=100';
+          var dzAResp = await fetchWithProxy(dzAUrl);
+          var dzAData = dzAResp && dzAResp.ok ? await dzAResp.json() : {data:[]};
+          (dzAData.data||[]).forEach(function(alb){
+            if(!alb||!alb.title) return;
+            if(!artistAlbums[a.name]) artistAlbums[a.name]=[];
+            var seenT2={}; artistAlbums[a.name].forEach(function(x){ seenT2[normTitle(x.collectionName)]=1; });
+            if(seenT2[normTitle(alb.title)]) return;
+            if(noise.test(alb.title)) return;
+            if(alb.record_type && alb.record_type!=='album' && alb.record_type!=='ep') return;
+            var cid2 = String(alb.id);
+            var seenC2={}; artistAlbums[a.name].forEach(function(x){ seenC2[x.collectionId]=1; });
+            if(seenC2[cid2]) return;
+            artistAlbums[a.name].push({ collectionId:cid2, collectionName:alb.title, artworkUrl100:alb.cover_medium||alb.cover_big||alb.cover||null, releaseDate:alb.release_date||'', trackCount:alb.nb_tracks||null, _dz:true });
+            totalAlbums++;
+          });
+        }
+      }catch(e){}
+      // MusicBrainz backup
+      if(window.__ahCancelled) return;
+      try{
+        var mbUrl = 'https://musicbrainz.org/ws/2/artist/?query=' + encodeURIComponent(a.name) + '&fmt=json&limit=1';
+        var mbData = await mbGet(mbUrl);
+        if(mbData && mbData.artists && mbData.artists[0]){
+          var mbId = mbData.artists[0].id;
+          var rgUrl = 'https://musicbrainz.org/ws/2/release-group?artist=' + mbId + '&type=album&fmt=json&limit=100';
+          var rgData = await mbGet(rgUrl);
+          if(rgData && rgData['release-groups']){
+            rgData['release-groups'].forEach(function(rg){
+              if(!rg||!rg.title) return;
+              var priType = rg['primary-type']||'';
+              if(priType!=='Album'&&priType!=='EP') return;
+              var secTypes = rg['secondary-types']||[];
+              if(secTypes.some(function(s){ return /soundtrack|dj-?mix|mixtape/i.test(s); })) return;
+              if(!artistAlbums[a.name]) artistAlbums[a.name]=[];
+              var seenT3={}; artistAlbums[a.name].forEach(function(x){ seenT3[normTitle(x.collectionName)]=1; });
+              if(seenT3[normTitle(rg.title)]) return;
+              if(dzNoise.test(rg.title)) return;
+              var cid3 = rg.id;
+              var seenC3={}; artistAlbums[a.name].forEach(function(x){ seenC3[x.collectionId]=1; });
+              if(seenC3[cid3]) return;
+              artistAlbums[a.name].push({ collectionId:cid3, collectionName:rg.title, artworkUrl100:null, releaseDate:rg['first-release-date']||'', trackCount:null, _mb:true });
+              totalAlbums++;
+            });
+          }
+        }
+      }catch(e){}
+    }catch(e){}
+    // Sort this artist's albums
+    if(artistAlbums[a.name]) artistAlbums[a.name].sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
+    artistsDone++;
+    // Update progress
+    var progEl = document.getElementById('ahProgressText');
+    if(progEl) progEl.textContent = 'Fetching albums\u2026 ' + artistsDone + '/' + pinnedArtists.length;
+    // Save incrementally
+    try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now()})); }catch(e){}
+  }
+  // Run workers
+  async function runWorkers(){
+    while(artistQueue.length > 0 && !window.__ahCancelled){
+      var artist = artistQueue.shift();
+      if(artist) await fetchOneArtist(artist);
+    }
+  }
+  var workers = [];
+  for(var w=0; w<workerCount; w++) workers.push(runWorkers());
+  await Promise.all(workers);
+  window.__ahFetching = false;
+  if(window.__ahCancelled){
+    toast('\ud83d\udcc0 Fetch cancelled.', 2000);
+    // Still render whatever we got
+    if(Object.keys(artistAlbums).length > 0) _renderAhFromData(artistAlbums);
+    return;
+  }
+  // Save final data
+  try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now()})); }catch(e){}
+  try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
+  // Clear old popup cache
+  try{ localStorage.removeItem('discPopupCache_\ud83d\udcc0 Album History'); }catch(e){}
+  // Render results
+  if(Object.keys(artistAlbums).length > 0){
+    _renderAhFromData(artistAlbums);
+    toast('\ud83d\udcc0 ' + totalAlbums + ' album' + (totalAlbums!==1?'s':'') + ' from ' + Object.keys(artistAlbums).length + ' artist' + (Object.keys(artistAlbums).length!==1?'s':''), 3000);
+  } else {
+    openDiscoverPopup('\ud83d\udcc0 Album History', '<div class="dp-empty" style="padding:30px 12px;">No albums found.<br><span style="font-size:11px;color:var(--ink-dim);">Try pinning some artists first.</span></div>', '');
+  }
 };
+
+// Helper: render Album History popup from artist data object
+function _renderAhFromData(artistAlbums){
+  var ahHtml = '';
+  var ahArtistKeys = Object.keys(artistAlbums).sort();
+  var ahTotal = 0;
+  for(var ahI=0; ahI<ahArtistKeys.length; ahI++){
+    var ahArtist = ahArtistKeys[ahI];
+    var ahAlbums = artistAlbums[ahArtist];
+    if(!ahAlbums||!ahAlbums.length) continue;
+    var ahAid = 'ahc_r_'+ahI;
+    ahHtml += '<div class="dp-ah-artist">';
+    ahHtml += '<div class="dp-ah-artist-hdr" data-target="'+ahAid+'">';
+    ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
+    ahHtml += '<span style="font-size:13px;font-weight:600;flex:1;">'+escapeHtml(ahArtist)+'</span>';
+    ahHtml += '<span style="font-size:11px;color:var(--ink-dim);">'+ahAlbums.length+' album'+(ahAlbums.length!==1?'s':'')+'</span>';
+    ahHtml += '</div>';
+    ahHtml += '<div id="'+ahAid+'" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
+    for(var ahJ=0; ahJ<ahAlbums.length; ahJ++){
+      var ahAlb = ahAlbums[ahJ];
+      var ahArt = ahAlb.artworkUrl100 ? ahAlb.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+      ahHtml += '<div class="dp-ah-album" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
+      ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
+      ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
+      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;'+(ahArt?'background-image:url('+escapeHtml(ahArt)+');':'background:var(--bg);')+'"></div>';
+      ahHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(ahAlb.collectionName||'Unknown')+'</div>';
+      ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+(ahAlb.releaseDate||'').slice(0,10)+(ahAlb.trackCount?' \u00b7 '+ahAlb.trackCount+' tracks':'')+'</div></div>';
+      ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
+      ahHtml += '</div>';
+      ahHtml += '<div id="ahc_trk_'+ahI+'_'+ahJ+'" class="dp-ah-albums" style="display:none;padding:2px 8px 4px 36px;"><div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Tap to load tracks</div></div>';
+      ahHtml += '</div>';
+      ahTotal++;
+    }
+    ahHtml += '</div></div>';
+  }
+  ahHtml = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch albums</button></div>' + ahHtml;
+  openDiscoverPopup('\ud83d\udcc0 Album History', ahHtml, ahTotal+' album'+(ahTotal!==1?'s':'')+' from '+ahArtistKeys.length+' artist'+(ahArtistKeys.length!==1?'s':''));
+  if(typeof window.__wireAH==='function') window.__wireAH();
+}
 
         // Album History: fetch all albums from pinned artists (all time), show in popup
     {
@@ -16843,7 +17051,7 @@ if(!isDiscover) stopDiscoverPreview();
           const a = activeAudio();
           if(!a || !queue.length){ toast('Nothing to play yet — add songs first.'); return; }
           if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-          if(a.paused){ a.play().catch(() => recoverAudio(a, 'home bubble play failed')); }
+          if(a.paused && !userPaused){ a.play().catch(() => recoverAudio(a, 'home bubble play failed')); }
           else { userPaused = true; a.pause(); }
           // Defer the re-render so the <audio> play()/pause() promise resolves and
           // activeAudio().paused reflects the new state in the icon.
