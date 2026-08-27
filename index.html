@@ -16216,9 +16216,8 @@ window.__refetchArtistAlbums = async function(artistName){
     try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(e){}
     try{ localStorage.removeItem('discPopupCache_' + '📀 Album History'); }catch(e){}
     if(typeof toast === 'function') toast('📀 ' + artistName + ' refreshed — ' + (artistAlbums[a.name]||[]).length + ' albums', 3000);
-    // Re-open album history
     window.__ahFetching = false;
-    window.__refetchAlbums(false);
+    // Don't refetch ALL artists — just clear cache so next open is fresh
   }catch(e){
     window.__ahFetching = false;
     if(typeof toast === 'function') toast('Error fetching albums for ' + artistName, 3000);
@@ -16916,7 +16915,7 @@ if(typeof toast === 'function') toastWithCancel();
             $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
           });
         });
-        // Wire up remove (X) buttons on singles
+        // Wire up remove (X) buttons on singles — with undo toast
         document.querySelectorAll('#discPopupBody .dp-ah-x').forEach(function(xbtn){
           xbtn.addEventListener('click', function(e){
             e.stopPropagation();
@@ -16927,11 +16926,28 @@ if(typeof toast === 'function') toastWithCancel();
             var sIdx = parseInt(parts[1]);
             var aKey = Object.keys(artistSingles).sort()[aIdx];
             if(!aKey || isNaN(sIdx)) return;
+            var removed = artistSingles[aKey][sIdx];
+            if(!removed) return;
+            var row = this.closest('.dp-track');
+            if(!row) return;
+            // Hide the row immediately (undo can restore it)
+            row.style.display = 'none';
             artistSingles[aKey].splice(sIdx, 1);
             if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
             totalFound--;
-            var row = this.closest('.dp-track');
-            if(row) row.remove();
+            // Show undo toast
+            var undoTimer = setTimeout(function(){ removed.__undone = true; }, 5000);
+            toastWithUndo('Removed "' + (removed.trackName||'') + '"', function(){
+              clearTimeout(undoTimer);
+              if(removed.__undone) return;
+              // Restore: re-insert into artistSingles and show row
+              if(!artistSingles[aKey]) artistSingles[aKey] = [];
+              artistSingles[aKey].splice(sIdx, 0, removed);
+              totalFound++;
+              row.style.display = '';
+              // Re-render the popup
+              window.__refetchSingles();
+            });
             // Update counts
             document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
               var tgt = document.getElementById(h.dataset.target);
