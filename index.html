@@ -16020,9 +16020,16 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 // Background Album History fetch — runs independently of popup
 // Per-artist album refetch — fetches albums for just one artist
 window.__refetchArtistAlbums = async function(artistName){
-  if(window.__ahFetching){ if(typeof toast === 'function') toast('Already fetching albums…'); return; }
+  if(window.__ahFetching){
+    if(window.__ahFetchingStartedAt && (Date.now() - window.__ahFetchingStartedAt) > 60000){
+      window.__ahFetching = false;
+    } else {
+      if(typeof toast === 'function') toast('Already fetching albums…'); return;
+    }
+  }
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
   window.__ahFetching = true;
+  window.__ahFetchingStartedAt = Date.now();
   window.__ahCancelled = false;
   try {
     // Show inline cancel below subtitle
@@ -16217,46 +16224,20 @@ window.__refetchArtistAlbums = async function(artistName){
 window.__ahFetching = false;
 window.__ahCancelled = false;
 
-// Resume album fetch if it was interrupted (page killed, backgrounded, etc.)
-// Checks for pending artists in localStorage and continues from where it left off.
-window.__resumeAlbumFetch = async function(){
-  try{
-    var pending = JSON.parse(localStorage.getItem('sidecut_ahPending') || 'null');
-    if(!pending || !pending.length) return;
-    if(window.__ahFetching) return;
-    // Check if cached data exists (partial results from interrupted fetch)
-    var ahData = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
-    if(!ahData || !ahData.artists) return;
-    if(typeof toast === 'function') toast('📀 Resuming album fetch\u2026 (' + pending.length + ' artists remaining)', 3000);
-    // Trigger a background refetch — it will skip already-fetched artists
-    window.__refetchAlbums(false);
-  }catch(e){}
-};
+// Clear stale pending fetch list on load
 
-// Auto-resume on page load if there was an interrupted fetch
-setTimeout(function(){
-  try{
-    var pending = JSON.parse(localStorage.getItem('sidecut_ahPending') || 'null');
-    if(pending && pending.length){
-      // Small delay to let the app initialize
-      setTimeout(function(){ window.__resumeAlbumFetch(); }, 2000);
-    }
-  }catch(e){}
-}, 1000);
+setTimeout(function(){ try{ localStorage.removeItem('sidecut_ahPending'); window.__ahFetching = false; window.__ahCancelled = false; }catch(e){} }, 500);
 
-// Also resume when app comes back to foreground (visibilitychange)
-document.addEventListener('visibilitychange', function(){
-  if(!document.hidden && !window.__ahFetching){
-    try{
-      var pending = JSON.parse(localStorage.getItem('sidecut_ahPending') || 'null');
-      if(pending && pending.length){
-        window.__resumeAlbumFetch();
-      }
-    }catch(e){}
-  }
-});
 window.__refetchAlbums = async function(wasRefetch){
-  if(window.__ahFetching){ if(typeof toast === 'function') toast('Already fetching albums…'); return; }
+  // Safety: if __ahFetching got stuck from a crashed previous session, force-reset
+  // after 60 seconds so the user isn't locked out forever
+  if(window.__ahFetching){
+    if(window.__ahFetchingStartedAt && (Date.now() - window.__ahFetchingStartedAt) > 60000){
+      window.__ahFetching = false;
+    } else {
+      if(typeof toast === 'function') toast('Already fetching albums…'); return;
+    }
+  }
   if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
         // wasRefetch comes from the function parameter (set by caller)
@@ -16265,7 +16246,7 @@ window.__refetchAlbums = async function(wasRefetch){
         // "Refetch albums" button inside the popup bypasses the cache.
         if(!wasRefetch){
           try{
-            var ahCached = JSON.parse(localStorage.getItem('discPopupCache_' + '📀 Album History') || 'null');
+            var ahCached = JSON.parse(localStorage.getItem('discPopupCache_📀 Album History') || 'null');
             if(ahCached && ahCached.ts && (Date.now() - ahCached.ts) < 24*3600*1000 && typeof window.__wireAH === 'function'){
               loadCachedDiscoverPopup('📀 Album History');
               window.__wireAH();
@@ -16274,6 +16255,7 @@ window.__refetchAlbums = async function(wasRefetch){
           }catch(e){}
         }
   window.__ahFetching = true;
+  window.__ahFetchingStartedAt = Date.now();
 window.__ahCancelled = false;
         try {
 
@@ -18171,14 +18153,13 @@ if(!isDiscover) stopDiscoverPreview();
     });
     actions.appendChild(pinBtn);
 
-    // Tapping anywhere on the card plays the 30-second preview inside SideCut.
-    // "Get song" copies the track URL to clipboard for MP3 conversion.
+    // Tapping the card opens the song in Spotify for the user to get it.
+    // Preview only plays via the explicit ▶ button — no auto-play on tap.
     card.addEventListener('click', () => {
-      if(r.previewUrl && previewBtn){
-        toggleDiscoverPreview(r.previewUrl, previewBtn);
-      } else {
-        toast('No preview available — tap Get song to open it in Spotify.');
-      }
+      const q = (r.trackName || '') + ' ' + (r.artistName || '');
+      var spotifyUrl = 'https://open.spotify.com/search/' + encodeURIComponent(q);
+      try{ window.open(spotifyUrl, '_blank', 'noopener'); }catch(e){}
+      toast('Spotify opened — tap the song, then Share → Copy link.', 4000);
     });
 
     card.appendChild(art); card.appendChild(meta); card.appendChild(actions);
