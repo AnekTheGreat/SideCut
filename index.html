@@ -1445,7 +1445,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   box-shadow:0 6px 18px rgba(0,0,0,.18);
 }
 
-#homeBubbles{ display:flex; flex-wrap:wrap; gap:10px; overflow-x:auto; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; padding-bottom:4px; }
+#homeBubbles{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .home-bubble{
   position:relative; min-width:0; min-height:calc(118px * var(--hb-s, 1));
   border-radius:22px; border:1px solid var(--line); cursor:pointer; overflow:hidden;
@@ -1458,8 +1458,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 .home-bubble:hover{ border-color:var(--coral); box-shadow:0 6px 22px rgba(227,178,60,0.10); }
 /* wide spans both columns; tall is one grid row taller. Row heights are
    content-driven, so no row ever opens a big empty gap after a reorder. */
-.home-bubble.wide{ flex:0 0 100%; max-width:100%; min-height:calc(96px * var(--hb-s, 1)); }
-.home-bubble.tall{ min-height:calc(158px * var(--hb-s, 1)); flex:0 0 calc(50% - 5px); max-width:calc(50% - 5px); }
+.home-bubble.wide{ grid-column:1 / -1; min-height:calc(96px * var(--hb-s, 1)); }
+.home-bubble.tall{ min-height:calc(158px * var(--hb-s, 1)); }
 .home-bubble .hb-ico{ position:absolute; top:calc(12px * var(--hb-s, 1)); left:calc(12px * var(--hb-s, 1)); width:calc(30px * var(--hb-s, 1)); height:calc(30px * var(--hb-s, 1)); border-radius:50%;
   display:flex; align-items:center; justify-content:center; font-size:15px;
   background:color-mix(in srgb, var(--coral) 22%, transparent); color:var(--coral); }
@@ -1493,12 +1493,6 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 .home-bubble.hb-size-tall{ min-height:calc(158px * var(--hb-s, 1)); }
 .home-bubble.hb-size-wide{ grid-column:1 / -1; min-height:calc(96px * var(--hb-s, 1)); }
 .home-bubble.hb-size-full{ grid-column:1 / -1; min-height:calc(200px * var(--hb-s, 1)); }
-/* Independent width/height classes for fully customizable bubbles */
-.home-bubble.hb-w-1{ flex:0 0 calc(50% - 5px); max-width:calc(50% - 5px); }
-.home-bubble.hb-w-2{ flex:0 0 calc(33.33% - 7px); max-width:calc(33.33% - 7px); }
-.home-bubble.hb-w-3{ flex:0 0 100%; max-width:100%; }
-.home-bubble.hb-h-short{ min-height:calc(72px * var(--hb-s, 1)); }
-.home-bubble.hb-h-tall{ min-height:calc(170px * var(--hb-s, 1)); }
 .home-bubble .hb-ico svg{ width:calc(18px * var(--hb-s, 1)); height:calc(18px * var(--hb-s, 1)); }
 .home-bubble .hb-ico svg path{ fill:currentColor; }
 .home-bubble .hb-miniplay{ position:absolute; bottom:10px; right:12px; width:calc(34px * var(--hb-s, 1)); height:calc(34px * var(--hb-s, 1)); border-radius:50%;
@@ -4908,55 +4902,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Manual per-bubble sizes picked via the expand handle (⤢ chip, bottom-left).
   // Absent key = automatic template size. Values: small|tall|wide|full.
   let homeBubbleSizes = {};
-  const HB_SIZE_CLASSES = ['hb-size-small', 'hb-size-tall', 'hb-size-wide', 'hb-size-full', 'hb-w-1', 'hb-w-2', 'hb-w-3', 'hb-h-short', 'hb-h-tall'];
-  // Per-bubble size: { w: '1'|'2'|'3', h: 'short'|'tall'|null }
-  // w: 1=50%, 2=33%, 3=full width; h: short=72px, tall=170px, null=auto
+  const HB_SIZE_CLASSES = ['hb-size-small', 'hb-size-tall', 'hb-size-wide', 'hb-size-full'];
+  const HB_SIZE_CYCLE = ['small', null, 'tall', 'wide', 'full']; // null = back to automatic
   function applyHomeBubbleSizes(){
     const wrap = $('homeBubbles');
     if(!wrap) return;
     wrap.querySelectorAll('.home-bubble').forEach(b => {
       HB_SIZE_CLASSES.forEach(c => b.classList.remove(c));
       const sz = homeBubbleSizes[b.dataset.bubble];
-      if(!sz) return;
-      // Legacy format: string like 'small','tall','wide','full'
-      if(typeof sz === 'string'){
-        const cls = 'hb-size-' + sz;
-        if(HB_SIZE_CLASSES.indexOf(cls) > -1) b.classList.add(cls);
-      }
-      // New format: { w, h }
-      if(sz && typeof sz === 'object'){
-        if(sz.w) b.classList.add('hb-w-' + sz.w);
-        if(sz.h) b.classList.add('hb-h-' + sz.h);
-      }
+      if(sz && HB_SIZE_CLASSES.indexOf('hb-size-' + sz) > -1) b.classList.add('hb-size-' + sz);
       const chip = b.querySelector('.hb-expand');
       if(chip) chip.classList.toggle('sized', !!sz);
     });
   }
   function cycleHomeBubbleSize(kind){
     const cur = homeBubbleSizes[kind] || null;
-    // New cycle: none → half → third → full → short+tall → tall → none
-    const STATES = [
-      null,
-      { w: '1' },           // half width
-      { w: '2' },           // third width
-      { w: '3' },           // full width
-      { w: '1', h: 'short' }, // half + short
-      { w: '1', h: 'tall' },  // half + tall
-      { w: '2', h: 'short' }, // third + short
-      { w: '2', h: 'tall' },  // third + tall
-      { w: '3', h: 'short' }, // full + short
-      { w: '3', h: 'tall' },  // full + tall
-    ];
-    // Find current index (handle legacy string values)
-    let curIdx = 0;
-    if(typeof cur === 'string'){
-      const legacy = { small: 0, tall: 5, wide: 3, full: 3 };
-      curIdx = legacy[cur] || 0;
-    } else if(cur && typeof cur === 'object'){
-      curIdx = STATES.findIndex(s => s && s.w === cur.w && s.h === (cur.h||null));
-      if(curIdx < 0) curIdx = 0;
-    }
-    const next = STATES[(curIdx + 1) % STATES.length];
+    const next = HB_SIZE_CYCLE[(HB_SIZE_CYCLE.indexOf(cur) + 1) % HB_SIZE_CYCLE.length];
     if(next) homeBubbleSizes[kind] = next; else delete homeBubbleSizes[kind];
     dbPut('meta', { key: 'homeBubbleSizes', value: homeBubbleSizes });
     applyHomeBubbleSizes();
