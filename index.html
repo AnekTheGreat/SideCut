@@ -16881,14 +16881,21 @@ window.__refetchAlbums = async function(wasRefetch){
     artistsDone++;
     // Update progress
     var progEl = document.getElementById('ahProgressText');
-    if(progEl) progEl.textContent = 'Fetching albums\u2026 ' + artistsDone + '/' + pinnedArtists.length;
+    var _elapsed = (Date.now() - (window.__ahFetchStart || Date.now())) / 1000;
+    var _remaining = artistsDone > 0 ? (_elapsed / artistsDone) * (pinnedArtists.length - artistsDone) : 0;
+    var _etaStr = '';
+    if(artistsDone > 0 && artistsDone < pinnedArtists.length){
+      if(_remaining < 60) _etaStr = ' ~' + Math.ceil(_remaining) + 's left';
+      else _etaStr = ' ~' + Math.ceil(_remaining/60) + 'm left';
+    }
+    if(progEl) progEl.textContent = 'Fetching albums\u2026 ' + artistsDone + '/' + pinnedArtists.length + _etaStr;
     // Update home screen progress bar
     var _hpBar = document.getElementById('ahFetchProgressBar');
     var _hpPct = document.getElementById('ahFetchProgressPct');
     var _hpTxt = document.getElementById('ahFetchProgressText');
     if(_hpBar){ var _pct = Math.round((artistsDone / pinnedArtists.length) * 100); _hpBar.style.width = _pct + '%'; }
     if(_hpPct){ _hpPct.textContent = Math.round((artistsDone / pinnedArtists.length) * 100) + '%'; }
-    if(_hpTxt){ _hpTxt.textContent = 'Fetching albums... ' + artistsDone + '/' + pinnedArtists.length; }
+    if(_hpTxt){ _hpTxt.textContent = 'Fetching albums... ' + artistsDone + '/' + pinnedArtists.length + _etaStr; }
     // Save incrementally
     // Strip singles from artistAlbums before saving to cache
     try{
@@ -18841,6 +18848,7 @@ function __ahFetchArtFromSearch(artist, album, artDiv, PLACEHOLDER){
 var _aiChatHistory = [];
 var _aiInitialized = false;
 var _aiGeminiKey = '';
+try { _aiGeminiKey = localStorage.getItem('sidecut_aiGeminiKey') || ''; } catch(_e){}
 var _aiTyping = false;
 
 // Knowledge base: question → answer pairs
