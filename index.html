@@ -8553,8 +8553,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const hasDupAlert = typeof getDuplicateGroups === 'function' && getDuplicateGroups().length > 0;
     const hasEnrichAlert = enrichState.active || (enrichState.finishedAt && !enrichState.seen);
     const hasExportAlert = exportState.active || (exportState.finishedAt && !exportState.seen);
-    const hasReleasesAlert = (typeof hasUnseenReleases === 'function') && hasUnseenReleases();
-    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || hasReleasesAlert) ? 'block' : 'none';
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert ) ? 'block' : 'none';
   }
   function renderNotifPanel(){
     const body = $('notifBody');
@@ -8573,30 +8572,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       summaryHtml += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
           <div style="font-weight:600; font-size:13.5px; color:var(--coral);">⚠ ${dupGroups.length} duplicate song${dupGroups.length>1?'s':''} found</div>
-        </div>
-      `;
-    }
-    // Pinned-artist new releases — the freshest 8, across all pinned artists.
-    if((typeof hasUnseenReleases === 'function') && hasUnseenReleases()){
-      const all = [];
-      Object.keys(pinnedReleases).forEach(artist => {
-        (pinnedReleases[artist] || []).forEach(r => { if(!r.seen) all.push({ ...r, artist }); });
-      });
-      all.sort((a,b) => (b.date||'').localeCompare(a.date||''));
-      const fresh = all.slice(0, 8);
-      summaryHtml += `
-        <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
-          <div style="font-weight:600; font-size:13.5px; color:var(--coral);">🆕 ${fresh.length} new release${fresh.length>1?'s':''} from pinned artists</div>
-          <div style="font-size:12px; color:var(--ink-dim); margin-top:4px;">${escapeHtml(fresh.map(r => r.artist).filter((v,i,a)=>a.indexOf(v)===i).slice(0,3).join(', '))}${all.length>3?'…':''}</div>
-        </div>
-      `;
-      html += `
-        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
-          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">🆕 New from your pinned artists</div>
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            ${fresh.map(r => `<div style="font-size:12px; color:var(--ink-dim);"><b style="color:var(--ink);">${escapeHtml(r.title)}</b> — ${escapeHtml(r.artist)}${r.date ? ' · ' + r.date : ''}</div>`).join('')}
-          </div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:6px;">Tap Discover → New from your artists to get any of these.</div>
         </div>
       `;
     }
@@ -15900,8 +15875,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           cbs.forEach(function(cb){
             var cid = cb.dataset.cid;
             if(cid){
-              hideAlbum(cid, '');
               var hdr = cb.closest('.dp-ah-album-hdr');
+              var cname = (hdr && hdr.dataset.album) || '';
+              hideAlbum(cid, cname);
               if(hdr){ var al = hdr.closest('.dp-ah-album'); if(al) al.remove(); }
             }
           });
@@ -16067,12 +16043,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 trackSources = [{ kind: 'it', url: itUrl }];
                 return fetchTracks(trackSources);
               }
-              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>';
+              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
               return null;
             }
             var src = sources[0];
             var finishTracks = function(tracks){
-              if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:8px 0;">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>'; return; }
+              if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:8px 0;">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>'; return; }
               // Build download/search link for the album
               var dlLink = 'https://open.spotify.com/search/' + encodeURIComponent(artistName + ' ' + albumName);
               var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-dl-album-btn" data-album="' + escapeHtml(artistName + ' - ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">⬇ Download preview</button><a href="' + dlLink + '" target="_blank" rel="noopener" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;">✨ Find on Spotify</a><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
@@ -16081,7 +16057,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
                 // Get album art from the header's art div
                 var albumArtUrl = '';
-                try{ var artDiv = h.querySelector('div:first-child'); if(artDiv) albumArtUrl = artDiv.getAttribute('data-art-url') || ''; }catch(e){}
+                try{ var artDiv = h.querySelector('div'); if(artDiv){ var _bg = artDiv.style.backgroundImage || ''; var _m = _bg.match(/url\(["']?(.*?)["']?\)/); if(_m) albumArtUrl = _m[1]; if(!albumArtUrl) albumArtUrl = artDiv.getAttribute('data-art-url') || ''; } }catch(e){}
                 h2 += '<div class="dp-ah-track" data-search="' + escapeHtml(tr.trackName + ' ' + tr.artistName) + '" data-preview="' + escapeHtml(tr.previewUrl || '') + '" data-trackname="' + escapeHtml(tr.trackName) + '" data-artist="' + escapeHtml(tr.artistName || artistName) + '" data-albumname="' + escapeHtml(albumName) + '" data-art="' + escapeHtml(albumArtUrl) + '" data-tracknum="' + (tr.trackNumber||ti+1) + '">';
                 if(albumArtUrl){ h2 += '<div style="width:28px;height:28px;border-radius:3px;background-size:cover;background-position:center;flex-shrink:0;background-image:url(' + escapeHtml(albumArtUrl) + ');"></div>'; }
                 h2 += '<span style="color:var(--ink-dim);min-width:18px;text-align:right;">' + (tr.trackNumber||'') + '</span>';
@@ -16193,12 +16169,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               }
               return finishTracks(tracks);
             });
-          })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-songs\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\'; c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\').click();}">Retry</span></div>'; });
+          })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>'; });
         }
       });
     });
 
   };
+
+// Re-apply manual album covers after every render/wire — fresh renders,
+// cached restores,and track loads all run through __wireAH(). The covers
+// live in sidecut_ahCovers keyed by normalized artist|album; fresh renders
+// use data-art-url from iTunes, so without this the manual cover disappears
+// after a refetch.
+try{ if(typeof __ahResolveArtworks === 'function') __ahResolveArtworks(); }catch(_e){}
+
 // Background Album History fetch — runs independently of popup
 // Per-artist album refetch — fetches albums for just one artist
 window.__refetchArtistAlbums = async function(artistName){
@@ -16258,7 +16242,7 @@ window.__refetchArtistAlbums = async function(artistName){
       var lookupCount = 0;
       var seenCids = {};
       var seenTitles = {};
-      var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|ep|remix album)\b|\s[–—]\s*(single|remix)\b/i;
+      var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remix(es| bundle| album)?|focus collection|non.?stop|mashup)\b|\s(?:-|–|—)?\s*(remix)\b/i;
       var dzNoise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|best of|top hits|workout|party mix|dance party|party songs|collaborations|playlist|essentials?|greatest)\b|\s[–—]?\s*mix(es)?$/i;
       var normTitle = function(t){ return (t||'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/\s*[-–—]\s*(deluxe|expanded|special|bonus|explicit|clean|remastered|remaster|re.?recorded|version).*$/i,'').replace(/\b(soundtrack|original motion picture soundtrack)\b/gi,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim(); };
       var filterInto = function(results){
@@ -16270,13 +16254,14 @@ window.__refetchArtistAlbums = async function(artistName){
           var relDate = r.releaseDate || '';
           if(trackCount <= 1) return; // skip singles
           if(seenCids[collectionId]) return;
+          if(isAlbumHidden(collectionId, r.collectionName)) return; // user-deleted album stays deleted across refetches
           var tNorm = normTitle(r.collectionName);
           if(seenTitles[tNorm]) return;
           if(noise.test(r.collectionName)) return;
           var rArtist = primaryArtistName(r.artistName || '').toLowerCase().trim();
           if(!rArtist || rArtist === 'various artists') return;
           // Strict match: album artist must be exactly the pinned artist, or start with it
-          if(rArtist !== artistLower && !(rArtist.startsWith(artistLower) && (rArtist.length === artistLower.length || /[^a-z]/.test(rArtist.charAt(artistLower.length)))) && !(artistLower.startsWith(rArtist) && (artistLower.length === rArtist.length || /[^a-z]/.test(artistLower.charAt(rArtist.length))))) return;
+          if(!nameMatchArtists(rArtist, artistLower)) return;
           seenCids[collectionId] = 1;
           seenTitles[tNorm] = 1;
           if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
@@ -16317,8 +16302,7 @@ window.__refetchArtistAlbums = async function(artistName){
         var dzUrl = 'https://api.deezer.com/search/artist?q=' + encodeURIComponent(a.name);
         var dzResp = await fetchWithProxy(dzUrl);
         var dzData = dzResp && dzResp.ok ? await dzResp.json() : { data: [] };
-        var dzArtist = (dzData.data||[])[0];
-        if(dzArtist && dzArtist.id){
+        var dzArtist = null; var _dzList = (dzData.data||[]); var _aLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _nmS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; for(var _di=0;_di<_dzList.length;_di++){ var _cand = _nmS(_dzList[_di].name); if(_cand === _aLo || _cand.includes(_aLo) || _aLo.includes(_cand)){ dzArtist = _dzList[_di]; break; } } if(dzArtist && dzArtist.id){
           var dzAlbumsUrl = 'https://api.deezer.com/artist/' + dzArtist.id + '/albums?limit=100';
           var dzAResp = await fetchWithProxy(dzAlbumsUrl);
           var dzAData = dzAResp && dzAResp.ok ? await dzAResp.json() : { data: [] };
@@ -16329,6 +16313,7 @@ window.__refetchArtistAlbums = async function(artistName){
             if(alb.record_type && alb.record_type !== 'album') return;
             var collectionId = String(alb.id);
             if(seenCids[collectionId]) return;
+            if(isAlbumHidden(collectionId, alb.title)) return;
             seenCids[collectionId] = 1;
             seenTitles[normTitle(alb.title)] = 1;
             if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
@@ -16343,10 +16328,10 @@ window.__refetchArtistAlbums = async function(artistName){
       }catch(e){}
       // MusicBrainz backup
       try{
-        var mbUrl = 'https://musicbrainz.org/ws/2/artist/?query=' + encodeURIComponent(a.name) + '&fmt=json&limit=1';
+        var mbUrl = 'https://musicbrainz.org/ws/2/artist/?query=' + encodeURIComponent('artist:"' + a.name + '"') + '&fmt=json&limit=25';
         var mbData = await mbGet(mbUrl);
-        if(mbData && mbData.artists && mbData.artists[0]){
-          var mbId = mbData.artists[0].id;
+        var mbArtist = null; var _mbLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _mbS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; if(mbData && mbData.artists){ for(var _bi=0;_bi<mbData.artists.length;_bi++){ var _ba = _mbS(mbData.artists[_bi].name); if(_ba === _mbLo){ mbArtist = mbData.artists[_bi]; break; } } } if(mbArtist){
+          var mbId = mbArtist.id;
           var rgUrl = 'https://musicbrainz.org/ws/2/release-group?artist=' + mbId + '&type=album&fmt=json&limit=100';
           var rgData = await mbGet(rgUrl);
           if(rgData && rgData['release-groups']){
@@ -16357,8 +16342,9 @@ window.__refetchArtistAlbums = async function(artistName){
               var secTypes = (rg['secondary-types'] || []);
               var priType = rg['primary-type'] || '';
               if(priType !== 'Album') return;
-              // Only reject soundtrack, dj-mix, mixtape — allow compilation, live, remix, etc.
-              var mbBadSec = secTypes.filter(function(s){ return /soundtrack|dj-?mix|mixtape/i.test(s); });
+              // Allow compilations and live/remix albums (old studio albums are often tagged these)
+              // but keep DJ-mix/mixtape-style compilations out; remix comps are still remixes
+              var mbBadSec = secTypes.filter(function(s){ return /soundtrack|dj-?mix|mixtape|remix/i.test(s); });
               if(mbBadSec.length > 0) return;
               // Only reject if status exists and is NOT Official (skip check if status missing — old releases often lack it)
               if(rg['first-release-date-status'] && rg['first-release-date-status'] !== 'Official') return;
@@ -16367,6 +16353,7 @@ window.__refetchArtistAlbums = async function(artistName){
               if(seenTitles[normTitle(rg.title)]) return;
               var collectionId = rg.id;
               if(seenCids[collectionId]) return;
+              if(isAlbumHidden(collectionId, rg.title)) return;
               seenCids[collectionId] = 1;
               seenTitles[normTitle(rg.title)] = 1;
               if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
@@ -16461,15 +16448,30 @@ window.__refetchAlbums = async function(wasRefetch){
       if(ahADRaw){
         var ahAD = JSON.parse(ahADRaw);
         if(ahAD && ahAD.artists && Object.keys(ahAD.artists).length > 0){
-          // Filter out hidden albums before rendering from cache
+          // Re-sanitize stored rows before render: hidden albums, noise,
+          // and wrong-artist entries must never reappear (they can
+          // sneak in from pre-filter eras or other sources). EPs and singles
+          // by the artist are kept.
           try{
             var _hAlb = JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]');
-            if(_hAlb.length){
-              Object.keys(ahAD.artists).forEach(function(k){
-                ahAD.artists[k] = ahAD.artists[k].filter(function(a){ return _hAlb.indexOf(String(a.collectionId)) === -1; });
-                if(!ahAD.artists[k].length) delete ahAD.artists[k];
+            var _noiseR = /\b(karaoke|tribute|bootleg|unreleased|video album|remix(es| bundle| album)?|focus collection|non.?stop|mashup)\b|\s(?:-|\u2013|\u2014)?(?:\s)*(remix)\b/i;
+            Object.keys(ahAD.artists).forEach(function(k){
+              var _aLow = primaryArtistName(k).toLowerCase().trim();
+              ahAD.artists[k] = ahAD.artists[k].filter(function(a){
+                if(_hAlb.indexOf(String(a.collectionId)) !== -1) return false;
+                var _at = (a.collectionName||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                if(_at && _hAlb.indexOf('t:' + _at) !== -1) return false;
+                if(!_at) return false;
+                if(_noiseR.test(a.collectionName||'')) return false;
+                var aA = primaryArtistName((a.artistName||k)).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                if(!aA || aA === 'various' || aA === 'variousartists') return false;
+                var _aLo2 = k.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                if(aA !== _aLow && !nameMatchArtists(aA, _aLow)) return false;
+                if(a.trackCount && a.trackCount <= 1) return false;
+                return true;
               });
-            }
+              if(!ahAD.artists[k].length) delete ahAD.artists[k];
+            });
           }catch(_){}
           _renderAhFromData(ahAD.artists);
           return;
@@ -16486,12 +16488,35 @@ window.__refetchAlbums = async function(wasRefetch){
   openDiscoverPopup('📀 Album History', loadingHtml, 'Fetching\u2026');
   var cancelBtn = document.getElementById('ahCancelBtn');
   if(cancelBtn) cancelBtn.onclick = function(){ window.__ahCancelled = true; window.__ahFetching = false; toast('\ud83d\udcc0 Cancelling\u2026', 2000); };
-  // Load existing data to merge into
+  // Load existing data to merge into — but sanitize the seed so junk
+  // (wrong-artist, remix/hidden/noise) stored by pre-filter versions
+  // can't resurrect on a refetch. EPs and singles by the artist are kept.
+
   var artistAlbums = {};
   var totalAlbums = 0;
   try{
     var cache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
-    if(cache && cache.artists){ artistAlbums = cache.artists; totalAlbums = cache.total || 0; }
+    if(cache && cache.artists){
+      var _hA = JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]');
+      var _noiseS = /\b(karaoke|tribute|bootleg|unreleased|video album|remix(es| bundle| album)?|focus collection|non.?stop|mashup)\b|\s(?:-|\u2013|\u2014)?(?:\s)*(remix)\b/i;
+      Object.keys(cache.artists).forEach(function(k){
+        var _kLo = primaryArtistName(k).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        cache.artists[k] = (cache.artists[k]||[]).filter(function(a){
+          if(!a || !a.collectionName) return false;
+          if(_hA.indexOf(String(a.collectionId)) !== -1) return false;
+          var _tn = (a.collectionName||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+          if(_tn && _hA.indexOf('t:' + _tn) !== -1) return false;
+          if(!_tn) return false;
+          if(_noiseS.test(a.collectionName)) return false;
+          if(a.trackCount && a.trackCount <= 1) return false;
+          var _aN = primaryArtistName((a.artistName||k)).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+          if(!_aN || _aN === 'various' || _aN === 'variousartists' || !nameMatchArtists(_aN, _kLo)) return false;
+          return true;
+        });
+        if(!cache.artists[k].length) delete cache.artists[k];
+      });
+      artistAlbums = cache.artists; totalAlbums = cache.total || 0;
+    }
   }catch(e){}
   // MusicBrainz rate-limited chain
   var mbChain = Promise.resolve();
@@ -16503,7 +16528,7 @@ window.__refetchAlbums = async function(wasRefetch){
     mbChain = p.catch(function(){});
     return p;
   };
-  var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|ep|remix album)\b|\s[\u2013\u2014]\s*(single|remix)\b/i;
+  var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remix(es| bundle| album)?|focus collection|non.?stop|mashup)\b|\s(?:-|\u2013|\u2014)?(?:\s)*(remix)\b/i;
   var dzNoise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|best of|top hits|workout|party mix|dance party|party songs|collaborations|playlist|essentials?|greatest)\b|\s[\u2013\u2014]?\s*mix(es)?$/i;
   var normTitle = function(t){ return (t||'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/\s*[\u2013\u2014]\s*(deluxe|expanded|special|bonus|explicit|clean|remastered|remaster|re.?recorded|version).*$/i,'').replace(/\b(soundtrack|original motion picture soundtrack)\b/gi,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim(); };
   var filterInto = function(results, artistName){
@@ -16515,13 +16540,14 @@ window.__refetchAlbums = async function(wasRefetch){
       if(!artistAlbums[artistName]) artistAlbums[artistName] = [];
       var seenC = {}; artistAlbums[artistName].forEach(function(x){ seenC[x.collectionId]=1; });
       if(seenC[cid]) return;
+      if(isAlbumHidden(cid, r.collectionName)) return; // deleted albums stay deleted across refetches
       var tN = normTitle(r.collectionName);
       var seenT = {}; artistAlbums[artistName].forEach(function(x){ seenT[normTitle(x.collectionName)]=1; });
       if(seenT[tN]) return;
       if(noise.test(r.collectionName)) return;
       var rA = primaryArtistName(r.artistName||'').toLowerCase().trim();
       if(!rA || rA === 'various artists') return;
-      if(rA !== artistLower && !rA.startsWith(artistLower) && !artistLower.startsWith(rA)) return;
+      if(!nameMatchArtists(rA, artistLower)) return;
       artistAlbums[artistName].push({ collectionId:cid, collectionName:r.collectionName, artworkUrl100:r.artworkUrl100||null, releaseDate:r.releaseDate||'', trackCount:tc, _country:r._country||'' });
       totalAlbums++;
     });
@@ -16562,8 +16588,7 @@ window.__refetchAlbums = async function(wasRefetch){
         var dzUrl = 'https://api.deezer.com/search/artist?q=' + encodeURIComponent(a.name);
         var dzResp = await fetchWithProxy(dzUrl);
         var dzData = dzResp && dzResp.ok ? await dzResp.json() : {data:[]};
-        var dzA = (dzData.data||[])[0];
-        if(dzA && dzA.id){
+        var dzA = null; var _dzList = (dzData.data||[]); var _aLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _nmS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; for(var _di=0;_di<_dzList.length;_di++){ var _cand = _nmS(_dzList[_di].name); if(_cand === _aLo || _cand.includes(_aLo) || _aLo.includes(_cand)){ dzA = _dzList[_di]; break; } } if(dzA && dzA.id){
           var dzAUrl = 'https://api.deezer.com/artist/' + dzA.id + '/albums?limit=100';
           var dzAResp = await fetchWithProxy(dzAUrl);
           var dzAData = dzAResp && dzAResp.ok ? await dzAResp.json() : {data:[]};
@@ -16575,6 +16600,7 @@ window.__refetchAlbums = async function(wasRefetch){
             if(noise.test(alb.title)) return;
             if(alb.record_type && alb.record_type!=='album') return;
             var cid2 = String(alb.id);
+            if(isAlbumHidden(cid2, alb.title)) return;
             var seenC2={}; artistAlbums[a.name].forEach(function(x){ seenC2[x.collectionId]=1; });
             if(seenC2[cid2]) return;
             artistAlbums[a.name].push({ collectionId:cid2, collectionName:alb.title, artworkUrl100:alb.cover_medium||alb.cover_big||alb.cover||null, releaseDate:alb.release_date||'', trackCount:alb.nb_tracks||null, _dz:true });
@@ -16585,10 +16611,10 @@ window.__refetchAlbums = async function(wasRefetch){
       // MusicBrainz backup
       if(window.__ahCancelled) return;
       try{
-        var mbUrl = 'https://musicbrainz.org/ws/2/artist/?query=' + encodeURIComponent(a.name) + '&fmt=json&limit=1';
+        var mbUrl = 'https://musicbrainz.org/ws/2/artist/?query=' + encodeURIComponent('artist:"' + a.name + '"') + '&fmt=json&limit=25';
         var mbData = await mbGet(mbUrl);
-        if(mbData && mbData.artists && mbData.artists[0]){
-          var mbId = mbData.artists[0].id;
+        var mbArtist = null; var _mbLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _mbS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; if(mbData && mbData.artists){ for(var _bi=0;_bi<mbData.artists.length;_bi++){ var _ba = _mbS(mbData.artists[_bi].name); if(_ba === _mbLo){ mbArtist = mbData.artists[_bi]; break; } } } if(mbArtist){
+          var mbId = mbArtist.id;
           var rgUrl = 'https://musicbrainz.org/ws/2/release-group?artist=' + mbId + '&type=album&fmt=json&limit=100';
           var rgData = await mbGet(rgUrl);
           if(rgData && rgData['release-groups']){
@@ -16597,12 +16623,14 @@ window.__refetchAlbums = async function(wasRefetch){
               var priType = rg['primary-type']||'';
               if(priType!=='Album') return;
               var secTypes = rg['secondary-types']||[];
-              if(secTypes.some(function(s){ return /soundtrack|dj-?mix|mixtape/i.test(s); })) return;
+              // Keep DJ-mix/mixtape/soundtrack/remix comps out — remix albums are the noise the user asked us to drop
+              if(secTypes.some(function(s){ return /soundtrack|dj-?mix|mixtape|remix/i.test(s); })) return;
               if(!artistAlbums[a.name]) artistAlbums[a.name]=[];
               var seenT3={}; artistAlbums[a.name].forEach(function(x){ seenT3[normTitle(x.collectionName)]=1; });
               if(seenT3[normTitle(rg.title)]) return;
               if(dzNoise.test(rg.title)) return;
               var cid3 = rg.id;
+              if(isAlbumHidden(cid3, rg.title)) return;
               var seenC3={}; artistAlbums[a.name].forEach(function(x){ seenC3[x.collectionId]=1; });
               if(seenC3[cid3]) return;
               artistAlbums[a.name].push({ collectionId:cid3, collectionName:rg.title, artworkUrl100:null, releaseDate:rg['first-release-date']||'', trackCount:null, _mb:true });
@@ -16675,10 +16703,10 @@ function _renderAhFromData(artistAlbums){
       ahHtml += '<div class="dp-ah-album" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
       ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
       ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
-      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'"></div>';
+      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'" data-art-url="'+escapeHtml(ahAlb.artworkUrl100||'')+'"></div>';
       ahHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(ahAlb.collectionName||'Unknown')+'</div>';
       ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+(ahAlb.releaseDate||'').slice(0,10)+(ahAlb.trackCount?' \u00b7 '+ahAlb.trackCount+' tracks':'')+'</div></div>';
-      ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
+      ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" data-cname="'+escapeHtml(ahAlb.collectionName||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
       ahHtml += '</div>';
       ahHtml += '<div id="ahc_trk_'+ahI+'_'+ahJ+'" class="dp-ah-albums" style="display:none;padding:2px 8px 4px 36px;"><div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Tap to load tracks</div></div>';
       ahHtml += '</div>';
@@ -18229,15 +18257,24 @@ if(!isDiscover) stopDiscoverPreview();
 function getHiddenAlbums(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]'); }catch(e){ return []; } }
 function hideAlbum(collectionId, collectionName){
   var h = getHiddenAlbums();
-  if(h.indexOf(collectionId) === -1) h.push(collectionId);
+  if(h.indexOf(String(collectionId)) === -1) h.push(String(collectionId));
+  var t = (collectionName || '' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t && h.indexOf('t:' + t) === -1) h.push('t:' + t);
   localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h));
-  // Also remove from artist data cache so refetch doesn't re-add it
+  // Also remove from artist data cache so refetch doesn't re-add it (by id AND normalized title, so other-source copies of the same album get purged too)
   try{
     var ad = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
     if(ad && ad.artists){
+      var _dt = (collectionName || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
       Object.keys(ad.artists).forEach(function(name){
         var before = ad.artists[name].length;
-        ad.artists[name] = ad.artists[name].filter(function(a){ return String(a.collectionId) !== String(collectionId); });
+        ad.artists[name] = ad.artists[name].filter(function(a){
+          if(String(a.collectionId) === String(collectionId)) return false;
+          if(_dt){
+            var at = (a.collectionName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+            if(at === _dt) return false;
+          }
+          return true;
+        });
         ad.total = (ad.total || 0) - (before - ad.artists[name].length);
       });
       localStorage.setItem('sidecut_ahArtistData', JSON.stringify(ad));
@@ -18249,8 +18286,9 @@ function hideAlbum(collectionId, collectionName){
   if(typeof toastWithUndo === 'function'){
     toastWithUndo('Removed "' + collectionName + '" from Album History.', function(){
       var h2 = getHiddenAlbums();
-      var idx2 = h2.indexOf(collectionId);
+      var idx2 = h2.indexOf(String(collectionId));
       if(idx2 !== -1) h2.splice(idx2, 1);
+      var _tn = (collectionName || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(_tn){ var _ti = h2.indexOf('t:' + _tn); if(_ti !== -1) h2.splice(_ti, 1); }
       localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(h2));
       toast('Album restored. Tap 📀 Album History to see it.', 3000);
     });
@@ -18258,7 +18296,8 @@ function hideAlbum(collectionId, collectionName){
     toast('Removed "' + collectionName + '" from Album History.', 3000);
   }
 }
-function isAlbumHidden(collectionId){ var h = getHiddenAlbums(); for(var i=0;i<h.length;i++){ if(String(h[i]) === String(collectionId)) return true; } return false; }
+function nameMatchArtists(a,b){ if(a===b) return true; if(a.startsWith(b)){ return b.length===a.length || !/[a-z0-9]/.test(a.charAt(b.length)); } if(b.startsWith(a)){ return a.length===b.length || !/[a-z0-9]/.test(b.charAt(a.length)); } return false; }
+function isAlbumHidden(collectionId, collectionName){ var h = getHiddenAlbums(); var cid = String(collectionId); if(cid){ for(var i=0;i<h.length;i++){ if(String(h[i]) === cid) return true; } } if(collectionName){ var t = (collectionName||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t){ for(var j=0;j<h.length;j++){ if(h[j] === 't:' + t) return true; } } } return false; }
 // Async artwork resolver for albums with missing/broken covers
 // Set custom album cover — triggered by long-pressing album art
 function _ahSetCover(artistName, albumName, collectionId) {
@@ -18271,11 +18310,13 @@ function _ahSetCover(artistName, albumName, collectionId) {
     covers[coverKey] = dataUrl;
     localStorage.setItem('sidecut_ahCovers', JSON.stringify(covers));
     toast('Cover added!', 1500);
+    try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(e){}
+    try{ localStorage.removeItem('discPopupCache_' + '📀 Album History'); }catch(e){}
     var f = document.getElementById('ahCoverForm'); if(f) f.remove();
     document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
       if((hdr.dataset.artist||'').toLowerCase().trim() === artistName.toLowerCase().trim() &&
          (hdr.dataset.album||'').toLowerCase().trim() === albumName.toLowerCase().trim()){
-        var ad = hdr.querySelector('div:first-child');
+        var ad = hdr.querySelector('div');
         if(ad) ad.style.backgroundImage = 'url(' + dataUrl + ')';
       }
     });
@@ -18406,6 +18447,8 @@ function _ahSetCover(artistName, albumName, collectionId) {
   document.getElementById('ahCoverClear').addEventListener('click', function(){
     delete covers[coverKey];
     localStorage.setItem('sidecut_ahCovers', JSON.stringify(covers));
+    try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(e){}
+    try{ localStorage.removeItem('discPopupCache_' + '📀 Album History'); }catch(e){}
     toast('Cover removed.', 1500);
     var f = document.getElementById('ahCoverForm'); if(f) f.remove();
     window.__refetchAlbums(false);
@@ -18421,7 +18464,7 @@ function __ahResolveArtworks(){
   var covers = {};
   try { covers = JSON.parse(localStorage.getItem('sidecut_ahCovers') || '{}'); } catch(e) {}
   document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(hdr){
-    var artDiv = hdr.querySelector('div:first-child');
+    var artDiv = hdr.querySelector('div');
     if(!artDiv) return;
     var aName = (hdr.dataset.artist || '').toLowerCase().trim();
     var alName = (hdr.dataset.album || '').toLowerCase().trim();
@@ -19051,7 +19094,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       (bEl || ov).querySelectorAll('.dp-ah-album-hdr').forEach(function(_h){
         var _ck = ((_h.dataset.artist||'') + '|' + (_h.dataset.album||'')).toLowerCase().trim();
         if(_cvMap[_ck]){
-          var _ad = _h.querySelector('div:first-child');
+          var _ad = _h.querySelector('div');
           if(_ad) _ad.style.backgroundImage = 'url(' + _cvMap[_ck] + ')';
         }
       });
