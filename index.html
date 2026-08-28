@@ -16425,6 +16425,16 @@ window.__refetchArtistAlbums = async function(artistName){
     // Sort albums by date
     if(artistAlbums[a.name]) artistAlbums[a.name].sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
     // Save and re-render
+    // Strip singles before saving
+    try{
+      Object.keys(artistAlbums).forEach(function(k){
+        artistAlbums[k] = artistAlbums[k].filter(function(a){
+          var _tc3 = a.trackCount;
+          return _tc3 === null || _tc3 === undefined || _tc3 > 1;
+        });
+        if(!artistAlbums[k].length) delete artistAlbums[k];
+      });
+    }catch(_){}
     try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists: artistAlbums, total: totalAlbums, ts: Date.now()})); }catch(e){}
     try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
     // Clear popup cache so next open shows fresh data
@@ -16522,8 +16532,9 @@ window.__refetchAlbums = async function(wasRefetch){
                 if(!aA || aA === 'various' || aA === 'variousartists') return false;
                 var _aLo2 = k.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
                 if(!nameMatchArtists(aA, _aLo2)) return false;
-                // Filter out singles (trackCount <= 1)
-                if(a.trackCount && a.trackCount <= 1) return false;
+                // Filter out singles (trackCount <= 1 or unknown)
+                var _tc = a.trackCount;
+                if(_tc !== null && _tc !== undefined && _tc <= 1) return false;
                 return true;
               });
               if(!ahAD.artists[k].length) delete ahAD.artists[k];
@@ -16707,6 +16718,16 @@ window.__refetchAlbums = async function(wasRefetch){
     var progEl = document.getElementById('ahProgressText');
     if(progEl) progEl.textContent = 'Fetching albums\u2026 ' + artistsDone + '/' + pinnedArtists.length;
     // Save incrementally
+    // Strip singles from artistAlbums before saving to cache
+    try{
+      Object.keys(artistAlbums).forEach(function(k){
+        artistAlbums[k] = artistAlbums[k].filter(function(a){
+          var _tc2 = a.trackCount;
+          return _tc2 === null || _tc2 === undefined || _tc2 > 1;
+        });
+        if(!artistAlbums[k].length) delete artistAlbums[k];
+      });
+    }catch(_){}
     try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now()})); }catch(e){}
   }
   // Run workers
@@ -16769,8 +16790,8 @@ function _renderAhFromData(artistAlbums){
       ahHtml += '<div class="dp-ah-album" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
       ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'"'+(ahAlb._manual?' data-manual="1"':'')+'>';
       ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
-      var _ahBgSize = ahAlb._manual ? 'background-size:contain;background-repeat:no-repeat;' : 'background-size:cover;background-position:center;';
-      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;'+_ahBgSize+'flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'" data-art-url="'+escapeHtml(ahAlb.artworkUrl100||'')+'"></div>';
+      // Manual albums use img tag for proper sizing; others use background-image
+      if(ahAlb._manual && ahArt){ ahHtml += '<img src="'+escapeHtml(ahArt)+'" style="width:36px;height:36px;border-radius:6px;object-fit:contain;flex-shrink:0;background:var(--bg);" onerror="this.style.display=\'none\'" />'; } else { ahHtml += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'" data-art-url="'+escapeHtml(ahAlb.artworkUrl100||'')+'"></div>'; }
       ahHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(ahAlb.collectionName||'Unknown')+'</div>';
       var _ae = getAlbumEdits()[ahAlb.collectionId] || {};
       var _showDate = _ae.date || (ahAlb.releaseDate||'').slice(0,10);
