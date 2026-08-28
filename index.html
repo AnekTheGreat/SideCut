@@ -7313,13 +7313,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.1.8';
+  const APP_VERSION = '50.1.9';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '50.1.8'){
+    if(_lastCacheVer !== '50.1.9'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
-      localStorage.setItem('sidecut_discCacheVersion', '50.1.8');
+      localStorage.removeItem('sidecut_ahArtistData');
+      localStorage.setItem('sidecut_discCacheVersion', '50.1.9');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7334,6 +7335,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.1.9', date: 'August 28, 2026 at 11:55 pm EDT', title: 'Album History fixes — missing albums, artwork, track loading', items: [
+      'Fixed albums with unknown trackCount being silently dropped (trackCount || 0 bug)',
+      'Fixed old album track loading with Deezer and MusicBrainz fallbacks',
+      'Upscaled Deezer artwork from 250x250 to 600x600',
+      'Added track count display for albums where it was previously unknown',
+      'Forced cache clear on version change to ensure fixes take effect',
+    ]},
 
     { version: '50.0.10', date: 'August 27, 2026 at 7:00 pm EDT', title: 'Album History works again — fetches only when you tap it', items: [
       'Album History button re-enabled: tap 📀 Albums to fetch your pinned artists\u2019 discographies',
@@ -16335,9 +16343,9 @@ window.__refetchArtistAlbums = async function(artistName){
         results.forEach(function(r){
           if(!r || !r.collectionName) return;
           var collectionId = r.collectionId;
-          var trackCount = r.trackCount || 0;
+          var trackCount = r.trackCount;
           var relDate = r.releaseDate || '';
-          if(trackCount <= 1) return; // skip singles
+          if(trackCount !== null && trackCount !== undefined && trackCount <= 1) return; // skip singles
           if(seenCids[collectionId]) return;
           if(isAlbumHidden(collectionId, r.collectionName)) return; // user-deleted album stays deleted across refetches
           var tNorm = normTitle(r.collectionName);
