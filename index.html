@@ -1831,6 +1831,17 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button id="ahExternalCancel" style="display:none; grid-column:1/-1; padding:8px 16px; font-size:12px; font-weight:600; border:1px solid var(--coral); border-radius:10px; background:rgba(255,80,80,0.08); color:var(--coral); cursor:pointer; text-align:center;">✖ Cancel album fetch</button>
       <button id="discoverSingles" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🎵 Singles <span class="online-badge">ONLINE</span></button>
   </div>
+  <!-- AI status + fetch progress -->
+  <div id="ahFetchProgress" style="display:none; margin-bottom:10px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; padding:0 2px;">
+      <span id="ahFetchProgressText" style="font-size:11px; color:var(--ink-dim);">Fetching albums...</span>
+      <span id="ahFetchProgressPct" style="font-size:11px; color:var(--coral); font-weight:600;">0%</span>
+    </div>
+    <div style="width:100%; height:4px; border-radius:2px; background:rgba(255,255,255,0.06); overflow:hidden;">
+      <div id="ahFetchProgressBar" style="height:100%; width:0%; border-radius:2px; background:var(--coral); transition:width 0.3s ease;"></div>
+    </div>
+    <div id="ahAIStatus" style="display:flex; align-items:center; gap:4px; margin-top:4px; font-size:10px;"></div>
+  </div>
   <div id="albumHistoryContainer" style="display:none; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,0.03); overflow:hidden;">
     <div style="padding:10px 14px; font-size:13.5px; font-weight:600; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;">
       <span style="font-size:15px;">📀</span> Album history
@@ -16278,6 +16289,16 @@ window.__refetchArtistAlbums = async function(artistName){
   window.__ahFetching = true;
   window.__ahFetchingStartedAt = Date.now();
   window.__ahCancelled = false;
+  // Show home screen progress bar
+  var _hpWrap = document.getElementById('ahFetchProgress');
+  if(_hpWrap) _hpWrap.style.display = 'block';
+  var _hpBar = document.getElementById('ahFetchProgressBar');
+  if(_hpBar) _hpBar.style.width = '0%';
+  var _hpPct = document.getElementById('ahFetchProgressPct');
+  if(_hpPct) _hpPct.textContent = '0%';
+  // Show AI status indicator
+  var _aiEl = document.getElementById('ahAIStatus');
+  if(_aiEl){ _aiEl.innerHTML = _aiGeminiKey ? '<span style="color:var(--coral);">&#9679;</span> <span style="color:var(--ink-dim);">Using AI for complete discographies</span>' : '<span style="color:var(--ink-dim);">&#9675;</span> <span style="color:var(--ink-dim);">No AI key — <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="openSettingsTo(\'ai\')">Add Gemini API key</span> for complete album lookups</span>'; }
   try {
     // Show inline cancel below subtitle
     var _sub = document.getElementById('discPopupSub');
@@ -16800,6 +16821,13 @@ window.__refetchAlbums = async function(wasRefetch){
     // Update progress
     var progEl = document.getElementById('ahProgressText');
     if(progEl) progEl.textContent = 'Fetching albums\u2026 ' + artistsDone + '/' + pinnedArtists.length;
+    // Update home screen progress bar
+    var _hpBar = document.getElementById('ahFetchProgressBar');
+    var _hpPct = document.getElementById('ahFetchProgressPct');
+    var _hpTxt = document.getElementById('ahFetchProgressText');
+    if(_hpBar){ var _pct = Math.round((artistsDone / pinnedArtists.length) * 100); _hpBar.style.width = _pct + '%'; }
+    if(_hpPct){ _hpPct.textContent = Math.round((artistsDone / pinnedArtists.length) * 100) + '%'; }
+    if(_hpTxt){ _hpTxt.textContent = 'Fetching albums... ' + artistsDone + '/' + pinnedArtists.length; }
     // Save incrementally
     // Strip singles from artistAlbums before saving to cache
     try{
@@ -16825,6 +16853,9 @@ window.__refetchAlbums = async function(wasRefetch){
   for(var w=0; w<workerCount; w++) workers.push(runWorkers());
   await Promise.all(workers);
   window.__ahFetching = false;
+  // Hide home screen progress bar
+  var _hpWrap2 = document.getElementById('ahFetchProgress');
+  if(_hpWrap2) _hpWrap2.style.display = 'none';
   if(window.__ahCancelled){
     toast('\ud83d\udcc0 Fetch cancelled.', 2000);
     // Still render whatever we got
