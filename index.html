@@ -7314,11 +7314,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
   const APP_VERSION = '50.1.5';
-  // Invalidate any cached Album History popup that still has watermark text
+  // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
-    var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
-    if(_ahCache && (_ahCache.indexOf('MusicBrainz') !== -1 || _ahCache.indexOf('\u00b7 Deezer') !== -1 || _ahCache.indexOf('dp-empty') !== -1 || _ahCache.indexOf('No albums found') !== -1)){
-      localStorage.removeItem('discPopupCache_📀 Album History');
+    var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
+    if(_lastCacheVer !== '50.1.5'){
+      Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
+      localStorage.setItem('sidecut_discCacheVersion', '50.1.5');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -16257,7 +16258,7 @@ window.__refetchArtistAlbums = async function(artistName){
       var lookupCount = 0;
       var seenCids = {};
       var seenTitles = {};
-      var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup)\b|\s[–—]\s*(single|remix)\b/i;
+      var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|ep|remix album)\b|\s[–—]\s*(single|remix)\b/i;
       var dzNoise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|best of|top hits|workout|party mix|dance party|party songs|collaborations|playlist|essentials?|greatest)\b|\s[–—]?\s*mix(es)?$/i;
       var normTitle = function(t){ return (t||'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/\s*[-–—]\s*(deluxe|expanded|special|bonus|explicit|clean|remastered|remaster|re.?recorded|version).*$/i,'').replace(/\b(soundtrack|original motion picture soundtrack)\b/gi,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim(); };
       var filterInto = function(results){
@@ -16275,7 +16276,7 @@ window.__refetchArtistAlbums = async function(artistName){
           var rArtist = primaryArtistName(r.artistName || '').toLowerCase().trim();
           if(!rArtist || rArtist === 'various artists') return;
           // Strict match: album artist must be exactly the pinned artist, or start with it
-          if(rArtist !== artistLower && !rArtist.startsWith(artistLower) && !artistLower.startsWith(rArtist)) return;
+          if(rArtist !== artistLower && !(rArtist.startsWith(artistLower) && (rArtist.length === artistLower.length || /[^a-z]/.test(rArtist.charAt(artistLower.length)))) && !(artistLower.startsWith(rArtist) && (artistLower.length === rArtist.length || /[^a-z]/.test(artistLower.charAt(rArtist.length))))) return;
           seenCids[collectionId] = 1;
           seenTitles[tNorm] = 1;
           if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
@@ -16325,7 +16326,7 @@ window.__refetchArtistAlbums = async function(artistName){
             if(!alb || !alb.title) return;
             if(seenTitles[normTitle(alb.title)]) return;
             if(noise.test(alb.title)) return;
-            if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep') return;
+            if(alb.record_type && alb.record_type !== 'album') return;
             var collectionId = String(alb.id);
             if(seenCids[collectionId]) return;
             seenCids[collectionId] = 1;
@@ -16355,7 +16356,7 @@ window.__refetchArtistAlbums = async function(artistName){
               // (old studio albums are often tagged "Compilation" on MB)
               var secTypes = (rg['secondary-types'] || []);
               var priType = rg['primary-type'] || '';
-              if(priType !== 'Album' && priType !== 'EP') return;
+              if(priType !== 'Album') return;
               // Only reject soundtrack, dj-mix, mixtape — allow compilation, live, remix, etc.
               var mbBadSec = secTypes.filter(function(s){ return /soundtrack|dj-?mix|mixtape/i.test(s); });
               if(mbBadSec.length > 0) return;
@@ -16460,6 +16461,16 @@ window.__refetchAlbums = async function(wasRefetch){
       if(ahADRaw){
         var ahAD = JSON.parse(ahADRaw);
         if(ahAD && ahAD.artists && Object.keys(ahAD.artists).length > 0){
+          // Filter out hidden albums before rendering from cache
+          try{
+            var _hAlb = JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]');
+            if(_hAlb.length){
+              Object.keys(ahAD.artists).forEach(function(k){
+                ahAD.artists[k] = ahAD.artists[k].filter(function(a){ return _hAlb.indexOf(String(a.collectionId)) === -1; });
+                if(!ahAD.artists[k].length) delete ahAD.artists[k];
+              });
+            }
+          }catch(_){}
           _renderAhFromData(ahAD.artists);
           return;
         }
@@ -16492,7 +16503,7 @@ window.__refetchAlbums = async function(wasRefetch){
     mbChain = p.catch(function(){});
     return p;
   };
-  var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup)\b|\s[\u2013\u2014]\s*(single|remix)\b/i;
+  var noise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|ep|remix album)\b|\s[\u2013\u2014]\s*(single|remix)\b/i;
   var dzNoise = /\b(karaoke|tribute|bootleg|unreleased|video album|remixes|remix bundle|focus collection|non.?stop|mashup|best of|top hits|workout|party mix|dance party|party songs|collaborations|playlist|essentials?|greatest)\b|\s[\u2013\u2014]?\s*mix(es)?$/i;
   var normTitle = function(t){ return (t||'').toLowerCase().replace(/\([^)]*\)/g,'').replace(/\s*[\u2013\u2014]\s*(deluxe|expanded|special|bonus|explicit|clean|remastered|remaster|re.?recorded|version).*$/i,'').replace(/\b(soundtrack|original motion picture soundtrack)\b/gi,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim(); };
   var filterInto = function(results, artistName){
@@ -16562,7 +16573,7 @@ window.__refetchAlbums = async function(wasRefetch){
             var seenT2={}; artistAlbums[a.name].forEach(function(x){ seenT2[normTitle(x.collectionName)]=1; });
             if(seenT2[normTitle(alb.title)]) return;
             if(noise.test(alb.title)) return;
-            if(alb.record_type && alb.record_type!=='album' && alb.record_type!=='ep') return;
+            if(alb.record_type && alb.record_type!=='album') return;
             var cid2 = String(alb.id);
             var seenC2={}; artistAlbums[a.name].forEach(function(x){ seenC2[x.collectionId]=1; });
             if(seenC2[cid2]) return;
@@ -16584,7 +16595,7 @@ window.__refetchAlbums = async function(wasRefetch){
             rgData['release-groups'].forEach(function(rg){
               if(!rg||!rg.title) return;
               var priType = rg['primary-type']||'';
-              if(priType!=='Album'&&priType!=='EP') return;
+              if(priType!=='Album') return;
               var secTypes = rg['secondary-types']||[];
               if(secTypes.some(function(s){ return /soundtrack|dj-?mix|mixtape/i.test(s); })) return;
               if(!artistAlbums[a.name]) artistAlbums[a.name]=[];
