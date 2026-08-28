@@ -16079,12 +16079,41 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               // If all sources failed, try other sources as fallback
               if(!container.dataset.searchFallbackDone){
                 container.dataset.searchFallbackDone = '1';
+                // Try iTunes search variations first
                 var _fbSources = [
                   { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200' },
+                  { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(albumName) + '&media=music&entity=song&limit=200' },
                   { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=song&limit=200' }
                 ];
                 trackSources = _fbSources;
-                return fetchTracks(trackSources).catch(function(){});
+                return fetchTracks(trackSources).then(function(){}, function(){
+                  // If all iTunes searches fail, try Deezer
+                  if(container.dataset.dzFallbackDone) return;
+                  container.dataset.dzFallbackDone = '1';
+                  container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Trying Deezer...</div>';
+                  return fetchWithProxy('https://api.deezer.com/search?q=' + encodeURIComponent(artistName + ' ' + albumName) + '&limit=50').then(function(r){ return r && r.ok ? r.json() : {data:[]}; }).then(function(dzData){
+                    var dzTracks = (dzData.data||[]).filter(function(t){
+                      if(!t || !t.title) return false;
+                      var _tA = (t.artist && t.artist.name || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                      var _pA = artistName.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                      if(!_tA || (_tA.indexOf(_pA) === -1 && _pA.indexOf(_tA) === -1)) return false;
+                      var _tTitle = t.title.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                      var _aTitle = albumName.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                      // Loose match: check if album name words appear in any track album title
+                      return true;
+                    }).map(function(t, ix){ return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1, previewUrl: t.preview || '' }; });
+                    if(dzTracks.length > 0){ return finishTracks(dzTracks); }
+                    // Final fallback: MusicBrainz recording search
+                    return fetchWithProxy('https://musicbrainz.org/ws/2/recording/?query=' + encodeURIComponent(artistName + ' ' + albumName) + '&fmt=json&limit=50').then(function(r2){ return r2 && r2.ok ? r2.json() : {recordings:[]}; }).then(function(mbData){
+                      var mbTracks = (mbData.recordings||[]).filter(function(rec){
+                        var _rA = ((rec['artist-credit'] && rec['artist-credit'][0] && rec['artist-credit'][0].name) || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                        var _pA = artistName.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+                        return _rA && (_rA.indexOf(_pA) !== -1 || _pA.indexOf(_rA) !== -1);
+                      }).map(function(rec, ix){ return { trackName: rec.title, artistName: artistName, trackTimeMillis: rec.length || 0, trackNumber: ix + 1 }; });
+                      return finishTracks(mbTracks);
+                    }).catch(function(){});
+                  }).catch(function(){});
+                });
               }
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
               return null;
@@ -16608,8 +16637,8 @@ window.__refetchAlbums = async function(wasRefetch){
     var artistLower = primaryArtistName(artistName).toLowerCase().trim();
     results.forEach(function(r){
       if(!r || !r.collectionName) return;
-      var cid = r.collectionId; var tc = r.trackCount || 0;
-      if(tc <= 1) return; // skip singles
+      var cid = r.collectionId; var tc = r.trackCount;
+      if(tc !== null && tc !== undefined && tc <= 1) return; // skip singles
       if(!artistAlbums[artistName]) artistAlbums[artistName] = [];
       var seenC = {}; artistAlbums[artistName].forEach(function(x){ seenC[x.collectionId]=1; });
       if(seenC[cid]) return;
