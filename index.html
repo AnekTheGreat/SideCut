@@ -7313,7 +7313,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '50.1.5';
+  const APP_VERSION = '50.1.6';
   // Invalidate any cached Album History popup that still has watermark text
   try{
     var _ahCache = localStorage.getItem('discPopupCache_📀 Album History');
@@ -7333,6 +7333,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '50.1.6', date: 'August 28, 2026', title: 'Fix glitched album artwork thumbnails', items: [
+      'Album artwork URLs no longer broken by escapeHtml converting & to &amp;',
+      'Added overflow:hidden to artwork containers to prevent visual overflow',
+      'Fixed artwork rendering in Album History, Singles, and Discover sections',
+    ]},
     { version: '50.0.10', date: 'August 27, 2026 at 7:00 pm EDT', title: 'Album History works again — fetches only when you tap it', items: [
       'Album History button re-enabled: tap 📀 Albums to fetch your pinned artists\u2019 discographies',
       'Fetching only ever runs from an explicit tap \u2014 no auto-fetch on load, no resume loops',
@@ -9699,6 +9704,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 }
   function escapeHtml(s){
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  // Escape a URL for use inside CSS url() — does NOT convert & to &amp; which would break CDN query strings
+  function cssUrl(u){
+    return String(u||'').replace(/[()'"\\]/g, function(c){
+      if(c==='(') return '%28'; if(c===')') return '%29';
+      if(c==="'") return '%27'; if(c==='"') return '%22';
+      return c;
+    });
   }
   function fmtTime(sec){
     if(!isFinite(sec) || sec < 0) sec = 0;
@@ -15707,7 +15720,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           var when = r.date ? r.date.slice(0,10) : '';
           var art = r.art || '';
           html += '<div class="dp-track" data-search="' + escapeHtml((r.title||'') + ' ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.url||'') + '">';
-          html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
+          html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (art ? 'background-image:url(' + cssUrl(art) + ');' : 'background:var(--bg);') + '"></div>';
           html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.title||'Unknown title') + (isNew ? ' <span style="color:var(--coral);font-size:10px;font-weight:700;">NEW</span>' : '') + '</div>';
           html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName||'') + (when ? ' · ' + when : '') + (r.date ? ' (' + r.date.slice(0,10) + ')' : '') + '</div></div></div>';
         }); }
@@ -15777,7 +15790,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             var when = daysAgo + 'd ago';
             var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
             html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '">';
-            html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (art ? 'background-image:url(' + escapeHtml(art) + ');' : 'background:var(--bg);') + '"></div>';
+            html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (art ? 'background-image:url(' + cssUrl(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName) + '</div>';
             html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + ' · ' + when + (r.releaseDate ? ' (' + r.releaseDate.slice(0,10) + ')' : '') + '</div></div></div>';
             totalFound++;
@@ -16655,7 +16668,7 @@ function _renderAhFromData(artistAlbums){
       ahHtml += '<div class="dp-ah-album" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
       ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
       ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
-      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;'+(ahArt?'background-image:url('+escapeHtml(ahArt)+');':'background:var(--bg);')+'"></div>';
+      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'"></div>';
       ahHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(ahAlb.collectionName||'Unknown')+'</div>';
       ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+(ahAlb.releaseDate||'').slice(0,10)+(ahAlb.trackCount?' \u00b7 '+ahAlb.trackCount+' tracks':'')+'</div></div>';
       ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
@@ -16746,7 +16759,7 @@ function _renderAhFromData(artistAlbums){
             var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
             var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
             html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-link="' + escapeHtml(sr.trackViewUrl||'') + '" data-si="' + ki + '-' + sri + '">';
-            html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (sart ? 'background-image:url(' + escapeHtml(sart) + ');' : 'background:var(--bg);') + '"></div>';
+            html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
             html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' · ' + swhen : '') + '</div></div>';
             html += '<span class="dp-ah-x" data-si="' + ki + '-' + sri + '" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
@@ -17486,9 +17499,9 @@ if(!isDiscover) stopDiscoverPreview();
         $('hbCtaDiscoverPA').addEventListener('click', () => { closeHomeBubble(); navigate('discover'); });
       } else {
         body.innerHTML = pinnedArtists.map(a => {
-          const bg = a.art ? 'background-image:url("' + escapeHtml(a.art) + '");' : 'background:var(--bg-raised);';
+          const bg = a.art ? 'background-image:url("' + cssUrl(a.art) + '");' : 'background:var(--bg-raised);';
           return '<div class="hb-list-row pinned-artist-row" data-name="' + escapeHtml(a.name) + '" style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">' +
-            '<div style="width:34px; height:34px; border-radius:50%; background-size:cover; background-position:center; flex-shrink:0; ' + bg + '"></div>' +
+            '<div style="width:34px; height:34px; border-radius:50%; background-size:cover; background-position:center; flex-shrink:0; overflow:hidden; ' + bg + '"></div>' +
             '<span style="flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(a.name) + '</span>' +
             '<button class="unpin-artist" data-name="' + escapeHtml(a.name) + '" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer;">Unpin</button>' +
             '</div>';
@@ -19102,7 +19115,7 @@ window.__refetchSingles = async function(){
       var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
       var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
       html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-si="' + ki + '-' + sri + '">';
-      html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;' + (sart ? 'background-image:url(' + escapeHtml(sart) + ');' : 'background:var(--bg);') + '"></div>';
+      html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
       html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
       html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' \u00b7 ' + swhen : '') + '</div></div>';
       html += '<span class="dp-ah-x" data-si="' + ki + '-' + sri + '" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
