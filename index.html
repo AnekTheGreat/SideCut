@@ -16312,8 +16312,7 @@ window.__refetchArtistAlbums = async function(artistName){
       if(pinnedArtists[pi].name === artistName){ targetArtist = pinnedArtists[pi]; break; }
     }
     if(!targetArtist){ toast('Artist not found in pinned artists.', 2000); window.__ahFetching = false; return; }
-    // Clear this artist's cached data to force re-fetch
-    delete artistAlbums[artistName];
+    // Keep existing cached data — new fetches will merge (not replace) so albums aren't lost
     // Re-fetch using the same logic as __refetchAlbums but for one artist
     var mbChain = Promise.resolve();
     var mbGet = function(u){
@@ -16469,7 +16468,9 @@ window.__refetchArtistAlbums = async function(artistName){
       Object.keys(artistAlbums).forEach(function(k){
         artistAlbums[k] = artistAlbums[k].filter(function(a){
           var _tc3 = a.trackCount;
-          return _tc3 === null || _tc3 === undefined || _tc3 > 1;
+          // Only remove confirmed singles (trackCount exactly 1).
+          // trackCount 0/null/undefined = unknown, keep the album.
+          return _tc3 !== 1;
         });
         if(!artistAlbums[k].length) delete artistAlbums[k];
       });
@@ -16763,7 +16764,8 @@ window.__refetchAlbums = async function(wasRefetch){
       Object.keys(artistAlbums).forEach(function(k){
         artistAlbums[k] = artistAlbums[k].filter(function(a){
           var _tc2 = a.trackCount;
-          return _tc2 === null || _tc2 === undefined || _tc2 > 1;
+          // Only remove confirmed singles (trackCount exactly 1)
+          return _tc2 !== 1;
         });
         if(!artistAlbums[k].length) delete artistAlbums[k];
       });
