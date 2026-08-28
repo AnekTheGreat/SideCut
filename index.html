@@ -16747,6 +16747,53 @@ window.__refetchAlbums = async function(wasRefetch){
         }
       }catch(e){}
     }catch(e){}
+    // --- AI-powered discography lookup (Gemini) ---
+    // Ask Gemini for a complete discography including old albums, movie soundtracks,
+    // compilation features, deluxe editions, etc. that the APIs above may miss.
+    if(!window.__ahCancelled && _aiGeminiKey){
+      try{
+        var _aiPrompt = 'List every album, EP, soundtrack appearance, and compilation feature by ' + a.name + '. Return ONLY a JSON array (no markdown) where each item has: {"title":"Album Name","date":"YYYY-MM-DD","tracks":12,"type":"album|ep|soundtrack|compilation|live"}. Include deluxe/special editions as separate items. Be as complete as possible including old albums from the early 2000s, movie soundtracks, and guest features on compilations. No text explanation, just the JSON array.';
+        var _aiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + _aiGeminiKey, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: _aiPrompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
+          })
+        });
+        if(_aiResp && _aiResp.ok){
+          var _aiData = await _aiResp.json();
+          var _aiText = (_aiData.candidates && _aiData.candidates[0] && _aiData.candidates[0].content && _aiData.candidates[0].content.parts && _aiData.candidates[0].content.parts[0].text) || '';
+          // Strip markdown fences if present
+          _aiText = _aiText.replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
+          var _aiAlbums = JSON.parse(_aiText);
+          if(Array.isArray(_aiAlbums)){
+            if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
+            var _aiSeenT = {}; artistAlbums[a.name].forEach(function(x){ _aiSeenT[normTitle(x.collectionName)]=1; });
+            for(var _aiI=0; _aiI<_aiAlbums.length; _aiI++){
+              var _aiA = _aiAlbums[_aiI];
+              if(!_aiA || !_aiA.title) continue;
+              var _aiTN = normTitle(_aiA.title);
+              if(_aiSeenT[_aiTN]) continue; // already have this album from API
+              _aiSeenT[_aiTN] = 1;
+              // Skip singles from AI results too
+              var _aiTC = _aiA.tracks || null;
+              if(_aiTC === 1) continue;
+              var _aiCid = 'ai_' + a.name.toLowerCase().replace(/[^a-z0-9]/g,'') + '_' + _aiI;
+              artistAlbums[a.name].push({
+                collectionId: _aiCid,
+                collectionName: _aiA.title,
+                artworkUrl100: null,
+                releaseDate: _aiA.date || '',
+                trackCount: _aiTC,
+                _ai: true
+              });
+              totalAlbums++;
+            }
+          }
+        }
+      }catch(_aiErr){}
+    }
     // Sort this artist's albums
     if(artistAlbums[a.name]) artistAlbums[a.name].sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
     artistsDone++;
