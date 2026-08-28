@@ -16023,12 +16023,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           // other big ones until one actually returns songs. Deezer albums
           // go through Deezer's own endpoint instead.
           var trackSources;
-          if(h.dataset.mb){
+          var isManual = (collectionId||'').indexOf('manual_') === 0;
+          if(h.dataset.mb && !isManual){
             trackSources = [{ kind: 'mb', url: 'https://musicbrainz.org/ws/2/release-group/' + collectionId + '?inc=releases&fmt=json' }];
-          }else if(h.dataset.dz){
+          }else if(h.dataset.dz && !isManual){
             trackSources = [{ kind: 'dz', url: 'https://api.deezer.com/album/' + collectionId + '/tracks?limit=100' }];
           }else{
-            trackSources = (collectionId
+            trackSources = (!isManual && collectionId
               ? [albumCountry, 'GB', 'IN', 'US', ''].filter(function(c, i, arr){ return arr.indexOf(c) === i; })
                 .map(function(c){ return 'https://itunes.apple.com/lookup?id=' + collectionId + '&entity=song&limit=200' + (c ? '&country=' + c : ''); })
               : ['https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200'])
@@ -16302,7 +16303,7 @@ window.__refetchArtistAlbums = async function(artistName){
         var dzUrl = 'https://api.deezer.com/search/artist?q=' + encodeURIComponent(a.name);
         var dzResp = await fetchWithProxy(dzUrl);
         var dzData = dzResp && dzResp.ok ? await dzResp.json() : { data: [] };
-        var dzArtist = null; var _dzList = (dzData.data||[]); var _aLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _nmS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; for(var _di=0;_di<_dzList.length;_di++){ var _cand = _nmS(_dzList[_di].name); if(_cand === _aLo || _cand.includes(_aLo) || _aLo.includes(_cand)){ dzArtist = _dzList[_di]; break; } } if(dzArtist && dzArtist.id){
+        var dzArtist = null; var _dzList = (dzData.data||[]); var _aLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _nmS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; for(var _di=0;_di<_dzList.length;_di++){ var _cand = _nmS(_dzList[_di].name); if(nameMatchArtists(_cand, _aLo)){ dzArtist = _dzList[_di]; break; } } if(dzArtist && dzArtist.id){
           var dzAlbumsUrl = 'https://api.deezer.com/artist/' + dzArtist.id + '/albums?limit=100';
           var dzAResp = await fetchWithProxy(dzAlbumsUrl);
           var dzAData = dzAResp && dzAResp.ok ? await dzAResp.json() : { data: [] };
@@ -16431,7 +16432,9 @@ window.__refetchAlbums = async function(wasRefetch){
         } else if(ahCached && ahCached.body && ahCached.ts){
           // Skip cached empty states — always re-fetch fresh data
           if(!/dp-empty|No albums found/i.test(ahCached.body)){
-            openDiscoverPopup('📀 Album History', ahCached.body, ahCached.subtitle || '');
+            var _ahBody2 = ahCached.body;
+            if(_ahBody2.indexOf('ahRefetchBtn') === -1) _ahBody2 = '<div style="text-align:center;padding:4px 0 6px;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch albums</button></div>' + _ahBody2;
+            openDiscoverPopup('📀 Album History', _ahBody2, ahCached.subtitle || '');
             if(typeof window.__wireAH === 'function') window.__wireAH();
             return;
           } else {
@@ -16589,7 +16592,7 @@ window.__refetchAlbums = async function(wasRefetch){
         var dzUrl = 'https://api.deezer.com/search/artist?q=' + encodeURIComponent(a.name);
         var dzResp = await fetchWithProxy(dzUrl);
         var dzData = dzResp && dzResp.ok ? await dzResp.json() : {data:[]};
-        var dzA = null; var _dzList = (dzData.data||[]); var _aLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _nmS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; for(var _di=0;_di<_dzList.length;_di++){ var _cand = _nmS(_dzList[_di].name); if(_cand === _aLo || _cand.includes(_aLo) || _aLo.includes(_cand)){ dzA = _dzList[_di]; break; } } if(dzA && dzA.id){
+        var dzA = null; var _dzList = (dzData.data||[]); var _aLo = (a.name||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); var _nmS = function(_s){ return (_s||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; for(var _di=0;_di<_dzList.length;_di++){ var _cand = _nmS(_dzList[_di].name); if(nameMatchArtists(_cand, _aLo)){ dzA = _dzList[_di]; break; } } if(dzA && dzA.id){
           var dzAUrl = 'https://api.deezer.com/artist/' + dzA.id + '/albums?limit=100';
           var dzAResp = await fetchWithProxy(dzAUrl);
           var dzAData = dzAResp && dzAResp.ok ? await dzAResp.json() : {data:[]};
@@ -16708,9 +16711,10 @@ function _renderAhFromData(artistAlbums){
       var ahAlb = ahAlbums[ahJ];
       var ahArt = ahAlb.artworkUrl100 ? ahAlb.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
       ahHtml += '<div class="dp-ah-album" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
-      ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
+      ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'"'+(ahAlb._manual?' data-manual="1"':'')+'>';
       ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
-      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'" data-art-url="'+escapeHtml(ahAlb.artworkUrl100||'')+'"></div>';
+      var _ahBgSize = ahAlb._manual ? 'background-size:contain;background-repeat:no-repeat;' : 'background-size:cover;background-position:center;';
+      ahHtml += '<div style="width:36px;height:36px;border-radius:6px;'+_ahBgSize+'flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'" data-art-url="'+escapeHtml(ahAlb.artworkUrl100||'')+'"></div>';
       ahHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(ahAlb.collectionName||'Unknown')+'</div>';
       ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+(ahAlb.releaseDate||'').slice(0,10)+(ahAlb.trackCount?' \u00b7 '+ahAlb.trackCount+' tracks':'')+'</div></div>';
       ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" data-cname="'+escapeHtml(ahAlb.collectionName||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
