@@ -16088,8 +16088,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               }
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
               return null;
-              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
-              return null;
             }
             var src = sources[0];
             var finishTracks = function(tracks){
@@ -16210,7 +16208,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                   return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
                 });
               }else{
-                tracks = (data.results||[]).filter(function(r){ return r && r.trackName && (collectionId ? true : (primaryArtistName(r.artistName||'').toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim() && r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim())); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+                tracks = (data.results||[]).filter(function(r){ if(!r || !r.trackName) return false; var _rA = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _pA = primaryArtistName(artistName).toLowerCase().trim(); if(!nameMatchArtists(_rA, _pA)) return false; if(collectionId) return true; return r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim(); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
               }
               return finishTracks(tracks);
             });
@@ -16363,7 +16361,7 @@ window.__refetchArtistAlbums = async function(artistName){
             if(!alb || !alb.title) return;
             if(seenTitles[normTitle(alb.title)]) return;
             if(noise.test(alb.title)) return;
-            if(alb.record_type && alb.record_type !== 'album') return;
+            if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep') return;
             var collectionId = String(alb.id);
             if(seenCids[collectionId]) return;
             if(isAlbumHidden(collectionId, alb.title)) return;
@@ -16668,9 +16666,8 @@ window.__refetchAlbums = async function(wasRefetch){
             var seenT2={}; artistAlbums[a.name].forEach(function(x){ seenT2[normTitle(x.collectionName)]=1; });
             if(seenT2[normTitle(alb.title)]) return;
             if(noise.test(alb.title)) return;
-            if(alb.record_type && alb.record_type!=='album') return;
-            if(alb.nb_tracks && alb.nb_tracks <= 1) return; // skip singles
-            if(alb.nb_tracks && alb.nb_tracks <= 1) return; // skip singles
+            if(alb.record_type && alb.record_type!=='album' && alb.record_type!=='ep') return;
+            if(alb.nb_tracks !== null && alb.nb_tracks !== undefined && alb.nb_tracks <= 1) return; // skip singles
             var cid2 = String(alb.id);
             if(isAlbumHidden(cid2, alb.title)) return;
             var seenC2={}; artistAlbums[a.name].forEach(function(x){ seenC2[x.collectionId]=1; });
