@@ -16170,7 +16170,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               }
               return finishTracks(tracks);
             });
-          })(trackSources).catch(function(){ container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>'; });
+})(trackSources).catch(function(){
+              if(!container.dataset.searchFallbackDone){
+                container.dataset.searchFallbackDone = '1';
+                var _fbUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
+                trackSources = [{ kind: 'it', url: _fbUrl }];
+                return fetchTracks(trackSources).catch(function(){});
+              }
+              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
+            });
         }
       });
     });
@@ -16709,14 +16717,14 @@ function _renderAhFromData(artistAlbums){
     ahHtml += '<div id="'+ahAid+'" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
     for(var ahJ=0; ahJ<ahAlbums.length; ahJ++){
       var ahAlb = ahAlbums[ahJ];
-      var ahArt = ahAlb.artworkUrl100 ? ahAlb.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+      var ahArt = ahAlb.artworkUrl100 ? (ahAlb.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? ahAlb.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : ahAlb.artworkUrl100) : '';
       ahHtml += '<div class="dp-ah-album" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
       ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'"'+(ahAlb._manual?' data-manual="1"':'')+'>';
       ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
       var _ahBgSize = ahAlb._manual ? 'background-size:contain;background-repeat:no-repeat;' : 'background-size:cover;background-position:center;';
       ahHtml += '<div style="width:36px;height:36px;border-radius:6px;'+_ahBgSize+'flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'" data-art-url="'+escapeHtml(ahAlb.artworkUrl100||'')+'"></div>';
       ahHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(ahAlb.collectionName||'Unknown')+'</div>';
-      ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+(ahAlb.releaseDate||'').slice(0,10)+(ahAlb.trackCount?' \u00b7 '+ahAlb.trackCount+' tracks':'')+'</div></div>';
+      ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+(ahAlb.releaseDate||'').slice(0,10)+(ahAlb.artistName?' \u00b7 '+escapeHtml(ahAlb.artistName):'')+(ahAlb.trackCount?' \u00b7 '+ahAlb.trackCount+' tracks':'')+'</div></div>';
       ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" data-cname="'+escapeHtml(ahAlb.collectionName||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
       ahHtml += '</div>';
       ahHtml += '<div id="ahc_trk_'+ahI+'_'+ahJ+'" class="dp-ah-albums" style="display:none;padding:2px 8px 4px 36px;"><div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Tap to load tracks</div></div>';
@@ -16764,6 +16772,7 @@ function _renderAhFromData(artistAlbums){
             var sdata = await sresp.json();
             var sresults = (sdata.results||[]).filter(function(sr){
               if(!sr || !sr.trackName) return false;
+              if(isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return false;
               var _srA2 = primaryArtistName(sr.artistName||'').toLowerCase().trim(); var _saN2 = primaryArtistName(sa.name).toLowerCase().trim(); if(_srA2 !== _saN2 && _srA2.indexOf(_saN2) === -1 && _saN2.indexOf(_srA2) === -1) return false;
               var cn = (sr.collectionName || '').toLowerCase();
               var tn = (sr.trackName || '').toLowerCase();
@@ -16854,6 +16863,8 @@ function _renderAhFromData(artistAlbums){
             artistSingles[aKey].splice(sIdx, 1);
             if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
             totalFound--;
+            // Persist the delete
+            hideSingle(removed.trackId || removed.collectionId || ("manual_" + Date.now()), removed.trackName);
             // Show undo toast
             var undoTimer = setTimeout(function(){ removed.__undone = true; }, 5000);
             toastWithUndo('Removed "' + (removed.trackName||'') + '"', function(){
@@ -18266,6 +18277,9 @@ if(!isDiscover) stopDiscoverPreview();
 
 // --- Album History hidden albums (localStorage) ---
 function getHiddenAlbums(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]'); }catch(e){ return []; } }
+function getHiddenSingles(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenSingles') || '[]'); }catch(e){ return []; } }
+function isSingleHidden(trackId, trackName){ var h = getHiddenSingles(); var tid = String(trackId); if(tid){ for(var i=0;i<h.length;i++){ if(String(h[i]) === tid) return true; } } if(trackName){ var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t){ for(var j=0;j<h.length;j++){ if(h[j] === 't:' + t) return true; } } } return false; }
+function hideSingle(trackId, trackName){ var h = getHiddenSingles(); if(h.indexOf(String(trackId)) === -1) h.push(String(trackId)); var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t && h.indexOf('t:' + t) === -1) h.push('t:' + t); localStorage.setItem('sidecut_hiddenSingles', JSON.stringify(h)); }
 function hideAlbum(collectionId, collectionName){
   var h = getHiddenAlbums();
   if(h.indexOf(String(collectionId)) === -1) h.push(String(collectionId));
@@ -19138,6 +19152,7 @@ window.__refetchSingles = async function(){
       var sdata = await sresp.json();
       var sresults = (sdata.results||[]).filter(function(sr){
         if(!sr || !sr.trackName) return false;
+        if(isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return false;
         var _srA2 = primaryArtistName(sr.artistName||'').toLowerCase().trim(); var _saN2 = primaryArtistName(sa.name).toLowerCase().trim(); if(_srA2 !== _saN2 && _srA2.indexOf(_saN2) === -1 && _saN2.indexOf(_srA2) === -1) return false;
         var cn = (sr.collectionName || '').toLowerCase();
         var tn = (sr.trackName || '').toLowerCase();
@@ -19215,9 +19230,13 @@ window.__refetchSingles = async function(){
       var sIdx = parseInt(parts[1]);
       if(!aKey || isNaN(sIdx)) return;
       // Remove from the data
+      var _removedSingle = artistSingles[aKey] ? artistSingles[aKey][sIdx] : null;
       artistSingles[aKey].splice(sIdx, 1);
       if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
       totalFound--;
+      // Persist the delete
+      if(_removedSingle) hideSingle(_removedSingle.trackId || _removedSingle.collectionId || ("manual_" + Date.now()), _removedSingle.trackName);
+      hideSingle(removed.trackId || removed.collectionId || ("manual_" + Date.now()), removed.trackName);
       // Remove the row from DOM
       var row = this.closest('.dp-track');
       if(row) row.remove();
