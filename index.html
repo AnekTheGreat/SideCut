@@ -16456,7 +16456,6 @@ window.__refetchAlbums = async function(wasRefetch){
             var _hAlb = JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]');
             var _noiseR = /\b(karaoke|tribute|bootleg|unreleased|video album|remix(es| bundle| album)?|focus collection|non.?stop|mashup)\b|\s(?:-|\u2013|\u2014)?(?:\s)*(remix)\b/i;
             Object.keys(ahAD.artists).forEach(function(k){
-              var _aLow = primaryArtistName(k).toLowerCase().trim();
               ahAD.artists[k] = ahAD.artists[k].filter(function(a){
                 if(_hAlb.indexOf(String(a.collectionId)) !== -1) return false;
                 var _at = (a.collectionName||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
@@ -16466,7 +16465,7 @@ window.__refetchAlbums = async function(wasRefetch){
                 var aA = primaryArtistName((a.artistName||k)).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
                 if(!aA || aA === 'various' || aA === 'variousartists') return false;
                 var _aLo2 = k.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
-                if(aA !== _aLow && !nameMatchArtists(aA, _aLow)) return false;
+                if(!nameMatchArtists(aA, _aLo2)) return false;
                 if(a.trackCount && a.trackCount <= 1) return false;
                 return true;
               });
@@ -16682,6 +16681,12 @@ window.__refetchAlbums = async function(wasRefetch){
 
 // Helper: render Album History popup from artist data object
 function _renderAhFromData(artistAlbums){
+  // Never render an empty list: an empty body would overwrite
+  // the cached popup with a bare "Refetch" shell (the disappearing-albums glitch).
+  if(!artistAlbums || !Object.keys(artistAlbums) .length){
+    openDiscoverPopup('📀 Album History', '<div class="dp-empty" style="padding:30px 12px;">No albums found.<br><span style="font-size:11px;color:var(--ink-dim);">Try pinning some artists first.</span></div>', '');
+    return;
+  }
   var ahHtml = '';
   var ahArtistKeys = Object.keys(artistAlbums).sort();
   var ahTotal = 0;

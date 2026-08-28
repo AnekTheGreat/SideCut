@@ -1,5 +1,15 @@
 # SideCut — repository memory
 
+## Post-v50.0.10 follow-up #3 (Aug 28, 2026, no version bump) — "only first and last albums" Album History glitch
+
+Root cause: the cached-branch re-sanitize that serves sidecut_ahArtistData compared a normalized row artist name against the raw pinned-artist key, which keeps spaces and case intact。 nameMatchArtists failed for any real artist with a space,so every row for that artist was silently dropped from the re-render → the popup showed a bare Refetch shell or a few surviving rows,and that truncated shell got cached,persisting across close and reopen. A fresh Refetch, which compares raw verses raw consistently, showed everything — hence“refetch fixes it, exit and return breaks it”.
+
+Fix, no version bump, APP_VERSION stays 50.1.5 and sw.js untouched: 1) the cache-branch sanitizer now uses the normalized artist key everywhere and only nameMatchArtists — normalized against normalized;2) _renderAhFromData with an empty input now shows dp-empty instead of rendering a bare Refetch shell, so no path can cache a truncated body over a good full popup cache。
+
+
+
+Gotcha:the seed-merge sanitizer already normalized both sides;the cache-branch one was the inconsistent copy。 Always normalize both artist sides,and use nameMatchArtists only,never a raw strict-equality compare between differently normalized strings。
+
 ## Post-v50.0.10 follow-up #2 (Aug  ồ28,  ồ2026, no version bump) — AH filtering/delete/cover/Retry/pinned-notif fixes
 - **NO version bump per user.** sw.js untouched. APP_VERSION stays 50.0.10。
 - **EPs/singles by the artist are FINE — don't delete them.** User: "No don't delete eps那些are fine" (this reversed the earlier "too general" complaint — there the problem was *wrong-artist* EPs, not EPs per se. The artist-match filter (`nameMatchArtists` → `primaryArtistName` both sides) excludes wrong-artist rows; legit EPs/high-track-count singles stay。) All 4 `noise`/`_noiseR`/`_noiseS` regexes (fresh fetch, per-artist refetch, cache re-sanitize, seed re-sanitize) dropped `ep`/`single` (keep karaoke/tribute/bootleg/unreleased/video album/remix (es|bundle|album)/focus collection/non.?stop/mashup + trailing "remix"。 Also each fresh-fetch `filterInto` still `trackCount <= 1` skip singles — matches the cached sanitize behavior。
