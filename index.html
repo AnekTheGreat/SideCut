@@ -16363,6 +16363,26 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 // live in sidecut_ahCovers keyed by normalized artist|album; fresh renders
 // use data-art-url from iTunes, so without this the manual cover disappears
 // after a refetch.
+// Per-artist refetch buttons
+document.querySelectorAll('#discPopupBody .dp-ah-artist-refetch').forEach(function(btn){
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var artistName = this.dataset.artist;
+    if(!artistName) return;
+    var self = this;
+    self.textContent = '\u23f3';
+    self.style.pointerEvents = 'none';
+    toast('\u21bb Refetching ' + artistName + '\u2026', 2000);
+    if(typeof window.__refetchArtistAlbums === 'function'){
+      window.__refetchArtistAlbums(artistName).then(function(){
+        try{
+          var cache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+          if(cache && cache.artists) _renderAhFromData(cache.artists);
+        }catch(_e){}
+      });
+    }
+  });
+});
 try{ if(typeof __ahResolveArtworks === 'function') __ahResolveArtworks(); }catch(_e){}
 
 // Background Album History fetch — runs independently of popup
@@ -17016,6 +17036,7 @@ function _renderAhFromData(artistAlbums){
     ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
     ahHtml += '<span style="font-size:13px;font-weight:600;flex:1;">'+escapeHtml(ahArtist)+'</span>';
     ahHtml += '<span style="font-size:11px;color:var(--ink-dim);">'+ahAlbums.length+' album'+(ahAlbums.length!==1?'s':'')+'</span>';
+    ahHtml += '<span class="dp-ah-artist-refetch" data-artist="'+escapeHtml(ahArtist)+'" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:11px;cursor:pointer;flex-shrink:0;" title="Refetch '+escapeHtml(ahArtist)+'">\u21bb</span>';
     ahHtml += '</div>';
     ahHtml += '<div id="'+ahAid+'" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
     for(var ahJ=0; ahJ<ahAlbums.length; ahJ++){
