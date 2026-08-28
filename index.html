@@ -16659,6 +16659,8 @@ window.__refetchAlbums = async function(wasRefetch){
         if(ahCached && ahCached.body && /fetching|loading|spinner|\u23f3/i.test(ahCached.body)){
           localStorage.removeItem('discPopupCache_📀 Album History');
         } else if(ahCached && ahCached.body && ahCached.ts){
+          // Invalidate old caches without per-artist refetch buttons
+          if(ahCached.body.indexOf('dp-ah-artist-refetch') === -1){ localStorage.removeItem('discPopupCache_\ud83d\udcbf Album History'); ahCached = null; }
           // Skip cached empty states — always re-fetch fresh data
           if(!/dp-empty|No albums found/i.test(ahCached.body)){
             var _ahBody2 = ahCached.body;
@@ -17150,7 +17152,7 @@ function _renderAhFromData(artistAlbums){
           }
           html += '</div></div>';
         }
-        html = '<div style="text-align:center;padding:4px 0 6px;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button></div>' + html;
+        html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button><button id="singlesRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + html;
         openDiscoverPopup('🎵 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
 
         // Wire up artist headers
@@ -18604,11 +18606,37 @@ if(!isDiscover) stopDiscoverPreview();
 
 // --- Album History hidden albums (localStorage) ---
 function getHiddenAlbums(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]'); }catch(e){ return []; } }
+function getRecentlyDeletedSingles(){ try{ return JSON.parse(localStorage.getItem('sidecut_recentlyDeletedSingles') || '[]'); }catch(e){ return []; } }
+function restoreSingle(trackId){
+  var rs = getRecentlyDeletedSingles();
+  var track = null;
+  for(var i=0;i<rs.length;i++){ if(String(rs[i].trackId) === String(trackId)){ track = rs[i]; rs.splice(i,1); break; } }
+  if(!track) return;
+  localStorage.setItem('sidecut_recentlyDeletedSingles', JSON.stringify(rs));
+  // Remove from hidden singles
+  var h = getHiddenSingles();
+  var idx = h.indexOf(String(trackId)); if(idx !== -1) h.splice(idx, 1);
+  var _tn = (track.trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+  if(_tn){ var _ti = h.indexOf('t:' + _tn); if(_ti !== -1) h.splice(_ti, 1); }
+  localStorage.setItem('sidecut_hiddenSingles', JSON.stringify(h));
+  toast('Restored "' + track.trackName + '" to Singles.', 2000);
+}
 function getHiddenSingles(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenSingles') || '[]'); }catch(e){ return []; } }
 function getAlbumEdits(){ try{ return JSON.parse(localStorage.getItem('sidecut_albumEdits') || '{}'); }catch(e){ return {}; } }
 function saveAlbumEdit(collectionId, field, value){ var edits = getAlbumEdits(); if(!edits[collectionId]) edits[collectionId] = {}; edits[collectionId][field] = value; localStorage.setItem('sidecut_albumEdits', JSON.stringify(edits)); }
 function isSingleHidden(trackId, trackName){ var h = getHiddenSingles(); var tid = String(trackId); if(tid){ for(var i=0;i<h.length;i++){ if(String(h[i]) === tid) return true; } } if(trackName){ var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t){ for(var j=0;j<h.length;j++){ if(h[j] === 't:' + t) return true; } } } return false; }
-function hideSingle(trackId, trackName){ var h = getHiddenSingles(); if(h.indexOf(String(trackId)) === -1) h.push(String(trackId)); var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t && h.indexOf('t:' + t) === -1) h.push('t:' + t); localStorage.setItem('sidecut_hiddenSingles', JSON.stringify(h)); }
+function hideSingle(trackId, trackName){
+  // Record in recently deleted singles (30-day retention)
+  try{
+    var rs = getRecentlyDeletedSingles();
+    rs = rs.filter(function(s){ return String(s.trackId) !== String(trackId); });
+    rs.unshift({ trackId: trackId, trackName: trackName || '', deletedAt: Date.now() });
+    var cutoff = Date.now() - 30*24*60*60*1000;
+    rs = rs.filter(function(s){ return s.deletedAt > cutoff; });
+    localStorage.setItem('sidecut_recentlyDeletedSingles', JSON.stringify(rs));
+  }catch(_){}
+  var h = getHiddenSingles(); if(h.indexOf(String(trackId)) === -1) h.push(String(trackId)); var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t && h.indexOf('t:' + t) === -1) h.push('t:' + t); localStorage.setItem('sidecut_hiddenSingles', JSON.stringify(h));
+}
 // --- Recently Deleted Albums (30-day history) ---
 function getRecentlyDeleted(){ try{ return JSON.parse(localStorage.getItem('sidecut_recentlyDeleted') || '[]'); }catch(e){ return []; } }
 function addRecentlyDeleted(album){
@@ -19582,7 +19610,7 @@ window.__refetchSingles = async function(){
     }
     html += '</div></div>';
   }
-  html = '<div style="text-align:center;padding:4px 0 6px;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button></div>' + html;
+  html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button><button id="singlesRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + html;
   openDiscoverPopup('\u2728 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
   // Wire up artist headers
   document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr').forEach(function(h){
@@ -19617,9 +19645,18 @@ window.__refetchSingles = async function(){
       artistSingles[aKey].splice(sIdx, 1);
       if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
       totalFound--;
+      // 2-step confirm: show "Are you sure?" then actually delete
+      var _self = this;
+      if(!_self._confirmStep){
+        _self._confirmStep = 1;
+        _self.textContent = '?';
+        _self.style.color = '#ff4444';
+        _self.title = 'Tap again to confirm delete';
+        setTimeout(function(){ _self._confirmStep = 0; _self.textContent = '\u00d7'; _self.style.color = ''; _self.title = ''; }, 3000);
+        return;
+      }
       // Persist the delete
       if(_removedSingle) hideSingle(_removedSingle.trackId || _removedSingle.collectionId || ("manual_" + Date.now()), _removedSingle.trackName);
-      // hideSingle(removed...) was a crash bug — removed undefined variable; the _removedSingle call above handles persistence
       // Remove the row from DOM
       var row = this.closest('.dp-track');
       if(row) row.remove();
@@ -19651,6 +19688,42 @@ document.addEventListener('click', function(e){
   e.preventDefault();
   // Keep popup open — __refetchSingles will re-render it
   window.__refetchSingles();
+}, true);
+// Recently Deleted Singles button
+document.addEventListener('click', function(e){
+  var t = e.target.closest ? e.target.closest('#singlesRecentlyDeletedBtn') : null;
+  if(!t) return;
+  e.stopPropagation();
+  e.preventDefault();
+  var rs = getRecentlyDeletedSingles();
+  if(!rs.length){ openDiscoverPopup('\u2728 Recently Deleted Singles', '<div class="dp-empty" style="padding:20px;">No recently deleted singles.</div>', ''); return; }
+  var rHtml = '<div style="text-align:center;padding:4px 0 6px;"><button id="singlesRDBackBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u2190 Back to Singles</button></div>';
+  for(var ri=0; ri<rs.length; ri++){
+    var s = rs[ri];
+    var daysAgo = Math.floor((Date.now() - s.deletedAt)/86400000);
+    var when = daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+    rHtml += '<div class="dp-track" style="display:flex;align-items:center;gap:8px;padding:6px 12px;">';
+    rHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(s.trackName || 'Unknown') + '</div>';
+    rHtml += '<div style="font-size:11px;color:var(--ink-dim);">deleted ' + when + '</div></div>';
+    rHtml += '<button class="singles-rd-restore" data-trackid="' + escapeHtml(String(s.trackId)) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">Restore</button>';
+    rHtml += '</div>';
+  }
+  openDiscoverPopup('\u2728 Recently Deleted Singles', rHtml, rs.length + ' deleted single' + (rs.length!==1?'s':''));
+  // Wire restore buttons
+  document.querySelectorAll('#discPopupBody .singles-rd-restore').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      restoreSingle(this.dataset.trackid);
+      this.closest('.dp-track').remove();
+      var remaining = document.querySelectorAll('#discPopupBody .singles-rd-restore').length;
+      var sub = document.getElementById('discPopupSub');
+      if(sub) sub.textContent = remaining + ' deleted single' + (remaining!==1?'s':'');
+      if(remaining === 0) openDiscoverPopup('\u2728 Recently Deleted Singles', '<div class="dp-empty" style="padding:20px;">No recently deleted singles.</div>', '');
+    });
+  });
+  // Wire back button
+  var backBtn = document.getElementById('singlesRDBackBtn');
+  if(backBtn) backBtn.addEventListener('click', function(){ window.__refetchSingles(); });
 }, true);
 function loadCachedDiscoverPopup(key){
   try{
