@@ -15854,7 +15854,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       window.__ahSelectMode = !window.__ahSelectMode;
       if(window.__ahSelectMode){
         // Show checkboxes, hide ✕ buttons, add delete bar
-        document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display='none'; });
+        document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display='none'; }); document.querySelectorAll('#discPopupBody .dp-ah-edit').forEach(function(b){ b.style.display='none'; });
         document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
           if(!h.querySelector('.dp-ah-cb')){
             var cb = document.createElement('input');
@@ -15883,20 +15883,20 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           });
           window.__ahSelectMode = false;
           var db = document.getElementById('ahDeleteBar'); if(db) db.remove();
-          document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; });
+          document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; }); document.querySelectorAll('#discPopupBody .dp-ah-edit').forEach(function(b){ b.style.display=''; });
           toast('Deleted ' + cbs.length + ' album' + (cbs.length!==1?'s':'') + '.', 2000);
         });
         document.getElementById('ahCancelSelBtn').addEventListener('click', function(){
           window.__ahSelectMode = false;
           var db = document.getElementById('ahDeleteBar'); if(db) db.remove();
           document.querySelectorAll('#discPopupBody .dp-ah-cb').forEach(function(cb){ cb.remove(); });
-          document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; });
+          document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; }); document.querySelectorAll('#discPopupBody .dp-ah-edit').forEach(function(b){ b.style.display=''; });
         });
         selectBtn.textContent='\u2714 Done';
       } else {
         // Exit select mode
         document.querySelectorAll('#discPopupBody .dp-ah-cb').forEach(function(cb){ cb.remove(); });
-        document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; });
+        document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(b){ b.style.display=''; }); document.querySelectorAll('#discPopupBody .dp-ah-edit').forEach(function(b){ b.style.display=''; });
         var db = document.getElementById('ahDeleteBar'); if(db) db.remove();
         selectBtn.textContent='\u2610 Select';
       }
@@ -15970,6 +15970,45 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       });
     });
     // Wire up remove buttons on album headers
+  // Wire up edit buttons on album headers
+  document.querySelectorAll('#discPopupBody .dp-ah-edit').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var cid = this.dataset.cid;
+      var artist = this.dataset.artist || '';
+      var album = this.dataset.album || '';
+      var curDate = this.dataset.date || '';
+      var curTracks = this.dataset.tracks || '';
+      // Show edit form
+      var formHtml = '<div style="padding:12px;border-bottom:1px solid var(--line);margin-bottom:4px;" id="ahEditForm">';
+      formHtml += '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">Edit "' + album.replace(/"/g, '&quot;') + '"</div>';
+      formHtml += '<label style="font-size:11px;color:var(--ink-dim);display:block;margin-bottom:4px;">Release date</label>';
+      formHtml += '<input id="ahEditDate" type="date" value="' + curDate + '" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:6px;box-sizing:border-box;" />';
+      formHtml += '<label style="font-size:11px;color:var(--ink-dim);display:block;margin-bottom:4px;">Track count</label>';
+      formHtml += '<input id="ahEditTracks" type="number" min="0" value="' + curTracks + '" placeholder="Auto" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:12px;margin-bottom:8px;box-sizing:border-box;" />';
+      formHtml += '<div style="display:flex;gap:6px;">';
+      formHtml += '<button id="ahEditSave" style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Save</button>';
+      formHtml += '<button id="ahEditCancel" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>';
+      formHtml += '</div></div>';
+      var oldForm = document.getElementById('ahEditForm'); if(oldForm) oldForm.remove();
+      var body = document.getElementById('discPopupBody');
+      if(body){ body.insertAdjacentHTML('afterbegin', formHtml); }
+      document.getElementById('ahEditCancel').addEventListener('click', function(){ var f = document.getElementById('ahEditForm'); if(f) f.remove(); });
+      document.getElementById('ahEditSave').addEventListener('click', function(){
+        var newDate = (document.getElementById('ahEditDate').value||'').trim();
+        var newTracks = (document.getElementById('ahEditTracks').value||'').trim();
+        if(cid){
+          if(newDate) saveAlbumEdit(cid, 'date', newDate);
+          if(newTracks) saveAlbumEdit(cid, 'tracks', newTracks);
+        }
+        var f = document.getElementById('ahEditForm'); if(f) f.remove();
+        // Re-render with updated data
+        window.__refetchAlbums(false);
+        toast('Album updated', 2000);
+      });
+    });
+  });
+
   document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(btn){
     btn.addEventListener('click', function(e){
       e.stopPropagation();
@@ -16037,13 +16076,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
           (function fetchTracks(sources){
             if(!sources.length){
-              // If all sources failed and this is an MB album, try iTunes as last resort
-              if(!container.dataset.mbFallbackDone && h.dataset.mb){
-                container.dataset.mbFallbackDone = '1';
-                var itUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
-                trackSources = [{ kind: 'it', url: itUrl }];
-                return fetchTracks(trackSources);
+              // If all sources failed, try other sources as fallback
+              if(!container.dataset.searchFallbackDone){
+                container.dataset.searchFallbackDone = '1';
+                var _fbSources = [
+                  { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200' },
+                  { kind: 'dz', url: 'https://api.deezer.com/search?q=' + encodeURIComponent(artistName + ' ' + albumName) },
+                  { kind: 'mb', url: 'https://musicbrainz.org/ws/2/recording/?query=' + encodeURIComponent(artistName + ' ' + albumName) + '&fmt=json&limit=100' }
+                ];
+                trackSources = _fbSources;
+                return fetchTracks(trackSources).catch(function(){});
               }
+              container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
+              return null;
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
               return null;
             }
@@ -16724,7 +16769,11 @@ function _renderAhFromData(artistAlbums){
       var _ahBgSize = ahAlb._manual ? 'background-size:contain;background-repeat:no-repeat;' : 'background-size:cover;background-position:center;';
       ahHtml += '<div style="width:36px;height:36px;border-radius:6px;'+_ahBgSize+'flex-shrink:0;overflow:hidden;'+(ahArt?'background-image:url('+cssUrl(ahArt)+');':'background:var(--bg);')+'" data-art-url="'+escapeHtml(ahAlb.artworkUrl100||'')+'"></div>';
       ahHtml += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escapeHtml(ahAlb.collectionName||'Unknown')+'</div>';
-      ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+(ahAlb.releaseDate||'').slice(0,10)+(ahAlb.artistName?' \u00b7 '+escapeHtml(ahAlb.artistName):'')+(ahAlb.trackCount?' \u00b7 '+ahAlb.trackCount+' tracks':'')+'</div></div>';
+      var _ae = getAlbumEdits()[ahAlb.collectionId] || {};
+      var _showDate = _ae.date || (ahAlb.releaseDate||'').slice(0,10);
+      var _showTracks = _ae.tracks || ahAlb.trackCount;
+      ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+_showDate+(ahAlb.artistName?' \u00b7 '+escapeHtml(ahAlb.artistName):'')+( _showTracks?' \u00b7 '+_showTracks+' tracks':'')+'</div></div>';
+      ahHtml += '<span class="dp-ah-edit" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-date="'+escapeHtml((ahAlb.releaseDate||'').slice(0,10))+'" data-tracks="'+escapeHtml(String(ahAlb.trackCount||''))+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:12px;cursor:pointer;flex-shrink:0;">\u270e</span>';
       ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" data-cname="'+escapeHtml(ahAlb.collectionName||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
       ahHtml += '</div>';
       ahHtml += '<div id="ahc_trk_'+ahI+'_'+ahJ+'" class="dp-ah-albums" style="display:none;padding:2px 8px 4px 36px;"><div style="font-size:11px;color:var(--ink-dim);padding:4px 0;">Tap to load tracks</div></div>';
@@ -18278,6 +18327,8 @@ if(!isDiscover) stopDiscoverPreview();
 // --- Album History hidden albums (localStorage) ---
 function getHiddenAlbums(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]'); }catch(e){ return []; } }
 function getHiddenSingles(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenSingles') || '[]'); }catch(e){ return []; } }
+function getAlbumEdits(){ try{ return JSON.parse(localStorage.getItem('sidecut_albumEdits') || '{}'); }catch(e){ return {}; } }
+function saveAlbumEdit(collectionId, field, value){ var edits = getAlbumEdits(); if(!edits[collectionId]) edits[collectionId] = {}; edits[collectionId][field] = value; localStorage.setItem('sidecut_albumEdits', JSON.stringify(edits)); }
 function isSingleHidden(trackId, trackName){ var h = getHiddenSingles(); var tid = String(trackId); if(tid){ for(var i=0;i<h.length;i++){ if(String(h[i]) === tid) return true; } } if(trackName){ var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t){ for(var j=0;j<h.length;j++){ if(h[j] === 't:' + t) return true; } } } return false; }
 function hideSingle(trackId, trackName){ var h = getHiddenSingles(); if(h.indexOf(String(trackId)) === -1) h.push(String(trackId)); var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t && h.indexOf('t:' + t) === -1) h.push('t:' + t); localStorage.setItem('sidecut_hiddenSingles', JSON.stringify(h)); }
 function hideAlbum(collectionId, collectionName){
