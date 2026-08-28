@@ -16116,6 +16116,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                   var oldText = infoDiv.textContent;
                   var m = oldText.match(/(\d+|\?) tracks/);
                   if(m) infoDiv.textContent = oldText.replace(m[0], tracks.length + ' tracks');
+                  else if(oldText.indexOf('tracks') === -1 && tracks.length > 0) infoDiv.textContent = oldText + ' \u00b7 ' + tracks.length + ' tracks';
                 }
               }
               container.querySelectorAll('.dp-ah-track').forEach(function(row){
@@ -16179,7 +16180,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 if(cid){ hideAlbum(cid, cname); try{ this.closest('.dp-ah-album').remove(); }catch(_){} if(typeof toast === 'function') toast('Removed \"' + cname + '\"', 2000); }
               }); }
             };
-            var _trackTimeout = new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 10000); });
+            var _trackTimeout = new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 20000); });
             var _trackFetch = fetchWithProxy(src.url)
             .then(function(r){ return r && r.ok ? r.json() : {}; });
             return Promise.race([_trackFetch, _trackTimeout])
@@ -16208,15 +16209,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                   return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
                 });
               }else{
-                tracks = (data.results||[]).filter(function(r){ if(!r || !r.trackName) return false; var _rA = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _pA = primaryArtistName(artistName).toLowerCase().trim(); if(!nameMatchArtists(_rA, _pA)) return false; if(collectionId) return true; return r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim(); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+                tracks = (data.results||[]).filter(function(r){ if(!r || !r.trackName) return false; var _rA = primaryArtistName(r.artistName||'').toLowerCase().trim(); var _pA = primaryArtistName(artistName).toLowerCase().trim(); if(!nameMatchArtists(_rA, _pA) && _rA.indexOf(_pA) === -1 && _pA.indexOf(_rA) === -1) return false; if(collectionId) return true; return r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim(); }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
               }
               return finishTracks(tracks);
             });
 })(trackSources).catch(function(){
               if(!container.dataset.searchFallbackDone){
                 container.dataset.searchFallbackDone = '1';
-                var _fbUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200';
-                trackSources = [{ kind: 'it', url: _fbUrl }];
+                var _fbSources2 = [
+                  { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName + ' ' + albumName) + '&media=music&entity=song&limit=200' },
+                  { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(albumName) + '&media=music&entity=song&limit=200' },
+                  { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=song&limit=200' }
+                ];
+                trackSources = _fbSources2;
                 return fetchTracks(trackSources).catch(function(){});
               }
               container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Error loading tracks. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>';
@@ -16784,7 +16789,7 @@ function _renderAhFromData(artistAlbums){
     ahHtml += '<div id="'+ahAid+'" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
     for(var ahJ=0; ahJ<ahAlbums.length; ahJ++){
       var ahAlb = ahAlbums[ahJ];
-      var ahArt = ahAlb.artworkUrl100 ? (ahAlb.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? ahAlb.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : ahAlb.artworkUrl100) : '';
+      var ahArt = ahAlb.artworkUrl100 ? (ahAlb.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? ahAlb.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : ahAlb.artworkUrl100.indexOf('dzcdn.net') !== -1 ? ahAlb.artworkUrl100.replace(/\\d+x\\d+/, '600x600') : ahAlb.artworkUrl100) : '';
       ahHtml += '<div class="dp-ah-album" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'">';
       ahHtml += '<div class="dp-ah-album-hdr" data-target="ahc_trk_'+ahI+'_'+ahJ+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-collection-id="'+escapeHtml(ahAlb.collectionId||'')+'"'+(ahAlb._manual?' data-manual="1"':'')+'>';
       ahHtml += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">\u25b8</span>';
@@ -16883,7 +16888,7 @@ function _renderAhFromData(artistAlbums){
             var srelDate = sr.releaseDate ? sr.releaseDate.slice(0,10) : '';
             var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
             var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
-            var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+            var sart = sr.artworkUrl100 ? (sr.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : sr.artworkUrl100.indexOf('dzcdn.net') !== -1 ? sr.artworkUrl100.replace(/\\d+x\\d+/, '600x600') : sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg')) : '';
             html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-link="' + escapeHtml(sr.trackViewUrl||'') + '" data-si="' + ki + '-' + sri + '">';
             html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
@@ -19262,7 +19267,7 @@ window.__refetchSingles = async function(){
       var srelDate = sr.releaseDate ? sr.releaseDate.slice(0,10) : '';
       var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
       var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
-      var sart = sr.artworkUrl100 ? sr.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
+      var sart = sr.artworkUrl100 ? (sr.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : sr.artworkUrl100.indexOf('dzcdn.net') !== -1 ? sr.artworkUrl100.replace(/\\d+x\\d+/, '600x600') : sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg')) : '';
       html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-si="' + ki + '-' + sri + '">';
       html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
       html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
