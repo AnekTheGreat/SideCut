@@ -15988,7 +15988,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         pop.remove();
         bd.remove();
         hideAlbum(cid, cname);
-        if(typeof toast === 'function') toast('Removed \"' + cname + '\"', 2000);
+
         // Remove the album element from the popup instead of closing it
         var albumEl = document.querySelector('.dp-ah-rm[data-cid="' + cid + '"]');
         if(albumEl){ var alRow = albumEl.closest('.dp-ah-album'); if(alRow) alRow.remove(); }
@@ -16466,7 +16466,7 @@ window.__refetchAlbums = async function(wasRefetch){
                 if(!aA || aA === 'various' || aA === 'variousartists') return false;
                 var _aLo2 = k.toLowerCase().replace(/[^a-z0-9]/g,'').trim();
                 if(!nameMatchArtists(aA, _aLo2)) return false;
-                if(a.trackCount && a.trackCount <= 1) return false;
+                if(a.trackCount && a.trackCount === 1) return false;
                 return true;
               });
               if(!ahAD.artists[k].length) delete ahAD.artists[k];
@@ -16483,10 +16483,12 @@ window.__refetchAlbums = async function(wasRefetch){
   window.__ahFetchingStartedAt = Date.now();
   window.__ahCancelled = false;
   // Show loading popup immediately
-  var loadingHtml = '<div style="text-align:center;padding:20px 12px;"><div style="font-size:16px;margin-bottom:8px;">\u23f3</div><div style="font-size:13px;color:var(--ink-dim);" id="ahProgressText">Fetching albums from pinned artists\u2026 0/' + pinnedArtists.length + '</div><button id="ahCancelBtn" style="margin-top:12px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u2716 Cancel</button></div>';
+  var loadingHtml = '<div style="text-align:center;padding:20px 12px;"><div style="font-size:16px;margin-bottom:8px;">\u23f3</div><div style="font-size:13px;color:var(--ink-dim);" id="ahProgressText">Fetching albums from pinned artists\u2026 0/' + pinnedArtists.length + '</div><div style="display:flex;gap:8px;justify-content:center;margin-top:12px;"><button id="ahMinimizeBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink);font-size:11px;font-weight:600;cursor:pointer;">\u2014 Minimize</button><button id="ahCancelBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u2716 Cancel</button></div></div>';
   openDiscoverPopup('📀 Album History', loadingHtml, 'Fetching\u2026');
   var cancelBtn = document.getElementById('ahCancelBtn');
   if(cancelBtn) cancelBtn.onclick = function(){ window.__ahCancelled = true; window.__ahFetching = false; toast('\ud83d\udcc0 Cancelling\u2026', 2000); };
+  var minBtn = document.getElementById('ahMinimizeBtn');
+  if(minBtn) minBtn.onclick = function(){ closeDiscoverPopup(); toast('\ud83d\udcc0 Fetching in background\u2020\u2026', 3000); };
   // Load existing data to merge into — but sanitize the seed so junk
   // (wrong-artist, remix/hidden/noise) stored by pre-filter versions
   // can't resurrect on a refetch. EPs and singles by the artist are kept.
@@ -16507,7 +16509,7 @@ window.__refetchAlbums = async function(wasRefetch){
           if(_tn && _hA.indexOf('t:' + _tn) !== -1) return false;
           if(!_tn) return false;
           if(_noiseS.test(a.collectionName)) return false;
-          if(a.trackCount && a.trackCount <= 1) return false;
+          if(a.trackCount && a.trackCount === 1) return false;
           var _aN = primaryArtistName((a.artistName||k)).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
           if(!_aN || _aN === 'various' || _aN === 'variousartists' || !nameMatchArtists(_aN, _kLo)) return false;
           return true;
@@ -18301,7 +18303,7 @@ function hideAlbum(collectionId, collectionName){
     toast('Removed "' + collectionName + '" from Album History.', 3000);
   }
 }
-function nameMatchArtists(a,b){ if(a===b) return true; if(a.startsWith(b)){ return b.length===a.length || !/[a-z0-9]/.test(a.charAt(b.length)); } if(b.startsWith(a)){ return a.length===b.length || !/[a-z0-9]/.test(b.charAt(a.length)); } return false; }
+function nameMatchArtists(a,b){ if(a===b) return true; var _ns = function(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); }; var na = _ns(a), nb = _ns(b); if(na === nb) return true; if(na.startsWith(nb)){ return nb.length===na.length || !/[a-z0-9]/.test(na.charAt(nb.length)); } if(nb.startsWith(na)){ return na.length===nb.length || !/[a-z0-9]/.test(nb.charAt(na.length)); } return false; }
 function isAlbumHidden(collectionId, collectionName){ var h = getHiddenAlbums(); var cid = String(collectionId); if(cid){ for(var i=0;i<h.length;i++){ if(String(h[i]) === cid) return true; } } if(collectionName){ var t = (collectionName||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t){ for(var j=0;j<h.length;j++){ if(h[j] === 't:' + t) return true; } } } return false; }
 // Async artwork resolver for albums with missing/broken covers
 // Set custom album cover — triggered by long-pressing album art
