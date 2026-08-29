@@ -1721,7 +1721,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button id="addFolderBtn" class="action-pill primary" style="width:100%; justify-content:flex-start;">+ Add folder</button>
       <button id="addBtn" class="action-pill" style="width:100%; justify-content:flex-start;">+ Files</button>
       <button id="importLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Import library</button>
-      <button id="exportLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export library</button>
+      <button id="exportSongsBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export songs only</button>
+      <button id="exportLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export everything (backup)</button>
     </div>
   </div>
 </div>
@@ -10743,6 +10744,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('addBtnBig').addEventListener('click', () => $('fileInput').click());
   $('addFolderBtn').addEventListener('click', () => $('folderInput').click());
   $('addFolderBtnBig').addEventListener('click', () => $('folderInput').click());
+  $('exportSongsBtn').addEventListener('click', exportSongsOnly);
   $('exportLibBtn').addEventListener('click', exportLibrary);
   $('searchInput').addEventListener('input', (e) => {
     searchQuery = e.target.value.trim().toLowerCase();
@@ -12142,7 +12144,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   async function runZipExport(opts){
     const { tracks, manifest, filename, kindLabel } = opts;
     if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
-    const btn = $('exportLibBtn');
+    const btn = opts.songsOnly ? $('exportSongsBtn') : $('exportLibBtn');
     exportState = { active:true, phase:'reading', kind: kindLabel || 'library',
       total: tracks.length, done:0, bytesDone:0, totalBytes:0, compressPct:0,
       startedAt: Date.now(), compressStartedAt:0, finishedAt:0, seen:false, lastErr:'' };
@@ -12185,7 +12187,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           lyricsSynced: t.lyricsSynced, notes: t.notes, vibe: t.vibe,
           playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, dateAdded: t.dateAdded || null, releaseDate: t.releaseDate || null, path: t.file ? zipPath : null, hasCover: !!t.artBlob
         });
-        if(t.artBlob){
+        if(!opts.songsOnly && t.artBlob){
           // Covers are tiny; still pass the Blob directly to avoid extra copies.
           zip.file(`covers/${t.id}.jpg`, t.artBlob);
           exportState.bytesDone += (t.artBlob.size || 0);
@@ -12194,8 +12196,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         refreshExportNotif();
       }
       // Optional settings/stats (library export only) injected by the caller.
-      if(opts.attachManifestExtras) await opts.attachManifestExtras(manifest);
-      zip.file('manifest.json', JSON.stringify(manifest));
+      if(!opts.songsOnly){
+        if(opts.attachManifestExtras) await opts.attachManifestExtras(manifest);
+        zip.file('manifest.json', JSON.stringify(manifest));
+      }
 
       exportState.phase = 'compressing';
       exportState.compressStartedAt = Date.now();
@@ -12320,18 +12324,37 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         : 'Export failed: ' + (msg || 'see console for details'));
       refreshExportNotif();
     }finally{
-      if(btn){ btn.disabled = false; btn.textContent = 'Export library'; }
+      if(btn){ btn.disabled = false; btn.textContent = opts.songsOnly ? 'Export songs only' : 'Export everything'; }
     }
   }
 
   // Full library export/import — bundles actual audio + playlists into one
   // .zip so you can carry your whole library into a newer version of this
   // page (or restore it after clearing browser data), no re-picking needed.
+  // "Songs only" export — just the raw audio files, no manifest, playlists,
+  // settings, stats, covers, or premium code. Fast, shareable (re-importable as
+  // plain files via + Add songs). For a full restorable backup use the
+  // "Export everything" button.
+  async function exportSongsOnly(){
+    if(!allTracks.length){ toast('No songs to export yet.'); return; }
+    showExportConfirm(`Export ${allTracks.length} song${allTracks.length>1?'s':''} as a .zip of JUST the audio files? (No playlists, settings, stats, or cover art.)`, async () => {
+      if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
+      await runZipExport({
+        kindLabel: 'songs',
+        tracks: allTracks.slice(),
+        manifest: { playlists: {}, tracks: [], version: 2 },
+        filename: 'sidecut-songs.zip',
+        songsOnly: true,
+        toastOk: `Exported ${allTracks.length} song${allTracks.length>1?'s':''} (audio only)`,
+      });
+    });
+  }
+
   // INCLUDES: songs, playlists, listening stats, streaks, theme, EQ, turntable angle, glow settings,
   // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export full library (${allTracks.length} song${allTracks.length>1?'s':''}) as a .zip backup?`, async () => {
+    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} PLUS playlists, stats, theme, EQ and settings — as a full restorable backup .zip?`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
       const premiumPayload = buildPremiumPayload();
       await runZipExport({
@@ -17648,7 +17671,7 @@ if(!isDiscover) stopDiscoverPreview();
   // action's own click handler (file/folder/import/export) runs first, inside the
   // user gesture — then the menu closes. Deferring the close with a microtask keeps
   // the file-picker open() call safely within the original click gesture.
-  ['addFolderBtn','addBtn','importLibBtn','exportLibBtn'].forEach(id => {
+  ['addFolderBtn','addBtn','importLibBtn','exportSongsBtn','exportLibBtn'].forEach(id => {
     const el = $(id);
     if(el) el.addEventListener('click', () => { queueMicrotask(closeAddSongsMenu); });
   });
