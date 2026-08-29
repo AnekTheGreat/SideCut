@@ -7506,14 +7506,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '51.5';
+  const APP_VERSION = '52';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '51'){
+    if(_lastCacheVer !== '52'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '51.5');
+      localStorage.setItem('sidecut_discCacheVersion', '52');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7528,6 +7528,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '52', date: 'August 29, 2026 at 12:15 am EDT', title: 'Conversion Tools menu + hold-to-reorder album history & singles', items: [
+      'New collapsible \u201cConversion Tools\u201d menu (Discover + Settings) groups the Expand URL, YouTube, Spotify and MP4-to-WAV converters together',
+      'New Spotify to MP3/WAV converter \u2014 paste a Spotify link to get audio, with a note that WAV takes far more storage than MP3',
+      'YouTube & Spotify converters no longer open an external site when they fail \u2014 they say \u201cConversion didn\u2019t succeed\u201d and suggest trying again',
+      'Album History and Singles: press and hold an artist group, then drag to reorder \u2014 the order sticks when you reopen',
+      'Album History and Singles are grouped into collapsible per-artist menus',
+    ]},
     { version: '51.5', date: 'August 28, 2026 at 8:40 pm EDT', title: 'Singles caching + per-artist refetch fix', items: [
       'Singles popup now caches results — no more auto-refetching every time you open it (Refetch button still works)',
       'Fixed per-artist album refetch button selector — was targeting wrong CSS class',
@@ -17313,7 +17320,7 @@ function _renderAhFromData(artistAlbums){
     return;
   }
   var ahHtml = '';
-  var ahArtistKeys = Object.keys(artistAlbums).sort();
+  var ahArtistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistAlbums), 'sidecut_ahArtistOrder') : Object.keys(artistAlbums).sort());
   var ahTotal = 0;
   for(var ahI=0; ahI<ahArtistKeys.length; ahI++){
     var ahArtist = ahArtistKeys[ahI];
@@ -17431,7 +17438,7 @@ function _renderAhFromData(artistAlbums){
         if(!totalFound){ if(navigator.onLine === false && loadCachedDiscoverPopup('🎵 Singles')){ this.textContent='🎵 Singles'; this.disabled=false; return; } openDiscoverPopup('🎵 Singles', '<div class="dp-empty">No singles found from pinned artists.</div>', ''); return; }
         // Build collapsible: artist → singles
         var html = '';
-        var artistKeys = Object.keys(artistSingles).sort();
+        var artistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistSingles), 'sidecut_singlesArtistOrder') : Object.keys(artistSingles).sort());
         for(var ki=0; ki<artistKeys.length; ki++){
           var artist = artistKeys[ki];
           var singles = artistSingles[artist];
@@ -17488,7 +17495,7 @@ function _renderAhFromData(artistAlbums){
             var parts = si.split('-');
             var aIdx = parseInt(parts[0]);
             var sIdx = parseInt(parts[1]);
-            var aKey = Object.keys(artistSingles).sort()[aIdx];
+            var aKey = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistSingles), 'sidecut_singlesArtistOrder') : Object.keys(artistSingles).sort())[aIdx];
             if(!aKey || isNaN(sIdx)) return;
             var removed = artistSingles[aKey][sIdx];
             if(!removed) return;
@@ -19008,17 +19015,16 @@ if(!isDiscover) stopDiscoverPreview();
         if(resultEl){ var s = resultEl.querySelector('.dp-yt-status'); }
         return tryCobaltFormat('wav').then(function(wav){
           if(wav){ renderDownload('wav', wav.downloadUrl, wav.filename); return true; }
-          // Last resort: open YTMP3 which actually converts in-browser.
+          // Conversion failed — say so instead of bouncing to an external site.
           if(resultEl){
             resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
               '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
               '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
-              '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Opening YTMP3 converter</div>' +
-              '<a href="' + ytmp3Url + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none;">\u2b07 Convert on YTMP3</a>' +
+              '<div style="font-size:10px; color:var(--coral); margin-bottom:4px;">\u26a0 Conversion didn\u2019t succeed</div>' +
+              '<div style="font-size:11px; color:var(--ink-dim);">The converter couldn\u2019t reach a working server. Try again in a moment, or use one of the recommended external converters.</div>' +
               '</div></div>';
           }
-          window.open(ytmp3Url, '_blank');
-          toast('Opened YTMP3 \u2014 your link is pre-filled, just tap Convert.', 5000);
+          toast('Conversion didn\u2019t succeed \u2014 try again.', 4000);
           return false;
         });
       });
@@ -19150,10 +19156,9 @@ if(!isDiscover) stopDiscoverPreview();
       return csTryFormat('wav').then(function(wav){
         if(wav){ csRender('wav', wav.downloadUrl, wav.filename); return; }
         if(resultEl){
-          resultEl.innerHTML = '<span style="color:var(--ink-dim); font-size:11.5px;">\u26a0 The built-in converter couldn\u2019t reach a working server right now. Opening a converter with your link pre-filled...<br><br>Tip: <b>WAV takes up much more storage than MP3</b> \u2014 most listening is fine with MP3.</span>';
+          resultEl.innerHTML = '<span style="color:var(--ink-dim); font-size:11.5px;">\u26a0 <b>Conversion didn\u2019t succeed</b> \u2014 the converter couldn\u2019t reach a working server. Try again in a moment, or use one of the recommended external converters.<br><br>Tip: <b>WAV takes up much more storage than MP3</b> \u2014 most listening is fine with MP3.</span>';
         }
-        window.open(csFallbackUrl, '_blank');
-        toast('Opened cobalt \u2014 your Spotify link is pre-filled.', 5000);
+        toast('Conversion didn\u2019t succeed \u2014 try again.', 4000);
       });
     }).catch(function(){}).finally(function(){
       if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
@@ -20312,6 +20317,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       });
     }
   } catch(_e) {}
+  try{ if(typeof window.setupGroupReorderByContext==='function') window.setupGroupReorderByContext(); }catch(_sc){}
   try{ if(title && bodyHTML && !/fetching|loading|spinner|dp-empty|No albums found|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
 }
 function closeDiscoverPopup(){
@@ -20360,7 +20366,7 @@ window.__refetchSingles = async function(){
   if(siBtn){ siBtn.textContent = '\u2728 Singles'; siBtn.disabled = false; }
   if(!totalFound){ openDiscoverPopup('\u2728 Singles', '<div class="dp-empty">No singles found from pinned artists.</div>', ''); return; }
   var html = '';
-  var artistKeys = Object.keys(artistSingles).sort();
+  var artistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistSingles), 'sidecut_singlesArtistOrder') : Object.keys(artistSingles).sort());
   for(var ki=0; ki<artistKeys.length; ki++){
     var artist = artistKeys[ki];
     var singles = artistSingles[artist];
@@ -20515,7 +20521,93 @@ function loadCachedDiscoverPopup(key){
 }
 
 
+window.orderArtistKeys = function(keys, persistKey){
+  var pool = keys.slice(), arr = [];
+  try{ arr = JSON.parse(localStorage.getItem(persistKey) || '[]'); }catch(e){ arr = []; }
+  var out = [];
+  for(var i=0; i<arr.length; i++){
+    var idx = pool.indexOf(arr[i]);
+    if(idx !== -1){ out.push(pool[idx]); pool.splice(idx, 1); }
+  }
+  return out.concat(pool);
+};
+
+// Hold-to-reorder artist groups inside a discover popup list (Album History / Singles).
+// Long-press a group then drag to reorder; the order persists across close & reopen.
+window.setupGroupReorder = function(persistKey){
+  var bodyEl = document.getElementById('discPopupBody');
+  if(!bodyEl) return;
+  var groups = Array.prototype.slice.call(bodyEl.querySelectorAll('.dp-ah-artist'));
+  if(!groups.length) return;
+  groups.forEach(function(g){
+    if(g._hreReady) return;
+    g._hreReady = true;
+    var holdTimer = null, drag = null;
+    function nameOf(el){
+      var span = el.querySelector('.dp-ah-artist-hdr span[style*="flex:1"]');
+      return span ? span.textContent.trim() : '';
+    }
+    function persistOrder(){
+      var order = [];
+      Array.prototype.forEach.call(bodyEl.querySelectorAll('.dp-ah-artist'), function(el){ var nm = nameOf(el); if(nm) order.push(nm); });
+      try{ localStorage.setItem(persistKey, JSON.stringify(order)); }catch(e){}
+    }
+    function begin(e){
+      if(drag || !e.pointerId) return;
+      drag = g;
+      g.style.opacity = '0.7';
+      g.style.zIndex = '99';
+      g.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
+      g.style.background = 'rgba(255,255,255,0.06)';
+      try{ g.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    function move(e){
+      if(drag !== g) return;
+      e.preventDefault();
+      var y = e.clientY;
+      var before = null;
+      var sibs = Array.prototype.filter.call(bodyEl.children, function(k){ return k!==g && k.classList && k.classList.contains('dp-ah-artist'); });
+      for(var i=0; i<sibs.length; i++){
+        var r = sibs[i].getBoundingClientRect();
+        if(y < r.top + r.height/2){ before = sibs[i]; break; }
+      }
+      if(before){
+        if(before.previousElementSibling !== g) bodyEl.insertBefore(g, before);
+      } else {
+        if(g !== bodyEl.lastElementChild) bodyEl.appendChild(g);
+      }
+    }
+    function finish(){
+      clearTimeout(holdTimer);
+      if(drag){
+        drag.style.opacity = ''; drag.style.zIndex = ''; drag.style.boxShadow = ''; drag.style.background = '';
+        persistOrder();
+        drag = null;
+      }
+    }
+    g.addEventListener('pointerdown', function(e){
+      if(e.target.closest('.dp-ah-x,.dp-ah-rm,.dp-ah-edit,.dp-ah-artist-refetch,button,a,input,select')) return;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(function(){ begin(e); }, 300);
+    });
+    g.addEventListener('pointermove', move);
+    g.addEventListener('pointerup', finish);
+    g.addEventListener('pointercancel', finish);
+  });
+};
+
+// Detect which list is open (Album History has refetch/album rows) and wire the right persist key.
+window.setupGroupReorderByContext = function(){
+  var bodyEl = document.getElementById('discPopupBody');
+  if(!bodyEl || typeof window.setupGroupReorder !== 'function') return;
+  var g = bodyEl.querySelector('.dp-ah-artist');
+  if(!g) return;
+  var isAlbum = !!(g.querySelector('.dp-ah-artist-refetch') || g.querySelector('.dp-ah-album'));
+  setupGroupReorder(isAlbum ? 'sidecut_ahArtistOrder' : 'sidecut_singlesArtistOrder');
+};
+
 window.toastWithCancel = function(){
+
   var td = document.getElementById('toast');
   if(td){ td.style.display = 'none'; clearTimeout(td._timer); }
   // Show the external cancel button below the Albums button
