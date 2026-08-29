@@ -10403,6 +10403,39 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       list.appendChild(dupBtn);
     }
 
+    // DJ Mode toggle for this playlist
+    if(!isAllSongs){
+      var djBuiltInPl = DJ_MODE_DISABLED_PLAYLISTS.some(function(p){ return p.toLowerCase() === activePlaylist.trim().toLowerCase(); });
+      var djOffPl = djBuiltInPl || djDisabledPlaylists.has(activePlaylist);
+      var djToggleBtn = document.createElement('button');
+      if(djOffPl){
+        djToggleBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg> DJ Mode: <span style="color:#ff4444;">Disabled</span>' + (djBuiltInPl ? ' (built-in)' : '');
+        if(!djBuiltInPl){
+          djToggleBtn.addEventListener('click', function(){
+            djDisabledPlaylists.delete(activePlaylist);
+            dbPut('meta', { key: 'djDisabledPlaylists', value: Array.from(djDisabledPlaylists) });
+            $('songActionsBackdrop').style.display='none';
+            toast('DJ Mode enabled for "' + activePlaylist + '"');
+            renderTabs();
+            renderList();
+          });
+        }
+      }else{
+        djToggleBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg> DJ Mode: Enabled';
+        djToggleBtn.addEventListener('click', function(){
+          djDisabledPlaylists.add(activePlaylist);
+          dbPut('meta', { key: 'djDisabledPlaylists', value: Array.from(djDisabledPlaylists) });
+          $('songActionsBackdrop').style.display='none';
+          toast('DJ Mode disabled for "' + activePlaylist + '"');
+          renderTabs();
+          renderList();
+        });
+      }
+      if(djBuiltInPl) djToggleBtn.disabled = true;
+      djToggleBtn.style.opacity = djBuiltInPl ? '0.5' : '1';
+      list.appendChild(djToggleBtn);
+    }
+
     // visual separator before destructive actions, so they don't blend in with everyday ones
     const sep = document.createElement('div');
     sep.style.cssText = 'height:1px; background:var(--line); margin:4px 2px;';
@@ -18732,35 +18765,36 @@ if(!isDiscover) stopDiscoverPreview();
       resultEl.style.display = 'block';
       resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
         '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
-        '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px;">\u23f3 Fetching video info...</div>' +
-        '<div style="font-size:10px; color:var(--ink-dim);">Connecting to converter service...</div></div></div>';
+        '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px;">\u23f3 Converting...</div>' +
+        '<div style="font-size:10px; color:var(--ink-dim);">Trying cobalt API...</div></div></div>';
     }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
 
-    var cobaltInstances = ['https://api.cobalt.tools'];
-    var body = JSON.stringify({ url: url, downloadMode: 'audio', audioFormat: 'mp3', audioBitrate: '128' });
+    // Get video title from oEmbed
+    var title = 'YouTube video';
+    var ytmp3Url = 'https://ytmp3.cc/en13/?url=' + encodeURIComponent(url);
 
     async function tryConvert(){
-      // Get video title from oEmbed
-      var title = 'YouTube video';
       try{
         var oResp = await fetch('https://www.youtube.com/oembed?url=' + encodeURIComponent(url) + '&format=json');
         if(oResp && oResp.ok){ var oData = await oResp.json(); if(oData && oData.title) title = oData.title; }
       }catch(e){}
 
-      for(var i = 0; i < cobaltInstances.length; i++){
-        var target = cobaltInstances[i] + '/';
-        // Try direct fetch first
-        var proxies = [
-          function(u,b){ return fetch(u, { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
-          function(u,b){ return fetch('https://corsproxy.io/?' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
-          function(u,b){ return fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); }
-        ];
-        for(var j = 0; j < proxies.length; j++){
+      // Try cobalt API through CORS proxies
+      var cobaltBody = JSON.stringify({ url: url, downloadMode: 'audio', audioFormat: 'mp3', audioBitrate: '128' });
+      var cobaltTargets = ['https://api.cobalt.tools/'];
+      var cobaltProxies = [
+        function(u,b){ return fetch(u, { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
+        function(u,b){ return fetch('https://corsproxy.io/?' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
+        function(u,b){ return fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); }
+      ];
+
+      for(var i = 0; i < cobaltTargets.length; i++){
+        for(var j = 0; j < cobaltProxies.length; j++){
           try{
             var ctrl = new AbortController();
-            var timer = setTimeout(function(){ ctrl.abort(); }, 12000);
-            var resp = await proxies[j](target, body);
+            var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
+            var resp = await cobaltProxies[j](cobaltTargets[i], cobaltBody);
             clearTimeout(timer);
             if(!resp || !resp.ok) continue;
             var data;
@@ -18804,16 +18838,17 @@ if(!isDiscover) stopDiscoverPreview();
 
     tryConvert().then(function(ok){
       if(!ok){
+        // Fallback: open ytmp3.cc which actually works
         if(resultEl){
           resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
             '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
             '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
-            '<div style="font-size:10px; color:var(--coral); margin-bottom:6px;">\u2197 Direct conversion unavailable — opening cobalt.tools</div>' +
-            '<a href="https://cobalt.tools" target="_blank" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none;">Open converter</a>' +
+            '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Opening YTMP3 converter</div>' +
+            '<a href="' + ytmp3Url + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none;">\u2b07 Convert on YTMP3</a>' +
             '</div></div>';
         }
-        window.open('https://cobalt.tools', '_blank');
-        toast('Opened cobalt.tools \u2014 paste the URL there to convert.', 5000);
+        window.open(ytmp3Url, '_blank');
+        toast('Opened YTMP3 \u2014 your link is pre-filled, just tap Convert.', 5000);
       }
       if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
     }).catch(function(){
