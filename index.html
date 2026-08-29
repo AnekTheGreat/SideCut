@@ -1883,8 +1883,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     </details>
   </div>
   <div style="margin-bottom:14px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
-    <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎞️ MP4 to MP3 Converter</div>
-    <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px;"><span style="color:var(--gold);">⚠ Experimental</span> — Convert MP4 video files to MP3 audio directly in your browser. No upload needed, everything stays on your device.</div>
+    <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎞️ MP4 to WAV Converter</div>
+    <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px;"><span style="color:var(--gold);">⚠ Experimental</span> — Convert MP4 video files to WAV audio directly in your browser. No upload needed, everything stays on your device.</div>
     <div style="display:flex; gap:6px; align-items:center;">
       <label for="mp4ToMp3File" style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink-dim); font-size:13px; cursor:pointer; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Choose MP4 file...</label>
       <input type="file" id="mp4ToMp3File" accept="video/mp4,video/m4v,audio/mp4,.mp4,.m4v,.mov" style="display:none;">
@@ -2245,14 +2245,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         </details>
       </div>
       <div style="border-top:1px solid var(--line); margin-top:14px; padding-top:14px;">
-        <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎞️ MP4 to MP3 Converter</div>
+        <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎞️ MP4 to WAV Converter</div>
         <div style="font-size:12px; color:var(--ink-dim); line-height:1.6; margin-bottom:12px;">
-          Convert MP4 video files to MP3 audio right in your browser. <span style="color:var(--gold);">⚠ Experimental</span> — no upload needed, everything stays on your device.<br><br>
+          Convert MP4 video files to WAV audio right in your browser. <span style="color:var(--gold);">⚠ Experimental</span> — no upload needed, everything stays on your device.<br><br>
           <b>How to convert:</b><br>
           1. Tap <b>Choose MP4 file</b> below.<br>
           2. Select any .mp4 or .m4v video file.<br>
           3. Tap <b>Convert</b> and wait for the conversion.<br>
-          4. Download the MP3 and import with <b>+ Add songs ▾ → + Files</b>.
+          4. Download the WAV and import with <b>+ Add songs ▾ → + Files</b>.
         </div>
         <div style="display:flex; gap:6px; align-items:center; margin-bottom:10px;">
           <label for="mp4ToMp3FileSettings" style="flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink-dim); font-size:13px; cursor:pointer; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Choose MP4 file...</label>
@@ -3109,6 +3109,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <button id="lyricsRefetchBtn" style="background:none; border:1px solid var(--line); color:var(--coral); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
           ↻ Refetch
         </button>
+        <button id="lyricsManualBtn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; display:none;">
+          Manual: Off
+        </button>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-size:11px; color:var(--ink-dim);">A-</span>
@@ -3126,6 +3129,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:20px 0;">
         <div style="margin-bottom:8px;">No lyrics found</div>
         <div style="font-size:12px;">Lyrics could not be found. Lyrics APIs primarily support English/Western music.</div>
+      </div>
+      <div id="lyricsManualEditor" style="display:none;">
+        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:6px;">Manual lyrics (from Song info → Notes). Edit here and they save to the song's notes automatically.</div>
+        <textarea id="lyricsManualInput" placeholder="Paste or type the lyrics here…" style="width:100%; min-height:260px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:13px; font-family:var(--font-ui); resize:vertical; box-sizing:border-box;"></textarea>
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <button id="lyricsManualSave" style="flex:1; padding:8px; border-radius:8px; border:none; background:var(--coral); color:#fff; font-size:12px; font-weight:600; cursor:pointer;">Save as lyrics</button>
+          <button id="lyricsManualCancel" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:12px; cursor:pointer;">Back</button>
+        </div>
       </div>
     </div>
   </div>
@@ -6011,6 +6022,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       lyricsScrollInterval = null;
     }
     
+    // Manual mode renders the song's own notes (manual lyrics) without fetching.
+    if(lyricsManualActive){
+      renderManualLyrics(track);
+      return;
+    }
     // First check if we already have saved lyrics
     if(track.lyrics) {
       showLyrics(track.lyrics, !!track.lyricsSynced);
@@ -6174,9 +6190,70 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       .trim();
   }
   
+  // ---------------- Manual lyrics (from Song info notes) ----------------
+  function renderManualLyrics(track){
+    const t = track || allTracks.find(tr => tr.id === lyricsCurrentTrack);
+    if(!t){ return; }
+    $('lyricsLoading').style.display = 'none';
+    $('lyricsText').style.display = 'none';
+    $('lyricsNotFound').style.display = 'none';
+    const editor = $('lyricsManualEditor');
+    editor.style.display = 'block';
+    const input = $('lyricsManualInput');
+    if(input.value !== (t.notes || '')) input.value = t.notes || '';
+    const mBtn = $('lyricsManualBtn');
+    if(mBtn){ mBtn.textContent = 'Manual: On'; mBtn.style.borderColor = 'var(--coral)'; mBtn.style.color = 'var(--coral)'; }
+  }
+
+  function exitManualLyrics(){
+    lyricsManualActive = false;
+    const editor = $('lyricsManualEditor');
+    if(editor) editor.style.display = 'none';
+    const mBtn = $('lyricsManualBtn');
+    if(mBtn){ mBtn.textContent = 'Manual: Off'; mBtn.style.borderColor = 'var(--line)'; mBtn.style.color = 'var(--ink-dim)'; }
+    const t = allTracks.find(tr => tr.id === lyricsCurrentTrack);
+    if(t && t.lyrics){ showLyrics(t.lyrics, !!t.lyricsSynced); }
+    else if(t){ fetchLyrics(t); }
+  }
+
+  $('lyricsManualBtn').addEventListener('click', function(e){
+    e.stopPropagation();
+    if(!lyricsManualActive){
+      lyricsManualActive = true;
+      renderManualLyrics(allTracks.find(tr => tr.id === lyricsCurrentTrack));
+    } else {
+      exitManualLyrics();
+    }
+  });
+
+  // Live-save manual lyrics into the song's notes (same store as Song info).
+  let lyricsManualSaveTimer = null;
+  $('lyricsManualInput').addEventListener('input', (e) => {
+    const trackId = lyricsCurrentTrack;
+    const value = e.target.value;
+    clearTimeout(lyricsManualSaveTimer);
+    lyricsManualSaveTimer = setTimeout(() => {
+      const t = allTracks.find(tr => tr.id === trackId);
+      if(!t) return;
+      t.notes = value;
+      persistTrackMeta(t);
+    }, 400);
+  });
+  $('lyricsManualSave').addEventListener('click', () => {
+    const t = allTracks.find(tr => tr.id === lyricsCurrentTrack);
+    if(!t) return;
+    t.notes = $('lyricsManualInput').value;
+    persistTrackMeta(t);
+    toast('Manual lyrics saved to song notes.', 2500);
+  });
+  $('lyricsManualCancel').addEventListener('click', () => exitManualLyrics());
+
   // ---------------- English translation for lyrics ----------------
   let currentLyricsText = '';
   let currentLyricsSynced = false;
+  // Manual-lyrics mode: when on, the lyrics view shows/edits the song's Notes
+  // (the "manual lyrics" kept in Song info) instead of fetched lyrics.
+  let lyricsManualActive = false;
   let lyricsTranslated = false;
   let suppressTranslateReset = false; // set while re-rendering from the translate toggle
   // A line counts as non-Latin if it has a meaningful run of characters outside
@@ -6301,6 +6378,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
     // Only offer "Translate to English" when the lyrics aren't already English.
     if(tBtn && !lyricsTranslated && looksNonEnglish(currentLyricsText)) tBtn.style.display = '';
+
+    // Manual-lyrics toggle: visible whenever a track is loaded; label reflects state.
+    const mBtn = $('lyricsManualBtn');
+    if(mBtn){
+      mBtn.style.display = '';
+      mBtn.textContent = 'Manual: ' + (lyricsManualActive ? 'On' : 'Off');
+      mBtn.style.borderColor = lyricsManualActive ? 'var(--coral)' : 'var(--line)';
+      mBtn.style.color = lyricsManualActive ? 'var(--coral)' : 'var(--ink-dim)';
+    }
 
     // Stop any existing scroll interval
     if (lyricsScrollInterval) {
@@ -18961,7 +19047,7 @@ if(!isDiscover) stopDiscoverPreview();
     });
     ytMp3InputSet.addEventListener('keydown', function(e){ if(e.key === 'Enter') ytMp3BtnSet.click(); });
   }
-  // ─── MP4 to MP3 converter (client-side via Web Audio API) ───
+  // ─── MP4 to WAV converter (client-side via Web Audio API) ───
   function convertMp4ToMp3(file, resultEl, btnEl, labelEl, fileInputEl){
     if(!file){ toast('Pick an MP4 file first.', 2000); return; }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; btnEl.style.opacity = '0.5'; btnEl.style.cursor = 'not-allowed'; }
@@ -18973,7 +19059,7 @@ if(!isDiscover) stopDiscoverPreview();
       var arrayBuffer = e.target.result;
       var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       audioCtx.decodeAudioData(arrayBuffer).then(function(audioBuffer){
-        if(resultEl) resultEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;"><div style="width:16px;height:16px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span>Encoding MP3...</span></div>';
+        if(resultEl) resultEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;"><div style="width:16px;height:16px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span>Encoding WAV...</span></div>';
 
         // Encode to WAV (universal format, plays everywhere)
         var numChannels = audioBuffer.numberOfChannels;
@@ -19079,7 +19165,7 @@ if(!isDiscover) stopDiscoverPreview();
     });
   };
 
-  // Discover MP4 to MP3
+  // Discover MP4 to WAV
   var mp4FileDisc = document.getElementById('mp4ToMp3File');
   var mp4ConvertDisc = document.getElementById('mp4ToMp3Convert');
   var mp4ResultDisc = document.getElementById('mp4ToMp3Result');
@@ -19101,7 +19187,7 @@ if(!isDiscover) stopDiscoverPreview();
     });
   }
 
-  // Settings MP4 to MP3
+  // Settings MP4 to WAV
   var mp4FileSet = document.getElementById('mp4ToMp3FileSettings');
   var mp4ConvertSet = document.getElementById('mp4ToMp3ConvertSettings');
   var mp4ResultSet = document.getElementById('mp4ToMp3ResultSettings');
