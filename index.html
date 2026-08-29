@@ -9788,8 +9788,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Single source of truth for what gets written to the tracks store —
   // every field we track per-song funnels through here so nothing gets
   // silently dropped when one code path forgets a field another path added.
-  function persistTrackMeta(t){
-    dbPut('tracks', {
+  function buildTrackRecord(t){
+    return {
       id: t.id, blob: t.file, name: t.name, artist: t.artist,
       duration: t.duration, bpm: t.bpm, genre: t.genre,
       gain: t.gain ?? null, art: t.artBlob || null, vibe: t.vibe || null,
@@ -9800,6 +9800,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       notes: t.notes || '',
       lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
       manualOverride: t.manualOverride || false,
+    };
+  }
+  function persistTrackMeta(t){
+    dbPut('tracks', buildTrackRecord(t));
+  }
+
+  // Batch-write many track records to the tracks store in as few transactions as
+  // possible. A fresh IndexedDB transaction per track (each awaited) was the
+  // bottleneck that made large library imports crawl for hundreds of songs. We
+  // flush in short chunks inside one transaction each, and rethrow quota /
+  // allocation errors so the caller can tell the user the truth instead of a
+  // false "Imported N tracks" toast that never actually persisted.
+  async function batchPutTracks(records){
+    if(!records || !records.length) return;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('tracks', 'readwrite');
+      const store = tx.objectStore('tracks');
+      for(const r of records){ store.put(r); }
+      tx.oncomplete = () => resolve();
+      tx.onerror  = () => reject(tx.error || new Error('track write failed'));
+      tx.onabort  = () => reject(tx.error || new Error('track write aborted'));
     });
   }
 
@@ -12494,10 +12516,31 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // decide if we truly already have a track, and always remap the
       // manifest's id to that resolved local id before touching playlists.
       const idRemap = {}; // manifest id -> local id
+      // Speed up "do we already have this track?" from a linear scan per manifest
+      // row (O(N^2) on big imports) to an O(1) map lookup keyed by content, so a
+      // 500-song backup doesn't do 250k comparisons.
+      const byContentKey = new Map();
+      for(const t of allTracks){
+        const key = (t.name || 'Untitled') + '\u0000' + (t.artist || 'Unknown artist') + '\u0000' + (t.duration || 0);
+        if(!byContentKey.has(key)) byContentKey.set(key, []);
+        byContentKey.get(key).push(t);
+      }
       function findExistingByContent(m){
-        return allTracks.find(t => t.name === (m.name || 'Untitled')
-          && t.artist === (m.artist || 'Unknown artist')
-          && (t.duration || null) === (m.duration || null));
+        const list = byContentKey.get((m.name || 'Untitled') + '\u0000' + (m.artist || 'Unknown artist') + '\u0000' + (m.duration || 0));
+        return list ? list[0] : undefined;
+      }
+      // Audio/cover writes are batched here and committed in chunks after the
+      // read loop, instead of opening (and awaiting) a fresh IDB transaction per
+      // song — that per-transaction cost is what made big imports crawl. Batched
+      // writes also let a quota error surface as a real failure.
+      const storeBatch = [];
+      async function flushStoreBatch(){
+        while(storeBatch.length){
+          // ~40 records per transaction: small enough for low-memory webviews,
+          // big enough that a 500-song import is only ~13 transactions.
+          const chunk = storeBatch.splice(0, 40);
+          await batchPutTracks(chunk);
+        }
       }
       for(const m of (manifest.tracks || [])){
         const existing = findExistingByContent(m);
@@ -12525,7 +12568,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
                 existing.artUrl = URL.createObjectURL(coverBlob);
               }
             }
-            persistTrackMeta(existing);
+            storeBatch.push(buildTrackRecord(existing));
           }
           continue; 
         }
@@ -12574,9 +12617,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         
         allTracks.push(track);
-        persistTrackMeta(track);
+        storeBatch.push(buildTrackRecord(track));
         count++;
       }
+      // Commit all batched audio + cover blob writes (and metadata merges on
+      // existing tracks) to IndexedDB before we claim success — this is where a
+      // storage-quota or alloc error surfaces instead of silently dropping
+      // tracks on the next reload.
+      await flushStoreBatch();
       Object.keys(manifest.playlists || {}).forEach(name => {
         if(name === 'All Songs') return;
         if(!playlists[name]) playlists[name] = [];
