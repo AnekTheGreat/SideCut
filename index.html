@@ -18903,29 +18903,31 @@ if(!isDiscover) stopDiscoverPreview();
       resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
         '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
         '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px;">\u23f3 Converting...</div>' +
-        '<div style="font-size:10px; color:var(--ink-dim);">Trying cobalt API...</div></div></div>';
+        '<div style="font-size:10px; color:var(--ink-dim);">Trying cobalt API (MP3)...</div></div></div>';
     }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
 
     // Get video title from oEmbed
     var title = 'YouTube video';
     var ytmp3Url = 'https://ytmp3.cc/en13/?url=' + encodeURIComponent(url);
+    var cobaltTargets = ['https://api.cobalt.tools/'];
+    var cobaltProxies = [
+      function(u,b){ return fetch(u, { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
+      function(u,b){ return fetch('https://corsproxy.io/?' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
+      function(u,b){ return fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); }
+    ];
 
-    async function tryConvert(){
+    // Try to fetch metadata once (oEmbed has no CORS, always worth attempting).
+    async function tryMeta(){
       try{
         var oResp = await fetch('https://www.youtube.com/oembed?url=' + encodeURIComponent(url) + '&format=json');
         if(oResp && oResp.ok){ var oData = await oResp.json(); if(oData && oData.title) title = oData.title; }
       }catch(e){}
+    }
 
-      // Try cobalt API through CORS proxies
-      var cobaltBody = JSON.stringify({ url: url, downloadMode: 'audio', audioFormat: 'mp3', audioBitrate: '128' });
-      var cobaltTargets = ['https://api.cobalt.tools/'];
-      var cobaltProxies = [
-        function(u,b){ return fetch(u, { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
-        function(u,b){ return fetch('https://corsproxy.io/?' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); },
-        function(u,b){ return fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(u), { method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'}, body:b }); }
-      ];
-
+    // Ask cobalt for a downloadable audio URL in the requested format.
+    async function tryCobaltFormat(fmt){
+      var cobaltBody = JSON.stringify({ url: url, downloadMode: 'audio', audioFormat: fmt, audioBitrate: (fmt === 'wav' ? 'lossless' : '128') });
       for(var i = 0; i < cobaltTargets.length; i++){
         for(var j = 0; j < cobaltProxies.length; j++){
           try{
@@ -18938,57 +18940,56 @@ if(!isDiscover) stopDiscoverPreview();
             try{ data = await resp.json(); }catch(e){ continue; }
             if(!data || !data.status) continue;
             if(data.status === 'tunnel' || data.status === 'redirect'){
-              var downloadUrl = data.url;
-              var filename = data.filename || ('youtube_' + videoId + '.mp3');
-              if(resultEl){
-                resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
-                  '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
-                  '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
-                  '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Ready to download</div>' +
-                  '<a href="' + downloadUrl + '" download="' + filename + '" target="_blank" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none; margin-right:6px;">\u2b07 Download MP3</a>' +
-                  '<button onclick="window.open(this.dataset.url,\'_blank\')" data-url="' + downloadUrl + '" style="padding:5px 10px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; cursor:pointer;">Open in tab</button>' +
-                  '</div></div>';
-              }
-              toast('MP3 ready! Tap Download.', 5000);
-              return true;
+              return { downloadUrl: data.url, filename: data.filename || ('youtube_' + videoId + '.' + (fmt === 'wav' ? 'wav' : 'mp3')) };
             }
             if(data.status === 'picker' && data.picker){
-              var firstAudio = data.picker.find(function(p){ return p.type === 'audio'; }) || data.picker[0];
-              if(firstAudio && firstAudio.url){
-                if(resultEl){
-                  resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
-                    '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
-                    '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
-                    '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Ready to download</div>' +
-                    '<a href="' + firstAudio.url + '" download target="_blank" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none;">\u2b07 Download MP3</a>' +
-                    '</div></div>';
-                }
-                toast('MP3 ready! Tap Download.', 5000);
-                return true;
-              }
+              var firstAudio = data.picker.find(function(p){ return (p.type === 'audio'); }) || data.picker[0];
+              if(firstAudio && firstAudio.url) return { downloadUrl: firstAudio.url, filename: ('youtube_' + videoId + '.' + (fmt === 'wav' ? 'wav' : 'mp3')) };
             }
           }catch(e){}
         }
       }
-      return false;
+      return null;
     }
 
-    tryConvert().then(function(ok){
-      if(!ok){
-        // Fallback: open ytmp3.cc which actually works
-        if(resultEl){
-          resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
-            '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
-            '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
-            '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Opening YTMP3 converter</div>' +
-            '<a href="' + ytmp3Url + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none;">\u2b07 Convert on YTMP3</a>' +
-            '</div></div>';
-        }
-        window.open(ytmp3Url, '_blank');
-        toast('Opened YTMP3 \u2014 your link is pre-filled, just tap Convert.', 5000);
+    function renderDownload(fmt, downloadUrl, filename){
+      var ext = fmt === 'wav' ? 'wav' : 'mp3';
+      var label = fmt === 'wav' ? 'Download WAV' : 'Download MP3';
+      if(resultEl){
+        resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
+          '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
+          '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
+          '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Ready to download (' + ext.toUpperCase() + ')</div>' +
+          '<a href="' + downloadUrl + '" download="' + filename + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none; margin-right:6px;">\u2b07 ' + label + '</a>' +
+          '<button onclick="window.open(this.dataset.url,\'_blank\')" data-url="' + downloadUrl + '" style="padding:5px 10px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; cursor:pointer;">Open in tab</button>' +
+          '</div></div>';
       }
-      if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
-    }).catch(function(){
+      toast(label + ' ready! Tap Download.', 5000);
+    }
+
+    tryMeta().then(function(){
+      // Pass 1: try MP3. Pass 2: if that fails, try WAV — so if the MP3
+      // converter doesn't produce audio we can still grab a lossless WAV.
+      return tryCobaltFormat('mp3').then(function(mp3){
+        if(mp3){ renderDownload('mp3', mp3.downloadUrl, mp3.filename); return true; }
+        if(resultEl){ var s = resultEl.querySelector('.dp-yt-status'); }
+        return tryCobaltFormat('wav').then(function(wav){
+          if(wav){ renderDownload('wav', wav.downloadUrl, wav.filename); return true; }
+          // Last resort: open YTMP3 which actually converts in-browser.
+          if(resultEl){
+            resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
+              '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
+              '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
+              '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Opening YTMP3 converter</div>' +
+              '<a href="' + ytmp3Url + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none;">\u2b07 Convert on YTMP3</a>' +
+              '</div></div>';
+          }
+          window.open(ytmp3Url, '_blank');
+          toast('Opened YTMP3 \u2014 your link is pre-filled, just tap Convert.', 5000);
+          return false;
+        });
+      });
+    }).catch(function(){}).finally(function(){
       if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
     });
   }
