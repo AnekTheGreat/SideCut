@@ -1,5 +1,13 @@
 # SideCut — repository memory
 
+## GUEST PREFERENCE (Aug 30, 2026): DO NOT bump the version
+- The user explicitly said "Don't bump ver" — stop incrementing APP_VERSION.
+  Leave APP_VERSION at 52.5 and sw.js CACHE_NAME at sidecut-shell-v52.5 for
+  small fixes. index.html is served network-first in the SW, so plain edits to
+  index.html still reach the installed app on its next reload even without a
+  cache-version bump (though a stale-SW user may need a hard refresh). Only
+  bump if the user explicitly asks.
+
 ## Post-v50.0.10 follow-up #3 (Aug 28, 2026, no version bump) — "only first and last albums" Album History glitch
 
 Root cause: the cached-branch re-sanitize that serves sidecut_ahArtistData compared a normalized row artist name against the raw pinned-artist key, which keeps spaces and case intact。 nameMatchArtists failed for any real artist with a space,so every row for that artist was silently dropped from the re-render → the popup showed a bare Refetch shell or a few surviving rows,and that truncated shell got cached,persisting across close and reopen. A fresh Refetch, which compares raw verses raw consistently, showed everything — hence“refetch fixes it, exit and return breaks it”.
