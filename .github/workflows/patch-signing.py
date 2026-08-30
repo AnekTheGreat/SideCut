@@ -1,47 +1,40 @@
 #!/usr/bin/env python3
 """
-Wire release signing into the Capacitor-generated Android project.
+Rewrite the signing setup to use the developer's REAL upload keystore.
 
-Idempotent: safe to run every build. Generates the upload keystore once (via
-keytool) and NEVER overwrites it, so the signing key stays identical across
-builds via the GitHub Actions cache — Google Play requires a stable upload
-signature to accept updates.
-
-If sidecut-upload.jks already exists (from a previous CI run restored from
-cache), this script leaves it untouched and just points Gradle at it.
+The keystore arrives base64-encoded in the ANDROID_KEYSTORE_BASE64 env var
+(set as a GitHub Actions repo secret); its passwords/alias come from the
+ANDROID_KEYSTORE_* env vars. We decode/write it to android/keystore.properties
+and inject the release signingConfig into build.gradle (idempotent).
 """
-import os, subprocess, sys
+import base64, os, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 ANDROID_APP = os.path.join(ROOT, 'android', 'app')
 BUILD_GRADLE = os.path.join(ANDROID_APP, 'build.gradle')
 KEYSTORE = os.path.join(ROOT, 'sidecut-upload.jks')
 
-ALIAS = 'sidecut'
-STORE_PASS = 'SideCutUpload!2026'
-KEY_PASS = 'SideCutUpload!2026'
+# -------- Read credentials from env (set as GitHub repo secrets) --------
+KS_B64 = os.environ.get('ANDROID_KEYSTORE_BASE64', '').strip()
+STORE_PASS = os.environ.get('ANDROID_KEYSTORE_PASSWORD', '')
+KEY_PASS = os.environ.get('ANDROID_KEY_PASSWORD', '')
+ALIAS = os.environ.get('ANDROID_KEY_ALIAS', '')
 
 
-def ensure_keystore():
-    # Stability comes from the GitHub Actions cache (workflow restores
-    # sidecut-upload.jks from cache when present). NEVER overwrite an existing
-    # keystore, or Play would reject the changed signature and all future
-    # uploads. We only generate when the file is genuinely absent.
-    if os.path.exists(KEYSTORE):
-        print('keystore already present:', KEYSTORE)
-        return
-    # Generate a keystore with keytool (JDK present on the runner).
-    cmd = [
-        'keytool', '-genkeypair', '-v',
-        '-keystore', KEYSTORE,
-        '-alias', ALIAS,
-        '-storepass', STORE_PASS,
-        '-keypass', KEY_PASS,
-        '-keyalg', 'RSA', '-keysize', '4096', '-validity', '10950',
-        '-dname', 'CN=SideCut, OU=Android, O=AnekTheGreat, L=Unknown, ST=Unknown, C=US',
-    ]
-    print('generating keystore via:', ' '.join(cmd))
-    subprocess.run(cmd, check=True)
+def write_keystore_from_secret():
+    if not KS_B64:
+        sys.exit('FATAL: ANDROID_KEYSTORE_BASE64 secret is not set. '
+                 'Add it to repo Settings -> Secrets and variables -> Actions.')
+    try:
+        data = base64.b64decode(KS_B64)
+    except Exception as e:
+        sys.exit('FATAL: could not base64-decode ANDROID_KEYSTORE_BASE64: %s' % e)
+    if not STORE_PASS or not KEY_PASS or not ALIAS:
+        sys.exit('FATAL: ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_PASSWORD / '
+                 'ANDROID_KEY_ALIAS secrets must all be set.')
+    with open(KEYSTORE, 'wb') as f:
+        f.write(data)
+    print('wrote keystore (%d bytes) from secret' % len(data))
 
 
 def inject():
@@ -82,9 +75,6 @@ android {{
 }}
 {marker}
 '''
-    # Insert right after the closing brace of the outer `android { ... }` block,
-    # i.e. before the final newline. Capacitor build.gradle ends the top-level
-    # android {} block at the bottom of the file.
     if src.rstrip().endswith('}'):
         src = src.rstrip() + injection
     else:
@@ -108,7 +98,7 @@ def write_keystore_properties():
 
 
 if __name__ == '__main__':
-    ensure_keystore()
+    write_keystore_from_secret()
     inject()
     write_keystore_properties()
-    print('signing setup complete')
+    print('signing setup complete (using developer keystore)')

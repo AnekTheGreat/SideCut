@@ -51,28 +51,17 @@ jobs:
       - name: Sync web assets into the Android project
         run: npx cap sync android
 
-      # ---- Signing key (stable across builds so Play accepts updates) ----
-      # The keystore is generated ONCE and cached. Same key every build = smooth updates.
-      - name: Restore cached upload keystore
-        id: ks-cache
-        uses: actions/cache@v4
-        with:
-          path: sidecut-upload.jks
-          key: sidecut-upload-key-${{ runner.os }}
-
-      - name: Generate upload keystore (first run only)
-        if: steps.ks-cache.outputs.cache-hit != 'true'
-        run: |
-          keytool -genkeypair \
-            -v -keystore sidecut-upload.jks \
-            -alias sidecut \
-            -storepass 'SideCutUpload!2026' \
-            -keypass 'SideCutUpload!2026' \
-            -keyalg RSA -keysize 4096 -validity 10950 \
-            -dname "CN=SideCut, OU=Android, O=AnekTheGreat, L=Unknown, ST=Unknown, C=US"
-
-      - name: Wire signing into the Android Gradle config
+      # ---- Signing with the REAL upload keystore ----
+      # The keystore (base64) + its passwords/alias are stored as GitHub repo
+      # secrets and injected here, so the app is signed with the same key Play
+      # already knows. Keystore material is NEVER stored in the repo.
+      - name: Wire the developer keystore into the Android Gradle config
         run: python3 .github/workflows/patch-signing.py
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
 
       # ---------------- Real build ---------------
       - name: Build release AAB
