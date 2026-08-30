@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Base64 encode (local only)</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,sans-serif;background:#0E1B1F;color:#eef;margin:0;padding:16px;line-height:1.5}
+  h1{font-size:18px;margin:0 0 4px}
+  .note{font-size:12px;color:#9fb3b9;margin-bottom:16px}
+  .btn{display:block;width:100%;padding:14px;font-size:15px;font-weight:600;border:none;border-radius:10px;background:#f47a55;color:#0E1B1F;margin:12px 0}
+  textarea{width:100%;min-height:160px;box-sizing:border-box;background:#13262b;color:#eef;border:1px solid #2b4450;border-radius:8px;padding:10px;font-size:12px;font-family:ui-monospace,monospace}
+  .meta{font-size:12px;color:#7fd7a0;margin:8px 0}
+</style>
+</head>
+<body>
+  <h1>Encode a file to base64</h1>
+  <div class="note">Runs entirely on this phone — the file is never uploaded anywhere. Pick your keystore file, then copy the output and paste it into the GitHub secret field.</div>
+
+  <input type="file" id="file">
+  <div class="meta" id="meta"></div>
+  <button class="btn" id="copy">Copy base64</button>
+  <textarea id="out" placeholder="Base64 will appear here…" readonly></textarea>
+
+<script>
+  const f = document.getElementById('file');
+  const meta = document.getElementById('meta');
+  const out = document.getElementById('out');
+  const copy = document.getElementById('copy');
+  f.addEventListener('change', () => {
+    const file = f.files && f.files[0];
+    if (!file) return;
+    meta.textContent = file.name + ' — ' + file.size + ' bytes';
+    out.value = '';
+    const r = new FileReader();
+    r.onload = () => {
+      // FileReader.readAsDataURL gives "data:...;base64,XXXX" — strip the prefix.
+      const str = String(r.result);
+      const comma = str.indexOf(',');
+      out.value = comma >= 0 ? str.slice(comma + 1) : str;
+      meta.textContent = file.name + ' — ' + file.size + ' bytes — encoding done (' + (out.value.length|0) + ' chars)';
+    };
+    r.onerror = () => meta.textContent = 'Error reading file.';
+    r.readAsDataURL(file);
+  });
+  copy.addEventListener('click', async () => {
+    if (!out.value) return;
+    try { await navigator.clipboard.writeText(out.value); meta.textContent = 'Copied! Paste it into the GitHub secret field.'; }
+    catch (e) { out.select(); document.execCommand('copy'); meta.textContent = 'Tap the box, then long-press and choose Copy.'; }
+  });
+</script>
+</body>
+</html>
