@@ -16785,7 +16785,7 @@ window.__refetchArtistAlbums = async function(artistName){
     var totalAlbums = 0;
     try{
       var ahDataCache = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
-      if(ahDataCache && ahDataCache.artists && ahDataCache.ts && (Date.now() - ahDataCache.ts) < 24*3600*1000){
+      if(ahDataCache && ahDataCache.artists){
         artistAlbums = ahDataCache.artists;
         totalAlbums = ahDataCache.total || 0;
       }
@@ -16963,6 +16963,7 @@ window.__refetchArtistAlbums = async function(artistName){
           // trackCount 0/null/undefined = unknown, keep the album.
           return _tc3 !== 1;
         });
+        artistAlbums[k] = _dedupAlbums(artistAlbums[k]);
         if(!artistAlbums[k].length) delete artistAlbums[k];
       });
     }catch(_){}
@@ -17124,14 +17125,12 @@ window.__refetchAlbums = async function(wasRefetch){
           var _tn = (a.collectionName||'' ).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
           if(_tn && _hA.indexOf('t:' + _tn) !== -1) return false;
           if(!_tn) return false;
-          if(_noiseS.test(a.collectionName)) return false;
-          var _aN = primaryArtistName((a.artistName||k)).toLowerCase().replace(/[^a-z0-9]/g,'').trim();
-          if(!_aN || _aN === 'various' || _aN === 'variousartists' || !nameMatchArtists(_aN, _kLo)) return false;
           // Filter out singles
           var _tc = a.trackCount;
           if(_tc === 1) return false;
           return true;
         });
+        cache.artists[k] = _dedupAlbums(cache.artists[k]);
         if(!cache.artists[k].length) delete cache.artists[k];
       });
       artistAlbums = cache.artists; totalAlbums = cache.total || 0;
@@ -17343,6 +17342,7 @@ window.__refetchAlbums = async function(wasRefetch){
           // Only remove confirmed singles (trackCount exactly 1)
           return _tc2 !== 1;
         });
+        artistAlbums[k] = _dedupAlbums(artistAlbums[k]);
         if(!artistAlbums[k].length) delete artistAlbums[k];
       });
     }catch(_){}
@@ -17383,6 +17383,25 @@ window.__refetchAlbums = async function(wasRefetch){
 };
 
 // Helper: render Album History popup from artist data object
+// Dedup an artist's album list by normalized title (keeps the first row, so the
+// same album arriving via iTunes/Deezer/MusicBrainz/AI collapses into one entry).
+function _albumKey(a){
+  var t = a && a.collectionName ? a.collectionName.toLowerCase().replace(/\([^)]*\)/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim() : '';
+  return t || (a && a.collectionId ? 'id:' + String(a.collectionId) : '_anon');
+}
+function _dedupAlbums(arr){
+  if(!Array.isArray(arr)) return arr;
+  var seen = {}, out = [];
+  for(var i=0;i<arr.length;i++){
+    var a = arr[i];
+    if(!a || !a.collectionName) continue;
+    var k = _albumKey(a);
+    if(seen[k]) continue;
+    seen[k] = 1; out.push(a);
+  }
+  return out;
+}
+
 function _renderAhFromData(artistAlbums){
   // Never render an empty list: an empty body would overwrite
   // the cached popup with a bare "Refetch" shell (the disappearing-albums glitch).
@@ -17390,6 +17409,8 @@ function _renderAhFromData(artistAlbums){
     openDiscoverPopup('📀 Album History', '<div class="dp-empty" style="padding:30px 12px;">No albums found.<br><span style="font-size:11px;color:var(--ink-dim);">Try pinning some artists first.</span></div>', '');
     return;
   }
+  // Dedup every artist's list before rendering so no album ever shows twice.
+  Object.keys(artistAlbums).forEach(function(k){ if(Array.isArray(artistAlbums[k])) artistAlbums[k] = _dedupAlbums(artistAlbums[k]); });
   var ahHtml = '';
   var ahArtistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistAlbums), 'sidecut_ahArtistOrder') : Object.keys(artistAlbums).sort());
   var ahTotal = 0;
@@ -18522,6 +18543,38 @@ if(!isDiscover) stopDiscoverPreview();
     updateNotifBadge();
   }
 
+  // Backfill artwork for pinned artists saved without a picture (e.g. older
+  // pins), via the iTunes musicArtist lookup — updates the chip as soon as it arrives.
+  var __artFetchBusy = {};
+  function ensurePinnedArtistArt(){
+    if(!pinnedArtists || !pinnedArtists.length) return;
+    pinnedArtists.forEach(function(p){
+      if(p && p.art) return;
+      var key = primaryArtistName(p.name).toLowerCase().trim();
+      if(!key || __artFetchBusy[key]) return;
+      __artFetchBusy[key] = true;
+      var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=musicArtist&limit=5';
+      Promise.resolve(fetchWithProxy(url)).then(function(resp){
+        return resp && resp.ok ? resp.json() : {results:[]};
+      }).then(function(data){
+        var want = key.replace(/[^a-z0-9]/g,'');
+        var pick = null;
+        (data.results||[]).forEach(function(x){
+          if(pick || !x || !x.artworkUrl100) return;
+          var xk = primaryArtistName(x.artistName||'').toLowerCase().trim().replace(/[^a-z0-9]/g,'');
+          if(xk === want || (xk && want && xk.indexOf(want) !== -1 && want.length >= 3)) pick = x;
+        });
+        if(!pick) pick = (data.results||[]).find(function(x){ return x && x.artworkUrl100; });
+        if(pick && pick.artworkUrl100){
+          var art = pick.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? pick.artworkUrl100.replace('/100x100bb.jpg','/400x400bb.jpg') : pick.artworkUrl100;
+          var hit = null;
+          for(var i=0;i<pinnedArtists.length;i++){ if(primaryArtistName(pinnedArtists[i].name).toLowerCase().trim() === key){ hit = pinnedArtists[i]; break; } }
+          if(hit && !hit.art){ hit.art = art; savePinnedArtists(); renderPinnedArtists(); }
+        }
+      }).catch(function(){}).finally(function(){ __artFetchBusy[key] = false; });
+    });
+  }
+
   function renderPinnedArtists(){
     const list = $('pinnedArtistsList');
     if(!list) return;
@@ -18533,7 +18586,9 @@ if(!isDiscover) stopDiscoverPreview();
       const bg = a.art ? `background-image:url("${a.art}");` : 'background:var(--bg-raised);';
       return `<div class="pinned-artist-chip" data-name="${escapeHtml(a.name)}" style="flex:0 0 auto;width:72px;text-align:center;cursor:pointer;position:relative;padding-top:4px;">
         <button class="unpin-artist" data-name="${escapeHtml(a.name)}" title="Unpin ${escapeHtml(a.name)}" style="position:absolute;top:0;right:-4px;width:17px;height:17px;border-radius:50%;background:rgba(0,0,0,0.65);color:#fff;border:1px solid var(--line);font-size:10px;line-height:16px;cursor:pointer;z-index:3;">×</button>
-        <div style="width:56px;height:56px;border-radius:14px;background-size:cover;background-position:center;margin:0 auto;border:1px solid var(--line);${bg}"></div>
+        ${a.art
+          ? `<div style="width:56px;height:56px;border-radius:14px;background-size:cover;background-position:center;margin:0 auto;border:1px solid var(--line);${bg}"></div>`
+          : `<div style="width:56px;height:56px;border-radius:14px;margin:0 auto;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;background:linear-gradient(135deg,#ff4f7e,#7a5cff);">${escapeHtml((a.name||'?').trim().charAt(0).toUpperCase())}</div>`}
         <div style="font-size:10.5px;margin-top:4px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 2px;">${escapeHtml(a.name)}</div>
       </div>`;
     }).join('');
@@ -18542,6 +18597,8 @@ if(!isDiscover) stopDiscoverPreview();
       if(e.target.classList.contains('unpin-artist')) return;
       runDiscoverSearch(chip.dataset.name, chip.dataset.name, null);
     }));
+    // Backfill missing artist artwork (iTunes) so bubbles aren't empty.
+    try{ ensurePinnedArtistArt(); }catch(_ea){}
   }
 
   function renderNewReleases(){
