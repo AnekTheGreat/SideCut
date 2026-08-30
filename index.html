@@ -1798,7 +1798,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 
 <!-- Discover: browse the Spotify catalog online, preview tracks, and grab the MP3 -->
 <div id="discoverView">
-<div id="pinnedArtistsDetails" style="position:sticky; top:10px; z-index:6; margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:var(--bg); box-shadow:0 6px 18px rgba(0,0,0,0.25); overflow:hidden;">
+<div id="pinnedArtistsDetails" style="margin-bottom:14px; border:1px solid var(--line); border-radius:12px; background:var(--bg); overflow:hidden;">
     <div style="padding:10px 14px; font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:8px;">
       <span style="font-size:15px;">📌</span>
       <span style="flex:1;">Your artists</span>
@@ -15657,27 +15657,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // to another app (e.g. Spotify) while backgrounded, or suspend the AudioContext
     // outright. Reassert our own state so playback controls act on us again.
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-    // Don't auto-resume audio on foreground — only resume on explicit user action.
-    // Previously this auto-played when switching back, which was unwanted.
-    // Auto-resume if playback was interrupted while backgrounded (not user-paused).
-    // After ~30 min the OS may kill the audio element or revoke blob URLs.
+    // Never auto-resume audio on foreground — playback resumes only on explicit
+    // user action, even if it was playing when we went into the background.
     const a = activeAudio();
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(t) updateMediaSession(t);
     if('mediaSession' in navigator) navigator.mediaSession.playbackState = a.paused ? 'paused' : 'playing';
-    if(!userPaused && a.paused && queueIndex >= 0 && queueIndex < queue.length){
-      const tt = allTracks.find(tr => tr.id === queue[queueIndex]);
-      if(tt && tt.file){
-        try{ URL.revokeObjectURL(tt.url); }catch(_){}
-        tt.url = URL.createObjectURL(tt.file);
-        a.src = tt.url;
-        a.load();
-        a.play().then(()=>{
-          if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-          requestWakeLock();
-        }).catch(()=>{});
-      }
-    }
   });
 
   // ---------------- Mini-player: collapse now-playing bar while scrolling down ----------------
