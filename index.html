@@ -18655,7 +18655,7 @@ if(!isDiscover) stopDiscoverPreview();
       const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
       const bg = rel.art ? `background-image:url("${rel.art}");` : 'background:var(--bg-raised);';
       const playBtn = rel.previewUrl
-        ? `<button class="nr-play discover-preview-btn" data-preview="${escapeHtml(rel.previewUrl)}" title="Play 30s preview" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:50%; width:30px; height:30px; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;"><svg viewBox="0 0 24 24" style="width:14px; height:14px;"><path d="M8 5v14l11-7z"/></svg></button>`
+        ? `<button class="nr-play discover-preview-btn" data-preview="${escapeHtml(rel.previewUrl)}" data-art="${escapeHtml(rel.art || '')}" data-title="${escapeHtml(rel.title || '')}" data-artist="${escapeHtml(rel.artist || '')}" title="Play 30s preview" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:50%; width:30px; height:30px; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;"><svg viewBox="0 0 24 24" style="width:14px; height:14px;"><path d="M8 5v14l11-7z"/></svg></button>`
         : '';
       return `<div class="new-release-row" data-title="${escapeHtml(rel.title)}" data-artist="${escapeHtml(rel.artist)}" data-preview="${escapeHtml(rel.previewUrl || '')}" data-link="${escapeHtml(rel.url || '')}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line); cursor:pointer;">
         <div style="width:38px; height:38px; border-radius:8px; background-size:cover; background-position:center; flex-shrink:0; ${bg}"></div>
@@ -18671,7 +18671,7 @@ if(!isDiscover) stopDiscoverPreview();
       e.stopPropagation();
       const url = btn.dataset.preview;
       if(!url) return;
-      toggleDiscoverPreview(url, btn);
+      toggleDiscoverPreview(url, btn, { trackName: btn.dataset.title, artistName: btn.dataset.artist, art: btn.dataset.art });
     }));
     list.querySelectorAll('.new-release-row').forEach(row => row.addEventListener('click', (e) => {
       if(e.target.closest('.nr-play')) return;
@@ -18874,7 +18874,7 @@ if(!isDiscover) stopDiscoverPreview();
       previewBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
       previewBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        toggleDiscoverPreview(r.previewUrl, previewBtn);
+        toggleDiscoverPreview(r.previewUrl, previewBtn, r);
       });
       actions.appendChild(previewBtn);
     }
@@ -18929,7 +18929,7 @@ if(!isDiscover) stopDiscoverPreview();
     toast('Spotify opened \u2014 tap the song, then Share \u2192 Copy link.', 5000);
   }
 
-  function toggleDiscoverPreview(url, btn){
+  function toggleDiscoverPreview(url, btn, meta){
     if(!discoverPreviewEl) discoverPreviewEl = $('discoverPreviewAudio');
     if(discoverPlayingUrl === url && !discoverPreviewEl.paused){
       discoverPreviewEl.pause();
@@ -18944,6 +18944,25 @@ if(!isDiscover) stopDiscoverPreview();
     discoverPlayingUrl = url;
     btn.classList.add('playing');
     btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>';
+    // Give this <audio> preview its own Media Session so Android's now-playing
+    // card shows the SideCut track info + artwork instead of Chrome's raw
+    // default session (which is what makes the corner show a Chrome icon).
+    if(meta && 'mediaSession' in navigator && navigator.mediaSession){
+      var _artUrl = meta.art || meta.artworkUrl100 || '';
+      var _artwork = [];
+      if(_artUrl){
+        var _big = _artUrl.indexOf('/100x100bb.jpg') !== -1 ? _artUrl.replace('/100x100bb.jpg','/600x600bb.jpg') : _artUrl;
+        _artwork = [96,128,192,256,384,512].map(function(sz){ return { src: _big, sizes: sz+'x'+sz, type: 'image/jpeg' }; });
+      }
+      try{
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: meta.trackName || meta.title || ('Preview from ' + (meta.artistName || 'SideCut')),
+          artist: meta.artistName || meta.artist || 'SideCut',
+          album: meta.collectionName || 'SideCut',
+          artwork: _artwork
+        });
+      }catch(_e){}
+    }
   }
   function stopDiscoverPreview(){
     if(discoverPreviewEl && !discoverPreviewEl.paused) discoverPreviewEl.pause();
