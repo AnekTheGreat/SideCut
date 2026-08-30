@@ -18544,7 +18544,9 @@ if(!isDiscover) stopDiscoverPreview();
   }
 
   // Backfill artwork for pinned artists saved without a picture (e.g. older
-  // pins), via the iTunes musicArtist lookup — updates the chip as soon as it arrives.
+  // pins). Uses the iTunes musicArtist lookup first; if an artist has no
+  // dedicated artist art, falls back to that artist's most popular song cover
+  // so the bubble always shows a real picture instead of staying blank.
   var __artFetchBusy = {};
   function ensurePinnedArtistArt(){
     if(!pinnedArtists || !pinnedArtists.length) return;
@@ -18553,24 +18555,40 @@ if(!isDiscover) stopDiscoverPreview();
       var key = primaryArtistName(p.name).toLowerCase().trim();
       if(!key || __artFetchBusy[key]) return;
       __artFetchBusy[key] = true;
-      var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=musicArtist&limit=5';
-      Promise.resolve(fetchWithProxy(url)).then(function(resp){
-        return resp && resp.ok ? resp.json() : {results:[]};
-      }).then(function(data){
-        var want = key.replace(/[^a-z0-9]/g,'');
-        var pick = null;
-        (data.results||[]).forEach(function(x){
-          if(pick || !x || !x.artworkUrl100) return;
+      var apply = function(artRaw){
+        if(!artRaw) return;
+        var art = String(artRaw).indexOf('/100x100bb.jpg') !== -1 ? String(artRaw).replace('/100x100bb.jpg','/400x400bb.jpg') : String(artRaw);
+        var hit = null;
+        for(var i=0;i<pinnedArtists.length;i++){ if(primaryArtistName(pinnedArtists[i].name).toLowerCase().trim() === key){ hit = pinnedArtists[i]; break; } }
+        if(hit && !hit.art){ hit.art = art; savePinnedArtists(); renderPinnedArtists(); }
+      };
+      var want = key.replace(/[^a-z0-9]/g,'');
+      function findPick(results){
+        var first = null, matched = null;
+        (results||[]).forEach(function(x){
+          if(!x || !x.artworkUrl100) return;
+          if(!first) first = x;
+          if(matched) return;
           var xk = primaryArtistName(x.artistName||'').toLowerCase().trim().replace(/[^a-z0-9]/g,'');
-          if(xk === want || (xk && want && xk.indexOf(want) !== -1 && want.length >= 3)) pick = x;
+          if(xk === want || (xk && want && (xk.indexOf(want) !== -1 || want.indexOf(xk) !== -1))) matched = x;
         });
-        if(!pick) pick = (data.results||[]).find(function(x){ return x && x.artworkUrl100; });
-        if(pick && pick.artworkUrl100){
-          var art = pick.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? pick.artworkUrl100.replace('/100x100bb.jpg','/400x400bb.jpg') : pick.artworkUrl100;
-          var hit = null;
-          for(var i=0;i<pinnedArtists.length;i++){ if(primaryArtistName(pinnedArtists[i].name).toLowerCase().trim() === key){ hit = pinnedArtists[i]; break; } }
-          if(hit && !hit.art){ hit.art = art; savePinnedArtists(); renderPinnedArtists(); }
-        }
+        return matched || first;
+      }
+      // Route 1: iTunes artist lookup.
+      var u1 = 'https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=musicArtist&limit=25';
+      Promise.resolve(fetchWithProxy(u1)).then(function(resp){
+        return resp && resp.ok ? resp.json() : {results:[]};
+      }).then(function(d1){
+        var pick = findPick(d1.results);
+        if(pick){ apply(pick.artworkUrl100); return; }
+        // Route 2: representative cover from the artist's top songs.
+        var u2 = 'https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=song&limit=25';
+        return Promise.resolve(fetchWithProxy(u2)).then(function(resp){
+          return resp && resp.ok ? resp.json() : {results:[]};
+        }).then(function(d2){
+          var s = findPick(d2.results);
+          if(s) apply(s.artworkUrl100);
+        });
       }).catch(function(){}).finally(function(){ __artFetchBusy[key] = false; });
     });
   }
