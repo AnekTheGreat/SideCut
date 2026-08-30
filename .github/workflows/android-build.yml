@@ -1,0 +1,86 @@
+name: Build Android (Capacitor) AAB
+
+# Builds a signed SideCut Android app (WebView, NOT a TWA) entirely in the cloud.
+# Result: a downloadable .aab you upload to Play Console. No Android Studio needed.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: android-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package.json
+
+      - name: Set up JDK (for Gradle + keytool)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Capacitor
+        run: npm install
+
+      # ---- Stage the static web app into what Capacitor calls its webDir ----
+      - name: Stage web assets into www/
+        run: |
+          rm -rf www
+          mkdir -p www
+          cp index.html www/index.html
+          cp sw.js www/sw.js 2>/dev/null || true
+          cp manifest.json www/manifest.json 2>/dev/null || true
+          cp icon-192.png www/icon-192.png 2>/dev/null || true
+          cp icon-512.png www/icon-512.png 2>/dev/null || true
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Sync web assets into the Android project
+        run: npx cap sync android
+
+      # ---- Signing key (stable across builds so Play accepts updates) ----
+      # The keystore is generated ONCE and cached. Same key every build = smooth updates.
+      - name: Restore cached upload keystore
+        id: ks-cache
+        uses: actions/cache@v4
+        with:
+          path: sidecut-upload.jks
+          key: sidecut-upload-key-${{ runner.os }}
+
+      - name: Generate upload keystore (first run only)
+        if: steps.ks-cache.outputs.cache-hit != 'true'
+        run: |
+          keytool -genkeypair \
+            -v -keystore sidecut-upload.jks \
+            -alias sidecut \
+            -storepass 'SideCutUpload!2026' \
+            -keypass 'SideCutUpload!2026' \
+            -keyalg RSA -keysize 4096 -validity 10950 \
+            -dname "CN=SideCut, OU=Android, O=AnekTheGreat, L=Unknown, ST=Unknown, C=US"
+
+      - name: Wire signing into the Android Gradle config
+        run: python3 .github/workflows/patch-signing.py
+
+      # ---------------- Real build ---------------
+      - name: Build release AAB
+        run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SideCut-release
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
