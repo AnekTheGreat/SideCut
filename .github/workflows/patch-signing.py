@@ -15,10 +15,15 @@ BUILD_GRADLE = os.path.join(ANDROID_APP, 'build.gradle')
 KEYSTORE = os.path.join(ROOT, 'sidecut-upload.jks')
 
 # -------- Read credentials from env (set as GitHub repo secrets) --------
+# Values are .strip()ed defensively: entering a secret on a phone can leave a
+# stray trailing space/newline (autocorrect or copy-paste) that otherwise makes
+# Gradle reject a perfectly correct password "keystore password was incorrect".
+# Keystore/key passwords almost never contain meaningful leading/trailing
+# whitespace, so stripping is safe and only guards against the paste bug.
 KS_B64 = os.environ.get('ANDROID_KEYSTORE_BASE64', '').strip()
-STORE_PASS = os.environ.get('ANDROID_KEYSTORE_PASSWORD', '')
-KEY_PASS = os.environ.get('ANDROID_KEY_PASSWORD', '')
-ALIAS = os.environ.get('ANDROID_KEY_ALIAS', '')
+STORE_PASS = os.environ.get('ANDROID_KEYSTORE_PASSWORD', '').strip()
+KEY_PASS = os.environ.get('ANDROID_KEY_PASSWORD', '').strip()
+ALIAS = os.environ.get('ANDROID_KEY_ALIAS', '').strip()
 
 
 def write_keystore_from_secret():
