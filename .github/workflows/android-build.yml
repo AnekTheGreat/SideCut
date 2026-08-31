@@ -78,13 +78,28 @@ jobs:
           keytool -list -keystore sidecut-upload.jks -storepass "SideCut-Upload-Key-2026!Gen" -storetype PKCS12 2>&1 | head -30
           echo "--- done ---"
 
+      # Export the upload-key CERTIFICATE (PEM) from the generated keystore so
+      # the owner can register it in Play Console's App signing -> reset upload
+      # key screen (that screen needs a .pem certificate, NOT the .aab).
+      - name: Export upload certificate (PEM)
+        run: |
+          keytool -export -rfc \
+            -keystore sidecut-upload.jks \
+            -storepass "SideCut-Upload-Key-2026!Gen" \
+            -alias sidecut \
+            -file upload_certificate.pem
+          echo "certificate exported:"; head -1 upload_certificate.pem
+          mv upload_certificate.pem android/app/build/outputs/bundle/release/ 2>/dev/null || { cp upload_certificate.pem android/app/build/outputs/bundle/release/ 2>/dev/null || mv upload_certificate.pem .; }
+
       # ---------------- Real build ---------------
       - name: Build release AAB
         run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
 
-      - name: Upload AAB artifact
+      - name: Upload AAB + certificate
         uses: actions/upload-artifact@v4
         with:
           name: SideCut-release
-          path: android/app/build/outputs/bundle/release/app-release.aab
+          path: |
+            android/app/build/outputs/bundle/release/app-release.aab
+            upload_certificate.pem
           if-no-files-found: error
