@@ -51,29 +51,29 @@ jobs:
       - name: Sync web assets into the Android project
         run: npx cap sync android
 
-      # ---- Signing with the REAL Play upload keystore ----
-      # The keystore (base64) + passwords/alias come from GitHub repo secrets.
-      # Keystore material is NEVER stored in the repo.
-      - name: Wire the developer keystore into the Android Gradle config
+      # ---- Signing: generated keystore (phone-only path) ----
+      # The pipeline generates its OWN keystore, cached so the same key is reused
+      # on every build. After ONE Play Console upload-key reset (registering the
+      # exported certificate below), Play accepts it and every future build signs
+      # cleanly. No keystore password needed — works 100% from a phone.
+      - name: Cache the generated signing keystore
+        uses: actions/cache@v4
+        with:
+          path: sidecut-upload.jks
+          key: sidecut-generated-key-v1
+
+      - name: Wire signing into the Android Gradle config
         run: python3 .github/workflows/patch-signing.py
         env:
-          ANDROID_SIGNING_MODE: secret
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_SIGNING_MODE: generated
 
-      # Independent sanity check of the keystore via Java's keytool, using the
-      # store password from the secret — confirms the corrected password opens
-      # the real keystore before Gradle runs.
+      # Independent sanity check of the generated keystore via Java's keytool.
       - name: Verify keystore with keytool
         run: |
           set +e
           echo "--- keytool -list ---"
-          keytool -list -keystore sidecut-upload.jks -storepass "$PASS" -storetype PKCS12 2>&1 | head -30
+          keytool -list -keystore sidecut-upload.jks -storepass "SideCut-Upload-Key-2026!Gen" -storetype PKCS12 2>&1 | head -30
           echo "--- done ---"
-        env:
-          PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
 
       # ---------------- Real build ---------------
       - name: Build release AAB
