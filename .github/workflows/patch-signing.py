@@ -14,6 +14,22 @@ ANDROID_APP = os.path.join(ROOT, 'android', 'app')
 BUILD_GRADLE = os.path.join(ANDROID_APP, 'build.gradle')
 KEYSTORE = os.path.join(ROOT, 'sidecut-upload.jks')
 
+
+def detect_storetype(path):
+    """Return 'pkcs12' or 'jks' for the given keystore file (by magic bytes).
+    A PKCS#12 bundle starts 0x30 0x82 (DER SEQUENCE, long-form length); a JKS
+    starts 0xFE 0xED 0xFE 0xED. PWA Builder's 'signing.keystore' is often
+    PKCS#12 despite the .keystore name; Gradle defaults to JKS, and jam a
+    PKCS#12 into the JKS loader => 'keystore password was incorrect'."""
+    with open(path, 'rb') as f:
+        head = f.read(8)
+    if len(head) >= 4 and head[0] == 0xFE and head[1] == 0xED and head[2] == 0xFE and head[3] == 0xED:
+        return 'jks'
+    if len(head) >= 2 and head[0] == 0x30 and head[1] == 0x82:
+        return 'pkcs12'
+    return 'jks'  # unknown; fall back to default
+
+
 # -------- Read credentials from env (set as GitHub repo secrets) --------
 # Values are .strip()ed defensively: entering a secret on a phone can leave a
 # stray trailing space/newline (autocorrect or copy-paste) that otherwise makes
@@ -63,6 +79,7 @@ android {{
         release {{
             if (sidecutKsProps.storeFile) {{
                 storeFile file(sidecutKsProps.storeFile)
+                storeType sidecutKsProps.storeType ?: 'jks'
                 storePassword sidecutKsProps.storePassword
                 keyAlias sidecutKsProps.keyAlias
                 keyPassword sidecutKsProps.keyPassword
@@ -90,10 +107,13 @@ android {{
 
 def write_keystore_properties():
     # Gradle reads it via rootProject.file(...) => lives in the android/ project.
+    storetype = detect_storetype(KEYSTORE)
+    print('detected keystore format:', storetype)
     ks_path = os.path.join(ROOT, 'android', 'keystore.properties')
     with open(ks_path, 'w') as f:
         f.write('\n'.join([
             f'storeFile={KEYSTORE}',
+            f'storeType={storetype}',
             f'storePassword={STORE_PASS}',
             f'keyAlias={ALIAS}',
             f'keyPassword={KEY_PASS}',
