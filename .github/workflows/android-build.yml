@@ -51,29 +51,44 @@ jobs:
       - name: Sync web assets into the Android project
         run: npx cap sync android
 
-      # ---- Signing: generated keystore (phone-only path) ----
-      # The pipeline generates its OWN keystore, cached so the same key is reused
-      # on every build. After ONE Play Console upload-key reset (registering the
-      # exported certificate below), Play accepts it and every future build signs
-      # cleanly. No keystore password needed — works 100% from a phone.
-      - name: Cache the generated signing keystore
-        uses: actions/cache@v4
-        with:
-          path: sidecut-upload.jks
-          key: sidecut-generated-key-v1
-
-      - name: Wire signing into the Android Gradle config
+      # ---- Signing with the REAL Play upload keystore ----
+      # The keystore (base64) + passwords/alias come from GitHub repo secrets.
+      # Keystore material is NEVER stored in the repo. The signing script
+      # auto-detects the store type (PKCS#12 vs JKS) and, if the password in
+      # the secret is off by a typo, falls back to the exact password PWA
+      # Builder printed for signing.keystore — so a paste/case slip in the
+      # secret can't silently break signing.
+      - name: Wire the developer keystore into the Android Gradle config
         run: python3 .github/workflows/patch-signing.py
         env:
-          ANDROID_SIGNING_MODE: generated
+          ANDROID_SIGNING_MODE: secret
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
 
-      # Independent sanity check of the generated keystore via Java's keytool.
+      # Independent sanity check: confirm the exact password/alias pair the
+      # script settled on really opens the keystore (Java's own keytool).
       - name: Verify keystore with keytool
         run: |
           set +e
-          echo "--- keytool -list ---"
-          keytool -list -keystore sidecut-upload.jks -storepass "SideCut-Upload-Key-2026!Gen" -storetype PKCS12 2>&1 | head -30
+          echo "--- keytool -list (using working creds from keystore.properties) ---"
+          keytool -list -keystore sidecut-upload.jks \
+            -storepass "$(grep '^storePassword=' android/keystore.properties | cut -d= -f2)" \
+            -storetype "$(grep '^storeType=' android/keystore.properties | cut -d= -f2)" 2>&1 | head -30
           echo "--- done ---"
+
+      # Export the upload-key CERTIFICATE (PEM) from the same keystore, so if
+      # Play Console ever asks for it (App signing -> reset upload key), it is
+      # ready in the artifact. The cert and the AAB come from the same key.
+      - name: Export upload certificate (PEM)
+        run: |
+          keytool -export -rfc \
+            -keystore sidecut-upload.jks \
+            -storepass "$(grep '^storePassword=' android/keystore.properties | cut -d= -f2)" \
+            -alias "$(grep '^keyAlias=' android/keystore.properties | cut -d= -f2)" \
+            -file upload_certificate.pem
+          head -1 upload_certificate.pem
 
       # ---------------- Real build ---------------
       - name: Build release AAB

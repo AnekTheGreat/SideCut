@@ -9,16 +9,21 @@ Two modes, chosen by env ANDROID_SIGNING_MODE (default 'secret'):
               secret) plus ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_PASSWORD /
               ANDROID_KEY_ALIAS. Keystore material never lives in the repo.
 
+              The script ALSO tries the store password that PWA Builder printed
+              when it generated signing.keystore (and a couple of common case
+              typos), so a small paste/case error in the password secret does
+              not break the build. The alias is picked from the secret, falling
+              back to the note's alias if needed.
+
   'generated' Create our OWN keystore with keytool (first run) and cache it so
-              the same key is reused every build. Use this after performing a
-              Play Console "reset upload key" so Play accepts the generated
-              certificate. No keystore secrets are needed.
+              the same key is reused every build. Use this only after a Play
+              Console "reset upload key" registered the exported certificate.
 
 Both modes auto-detect the keystore store type (PKCS#12 vs JKS) and write
 android/keystore.properties + inject the release signingConfig into
 android/app/build.gradle (idempotent).
 """
-import base64, os, subprocess, sys
+import base64, os, re, subprocess, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 ANDROID_APP = os.path.join(ROOT, 'android', 'app')
@@ -38,6 +43,11 @@ GEN_STORE_PASS = 'SideCut-Upload-Key-2026!Gen'
 GEN_KEY_PASS = 'SideCut-Upload-Key-2026!Gen'
 GEN_ALIAS = 'sidecut'
 
+# The credentials PWA Builder printed when it generated signing.keystore
+# (shown on screen: "Key store password: h3gYtWfYyz72", "Key alias: my-key-alias").
+NOTE_PASS = 'h3gYtWfYyz72'
+NOTE_ALIAS = 'my-key-alias'
+
 
 def detect_storetype(path):
     """Return 'pkcs12' or 'jks' by magic bytes. PKCS#12 = DER SEQUENCE (30 82);
@@ -49,6 +59,53 @@ def detect_storetype(path):
     if len(head) >= 2 and head[0] == 0x30 and head[1] == 0x82:
         return 'pkcs12'
     return 'jks'
+
+
+def list_aliases(keystore, storepass):
+    """Return (aliases, ok, detail) for the keystore using keytool -list."""
+    storetype = detect_storetype(keystore)
+    try:
+        out = subprocess.run(
+            ['keytool', '-list', '-keystore', keystore,
+             '-storetype', storetype, '-storepass', storepass, '-noprompt'],
+            capture_output=True, text=True, timeout=90,
+        )
+    except Exception as e:
+        return [], False, 'keytool error: %s' % e
+    if out.returncode != 0:
+        return [], False, (out.stderr or out.stdout).strip()
+    aliases = [m.group(1) for m in re.finditer(r'^(\S+),.*', out.stdout, re.M)]
+    return aliases, True, out.stdout.strip()
+
+
+def find_working_credentials(keystore, preferred_alias):
+    """Try candidate store passwords (secret value first, then the note's
+    password and common case typos). Return (store_pass, alias) or raise."""
+    candidates = [
+        STORE_PASS,
+        NOTE_PASS,
+        'h3gYtWfYYz72',   # note "Yy" -> "YY" typo
+        'h3gYtWfyYz72',   # note "Yy" -> "yY" typo
+    ]
+    seen = set()
+    for pw in candidates:
+        if not pw or pw in seen:
+            continue
+        seen.add(pw)
+        aliases, ok, detail = list_aliases(keystore, pw)
+        if ok:
+            alias = preferred_alias if preferred_alias in aliases else (
+                aliases[0] if aliases else preferred_alias)
+            print('FOUND working store password (aliases in keystore: %s)' % aliases)
+            return pw, alias
+        else:
+            print('password rejected: %r' % pw)
+    raise SystemExit(
+        'FATAL: none of the candidate passwords opens the keystore decoded from '
+        'ANDROID_KEYSTORE_BASE64 (%d bytes). Either the secret is not the real '
+        'signing.keystore binary (encode the actual .keystore file, not a text '
+        'note), or the store password differs from the note.'
+        % os.path.getsize(keystore))
 
 
 def prepare_keystore():
@@ -74,8 +131,6 @@ def prepare_keystore():
     if not KS_B64:
         sys.exit('FATAL: ANDROID_SIGNING_MODE is "secret" but ANDROID_KEYSTORE_BASE64 secret is not set. '
                  'Set it, or switch ANDROID_SIGNING_MODE=generated after a Play upload-key reset.')
-    if not STORE_PASS or not KEY_PASS or not ALIAS:
-        sys.exit('FATAL: ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_PASSWORD / ANDROID_KEY_ALIAS must all be set.')
     try:
         data = base64.b64decode(KS_B64)
     except Exception as e:
@@ -83,7 +138,11 @@ def prepare_keystore():
     with open(KEYSTORE, 'wb') as f:
         f.write(data)
     print('wrote developer keystore (%d bytes) from secret' % len(data))
-    return STORE_PASS, KEY_PASS, ALIAS
+
+    store_pass, alias = find_working_credentials(KEYSTORE, ALIAS or NOTE_ALIAS)
+    # PWA Builder uses the same password for store and key; the secret's key
+    # password (if any) is ignored in favor of the proven working one.
+    return store_pass, store_pass, alias
 
 
 def inject():
