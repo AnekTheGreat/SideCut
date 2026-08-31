@@ -1049,7 +1049,7 @@
   }
   .stat-add-btn:active{ background:var(--coral); color:#161616; }
   .stat-del-btn{
-    position:absolute; top:6px; right:6px;
+    position:absolute; top:34px; right:8px;
     width:22px; height:22px; border-radius:50%;
     border:1px solid var(--line); background:none;
     color:var(--ink-dim); font-size:14px; font-weight:700;
@@ -12377,7 +12377,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} PLUS playlists, stats, theme, EQ and settings — as a full restorable backup .zip?`, async () => {
+    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} PLUS playlists, listening stats, streak, theme, EQ, all settings, and your premium unlock code (if you have one) — as a full restorable backup .zip?`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
       const premiumPayload = buildPremiumPayload();
       await runZipExport({
@@ -13259,8 +13259,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   }
   function computeStreak(){
-    let streak = 0;
     let cursor = new Date();
+    // 1-day buffer: if today wasn't a listening day but yesterday was, the
+    // streak survives the miss and keeps counting from yesterday. Two missed
+    // days in a row (today AND yesterday inactive) resets it.
+    if(!listenedDates.has(dateKeyFor(cursor))){
+      cursor.setDate(cursor.getDate() - 1); // buffer covers an inactive today
+      if(!listenedDates.has(dateKeyFor(cursor))) return 0;
+    }
+    let streak = 0;
     while(true){
       const key = dateKeyFor(cursor);
       if(listenedDates.has(key)){
