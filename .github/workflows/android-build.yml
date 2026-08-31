@@ -105,11 +105,22 @@ jobs:
       - name: Build release AAB
         run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
 
+      # Name the file and artifact with the actual version (e.g. SideCut-5.0.3.aab
+      # in a SideCut-5.0.3-release zip) so a phone-only releaser can never grab
+      # the wrong build — every prior artifact was also called app-release.aab and
+      # indistinguishable when downloaded twice (see the 500002-vs-500003 mix-up).
+      - name: Compute version and rename AAB
+        id: ver
+        run: |
+          V="$(node -p "require('./package.json').version")"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          cp android/app/build/outputs/bundle/release/app-release.aab "SideCut-$V.aab"
+
       - name: Upload AAB + certificate
         uses: actions/upload-artifact@v4
         with:
-          name: SideCut-release
+          name: SideCut-${{ steps.ver.outputs.version }}-release
           path: |
-            android/app/build/outputs/bundle/release/app-release.aab
+            SideCut-${{ steps.ver.outputs.version }}.aab
             upload_certificate.pem
           if-no-files-found: error
