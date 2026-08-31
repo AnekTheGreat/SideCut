@@ -63,6 +63,21 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
 
+      # Diagnose the keystore independently of Gradle: keytool will show whether
+      # the store password opens it and list the actual alias(es). If the alias
+      # secret doesn't match what's inside, users see it here instead of a vague
+      # 'keystore password was incorrect' from Gradle.
+      - name: Verify keystore with keytool
+        run: |
+          set +e
+          echo "--- keytool -list (store password check) ---"
+          keytool -list -keystore sidecut-upload.jks -storepass "$LOOP_SECRET" \
+            ${KEYSTORE_TYPE_FLAG} 2>&1 | sed 's/Password is entered/ok/' | head -30
+          echo "--- exit: $? ---"
+        env:
+          LOOP_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEYSTORE_TYPE_FLAG: "-storetype PKCS12"
+
       # ---------------- Real build ---------------
       - name: Build release AAB
         run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
