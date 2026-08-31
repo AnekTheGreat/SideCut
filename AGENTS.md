@@ -1,5 +1,21 @@
 # SideCut — repository memory
 
+## Android Capacitor signing (Aug 30, 2026) — REAL Play upload keystore
+- User has the REAL upload keystore (`signing.keystore`) used for the existing
+  Play app `com.SideCut.myapp`. The Capacitor cloud build (.github/workflows/
+  android-build.yml) signs the AAB with it, via 4 GitHub repo secrets:
+  `ANDROID_KEYSTORE_BASE64` (keystore, base64), `ANDROID_KEYSTORE_PASSWORD`,
+  `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS` (alias: `my-key-alias`).
+- Keystore material NEVER lives in the repo; the workflow decodes it from
+  secrets at build time (patch-signing.py). Builds fail fast if the secrets
+  are missing.
+- Goal: packaged as a Capacitor **WebView** app (NOT the PWABuilder TWA) so the
+  lock-screen / media notification is attributed to the SideCut app icon
+  instead of Chrome's. Same appId keeps it an in-place Play update.
+- `tools/base64.html` (served on GitHub Pages) lets a phone-only user base64-
+  encode the keystore locally, no computer needed.
+
+
 ## GUEST PREFERENCE (Aug 30, 2026): DO NOT bump the version
 - The user explicitly said "Don't bump ver" — stop incrementing APP_VERSION.
   Leave APP_VERSION at 52.5 and sw.js CACHE_NAME at sidecut-shell-v52.5 for
