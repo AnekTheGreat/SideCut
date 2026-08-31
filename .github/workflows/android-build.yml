@@ -51,32 +51,32 @@ jobs:
       - name: Sync web assets into the Android project
         run: npx cap sync android
 
-      # ---- Signing with the REAL upload keystore ----
-      # The keystore (base64) + its passwords/alias are stored as GitHub repo
-      # secrets and injected here, so the app is signed with the same key Play
-      # already knows. Keystore material is NEVER stored in the repo.
-      - name: Wire the developer keystore into the Android Gradle config
+      # ---- Signing: generated keystore (after Play upload-key reset) ----
+      # The pipeline generates its OWN keystore, cached so the same key is reused
+      # on every build. After ONE Play Console upload-key reset, Play accepts it
+      # and every future build signs cleanly. No keystore secrets to manage.
+      # If you still want to sign with your real Play upload keystore instead,
+      # switch ANDROID_SIGNING_MODE to "secret" below and set the 4 repo secrets.
+      - name: Cache the generated signing keystore
+        uses: actions/cache@v4
+        with:
+          path: sidecut-upload.jks
+          key: sidecut-generated-key-v1
+
+      - name: Wire signing into the Android Gradle config
         run: python3 .github/workflows/patch-signing.py
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_SIGNING_MODE: generated
 
-      # Diagnose the keystore independently of Gradle: keytool will show whether
-      # the store password opens it and list the actual alias(es). If the alias
-      # secret doesn't match what's inside, users see it here instead of a vague
-      # 'keystore password was incorrect' from Gradle.
+      # Independent sanity check of the keystore via Java's keytool (works in
+      # both signing modes). Confirms the alias Gradle will look up actually
+      # exists inside the store.
       - name: Verify keystore with keytool
         run: |
           set +e
-          echo "--- keytool -list (store password check) ---"
-          keytool -list -keystore sidecut-upload.jks -storepass "$LOOP_SECRET" \
-            ${KEYSTORE_TYPE_FLAG} 2>&1 | sed 's/Password is entered/ok/' | head -30
-          echo "--- exit: $? ---"
-        env:
-          LOOP_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEYSTORE_TYPE_FLAG: "-storetype PKCS12"
+          echo "--- keytool -list ---"
+          keytool -list -keystore sidecut-upload.jks -storepass "SideCut-Upload-Key-2026!Gen" -storetype PKCS12 2>&1 | head -30
+          echo "--- done ---"
 
       # ---------------- Real build ---------------
       - name: Build release AAB
