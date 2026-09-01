@@ -1726,8 +1726,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     </div>
   </div>
 </div>
-<input type="file" id="importLibInput" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream">
-<input type="file" id="importIntoPlaylistInput" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream">
+<input type="file" id="importLibInput">
+<input type="file" id="importIntoPlaylistInput">
 <input type="file" id="addFilesToPlaylistInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
 
 <div class="toast" id="toast"></div>
@@ -7539,14 +7539,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '53.5';
+  const APP_VERSION = '54';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '53.5'){
+    if(_lastCacheVer !== '54'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '53.5');
+      localStorage.setItem('sidecut_discCacheVersion', '54');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7561,6 +7561,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '54', date: 'September 1, 2026', title: 'Play no longer crashes; export and import fixed in the app', items: [
+      'Fixed the crash when pressing play in the installed app: the broken media-notification plugin is now disconnected permanently the first time it misbehaves, instead of being called again during playback when it crashed the whole app. On affected phones the lock-screen player stays off — everything else works',
+      'Export no longer produces 0-byte files in the installed app: the zip is written natively and handed to the Android share sheet, so it can be saved to Files, Drive, or sent anywhere. Browsers keep the normal download',
+      'Import backup: removed the file-type filter that made the Android picker open empty or not open at all — the picker now always opens and shows your zip; the importer still checks the file itself',
+    ]},
     { version: '53.5', date: 'September 1, 2026', title: 'Fixed the crash the red banner caught on phones', items: [
       'The startup error the on-screen banner reported (media session .catch crash, line 13423) is fixed — on some phones the Android media-notification plugin returns no promise, and that one crash killed the media player bar and the Playlists/Discover tabs. Every plugin call is now crash-proof',
       'Media notification and lock-screen controls now work even when the plugin answers oddly — worst case they are simply absent instead of breaking the app',
@@ -12237,6 +12242,41 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Blob.arrayBuffer() is missing/broken), reports live progress + ETA to the
   // notification bell, and streams the zip compression with an onUpdate percent.
   // Runs entirely async — playback is never interrupted, so you can keep listening.
+  // Save an exported file. In the bundled app an <a download> click produces a
+  // 0-byte file (the WebView's downloader cannot fetch blob: URLs), so on native
+  // the zip is written to the app cache and handed to the Android share sheet —
+  // from there it saves to Files, Drive, WhatsApp, anywhere. Browsers keep the
+  // normal download-anchor path. Falls back automatically if anything is off.
+  async function saveExportFile(blob, filename){
+    try{
+      const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
+      const FS = cap ? cap.Filesystem : null;
+      const Share = cap ? cap.Share : null;
+      if(FS && Share && typeof FS.writeFile === 'function' && typeof Share.share === 'function'){
+        const data = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result).split(',')[1] || '');
+          r.onerror = () => rej(r.error || new Error('could not read export data'));
+          r.readAsDataURL(blob);
+        });
+        const w = await FS.writeFile({ path: filename, data, directory: 'CACHE', recursive: true });
+        const uri = w && w.uri;
+        if(uri){
+          await Share.share({ title: filename, files: [uri], dialogTitle: 'Save your SideCut export' });
+          return true;
+        }
+      }
+    }catch(e){ console.warn('Native save unavailable, using download instead', e); }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return false;
+  }
   async function runZipExport(opts){
     const { tracks, manifest, filename, kindLabel } = opts;
     if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
@@ -12382,17 +12422,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
           }
         );
         exportState.compressPct = 100;
-        // Anchor must live in the DOM for the click to actually fire a download —
-        // a detached element's .click() is silently ignored by most mobile
-        // webviews (and the APK shell), which is why export "did nothing" before.
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        // In the app this writes the file natively and opens the share sheet;
+        // in browsers it falls back to the normal download anchor (see above).
+        saveExportFile(blob, filename);
       }
       exportState.active = false;
       exportState.phase = 'done';
@@ -13403,34 +13435,43 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // combos they return undefined or a plain object — calling .catch on that
   // threw at top level during boot and killed everything wired after it.
   // capQuiet swallows the result only when it really is a promise.
+  let capPluginUsable = true; // flips false the moment the bridge misbehaves
   function capQuiet(p){
     if(p && typeof p.catch === 'function'){ p.catch(function(){}); }
+    else if(!p){
+      // The bridge returned nothing — this plugin is not actually connected on
+      // this device (its native layer is missing or broken). Pushing playback
+      // state into it later (on play) hard-crashed the whole app process, so
+      // disconnect it permanently. Web fallbacks take over; the worst case is
+      // simply no lock-screen player instead of a dead app.
+      capPluginUsable = false;
+    }
   }
   function mediaSetMetadata(t){
     const artType = (t.artBlob && t.artBlob.type) || 'image/jpeg';
     const artwork = t.artUrl && /^https?:/i.test(t.artUrl) ? [{ src: t.artUrl, sizes: '512x512', type: artType }] : [];
-    if(capMediaSession){
+    if(capMediaSession && capPluginUsable){
       capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }); }catch(e){}
     }
   }
   function mediaSetPlaybackState(state){
-    if(capMediaSession){
+    if(capMediaSession && capPluginUsable){
       capQuiet(capMediaSession.setPlaybackState({ playbackState: state }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.playbackState = state; }catch(e){}
     }
   }
   function mediaSetPositionState(duration, playbackRate, position){
-    if(capMediaSession){
+    if(capMediaSession && capPluginUsable){
       capQuiet(capMediaSession.setPositionState({ duration, playbackRate, position }));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function'){
       try{ navigator.mediaSession.setPositionState({ duration, playbackRate, position }); }catch(e){ /* out-of-range mid-seek — safe to ignore */ }
     }
   }
   function mediaSetActionHandler(action, handler){
-    if(capMediaSession){
+    if(capMediaSession && capPluginUsable){
       capQuiet(capMediaSession.setActionHandler({ action: action }, handler));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
       try{ navigator.mediaSession.setActionHandler(action, handler); }catch(e){}
@@ -13472,7 +13513,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const artwork = t.artUrl ? [96, 128, 192, 256, 384, 512].map(size => ({
       src: t.artUrl, sizes: `${size}x${size}`, type: artType
     })) : [];
-    if(capMediaSession){
+    if(capMediaSession && capPluginUsable){
       // native mirror for the Play build's notification card
       capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
     }
