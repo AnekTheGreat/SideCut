@@ -111,6 +111,11 @@ jobs:
       - name: Build release AAB
         run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
 
+      # Also build a directly-installable APK (same signed release build) so a
+      # phone-only releaser can side-load the exact same app without Play.
+      - name: Build release APK
+        run: cd android && ./gradlew assembleRelease --no-daemon
+
       # Name the file and artifact with the actual version (e.g. SideCut-5.0.3.aab
       # in a SideCut-5.0.3-release zip) so a phone-only releaser can never grab
       # the wrong build — every prior artifact was also called app-release.aab and
@@ -121,6 +126,7 @@ jobs:
           V="$(node -p "require('./package.json').version")"
           echo "version=$V" >> "$GITHUB_OUTPUT"
           cp android/app/build/outputs/bundle/release/app-release.aab "SideCut-$V.aab"
+          cp android/app/build/outputs/apk/release/app-release.apk "SideCut-$V.apk"
 
       - name: Upload AAB + certificate
         uses: actions/upload-artifact@v4
@@ -128,5 +134,6 @@ jobs:
           name: SideCut-${{ steps.ver.outputs.version }}-release
           path: |
             SideCut-${{ steps.ver.outputs.version }}.aab
+            SideCut-${{ steps.ver.outputs.version }}.apk
             upload_certificate.pem
           if-no-files-found: error
