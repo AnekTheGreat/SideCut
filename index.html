@@ -2143,6 +2143,11 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <div id="premiumManageView" style="display:none;">
         <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Manage premium</div>
         <div id="premiumPlanLine" style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:14px;"></div>
+        <div id="premiumCodeBox" style="display:none; border:1px dashed var(--line); border-radius:10px; padding:10px 12px; margin-bottom:14px;">
+          <div style="font-size:11px; color:var(--ink-dim); margin-bottom:4px;">Your unlock code — tap to copy. Enter it under Redeem a code on any device to transfer premium there:</div>
+          <div id="premiumCodeValue" style="font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--ink); cursor:pointer; user-select:all; word-break:break-all;"></div>
+        </div>
+        <button id="premiumTransferBtn" style="display:block; width:100%; background:var(--bg); border:1px solid var(--coral); color:var(--coral); border-radius:10px; padding:11px 12px; font-size:13px; font-weight:600; cursor:pointer; margin-bottom:14px;">📤 Transfer to any device</button>
 
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Your unlocked features</div>
         <div id="premiumFeatureList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:18px;">
@@ -4663,6 +4668,18 @@ function getApiHeaders() {
           planLine.textContent = 'Plan: Gifted code — unlocked on this device.';
         }
       }
+      // Show the redeemable code (when this premium came from a code) so it can
+      // be transferred by hand — Settings → Premium on the other device → Redeem.
+      const codeBox = $('premiumCodeBox');
+      const codeVal = $('premiumCodeValue');
+      if(codeBox && codeVal){
+        if(info && info.code){
+          codeVal.textContent = info.code;
+          codeBox.style.display = 'block';
+        } else {
+          codeBox.style.display = 'none';
+        }
+      }
     }
   }
 
@@ -4754,6 +4771,39 @@ function getApiHeaders() {
       msg.textContent = 'Play billing only works inside the SideCut app installed from Google Play. Opening the Play Store so you can install it.';
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
+
+    const codeVal = $('premiumCodeValue');
+    if(codeVal && !codeVal._init){
+      codeVal._init = true;
+      codeVal.addEventListener('click', () => {
+        const txt = codeVal.textContent || '';
+        if(!txt) return;
+        const done = () => toast('Code copied — paste it into Redeem a code on your other device.', 3600);
+        if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>{}); }
+        else {
+          try{
+            const ta = document.createElement('textarea');
+            ta.value = txt; document.body.appendChild(ta); ta.select();
+            document.execCommand('copy'); document.body.removeChild(ta); done();
+          }catch(e){}
+        }
+      });
+    }
+
+    const transferBtn = $('premiumTransferBtn');
+    if(transferBtn && !transferBtn._init){
+      transferBtn._init = true;
+      transferBtn.addEventListener('click', () => {
+        const info = getPremiumInfo();
+        if(info && info.code){
+          const box = $('premiumCodeBox');
+          if(box) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          toast('1) Tap the code above to copy. 2) On the other device: Settings → Premium → paste it under Redeem a code. Done!', 6500);
+        } else {
+          toast('Premium from Play billing has no code — use + Add songs ▾ → Export everything here, then Import backup on the other device. Premium rides inside the backup.', 6500);
+        }
+      });
+    }
 
     const doRedeem = async () => {
       const code = input.value.trim();
@@ -7143,7 +7193,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
     html += `</div>`;
 
-    html += `<div><h3 style="font-size:14px; margin-bottom:8px;">All songs (${allPlayedTracks.length})</h3>`;
+    const totalTrackPlays = allPlayedTracks.reduce((n, t) => n + (t.playCount || 0), 0);
+    html += `<div><h3 style="font-size:14px; margin-bottom:8px;">All songs (${allPlayedTracks.length} · ${totalTrackPlays} total plays)</h3>`;
     if(!allPlayedTracks.length){
       html += `<div style="font-size:13px; color:var(--ink-dim);">Play some songs to see your listening history here.</div>`;
     } else {
@@ -7151,7 +7202,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); gap:10px;">
           <div style="min-width:0; flex:1;">
             <div style="font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(t.name)}</div>
-            <div style="font-size:11.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(t.artist)}</div>
+            <div style="font-size:11.5px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(t.artist)}${t.lastPlayedAt ? ' · last played ' + timeAgo(t.lastPlayedAt) : ''}</div>
           </div>
           <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--gold); flex-shrink:0;">${t.playCount}×</div>
         </div>
@@ -7558,7 +7609,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.20';
+  const APP_VERSION = '5.0.21';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -13234,7 +13285,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         navigate('library');
         renderTabs();
         renderList();
-        toast(`Imported ${count} track${count===1?'':'s'}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + all settings' : ''}`);
+        const withPlays = (manifest.tracks || []).filter(m => m.playCount > 0).length;
+        toast(`Imported ${count} track${count===1?'':'s'}${withPlays ? ' (' + withPlays + ' with play history)' : ''}${targetPlaylist ? ` into "${targetPlaylist}"` : ''}${manifest.settings ? ' + all settings' : ''}`);
       }
     }catch(e){
       console.error(e);
