@@ -7553,14 +7553,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.15';
+  const APP_VERSION = '5.0.16';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '5.0.15'){
+    if(_lastCacheVer !== '5.0.16'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '5.0.15');
+      localStorage.setItem('sidecut_discCacheVersion', '5.0.16');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7575,6 +7575,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '5.0.16', date: 'September 1, 2026 at 9:40 pm EDT', title: 'Import crash found and fixed — the app now survives big backups', items: [
+      'The crash the banner reported (dying during a zip import) is fixed: the importer was holding every song\'s audio data in memory until the very end, so big backups exhausted the phone\'s memory and the system killed the app. It now writes songs to storage in small batches as it goes — peak memory stays tiny no matter how big the backup is',
+      'The import now announces its progress in the crash recorder, so if anything ever interrupts it, the next launch says exactly how far it got',
+    ]},
     { version: '5.0.15', date: 'September 1, 2026 at 8:30 pm EDT', title: 'Crash-proofed play/import, honest media player, AI assistant rebuilt, version numbers unified', items: [
       'Play can no longer crash the app on phones: the media-notification plugin (whose native layer was killing the whole process) is now completely disconnected inside the installed app — the lock-screen player stays off on affected phones, everything else works',
       'New crash flight recorder: if the app ever dies mid-operation (import, export, playback), the next launch shows a banner naming exactly what it was doing when it crashed — screenshot it and it can be fixed',
@@ -12727,10 +12731,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         const list = byContentKey.get((m.name || 'Untitled') + '\u0000' + (m.artist || 'Unknown artist') + '\u0000' + (m.duration || 0));
         return list ? list[0] : undefined;
       }
-      // Audio/cover writes are batched here and committed in chunks after the
-      // read loop, instead of opening (and awaiting) a fresh IDB transaction per
-      // song — that per-transaction cost is what made big imports crawl. Batched
-      // writes also let a quota error surface as a real failure.
+      // Audio/cover writes are batched and committed INCREMENTALLY — every few
+      // tracks — instead of opening a fresh IDB transaction per song (that
+      // per-transaction cost is what made big imports crawl). CRITICAL: the
+      // records hold each song's full audio blob, so accumulating the whole
+      // library in memory until after the read loop spiked RAM by the size of
+      // the entire backup and got the app process KILLED mid-import on phones
+      // (the flight recorder's "crashed during: importing a backup zip").
+      // Small batches keep peak memory at a few songs' worth of data.
       const storeBatch = [];
       async function flushStoreBatch(){
         while(storeBatch.length){
@@ -12741,6 +12749,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
       }
       for(const m of (manifest.tracks || [])){
+        // Flush as we go — see the memory note above the storeBatch declaration.
+        if(storeBatch.length >= 4) await flushStoreBatch();
+        if(window.__scMark) __scMark('importing a backup zip (' + count + ' songs done)');
         const existing = findExistingByContent(m);
         if(existing){ 
           idRemap[m.id] = existing.id; 
