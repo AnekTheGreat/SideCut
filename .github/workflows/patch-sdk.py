@@ -57,9 +57,9 @@ if not os.path.exists(WRAPPER):
     sys.exit('FATAL: %s missing — run `npx cap add android` first.' % WRAPPER)
 src = open(WRAPPER).read()
 new_src, n5 = re.subn(
-    r'(distributionUrl=.*gradle-)\d+\.\d+(\.\d+)?(-bin\.zip)',
+    r'(distributionUrl=.*gradle-)(\d+(?:\.\d+)+)(-[a-z]+\.zip)',
     r'\g<1>%s\g<3>' % GRADLE_VERSION, src)
 if n5 == 0:
-    sys.exit('FATAL: could not find distributionUrl in %s' % WRAPPER)
+    sys.exit('FATAL: could not find distributionUrl in %s\n--- file content ---\n%s' % (WRAPPER, src))
 open(WRAPPER, 'w').write(new_src)
 print('set Gradle wrapper=%s in %s' % (GRADLE_VERSION, WRAPPER))
