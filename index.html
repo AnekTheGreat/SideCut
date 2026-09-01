@@ -1420,6 +1420,21 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 
 /* ─────────────── Add-songs collapsible menu ─────────────── */
 .add-songs-wrap{ position:relative; flex-shrink:0; }
+  /* Foldables / tablets: the other action-strip pills stretch with flex:1 while
+     this wrap was content-width, so + Add songs looked tiny next to them.
+     Grow it exactly like its siblings, and let the pill fill it. */
+  .add-songs-wrap{ position:relative; flex:1 1 0; min-width:0; }
+  #addSongsToggle{ width:100%; }
+  /* Large screens (unfolded foldables, tablets): keep the strip readable —
+     cap its width, center it, and scale pill text/touch size up a step. */
+  @media (min-width: 640px){
+    .action-strip{ max-width:720px; margin:0 auto; width:100%; box-sizing:border-box; }
+    .action-pill{ font-size:13px; padding:10px 8px; min-height:42px; }
+  }
+  /* Very narrow phones: keep four pills on one row without clipping. */
+  @media (max-width: 380px){
+    .action-pill{ font-size:10px; padding:8px 2px; letter-spacing:-0.2px; }
+  }
 .add-songs-menu{
   display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200;
   min-width:240px; max-width:calc(100vw - 32px); padding:10px; gap:6px; flex-direction:column;
@@ -7650,6 +7665,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '53.1', date: 'September 1, 2026 at 11:25 pm EDT', title: '2x2 home-screen widget — now playing + controls', items: [
+      'NEW: add the SideCut widget to your home screen (2x2) — shows the currently playing song with cover art, artist, and play/pause, next and previous controls',
+      'The widget updates live with playback — the play/pause icon, title and artwork change as you listen, and controls work even when the app is in the background',
+      'Tap the widget background to jump straight into the app',
+    ]},
     { version: '53', date: 'September 1, 2026 at 6:20 pm EDT', title: 'Android 14+ media player, background playback & Album History fixes', items: [
       'External media player is here — play a song and get the Spotify-style notification card and home-screen widget with artwork, play/pause and next/previous (now on by default)',
       'Music keeps playing when you switch apps or lock the screen — the player now runs as a proper foreground media service (fixes the Android 14 permission that blocked it)',
@@ -13601,7 +13621,38 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       capPluginUsable = false;
     }
   }
+  // ---------------- Home-screen widget (2x2 now-playing) ----------------
+  // The native SideCutWidget plugin (injected into the Android project in CI)
+  // stores this state and redraws the widget. Art must be a data: URL — the
+  // widget decodes it directly (blob:/https: are useless to a RemoteViews).
+  let widgetTrack = null;
+  let widgetPlaying = false;
+  function pushWidgetState(t, playing){
+    try{
+      const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget;
+      if(!W || typeof W.update !== 'function') return;
+      const send = (art) => { try{ W.update({ data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing }) }); }catch(e){} };
+      if(!t){ send(''); return; }
+      if(t.artBlob){
+        if(t._artDataUrl){ send(t._artDataUrl); return; }
+        const fr = new FileReader();
+        fr.onload = () => { try{ t._artDataUrl = String(fr.result || ''); send(t._artDataUrl); }catch(e){ send(''); } };
+        fr.onerror = () => send('');
+        fr.readAsDataURL(t.artBlob);
+        return;
+      }
+      if(t.artUrl && /^https?:/i.test(t.artUrl)){
+        if(t._artDataUrl){ send(t._artDataUrl); return; }
+        // Remote cover (e.g. iTunes) — convert to a data: URL (cached on the
+        // track, shared with the notification player) so the widget can decode it.
+        fetch(t.artUrl).then(r => r.ok ? r.blob() : Promise.reject()).then(b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result || '')); fr.onerror = rej; fr.readAsDataURL(b); })).then(url => { try{ t._artDataUrl = url; send(url); }catch(e){ send(''); } }).catch(() => send(''));
+        return;
+      }
+      send('');
+    }catch(e){}
+  }
   function mediaSetMetadata(t){
+    try{ widgetTrack = t; pushWidgetState(t, widgetPlaying); }catch(e){}
     if(capMediaSessionActive && capPluginUsable){
       // This call is what makes the notification/lock-screen card appear in the
       // Play build. blob: URLs are meaningless outside the WebView's JS context,
@@ -13629,6 +13680,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
   }
   function mediaSetPlaybackState(state){
+    try{ widgetPlaying = (state === 'playing'); if(widgetTrack) pushWidgetState(widgetTrack, widgetPlaying); }catch(e){}
     if(capMediaSessionActive && capPluginUsable){
       capQuiet(capMediaSessionActive.setPlaybackState({ playbackState: state }));
     } else if('mediaSession' in navigator){
