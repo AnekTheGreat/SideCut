@@ -16006,7 +16006,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Only matters once these files are hosted online (https) — a plain
   // downloaded/local file won't trigger an install prompt, that's an OS-level
   // restriction no website can bypass.
-  if('serviceWorker' in navigator && !window.__SIDECUT_SNAPSHOT_VIEW__){
+  // Never register the service worker inside the native app: the bundled shell
+  // is already local (no network, no updates to fetch), and SWs on Capacitor's
+  // local https://localhost WebView are a documented source of blank/hung pages.
+  // The website version still registers it normally.
+  var __SC_IS_NATIVE = !!(typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if('serviceWorker' in navigator && !window.__SIDECUT_SNAPSHOT_VIEW__ && !__SC_IS_NATIVE){
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then((reg) => {
         // Auto-update cache: check for a newer service worker right away, then every
