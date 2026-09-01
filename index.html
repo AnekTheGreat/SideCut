@@ -7558,7 +7558,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.19';
+  const APP_VERSION = '5.0.20';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -12758,9 +12758,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       const storeBatch = [];
       async function flushStoreBatch(){
         while(storeBatch.length){
-          // ~40 records per transaction: small enough for low-memory webviews,
-          // big enough that a 500-song import is only ~13 transactions.
-          const chunk = storeBatch.splice(0, 40);
+          // ONE record per transaction. Chunks of 40 (then even 4) still killed
+          // low-memory Android WebViews mid-transaction — the flight recorder
+          // proved the crash lands on the first flush. Per-song writes are the
+          // only size that survives every device; the recorder marks each write
+          // so a future crash names the exact song instead of a count.
+          const chunk = storeBatch.splice(0, 1);
+          if(window.__scMark) __scMark('writing "' + ((chunk[0] && chunk[0].name) || 'song') + '" to storage');
           await batchPutTracks(chunk);
         }
       }
@@ -12787,6 +12791,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
             if(m.hasCover && !existing.artBlob){
               const coverEntry = zipApi.file(`covers/${m.id}.jpg`);
               if(coverEntry){
+                if(window.__scMark) __scMark('importing cover for "' + (m.name || 'Untitled') + '"');
                 const coverBlob = await coverEntry.async('blob');
                 existing.artBlob = coverBlob;
                 if(existing.artUrl) try{ URL.revokeObjectURL(existing.artUrl); }catch(e){}
@@ -12799,6 +12804,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
         const entry = zipApi.file(m.path);
         if(!entry) continue;
+        if(window.__scMark) __scMark('importing "' + (m.name || 'Untitled') + '" (song ' + (count + 1) + ')');
         const blob = await entry.async('blob');
         const url = URL.createObjectURL(blob);
         // Always mint a fresh local id rather than reusing the manifest's id,
@@ -12835,6 +12841,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         if(isV2 && m.hasCover){
           const coverEntry = zipApi.file(`covers/${m.id}.jpg`);
           if(coverEntry){
+            if(window.__scMark) __scMark('importing cover for "' + (m.name || 'Untitled') + '"');
             const coverBlob = await coverEntry.async('blob');
             track.artBlob = coverBlob;
             track.artUrl = URL.createObjectURL(coverBlob);
