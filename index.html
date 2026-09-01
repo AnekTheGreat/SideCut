@@ -17315,14 +17315,16 @@ window.__refetchArtistAlbums = async function(artistName){
           if(seenCids[collectionId]) return;
           if(isAlbumHidden(collectionId, r.collectionName)) return; // user-deleted album stays deleted across refetches
           var tNorm = normTitle(r.collectionName);
-          if(seenTitles[tNorm]) return;
+          var _tY = String(relDate||'').slice(0,4);
+          if(seenTitles[tNorm] && (!_tY || seenTitles[tNorm].indexOf(_tY) !== -1)) return;
           if(noise.test(r.collectionName)) return;
           var rArtist = primaryArtistName(r.artistName || '').toLowerCase().trim();
           if(!rArtist || rArtist === 'various artists') return;
           // Strict match: album artist must be exactly the pinned artist, or start with it
           if(!nameMatchArtists(rArtist, artistLower)) return;
           seenCids[collectionId] = 1;
-          seenTitles[tNorm] = 1;
+          if(!seenTitles[tNorm]) seenTitles[tNorm] = [];
+          seenTitles[tNorm].push(_tY);
           if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
           artistAlbums[a.name].push({
             collectionId: collectionId, collectionName: r.collectionName,
@@ -17367,7 +17369,8 @@ window.__refetchArtistAlbums = async function(artistName){
           var dzAData = dzAResp && dzAResp.ok ? await dzAResp.json() : { data: [] };
           (dzAData.data||[]).forEach(function(alb){
             if(!alb || !alb.title) return;
-            if(seenTitles[normTitle(alb.title)]) return;
+            var _dzY = String(alb.release_date||'').slice(0,4);
+            if(seenTitles[normTitle(alb.title)] && (!_dzY || seenTitles[normTitle(alb.title)].indexOf(_dzY) !== -1)) return;
             if(noise.test(alb.title)) return;
             if(alb.record_type && alb.record_type !== 'album' && alb.record_type !== 'ep') return;
             if(alb.nb_tracks === 1) return; // skip only confirmed singles
@@ -17381,7 +17384,9 @@ window.__refetchArtistAlbums = async function(artistName){
             if(seenCids[collectionId]) return;
             if(isAlbumHidden(collectionId, alb.title)) return;
             seenCids[collectionId] = 1;
-            seenTitles[normTitle(alb.title)] = 1;
+            var _dzT = normTitle(alb.title);
+            if(!seenTitles[_dzT]) seenTitles[_dzT] = [];
+            seenTitles[_dzT].push(_dzY);
             if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
             artistAlbums[a.name].push({
               collectionId: collectionId, collectionName: alb.title,
@@ -17416,12 +17421,15 @@ window.__refetchArtistAlbums = async function(artistName){
               if(rg['first-release-date-status'] && rg['first-release-date-status'] !== 'Official') return;
               // Apply noise filter to titles
               if(dzNoise.test(rg.title)) return;
-              if(seenTitles[normTitle(rg.title)]) return;
+              var _mbY = String(rg['first-release-date']||'').slice(0,4);
+              if(seenTitles[normTitle(rg.title)] && (!_mbY || seenTitles[normTitle(rg.title)].indexOf(_mbY) !== -1)) return;
               var collectionId = rg.id;
               if(seenCids[collectionId]) return;
               if(isAlbumHidden(collectionId, rg.title)) return;
               seenCids[collectionId] = 1;
-              seenTitles[normTitle(rg.title)] = 1;
+              var _mbT = normTitle(rg.title);
+              if(!seenTitles[_mbT]) seenTitles[_mbT] = [];
+              seenTitles[_mbT].push(_mbY);
               if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
               artistAlbums[a.name].push({
                 collectionId: collectionId, collectionName: rg.title,
@@ -17643,8 +17651,11 @@ window.__refetchAlbums = async function(wasRefetch){
       if(seenC[cid]) return;
       if(isAlbumHidden(cid, r.collectionName)) return; // deleted albums stay deleted across refetches
       var tN = normTitle(r.collectionName);
-      var seenT = {}; artistAlbums[artistName].forEach(function(x){ seenT[normTitle(x.collectionName)]=1; });
-      if(seenT[tN]) return;
+      // Year-aware: same title with a different release year is a different album
+      var seenT = {}; artistAlbums[artistName].forEach(function(x){ var _tn=normTitle(x.collectionName); var _y=String(x.releaseDate||'').slice(0,4); (seenT[_tn]=seenT[_tn]||[]).push(_y); });
+      var _rY = String(r.releaseDate||'').slice(0,4);
+      if(seenT[tN] && (!_rY || seenT[tN].indexOf(_rY) !== -1)) return;
+      if(seenT[tN] && _rY) seenT[tN].push(_rY);
       if(noise.test(r.collectionName)) return;
       var rA = primaryArtistName(r.artistName||'').toLowerCase().trim();
       if(!rA || rA === 'various artists') return;
@@ -17697,8 +17708,9 @@ window.__refetchAlbums = async function(wasRefetch){
           (dzAData.data||[]).forEach(function(alb){
             if(!alb||!alb.title) return;
             if(!artistAlbums[a.name]) artistAlbums[a.name]=[];
-            var seenT2={}; artistAlbums[a.name].forEach(function(x){ seenT2[normTitle(x.collectionName)]=1; });
-            if(seenT2[normTitle(alb.title)]) return;
+            var seenT2={}; artistAlbums[a.name].forEach(function(x){ var _tn=normTitle(x.collectionName); var _y=String(x.releaseDate||'').slice(0,4); (seenT2[_tn]=seenT2[_tn]||[]).push(_y); });
+            var _dzY2 = String(alb.release_date||'').slice(0,4);
+            if(seenT2[normTitle(alb.title)] && (!_dzY2 || seenT2[normTitle(alb.title)].indexOf(_dzY2) !== -1)) return;
             if(noise.test(alb.title)) return;
             if(alb.record_type && alb.record_type!=='album' && alb.record_type!=='ep') return;
             if(alb.nb_tracks === 1) return; // skip only confirmed singles
@@ -17735,8 +17747,9 @@ window.__refetchAlbums = async function(wasRefetch){
               // Skip singles, DJ-mix, mixtape, soundtrack, remix compilations
               if(secTypes.some(function(s){ return /single|soundtrack|dj-?mix|mixtape|remix/i.test(s); })) return;
               if(!artistAlbums[a.name]) artistAlbums[a.name]=[];
-              var seenT3={}; artistAlbums[a.name].forEach(function(x){ seenT3[normTitle(x.collectionName)]=1; });
-              if(seenT3[normTitle(rg.title)]) return;
+              var seenT3={}; artistAlbums[a.name].forEach(function(x){ var _tn=normTitle(x.collectionName); var _y=String(x.releaseDate||'').slice(0,4); (seenT3[_tn]=seenT3[_tn]||[]).push(_y); });
+              var _mbY3 = String(rg['first-release-date']||'').slice(0,4);
+              if(seenT3[normTitle(rg.title)] && (!_mbY3 || seenT3[normTitle(rg.title)].indexOf(_mbY3) !== -1)) return;
               if(dzNoise.test(rg.title)) return;
               var cid3 = rg.id;
               if(isAlbumHidden(cid3, rg.title)) return;
@@ -17771,13 +17784,15 @@ window.__refetchAlbums = async function(wasRefetch){
           var _aiAlbums = JSON.parse(_aiText);
           if(Array.isArray(_aiAlbums)){
             if(!artistAlbums[a.name]) artistAlbums[a.name] = [];
-            var _aiSeenT = {}; artistAlbums[a.name].forEach(function(x){ _aiSeenT[normTitle(x.collectionName)]=1; });
+            var _aiSeenT = {}; artistAlbums[a.name].forEach(function(x){ var _tn=normTitle(x.collectionName); var _y=String(x.releaseDate||'').slice(0,4); (_aiSeenT[_tn]=_aiSeenT[_tn]||[]).push(_y); });
             for(var _aiI=0; _aiI<_aiAlbums.length; _aiI++){
               var _aiA = _aiAlbums[_aiI];
               if(!_aiA || !_aiA.title) continue;
               var _aiTN = normTitle(_aiA.title);
-              if(_aiSeenT[_aiTN]) continue; // already have this album from API
-              _aiSeenT[_aiTN] = 1;
+              var _aiY = String(_aiA.date||'').slice(0,4);
+              if(_aiSeenT[_aiTN] && (!_aiY || _aiSeenT[_aiTN].indexOf(_aiY) !== -1)) continue; // already have this album from API
+              if(_aiSeenT[_aiTN] && _aiY) _aiSeenT[_aiTN].push(_aiY);
+              else if(!_aiSeenT[_aiTN]) _aiSeenT[_aiTN] = [_aiY];
               // Skip singles from AI results too
               var _aiTC = _aiA.tracks || null;
               if(_aiTC === 1) continue;
@@ -17874,13 +17889,23 @@ function _albumKey(a){
 }
 function _dedupAlbums(arr){
   if(!Array.isArray(arr)) return arr;
+  // Year-aware dedup: same title + same (or unknown) year = the same album;
+  // same title but a DIFFERENT year = a genuinely different release — keep both
+  // (fixes old albums disappearing when an artist reuses an album name).
   var seen = {}, out = [];
   for(var i=0;i<arr.length;i++){
     var a = arr[i];
     if(!a || !a.collectionName) continue;
     var k = _albumKey(a);
-    if(seen[k]) continue;
-    seen[k] = 1; out.push(a);
+    var y = String(a.releaseDate||'').slice(0,4);
+    var ys = seen[k];
+    if(ys){
+      if(!y || ys.indexOf(y) !== -1) continue;
+      ys.push(y);
+    } else {
+      seen[k] = [y];
+    }
+    out.push(a);
   }
   return out;
 }
