@@ -1728,7 +1728,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 </div>
 <input type="file" id="importLibInput">
 <input type="file" id="importIntoPlaylistInput">
-<input type="file" id="addFilesToPlaylistInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
+<input type="file" id="addFilesToPlaylistInput" multiple>
 
 <div class="toast" id="toast"></div>
 
@@ -1776,6 +1776,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <button id="addFolderBtnBig" class="tab active" style="padding:12px 22px; font-size:14px;">+ Choose folder</button>
     <button id="addBtnBig" class="tab" style="padding:12px 22px; font-size:14px;">+ Choose files</button>
     <button id="importLibBtnBig" class="tab" style="padding:12px 22px; font-size:14px;">Import backup (everything)</button>
+    <button id="transferOldBtnBig" class="tab" style="display:none; padding:12px 22px; font-size:14px;">Transfer from old SideCut</button>
   </div>
 </div>
 
@@ -1969,7 +1970,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   </div>
 </div>
 
-<input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
+<input type="file" id="fileInput" multiple>
 <input type="file" id="folderInput" webkitdirectory directory multiple>
 
 <div id="nowPlaying">
@@ -7539,14 +7540,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '54';
+  const APP_VERSION = '55';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '54'){
+    if(_lastCacheVer !== '55'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '54');
+      localStorage.setItem('sidecut_discCacheVersion', '55');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7561,6 +7562,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '55', date: 'September 1, 2026', title: 'One-tap transfer from old SideCut installs + file adding fixed', items: [
+      'Transfer from old SideCut: if your library was saved by a 5.0.x version, tap Transfer from old SideCut on the welcome screen — it finds that library (it still lives inside the app), starts the export, and the share sheet saves the zip to import here',
+      'Adding files fixed in the app: the file-type filter that could empty or block the Android picker is removed, so the picker always opens and shows your music. If adding ever fails, a message now says exactly why',
+    ]},
     { version: '54', date: 'September 1, 2026', title: 'Play no longer crashes; export and import fixed in the app', items: [
       'Fixed the crash when pressing play in the installed app: the broken media-notification plugin is now disconnected permanently the first time it misbehaves, instead of being called again during playback when it crashed the whole app. On affected phones the lock-screen player stays off — everything else works',
       'Export no longer produces 0-byte files in the installed app: the zip is written natively and handed to the Android share sheet, so it can be saved to Files, Drive, or sent anywhere. Browsers keep the normal download',
@@ -10144,6 +10149,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   function handleFiles(fileList, targetPlaylist, opts){
+   try{
     // Check if any CSV files are included - handle Spotify playlist imports
     const csvFiles = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.csv'));
     if(csvFiles.length > 0){
@@ -10160,6 +10166,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     
     // Process regular audio files
     handleAudioFiles(Array.from(fileList), targetPlaylist, opts);
+   }catch(e){ console.error('Adding files failed', e); toast('Could not add files: ' + (e && e.message ? e.message : e), 5000); }
   }
   
   function handleCSVFile(csvFile){
@@ -10831,6 +10838,15 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('addBtn').addEventListener('click', () => $('fileInput').click());
   $('addBtnBig').addEventListener('click', () => $('fileInput').click());
   $('importLibBtnBig').addEventListener('click', () => $('importLibInput').click());
+  // Old-install transfer: versions 5.0.3-5.0.7 loaded from the website, so their
+  // library still lives under that origin INSIDE this app's WebView storage.
+  // Navigating there (allowed via allowNavigation, with the plugin bridge) lets
+  // the site export that library through the share sheet; the zip then imports
+  // here. Only shown in the installed app — in browsers this origin is just us.
+  $('transferOldBtnBig').addEventListener('click', () => {
+    toast('Opening your old SideCut library…', 2500);
+    setTimeout(() => { window.location.href = 'https://anekthegreat.github.io/SideCut/?transfer=1'; }, 600);
+  });
   // "Choose folder" needs a real directory picker (showDirectoryPicker / webkitdirectory),
   // which Android WebView and mobile browsers don't support — the tap silently did
   // nothing there, which looked like a dead button. Fall back to the multi-file
@@ -16091,6 +16107,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
   })();
 
+  // ---- Old-install transfer mode (?transfer=1 inside the app): this page on
+  // ---- the website origin still sees the library the 5.0.x remote-loading
+  // ---- versions saved here. Auto-run the full export so the zip can be saved
+  // ---- via the share sheet, then imported into the new self-contained build.
+  if(typeof URLSearchParams === 'function' && new URLSearchParams(location.search).get('transfer') === '1' && typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()){
+    setTimeout(() => {
+      try{
+        const back = document.createElement('button');
+        back.textContent = '← Back to SideCut';
+        back.style.cssText = 'position:fixed;top:10px;right:10px;z-index:2147483646;padding:10px 16px;border-radius:22px;border:none;background:#e8a0a0;color:#161616;font-weight:700;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.4);';
+        back.addEventListener('click', () => { window.location.href = 'https://localhost/'; });
+        document.body.appendChild(back);
+        if(allTracks.length){
+          toast('Old library found — ' + allTracks.length + ' tracks. Choose where to save…', 4000);
+          exportLibrary();
+        } else {
+          toast('No old library was found on this device', 3500);
+        }
+      }catch(e){ console.error('Transfer mode failed', e); toast('Transfer failed: ' + (e && e.message ? e.message : e), 4000); }
+    }, 3000);
+  }
+
   function restorePlaybackState(){
     const state = lastPlaybackState;
     if(!state || !state.trackId) return;
@@ -16149,6 +16187,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // local https://localhost WebView are a documented source of blank/hung pages.
   // The website version still registers it normally.
   var __SC_IS_NATIVE = !!(typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  try{ if(__SC_IS_NATIVE){ var _scTob = document.getElementById('transferOldBtnBig'); if(_scTob) _scTob.style.display = ''; } }catch(e){ }
   if('serviceWorker' in navigator && !window.__SIDECUT_SNAPSHOT_VIEW__ && !__SC_IS_NATIVE){
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then((reg) => {
