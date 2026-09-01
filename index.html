@@ -1726,8 +1726,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     </div>
   </div>
 </div>
-<input type="file" id="importLibInput" accept=".zip">
-<input type="file" id="importIntoPlaylistInput" accept=".zip">
+<input type="file" id="importLibInput" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream">
+<input type="file" id="importIntoPlaylistInput" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream">
 <input type="file" id="addFilesToPlaylistInput" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.wma,.opus,.aiff,.alac,.csv" multiple>
 
 <div class="toast" id="toast"></div>
@@ -1775,6 +1775,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
     <button id="addFolderBtnBig" class="tab active" style="padding:12px 22px; font-size:14px;">+ Choose folder</button>
     <button id="addBtnBig" class="tab" style="padding:12px 22px; font-size:14px;">+ Choose files</button>
+    <button id="importLibBtnBig" class="tab" style="padding:12px 22px; font-size:14px;">Import backup (everything)</button>
   </div>
 </div>
 
@@ -10766,6 +10767,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('folderInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value=''; });
   $('addBtn').addEventListener('click', () => $('fileInput').click());
   $('addBtnBig').addEventListener('click', () => $('fileInput').click());
+  $('importLibBtnBig').addEventListener('click', () => $('importLibInput').click());
   $('addFolderBtn').addEventListener('click', () => $('folderInput').click());
   $('addFolderBtnBig').addEventListener('click', () => $('folderInput').click());
   $('exportSongsBtn').addEventListener('click', exportSongsOnly);
@@ -12494,7 +12496,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
 
   async function importLibrary(file, targetPlaylist){
-    if(typeof JSZip === 'undefined'){ toast('Import tool failed to load — check your connection and reload.'); return; }
+    // Imports use the built-in streaming zip reader first, which needs no JSZip
+    // and no network — so we don't gate on JSZip here. Only the JSZip fallback does.
     toast(targetPlaylist ? `Importing into "${targetPlaylist}"…` : 'Importing library…', 3000);
     try{
       // Open the .zip with the lowest-memory reader available. JSZip.loadAsync
@@ -12535,6 +12538,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         } else { throw streamErr; }
       }
       if(!usingStream){
+        if(typeof JSZip === 'undefined'){ toast('Import tool failed to load — check your connection and reload.'); return; }
         const jsz = await JSZip.loadAsync(file);
         const jsEntry = (name) => {
           const e = jsz.file(name);
