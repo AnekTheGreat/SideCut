@@ -3593,6 +3593,38 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 (function(){
   const $ = id => document.getElementById(id);
 
+  // ---- Boot error visibility: surface ANY uncaught startup error on screen ----
+  // On phones there is no devtools console; an uncaught error used to silently
+  // kill part of the boot ("some buttons work, most do not") with zero way to
+  // see why. This banner shows the exact message so a screenshot is a bug report.
+  (function(){
+    function __scShowBootError(msg){
+      try{
+        if(!document.body) return;
+        if(document.getElementById('scBootErrorBanner')){
+          var prev = document.getElementById('scBootErrorBanner');
+          prev.textContent = 'SideCut error: ' + msg + ' — tap to dismiss';
+          return;
+        }
+        var b = document.createElement('div');
+        b.id = 'scBootErrorBanner';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#b3261e;color:#fff;font:11px/1.45 monospace;padding:9px 14px;max-height:38%;overflow:auto;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.45);';
+        b.textContent = 'SideCut error: ' + msg + ' — tap to dismiss';
+        b.addEventListener('click', function(){ if(b.parentNode) b.parentNode.removeChild(b); });
+        document.body.appendChild(b);
+      }catch(_){ }
+    }
+    window.addEventListener('error', function(ev){
+      var msg = (ev && ev.message) || 'unknown error';
+      if(ev && ev.lineno) msg += ' (line ' + ev.lineno + ')';
+      __scShowBootError(msg);
+    });
+    window.addEventListener('unhandledrejection', function(ev){
+      var r = ev && ev.reason;
+      __scShowBootError((r && (r.message || String(r))) || 'promise rejection');
+    });
+  })();
+
   // Discover dropdown toggles, defined EARLY so no later boot failure can ever
   // remove them. The inline onclick handlers on the Discover buttons call these
   // as globals; everything they use (isPremiumActive, openPremiumSettings, toast,
@@ -7507,14 +7539,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '52.7';
+  const APP_VERSION = '53';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '52.7'){
+    if(_lastCacheVer !== '53'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '52.7');
+      localStorage.setItem('sidecut_discCacheVersion', '53');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7529,6 +7561,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '53', date: 'September 1, 2026', title: 'Fixed the crash that killed most buttons in the app', items: [
+      'Root cause found and fixed: if the audio engine fails to start on a device, one crash during startup used to kill everything wired after it — the media player bar, Playlists and Discover tabs, while earlier buttons kept working. The app now always starts fully, with EQ and DJ Mode gracefully disabled if the audio engine is unavailable',
+      'Any startup error now shows a red banner on screen with the exact message (tap to dismiss) — screenshot it and it can be fixed immediately instead of silent half-broken boots',
+    ]},
     { version: '52.7', date: 'September 1, 2026', title: 'Welcome screen buttons actually work now', items: [
       '"Choose folder" no longer silently does nothing on phones — Android cannot pick folders in the app, so it now opens the multi-file picker instead (select many files at once)',
       'Import backup (everything) sits right on the welcome screen — one tap, pick your .zip, everything comes back: songs, playlists, stats, themes, premium',
@@ -9692,7 +9728,19 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // scratches, EQ, kill switches, gain, pitch, all of it — nothing extra to wire up.
       recordDestNode = audioCtx.createMediaStreamDestination();
       limiterNodes[0].connect(recordDestNode);
-    }catch(e){ console.warn('Audio graph setup failed, normalization/EQ disabled', e); }
+    }catch(e){
+      console.warn('Audio graph setup failed, normalization/EQ disabled', e);
+      // Leave NO half-built graph behind: callers treat audioCtx + eqNodes as
+      // all-or-nothing. A partial graph (ctx alive, EQ nodes missing) is worse
+      // than none — it crashed ensureDeckGainNode at boot on some devices.
+      try{ if(audioCtx) audioCtx.close(); }catch(_){ }
+      audioCtx = null;
+      gainNodes[0] = gainNodes[1] = null;
+      eqNodes[0] = eqNodes[1] = null;
+      deckGainNodes[0] = deckGainNodes[1] = null;
+      limiterNodes[0] = limiterNodes[1] = null;
+      recordDestNode = null;
+    }
   }
   const deckGainNodes = [null, null]; // DJ Mode "GAIN" knob per deck, independent of auto-normalize
   const limiterNodes = [null, null];
@@ -14074,6 +14122,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function ensureDeckGainNode(deck){
     if(deck.gainNode) return deck.gainNode;
     ensureAudioGraph();
+    // The audio graph can fail to build on some devices/engines. Dereferencing
+    // the null ctx here used to throw at TOP LEVEL during boot (DJ deck init),
+    // which killed the entire script block — every listener wired after this
+    // point (now bar transport, nav pills, playlists, discover) stayed dead
+    // while earlier buttons worked. Degrade instead: return null, callers guard.
+    if(!audioCtx || !eqNodes[0]) return null;
     const knobGain = audioCtx.createGain();
     knobGain.gain.value = 1; // the dB GAIN knob's own node — independent of crossfade blending
     const blendGain = audioCtx.createGain();
@@ -14087,7 +14141,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function deckNow(){
     // Virtual playhead position in buffer-seconds, right now.
-    if(!deckEngine.buffer) return 0;
+    if(!deckEngine.buffer || !audioCtx) return 0;
     if(!deckEngine.running) return deckEngine.startOffset;
     const elapsed = (audioCtx.currentTime - deckEngine.startedAt) * deckEngine.rate;
     return deckEngine.startOffset + elapsed;
@@ -14105,6 +14159,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function deckStart(offsetSeconds, rate){
     if(!deckEngine.buffer) return;
     ensureAudioGraph();
+    if(!audioCtx || !ensureDeckGainNode(deckEngine)) return; // no Web Audio: DJ Mode off, app keeps running
     if(audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
     deckStop();
     const dur = deckEngine.buffer.duration;
@@ -14232,6 +14287,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
     const gA = ensureDeckGainNode(deckEngine);
     const gB = ensureDeckGainNode(deckEngineB);
+    if(!gA || !gB){ toast('DJ Mode needs Web Audio, which is not available on this device.'); return; }
     gB.gain.value = 0;
     deckBStart(0, playbackSpeedDJ || 1);
 
@@ -15455,6 +15511,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function ensureFilterNode(){
     if(deckEngine.filterNode) return deckEngine.filterNode;
     ensureAudioGraph();
+    if(!audioCtx || !eqNodes[0]) return null; // no audio graph: knob does nothing, no crash
     const f = audioCtx.createBiquadFilter();
     f.type = 'allpass';
     f.frequency.value = 20000;
@@ -15468,6 +15525,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   attachKnobDrag($('filterKnob'), $('filterKnob').querySelector('.knob-indicator'), { min:-100, max:100, initial:0 }, (v) => {
     const f = ensureFilterNode();
+    if(!f) return;
     if(Math.abs(v) < 3){
       f.type = 'allpass';
       f.frequency.value = 20000;
@@ -15493,6 +15551,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function ensureReverbSend(){
     if(deckEngine.reverbNodes) return deckEngine.reverbNodes;
     ensureAudioGraph();
+    if(!audioCtx || !eqNodes[0]) return null; // no audio graph: knob does nothing, no crash
     const convolver = audioCtx.createConvolver();
     const sr = audioCtx.sampleRate;
     const len = Math.floor(sr * 3.2);
@@ -15542,7 +15601,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return deckEngine.reverbNodes;
   }
   attachKnobDrag($('reverbKnob'), $('reverbKnob').querySelector('.knob-indicator'), { min:0, max:100, initial:0 }, (v) => {
-    const { wetGain, preDelay, wetHighpass, wetLowpass } = ensureReverbSend();
+    const _rv = ensureReverbSend();
+    if(!_rv) return;
+    const { wetGain, preDelay, wetHighpass, wetLowpass } = _rv;
     const t = v/100;
     wetGain.gain.value = t * 0.6; // much gentler ceiling — blends in instead of drowning the track
     preDelay.delayTime.value = 0.01 + t * 0.03; // bigger-sounding space as it's pushed further
@@ -15555,6 +15616,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function ensureFlangerSend(){
     if(deckEngine.flangerNodes) return deckEngine.flangerNodes;
     ensureAudioGraph();
+    if(!audioCtx || !eqNodes[0]) return null; // no audio graph: knob does nothing, no crash
     const delay = audioCtx.createDelay(0.02);
     delay.delayTime.value = 0.005;
     const lfo = audioCtx.createOscillator();
@@ -15575,7 +15637,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return deckEngine.flangerNodes;
   }
   attachKnobDrag($('flangerKnob'), $('flangerKnob').querySelector('.knob-indicator'), { min:0, max:100, initial:0 }, (v) => {
-    const { wetGain } = ensureFlangerSend();
+    const _fl = ensureFlangerSend();
+    if(!_fl) return;
+    const { wetGain } = _fl;
     wetGain.gain.value = (v/100) * 0.8;
     $('flangerReadout').textContent = `${Math.round(v)}%`;
   });
@@ -15585,6 +15649,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function ensureDelaySend(){
     if(deckEngine.delayNodes) return deckEngine.delayNodes;
     ensureAudioGraph();
+    if(!audioCtx || !eqNodes[0]) return null; // no audio graph: knob does nothing, no crash
     const delay = audioCtx.createDelay(2);
     delay.delayTime.value = 0.3;
     const feedback = audioCtx.createGain();
@@ -15599,7 +15664,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return deckEngine.delayNodes;
   }
   attachKnobDrag($('delayKnob'), $('delayKnob').querySelector('.knob-indicator'), { min:0, max:100, initial:0 }, (v) => {
-    const { delay, wetGain } = ensureDelaySend();
+    const _dl = ensureDelaySend();
+    if(!_dl) return;
+    const { delay, wetGain } = _dl;
     const bpm = liveBpm || (allTracks.find(tr => tr.id === djCurrentTrackId)?.bpm) || 120;
     delay.delayTime.value = 60 / bpm / 2; // tempo-synced eighth-note delay, like a real DJ delay unit
     wetGain.gain.value = (v/100) * 0.7;
@@ -15622,6 +15689,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   $('echoOutBtn').addEventListener('click', () => {
     if(!deckEngine.node || !deckEngine.running){ toast('Nothing playing to fade'); return; }
     ensureAudioGraph();
+    if(!audioCtx || !eqNodes[0]){ toast('Audio engine unavailable on this device'); return; }
     const delay = audioCtx.createDelay(1.5);
     delay.delayTime.value = 0.28;
     const feedback = audioCtx.createGain();
