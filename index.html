@@ -7539,14 +7539,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '53';
+  const APP_VERSION = '53.5';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '53'){
+    if(_lastCacheVer !== '53.5'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '53');
+      localStorage.setItem('sidecut_discCacheVersion', '53.5');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7561,6 +7561,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '53.5', date: 'September 1, 2026', title: 'Fixed the crash the red banner caught on phones', items: [
+      'The startup error the on-screen banner reported (media session .catch crash, line 13423) is fixed — on some phones the Android media-notification plugin returns no promise, and that one crash killed the media player bar and the Playlists/Discover tabs. Every plugin call is now crash-proof',
+      'Media notification and lock-screen controls now work even when the plugin answers oddly — worst case they are simply absent instead of breaking the app',
+    ]},
     { version: '53', date: 'September 1, 2026', title: 'Fixed the crash that killed most buttons in the app', items: [
       'Root cause found and fixed: if the audio engine fails to start on a device, one crash during startup used to kill everything wired after it — the media player bar, Playlists and Discover tabs, while earlier buttons kept working. The app now always starts fully, with EQ and DJ Mode gracefully disabled if the audio engine is unavailable',
       'Any startup error now shows a red banner on screen with the exact message (tap to dismiss) — screenshot it and it can be fixed immediately instead of silent half-broken boots',
@@ -13395,32 +13399,39 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // lock-screen player show up when you play a song and leave the app. In a plain
   // browser the plugin is absent and the web API is used, exactly as before.
   const capMediaSession = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.MediaSession) ? window.Capacitor.Plugins.MediaSession : null;
+  // Plugin bridge calls normally return a Promise, but on some WebView/plugin
+  // combos they return undefined or a plain object — calling .catch on that
+  // threw at top level during boot and killed everything wired after it.
+  // capQuiet swallows the result only when it really is a promise.
+  function capQuiet(p){
+    if(p && typeof p.catch === 'function'){ p.catch(function(){}); }
+  }
   function mediaSetMetadata(t){
     const artType = (t.artBlob && t.artBlob.type) || 'image/jpeg';
     const artwork = t.artUrl && /^https?:/i.test(t.artUrl) ? [{ src: t.artUrl, sizes: '512x512', type: artType }] : [];
     if(capMediaSession){
-      capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }).catch(() => {});
+      capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }); }catch(e){}
     }
   }
   function mediaSetPlaybackState(state){
     if(capMediaSession){
-      capMediaSession.setPlaybackState({ playbackState: state }).catch(() => {});
+      capQuiet(capMediaSession.setPlaybackState({ playbackState: state }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.playbackState = state; }catch(e){}
     }
   }
   function mediaSetPositionState(duration, playbackRate, position){
     if(capMediaSession){
-      capMediaSession.setPositionState({ duration, playbackRate, position }).catch(() => {});
+      capQuiet(capMediaSession.setPositionState({ duration, playbackRate, position }));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function'){
       try{ navigator.mediaSession.setPositionState({ duration, playbackRate, position }); }catch(e){ /* out-of-range mid-seek — safe to ignore */ }
     }
   }
   function mediaSetActionHandler(action, handler){
     if(capMediaSession){
-      capMediaSession.setActionHandler({ action: action }, handler).catch(() => {});
+      capQuiet(capMediaSession.setActionHandler({ action: action }, handler));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
       try{ navigator.mediaSession.setActionHandler(action, handler); }catch(e){}
     }
@@ -13463,7 +13474,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     })) : [];
     if(capMediaSession){
       // native mirror for the Play build's notification card
-      capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }).catch(() => {});
+      capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
     }
     if('mediaSession' in navigator){
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -19116,12 +19127,12 @@ if(!isDiscover) stopDiscoverPreview();
         _artwork = [96,128,192,256,384,512].map(function(sz){ return { src: _big, sizes: sz+'x'+sz, type: 'image/jpeg' }; });
       }
       if(capMediaSession){
-        capMediaSession.setMetadata({
+        capQuiet(capMediaSession.setMetadata({
           title: meta.trackName || meta.title || ('Preview from ' + (meta.artistName || 'SideCut')),
           artist: meta.artistName || meta.artist || 'SideCut',
           album: meta.collectionName || 'SideCut',
           artwork: _artwork
-        }).catch(function(){});
+        }));
       } else if('mediaSession' in navigator && navigator.mediaSession){
         try{
           navigator.mediaSession.metadata = new MediaMetadata({
