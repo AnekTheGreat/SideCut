@@ -3605,8 +3605,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   // kill part of the boot ("some buttons work, most do not") with zero way to
   // see why. This banner shows the exact message so a screenshot is a bug report.
   (function(){
+    // Test-only visibility: in public releases the banner stays hidden and
+    // errors go to the console only. Tap the version label in Settings five
+    // times to toggle test mode (sidecut_testMode=1).
+    function __scTestMode(){ try{ return localStorage.getItem('sidecut_testMode') === '1'; }catch(e){ return false; } }
     function __scShowBootError(msg){
+      try{ console.error('SideCut:', msg); }catch(_){ }
       try{
+        if(!__scTestMode()) return;
         if(!document.body) return;
         if(document.getElementById('scBootErrorBanner')){
           var prev = document.getElementById('scBootErrorBanner');
@@ -3641,7 +3647,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       if(_scLast && _scLast.op){
         setTimeout(function(){ __scShowBootError('The app previously crashed during: ' + _scLast.op + ' — screenshot this message'); }, 1200);
         if(_scLast.op === 'the media player notification'){
-          try{ localStorage.removeItem('sidecut_native_media'); }catch(e){ }
+          try{ localStorage.setItem('sidecut_native_media', '0'); }catch(e){ }
           setTimeout(function(){ __scShowBootError('The notification player crashed the app — it has been switched off automatically.'); }, 1800);
         }
         try{ localStorage.setItem('scLastOp', JSON.stringify({ op: null, at: Date.now() })); }catch(e){ }
@@ -7609,7 +7615,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.23';
+  const APP_VERSION = '5.0.24';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -10890,9 +10896,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // here. Only shown in the installed app — in browsers this origin is just us.
   $('mediaNotifBtnBig').addEventListener('click', () => {
     try{
-      const _on = localStorage.getItem('sidecut_native_media') === '1';
-      if(_on){ localStorage.removeItem('sidecut_native_media'); toast('Notification player disabled.', 2500); }
-      else { localStorage.setItem('sidecut_native_media', '1'); toast('Notification player enabled — reloading…', 2500); }
+      const _on = localStorage.getItem('sidecut_native_media') !== '0';
+      if(_on){ localStorage.setItem('sidecut_native_media', '0'); toast('Notification player disabled — reloading…', 2500); }
+      else { localStorage.removeItem('sidecut_native_media'); toast('Notification player enabled — reloading…', 2500); }
       setTimeout(() => window.location.reload(), 800);
     }catch(e){ toast('Could not change the setting'); }
   });
@@ -13632,7 +13638,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     // auto-disables itself if the process dies while it is active.
     setTimeout(() => {
       try{
-        if(localStorage.getItem('sidecut_native_media') !== '1') return;
+        if(localStorage.getItem('sidecut_native_media') === '0') return;
         const C = window.Capacitor;
         if(!C || typeof C.nativePromise !== 'function' || typeof C.nativeCallback !== 'function') return;
         let broken = false;
@@ -16218,6 +16224,21 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         }
       }
       $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
+      // 5 quick taps on the version label toggles test mode — that is what makes
+      // the red on-screen crash/error banner appear. Off by default so public
+      // releases never flash it; errors always go to the console regardless.
+      (function(){
+        var _lbl = $('currentVersionLabel'); if(!_lbl || _lbl.dataset.tapWired) return; _lbl.dataset.tapWired = '1';
+        var _taps = 0, _timer = null;
+        _lbl.addEventListener('click', function(){
+          _taps++; clearTimeout(_timer); _timer = setTimeout(function(){ _taps = 0; }, 1500);
+          if(_taps < 5) return;
+          _taps = 0;
+          var on = false; try{ on = localStorage.getItem('sidecut_testMode') === '1'; }catch(e){ }
+          try{ if(on) localStorage.removeItem('sidecut_testMode'); else localStorage.setItem('sidecut_testMode', '1'); }catch(e){ }
+          if(typeof toast === 'function') toast(on ? 'Test mode off — crash banner hidden.' : 'Test mode on — errors will show on screen.', 2500);
+        });
+      })();
       requestPersistentStorage();
       await loadNotifReadState();
       updateNotifBadge();
@@ -16340,7 +16361,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // local https://localhost WebView are a documented source of blank/hung pages.
   // The website version still registers it normally.
   var __SC_IS_NATIVE = !!(typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-  try{ if(__SC_IS_NATIVE){ var _scTob = document.getElementById('transferOldBtnBig'); if(_scTob) _scTob.style.display = ''; var _scMnb = document.getElementById('mediaNotifBtnBig'); if(_scMnb){ var _scNmOn = false; try{ _scNmOn = localStorage.getItem('sidecut_native_media') === '1'; }catch(e){ } _scMnb.style.display = ''; _scMnb.textContent = _scNmOn ? 'Disable notification player' : 'Enable notification player (experimental)'; } } }catch(e){ }
+  try{ if(__SC_IS_NATIVE){ var _scTob = document.getElementById('transferOldBtnBig'); if(_scTob) _scTob.style.display = ''; var _scMnb = document.getElementById('mediaNotifBtnBig'); if(_scMnb){ var _scNmOn = false; try{ _scNmOn = localStorage.getItem('sidecut_native_media') !== '0'; }catch(e){ } _scMnb.style.display = ''; _scMnb.textContent = _scNmOn ? 'Disable notification player' : 'Enable notification player (experimental)'; } } }catch(e){ }
   if('serviceWorker' in navigator && !window.__SIDECUT_SNAPSHOT_VIEW__ && !__SC_IS_NATIVE){
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then((reg) => {
