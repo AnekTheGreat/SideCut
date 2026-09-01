@@ -7553,14 +7553,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.16';
+  const APP_VERSION = '5.0.17';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '5.0.16'){
+    if(_lastCacheVer !== '5.0.17'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '5.0.16');
+      localStorage.setItem('sidecut_discCacheVersion', '5.0.17');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7575,6 +7575,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '5.0.17', date: 'September 1, 2026 at 10:25 pm EDT', title: 'Media player notification restored + stats now transfer fully', items: [
+      'The lock-screen / notification media player is back in the installed app: the app now reaches the native media-notification plugin directly through the Capacitor bridge (the plugin\'s web stub was answering before, so the native side was never actually called — that is why it never appeared). Playback state, artwork and the play/pause/next/previous controls all go through it, crash-guarded as always',
+      'Listening stats now transfer completely on import: total plays and listening time are restored into the live counters immediately, so the stats page reflects your backup right away instead of showing zeros',
+      'Premium reminder: it restores from backups that include the unlock code — export a fresh backup from the device where premium is active, then import it here',
+    ]},
     { version: '5.0.16', date: 'September 1, 2026 at 9:40 pm EDT', title: 'Import crash found and fixed — the app now survives big backups', items: [
       'The crash the banner reported (dying during a zip import) is fixed: the importer was holding every song\'s audio data in memory until the very end, so big backups exhausted the phone\'s memory and the system killed the app. It now writes songs to storage in small batches as it goes — peak memory stays tiny no matter how big the backup is',
       'The import now announces its progress in the crash recorder, so if anything ever interrupts it, the next launch says exactly how far it got',
@@ -13123,7 +13128,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // Restore listening stats if present
       if(manifest.stats){
         if(manifest.stats.totalListenSeconds !== undefined){
+          // Restore into the LIVE counters too — writing only the storage row left
+          // the session at 0 plays (and the next save clobbered the restored data).
+          totalListenSeconds = manifest.stats.totalListenSeconds || 0;
+          totalPlays = manifest.stats.totalPlays || 0;
           dbPut('meta', { key: 'stats', value: manifest.stats });
+          try{ if(typeof renderHome === 'function') renderHome(); }catch(e){ }
         }
         if(manifest.stats.streak){
           dbPut('meta', { key: 'streak', value: manifest.stats.streak });
@@ -13492,6 +13502,47 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // plugin at all — its native layer hard-crashes the app process on some
   // phones (pressing play killed the whole app, with no JS error to catch).
   const __SC_NATIVE_EARLY = !!(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  // WHY THIS EXISTS: inside the installed app, Capacitor.Plugins.MediaSession
+  // resolves to the plugin's WEB stub — its setActionHandler returns undefined
+  // when navigator.mediaSession is absent (a WebView doesn't have it), which
+  // both crashed 5.0.11 and meant the compiled-in NATIVE notification plugin
+  // was never reached. The injected bridge exposes nativePromise/nativeCallback,
+  // so we call the native plugin directly — real promises, real notification.
+  const capMediaSessionNative = (!__SC_NATIVE_EARLY) ? null : (function(){
+    try{
+      const C = window.Capacitor;
+      if(!C || typeof C.nativePromise !== 'function' || typeof C.nativeCallback !== 'function') return null;
+      let broken = false;
+      const call = (method, options) => {
+        if(broken) return Promise.resolve();
+        try{
+          const p = C.nativePromise('MediaSession', method, options);
+          if(p && typeof p.catch === 'function') p.catch(function(){ });
+          else broken = true;
+          return p;
+        }catch(e){ broken = true; return Promise.resolve(); }
+      };
+      return {
+        setMetadata: (o) => call('setMetadata', o),
+        setPlaybackState: (o) => call('setPlaybackState', o),
+        setPositionState: (o) => call('setPositionState', o),
+        // The native method is a RETURN_CALLBACK: every notification button press
+        // resolves the saved call again with { action } — route it to the handler.
+        setActionHandler: (o, handler) => {
+          if(broken) return Promise.resolve();
+          try{
+            C.nativeCallback('MediaSession', 'setActionHandler', { action: o.action }, function(data){
+              try{ handler(data && data.data !== undefined ? data.data : data); }catch(e){ }
+            });
+          }catch(e){ broken = true; }
+          return Promise.resolve();
+        },
+      };
+    }catch(e){ return null; }
+  })();
+  // The adapter the media code talks to: the direct native bridge inside the
+  // installed app, the plugin proxy (wrapping the real browser API) elsewhere.
+  const capMediaSessionActive = __SC_NATIVE_EARLY ? capMediaSessionNative : capMediaSession;
   // Plugin bridge calls normally return a Promise, but on some WebView/plugin
   // combos they return undefined or a plain object — calling .catch on that
   // threw at top level during boot and killed everything wired after it.
@@ -13511,29 +13562,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function mediaSetMetadata(t){
     const artType = (t.artBlob && t.artBlob.type) || 'image/jpeg';
     const artwork = t.artUrl && /^https?:/i.test(t.artUrl) ? [{ src: t.artUrl, sizes: '512x512', type: artType }] : [];
-    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
-      capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
+    if(capMediaSessionActive && capPluginUsable){
+      capQuiet(capMediaSessionActive.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }); }catch(e){}
     }
   }
   function mediaSetPlaybackState(state){
-    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
-      capQuiet(capMediaSession.setPlaybackState({ playbackState: state }));
+    if(capMediaSessionActive && capPluginUsable){
+      capQuiet(capMediaSessionActive.setPlaybackState({ playbackState: state }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.playbackState = state; }catch(e){}
     }
   }
   function mediaSetPositionState(duration, playbackRate, position){
-    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
-      capQuiet(capMediaSession.setPositionState({ duration, playbackRate, position }));
+    if(capMediaSessionActive && capPluginUsable){
+      capQuiet(capMediaSessionActive.setPositionState({ duration, playbackRate, position }));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function'){
       try{ navigator.mediaSession.setPositionState({ duration, playbackRate, position }); }catch(e){ /* out-of-range mid-seek — safe to ignore */ }
     }
   }
   function mediaSetActionHandler(action, handler){
-    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
-      capQuiet(capMediaSession.setActionHandler({ action: action }, handler));
+    if(capMediaSessionActive && capPluginUsable){
+      capQuiet(capMediaSessionActive.setActionHandler({ action: action }, handler));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
       try{ navigator.mediaSession.setActionHandler(action, handler); }catch(e){}
     }
@@ -13541,7 +13592,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Lock-screen / notification controls: play, pause, next, prev, stop, seek.
   // The WebView cannot surface these on its own — registering them is what makes
   // the media notification controls appear in the Play app.
-  if(!__SC_NATIVE_EARLY && (capMediaSession || ('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'))){
+  if(!__SC_NATIVE_EARLY && (capMediaSession || ('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function')) || (__SC_NATIVE_EARLY && capMediaSessionNative)){
     mediaSetActionHandler('play', () => {
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       activeAudio().play().catch(() => recoverAudio(activeAudio(), 'media session play failed'));
