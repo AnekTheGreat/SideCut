@@ -13578,11 +13578,29 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     }
   }
   function mediaSetMetadata(t){
-    const artType = (t.artBlob && t.artBlob.type) || 'image/jpeg';
-    const artwork = t.artUrl && /^https?:/i.test(t.artUrl) ? [{ src: t.artUrl, sizes: '512x512', type: artType }] : [];
     if(capMediaSessionActive && capPluginUsable){
-      capQuiet(capMediaSessionActive.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
+      // This call is what makes the notification/lock-screen card appear in the
+      // Play build. blob: URLs are meaningless outside the WebView's JS context,
+      // so for imported files convert the embedded art blob to a data: URL
+      // (cached on the track) — otherwise the card would show with no cover art.
+      const push = (artwork) => capQuiet(capMediaSessionActive.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
+      if(t.artBlob){
+        try{
+          const artType = t.artBlob.type || 'image/jpeg';
+          if(t._artDataUrl){ push([{ src: t._artDataUrl, sizes: '512x512', type: artType }]); return; }
+          const fr = new FileReader();
+          fr.onload = () => { try{ t._artDataUrl = String(fr.result || ''); push([{ src: t._artDataUrl, sizes: '512x512', type: artType }]); }catch(e){ push([]); } };
+          fr.onerror = () => push([]);
+          fr.readAsDataURL(t.artBlob);
+          return;
+        }catch(e){ push([]); return; }
+      }
+      const artType = (t.artBlob && t.artBlob.type) || 'image/jpeg';
+      const artwork = t.artUrl && /^https?:/i.test(t.artUrl) ? [{ src: t.artUrl, sizes: '512x512', type: artType }] : [];
+      push(artwork);
     } else if('mediaSession' in navigator){
+      const artType = (t.artBlob && t.artBlob.type) || 'image/jpeg';
+      const artwork = t.artUrl ? [{ src: t.artUrl, sizes: '512x512', type: artType }] : [];
       try{ navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }); }catch(e){}
     }
   }
@@ -13668,6 +13686,17 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         capMediaSessionActive = capMediaSessionNative;
         if(window.__scMark) __scMark('the media player notification');
         registerMediaSessionHandlers();
+        // If a song is already playing when the adapter arms (it deliberately
+        // waits 3s after boot), push its metadata + state immediately so the
+        // notification shows without needing a pause/play cycle first.
+        setTimeout(function(){
+          try{
+            var _cur = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; });
+            if(_cur) mediaSetMetadata(_cur);
+            var _a = activeAudio();
+            mediaSetPlaybackState(_a && !_a.paused ? 'playing' : 'paused');
+          }catch(e){ }
+        }, 0);
       }catch(e){ }
     }, 3000);
   }
@@ -13684,9 +13713,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const artwork = t.artUrl ? [96, 128, 192, 256, 384, 512].map(size => ({
       src: t.artUrl, sizes: `${size}x${size}`, type: artType
     })) : [];
-    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
-      // native mirror for the Play build's notification card
-      capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
+    if(capMediaSessionActive && capPluginUsable){
+      // push to whatever adapter is live — the native plugin in the Play build
+      // (this is what makes the notification card appear at all) or the web
+      // stub mirror before the native adapter arms
+      mediaSetMetadata(t);
     }
     if('mediaSession' in navigator){
       navigator.mediaSession.metadata = new MediaMetadata({
