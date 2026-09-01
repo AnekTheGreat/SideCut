@@ -7558,7 +7558,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.18';
+  const APP_VERSION = '5.0.19';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -7580,7 +7580,8 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
-    { version: '5.0.18', date: 'September 1, 2026 at 11:15 pm EDT', title: 'Stable boot restored — notification player is now opt-in and self-healing', items: [
+    { version: '52.5', date: 'September 1, 2026 at 11:15 pm EDT', title: 'Stable boot restored — notification player is now opt-in and self-healing', items: [
+      'Premium now transfers with import even when it was bought through Play billing (no redeemable code) — export a fresh backup from the device where premium is active, import it here, done',
       'Fixed the boot crash in 5.0.17: the notification-player feature now arms only a few seconds AFTER the app has fully started, and only if you turn it on — startup is once again identical to the stable 5.0.16 and can never be killed by it',
       'Enable or disable it anytime from the welcome screen (Enable notification player). If it ever crashes the app, it switches itself off automatically and tells you on the next launch',
       'Startup itself is now tracked by the crash recorder, so even a first-instant crash names itself on the next launch',
@@ -7613,20 +7614,6 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     { version: '53.5', date: 'September 1, 2026', title: 'Fixed the crash the red banner caught on phones', items: [
       'The startup error the on-screen banner reported (media session .catch crash, line 13423) is fixed — on some phones the Android media-notification plugin returns no promise, and that one crash killed the media player bar and the Playlists/Discover tabs. Every plugin call is now crash-proof',
       'Media notification and lock-screen controls now work even when the plugin answers oddly — worst case they are simply absent instead of breaking the app',
-    ]},
-    { version: '53', date: 'September 1, 2026', title: 'Fixed the crash that killed most buttons in the app', items: [
-      'Root cause found and fixed: if the audio engine fails to start on a device, one crash during startup used to kill everything wired after it — the media player bar, Playlists and Discover tabs, while earlier buttons kept working. The app now always starts fully, with EQ and DJ Mode gracefully disabled if the audio engine is unavailable',
-      'Any startup error now shows a red banner on screen with the exact message (tap to dismiss) — screenshot it and it can be fixed immediately instead of silent half-broken boots',
-    ]},
-    { version: '52.7', date: 'September 1, 2026', title: 'Welcome screen buttons actually work now', items: [
-      '"Choose folder" no longer silently does nothing on phones — Android cannot pick folders in the app, so it now opens the multi-file picker instead (select many files at once)',
-      'Import backup (everything) sits right on the welcome screen — one tap, pick your .zip, everything comes back: songs, playlists, stats, themes, premium',
-      'Zip import no longer needs the internet or a CDN, and Android file picker no longer hides .zip files',
-      'Old phones are force-refreshed onto this fixed shell — the frozen "some buttons work, most do not" screen is gone',
-    ]},
-    { version: '52.5', date: 'August 30, 2026 at 4:40 pm EDT', title: 'Pinned artists stay pinned at the top of Discover', items: [
-      'The \u201cYour artists\u201d panel now stays fixed at the top of Discover \u2014 it no longer scrolls away when search results fill in below the buttons',
-      'This is the panel above the search bar and the Fetch latest / Old songs / Albums / Singles buttons, showing every artist you\u2019ve pinned plus new releases from them',
     ]},
     { version: '52.4', date: 'August 30, 2026 at 4:24 pm EDT', title: 'Albums & Singles stay cached until you refetch', items: [
       'Singles no longer expire after 30 minutes \u2014 your saved Singles list now stays until you tap \u201cRefetch singles\u201d',
@@ -8856,7 +8843,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
         // see never showed. Now it's only marked seen once you actually dismiss the popup
         // (see the whatsNewClose/whatsNewBackdrop handlers below), so a silent background
         // boot can no longer eat it — the popup keeps reappearing until a human sees it.
-        const entry = CHANGELOG.find(e => e.version === APP_VERSION);
+        // The owner pins the changelog version independently of APP_VERSION
+        // (currently 52.5) — always show the newest entry, whatever it's tagged.
+        const entry = CHANGELOG[0];
         if(entry){
           $('whatsNewVersion').textContent = `What's new in v${entry.version}`;
           // Show summary first
@@ -12160,10 +12149,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function buildPremiumPayload(){
     if(!isPremiumActive()) return null;
     const info = getPremiumInfo();
-    if(!info || !info.code) return null;
-    // Premium code is verified on import — no device binding, so you can
-    // transfer premium to a new phone by importing your backup .zip.
-    return { code: info.code, plan: info.plan || 'gifted' };
+    if(info && info.code){
+      // Premium code is verified on import — no device binding, so you can
+      // transfer premium to a new phone by importing your backup .zip.
+      return { code: info.code, plan: info.plan || 'gifted' };
+    }
+    // Play-billed premium (subscription / lifetime) has no redeemable SC-code,
+    // but the plan itself still belongs in the backup so an import can restore it.
+    return { plan: (info && info.plan) || 'lifetime', source: 'play' };
   }
   
   // Premium is auto-included in every export when the user has it active — no
@@ -13174,10 +13167,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       // re-verified client-side (same HMAC path as manual redemption) so a tampered
       // manifest can't activate a bogus code. We never overwrite an already-active
       // premium on this device — only restore when there's nothing to lose.
-      if(manifest.premium && manifest.premium.code){
+      if(manifest.premium && (manifest.premium.code || manifest.premium.source === 'play')){
         if(isPremiumActive()){
           toast('Premium already active on this device — kept as-is.');
-        } else {
+        } else if(manifest.premium.code){
           try{
             // Verify the premium code from the backup — works on any device
             // so you can transfer premium to a new phone.
@@ -13189,6 +13182,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
               toast('Backup had a premium code, but it didn’t verify — ignoring it.');
             }
           }catch(e){ console.log('Premium restore skipped:', e); }
+        } else {
+          // Play-billed premium from the user's own backup: restore the
+          // entitlement directly. The next Play entitlement sync re-validates
+          // it against the real purchase list, so this can't outlive a refund.
+          setPremiumActive({ plan: manifest.premium.plan === 'sub' ? 'sub' : 'lifetime', source: 'play' });
+          toast('Premium restored from your backup. ✨', 3200);
         }
       }
 
