@@ -3624,6 +3624,19 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       var r = ev && ev.reason;
       __scShowBootError((r && (r.message || String(r))) || 'promise rejection');
     });
+    // ---- Crash flight recorder: a hard process crash (out-of-memory, native
+    // plugin) kills the app without any JS error, so no banner can fire. Every
+    // risky operation records itself; if the next boot finds no clean marker,
+    // the banner names exactly what was in progress when the app died.
+    window.__scMark = function(op){ try{ localStorage.setItem('scLastOp', JSON.stringify({ op: op, at: Date.now() })); }catch(e){ } };
+    window.__scMarkDone = function(){ try{ localStorage.setItem('scLastOp', JSON.stringify({ op: null, at: Date.now() })); }catch(e){ } };
+    try{
+      var _scLast = JSON.parse(localStorage.getItem('scLastOp') || 'null');
+      if(_scLast && _scLast.op){
+        setTimeout(function(){ __scShowBootError('The app previously crashed during: ' + _scLast.op + ' — screenshot this message'); }, 1200);
+        try{ localStorage.setItem('scLastOp', JSON.stringify({ op: null, at: Date.now() })); }catch(e){ }
+      }
+    }catch(e){ }
   })();
 
   // Discover dropdown toggles, defined EARLY so no later boot failure can ever
@@ -7540,14 +7553,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '55';
+  const APP_VERSION = '5.0.15';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== '55'){
+    if(_lastCacheVer !== '5.0.15'){
       Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
       localStorage.removeItem('sidecut_ahArtistData');
-      localStorage.setItem('sidecut_discCacheVersion', '55');
+      localStorage.setItem('sidecut_discCacheVersion', '5.0.15');
     }
   }catch(e){}
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
@@ -7562,6 +7575,13 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '5.0.15', date: 'September 1, 2026 at 8:30 pm EDT', title: 'Crash-proofed play/import, honest media player, AI assistant rebuilt, version numbers unified', items: [
+      'Play can no longer crash the app on phones: the media-notification plugin (whose native layer was killing the whole process) is now completely disconnected inside the installed app — the lock-screen player stays off on affected phones, everything else works',
+      'New crash flight recorder: if the app ever dies mid-operation (import, export, playback), the next launch shows a banner naming exactly what it was doing when it crashed — screenshot it and it can be fixed',
+      'Huge backup zips no longer can\'t out-of-memory the app on import: zips over 120 MB are politely refused with an explanation instead of crashing',
+      'The AI assistant was rebuilt: repaired the corrupted knowledge-base answers, updated every outdated instruction (import, export via share sheet, Play Store, transfer from old SideCut), and doubled how much the Gemini fallback can write',
+      'Version numbers now match everywhere: the app, the What\'s New patch notes, and the Play Store all say 5.0.15 — and every release carries a full timestamp',
+    ]},
     { version: '55', date: 'September 1, 2026', title: 'One-tap transfer from old SideCut installs + file adding fixed', items: [
       'Transfer from old SideCut: if your library was saved by a 5.0.x version, tap Transfer from old SideCut on the welcome screen — it finds that library (it still lives inside the app), starts the export, and the share sheet saves the zip to import here',
       'Adding files fixed in the app: the file-type filter that could empty or block the Android picker is removed, so the picker always opens and shows your music. If adding ever fails, a message now says exactly why',
@@ -10150,6 +10170,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   function handleFiles(fileList, targetPlaylist, opts){
    try{
+    if(window.__scMark) __scMark('adding files to the library');
     // Check if any CSV files are included - handle Spotify playlist imports
     const csvFiles = Array.from(fileList).filter(f => f.name.toLowerCase().endsWith('.csv'));
     if(csvFiles.length > 0){
@@ -12616,6 +12637,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   async function importLibrary(file, targetPlaylist){
     // Imports use the built-in streaming zip reader first, which needs no JSZip
     // and no network — so we don't gate on JSZip here. Only the JSZip fallback does.
+    if(window.__scMark) __scMark(targetPlaylist ? 'importing a zip into a playlist' : 'importing a backup zip');
     toast(targetPlaylist ? `Importing into "${targetPlaylist}"…` : 'Importing library…', 3000);
     try{
       // Open the .zip with the lowest-memory reader available. JSZip.loadAsync
@@ -12657,7 +12679,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }
       if(!usingStream){
         if(typeof JSZip === 'undefined'){ toast('Import tool failed to load — check your connection and reload.'); return; }
-        const jsz = await JSZip.loadAsync(file);
+        if(file.size > 120 * 1024 * 1024){ toast('This zip is ' + Math.round(file.size / 1048576) + ' MB — too large for this device to open directly. Try a smaller backup.', 6000); return; }
+        let jsz;
+        try{ jsz = await JSZip.loadAsync(file); }
+        catch(zipErr){
+          const _zm = (zipErr && zipErr.message) || String(zipErr);
+          toast(/allocat|memory/i.test(_zm) ? 'This zip is too large for this device\'s memory — try a smaller backup.' : 'Could not open that zip: ' + _zm, 6000);
+          return;
+        }
         const jsEntry = (name) => {
           const e = jsz.file(name);
           return e ? { async: (t) => e.async(t) } : null;
@@ -13447,6 +13476,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // lock-screen player show up when you play a song and leave the app. In a plain
   // browser the plugin is absent and the web API is used, exactly as before.
   const capMediaSession = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.MediaSession) ? window.Capacitor.Plugins.MediaSession : null;
+  // Computed EARLY (before the later __SC_IS_NATIVE assignment) because the
+  // media adapter runs first: native builds must never call the media-session
+  // plugin at all — its native layer hard-crashes the app process on some
+  // phones (pressing play killed the whole app, with no JS error to catch).
+  const __SC_NATIVE_EARLY = !!(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   // Plugin bridge calls normally return a Promise, but on some WebView/plugin
   // combos they return undefined or a plain object — calling .catch on that
   // threw at top level during boot and killed everything wired after it.
@@ -13466,28 +13500,28 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function mediaSetMetadata(t){
     const artType = (t.artBlob && t.artBlob.type) || 'image/jpeg';
     const artwork = t.artUrl && /^https?:/i.test(t.artUrl) ? [{ src: t.artUrl, sizes: '512x512', type: artType }] : [];
-    if(capMediaSession && capPluginUsable){
+    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
       capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }); }catch(e){}
     }
   }
   function mediaSetPlaybackState(state){
-    if(capMediaSession && capPluginUsable){
+    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
       capQuiet(capMediaSession.setPlaybackState({ playbackState: state }));
     } else if('mediaSession' in navigator){
       try{ navigator.mediaSession.playbackState = state; }catch(e){}
     }
   }
   function mediaSetPositionState(duration, playbackRate, position){
-    if(capMediaSession && capPluginUsable){
+    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
       capQuiet(capMediaSession.setPositionState({ duration, playbackRate, position }));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function'){
       try{ navigator.mediaSession.setPositionState({ duration, playbackRate, position }); }catch(e){ /* out-of-range mid-seek — safe to ignore */ }
     }
   }
   function mediaSetActionHandler(action, handler){
-    if(capMediaSession && capPluginUsable){
+    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
       capQuiet(capMediaSession.setActionHandler({ action: action }, handler));
     } else if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
       try{ navigator.mediaSession.setActionHandler(action, handler); }catch(e){}
@@ -13496,7 +13530,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // Lock-screen / notification controls: play, pause, next, prev, stop, seek.
   // The WebView cannot surface these on its own — registering them is what makes
   // the media notification controls appear in the Play app.
-  if(capMediaSession || ('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function')){
+  if(!__SC_NATIVE_EARLY && (capMediaSession || ('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'))){
     mediaSetActionHandler('play', () => {
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       activeAudio().play().catch(() => recoverAudio(activeAudio(), 'media session play failed'));
@@ -13529,7 +13563,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     const artwork = t.artUrl ? [96, 128, 192, 256, 384, 512].map(size => ({
       src: t.artUrl, sizes: `${size}x${size}`, type: artType
     })) : [];
-    if(capMediaSession && capPluginUsable){
+    if(capMediaSession && capPluginUsable && !__SC_NATIVE_EARLY){
       // native mirror for the Play build's notification card
       capQuiet(capMediaSession.setMetadata({ title: t.name, artist: t.artist, album: 'SideCut', artwork }));
     }
@@ -13927,6 +13961,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
 
   $('playPauseBtn').addEventListener('click', () => {
     $('playPauseBtn').classList.remove('pulse-cue');
+    if(window.__scMark){ __scMark('starting playback'); setTimeout(function(){ if(window.__scMarkDone) __scMarkDone(); }, 4000); }
     const a = activeAudio();
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
     if(a.paused){ a.play().catch(() => recoverAudio(a, 'manual play failed')); }
@@ -20542,14 +20577,14 @@ var _aiTyping = false;
 // Knowledge base: question → answer pairs
 var _aiKB = [
   // ═══ GETTING STARTED ═══
-  {q:['how do i add songs','how to add music','how to import songs','import music','add files'],a:'To add songs: tap the **+ Add songs** button at the bottom, then choose **+ Files** to pick individual MP3s, or **+ Add folder** to import an entire folder at once. You can also **Import library** to restore a backup .zip file.'},
+  {q:['how do i add songs','how to add music','how to import songs','import music','add files'],a:'To add songs: on the welcome screen tap **+ Choose files** (pick MP3s one by one) — or use **+ Add songs ▾ → Choose folder / Choose files**. To restore a backup, tap **Import backup (everything)** and pick your .zip.'},
   {q:['how to get songs','where to get music','download music','get mp3s','spotify to mp3','how do i get music'],a:'The free way: open **Spotify** → find a song → tap **Share → Copy link** → paste it into **Expand URL** (Settings → Get Songs, or the box at the top of Discover) → take the expanded link to any Spotify-to-MP3 converter website → download the MP3 → import it into SideCut with **+ Add songs → + Files**.'},
   {q:['what file types','supported formats','file types','audio formats','what files','can i use flac','can i use wav','can i use ogg'],a:'SideCut supports: **Audio:** .mp3, .m4a, .wav, .flac, .ogg, .aac, .wma, .opus, .aiff, .alac. **Other:** .zip (library/playlist import), .csv (Spotify playlist import).'},
   {q:['expand url','spotify link','paste link','convert url','what is expand url'],a:'**Expand URL** takes a Spotify short link (like open.spotify.com/track/...) and expands it to the full URL that MP3 converter sites accept. You can find it in **Settings → Get Songs** or at the top of the **Discover** tab.'},
-  {q:['first time','getting started','new user','how to start','setup'],a:'WelWelcome! Here\'s the quick start: 1) Tap **+ Add songs → + Files** to import MP3s from your device. 2) Tap any song to play it. 3) Use the mini player at the bottom for play/pause, skip, shuffle. 4) Check **Settings → Theme** to customize the look. For more music: use **Expand URL** with a Spotify link converter.'},
+  {q:['first time','getting started','new user','how to start','setup'],a:'Welcome! Here\'s the quick start: 1) Tap **+ Add songs → + Files** to import MP3s from your device. 2) Tap any song to play it. 3) Use the mini player at the bottom for play/pause, skip, shuffle. 4) Check **Settings → Theme** to customize the look. For more music: use **Expand URL** with a Spotify link converter.'},
   {q:['tutorial','how to use','help','guide','instructions'],a:'The app comes with a built-in tutorial shown on first launch. To replay it: go to **Settings → More → 🎓 Replay tutorial**. You can also ask me specific questions about any feature!'},
   {q:['add folder','import folder','whole folder'],a:'Tap **+ Add songs → + Add folder** to import an entire folder of audio files at once. SideCut will scan the folder and add all supported audio files (.mp3, .m4a, .flac, etc.).'},
-  {q:['backup','export library','save library','restore library','zip file'],a:'Go to **Settings → More → Export library** to save your entire library as a .zip backup. To restore, use **+ Add songs → Import library** and select your backup .zip file.'},
+  {q:['backup','export library','save library','restore library','zip file'],a:'To back up: tap **+ Add songs ▾ → Export everything (backup)** — it saves a .zip with your songs, playlists, stats, themes and premium code. In the installed app it opens the share sheet: save it to Files or send it anywhere. To restore: **Import backup (everything)** and pick that .zip.'},
   {q:['import csv','spotify csv','import from csv','spotify playlist csv'],a:'You can import a Spotify playlist CSV file: go to **+ Add songs → Import library** and select your .csv file. SideCut will try to match the tracks from the CSV.'},
 
   // ═══ PLAYBACK ═══
@@ -20569,9 +20604,9 @@ var _aiKB = [
   {q:['seek','scrub','jump to time','fast forward','rewind'],a:'In the Now Playing screen, drag the **seek bar** to jump to any point in the song. You can also tap anywhere on the progress bar to jump there.'},
   {q:['skip next','previous song','go back','skip forward'],a:'Use the **skip buttons** (⏮ ⏭) in the mini player or Now Playing screen. You can also swipe left/right on the Now Playing screen to skip tracks.'},
   {q:['pause','play','stop music','resume'],a:'Tap the **play/pause button** in the mini player at the bottom, or in the Now Playing screen. Music also pauses when you disconnect headphones.'},
-  {q:['autoplay','play automatically','start playing'],a:'SidSideCut doesn\'t autoplay — you choose what to play. Tap any song in your library, or use the play button on a playlist to start playing.'},
+  {q:['autoplay','play automatically','start playing'],a:'SideCut doesn\'t autoplay — you choose what to play. Tap any song in your library, or use the play button on a playlist to start playing.'},
   {q:['audio output','bluetooth','headphones','speakers','cast'],a:'SideCut outputs audio to whatever your phone is connected to — Bluetooth speakers, wired headphones, car audio, etc. Just connect your device and play. No special casting feature needed.'},
-  {q:['speed','playback speed','slow','fast','tempo'],a:'SidSideCut plays at normal speed — there\'s no variable speed control. If you need slow/fast playback, check your phone\'s accessibility settings for system-wide playback speed.'},
+  {q:['speed','playback speed','slow','fast','tempo'],a:'SideCut has playback speed control — open the **DJ Mode** panel for the speed control, and check **Settings → Playback** for more playback options.'},
   {q:['pitch','change pitch','vocal pitch'],a:'SideCut plays audio at its original pitch. For pitch effects, try the **Equalizer** (Settings → EQ) — some presets can alter the tonal character, though not the actual pitch.'},
 
   // ═══ ORGANIZING ═══
@@ -20585,9 +20620,9 @@ var _aiKB = [
   {q:['reorder songs','move songs','change order','drag to reorder'],a:'In a playlist, long-press a song and drag it to reorder. In the main library, use the sort button to change the display order.'},
   {q:['album','album view','group by album','see albums'],a:'Songs are organized by artist and album automatically. Use the search bar to find a specific album, or browse by artist in the library.'},
   {q:['genre','music genre','filter by genre'],a:'SideCut reads genre tags from your audio files. Use the search bar to find songs by genre, or check the **Stats** section for genre breakdowns.'},
-  {q:['duplicate songs','duplicate tracks','same song twice','remove duplicates'],a:'SidSideCut doesn\'t auto-detect duplicates. If you see the same song twice, use **long-press → multi-select** to select the duplicate and delete it.'},
-  {q:['file name','song name wrong','wrong title','fix metadata','edit song info'],a:'SidSideCut reads song info (title, artist, album) from the audio file\'s embedded tags (ID3 tags). To fix wrong info, use a tag editor app to edit the MP3\'s metadata before importing.'},
-  {q:['artwork','album art','cover image','no cover','wrong cover'],a:'SidSideCut reads album art from the audio file\'s embedded tags. If artwork is missing, use a tag editor app to add cover art to the MP3 before importing. Some files may show a default record icon.'},
+  {q:['duplicate songs','duplicate tracks','same song twice','remove duplicates'],a:'SideCut detects duplicates automatically when you import (it asks before adding them). For duplicates already in your library, use **long-press → multi-select** to select and delete them.'},
+  {q:['file name','song name wrong','wrong title','fix metadata','edit song info'],a:'SideCut reads song info (title, artist, album) from the audio file\'s embedded tags (ID3 tags). To fix wrong info, use a tag editor app to edit the MP3\'s metadata before importing.'},
+  {q:['artwork','album art','cover image','no cover','wrong cover'],a:'SideCut reads album art from the audio file\'s embedded tags. If artwork is missing, use a tag editor app to add cover art to the MP3 before importing. Some files may show a default record icon.'},
 
   // ═══ PREMIUM & DISCOVER ═══
   {q:['premium','unlock premium','what is premium','premium features','buy premium'],a:'**Premium** unlocks the **Discover** tab (song search, pinned artists, new releases, singles, album history). Go to **Settings → Premium** to learn more and unlock it. Premium is a one-time purchase — no subscription.'},
@@ -20599,7 +20634,7 @@ var _aiKB = [
   {q:['discover','discover tab','song discovery','search songs online'],a:'The **Discover** tab lets you search for songs by name, preview them, and add them to your library. Premium unlocks full search, pinned artists, new releases, singles, and album history.'},
   {q:['discover search','search discover','find songs online'],a:'In the **Discover** tab, type a song name or artist in the search bar at the top. Results show previews you can listen to before adding them to your library.'},
   {q:['refetch albums','refresh albums','update albums','albums missing'],a:'In **📀 Album History**, tap the **↻ Refetch albums** button to re-fetch from iTunes, Deezer, and MusicBrainz. You can also tap the per-artist ↻ to refetch just one artist.'},
-  {q:['remove album','delete album','hide album','album history remove'],a:'In In **📀 Album History**, tap the **✕** on any album to remove it. It won\'t come back unless you refetch. You can also use **☐ Select** mode to batch-delete multiple albums.'},
+  {q:['remove album','delete album','hide album','album history remove'],a:'In **📀 Album History**, tap the **✕** on any album to remove it. It won\'t come back unless you refetch. You can also use **☐ Select** mode to batch-delete multiple albums.'},
   {q:['add album manually','manual album','add album','custom album'],a:'In **📀 Album History**, tap **+ Add album** to manually add an album with a custom artist name, album name, and image URL. Great for albums not found on streaming services.'},
   {q:['select delete','batch delete albums','select mode','multi select albums'],a:'In **📀 Album History**, tap **☐ Select** to enter select mode. Check the albums you want to remove, then tap **Delete selected**. Tap **Cancel** or **✔ Done** to exit.'},
   {q:['album history loading','albums loading slowly','album fetch slow'],a:'Album History fetches from multiple sources (iTunes, Deezer, MusicBrainz) for each pinned artist. It saves progress as it goes — if you close the app, it resumes where it left off when you reopen.'},
@@ -20613,7 +20648,7 @@ var _aiKB = [
   {q:['icon','app icon','change icon','sidecut icon'],a:'The app icon is set by SideCut and can vary based on your theme. To change it, check if your phone launcher supports custom icon packs and apply one to the SideCut icon.'},
   {q:['color','change color','accent color','primary color'],a:'Go to **Settings → Theme** to change the accent color and overall color scheme. SideCut has several built-in color palettes.'},
   {q:['wallpaper','background','home background','app background'],a:'Go to **Settings → Theme** to customize the app background. You can choose from built-in backgrounds or use a solid color.'},
-  {q:['mini player style','player look','player design'],a:'TheThe mini player at the bottom inherits the current theme\'s colors. Go to **Settings → Theme** to change the overall look, which affects the player appearance.'},
+  {q:['mini player style','player look','player design'],a:'The mini player at the bottom inherits the current theme\'s colors. Go to **Settings → Theme** to change the overall look, which affects the player appearance.'},
   {q:['text color','font color','readability'],a:'Text colors are set by the current theme. Go to **Settings → Theme** to switch themes. Some themes have better contrast than others for outdoor use.'},
   {q:['dark mode','light mode','oled','amoled'],a:'Go to **Settings → Theme** — look for themes with dark backgrounds. AMOLED-black themes use true black (#000) which saves battery on OLED screens.'},
   {q:['custom glow settings','glow color','glow size','glow opacity','edge line','blur band','corner glow'],a:'In **Settings → Glow**, you can independently toggle and customize: left edge line, right edge line, top blur band, bottom blur band, corner glow, plus size and opacity sliders for each.'},
@@ -20623,25 +20658,27 @@ var _aiKB = [
   {q:['offline','no internet','work offline','offline mode','without wifi'],a:'Once songs are imported, SideCut works fully offline: playing your library, playlists, shuffle/repeat, EQ, DJ mode, seek, sleep timer, gapless, crossfade, and all settings. **Needs internet:** Discover, fetching new lyrics/covers, and update checks.'},
   {q:['cache','clear cache','storage','space','storage full'],a:'SideCut stores songs in your device storage and lyrics/settings in IndexedDB. To clear the cache: go to **Settings → More** for storage info. Your actual music files are stored separately.'},
   {q:['update','version','app version','check for updates','new version'],a:'SideCut checks for updates automatically. To manually check: go to **Settings → More** → look for the version info and update check button.'},
-  {q:['notification','media controls','notification shade','notification bar'],a:'WheWhen music plays, media controls appear in your phone\'s notification shade. You can play/pause from there. Note: tapping the notification opens SideCut, but to jump to the current song, tap the record on the mini player.'},
+  {q:['notification','media controls','notification shade','notification bar'],a:'When music plays in the browser, media controls appear in your phone\'s notification shade. In the installed Android app the notification player is currently disabled on some phones for stability — if it is active on yours, you get play/pause from the shade. To jump to the current song in the app, tap the record on the mini player.'},
   {q:['mini player','bottom player','now playing bar','player bar'],a:'The **mini player** at the bottom shows the current song with play/pause, skip, and shuffle controls. Tap the **record/album art** to open the full Now Playing screen.'},
   {q:['now playing','full player','playing screen','big player'],a:'Tap the **album art** on the mini player to open the full Now Playing screen with lyrics, seek bar, queue, and more controls. Tap outside or swipe down to close.'},
   {q:['queue','play queue','up next','song queue'],a:'In the Now Playing screen, tap the **queue icon** to see what songs are coming up next. You can reorder or remove songs from the queue. Swipe a song left to remove it.'},
-  {q:['media session','lock screen controls','lockscreen','car controls'],a:'SidSideCut integrates with your phone\'s media session, so you get play/pause controls on your lock screen, notification shade, Bluetooth devices, and car displays while music is playing.'},
+  {q:['media session','lock screen controls','lockscreen','car controls'],a:'SideCut integrates with your phone\'s media session in the browser version: play/pause controls on the lock screen, notification shade, Bluetooth devices, and car displays. In the installed Android app this is currently disabled on some phones for stability.'},
   {q:['audio quality','bitrate','sound quality','high quality','flac quality'],a:'SidSideCut plays audio files at their native quality — it doesn\'t compress or re-encode your music. Higher bitrate files (320kbps MP3, FLAC, etc.) will sound better. Use the **Equalizer** (Settings → EQ) to fine-tune the sound.'},
-  {q:['battery','battery drain','power usage','saves battery'],a:'SidSideCut is designed to be battery-efficient. For best battery life: use normal themes (not heavy glow), and keep the screen off when listening. The app doesn\'t run background processes when paused.'},
+  {q:['battery','battery drain','power usage','saves battery'],a:'SideCut is designed to be battery-efficient. For best battery life: use normal themes (not heavy glow), and keep the screen off when listening. The app doesn\'t run background processes when paused.'},
   {q:['crash','app crashing','force close','stops working','bug'],a:'If SideCut crashes: try force-closing and reopening the app. If it keeps crashing, go to **Settings → Support** and email us at sidecutsupport@gmail.com with details about what you were doing.'},
   {q:['slow','laggy','performance','stuttering','audio glitch'],a:'If SideCut is slow: close other apps to free up memory. Large libraries (1000+ songs) may take a moment to load. Try **Settings → More → Clear cache** if available. Restarting your phone can help too.'},
-  {q:['privacy','data','tracking','what data','collect data'],a:'SidSideCut is privacy-focused: all your music, playlists, and settings stay on your device. We don\'t collect analytics or personal data. The only network requests are for Discover (song search, lyrics, covers) and update checks.'},
+  {q:['privacy','data','tracking','what data','collect data'],a:'SideCut is privacy-focused: all your music, playlists, and settings stay on your device. We don\'t collect analytics or personal data. The only network requests are for Discover (song search, lyrics, covers) and update checks.'},
   {q:['contact','support email','help email','report bug','email support'],a:'Email us at **sidecutsupport@gmail.com** — go to **Settings → Support** and tap the email link. We typically respond within 48 hours.'},
-  {q:['sandbox','sandbox mode','experimental','developer options'],a:'**S**Sandbox** (Settings → Sandbox) is a premium feature with experimental tweaks like custom quick actions, Home layout, and more. It\'s for power users who want deeper customization.'},
+  {q:['sandbox','sandbox mode','experimental','developer options'],a:'**Sandbox** (Settings → Sandbox) is a premium feature with experimental tweaks like custom quick actions, Home layout, and more. It\'s for power users who want deeper customization.'},
   {q:['donate','support developer','buy premium','contribute'],a:'You can support SideCut development through **Settings → Donate** or by unlocking **Premium** in **Settings → Premium**. Premium is a one-time purchase that unlocks Discover and all advanced features.'},
-  {q:['keyboard','type','typing','search keyboard'],a:'WheWhen you tap a search bar or text input in SideCut, your phone\'s keyboard appears automatically. Use it to type song names, artist names, or search queries.'},
+  {q:['keyboard','type','typing','search keyboard'],a:'When you tap a search bar or text input in SideCut, your phone\'s keyboard appears automatically. Use it to type song names, artist names, or search queries.'},
   {q:['swipe','gesture','swipe actions'],a:'In the Now Playing screen, you can swipe left/right to skip tracks. In the song list, swipe actions may depend on your settings. Try long-pressing for more options.'},
   {q:['pro version','full version','paid version','buy app'],a:'SideCut is free to use with your own audio files. **Premium** (one-time purchase in Settings → Premium) unlocks the Discover tab with song search, previews, pinned artists, new releases, singles, and album history.'},
-  {q:['why free','how is it free','no ads','no subscriptions'],a:'SidSideCut is free and ad-free because it plays YOUR files — it\'s a player, not a streaming service. Premium unlocks Discover features (search, previews, artist tracking) to support ongoing development.'},
+  {q:['why free','how is it free','no ads','no subscriptions'],a:'SideCut is free and ad-free because it plays YOUR files — it\'s a player, not a streaming service. Premium unlocks Discover features (search, previews, artist tracking) to support ongoing development.'},
   {q:['ios','iphone','apple','ipad','available on ios'],a:'SideCut is currently available as a web app (PWA) that works on iOS, Android, and desktop browsers. Add it to your home screen for the app-like experience. On iOS, tap the share button → "Add to Home Screen".'},
-  {q:['android','google play','play store'],a:'SideCut is a Progressive Web App (PWA) — no Play Store needed. Visit the SideCut website in Chrome on Android and tap "Add to Home Screen" when prompted, or use the install prompt.'},
+  {q:['android','google play','play store'],a:'SideCut is on **Google Play** as a normal app (version 5.0.x) — updates arrive through the Play Store. There is also the web version at the SideCut website: open it in Chrome and tap "Add to Home Screen". The two store data separately, so use **Import backup (everything)** / **Transfer from old SideCut** to move a library between them.'},
+  {q:['transfer old','old sidecut','old version','migrate','move my library','old install'],a:'If your library was saved by an older SideCut version (5.0.x), tap **Transfer from old SideCut** on the welcome screen. It finds that library (it still lives inside the app), starts the export, and the share sheet saves the zip — then tap **Import backup (everything)** to bring it in.'},
+  {q:['red banner','error banner','crash message','crashed during'],a:'If SideCut shows a red error banner, it names exactly what went wrong — tap to dismiss, and screenshot it when reporting a bug. If the app ever closes by itself, the next launch shows what it was doing when it crashed.'},
   {q:['add to home screen','install','pwa','home screen shortcut'],a:'SideCut is a PWA — add it to your home screen for an app-like experience. On iOS: tap the share button → "Add to Home Screen". On Android: Chrome will prompt you, or tap the menu → "Add to Home Screen".'},
 ];
 
@@ -20746,7 +20783,7 @@ async function _aiGeminiQuery(userMessage) {
       body: JSON.stringify({
         system_instruction: { parts: [{ text: _aiSystemPrompt }] },
         contents: contents,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 300 }
+        generationConfig: { temperature: 0.7, maxOutputTokens: 600 }
       })
     });
     if (!resp.ok) {
