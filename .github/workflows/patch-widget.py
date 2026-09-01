@@ -161,6 +161,17 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         else if (action.endsWith("_next")) code = KeyEvent.KEYCODE_MEDIA_NEXT;
         else if (action.endsWith("_playpause")) code = KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
         if (code != 0) {
+            // Optimistically flip the play/pause icon so the widget responds
+            // instantly, then let the web layer's next push correct it.
+            if (action.endsWith("_playpause")) {
+                try {
+                    android.content.SharedPreferences sp = context.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
+                    JSONObject o = new JSONObject(sp.getString("state", "{}"));
+                    o.put("playing", !o.optBoolean("playing", false));
+                    sp.edit().putString("state", o.toString()).apply();
+                } catch (Exception ignored) {
+                }
+            }
             try {
                 AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
                 if (am != null) {
@@ -169,6 +180,7 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
                 }
             } catch (Exception ignored) {
             }
+            pushAll(context);
         }
     }
 }
@@ -181,17 +193,24 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center_horizontal"
-    android:padding="8dp"
+    android:padding="9dp"
     android:background="@drawable/sidecut_widget_bg">
 
-    <ImageView
-        android:id="@+id/wArt"
-        android:layout_width="52dp"
-        android:layout_height="52dp"
-        android:layout_marginTop="2dp"
-        android:scaleType="centerCrop"
-        android:contentDescription="Album art" />
+    <!-- Album cover, centered, with a soft rounded frame -->
+    <FrameLayout
+        android:layout_width="58dp"
+        android:layout_height="58dp"
+        android:layout_marginTop="1dp"
+        android:background="@drawable/sidecut_widget_art_frame">
+        <ImageView
+            android:id="@+id/wArt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="Album art" />
+    </FrameLayout>
 
+    <!-- Song name -->
     <TextView
         android:id="@+id/wTitle"
         android:layout_width="match_parent"
@@ -204,6 +223,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:textColor="#FFFFFF"
         android:text="SideCut" />
 
+    <!-- Artist name -->
     <TextView
         android:id="@+id/wArtist"
         android:layout_width="match_parent"
@@ -211,7 +231,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:maxLines="1"
         android:ellipsize="end"
         android:textSize="10sp"
-        android:textColor="#B0B0B0"
+        android:textColor="#C7C7C7"
         android:text="" />
 
     <LinearLayout
@@ -250,8 +270,16 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
 
 BG_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="16dp" />
-    <solid android:color="#CC0E1B1F" />
+    <corners android:radius="20dp" />
+    <solid android:color="#E60E1B1F" />
+    <stroke android:width="1dp" android:color="#2B4450" />
+</shape>
+"""
+
+ART_FRAME_XML = """<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners android:radius="12dp" />
+    <stroke android:width="1dp" android:color="#33455F" />
 </shape>
 """
 
@@ -328,6 +356,7 @@ def main():
     write(os.path.join(JAVA_DIR, "SideCutWidgetProvider.java"), PROVIDER_JAVA)
     write(os.path.join(RES_DIR, "layout", "sidecut_widget.xml"), LAYOUT_XML)
     write(os.path.join(RES_DIR, "drawable", "sidecut_widget_bg.xml"), BG_XML)
+    write(os.path.join(RES_DIR, "drawable", "sidecut_widget_art_frame.xml"), ART_FRAME_XML)
     write(os.path.join(RES_DIR, "xml", "sidecut_widget_info.xml"), WIDGET_INFO_XML)
     patch_manifest()
     patch_main_activity()
