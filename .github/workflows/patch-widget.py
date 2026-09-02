@@ -136,7 +136,18 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             if (comma < 0) return null;
             String b64 = dataUrl.substring(comma + 1).replaceAll("\\s", "");
             byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
-            return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            // Downsample so the bitmap stays small: Android ships RemoteViews over
+            // a Binder transaction (~1MB cap). A full-res cover overflows that on
+            // Android 14+/OnePlus launchers and shows "An error occurred when
+            // loading widget". Target ~160-320px, far under the cap.
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
+            int sample = 1;
+            while ((opts.outWidth / sample > 320) || (opts.outHeight / sample > 320)) sample *= 2;
+            opts.inJustDecodeBounds = false;
+            opts.inSampleSize = sample;
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
         } catch (Exception e) {
             return null;
         }
