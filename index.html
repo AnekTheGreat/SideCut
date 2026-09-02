@@ -7915,13 +7915,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '55.6';
-  // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
+  const APP_VERSION = '55.7';
+  // Keep discover caches (Album History data + popup HTML, Singles) across app
+  // updates: bumping the version must NOT force a refetch of the user's albums.
+  // Only clear once per install when no version marker exists yet (fresh data).
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
-    if(_lastCacheVer !== APP_VERSION){
-      Object.keys(localStorage).forEach(function(k){ if(k.indexOf('discPopupCache_') === 0) localStorage.removeItem(k); });
-      localStorage.removeItem('sidecut_ahArtistData');
+    if(!_lastCacheVer){
       localStorage.setItem('sidecut_discCacheVersion', APP_VERSION);
     }
   }catch(e){}
@@ -7937,7 +7937,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
-    { version: '55.6', date: 'September 2, 2026 · 4:01 PM ET', title: 'Fixed version log times (now true Eastern time)', items: [
+    { version: '55.7', date: 'September 2, 2026 · 4:07 PM ET', title: 'Search in Singles & Album History + albums survive updates', items: [
+      'New search bar at the top of the Singles and Album History popups — type to filter by song, album, or artist name; matching groups auto-expand',
+      'Albums and singles are no longer wiped on app updates — your Album History opens instantly from saved data instead of refetching everything',
+    ] },{ version: '55.6', date: 'September 2, 2026 · 4:01 PM ET', title: 'Fixed version log times (now true Eastern time)', items: [
       'Changelog timestamps were showing UTC instead of Eastern — all times are now corrected (4 hours earlier)',
     ] },{
     version: '55.5',
@@ -22056,6 +22059,62 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
   if(tEl) tEl.textContent = title || '';
   if(sEl){ if(subtitle){ sEl.textContent = subtitle; sEl.style.display='block'; } else { sEl.style.display='none'; } }
   if(bEl) bEl.innerHTML = bodyHTML || '';
+  // Search bar for Singles & Album History: a filter row pinned above the list
+  // that narrows artist groups / album & single rows as you type. The popup
+  // cache only stores list HTML, so this is injected at open time — never
+  // cached, always wired fresh.
+  try{
+    if(title && (title.indexOf('\ud83c\udfb5 Singles') !== -1 || title.indexOf('\ud83d\udcbf Album History') !== -1) && bodyHTML && !/fetching|loading|spinner|\u23f3|dp-empty/i.test(bodyHTML)){
+      var _sb = document.createElement('div');
+      _sb.id = 'discPopupSearchWrap';
+      _sb.style.cssText = 'padding:0 12px 8px 12px; position:sticky; top:0; z-index:5; background:inherit;';
+      _sb.innerHTML = '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border:1px solid var(--line);border-radius:10px;padding:8px 12px;">' +
+        '<span style="color:var(--ink-dim);font-size:13px;">\ud83d\udd0d</span>' +
+        '<input id="discPopupSearch" type="text" placeholder="Search ' + (title.indexOf('Singles') !== -1 ? 'singles' : 'albums') + ' or artists\u2026" autocomplete="off" style="flex:1;background:none;border:none;outline:none;color:var(--ink);font-size:13px;min-width:0;" />' +
+        '<span id="discPopupSearchClear" style="display:none;color:var(--ink-dim);font-size:15px;cursor:pointer;padding:0 2px;">\u00d7</span>' +
+        '</div>';
+      bEl.insertBefore(_sb, bEl.firstChild);
+      var _sin = _sb.querySelector('#discPopupSearch');
+      var _sclr = _sb.querySelector('#discPopupSearchClear');
+      if(_sin){
+        _sin.addEventListener('input', function(){
+          var q = (this.value || '').toLowerCase().trim();
+          _sclr.style.display = q ? 'block' : 'none';
+          var groups = bEl.querySelectorAll('.dp-ah-artist');
+          for(var gi=0; gi<groups.length; gi++){
+            var g = groups[gi];
+            var hdr = g.querySelector('.dp-ah-artist-hdr');
+            var rows = g.querySelectorAll('.dp-track, .dp-ah-album');
+            var any = false;
+            for(var ri=0; ri<rows.length; ri++){
+              var row = rows[ri];
+              var hay = '';
+              // Match on track/album name, artist name, and date text.
+              var nm = row.querySelector('div[style*="flex:1"] > div');
+              if(nm) hay += ' ' + (nm.textContent || '');
+              if(row.dataset && row.dataset.artist) hay += ' ' + row.dataset.artist;
+              var sub = row.querySelector('div[style*="flex:1"] > div:nth-child(2)');
+              if(sub) hay += ' ' + (sub.textContent || '');
+              var hit = !q || hay.toLowerCase().indexOf(q) !== -1;
+              row.style.display = hit ? '' : 'none';
+              if(hit) any = true;
+            }
+            g.style.display = any ? '' : 'none';
+            // Auto-expand matching groups while searching; restore on clear.
+            var body = g.querySelector('.dp-ah-albums');
+            var chv = hdr ? hdr.querySelector('.dp-ah-chevron') : null;
+            if(q && any && body) body.style.display = 'block';
+            if(!q && body && chv) body.style.display = 'none';
+            if(chv) chv.style.transform = (!q && body && body.style.display === 'none') ? '' : 'rotate(90deg)';
+          }
+          // Hide the Refetch/Recently Deleted button row while filtering.
+          var btnRow = bEl.querySelector('div[style*="justify-content:center"] > button#ahRefetchBtn') ? bEl.querySelector('div[style*="justify-content:center"]') : (bEl.querySelector('#ahRefetchBtn') ? bEl.querySelector('#ahRefetchBtn').parentElement : null);
+          if(btnRow && btnRow !== _sb) btnRow.style.display = q ? 'none' : '';
+          _sclr.onclick = function(){ _sin.value = ''; _sin.dispatchEvent(new Event('input')); _sin.focus(); };
+        });
+      }
+    }
+  }catch(e){}
   ov.style.display = 'flex';
   // Re-apply custom album covers from localStorage — the cached popup HTML
   // may have been saved before the user set a cover, so covers won't be in
