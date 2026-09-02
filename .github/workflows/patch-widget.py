@@ -5,19 +5,17 @@ patch-widget.py — run AFTER `npx cap add android` in CI.
 Injects the SideCut 2x2 home-screen widget into the generated android project:
   - SideCutWidgetPlugin.java : Capacitor plugin ("SideCutWidget"). The web layer
     pushes now-playing state (title, artist, cover art as a data URL, playing
-    bool, playlists list + active playlist) with `update()`. The web layer also
-    polls `getPendingPlaylist()` — when the user taps a playlist pill on the
-    widget, the widget writes the target playlist to prefs and the web layer
-    picks it up and switches the playlist.
+    bool) with `update()`. A widget THEME object (bg colors, text colors) rides
+    along in the same update payload.
   - SideCutWidgetProvider.java : AppWidgetProvider that renders a Spotify-style
     widget (cover art top-left, song title + artist below, prev / play-pause /
-    next; an extra PLAYLIST PILL ROW appears when the widget is EXPANDED) and
-    turns button taps into media key events routed to the media session.
+    next) and turns button taps into media key events routed to the media
+    session.
   - User-themeable: the web layer sends a "theme" object inside update() -
-    bg (bg1/bg2 gradient + radius), accent for the active pill, title/artist
-    text colors. All colors are applied at render time via RemoteViews.
+    bg (bg1/bg2 gradient + radius), title/artist text colors. All colors are
+    applied at render time via RemoteViews.
   - res/layout/sidecut_widget.xml + res/xml/sidecut_widget_info.xml (2x2 cell)
-    + custom white vector transport icons + pill/card backgrounds (res/drawable).
+    + custom white vector transport icons + cover-card background (res/drawable).
   - AndroidManifest.xml receiver entry (idempotent).
   - MainActivity.java registers the plugin (idempotent).
 
@@ -129,24 +127,6 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         catch (Exception e) { return -1L; }
     }
 
-    // True when the home-screen widget is resized taller than its 2x2 target.
-    static boolean isExpanded(Context ctx) {
-        try {
-            AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
-            if (mgr == null) return false;
-            int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, SideCutWidgetProvider.class));
-            if (ids == null) return false;
-            for (int id : ids) {
-                android.os.Bundle o = mgr.getAppWidgetOptions(id);
-                if (o == null) continue;
-                int h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
-                if (h > 0 && h < 9999 && h > 2 * 62) return true; // ~62dp per 2x2 cell row
-            }
-            return false;
-        } catch (Exception e) {
-            return false;
-        }
-    }
 
     // Renders the themeable gradient (bg1 -> bg2, rounded corners) as a small
     // bitmap. Downsampled on purpose: it is stretched to the widget bounds and
@@ -168,20 +148,6 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         }
     }
 
-    // Solid rounded-rect bitmap for playlist pill backgrounds (accent-themeable).
-    static Bitmap pillBitmap(int color) {
-        try {
-            int w = 160, h = 44, r = 22;
-            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            android.graphics.Canvas cv = new android.graphics.Canvas(bmp);
-            android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-            p.setColor(color);
-            cv.drawRoundRect(new android.graphics.RectF(0, 0, w, h), r, r, p);
-            return bmp;
-        } catch (Exception e) {
-            return null;
-        }
-    }
 
     static void pushAll(Context ctx) {
         try {
@@ -232,34 +198,6 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             rv.setOnClickPendingIntent(R.id.wPrev, pi(ctx, "prev", ""));
             rv.setOnClickPendingIntent(R.id.wPlay, pi(ctx, "playpause", ""));
             rv.setOnClickPendingIntent(R.id.wNext, pi(ctx, "next", ""));
-
-            // Playlist pill row: shown only when the widget is EXPANDED
-            // (taller than 2 cells). Collapsed widgets keep the clean 2x2 look.
-            JSONObject state = null;
-            try { state = new JSONObject(stateJson); } catch (Exception ignored) {}
-            org.json.JSONArray pls = (state != null) ? state.optJSONArray("playlists") : null;
-            String act = (state != null) ? state.optString("active", "") : "";
-            boolean showPills = isExpanded(ctx) && pls != null && pls.length() > 0;
-            rv.setViewVisibility(R.id.wPillsRow, showPills ? View.VISIBLE : View.GONE);
-            if (showPills) {
-                int acc = (int) parseColor(th.optString("accent", "#E3B23C"));
-                int accInk = (int) parseColor(th.optString("accentText", "#1A1305"));
-                int pillBg = (int) parseColor(th.optString("pill", "#1C1F26"));
-                int pillText = (int) parseColor(th.optString("pillText", "#DDDEE3"));
-                int[] pillWraps = { R.id.wPillWrap0, R.id.wPillWrap1, R.id.wPillWrap2, R.id.wPillWrap3 };
-                int[] pillBgs = { R.id.wPillBg0, R.id.wPillBg1, R.id.wPillBg2, R.id.wPillBg3 };
-                int[] pillIds = { R.id.wPill0, R.id.wPill1, R.id.wPill2, R.id.wPill3 };
-                for (int i = 0; i < pillIds.length; i++) {
-                    String name = (i < pls.length()) ? pls.optString(i, "") : "";
-                    if (name.isEmpty()) { rv.setViewVisibility(pillWraps[i], View.GONE); continue; }
-                    boolean isActive = name.equals(act);
-                    rv.setImageViewBitmap(pillBgs[i], pillBitmap(isActive ? acc : pillBg));
-                    rv.setTextViewText(pillIds[i], name);
-                    rv.setTextColor(pillIds[i], isActive ? accInk : pillText);
-                    rv.setViewVisibility(pillWraps[i], View.VISIBLE);
-                    rv.setOnClickPendingIntent(pillWraps[i], pi(ctx, "pl", name));
-                }
-            }
 
             mgr.updateAppWidget(ids, rv);
         } catch (Exception ignored) {
@@ -322,15 +260,6 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             if (i != null) context.startActivity(i);
             return;
         }
-        if (action.endsWith("_pl")) {
-            String name = intent.getStringExtra("name");
-            if (name != null && !name.isEmpty()) {
-                context.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
-                        .edit().putString("pendingPlaylist", name).apply();
-            }
-            return;
-        }
-
         int code = 0;
         if (action.endsWith("_prev")) code = KeyEvent.KEYCODE_MEDIA_PREVIOUS;
         else if (action.endsWith("_next")) code = KeyEvent.KEYCODE_MEDIA_NEXT;
@@ -369,123 +298,6 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="7dp">
-
-    <!-- Playlist pills: hidden on the 2x2 layout, shown when EXPANDED -->
-    <LinearLayout
-        android:id="@+id/wPillsRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:visibility="gone">
-
-        <FrameLayout
-            android:id="@+id/wPillWrap0"
-            android:layout_width="0dp"
-            android:layout_height="26dp"
-            android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:visibility="gone">
-            <ImageView
-                android:id="@+id/wPillBg0"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="fitXY"
-                android:importantForAccessibility="no"
-                android:contentDescription="@null" />
-            <TextView
-                android:id="@+id/wPill0"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:paddingHorizontal="8dp"
-                android:textSize="10sp"
-                android:textColor="#DDDEE3"
-                android:text="" />
-        </FrameLayout>
-
-        <FrameLayout
-            android:id="@+id/wPillWrap1"
-            android:layout_width="0dp"
-            android:layout_height="26dp"
-            android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:visibility="gone">
-            <ImageView
-                android:id="@+id/wPillBg1"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="fitXY"
-                android:importantForAccessibility="no"
-                android:contentDescription="@null" />
-            <TextView
-                android:id="@+id/wPill1"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:paddingHorizontal="8dp"
-                android:textSize="10sp"
-                android:textColor="#DDDEE3"
-                android:text="" />
-        </FrameLayout>
-
-        <FrameLayout
-            android:id="@+id/wPillWrap2"
-            android:layout_width="0dp"
-            android:layout_height="26dp"
-            android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:visibility="gone">
-            <ImageView
-                android:id="@+id/wPillBg2"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="fitXY"
-                android:importantForAccessibility="no"
-                android:contentDescription="@null" />
-            <TextView
-                android:id="@+id/wPill2"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:paddingHorizontal="8dp"
-                android:textSize="10sp"
-                android:textColor="#DDDEE3"
-                android:text="" />
-        </FrameLayout>
-
-        <FrameLayout
-            android:id="@+id/wPillWrap3"
-            android:layout_width="0dp"
-            android:layout_height="26dp"
-            android:layout_weight="1"
-            android:visibility="gone">
-            <ImageView
-                android:id="@+id/wPillBg3"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="fitXY"
-                android:importantForAccessibility="no"
-                android:contentDescription="@null" />
-            <TextView
-                android:id="@+id/wPill3"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:paddingHorizontal="8dp"
-                android:textSize="10sp"
-                android:textColor="#DDDEE3"
-                android:text="" />
-        </FrameLayout>
-    </LinearLayout>
 
     <!-- Track cover, top-left -->
     <ImageView
@@ -567,21 +379,6 @@ BG_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <corners android:radius="16dp" />
     <solid android:color="#FF0A0B0E" />
-</shape>
-"""
-
-PILL_XML = """<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="12dp" />
-    <solid android:color="#16181C" />
-    <stroke android:width="1dp" android:color="#2A2D33" />
-</shape>
-"""
-
-PILL_ACTIVE_XML = """<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="12dp" />
-    <solid android:color="#E3B23C" />
 </shape>
 """
 
@@ -711,8 +508,7 @@ def main():
     write(os.path.join(JAVA_DIR, "SideCutWidgetProvider.java"), PROVIDER_JAVA)
     write(os.path.join(RES_DIR, "layout", "sidecut_widget.xml"), LAYOUT_XML)
     write(os.path.join(DRW_DIR, "sidecut_widget_bg.xml"), BG_XML)
-    write(os.path.join(DRW_DIR, "sidecut_pill.xml"), PILL_XML)
-    write(os.path.join(DRW_DIR, "sidecut_pill_active.xml"), PILL_ACTIVE_XML)
+    # cover card background
     write(os.path.join(DRW_DIR, "sidecut_cover_bg.xml"), COVER_BG_XML)
     for name, data in ICONS.items():
         write(os.path.join(DRW_DIR, name), ICON_TMPL % data)

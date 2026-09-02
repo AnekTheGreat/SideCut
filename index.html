@@ -2142,6 +2142,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button class="tab" id="settingsTabGlow" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Glow</button>
       <button class="tab" id="settingsTabSandbox" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Sandbox</button>
       <button class="tab" id="settingsTabSupport" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Support</button>
+      <button class="tab" id="settingsTabWidget" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Widget</button>
       <button class="tab" id="settingsTabMore" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">More</button>
     </div>
 
@@ -2349,6 +2350,13 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       </div>
       <div style="font-size:11px; color:var(--ink-dim); text-align:center; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); line-height:1.5;">Having trouble? Fully close SideCut (swipe it away from recents) and reopen it — then try again.</div>
       <div id="donateMsg" style="text-align:center; font-size:12px; color:var(--ink-dim); margin-top:6px; min-height:16px; line-height:1.5;"></div>
+    </div>
+
+    <div id="settingsPaneWidget" style="display:none;">
+      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget. Changes apply to every widget you have placed; re-adding one also picks these up.</div>
+      <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
+      <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Preview</div>
+      <div id="widgetThemePreview" style="border-radius:16px; padding:14px; max-width:260px;"></div>
     </div>
 
     <div id="settingsPaneGlow" style="display:none;">
@@ -4295,6 +4303,38 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   });
 
   // ---------------- Glow tab rendering + wiring ----------------
+  // ---------------- Widget appearance (Settings > Widget) ----------------
+  function renderWidgetThemeControls(){
+    const grid = $('widgetThemeGrid');
+    if(!grid) return;
+    const cur = widgetThemeKey;
+    grid.innerHTML = Object.keys(WIDGET_THEMES).map(k => {
+      const t = WIDGET_THEMES[k];
+      const sel = k === cur;
+      return '<button class="tab" data-wt="' + k + '" style="padding:10px; text-align:left; border-radius:12px;' + (sel ? ' outline:2px solid ' + t.accent + ';' : '') + '">' +
+        '<span style="display:inline-block; width:22px; height:22px; border-radius:7px; vertical-align:middle; margin-right:8px; background:linear-gradient(135deg,' + t.bg1 + ',' + t.bg2 + ');"></span>' +
+        '<span style="font-size:12.5px; font-weight:600; color:' + t.title + '; vertical-align:middle;">' + t.label + '</span></button>';
+    }).join("");
+    grid.querySelectorAll('[data-wt]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        widgetThemeKey = btn.getAttribute('data-wt');
+        try{ localStorage.setItem("sidecut_widgetTheme", widgetThemeKey); }catch(_){ }
+        renderWidgetThemeControls();
+        try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
+        toast("Widget updated");
+      });
+    });
+    const pv = $('widgetThemePreview');
+    if(pv){
+      const t = getWidgetTheme();
+      pv.style.background = 'linear-gradient(160deg,' + t.bg1 + ',' + t.bg2 + ')';
+      pv.innerHTML = '<div style="width:64px; height:64px; border-radius:10px; background:linear-gradient(135deg,#3a3f4b,#22252c); margin-bottom:10px;"></div>' +
+        '<div style="font-size:16px; font-weight:700; color:' + t.title + '; margin-bottom:3px;">Song title</div>' +
+        '<div style="font-size:13px; color:' + t.artist + '; margin-bottom:12px;">Artist name</div>' +
+        '<div style="display:flex; gap:22px; font-size:18px; color:' + t.title + ';"><span>|&#9664;</span><span>&#9654;</span><span>&#9654;|</span></div>';
+    }
+  }
+
   function renderGlowControls(){
     const isRgb = THEMES[currentTheme] && THEMES[currentTheme].rgb;
     const isRgbPlus = THEMES[currentTheme] && THEMES[currentTheme].rgbPlus;
@@ -5004,10 +5044,12 @@ function getApiHeaders() {
     $('settingsPaneTheme').style.display = tab === 'theme' ? '' : 'none';
     $('settingsPaneDonate').style.display = tab === 'donate' ? '' : 'none';
     $('settingsPaneGlow').style.display = tab === 'glow' ? '' : 'none';
+    $('settingsPaneWidget').style.display = tab === 'widget' ? '' : 'none';
     $('settingsPaneSupport').style.display = tab === 'support' ? '' : 'none';
         $('settingsPaneMore').style.display = tab === 'more' ? '' : 'none';
     $('settingsPaneSandbox').style.display = tab === 'sandbox' ? '' : 'none';
     if(tab === 'glow') renderGlowControls();
+    if(tab === 'widget') renderWidgetThemeControls();
     // Nested panes are only visible inside the (open) More playback section.
     if(tab === 'more'){
       renderRefreshRateOptions();
@@ -5023,6 +5065,7 @@ function getApiHeaders() {
     $('settingsTabGlow').classList.toggle('active', tab === 'glow');
     $('settingsTabSupport').classList.toggle('active', tab === 'support');
     $('settingsTabMore').classList.toggle('active', tab === 'more');
+    $('settingsTabWidget').classList.toggle('active', tab === 'widget');
     $('settingsTabSandbox').classList.toggle('active', tab === 'sandbox');
     if(tab === 'more'){ renderVersionSnapshots(); renderDjPerPlaylistList(); }
     if(tab === 'support') initAIAssistant();
@@ -5035,6 +5078,7 @@ $('settingsTabExpand').addEventListener('click', () => showSettingsTab('expand')
 $('settingsTabTheme').addEventListener('click', () => showSettingsTab('theme'));
 $('settingsTabDonate').addEventListener('click', () => showSettingsTab('donate'));
 $('settingsTabGlow').addEventListener('click', () => showSettingsTab('glow'));
+$('settingsTabWidget').addEventListener('click', () => showSettingsTab('widget'));
 $('settingsTabSupport').addEventListener('click', () => { showSettingsTab('support'); initAIAssistant(); });
 
 $('settingsTabMore').addEventListener('click', () => showSettingsTab('more'));
@@ -7692,7 +7736,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.55';
+  const APP_VERSION = '5.0.56';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -7714,6 +7758,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+    { version: '56.0', date: 'September 2, 2026', title: 'Widget cleanup — no more pill dots, plus a Widget settings tab', items: [
+      'Removed the row of dot pills that sat on top of the album cover on the widget',
+      'New Widget tab in Settings: pick from 6 widget color themes (Midnight, Pure black, Warm amber, Deep ocean, Forest, Rosewood) with a live preview — your choice persists across app updates',
+      'Widget media controls remain white and stay big and easy to tap',
+    ] },
     { version: '55.0', date: 'September 2, 2026', title: 'Big batch — playlists, discover pictures, settings & widget polish', items: [
       'Playlists now auto-scroll to the currently playing (or most recent) song when you switch to the Playlists tab',
       'Tapping a single in the Singles popup plays that song right away instead of just searching',
@@ -13741,29 +13790,19 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     rose:   { label: 'Rosewood',           bg1: '#211318', bg2: '#100809', title: '#FBEAF0', artist: '#C79BAA', accent: '#E36A8A', accentText: '#1F060D', pill: '#2A181F', pillText: '#F2DCE4' }
   };
   let widgetThemeKey = 'dark';
+  try{ const _savedWT = localStorage.getItem('sidecut_widgetTheme'); if(_savedWT && WIDGET_THEMES[_savedWT]) widgetThemeKey = _savedWT; }catch(_){ }
   function getWidgetTheme(){ return WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.dark; }
-  // Build the playlist pill list for the widget: the currently-playing
-  // playlist first (so its pill is highlighted), then the rest, capped at the
-  // number of pill slots (5). The widget renders them as tappable rows.
-  function scWidgetPlaylistState(){
-    var active = (queueSourcePlaylist && playlists[queueSourcePlaylist]) ? queueSourcePlaylist : (activePlaylist && playlists[activePlaylist] ? activePlaylist : 'All Songs');
-    if(active === UNSORTED_VIEW) active = 'All Songs';
-    var names = [active];
-    Object.keys(playlists).forEach(function(n){ if(n === active) return; names.push(n); });
-    return { playlists: names.slice(0, 5), active: active };
-  }
   function pushWidgetState(t, playing){
     try{
       const C = (window.Capacitor) || null;
       const W = (C && C.Plugins && C.Plugins.SideCutWidget) || null;
       if(!C || (typeof C.nativePromise !== 'function' && !(W && typeof W.update === 'function'))){ try{ window.__scWd = window.__scWd || { runs:0, sends:0, lastOk:'', lastErr:'', title:'', artLen:0, plugin:'MISSING', ts:0 }; window.__scWd.plugin = 'MISSING'; window.__scWd.ts = Date.now(); }catch(_){} return; }
-      const plState = scWidgetPlaylistState();
       window.__scWd = window.__scWd || { runs: 0, sends: 0, lastOk: '', lastErr: '', title: '', artLen: 0, plugin: '', ts: 0 };
       window.__scWd.runs++; window.__scWd.title = (t && t.name) || 'SideCut'; window.__scWd.playing = !!playing; window.__scWd.ts = Date.now();
       const send = (art) => {
         try{
           window.__scWd.sends++; window.__scWd.artLen = (art || '').length;
-          const body = { data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing, playlists: plState.playlists, active: plState.active }), theme: JSON.stringify(getWidgetTheme()) };
+          const body = { data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing }), theme: JSON.stringify(getWidgetTheme()) };
           if(W && typeof W.update === 'function'){ W.update(body); window.__scWd.plugin = 'proxy'; }
           else if(C && typeof C.nativePromise === 'function'){ const p = C.nativePromise('SideCutWidget', 'update', body); if(p && typeof p.catch === 'function') p.catch(function(err){ try{ window.__scWd.lastErr = String((err && err.message) || err).slice(0,120); }catch(_){} }); window.__scWd.plugin = 'native'; }
           else { throw new Error('no bridge'); }
