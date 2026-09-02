@@ -7666,7 +7666,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.44';
+  const APP_VERSION = '5.0.45';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -13686,12 +13686,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   }
   function pushWidgetState(t, playing){
     try{
-      const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget;
-      if(!W || typeof W.update !== 'function'){ try{ window.__scWd = window.__scWd || { runs:0, sends:0, lastOk:'', lastErr:'', title:'', artLen:0, plugin:'MISSING', ts:0 }; window.__scWd.plugin = 'MISSING'; window.__scWd.ts = Date.now(); }catch(_){} return; }
+      const C = (window.Capacitor) || null;
+      const W = (C && C.Plugins && C.Plugins.SideCutWidget) || null;
+      if(!C || (typeof C.nativePromise !== 'function' && !(W && typeof W.update === 'function'))){ try{ window.__scWd = window.__scWd || { runs:0, sends:0, lastOk:'', lastErr:'', title:'', artLen:0, plugin:'MISSING', ts:0 }; window.__scWd.plugin = 'MISSING'; window.__scWd.ts = Date.now(); }catch(_){} return; }
       const plState = scWidgetPlaylistState();
-      window.__scWd = window.__scWd || { runs: 0, sends: 0, lastOk: '', lastErr: '', title: '', artLen: 0, plugin: 'yes', ts: 0 };
+      window.__scWd = window.__scWd || { runs: 0, sends: 0, lastOk: '', lastErr: '', title: '', artLen: 0, plugin: '', ts: 0 };
       window.__scWd.runs++; window.__scWd.title = (t && t.name) || 'SideCut'; window.__scWd.playing = !!playing; window.__scWd.ts = Date.now();
-      const send = (art) => { try{ window.__scWd.sends++; window.__scWd.artLen = (art || '').length; W.update({ data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing, playlists: plState.playlists, active: plState.active }) }); window.__scWd.lastOk = 'ok ' + window.__scWd.sends; }catch(e){ window.__scWd.lastErr = String(e && e.message || e); } };
+      const send = (art) => {
+        try{
+          window.__scWd.sends++; window.__scWd.artLen = (art || '').length;
+          const body = { data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing, playlists: plState.playlists, active: plState.active }) };
+          if(W && typeof W.update === 'function'){ W.update(body); window.__scWd.plugin = 'proxy'; }
+          else if(C && typeof C.nativePromise === 'function'){ const p = C.nativePromise('SideCutWidget', 'update', body); if(p && typeof p.catch === 'function') p.catch(function(){}); window.__scWd.plugin = 'native'; }
+          else { throw new Error('no bridge'); }
+          window.__scWd.lastOk = 'ok ' + window.__scWd.sends;
+        }catch(e){ window.__scWd.lastErr = String(e && e.message || e); }
+      };
       if(!t){ send(''); return; }
       if(t.artBlob){
         if(t._artDataUrl){ send(t._artDataUrl); return; }
