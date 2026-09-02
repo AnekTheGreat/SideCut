@@ -7643,7 +7643,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.40';
+  const APP_VERSION = '5.0.41';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -13592,6 +13592,12 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   });
 
   function updateNowPlayingArt(t){
+    // Push the new track to the home-screen widget UNCONDITIONALLY on every
+    // track change. Previously the widget only updated after the media-session
+    // adapter armed, so on devices where that gating never fired the widget
+    // stayed stuck on the default "SideCut"/logo even though the notification
+    // card showed the real song. The widget is independent of the media session.
+    try{ if(window.__scWidgetOnTrack) window.__scWidgetOnTrack(t); }catch(e){}
     const labelEl = $('npDiscLabel');
     labelEl.style.backgroundImage = t.artUrl ? `url("${t.artUrl}")` : '';
     const artEl = $('npArt');
@@ -13749,6 +13755,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     setTimeout(window.__scWidgetArm, 900);
     setTimeout(window.__scWidgetArm, 3600);
   })();
+  // Unconditional per-track hook used by updateNowPlayingArt so the widget
+  // gets every track change directly, independent of the media-session arm.
+  window.__scWidgetOnTrack = function(t){
+    try{ if(t){ widgetTrack = t; pushWidgetState(t, widgetPlaying); } }catch(e){}
+  };
   function mediaSetMetadata(t){
     try{ widgetTrack = t; pushWidgetState(t, widgetPlaying); }catch(e){}
     if(capMediaSessionActive && capPluginUsable){
