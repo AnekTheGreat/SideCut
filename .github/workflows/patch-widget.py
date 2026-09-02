@@ -236,6 +236,14 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         super.onReceive(context, intent);
         String action = intent.getAction();
         if (action == null) return;
+        // App was updated (or resized): redraw every placed widget NOW so users
+        // see the new design immediately instead of a stale pre-update render.
+        if (action.endsWith("MY_PACKAGE_REPLACED")
+                || action.endsWith("APPWIDGET_OPTIONS_CHANGED")
+                || action.endsWith("APPWIDGET_UPDATE")) {
+            pushAll(context);
+            if (action.endsWith("MY_PACKAGE_REPLACED") || action.endsWith("APPWIDGET_OPTIONS_CHANGED")) return;
+        }
         if (action.endsWith("_open")) {
             Intent i = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
             if (i != null) context.startActivity(i);
@@ -494,6 +502,11 @@ MANIFEST_SNIPPET = """        <receiver
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.appwidget.action.APPWIDGET_OPTIONS_CHANGED" />
+                <!-- After the APK is updated, Android fires this broadcast —
+                     the provider re-pushes state so an ALREADY-PLACED widget
+                     re-inflates with the new layout immediately, no remove/re-add. -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
