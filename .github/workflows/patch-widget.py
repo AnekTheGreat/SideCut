@@ -184,18 +184,16 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
     android:padding="7dp"
     android:background="@drawable/sidecut_widget_bg">
 
-    <!-- Track cover, top-left -->
+    <!-- Track cover, top-left (vertical LinearLayout left-aligns children) -->
     <ImageView
         android:id="@+id/wArt"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
-        android:layout_marginTop="2dp"
-        android:layout_gravity="start"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:background="@drawable/sidecut_cover_bg"
         android:scaleType="centerCrop"
         android:contentDescription="Album art" />
 
-    <!-- Song name below the cover, left-aligned -->
+    <!-- Song name below the cover -->
     <TextView
         android:id="@+id/wTitle"
         android:layout_width="match_parent"
@@ -218,21 +216,18 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:textColor="#B9C2C6"
         android:text="" />
 
-    <View
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-
+    <!-- Bottom transport controls -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:orientation="horizontal"
         android:gravity="center">
 
         <ImageView
             android:id="@+id/wPrev"
             android:layout_width="0dp"
-            android:layout_height="24dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:src="@drawable/sidecut_ic_prev"
             android:contentDescription="Previous" />
@@ -240,7 +235,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         <ImageView
             android:id="@+id/wPlay"
             android:layout_width="0dp"
-            android:layout_height="28dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:src="@drawable/sidecut_ic_play"
             android:contentDescription="Play or pause" />
@@ -248,7 +243,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         <ImageView
             android:id="@+id/wNext"
             android:layout_width="0dp"
-            android:layout_height="24dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:src="@drawable/sidecut_ic_next"
             android:contentDescription="Next" />
