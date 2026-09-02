@@ -259,7 +259,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:ellipsize="end"
         android:textSize="12sp"
         android:textStyle="bold"
-        android:textColor="#FFFFFF"
+        android:textColor="#F5E7D3"
         android:text="Now playing" />
 
     <TextView
@@ -269,7 +269,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:maxLines="1"
         android:ellipsize="end"
         android:textSize="10sp"
-        android:textColor="#B9C2C6"
+        android:textColor="#CBB89B"
         android:text="" />
 
     <!-- Bottom transport controls -->
@@ -310,30 +310,30 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
 BG_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <corners android:radius="16dp" />
-    <solid android:color="#DD0E1B1F" />
+    <solid android:color="#FF0A0B0E" />
 </shape>
 """
 
 PILL_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <corners android:radius="12dp" />
-    <solid android:color="#2A3A3F" />
-    <stroke android:width="1dp" android:color="#3A4A4F" />
+    <solid android:color="#16181C" />
+    <stroke android:width="1dp" android:color="#2A2D33" />
 </shape>
 """
 
 PILL_ACTIVE_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <corners android:radius="12dp" />
-    <solid android:color="#F0B7A0" />
+    <solid android:color="#E3B23C" />
 </shape>
 """
 
 COVER_BG_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <corners android:radius="8dp" />
-    <solid android:color="#2A3A3F" />
-    <stroke android:width="1dp" android:color="#3A4A4F" />
+    <solid android:color="#16181C" />
+    <stroke android:width="1dp" android:color="#2A2D33" />
 </shape>
 """
 
@@ -344,7 +344,7 @@ ICON_TMPL = """<?xml version="1.0" encoding="utf-8"?>
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#E3B23C"
         android:pathData="%s" />
 </vector>
 """
