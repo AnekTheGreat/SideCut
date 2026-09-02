@@ -497,6 +497,29 @@ WIDGET_INFO_XML = """<?xml version="1.0" encoding="utf-8"?>
     android:widgetCategory="home_screen" />
 """
 
+# CRITICAL Capacitor 6 ordering: the bridge is built INSIDE super.onCreate()
+# (BridgeActivity.onCreate -> load() -> bridgeBuilder.create() -> Bridge()
+# constructor -> registerAllPlugins(), which consumes the plugin list).
+# Registering the widget plugin AFTER super.onCreate() appends to a list that
+# was already iterated — a silent no-op. The plugin must be added to the
+# builder list BEFORE super.onCreate() so create() picks it up.
+MAIN_ACTIVITY_TMPL = """package %s;
+
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends BridgeActivity {
+    public MainActivity() {
+        // BridgeActivity.onCreate() consumes `initialPlugins` when it builds the
+        // bridge; adding here (constructor) guarantees the widget plugin is in
+        // the list BEFORE that happens.
+        this.initialPlugins.add(SideCutWidgetPlugin.class);
+    }
+}
+"""
+
 MANIFEST_SNIPPET = """        <receiver
             android:name=".SideCutWidgetProvider"
             android:exported="true">
@@ -533,22 +556,20 @@ def patch_main_activity():
     with open(MAIN_ACTIVITY) as f:
         src = f.read()
     if "SideCutWidgetPlugin" in src:
+        # Upgrade any older registration (it was made AFTER super.onCreate(),
+        # which is a silent no-op in Capacitor 6: super.onCreate() -> load() ->
+        # bridgeBuilder.create() already consumed the plugin list, so the
+        # widget plugin never joined the bridge and every JS call failed as
+        # "not implemented". Registration MUST happen BEFORE super.onCreate().
+        if "initialPlugins.add" in src:
+            return
+        new_src = MAIN_ACTIVITY_TMPL % APP_ID
+        with open(MAIN_ACTIVITY, "w") as f:
+            f.write(new_src)
+        changed.append("android/app/src/main/java/%s/MainActivity.java (UPGRADED registration order)" % PKG_PATH)
         return
-    new_src = """package %s;
-
-import android.os.Bundle;
-import com.getcapacitor.BridgeActivity;
-
-public class MainActivity extends BridgeActivity {
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        registerPlugin(SideCutWidgetPlugin.class);
-    }
-}
-""" % APP_ID
     with open(MAIN_ACTIVITY, "w") as f:
-        f.write(new_src)
+        f.write(MAIN_ACTIVITY_TMPL % APP_ID)
     changed.append("android/app/src/main/java/%s/MainActivity.java" % PKG_PATH)
 
 
