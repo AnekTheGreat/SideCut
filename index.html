@@ -2320,6 +2320,20 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="settingsPaneTheme">
       <div id="themeOptions" style="display:flex; flex-direction:column; gap:8px;"></div>
 
+      <!-- Build your own theme -->
+      <div id="customThemeSection" style="border-top:1px solid var(--line); margin-top:14px; padding-top:14px;">
+        <button class="playlist-pick-btn" id="customThemeToggle" style="width:100%; text-align:left;">🎨 Create your own theme…</button>
+        <div id="customThemeBuilder" style="display:none; margin-top:12px;">
+          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">Name it, pick the colors, then save — it shows up in your theme list and sticks across app updates.</div>
+          <input id="customThemeName" type="text" placeholder="Theme name (e.g. Midnight Purple)" maxlength="24" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:13px; margin-bottom:12px;">
+          <div id="customThemeColors" style="display:flex; flex-direction:column; gap:12px; margin-bottom:12px;"></div>
+          <div style="display:flex; gap:8px;">
+            <button class="playlist-pick-btn" id="customThemeSave" style="flex:1; text-align:center;">Save &amp; apply</button>
+            <button class="playlist-pick-btn" id="customThemeDelete" style="text-align:center;">Delete</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Liquid glass mode toggle moved from Glow to Themes -->
       <div style="border-top:1px solid var(--line); margin-top:14px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
         <span style="font-size:13px; color:var(--ink-dim);">Liquid glass mode</span>
@@ -3803,7 +3817,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   let shuffle = false;
   let repeatMode = 'off';  // off | one | all
   let playbackSpeed = 1;
-  let currentTheme = 'rosegold';
+  let currentTheme = 'coral';
   let customTheme = null;
 
   // ---------------- Themes ----------------
@@ -3847,7 +3861,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   // Values are still persisted the same way (dbPut('meta', {key:'npTurntableAngle', ...})) so old saved angles keep working.
   (function(){
     const stage = $('npPlayerStage'), tt = $('npTt3d');
-    let rx = 35, ry = -15, rz = 15;
+    let rx = 40, ry = 0, rz = 135;
     function apply(){ tt.style.setProperty('--np-rx', rx + 'deg'); tt.style.setProperty('--np-ry', ry + 'deg'); tt.style.setProperty('--np-rz', rz + 'deg'); }
     window.restoreTurntableAngle = function(saved){
       if(saved){ rx = saved.rx; ry = saved.ry; rz = saved.rz || 0; apply(); }
@@ -3891,7 +3905,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
     const backdrop = $('turntablePopupBackdrop');
     const popupTt = $('ttPopupTt3d');
     const rxS = $('ttRxSlider'), ryS = $('ttRySlider'), rzS = $('ttRzSlider');
-    const DEFAULT_ANGLE = { rx: 35, ry: -15, rz: 15 };
+    const DEFAULT_ANGLE = { rx: 40, ry: 0, rz: 135 };
     function applyPreview(a){
       popupTt.style.setProperty('--np-rx', a.rx + 'deg');
       popupTt.style.setProperty('--np-ry', a.ry + 'deg');
@@ -3933,9 +3947,9 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   })();
 
   const THEMES = {
-    rosegold: { name: 'Rose Gold (default)', bg:'#221417', bgRaised:'#2E1D20', coral:'#F0A6A0', gold:'#D9B08C' },
+    rosegold: { name: 'Rose Gold', bg:'#221417', bgRaised:'#2E1D20', coral:'#F0A6A0', gold:'#D9B08C' },
     royal:    { name: 'Royal Blue',      bg:'#0A1330', bgRaised:'#131D45', coral:'#E3B23C', gold:'#4A6CF7' },
-    coral:    { name: 'Coral',           bg:'#0E1B1F', bgRaised:'#16262B', coral:'#FF6F59', gold:'#D4A574' },
+    coral:    { name: 'Coral (default)', bg:'#0E1B1F', bgRaised:'#16262B', coral:'#FF6F59', gold:'#D4A574' },
     blue:     { name: 'Ocean Blue',      bg:'#0B1626', bgRaised:'#132238', coral:'#4FA8FF', gold:'#7EC8E3' },
     gold:     { name: 'Royal Gold',      bg:'#1A140B', bgRaised:'#241C10', coral:'#E8B94D', gold:'#C9962C' },
     emerald:  { name: 'Emerald',         bg:'#0B1F1A', bgRaised:'#122E26', coral:'#3FCF8E', gold:'#8FD9B6' },
@@ -4215,7 +4229,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   }
 
   function applyTheme(key){
-    const th = THEMES[key] || THEMES.rosegold;
+    const th = THEMES[key] || THEMES.coral;
     const root = document.documentElement.style;
     root.setProperty('--bg', th.bg);
     root.setProperty('--bg-raised', th.bgRaised);
@@ -4248,8 +4262,9 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
     prevDetails.forEach(d => { if(d.open) prevOpen.add(d.querySelector('summary')?.textContent?.trim()); });
     container.innerHTML = '';
     const groups = { static: [], dynamic: [] };
+    if(THEMES.custom) groups.static.push('custom'); // user's custom theme first
     Object.keys(THEMES).forEach(key => {
-      if(key === 'custom') return; // custom theme builder removed
+      if(key === 'custom') return;
       const th = THEMES[key];
       (th.rgb || th.dynamic ? groups.dynamic : groups.static).push(key);
     });
@@ -4277,6 +4292,77 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
         toast(th.liquidGlass ? 'Theme: ' + th.name + ' ✨ glass mode on' : 'Theme: ' + th.name);
       });
     });
+    renderCustomThemeColors();
+    initCustomThemeBuilder();
+  }
+  // ---------------- Build your own theme ----------------
+  const CUSTOM_FIELDS = [
+    ['bg', 'Background'],
+    ['bgRaised', 'Raised background'],
+    ['coral', 'Accent'],
+    ['gold', 'Accent 2']
+  ];
+  const THEME_PAL = {
+    bg:      ['#221417','#0E1B1F','#0B1626','#0A1330','#1A140B','#0B1F1A','#160B24','#210B0F','#081F1E','#101B0E','#080B18','#141414','#0E2A47'],
+    bgRaised:['#2E1D20','#16262B','#132238','#131D45','#241C10','#122E26','#211235','#2E1217','#0F2E2C','#182814','#101425','#1E1E1E','#14324F'],
+    coral:   ['#FF6F59','#F0A6A0','#E3B23C','#4FA8FF','#E8B94D','#3FCF8E','#FF6B6B','#B084F5','#FF5470','#3FD9C8','#8FCB5B','#6C7BFF','#3FA9F5','#FF5EC4','#00F0FF'],
+    gold:    ['#D4A574','#D9B08C','#4A6CF7','#7EC8E3','#C9962C','#8FD9B6','#FFB86B','#8E6FD6','#E38B96','#6BAFA6','#C7D98A','#9FA8DA','#D3B79B','#FFD166','#FF2ED1']
+  };
+  function renderCustomThemeColors(){
+    const box = $('customThemeColors');
+    if(!box) return;
+    const ct = customTheme || { bg:'#221417', bgRaised:'#2E1D20', coral:'#FF6F59', gold:'#D4A574' };
+    box.innerHTML = CUSTOM_FIELDS.map(f => {
+      const key = f[0], label = f[1];
+      const cur = String(ct[key] || '').toLowerCase();
+      const ring = (key === 'bg' || key === 'bgRaised') ? '#fff' : 'var(--ink)';
+      const sw = (THEME_PAL[key] || THEME_PAL.coral).map(col => {
+        const sel = col.toLowerCase() === cur;
+        return '<button class="ctt-sw" data-ctt="' + key + '" data-col="' + col + '" title="' + col + '" style="width:24px;height:24px;border-radius:7px;background:' + col + ';border:1px solid var(--line);flex:0 0 auto;' + (sel ? ' outline:2px solid ' + ring + '; outline-offset:1px;' : '') + '"></button>';
+      }).join('');
+      return '<div><div style="font-size:12px;color:var(--ink-dim);margin-bottom:6px;">' + label + '</div><div style="display:flex;flex-wrap:wrap;gap:7px;">' + sw + '</div></div>';
+    }).join('');
+    box.querySelectorAll('[data-ctt]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-ctt');
+        if(!customTheme) customTheme = { name: ($('customThemeName') && $('customThemeName').value.trim()) || 'My theme', bg:'#221417', bgRaised:'#2E1D20', coral:'#FF6F59', gold:'#D4A574' };
+        customTheme[key] = btn.getAttribute('data-col');
+        renderCustomThemeColors();
+      });
+    });
+  }
+  function saveCustomTheme(){
+    const name = ($('customThemeName') && $('customThemeName').value.trim()) || 'My theme';
+    const ct = customTheme || { bg:'#221417', bgRaised:'#2E1D20', coral:'#FF6F59', gold:'#D4A574' };
+    ct.name = name;
+    customTheme = ct;
+    THEMES.custom = ct;
+    try{ dbPut('meta', { key: 'customTheme', value: ct }); }catch(_){ }
+    applyTheme('custom');
+    renderThemeOptions();
+    toast('Custom theme "' + name + '" saved!');
+  }
+  function deleteCustomTheme(){
+    customTheme = null;
+    delete THEMES.custom;
+    try{ dbPut('meta', { key: 'customTheme', value: null }); }catch(_){ }
+    if(currentTheme === 'custom') applyTheme('coral');
+    renderThemeOptions();
+    toast('Custom theme removed.');
+  }
+  function initCustomThemeBuilder(){
+    if(window.__ctInit) return;
+    window.__ctInit = true;
+    const toggle = $('customThemeToggle'), builder = $('customThemeBuilder');
+    if(toggle) toggle.addEventListener('click', () => {
+      const open = (builder.style.display === 'none');
+      builder.style.display = open ? '' : 'none';
+      if(open){ renderCustomThemeColors(); const nm = $('customThemeName'); if(nm && customTheme) nm.value = customTheme.name || ''; }
+    });
+    const save = $('customThemeSave');
+    if(save) save.addEventListener('click', () => { saveCustomTheme(); });
+    const del = $('customThemeDelete');
+    if(del) del.addEventListener('click', () => { deleteCustomTheme(); });
   }
   function themeGroupHTML(title, keys, startOpen){
     if(!keys || !keys.length) return '';
@@ -7655,9 +7741,16 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(!snaps.find(r => r.key === versionKey)){
         dbPut('meta', { key: versionKey, value: { version: APP_VERSION, html: SHELL_SNAPSHOT_HTML, savedAt: Date.now() } });
       }
+      // Load any saved custom theme BEFORE applying the saved theme, so
+      // applyTheme('custom') resolves to the user's own colors, not the fallback.
+      const customThemeRow = metaRows.find(r => r.key === 'customTheme');
+      if(customThemeRow && customThemeRow.value && typeof customThemeRow.value === 'object'){
+        customTheme = customThemeRow.value;
+        THEMES.custom = customTheme;
+      }
       const themeRow = metaRows.find(r => r.key === 'theme');
       if(themeRow && THEMES[themeRow.value]) applyTheme(themeRow.value);
-      else applyTheme('rosegold'); // no saved theme yet — rose gold is the default
+      else applyTheme('coral'); // no saved theme yet — coral is the default
       const ttAngleRow = metaRows.find(r => r.key === 'npTurntableAngle');
       if(ttAngleRow && window.restoreTurntableAngle) window.restoreTurntableAngle(ttAngleRow.value);
       const rgbSpeedRow = metaRows.find(r => r.key === 'rgbSpeedSec');
@@ -7820,7 +7913,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '55.3';
+  const APP_VERSION = '55.4';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -7842,6 +7935,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+    { version: '55.4', date: 'September 2, 2026 · 4:30 PM ET', title: 'Coral default theme, custom theme builder, turntable & widget polish', items: [
+      'The app\'s default theme is now Coral (Rose Gold becomes a regular choice)',
+      'New "Create your own theme" in Settings > Theme: name it, pick background / accent / accent colors from swatches, save & apply, and it persists across updates — then manage or delete it anytime',
+      'The mini record player\'s default angle is now really TILT 40 / SPIN 0 / ROLL 135 (both the now-bar and the Turntable popup Reset now use it)',
+      'Widget default theme is now Deep Ocean, and the Coral + other widget palettes were re-tuned for better contrast (cleaner text, brighter accents)',
+    ] },
     { version: '55.3', date: 'September 2, 2026 · 3:48 PM ET', title: 'Cleaner color pickers — no more clunky color wheels', items: [
       'Settings > Widget (Fine-tune) now uses clean tappable color swatches instead of the big native color wheel, so you can pick background, title, artist and accent colors in one tap',
       'Settings > Glow custom color got the same swatch treatment',
@@ -8913,7 +9012,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   $('resetAppearanceBtn').addEventListener('click', () => {
     // In-app safety net: puts theme + liquid glass back to first-run defaults,
     // separate from the full code revert you'd get by keeping an older build around.
-    applyTheme('rosegold');
+    applyTheme('coral');
     setLiquidGlass(false);
     glowSettings = defaultGlowSettings();
     applyGlowCssVars();
@@ -13338,7 +13437,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         // Restore custom theme
         if(manifest.settings.customTheme !== undefined){
           customTheme = manifest.settings.customTheme;
-          if(customTheme) dbPut('meta', { key: 'customTheme', value: customTheme });
+          if(customTheme){ dbPut('meta', { key: 'customTheme', value: customTheme }); THEMES.custom = customTheme; }
         }
         // Restore tab order
         if(manifest.settings.tabOrder !== undefined && Array.isArray(manifest.settings.tabOrder)){
@@ -13889,17 +13988,17 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // Widget appearance, customized in Settings > Widget. Sent with every
   // state push; the native side persists it so re-added widgets keep the look.
   const WIDGET_THEMES = {
-    coral:  { label: 'Coral (default)', bg1: '#2A1216', bg2: '#160708', title: '#FFF0EC', artist: '#D89B90', accent: '#FF6F61', accentText: '#2A0805', pill: '#33171A', pillText: '#FFD9D2' },
-    dark:   { label: 'Midnight',        bg1: '#141821', bg2: '#0A0B0E', title: '#FFFFFF', artist: '#B9BDC7', accent: '#E3B23C', accentText: '#1A1305', pill: '#1C1F26', pillText: '#DDDEE3' },
-    black:  { label: 'Pure black',      bg1: '#000000', bg2: '#000000', title: '#FFFFFF', artist: '#9AA0AC', accent: '#E3B23C', accentText: '#1A1305', pill: '#16181C', pillText: '#DDDEE3' },
-    warm:   { label: 'Warm amber',      bg1: '#1D1410', bg2: '#0D0906', title: '#F5E7D3', artist: '#CBB89B', accent: '#E3B23C', accentText: '#1A1305', pill: '#241A12', pillText: '#EBDCC4' },
-    ocean:  { label: 'Deep ocean',      bg1: '#0D1B2A', bg2: '#060D16', title: '#EAF2FB', artist: '#8FA8C4', accent: '#4FA3E3', accentText: '#04121F', pill: '#132437', pillText: '#D7E5F4' },
-    forest: { label: 'Forest',          bg1: '#12211A', bg2: '#08120D', title: '#EAF5EE', artist: '#93B3A2', accent: '#4CC38A', accentText: '#06130C', pill: '#17291F', pillText: '#D9EEE2' },
-    rose:   { label: 'Rosewood',        bg1: '#211318', bg2: '#100809', title: '#FBEAF0', artist: '#C79BAA', accent: '#E36A8A', accentText: '#1F060D', pill: '#2A181F', pillText: '#F2DCE4' }
+    coral:  { label: 'Coral',               bg1: '#3A171B', bg2: '#1C0B0D', title: '#FFE9E4', artist: '#E3A99E', accent: '#FF6F61', accentText: '#2A0805', pill: '#46201F', pillText: '#FFD9D2' },
+    ocean:  { label: 'Deep Ocean (default)', bg1: '#0E2A47', bg2: '#071322', title: '#FFFFFF', artist: '#A8C6E8', accent: '#3FA9F5', accentText: '#04131F', pill: '#14324F', pillText: '#DBEBFB' },
+    dark:   { label: 'Midnight',            bg1: '#161B26', bg2: '#0A0B0E', title: '#FFFFFF', artist: '#B9BDC7', accent: '#E3B23C', accentText: '#1A1305', pill: '#1F2430', pillText: '#DDDEE3' },
+    black:  { label: 'Pure black',          bg1: '#000000', bg2: '#000000', title: '#FFFFFF', artist: '#9AA0AC', accent: '#E3B23C', accentText: '#1A1305', pill: '#16181C', pillText: '#DDDEE3' },
+    warm:   { label: 'Warm amber',          bg1: '#241613', bg2: '#0E0906', title: '#F8EBD8', artist: '#D3B79B', accent: '#E8B23C', accentText: '#1F1304', pill: '#2B1C13', pillText: '#F0E2CC' },
+    forest: { label: 'Forest',              bg1: '#152B20', bg2: '#08120D', title: '#EDF8F1', artist: '#9CC0AB', accent: '#4CC38A', accentText: '#06130C', pill: '#1B3227', pillText: '#DCEFE3' },
+    rose:   { label: 'Rosewood',            bg1: '#2A1A21', bg2: '#120A0D', title: '#FCEFF3', artist: '#CFA3B2', accent: '#E36A8A', accentText: '#1F060D', pill: '#36222C', pillText: '#F6E2EA' }
   };
-  let widgetThemeKey = 'coral';
+  let widgetThemeKey = 'ocean';
   try{ const _savedWT = localStorage.getItem('sidecut_widgetTheme'); if(_savedWT && WIDGET_THEMES[_savedWT]) widgetThemeKey = _savedWT; }catch(_){ }
-  function getWidgetTheme(){ return applyWidgetCustom(WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.coral); }
+  function getWidgetTheme(){ return applyWidgetCustom(WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.ocean); }
   // Merge user custom color overrides (Settings > Widget) on top of a preset.
   function applyWidgetCustom(base){
     try{
