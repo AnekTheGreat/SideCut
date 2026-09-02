@@ -7666,7 +7666,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.47';
+  const APP_VERSION = '5.0.48';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -13726,13 +13726,14 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // (State was previously only pushed on track / play-pause CHANGE, which left a
   // freshly-placed widget stuck on the default "SideCut" until the song changed.)
   (function(){
-    var last = '';
     window.__scWidgetHeartbeat = function(){
       try{
         if(!widgetTrack) return;
-        var sig = (widgetTrack.name||'') + '|' + (widgetTrack.artist||'') + '|' + (widgetTrack._artDataUrl||'') + '|' + widgetPlaying;
-        if(sig === last) return;
-        last = sig;
+        // Push unconditionally every tick: an already-placed widget only updates
+        // when Android re-renders it, and that is triggered by the native
+        // update() -> pushAll() call. Removing the change-gate guarantees a
+        // widget placed EARLIER (while a song was already playing) still gets
+        // filled within ~1.5s instead of staying on the default SideCut.
         pushWidgetState(widgetTrack, widgetPlaying);
       }catch(e){}
     };
@@ -13765,9 +13766,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   (function(){
     window.__scWidgetPollTimer = setInterval(function(){
       try{
-        const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget;
-        if(!W || typeof W.getPendingPlaylist !== 'function') return;
-        W.getPendingPlaylist({}).then(function(res){
+        const P = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget) || null;
+        const nat = (window.Capacitor && typeof window.Capacitor.nativePromise === 'function') ? window.Capacitor : null;
+        const getPending = () => { try{ if(P && typeof P.getPendingPlaylist === 'function') return P.getPendingPlaylist({}); }catch(e){} if(nat) return nat.nativePromise('SideCutWidget','getPendingPlaylist',{}).catch(function(){ return {playlist:''}; }); return Promise.resolve({playlist:''}); };
+        getPending().then(function(res){
           var name = res && res.playlist ? res.playlist : '';
           if(name && window.scWidgetSwitchPlaylist) window.scWidgetSwitchPlaylist(name);
         }).catch(function(){});
@@ -13783,7 +13785,9 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     var armed = false;
     window.__scWidgetArm = function(){
       if(!widgetTrack) return;
-      if(!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget)) return;
+      // Reachable via the nativePromise bridge (works even when the generated
+      // Plugins.SideCutWidget proxy is absent) — don't pre-block on the proxy.
+      if(!(window.Capacitor && typeof window.Capacitor.nativePromise === 'function')) return;
       pushWidgetState(widgetTrack, widgetPlaying);
       if(!armed){ armed = true; setTimeout(window.__scWidgetArm, 2600); }
     };
