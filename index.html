@@ -2439,7 +2439,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
             <div><div style="font-size:13.5px; font-weight:600;">Custom glow color</div><div style="font-size:11px; color:var(--ink-dim);">Override the theme accent color for glow effects</div></div>
             <div style="display:flex; align-items:center; gap:8px;">
               <input type="text" id="glowColorHex" maxlength="7" style="width:70px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:6px; padding:4px 6px; font-size:11px; font-family:'JetBrains Mono',monospace;">
-              <input type="color" id="glowColorPicker" value="#E3B23C">
+              <div id="glowColorSwatches" style="display:flex;flex-wrap:wrap;gap:6px;max-width:150px;"></div>
             </div>
           </div>
         </div>
@@ -4343,13 +4343,33 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
       ['artist', 'Artist text'],
       ['accent', 'Accent']
     ];
+    // Curated palettes — tap to pick, instead of the clunky native color wheel
+    // (which is huge and hard to use in the WebView). Light text colors on a
+    // dark widget still show a border so they're easy to see.
+    const PAL = {
+      bg1:    ['#000000','#0A0B0E','#141821','#1D1410','#2A1216','#12211A','#0D1B2A','#211318','#1C1F26','#241A12'],
+      bg2:    ['#000000','#060B10','#0A0B0E','#0D0906','#160708','#08120D','#060D16','#100809','#111318','#120E0A'],
+      title:  ['#FFFFFF','#FFF0EC','#F5E7D3','#EAF2FB','#EAF5EE','#FBEAF0','#F2F2F5','#FDF6E3'],
+      artist: ['#B9BDC7','#9AA0AC','#8FA8C4','#93B3A2','#CBB89B','#C79BAA','#8A8F9B','#CCC3B5'],
+      accent: ['#FF6F61','#E3B23C','#4CC38A','#4FA3E3','#E36A8A','#A78BFA','#34D399','#F97316','#38BDF8','#FB7185']
+    };
     wrap.innerHTML = fields.map(f => {
-      const v = base[f[0]] || '#000000';
-      return '<label style="font-size:12px; color:var(--ink-dim); display:flex; flex-direction:column; gap:5px;">' + f[1] +
-        '<input type="color" data-wcc="' + f[0] + '" value="' + v + '" style="height:34px; padding:2px; border-radius:8px; border:1px solid var(--line); background:var(--bg); width:100%;"></label>';
-    }).join("");
-    wrap.querySelectorAll('[data-wcc]').forEach(inp => {
-      inp.addEventListener('input', () => setWidgetCustom(inp.getAttribute('data-wcc'), inp.value));
+      const key = f[0], label = f[1];
+      const cur = String(base[key] || '').toLowerCase();
+      const ringColor = (key === 'title' || key === 'artist') ? 'var(--ink)' : '#fff';
+      const sw = (PAL[key] || PAL.accent).map(col => {
+        const sel = col.toLowerCase() === cur;
+        return '<button class="wcc-sw" data-wcc="' + key + '" data-col="' + col + '" title="' + col + '" style="width:26px;height:26px;border-radius:8px;background:' + col + ';border:1px solid var(--line);flex:0 0 auto;' + (sel ? ' outline:2px solid ' + ringColor + '; outline-offset:1px;' : '') + '"></button>';
+      }).join('');
+      return '<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--ink-dim);margin-bottom:6px;">' + label + '</div><div style="display:flex;flex-wrap:wrap;gap:8px;">' + sw + '</div></div>';
+    }).join('');
+    wrap.querySelectorAll('[data-wcc]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-wcc');
+        const col = btn.getAttribute('data-col');
+        setWidgetCustom(key, col);
+        renderWidgetCustomColors();
+      });
     });
     const reset = $('widgetCustomReset');
     if(reset){
@@ -4381,7 +4401,25 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
       '<div style="font-size:13px; color:' + t.artist + '; margin-bottom:12px;">Artist name</div>' +
       '<div style="display:flex; gap:22px; font-size:18px; color:' + t.title + ';"><span>|&#9664;</span><span>&#9654;</span><span>&#9654;|</span></div>';
   }
-  function renderGlowControls(){
+  function renderGlowControls(){    // Glow color swatches — tap to pick instead of the clunky native wheel.
+    try{
+      const gw = $('glowColorSwatches');
+      if(gw && !gw._done){
+        gw._done = true;
+        const gpal = ['#E3B23C','#FF6F61','#4CC38A','#4FA3E3','#E36A8A','#A78BFA','#34D399','#F97316','#38BDF8','#FB7185'];
+        const curGlow = ($('glowColorHex') ? String($('glowColorHex').value||'') : '').toLowerCase();
+        gw.innerHTML = gpal.map(c => '<button class="glow-sw" data-gc="'+c+'" title="'+c+'" style="width:22px;height:22px;border-radius:6px;background:'+c+';border:1px solid var(--line);'+(c.toLowerCase()===curGlow?' outline:2px solid var(--ink); outline-offset:1px;':'')+'"></button>').join('');
+        gw.querySelectorAll('[data-gc]').forEach(b => {
+          b.addEventListener('click', () => {
+            const c = b.getAttribute('data-gc');
+            const hex = $('glowColorHex'); if(hex) hex.value = c;
+            gw.querySelectorAll('[data-gc]').forEach(x => x.style.outline = (x.getAttribute('data-gc')===c) ? '2px solid var(--ink)' : '');
+            try{ dbPut('meta', { key: 'glowColor', value: c }); }catch(_){}
+          });
+        });
+      }
+    }catch(_){}
+
     const isRgb = THEMES[currentTheme] && THEMES[currentTheme].rgb;
     const isRgbPlus = THEMES[currentTheme] && THEMES[currentTheme].rgbPlus;
     $('rgbSpeedWrap').style.display = isRgb ? '' : 'none';
@@ -7782,7 +7820,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '55.2';
+  const APP_VERSION = '55.3';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -7804,6 +7842,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+    { version: '55.3', date: 'September 2, 2026 · 3:48 PM ET', title: 'Cleaner color pickers — no more clunky color wheels', items: [
+      'Settings > Widget (Fine-tune) now uses clean tappable color swatches instead of the big native color wheel, so you can pick background, title, artist and accent colors in one tap',
+      'Settings > Glow custom color got the same swatch treatment',
+      'Colors still save and apply to every widget across updates',
+    ] },
     { version: '55.2', date: 'September 2, 2026 · 3:15 PM ET', title: 'Widget no longer freezes or shows the wrong song', items: [
       'Fixed the widget showing the wrong song: a slow album-art fetch from the previous track can no longer overwrite the one that is playing (a sequence guard now drops stale updates)',
       'Fixed the widget completely freezing after an app relaunch (the update baseline resets on each new session)',
