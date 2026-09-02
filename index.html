@@ -7643,7 +7643,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.36';
+  const APP_VERSION = '5.0.37';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -7665,6 +7665,10 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
     return 0;
   }
   const CHANGELOG = [
+    { version: '53.5', date: 'September 2, 2026 at 12:35 am EDT', title: 'Widget now shows the live song & pinned-artist covers fixed', items: [
+      'The home-screen widget now always shows the current song, artist and cover — even if you add the widget mid-song (it used to stay on a blank default until the song changed)',
+      'Pinned artists in Discover no longer show black boxes — if a cover can’t load it shows a colorful letter tile instead',
+    ]},
     { version: '53.4', date: 'September 2, 2026 at 12:20 am EDT', title: 'Singles & Albums artist menus stay tappable', items: [
       'Fixed the artist group collapses stopping after you left Singles once — tapping an artist to expand/collapse its track list now always works',
       'The same fix applies to Albums artist groups in Album History',
@@ -13665,6 +13669,23 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       send('');
     }catch(e){}
   }
+  // Heartbeat: push the current now-playing state to the widget a few times a
+  // second while playing — so a widget ADDED MID-SONG still picks up the track.
+  // (State was previously only pushed on track / play-pause CHANGE, which left a
+  // freshly-placed widget stuck on the default "SideCut" until the song changed.)
+  (function(){
+    var last = '';
+    window.__scWidgetHeartbeat = function(){
+      try{
+        if(!widgetTrack) return;
+        var sig = (widgetTrack.name||'') + '|' + (widgetTrack.artist||'') + '|' + (widgetTrack._artDataUrl||'') + '|' + widgetPlaying;
+        if(sig === last) return;
+        last = sig;
+        pushWidgetState(widgetTrack, widgetPlaying);
+      }catch(e){}
+    };
+    setInterval(function(){ try{ window.__scWidgetHeartbeat(); }catch(e){} }, 1500);
+  })();
   function mediaSetMetadata(t){
     try{ widgetTrack = t; pushWidgetState(t, widgetPlaying); }catch(e){}
     if(capMediaSessionActive && capPluginUsable){
@@ -19180,7 +19201,25 @@ if(!isDiscover) stopDiscoverPreview();
       if(e.target.classList.contains('unpin-artist')) return;
       runDiscoverSearch(chip.dataset.name, chip.dataset.name, null);
     }));
-    // Backfill missing artist artwork (iTunes) so bubbles aren't empty.
+    // If a stored cover fails to load (stale / blocked URL), swap to a
+    // gradient-initial tile instead of leaving an empty black box.
+    list.querySelectorAll('.pinned-artist-chip').forEach(function(chip){
+      var tile = chip.querySelector('div[style*="background-image"]');
+      if(!tile) return;
+      var st = tile.getAttribute('style') || '';
+      var m = st.match(/url\((["']?)(.+?)\1\)/);
+      if(!m) return;
+      var img = new Image();
+      img.onerror = function(){
+        var nm = chip.dataset.name || '?';
+        tile.style.backgroundImage = 'none';
+        tile.style.background = 'linear-gradient(135deg,#ff4f7e,#7a5cff)';
+        tile.style.display = 'flex'; tile.style.alignItems = 'center'; tile.style.justifyContent = 'center';
+        tile.style.fontSize = '22px'; tile.style.fontWeight = '700'; tile.style.color = '#fff';
+        tile.textContent = nm.trim().charAt(0).toUpperCase();
+      };
+      img.src = m[2];
+    });
     try{ ensurePinnedArtistArt(); }catch(_ea){}
   }
 
