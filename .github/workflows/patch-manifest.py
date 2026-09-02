@@ -22,6 +22,9 @@ MANIFEST = os.path.abspath(os.path.join(
 PERMISSIONS = [
     'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
     'android.permission.POST_NOTIFICATIONS',
+    # Widget watchdog: lets the widget receiver repaint after a reboot with a
+    # corrected (paused) state instead of a stale frozen "playing" snapshot.
+    'android.permission.RECEIVE_BOOT_COMPLETED',
 ]
 
 if not os.path.exists(MANIFEST):

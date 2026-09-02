@@ -87,6 +87,29 @@ public class SideCutWidgetPlugin extends Plugin {
         if (seq > 0) ed.putInt("lastSeq", seq);
         if (boot != 0) ed.putLong("lastBoot", boot);
         ed.apply();
+        // Heartbeat + watchdog: every update stamps a fresh "last seen" time.
+        // While a track is playing we also keep a ~75s alarm alive; if the app
+        // is swiped out of recents (process killed mid-song), the alarm fires,
+        // finds no fresh heartbeat and no active music, and repaints the widget
+        // as a clean paused state instead of leaving frozen EQ bars and a dead
+        // pause button (the "widget freaks out" bug).
+        boolean playing = false;
+        try { playing = new org.json.JSONObject(data).optBoolean("playing", false); } catch (Exception ignored) {}
+        android.content.SharedPreferences.Editor ed2 = sp.edit();
+        ed2.putLong("hb", System.currentTimeMillis());
+        if (playing) {
+            if (!sp.getBoolean("wdArmed", false)) {
+                ed2.putBoolean("wdArmed", true);
+                ed2.apply();
+                SideCutWidgetProvider.armWatchdog(ctx);
+            } else {
+                ed2.apply();
+            }
+        } else {
+            ed2.putBoolean("wdArmed", false);
+            ed2.apply();
+            SideCutWidgetProvider.cancelWatchdog(ctx);
+        }
         SideCutWidgetProvider.pushAll(ctx);
         call.resolve();
     }
@@ -253,6 +276,64 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         }
     }
 
+    // ---- Watchdog: repaint a paused widget when the app dies mid-song ----
+    private static PendingIntent hbPi(Context ctx) {
+        Intent i = new Intent(ctx, SideCutWidgetProvider.class)
+                .setAction("com.SideCut.myapp.WIDGET_HBCHECK");
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(ctx, 424242, i, flags);
+    }
+
+    static void armWatchdog(Context ctx) {
+        try {
+            android.app.AlarmManager am = (android.app.AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+            am.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    android.os.SystemClock.elapsedRealtime() + 75000L, hbPi(ctx));
+        } catch (Exception ignored) {
+        }
+    }
+
+    static void cancelWatchdog(Context ctx) {
+        try {
+            android.app.AlarmManager am = (android.app.AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+            am.cancel(hbPi(ctx));
+        } catch (Exception ignored) {
+        }
+    }
+
+    // Called by the watchdog alarm (and after boot / app update). If the stored
+    // state still says "playing" but the web heartbeat is stale AND no music is
+    // actually active, the app process is gone — rewrite the state as paused
+    // and re-render, so the widget shows a play button (which reopens the app)
+    // instead of frozen EQ bars and a pause icon that does nothing.
+    static void maybeFixStale(Context ctx, boolean rearmIfAlive) {
+        try {
+            android.content.SharedPreferences sp = ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
+            JSONObject o = new JSONObject(sp.getString("state", "{}"));
+            if (!o.optBoolean("playing", false)) return;
+            long hb = sp.getLong("hb", 0);
+            boolean alive = hb > 0 && (System.currentTimeMillis() - hb) <= 90000L;
+            boolean music = false;
+            try {
+                AudioManager am2 = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                if (am2 != null) music = am2.isMusicActive();
+            } catch (Exception ignored) {}
+            if (alive || music) {
+                // App (or its audio) is still going — keep the watchdog alive.
+                if (rearmIfAlive) armWatchdog(ctx);
+                return;
+            }
+            o.put("playing", false);
+            o.put("pulse", 0);
+            sp.edit().putString("state", o.toString()).putBoolean("wdArmed", false).apply();
+            cancelWatchdog(ctx);
+            pushAll(ctx);
+        } catch (Exception ignored) {
+        }
+    }
+
     private static PendingIntent pi(Context ctx, String action, String extra) {
         Intent i = new Intent(ctx, SideCutWidgetProvider.class)
                 .setAction("com.SideCut.myapp.WIDGET_" + action);
@@ -288,6 +369,7 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
+        maybeFixStale(context, false);
         pushAll(context);
     }
 
@@ -296,11 +378,25 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         super.onReceive(context, intent);
         String action = intent.getAction();
         if (action == null) return;
+        // Watchdog alarm: the app heartbeat has (maybe) stopped — repaint a
+        // clean paused widget if the process is really gone.
+        if (action.endsWith("_HBCHECK")) {
+            maybeFixStale(context, true);
+            return;
+        }
+        if (action.endsWith("BOOT_COMPLETED")) {
+            // After a reboot the launcher re-inflates the last snapshot, which
+            // may still say "playing" — correct it before it is ever shown.
+            maybeFixStale(context, false);
+            pushAll(context);
+            return;
+        }
         // App was updated (or resized): redraw every placed widget NOW so users
         // see the new design immediately instead of a stale pre-update render.
         if (action.endsWith("MY_PACKAGE_REPLACED")
                 || action.endsWith("APPWIDGET_OPTIONS_CHANGED")
                 || action.endsWith("APPWIDGET_UPDATE")) {
+            maybeFixStale(context, false);
             pushAll(context);
             if (action.endsWith("MY_PACKAGE_REPLACED") || action.endsWith("APPWIDGET_OPTIONS_CHANGED")) return;
         }
@@ -548,6 +644,9 @@ MANIFEST_SNIPPET = """        <receiver
                      the provider re-pushes state so an ALREADY-PLACED widget
                      re-inflates with the new layout immediately, no remove/re-add. -->
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <!-- After a reboot, repaint with the stored state (correcting a
+                     stale "playing" snapshot via the heartbeat watchdog). -->
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
