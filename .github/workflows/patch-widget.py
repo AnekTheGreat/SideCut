@@ -143,21 +143,15 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         catch (Exception e) { return -1L; }
     }
 
-    static int dp(Context ctx, int v) {
-        return (int) (v * ctx.getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    // 4 repeating wave phases so the equalizer bars rise/fall while playing.
-    static int[] eqHeights(int pulse) {
-        int[][] P = {
-            { 8, 14, 10 },
-            { 13, 9, 6 },
-            { 6, 12, 15 },
-            { 10, 6, 12 }
-        };
-        int ph = ((pulse %% P.length) + P.length) %% P.length;
-        return P[ph];
-    }
+    // Visibility wave for the playing equalizer (bar1, bar2, bar3).
+    // The web layer sends a monotonic pulse; each phase shows a different
+    // combo so the bars appear to shimmer while a track is playing.
+    static final int[][] EQ_WAVE = {
+        { android.view.View.VISIBLE, android.view.View.VISIBLE, android.view.View.VISIBLE },
+        { android.view.View.VISIBLE, android.view.View.INVISIBLE, android.view.View.VISIBLE },
+        { android.view.View.INVISIBLE, android.view.View.VISIBLE, android.view.View.INVISIBLE },
+        { android.view.View.VISIBLE, android.view.View.INVISIBLE, android.view.View.VISIBLE }
+    };
 
 
     // Renders the themeable gradient (bg1 -> bg2, rounded corners) as a small
@@ -224,18 +218,21 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             if (bmp != null) rv.setImageViewBitmap(R.id.wArt, bmp);
             else rv.setImageViewResource(R.id.wArt, R.mipmap.ic_launcher);
 
-            // Playing equalizer animation: a small 3-bar EQ (themed accent)
-            // that pulses while a track is playing. The web layer sends a
-            // monotonic "pulse" on every heartbeat, so the bars keep moving.
+            // Playing equalizer animation: three fixed-height bars (themed
+            // accent) that pulse by toggling visibility in a wave while a track
+            // plays. The web layer sends a monotonic "pulse" every heartbeat, so
+            // the bars keep moving. Only supported RemoteViews calls are used
+            // (setViewVisibility / setInt -> setColorFilter) so it always compiles.
             int pulse = 0;
             if (o != null) { try { pulse = o.optInt("pulse", 0); } catch (Exception ignored) {} }
             int accent = (int) parseColor(th.optString("accent", "#E3B23C"));
             if (playing) {
-                int[] hs = eqHeights(pulse);
                 rv.setViewVisibility(R.id.wEqWrap, android.view.View.VISIBLE);
-                rv.setViewLayoutHeight(R.id.wEq1, dp(ctx, hs[0]));
-                rv.setViewLayoutHeight(R.id.wEq2, dp(ctx, hs[1]));
-                rv.setViewLayoutHeight(R.id.wEq3, dp(ctx, hs[2]));
+                int ph = ((pulse %% 4) + 4) %% 4;
+                int[] v = EQ_WAVE[ph];
+                rv.setViewVisibility(R.id.wEq1, v[0]);
+                rv.setViewVisibility(R.id.wEq2, v[1]);
+                rv.setViewVisibility(R.id.wEq3, v[2]);
                 rv.setInt(R.id.wEq1, "setColorFilter", accent);
                 rv.setInt(R.id.wEq2, "setColorFilter", accent);
                 rv.setInt(R.id.wEq3, "setColorFilter", accent);
