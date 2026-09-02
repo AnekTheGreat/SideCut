@@ -101,18 +101,9 @@ import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.RemoteViews;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class SideCutWidgetProvider extends AppWidgetProvider {
-
-    // ---- Layout view ids (must match sidecut_widget.xml) ----
-    private static final int[] PILL_IDS = {
-        R.id.wPill0, R.id.wPill1, R.id.wPill2, R.id.wPill3, R.id.wPill4
-    };
 
     static void pushAll(Context ctx) {
         try {
@@ -127,51 +118,15 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             String artist = "";
             String art = "";
             boolean playing = false;
-            JSONArray playlistsJson = new JSONArray();
-            String active = "";
             try {
                 JSONObject o = new JSONObject(state);
                 title = o.optString("title", "SideCut");
                 artist = o.optString("artist", "");
                 art = o.optString("art", "");
                 playing = o.optBoolean("playing", false);
-                playlistsJson = o.optJSONArray("playlists");
-                if (playlistsJson == null) playlistsJson = new JSONArray();
-                active = o.optString("active", "");
             } catch (Exception ignored) {}
 
             RemoteViews rv = new RemoteViews(ctx.getPackageName(), R.layout.sidecut_widget);
-
-            // Playlist pill row (top). Show the active playlist first, then a few
-            // others; hide the unused pill slots.
-            List<String> pls = new ArrayList<String>();
-            if (active != null && !active.isEmpty()) pls.add(active);
-            for (int i = 0; i < playlistsJson.length(); i++) {
-                String n = playlistsJson.optString(i, "");
-                if (n.isEmpty()) continue;
-                boolean isActive = n.equals(active);
-                boolean already = false;
-                for (String p : pls) if (p.equals(n)) already = true;
-                if (already) continue;
-                pls.add(n);
-            }
-            int shown = 0;
-            for (int i = 0; i < PILL_IDS.length; i++) {
-                int pid = PILL_IDS[i];
-                if (i < pls.size()) {
-                    String name = pls.get(i);
-                    boolean isActive = name.equals(active);
-                    rv.setTextViewText(pid, name);
-                    rv.setViewVisibility(pid, View.VISIBLE);
-                    rv.setTextColor(pid, isActive ? 0xFF0E1B1F : 0xFFFFFFFF);
-                    rv.setInt(pid, "setBackgroundResource", isActive
-                            ? R.drawable.sidecut_pill_active : R.drawable.sidecut_pill);
-                    rv.setOnClickPendingIntent(pid, pi(ctx, "pl", name));
-                    shown++;
-                } else {
-                    rv.setViewVisibility(pid, View.GONE);
-                }
-            }
 
             // Cover art / title / artist.
             rv.setTextViewText(R.id.wTitle, title);
@@ -284,94 +239,12 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
     android:padding="7dp"
     android:background="@drawable/sidecut_widget_bg">
 
-    <!-- Playlist pill row (top) -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_horizontal">
-
-        <TextView
-            android:id="@+id/wPill0"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:layout_marginEnd="3dp"
-            android:background="@drawable/sidecut_pill"
-            android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:textSize="9sp"
-            android:textColor="#FFFFFF"
-            android:text="" />
-
-        <TextView
-            android:id="@+id/wPill1"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:layout_marginEnd="3dp"
-            android:background="@drawable/sidecut_pill"
-            android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:textSize="9sp"
-            android:textColor="#FFFFFF"
-            android:text="" />
-
-        <TextView
-            android:id="@+id/wPill2"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:layout_marginEnd="3dp"
-            android:background="@drawable/sidecut_pill"
-            android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:textSize="9sp"
-            android:textColor="#FFFFFF"
-            android:text="" />
-
-        <TextView
-            android:id="@+id/wPill3"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:layout_marginEnd="3dp"
-            android:background="@drawable/sidecut_pill"
-            android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:textSize="9sp"
-            android:textColor="#FFFFFF"
-            android:text="" />
-
-        <TextView
-            android:id="@+id/wPill4"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:background="@drawable/sidecut_pill"
-            android:gravity="center"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:textSize="9sp"
-            android:textColor="#FFFFFF"
-            android:text="" />
-    </LinearLayout>
-
     <!-- Track cover, top-left -->
     <ImageView
         android:id="@+id/wArt"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
-        android:layout_marginTop="5dp"
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:layout_marginTop="2dp"
         android:background="@drawable/sidecut_cover_bg"
         android:scaleType="centerCrop"
         android:contentDescription="Album art" />
