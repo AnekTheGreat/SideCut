@@ -198,11 +198,9 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
     <!-- Song name below the cover, left-aligned -->
     <TextView
         android:id="@+id/wTitle"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="start"
         android:layout_marginTop="3dp"
-        android:maxWidth="match_parent"
         android:maxLines="1"
         android:ellipsize="end"
         android:textSize="12sp"
@@ -212,9 +210,8 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
 
     <TextView
         android:id="@+id/wArtist"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="start"
         android:maxLines="1"
         android:ellipsize="end"
         android:textSize="10sp"
