@@ -10,9 +10,12 @@ Injects the SideCut 2x2 home-screen widget into the generated android project:
     widget, the widget writes the target playlist to prefs and the web layer
     picks it up and switches the playlist.
   - SideCutWidgetProvider.java : AppWidgetProvider that renders a Spotify-style
-    widget (playlist pill row on top, cover art top-left, song title + artist
-    below, prev / play-pause / next) and turns button taps into media key events
-    routed to the media session.
+    widget (cover art top-left, song title + artist below, prev / play-pause /
+    next; an extra PLAYLIST PILL ROW appears when the widget is EXPANDED) and
+    turns button taps into media key events routed to the media session.
+  - User-themeable: the web layer sends a "theme" object inside update() -
+    bg (bg1/bg2 gradient + radius), accent for the active pill, title/artist
+    text colors. All colors are applied at render time via RemoteViews.
   - res/layout/sidecut_widget.xml + res/xml/sidecut_widget_info.xml (2x2 cell)
     + custom white vector transport icons + pill/card backgrounds (res/drawable).
   - AndroidManifest.xml receiver entry (idempotent).
@@ -63,9 +66,13 @@ public class SideCutWidgetPlugin extends Plugin {
     public void update(PluginCall call) {
         String data = call.getString("data");
         if (data == null || data.isEmpty()) data = "{}";
+        String theme = call.getString("theme");
         Context ctx = getContext();
-        ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
-                .edit().putString("state", data).apply();
+        android.content.SharedPreferences.Editor ed = ctx
+                .getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE).edit();
+        ed.putString("state", data);
+        if (theme != null && !theme.isEmpty()) ed.putString("theme", theme);
+        ed.apply();
         SideCutWidgetProvider.pushAll(ctx);
         call.resolve();
     }
@@ -105,6 +112,77 @@ import org.json.JSONObject;
 
 public class SideCutWidgetProvider extends AppWidgetProvider {
 
+    // ---- Theme helpers (Widget settings tab persists colors via the plugin) ----
+    static JSONObject readTheme(Context ctx) {
+        try {
+            String raw = ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
+                    .getString("theme", "{}");
+            return new JSONObject(raw);
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    // "#RRGGBB" / "#AARRGGBB" -> Android int. Invalid input falls back to def.
+    static long parseColor(String s) {
+        try { return 0xFFFFFFFFL & android.graphics.Color.parseColor(s); }
+        catch (Exception e) { return -1L; }
+    }
+
+    // True when the home-screen widget is resized taller than its 2x2 target.
+    static boolean isExpanded(Context ctx) {
+        try {
+            AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
+            if (mgr == null) return false;
+            int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, SideCutWidgetProvider.class));
+            if (ids == null) return false;
+            for (int id : ids) {
+                android.os.Bundle o = mgr.getAppWidgetOptions(id);
+                if (o == null) continue;
+                int h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
+                if (h > 0 && h < 9999 && h > 2 * 62) return true; // ~62dp per 2x2 cell row
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Renders the themeable gradient (bg1 -> bg2, rounded corners) as a small
+    // bitmap. Downsampled on purpose: it is stretched to the widget bounds and
+    // must stay far under the ~1MB Binder transaction cap.
+    static Bitmap makeBgBitmap(String c1, String c2) {
+        try {
+            int w = 240, h = 240, r = 26;
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas cv = new android.graphics.Canvas(bmp);
+            android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            p.setShader(new android.graphics.LinearGradient(
+                    0, 0, w, h,
+                    (int) parseColor(c1), (int) parseColor(c2),
+                    android.graphics.Shader.TileMode.CLAMP));
+            cv.drawRoundRect(new android.graphics.RectF(0, 0, w, h), r, r, p);
+            return bmp;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // Solid rounded-rect bitmap for playlist pill backgrounds (accent-themeable).
+    static Bitmap pillBitmap(int color) {
+        try {
+            int w = 160, h = 44, r = 22;
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas cv = new android.graphics.Canvas(bmp);
+            android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            p.setColor(color);
+            cv.drawRoundRect(new android.graphics.RectF(0, 0, w, h), r, r, p);
+            return bmp;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     static void pushAll(Context ctx) {
         try {
             AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
@@ -112,14 +190,14 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             int[] ids = mgr.getAppWidgetIds(new ComponentName(ctx, SideCutWidgetProvider.class));
             if (ids == null || ids.length == 0) return;
 
-            String state = ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
+            String stateJson = ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
                     .getString("state", "{}");
             String title = "SideCut";
             String artist = "";
             String art = "";
             boolean playing = false;
             try {
-                JSONObject o = new JSONObject(state);
+                JSONObject o = new JSONObject(stateJson);
                 title = o.optString("title", "SideCut");
                 artist = o.optString("artist", "");
                 art = o.optString("art", "");
@@ -128,20 +206,60 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
 
             RemoteViews rv = new RemoteViews(ctx.getPackageName(), R.layout.sidecut_widget);
 
-            // Cover art / title / artist.
+            // User theme (from the Widget settings tab, persisted in prefs).
+            JSONObject th = readTheme(ctx);
+
+            // Background: user-themeable gradient, rendered as a bitmap onto
+            // the wBg ImageView (RemoteViews cannot take arbitrary drawables,
+            // but setImageViewBitmap works on every API level).
+            rv.setImageViewBitmap(R.id.wBg, makeBgBitmap(
+                    th.optString("bg1", "#141821"),
+                    th.optString("bg2", "#0A0B0E")));
+
+            // Cover art / title / artist - themeable text colors.
             rv.setTextViewText(R.id.wTitle, title);
+            rv.setTextColor(R.id.wTitle, (int) parseColor(th.optString("title", "#FFFFFF")));
             rv.setTextViewText(R.id.wArtist, artist);
+            rv.setTextColor(R.id.wArtist, (int) parseColor(th.optString("artist", "#B9BDC7")));
             Bitmap bmp = decodeArt(art);
             if (bmp != null) rv.setImageViewBitmap(R.id.wArt, bmp);
             else rv.setImageViewResource(R.id.wArt, R.mipmap.ic_launcher);
 
-            // Transport.
+            // Transport (always white icons).
             rv.setImageViewResource(R.id.wPlay,
                     playing ? R.drawable.sidecut_ic_pause : R.drawable.sidecut_ic_play);
             rv.setOnClickPendingIntent(R.id.wRoot, pi(ctx, "open", ""));
             rv.setOnClickPendingIntent(R.id.wPrev, pi(ctx, "prev", ""));
             rv.setOnClickPendingIntent(R.id.wPlay, pi(ctx, "playpause", ""));
             rv.setOnClickPendingIntent(R.id.wNext, pi(ctx, "next", ""));
+
+            // Playlist pill row: shown only when the widget is EXPANDED
+            // (taller than 2 cells). Collapsed widgets keep the clean 2x2 look.
+            JSONObject state = null;
+            try { state = new JSONObject(stateJson); } catch (Exception ignored) {}
+            org.json.JSONArray pls = (state != null) ? state.optJSONArray("playlists") : null;
+            String act = (state != null) ? state.optString("active", "") : "";
+            boolean showPills = isExpanded(ctx) && pls != null && pls.length() > 0;
+            rv.setViewVisibility(R.id.wPillsRow, showPills ? View.VISIBLE : View.GONE);
+            if (showPills) {
+                int acc = (int) parseColor(th.optString("accent", "#E3B23C"));
+                int accInk = (int) parseColor(th.optString("accentText", "#1A1305"));
+                int pillBg = (int) parseColor(th.optString("pill", "#1C1F26"));
+                int pillText = (int) parseColor(th.optString("pillText", "#DDDEE3"));
+                int[] pillWraps = { R.id.wPillWrap0, R.id.wPillWrap1, R.id.wPillWrap2, R.id.wPillWrap3 };
+                int[] pillBgs = { R.id.wPillBg0, R.id.wPillBg1, R.id.wPillBg2, R.id.wPillBg3 };
+                int[] pillIds = { R.id.wPill0, R.id.wPill1, R.id.wPill2, R.id.wPill3 };
+                for (int i = 0; i < pillIds.length; i++) {
+                    String name = (i < pls.length()) ? pls.optString(i, "") : "";
+                    if (name.isEmpty()) { rv.setViewVisibility(pillWraps[i], View.GONE); continue; }
+                    boolean isActive = name.equals(act);
+                    rv.setImageViewBitmap(pillBgs[i], pillBitmap(isActive ? acc : pillBg));
+                    rv.setTextViewText(pillIds[i], name);
+                    rv.setTextColor(pillIds[i], isActive ? accInk : pillText);
+                    rv.setViewVisibility(pillWraps[i], View.VISIBLE);
+                    rv.setOnClickPendingIntent(pillWraps[i], pi(ctx, "pl", name));
+                }
+            }
 
             mgr.updateAppWidget(ids, rv);
         } catch (Exception ignored) {
@@ -212,6 +330,7 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             }
             return;
         }
+
         int code = 0;
         if (action.endsWith("_prev")) code = KeyEvent.KEYCODE_MEDIA_PREVIOUS;
         else if (action.endsWith("_next")) code = KeyEvent.KEYCODE_MEDIA_NEXT;
@@ -231,13 +350,142 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
 """ % APP_ID
 
 LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/wRoot"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="7dp"
-    android:background="@drawable/sidecut_widget_bg">
+    android:layout_height="match_parent">
+
+    <!-- Themeable gradient background, sized to the widget bounds -->
+    <ImageView
+        android:id="@+id/wBg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:importantForAccessibility="no"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:id="@+id/wRoot"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="7dp">
+
+    <!-- Playlist pills: hidden on the 2x2 layout, shown when EXPANDED -->
+    <LinearLayout
+        android:id="@+id/wPillsRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:id="@+id/wPillWrap0"
+            android:layout_width="0dp"
+            android:layout_height="26dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:visibility="gone">
+            <ImageView
+                android:id="@+id/wPillBg0"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
+            <TextView
+                android:id="@+id/wPill0"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingHorizontal="8dp"
+                android:textSize="10sp"
+                android:textColor="#DDDEE3"
+                android:text="" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/wPillWrap1"
+            android:layout_width="0dp"
+            android:layout_height="26dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:visibility="gone">
+            <ImageView
+                android:id="@+id/wPillBg1"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
+            <TextView
+                android:id="@+id/wPill1"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingHorizontal="8dp"
+                android:textSize="10sp"
+                android:textColor="#DDDEE3"
+                android:text="" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/wPillWrap2"
+            android:layout_width="0dp"
+            android:layout_height="26dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:visibility="gone">
+            <ImageView
+                android:id="@+id/wPillBg2"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
+            <TextView
+                android:id="@+id/wPill2"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingHorizontal="8dp"
+                android:textSize="10sp"
+                android:textColor="#DDDEE3"
+                android:text="" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/wPillWrap3"
+            android:layout_width="0dp"
+            android:layout_height="26dp"
+            android:layout_weight="1"
+            android:visibility="gone">
+            <ImageView
+                android:id="@+id/wPillBg3"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
+            <TextView
+                android:id="@+id/wPill3"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:paddingHorizontal="8dp"
+                android:textSize="10sp"
+                android:textColor="#DDDEE3"
+                android:text="" />
+        </FrameLayout>
+    </LinearLayout>
 
     <!-- Track cover, top-left -->
     <ImageView
@@ -272,39 +520,47 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:textColor="#CBB89B"
         android:text="" />
 
-    <!-- Bottom transport controls -->
+    <!-- Bottom transport controls: fixed-height (40dp) rows so each button is a
+         big, reliable tap target. Larger icons + full-width cells mean a tap
+         lands on prev/play/next instead of falling through to open the app. -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="40dp"
         android:orientation="horizontal"
-        android:gravity="center">
+        android:gravity="center_vertical">
 
         <ImageView
             android:id="@+id/wPrev"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
             android:layout_weight="1"
+            android:padding="5dp"
+            android:scaleType="center"
             android:src="@drawable/sidecut_ic_prev"
             android:contentDescription="Previous" />
 
         <ImageView
             android:id="@+id/wPlay"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
             android:layout_weight="1"
+            android:padding="5dp"
+            android:scaleType="center"
             android:src="@drawable/sidecut_ic_play"
             android:contentDescription="Play or pause" />
 
         <ImageView
             android:id="@+id/wNext"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="40dp"
             android:layout_weight="1"
+            android:padding="5dp"
+            android:scaleType="center"
             android:src="@drawable/sidecut_ic_next"
             android:contentDescription="Next" />
     </LinearLayout>
-</LinearLayout>
+    </LinearLayout>
+</FrameLayout>
 """
 
 BG_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -344,7 +600,7 @@ ICON_TMPL = """<?xml version="1.0" encoding="utf-8"?>
     android:viewportWidth="24"
     android:viewportHeight="24">
     <path
-        android:fillColor="#E3B23C"
+        android:fillColor="#FFFFFF"
         android:pathData="%s" />
 </vector>
 """
