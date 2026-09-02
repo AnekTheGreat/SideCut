@@ -5,10 +5,11 @@ patch-widget.py — run AFTER `npx cap add android` in CI.
 Injects the SideCut 2x2 home-screen widget into the generated android project:
   - SideCutWidgetPlugin.java : Capacitor plugin ("SideCutWidget") that receives
     now-playing state from the web layer (JSON string) and refreshes the widget.
-  - SideCutWidgetProvider.java : AppWidgetProvider that renders the widget
-    (cover art, title, artist, prev / play-pause / next) and turns button taps
-    into media key events routed to the app's active media session.
-  - res/layout/sidecut_widget.xml + res/xml/sidecut_widget_info.xml (2x2 cell).
+  - SideCutWidgetProvider.java : AppWidgetProvider that renders a polished
+    widget (cover art, song title + artist below, prev / play-pause / next)
+    and turns button taps into media key events routed to the media session.
+  - res/layout/sidecut_widget.xml + res/xml/sidecut_widget_info.xml (2x2 cell)
+    + custom white vector transport icons (res/drawable).
   - AndroidManifest.xml receiver entry (idempotent).
   - MainActivity.java registers the plugin (idempotent).
 
@@ -16,7 +17,6 @@ Idempotent: safe to run on fresh AND already-patched projects.
 """
 import json
 import os
-import re
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -26,6 +26,7 @@ with open(os.path.join(ROOT, "capacitor.config.json")) as f:
 PKG_PATH = APP_ID.replace(".", "/")
 JAVA_DIR = os.path.join(ROOT, "android", "app", "src", "main", "java", PKG_PATH)
 RES_DIR = os.path.join(ROOT, "android", "app", "src", "main", "res")
+DRW_DIR = os.path.join(RES_DIR, "drawable")
 MANIFEST = os.path.join(ROOT, "android", "app", "src", "main", "AndroidManifest.xml")
 MAIN_ACTIVITY = os.path.join(JAVA_DIR, "MainActivity.java")
 
@@ -42,7 +43,6 @@ def write(path, content):
 PLUGIN_JAVA = """package %s;
 
 import android.content.Context;
-import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -110,7 +110,7 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             if (bmp != null) rv.setImageViewBitmap(R.id.wArt, bmp);
             else rv.setImageViewResource(R.id.wArt, R.mipmap.ic_launcher);
             rv.setImageViewResource(R.id.wPlay,
-                    playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play);
+                    playing ? R.drawable.sidecut_ic_pause : R.drawable.sidecut_ic_play);
 
             rv.setOnClickPendingIntent(R.id.wRoot, pi(ctx, "open"));
             rv.setOnClickPendingIntent(R.id.wPrev, pi(ctx, "prev"));
@@ -161,17 +161,6 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         else if (action.endsWith("_next")) code = KeyEvent.KEYCODE_MEDIA_NEXT;
         else if (action.endsWith("_playpause")) code = KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
         if (code != 0) {
-            // Optimistically flip the play/pause icon so the widget responds
-            // instantly, then let the web layer's next push correct it.
-            if (action.endsWith("_playpause")) {
-                try {
-                    android.content.SharedPreferences sp = context.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
-                    JSONObject o = new JSONObject(sp.getString("state", "{}"));
-                    o.put("playing", !o.optBoolean("playing", false));
-                    sp.edit().putString("state", o.toString()).apply();
-                } catch (Exception ignored) {
-                }
-            }
             try {
                 AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
                 if (am != null) {
@@ -180,7 +169,6 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
                 }
             } catch (Exception ignored) {
             }
-            pushAll(context);
         }
     }
 }
@@ -193,45 +181,40 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center_horizontal"
-    android:padding="9dp"
+    android:padding="8dp"
     android:background="@drawable/sidecut_widget_bg">
 
-    <!-- Album cover, centered, with a soft rounded frame -->
-    <FrameLayout
-        android:layout_width="58dp"
-        android:layout_height="58dp"
-        android:layout_marginTop="1dp"
-        android:background="@drawable/sidecut_widget_art_frame">
-        <ImageView
-            android:id="@+id/wArt"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop"
-            android:contentDescription="Album art" />
-    </FrameLayout>
+    <ImageView
+        android:id="@+id/wArt"
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:layout_marginTop="3dp"
+        android:layout_marginBottom="3dp"
+        android:background="@drawable/sidecut_cover_bg"
+        android:scaleType="centerCrop"
+        android:contentDescription="Album art" />
 
-    <!-- Song name -->
     <TextView
         android:id="@+id/wTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
         android:maxLines="1"
         android:ellipsize="end"
+        android:gravity="center"
         android:textSize="12sp"
         android:textStyle="bold"
         android:textColor="#FFFFFF"
         android:text="SideCut" />
 
-    <!-- Artist name -->
     <TextView
         android:id="@+id/wArtist"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:maxLines="1"
         android:ellipsize="end"
+        android:gravity="center"
         android:textSize="10sp"
-        android:textColor="#C7C7C7"
+        android:textColor="#B9C2C6"
         android:text="" />
 
     <LinearLayout
@@ -246,7 +229,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:src="@android:drawable/ic_media_previous"
+            android:src="@drawable/sidecut_ic_prev"
             android:contentDescription="Previous" />
 
         <ImageView
@@ -254,7 +237,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:src="@android:drawable/ic_media_play"
+            android:src="@drawable/sidecut_ic_play"
             android:contentDescription="Play or pause" />
 
         <ImageView
@@ -262,7 +245,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:src="@android:drawable/ic_media_next"
+            android:src="@drawable/sidecut_ic_next"
             android:contentDescription="Next" />
     </LinearLayout>
 </LinearLayout>
@@ -270,18 +253,37 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
 
 BG_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="20dp" />
-    <solid android:color="#E60E1B1F" />
-    <stroke android:width="1dp" android:color="#2B4450" />
+    <corners android:radius="16dp" />
+    <solid android:color="#CC0E1B1F" />
 </shape>
 """
 
-ART_FRAME_XML = """<?xml version="1.0" encoding="utf-8"?>
+COVER_BG_XML = """<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <corners android:radius="12dp" />
-    <stroke android:width="1dp" android:color="#33455F" />
+    <corners android:radius="8dp" />
+    <solid android:color="#2A3A3F" />
+    <stroke android:width="1dp" android:color="#3A4A4F" />
 </shape>
 """
+
+ICON_TMPL = """<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="%s" />
+</vector>
+"""
+
+ICONS = {
+    "sidecut_ic_play.xml": "M8 5v14l11-7z",
+    "sidecut_ic_pause.xml": "M6 5h4v14H6zM14 5h4v14h-4z",
+    "sidecut_ic_prev.xml": "M6 6h2v12H6zM20 6l-10 6 10 6z",
+    "sidecut_ic_next.xml": "M16 6h2v12h-2zM4 6l10 6-10 6z",
+}
 
 WIDGET_INFO_XML = """<?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
@@ -355,8 +357,10 @@ def main():
     write(os.path.join(JAVA_DIR, "SideCutWidgetPlugin.java"), PLUGIN_JAVA)
     write(os.path.join(JAVA_DIR, "SideCutWidgetProvider.java"), PROVIDER_JAVA)
     write(os.path.join(RES_DIR, "layout", "sidecut_widget.xml"), LAYOUT_XML)
-    write(os.path.join(RES_DIR, "drawable", "sidecut_widget_bg.xml"), BG_XML)
-    write(os.path.join(RES_DIR, "drawable", "sidecut_widget_art_frame.xml"), ART_FRAME_XML)
+    write(os.path.join(DRW_DIR, "sidecut_widget_bg.xml"), BG_XML)
+    write(os.path.join(DRW_DIR, "sidecut_cover_bg.xml"), COVER_BG_XML)
+    for name, data in ICONS.items():
+        write(os.path.join(DRW_DIR, name), ICON_TMPL % data)
     write(os.path.join(RES_DIR, "xml", "sidecut_widget_info.xml"), WIDGET_INFO_XML)
     patch_manifest()
     patch_main_activity()
