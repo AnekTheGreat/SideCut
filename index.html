@@ -13645,11 +13645,22 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   // widget decodes it directly (blob:/https: are useless to a RemoteViews).
   let widgetTrack = null;
   let widgetPlaying = false;
+  // Build the playlist pill list for the widget: the currently-playing
+  // playlist first (so its pill is highlighted), then the rest, capped at the
+  // number of pill slots (5). The widget renders them as tappable rows.
+  function scWidgetPlaylistState(){
+    var active = (queueSourcePlaylist && playlists[queueSourcePlaylist]) ? queueSourcePlaylist : (activePlaylist && playlists[activePlaylist] ? activePlaylist : 'All Songs');
+    if(active === UNSORTED_VIEW) active = 'All Songs';
+    var names = [active];
+    Object.keys(playlists).forEach(function(n){ if(n === active) return; names.push(n); });
+    return { playlists: names.slice(0, 5), active: active };
+  }
   function pushWidgetState(t, playing){
     try{
       const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget;
       if(!W || typeof W.update !== 'function') return;
-      const send = (art) => { try{ W.update({ data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing }) }); }catch(e){} };
+      const plState = scWidgetPlaylistState();
+      const send = (art) => { try{ W.update({ data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing, playlists: plState.playlists, active: plState.active }) }); }catch(e){} };
       if(!t){ send(''); return; }
       if(t.artBlob){
         if(t._artDataUrl){ send(t._artDataUrl); return; }
@@ -13685,6 +13696,58 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
       }catch(e){}
     };
     setInterval(function(){ try{ window.__scWidgetHeartbeat(); }catch(e){} }, 1500);
+  })();
+  // Switch the playing playlist when the user taps a pill on the home widget.
+  // The widget writes the target name to prefs; we poll the plugin and switch.
+  window.scWidgetSwitchPlaylist = function(name){
+    try{
+      if(!name) return;
+      if(name !== 'All Songs' && name !== 'Favorites' && !playlists[name]) return;
+      activePlaylist = name;
+      rememberPlaylist(name);
+      reorderMode = false;
+      var ids = (name === 'All Songs') ? allTracks.map(t => t.id) : (playlists[name] || []).slice();
+      if(!ids.length){ renderTabs(); renderList(); return; }
+      if(shuffle){
+        if(!shuffledOrderCache || shuffledOrderCache.playlist !== activePlaylist) regenerateShuffleOrder();
+        var validSet = new Set(ids);
+        ids = shuffledOrderCache.ids.filter(x => validSet.has(x));
+      } else {
+        ids = getSortedIds(ids);
+      }
+      playFromList(ids, ids[0]);
+      renderTabs();
+      renderList();
+    }catch(e){}
+  };
+  // Poll for a playlist the user picked from the home widget and switch to it.
+  (function(){
+    window.__scWidgetPollTimer = setInterval(function(){
+      try{
+        const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget;
+        if(!W || typeof W.getPendingPlaylist !== 'function') return;
+        W.getPendingPlaylist({}).then(function(res){
+          var name = res && res.playlist ? res.playlist : '';
+          if(name && window.scWidgetSwitchPlaylist) window.scWidgetSwitchPlaylist(name);
+        }).catch(function(){});
+      }catch(e){}
+    }, 2000);
+  })();
+  // One-time arm: right after boot, push the current now-playing state to the
+  // widget so a freshly-placed widget (or an app relaunch) shows the real song,
+  // title, artist and play/pause state instead of the "SideCut" + logo default.
+  // Runs after a short delay (plugin may not be ready for a moment) and again
+  // once more later in case art is still decoding from a blob.
+  (function(){
+    var armed = false;
+    window.__scWidgetArm = function(){
+      if(!widgetTrack) return;
+      if(!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget)) return;
+      pushWidgetState(widgetTrack, widgetPlaying);
+      if(!armed){ armed = true; setTimeout(window.__scWidgetArm, 2600); }
+    };
+    setTimeout(window.__scWidgetArm, 900);
+    setTimeout(window.__scWidgetArm, 3600);
   })();
   function mediaSetMetadata(t){
     try{ widgetTrack = t; pushWidgetState(t, widgetPlaying); }catch(e){}
