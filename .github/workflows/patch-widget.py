@@ -134,7 +134,8 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             if (dataUrl == null || !dataUrl.startsWith("data:")) return null;
             int comma = dataUrl.indexOf(',');
             if (comma < 0) return null;
-            byte[] bytes = Base64.decode(dataUrl.substring(comma + 1), Base64.DEFAULT);
+            String b64 = dataUrl.substring(comma + 1).replaceAll("\\s", "");
+            byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
             return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
         } catch (Exception e) {
             return null;
@@ -180,54 +181,61 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center_horizontal"
-    android:padding="8dp"
+    android:padding="7dp"
     android:background="@drawable/sidecut_widget_bg">
 
+    <!-- Track cover, top-left -->
     <ImageView
         android:id="@+id/wArt"
-        android:layout_width="46dp"
-        android:layout_height="46dp"
-        android:layout_marginTop="3dp"
-        android:layout_marginBottom="3dp"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_marginTop="2dp"
+        android:layout_gravity="start"
         android:background="@drawable/sidecut_cover_bg"
         android:scaleType="centerCrop"
         android:contentDescription="Album art" />
 
+    <!-- Song name below the cover, left-aligned -->
     <TextView
         android:id="@+id/wTitle"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="start"
+        android:layout_marginTop="3dp"
+        android:maxWidth="match_parent"
         android:maxLines="1"
         android:ellipsize="end"
-        android:gravity="center"
         android:textSize="12sp"
         android:textStyle="bold"
         android:textColor="#FFFFFF"
-        android:text="SideCut" />
+        android:text="Now playing" />
 
     <TextView
         android:id="@+id/wArtist"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="start"
         android:maxLines="1"
         android:ellipsize="end"
-        android:gravity="center"
         android:textSize="10sp"
         android:textColor="#B9C2C6"
         android:text="" />
 
+    <View
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center">
 
         <ImageView
             android:id="@+id/wPrev"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="24dp"
             android:layout_weight="1"
             android:src="@drawable/sidecut_ic_prev"
             android:contentDescription="Previous" />
@@ -235,7 +243,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         <ImageView
             android:id="@+id/wPlay"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="28dp"
             android:layout_weight="1"
             android:src="@drawable/sidecut_ic_play"
             android:contentDescription="Play or pause" />
@@ -243,7 +251,7 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         <ImageView
             android:id="@+id/wNext"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="24dp"
             android:layout_weight="1"
             android:src="@drawable/sidecut_ic_next"
             android:contentDescription="Next" />
