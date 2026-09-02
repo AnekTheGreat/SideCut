@@ -2355,6 +2355,11 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="settingsPaneWidget" style="display:none;">
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget. Changes apply to every widget you have placed; re-adding one also picks these up.</div>
       <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
+      <div id="widgetCustomWrap" style="margin-bottom:16px;">
+        <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Fine-tune</div>
+        <div id="widgetCustomColors" style="display:grid; grid-template-columns:1fr 1fr; gap:10px 14px;"></div>
+        <button class="tab" id="widgetCustomReset" style="margin-top:12px; padding:7px 14px; font-size:12px;">Reset to preset</button>
+      </div>
       <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Preview</div>
       <div id="widgetThemePreview" style="border-radius:16px; padding:14px; max-width:260px;"></div>
     </div>
@@ -4318,23 +4323,64 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
     grid.querySelectorAll('[data-wt]').forEach(btn => {
       btn.addEventListener('click', () => {
         widgetThemeKey = btn.getAttribute('data-wt');
-        try{ localStorage.setItem("sidecut_widgetTheme", widgetThemeKey); }catch(_){ }
+        try{ localStorage.setItem("sidecut_widgetTheme", widgetThemeKey); localStorage.removeItem("sidecut_widgetThemeCustom"); }catch(_){ }
         renderWidgetThemeControls();
         try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
-        toast("Widget updated");
+        toast("Widget theme updated");
       });
     });
-    const pv = $('widgetThemePreview');
-    if(pv){
-      const t = getWidgetTheme();
-      pv.style.background = 'linear-gradient(160deg,' + t.bg1 + ',' + t.bg2 + ')';
-      pv.innerHTML = '<div style="width:64px; height:64px; border-radius:10px; background:linear-gradient(135deg,#3a3f4b,#22252c); margin-bottom:10px;"></div>' +
-        '<div style="font-size:16px; font-weight:700; color:' + t.title + '; margin-bottom:3px;">Song title</div>' +
-        '<div style="font-size:13px; color:' + t.artist + '; margin-bottom:12px;">Artist name</div>' +
-        '<div style="display:flex; gap:22px; font-size:18px; color:' + t.title + ';"><span>|&#9664;</span><span>&#9654;</span><span>&#9654;|</span></div>';
+    renderWidgetCustomColors();
+    renderWidgetPreview();
+  }
+  function renderWidgetCustomColors(){
+    const wrap = $('widgetCustomColors');
+    if(!wrap) return;
+    const base = getWidgetTheme();
+    const fields = [
+      ['bg1', 'Background top'],
+      ['bg2', 'Background bottom'],
+      ['title', 'Title'],
+      ['artist', 'Artist text'],
+      ['accent', 'Accent']
+    ];
+    wrap.innerHTML = fields.map(f => {
+      const v = base[f[0]] || '#000000';
+      return '<label style="font-size:12px; color:var(--ink-dim); display:flex; flex-direction:column; gap:5px;">' + f[1] +
+        '<input type="color" data-wcc="' + f[0] + '" value="' + v + '" style="height:34px; padding:2px; border-radius:8px; border:1px solid var(--line); background:var(--bg); width:100%;"></label>';
+    }).join("");
+    wrap.querySelectorAll('[data-wcc]').forEach(inp => {
+      inp.addEventListener('input', () => setWidgetCustom(inp.getAttribute('data-wcc'), inp.value));
+    });
+    const reset = $('widgetCustomReset');
+    if(reset){
+      reset.onclick = () => {
+        try{ localStorage.removeItem('sidecut_widgetThemeCustom'); }catch(_){ }
+        renderWidgetThemeControls();
+        try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
+        toast('Widget reset to preset');
+      };
     }
   }
-
+  function setWidgetCustom(key, value){
+    try{
+      let ov = {};
+      try{ ov = JSON.parse(localStorage.getItem('sidecut_widgetThemeCustom') || '{}'); }catch(_){ ov = {}; }
+      ov[key] = value;
+      localStorage.setItem('sidecut_widgetThemeCustom', JSON.stringify(ov));
+    }catch(_){ }
+    renderWidgetPreview();
+    try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
+  }
+  function renderWidgetPreview(){
+    const pv = $('widgetThemePreview');
+    if(!pv) return;
+    const t = getWidgetTheme();
+    pv.style.background = 'linear-gradient(160deg,' + t.bg1 + ',' + t.bg2 + ')';
+    pv.innerHTML = '<div style="width:64px; height:64px; border-radius:10px; background:linear-gradient(135deg,#3a3f4b,#22252c); margin-bottom:10px;"></div>' +
+      '<div style="font-size:16px; font-weight:700; color:' + t.title + '; margin-bottom:3px;">Song title</div>' +
+      '<div style="font-size:13px; color:' + t.artist + '; margin-bottom:12px;">Artist name</div>' +
+      '<div style="display:flex; gap:22px; font-size:18px; color:' + t.title + ';"><span>|&#9664;</span><span>&#9654;</span><span>&#9654;|</span></div>';
+  }
   function renderGlowControls(){
     const isRgb = THEMES[currentTheme] && THEMES[currentTheme].rgb;
     const isRgbPlus = THEMES[currentTheme] && THEMES[currentTheme].rgbPlus;
@@ -7736,7 +7782,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.56';
+  const APP_VERSION = '55.1';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -7758,12 +7804,14 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
-    { version: '56.0', date: 'September 2, 2026', title: 'Widget cleanup — no more pill dots, plus a Widget settings tab', items: [
-      'Removed the row of dot pills that sat on top of the album cover on the widget',
-      'New Widget tab in Settings: pick from 6 widget color themes (Midnight, Pure black, Warm amber, Deep ocean, Forest, Rosewood) with a live preview — your choice persists across app updates',
-      'Widget media controls remain white and stay big and easy to tap',
+    { version: '55.1', date: 'September 2, 2026 · 2:56 PM ET', title: 'Widget theming + AI assistant cleanup', items: [
+      'Widget Settings tab got a real home and more power: pick from 7 themes including the new default Coral, and now you can fine-tune it with custom background, title, artist and accent colors plus a live preview — everything saves across updates',
+      'Default widget theme is now Coral',
+      'Removed the row of dot pills that sat on top of the album cover on the widget (clean 2x2 now: cover, title, artist, controls)',
+      'Widget media controls stay white and big and easy to tap',
+      'AI assistant no longer repeats its welcome message every time you open it — you get one clean greeting, and it answers smarter with a tighter system prompt',
     ] },
-    { version: '55.0', date: 'September 2, 2026', title: 'Big batch — playlists, discover pictures, settings & widget polish', items: [
+    { version: '55.0', date: 'September 1, 2026 · 11:58 PM ET', title: 'Big batch — playlists, discover pictures, settings & widget polish', items: [
       'Playlists now auto-scroll to the currently playing (or most recent) song when you switch to the Playlists tab',
       'Tapping a single in the Singles popup plays that song right away instead of just searching',
       'Fixed the album-fetch progress bar that froze at 0% when fetching a single artist',
@@ -13782,16 +13830,25 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // Widget appearance, customized in Settings > Widget. Sent with every
   // state push; the native side persists it so re-added widgets keep the look.
   const WIDGET_THEMES = {
-    dark:   { label: 'Midnight (default)', bg1: '#141821', bg2: '#0A0B0E', title: '#FFFFFF', artist: '#B9BDC7', accent: '#E3B23C', accentText: '#1A1305', pill: '#1C1F26', pillText: '#DDDEE3' },
-    black:  { label: 'Pure black',         bg1: '#000000', bg2: '#000000', title: '#FFFFFF', artist: '#9AA0AC', accent: '#E3B23C', accentText: '#1A1305', pill: '#16181C', pillText: '#DDDEE3' },
-    warm:   { label: 'Warm amber',         bg1: '#1D1410', bg2: '#0D0906', title: '#F5E7D3', artist: '#CBB89B', accent: '#E3B23C', accentText: '#1A1305', pill: '#241A12', pillText: '#EBDCC4' },
-    ocean:  { label: 'Deep ocean',         bg1: '#0D1B2A', bg2: '#060D16', title: '#EAF2FB', artist: '#8FA8C4', accent: '#4FA3E3', accentText: '#04121F', pill: '#132437', pillText: '#D7E5F4' },
-    forest: { label: 'Forest',             bg1: '#12211A', bg2: '#08120D', title: '#EAF5EE', artist: '#93B3A2', accent: '#4CC38A', accentText: '#06130C', pill: '#17291F', pillText: '#D9EEE2' },
-    rose:   { label: 'Rosewood',           bg1: '#211318', bg2: '#100809', title: '#FBEAF0', artist: '#C79BAA', accent: '#E36A8A', accentText: '#1F060D', pill: '#2A181F', pillText: '#F2DCE4' }
+    coral:  { label: 'Coral (default)', bg1: '#2A1216', bg2: '#160708', title: '#FFF0EC', artist: '#D89B90', accent: '#FF6F61', accentText: '#2A0805', pill: '#33171A', pillText: '#FFD9D2' },
+    dark:   { label: 'Midnight',        bg1: '#141821', bg2: '#0A0B0E', title: '#FFFFFF', artist: '#B9BDC7', accent: '#E3B23C', accentText: '#1A1305', pill: '#1C1F26', pillText: '#DDDEE3' },
+    black:  { label: 'Pure black',      bg1: '#000000', bg2: '#000000', title: '#FFFFFF', artist: '#9AA0AC', accent: '#E3B23C', accentText: '#1A1305', pill: '#16181C', pillText: '#DDDEE3' },
+    warm:   { label: 'Warm amber',      bg1: '#1D1410', bg2: '#0D0906', title: '#F5E7D3', artist: '#CBB89B', accent: '#E3B23C', accentText: '#1A1305', pill: '#241A12', pillText: '#EBDCC4' },
+    ocean:  { label: 'Deep ocean',      bg1: '#0D1B2A', bg2: '#060D16', title: '#EAF2FB', artist: '#8FA8C4', accent: '#4FA3E3', accentText: '#04121F', pill: '#132437', pillText: '#D7E5F4' },
+    forest: { label: 'Forest',          bg1: '#12211A', bg2: '#08120D', title: '#EAF5EE', artist: '#93B3A2', accent: '#4CC38A', accentText: '#06130C', pill: '#17291F', pillText: '#D9EEE2' },
+    rose:   { label: 'Rosewood',        bg1: '#211318', bg2: '#100809', title: '#FBEAF0', artist: '#C79BAA', accent: '#E36A8A', accentText: '#1F060D', pill: '#2A181F', pillText: '#F2DCE4' }
   };
-  let widgetThemeKey = 'dark';
+  let widgetThemeKey = 'coral';
   try{ const _savedWT = localStorage.getItem('sidecut_widgetTheme'); if(_savedWT && WIDGET_THEMES[_savedWT]) widgetThemeKey = _savedWT; }catch(_){ }
-  function getWidgetTheme(){ return WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.dark; }
+  function getWidgetTheme(){ return applyWidgetCustom(WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.coral); }
+  // Merge user custom color overrides (Settings > Widget) on top of a preset.
+  function applyWidgetCustom(base){
+    try{
+      const ov = JSON.parse(localStorage.getItem('sidecut_widgetThemeCustom') || '{}');
+      if(ov && typeof ov === 'object') return Object.assign({}, base, ov);
+    }catch(_){ }
+    return base;
+  }
   function pushWidgetState(t, playing){
     try{
       const C = (window.Capacitor) || null;
@@ -21363,7 +21420,7 @@ function _aiFormatText(text) {
 }
 
 // Gemini system prompt
-var _aiSystemPrompt = 'You are SideCut Assistant, an expert on the SideCut music player app. You know every feature, setting, and troubleshooting step in detail. Be helpful, specific, and actionable. When a user asks "how do I...", give step-by-step instructions with the exact menu path (e.g., Settings → Playback → Crossfade). When they report a problem, diagnose it and suggest a fix. You can answer questions about: playback (shuffle, repeat, crossfade, gapless, EQ, DJ mode, sleep timer, lyrics), library management (playlists, favorites, sorting, searching, importing), Discover (search, preview, pin artists, new releases, singles, album history), themes and customization (colors, glow, home layout, mini player), technical details (file formats, battery, offline mode, storage), and premium features. If a question is ambiguous, ask a clarifying question. If something is unclear, explain what you do know and suggest where to find more info. Never say "I don\'t know" without first trying to help. Keep responses under 4 sentences unless step-by-step instructions require more.';
+var _aiSystemPrompt = 'You are SideCut Assistant, a concise, accurate helper for the SideCut music player app. Be direct and specific; answer in 1-3 short sentences unless numbered steps are genuinely needed. When the user asks "how do I...", give the exact menu path (e.g. Settings → Playback → Crossfade). When they report a problem, state the likely cause and the fix in order. Only mention features that actually exist in SideCut; if you are unsure, say so briefly rather than guessing. You can help with playback (shuffle, repeat, crossfade, gapless, EQ, DJ mode, sleep timer, lyrics), library (playlists, favorites, sorting, searching, importing), Discover (search, preview, pin artists, singles, album history), themes/customization (colors, glow, home layout, mini player), technical (formats, battery, offline, storage), and premium features. If a question is off-topic or unclear, ask one short clarifying question. Keep it clean, no filler, no emoji unless asked.';
 
 // Add a chat message to the UI
 function _aiAddMessage(role, text) {
@@ -21500,11 +21557,8 @@ function initAIAssistant() {
   try { _aiGeminiKey = localStorage.getItem('sidecut_aiGeminiKey') || ''; } catch(e) {}
   var _keyInput = document.getElementById('aiGeminiKeyInput');
   if (_keyInput && _aiGeminiKey) _keyInput.value = _aiGeminiKey;
-  // Wire up event listeners (only once)
-  if (_aiInitialized) {
-    _aiAddMessage('assistant', 'Welcome back! Ask me anything about SideCut. I can help with settings, features, troubleshooting, and more.');
-    return;
-  }
+    // Wire up event listeners (only once) — never re-add the welcome on every open
+  if (_aiInitialized) return;
   _aiInitialized = true;
   var sendBtn = $('aiChatSend');
   var input = $('aiChatInput');
@@ -21513,7 +21567,7 @@ function initAIAssistant() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _aiSendMessage(); }
   });
   // Welcome message
-  _aiAddMessage('assistant', 'Hey! I\'m your **SideCut Assistant** \ud83e\udd16\n\nI know everything about SideCut \u2014 ask me about:\n\u2022 Getting started & adding music\n\u2022 Playback, lyrics, equalizer\n\u2022 Themes, glow, customization\n\u2022 Playlists & organizing\n\u2022 Discover & album history\n\u2022 Troubleshooting & tips\n\nJust type your question!\n\n*The AI assistant is experimental and may not always be correct. For critical issues, contact us at sidecutsupport@gmail.com.*');
+  _aiAddMessage('assistant', 'Hi, I\'m the SideCut assistant. Ask me anything about the app \u2014 settings, playback, playlists, Discover, or troubleshooting.');
   // Show API key section if no key
   var statusEl = $('aiChatStatus');
   if (statusEl && !_aiGeminiKey) {

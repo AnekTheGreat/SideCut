@@ -27,19 +27,20 @@ if not os.path.exists(BUILD_GRADLE):
 
 with open(PACKAGE_JSON) as f:
     version = json.load(f)['version']
-m = re.match(r'^(\d+)\.(\d+)\.(\d+)', version.strip())
+m = re.match(r'^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$', version.strip())
 if not m:
     sys.exit('FATAL: cannot parse version %r from package.json' % version)
-major, minor, patch = (int(x) for x in m.groups())
-version_code = major * 100000 + minor * 1000 + patch
+major, minor, patch, build = (int(x) if x else 0 for x in (m.group(1), m.group(2), m.group(3), m.group(4)))
+version_code = (major * 1000 + minor) * 100000 + patch * 1000 + build
 
 src = open(BUILD_GRADLE).read()
 new_src, subs = re.subn(
     r'(\s*versionCode\s+)\d+', r'\g<1>%d' % version_code, src, count=1)
+ver_name = "%d.%d.%d" % (major, minor, patch) if build == 0 else "%d.%d.%d.%d" % (major, minor, patch, build)
 new_src, subs_name = re.subn(
-    r'(\s*versionName\s+)"[^"]*"', r'\g<1>"%d.%d.%d"' % (major, minor, patch),
+    r'(\s*versionName\s+)"[^"]*"', lambda m: m.group(1) + '"' + ver_name + '"',
     new_src, count=1)
 if subs == 0 or subs_name == 0:
     sys.exit('FATAL: could not find versionCode/versionName in %s' % BUILD_GRADLE)
 open(BUILD_GRADLE, 'w').write(new_src)
-print('set versionCode=%d versionName="%d.%d.%d"' % (version_code, major, minor, patch))
+print('set versionCode=%d versionName="%s"' % (version_code, ver_name))
