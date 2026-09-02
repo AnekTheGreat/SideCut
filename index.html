@@ -3651,6 +3651,29 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       var r = ev && ev.reason;
       __scShowBootError((r && (r.message || String(r))) || 'promise rejection');
     });
+
+    // ---- Home-screen widget live debug (test mode only) ----
+    // Reads window.__scWd (set by pushWidgetState) and shows it on-screen so a
+    // screenshot is a bug report for why the widget stays on default state.
+    window.__scShowWidgetDebug = function(){
+      try{
+        var wd = window.__scWd; if(!wd) return;
+        var msg = 'WIDGET plugin=' + wd.plugin + ' runs=' + wd.runs + ' sends=' + wd.sends +
+          ' title=' + wd.title + ' artLen=' + wd.artLen +
+          (wd.lastErr ? ' ERR=' + wd.lastErr : (wd.lastOk ? ' ' + wd.lastOk : '')) +
+          (wd.plugin === 'MISSING' ? ' [Capacitor.Plugins.SideCutWidget NOT FOUND]' : '');
+        if(!document.getElementById('scWidgetDbgBanner')){
+          var b = document.createElement('div');
+          b.id = 'scWidgetDbgBanner';
+          b.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;background:#0b3d91;color:#fff;font:11px/1.4 monospace;padding:8px 12px;box-shadow:0 -2px 10px rgba(0,0,0,.45);';
+          b.addEventListener('click', function(){ if(b.parentNode) b.parentNode.removeChild(b); });
+          document.body.appendChild(b);
+        }
+        document.getElementById('scWidgetDbgBanner').textContent = msg + ' — tap to hide';
+      }catch(_){}
+    };
+    // Refresh the readout every 1.5s while test mode is on.
+    setInterval(function(){ try{ if(window.__scTestMode && window.__scTestMode()) window.__scShowWidgetDebug(); }catch(_){} }, 1500);
     // ---- Crash flight recorder: a hard process crash (out-of-memory, native
     // plugin) kills the app without any JS error, so no banner can fire. Every
     // risky operation records itself; if the next boot finds no clean marker,
@@ -7643,7 +7666,7 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '5.0.41';
+  const APP_VERSION = '5.0.42';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -13664,9 +13687,11 @@ $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBack
   function pushWidgetState(t, playing){
     try{
       const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget;
-      if(!W || typeof W.update !== 'function') return;
+      if(!W || typeof W.update !== 'function'){ try{ window.__scWd = window.__scWd || { runs:0, sends:0, lastOk:'', lastErr:'', title:'', artLen:0, plugin:'MISSING', ts:0 }; window.__scWd.plugin = 'MISSING'; window.__scWd.ts = Date.now(); }catch(_){} return; }
       const plState = scWidgetPlaylistState();
-      const send = (art) => { try{ W.update({ data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing, playlists: plState.playlists, active: plState.active }) }); }catch(e){} };
+      window.__scWd = window.__scWd || { runs: 0, sends: 0, lastOk: '', lastErr: '', title: '', artLen: 0, plugin: 'yes', ts: 0 };
+      window.__scWd.runs++; window.__scWd.title = (t && t.name) || 'SideCut'; window.__scWd.playing = !!playing; window.__scWd.ts = Date.now();
+      const send = (art) => { try{ window.__scWd.sends++; window.__scWd.artLen = (art || '').length; W.update({ data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing, playlists: plState.playlists, active: plState.active }) }); window.__scWd.lastOk = 'ok ' + window.__scWd.sends; }catch(e){ window.__scWd.lastErr = String(e && e.message || e); } };
       if(!t){ send(''); return; }
       if(t.artBlob){
         if(t._artDataUrl){ send(t._artDataUrl); return; }
