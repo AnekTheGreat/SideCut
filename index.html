@@ -7915,7 +7915,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '55.7';
+  const APP_VERSION = '55.8';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -7937,21 +7937,21 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
-    { version: '55.7', date: 'September 2, 2026 · 4:07 PM ET', title: 'Search in Singles & Album History + albums survive updates', items: [
+    { version: '55.8', date: 'September 2, 2026 · 5:40 PM ET', title: 'Crash fix, DJ knob haptics & Singles delete confirmation', items: [
+      'Fixed the red error banner on Home (v55.5 update-log entry was malformed and crashed the notification panel)',
+      'DJ Mode knobs now buzz when you grab them and tick as you turn — real dial feel',
+      'Singles remove now shows a “Remove from Singles?” confirmation popup (same as Album History) instead of deleting instantly',
+    ] },    { version: '55.7', date: 'September 2, 2026 · 4:07 PM ET', title: 'Search in Singles & Album History + albums survive updates', items: [
       'New search bar at the top of the Singles and Album History popups — type to filter by song, album, or artist name; matching groups auto-expand',
       'Albums and singles are no longer wiped on app updates — your Album History opens instantly from saved data instead of refetching everything',
     ] },{ version: '55.6', date: 'September 2, 2026 · 4:01 PM ET', title: 'Fixed version log times (now true Eastern time)', items: [
       'Changelog timestamps were showing UTC instead of Eastern — all times are now corrected (4 hours earlier)',
-    ] },{
-    version: '55.5',
-    date: 'September 2, 2026 · 3:41 PM ET',
-    notes: [
+    ] },{ version: '55.5', date: 'September 2, 2026 · 3:41 PM ET', title: 'Turntable defaults, Coral theme & custom themes', items: [
       'Turntable default applied for real: Tilt 40, Spin 0, Roll 135.',
       'Themes: Coral is now first in the list and the default.',
       'Widget themes refreshed — better Coral, Deep Ocean default.',
       'Custom theme builder: build your own theme and name it.'
-    ]
-  },{ version: '55.4', date: 'September 2, 2026 · 12:30 PM ET', title: 'Coral default theme, custom theme builder, turntable & widget polish', items: [
+    ] },{ version: '55.4', date: 'September 2, 2026 · 12:30 PM ET', title: 'Coral default theme, custom theme builder, turntable & widget polish', items: [
       'The app\'s default theme is now Coral (Rose Gold becomes a regular choice)',
       'New "Create your own theme" in Settings > Theme: name it, pick background / accent / accent colors from swatches, save & apply, and it persists across updates — then manage or delete it anytime',
       'The mini record player\'s default angle is now really TILT 40 / SPIN 0 / ROLL 135 (both the now-bar and the Turntable popup Reset now use it)',
@@ -16298,9 +16298,18 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       knobEl.classList.add('grabbing');
       value = valueForAngle(angleFromPointer(e));
       render();
+      // Haptics: a short buzz when you grab the knob, then a tick every few
+      // degrees of rotation so turning it feels like real detents.
+      try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_h){}
+      knobEl._hapticAngle = angleForValue(value);
       function onMove(ev){
         value = valueForAngle(angleFromPointer(ev));
         render();
+        var _a = angleForValue(value);
+        if(knobEl._hapticAngle == null || Math.abs(_a - knobEl._hapticAngle) >= 5){
+          try{ if(navigator.vibrate) navigator.vibrate(5); }catch(_h2){}
+          knobEl._hapticAngle = _a;
+        }
       }
       function onUp(ev){
         knobEl.classList.remove('grabbing');
@@ -16314,7 +16323,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       knobEl.addEventListener('pointercancel', onUp);
     });
     // Double-tap/double-click to reset to a sensible default (0 for gain, off for filter)
-    knobEl.addEventListener('dblclick', () => { value = initial; render(); });
+    knobEl.addEventListener('dblclick', () => { value = initial; render(); try{ if(navigator.vibrate) navigator.vibrate([10, 40, 10]); }catch(_h3){} });
     render();
     return { get: () => value, set: (v) => { value = v; render(); } };
   }
@@ -17501,7 +17510,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         if(albumEl){ var alRow = albumEl.closest('.dp-ah-album'); if(alRow) alRow.remove(); }
       });
       var bd = document.createElement('div');
-      bd.style.cssText = 'position:fixed;inset:0;z-index:249;';
+      bd.style.cssText = 'position:fixed;inset:0;z-index:260;';
       bd.addEventListener('click', function(){ bd.remove(); pop.remove(); });
       document.body.appendChild(bd);
     });
@@ -18658,6 +18667,8 @@ function _renderAhFromData(artistAlbums){
             if(!removed) return;
             var row = this.closest('.dp-track');
             if(!row) return;
+            // Ask first — same "are you sure" popup as Album History
+            window._singlesRemoveConfirm(removed.trackName || '', function(){
             // Hide the row immediately (undo can restore it)
             row.style.display = 'none';
             artistSingles[aKey].splice(sIdx, 1);
@@ -18698,6 +18709,7 @@ function _renderAhFromData(artistAlbums){
             var sub = document.getElementById('discPopupSub');
             if(sub) sub.textContent = totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + Object.keys(artistSingles).length + ' artist' + (Object.keys(artistSingles).length!==1?'s':'');
             toast('Removed single', 1500);
+            });
           });
         });
       };
@@ -22159,6 +22171,22 @@ document.addEventListener('click', function(e){
 }, false);
 
 // Standalone Singles refetch — called by the refetch button in the popup
+  // Shared "Remove from Singles?" confirm popup — matches the Album History one.
+  // onConfirm fires only after the user taps Remove; tapping the backdrop or
+  // Cancel just closes it. Returns the popup element (already in the DOM).
+  window._singlesRemoveConfirm = function(name, onConfirm){
+    var pop = document.createElement('div');
+    pop.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:14px 18px;z-index:300;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.4);max-width:280px;';
+    pop.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px;">Remove from Singles?</div><div style="font-size:11px;color:var(--ink-dim);margin-bottom:12px;">' + (name || 'this single') + '</div><div style="display:flex;gap:8px;"><button style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;" class="pop-cancel">Cancel</button><button style="flex:1;padding:8px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;" class="pop-confirm">Remove</button></div>';
+    document.body.appendChild(pop);
+    var bd = document.createElement('div');
+    bd.style.cssText = 'position:fixed;inset:0;z-index:249;';
+    bd.addEventListener('click', function(){ bd.remove(); pop.remove(); });
+    document.body.appendChild(bd);
+    pop.querySelector('.pop-cancel').addEventListener('click', function(){ bd.remove(); pop.remove(); });
+    pop.querySelector('.pop-confirm').addEventListener('click', function(){ bd.remove(); pop.remove(); onConfirm(); });
+    return pop;
+  };
 window.__refetchSingles = async function(){
   try{ localStorage.removeItem('discPopupCache_' + '\ud83c\udfb5 Singles'); }catch(_e){}
   if(!window.isPremiumActive()){ window.toast('Premium feature — unlock in Settings!'); window.openSettingsTo('premium'); return; }
@@ -22251,27 +22279,19 @@ window.__refetchSingles = async function(){
       var aKey = artistKeys[parseInt(parts[0])];
       var sIdx = parseInt(parts[1]);
       if(!aKey || isNaN(sIdx)) return;
-      // 2-step confirm: use data attribute (persists better than custom prop)
+      // Ask first — same "are you sure" popup as Album History
       var _self = this;
-      if(!_self.dataset.confirmed){
-        _self.dataset.confirmed = '1';
-        _self.textContent = '\u2716';
-        _self.style.color = '#ff4444';
-        _self.style.background = 'rgba(255,50,50,0.25)';
-        _self.style.fontSize = '16px';
-        _self.title = 'Tap again to confirm delete';
-        setTimeout(function(){ delete _self.dataset.confirmed; _self.textContent = '\u00d7'; _self.style.color = ''; _self.style.background = ''; _self.style.fontSize = ''; _self.title = ''; }, 3000);
-        return;
-      }
-      // Remove from the data
       var _removedSingle = artistSingles[aKey] ? artistSingles[aKey][sIdx] : null;
-      artistSingles[aKey].splice(sIdx, 1);
-      if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
-      totalFound--;
-      // Persist the delete
-      if(_removedSingle) window.hideSingle(_removedSingle.trackId || _removedSingle.collectionId || ("manual_" + Date.now()), _removedSingle.trackName);
+      window._singlesRemoveConfirm(_removedSingle && _removedSingle.trackName || '', function(){
+      if(_removedSingle){
+        artistSingles[aKey].splice(sIdx, 1);
+        if(artistSingles[aKey].length === 0) delete artistSingles[aKey];
+        totalFound--;
+        // Persist the delete
+        window.hideSingle(_removedSingle.trackId || _removedSingle.collectionId || ("manual_" + Date.now()), _removedSingle.trackName);
+      }
       // Remove the row from DOM
-      var row = this.closest('.dp-track');
+      var row = _self.closest('.dp-track');
       if(row) row.remove();
       // Update count badge
       var hdrs = document.querySelectorAll('#discPopupBody .dp-ah-artist-hdr');
@@ -22283,12 +22303,13 @@ window.__refetchSingles = async function(){
         var cnt = container.querySelectorAll('.dp-track').length;
         var cntSpan = h.querySelector('span:last-child');
         if(cntSpan && cnt >= 0) cntSpan.textContent = cnt + ' single' + (cnt!==1?'s':'');
-        if(cnt === 0) h.closest('.dp-ah-artist').remove();
+        if(cnt === 0){ var pa = h.closest('.dp-ah-artist'); if(pa) pa.remove(); }
       });
       // Update subtitle
       var sub = document.getElementById('discPopupSub');
       if(sub && totalFound >= 0) sub.textContent = totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + Object.keys(artistSingles).length + ' artist' + (Object.keys(artistSingles).length!==1?'s':'');
-      window.toast('Removed "' + (parts.length > 1 ? 'single' : 'track') + '"', 1500);
+      window.toast('Removed "' + (_removedSingle && _removedSingle.trackName || 'single') + '"', 1500);
+      });
     });
   });
 };
