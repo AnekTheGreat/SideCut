@@ -53,8 +53,8 @@ import android.content.Context;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import org.json.JSONObject;
 
 @CapacitorPlugin(name = "SideCutWidget")
 public class SideCutWidgetPlugin extends Plugin {
@@ -79,7 +79,7 @@ public class SideCutWidgetPlugin extends Plugin {
                 ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
         String pending = sp.getString("pendingPlaylist", "");
         if (!pending.isEmpty()) sp.edit().remove("pendingPlaylist").apply();
-        JSONObject out = new JSONObject();
+        JSObject out = new JSObject();
         try { out.put("playlist", pending); } catch (Exception ignored) {}
         call.resolve(out);
     }
