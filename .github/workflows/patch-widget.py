@@ -66,10 +66,26 @@ public class SideCutWidgetPlugin extends Plugin {
         if (data == null || data.isEmpty()) data = "{}";
         String theme = call.getString("theme");
         Context ctx = getContext();
-        android.content.SharedPreferences.Editor ed = ctx
-                .getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE).edit();
+        android.content.SharedPreferences sp = ctx
+                .getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
+        // Monotonic seq sent from the web layer, bumped on every track change.
+        // Drop any update with an OLDER seq so a slow cover fetch from a previous
+        // song (resolving after the new one) can never overwrite the widget.
+        // A per-session "boot" token resets the baseline on a fresh web session,
+        // so a seq that restarts low after an app relaunch can't freeze the widget.
+        long boot = 0;
+        try { boot = new org.json.JSONObject(data).optLong("boot", 0); } catch (Exception ignored) {}
+        long lastBoot = sp.getLong("lastBoot", 0);
+        int seq = 0;
+        try { seq = (int) new org.json.JSONObject(data).optLong("seq", 0); } catch (Exception ignored) {}
+        int lastSeq = sp.getInt("lastSeq", 0);
+        if (boot != lastBoot) lastSeq = 0;
+        if (seq > 0 && seq < lastSeq) { call.resolve(); return; }
+        android.content.SharedPreferences.Editor ed = sp.edit();
         ed.putString("state", data);
         if (theme != null && !theme.isEmpty()) ed.putString("theme", theme);
+        if (seq > 0) ed.putInt("lastSeq", seq);
+        if (boot != 0) ed.putLong("lastBoot", boot);
         ed.apply();
         SideCutWidgetProvider.pushAll(ctx);
         call.resolve();
@@ -127,13 +143,29 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         catch (Exception e) { return -1L; }
     }
 
+    static int dp(Context ctx, int v) {
+        return (int) (v * ctx.getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    // 4 repeating wave phases so the equalizer bars rise/fall while playing.
+    static int[] eqHeights(int pulse) {
+        int[][] P = {
+            { 8, 14, 10 },
+            { 13, 9, 6 },
+            { 6, 12, 15 },
+            { 10, 6, 12 }
+        };
+        int ph = ((pulse %% P.length) + P.length) %% P.length;
+        return P[ph];
+    }
+
 
     // Renders the themeable gradient (bg1 -> bg2, rounded corners) as a small
     // bitmap. Downsampled on purpose: it is stretched to the widget bounds and
     // must stay far under the ~1MB Binder transaction cap.
     static Bitmap makeBgBitmap(String c1, String c2) {
         try {
-            int w = 240, h = 240, r = 26;
+            int w = 200, h = 200, r = 22;
             Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             android.graphics.Canvas cv = new android.graphics.Canvas(bmp);
             android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
@@ -162,8 +194,9 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             String artist = "";
             String art = "";
             boolean playing = false;
+            JSONObject o = null;
             try {
-                JSONObject o = new JSONObject(stateJson);
+                o = new JSONObject(stateJson);
                 title = o.optString("title", "SideCut");
                 artist = o.optString("artist", "");
                 art = o.optString("art", "");
@@ -190,6 +223,25 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             Bitmap bmp = decodeArt(art);
             if (bmp != null) rv.setImageViewBitmap(R.id.wArt, bmp);
             else rv.setImageViewResource(R.id.wArt, R.mipmap.ic_launcher);
+
+            // Playing equalizer animation: a small 3-bar EQ (themed accent)
+            // that pulses while a track is playing. The web layer sends a
+            // monotonic "pulse" on every heartbeat, so the bars keep moving.
+            int pulse = 0;
+            if (o != null) { try { pulse = o.optInt("pulse", 0); } catch (Exception ignored) {} }
+            int accent = (int) parseColor(th.optString("accent", "#E3B23C"));
+            if (playing) {
+                int[] hs = eqHeights(pulse);
+                rv.setViewVisibility(R.id.wEqWrap, android.view.View.VISIBLE);
+                rv.setViewLayoutHeight(R.id.wEq1, dp(ctx, hs[0]));
+                rv.setViewLayoutHeight(R.id.wEq2, dp(ctx, hs[1]));
+                rv.setViewLayoutHeight(R.id.wEq3, dp(ctx, hs[2]));
+                rv.setInt(R.id.wEq1, "setColorFilter", accent);
+                rv.setInt(R.id.wEq2, "setColorFilter", accent);
+                rv.setInt(R.id.wEq3, "setColorFilter", accent);
+            } else {
+                rv.setViewVisibility(R.id.wEqWrap, android.view.View.GONE);
+            }
 
             // Transport (always white icons).
             rv.setImageViewResource(R.id.wPlay,
@@ -228,7 +280,7 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             opts.inJustDecodeBounds = true;
             BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
             int sample = 1;
-            while ((opts.outWidth / sample > 300) || (opts.outHeight / sample > 300)) sample *= 2;
+            while ((opts.outWidth / sample > 216) || (opts.outHeight / sample > 216)) sample *= 2;
             opts.inJustDecodeBounds = false;
             opts.inSampleSize = sample;
             return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opts);
@@ -322,15 +374,51 @@ LAYOUT_XML = """<?xml version="1.0" encoding="utf-8"?>
         android:textColor="#F5E7D3"
         android:text="Now playing" />
 
-    <TextView
-        android:id="@+id/wArtist"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:textSize="10sp"
-        android:textColor="#CBB89B"
-        android:text="" />
+        android:layout_height="16dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/wArtist"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="10sp"
+            android:textColor="#CBB89B"
+            android:text="" />
+        <LinearLayout
+            android:id="@+id/wEqWrap"
+            android:layout_width="wrap_content"
+            android:layout_height="16dp"
+            android:orientation="horizontal"
+            android:gravity="bottom"
+            android:visibility="gone"
+            android:layout_marginStart="6dp">
+            <ImageView
+                android:id="@+id/wEq1"
+                android:layout_width="3dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="2dp"
+                android:src="@drawable/sidecut_eq_bar"
+                android:contentDescription="@null" />
+            <ImageView
+                android:id="@+id/wEq2"
+                android:layout_width="3dp"
+                android:layout_height="14dp"
+                android:layout_marginEnd="2dp"
+                android:src="@drawable/sidecut_eq_bar"
+                android:contentDescription="@null" />
+            <ImageView
+                android:id="@+id/wEq3"
+                android:layout_width="3dp"
+                android:layout_height="10dp"
+                android:src="@drawable/sidecut_eq_bar"
+                android:contentDescription="@null" />
+        </LinearLayout>
+    </LinearLayout>
 
     <!-- Bottom transport controls: fixed-height (40dp) rows so each button is a
          big, reliable tap target. Larger icons + full-width cells mean a tap
@@ -387,6 +475,13 @@ COVER_BG_XML = """<?xml version="1.0" encoding="utf-8"?>
     <corners android:radius="8dp" />
     <solid android:color="#16181C" />
     <stroke android:width="1dp" android:color="#2A2D33" />
+</shape>
+"""
+
+EQ_BAR_XML = """<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners android:radius="2dp" />
+    <solid android:color="#E3B23C" />
 </shape>
 """
 
@@ -510,6 +605,7 @@ def main():
     write(os.path.join(DRW_DIR, "sidecut_widget_bg.xml"), BG_XML)
     # cover card background
     write(os.path.join(DRW_DIR, "sidecut_cover_bg.xml"), COVER_BG_XML)
+    write(os.path.join(DRW_DIR, "sidecut_eq_bar.xml"), EQ_BAR_XML)
     for name, data in ICONS.items():
         write(os.path.join(DRW_DIR, name), ICON_TMPL % data)
     write(os.path.join(RES_DIR, "xml", "sidecut_widget_info.xml"), WIDGET_INFO_XML)

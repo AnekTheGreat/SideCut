@@ -7782,7 +7782,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   // The service worker's cache name should be bumped to match on every change too.
-  const APP_VERSION = '55.1';
+  const APP_VERSION = '55.2';
   // Invalidate ALL discover popup caches when version changes (fixes stale broken artwork HTML)
   try{
     var _lastCacheVer = localStorage.getItem('sidecut_discCacheVersion');
@@ -7804,6 +7804,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+    { version: '55.2', date: 'September 2, 2026 · 3:15 PM ET', title: 'Widget no longer freezes or shows the wrong song', items: [
+      'Fixed the widget showing the wrong song: a slow album-art fetch from the previous track can no longer overwrite the one that is playing (a sequence guard now drops stale updates)',
+      'Fixed the widget completely freezing after an app relaunch (the update baseline resets on each new session)',
+      'Shrunk the widget cover art and background so updates never blow past Android\'s size limit and silently stop',
+      'Added a small themed equalizer that pulses on the widget while music plays, so it visibly animates instead of looking frozen',
+      'Kept the media buttons big and white so taps land on prev/play/next',
+    ] },
     { version: '55.1', date: 'September 2, 2026 · 2:56 PM ET', title: 'Widget theming + AI assistant cleanup', items: [
       'Widget Settings tab got a real home and more power: pick from 7 themes including the new default Coral, and now you can fine-tune it with custom background, title, artist and accent colors plus a live preview — everything saves across updates',
       'Default widget theme is now Coral',
@@ -13827,6 +13834,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // widget decodes it directly (blob:/https: are useless to a RemoteViews).
   let widgetTrack = null;
   let widgetPlaying = false;
+  // Monotonic sequence for the CURRENT track. Only bumped when the track
+  // changes, never on heartbeats. The native layer drops any update carrying an
+  // OLDER seq, so a slow-fetching album-art callback from a previous track can
+  // never overwrite the song that is actually playing (the wrong-song bug).
+  let widgetTrackSeq = 0;
+  window.__scWidgetSeq = 0;
+  // Per-web-session token: the native guard resets its seq baseline on a new
+  // session, so a seq that restarts low after an app relaunch can't freeze the widget.
+  window.__scWidgetBoot = Date.now();
   // Widget appearance, customized in Settings > Widget. Sent with every
   // state push; the native side persists it so re-added widgets keep the look.
   const WIDGET_THEMES = {
@@ -13855,11 +13871,16 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       const W = (C && C.Plugins && C.Plugins.SideCutWidget) || null;
       if(!C || (typeof C.nativePromise !== 'function' && !(W && typeof W.update === 'function'))){ try{ window.__scWd = window.__scWd || { runs:0, sends:0, lastOk:'', lastErr:'', title:'', artLen:0, plugin:'MISSING', ts:0 }; window.__scWd.plugin = 'MISSING'; window.__scWd.ts = Date.now(); }catch(_){} return; }
       window.__scWd = window.__scWd || { runs: 0, sends: 0, lastOk: '', lastErr: '', title: '', artLen: 0, plugin: '', ts: 0 };
-      window.__scWd.runs++; window.__scWd.title = (t && t.name) || 'SideCut'; window.__scWd.playing = !!playing; window.__scWd.ts = Date.now();
+      const seq = widgetTrackSeq;
+      if(seq > (window.__scWidgetSeq || 0)) window.__scWidgetSeq = seq;
+      window.__scWd.runs++; window.__scWd.title = (t && t.name) || 'SideCut'; window.__scWd.playing = !!playing; window.__scWd.ts = Date.now(); window.__scWd.seq = seq; window.__scWd.pulse = (window.__scWidgetPulse || 0);
       const send = (art) => {
         try{
+          // Drop stale art from an earlier track (a slow cover fetch resolving
+          // after the song already changed) so it can't overwrite the widget.
+          if(seq < (window.__scWidgetSeq || 0)) return;
           window.__scWd.sends++; window.__scWd.artLen = (art || '').length;
-          const body = { data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing }), theme: JSON.stringify(getWidgetTheme()) };
+          const body = { data: JSON.stringify({ title: (t && t.name) || 'SideCut', artist: (t && t.artist) || '', art: art || '', playing: !!playing, seq: seq, boot: (window.__scWidgetBoot || 0), pulse: (window.__scWidgetPulse || 0) }), theme: JSON.stringify(getWidgetTheme()) };
           if(W && typeof W.update === 'function'){ W.update(body); window.__scWd.plugin = 'proxy'; }
           else if(C && typeof C.nativePromise === 'function'){ const p = C.nativePromise('SideCutWidget', 'update', body); if(p && typeof p.catch === 'function') p.catch(function(err){ try{ window.__scWd.lastErr = String((err && err.message) || err).slice(0,120); }catch(_){} }); window.__scWd.plugin = 'native'; }
           else { throw new Error('no bridge'); }
@@ -13898,10 +13919,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         // update() -> pushAll() call. Removing the change-gate guarantees a
         // widget placed EARLIER (while a song was already playing) still gets
         // filled within ~1.5s instead of staying on the default SideCut.
+        if(widgetPlaying) window.__scWidgetPulse = ((window.__scWidgetPulse || 0) + 1) % 16;
         pushWidgetState(widgetTrack, widgetPlaying);
       }catch(e){}
     };
-    setInterval(function(){ try{ window.__scWidgetHeartbeat(); }catch(e){} }, 1500);
+    setInterval(function(){ try{ window.__scWidgetHeartbeat(); }catch(e){} }, 1000);
   })();
   // Switch the playing playlist when the user taps a pill on the home widget.
   // The widget writes the target name to prefs; we poll the plugin and switch.
@@ -13961,10 +13983,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // Unconditional per-track hook used by updateNowPlayingArt so the widget
   // gets every track change directly, independent of the media-session arm.
   window.__scWidgetOnTrack = function(t){
-    try{ if(t){ widgetTrack = t; pushWidgetState(t, widgetPlaying); } }catch(e){}
+    try{ if(t){ widgetTrackSeq++; widgetTrack = t; pushWidgetState(t, widgetPlaying); } }catch(e){}
   };
   function mediaSetMetadata(t){
-    try{ widgetTrack = t; pushWidgetState(t, widgetPlaying); }catch(e){}
+    try{ widgetTrackSeq++; widgetTrack = t; pushWidgetState(t, widgetPlaying); }catch(e){}
     if(capMediaSessionActive && capPluginUsable){
       // This call is what makes the notification/lock-screen card appear in the
       // Play build. blob: URLs are meaningless outside the WebView's JS context,
