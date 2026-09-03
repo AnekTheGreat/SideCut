@@ -7965,7 +7965,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '55.9';
+  const APP_VERSION = '5.40';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -7987,13 +7987,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
-    { version: '55.9', date: 'September 2, 2026 · 7:10 PM ET', title: 'Widget stays calm when you swipe the app away — no more fake crash banners', items: [
+    { version: '5.40', date: 'September 3, 2026 · 4:22 PM ET', title: 'Widget stays calm when you swipe the app away — no more fake crash banners', items: [
       'Swiping SideCut out of recents no longer leaves the widget frozen mid-song — a watchdog repaints it as a clean paused state within about a minute',
       'After a phone reboot the widget also corrects a stale playing snapshot instead of showing dead controls',
       'In-app Spotify to MP3/WAV/FLAC converter now actually works — it resolves the track and encodes audio right on your device (Spotisaver & SpotMate links updated)',
       'Removed the dead Cobalt-based conversion backend and all Cobalt links',
       'Singles remove (✕) now works everywhere — even when the list opens from cache — and adding new pinned artists is one search away with the new "Add an artist" box in Discover and the Home bubble',
       'Playlist reordering now auto-scrolls with your finger — drag a song or a playlist tab to the screen edge and the list scrolls under it, dropping exactly where you let go',
+      'Tapping a single in the Singles popup now takes you straight to the song, just like tracks in an album — even when the list opened from cache (those taps used to silently do nothing)',
+      'The drag-reorder crash (assignment to a constant) is fixed — reordering playlists and songs no longer kills the app mid-drag',
       'EQ bars and the play/pause icon now always match reality',
       'Swiping the app away or Android reclaiming memory no longer triggers a fake “The app previously crashed during: starting up / starting playback” banner on the next launch — the crash recorder now ignores deaths that happened while the app was backgrounded',
       'A new 2-second heartbeat while the app is in the foreground lets SideCut tell a real crash apart from a silent kill even when Android fires no shutdown event at all',
@@ -18738,7 +18740,7 @@ function _renderAhFromData(artistAlbums){
             var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
             var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
             var sart = sr.artworkUrl100 ? (sr.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : sr.artworkUrl100.indexOf('dzcdn.net') !== -1 ? sr.artworkUrl100.replace(/\\d+x\\d+/, '600x600') : sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg')) : '';
-            html += '<div class="dp-track" data-search="' + escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-link="' + escapeHtml(sr.trackViewUrl||'') + '" data-si="' + ki + '-' + sri + '">';
+            html += '<div class="dp-track" data-search="' + escapeHtml('"' + String(sr.trackName).replace(/"/g,'') + '" ' + (sr.artistName || '')) + '" data-link="' + escapeHtml(sr.trackViewUrl||'') + '" data-si="' + ki + '-' + sri + '">';
             html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(sr.trackName) + '</div>';
             html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (srelDate ? srelDate : '') + (swhen ? ' · ' + swhen : '') + '</div></div>';
@@ -18751,13 +18753,9 @@ function _renderAhFromData(artistAlbums){
         openDiscoverPopup('🎵 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
 
 
-        // Wire up track clicks
-        document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
-          row.addEventListener('click', function(e){
-            if(e.target && e.target.classList.contains('dp-ah-x')) return;
-            $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
-          });
-        });
+        // Whole-row taps are handled by the global .dp-track[data-si] delegate
+        // below — cached popups skip this per-render wiring, so row taps must
+        // not depend on it. Same "go to the song" behaviour as album tracks.
         // (Singles remove is handled by the global #discPopupBody .dp-ah-x delegate.)
       };
 if(!isDiscover) stopDiscoverPreview();
@@ -22447,7 +22445,7 @@ window.__refetchSingles = async function(){
       var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
       var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
       var sart = sr.artworkUrl100 ? (sr.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : sr.artworkUrl100.indexOf('dzcdn.net') !== -1 ? sr.artworkUrl100.replace(/\\d+x\\d+/, '600x600') : sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg')) : '';
-      html += '<div class="dp-track" data-search="' + window.escapeHtml(sr.trackName + ' ' + sr.artistName) + '" data-si="' + ki + '-' + sri + '" data-preview="' + window.escapeHtml(sr.previewUrl || '') + '" data-trackname="' + window.escapeHtml(sr.trackName) + '" data-artist="' + window.escapeHtml(sr.artistName || artist) + '" data-art="' + window.escapeHtml(sart || '') + '">';
+      html += '<div class="dp-track" data-search="' + window.escapeHtml('"' + String(sr.trackName).replace(/"/g,'') + '" ' + (sr.artistName || artist)) + '" data-si="' + ki + '-' + sri + '" data-preview="' + window.escapeHtml(sr.previewUrl || '') + '" data-trackname="' + window.escapeHtml(sr.trackName) + '" data-artist="' + window.escapeHtml(sr.artistName || artist) + '" data-art="' + window.escapeHtml(sart || '') + '">';
       html += '<div class="dp-track-play" data-play="' + ki + '-' + sri + '" style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(227,178,60,0.16);color:var(--coral);font-size:11px;cursor:pointer;">\u25b6</div>';
       html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + window.cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
       html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(sr.trackName) + '</div>';
@@ -22460,17 +22458,14 @@ window.__refetchSingles = async function(){
   html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button><button id="singlesRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + html;
   openDiscoverPopup('\u2728 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
 
-  // Wire up track clicks
-  document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
-    row.addEventListener('click', function(e){
-      if(e.target && e.target.classList.contains('dp-ah-x')) return;
-      var pv = row.dataset.preview || '';
-      if(pv){
-        var _btn = row;
-        window.playDiscoverTrack(pv, row, { trackName: row.dataset.trackname||'', artistName: row.dataset.artist||'', art: row.dataset.art||'' });
-        return;
-      }
-      $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
+  // ▶ buttons play the 30s preview inline; whole-row taps go to the song via
+  // the global .dp-track[data-si] delegate (matching album-track behaviour).
+  document.querySelectorAll('#discPopupBody .dp-track[data-si] .dp-track-play').forEach(function(pb){
+    pb.addEventListener('click', function(e){
+      e.stopPropagation();
+      e.preventDefault();
+      var _r = pb.closest('.dp-track');
+      if(_r && _r.dataset.preview) window.playDiscoverTrack(_r.dataset.preview, _r, { trackName: _r.dataset.trackname||'', artistName: _r.dataset.artist||'', art: _r.dataset.art||'' });
     });
   });
   // (Singles remove is handled by the global #discPopupBody .dp-ah-x delegate.)
@@ -22502,6 +22497,28 @@ document.addEventListener('click', function(e){
     paRecountSingles();
   });
 }, true);
+
+// Global delegated handler: tapping a single row takes you to the song exactly
+// like tapping a track inside an album does — fills Discover with that track's
+// search term and closes the popup. Rows carry their search term at render
+// time, so this works whether the Singles popup opened fresh, from a refetch,
+// or from a cached snapshot (cached opens used to skip per-render wiring,
+// which is why tapping a single silently did nothing after the first open).
+if(!document._scSingleRowDelegated){
+  document._scSingleRowDelegated = true;
+  document.addEventListener('click', function(e){
+    var row = e.target && e.target.closest ? e.target.closest('#discPopupBody .dp-track[data-si]') : null;
+    if(!row) return;
+    if(e.target.closest && (e.target.closest('.dp-ah-x') || e.target.closest('.dp-track-play') || e.target.closest('button,a[href]'))) return;
+    var q = row.dataset.search || '';
+    if(!q) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try{ document.getElementById('discoverSearch').value = q; }catch(_e){}
+    if(typeof window.runDiscoverSearch === 'function') window.runDiscoverSearch(q);
+    closeDiscoverPopup();
+  });
+}
 
 // Re-count Singles groups + popup subtitle straight from the DOM (used after a
 // remove/undo so counts stay right even when the popup came from cache).
