@@ -1689,6 +1689,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
       <span id="notifBadge" style="display:none; position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:var(--coral); box-shadow:0 0 0 2px var(--bg);"></span>
     </button>
+    <button class="icon-btn" id="refreshBtn" title="Refresh app" style="flex-shrink:0;">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
     <button class="icon-btn" id="themeBtn" title="Settings"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 00.12-.61l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 00-.6.22L2.66 8.87a.5.5 0 00.12.61l2.03 1.58c-.05.3-.08.61-.08.94s.02.64.07.94l-2.03 1.58a.5.5 0 00-.12.61l1.92 3.32c.12.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.61l-2.03-1.58zM12 15.6a3.6 3.6 0 110-7.2 3.6 3.6 0 010 7.2z"/></svg></button>
   </div>
 </header>
@@ -5312,6 +5315,9 @@ $('settingsTabSandbox').addEventListener('click', () => {
 // only the first time the user opens settings each session — after that, respect
 // whatever tab they last chose.
 let _settingsFirstOpen = true;
+
+// Header refresh button: full app reload so any new build changes take effect immediately.
+try{ if(document.getElementById('refreshBtn') && !document.getElementById('refreshBtn')._scRefreshWired){ var _rb = document.getElementById('refreshBtn'); _rb._scRefreshWired = true; _rb.addEventListener('click', function(){ try{ window.location.reload(); }catch(e){ document.location.reload(); } }); } }catch(e){}
 $('themeBtn').addEventListener('click', () => { renderThemeOptions(); showSettingsTab(_settingsFirstOpen && isPremiumActive() ? 'premium' : 'theme'); _settingsFirstOpen = false; $('themeBackdrop').style.display = 'flex'; });
 $('themeCancel').addEventListener('click', () => { applyTheme(currentTheme); $('themeBackdrop').style.display = 'none'; });
 $('themeBackdrop').addEventListener('click', e => { if(e.target === $('themeBackdrop')){ applyTheme(currentTheme); $('themeBackdrop').style.display = 'none'; } });
@@ -14197,11 +14203,26 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     // Keep Home recent/forgotten lists fresh if Home is visible.
     if($('homeView').classList.contains('active')) renderHome();
   }
+  let _lastListenPos = -1;
   setInterval(() => {
-    if(activeAudio() && !activeAudio().paused){
-      totalListenSeconds++;
-      if(totalListenSeconds % 15 === 0) dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
-    }
+    // Count only REAL, audible playback: the active element must be playing a
+    // loaded source and its currentTime must actually advance between ticks.
+    // A frozen position means buffering / stalled / ended — no sound is coming
+    // out, so it must not count. This keeps "Total listening time" tied to
+    // songs you actually heard, not time spent with the app open.
+    try{
+      const a = activeAudio();
+      if(a && !a.paused && !a.ended && (a.src || a.currentSrc)){
+        const now = a.currentTime || 0;
+        if(now > _lastListenPos || _lastListenPos < 0){
+          totalListenSeconds++;
+          if(totalListenSeconds % 15 === 0) dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
+        }
+        _lastListenPos = now;
+      } else {
+        _lastListenPos = -1;
+      }
+    }catch(_e){}
   }, 1000);
   $('viewListeningStreakBtn').addEventListener('click', () => {
     const streak = computeStreak();
@@ -17453,7 +17474,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         // popup avoids re-querying three endpoints per pinned artist per tap.
         try{
           var lyCached = JSON.parse(localStorage.getItem('discPopupCache_📅 Old songs') || 'null');
-          if(lyCached && lyCached.ts && (Date.now() - lyCached.ts) < 24*3600*1000){
+          var _lySig = pinnedArtists.map(function(p){ return (p&&p.name||'').toLowerCase().trim(); }).sort().join('|');
+          if(lyCached && lyCached.pins === _lySig && lyCached.ts && (Date.now() - lyCached.ts) < 24*3600*1000){
             loadCachedDiscoverPopup('📅 Old songs');
             return;
           }
@@ -18379,6 +18401,7 @@ window.__refetchAlbums = async function(wasRefetch){
   window.__ahCancelled = false;
   if(!isPremiumActive()){ toast('Premium feature \u2014 unlock in Settings!'); openSettingsTo('premium'); return; }
   if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
+  var _ahPinsSig = pinnedArtists.map(function(p){ return (p&&p.name||'').toLowerCase().trim(); }).sort().join('|');
   // Try cached popup first (non-refetch only)
   if(!wasRefetch){
     try{
@@ -18391,7 +18414,7 @@ window.__refetchAlbums = async function(wasRefetch){
           // Invalidate old caches without per-artist refetch buttons
           if(ahCached.body.indexOf('dp-ah-artist-refetch') === -1){ localStorage.removeItem('discPopupCache_\ud83d\udcbf Album History'); ahCached = null; }
           // Skip cached empty states — always re-fetch fresh data
-          if(!/dp-empty|No albums found/i.test(ahCached.body)){
+          if(ahCached && !/dp-empty|No albums found/i.test(ahCached.body) && ahCached.pins === _ahPinsSig){
             var _ahBody2 = ahCached.body;
             if(_ahBody2.indexOf('ahRefetchBtn') === -1) _ahBody2 = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch albums</button><button id="ahRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + _ahBody2;
             openDiscoverPopup('📀 Album History', _ahBody2, ahCached.subtitle || '');
@@ -18410,7 +18433,7 @@ window.__refetchAlbums = async function(wasRefetch){
       var ahADRaw = localStorage.getItem('sidecut_ahArtistData');
       if(ahADRaw){
         var ahAD = JSON.parse(ahADRaw);
-        if(ahAD && ahAD.artists && Object.keys(ahAD.artists).length > 0){
+        if(ahAD && ahAD.artists && Object.keys(ahAD.artists).length > 0 && (!ahAD.pins || ahAD.pins === _ahPinsSig)){
           // Re-sanitize stored rows before render: hidden albums, noise,
           // and wrong-artist entries must never reappear (they can
           // sneak in from pre-filter eras or other sources). EPs and singles
@@ -18721,7 +18744,7 @@ window.__refetchAlbums = async function(wasRefetch){
         if(!artistAlbums[k].length) delete artistAlbums[k];
       });
     }catch(_){}
-    try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now()})); }catch(e){}
+    try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now(),pins:_ahPinsSig})); }catch(e){}
   }
   // Run workers
   async function runWorkers(){
@@ -18744,7 +18767,7 @@ window.__refetchAlbums = async function(wasRefetch){
     return;
   }
   // Save final data
-  try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now()})); }catch(e){}
+  try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify({artists:artistAlbums,total:totalAlbums,ts:Date.now(),pins:_ahPinsSig})); }catch(e){}
   try{ localStorage.removeItem('sidecut_ahPending'); }catch(e){}
   // Clear old popup cache
   try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(e){}
@@ -18868,8 +18891,9 @@ function _renderAhFromData(artistAlbums){
             var _sRaw = localStorage.getItem('discPopupCache_' + _sCacheKey);
             if(_sRaw){
               var _sCached = JSON.parse(_sRaw);
+              var _sigNow = pinnedArtists.map(function(p){ return (p&&p.name||'').toLowerCase().trim(); }).sort().join('|');
               if(_sCached && _sCached.body && _sCached.ts){
-                if(!/fetching|loading|spinner|\u23f3/i.test(_sCached.body) && !/dp-empty|No singles found/i.test(_sCached.body)){
+                if(_sCached.pins === _sigNow && !/fetching|loading|spinner|\u23f3/i.test(_sCached.body) && !/dp-empty|No singles found/i.test(_sCached.body)){
                   openDiscoverPopup('\ud83c\udfb5 Singles', _sCached.body, _sCached.subtitle || '');
                   return;
                 }
@@ -19864,6 +19888,14 @@ if(!isDiscover) stopDiscoverPreview();
     return primary || name;
   }
     let lastUnpinned = null; // {name, art, addedAt} for undo
+    // When the pinned set changes, every popup built from it (Singles, Old
+    // songs, Album History) is stale — bust the caches so a newly pinned
+    // artist shows up on the next open without a manual refetch.
+    function __bustPinPopups(){
+      try{ localStorage.removeItem('discPopupCache_' + '\ud83c\udfb5 Singles'); }catch(_e){}
+      try{ localStorage.removeItem('discPopupCache_' + '\ud83d\udcc5 Old songs'); }catch(_e){}
+      try{ localStorage.removeItem('discPopupCache_' + '\ud83d\udcbf Album History'); }catch(_e){}
+    }
     function isPinnedArtist(name){
     if(!name) return false;
     const n = primaryArtistName(name).toLowerCase().trim();
@@ -19885,6 +19917,7 @@ if(!isDiscover) stopDiscoverPreview();
           savePinnedArtists();
           renderPinnedArtists();
           renderNewReleases();
+          __bustPinPopups();
           toast(`Re-pinned ${primary}`);
         }
       });
@@ -19896,6 +19929,7 @@ if(!isDiscover) stopDiscoverPreview();
       toast(`Pinned ${name} — we'll watch for new releases`);
     }
     savePinnedArtists();
+    __bustPinPopups();
     // Re-render the Home bubble if it's open, else just refresh Home
     if($('homeBubbleOverlay').classList.contains('open')){
       openHomeBubble('pinnedartists');
@@ -20112,6 +20146,7 @@ if(!isDiscover) stopDiscoverPreview();
     if(!pinnedArtists.length) return;
     if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
     pinnedCheckState = { active:true, total:pinnedArtists.length, done:0, newCount:0, finishedAt:0, seen:false };
+    try{
     renderHomeExportPopup();
     let totalNew = 0;
     for(const a of pinnedArtists){
@@ -20120,7 +20155,9 @@ if(!isDiscover) stopDiscoverPreview();
       pinnedCheckState.done++;
       renderHomeExportPopup();
     }
-    pinnedCheckState.active = false;
+    }finally{
+      pinnedCheckState.active = false;
+    }
     pinnedCheckState.finishedAt = Date.now();
     pinnedCheckState.newCount = totalNew;
     savePinnedArtists();
@@ -22539,7 +22576,25 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
     }
   } catch(_e) {}
   try{ if(typeof window.setupGroupReorderByContext==='function') window.setupGroupReorderByContext(); }catch(_sc){}
-  try{ if(title && bodyHTML && !/fetching|loading|spinner|dp-empty|No albums found|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now()})); } }catch(e){}
+  var _pinSig = '';
+  try{ if(typeof window.getPinnedArtists === 'function'){ var _pa = window.getPinnedArtists() || []; _pinSig = _pa.map(function(p){ return (p&&p.name||'').toLowerCase().trim(); }).sort().join('|'); } }catch(_pe){}
+  try{ if(title && bodyHTML && !/fetching|loading|spinner|dp-empty|No albums found|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now(),pins:_pinSig})); } }catch(e){}
+  // Singles & Album History: when more than 6 pinned artists are listed, cap the
+  // popup to a comfortable height and force an explicit scrollbar so the list
+  // scrolls inside the card instead of filling the whole screen. Under 6 the
+  // popup keeps its natural (uncapped) size. Runs on fresh and cached opens.
+  try{
+    var _isSL = title && /Singles|Album History/.test(title);
+    var _grpCount = _isSL ? bEl.querySelectorAll('.dp-ah-artist').length : 0;
+    var _cardEl = document.getElementById('discPopupCard');
+    if(_isSL && _grpCount > 6){
+      if(_cardEl) _cardEl.style.maxHeight = '68vh';
+      if(bEl){ bEl.style.overflowY = 'auto'; bEl.style.scrollbarWidth = 'thin'; bEl.style.webkitOverflowScrolling = 'touch'; }
+    } else {
+      if(_cardEl) _cardEl.style.maxHeight = '';
+      if(bEl){ bEl.style.overflowY = ''; bEl.style.scrollbarWidth = ''; bEl.style.webkitOverflowScrolling = ''; }
+    }
+  }catch(_e){}
 }
   // Delegated artist-group collapse: survives popup re-renders AND cached
   // reopens (fresh renders wired per-render, but a cached reopen did not, so
