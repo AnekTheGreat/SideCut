@@ -455,8 +455,7 @@
   .pane-header-spacer{ flex:1 0 auto; min-width:16px; }
   .pane-actions{ display:flex; gap:8px; flex-shrink:0; }
   .icon-btn{
-    background:none; border:1px solid var(--line); color:var(--ink-dim);
-    width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:none; border:1px solid var(--line); color:var(--ink-dim);    width:32px;     height: 32px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;
     transition: transform 0.1s ease, background 0.2s ease, border-color 0.25s ease, color 0.25s ease;
     position:relative; touch-action:manipulation;
   }
@@ -7975,6 +7974,178 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       localStorage.setItem('sidecut_discCacheVersion', APP_VERSION);
     }
   }catch(e){}
+  // ---------------- Data-loss safety net: mirror small data to a file --------
+  // WHY THIS EXISTS: on Android, ALL WebView storage (localStorage + IndexedDB)
+  // lives inside the app's private data dir and Android deletes it on uninstall.
+  // WebView storage is also keyed to the page origin, which is exactly why the
+  // 5.0.14 update looked like a total wipe: the app switched from loading the
+  // hosted website (https://anekthegreat.github.io) to the bundled shell
+  // (https://localhost), and the old origin's storage became invisible. Updates
+  // have kept data since then (the origin is stable), but uninstall -> reinstall
+  // still nukes everything unless Android Auto Backup restores it. Auto Backup
+  // only restores shared prefs + the app's internal files dir - NOT WebView
+  // storage - and it hard-fails above its 25 MB per-app cap, so the audio blobs
+  // can never ride along. Therefore: continuously mirror the SMALL user data
+  // (settings, premium, pins, singles, playlists, theme, stats, counters) into
+  // a JSON file in the internal files dir (Capacitor Filesystem Directory.Data).
+  // That file survives updates no matter what, is restored by Auto Backup after
+  // an uninstall + reinstall (or a phone transfer), and is immune to origin
+  // switches. At boot, if the WebView stores come up empty but a snapshot file
+  // exists, hydrate from it and reload once. The audio files themselves still
+  // need a manual Export -> Import .zip backup - that's the 25 MB cloud cap.
+  (function(){
+    var SNAP_NAME = 'sidecut-snapshot.json';
+    var SNAP_MARKER = 'sidecut_snapshot_marker';
+    var MAX_ITEM = 262144; // skip oversized values (discovery caches, etc.)
+    var dirty = false, timer = null, writing = false;
+    function isNative(){
+      try{
+        return !!(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem);
+      }catch(e){ return false; }
+    }
+    function markDirty(){
+      try{
+        if(!isNative()) return;
+        dirty = true;
+        if(timer) clearTimeout(timer);
+        timer = setTimeout(flushSnapshot, 1500);
+      }catch(e){}
+    }
+    function collectLocalStorage(){
+      var out = {};
+      try{
+        for(var i = 0; i < localStorage.length; i++){
+          var k = localStorage.key(i);
+          if(!k || typeof k !== 'string') continue;
+          if(k.indexOf('discPopupCache_') === 0) continue;
+          if(k === 'scLastOp' || k === 'scLeftFgAt' || k === 'scAliveAt' || k === 'sidecut_ahPending' || k === 'bgImportState') continue;
+          var v = null; try{ v = localStorage.getItem(k); }catch(e){ v = null; }
+          if(v === null || v === undefined || v.length > MAX_ITEM) continue;
+          out[k] = v;
+        }
+      }catch(e){}
+      return out;
+    }
+    async function collectMeta(){
+      var out = {};
+      try{
+        var rows = await dbGetAll('meta');
+        for(var i = 0; i < rows.length; i++){
+          var key = rows[i] && rows[i].key;
+          if(typeof key !== 'string') continue;
+          if(key.indexOf('versionSnapshot_') === 0) continue;
+          var val = rows[i].value;
+          if(typeof val === 'string' && val.length > MAX_ITEM) continue;
+          out[key] = val;
+        }
+      }catch(e){}
+      return out;
+    }
+    async function flushSnapshot(){
+      try{
+        if(!isNative() || writing) return;
+        writing = true;
+        try{
+          if(timer){ clearTimeout(timer); timer = null; }
+          if(!dirty) return;
+          dirty = false;
+          var payload = {
+            v: 1,
+            at: Date.now(),
+            app: (typeof APP_VERSION !== 'undefined') ? APP_VERSION : '',
+            localStorage: collectLocalStorage(),
+            meta: await collectMeta()
+          };
+          var FS = window.Capacitor.Plugins.Filesystem;
+          await FS.writeFile({ path: SNAP_NAME, data: JSON.stringify(payload), directory: 'DATA', encoding: 'utf8', recursive: true });
+          try{ if(localStorage.getItem(SNAP_MARKER) === null) localStorage.setItem(SNAP_MARKER, String(Date.now())); }catch(e){}
+        }finally{
+          writing = false;
+        }
+      }catch(e){
+        dirty = true; // retry on the next mark or sweep
+      }
+    }
+    // Periodic sweep: catches any write that slipped past the debounce, and is
+    // the real guarantee the snapshot stays current even if a flush is killed.
+    setInterval(function(){ if(isNative() && dirty) flushSnapshot(); }, 15000);
+    // Flush when the user backgrounds or closes the app - best effort, since the
+    // process may die before the async write completes (the sweep covers that).
+    try{
+      document.addEventListener('visibilitychange', function(){ if(document.hidden && dirty) flushSnapshot(); });
+      window.addEventListener('pagehide', function(){ if(dirty) flushSnapshot(); });
+    }catch(e){}
+    // Patch storage writes so every change marks the snapshot dirty. Guard to
+    // window.localStorage only - sessionStorage shares the Storage prototype.
+    try{
+      var _origSet = Storage.prototype.setItem, _origRem = Storage.prototype.removeItem, _origClr = Storage.prototype.clear;
+      Storage.prototype.setItem = function(k, v){
+        var r = _origSet.call(this, k, v);
+        if(this === window.localStorage) markDirty();
+        return r;
+      };
+      Storage.prototype.removeItem = function(k){
+        var r = _origRem.call(this, k);
+        if(this === window.localStorage) markDirty();
+        return r;
+      };
+      Storage.prototype.clear = function(){
+        var r = _origClr.call(this);
+        if(this === window.localStorage) markDirty();
+        return r;
+      };
+    }catch(e){}
+    window.__scSnapDirty = markDirty;
+    window.__scSnapFlush = flushSnapshot;
+    // Restore hook, called early in boot(). Hydrates only when a store is empty
+    // AND a snapshot file exists (reinstall/wipe with Auto Backup-restored
+    // files), then reloads once so the app boots against the restored data.
+    window.__scSnapRestore = async function(){
+      try{
+        if(!isNative()) return false;
+        var FS = window.Capacitor.Plugins.Filesystem;
+        var res = null;
+        try{ res = await FS.readFile({ path: SNAP_NAME, directory: 'DATA', encoding: 'utf8' }); }catch(e){ return false; }
+        var snap = null;
+        try{ snap = JSON.parse(res.data || ''); }catch(e){ return false; }
+        if(!snap || snap.v !== 1) return false;
+        var lsWiped = false, metaWiped = false;
+        try{ lsWiped = localStorage.getItem(SNAP_MARKER) === null; }catch(e){ lsWiped = true; }
+        try{
+          var idc = await dbGet('meta', 'idCounter');
+          metaWiped = !idc;
+        }catch(e){ metaWiped = true; }
+        if(!lsWiped && !metaWiped) return false;
+        if(lsWiped && snap.localStorage){
+          for(var k in snap.localStorage){
+            try{ localStorage.setItem(k, snap.localStorage[k]); }catch(e){}
+          }
+        }
+        if(metaWiped && snap.meta){
+          for(var mk in snap.meta){
+            try{ await dbPut('meta', { key: mk, value: snap.meta[mk] }); }catch(e){}
+          }
+        }
+        // Ensure the marker exists before reload so the next boot skips this.
+        try{ if(lsWiped && localStorage.getItem(SNAP_MARKER) === null) localStorage.setItem(SNAP_MARKER, 'restored'); }catch(e){}
+        try{ location.reload(); }catch(e){}
+        return true;
+      }catch(e){
+        try{ console.error('Snapshot restore failed', e); }catch(_){}
+        return false;
+      }
+    };
+    // Baseline snapshot shortly after boot - but ONLY when no snapshot file
+    // exists yet (true fresh install). Never overwrite a surviving snapshot
+    // from a previous install with a just-wiped fresh store.
+    setTimeout(function(){
+      if(!isNative()) return;
+      var FS = window.Capacitor.Plugins.Filesystem;
+      FS.readFile({ path: SNAP_NAME, directory: 'DATA', encoding: 'utf8' })
+        .then(function(){ /* snapshot already exists - leave it alone */ })
+        .catch(function(){ markDirty(); });
+    }, 3000);
+  })();
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   function compareVersions(a, b){
@@ -10341,7 +10512,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       return new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
         tx.objectStore(storeName).put(value);
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => {
+          resolve();
+          // Data-loss safety net: meta writes (playlists, counters, pins) also
+          // mark the file snapshot dirty so it stays current.
+          try{ if(storeName === 'meta' && window.__scSnapDirty) window.__scSnapDirty(); }catch(e){}
+        };
         tx.onerror = () => reject(tx.error);
       });
     }catch(e){ console.error('Storage save failed', e); }
@@ -16961,6 +17137,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       await loadNotifReadState();
       updateNotifBadge();
       await loadSavedTheme();
+      // Data-loss safety net: if the WebView stores come up empty but a snapshot
+      // file survived (update origin switch, uninstall + reinstall restored by
+      // Android Auto Backup, or a partial wipe), hydrate from it and reload once.
+      try{ await window.__scSnapRestore(); }catch(e){ console.error('Snapshot restore failed', e); }
       const loaded = await loadFromDB();
       if(loaded){
         // Reopen on the last playlist the user engaged with — never default to All Songs.
@@ -17557,6 +17737,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     // Wire up remove buttons on album headers
   // Wire up edit buttons on album headers
   document.querySelectorAll('#discPopupBody .dp-ah-edit').forEach(function(btn){
+    if(btn._editWired) return;
+    btn._editWired = true;
     btn.addEventListener('click', function(e){
       e.stopPropagation();
       var cid = this.dataset.cid;
@@ -17595,6 +17777,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   });
 
   document.querySelectorAll('#discPopupBody .dp-ah-rm').forEach(function(btn){
+    if(btn._rmWired) return;
+    btn._rmWired = true;
     btn.addEventListener('click', function(e){
       e.stopPropagation();
       var cid = this.dataset.cid;
@@ -17625,6 +17809,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   });
     // Wire up album headers (lazy-load tracks)
   document.querySelectorAll('#discPopupBody .dp-ah-album-hdr').forEach(function(h){
+      // Idempotence guard: __wireAH can run more than once against the same popup
+      // DOM across the render/refetch/cached-open paths. A duplicate pass would
+      // bind the toggle twice, and one tap would open the track list then close it
+      // again in the same click — which reads exactly as "clicking an album shows
+      // no songs". Fresh re-renders create fresh nodes, so this never blocks them.
+      if(h._ahLazyWired) return;
+      h._ahLazyWired = true;
       h.addEventListener('click', function(){
         var tgt = document.getElementById(this.dataset.target);
         var chv = this.querySelector('.dp-ah-chevron');
@@ -17741,6 +17932,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
               container.querySelectorAll('.dp-ah-track').forEach(function(row){
                 row.addEventListener('click', function(e){
                   if(e.target.closest('.ah-dl-track')){
+                    e.stopPropagation(); // per-row download — not a "go to song" tap
                     var pv = row.dataset.preview;
                     if(pv){
                       var meta = { name: row.dataset.trackname||'track', artist: row.dataset.artist||artistName, album: row.dataset.albumname||albumName, art: row.dataset.art||'', num: parseInt(row.dataset.tracknum)||0 };
@@ -17758,9 +17950,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
                     }
                     return;
                   }
-                  $('discoverSearch').value = this.dataset.search;
-                  runDiscoverSearch(this.dataset.search);
-                  closeDiscoverPopup();
+                  // Whole-row taps now go through the global .dp-ah-track
+                  // delegate (registered once at page load, same as Singles),
+                  // so they work from cached popups and refetches too — not
+                  // just freshly rendered track lists.
                 });
               });
               // Wire up download album button
@@ -22510,6 +22703,29 @@ if(!document._scSingleRowDelegated){
     var row = e.target && e.target.closest ? e.target.closest('#discPopupBody .dp-track[data-si]') : null;
     if(!row) return;
     if(e.target.closest && (e.target.closest('.dp-ah-x') || e.target.closest('.dp-track-play') || e.target.closest('button,a[href]'))) return;
+    var q = row.dataset.search || '';
+    if(!q) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try{ document.getElementById('discoverSearch').value = q; }catch(_e){}
+    if(typeof window.runDiscoverSearch === 'function') window.runDiscoverSearch(q);
+    closeDiscoverPopup();
+  });
+}
+
+// Global delegated handler: tapping a track row inside an expanded album
+// (Album History) takes you to the song in Discover exactly like tapping a
+// single does — fills Discover with the row's search term and closes the
+// popup. Rows carry their term at render time, so this works whether the
+// album was expanded from a fresh fetch, a refetch, or a cached popup
+// (whole-row taps used to depend on per-render listeners, which is why
+// tapping a track could silently do nothing after the first open).
+if(!document._scAhTrackDelegated){
+  document._scAhTrackDelegated = true;
+  document.addEventListener('click', function(e){
+    var row = e.target && e.target.closest ? e.target.closest('#discPopupBody .dp-ah-track') : null;
+    if(!row) return;
+    if(e.target.closest && (e.target.closest('.ah-dl-track') || e.target.closest('.ah-remove-album-btn') || e.target.closest('.ah-dl-album-btn') || e.target.closest('button,a[href],input,select'))) return;
     var q = row.dataset.search || '';
     if(!q) return;
     e.preventDefault();
