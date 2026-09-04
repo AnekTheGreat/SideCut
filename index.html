@@ -1826,7 +1826,6 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <span style="flex:1;font-size:12.5px;font-weight:600;">Pinned artists</span>
       <button id="pinnedArtistsHelp" style="background:none;border:none;color:var(--ink-dim);font-size:12px;cursor:pointer;padding:0;">?</button>
     </div>
-    <div id="paQuickAddWrap" style="margin-bottom:8px;"></div>
     <div id="pinnedArtistsList" style="display:flex;gap:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:0 2px 4px;"></div>
   </div>
   <div id="discoverSearchRow">
@@ -8169,7 +8168,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       'After a phone reboot the widget also corrects a stale playing snapshot instead of showing dead controls',
       'In-app Spotify to MP3/WAV/FLAC converter now actually works — it resolves the track and encodes audio right on your device (Spotisaver & SpotMate links updated)',
       'Removed the dead Cobalt-based conversion backend and all Cobalt links',
-      'Singles remove (✕) now works everywhere — even when the list opens from cache — and adding new pinned artists is one search away with the new "Add an artist" box in Discover and the Home bubble',
+      'Singles remove (✕) now works everywhere — even when the list opens from cache — and pinning new artists is easy straight from any Discover search result',
       'Playlist reordering now auto-scrolls with your finger — drag a song or a playlist tab to the screen edge and the list scrolls under it, dropping exactly where you let go',
       'Tapping a single in the Singles popup now takes you straight to the song, just like tracks in an album — even when the list opened from cache (those taps used to silently do nothing)',
       'The drag-reorder crash (assignment to a constant) is fixed — reordering playlists and songs no longer kills the app mid-drag',
@@ -17425,7 +17424,6 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // Always re-render the pinned-artists + new-releases sections when Discover
       // opens, so they're never left empty even if the boot render was missed.
       try{ if(typeof renderPinnedArtists === 'function') renderPinnedArtists(); }catch(e){ console.error('renderPinnedArtists failed', e); }
-      try{ window.paAddArtist(document.getElementById('paQuickAddWrap')); }catch(_e){}
       try{ if(typeof renderNewReleases === 'function') renderNewReleases(); }catch(e){ console.error('renderNewReleases failed', e); }
 
       // Fetch Latest button: check for new releases, show in popup
@@ -19634,11 +19632,10 @@ if(!isDiscover) stopDiscoverPreview();
       }
       ico.textContent = '\u{1F4CC}'; title.textContent = 'Your pinned artists';
       if(!pinnedArtists.length){
-        body.innerHTML = '<div id="paQuickAddWrapBubble" style="margin-bottom:10px;"></div><div class="hb-empty">No pinned artists yet \u2014 search above or in Discover, tap a result, and hit Pin.</div><button class="hb-cta" id="hbCtaDiscoverPA" style="background:transparent; color:var(--coral); border:1px solid var(--coral);">Open Discover</button>';
+        body.innerHTML = '<div class="hb-empty">No pinned artists yet \u2014 search in Discover, tap a result, and hit Pin.</div><button class="hb-cta" id="hbCtaDiscoverPA" style="background:transparent; color:var(--coral); border:1px solid var(--coral);">Open Discover</button>';
         $('hbCtaDiscoverPA').addEventListener('click', () => { closeHomeBubble(); navigate('discover'); });
-        try{ window.paAddArtist($('paQuickAddWrapBubble')); }catch(_e){}
       } else {
-        body.innerHTML = '<div id="paQuickAddWrapBubble" style="margin-bottom:10px;"></div>' + pinnedArtists.map(a => {
+        body.innerHTML = pinnedArtists.map(a => {
           const bg = a.art ? 'background-image:url("' + cssUrl(a.art) + '");' : 'background:var(--bg-raised);';
           return '<div class="hb-list-row pinned-artist-row" data-name="' + escapeHtml(a.name) + '" style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">' +
             '<div style="width:34px; height:34px; border-radius:50%; background-size:cover; background-position:center; flex-shrink:0; overflow:hidden; ' + bg + '"></div>' +
@@ -19655,7 +19652,6 @@ if(!isDiscover) stopDiscoverPreview();
           });
         });
         $('hbCtaDiscoverPA').addEventListener('click', () => { closeHomeBubble(); navigate('discover'); });
-        try{ window.paAddArtist($('paQuickAddWrapBubble')); }catch(_e){}
       }
     }
     else if(kind === 'shortcuts'){
@@ -22812,63 +22808,6 @@ function paRecountSingles(){
     sub.textContent = total + ' single' + (total !== 1 ? 's' : '') + ' from ' + grps.length + ' artist' + (grps.length !== 1 ? 's' : '');
   }
 }
-
-// Quick "Add artist" — type a name in Discover / the Home pinned bubble, pick a
-// live iTunes result, and it is pinned instantly (no need to hunt through cards).
-window.paAddArtist = function(rootEl){
-  if(!rootEl || rootEl._paReady) return;
-  rootEl._paReady = true;
-  rootEl.innerHTML =
-    '<div style="display:flex;gap:6px;align-items:center;">' +
-      '<input type="text" placeholder="Add an artist — type a name" style="flex:1;min-width:0;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,0.05);color:var(--ink);font-size:12px;">' +
-      '<button style="padding:7px 12px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Search</button>' +
-    '</div>' +
-    '<div class="pa-quick-results" style="margin-top:6px;display:none;"></div>';
-  var inp = rootEl.querySelector('input');
-  var btn = rootEl.querySelector('button');
-  var res = rootEl.querySelector('.pa-quick-results');
-  var busy = false;
-  function run(){
-    var q = inp.value.trim();
-    if(q.length < 2){ toast('Type at least 2 letters of the artist name.'); return; }
-    if(busy) return; busy = true;
-    btn.textContent = '...'; btn.disabled = true;
-    res.style.display = 'block';
-    res.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:6px 4px;">Searching iTunes…</div>';
-    Promise.resolve(fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(q) + '&media=music&entity=musicArtist&limit=6'))
-      .then(function(rp){ return rp && rp.ok ? rp.json() : { results: [] }; })
-      .then(function(d){
-        var rs = (d.results || []).filter(function(a){ return a.artistName; });
-        if(!rs.length){
-          res.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:6px 4px;">No artists found — try a different spelling.</div>';
-          return;
-        }
-        res.innerHTML = rs.map(function(a){
-          var img = a.artworkUrl100
-            ? '<img src="' + a.artworkUrl100 + '" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.style.display=none">'
-            : '<div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;background:linear-gradient(135deg,#ff4f7e,#7a5cff);">' + escapeHtml((a.artistName || '?').trim().charAt(0).toUpperCase()) + '</div>';
-          var pinned = isPinnedArtist(a.artistName);
-          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid var(--line);margin-bottom:6px;">' +
-            img +
-            '<span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(a.artistName) + '</span>' +
-            '<button class="pa-q-pin" data-name="' + escapeHtml(a.artistName) + '" data-art="' + escapeHtml(a.artworkUrl100 || '') + '" style="padding:5px 12px;border-radius:6px;border:' + (pinned ? '1px solid var(--line);background:none;color:var(--ink-dim)' : 'none;background:var(--coral);color:#fff') + ';font-size:11px;font-weight:600;cursor:pointer;">' + (pinned ? '✓ Pinned' : '📌 Pin') + '</button>' +
-            '</div>';
-        }).join('');
-        res.querySelectorAll('.pa-q-pin').forEach(function(b){
-          b.addEventListener('click', function(){
-            togglePinArtist(b.dataset.name, b.dataset.art || null);
-            b.textContent = '✓ Pinned';
-            b.style.background = 'none'; b.style.color = 'var(--ink-dim)'; b.style.border = '1px solid var(--line)';
-            try{ if(typeof renderPinnedArtists === 'function') renderPinnedArtists(); }catch(_e){}
-          });
-        });
-      })
-      .catch(function(){ res.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:6px 4px;">Search failed — check your connection and try again.</div>'; })
-      .finally(function(){ busy = false; btn.textContent = 'Search'; btn.disabled = false; });
-  }
-  btn.addEventListener('click', run);
-  inp.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); run(); } });
-};
 
 // Global refetch handler: clicking the refetch button in Singles popup re-runs the search
 document.addEventListener('click', function(e){
