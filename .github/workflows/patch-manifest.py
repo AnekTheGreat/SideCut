@@ -25,6 +25,11 @@ PERMISSIONS = [
     # Widget watchdog: lets the widget receiver repaint after a reboot with a
     # corrected (paused) state instead of a stale frozen "playing" snapshot.
     'android.permission.RECEIVE_BOOT_COMPLETED',
+    # Google Play Billing (@capgo/native-purchases): the plugin's own manifest is
+    # empty, and without com.android.vending.BILLING the BillingClient setup fails
+    # (isBillingSupported → false, purchases → "unavailable"), so the Play
+    # purchase sheet can never open in the installed app. https://developer.android.com/google/play/billing/integrate#billing-permission
+    'com.android.vending.BILLING',
 ]
 
 if not os.path.exists(MANIFEST):
