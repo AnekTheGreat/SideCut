@@ -4765,106 +4765,93 @@ function getApiHeaders() {
     refreshPremiumUI();
   }
 
-  // ---------------- Google Play billing (Digital Goods API) ----------------
-  // When SideCut runs as a Play-installed Trusted Web Activity, the Digital Goods
-  // API lets the web app use Play Billing directly: the user subscribes in a Play
-  // billing sheet and the app re-checks the entitlement — no manual unlock code
-  // needed. Outside a TWA (plain browser/PWA) the API is absent, so the Subscribe
-  // button falls back to opening the Play Store listing.
-  const PLAY_BILLING_URL = 'https://play.google.com/billing';
-  // Product IDs from Google Play Console (Monetize → Products).
+// ---------------- Google Play billing (native Capacitor Play Billing) ----------------
+  // SideCut's Android app is a Capacitor WebView (not a TWA), so the Play
+  // billing integration goes through the native @capgo/native-purchases plugin
+  // (registered as window.Capacitor.Plugins.NativePurchases, compiled in by
+  // `npx cap sync android` — see ../package.json). The plugin wraps Google Play
+  // Billing Library 8.3 directly: real billing sheet, real purchases,
+  // real subscription management. Outside the installed app (plain browser/PWA)
+  // the plugin is absent, so the Subscribe button falls back to opening the Play
+  // Store listing instead.
+
+  // Product IDs from Google Play Console (Monetize → Products / Subscriptions).
   const PLAY_SUBSCRIPTION_PRODUCT_ID = 'sidecutsub';
   const PLAY_LIFETIME_PRODUCT_ID = 'lifetime';
   // Tip tiers for the Donate tab (consumable one-time products). Keys are the
   // dollar amounts shown in the UI; values are the Play Console product IDs.
-  const PLAY_TIP_PRODUCTS = { 1: 'tip1', 2: 'tip2', 3: 'tip3', 5: 'tip5', 7: 'tip7', 10: 'tip10', 15: 'tip15', 25: 'tip25', 50: 'tip50', 75: 'tip75', 100: 'tip100' };
-  // On-device grace window between Play entitlement checks. Play's listPurchases
+
+  const PLAY_TIP_PRODUCTS = {
+    1: 'tip1',
+    2: 'tip2',
+    3: 'tip3',
+    5: 'tip5',
+    7: 'tip7',
+    10: 'tip10',
+    15: 'tip15',
+    25: 'tip25',
+    50: 'tip50',
+    75: 'tip75',
+    100: 'tip100',
+  };
+  // On-device grace window between Play entitlement checks. Play's purchase list
   // is the source of truth; this just keeps the app unlocked while offline or
   // backgrounded between checks, and it's refreshed on every sync.
   const PLAY_SUB_GRACE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-  // ---- Native Google Play billing via RevenueCat (installed Capacitor app) ---
-  // SideCut's Android app is a Capacitor WebView, NOT a TWA — and the Digital
-  // Goods API above only exists inside Bubblewrap TWAs, so it can never fire in
-  // the real app (that's why donations/premium always said "Play Billing isn't
-  // available here"). Real Play Billing in the installed app runs through the
-  // RevenueCat Capacitor plugin (@revenuecat/purchases-capacitor 9.x, matched
-  // to Capacitor 6), which wraps Google's native Play Billing Library. The
-  // CI's `npx cap sync` adds the plugin's native module to the Android build;
-  // no JS import is needed because Capacitor's Android bridge auto-exposes
-  // every native plugin as Capacitor.Plugins.<Plugin>.<method> — the same
-  // mechanism the app already uses for Filesystem / MediaSession / Widget.
-  //
-  // ONE-TIME SETUP (your Play Console products already exist):
-  //   1. app.revenuecat.com → free project → add Android app, package
-  //      com.SideCut.myapp.
-  //   2. Products → Add product → Google Play → pick sidecutsub (subscription),
-  //      lifetime (non-consumable) and tip1…tip100 — mark every tipN CONSUMABLE.
-  //   3. (Recommended) Entitlements → create one called "premium" and attach
-  //      lifetime + sidecutsub to it. The code below also works off plain
-  //      product IDs, so a missed entitlement can't break unlocking.
-  //   4. Paste the public SDK key (goog_…) into REVENUECAT_ANDROID_API_KEY.
-  const REVENUECAT_ANDROID_API_KEY = ''; // e.g. 'goog_xxxxxxxxxxxxxxxxxxxxxxxx'
-  let rcConfigurePromise = null;
-  let rcRestoredOnce = false; // restorePurchases() replays Play purchases once per session
-
-  function nativePurchasesAvailable(){
-    try{
-      return !!(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.Purchases && typeof window.Capacitor.Plugins.Purchases.configure === 'function');
-    }catch(e){ return false; }
-  }
-  function rcPlugin(){ return nativePurchasesAvailable() ? window.Capacitor.Plugins.Purchases : null; }
-  function rcErrText(e){
-    if(!e) return 'unknown error';
-    if(typeof e === 'string') return e;
-    return String(e.message || e.code || e);
-  }
-  function rcErrCode(e){
-    if(e && e.code !== undefined && e.code !== null) return String(e.code);
-    return '';
-  }
-  // One-time configure (cached). Resolves {ok:true} or
-  // {ok:false, reason:'plugin'|'key'|'error', detail}.
-  function rcEnsureConfigured(){
-    if(rcConfigurePromise) return rcConfigurePromise;
-    rcConfigurePromise = (async () => {
-      const P = rcPlugin();
-      if(!P) return { ok:false, reason:'plugin' };
-      const key = String(REVENUECAT_ANDROID_API_KEY || '').trim();
-      if(!key) return { ok:false, reason:'key' };
-      try{
-        await P.configure({ apiKey: key, shouldShowInAppMessagesAutomatically: true });
-        return { ok:true };
-      }catch(e){
-        return { ok:false, reason:'error', detail: rcErrText(e) };
-      }
-    })();
-    return rcConfigurePromise;
-  }
-
-  let playBillingService = null; // null = not queried yet; undefined = unavailable
+  let playBillingService = null; // null = not determined yet; undefined = unavailable
   // Last Play Billing failure detail, set when purchasePlayItem returns 'error' so
   // the UI can show which step failed (product lookup / billing sheet / token).
   let playLastErrorDetail = '';
 
+  // The native plugin, present only in the installed SideCut Android app.
+
+  const PLAY_BILLING_URL = 'https://play.google.com/billing';
+  async function playNativeCap(){
+    // Re-resolve the plugin at call time (the web bridge can register a beat
+    // after the IIFE's early const ran); fall back to the early snapshot.
+
+    let cap = capNativePurchases;
+    try{
+      const live = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases) || null;
+      if(live) cap = live;
+    }catch(_e){ }
+    if(!cap) return undefined;
+    if(typeof cap.isBillingSupported !== 'function' && typeof cap.purchaseProduct !== 'function') return undefined;
+    if(typeof window !== 'undefined' && window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && !window.Capacitor.isNativePlatform()) return undefined;
+    return cap;
+  }
+
   async function getPlayBillingService(){
     if(playBillingService !== null) return playBillingService;
     playBillingService = undefined;
-    if(typeof getDigitalGoodsService !== 'function') return undefined;
-    try{ playBillingService = await getDigitalGoodsService(PLAY_BILLING_URL); }
-    catch(e){
-      // Don't lock the session into 'unavailable' on a transient failure: a
-      // freshly installed/updated app can briefly reject with
-      // 'clientAppUnavailable' until the Play billing connection is ready.
-      // Leave the slot null so the next call retries the connection.
-      playBillingService = null;
+    const cap = await playNativeCap();
+    if(!cap){
+      // plugin missing: unavailable.
+      if(playBillingService === null) playBillingService = undefined;
+      return undefined;
     }
+    try{
+      // Confirm this is the real native plugin (not a web stub): the web mock
+      // returns { version: 'default' } and reports isBillingSupported: false.
+
+      if(typeof cap.isBillingSupported === 'function'){
+        let sres = null;
+        try{ sres = await cap.isBillingSupported(); }catch(_e){ sres = null; }
+        if(!(sres && sres.isBillingSupported)){ playBillingService = undefined; return undefined; }
+      }
+      if(typeof cap.getPluginVersion === 'function'){
+        let vres = null;
+        try{ vres = await cap.getPluginVersion(); }catch(_e){ vres = null; }
+        if(!vres || vres.version === 'default'){ playBillingService = undefined; return undefined; }
+      }
+    }catch(_e){ playBillingService = undefined; return undefined; }
+    playBillingService = cap;
     return playBillingService;
   }
 
-  // Retries a Play Digital Goods call that can transiently fail with
-  // 'clientAppUnavailable' (known android-browser-helper issue right after a
-  // fresh install/update), with short backoff. Non-transient errors throw
+  // Retries a Play Billing call that can transiently fail with a connection/setup
+  // error right after install/update; with short backoff. Non-transient errors throw
   // immediately.
   async function playCallWithRetry(fn, attempts = 3){
     let lastErr;
@@ -4873,7 +4860,7 @@ function getApiHeaders() {
       catch(e){
         lastErr = e;
         const desc = String((e && (e.message || e.name)) || e);
-        if(!/clientAppUnavailable|OperationError/i.test(desc)) throw e;
+        if(!/clientAppUnavailable|OperationError|unavailable|disconnect|Unable to connect|BILLING_SETUP_FAILED|SERVICE_UNAVAILABLE/i.test(desc)) throw e;
         await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
       }
     }
@@ -4883,26 +4870,22 @@ function getApiHeaders() {
   // Why is Play Billing unavailable right now? Returns a human-readable reason,
   // or null when it should be available. Turns the generic "only works in the
   // Play app" fallback into an actionable message.
+
   async function playBillingUnavailableReason(){
-    if(nativePurchasesAvailable()){
-      const cfg = await rcEnsureConfigured();
-      if(cfg.ok) return null;
-      if(cfg.reason === 'key'){
-        return 'Play Billing is wired up but needs one setup step: paste your RevenueCat public SDK key (goog_...) into the REVENUECAT_ANDROID_API_KEY line in index.html, then fully close and reopen SideCut.';
-      }
-      return 'Play Billing couldn\'t connect right now' + (cfg.detail ? ' (' + cfg.detail + ')' : '') + ' — check your connection and try again.';
-    }
-    if(typeof getDigitalGoodsService !== 'function'){
-      return 'Play Billing isn\'t available here — make sure you\'re in the SideCut app installed from Google Play (not a browser), with Digital Asset Links verified.';
-    }
-    const svc = await getPlayBillingService();
-    if(!svc){
-      return 'Play Billing is disabled in this app build — the TWA needs the "playBilling" feature enabled (Bubblewrap twa-manifest.json), then rebuilt and re-uploaded to Play.';
-    }
-    if(typeof PaymentRequest !== 'function'){
-      return 'The Payment Request API isn\'t available on this device.';
+    const cap = await playNativeCap();
+    if(!cap){
+      return 'Play Billing isn\'t available here — make sure you\'re in the SideCut app installed from Google Play (not a browser or a sideloaded copy., with Play billing enabled.';
     }
     return null;
+  }
+
+  // Normalize a native plugin purchase/transaction row into the shape the rest of
+  // the billing code uses (itemId + purchaseToken).
+  function playNativeNorm(p){
+    if(!p) return p;
+    if(p.productIdentifier && !p.itemId) return Object.assign({}, p, { itemId: p.productIdentifier });
+    if(p.purchaseToken && !p.token) return Object.assign({}, p, { token: p.purchaseToken });
+    return p;
   }
 
   // Mirrors Play purchase state (one-time lifetime + monthly subscription) into
@@ -4914,19 +4897,24 @@ function getApiHeaders() {
     const service = await getPlayBillingService();
     if(!service) return 'unavailable';
     try{
-      const purchases = await playCallWithRetry(() => service.listPurchases());
-      const list = Array.isArray(purchases) ? purchases : [];
+      const res = await playCallWithRetry(() => service.getPurchases());
+      const raw = res && (res.purchases || res.results || []);
+      const list = (Array.isArray(raw) ? raw : []).map(playNativeNorm).filter(Boolean);
       const info = getPremiumInfo();
 
       // A one-time lifetime purchase is permanent and wins over a subscription.
-      if(list.some(p => p && p.itemId === PLAY_LIFETIME_PRODUCT_ID)){
+
+
+
+      const hasLifetime = list.some(p => p && (p.itemId === PLAY_LIFETIME_PRODUCT_ID || p.productIdentifier === PLAY_LIFETIME_PRODUCT_ID));
+      const hasSub = list.some(p => p && (p.itemId === PLAY_SUBSCRIPTION_PRODUCT_ID || p.productIdentifier === PLAY_SUBSCRIPTION_PRODUCT_ID));
+      if(hasLifetime){
         if(!info || info.plan !== 'lifetime' || !isPremiumActive()){
           setPremiumActive({ plan: 'lifetime' });
         }
         return 'lifetime';
       }
-
-      if(list.some(p => p && p.itemId === PLAY_SUBSCRIPTION_PRODUCT_ID)){
+      if(hasSub){
         if(!info || info.plan !== 'sub' || !isPremiumActive()){
           setPremiumActive({ plan: 'sub', expires: Date.now() + PLAY_SUB_GRACE_MS });
         }
@@ -4934,6 +4922,7 @@ function getApiHeaders() {
       }
 
       // Only revoke Play-billed unlocks we granted; never touch gifted codes.
+
       if(info && (info.plan === 'sub' || info.plan === 'lifetime')) clearPremiumQuietly();
       return 'inactive';
     }catch(e){
@@ -4941,145 +4930,63 @@ function getApiHeaders() {
     }
   }
 
-  // RevenueCat flavor of the entitlement sync — real Play Billing in the
-  // Capacitor app. restorePurchases() is silent on Android and replays the
-  // Play account's purchases into RevenueCat, so a reinstall / re-login on the
-  // same Google account re-grants premium (matching the old listPurchases boot
-  // behaviour). Runs at most once per app session, not on every focus tick.
-  async function syncPlayEntitlementNative(){
-    const P = rcPlugin();
-    const cfg = await rcEnsureConfigured();
-    if(!cfg.ok) return 'unavailable';
-    try{
-      if(!rcRestoredOnce){
-        rcRestoredOnce = true;
-        try{ await P.restorePurchases(); }catch(e){ /* keep going with whatever getCustomerInfo returns */ }
-      }
-      const res = await P.getCustomerInfo();
-      const ci = (res && res.customerInfo) || {};
-      const entitlements = (ci.entitlements && ci.entitlements.active) || {};
-      const entList = (typeof entitlements === 'object' && entitlements) ? Object.keys(entitlements).map(k => entitlements[k]) : [];
-      const ownedLifetime = entList.some(e => e && e.productIdentifier === PLAY_LIFETIME_PRODUCT_ID)
-        || (Array.isArray(ci.allPurchasedProductIdentifiers) && ci.allPurchasedProductIdentifiers.indexOf(PLAY_LIFETIME_PRODUCT_ID) !== -1);
-      const activeSub = entList.some(e => e && e.productIdentifier === PLAY_SUBSCRIPTION_PRODUCT_ID)
-        || (Array.isArray(ci.activeSubscriptions) && ci.activeSubscriptions.indexOf(PLAY_SUBSCRIPTION_PRODUCT_ID) !== -1);
-      const info = getPremiumInfo();
-      // A one-time lifetime purchase is permanent and wins over a subscription.
-      if(ownedLifetime){
-        if(!info || info.plan !== 'lifetime' || !isPremiumActive()) setPremiumActive({ plan: 'lifetime' });
-        return 'lifetime';
-      }
-      if(activeSub){
-        if(!info || info.plan !== 'sub' || !isPremiumActive()) setPremiumActive({ plan: 'sub', expires: Date.now() + PLAY_SUB_GRACE_MS });
-        return 'active';
-      }
-      // Only revoke Play-billed unlocks we granted; never touch gifted codes.
-      if(info && (info.plan === 'sub' || info.plan === 'lifetime')) clearPremiumQuietly();
-      return 'inactive';
-    }catch(e){
-      return 'unavailable';
-    }
-  }
-
-  // Starts a Play Billing purchase. Digital Goods API v2 removed the old
-  // service.purchase()/service.acknowledge() methods — purchases now go through
-  // the Payment Request API with 'https://play.google.com/billing' as the
-  // payment method. Returns 'purchased' | 'cancelled' | 'unavailable' |
-  // 'not-found' | 'error'.
+  // Starts a native Play Billing purchase. Returns 'purchased' | 'cancelled'
+  // | 'unavailable' | 'not-found' | 'error'.
   async function purchasePlayItem(sku, consumable){
     playLastErrorDetail = '';
     if(nativePurchasesAvailable()){
       return purchasePlayItemNative(sku, consumable);
     }
     const service = await getPlayBillingService();
-    if(!service || typeof PaymentRequest !== 'function') return 'unavailable';
+    if(!service) return 'unavailable';
+    const isSub = sku === PLAY_SUBSCRIPTION_PRODUCT_ID;
+    const productType = isSub ? 'subs' : 'inapp';
     // Verify the SKU exists and is active before opening the billing sheet. An
     // empty result means the product ID isn't active/matching in Play Console —
     // that's a Play Console config problem, not a "browser fallback" situation.
     try{
-      const details = await playCallWithRetry(() => service.getDetails([sku]));
-      if(!Array.isArray(details) || !details.length) return 'not-found';
-    }catch(e){
-      const desc = (e && (e.message || e.name)) ? (e.message || e.name) : String(e);
-      playLastErrorDetail = 'couldn\'t load the product from Play: ' + desc
-        + (/clientAppUnavailable/i.test(String(desc)) ? ' — if this keeps happening, fully close SideCut and reopen it.' : '');
-      return 'error';
-    }
-    try{
-      const paymentMethods = [{ supportedMethods: 'https://play.google.com/billing', data: { sku: sku } }];
-      const paymentDetails = { total: { label: 'Total', amount: { currency: 'USD', value: '0' } } };
-      const request = new PaymentRequest(paymentMethods, paymentDetails);
-      const response = await request.show();
-      const token = response.details && (response.details.purchaseToken || response.details.token);
-      // complete() failing doesn't necessarily mean the purchase failed — Play
-      // may have recorded it server-side anyway — so verify before giving up.
-      try{ await response.complete(token ? 'success' : 'fail'); }catch(ce){}
-      if(!token){
-        // Payment UI closed without a token: check whether the purchase actually
-        // landed server-side (e.g. complete() threw after payment succeeded).
-        try{
-          const purchases = await playCallWithRetry(() => service.listPurchases());
-          const bought = Array.isArray(purchases) ? purchases.find(p => p && p.itemId === sku) : null;
-          if(bought){
-            if(consumable && bought.purchaseToken){ try{ await service.consume(bought.purchaseToken); }catch(e){} }
-            return 'purchased';
+      const res = await playCallWithRetry(() => service.getProducts({ productIdentifiers: [sku], productType }));
+      const products = res && Array.isArray(res.products) ? res.products : [];
+      if(!Array.isArray(products) || !products.length){
+        playLastErrorDetail = 'no active Play product found for "' + sku + '"';
+        return 'not-found';
+      }
+      // For subscriptions the plugin needs the base-plan id (the returned
+      // product's 'identifier'), not the subscription product id, to launch the flow.
+
+      const basePlan = isSub ? (products[0] && (products[0].identifier || products[0].planIdentifier)) : undefined;
+      try{
+        await service.purchaseProduct({
+          productIdentifier: sku,
+          productType: productType,
+          planIdentifier: basePlan || sku,
+          isConsumable: !!consumable,
+          autoAcknowledgePurchases: true
+        });
+      }catch(e){
+        const desc = String((e && (e.message || e.name)) || e);
+        if(/not purchased|pending|cancelled|USER_CANCELED/i.test(desc)){
+          if(/pending/i.test(desc)){
+            playLastErrorDetail = 'payment is pending — complete it in your Play order history, then reopen SideCut.';
           }
-        }catch(_){}
-        playLastErrorDetail = 'payment went through but no purchase token was returned';
+          return 'cancelled';
+        }
+        playLastErrorDetail = desc;
         return 'error';
       }
-      // Consumables must be consumed after purchase — that also acknowledges
-      // them (avoiding the 72-hour auto-refund) and lets the user tip again.
-      if(consumable){ try{ await service.consume(token); }catch(e){} }
+      // The plugin consumes (isConsumable) or auto-acknowledges every
+      // purchase itself before resolving — nothing to do here. Try to surface the
+      // purchase immediately (the purchase list can lag a beat).
+      try{ setTimeout(() => { try{ syncPlayEntitlement(); }catch(_e){} }, 1200); }catch(_e){}
       return 'purchased';
     }catch(e){
-      // AbortError/NotAllowedError mean the user dismissed the billing sheet.
-      if(e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) return 'cancelled';
       const desc = (e && (e.message || e.name)) ? (e.message || e.name) : String(e);
-      playLastErrorDetail = (e && e.name ? e.name : 'error') + (e && e.message ? ': ' + e.message : '')
-        + (/clientAppUnavailable/i.test(String(desc)) ? ' — if this keeps happening, fully close SideCut and reopen it.' : '');
+      playLastErrorDetail = desc;
       return 'error';
     }
   }
 
-  // RevenueCat flavor of a purchase — opens Google's native Play billing sheet
-  // in the Capacitor app. Returns the same contract as purchasePlayItem:
-  // 'purchased' | 'cancelled' | 'unavailable' | 'not-found' | 'error'.
-  async function purchasePlayItemNative(sku, consumable){
-    const P = rcPlugin();
-    const cfg = await rcEnsureConfigured();
-    if(!cfg.ok){
-      playLastErrorDetail = cfg.reason === 'key'
-        ? 'RevenueCat key not set — paste your goog_… public SDK key into REVENUECAT_ANDROID_API_KEY in index.html and reopen SideCut'
-        : (cfg.detail || 'Play Billing could not start');
-      return 'unavailable';
-    }
-    const isSub = sku === PLAY_SUBSCRIPTION_PRODUCT_ID;
-    try{
-      // Look the product up first so a missing/inactive product shows a clear
-      // "not found" state instead of a dead billing sheet.
-      const listRes = await P.getProducts({ productIdentifiers: [sku], type: isSub ? 'SUBSCRIPTION' : 'NON_SUBSCRIPTION' });
-      const products = (listRes && Array.isArray(listRes.products)) ? listRes.products : [];
-      if(!products.length){
-        playLastErrorDetail = 'product "' + sku + '" is not active';
-        return 'not-found';
-      }
-      await P.purchaseStoreProduct({ product: products[0] });
-      return 'purchased';
-    }catch(e){
-      const code = rcErrCode(e);
-      const msg = rcErrText(e);
-      if(code === '1' || /cancel/i.test(msg) || (e && e.userCancelled)) return 'cancelled';
-      // A consumable configured as NON-consumable in RevenueCat can only be
-      // bought once — the next tip attempt fails with "already purchased".
-      if(code === '6' && consumable && !isSub){
-        playLastErrorDetail = 'that tip was already purchased once — tip products must be marked CONSUMABLE in RevenueCat (Products → ' + sku + ') so fans can tip again';
-        return 'error';
-      }
-      playLastErrorDetail = msg + (code ? ' (code ' + code + ')' : '');
-      return 'error';
-    }
-  }
+
 
   async function purchasePlaySubscription(){
     return purchasePlayItem(PLAY_SUBSCRIPTION_PRODUCT_ID);
@@ -5091,9 +4998,7 @@ function getApiHeaders() {
 
   async function purchasePlayTip(sku){
     return purchasePlayItem(sku, true);
-  }
-
-  // base64 → Uint8Array
+  }  // base64 → Uint8Array
   function b64ToBytes(b64){
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
@@ -5197,9 +5102,10 @@ function getApiHeaders() {
     const subBtn = $('premiumBuySubBtn');
     if(!input || redeemBtn._init) return;
 
-    // Subscribe uses Play Billing when running as a Play-installed TWA (Digital
-    // Goods API); outside a TWA it falls back to the Play Store listing. It must
-    // NOT grant premium for free on click (that was a v45.1 glitch).
+    // Subscribe uses native Google Play Billing inside the installed Capacitor app
+    // (@capgo/native-purchases); outside it, it falls back to the Play Store listing.
+
+    // It must NOT grant premium for free on click (that was a v45.1 glitch).
     subBtn.addEventListener('click', async () => {
       msg.style.color = 'var(--ink-dim)';
       msg.textContent = 'Opening Google Play billing…';
@@ -5245,8 +5151,9 @@ function getApiHeaders() {
       msg.textContent = 'Play billing only works inside the SideCut app installed from Google Play. Opening the Play Store so you can install it.';
       try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
     });
-    // Lifetime uses Play Billing when running as a Play-installed TWA; outside a
-    // TWA it falls back to the Play Store listing.
+    // Lifetime uses native Google Play Billing inside the installed Capacitor app;
+    // outside it, it falls back to the Play Store listing.
+
     lifetimeBtn.addEventListener('click', async () => {
       msg.style.color = 'var(--ink-dim)';
       msg.textContent = 'Opening Google Play billing…';
@@ -8227,7 +8134,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.0.7';
+  const APP_VERSION = '56.0.8';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -8421,17 +8328,24 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
-    { version: '56.0.7', date: 'September 5, 2026 · 6:40 PM ET', title: 'Spotify converter: albums & playlists work, every song comes out right', items: [
-      'The built-in Spotify converter now accepts ALBUM and PLAYLIST links — it resolves the real track list (works with spotify.link short links too), then converts and auto-downloads every song one by one with a live progress bar and per-track status, plus a retry button for any song that fails',
-      'Every converted song is the right song: searches are artist-locked, SideCut AI double-checks the pick when a Gemini key is set, and a source whose channel is provably someone else is rejected instead of silently used',
-      'Album downloads carry each track\'s own title, artist, track number and the shared album cover in its tags — files land as "01 - Artist - Title.mp3" in album order',
-      'spotify.link short links now resolve to their real album/playlist before converting (they used to be treated as single tracks)',
-      'Faster, steadier conversions: audio fetching retries across YouTube clients with a timeout, per-track pacing prevents silent mid-album failures, and tapping Convert twice can no longer clobber a running conversion',
+    { version: '56.0.8', date: 'September 5, 2026 · 2:25 PM ET', title: 'Spotify converter: albums & playlists work, every song actually downloads', items: [
+      'The built-in Spotify converter now accepts ALBUM and PLAYLIST links — it resolves the real track list (works with spotify.link short links too), then converts and auto-downloads every song one by one with a live progress bar, per-track status and a retry button for any song that fails',
+      'Fixed the biggest album bug: converted songs now save for real — the WebView cannot download blob: URLs (files came out 0 bytes or never appeared), so finished audio is written to storage and offered through the Android share sheet; browsers keep the normal download',
+      'Every converted song is the right song: searches are artist-locked, SideCut AI double-checks the pick when a Gemini key is set, and a source whose channel is provably someone else is rejected instead of silently used — failed rows now say why they failed',
+      'Album downloads carry each track\'s own title, artist, track number and the shared album cover in the tags — files land as "01 - Artist - Title.mp3" in album order, and retrying failed songs keeps that numbering',
     ] },
-    { version: '56.0.6', date: 'September 04, 2026 · 7:15 PM ET', title: 'Donations & Premium purchases finally really work \u2014 real Google Play billing', items: [
-      'Fix: "Play billing isn\'t set up" was half true \u2014 the app is a WebView build, and the old payment code only spoke the Digital Goods API that exists in a different (TWA) packaging, so the billing sheet could never open. Payments now go through Google\'s real native Play billing sheet (RevenueCat plugin), so Donate tips, Lifetime and the $1.29/month subscription actually complete inside the installed app',
-      'Premium bought through Play is re-verified every time SideCut opens or regains focus, and is restored automatically after a reinstall on the same Google account',
-      'Clearer messages everywhere a purchase can\'t happen: browser previews say to use the installed app, and missing setup names the exact step (paste the RevenueCat key / activate the product) instead of a dead-end error',
+    { version: '56.0.7', date: 'September 5, 2026 · 10:40 AM ET', title: 'Play Billing fixed — Donate tips, lifetime and subscriptions open the real Google Play sheet again', items: [
+      'Fixed the “Something went wrong” error on every Donate tip tap: the Donate tier product map (tip1…tip100) was missing from the shipped app, so the tap crashed before Google Play billing even opened. The tip buttons now resolve their Play Console product and launch the billing sheet properly',
+      'Added the missing com.android.vending.BILLING permission to the Android app manifest — without it Play Billing setup fails and the purchase sheet can never open in the installed app',
+      'Subscriptions now pass the correct Android base plan id to Google Play (the plugin reports the base plan via the product\'s `identifier` field; the old fallback could hand it the subscription product id instead, making Play pick the wrong plan offer)',
+    ] },
+    { version: '56.0.6', date: 'September 4, 2026 · 10:58 PM ET', title: 'Play Billing now actually charges real money — the native Google Play purchase sheet works in the installed app', items: [
+      'Subscribe, Lifetime, and Donate tips now open the real Google Play billing sheet in the installed SideCut Android app (via the @capgo/native-purchases plugin)',
+      'Purchases are verified against Google Play on every premium check: a lifetime purchase unlocks permanent premium,a subscription unlocks for as long as it stays active (plus a 7-day offline grace period),and cancelling/refunding a purchase revokes premium on the next check',
+      'Donate tips are consumed one-time products — no double-charge, no stuck purchases',
+      'If a SKU is not activated in Play Console yet,the app tells you exactly that instead of failing silently',
+      'Outside the installed app (browser/PWA/sideloaded APK) the Subscribe/Lifetime buttons still fall back to opening the Play Store listing',
+      'Added .npmrc so the cloud AAB build installs the billing plugin alongside the project Capacitor 6 core',
     ] },
     { version: '56.0.5', date: 'September 4, 2026 · 3:05 PM ET', title: 'Album covers look right, custom covers survive updates & New Releases finds your newest albums', items: [
       'Album History album covers now show the full artwork — the main album thumb is no longer zoomed in while the song covers next to it stay clean',
@@ -14553,6 +14467,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // media-notification stack, so startup can't be killed by it.
   let capMediaSessionNative = null;
   let capMediaSessionActive = __SC_NATIVE_EARLY ? null : capMediaSession;
+  // Native Play Billing plugin (registered as NativePurchases by @capgo/native-purchases).
+  // Present only in the installed Android app; undefined elsewhere.
+  const capNativePurchases = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases) ? window.Capacitor.Plugins.NativePurchases : null;
   // Plugin bridge calls normally return a Promise, but on some WebView/plugin
   // combos they return undefined or a plain object — calling .catch on that
   // threw at top level during boot and killed everything wired after it.
@@ -21979,12 +21896,37 @@ if(!isDiscover) stopDiscoverPreview();
   }
   async function scYtPlayer(videoId){
     var clients = [
-      { clientName: 'ANDROID', clientVersion: '19.09.37', androidSdkVersion: 30 },
-      { clientName: 'IOS', clientVersion: '19.09.3', deviceModel: 'iPhone14,3' },
-      { clientName: 'ANDROID_MUSIC', clientVersion: '6.33', androidSdkVersion: 30 },
-      { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20240801.00.00' },
-      { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.0' }
+      { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 },
+      { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' },
+      { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' },
+      { clientName: 'WEB', clientVersion: '2.20250220.01.00' },
+      { clientName: 'MWEB', clientVersion: '2.20250220.00.00' },
+      { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }
     ];
+
+    // Decrypt signatureCipher URLs when a client only hands one over.
+    function deco(f){
+      if(!f) return '';
+      if(f.url) return f.url;
+
+      var ciph = f.signatureCipher || f.cipher || '';
+      if(!ciph) return '';
+      try{
+        var pairs = {};
+        ciph.split('&').forEach(function(kv){
+          var eq = kv.indexOf('=');
+          if(eq > 0) pairs[decodeURIComponent(kv.slice(0,eq))] = decodeURIComponent(kv.slice(eq+1));
+        });
+        var base = pairs.url || '';
+        if(!base) return '';
+        var sp = pairs.sp || 'sig';
+        var sig = pairs.s || '';
+        base = base.replace(/([?&])sp=[^&]*/,'$1').replace(/([?&])s=[^&]*/,'$1');
+        if(sig) base += (base.indexOf('?') !== -1 ? '&' : '?') + encodeURIComponent(sp) + '=' + encodeURIComponent(sig);
+        return base;
+      }catch(_e){ return ''; }
+    }
+
     for(var c = 0; c < clients.length; c++){
       try{
         var body = JSON.stringify({ context: { client: clients[c] }, videoId: videoId, contentCheckOk: true, racyCheckOk: true });

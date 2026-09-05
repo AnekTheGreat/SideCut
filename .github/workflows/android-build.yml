@@ -18,27 +18,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # patch-version.py derives versionCode from the full commit count,
-          # so a shallow clone would produce a wrong (too low) version code.
           fetch-depth: 0
-
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: package.json
-
       - name: Set up JDK (for Gradle + keytool)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
-
+          java-version: 21
       - name: Install Capacitor
         run: npm install
-
-      # ---- Stage the static web app into what Capacitor calls its webDir ----
       - name: Stage web assets into www/
         run: |
           rm -rf www
@@ -48,44 +41,20 @@ jobs:
           cp manifest.json www/manifest.json 2>/dev/null || true
           cp icon-192.png www/icon-192.png 2>/dev/null || true
           cp icon-512.png www/icon-512.png 2>/dev/null || true
-
+      - name: Patch native Play Billing web bridge
+        run: python3 .github/workflows/patch-billing.py
       - name: Add Android platform
         run: npx cap add android
-
       - name: Sync web assets into the Android project
         run: npx cap sync android
-
-      # Android 14+ requires FOREGROUND_SERVICE_MEDIA_PLAYBACK for the media
-      # notification; the media-session plugin's manifest only declares
-      # FOREGROUND_SERVICE, so add what's missing to the app manifest.
       - name: Patch Android manifest permissions for the media notification
         run: python3 .github/workflows/patch-manifest.py
-
-      # Enable Android Auto Backup so uninstall + reinstall (or a new phone)
-      # restores SideCut's settings/playlists/premium from Google Drive. WebView
-      # storage itself can't ride along (25 MB cap + not in the default backup
-      # set), so the app also mirrors small data into files/; this patch makes
-      # that file (and prefs) actually get backed up and restored.
       - name: Enable Android Auto Backup
         run: python3 .github/workflows/patch-backup.py
-
-      # Harden the media-session plugin: onStartCommand can NPE on first
-      # playback (mediaSession is null until the binder connects), which is the
-      # real crash behind the "notification player crashed" flight-recorder.
       - name: Harden media-session plugin against onStartCommand NPE
         run: python3 .github/workflows/patch-mediaplugin.py
-
-      # Inject the SideCut 2x2 home-screen widget (now-playing + controls).
       - name: Inject the SideCut home-screen widget
         run: python3 .github/workflows/patch-widget.py
-
-      # ---- Signing with the REAL Play upload keystore ----
-      # The keystore (base64) + passwords/alias come from GitHub repo secrets.
-      # Keystore material is NEVER stored in the repo. The signing script
-      # auto-detects the store type (PKCS#12 vs JKS) and, if the password in
-      # the secret is off by a typo, falls back to the exact password PWA
-      # Builder printed for signing.keystore — so a paste/case slip in the
-      # secret can't silently break signing.
       - name: Wire the developer keystore into the Android Gradle config
         run: python3 .github/workflows/patch-signing.py
         env:
@@ -94,21 +63,12 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-
-      # Independent sanity check: confirm the exact password/alias pair the
-      # script settled on really opens the keystore (Java's own keytool).
       - name: Verify keystore with keytool
         run: |
           set +e
-          echo "--- keytool -list (using working creds from keystore.properties) ---"
           keytool -list -keystore sidecut-upload.jks \
             -storepass "$(grep '^storePassword=' android/keystore.properties | cut -d= -f2)" \
             -storetype "$(grep '^storeType=' android/keystore.properties | cut -d= -f2)" 2>&1 | head -30
-          echo "--- done ---"
-
-      # Export the upload-key CERTIFICATE (PEM) from the same keystore, so if
-      # Play Console ever asks for it (App signing -> reset upload key), it is
-      # ready in the artifact. The cert and the AAB come from the same key.
       - name: Export upload certificate (PEM)
         run: |
           keytool -export -rfc \
@@ -117,38 +77,16 @@ jobs:
             -alias "$(grep '^keyAlias=' android/keystore.properties | cut -d= -f2)" \
             -file upload_certificate.pem
           head -1 upload_certificate.pem
-
-      # Bump versionCode/versionName from package.json — the Capacitor template
-      # hardcodes versionCode 1, which Play rejects once version 1 is published.
-      # Without this, a new AAB can never auto-update existing installs.
       - name: Bump Android version from package.json
         run: python3 .github/workflows/patch-version.py
-
-      # Play now REQUIRES a target/compile SDK of 36 (an upload error if lower).
-      # The Capacitor 6 template pins 34 (with AGP 8.2.1 / Gradle 8.2.1, too old
-      # for API 36), so bump variables.gradle + AGP + Gradle wrapper before build.
       - name: Bump Android SDK to API 36
         run: python3 .github/workflows/patch-sdk.py
-
-      # The Capacitor template ships its own stock icon, not SideCut's. Replace
-      # every generated launcher icon (legacy + adaptive foreground) with the
-      # repo's icon-512.png branding so the installed app looks like SideCut.
       - name: Replace default launcher icons with SideCut branding
         run: python3 .github/workflows/patch-icons.py
-
-      # ---------------- Real build ---------------
       - name: Build release AAB
         run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
-
-      # Also build a directly-installable APK (same signed release build) so a
-      # phone-only releaser can side-load the exact same app without Play.
       - name: Build release APK
         run: cd android && ./gradlew assembleRelease --no-daemon
-
-      # Name the file and artifact with the actual version (e.g. SideCut-5.0.3.aab
-      # in a SideCut-5.0.3-release zip) so a phone-only releaser can never grab
-      # the wrong build — every prior artifact was also called app-release.aab and
-      # indistinguishable when downloaded twice (see the 500002-vs-500003 mix-up).
       - name: Compute version and rename AAB
         id: ver
         run: |
@@ -156,7 +94,6 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           cp android/app/build/outputs/bundle/release/app-release.aab "SideCut-$V.aab"
           cp android/app/build/outputs/apk/release/app-release.apk "SideCut-$V.apk"
-
       - name: Upload AAB + certificate
         uses: actions/upload-artifact@v4
         with:

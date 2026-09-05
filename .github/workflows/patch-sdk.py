@@ -26,14 +26,18 @@ GRADLE_VERSION = '8.11.1'  # minimum Gradle for AGP 8.9.x
 if not os.path.exists(VARIABLES):
     sys.exit('FATAL: %s missing — run `npx cap add android` first.' % VARIABLES)
 
-# ---- 1) compile/target SDK in variables.gradle ----
+# ---- 1) compile/target SDK + minSdk in variables.gradle ----
+# Billing client 8.3 (pulled in by @capgo/native-purchases) declares minSdk 23,
+# so raise the app minSdk from the Capacitor template 22 to 23.
+MIN_SDK =23
 src = open(VARIABLES).read()
 new_src, n1 = re.subn(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = %d' % TARGET, src)
 new_src, n2 = re.subn(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = %d' % TARGET, new_src)
-if n1 == 0 or n2 == 0:
+new_src, n3 = re.subn(r'minSdkVersion\s*=\s*\d+', 'minSdkVersion = %d' % MIN_SDK, new_src)
+if n1 == 0 or n2 ==0 or n3 ==0:
     sys.exit('FATAL: could not find compileSdkVersion/targetSdkVersion in %s' % VARIABLES)
 open(VARIABLES, 'w').write(new_src)
-print('set compileSdkVersion=%d targetSdkVersion=%d in %s' % (TARGET, TARGET, VARIABLES))
+print('set compileSdkVersion=%d targetSdkVersion=%d minSdkVersion=%d in %s' % (TARGET, TARGET, MIN_SDK, VARIABLES))
 
 # ---- 2) Android Gradle Plugin version in android/build.gradle ----
 # Handles both the buildscript-classpath style and the plugins-DSL style the
