@@ -1,5 +1,22 @@
 # SideCut — repository memory
 
+## Play Billing native purchases (Sep  ồ4,  ồ2026) — v56.0.6
+- **Goal reached: native Google Play Billing works in the Capacitor WebView app** —
+  `@capgo/native-purchases@7.19.3` added (`.npmrc` at repo root sets
+  `legacy-peer-deps=true` so CI `npm install` succeeds despite plugin peer
+  `@capacitor/core >=7` vs project core `^6`.) Billing adapter region lives in
+  `index.html` (validated 9/9 harness checks; APP_VERSION `56.0.6`,
+  sw.js cache `sidecut-shell-v56.0.6`; CHANGELOG entry added).
+- **Two CI-required env facts (both committed and pushed**:
+  1. **minSdk 23**: downstream `com.android.billingclient:billing:8.3.0`
+     declares `uses-sdk:minSdkVersion 23`;the Capacitor 6 template pins
+     `22`,so Gradle manifest merger failed. `.github/workflows/patch-sdk.py`
+     now also rewrites `minSdkVersion` in `android/variables.gradle` (min 23;
+     max-with-any-future-explicit-higher-value). Verified vs a mock template:
+     `compileSdkVersion=36 targetSdkVersion=36 minSdkVersion=23`.
+  2. **JDK 21**:the plugin module compiles with `release 21`,so the
+     runner JDK 17 threw `invalid source release: 21`. `.github/workflows/
+     android-build.yml` sets `java-version: '21'` (quoted). Commit dcf9613.
 ## Android Capacitor signing (Aug 30, 2026) — REAL Play upload keystore
 - User has the REAL upload keystore (`signing.keystore`) used for the existing
   Play app `com.SideCut.myapp`. The Capacitor cloud build (.github/workflows/
@@ -1290,3 +1307,4 @@ All v47.7/v47.8/v47.9 changes rolled into a single v47.7 entry:
   duration. Album artwork, year, and track count shown. Tapping a track
   searches for it in Discover. Songs are lazy-loaded on first expand.
 - SW cache: sidecut-shell-v48. Date Aug 19 10:30 am EDT.
+
