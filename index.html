@@ -21376,12 +21376,37 @@ if(!isDiscover) stopDiscoverPreview();
   }
   async function scYtPlayer(videoId){
     var clients = [
-      { clientName: 'ANDROID', clientVersion: '19.09.37', androidSdkVersion: 30 },
-      { clientName: 'IOS', clientVersion: '19.09.3', deviceModel: 'iPhone14,3' },
-      { clientName: 'ANDROID_MUSIC', clientVersion: '6.33', androidSdkVersion: 30 },
-      { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20240801.00.00' },
-      { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.0' }
+      { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 },
+      { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' },
+      { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' },
+      { clientName: 'WEB', clientVersion: '2.20250220.01.00' },
+      { clientName: 'MWEB', clientVersion: '2.20250220.00.00' },
+      { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }
     ];
+
+    // Decrypt signatureCipher URLs when a client only hands one over.
+    function deco(f){
+      if(!f) return '';
+      if(f.url) return f.url;
+
+      var ciph = f.signatureCipher || f.cipher || '';
+      if(!ciph) return '';
+      try{
+        var pairs = {};
+        ciph.split('&').forEach(function(kv){
+          var eq = kv.indexOf('=');
+          if(eq > 0) pairs[decodeURIComponent(kv.slice(0,eq))] = decodeURIComponent(kv.slice(eq+1));
+        });
+        var base = pairs.url || '';
+        if(!base) return '';
+        var sp = pairs.sp || 'sig';
+        var sig = pairs.s || '';
+        base = base.replace(/([?&])sp=[^&]*/,'$1').replace(/([?&])s=[^&]*/,'$1');
+        if(sig) base += (base.indexOf('?') !== -1 ? '&' : '?') + encodeURIComponent(sp) + '=' + encodeURIComponent(sig);
+        return base;
+      }catch(_e){ return ''; }
+    }
+
     for(var c = 0; c < clients.length; c++){
       try{
         var body = JSON.stringify({ context: { client: clients[c] }, videoId: videoId, contentCheckOk: true, racyCheckOk: true });
