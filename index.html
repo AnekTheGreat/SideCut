@@ -2132,6 +2132,21 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 </div>
 <button id="hbReorderDone">✓ Done</button>
 
+<!-- Import artist prompt: asks who the imported songs are by so covers/lyrics match the right artist -->
+<div class="modal-backdrop" id="artistPromptBackdrop" style="align-items:center; z-index:10001;">
+  <div class="modal" style="max-width:360px; border-radius:18px; border-top:none;">
+    <h3 id="artistPromptTitle">🎤 Who's the artist?</h3>
+    <div id="artistPromptSub" style="font-size:12px; color:var(--ink-dim); margin-top:-6px; margin-bottom:10px;"></div>
+    <input type="text" id="artistPromptInput" placeholder="Artist name..." style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:14px; box-sizing:border-box;" autocomplete="off">
+    <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; line-height:1.5;">Used to fetch the right cover art and lyrics. Multiple artists: separate them with commas. Leave empty and confirm to keep the names SideCut guessed.</div>
+    <div class="modal-btns" style="margin-top:14px;">
+      <button class="cancel" id="artistPromptSkip" style="flex:1;">Skip</button>
+      <button class="confirm" id="artistPromptOk" style="flex:1;">Save</button>
+    </div>
+    <button id="artistPromptNever" style="display:block; margin:8px auto 0; background:none; border:none; color:var(--ink-dim); font-size:11px; cursor:pointer; text-decoration:underline; padding:4px;">Don't ask again</button>
+  </div>
+</div>
+
 <!-- Theme picker modal -->
 <div class="modal-backdrop" id="themeBackdrop">
   <div class="modal">
@@ -2587,6 +2602,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     </div>
 
         </div>
+      </div>
+
+      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span style="font-size:13px; color:var(--ink-dim);">Ask artist when importing songs</span>
+          <button class="tab" id="artistAskToggle" style="padding:5px 12px; font-size:12px;">On</button>
+        </div>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">When you add files, SideCut asks who the artist is — once for the whole batch — so covers and lyrics fetch for the right artist. You can always skip the question.</div>
       </div>
 
       <div style="margin-bottom:16px;">
@@ -6601,7 +6624,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
 
   async function fetchLyrics(track) {
     const title = track.name || '';
-    const artist = track.artist || 'Unknown';
+    let artist = track.artist || 'Unknown';
+    // Multi-artist strings like "A, B": lyrics APIs match on the primary artist.
+    if(artist && artist.indexOf(',') !== -1) artist = scPrimaryArtist(artist) || artist;
     lyricsCurrentTrack = track.id;
     
     // Populate mini now bar
@@ -8333,6 +8358,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       'Fixed the biggest album bug: converted songs now save for real — the WebView cannot download blob: URLs (files came out 0 bytes or never appeared), so finished audio is written to storage and offered through the Android share sheet; browsers keep the normal download',
       'Every converted song is the right song: searches are artist-locked, SideCut AI double-checks the pick when a Gemini key is set, and a source whose channel is provably someone else is rejected instead of silently used — failed rows now say why they failed',
       'Album downloads carry each track\'s own title, artist, track number and the shared album cover in the tags — files land as "01 - Artist - Title.mp3" in album order, and retrying failed songs keeps that numbering',
+      'Importing songs now asks who the artist is \u2014 once for the whole batch, whether it\'s one file or a whole folder. Confirm the guess, type the real artist (comma-separate multiples), or skip \u2014 your answer drives cover-art and lyrics lookups so \"01 Track.mp3\" still gets the right artwork. Turn it off with \"Don\'t ask again\" or Settings → More',
     ] },
     { version: '56.0.7', date: 'September 5, 2026 · 10:40 AM ET', title: 'Play Billing fixed — Donate tips, lifetime and subscriptions open the real Google Play sheet again', items: [
       'Fixed the “Something went wrong” error on every Donate tip tap: the Donate tier product map (tip1…tip100) was missing from the shipped app, so the tap crashed before Google Play billing even opened. The tip buttons now resolve their Play Console product and launch the billing sheet properly',
@@ -9889,7 +9915,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const rawArtist = (t.artist && t.artist !== 'Unknown artist') ? t.artist : '';
     // Apply custom watermark patterns (artist gets number patterns, title doesn't)
     const title = applyWatermarkPatterns(rawTitle, false);
-    const artist = applyWatermarkPatterns(rawArtist, true);
+    // Multi-artist strings like "A, B": cover lookups work best on the primary artist.
+    const primary = (rawArtist && rawArtist.indexOf(',') !== -1) ? (scPrimaryArtist(rawArtist) || rawArtist) : rawArtist;
+    const artist = applyWatermarkPatterns(primary, true);
     let query = `${artist} ${title}`.trim();
     // If no good query, try using filename
     if(!query && t.file){
@@ -11402,6 +11430,19 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const added = [];
     let skippedDup = 0, skippedType = 0;
     const seenKeys = new Set(allTracks.map(t => dupKey((t.file && t.file.size) || 0, t.name, t.artist, t.duration, t.file && t.file.lastModified)));
+    // Ask "who's the artist?" once per import batch (skippable) before any
+    // processing, so the answer is known while tracks are being created and
+    // enrichment immediately queries the right artist. Internal callers that
+    // already know the artists (CSV imports, re-entry after the prompt) set
+    // opts.__artistPrompted and skip the gate.
+    if(scImportArtistAnswer === null && !opts.__artistPrompted){
+      promptArtistForFiles(fileList, () => {
+        const o2 = Object.assign({}, opts, { __artistPrompted: true });
+        handleAudioFiles(fileList, targetPlaylist, o2);
+        scImportArtistAnswer = null;
+      });
+      return;
+    }
     Array.from(fileList).forEach(file => {
       // The file picker's "accept" list includes more extensions (.wma, .opus, .aiff,
       // .alac) than this check used to recognize, and some OS file pickers (notably
@@ -11418,6 +11459,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // Always strip watermark cruft (numbered prefixes, radio-edit tags, etc.)
       // from the guessed title/artist on the way in — see cleanOnImport.
       const cleaned = cleanOnImport(meta.title, meta.artist);
+      // Import artist prompt answer: overrides the filename-guessed artist for
+      // every song in this batch so cover/lyrics lookups hit the right artist.
+      if(scImportArtistAnswer){ cleaned.artist = scImportArtistAnswer; cleaned.changed = true; }
       const key = dupKey(file.size, cleaned.name, cleaned.artist, 0, file.lastModified);
       if(seenKeys.has(key)){ skippedDup++; return; }
       seenKeys.add(key);
@@ -13011,6 +13055,68 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   }
   $('insertPosCancel').addEventListener('click', () => { $('insertPosBackdrop').style.display = 'none'; });
   $('insertPosBackdrop').addEventListener('click', e => { if(e.target === $('insertPosBackdrop')) $('insertPosBackdrop').style.display = 'none'; });
+
+  // ---------------- Import artist prompt ----------------
+  // When songs are imported (+ Files / + Add folder), ask who the artist is —
+  // once for the whole batch. The answer is written into every imported track
+  // BEFORE enrichment runs, so cover/lyrics lookups query the right artist
+  // instead of a filename guess like "01 Track" or "Unknown artist".
+  // Skippable per import; "Don't ask again" and the Settings → More toggle
+  // control it globally (localStorage['sidecut_askArtistOnImport']).
+  let scImportArtistAnswer = null; // set by the prompt, consumed by handleAudioFiles
+  function scAskArtistEnabled(){
+    try{ return localStorage.getItem('sidecut_askArtistOnImport') !== 'off'; }catch(e){ return true; }
+  }
+  // Primary artist = the first name in a comma-separated "A, B, C" artist string.
+  function scPrimaryArtist(artistStr){
+    const s = String(artistStr || '').trim();
+    if(!s) return '';
+    const first = s.split(',')[0].trim();
+    return first || s;
+  }
+  function promptArtistForFiles(files, onDone){
+    if(!scAskArtistEnabled()){ onDone(); return; }
+    const list = Array.from(files || []);
+    if(!list.length){ onDone(); return; }
+    // Pre-fill with the guessed artist when every file in the batch agrees.
+    const guesses = list.map(f => {
+      try{ const m = guessMeta(f.name); return cleanOnImport(m.title, m.artist).artist || ''; }
+      catch(e){ return ''; }
+    });
+    const named = guesses.filter(g => g && g !== 'Unknown artist');
+    const shared = (named.length === list.length && named.every(g => g.toLowerCase() === named[0].toLowerCase())) ? named[0] : '';
+    $('artistPromptSub').textContent = list.length + ' song' + (list.length === 1 ? '' : 's') + (list.length <= 3 ? ' · ' + list.map(f => f.name.replace(/\.[^/.]+$/, '')).join(' · ') : '');
+    const input = $('artistPromptInput');
+    input.value = shared;
+    $('artistPromptBackdrop').style.display = 'flex';
+    setTimeout(() => { try{ input.focus(); input.select(); }catch(e){} }, 60);
+    const finish = (answer, never) => {
+      $('artistPromptBackdrop').style.display = 'none';
+      if(never){ try{ localStorage.setItem('sidecut_askArtistOnImport', 'off'); }catch(e){} }
+      scImportArtistAnswer = String(answer || '').trim() || null;
+      onDone();
+    };
+    // Replace the buttons each time so a previous import's listeners can't double-fire.
+    const wire = (id, fn) => {
+      const el = $(id);
+      const n = el.cloneNode(true);
+      el.replaceWith(n);
+      n.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+    };
+    wire('artistPromptOk', () => finish(input.value, false));
+    wire('artistPromptSkip', () => finish('', false));
+    wire('artistPromptNever', () => finish('', true));
+  }
+  $('artistPromptInput').addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); $('artistPromptOk').click(); } });
+  $('artistPromptBackdrop').addEventListener('click', (e) => { if(e.target === $('artistPromptBackdrop')) $('artistPromptOk').click(); });
+  // Settings → More toggle: turn the import artist prompt on/off anytime.
+  (function(){
+    const btn = $('artistAskToggle');
+    if(!btn) return;
+    const paint = () => { const on = scAskArtistEnabled(); btn.textContent = on ? 'On' : 'Off'; btn.classList.toggle('active', on); };
+    btn.addEventListener('click', () => { const on = scAskArtistEnabled(); try{ localStorage.setItem('sidecut_askArtistOnImport', on ? 'off' : 'on'); }catch(e){} paint(); });
+    paint();
+  })();
 
   // Enter "tap a row to insert after it" mode. `pendingIds` are the track ids to
   // insert; onCommit(index) finalizes. Renders a banner + an insert-at-top bar.
