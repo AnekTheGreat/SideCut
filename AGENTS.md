@@ -1,5 +1,38 @@
 # SideCut — repository memory
 
+## v56.0.17: "Install later" actually installs on close + version bump REQUIRED for delivery (Sep 6, 2026)
+- **Delivery gotcha that cost hours**: fixing only `dev/native-updates.js` and republishing a
+  SAME-VERSION manifest does nothing for devices that already staged/applied 56.0.12 —
+  `checkForUpdate` short-circuits on `man.version === cur` ("up to date") and the already-staged
+  old zip would be re-offered instead of re-downloaded. **The version bump is not cosmetic; it
+  IS the delivery mechanism.** APP_VERSION 56.0.12→56.0.17, sw.js cache → sidecut-shell-v56.0.17,
+  fresh CHANGELOG head entry (deploy.yml extracts notes/size/date from it).
+- **What the uncommitted diff shipped** (close/reopen complaint: "I got the OTA, closed + reopened,
+  still old version"):
+  - `applyStagedNow` returns true when the apply was DEFERRED (music playing) — callers drop the
+    sheet instead of repainting over the deferral toast; it now also sets
+    `sidecut_ota_prompt_<version>` so silent checks stop re-offering, and remembers the version in
+    `sidecut_ota_applied` for the next-boot confirmation toast.
+  - New `applyInBackground(Updater, nb)` implements the Install-later contract for real: if the
+    user chose "later" (or music forced a deferral), the staged bundle installs the moment the app
+    leaves the foreground — wired to pause/resume/visibilitychange (BOTH transitions: 'hidden'
+    catches Home-gesture close while the webview is alive; 'visible' on reopen catches swipe-away
+    kills). Returns 'immediate' | 'deferred' | false. If the plugin's own background handler
+    applied it first, `getNextBundle()` returns null and `go()` no-ops.
+  - Launch staged-bundle check restores v56.0.16 auto-apply: never-later users get it applied at
+    launch (sheet shows "Installing…"), later-choosers get the on-close wiring, nobody sees the
+    stuck behind-a-sheet-forever loop.
+  - Boot confirmation: `sidecut_ota_applied` matching `currentVersion()` → "✓ SideCut updated to
+    v…" toast, then the key is removed.
+  - `checkForUpdateInner` staged branch: when `applyInBackground` returned 'immediate', return
+    early — never repaint a 'staged' sheet over the 'Installing…' sheet in the 450ms before
+    `set()` reloads the context.
+- **Workflow verified locally**: zipped the shell + ran deploy.yml's exact manifest node block →
+  `{version:'56.0.17', size:424330, notes:[3], date:'…11:40 PM ET'}`.
+- Parse checks: `node --check` on native-updates.js + sw.js, `new Function` on both inline
+  index.html script blocks — all green. ota/ in-repo copies are CI-owned (regenerated on push);
+  don't hand-edit them.
+
 ## OTA update sheet: progress + ETA + Install now/later + real patch notes (Sep 6, 2026) — v56.0.12
 - **User complaint**: OTA "gives the toast and stays there installing" — no visible progress, no
   install choice, and the update's patch notes were missing. Also the user explicitly set the

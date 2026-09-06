@@ -220,12 +220,19 @@
 
   // Applies a staged bundle in place. set() reloads the WebView into the new
   // bundle (the JS context dies — nothing after it runs), so only do this when
-  // no song is playing; otherwise tell the user it installs at close.
+  // no song is playing. Returns true when the apply was DEFERRED to app-close
+  // (music was playing) — callers use that to drop the staged sheet instead of
+  // repainting it over the deferral message.
   function applyStagedNow(Updater, nb){
-    if(!nb || !nb.id) return;
+    if(!nb || !nb.id) return false;
     if(somethingIsPlaying()){
+      // Defer for real instead of just talking about it: install the moment the
+      // user leaves the app (music must not be killed mid-play) and remember
+      // the choice so silent checks stop re-offering the same version.
+      try{ localStorage.setItem(INSTALL_PROMPT_SEEN + nb.version, '1'); }catch(e){}
+      applyInBackground(Updater, nb);
       toast('Update ' + nb.version + ' is ready — it installs when you close the app.', 4500);
-      return;
+      return true;
     }
     log('applying staged bundle ' + nb.version + ' now');
     // Show the Installing state in the sheet (not just a toast) — the set()
@@ -236,10 +243,65 @@
     // the bundle is current, and a stale 'staged' record would re-open the
     // update sheet after the new version boots.
     clearSheet();
+    // Remember the applied version so the next boot can confirm it to the user
+    // with a real "✓ Updated" toast instead of silence.
+    try{ localStorage.setItem('sidecut_ota_applied', String(nb.version)); }catch(e){}
     // Small delay so the sheet paints before the context is destroyed.
     setTimeout(function(){
       try{ Updater.set({ id: nb.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
     }, 450);
+    return false;
+  }
+
+  // Did the user already pick "Install later" for this version? Every onLater
+  // handler (and a music-playing deferral) sets sidecut_ota_prompt_<version>.
+  function wantDeferredInstall(version){
+    try{ if(localStorage.getItem(INSTALL_PROMPT_SEEN + version) === '1') return true; }catch(e){}
+    return false;
+  }
+
+  // The "Install later" contract, kept: a staged bundle installs as soon as the
+  // user leaves the app — not on the relaunch AFTER that (which is what the
+  // user saw as "I closed it, reopened it, still old version"). resume /
+  // visibilitychange are the reliable hooks (the context may freeze mid-call on
+  // 'pause', but the native side still completes an in-flight set(); if the
+  // plugin's own background handler applied it first, getNextBundle() returns
+  // null and this no-ops). Users who never chose "later" get the immediate
+  // v56.0.16 behavior: apply right away (or at next launch).
+  // Returns 'immediate' when an apply was just started (sheet now shows
+  // "Installing…", app reloads within ~450ms), 'deferred' when the bundle will
+  // install on app-close, or false when nothing could be done.
+  function applyInBackground(Updater, nb){
+    if(!Updater || !nb || !nb.id) return false;
+    var version = String(nb.version || '');
+    if(!wantDeferredInstall(version)){
+      var r = applyStagedNow(Updater, nb); // true = deferred to close (music playing)
+      return r ? 'deferred' : 'immediate';
+    }
+    try{ window.__scOtaDeferred = { id: nb.id, version: version }; }catch(e){}
+    log('staged ' + version + ' will install when the app is closed/backgrounded');
+    function go(){
+      var d = window.__scOtaDeferred;
+      if(!d) return;
+      window.__scOtaDeferred = null;
+      Updater.getNextBundle().then(function(cur){
+        if(cur && cur.id === d.id){
+          log('app left foreground — installing staged ' + d.version);
+          try{ localStorage.setItem('sidecut_ota_applied', d.version); }catch(e){}
+          try{ Updater.set({ id: d.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
+        }
+      }).catch(function(){});
+    }
+    try{ document.addEventListener('pause', go, false); }catch(e){}
+    try{ document.addEventListener('resume', go, false); }catch(e){}
+    document.addEventListener('visibilitychange', function(){
+      // Fire on BOTH transitions: 'hidden' catches a normal Home-gesture close
+      // while the webview is still alive, and the 'visible' pass on reopen
+      // catches every other close style (swipe-away, task-manager kill).
+      go();
+    }, false);
+    try{ if(document.visibilityState !== 'visible') go(); }catch(e){}
+    return 'deferred';
   }
 
   // Confirms the running bundle is healthy so Capgo keeps it; a bundle that
@@ -298,12 +360,23 @@
         var nb = await Updater.getNextBundle();
         if(nb && nb.version === String(man.version)){
           log('bundle ' + man.version + ' already staged');
+          // Keep the close/reopen promise: install the staged bundle the moment
+          // the user leaves the app — or immediately if they never chose
+          // "Install later" (restores the v56.0.16 launch auto-apply).
           var seenKey = INSTALL_PROMPT_SEEN + man.version;
           var seen = false;
           try{ seen = !!localStorage.getItem(seenKey); }catch(e){}
+          var applied = applyInBackground(Updater, nb); // 'immediate' = apply started now
+          // An immediate apply repaints the sheet to "Installing…" and reloads
+          // the app ~450ms later — never repaint a "staged" card over it.
+          if(applied === 'immediate') return man;
+          // The user already picked "Install later": stay quiet during silent
+          // auto-checks (no update sheet popping up mid-song) — the background
+          // apply wired above finishes the job when they leave the app.
+          if(o.silent && seen) return man;
           showSheet({
             phase: 'staged', version: man.version, date: man.date || '', notes: man.notes,
-            onNow: function(){ applyStagedNow(Updater, nb); },
+            onNow: function(){ if(applyStagedNow(Updater, nb)) hideSheet(); },
             onLater: function(){ try{ localStorage.setItem(seenKey, '1'); }catch(e){} hideSheet(); toast('Saved for later — installs next time you close the app.', 3500); }
           });
           persistSheet({ version: man.version, notes: man.notes || [], size: man.size || 0, date: man.date || '', phase: 'staged', stagedAt: Date.now() });
@@ -355,7 +428,7 @@
             persistSheet({ version: man.version, notes: man.notes || [], size: man.size || 0, date: man.date || '', phase: 'staged', stagedAt: Date.now() });
             showSheet({ phase: 'staged', version: man.version, date: man.date || '', notes: man.notes,
               onNow: async function(){
-                try{ var nb2 = await Updater.getNextBundle(); applyStagedNow(Updater, nb2); }catch(e){ applyStagedNow(Updater, bundle); }
+                try{ var nb2 = await Updater.getNextBundle(); if(applyStagedNow(Updater, nb2)) hideSheet(); }catch(e){ if(applyStagedNow(Updater, bundle)) hideSheet(); }
               },
               onLater: function(){ try{ localStorage.setItem(seenKey, '1'); }catch(e){} hideSheet(); toast('Saved for later — installs next time you close the app.', 3500); } });
             finish(man);
@@ -393,13 +466,17 @@
     var st = readSheet();
     if(!st) return;
     if(st.phase === 'staged'){
+      // The bundle already installed (background/deferred apply)? Drop the
+      // stale record instead of showing an update sheet for the OLD version.
+      if(String(currentVersion()) === String(st.version)){ clearSheet(); return; }
+      if(wantDeferredInstall(st.version)) return; // installs on close — wired at launch
       showSheet({
         phase: 'staged', version: st.version, date: st.date || '', notes: st.notes,
         onNow: async function(){
           try{
             var U = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
             var nb = U ? await U.getNextBundle() : null;
-            applyStagedNow(U, nb);
+            if(applyStagedNow(U, nb)) hideSheet();
           }catch(e){}
         },
         onLater: function(){ hideSheet(); }
@@ -429,6 +506,16 @@
       setTimeout(function(){
         if(!appBooted()){ log('app did not finish booting — bundle stays unconfirmed'); return; }
         markAppReady();
+        // Confirm a bundle that installed since the last session (background
+        // apply or the deferred on-close apply) — the user closed the app on
+        // the old version and reopened on the new one; say so out loud.
+        try{
+          var appliedV = localStorage.getItem('sidecut_ota_applied');
+          if(appliedV){
+            localStorage.removeItem('sidecut_ota_applied');
+            if(String(currentVersion()) === String(appliedV)) toast('✓ SideCut updated to v' + appliedV + '.', 4000);
+          }
+        }catch(_ae){}
         restoreSheetState();
         // A staged bundle can survive a swipe-away kill (the plugin only applies
         // staged bundles on background events). Surface it in the sheet on launch
@@ -438,12 +525,18 @@
           if(U && typeof U.getNextBundle === 'function'){
             U.getNextBundle().then(function(nb){
               if(!nb || !nb.version) return;
+              // v56.0.16 behavior restored (the sheet rewrite dropped it): a
+              // staged bundle applies at launch — immediately for users who
+              // never chose "Install later", on close for those who did —
+              // instead of sitting behind the update sheet forever.
+              applyInBackground(U, nb);
+              if(wantDeferredInstall(String(nb.version))) return; // installs on close — don't nag
               if(sheetRefs && sheetRefs.card.style.display === 'block') return; // sheet already up
               var st = readSheet();
               showSheet({
                 phase: 'staged', version: nb.version, date: (st && st.date) || '', notes: (st && st.notes) || [],
-                onNow: function(){ applyStagedNow(U, nb); },
-                onLater: function(){ hideSheet(); toast('Saved for later — installs next time you close the app.', 3500); }
+                onNow: function(){ if(applyStagedNow(U, nb)) hideSheet(); },
+                onLater: function(){ try{ localStorage.setItem(INSTALL_PROMPT_SEEN + nb.version, '1'); }catch(e){} hideSheet(); toast('Saved for later — installs when you leave the app.', 3500); }
               });
             }).catch(function(){});
           }
