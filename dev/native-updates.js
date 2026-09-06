@@ -53,7 +53,11 @@
     var o = opts || {};
     if(!IS_NATIVE || !appBooted()) return null;
     var Updater = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
-    if(!Updater){ log('plugin not available in this build'); return null; }
+    if(!Updater){
+      // The running APK predates the updater — OTA can never work from here.
+      if(!o.silent) toast('This installed build cannot self-update yet — install the newest APK/AAB once, and every update after that arrives automatically.', 6000);
+      return { unavailable: true };
+    }
     try{
       var ctrl = new AbortController();
       var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
