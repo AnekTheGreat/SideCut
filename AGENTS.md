@@ -628,6 +628,29 @@ Gotcha:the seed-merge sanitizer already normalized both sides;the cache-branch o
   safe margin from the top-corner header buttons on foldable WebViews.
 - The settings gear (`#themeBtn`) opens `#themeBackdrop` via `openSettingsTo()`.
 
+## Native OTA updates (Sep 6, 2026) — v56.0.11: self-hosted Capgo, no Capgo cloud
+- The native app could NEVER be updated by hard refresh: the WebView loads index.html from APK assets
+  and SWs are disabled at https://localhost (they hang) — only a new AAB from Play did. Fix:
+  `@capgo/capacitor-updater@7.51.15` + `dev/native-updates.js` (manual mode, `autoUpdate: false`,
+  `resetWhenUpdate: false`, `autoDeletePrevious: true` in capacitor.config.json `plugins.CapacitorUpdater`).
+- **Delivery pipeline (all three pieces required, they were the missing bits)**:
+  1. `deploy.yml` now builds `ota/SideCut-web.zip` (index.html, sw.js, manifest.json, icons, dev/native-updates.js
+     — native-updates.js MUST be at `dev/` inside the zip, matching the script tag) + `ota/manifest.json`
+     (`{version: APP_VERSION, url}`) and ships them with the GitHub Pages deploy.
+  2. `android-build.yml` stages `dev/native-updates.js` into `www/dev/` so the FIRST APK that ships the
+     updater is itself OTA-capable (that APK or newer is the floor — older APKs stay Play-Store-only).
+  3. `index.html` loads `<script src="dev/native-updates.js">` before the main script; it checks
+     `https://anekthegreat.github.io/SideCut/ota/manifest.json` at boot+8s, every 30min, on foreground,
+     and via the native-only `#otaCheckBtnBig` button; downloads → `next()` (activates on
+     background/relaunch, never mid-song) → `notifyAppReady()` after boot is confirmed healthy
+     (unconfirmed bundles auto-revert — a broken OTA can't brick the app).
+- Version-detection is fail-safe: `window.__SC_VERSION` is set by boot (`$('currentVersionLabel')` line);
+  if the version can't be determined, the check SKIPS instead of downloading (old code would have
+  re-downloaded on every boot). Bump APP_VERSION as usual and the OTA picks it up — no Capgo dashboard.
+- Gotcha: GitHub Pages caching is CDN-level (~10 min max-age); manifest fetch uses `cache: 'no-store'`.
+- zip note: `zip -q -r ota/SideCut-web.zip ... dev/native-updates.js` stores it as `dev/native-updates.js`
+  inside the zip root — that's why unzip layout matters (plugin serves the zip as the new web root).
+
 ## What this is
 SideCut is a single-file PWA music player (`index.html`) + a service worker (`sw.js`).
 Everything (HTML/CSS/JS) lives in `index.html`. Versioning: `APP_VERSION` + `CHANGELOG`
