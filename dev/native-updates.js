@@ -39,6 +39,32 @@
     return null;
   }
 
+  function somethingIsPlaying(){
+    try{
+      var els = document.querySelectorAll('audio');
+      for(var i = 0; i < els.length; i++){
+        var a = els[i];
+        if(a && !a.paused && !a.ended && (a.src || a.currentSrc)) return true;
+      }
+    }catch(e){}
+    return false;
+  }
+  // Applies a staged bundle in place. set() reloads the WebView into the new
+  // bundle (the JS context dies — nothing after it runs), so only do this when
+  // no song is playing; otherwise let the plugin's background apply handle it.
+  function applyStagedNow(Updater, nb){
+    if(!nb || !nb.id) return;
+    if(somethingIsPlaying()){
+      toast('Update ' + nb.version + ' is ready — it installs when you close the app.', 4500);
+      return;
+    }
+    log('applying staged bundle ' + nb.version + ' now');
+    toast('Installing update ' + nb.version + '…', 2000);
+    // Small delay so the toast paints before the context is destroyed.
+    setTimeout(function(){
+      try{ Updater.set({ id: nb.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
+    }, 350);
+  }
   // Confirms the running bundle is healthy so Capgo keeps it; a bundle that
   // never gets this call is rolled back to the previous one automatically.
   function markAppReady(){
@@ -70,11 +96,14 @@
       if(!cur){ log('cannot determine the running version — skipping update check (fail safe)'); return null; }
       if(String(man.version) === String(cur)){ log('up to date (' + cur + ')'); return null; }
       // Already staged but not yet applied (waiting for background/relaunch)?
+      // Apply it right now instead of looping on "restart again" — the plugin
+      // only applies staged bundles on background events, which a swipe-away
+      // kill interrupts, leaving the update stuck forever.
       try{
         var nb = await Updater.getNextBundle();
         if(nb && nb.version === String(man.version)){
-          log('bundle ' + man.version + ' already staged, applying on next relaunch');
-          toast('Update ' + man.version + ' is ready — restart the app to finish installing it.', 4000);
+          log('bundle ' + man.version + ' already staged');
+          applyStagedNow(Updater, nb);
           return man;
         }
       }catch(_ne){}
@@ -116,6 +145,15 @@
       setTimeout(function(){
         if(!appBooted()){ log('app did not finish booting — bundle stays unconfirmed'); return; }
         markAppReady();
+        // A staged bundle can survive a swipe-away kill (the plugin only applies
+        // staged bundles on background events). Apply it on launch instead of
+        // leaving the update stuck behind another close/reopen cycle.
+        try{
+          var U = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+          if(U && typeof U.getNextBundle === 'function'){
+            U.getNextBundle().then(function(nb){ applyStagedNow(U, nb); }).catch(function(){});
+          }
+        }catch(e){}
         startAutoCheck();
       }, 4000);
     });
