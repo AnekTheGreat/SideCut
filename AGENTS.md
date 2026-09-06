@@ -1,5 +1,34 @@
 # SideCut — repository memory
 
+## OTA update sheet: progress + ETA + Install now/later + real patch notes (Sep 6, 2026) — v56.0.12
+- **User complaint**: OTA "gives the toast and stays there installing" — no visible progress, no
+  install choice, and the update's patch notes were missing. Also the user explicitly set the
+  shipping version to **56.0.12** (an intentional re-use of the number — do NOT "fix" it upward;
+  the OTA version only matters as "different from installed").
+- **What shipped (dev/native-updates.js rewrite)**:
+  - A bottom **update sheet** (`#scOtaSheet`, z-index 9999) replaces toast-only feedback: title
+    + date, real patch notes (bulleted), progress bar with %, MB-of-total and a **live ETA**
+    (smoothed from the plugin's `download` percent events — `Updater.addListener('download', s => s.percent)`),
+    and **Install now / Install later** buttons.
+  - Phases: `prompt` (notes + buttons) → `downloading` (bar, buttons hidden) → `staged`
+    (Install now applies via `set()`, Install later defers to next close) → `installing`
+    ("Installing… the app will reopen automatically") → context dies → new version boots.
+  - Sheet state persists in `localStorage['sidecut_ota_sheet']` so a staged-but-unapplied
+    bundle re-surfaces on launch (`restoreSheetState` + the boot `getNextBundle` check).
+  - `checkForUpdate` resolves `{ dismissed: true }` when the user picks Install later — the
+    manual "Check for updates" button no longer lies "You're on the latest version ✓" after a
+    dismissal (that inverted-toast bug is also fixed in index.html).
+- **ota/manifest.json now carries `size` + `notes` + `date`**: deploy.yml extracts the matching
+  CHANGELOG entry (version-matched, falls back to newest) via `eval('[' + block + ']')` and the
+  real zip size via `stat -c%s`, so the sheet shows what changed and the ETA has a byte total.
+  Manifest is written ONCE, after the zip exists (the first node block was deleted as redundant).
+- **str_replace gotcha**: the file editor silently no-ops on index.html (1.5 MB) — every edit
+  "succeeds" but changes nothing. sw.js edits work fine. For index.html use an atomic python
+  replace pass with count==1 assertions, then parse-check both inline script blocks
+  (`<script(?![^>]*src=)` extraction → `node --check`).
+- Manifest flow verified locally: built the zip, ran the exact workflow node block, got
+  `{version:'56.0.12', size:'384510', notes:[3 items], date:'…6:30 PM ET'}`.
+
 ## OTA "I got the update but reopening didn't apply it" (Sep 6, 2026, post-v56.0.16) — DIAGNOSED, no code change
 - User report: got the OTA toast, closed + reopened the app, still old version. Chain of custody
   verified end-to-end: live Pages `ota/manifest.json` = 56.0.16; `ota/SideCut-web.zip` contains the

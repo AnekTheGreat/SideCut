@@ -11,9 +11,16 @@
 // mid-session), and confirms healthy boots with notifyAppReady() so a broken
 // bundle can never brick the app (the plugin auto-reverts to the last good one).
 //
+// Update UX (the point of this module): instead of a lone toast, the user gets
+// an in-app update sheet with the patch notes, a progress bar with %, MB and a
+// live ETA during the download, and an explicit choice — INSTALL NOW (applies
+// the bundle immediately) or INSTALL LATER (installs when the app next closes;
+// the sheet stays dismissible and the staged bundle is applied at next launch).
+//
 // The zip + manifest are produced by .github/workflows/deploy.yml on every push:
 //   ota/SideCut-web.zip   — index.html, sw.js, manifest.json, icons
-//   ota/manifest.json     — { "version": "56.0.11", "url": "SideCut-web.zip" }
+//   ota/manifest.json     — { "version": "56.0.12", "url": "SideCut-web.zip",
+//                             "size": 1530000, "notes": [ ... ] }
 (function(){
   'use strict';
   var IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -21,6 +28,8 @@
   var OTA_BASE = 'https://anekthegreat.github.io/SideCut/';
   var MANIFEST_URL = OTA_BASE + 'ota/manifest.json';
   var LS_KEY = 'sidecut_ota_last';
+  var SHEET_KEY = 'sidecut_ota_sheet';       // persisted sheet state { version, notes, size, stagedAt, phase }
+  var INSTALL_PROMPT_SEEN = 'sidecut_ota_prompt_'; // + version — set when the user picks "later"
 
   function log(msg){ try{ console.log('[SideCut OTA] ' + msg); }catch(e){} }
   function toast(msg, ms){
@@ -49,9 +58,169 @@
     }catch(e){}
     return false;
   }
+
+  // ---------------- Update sheet (bottom card, above the mini player) ----------
+  // A real UI instead of a toast: patch notes, progress with %/MB/ETA, and
+  // explicit Install now / Install later buttons. Kept plain-HTML so it works
+  // no matter what state the main app stylesheet is in.
+  var sheetRefs = null;
+  function fmtMB(bytes){
+    var mb = (Number(bytes) || 0) / (1024 * 1024);
+    return (mb >= 1 ? mb.toFixed(1) : (mb * 1024).toFixed(0) + ' KB');
+  }
+  function fmtEta(sec){
+    if(!isFinite(sec) || sec < 0) return '—';
+    if(sec < 5) return 'a few seconds';
+    sec = Math.round(sec);
+    if(sec < 60) return '~' + sec + 's';
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return '~' + m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+  }
+  function ensureSheet(){
+    if(sheetRefs && document.body.contains(sheetRefs.card)) return sheetRefs;
+    var card = document.createElement('div');
+    card.id = 'scOtaSheet';
+    card.style.cssText = 'position:fixed; left:12px; right:12px; bottom:86px; z-index:9999; display:none;' +
+      'background:#13262b; border:1px solid #2b4450; border-radius:16px; padding:16px;' +
+      'box-shadow:0 12px 34px rgba(0,0,0,0.5); color:#eef; font-family:inherit;';
+    card.innerHTML =
+      '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">' +
+        '<div id="scOtaTitle" style="font-weight:700; font-size:15px;"></div>' +
+        '<div id="scOtaDate" style="font-size:11px; color:#9fb3b9; flex-shrink:0;"></div>' +
+      '</div>' +
+      '<div id="scOtaNotes" style="margin-top:8px; font-size:12.5px; color:#cfe3e3; max-height:132px; overflow-y:auto;"></div>' +
+      '<div id="scOtaProgressWrap" style="display:none; margin-top:12px;">' +
+        '<div style="height:8px; border-radius:6px; background:rgba(255,255,255,0.12); overflow:hidden;">' +
+          '<div id="scOtaBar" style="height:100%; width:0%; background:#f47a55; transition:width 0.2s linear;"></div>' +
+        '</div>' +
+        '<div style="display:flex; justify-content:space-between; margin-top:5px; font-size:11px; color:#9fb3b9;">' +
+          '<span id="scOtaPct">0%</span><span id="scOtaEta">estimating…</span>' +
+        '</div>' +
+      '</div>' +
+      '<div id="scOtaBtns" style="display:flex; gap:10px; margin-top:14px;">' +
+        '<button id="scOtaLater" style="flex:1; padding:11px; font-size:13.5px; font-weight:600; border-radius:10px; border:1px solid #2b4450; background:#0E1B1F; color:#cfe3e3; cursor:pointer;">Install later</button>' +
+        '<button id="scOtaNow" style="flex:1; padding:11px; font-size:13.5px; font-weight:700; border-radius:10px; border:none; background:#f47a55; color:#0E1B1F; cursor:pointer;">Install now</button>' +
+      '</div>' +
+      '<div id="scOtaMsg" style="display:none; margin-top:10px; font-size:12px; color:#9fb3b9;"></div>';
+    document.body.appendChild(card);
+    sheetRefs = { card: card };
+    card.addEventListener('click', function(e){ e.stopPropagation(); });
+    return sheetRefs;
+  }
+  function $(id){ return document.getElementById(id); }
+  function sheetMsg(text, ms){
+    var el = $('scOtaMsg'); if(!el) return;
+    el.textContent = text || '';
+    el.style.display = text ? 'block' : 'none';
+    if(text && ms){ setTimeout(function(){ if(el.textContent === text){ el.textContent = ''; el.style.display = 'none'; } }, ms); }
+  }
+  function showSheet(opts){
+    var o = opts || {};
+    ensureSheet();
+    var title = $('scOtaTitle'), date = $('scOtaDate'), notes = $('scOtaNotes'),
+        wrap = $('scOtaProgressWrap'), btns = $('scOtaBtns'), now = $('scOtaNow'), later = $('scOtaLater');
+    if(!title) return;
+    title.textContent = o.title || ('SideCut ' + o.version + ' is ready');
+    date.textContent = o.date || '';
+    // Patch notes: the real changelog items from the OTA manifest — never blank.
+    var items = (o.notes && o.notes.length) ? o.notes : ['Bug fixes and improvements'];
+    notes.innerHTML = '';
+    for(var i = 0; i < items.length; i++){
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:8px; padding:3px 0;';
+      var dot = document.createElement('span'); dot.textContent = '•';
+      dot.style.cssText = 'color:#f47a55; flex-shrink:0;';
+      var txt = document.createElement('span'); txt.textContent = String(items[i]);
+      row.appendChild(dot); row.appendChild(txt);
+      notes.appendChild(row);
+    }
+    // Stage-specific layout:
+    //  - "prompt"   (update available): Install now starts the download.
+    //  - "downloading": progress bar with %/MB/ETA, no buttons (it IS installing).
+    //  - "staged"   (downloaded): Install now applies it.
+    //  - "installing": the WebView is about to reload — progress + buttons gone,
+    //    a clear "Installing…" message is the last thing the user sees.
+    //  - "done": confirmation only.
+    now.textContent = (o.phase === 'staged') ? 'Install now' : 'Download & install';
+    var hideBtns = (o.phase === 'done' || o.phase === 'downloading' || o.phase === 'installing');
+    later.style.display = hideBtns ? 'none' : 'block';
+    now.style.display = hideBtns ? 'none' : 'block';
+    now.disabled = false; later.disabled = false;
+    now.onclick = function(){ if(o.onNow) o.onNow(); };
+    later.onclick = function(){ if(o.onLater) o.onLater(); };
+    if(o.phase === 'done'){
+      btns.style.display = 'none';
+      sheetMsg('✓ ' + (o.doneMsg || ('Installed v' + o.version + ' — you are up to date.')));
+    } else if(o.phase === 'installing'){
+      btns.style.display = 'none';
+      sheetMsg('Installing… the app will reopen automatically in a moment.');
+    } else if(o.phase === 'downloading'){
+      btns.style.display = 'none';
+      sheetMsg('');
+    } else {
+      btns.style.display = 'flex';
+      sheetMsg('');
+    }
+    wrap.style.display = (o.showProgress || o.phase === 'downloading') ? 'block' : 'none';
+    card.style.display = 'block';
+  }
+  function hideSheet(){ if(sheetRefs){ sheetRefs.card.style.display = 'none'; } }
+  function sheetProgress(pct, etaText){
+    var bar = $('scOtaBar'), pctEl = $('scOtaPct'), eta = $('scOtaEta');
+    if(bar) bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    if(pctEl) pctEl.textContent = Math.round(Math.max(0, Math.min(100, pct))) + '%';
+    if(eta) eta.textContent = etaText || '';
+  }
+
+  // Download with a live progress bar + running ETA. The plugin's 'download'
+  // event fires percent (0..100); time-to-completion is extrapolated from the
+  // smoothed transfer rate, which is far more honest than a fake countdown.
+  function downloadWithProgress(Updater, man){
+    return new Promise(function(resolve, reject){
+      var startedAt = Date.now();
+      var lastTick = 0, smoothSec = null, lastPct = 0;
+      var handle = null;
+      try{
+        handle = Updater.addListener('download', function(state){
+          var pct = Number(state && state.percent) || 0;
+          lastPct = pct;
+          var now = Date.now();
+          if(now - lastTick > 250){
+            lastTick = now;
+            var elapsed = (now - startedAt) / 1000;
+            if(pct > 2 && elapsed > 1){
+              var instSec = elapsed * (100 - pct) / pct;
+              smoothSec = smoothSec == null ? instSec : (smoothSec * 0.7 + instSec * 0.3);
+            }
+            var total = (man && man.size) ? Number(man.size) : 0;
+            var doneMB = total ? fmtMB(total * pct / 100) : '';
+            var ofTotal = total ? ' of ' + fmtMB(total) : '';
+            sheetProgress(pct, (doneMB ? doneMB + ofTotal + ' · ' : '') + fmtEta(smoothSec));
+          }
+        });
+      }catch(e){ log('progress listener unavailable: ' + ((e && e.message) || e)); }
+      var dl = Updater.download({
+        url: (String(man.url).indexOf('http') === 0 ? man.url : OTA_BASE + 'ota/' + man.url),
+        version: String(man.version)
+      });
+      function cleanup(){ try{ if(handle && handle.remove) handle.remove(); }catch(e){} }
+      dl.then(function(bundle){
+        // Snap the bar to 100% with a final honest number.
+        sheetProgress(100, 'done in ' + fmtEta((Date.now() - startedAt) / 1000).replace('~', ''));
+        setTimeout(function(){ resolve(bundle); }, 350);
+      }).catch(function(err){
+        cleanup();
+        reject(err);
+      });
+      // Safety net: if the percent events stop but the promise hasn't settled,
+      // nothing shows progress — mirror the promise state onto the bar at 99%.
+      setTimeout(function(){ if(lastPct > 0 && lastPct < 100) sheetProgress(lastPct, 'finishing…'); }, 30000);
+    });
+  }
+
   // Applies a staged bundle in place. set() reloads the WebView into the new
   // bundle (the JS context dies — nothing after it runs), so only do this when
-  // no song is playing; otherwise let the plugin's background apply handle it.
+  // no song is playing; otherwise tell the user it installs at close.
   function applyStagedNow(Updater, nb){
     if(!nb || !nb.id) return;
     if(somethingIsPlaying()){
@@ -59,12 +228,20 @@
       return;
     }
     log('applying staged bundle ' + nb.version + ' now');
-    toast('Installing update ' + nb.version + '…', 2000);
-    // Small delay so the toast paints before the context is destroyed.
+    // Show the Installing state in the sheet (not just a toast) — the set()
+    // reload below destroys the JS context, so this is the last thing the
+    // user sees before the app comes back on the new version.
+    showSheet({ phase: 'installing', version: nb.version, title: 'Installing SideCut ' + nb.version + '…' });
+    // Clear the persisted sheet state BEFORE the reload: once set() succeeds
+    // the bundle is current, and a stale 'staged' record would re-open the
+    // update sheet after the new version boots.
+    clearSheet();
+    // Small delay so the sheet paints before the context is destroyed.
     setTimeout(function(){
       try{ Updater.set({ id: nb.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
-    }, 350);
+    }, 450);
   }
+
   // Confirms the running bundle is healthy so Capgo keeps it; a bundle that
   // never gets this call is rolled back to the previous one automatically.
   function markAppReady(){
@@ -75,7 +252,26 @@
     }catch(e){}
   }
 
-  async function checkForUpdate(opts){
+  function persistSheet(state){
+    try{ localStorage.setItem(SHEET_KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function readSheet(){
+    try{ var raw = localStorage.getItem(SHEET_KEY); if(raw){ var d = JSON.parse(raw); if(d && d.version) return d; } }catch(e){}
+    return null;
+  }
+  function clearSheet(){ try{ localStorage.removeItem(SHEET_KEY); }catch(e){} }
+
+  function checkForUpdate(opts){
+    var o = opts || {};
+    return new Promise(function(resolve){
+      (async function(){
+        var res = await checkForUpdateInner(o);
+        resolve(res);
+      })();
+    });
+  }
+
+  async function checkForUpdateInner(opts){
     var o = opts || {};
     if(!IS_NATIVE || !appBooted()) return null;
     var Updater = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
@@ -95,31 +291,40 @@
       var cur = currentVersion();
       if(!cur){ log('cannot determine the running version — skipping update check (fail safe)'); return null; }
       if(String(man.version) === String(cur)){ log('up to date (' + cur + ')'); return null; }
+
       // Already staged but not yet applied (waiting for background/relaunch)?
-      // Apply it right now instead of looping on "restart again" — the plugin
-      // only applies staged bundles on background events, which a swipe-away
-      // kill interrupts, leaving the update stuck forever.
+      // Surface the staged state in the sheet so the user can apply it now.
       try{
         var nb = await Updater.getNextBundle();
         if(nb && nb.version === String(man.version)){
           log('bundle ' + man.version + ' already staged');
-          applyStagedNow(Updater, nb);
+          var seenKey = INSTALL_PROMPT_SEEN + man.version;
+          var seen = false;
+          try{ seen = !!localStorage.getItem(seenKey); }catch(e){}
+          showSheet({
+            phase: 'staged', version: man.version, date: man.date || '', notes: man.notes,
+            onNow: function(){ applyStagedNow(Updater, nb); },
+            onLater: function(){ try{ localStorage.setItem(seenKey, '1'); }catch(e){} hideSheet(); toast('Saved for later — installs next time you close the app.', 3500); }
+          });
+          persistSheet({ version: man.version, notes: man.notes || [], size: man.size || 0, date: man.date || '', phase: 'staged', stagedAt: Date.now() });
           return man;
         }
       }catch(_ne){}
-      if(!o.silent) toast('Downloading update ' + man.version + '…');
-      var bundle = await Updater.download({
-        url: (String(man.url).indexOf('http') === 0 ? man.url : OTA_BASE + 'ota/' + man.url),
-        version: String(man.version)
-      });
-      if(!bundle || !bundle.id){ log('download returned no bundle'); return man; }
-      // Stage, don't reload: the bundle activates on background/relaunch, so a
-      // playing song is never interrupted.
-      await Updater.next({ id: bundle.id });
-      try{ localStorage.setItem(LS_KEY, JSON.stringify({ version: String(man.version), at: Date.now() })); }catch(_e){}
-      log('staged ' + man.version + ' (id ' + bundle.id + ')');
-      toast('Update ' + man.version + ' downloaded — it installs when you close the app.', 4500);
-      return man;
+
+      // New update available: show the patch notes and ask before downloading
+      // (auto-checks stay silent unless the user asked to be told; the manual
+      // Check for updates button always shows the sheet immediately).
+      var showPrompt = !o.silent;
+      if(!showPrompt && o.onUpdateAvailable && typeof o.onUpdateAvailable === 'function'){
+        showPrompt = !!o.onUpdateAvailable(man);
+      }
+      if(!showPrompt){
+        // Silent background check: remember it so the next manual/open check
+        // still surfaces it, and leave a quiet toast pointing at the sheet.
+        try{ localStorage.setItem(LS_KEY, JSON.stringify({ version: String(man.version), at: Date.now(), available: true })); }catch(_e){}
+        return null;
+      }
+      return await promptAndInstall(Updater, man, o);
     }catch(e){
       log('update check failed: ' + ((e && e.message) || e));
       if(!o.silent) toast('Update check failed — check your connection.', 3000);
@@ -127,7 +332,86 @@
     }
   }
 
+  async function promptAndInstall(Updater, man, o){
+    var seenKey = INSTALL_PROMPT_SEEN + man.version;
+    return new Promise(function(resolve){
+      var settled = false;
+      function finish(v){ if(!settled){ settled = true; resolve(v === undefined ? man : v); } }
+      showSheet({
+        phase: 'prompt', version: man.version, date: man.date || '', notes: man.notes,
+        onNow: async function(){
+          try{
+            persistSheet({ version: man.version, notes: man.notes || [], size: man.size || 0, date: man.date || '', phase: 'downloading', startedAt: Date.now() });
+            showSheet({ phase: 'downloading', version: man.version, date: man.date || '', notes: man.notes, showProgress: true,
+              onNow: function(){}, onLater: function(){ try{ localStorage.setItem(seenKey, '1'); }catch(e){} hideSheet(); toast('Update will continue in the background.', 3000); } });
+            sheetProgress(0, 'starting…');
+            var bundle = await downloadWithProgress(Updater, man);
+            if(!bundle || !bundle.id){ log('download returned no bundle'); sheetMsg('Download failed — try again.', 0); finish(man); return; }
+            // Stage, don't reload: the bundle activates on background/relaunch,
+            // so a playing song is never interrupted.
+            await Updater.next({ id: bundle.id });
+            try{ localStorage.setItem(LS_KEY, JSON.stringify({ version: String(man.version), at: Date.now() })); }catch(_e){}
+            log('staged ' + man.version + ' (id ' + bundle.id + ')');
+            persistSheet({ version: man.version, notes: man.notes || [], size: man.size || 0, date: man.date || '', phase: 'staged', stagedAt: Date.now() });
+            showSheet({ phase: 'staged', version: man.version, date: man.date || '', notes: man.notes,
+              onNow: async function(){
+                try{ var nb2 = await Updater.getNextBundle(); applyStagedNow(Updater, nb2); }catch(e){ applyStagedNow(Updater, bundle); }
+              },
+              onLater: function(){ try{ localStorage.setItem(seenKey, '1'); }catch(e){} hideSheet(); toast('Saved for later — installs next time you close the app.', 3500); } });
+            finish(man);
+          }catch(e){
+            log('download/stage failed: ' + ((e && e.message) || e));
+            sheetMsg('Download failed — check your connection and try again.', 0);
+            // Give the user a way back to the buttons after a failure.
+            setTimeout(function(){
+              showSheet({ phase: 'prompt', version: man.version, date: man.date || '', notes: man.notes,
+                onNow: function(){ promptAndInstall(Updater, man, o); },
+                onLater: function(){ try{ localStorage.setItem(seenKey, '1'); }catch(e){} hideSheet(); } });
+            }, 4000);
+            finish(man);
+          }
+        },
+        onLater: function(){
+          try{ localStorage.setItem(seenKey, '1'); }catch(e){}
+          hideSheet();
+          toast('Maybe later — auto-checks continue in the background.', 3000);
+          // Distinct result so the manual Check-for-updates button doesn't
+          // mistake a user "later" for "you are on the latest version".
+          finish({ dismissed: true });
+        }
+      });
+    });
+  }
+
+  // Restore a persisted sheet (e.g. a 'staged' bundle record from a previous
+  // session) on launch so the UI never silently forgets it. 'downloading' can't
+  // survive a reload (the JS download dies with the page) — a fresh auto-check
+  // re-offers it; nothing to restore there.
+  function restoreSheetState(){
+    if(!IS_NATIVE || !appBooted()) return;
+    if(sheetRefs && sheetRefs.card.style.display === 'block') return; // already showing
+    var st = readSheet();
+    if(!st) return;
+    if(st.phase === 'staged'){
+      showSheet({
+        phase: 'staged', version: st.version, date: st.date || '', notes: st.notes,
+        onNow: async function(){
+          try{
+            var U = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+            var nb = U ? await U.getNextBundle() : null;
+            applyStagedNow(U, nb);
+          }catch(e){}
+        },
+        onLater: function(){ hideSheet(); }
+      });
+    }
+    // 'downloading' can't survive a reload (the JS download dies with the page) —
+    // a fresh auto-check will re-offer it; nothing to restore.
+  }
+
   // Auto-check shortly after boot, then every 30 minutes and on app foreground.
+  // Silent checks do NOT auto-download or auto-apply; they only record that an
+  // update exists (the restored/next sheet lets the user choose).
   function startAutoCheck(){
     if(!IS_NATIVE) return;
     setTimeout(function(){ checkForUpdate({ silent: true }); }, 8000);
@@ -137,7 +421,7 @@
     });
   }
 
-  window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, OTA_BASE: OTA_BASE };
+  window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, OTA_BASE: OTA_BASE };
   if(IS_NATIVE){
     // Give the main app script time to finish booting; only then confirm the
     // bundle is healthy and start checking for newer ones.
@@ -145,13 +429,23 @@
       setTimeout(function(){
         if(!appBooted()){ log('app did not finish booting — bundle stays unconfirmed'); return; }
         markAppReady();
+        restoreSheetState();
         // A staged bundle can survive a swipe-away kill (the plugin only applies
-        // staged bundles on background events). Apply it on launch instead of
-        // leaving the update stuck behind another close/reopen cycle.
+        // staged bundles on background events). Surface it in the sheet on launch
+        // instead of leaving the update stuck behind another close/reopen cycle.
         try{
           var U = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
           if(U && typeof U.getNextBundle === 'function'){
-            U.getNextBundle().then(function(nb){ applyStagedNow(U, nb); }).catch(function(){});
+            U.getNextBundle().then(function(nb){
+              if(!nb || !nb.version) return;
+              if(sheetRefs && sheetRefs.card.style.display === 'block') return; // sheet already up
+              var st = readSheet();
+              showSheet({
+                phase: 'staged', version: nb.version, date: (st && st.date) || '', notes: (st && st.notes) || [],
+                onNow: function(){ applyStagedNow(U, nb); },
+                onLater: function(){ hideSheet(); toast('Saved for later — installs next time you close the app.', 3500); }
+              });
+            }).catch(function(){});
           }
         }catch(e){}
         startAutoCheck();
