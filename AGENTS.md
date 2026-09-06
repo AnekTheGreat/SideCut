@@ -1,5 +1,30 @@
 # SideCut — repository memory
 
+## OTA "I got the update but reopening didn't apply it" (Sep 6, 2026, post-v56.0.16) — DIAGNOSED, no code change
+- User report: got the OTA toast, closed + reopened the app, still old version. Chain of custody
+  verified end-to-end: live Pages `ota/manifest.json` = 56.0.16; `ota/SideCut-web.zip` contains the
+  fixed updater (applyStagedNow/getNextBundle present), APP_VERSION 56.0.16, both inline script
+  blocks parse clean (`new Function`), `node --check` clean on native-updates.js. CI runs 34057489955
+  (Pages) + 34057489961 (AAB) green for 4fb7c05. **The published bundle is good.**
+- **Root cause of the symptom: one-way latch.** The user's installed build runs the OLD updater
+  (v56.0.11-era code from 7a28e81: staged bundles only say "restart the app to finish installing"
+  and NEVER call `set()` themselves — the plugin applies on background events, which swipe-away
+  kills interrupt). That updater can't be fixed by the OTA it delivers — it has to first install
+  the fixed one. Also, once the fixed bundle DOES land, the plugin's auto-revert still silently
+  kicks any bundle that never calls `notifyAppReady()` back to the previous version on relaunch —
+  indistinguishable from "didn't get the update" without checking the OTA log lines.
+- **Escape hatches for the user (in order)**: (1) reopen the app, leave it OPEN ~10 min (the 30-min
+  interval is 0/30/60…, but foreground visibilitychange fires an immediate silent check) so the
+  OLD code at least re-stages 56.0.16, then fully background it (Home gesture — NOT swipe-away)
+  so the plugin's background handler applies it, then reopen. (2) If that fails, install the new
+  AAB from Actions artifact `SideCut-5.0.44-release` once — every OTA after that works. (3) On the
+  NEW updater, a stuck staged bundle is applied automatically at launch (`applyStagedNow`), and
+  "didn't get it" on the new updater = bundle was rolled back by auto-revert → check logcat for
+  `[SideCut OTA]` (a crash before `toast` is defined leaves the bundle unconfirmed → revert).
+- **DO NOT bump the version again chasing this** — v56.0.16 already ships the fix and Pages is
+  serving it; another bump just adds another stage/apply cycle the old updater can't finish.
+- Changed files: none (diagnosis turn).
+
 ## Play Billing native purchases (Sep  ồ4,  ồ2026) — v56.0.6
 - **Goal reached: native Google Play Billing works in the Capacitor WebView app** —
   `@capgo/native-purchases@7.19.3` added (`.npmrc` at repo root sets
