@@ -413,8 +413,16 @@
     }
     try{
       var ctrl = new AbortController();
-      var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
-      var resp = await fetch(MANIFEST_URL, { signal: ctrl.signal, cache: 'no-store' });
+      var timer = setTimeout(function(){ ctrl.abort(); }, 20000);
+      // NO 'cache:no-store': from the native app this fetch is cross-origin
+      // (app origin is https://localhost),and the `cache` request header is not in
+      // the CORS-safelisted set, so the browser sends an OPTIONS preflight first —
+      // GitHub Pages answers those with HTTP 405, killing every check with
+      // "Failed to fetch" -> "Update check failed — check your connection."
+      // A plain GET (default mode:cors) is safelisted and GitHub Pages serves it
+      // with access-control-allow-origin:*, so drop the cache option entirely.
+
+      var resp = await fetch(MANIFEST_URL, { signal: ctrl.signal });
       clearTimeout(timer);
       if(!resp || !resp.ok){ log('manifest fetch failed: ' + (resp ? resp.status : 'no response')); return null; }
       var man = await resp.json();
@@ -460,12 +468,11 @@
       // tapped Check for updates by hand. The sheet only pops when a check has
       // actually found a newer manifest version (never on 'up to date').
       var showPrompt = !o.silent;
-      if(!showPrompt){
-        showPrompt = true;
-      }
-      if(!showPrompt){
-        // Silent background check: remember it so the next manual/open check
-        // still surfaces it, and leave a quiet toast pointing at the sheet.
+      if(!showPrompt && somethingIsPlaying()){
+        // Silent auto-check during playback: remember the update quietly but never
+        // throw the sheet up mid-song — checking never touches audio; the sheet +
+        // a possible install tap would reload the app and cut the tune. It surfaces
+        // on the next silent check after the music stops (or on a manual check).
         try{ localStorage.setItem(LS_KEY, JSON.stringify({ version: String(man.version), at: Date.now(), available: true })); }catch(_e){}
         return null;
       }
