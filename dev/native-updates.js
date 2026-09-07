@@ -490,11 +490,12 @@
   }
 
   // Auto-check shortly after boot, then every 30 minutes and on app foreground.
-  // Silent checks do NOT auto-download or auto-apply; they only record that an
-  // update exists (the restored/next sheet lets the user choose).
+  // Silent checks DO surface the update sheet when a newer version exists (the
+  // boot one fires ~2.5s in so a fresh update is visible on every refresh).
+  // Silent checks still never auto-download or auto-apply; the sheet asks.
   function startAutoCheck(){
     if(!IS_NATIVE) return;
-    setTimeout(function(){ checkForUpdate({ silent: true }); }, 8000);
+    setTimeout(function(){ checkForUpdate({ silent: true }); }, 2500);
     setInterval(function(){ checkForUpdate({ silent: true }); }, 30 * 60 * 1000);
     document.addEventListener('visibilitychange', function(){
       if(document.visibilityState === 'visible') checkForUpdate({ silent: true });

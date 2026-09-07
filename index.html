@@ -2770,6 +2770,17 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         </div>
       </div>
 
+      <!-- Collapsible: Check for updates (native only, unhidden below) -->
+      <div id="otaSettingsBlock" style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden; display:none;">
+        <button id="collapsibleOta" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+          <span>Check for updates</span><span id="collapseOtaIcon" style="transition:transform 0.2s;">▾</span>
+        </button>
+        <div id="collapsibleOtaContent" style="padding:12px; border-top:1px solid var(--line); display:none;">
+          <button class="playlist-pick-btn" id="otaCheckSettingsBtn" style="text-align:center; width:100%;">Check for updates</button>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">SideCut also checks on its own every time the app opens and comes back to the foreground.</div>
+        </div>
+      </div>
+
       <!-- Collapsible: Versions -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
         <button id="collapsibleVersions" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
@@ -8171,7 +8182,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.0.19';
+  const APP_VERSION = '56.0.20';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -8390,6 +8401,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+    { version: '56.0.20', date: 'September 7, 2026 · 2:10 AM ET', title: 'Updates check themselves on every refresh — and you can check from Settings', items: [
+      "Settings → More has a Check for updates row now — no more hunting for the button on the home screen",
+      "The update check fires about 2 seconds after the app opens, so a fresh update surfaces on every refresh instead of half a minute later",
+      "If a newer version is live, the update sheet with patch notes and Install now / later pops up on its own — no button needed",
+    ] },
     { version: '56.0.19', date: 'September 7, 2026 · 1:25 AM ET', title: 'Billing fixed + updates that actually arrive', items: [
       "Google Play billing opens again — Donate and premium taps were crashing on a hidden error before the Play sheet could appear",
       "This update bundles the delivery fix itself: some devices were never even offered 56.0.18, so all of it ships together here",
@@ -11874,6 +11890,25 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // handled that too. Only report "latest" for a genuine check with nothing new.
       if(man && !man.unavailable && !man.dismissed) toast('You\'re on the latest version ✓', 2500);
     } finally { btn.disabled = false; btn.textContent = old; }
+  });
+  // Settings → More "Check for updates": same handler as the home-screen big
+  // button, so the row behaves identically (spinner text, honest toasts, and
+  // the update sheet with patch notes when something is available).
+  $('otaCheckSettingsBtn').addEventListener('click', async () => {
+    if(!window.__SideCutOTA || !window.__SideCutOTA.IS_NATIVE){ toast('Updates are automatic in the browser — nothing to check.'); return; }
+    const sbtn = $('otaCheckSettingsBtn');
+    const sold = sbtn.textContent;
+    sbtn.disabled = true; sbtn.textContent = 'Checking…';
+    try{
+      const man = await window.__SideCutOTA.checkForUpdate({ silent: false });
+      if(man && !man.unavailable && !man.dismissed) toast('You\'re on the latest version ✓', 2500);
+    } finally { sbtn.disabled = false; sbtn.textContent = sold; }
+  });
+  $('collapsibleOta').addEventListener('click', () => {
+    const c = $('collapsibleOtaContent'), ic = $('collapseOtaIcon');
+    const open = c.style.display === 'none';
+    c.style.display = open ? 'block' : 'none';
+    if(ic) ic.style.transform = open ? 'rotate(180deg)' : '';
   });
   $('mediaNotifBtnBig').addEventListener('click', () => {
     try{
@@ -17689,7 +17724,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // local https://localhost WebView are a documented source of blank/hung pages.
   // The website version still registers it normally.
   var __SC_IS_NATIVE = !!(typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-  try{ if(__SC_IS_NATIVE){ var _scTob = document.getElementById('transferOldBtnBig'); if(_scTob) _scTob.style.display = ''; var _scOta = document.getElementById('otaCheckBtnBig'); if(_scOta) _scOta.style.display = ''; var _scMnb = document.getElementById('mediaNotifBtnBig'); if(_scMnb){ var _scNmOn = false; try{ _scNmOn = !window.__scMediaNotifOff(localStorage.getItem('sidecut_native_media')); }catch(e){ } _scMnb.style.display = ''; _scMnb.textContent = _scNmOn ? 'Disable notification player' : 'Enable notification player (experimental)'; } } }catch(e){ }
+  try{ if(__SC_IS_NATIVE){ var _scTob = document.getElementById('transferOldBtnBig'); if(_scTob) _scTob.style.display = ''; var _scOta = document.getElementById('otaCheckBtnBig'); if(_scOta) _scOta.style.display = ''; var _scOtaS = document.getElementById('otaSettingsBlock'); if(_scOtaS) _scOtaS.style.display = ''; var _scMnb = document.getElementById('mediaNotifBtnBig'); if(_scMnb){ var _scNmOn = false; try{ _scNmOn = !window.__scMediaNotifOff(localStorage.getItem('sidecut_native_media')); }catch(e){ } _scMnb.style.display = ''; _scMnb.textContent = _scNmOn ? 'Disable notification player' : 'Enable notification player (experimental)'; } } }catch(e){ }
   if('serviceWorker' in navigator && !window.__SIDECUT_SNAPSHOT_VIEW__ && !__SC_IS_NATIVE){
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').then((reg) => {
