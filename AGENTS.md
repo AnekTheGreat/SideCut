@@ -1,5 +1,17 @@
 # SideCut — repository memory
 
+## Google Play billing "not opening" (Sep 7, 2026): stale-bundle symptom, not a code bug
+- User reported billing taps don't open the Play sheet. The RUNNING bundle (pre-56.0.18
+  OTA zip) still contains the broken code: `purchasePlayItem()` calls
+  `nativePurchasesAvailable()` which has no definition there → ReferenceError on every
+  Donate/Subscribe tap BEFORE the sheet opens. The 56.0.18 source already fixed it.
+- Fix delivery = the rebuilt OTA zip (commit 1400519 + the copy fixes in this commit);
+  no APK rebuild needed. Billing should work as soon as the device applies 56.0.18.
+- Error-copy cleanup while there: 'not-found' messages no longer tell users to add
+  products to RevenueCat (plugin removed ages ago) — now they point at Play Console only.
+- CI `patch-billing.py` no-ops on current source (identifier-first already shipped);
+  BILLING permission is added by `patch-manifest.py` — nothing else to fix in CI.
+
 ## v56.0.18: UX batch + billing ReferenceError fix (Sep 7, 2026)
 - Batch: (1) Discover popup group reorder (Album History/Singles) now feels like
   playlist reorder — pickup haptic, dashed `.dp-ah-artist.dragging` outline,
