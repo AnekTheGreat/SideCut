@@ -1,7 +1,7 @@
 // Boot harness: run the main IIFE with a DOM/IDB mock, print the first runtime error.
 const fs = require('fs');
 const vm = require('vm');
-const html = fs.readFileSync('index.html', 'utf8');
+const html = fs.readFileSync(process.env.BOOT_HTML || 'index.html', 'utf8');
 const blocks = [...html.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g)];
 if (!blocks.length) { console.error('no inline scripts'); process.exit(1); }
 const src = blocks[0][1];

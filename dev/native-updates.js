@@ -30,6 +30,8 @@
   var LS_KEY = 'sidecut_ota_last';
   var SHEET_KEY = 'sidecut_ota_sheet';       // persisted sheet state { version, notes, size, stagedAt, phase }
   var INSTALL_PROMPT_SEEN = 'sidecut_ota_prompt_'; // + version — set when the user picks "later"
+  var READY_TOAST_KEY = 'sidecut_ota_ready_toast_'; // + version - "update is ready" toast fires at most once per staged version
+  var STAGED_SHOWN_KEY = 'sidecut_ota_staged_shown_'; // + version - play-time staged sheet surfaces at most once per staged version
 
   function log(msg){ try{ console.log('[SideCut OTA] ' + msg); }catch(e){} }
   function toast(msg, ms){
@@ -228,9 +230,14 @@
     if(somethingIsPlaying()){
       // Defer for real instead of just talking about it: install the moment the
       // user leaves the app (music must not be killed mid-play) and remember
-      // the choice so silent checks stop re-offering the same version.
+      // the choice so silent checks stop re-offering the same version. The
+      // "ready" toast fires at most ONCE per staged version — silent re-checks
+      // (every 30 min, foreground, before play) were re-running this path
+      // each time and re-toasting "it installs when you close the app.".
       try{ localStorage.setItem(INSTALL_PROMPT_SEEN + nb.version, '1'); }catch(e){}
       applyInBackground(Updater, nb);
+      var rtk = READY_TOAST_KEY + nb.version;
+      try{ if(localStorage.getItem(rtk) === '1') return true; localStorage.setItem(rtk, '1'); }catch(e){}
       toast('Update ' + nb.version + ' is ready — it installs when you close the app.', 4500);
       return true;
     }
@@ -255,6 +262,27 @@
 
   // Did the user already pick "Install later" for this version? Every onLater
   // handler (and a music-playing deferral) sets sidecut_ota_prompt_<version>.
+  function staged(){
+    if(!IS_NATIVE) return;
+    var U = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+    if(!U || typeof U.getNextBundle !== 'function') return;
+    U.getNextBundle().then(function(nb){
+      if(!nb || !nb.version) return;
+      if(!wantDeferredInstall(String(nb.version))) return; // auto-apply path already handled it
+      if(sheetRefs && sheetRefs.card && sheetRefs.card.style.display === 'block') return;
+      var st = readSheet();
+      if(st && st.version === String(nb.version)) return; // already on screen
+      var sk = STAGED_SHOWN_KEY + nb.version;
+      try{ if(localStorage.getItem(sk) === '1') return; }catch(e){}
+      try{ localStorage.setItem(sk, '1'); }catch(e){}
+      showSheet({
+        phase: 'staged', version: String(nb.version), date: (st && st.date) || '', notes: (st && st.notes) || [],
+        onNow: function(){ try{ localStorage.removeItem(sk); }catch(e){} if(applyStagedNow(U, nb)) hideSheet(); },
+        onLater: function(){ try{ localStorage.setItem(INSTALL_PROMPT_SEEN + nb.version, '1'); }catch(e){} hideSheet(); toast('Saved for later — installs when you leave the app.', 3500); }
+      });
+    }).catch(function(){});
+  }
+
   function wantDeferredInstall(version){
     try{ if(localStorage.getItem(INSTALL_PROMPT_SEEN + version) === '1') return true; }catch(e){}
     return false;
@@ -280,8 +308,43 @@
     }
     try{ window.__scOtaDeferred = { id: nb.id, version: version }; }catch(e){}
     log('staged ' + version + ' will install when the app is closed/backgrounded');
+    // Wire the transition listeners ONCE per deferred bundle (re-checks of the
+    // same staged version call this repeatedly — duplicate listeners would fire
+    // go() multiple times per event).
+    if(window.__scOtaDeferredWired === version) return 'deferred';
+    try{ window.__scOtaDeferredWired = version; }catch(e){}
     function go(){
+      // The user complaint: leaving the app while music plays must NOT reload
+      // the WebView. set() swaps the bundle and the JS context dies - playback
+      // dies with it. If music is (still) playing, keep the staged bundle
+      // around:the boot path applies it on the next clean relaunch.
+      if(somethingIsPlaying()){
+        // Keep the deferred marker — when the song pauses or ends (while
+        // backgrounded) punchs the install then, on the quiet clean moment.
+
+        // A foreground pause while music plays must NOT reload mid-use either:
+        // only install when the app has actually been backgrounded (Home gesture /
+        // close / task-mart removal), which is exactly the user complaint fix.
+
+
+        if(document.visibilityState === 'visible'){
+          // Playback still active, foreground: leave the staged bundle alone.
+
+          return;
+        }
+        log('app backgrounded while music is playing — updating when the music pauses');
+        return;
+      }
+      if(document.visibilityState === 'visible'){
+        // Never reload the app in the middle of a foreground session — only
+        // the background/close transitions (and the boot path, and the play-time
+        // staged() choice) may apply the update. A stale resume event while
+        // foreground (e.g. a notification shade pull) must not reload.now.
+
+        return;
+      }
       var d = window.__scOtaDeferred;
+
       if(!d) return;
       window.__scOtaDeferred = null;
       Updater.getNextBundle().then(function(cur){
@@ -301,6 +364,12 @@
       go();
     }, false);
     try{ if(document.visibilityState !== 'visible') go(); }catch(e){}
+    // When music was playing at background-time, defer the install until the
+    // song pauses or ends — the pause/ended event then runs go() and installs
+    // on the quiet clean moment ((still backgrounded), so the user never sees
+    // a reload or a cut-off song. Only wire these once per deferred bundle.
+
+    try{ document.addEventListener('ended', go, false); }catch(e){}
     return 'deferred';
   }
 
@@ -502,7 +571,7 @@
     });
   }
 
-  window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, OTA_BASE: OTA_BASE };
+  window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, staged: staged, OTA_BASE: OTA_BASE };
   if(IS_NATIVE){
     // Give the main app script time to finish booting; only then confirm the
     // bundle is healthy and start checking for newer ones.
