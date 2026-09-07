@@ -564,10 +564,19 @@
   // Silent checks still never auto-download or auto-apply; the sheet asks.
   function startAutoCheck(){
     if(!IS_NATIVE) return;
-    setTimeout(function(){ checkForUpdate({ silent: true }); }, 2500);
+    setTimeout(function(){ if(document.visibilityState !== 'hidden') checkForUpdate({ silent: true }); }, 2500);
     setInterval(function(){ checkForUpdate({ silent: true }); }, 30 * 60 * 1000);
+    // Debounced foreground check: rapid folds (visibility flicker on
+    // folding phones) collapse into a single check 6s after the screen
+    // settles, so checking can't spam the network or fight playback.
+    let _fgTimer = null;
     document.addEventListener('visibilitychange', function(){
-      if(document.visibilityState === 'visible') checkForUpdate({ silent: true });
+      if(document.visibilityState !== 'visible') return;
+      if(_fgTimer) clearTimeout(_fgTimer);
+      _fgTimer = setTimeout(function(){
+        _fgTimer = null;
+        checkForUpdate({ silent: true });
+      }, 6000);
     });
   }
 
