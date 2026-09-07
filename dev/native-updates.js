@@ -384,12 +384,15 @@
         }
       }catch(_ne){}
 
-      // New update available: show the patch notes and ask before downloading
-      // (auto-checks stay silent unless the user asked to be told; the manual
-      // Check for updates button always shows the sheet immediately).
+      // New update available: show the patch notes and ask before downloading.
+      // Silent auto-checks (boot / 30-min / foreground) SURFACE the sheet too —
+      // before this, a silent check only wrote a localStorage flag and returned,
+      // so an update could sit invisible until the user opened Settings and
+      // tapped Check for updates by hand. The sheet only pops when a check has
+      // actually found a newer manifest version (never on 'up to date').
       var showPrompt = !o.silent;
-      if(!showPrompt && o.onUpdateAvailable && typeof o.onUpdateAvailable === 'function'){
-        showPrompt = !!o.onUpdateAvailable(man);
+      if(!showPrompt){
+        showPrompt = true;
       }
       if(!showPrompt){
         // Silent background check: remember it so the next manual/open check
