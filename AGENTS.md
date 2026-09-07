@@ -1,5 +1,32 @@
 # SideCut — repository memory
 
+## v56.0.18: UX batch + billing ReferenceError fix (Sep 7, 2026)
+- Batch: (1) Discover popup group reorder (Album History/Singles) now feels like
+  playlist reorder — pickup haptic, dashed `.dp-ah-artist.dragging` outline,
+  drag-lift visuals, edge auto-scroll via rAF, settle-then-persist, transition
+  kill during drag; (2) pinned-artist `set photo` writes `a.photo` AND `a.art`,
+  and the no-art fallback div now shows the photo (`a.photo` as background) —
+  covers users whose stored pin only carries `photo`; (3) Discover Top Hits
+  (Apple RSS most-played 25 + iTunes lookup) goes through `fetchWithProxy` with
+  the 8s AbortController instead of bare fetch, so blocked domains can't kill
+  it; (4) Settings → More: "Ask artist when importing" moved below the Playback
+  collapsible, Library Tools relabeled "Library Tools & Fetching".
+- **Real bug found while verifying**: `nativePurchasesAvailable()` (added in
+  aed26ee v56.0.7) lost its DEFINITION in the very next commit but 4 call sites
+  survived — first line of `syncPlayEntitlement()` (boot/focus/visibility) and
+  `purchasePlayItem()` (Donate/premium taps) → guaranteed ReferenceError on
+  every purchase attempt. The RevenueCat native path (`*Native` fns, Purchases
+  plugin) was removed with it, so the two dead branches calling
+  `syncPlayEntitlementNative`/`purchasePlayItemNative` were deleted and the
+  function restored gated on `Capacitor.isNativePlatform()`. jsdom boot test
+  now clean (0 occurrences vs 1 before).
+- Version: APP_VERSION 56.0.16→56.0.18, sw.js cache → sidecut-shell-v56.0.18,
+  CHANGELOG + ota/manifest.json regenerated (notes = 4 bullet batch).
+- **index.html file-editor gotcha confirmed again**: str_replace "succeeds"
+  with no error yet writes NOTHING (even a trivial no-op replace fails to
+  match). Every index.html edit must go through an atomic python replace pass
+  with count==1 assertions, then `node --check` both inline blocks.
+
 ## v56.0.17: "Install later" actually installs on close + version bump REQUIRED for delivery (Sep 6, 2026)
 - **Delivery gotcha that cost hours**: fixing only `dev/native-updates.js` and republishing a
   SAME-VERSION manifest does nothing for devices that already staged/applied 56.0.12 —

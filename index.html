@@ -1549,6 +1549,9 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   z-index:40; padding:12px 28px; border-radius:999px; border:none; background:var(--coral); color:#161616;
   font-weight:700; font-size:14px; font-family:var(--font-ui); box-shadow:0 10px 30px rgba(0,0,0,0.4); cursor:pointer; }
 #hbReorderDone.show{ display:block; }
+/* Discover popup artist-group reorder (Album History / Singles) — same
+   dragging feel as playlist rows: dashed grip outline while a drag is live. */
+.dp-ah-artist.dragging{ cursor:grabbing; outline:2px dashed color-mix(in srgb, var(--coral) 45%, transparent); outline-offset:-2px; }
 
 /* Expanded bubble overlay — blurred backdrop + a single-run slide-up panel.
    Flicker-safety: the open/close motion is a keyframe ANIMATION that runs
@@ -2609,14 +2612,6 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         </div>
       </div>
 
-      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-          <span style="font-size:13px; color:var(--ink-dim);">Ask artist when importing songs</span>
-          <button class="tab" id="artistAskToggle" style="padding:5px 12px; font-size:12px;">On</button>
-        </div>
-        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">When you add files, SideCut asks who the artist is — once for the whole batch — so covers and lyrics fetch for the right artist. You can always skip the question.</div>
-      </div>
-
       <div style="margin-bottom:16px;">
         <button class="playlist-pick-btn" id="howToUseBtn" style="text-align:center;">🎓 Replay tutorial</button>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Shown automatically the first time you open the app — replay it anytime from here.</div>
@@ -2708,10 +2703,19 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         </div>
       </div>
 
-      <!-- Collapsible: Library Tools -->
+
+      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span style="font-size:13px; color:var(--ink-dim);">Ask artist when importing songs</span>
+          <button class="tab" id="artistAskToggle" style="padding:5px 12px; font-size:12px;">On</button>
+        </div>
+        <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">When you add files, SideCut asks who the artist is — once for the whole batch — so covers and lyrics fetch for the right artist. You can always skip the question.</div>
+      </div>
+
+      <!-- Collapsible: Library Tools & Fetching -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
         <button id="collapsibleLibrary" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-          <span>Library Tools</span><span id="collapseLibraryIcon" style="transition:transform 0.2s;">▾</span>
+          <span>Library Tools &amp; Fetching</span><span id="collapseLibraryIcon" style="transition:transform 0.2s;">▾</span>
         </button>
         <div id="collapsibleLibraryContent" style="padding:12px; border-top:1px solid var(--line); display:none;">
           <div style="margin-bottom:12px;">
@@ -4919,10 +4923,15 @@ function getApiHeaders() {
 
   // Mirrors Play purchase state (one-time lifetime + monthly subscription) into
   // on-device premium. Returns 'lifetime' | 'active' | 'inactive' | 'unavailable'.
+  // True when running inside the installed SideCut Android app (Capacitor
+  // native) — i.e. Google Play Billing is the purchase path. The old check
+  // probed the RevenueCat Purchases plugin, which no longer ships.
+  function nativePurchasesAvailable(){
+    try{
+      return !!(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    }catch(e){ return false; }
+  }
   async function syncPlayEntitlement(){
-    if(nativePurchasesAvailable()){
-      return syncPlayEntitlementNative();
-    }
     const service = await getPlayBillingService();
     if(!service) return 'unavailable';
     try{
@@ -4963,9 +4972,6 @@ function getApiHeaders() {
   // | 'unavailable' | 'not-found' | 'error'.
   async function purchasePlayItem(sku, consumable){
     playLastErrorDetail = '';
-    if(nativePurchasesAvailable()){
-      return purchasePlayItemNative(sku, consumable);
-    }
     const service = await getPlayBillingService();
     if(!service) return 'unavailable';
     const isSub = sku === PLAY_SUBSCRIPTION_PRODUCT_ID;
@@ -8165,7 +8171,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.0.16';
+  const APP_VERSION = '56.0.18';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -8384,6 +8390,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+    { version: '56.0.18', date: 'September 7, 2026 · 6:15 PM ET', title: 'Top hits fixed + pinned photos that actually show', items: [
+      "Top hits in Discover loads again — the chart now goes through the same resilient fetch path as every other chip, so blocked domains and flaky networks can't kill it",
+      "Set photo on pinned artists actually shows your picture now — and it sticks across app updates like it always should have",
+      "Reordering albums & singles feels like playlist reordering — haptic on pickup, rows slide out of the way, auto-scroll on long drags, smooth snap on drop",
+      'Settings → More cleanup: "Ask artist when importing" moved under Playback & sound, and Library Tools is now Library Tools & Fetching',
+    ] },
     { version: '56.0.16', date: 'September 6, 2026 · 6:30 PM ET', title: 'Updates you can actually see: progress, ETA, install now or later', items: [
       "The update screen is a real screen now \u2014 when an update is found you see the patch notes first, then a progress bar with the percent, megabytes downloaded and a live time-remaining estimate while it downloads, and two clear buttons: Install now or Install later",
       "Install now shows an Installing\u2026 state and reopens the app on the new version; Install later keeps it staged so it installs next time you close the app \u2014 no more silent toasts deciding everything for you",
@@ -20404,6 +20416,7 @@ if(!isDiscover) stopDiscoverPreview();
                 for(var i=0;i<pinnedArtists.length;i++){
                   if(primaryArtistName(pinnedArtists[i].name).toLowerCase().trim() === primaryArtistName(artistName).toLowerCase().trim()){
                     pinnedArtists[i].art = dataUrl;
+                    pinnedArtists[i].photo = dataUrl;
                     break;
                   }
                 }
@@ -20560,10 +20573,10 @@ if(!isDiscover) stopDiscoverPreview();
       return;
     }
     list.innerHTML = pinnedArtists.map(a => {
-      const bg = a.art ? `background-image:url("${a.art}");` : 'background:var(--bg-raised);';
+      const bg = a.photo || a.art ? `background-image:url("${a.photo || a.art}");` : 'background:var(--bg-raised);';
       return `<div class="pinned-artist-chip" data-name="${escapeHtml(a.name)}" style="flex:0 0 auto;width:72px;text-align:center;cursor:pointer;position:relative;padding-top:4px;">
         <button class="unpin-artist" data-name="${escapeHtml(a.name)}" title="Unpin ${escapeHtml(a.name)}" style="position:absolute;top:0;right:-4px;width:17px;height:17px;border-radius:50%;background:rgba(0,0,0,0.65);color:#fff;border:1px solid var(--line);font-size:10px;line-height:16px;cursor:pointer;z-index:3;">×</button>
-        ${a.art
+        ${a.photo || a.art
           ? `<div style="width:56px;height:56px;border-radius:14px;background-size:cover;background-position:center;margin:0 auto;border:1px solid var(--line);${bg}"></div>`
           : `<div style="width:56px;height:56px;border-radius:14px;margin:0 auto;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;background:linear-gradient(135deg,#ff4f7e,#7a5cff);">${escapeHtml((a.name||'?').trim().charAt(0).toUpperCase())}</div>`}
         <div style="font-size:10.5px;margin-top:4px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 2px;">${escapeHtml(a.name)}</div>
@@ -20838,14 +20851,15 @@ if(!isDiscover) stopDiscoverPreview();
       discoverStatus('Loading ' + _chipLabel + '…');
       try{
         var _ctrl = new AbortController(); var _timer = setTimeout(function(){ _ctrl.abort(); }, 8000);
-        var _rss = await fetch('https://rss.applemarketingtools.com/api/v2/us/music/most-played/25/songs.json', { signal: _ctrl.signal });
+        var _rssUrl = 'https://rss.applemarketingtools.com/api/v2/us/music/most-played/25/songs.json';
+        var _rss = await fetchWithProxy(_rssUrl);
         clearTimeout(_timer);
         if(!_rss || !_rss.ok) throw new Error('chart unreachable');
         var _feed = await _rss.json();
         var _items = ((_feed || {}).feed || {}).results || [];
         var _ids = _items.map(function(it){ var _m = String((it || {}).id || '').match(/(\d+)\s*$/); return _m ? _m[1] : null; }).filter(Boolean);
         if(!_ids.length) throw new Error('chart empty');
-        var _lk = await fetch('https://itunes.apple.com/lookup?id=' + _ids.join(',') + '&entity=song');
+        var _lk = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + _ids.join(',') + '&entity=song');
         if(!_lk || !_lk.ok) throw new Error('lookup failed');
         var _ld = await _lk.json();
         var _byId = {};
@@ -25007,7 +25021,7 @@ window.setupGroupReorder = function(persistKey){
   groups.forEach(function(g){
     if(g._hreReady) return;
     g._hreReady = true;
-    var holdTimer = null, drag = null;
+    var holdTimer = null, drag = null, autoRaf = null, lastPt = null;
     function nameOf(el){
       var span = el.querySelector('.dp-ah-artist-hdr span[style*="flex:1"]');
       return span ? span.textContent.trim() : '';
@@ -25017,19 +25031,23 @@ window.setupGroupReorder = function(persistKey){
       Array.prototype.forEach.call(bodyEl.querySelectorAll('.dp-ah-artist'), function(el){ var nm = nameOf(el); if(nm) order.push(nm); });
       try{ localStorage.setItem(persistKey, JSON.stringify(order)); }catch(e){}
     }
+    function haptic(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
     function begin(e){
       if(drag || !e.pointerId) return;
       drag = g;
+      lastPt = e;
       try{ document.body.classList.add('reordering'); }catch(err0){}
       g._dragging = false; // only becomes true after the finger actually moves
       g._startX = e.clientX; g._startY = e.clientY;
-      g.style.opacity = '0.7';
+      g.style.opacity = '0.85';
       g.style.zIndex = '99';
       g.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
       g.style.background = 'rgba(255,255,255,0.06)';
+      g.style.transition = 'none';
       try{ g.setPointerCapture(e.pointerId); }catch(err){}
     }
     function move(e){
+      lastPt = e;
       if(drag !== g){
         // Pre-hold: if the finger is already moving before the hold fires,
         // this is a scroll, not a hold — cancel the pending hold.
@@ -25045,6 +25063,8 @@ window.setupGroupReorder = function(persistKey){
         var ddx = e.clientX - g._startX, ddy = e.clientY - g._startY;
         if((ddx*ddx + ddy*ddy) < 100) return;
         g._dragging = true;
+        haptic(12); // pickup buzz — same feel as playlist reorder
+        g.classList.add('dragging');
       }
       e.preventDefault();
       var y = e.clientY;
@@ -25059,15 +25079,44 @@ window.setupGroupReorder = function(persistKey){
       } else {
         if(g !== bodyEl.lastElementChild) bodyEl.appendChild(g);
       }
+      // Auto-scroll the popup list while dragging near the top/bottom edges —
+      // without this, groups past the first screenful were unreachable.
+      var rect = bodyEl.getBoundingClientRect();
+      var edge = 56, dir = 0;
+      if(e.clientY - rect.top < edge) dir = -1;
+      else if(rect.bottom - e.clientY < edge) dir = 1;
+      if(dir !== 0){
+        if(!autoRaf){
+          var step = function(){
+            var p = lastPt, still = false;
+            if(p){
+              var rr = bodyEl.getBoundingClientRect();
+              if(dir < 0 && p.clientY - rr.top < edge) still = true;
+              if(dir > 0 && rr.bottom - p.clientY < edge) still = true;
+            }
+            if(!still){ autoRaf = null; return; }
+            bodyEl.scrollTop += dir * 8;
+            autoRaf = requestAnimationFrame(step);
+          };
+          autoRaf = requestAnimationFrame(step);
+        }
+      } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
     }
     function finish(){
       clearTimeout(holdTimer);
+      if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
       try{ document.body.classList.remove('reordering'); }catch(e2){}
       if(drag){
-        drag.style.opacity = ''; drag.style.zIndex = ''; drag.style.boxShadow = ''; drag.style.background = '';
+        drag.style.opacity = ''; drag.style.zIndex = ''; drag.style.boxShadow = ''; drag.style.background = ''; drag.style.transition = '';
+        drag.classList.remove('dragging');
         // Only persist when a real reorder happened — a tap or scroll that
         // never dragged shouldn't rewrite (and lock in) the existing order.
-        if(g._dragging) persistOrder();
+        if(g._dragging){
+          haptic(8);
+          // Let the drop settle for a beat (mirrors the playlist reorder's
+          // snap-back) before persisting the new order.
+          setTimeout(persistOrder, 60);
+        }
         drag = null;
       }
     }
