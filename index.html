@@ -8184,7 +8184,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.0.19';
+  const APP_VERSION = '56.0.20';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -8287,7 +8287,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
               snapIdx.push({ k: sk, at: sv.savedAt || 0 });
             }
             snapIdx.sort(function(a, b){ return b.at - a.at; });
-            snapIdx = snapIdx.slice(0, 3);
+            // Keep the whole rollback history in the disaster-recovery mirror
+            // too (each snapshot is HTML-heavy but indices are cheap); the live
+            // IndexedDB store never prunes, so this just stops old versions from
+            // vanishing on a store wipe/update reinstall.
+            snapIdx = snapIdx.slice(0, 50);
             for(var sj = 0; sj < snapIdx.length; sj++){
               for(var sk2 = 0; sk2 < snapRows.length; sk2++){
                 if(snapRows[sk2] && snapRows[sk2].key === snapIdx[sj].k){ metaForSnap[snapRows[sk2].key] = snapRows[sk2].value; break; }
@@ -8403,6 +8407,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+    { version: '56.0.20', date: 'September 7, 2026 · 5:15 PM ET', title: 'Roll-back history fixed \u2014 old versions stopped disappearing', items: [
+      "Roll-back history fixed: every version's snapshot now rides along in the disaster-recovery backup too (the backup used to carry only the 3 most recent versions, so older roll-back apps \u2014 down to wherever your history started \u2014 could vanish after a reinstall or storage wipe). Now all 50 most recent versions survive in the snapshot file, and the picker always shows your full history from IndexedDB (which already never pruned",
+    ] },
     { version: '56.0.19', date: 'September 7, 2026 · 1:05 PM ET', title: 'Music keeps playing when you leave the app', items: [
       "Fixed a bug where leaving the app while music was playing could kill playback:the self-update engine used to defer an incoming update to the moment you close the app, then apply it immediately on background, reloading the app and cutting the song off. It now waits until the song actually pauses or ends (while backgrounded), so the music keeps playing when you leave the app",
       "A downloaded-but-deferred update is offered again right when you start playing a song:the update sheet appears with Install now / Install later, so you always stay in control of when it applies",
