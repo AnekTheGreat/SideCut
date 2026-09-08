@@ -3205,6 +3205,10 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <input type="text" id="editSongArtist" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:14px; user-select:text; -webkit-user-select:text;" placeholder="Artist">
       </div>
       <div>
+        <label style="display:block; font-size:12px; color:var(--ink-dim); margin-bottom:4px;">Album <span style="opacity:0.6;">(optional — used by the By-album sort and album grouping)</span></label>
+        <input type="text" id="editSongAlbum" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:14px; user-select:text; -webkit-user-select:text;" placeholder="Album (e.g. After Hours)">
+      </div>
+      <div>
         <label style="display:block; font-size:12px; color:var(--ink-dim); margin-bottom:4px;">Release date <span style="opacity:0.6;">(optional — overrides the auto-lookup)</span></label>
         <input type="date" id="editSongDate" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 12px; font-size:14px;" title="Tap to pick a release date, or clear it to auto-look-up again">
       </div>
@@ -6531,6 +6535,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     editSongTrackId = t.id;
     $('editSongName').value = t.name || '';
     $('editSongArtist').value = t.artist || '';
+    const aEl = $('editSongAlbum');
+    if(aEl) aEl.value = t.album || '';
     const dEl = $('editSongDate');
     if(dEl) dEl.value = t.releaseDate ? String(t.releaseDate).slice(0, 10) : '';
     $('editSongBackdrop').style.display = 'flex';
@@ -6544,6 +6550,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const newArtist = $('editSongArtist').value.trim() || 'Unknown artist';
     t.name = newName;
     t.artist = newArtist;
+    const aEl2 = $('editSongAlbum');
+    if(aEl2){
+      const newAlbum = aEl2.value.trim();
+      t.album = newAlbum ? newAlbum : null;
+    }
     // Mark as manually overridden - watermark won't touch this track anymore
     t.manualOverride = true;
     // Release date: honor a manual value (or clearing it). When cleared, forget
@@ -10026,7 +10037,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
 
   // A song "needs" enrichment when it's missing cover art or has no real artist.
   function songNeedsMetadata(t){
-    return !t.artBlob || !t.artist || t.artist === 'Unknown artist';
+    return !t.artBlob || !t.artist || t.artist === 'Unknown artist' || !t.album;
   }
   // Build the search text from whatever the song already has.
   function enrichQueryFor(t){
@@ -10052,6 +10063,24 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     let changed = false;
     if((!t.artist || t.artist === 'Unknown artist') && r.artist){ t.artist = r.artist; changed = true; }
     if((!t.name || t.name === 'Untitled') && r.title){ t.name = r.title; changed = true; }
+    if(!t.album && r.album){ t.album = r.album; changed = true; }
+    // Album is optional — if the backend didn't supply one, try a quick no-auth
+    // iTunes lookup so the By-album grouping still works for tracks whose
+    // filename/backend only gave artist+title.
+    if(!t.album){
+      try{
+        const _aq = enrichQueryFor(t);
+        if(_aq){
+          const _ar = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(_aq) + '&media=music&entity=song&limit=3');
+          if(_ar && _ar.ok){
+            const _ad = await _ar.json();
+            const _n = function(_s){ return String(_s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+            const _hit = (Array.isArray(_ad.results) ? _ad.results.find(function(x){ return x && x.collectionName && x.trackName && _n(x.trackName) === _n(t.name); }) : null) || (_ad.results && _ad.results[0]);
+            if(_hit && _hit.collectionName){ t.album = _hit.collectionName; changed = true; }
+          }
+        }
+      }catch(_ae){}
+    }
     if(!t.artBlob && r.artwork){
       try{
         const imgResp = await fetch(r.artwork);
@@ -10913,6 +10942,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   function buildTrackRecord(t){
     return {
       id: t.id, blob: t.file, name: t.name, artist: t.artist,
+      album: t.album || null,
       duration: t.duration, bpm: t.bpm, genre: t.genre,
       gain: t.gain ?? null, art: t.artBlob || null, vibe: t.vibe || null,
       waveform: t.waveform || null, playCount: t.playCount || 0,
@@ -10984,6 +11014,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
             file: r.blob,
             name: r.name || 'Untitled',
             artist: r.artist || 'Unknown artist',
+            album: r.album || null,
             url: URL.createObjectURL(r.blob),
 
             duration: r.duration || null,
@@ -11586,7 +11617,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       seenKeys.add(key);
       const id = 't' + (idCounter++);
       const url = URL.createObjectURL(file);
-      const track = { id, file, name: cleaned.name, artist: cleaned.artist, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null, watermarkCleaned: cleaned.changed, dateAdded: Date.now() };
+      const track = { id, file, name: cleaned.name, artist: cleaned.artist, album: meta.album || null, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null, watermarkCleaned: cleaned.changed, dateAdded: Date.now() };
       allTracks.push(track);
       playlists['All Songs'].push(id);
       // New imports land in All Songs AND Unsorted — Unsorted is now independent,
@@ -11892,31 +11923,67 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // every 30 min, and on foreground — see dev/native-updates.js). Mirrors the
   // browser's service-worker update flow, which doesn't exist natively.
   $('otaCheckBtnBig').addEventListener('click', async () => {
-    if(!window.__SideCutOTA || !window.__SideCutOTA.IS_NATIVE){ toast('Updates are automatic in the browser — nothing to check.'); return; }
     const btn = $('otaCheckBtnBig');
     const old = btn.textContent;
     btn.disabled = true; btn.textContent = 'Checking…';
     try{
+      if(!window.__SideCutOTA || !window.__SideCutOTA.IS_NATIVE){
+        const r = await checkBrowserUpdate();
+        if(r === 'up-to-date'){ toast('You\'re on the latest version ✓', 2500); }
+        else if(r === 'newer'){ /* toast already shown */ }
+        return;
+      }
       const man = await window.__SideCutOTA.checkForUpdate({ silent: false });
       // A result with .unavailable means this APK predates the updater — the
       // module already explained that. A { dismissed: true } result means the
       // user picked Install later on the update sheet — the module already
-      // handled that too. Only report "latest" for a genuine check with nothing new.
-      if(man && !man.unavailable && !man.dismissed) toast('You\'re on the latest version ✓', 2500);
-    } finally { btn.disabled = false; btn.textContent = old; }
+      // handled that too. { failed:true } means a real network error already
+      // surfaced by the updater module. Only report "latest" for a genuine
+      // check with nothing new.
+      if(man && !man.unavailable && !man.dismissed && man.failed !== true) toast('You\'re on the latest version ✓', 2500);
+    } catch(_e){ toast('Update check failed — try again.'); }
+    finally { btn.disabled = false; btn.textContent = old; }
   });
+  async function checkBrowserUpdate(){
+  // Browser/PWA builds can't self-install an OTA bundle, but the Check buttons should
+  // never lie — fetch the same live manifest the native updater uses and report the
+  // truth: latest, or "new version available — reload to get it" (the PWA's
+  // service worker will pick up the new shell automatically on that reload).
+  try{
+    var resp = await fetch('https://anekthegreat.github.io/SideCut/ota/manifest.json', { cache: 'no-store' });
+    if(!resp || !resp.ok) throw new Error('HTTP ' + (resp ? resp.status : 'no response'));
+    var man = await resp.json();
+    var cur = (typeof APP_VERSION !== 'undefined') ? String(APP_VERSION) : (window.__SC_VERSION || '');
+    if(!cur || !man || !man.version) return null;
+    const cmp = compareVersions(String(man.version), cur);
+    if(cmp <= 0){
+      return 'up-to-date';
+    }
+    toast('A newer version (v' + String(man.version) + ') is available — reload the app to update.', 6000);
+    setTimeout(function(){ try{ if(confirm('Reload SideCut now to get v' + String(man.version) + '?')) location.reload(); }catch(_e){} }, 1400);
+    return 'newer';
+  }catch(e){
+    toast('Update check failed — could not reach the update server. Check your connection and try again.', 4500);
+    return 'failed';
+  }
+}
   // Settings → More "Check for updates": same handler as the home-screen big
   // button, so the row behaves identically (spinner text, honest toasts, and
   // the update sheet with patch notes when something is available).
   $('otaCheckSettingsBtn').addEventListener('click', async () => {
-    if(!window.__SideCutOTA || !window.__SideCutOTA.IS_NATIVE){ toast('Updates are automatic in the browser — nothing to check.'); return; }
     const sbtn = $('otaCheckSettingsBtn');
     const sold = sbtn.textContent;
     sbtn.disabled = true; sbtn.textContent = 'Checking…';
     try{
+      if(!window.__SideCutOTA || !window.__SideCutOTA.IS_NATIVE){
+        const r = await checkBrowserUpdate();
+        if(r === 'up-to-date'){ toast('You\'re on the latest version ✓', 2500); }
+        return;
+      }
       const man = await window.__SideCutOTA.checkForUpdate({ silent: false });
-      if(man && !man.unavailable && !man.dismissed) toast('You\'re on the latest version ✓', 2500);
-    } finally { sbtn.disabled = false; sbtn.textContent = sold; }
+      if(man && !man.unavailable && !man.dismissed && man.failed !== true) toast('You\'re on the latest version ✓', 2500);
+    } catch(_e){ toast('Update check failed — try again.'); }
+    finally { sbtn.disabled = false; sbtn.textContent = sold; }
   });
   $('collapsibleOta').addEventListener('click', () => {
     const c = $('collapsibleOtaContent'), ic = $('collapseOtaIcon');
@@ -12528,7 +12595,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       ids = ids.filter(id => {
         const t = allTracks.find(tr => tr.id === id);
         if(!t) return false;
-        return (t.name||'').toLowerCase().includes(searchQuery) || (t.artist||'').toLowerCase().includes(searchQuery);
+        return (t.name||'').toLowerCase().includes(searchQuery) || (t.artist||'').toLowerCase().includes(searchQuery) || (t.album||'').toLowerCase().includes(searchQuery);
       });
     }
     // Unsorted behaves like All Songs for capability purposes: no reorder
@@ -12670,14 +12737,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       const _collKey = function(g){ return g.artist + '' + g.ak; };
       _gaGroups.forEach(function(g){
         if(g.ak){
-          const sum = document.createElement('button');
+          const sum = document.createElement('div');
           sum.type = 'button';
           sum.className = 'track-ga-sum';
           sum.style.cssText = 'width:100%; display:flex; align-items:center; gap:8px; padding:7px 10px; margin:6px 0 2px; font-size:12px; font-weight:600; color:var(--ink-dim); background:rgba(255,255,255,0.035); border:1px solid var(--line); border-radius:8px; cursor:pointer; text-align:left;';
-          sum.innerHTML = '<span style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; font-size:9px; color:var(--coral); transition:transform .18s; transform:rotate(' + (g.open ? 90 : 0) + 'deg);">▶</span><span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(g.album) + '</span><span style="font-size:10px; opacity:.6;">' + g.rows.length + '</span>';
-          sum.addEventListener('click', function(){
+          sum.innerHTML = '<button type="button" class="track-ga-chev" style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; font-size:9px; color:var(--coral); transition:transform .18s; transform:rotate(' + (g.open ? 90 : 0) + 'deg); background:none; border:none; padding:0; cursor:pointer;">▶</button><span class="track-ga-play" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:7px; min-width:0;"><span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(g.album) + '</span><span style="font-size:10px; opacity:.6; flex-shrink:0;">' + g.rows.length + ' ▶ play</span></span>';
+          sum.querySelector('.track-ga-chev').addEventListener('click', function(ev){
+            ev.stopPropagation();
             g.open = !g.open;
-            sum.querySelector('span').style.transform = 'rotate(' + (g.open ? 90 : 0) + 'deg)';
+            sum.querySelector('.track-ga-chev').style.transform = 'rotate(' + (g.open ? 90 : 0) + 'deg)';
             g.rows.forEach(function(ri3){
               const _row = pane.querySelector('.track[data-id="' + ids[ri3] + '"]');
               if(_row) _row.style.display = g.open ? '' : 'none';
@@ -12687,6 +12755,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
               if(g.open) delete _c2[_collKey(g)]; else _c2[_collKey(g)] = 1;
               localStorage.setItem('sidecut_gaCollapsed', JSON.stringify(_c2));
             }catch(_e){}
+          });
+          sum.querySelector('.track-ga-play').addEventListener('click', function(ev){
+            if(ev.target.closest('.track-ga-chev')) return;
+            const albumIds = g.rows.map(function(ri4){ return ids[ri4]; }).filter(Boolean);
+            if(albumIds.length) playFromList(albumIds, albumIds[0]);
+          });
+          if(!g.open) g.rows.forEach(function(ri3){
+            const _row = pane.querySelector('.track[data-id="' + ids[ri3] + '"]');
+            if(_row) _row.style.display = 'none';
           });
           pane.appendChild(sum);
         } else {
@@ -13635,7 +13712,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           missing++;
         }
         manifest.tracks.push({
-          id: t.id, name: t.name, artist: t.artist, duration: t.duration,
+          id: t.id, name: t.name, artist: t.artist, album: t.album || null, duration: t.duration,
           bpm: t.bpm, genre: t.genre, gain: t.gain, lyrics: t.lyrics,
           lyricsSynced: t.lyricsSynced, notes: t.notes, vibe: t.vibe,
           playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, dateAdded: t.dateAdded || null, releaseDate: t.releaseDate || null, path: t.file ? zipPath : null, hasCover: !!t.artBlob
@@ -14064,6 +14141,7 @@ exportState.compressPct = 100;
           idRemap[m.id] = existing.id; 
           // Update existing track with additional metadata from v2 export
           if(isV2){
+            if(m.album !== undefined && m.album && !existing.album) existing.album = m.album;
             if(m.bpm !== undefined && existing.bpm === undefined) existing.bpm = m.bpm;
             if(m.genre !== undefined && existing.genre === undefined) existing.genre = m.genre;
             if(m.gain !== undefined && existing.gain === undefined) existing.gain = m.gain;
@@ -14106,6 +14184,7 @@ exportState.compressPct = 100;
           file: blob,
           name: cleaned.name,
           artist: cleaned.artist,
+          album: m.album || null,
           url,
           duration: m.duration || null,
           bpm: m.bpm ?? null,

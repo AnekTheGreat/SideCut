@@ -424,9 +424,10 @@
 
       var resp = await fetch(MANIFEST_URL, { signal: ctrl.signal });
       clearTimeout(timer);
-      if(!resp || !resp.ok){ log('manifest fetch failed: ' + (resp ? resp.status : 'no response')); return null; }
-      var man = await resp.json();
-      if(!man || !man.version || !man.url){ log('manifest missing version/url'); return null; }
+      if(!resp || !resp.ok){ log('manifest fetch failed: ' + (resp ? resp.status : 'no response')); if(!o.silent) toast('Update check failed — could not reach the update server (' + (resp ? resp.status : 'no connection') + '). Check your connection and try again.', 4500); return { failed: true }; }
+      var man = null;
+      try{ man = await resp.json(); }catch(_j){}
+      if(!man || !man.version || !man.url){ log('manifest missing version/url'); if(!o.silent) toast('Update check failed — the server update info was unreadable. Try again in a moment.', 4500); return { failed: true }; }
       var cur = currentVersion();
       if(!cur){ log('cannot determine the running version — skipping update check (fail safe)'); return null; }
       if(String(man.version) === String(cur)){ log('up to date (' + cur + ')'); return null; }
