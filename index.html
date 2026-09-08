@@ -13640,27 +13640,68 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // 0-byte file (the WebView's downloader cannot fetch blob: URLs), so on native
   // the zip is written to the app cache and handed to the Android share sheet —
   // from there it saves to Files, Drive, WhatsApp, anywhere. Browsers keep the
-  // normal download-anchor path. Falls back automatically if anything is off.
+  // normal download-anchor path. Falls back automatically if anything is off..
+  //
+  // A full-library zip can be hundreds of MB — reading it into ONE base64 string
+  // (FileReader.readAsDataURL) was the "export finishes but crashes, nothing saved"
+  // culprit: a single multi-MB allocation blows the WebView heap on big libraries. We
+  // instead write the blob to the app cache in small 256KB chunks (base64 per chunk,
+  // appended), so peak memory stays tiny regardless of the zip size.
+
+  function blobChunkToBase64(blob){
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result || '').split(',')[1] || '');
+      r.onerror = () => rej(r.error || new Error('could not read export chunk'));
+      r.readAsDataURL(blob);
+    });
+  }
+  async function writeBlobToCache(blob, path){
+    const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
+    const FS = cap ? cap.Filesystem : null;
+    if(!FS || typeof FS.writeFile !== 'function') return false;
+    const CHUNK = 256 * 1024;
+    let offset = 0;
+    let first = true;
+    while(offset < blob.size){
+      const end = Math.min(blob.size, offset + CHUNK);
+      const data = await blobChunkToBase64(blob.slice(offset, end));
+      if(!data){ throw new Error('could not read export data'); }
+      await FS.writeFile({ path, data, directory: 'CACHE', recursive: true, append: !first });
+      offset = end;
+      first = false;
+    }
+    if(first){
+      await FS.writeFile({ path, data: '', directory: 'CACHE', recursive: true, append: false });
+    }
+    return true;
+  }
   async function saveExportFile(blob, filename){
     try{
       const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
       const FS = cap ? cap.Filesystem : null;
       const Share = cap ? cap.Share : null;
       if(FS && Share && typeof FS.writeFile === 'function' && typeof Share.share === 'function'){
-        const data = await new Promise((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(String(r.result).split(',')[1] || '');
-          r.onerror = () => rej(r.error || new Error('could not read export data'));
-          r.readAsDataURL(blob);
-        });
-        const w = await FS.writeFile({ path: filename, data, directory: 'CACHE', recursive: true });
-        const uri = w && w.uri;
+        await writeBlobToCache(blob, filename);
+        // Prefer the URI from writeFile/stat/getUri — the first write's result
+        // carries it, so ask once more only if absent.
+        let uri = null;
+        try{
+          const got = await FS.getUri({ path: filename, directory: 'CACHE' });
+          uri = got ? got.uri : null;
+        }catch(_ge){}
+        if(!uri){
+          try{
+            const st = await FS.stat({ path: filename, directory: 'CACHE' });
+            uri = st && st.uri ? st.uri : null;
+          }catch(_se){}
+        }
         if(uri){
           await Share.share({ title: filename, files: [uri], dialogTitle: 'Save your SideCut export' });
           return true;
         }
       }
-    }catch(e){ console.warn('Native save unavailable, using download instead', e); }
+    }catch(e){ console.warn('Native save failed, using download instead', e); }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -13671,6 +13712,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return false;
   }
+
   async function runZipExport(opts){
     const { tracks, manifest, filename, kindLabel } = opts;
     if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
@@ -20851,14 +20893,20 @@ if(!isDiscover) stopDiscoverPreview();
       if(window.__scPinDragEndAt && Date.now() - window.__scPinDragEndAt < 450) return; // ignore the click that follows a drag
       runDiscoverSearch(chip.dataset.name, chip.dataset.name, null);
     }));
-    // If a stored cover fails to load (stale / blocked URL), swap to a
-    // gradient-initial tile instead of leaving an empty black box.
+    // If a stored cover fails to load (stale / blocked HTTP URL), swap to a
+    // gradient-initial tile instead of leaving an empty black box. NEVER swap
+    // a data: URL (user-set photos are downscaled JPEG data URLs, and the
+    // WebView can fire a spurious error on them mid-paint — the old fallback
+    // erased a perfectly good user picture into a gradient initial, which is
+    // exactly what "set photo doesn't show" looked like).
     list.querySelectorAll('.pinned-artist-chip').forEach(function(chip){
       var tile = chip.querySelector('div[style*="background-image"]');
       if(!tile) return;
       var st = tile.getAttribute('style') || '';
       var m = st.match(/url\((["']?)(.+?)\1\)/);
       if(!m) return;
+      var srcUrl = m[2];
+      if(String(srcUrl||'').indexOf('data:') === 0) return;
       var img = new Image();
       img.onerror = function(){
         var nm = chip.dataset.name || '?';
@@ -20868,7 +20916,7 @@ if(!isDiscover) stopDiscoverPreview();
         tile.style.fontSize = '22px'; tile.style.fontWeight = '700'; tile.style.color = '#fff';
         tile.textContent = nm.trim().charAt(0).toUpperCase();
       };
-      img.src = m[2];
+      img.src = srcUrl;
     });
     try{ ensurePinnedArtistArt(); }catch(_ea){}
     try{ if(typeof window.wirePinnedReorder === 'function') window.wirePinnedReorder(); }catch(_wr){}
