@@ -1457,3 +1457,34 @@ All v47.7/v47.8/v47.9 changes rolled into a single v47.7 entry:
   searches for it in Discover. Songs are lazy-loaded on first expand.
 - SW cache: sidecut-shell-v48. Date Aug 19 10:30 am EDT.
 
+
+## SHARE CODES — SPEC, NOT YET SHIPPED (Sep  ­8,  ­2026, deferred)
+- Request: "generate a link or code of your library or specific playlist, share it to
+  other users, they can get that playlist or library on their device as well".
+- AGENTS memory: the tool pipeline in this session garbled any JS I authored with
+  shift/ampersand/paren-closures (soft hyphens injected into `>>`,`&`,`(r.result` etc.),
+  so I reverted the half-built feature instead of shipping broken code. All risky JS lives
+  in index.html inline blocks — always parse-check via node --check on extracted blocks after
+  any edit, and eyeball cat-verified small files before splicing.
+- Deferred implementation plan (write it in a fresh session, ideally via discrete
+  minimal edits, or a code-generation script that writes files as data (python ast dump /
+  repr round-trip) rather than emitting JS verbatim):
+  1. Share UI: Add songs menu buttons 'Share library code' + 'Open a share code' (ids
+     shareLibCodeBtn / importShareCodeBtn), plus a 'Share playlist' entry in
+     openListMoreMenu (~line 11730). Share code modal #shareCodeModal (out textarea,
+     copy code, copy share link = https://anekthegreat.github.io/SideCut/?sc=<code>,
+     paste-in textarea + Open).
+  2. Code format: JSON payload {v:2, kind:'playlist'|'library', n:name,
+     ts:[{t:title,a:artist,al:album}]} → runtime btoa(unescape(encodeURIComponent(json)))
+     (no manual base64/deflate needed — keeps the code tiny to author). Library caps at
+     2000 newest tracks (else toast 'share a playlist instead'); zip backup stays the full-
+     fidelity path. Decompression: atob + decodeURIComponent. Prefix 'SC.' optional.
+  3. Import matching: normalize title+artist (album tie-break), match against allTracks,
+     add matched ids to playlists[name] (create if missing), renderTabs/renderList, toast the
+     count, and list unmatched rows (tap → Discover search for that song). Boot param
+     ?sc=<code> auto-opens the import modal (mirror the existing ?transfer=1 handler
+     ~17912). Clipboards via navigator.clipboard with execCommand fallback.
+ Clear out.dataset
+     pending on open/close. SaveMeta persists the new playlist.
+- Keep the existing .zip Export/Import as the reliable full-audio transfer meanwhile (it
+  already embeds album + premium — v45-era streaming + v56.0.22 chunked writes).
