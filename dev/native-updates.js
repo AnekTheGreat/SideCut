@@ -462,18 +462,14 @@
         }
       }catch(_ne){}
 
-      // New update available: show the patch notes and ask before downloading.
-      // Silent auto-checks (boot / 30-min / foreground) SURFACE the sheet too —
-      // before this, a silent check only wrote a localStorage flag and returned,
-      // so an update could sit invisible until the user opened Settings and
-      // tapped Check for updates by hand. The sheet only pops when a check has
-      // actually found a newer manifest version (never on 'up to date').
-      var showPrompt = !o.silent;
-      if(!showPrompt && somethingIsPlaying()){
-        // Silent auto-check during playback: remember the update quietly but never
-        // throw the sheet up mid-song — checking never touches audio; the sheet +
-        // a possible install tap would reload the app and cut the tune. It surfaces
-        // on the next silent check after the music stops (or on a manual check).
+      // New update available: show the patch notesand ask before downloading.
+      // Silent auto-checks SURFACE the sheet too — never hide an available update.
+      // The Install now path is already playback-safe: applying while music plays
+      // defers to app-close (applyInBackground), so no tune is ever cut. A
+      // user who picked "Install later" for this version stays quiet on silent checks.
+      if(wantDeferredInstall(String(man.version)) && o.silent){
+        // The user already chose "Install later" — remember it quietly and let
+        // the close-install wiring finish the job.
         try{ localStorage.setItem(LS_KEY, JSON.stringify({ version: String(man.version), at: Date.now(), available: true })); }catch(_e){}
         return null;
       }
