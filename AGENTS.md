@@ -1,5 +1,20 @@
 # SideCut — repository memory
 
+## v56.1 (Sep  9,  2026): user-requested overhaul — albums, share codes, exports, AI, icons
+- **Version**: APP_VERSION 56.0.23 → 56.1; sw.js cache → sidecut-shell-v56.1; CHANGELOG head date Sep  8 · 5:55 PM ET (user-specified EDT time).
+- **What shipped (this batch)**:
+  1. Create your own albums: hold a song → Select multiple → ⋮ → Create album; sort-by-artist now shows YOUR albums first, then singles under each artist (e.g. Diljit albums, then Diljit singles).
+  2. Playlist share codes: playlist ⋮ menu → Share code emits a tiny base64 payload (`?sc=<code>` share link too); any other SideCut → Open code rebuilds the playlist from matched songs — no file download. `_scB64Encode/_scB64Decode`, `sharePlaylistCode`, `importShareCode`, `copyTextToClipboard`; alias `window.__scImportShareCode = importShareCode;` MUST sit INSIDE the main IIFE (after line~11958, near the share-code megа-line); an external alias (post-IIFE) throws `importShareCode is not defined` on boot.
+  3. Playlist header decluttered: reorder + shuffle buttons hidden (`#mixBtn`/`#reorderModeBtn`/`#managePlaylistsBtn` CSS) — both moved into the playlist kebab sheet (same frame); also mix + delete there.
+  4. Back-to-top + Manage playlists merged: `#backToTopBtn` now pops a `#topChooser` action sheet (Back to top / Manage playlists).
+  5. Check-for-updates fixed (was firing and dying instantly due to un-awaited async): `otaCheckBtnBig` handler awaits `checkBrowserUpdate()`/`window.__SideCutOTA.checkForUpdate` with try/finally; a newer OTA triggers a real notification prompt to install.
+  6. Pinned-artist covers are manual-only now: theming/edit flow no longer auto-fetches; `#ahArtFab` etc only save what the user sets. Settings → More → Manage pinned-artist covers entry. (Also the no-art fallback div honors `a.photo`.)
+  7. Quick-actions Home bubble buttons now ordered and include Widgets (`SETTINGS_TABS` gained `'widget'` first) — Settings pane `widget` hosts the home-widget toggles.
+  8. App icon picker: Settings → Theme → App icon select (`auto`/coral/gold/ocean/night/mint/sunset)`; `updateFavicon()` draws theme colors unless a manual preset overrides them (tab/address-bar icon only; installed-OS icons are cached platform files).
+  9. Large exports fixed: `runZipExport` prefers File System Access API streaming (`showSaveFilePicker`+`createWritable`); else Capacitor path `streamZipToCapacitor` (chunked 256KB cache-file appends); else in-memory Blob-parts; `Array buffer allocation failed` now guides the user to export a playlist/selection instead. No song cap.
+  10. AI/smart tweaks + regex tidy-ups.
+- **Parse gotcha (cost this session)**:theror's `-c`/heredoc/file_editor transport injects soft-hyphens/U+200B into JS as I type it (e.g. `= 0`→`= = 0`, `chr(10`)→`chr(10`+missing-paren`. ALWAYS verify via a tiny python file as data + sed-delete all `\xe2\x80\x8b`, or use base64 round-trip, after authoring any multi-line JS edit.inline blocks parses via `node --check` on the two `<script>` blocks.
+- **Boottest now fully green**: dev/_boottest.js executes the main IIFE без throw and smoke-tests `_toggleGenres` (stale `_toggleNR` smoke removed — that toggle is intentionally gone per v47).
 ## Google Play billing "not opening" (Sep 7, 2026): stale-bundle symptom, not a code bug
 - User reported billing taps don't open the Play sheet. The RUNNING bundle (pre-56.0.18
   OTA zip) still contains the broken code: `purchasePlayItem()` calls
@@ -1458,7 +1473,7 @@ All v47.7/v47.8/v47.9 changes rolled into a single v47.7 entry:
 - SW cache: sidecut-shell-v48. Date Aug 19 10:30 am EDT.
 
 
-## SHARE CODES — SPEC, NOT YET SHIPPED (Sep  ­8,  ­2026, deferred)
+## SHARE CODES — SPEC, NOT YET SHIPPED (Sep  8,  2026, deferred)
 - Request: "generate a link or code of your library or specific playlist, share it to
   other users, they can get that playlist or library on their device as well".
 - AGENTS memory: the tool pipeline in this session garbled any JS I authored with

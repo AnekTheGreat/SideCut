@@ -31,6 +31,22 @@ function makeEl(tag) {
     autocomplete: '',
     addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); },
     removeEventListener() {},
+    clearRect: function() {},
+    createRadialGradient: function() { return { addColorStop: function() {} }; },
+    fillRect: function() {},
+    drawImage: function() {},
+    measureText: function() { return { width: 0 }; },
+    toDataURL: function() { return 'data:image/png;base64,' },
+    getContext: function() {
+      const ctx = { canvas: this };
+      const noops = ['save','restore','translate','rotate','scale','beginPath','closePath','fill','stroke','clip','clearRect','fillRect','strokeRect','arc','arcTo','ellipse','bezierCurveTo','quadraticCurveTo','lineTo','moveTo','rect','fillText','strokeText','setLineDash','resetTransform','setTransform','drawImage','putImageData'];
+      for (let k = 0; k < noops.length; k++) ctx[noops[k]] = function() {};
+      ctx.createRadialGradient = function() { return { addColorStop: function() {} }; };
+      ctx.createLinearGradient = ctx.createRadialGradient;
+      ctx.measureText = function() { return { width: 0 }; };
+      ctx.getImageData = function() { return { data: [] }; };
+      return ctx;
+    },
     appendChild(c) { if (c) { c.parent = this; this.children.push(c); } return c; },
     insertBefore(c, ref) { if (c) { c.parent = this; const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, c); } return c; },
     removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return c; },
@@ -220,7 +236,7 @@ sandbox.history = { pushState() {}, replaceState() {} };
 sandbox.screen = { width: 1080, height: 2400 };
 sandbox.addEventListener = doc.addEventListener.bind(doc);
 sandbox.removeEventListener = doc.removeEventListener.bind(doc);
-sandbox.getComputedStyle = () => ({ display: 'block', visibility: 'visible' });
+sandbox.getComputedStyle = () => { const s = { display: 'block', visibility: 'visible' }; s.getPropertyValue = (k) => s[k] || ''; return s; };
 sandbox.devicePixelRatio = 2;
 sandbox.scrollTo = () => {};
 try {
@@ -232,9 +248,7 @@ vm.createContext(sandbox);
 try {
   vm.runInContext(src, sandbox, { filename: 'inline-block-0.js' });
   console.log('IIFE completed without throwing');
-  console.log('typeof window._toggleNR:', typeof sandbox._toggleNR);
   console.log('typeof window._toggleGenres:', typeof sandbox._toggleGenres);
-  console.log('typeof window._toggleNR() smoke test:', (() => { try { sandbox._toggleNR(); return 'ok'; } catch (e) { return 'THREW: ' + e.message; } })());
   console.log('typeof window._toggleGenres() smoke test:', (() => { try { sandbox._toggleGenres(); return 'ok'; } catch (e) { return 'THREW: ' + e.message; } })());
 } catch (e) {
   console.error('IIFE THREW:', e && e.message);
