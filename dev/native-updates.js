@@ -18,15 +18,15 @@
 // the sheet stays dismissible and the staged bundle is applied at next launch).
 //
 // The zip + manifest are produced by .github/workflows/deploy.yml on every push:
-//   ota/SideCut-web.zip   — index.html, sw.js, manifest.json, icons
-//   ota/manifest.json     — { "version": "56.0.12", "url": "SideCut-web.zip",
+//   ota/update.zip          — index.html, sw.js, manifest.json, icons
+//   ota/updates.json       — { "version": "56.1", "url": "update.zip",
 //                             "size": 1530000, "notes": [ ... ] }
 (function(){
   'use strict';
   var IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   // GitHub Pages root of this repo (matches capacitor.config.json allowNavigation).
   var OTA_BASE = 'https://anekthegreat.github.io/SideCut/';
-  var MANIFEST_URL = OTA_BASE + 'ota/manifest.json';
+  var MANIFEST_URL = OTA_BASE + 'ota/updates.json';
   var LS_KEY = 'sidecut_ota_last';
   var SHEET_KEY = 'sidecut_ota_sheet';       // persisted sheet state { version, notes, size, stagedAt, phase }
   var INSTALL_PROMPT_SEEN = 'sidecut_ota_prompt_'; // + version — set when the user picks "later"

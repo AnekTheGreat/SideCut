@@ -1814,6 +1814,10 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       border-radius:20px; padding:9px 14px; font-size:13.5px; font-family:var(--font-ui);">
   </div>
   <div style="display:flex; align-items:center; gap:6px; padding:0 20px 4px;">
+    <div style="display:flex; gap:4px; margin:0 0 2px; padding:3px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; width:fit-content;">
+      <button id="libModePlaylists" type="button" style="flex:1; padding:5px 12px; border-radius:8px; border:none; background:var(--coral); color:#161616; font-size:11.5px; font-weight:600; cursor:pointer;">▶ Playlists</button>
+      <button id="libModeAlbums" type="button" style="flex:1; padding:5px 12px; border-radius:8px; border:none; background:transparent; color:var(--ink-dim); font-size:11.5px; font-weight:600; cursor:pointer;">💿 Albums</button>
+    </div>
     <div class="tabs" id="tabs" style="flex:1; padding:4px 0 10px;"></div>
     <button class="icon-btn" id="backToTopBtn" title="Back to top / Manage playlists" style="flex-shrink:0; opacity:0.7;">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 10c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm12 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm-6 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
@@ -1884,7 +1888,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <summary style="cursor:pointer; color:var(--gold); font-size:11px; font-weight:600;">💡 Backup: if the in-app converter can&#39;t find the song</summary>
         <div style="margin-top:6px; font-size:11px;">These open your link pre-filled — convert there, download the MP3, then import it with + Add songs → + Files:
           <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
-            <a href="https://spotisaver.net/en1" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--coral); background:none; color:var(--coral); font-size:11px; font-weight:600; text-decoration:none;">Spotisaver</a>
+            <a href="https://spodownloader.com/" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--coral); background:none; color:var(--coral); font-size:11px; font-weight:600; text-decoration:none;">Spotisaver</a>
             <a href="https://spotmate.online/en1" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink); font-size:11px; font-weight:600; text-decoration:none;">SpotMate</a>
           </div>
         </div>
@@ -2288,7 +2292,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
           <summary style="cursor:pointer; color:var(--gold); font-size:11px; font-weight:600;">💡 Backup: if the in-app converter can&#39;t find the song</summary>
           <div style="margin-top:6px; font-size:11px; color:var(--ink-dim);">These open your link pre-filled — convert there, download the MP3, then import it with + Add songs → + Files:
             <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
-              <a href="https://spotisaver.net/en1" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--coral); background:none; color:var(--coral); font-size:11px; font-weight:600; text-decoration:none;">Spotisaver</a>
+              <a href="https://spodownloader.com/" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--coral); background:none; color:var(--coral); font-size:11px; font-weight:600; text-decoration:none;">Spotisaver</a>
               <a href="https://spotmate.online/en1" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink); font-size:11px; font-weight:600; text-decoration:none;">SpotMate</a>
             </div>
           </div>
@@ -3983,6 +3987,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   let djDisabledPlaylists = new Set(); // playlists the user has manually opted out of DJ Mode for
   let hiddenUnsorted = false; // whether the Unsorted tab is hidden
   let currentSort = 'default'; // default | alpha | artist | genre | recent
+  let libraryMode = 'playlists'; // 'playlists' | 'albums'
   let reorderMode = false;
   let queue = [];          // track ids, current playback order
   let queueIndex = -1;
@@ -8275,7 +8280,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.1';
+  const APP_VERSION = '56.1.5';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -11143,6 +11148,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
 
 
     userAlbums = metaMap.userAlbums || {};
+    if(metaMap.libraryMode) libraryMode = metaMap.libraryMode;
     playlists = metaMap.playlists || {
         'All Songs': allTracks.map(t => t.id)
     };
@@ -12093,7 +12099,7 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
   // truth: latest, or "new version available — reload to get it" (the PWA's
   // service worker will pick up the new shell automatically on that reload).
   try{
-    var resp = await fetch('https://anekthegreat.github.io/SideCut/ota/manifest.json', { cache: 'no-store' });
+    var resp = await fetch('https://anekthegreat.github.io/SideCut/ota/updates.json', { cache: 'no-store' });
     if(!resp || !resp.ok) throw new Error('HTTP ' + (resp ? resp.status : 'no response'));
     var man = await resp.json();
     var cur = (typeof APP_VERSION !== 'undefined') ? String(APP_VERSION) : (window.__SC_VERSION || '');
@@ -12208,6 +12214,15 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
   function renderTabsInner(){
     const tabs = $('tabs');
     tabs.innerHTML = '';
+    if(libraryMode === 'albums'){
+      const albEl = document.createElement('div');
+      albEl.className = 'tab active';
+      albEl.textContent = '💿 Albums';
+      albEl.style.cursor = 'default';
+      tabs.appendChild(albEl);
+      return;
+    }
+
     Object.keys(playlists).forEach(name => {
       if(hiddenPlaylists.has(name) && name !== activePlaylist) return;
       const el = document.createElement('div');
@@ -12757,6 +12772,7 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
     } else {
       ids = getSortedIds(rawIds);
     }
+    if(libraryMode === 'albums'){ ids = []; }
     const fullIds = ids.slice(); // full playlist order, before search narrows what's shown — this is what playback should queue
     if(searchQuery){
       ids = ids.filter(id => {
@@ -12783,7 +12799,7 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
     // The sort actually applied to the list — perPlaylistSort wins over currentSort
     // when that feature is on, so every reorder check below keys off this, not
     // currentSort, or reordering can get gated/sorted wrong (see reorderModeBtn).
-    const effectiveSort = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
+    const effectiveSort = (libraryMode === 'albums') ? 'artist-album' : ((perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort);
 
     if(selectMode){
       header.innerHTML = `
@@ -12791,6 +12807,7 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
         <div class="pane-header-spacer"></div>
         <div class="pane-actions">
           <button class="icon-btn" id="selectCancelBtn" title="Cancel"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></button>
+          <button class="icon-btn" id="selectAlbumAddBtn" title="Add selected songs to an album"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg></button>
           <button class="icon-btn" id="selectAlbumBtn" title="Create album from selected songs"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg></button>
           <button class="icon-btn" id="selectExportBtn" title="Export selected to .zip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h4.17v6h4V9h4.17L12 2z"/></svg></button>
           <button class="icon-btn" id="selectDeleteBtn" title="Delete selected" style="color:var(--coral); border-color:var(--coral);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
@@ -12799,6 +12816,8 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
       pane.appendChild(header);
       $('selectCancelBtn').addEventListener('click', exitSelectMode);
       $('selectAlbumBtn').addEventListener('click', createAlbumFromSelected);
+      $('selectAlbumAddBtn').addEventListener('click', addSelectedToAlbum);
+
       $('selectExportBtn').addEventListener('click', exportSelected);
       $('selectDeleteBtn').addEventListener('click', deleteSelected);
     } else if(reorderMode && !isAllSongs && effectiveSort === 'default'){
@@ -13234,6 +13253,12 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
         saveMeta();
         renderList();
       });
+
+
+    const abBtn = document.createElement('button');
+    abBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg> Add to album`;
+    abBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; pickUserAlbum([id], t.name); });
+    list.appendChild(abBtn);
       list.appendChild(removeBtn);
     }
     $('songActionsBackdrop').style.display = 'flex';
@@ -13445,6 +13470,145 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
   // album field, groups them under a userAlbums entry, and makes them show
   // first in By-album sorts under their artist — then singles from that artist
   // show below. 
+
+
+  function pickUserAlbum(ids, sourceLabel){
+    const names = Object.keys(userAlbums).sort();
+    if(!names.length){ createAlbumFromIds(ids, sourceLabel, null); return; }
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.style.zIndex = '230';
+    const sheet = document.createElement('div');
+    sheet.className = 'modal';
+    sheet.style.maxWidth = '340px';
+    sheet.innerHTML = '<h3>Add to album</h3><div style="font-size:12.5px; color:var(--ink-dim); margin:2px 0 10px;">' + escapeHtml(sourceLabel) + ' — ' + ids.length + ' song' + (ids.length === 1 ? '' : 's') + '</div>';
+    const listEl = document.createElement('div');
+    listEl.style.cssText = 'display:flex; flex-direction:column; gap:6px; max-height:34vh; overflow-y:auto; margin-bottom:8px;';
+    names.forEach(name => {
+      const b = document.createElement('button');
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg> ' + escapeHtml(name) + ' <span style="opacity:.55; font-size:11px;">(' + (userAlbums[name].trackIds ? userAlbums[name].trackIds.length : 0) + ' songs)</span>';
+      b.addEventListener('click', () => { backdrop.remove(); addTracksToAlbum(ids, name, sourceLabel); });
+      listEl.appendChild(b);
+    });
+    const newBtn = document.createElement('button');
+    newBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> New album…';
+    newBtn.addEventListener('click', () => { backdrop.remove(); createAlbumFromIds(ids, sourceLabel, null); });
+    const doneBtn = document.createElement('button');
+    doneBtn.textContent = 'Cancel';
+    doneBtn.style.cssText = 'border:none; background:none; color:var(--ink-dim); padding:8px;';
+    doneBtn.addEventListener('click', () => { backdrop.remove(); });
+    sheet.appendChild(listEl);
+    sheet.appendChild(newBtn);
+    sheet.appendChild(doneBtn);
+    backdrop.appendChild(sheet);
+    backdrop.addEventListener('click', e => { if(e.target === backdrop) backdrop.remove(); });
+    document.body.appendChild(backdrop);
+  }
+
+  function addTracksToAlbum(ids, albumName, sourceLabel){
+    const entry = userAlbums[albumName];
+    if(entry && Array.isArray(entry.trackIds)){
+      let added = 0;
+      ids.forEach(id => {
+        const t = allTracks.find(tr => tr.id === id);
+        if(!t) return;
+        if(entry.trackIds.indexOf(id) === -1) entry.trackIds.push(id);
+        if((t.album || '').trim() !== albumName){
+          t.album = albumName;
+          persistTrackMeta(t);
+        }
+        added++;
+      });
+      saveMeta();
+      renderList();
+      toast('Added ' + added + ' song' + (added === 1 ? '' : 's') + ' to "' + escapeHtml(albumName) + '"');
+      return;
+    }
+    createAlbumFromIds(ids, sourceLabel, albumName);
+  }
+
+
+  /* albums tab lands in the next patch
+  function buildAlbumsIds(){
+    const albumArtists = {};
+    Object.keys(userAlbums.）.forEach(function(n){ const e = userAlbums[n]; if(e && e.artist) albumArtists[e.artist] =1; });
+    const inAlbum = {};
+    Object.keys(userAlbums.）.forEach(function(n){ const e = userAlbums[n]; if(e && Array.isArray(e.trackIds)) e.trackIds.forEach(function(id){ inAlbum[id] =1; }); });
+    const grouped = {};
+    allTracks.forEach(function(t){
+      if(!t) return;
+      const ar = (t.artist || '' .trim() || 'Unknown artist';
+      if(!albumArtists[ar]) return;
+      if(!grouped[ar]) grouped[ar] = { albs: [], sins: [] };
+      if(inAlbum[t.id]) grouped[ar].albs.push(t.id); else grouped[ar].sins.push(t.id);
+    });
+    const out = [];
+    Object.keys(grouped).sort().forEach(function(ar){
+      grouped[ar].albs.sort(function(a, b){
+        const ta = allTracks.find(function(x){ return x.id === a; });
+        const tb = allTracks.find(function(x){ return x.id === b; });
+        return ((ta && ta.album) || '' .toLowerCase().localeCompare(((tb && tb.album) || '' .toLowerCase());
+      });
+      out.push.apply(out, grouped[ar].albs);
+      out.push.apply(out, grouped[ar].sins);
+    });
+    return out;
+  }
+
+  */
+  function createAlbumFromIds(ids, sourceLabel, existingName){
+    ids = Array.from(ids || []);
+    if(!ids.length){ toast('Select some songs first.'); return; }
+    let albumName = (existingName && String(existingName).trim()) ? String(existingName).trim() : null;
+    if(!albumName){
+      albumName = prompt(sourceLabel + ' — name this album:');
+      if(!albumName || !albumName.trim()) return;
+      albumName = albumName.trim();
+    }
+    if(userAlbums[albumName]){
+      if(!confirm('An album named "' + albumName + '" already exists — merge these songs into it?')) return;
+    }
+    const artistSet = new Set();
+    ids.forEach(id => {
+      const t = allTracks.find(tr => tr.id === id);
+      if(t) artistSet.add((t.artist || 'Unknown artist').trim());
+    });
+    const primaryArtist = artistSet.size === 1 ? [...artistSet][0] : (prompt('Multiple artists selected — which artist should this album be filed under?', '') || '').trim() || 'Various Artists';
+    if(!userAlbums[albumName]){
+      userAlbums[albumName] = { artist: primaryArtist, trackIds: [], createdAt: Date.now() };
+    }
+    const entry = userAlbums[albumName];
+    let added = 0;
+    ids.forEach(id => {
+      const t = allTracks.find(tr => tr.id === id);
+      if(!t) return;
+      if(entry.trackIds.indexOf(id) === -1) entry.trackIds.push(id);
+      if((t.album || '').trim() !== albumName){
+        t.album = albumName;
+        persistTrackMeta(t);
+        added++;
+      } else {
+        added++;
+      }
+    });
+    if(added){
+      saveMeta();
+      exitSelectMode();
+      if(perPlaylistSortEnabled){ perPlaylistSort[activePlaylist] = 'artist-album'; dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort }); }
+      else { currentSort = 'artist-album'; }
+      renderList();
+      toast('Added ' + added + ' song' + (added === 1 ? '' : 's') + ' to "' + albumName + '" — albums now sort before singles.');
+    } else {
+      toast('No songs were added.');
+    }
+  }
+
+  function addSelectedToAlbum(){
+    const ids = Array.from(selectedIds);
+    if(!ids.length){ toast('Select some songs first.'); return; }
+    pickUserAlbum(ids, ids.length + ' selected songs');
+  }
+
   function createAlbumFromSelected(){
     const ids = Array.from(selectedIds);
     if(!ids.length){ toast('Select some songs first.'); return; }
@@ -18191,7 +18355,22 @@ exportState.compressPct = 100;
         }
       }
       $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
-      try{ window.__SC_VERSION = String(APP_VERSION); }catch(e){}
+      const _lbP = document.getElementById('libModePlaylists');
+    const _lbA = document.getElementById('libModeAlbums');
+    if(_lbP && _lbA){
+      function _lbSet(){
+        const on = (libraryMode === 'albums');
+        _lbP.style.background = on ? 'transparent' : 'var(--coral';
+        _lbP.style.color = on ? 'var(--ink-dim)' : '#161616';
+        _lbA.style.background = on ? 'var(--coral' : 'transparent';
+        _lbA.style.color = on ? '#161616' : 'var(--ink-dim';
+        renderTabs(); renderList();
+      }
+      _lbP.addEventListener('click', function(){ libraryMode = 'playlists'; dbPut('meta', { key: 'libraryMode', value: libraryMode }); _lbSet(); });
+      _lbA.addEventListener('click', function(){ libraryMode = 'albums'; dbPut('meta', { key: 'libraryMode', value: libraryMode }); _lbSet(); });
+      _lbSet();
+    }
+    try{ window.__SC_VERSION = String(APP_VERSION); }catch(e){}
       // 5 quick taps on the version label toggles test mode — that is what makes
       // the red on-screen crash/error banner appear. Off by default so public
       // releases never flash it; errors always go to the console regardless.
@@ -22398,7 +22577,7 @@ if(!isDiscover) stopDiscoverPreview();
           '<div style="font-weight:600; color:var(--ink); margin-bottom:2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + csTitle() + '</div>' + csMetaLine() +
           '<div style="font-size:10px; color:var(--gold); margin-bottom:4px;">⚠ Couldn\'t convert in-app right now — open one of these with your link pre-filled:</div>' +
           '<div style="display:flex; gap:6px; flex-wrap:wrap;">' +
-            '<a href="https://spotisaver.net/en1?url=' + _spURL + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--coral); background:none; color:var(--coral); font-size:11px; font-weight:600; text-decoration:none;">⬇ Spotisaver</a>' +
+            '<a href="https://spodownloader.com/?url=' + _spURL + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--coral); background:none; color:var(--coral); font-size:11px; font-weight:600; text-decoration:none;">⬇ Spotisaver</a>' +
             '<a href="https://spotmate.online/en1?url=' + _spURL + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink); font-size:11px; font-weight:600; text-decoration:none;">⬇ SpotMate</a>' +
           '</div>' +
           '<div style="font-size:10px;color:var(--ink-dim);margin-top:4px;">Download there, then use <b>+ Add songs → + Files</b> to import.</div>' +

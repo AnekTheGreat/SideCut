@@ -28,12 +28,13 @@ jobs:
       - name: Publish OTA bundle for the native app
         run: |
           mkdir -p ota
-          rm -f ota/SideCut-web.zip
-          zip -q -r ota/SideCut-web.zip index.html sw.js manifest.json icon-192.png icon-512.png dev/native-updates.js
+          rm -f ota/SideCut-web.zip ota/update.zip
+          zip -q -r ota/update.zip index.html sw.js manifest.json icon-192.png icon-512.png dev/native-updates.js
+          cp ota/update.zip ota/SideCut-web.zip
           # Manifest carries the real zip size (progress-bar ETA) and the real
           # patch notes (update sheet) — pulled from the in-app CHANGELOG so
           # users always see what actually changed in the version they install.
-          SIZE=$(stat -c%s ota/SideCut-web.zip)
+          SIZE=$(stat -c%s ota/update.zip)
           node -e "
             const fs = require('fs');
             const src = fs.readFileSync('index.html','utf8');
@@ -51,11 +52,13 @@ jobs:
                 }
               } catch (err) { console.log('changelog parse failed:', err.message); }
             }
+            fs.writeFileSync('ota/updates.json', JSON.stringify({ version: v, url: 'update.zip', size: process.argv[1], notes, date: dateField || '' }));
             fs.writeFileSync('ota/manifest.json', JSON.stringify({ version: v, url: 'SideCut-web.zip', size: process.argv[1], notes, date: dateField || '' }));
             console.log('OTA manifest:', v, process.argv[1], 'bytes,', notes.length, 'notes');
           " "$SIZE"
           echo '--- ota/ contents ---' && ls -la ota/
-          echo '--- ota/manifest.json ---' && cat ota/manifest.json
+          echo '--- ota/updates.json ---' && cat ota/updates.json
+          echo '--- ota/manifest.json (legacy path) ---' && cat ota/manifest.json
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
