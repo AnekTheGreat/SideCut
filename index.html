@@ -1813,17 +1813,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       style="width:100%; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);
       border-radius:20px; padding:9px 14px; font-size:13.5px; font-family:var(--font-ui);">
   </div>
-  <div style="display:flex; align-items:center; gap:6px; padding:0 20px 4px;">
-    <div style="display:flex; gap:4px; margin:0 0 2px; padding:3px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; width:fit-content;">
-      <button id="libModePlaylists" type="button" style="flex:1; padding:5px 12px; border-radius:8px; border:none; background:var(--coral); color:#161616; font-size:11.5px; font-weight:600; cursor:pointer;">▶ Playlists</button>
-      <button id="libModeAlbums" type="button" style="flex:1; padding:5px 12px; border-radius:8px; border:none; background:transparent; color:var(--ink-dim); font-size:11.5px; font-weight:600; cursor:pointer;">💿 Albums</button>
-    </div>
-    <div class="tabs" id="tabs" style="flex:1; padding:4px 0 10px;"></div>
-    <button class="icon-btn" id="backToTopBtn" title="Back to top / Manage playlists" style="flex-shrink:0; opacity:0.7;">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 10c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm12 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm-6 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
-    </button>
-    <button class="icon-btn" id="managePlaylistsBtn" title="Manage playlists" style="flex-shrink:0;">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h12v2H3z"/></svg>
+  <div style="display:flex; align-items:center; gap:8px; padding:0 20px 10px;">
+    <select id="libModeSel" title="Library view" style="flex-shrink:0; max-width:118px; background:var(--bg-raised); color:var(--ink); border:1px solid var(--line); border-radius:10px; font-size:12.5px; font-weight:600; padding:7px 8px; font-family:var(--font-ui);">
+      <option value="playlists">▶ Playlists</option>
+      <option value="albums">💿 Albums</option>
+    </select>
+    <select id="libPlaylistSel" title="Select playlist" style="flex:1; min-width:0; background:var(--bg-raised); color:var(--ink); border:1px solid var(--line); border-radius:10px; font-size:12.5px; font-weight:600; padding:7px 8px; font-family:var(--font-ui);"></select>
+    <button class="icon-btn" id="libTopKebab" title="Back to top / Manage playlists" style="flex-shrink:0; opacity:0.85;">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg>
     </button>
   </div>
   <div id="listPane"></div>
@@ -8280,7 +8277,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.1.5';
+  const APP_VERSION = '56.1.6';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -8503,6 +8500,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+  { version: '56.1.6', date: 'September 9, 2026 · 5:55 PM EDT', title: 'Library UI rework', items: [
+    'Playlists/Albums switched from a cramped tab strip to a dropdown pair — the top shows a mode dropdown and a playlist dropdown so every playlist name is readable and pickable.',
+    'Compact list header: smaller playlist name + sort control so the ⋮ kebab always stays in frame.',
+    'Back-to-top + Manage playlists merged into one kebab popup.'
+  ] },
   { version: '56.1.5', date: 'September 9, 2026 ·​​ 4:15 PM EDT', title: 'v56.1.5 fix pack', items: [
 '    OTA updates now ship to a fresh manifest/zip path every release (updates.json / update.zip) so GitHub Pages CDN caching can no longer stall Check for updates — notifications and installs actually fire.',
 '    Converter backup hosts refreshed to live sites (Spodownloader, plus ytmp3 for YouTube) — if the on-device pipeline is blocked, these take your copied link to a working paste-in converter.',
@@ -12217,193 +12219,64 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
     }
   }
   function renderTabsInner(){
-    const tabs = $('tabs');
-    tabs.innerHTML = '';
+    // Library header is now a dropdown pair: mode (Playlists/Albums) + the
+    // active playlist. Populate the playlist <select> with every visible
+    // playlist so the user can see & pick more than one at a time (the old
+    // horizontal tab strip could barely show a single name).
+    const sel = document.getElementById('libPlaylistSel');
+    if(!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const addOpt = (value, label) => {
+      const o = document.createElement('option');
+      o.value = value; o.textContent = label;
+      sel.appendChild(o);
+    };
     if(libraryMode === 'albums'){
-      const albEl = document.createElement('div');
-      albEl.className = 'tab active';
-      albEl.textContent = '💿 Albums';
-      albEl.style.cursor = 'default';
-      tabs.appendChild(albEl);
+      addOpt('albums', '💿 Albums');
+      sel.value = 'albums';
+      sel.disabled = true;
       return;
     }
-
+    sel.disabled = false;
+    addOpt('All Songs', '🎵 All Songs');
+    if(!hiddenUnsorted) addOpt(UNSORTED_VIEW, '📦 Unsorted');
+    addOpt('Favorites', '❤️ Favorites');
     Object.keys(playlists).forEach(name => {
+      if(name === 'All Songs' || name === 'Favorites') return;
       if(hiddenPlaylists.has(name) && name !== activePlaylist) return;
-      const el = document.createElement('div');
-      el.className = 'tab' + (name === activePlaylist ? ' active' : '');
-      
-      // Show duration on tabs if sandbox mode enabled
-      let tabText = name;
-      if(sandboxDurOnTabs && name !== 'All Songs' && name !== 'Favorites'){
-        const ids = playlists[name] || [];
-        const totalSec = ids.reduce((s, id) => { const t = allTracks.find(tr => tr.id === id); return s + (t && t.duration ? t.duration : 0); }, 0);
-        if(totalSec > 0){
-          tabText = name + ' <span class="tab-label" style="display:none; font-size:10px; opacity:0.7;">' + fmtDuration(totalSec) + '</span>';
-          el.innerHTML = tabText;
-        } else {
-          el.textContent = name;
-        }
-      } else {
-        el.textContent = name;
-      }
-      
-      el.dataset.playlistName = name;
-      const isPinned = (name === 'All Songs' || name === 'Favorites');
-      if(!isPinned) wireTabReorder(el, name);
-      el.addEventListener('click', () => {
-        if(el.dataset.justDragged){ delete el.dataset.justDragged; return; }
-        activePlaylist = name;
-        rememberPlaylist(name);
+      addOpt(name, name);
+    });
+    // Keep the current selection visible even if it was hidden.
+    if(activePlaylist && !sel.querySelector('option[value="' + activePlaylist + '"]')){
+      addOpt(activePlaylist, activePlaylist);
+    }
+    sel.value = activePlaylist || 'All Songs';
+    // Re-wire only when the value actually changed (avoids re-render loops).
+    if(prev !== sel.value || !sel._wired){
+      sel.onchange = () => {
+        const v = sel.value;
+        if(!v || v === 'albums') return;
+        activePlaylist = v;
+        rememberPlaylist(v);
         reorderMode = false;
         if(shuffle) regenerateShuffleOrder();
         renderTabs();
         renderList();
         renderListInner._scrollToPlaying = true;
-      });
-      tabs.appendChild(el);
-      // "Unsorted" is a virtual, always-pinned tab rendered right after All Songs —
-      // it used to be tucked inside this same loop, appended only when the loop
-      // happened to reach "Favorites", which meant it didn't render at all if
-      // Favorites was ever hidden/removed from the iteration, and its position was
-      // tied to wherever Favorites happened to sit. It's now its own independent
-      // step with no dependency on Favorites existing or being at any particular
-      // spot — it just always renders once, right after All Songs. Still virtual:
-      // computed on the fly in renderListInner, never stored as its own
-      // playlists[] entry, so it can't drift out of sync or get deleted.
-      if(name === 'All Songs'){
-        // Only show Unsorted tab if it's not hidden
-        if(!hiddenUnsorted){
-          const unsortedEl = document.createElement('div');
-          unsortedEl.className = 'tab' + (activePlaylist === UNSORTED_VIEW ? ' active' : '');
-          unsortedEl.textContent = 'Unsorted';
-          unsortedEl.dataset.playlistName = UNSORTED_VIEW;
-          unsortedEl.addEventListener('click', () => {
-            activePlaylist = UNSORTED_VIEW;
-            reorderMode = false;
-            if(shuffle) regenerateShuffleOrder();
-            renderTabs();
-            renderList();
-          });
-          tabs.appendChild(unsortedEl);
-        }
-      }
-    });
-    const newTab = document.createElement('div');
-    newTab.className = 'tab';
-    newTab.textContent = '+ New playlist';
-    newTab.style.borderStyle = 'dashed';
-    newTab.addEventListener('click', openNewPlaylistModal);
-    tabs.appendChild(newTab);
+      };
+      sel._wired = true;
+    }
   }
+  // ---------------- Playlist tab reordering ----------------
+  // The old long-press tab-drag reorder was tied to the horizontal tab strip,
+  // which is now a dropdown (that strip could barely show one playlist name).
+  // Playlist order can still be edited from Manage playlists; these stubs keep
+  // any callers from crashing.
 
-  // ---------------- Playlist tab reordering: long-press a tab (not All Songs/Favorites, which stay pinned first)
-  // then drag left/right to reorder. Order is persisted by rebuilding the playlists object in the new key order. ----------------
-  function wireTabReorder(el, name){
-    let pressTimer = null, dragging = false, startX = 0, startY = 0, moved = false;
-    let tabScrollDir = 0, tabScrollRAF = null, lastTabPointer = null;
-    const tabsEl = $('tabs');
-    el.addEventListener('pointerdown', (e) => {
-      if(e.target !== el) return;
-      startX = e.clientX; startY = e.clientY;
-      lastTabPointer = e;
-      moved = false;
-      pressTimer = setTimeout(() => {
-        if(moved) return;
-        dragging = true;
-        el.setPointerCapture(e.pointerId);
-        el.style.opacity = '0.55';
-        el.style.zIndex = '5';
-      }, 380);
-    });
-    function tabSwapCheck(cx){
-      const siblings = [...tabsEl.querySelectorAll('.tab[data-playlist-name]')].filter(s => s !== el);
-      const elRect = el.getBoundingClientRect();
-      // elRect already includes the live transform, so its center is the
-      // tab's true visual position — no extra drag-offset term needed.
-      const midX = elRect.left + elRect.width / 2;
-      for(const sib of siblings){
-        const r = sib.getBoundingClientRect();
-        if(midX > r.left && midX < r.right){
-          const sibName = sib.dataset.playlistName;
-          if(sibName === 'All Songs' || sibName === 'Favorites') continue; // pinned, never displaced
-          if(midX < r.left + r.width / 2) tabsEl.insertBefore(el, sib);
-          else tabsEl.insertBefore(el, sib.nextSibling);
-          startX = cx;
-          el.style.transform = '';
-          return;
-        }
-      }
-    }
-    el.addEventListener('pointermove', (e) => {
-      if(dragging){
-        const dx = e.clientX - startX;
-        el.style.transform = `translateX(${dx}px) scale(1.05)`;
-        tabSwapCheck(e.clientX);
-        // Auto-scroll the tab bar when the dragged tab nears the left or right
-        // edge, so long playlist lists can be reordered without letting go.
-        const tr = tabsEl.getBoundingClientRect();
-        const tEdge = 56;
-        lastTabPointer = e;
-        if(e.clientX - tr.left < tEdge) tabScrollDir = -1;
-        else if(tr.right - e.clientX < tEdge) tabScrollDir = 1;
-        else tabScrollDir = 0;
-        if(tabScrollDir !== 0){
-          if(!tabScrollRAF){
-            const tstep = () => {
-              const r = tabsEl.getBoundingClientRect();
-              const p = lastTabPointer;
-              let still = false;
-              if(tabScrollDir < 0 && p && p.clientX - r.left < tEdge) still = true;
-              if(tabScrollDir > 0 && p && r.right - p.clientX < tEdge) still = true;
-              if(!still){ tabScrollRAF = null; return; }
-              const before = tabsEl.scrollLeft;
-              tabsEl.scrollLeft += tabScrollDir * 8;
-              if(tabsEl.scrollLeft === before){ tabScrollRAF = null; return; }
-              // Keep the dragged tab glued to the finger while the bar scrolls.
-              startX -= tabScrollDir * 8;
-              el.style.transform = `translateX(${(lastTabPointer.clientX - startX)}px) scale(1.05)`;
-              tabSwapCheck(lastTabPointer.clientX);
-              tabScrollRAF = requestAnimationFrame(tstep);
-            };
-            tabScrollRAF = requestAnimationFrame(tstep);
-          }
-        } else if(tabScrollRAF){
-          cancelAnimationFrame(tabScrollRAF);
-          tabScrollRAF = null;
-        }
-        return;
-      }
-      // Not dragging yet — if the finger has moved more than a small jitter
-      // threshold, this is a scroll/swipe, not a hold. Cancel the pending
-      // reorder timer so scrolling the tab bar doesn't get hijacked mid-swipe.
-      if(Math.abs(e.clientX-startX) > 8 || Math.abs(e.clientY-startY) > 8){
-        moved = true;
-        clearTimeout(pressTimer);
-      }
-    });
-    function endDrag(e){
-      clearTimeout(pressTimer);
-      if(tabScrollRAF){ cancelAnimationFrame(tabScrollRAF); tabScrollRAF = null; }
-      tabScrollDir = 0;
-      // Was never releasing the pointer capture taken in the pointerdown handler above
-      // when dragging=true — same "everything else stops responding to taps" bug as the
-      // waveform seek bar, but on playlist tabs specifically: matches "can't click on
-      // other playlists" exactly. Release unconditionally (harmless no-op if this
-      // pointerId was never captured by this element).
-      if(e && e.pointerId != null){ try{ el.releasePointerCapture(e.pointerId); }catch(err){} }
-      if(dragging){
-        dragging = false;
-        el.style.opacity = ''; el.style.zIndex = ''; el.style.transform = '';
-        el.dataset.justDragged = '1';
-        persistTabOrder();
-      }
-    }
-    el.addEventListener('pointerup', endDrag);
-    el.addEventListener('pointercancel', endDrag);
-  }
+  function wireTabReorder(el, name){ }
   function persistTabOrder(){
-    const order = [...$('tabs').querySelectorAll('.tab[data-playlist-name]')].map(t => t.dataset.playlistName);
+    const order = Object.keys(playlists);
     const rebuilt = {};
     if(playlists['All Songs']) rebuilt['All Songs'] = playlists['All Songs'];
     if(playlists['Favorites']) rebuilt['Favorites'] = playlists['Favorites'];
@@ -12580,20 +12453,18 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
     renderList();
     toast(`Renamed to "${newName}"`);
   }
-  $('managePlaylistsBtn').addEventListener('click', () => {
+  // The header kebab (#libTopKebab) opens #topChooser — Back to top / Manage playlists.
+  // No standalone manage-playlists button anymore; it's reachable from that popup.
+  function openManagePlaylistsModal(){
     renderManagePlaylistsList();
     $('managePlaylistsBackdrop').style.display = 'flex';
-  });
+  }
   $('managePlaylistsClose').addEventListener('click', () => { $('managePlaylistsBackdrop').style.display = 'none'; });
   $('managePlaylistsBackdrop').addEventListener('click', e => { if(e.target === $('managePlaylistsBackdrop')) $('managePlaylistsBackdrop').style.display = 'none'; });
 
   // Back to top button
   // Back-to-top / Manage-playlists merged into one chooser popup.
   const _topChooser = $('topChooser');
-  $('backToTopBtn').addEventListener('click', () => {
-    if(_topChooser) _topChooser.style.display = 'flex';
-    else { const lp = $('listPane'); if(lp) lp.scrollTo({ top: 0, behavior: 'smooth' }); }
-  });
   const _topBack = $('topChoiceBack');
   if(_topBack) _topBack.addEventListener('click', () => { if(_topChooser) _topChooser.style.display='none'; const lp = $('listPane'); if(lp) lp.scrollTo({ top: 0, behavior: 'smooth' }); });
   const _topMng = $('topChoiceManage');
@@ -12603,10 +12474,10 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
   const listPane = $('listPane');
   if(listPane) {
     listPane.addEventListener('scroll', () => {
-      const backToTopBtn = $('backToTopBtn');
-      if(backToTopBtn) {
-        backToTopBtn.style.opacity = '0.85';
-        backToTopBtn.style.pointerEvents = 'auto';
+      const kebab = $('libTopKebab');
+      if(kebab ){
+        kebab.style.opacity = '0.85';
+        kebab.style.pointerEvents = 'auto';
       }
     });
   }
@@ -12837,13 +12708,15 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
       $('reorderDoneBtn').addEventListener('click', () => { reorderMode = false; renderList(); });
     } else {
       header.innerHTML = `
-        <div>
-          <h2>${escapeHtml(activePlaylist)}</h2>
-          <div class="sub">${ids.length} track${ids.length===1?'':'s'}${durLabel}</div>
+        <div style="min-width:0; flex-shrink:1;">
+          <div style="display:flex; align-items:center; gap:6px; max-width:100%;">
+            <h2 style="font-size:13.5px; font-weight:600; margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:38%;">${escapeHtml(activePlaylist)}</h2>
+            <div class="sub" style="margin-top:0; font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${ids.length} track${ids.length===1?'':'s'}${durLabel}</div>
+          </div>
         </div>
         <div class="pane-header-spacer"></div>
-        <div class="pane-actions">
-          <select id="sortSelect" style="background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); border-radius:8px; font-size:11.5px; padding:6px 8px; font-family:'JetBrains Mono',monospace;">
+        <div class="pane-actions" style="gap:4px;">
+          <select id="sortSelect" style="max-width:118px; background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); border-radius:8px; font-size:11px; padding:5px 6px; font-family:'JetBrains Mono',monospace;">
             <option value="default">Playlist order</option>
             <option value="alpha">A–Z</option>
             <option value="artist">By artist</option>
@@ -12852,11 +12725,12 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
             <option value="genre">By genre</option>
             <option value="recent">Recently added</option>
           </select>
-          <button class="icon-btn" id="mixBtn" title="Mix this playlist"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg></button>
-          ${!isAllSongs ? `<button class="icon-btn" id="reorderModeBtn" title="Reorder tracks" style="${reorderMode ? 'background:var(--coral); color:#161616; border-color:var(--coral);' : ''}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>` : ''}
-          <button class="icon-btn" id="listMoreBtn" title="More options"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>
+          <button class="icon-btn" id="mixBtn" title="Mix this playlist" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg></button>
+          ${!isAllSongs ? `<button class="icon-btn" id="reorderModeBtn" title="Reorder tracks" style="flex-shrink:0;${reorderMode ? 'background:var(--coral); color:#161616; border-color:var(--coral);' : ''}}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>` : ''}
+          <button class="icon-btn" id="listMoreBtn" title="More options" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>
         </div>
       `;
+
       pane.appendChild(header);
       $('sortSelect').value = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
       $('sortSelect').addEventListener('change', (e) => {
@@ -18199,8 +18073,8 @@ exportState.compressPct = 100;
   let lastScrollTop = 0;
   $('listPane').addEventListener('scroll', () => {
     const st = $('listPane').scrollTop;
-    const btt = $('backToTopBtn');
-    if(btt) btt.style.display = st > 300 ? 'block' : 'none';
+    const kebab = $('libTopKebab');
+    if(kebab) kebab.style.opacity = st > 300 ? '1' : '0.85';
     lastScrollTop = st;
   });
 
@@ -18360,21 +18234,25 @@ exportState.compressPct = 100;
         }
       }
       $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
-      const _lbP = document.getElementById('libModePlaylists');
-    const _lbA = document.getElementById('libModeAlbums');
-    if(_lbP && _lbA){
-      function _lbSet(){
-        const on = (libraryMode === 'albums');
-        _lbP.style.background = on ? 'transparent' : 'var(--coral';
-        _lbP.style.color = on ? 'var(--ink-dim)' : '#161616';
-        _lbA.style.background = on ? 'var(--coral' : 'transparent';
-        _lbA.style.color = on ? '#161616' : 'var(--ink-dim';
-        renderTabs(); renderList();
+      const _lbSel = document.getElementById('libModeSel');
+      const _plSel = document.getElementById('libPlaylistSel');
+      const _topKebab = document.getElementById('libTopKebab');
+      if(_lbSel){
+        _lbSel.value = (libraryMode === 'albums') ? 'albums' : 'playlists';
+        _lbSel.addEventListener('change', function(){
+          libraryMode = (_lbSel.value === 'albums') ? 'albums' : 'playlists';
+          dbPut('meta', { key: 'libraryMode', value: libraryMode });
+          renderTabs(); renderList();
+        });
       }
-      _lbP.addEventListener('click', function(){ libraryMode = 'playlists'; dbPut('meta', { key: 'libraryMode', value: libraryMode }); _lbSet(); });
-      _lbA.addEventListener('click', function(){ libraryMode = 'albums'; dbPut('meta', { key: 'libraryMode', value: libraryMode }); _lbSet(); });
-      _lbSet();
-    }
+      if(_topKebab){
+        _topKebab.addEventListener('click', function(){
+          const tc = document.getElementById('topChooser');
+          if(tc) tc.style.display = 'flex';
+          else { const lp = document.getElementById('listPane'); if(lp) lp.scrollTo({ top: 0, behavior: 'smooth' }); }
+        });
+      }
+      if(_plSel && typeof renderTabsInner === 'function') renderTabsInner();
     try{ window.__SC_VERSION = String(APP_VERSION); }catch(e){}
       // 5 quick taps on the version label toggles test mode — that is what makes
       // the red on-screen crash/error banner appear. Off by default so public
