@@ -8286,7 +8286,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.0.79';
+  const APP_VERSION = '56.0.80';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -13027,6 +13027,116 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
         }
       });
     }
+    // Albums mode: render collapsible album cards instead of flat song list
+    if(libraryMode === 'albums' && !reorderMode && !selectMode && !searchQuery && !inInsertPick){
+      var _albumMap = {};
+      var _albumOrder = [];
+      ids.forEach(function(id){
+        var t = allTracks.find(function(tr){ return tr.id === id; });
+        if(!t) return;
+        var aName = (t.album || '').trim() || 'Unknown Album';
+        if(!_albumMap[aName]){
+          _albumMap[aName] = { name: aName, artist: (t.artist||'').trim(), tracks: [], cover: t.artUrl || '' };
+          _albumOrder.push(aName);
+        }
+        _albumMap[aName].tracks.push(id);
+        if(!_albumMap[aName].cover && t.artUrl) _albumMap[aName].cover = t.artUrl;
+      });
+      _albumOrder.sort(function(a,b){
+        var ea = _albumMap[a], eb = _albumMap[b];
+        var cmp = String(a).toLowerCase().localeCompare(String(b).toLowerCase());
+        if(ea.artist && eb.artist && ea.artist !== eb.artist) return ea.artist.toLowerCase().localeCompare(eb.artist.toLowerCase()) || cmp;
+        return cmp;
+      });
+      _albumOrder.forEach(function(aName, aIdx){
+        var alb = _albumMap[aName];
+        if(!alb || !alb.tracks.length) return;
+        var cardId = 'alb_card_' + aIdx;
+        var collapsed = localStorage.getItem('sidecut_albColl_' + aName) === '1';
+        var card = document.createElement('div');
+        card.style.cssText = 'margin:6px 10px;border-radius:12px;background:rgba(255,255,255,0.035);border:1px solid var(--line);overflow:hidden;';
+        var hdr = document.createElement('div');
+        hdr.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;user-select:none;';
+        var chevronStyle = collapsed ? '' : 'transform:rotate(90deg);';
+        hdr.innerHTML = '<span style="transition:transform 0.2s;font-size:14px;color:var(--ink-dim);' + chevronStyle + '">&#9654;</span>'
+          + (alb.cover ? '<img src="' + alb.cover.replace(/'/g, '&#39;') + '" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--bg);" onerror="this.style.display=\x27none\x27" />' : '<div style="width:48px;height:48px;border-radius:8px;background:rgba(255,255,255,0.08);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--ink-dim);font-size:18px;">&#127925;</div>')
+          + '<div style="flex:1;min-width:0;">'
+          + '<div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.name) + '</div>'
+          + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.artist || 'Unknown artist') + '</div>'
+          + '</div>'
+          + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>';
+        card.appendChild(hdr);
+        var body = document.createElement('div');
+        body.id = cardId;
+        body.style.cssText = collapsed ? 'display:none;' : 'display:block;padding:0 6px 6px;';
+        card.appendChild(body);
+        hdr.addEventListener('click', function(){
+          var isHidden = body.style.display === 'none';
+          body.style.display = isHidden ? 'block' : 'none';
+          hdr.querySelector('span').style.transform = isHidden ? 'rotate(90deg)' : '';
+          try{ localStorage.setItem('sidecut_albColl_' + aName, isHidden ? '0' : '1'); }catch(_e){}
+          if(isHidden && body.children.length === 0){
+            alb.tracks.forEach(function(tid, ti){
+              var tt = allTracks.find(function(tr){ return tr.id === tid; });
+              if(!tt) return;
+              var row = document.createElement('div');
+              row.className = 'track';
+              row.dataset.id = tid;
+              var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+              row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
+                + '<div class="track-art" style="' + artStyle + '"></div>'
+                + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
+                + '<div class="a">' + escapeHtml(tt.artist) + '</div></div>'
+                + '<div class="dur">' + (tt.duration ? fmtTime(tt.duration) : '--:--') + '</div>'
+                + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
+              row.addEventListener('click', function(e){
+                if(e.target.closest('.kebab-btn')) return;
+                playFromList(fullIds, tid);
+              });
+              body.appendChild(row);
+              if(!selectMode){
+                attachLongPressChoice(row, tid);
+                row.querySelector('[data-kebab]').addEventListener('click', function(e){
+                  e.stopPropagation();
+                  openSongActions(tid);
+                });
+              }
+            });
+          }
+        });
+        pane.appendChild(card);
+        if(!collapsed){
+          alb.tracks.forEach(function(tid, ti){
+            var tt = allTracks.find(function(tr){ return tr.id === tid; });
+            if(!tt) return;
+            var row = document.createElement('div');
+            row.className = 'track';
+            row.dataset.id = tid;
+            var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+            row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
+              + '<div class="track-art" style="' + artStyle + '"></div>'
+              + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
+              + '<div class="a">' + escapeHtml(tt.artist) + '</div></div>'
+              + '<div class="dur">' + (tt.duration ? fmtTime(tt.duration) : '--:--') + '</div>'
+              + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
+            row.addEventListener('click', function(e){
+              if(e.target.closest('.kebab-btn')) return;
+              playFromList(fullIds, tid);
+            });
+            body.appendChild(row);
+            if(!selectMode){
+              attachLongPressChoice(row, tid);
+              row.querySelector('[data-kebab]').addEventListener('click', function(e){
+                e.stopPropagation();
+                openSongActions(tid);
+              });
+            }
+          });
+        }
+      });
+      return;
+    }
+
     ids.forEach((id,i) => {
       const t = allTracks.find(tr => tr.id === id);
       if(!t) return;
