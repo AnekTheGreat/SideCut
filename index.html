@@ -13085,6 +13085,68 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
         body.id = cardId;
         body.style.cssText = collapsed ? 'display:none;' : 'display:block;padding:0 6px 6px;';
         card.appendChild(body);
+        // Long-press on card header to reorder album
+        (function(_card, _aName, _alb){
+          var _timer = null, _moved = false, _sx = 0, _sy = 0;
+          hdr.addEventListener('pointerdown', function(e){
+            _moved = false; _sx = e.clientX; _sy = e.clientY;
+            _timer = setTimeout(function(){
+              if(_moved) return;
+              if(navigator.vibrate) navigator.vibrate(15);
+              // Enter album reorder mode - show up/down buttons on each card
+              document.querySelectorAll('[id^=alb_card_]').forEach(function(c){
+                var existing = c.querySelector('.alb-reorder-btns');
+                if(existing){ existing.remove(); return; }
+                var btns = document.createElement('div');
+                btns.className = 'alb-reorder-btns';
+                btns.style.cssText = 'display:flex;gap:4px;padding:0 8px 6px;';
+                var upBtn = document.createElement('button');
+                upBtn.textContent = '▲';
+                upBtn.style.cssText = 'flex:1;padding:6px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;';
+                var downBtn = document.createElement('button');
+                downBtn.textContent = '▼';
+                downBtn.style.cssText = 'flex:1;padding:6px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;';
+                // Click handlers for up/down
+                upBtn.addEventListener('click', function(e){
+                  e.stopPropagation();
+                  var keys = Object.keys(userAlbums);
+                  var idx = keys.indexOf(c.dataset.albumName);
+                  if(idx > 0){
+                    var temp = keys[idx]; keys[idx] = keys[idx-1]; keys[idx-1] = temp;
+                    // Rebuild userAlbums in new order
+                    var newObj = {};
+                    keys.forEach(function(k){ newObj[k] = userAlbums[k]; });
+                    userAlbums = newObj;
+                    saveMeta();
+                    renderList();
+                  }
+                });
+                downBtn.addEventListener('click', function(e){
+                  e.stopPropagation();
+                  var keys = Object.keys(userAlbums);
+                  var idx = keys.indexOf(c.dataset.albumName);
+                  if(idx < keys.length - 1){
+                    var temp = keys[idx]; keys[idx] = keys[idx+1]; keys[idx+1] = temp;
+                    var newObj = {};
+                    keys.forEach(function(k){ newObj[k] = userAlbums[k]; });
+                    userAlbums = newObj;
+                    saveMeta();
+                    renderList();
+                  }
+                });
+                btns.appendChild(upBtn);
+                btns.appendChild(downBtn);
+                c.appendChild(btns);
+              });
+            }, 500);
+          });
+          hdr.addEventListener('pointermove', function(e){
+            if(Math.abs(e.clientX-_sx)>8||Math.abs(e.clientY-_sy)>8){ _moved=true; clearTimeout(_timer); }
+          });
+          hdr.addEventListener('pointerup', function(){ clearTimeout(_timer); });
+          hdr.addEventListener('pointerleave', function(){ clearTimeout(_timer); });
+          hdr.addEventListener('pointercancel', function(){ clearTimeout(_timer); });
+        })(card, aName, alb);
         hdr.addEventListener('click', function(){
           var isHidden = body.style.display === 'none';
           body.style.display = isHidden ? 'block' : 'none';
@@ -13119,6 +13181,7 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
             });
           }
         });
+        card.dataset.albumName = aName;
         pane.appendChild(card);
         if(!collapsed){
           alb.tracks.forEach(function(tid, ti){
