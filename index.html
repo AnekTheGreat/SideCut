@@ -37,10 +37,10 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;}
   input, textarea, select{ -webkit-user-select: text; user-select: text; }
-  html,body{height:100%; margin:0; overflow-x:hidden; overscroll-behavior:none;}
+  html,body{height:100%; margin:0; overflow:hidden; overscroll-behavior:none; overscroll-behavior-x:none; overscroll-behavior-y:none;}
   body{
     background: var(--bg); color: var(--ink); font-family: var(--font-ui);
-    min-height:100dvh; display:flex; flex-direction:column; overflow-x:hidden; overscroll-behavior:none;
+    min-height:100dvh; display:flex; flex-direction:column; overflow:hidden; overscroll-behavior:none; overscroll-behavior-x:none; overscroll-behavior-y:none;
     padding-top: env(safe-area-inset-top);
     touch-action: manipulation;
     /* Fix WebView flickering: prevent perspective transforms from overflowing */
@@ -26886,6 +26886,38 @@ window.__ahCancelToast = function(){
   window.__ahCancelled = true;
   if(typeof toast === 'function') window.toast('\ud83d\udcc0 Cancelling\u2026', 2000);
 };
+
+// ---------------- Screen lock: prevent whole-page drag/bounce ----------------
+// On Android WebView, holding and dragging anywhere can bounce the entire page.
+// This handler catches body-level touchmove and prevents it, while letting inner
+// scrollable containers (listPane, homeView, discoverView, popups) scroll normally.
+(function(){
+  var scrollableSelectors = '#listPane, #homeView, #discoverView, #discPopupBody, .lyrics-scroll, [style*="overflow-y:auto"], [style*="overflow:auto"]';
+  document.addEventListener('touchmove', function(e){
+    if(!e.touches || e.touches.length > 1) return; // multi-touch handled by zoom lock
+    // Walk up from the touch target to find if it's inside a scrollable container
+    var el = e.target;
+    while(el && el !== document.body && el !== document.documentElement){
+      var cs = window.getComputedStyle(el);
+      var oy = cs.overflowY;
+      if((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 2){
+        return; // inner element can scroll — let it
+      }
+      el = el.parentElement;
+    }
+    // No scrollable ancestor found — this touch would bounce the body, block it
+    e.preventDefault();
+  }, { passive:false });
+  // Also block rubber-banding via CSS overscroll on every scrollable element
+  document.addEventListener('DOMContentLoaded', function(){
+    document.querySelectorAll('*').forEach(function(el){
+      var cs = window.getComputedStyle(el);
+      if(cs.overflowY === 'auto' || cs.overflowY === 'scroll'){
+        el.style.overscrollBehavior = 'contain';
+      }
+    });
+  });
+})();
 
 // ---------------- Zoom lock ----------------
 // SideCut is meant to stay pinned at 1x: block pinch-zoom on touch screens and
