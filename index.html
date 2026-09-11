@@ -1866,7 +1866,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="pinnedArtistsActions" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
       <button id="discoverFetchLatest" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🔄 Fetch latest <span class="online-badge">ONLINE</span></button>
       <button id="discoverLastYear" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Old songs</button>
-      <button id="discoverAlbumHistory" style="padding:12px 14px; font-size:13px; font-weight:700; border:1.5px solid var(--coral); border-radius:12px; background:color-mix(in srgb, var(--coral) 12%, var(--bg)); color:var(--coral); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; grid-column:1/-1;">📀 Albums</button>
+      <button id="discoverAlbumHistory" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📀 Albums</button>
       <button id="ahExternalCancel" style="display:none; grid-column:1/-1; padding:8px 16px; font-size:12px; font-weight:600; border:1px solid var(--coral); border-radius:10px; background:rgba(255,80,80,0.08); color:var(--coral); cursor:pointer; text-align:center;">✖ Cancel album fetch</button>
       <button id="discoverSingles" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🎵 Singles <span class="online-badge">ONLINE</span></button>
   </div>
@@ -8311,7 +8311,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.2';
+  const APP_VERSION = '56.2.1';
   window.__bootDone = false;window.__bootDone = false;
   // Diagonal split toggle
   var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false'; // default true
@@ -13971,10 +13971,10 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
     if(added){
       saveMeta();
       exitSelectMode();
-      if(perPlaylistSortEnabled){ perPlaylistSort[activePlaylist] = 'artist-album'; dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort }); }
-      else { currentSort = 'artist-album'; }
+      // Don't force sort — keep user's current sort mode
+      // (sort was previously forced to artist-album here)
       renderList();
-      toast('Added ' + added + ' song' + (added === 1 ? '' : 's') + ' to "' + albumName + '" — albums now sort before singles.');
+      toast('Added ' + added + ' song' + (added === 1 ? '' : 's') + ' to "' + albumName + '"');
     } else {
       toast('No songs were added.');
     }
@@ -14664,6 +14664,8 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
       exportState.phase = 'compressing';
       exportState.compressStartedAt = Date.now();
       exportState.compressPct = 0;
+      // If totalBytes wasn't calculated (files don't report size), use track count
+      if(!exportState.totalBytes) exportState.totalBytes = tracks.length;
       refreshExportNotif();
 
       // Generate the .zip. The output is written incrementally so a big library
@@ -14708,8 +14710,8 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
                 : data;
               writable.write(chunk);
               written += chunk.byteLength;
-              if(exportState.totalBytes){
-                exportState.compressPct = Math.min(99, Math.round((written / exportState.totalBytes) * 100));
+              var _totalB = exportState.totalBytes || (exportState.total || 1);
+                exportState.compressPct = Math.min(99, Math.round((written / _totalB) * 100));
                 if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
                   exportState._lastCompressTick = Date.now();
                   refreshExportNotif();
@@ -14784,8 +14786,8 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
               }
               parts.push(chunk);
               written += chunk.byteLength;
-              if(exportState.totalBytes){
-                exportState.compressPct = Math.min(99, Math.round((written / exportState.totalBytes) * 100));
+              var _totalB = exportState.totalBytes || (exportState.total || 1);
+                exportState.compressPct = Math.min(99, Math.round((written / _totalB) * 100));
                 if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick >   250){ exportState._lastCompressTick = Date.now(); refreshExportNotif(); }
               }
             });
@@ -20690,9 +20692,9 @@ function _renderAhFromData(artistAlbums){
   (function(){
     var plHalf = document.getElementById('playlistsHalf');
     var alHalf = document.getElementById('albumsHalf');
-    // Set initial active-half based on libraryMode
-    if(libraryMode === 'albums' && alHalf) alHalf.classList.add('active-half');
-    else if(plHalf) plHalf.classList.add('active-half');
+    // On boot: NO active-half — stay dark until user taps.
+    // Mark boot done so navigate() can manage illumination from here on.
+    window.__bootDone = true;
     if(plHalf) plHalf.addEventListener('click', function(e){
       e.stopPropagation();
       if(libraryMode === 'playlists') return; // already in playlists mode
@@ -21831,7 +21833,7 @@ if(!isDiscover) stopDiscoverPreview();
         var art = String(artRaw).indexOf('/100x100bb.jpg') !== -1 ? String(artRaw).replace('/100x100bb.jpg','/400x400bb.jpg') : String(artRaw);
         var hit = null;
         for(var i=0;i<pinnedArtists.length;i++){ if(primaryArtistName(pinnedArtists[i].name).toLowerCase().trim() === key){ hit = pinnedArtists[i]; break; } }
-        if(hit && art && (!hit.art || hit.art === '')){ hit.art = art; hit.photo = art; savePinnedArtists(); renderPinnedArtists(); }
+        if(hit && art){ hit.art = art; hit.photo = art; savePinnedArtists(); renderPinnedArtists(); }
       };
       var want = key.replace(/[^a-z0-9]/g,'');
       function findPick(results){
