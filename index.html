@@ -2609,6 +2609,17 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Shown automatically the first time you open the app — replay it anytime from here.</div>
       </div>
 
+      <!-- Diagonal / Single button toggle -->
+      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <div style="font-size:13px; font-weight:600;">Playlists / Albums button</div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Diagonal split or single toggle button</div>
+          </div>
+          <button id="diagonalSplitToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Loading…</button>
+        </div>
+      </div>
+
       <!-- Collapsible: Tutorial summary (text) -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:16px; overflow:hidden;">
         <button id="collapsibleTutorialSummary" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
@@ -8301,6 +8312,49 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
   const APP_VERSION = '56.2';
+  window.__bootDone = false;window.__bootDone = false;
+  // Diagonal split toggle
+  var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false'; // default true
+  function applyLibraryButtonMode(){
+    var libBtn = document.getElementById('libraryBtn');
+    if(!libBtn) return;
+    if(useDiagonalSplit){
+      // Ensure diagonal split HTML is in place (it always is in the static HTML)
+      libBtn.style.display = '';
+    } else {
+      // Single button mode: hide the halves and show a simple "Playlists ▾" or "Albums ▾" text
+      var plH = document.getElementById('playlistsHalf');
+      var alH = document.getElementById('albumsHalf');
+      var svg = libBtn.querySelector('svg');
+      if(plH) plH.style.display = 'none';
+      if(alH) alH.style.display = 'none';
+      if(svg) svg.style.display = 'none';
+      // Add a simple label
+      var label = libBtn.querySelector('.lib-single-label');
+      if(!label){
+        label = document.createElement('span');
+        label.className = 'lib-single-label';
+        label.style.cssText = 'font-size:11px; font-weight:600; color:var(--ink-dim);';
+        libBtn.appendChild(label);
+      }
+      label.textContent = libraryMode === 'albums' ? '💿 Albums ▾' : '🎵 Playlists ▾';
+      label.style.display = '';
+    }
+    // Update toggle button text
+    var toggleBtn = document.getElementById('diagonalSplitToggle');
+    if(toggleBtn) toggleBtn.textContent = useDiagonalSplit ? 'Diagonal ✓' : 'Single ✓';
+  }
+  // Wire up the toggle button
+  document.addEventListener('click', function(e){
+    if(e.target.id === 'diagonalSplitToggle'){
+      useDiagonalSplit = !useDiagonalSplit;
+      localStorage.setItem('sidecut_diagonalSplit', useDiagonalSplit);
+      applyLibraryButtonMode();
+    }
+  });
+  // Apply on load
+  setTimeout(function(){ applyLibraryButtonMode(); }, 100);
+
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -12252,15 +12306,10 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
 
   // ---------------- Tabs / playlists ----------------
   function renderTabs(){
-    if(renderTabs._pending) return;
-    renderTabs._pending = true;
-    requestAnimationFrame(function(){
-      renderTabs._pending = false;
-      try{ renderTabsInner(); }
-      catch(e){
-        console.error('renderTabs failed', e);
-      }
-    });
+    try{ renderTabsInner(); }
+    catch(e){
+      console.error('renderTabs failed', e);
+    }
     // Update DJ MODE button to show red X when current playlist has DJ mode disabled
     var djBtn = $('djModeBtn');
     if(djBtn){
@@ -12808,15 +12857,10 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
     renderList();
   }
   function renderList(){
-    if(renderList._pending) return;
-    renderList._pending = true;
-    requestAnimationFrame(function(){
-      renderList._pending = false;
-      try{ renderListInner(); }
-      catch(e){
-        console.error('renderList failed', e);
-      }
-    });
+    try{ renderListInner(); }
+    catch(e){
+      console.error('renderList failed', e);
+    }
   }
   function renderListInner(){
     const pane = $('listPane');
@@ -19001,11 +19045,14 @@ exportState.compressPct = 100;
     // Library + emptyState share visibility (emptyState shows when library is empty).
     $('library').style.display = isLibrary ? 'flex' : 'none';
     if(isLibrary){
-      // Illuminate only the active half
-      var _plH = document.getElementById('playlistsHalf');
-      var _alH = document.getElementById('albumsHalf');
-      if(_plH) _plH.classList.toggle('active-half', libraryMode === 'playlists');
-      if(_alH) _alH.classList.toggle('active-half', libraryMode === 'albums');
+      // Illuminate only the active half (skip on first boot)
+      if(!window.__bootDone){
+        var _plH = document.getElementById('playlistsHalf');
+        var _alH = document.getElementById('albumsHalf');
+        if(_plH) _plH.classList.toggle('active-half', libraryMode === 'playlists');
+        if(_alH) _alH.classList.toggle('active-half', libraryMode === 'albums');
+      }
+      if(typeof applyLibraryButtonMode === 'function') applyLibraryButtonMode();
       $('emptyState').style.display = allTracks.length ? 'none' : 'flex';
       renderTabs();
       renderList();
@@ -20648,6 +20695,7 @@ function _renderAhFromData(artistAlbums){
     else if(plHalf) plHalf.classList.add('active-half');
     if(plHalf) plHalf.addEventListener('click', function(e){
       e.stopPropagation();
+      if(libraryMode === 'playlists') return; // already in playlists mode
       libraryMode = 'playlists';
       if(typeof dbPut === 'function') dbPut('meta', { key: 'libraryMode', value: libraryMode });
       activePlaylist = lastUsedPlaylist || 'All Songs';
@@ -20655,6 +20703,7 @@ function _renderAhFromData(artistAlbums){
     });
     if(alHalf) alHalf.addEventListener('click', function(e){
       e.stopPropagation();
+      if(libraryMode === 'albums') return; // already in albums mode
       libraryMode = 'albums';
       if(typeof dbPut === 'function') dbPut('meta', { key: 'libraryMode', value: libraryMode });
       activePlaylist = lastUsedPlaylist || 'All Songs';
@@ -20770,7 +20819,16 @@ if(!isDiscover) stopDiscoverPreview();
   }
 
   $('homeBtn').addEventListener('click', () => navigate('home'));
-  $('libraryBtn').addEventListener('click', () => {
+  $('libraryBtn').addEventListener('click', (e) => {
+    // In single-button mode, toggle between playlists/albums on click
+    if(!useDiagonalSplit && !e.target.closest('#playlistsHalf') && !e.target.closest('#albumsHalf')){
+      libraryMode = libraryMode === 'playlists' ? 'albums' : 'playlists';
+      if(typeof dbPut === 'function') dbPut('meta', { key: 'libraryMode', value: libraryMode });
+      activePlaylist = lastUsedPlaylist || 'All Songs';
+      if(typeof applyLibraryButtonMode === 'function') applyLibraryButtonMode();
+      navigate('library');
+      return;
+    }
     // Land on the most recently used real playlist — never All Songs by default.
     // Preference: the live last-used playlist (updated on every play/tab pick),
     // then the last playback's source playlist, then the first real playlist.
