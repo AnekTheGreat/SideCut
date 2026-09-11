@@ -3955,8 +3955,17 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   function toast(msg, ms=2200){
     toastEl.textContent = msg;
     toastEl.style.display='block';
+    toastEl.style.cursor='pointer';
     clearTimeout(toastEl._t);
     toastEl._t = setTimeout(()=> toastEl.style.display='none', ms);
+    // Tap to dismiss (only bind once)
+    if(!toastEl._tapDismissed){
+      toastEl._tapDismissed = true;
+      toastEl.addEventListener('click', function(){
+        clearTimeout(toastEl._t);
+        toastEl.style.display='none';
+      });
+    }
   }
   // Toast with an inline Undo action (used by unpin). Reuses the #toast element,
   // keeps the message + Undo button up for 6 seconds, then clears itself.
@@ -13072,7 +13081,8 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
           + '<div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.name) + '</div>'
           + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.artist || 'Unknown artist') + '</div>'
           + '</div>'
-          + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>';
+          + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'
+          + '<span style="font-size:14px;color:var(--ink-dim);flex-shrink:0;cursor:grab;padding:4px;" title="Drag to reorder">☰</span>';
         card.appendChild(hdr);
         var body = document.createElement('div');
         body.id = cardId;
@@ -13325,6 +13335,16 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
       });
       list.appendChild(reorderBtn);
     }
+
+    // Add to album option
+    const albumHoldBtn = document.createElement('button');
+    albumHoldBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg> Add to album';
+    albumHoldBtn.addEventListener('click', () => {
+      $('holdChoiceBackdrop').style.display='none';
+      var _t = allTracks.find(function(tr){ return tr.id === id; });
+      pickUserAlbum([id], _t ? _t.name : '');
+    });
+    list.appendChild(albumHoldBtn);
 
     $('holdChoiceBackdrop').style.display = 'flex';
   }
