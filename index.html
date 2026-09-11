@@ -37,10 +37,10 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;}
   input, textarea, select{ -webkit-user-select: text; user-select: text; }
-  html,body{height:100%; margin:0; overflow-x:hidden;}
+  html,body{height:100%; margin:0; overflow-x:hidden; overscroll-behavior:none;}
   body{
     background: var(--bg); color: var(--ink); font-family: var(--font-ui);
-    min-height:100dvh; display:flex; flex-direction:column; overflow-x:hidden;
+    min-height:100dvh; display:flex; flex-direction:column; overflow-x:hidden; overscroll-behavior:none;
     padding-top: env(safe-area-inset-top);
     touch-action: manipulation;
     /* Fix WebView flickering: prevent perspective transforms from overflowing */
@@ -8415,7 +8415,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.5';
+  const APP_VERSION = '56.5.1';
   window.__bootDone = false;window.__bootDone = false;
   // Diagonal split toggle
   var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false'; // default true
@@ -8681,7 +8681,16 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
-  { version: '56.5', date: 'September 11, 2026', title: 'Albums, diagonal button, pinned artists, lyrics highlight & AI sync', items: [
+  { version: '56.5.1', date: 'September 11, 2026', title: 'QoL: scroll lock, album highlights, exports, navigation', items: [
+    'Whole-screen scroll/drag locked down \u2014 page no longer moves when touching toasts, player, or dragging',
+    'Albums header now says "Albums" instead of showing a playlist name',
+    'Direct navigation to Albums/Playlists from any tab (Home, Discover, Library)',
+    'Playing song auto-highlights and auto-scrolls in album cards (expands album if collapsed)',
+    'Pinned artist art fetch improved \u2014 re-fetches when artwork is missing or empty',
+    'Exports now include user-created albums (userAlbums)',
+    'User albums restored on import/backup restore',
+  ] },
+    { version: '56.5', date: 'September 11, 2026', title: 'Albums, diagonal button, pinned artists, lyrics highlight & AI sync', items: [
     'Albums tab now shows your manually created albums instead of playlist names',
     'Pinned artist pictures auto-fetch from iTunes (fixed blocked by AH cancel)',
     'Share code copy more robust on Android — better clipboard fallback',
@@ -13131,7 +13140,7 @@ function _fallbackCopy(text){
       header.innerHTML = `
         <div style="min-width:0; flex-shrink:1;">
           <div style="display:flex; align-items:center; gap:6px; max-width:100%;">
-            <h2 style="font-size:13.5px; font-weight:600; margin:0; line-height:1.3; overflow:visible; white-space:normal; word-break:break-word; overflow-wrap:anywhere; min-width:0; flex:1 1 auto;">${escapeHtml(activePlaylist)}</h2>
+            <h2 style="font-size:13.5px; font-weight:600; margin:0; line-height:1.3; overflow:visible; white-space:normal; word-break:break-word; overflow-wrap:anywhere; min-width:0; flex:1 1 auto;">${libraryMode === "albums" ? "Albums" : escapeHtml(activePlaylist)}</h2>
             <div class="sub" style="margin-top:0; font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${ids.length} track${ids.length===1?'':'s'}${durLabel}</div>
           </div>
         </div>
@@ -15108,6 +15117,9 @@ exportState.compressPct = 100;
             pinnedArtists: pinnedArtists,
             pinnedReleases: pinnedReleases,
 
+            // User-created albums
+            userAlbums: userAlbums || {},
+
             // UI positions
             activePlaylist: activePlaylist,
 
@@ -15543,6 +15555,13 @@ exportState.compressPct = 100;
           }
           renderPinnedArtists();
           renderNewReleases();
+        }
+        // Restore user-created albums
+        if(manifest.settings.userAlbums && typeof manifest.settings.userAlbums === 'object'){
+          Object.keys(manifest.settings.userAlbums).forEach(name => {
+            if(!userAlbums[name]) userAlbums[name] = manifest.settings.userAlbums[name];
+          });
+          dbPut('meta', { key: 'userAlbums', value: userAlbums });
         }
         // Restore custom theme
         if(manifest.settings.customTheme !== undefined){
@@ -16423,6 +16442,49 @@ exportState.compressPct = 100;
     document.querySelectorAll('.track').forEach(r => r.classList.toggle('playing', r.dataset.id === id));
     const activeRow = document.querySelector(`.track[data-id="${id}"]`);
     if(activeRow) activeRow.scrollIntoView({ behavior:'smooth', block:'center' });
+    // Auto-expand album cards containing the playing track and scroll to it
+    if(typeof libraryMode !== 'undefined' && libraryMode === 'albums'){
+      document.querySelectorAll('[data-album-name]').forEach(function(card){
+        var albName = card.dataset.albumName;
+        var ua = (typeof userAlbums !== 'undefined' && userAlbums) ? userAlbums[albName] : null;
+        if(ua && ua.trackIds && ua.trackIds.indexOf(id) !== -1){
+          var body = card.querySelector('[id^="alb_card_"]');
+          if(body && body.style.display === 'none'){
+            body.style.display = 'block';
+            var chev = card.querySelector('span');
+            if(chev) chev.style.transform = 'rotate(90deg)';
+            try{ localStorage.setItem('sidecut_albColl_' + albName, '0'); }catch(_e){}
+            body.innerHTML = '';
+            ua.trackIds.forEach(function(tid, ti){
+              var tt = allTracks.find(function(tr){ return tr.id === tid; });
+              if(!tt) return;
+              var row = document.createElement('div');
+              row.className = 'track' + (tid === id ? ' playing' : '');
+              row.dataset.id = tid;
+              var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+              row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
+                + '<div class="track-art" style="' + artStyle + '"></div>'
+                + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
+                + '<div class="a">' + escapeHtml(tt.artist) + '</div></div>'
+                + '<div class="dur">' + (tt.duration ? fmtTime(tt.duration) : '--:--') + '</div>'
+                + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
+              row.addEventListener('click', function(e){
+                if(e.target.closest('.kebab-btn')) return;
+                playFromList(ua.trackIds, tid);
+              });
+              body.appendChild(row);
+              if(typeof selectMode === 'undefined' || !selectMode){ try{ attachLongPressChoice(row, tid); }catch(_e){} }
+              if(tid === id){
+                setTimeout(function(){ row.scrollIntoView({behavior:'smooth',block:'center'}); }, 100);
+              }
+            });
+          } else if(body && body.style.display !== 'none'){
+            var pr = body.querySelector('[data-id="' + id + '"]');
+            if(pr) pr.scrollIntoView({behavior:'smooth',block:'center'});
+          }
+        }
+      });
+    }
   }
 
   function cancelCrossfade(){
@@ -19224,6 +19286,8 @@ exportState.compressPct = 100;
   // Unified top-level navigation: only one of Home / Discover / Library is visible at a time.
   // The active action-strip pill is highlighted to match.
   function navigate(view){
+    if(view === "albums"){ libraryMode = "albums"; try{ dbPut("meta",{key:"libraryMode",value:libraryMode}); }catch(_e){} view = "library"; }
+    if(view === "playlists"){ libraryMode = "playlists"; try{ dbPut("meta",{key:"libraryMode",value:libraryMode}); }catch(_e){} view = "library"; }
     const isHome = view === 'home';
     const isDiscover = view === 'discover';
     const isLibrary = view === 'library';
@@ -22011,7 +22075,7 @@ if(!isDiscover) stopDiscoverPreview();
 
     if(!pinnedArtists || !pinnedArtists.length) return;
     pinnedArtists.forEach(function(p){
-      if(p && (p.photo || p.art)) return;
+      if(p && p.photo && p.art && p.art.length > 5) return;
       var key = primaryArtistName(p.name).toLowerCase().trim();
       if(!key || __artFetchBusy[key]) return;
       __artFetchBusy[key] = true;
