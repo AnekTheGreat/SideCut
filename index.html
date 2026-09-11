@@ -3333,7 +3333,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <button id="lyricsHighlightBtn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
           Set highlight
         </button>
-        <button id="lyricsAiSyncBtn" style="background:none; border:1px solid #7a5cff; color:#7a5cff; border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+        <button id="lyricsAiSyncBtn" style="display:none; background:none; border:1px solid #7a5cff; color:#7a5cff; border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
           AI Sync
         </button>
           Auto-scroll: On
@@ -7187,6 +7187,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       mBtn.style.color = lyricsManualActive ? 'var(--coral)' : 'var(--ink-dim)';
     }
 
+    // Auto AI Sync: if lyrics are plain text (unsynced) and Gemini key is set,
+    // silently sync them in the background so auto-scroll works immediately.
+    if(!isSynced && _aiGeminiKey && lyrics && lyrics.trim() && !/\[\d{1,2}:\d{2}/.test(lyrics)){
+      try{ aiSyncLyrics(true); }catch(_e){}
+    }
+
     // Stop any existing scroll interval
     if (lyricsScrollInterval) {
       clearInterval(lyricsScrollInterval);
@@ -7287,15 +7293,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   }
 
   // ---- AI Sync: use Gemini to generate timestamps for unsynced lyrics ----
-  async function aiSyncLyrics() {
-    if (!_aiGeminiKey) { toast("Add a Gemini API key in Settings to use AI Sync."); return; }
+  async function aiSyncLyrics(silent) {
+    if (!_aiGeminiKey) { if(!silent) toast("Add a Gemini API key in Settings to use AI Sync."); return; }
     var audio = activeAudio();
-    if (!audio) { toast("No song playing."); return; }
+    if (!audio) { if(!silent) toast("No song playing."); return; }
     var t = allTracks.find(function(tr) { return tr.id === queue[queueIndex]; });
-    if (!t) { toast("No track info."); return; }
+    if (!t) { if(!silent) toast("No track info."); return; }
     var rawLyrics = currentLyricsText || "";
-    if (!rawLyrics.trim()) { toast("No lyrics to sync."); return; }
-    if (currentLyricsSynced && /\[\d{1,2}:\d{2}/.test(rawLyrics)) { toast("Lyrics are already synced."); return; }
+    if (!rawLyrics.trim()) { if(!silent) toast("No lyrics to sync."); return; }
+    if (currentLyricsSynced && /\[\d{1,2}:\d{2}/.test(rawLyrics)) { if(!silent) toast("Lyrics are already synced."); return; }
     var duration = audio.duration || t.duration || 180;
     var btn = $("lyricsAiSyncBtn");
     if (btn) { btn.textContent = "AI Syncing..."; btn.disabled = true; }
@@ -7321,10 +7327,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       currentLyricsText = text;
       currentLyricsSynced = true;
       showLyrics(text, true);
-      toast("AI Sync complete! Lyrics are now time-aligned.");
+      if(!silent) toast("AI Sync complete! Lyrics are now time-aligned.");
     } catch (e) {
       console.error("AI Sync failed:", e);
-      toast("AI Sync failed: " + (e.message || "Unknown error"));
+      if(!silent) toast("AI Sync failed: " + (e.message || "Unknown error"));
     } finally {
       if (btn) { btn.textContent = "AI Sync"; btn.disabled = false; }
     }
