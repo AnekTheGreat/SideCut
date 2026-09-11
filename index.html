@@ -43,7 +43,12 @@
     min-height:100dvh; display:flex; flex-direction:column; overflow-x:hidden;
     padding-top: env(safe-area-inset-top);
     touch-action: manipulation;
+    /* Fix WebView flickering: prevent perspective transforms from overflowing */
+    -webkit-backface-visibility: hidden;
+    -webkit-transform-style: preserve-3d;
   }
+  /* Prevent 3D transform overflow on mobile that causes flicker */
+  html{ -webkit-transform: translateZ(0); transform: translateZ(0); }
   ::selection{ background: var(--coral); color:#161616; }
   h1,h2,h3{ font-family: var(--font-ui); font-weight:600; margin:0; }
 
@@ -621,7 +626,7 @@
   #actionSpeedSlider::-moz-range-track{ height:8px; border-radius:999px; background:var(--line); }
   #actionSpeedSlider::-moz-range-progress{ height:8px; border-radius:999px; background:var(--coral); }
   .np-row{ display:flex; align-items:center; gap:12px; }
-  #npPlayerStage{ flex-shrink:0; position:relative; width:69px; height:58px; perspective:220px; cursor:grab; touch-action:none; overflow:visible; }
+  #npPlayerStage{ flex-shrink:0; position:relative; width:69px; height:58px; perspective:220px; cursor:grab; touch-action:none; overflow:hidden; }
   #npPlayerStage.dragging{ cursor:grabbing; }
   #npPlayerStage.dragging .np-tt-3d{ filter: brightness(1.08); }
   .np-tt-3d{
@@ -1781,11 +1786,11 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 <div id="homeBubbleConfirm">
   <div class="hb-confirm-backdrop"></div>
   <div class="hb-confirm-card">
-    <div class="hb-confirm-title" id="hbConfirmTitle">Remove this bubble?</div>
-    <div class="hb-confirm-desc" id="hbConfirmDesc">It will be hidden from your Home page. You can re-add it anytime from Sandbox → Home page layout.</div>
+    <div class="hb-confirm-title" id="hbConfirmTitle">Hide this bubble?</div>
+    <div class="hb-confirm-desc" id="hbConfirmDesc">This bubble will be hidden (not deleted). You can show it again anytime from Sandbox → Home page layout.</div>
     <div class="hb-confirm-btns">
       <button id="hbConfirmCancel">Cancel</button>
-      <button id="hbConfirmDelete">Delete this bubble</button>
+      <button id="hbConfirmDelete">Hide this bubble</button>
     </div>
   </div>
 </div>
@@ -1839,7 +1844,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="pinnedArtistsActions" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
       <button id="discoverFetchLatest" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🔄 Fetch latest <span class="online-badge">ONLINE</span></button>
       <button id="discoverLastYear" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📅 Old songs</button>
-      <button id="discoverAlbumHistory" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">📀 Albums</button>
+      <button id="discoverAlbumHistory" style="padding:12px 14px; font-size:13px; font-weight:700; border:1.5px solid var(--coral); border-radius:12px; background:color-mix(in srgb, var(--coral) 12%, var(--bg)); color:var(--coral); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; grid-column:1/-1;">📀 Albums</button>
       <button id="ahExternalCancel" style="display:none; grid-column:1/-1; padding:8px 16px; font-size:12px; font-weight:600; border:1px solid var(--coral); border-radius:10px; background:rgba(255,80,80,0.08); color:var(--coral); cursor:pointer; text-align:center;">✖ Cancel album fetch</button>
       <button id="discoverSingles" style="padding:10px 12px; font-size:12px; font-weight:600; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03); color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">🎵 Singles <span class="online-badge">ONLINE</span></button>
   </div>
@@ -8264,7 +8269,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.1.76';
+  const APP_VERSION = '56.0.77';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -8487,6 +8492,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+  { version: '56.0.77', date: 'September 11, 2026 · 8:05 PM EDT', title: 'Bug fixes: error messages, duplicate detection, album sorting, phone flicker', items: [
+    'Fixed "Something went wrong" error: the global click safety net now logs real error details to console instead of masking them',
+    'Fixed duplicate detection: matching was overly strict (required matching duration + file size), now matches by song name + artist reliably',
+    'Fixed album sorting: albums now sort by artist name (alphabetical) within the Album History popup',
+    'Fixed track count display: album names can now expand fully without being pushed off-screen by the track count label',
+    'Fixed bubble hide in sandbox: reordering bubbles now hides them instead of deleting, with "Hide this bubble" button text',
+    'Made Discover Albums button more prominent: full-width coral-bordered larger text so it stands out as the main action',
+    'Fixed phone flickering on AAB: added backface-visibility and overflow containment to prevent WebView perspective transform flicker',
+  ] },
   { version: '56.1.76', date: 'September 10, 2026 · 12:30 PM EDT', title: 'Playlists back to the familiar tab strip; Albums stays a tab; RGB+ glow no longer strobes', items: [
     "The separate Manage playlists header button is gone — Manage playlists now lives in the song-list ⋮ kebab menu, right under Export, exactly how the header looked before the v56.1 rework. Back-to-top is itself again, one tap scrolls straight up (no more 'Where to?' chooser popup).",
     "The Playlists/Albums mode dropdown is gone too — the playlist tab strip (All Songs, Unsorted, Favorites, your playlists, + New playlist) is back as it was in v56.0.23, with 💿 Albums as a regular tab at the end of the strip. Tapping it opens your user-made albums (the same manual-only Albums view as before, still grouped by artist with singles below. Tapping '◀ Playlists' brings the strip back.",
@@ -11980,17 +11994,9 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
     // duration loaded, also by duration. Uses file size as additional signal when available.
     const groups = {};
     allTracks.forEach(t => {
-      const name = (t.name || 'Untitled').toLowerCase().trim();
-      const artist = (t.artist || 'Unknown artist').toLowerCase().trim();
-      const duration = t.duration ? Math.round(t.duration) : null;
-      const size = t.file ? t.file.size : null;
-      
-      // Create key: name::artist::duration::size
-      // Only include duration/size if they exist to avoid false positives
-      const durationStr = duration !== null ? duration.toString() : '?';
-      const sizeStr = size !== null ? size.toString() : '?';
-      const key = `${name}::${artist}::${durationStr}::${sizeStr}`;
-      
+      const name = (t.name || "Untitled").toLowerCase().trim();
+      const artist = (t.artist || "Unknown artist").toLowerCase().trim();
+      const key = name + " " + artist;
       if(!groups[key]) groups[key] = [];
       groups[key].push(t);
     });
@@ -19748,7 +19754,7 @@ window.__refetchArtistAlbums = async function(artistName){
       }catch(e){}
     }catch(e){}
     // Sort albums by date
-    if(artistAlbums[a.name]) artistAlbums[a.name].sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
+    if(artistAlbums[a.name]) artistAlbums[a.name].sort(function(x,y){ return (x.collectionName||'').localeCompare(y.collectionName||''); });
     // Save and re-render
     // Strip singles before saving
     try{
@@ -20242,7 +20248,7 @@ function _renderAhFromData(artistAlbums){
   // Dedup every artist's list before rendering so no album ever shows twice.
   Object.keys(artistAlbums).forEach(function(k){ if(Array.isArray(artistAlbums[k])) artistAlbums[k] = _dedupAlbums(artistAlbums[k]); });
   var ahHtml = '';
-  var ahArtistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistAlbums), 'sidecut_ahArtistOrder') : Object.keys(artistAlbums).sort());
+  var ahArtistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistAlbums), 'sidecut_ahArtistOrder') : Object.keys(artistAlbums).sort(function(a,b){ return String(a).localeCompare(String(b)); }));
   var ahTotal = 0;
   for(var ahI=0; ahI<ahArtistKeys.length; ahI++){
     var ahArtist = ahArtistKeys[ahI];
@@ -20269,7 +20275,7 @@ function _renderAhFromData(artistAlbums){
       var _ae = getAlbumEdits()[ahAlb.collectionId] || {};
       var _showDate = _ae.date || (ahAlb.releaseDate||'').slice(0,10);
       var _showTracks = _ae.tracks || ahAlb.trackCount;
-      ahHtml += '<div style="font-size:11px;color:var(--ink-dim);">'+_showDate+(ahAlb.artistName?' \u00b7 '+escapeHtml(ahAlb.artistName):'')+( _showTracks?' \u00b7 '+_showTracks+' tracks':'')+'</div></div>';
+      ahHtml += '<div style="font-size:11px;color:var(--ink-dim);display:flex;align-items:center;gap:0;overflow:hidden;"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+_showDate+(ahAlb.artistName?' \u00b7 '+escapeHtml(ahAlb.artistName):'')+'</span>'+( _showTracks?'<span style="flex-shrink:0;margin-left:6px;color:var(--ink-dim);">'+_showTracks+' tracks</span>':'')+'</div></div>';
       ahHtml += '<span class="dp-ah-edit" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" data-artist="'+escapeHtml(ahArtist)+'" data-album="'+escapeHtml(ahAlb.collectionName||'')+'" data-date="'+escapeHtml((ahAlb.releaseDate||'').slice(0,10))+'" data-tracks="'+escapeHtml(String(ahAlb.trackCount||''))+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:12px;cursor:pointer;flex-shrink:0;">\u270e</span>';
       ahHtml += '<span class="dp-ah-rm" data-cid="'+escapeHtml(ahAlb.collectionId||'')+'" data-cname="'+escapeHtml(ahAlb.collectionName||'')+'" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
       ahHtml += '</div>';
@@ -25240,8 +25246,8 @@ window.addEventListener('pointercancel', __releaseAllPointerCaptures, true);
       const wrapped = function(e){
         try{ return listener.call(this, e); }
         catch(err){
-          console.error('Click handler threw (caught by safety net):', err);
-          if(typeof toast === 'function') window.toast('Something went wrong with that tap — try again.');
+          console.error('Click handler threw:', err.message || err, err.stack || '');
+          if(typeof toast === 'function') window.toast('Tap failed — check console for details.');
         }
       };
       return realAdd.call(this, type, wrapped, options);
