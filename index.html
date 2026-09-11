@@ -13271,10 +13271,27 @@ function _fallbackCopy(text){
     if(libraryMode === 'albums' && !reorderMode && !selectMode && !searchQuery && !inInsertPick){
       var _albumMap = {};
       var _albumOrder = [];
+      // Use userAlbums as primary source - these are the albums the user explicitly created
+      var _uaKeys = Object.keys(userAlbums);
+      _uaKeys.forEach(function(aName){
+        var ua = userAlbums[aName];
+        if(!ua || !ua.trackIds || !ua.trackIds.length) return;
+        // Only include albums that have tracks in the current view
+        var visibleTracks = ua.trackIds.filter(function(tid){ return ids.indexOf(tid) !== -1; });
+        if(!visibleTracks.length) return;
+        var firstTrack = allTracks.find(function(tr){ return tr.id === visibleTracks[0]; });
+        _albumMap[aName] = { name: aName, artist: (ua.artist || (firstTrack ? (firstTrack.artist||'').trim() : 'Unknown artist')), tracks: visibleTracks, cover: (firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '' };
+        _albumOrder.push(aName);
+      });
+      // Also add albums from track metadata that aren't in userAlbums
       ids.forEach(function(id){
         var t = allTracks.find(function(tr){ return tr.id === id; });
         if(!t) return;
-        var aName = (t.album || '').trim() || 'Unknown Album';
+        var aName = (t.album || '').trim();
+        if(!aName || _albumMap[aName]) return; // Skip if no album tag or already in userAlbums
+        // Check if this track belongs to a userAlbum
+        var inUserAlbum = _uaKeys.some(function(uaName){ return userAlbums[uaName] && userAlbums[uaName].trackIds && userAlbums[uaName].trackIds.indexOf(id) !== -1; });
+        if(inUserAlbum) return; // Already covered by userAlbums
         if(!_albumMap[aName]){
           _albumMap[aName] = { name: aName, artist: (t.artist||'').trim(), tracks: [], cover: t.artUrl || '' };
           _albumOrder.push(aName);
