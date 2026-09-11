@@ -1675,6 +1675,16 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 #discPopupBody .dp-ah-track:hover{background:var(--line);}
 
 #discPopupBody .dp-ah-chevron{font-size:12px;color:var(--ink-dim);transition:transform 0.2s;}
+
+  /* Diagonal split Playlists/Albums button */
+  #playlistsHalf:active, #albumsHalf:active { transform: scale(0.95); }
+  #playlistsHalf:hover, #albumsHalf:hover { background: var(--bg); }
+  #playlistsHalf.active-half, #albumsHalf.active-half { 
+    background: var(--coral) !important; 
+    border-color: var(--coral) !important;
+  }
+  #playlistsHalf.active-half span, #albumsHalf.active-half span { color: #161616 !important; }
+
 </style>
 </head>
 <body>
@@ -1739,7 +1749,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 
 <div class="action-strip" id="actionStrip">
   <button id="homeBtn" class="action-pill">Home</button>
-  <button id="libraryBtn" class="action-pill">Playlists</button>
+  <button id="libraryBtn" class="action-pill" style="position:relative;overflow:hidden;padding:0;background:none;border:none;height:36px;">
+  <div style="position:absolute;inset:0;clip-path:polygon(0 0, 100% 0, 100% 52%, 0 100%);background:var(--bg-raised);border:1px solid var(--line);border-radius:16px 16px 16px 16px;display:flex;align-items:center;justify-content:center;cursor:pointer;" id="playlistsHalf">
+    <span style="font-size:10.5px;font-weight:600;color:var(--ink-dim);margin-top:-4px;">Playlists</span>
+  </div>
+  <div style="position:absolute;inset:0;clip-path:polygon(0 48%, 100% 0, 100% 100%, 0 100%);background:var(--bg-raised);border:1px solid var(--line);border-radius:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;" id="albumsHalf">
+    <span style="font-size:10.5px;font-weight:600;color:var(--ink-dim);margin-top:6px;">Albums</span>
+  </div>
+</button>
   <button id="discoverBtn" class="action-pill">Discover</button>
   <div id="addSongsWrap" class="add-songs-wrap">
     <button id="addSongsToggle" class="action-pill">+ Add songs ▾</button>
@@ -8269,7 +8286,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.0.77';
+  const APP_VERSION = '56.0.78';
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
   // Only clear once per install when no version marker exists yet (fresh data).
@@ -8492,6 +8509,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
+  { version: '56.0.78', date: 'September 11, 2026 · 8:10 PM EDT', title: 'Diagonal split Playlists/Albums button, export fix, pinned artist covers', items: [
+    'Playlists tab is now a diagonal split button: top-right half = Playlists, bottom-left half = Albums (manual albums). Tap either half to switch modes.',
+    'Fixed exports: added dynamic JSZip loading fallback so exports work even if the CDN script fails to load initially.',
+    'Fixed pinned artist covers: better null-checking on artwork URLs and apply conditions so auto-fetched artist pictures actually show.',
+  ] },
   { version: '56.0.77', date: 'September 11, 2026 · 8:05 PM EDT', title: 'Bug fixes: error messages, duplicate detection, album sorting, phone flicker', items: [
     'Fixed "Something went wrong" error: the global click safety net now logs real error details to console instead of masking them',
     'Fixed duplicate detection: matching was overly strict (required matching duration + file size), now matches by song name + artist reliably',
@@ -14059,7 +14081,37 @@ function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str)
   // bundle of tracks with no playlist association (e.g. an ad-hoc selection).
   async function doExportTracks(ids, filenameBase, manifestPlaylists, kindLabel, premiumPayload){
     if(!ids.length){ toast('Nothing to export yet.'); return; }
-    if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
+    if(typeof JSZip === 'undefined'){
+      // Try loading JSZip dynamically as a fallback
+      try {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      } catch(_e) {
+        toast('Export tool failed to load — check your connection and reload.');
+        return;
+      }
+      if(typeof JSZip === 'undefined'){
+      // Try loading JSZip dynamically as a fallback
+      try {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      } catch(_e) {
+        toast('Export tool failed to load — check your connection and reload.');
+        return;
+      }
+      if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
+    }
+    }
     const tracks = ids.map(id => allTracks.find(tr => tr.id === id)).filter(Boolean);
     if(!tracks.length){ toast('Nothing to export yet.'); return; }
     await runZipExport({
@@ -20304,7 +20356,25 @@ function _renderAhFromData(artistAlbums){
 // section — deleting it breaks the script parse. The guarded call after it is
 // a no-op at boot (popup is empty); the real wiring happens inside
 // ahBtn.onclick via the unguarded call above.
-        };
+        }
+  // Wire up the diagonal split Playlists/Albums button
+  (function(){
+    var plHalf = document.getElementById('playlistsHalf');
+    var alHalf = document.getElementById('albumsHalf');
+    if(plHalf) plHalf.addEventListener('click', function(e){
+      e.stopPropagation();
+      libraryMode = 'playlists';
+      if(typeof dbPut === 'function') dbPut('meta', { key: 'libraryMode', value: libraryMode });
+      activePlaylist = lastUsedPlaylist || 'All Songs';
+      navigate('library');
+    });
+    if(alHalf) alHalf.addEventListener('click', function(e){
+      e.stopPropagation();
+      libraryMode = 'albums';
+      if(typeof dbPut === 'function') dbPut('meta', { key: 'libraryMode', value: libraryMode });
+      navigate('library');
+    });
+  })();;
         if(typeof window.__wireAH === 'function') window.__wireAH();
 
       // Singles button: search for singles from pinned artists, show in popup
@@ -21417,7 +21487,7 @@ if(!isDiscover) stopDiscoverPreview();
         var art = String(artRaw).indexOf('/100x100bb.jpg') !== -1 ? String(artRaw).replace('/100x100bb.jpg','/400x400bb.jpg') : String(artRaw);
         var hit = null;
         for(var i=0;i<pinnedArtists.length;i++){ if(primaryArtistName(pinnedArtists[i].name).toLowerCase().trim() === key){ hit = pinnedArtists[i]; break; } }
-        if(hit && !hit.art){ hit.art = art; hit.photo = art; savePinnedArtists(); renderPinnedArtists(); }
+        if(hit && art && (!hit.art || hit.art === '')){ hit.art = art; hit.photo = art; savePinnedArtists(); renderPinnedArtists(); }
       };
       var want = key.replace(/[^a-z0-9]/g,'');
       function findPick(results){
@@ -21437,7 +21507,7 @@ if(!isDiscover) stopDiscoverPreview();
         return resp && resp.ok ? resp.json() : {results:[]};
       }).then(function(d1){
         var pick = findPick(d1.results);
-        if(pick){ apply(pick.artworkUrl100); return; }
+        if(pick && pick.artworkUrl100){ apply(pick.artworkUrl100); return; }
         // Route 2: representative cover from the artist's top songs.
         var u2 = 'https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=song&limit=25';
         return Promise.resolve(fetchWithProxy(u2)).then(function(resp){
