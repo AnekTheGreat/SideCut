@@ -3231,6 +3231,18 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   .dp-ah-track{ display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; font-size:12px; margin-left:40px; }
   .dp-ah-track:active{ opacity:0.6; }
 
+
+  #lyricsText .lyric-line.highlight-line {
+    border-left: 3px solid var(--coral);
+    background: rgba(255,79,126,0.08);
+    border-radius: 0 6px 6px 0;
+  }
+  #lyricsHighlightBtn.active {
+    border-color: var(--coral) !important;
+    color: var(--coral) !important;
+    background: rgba(255,79,126,0.1) !important;
+  }
+
 </style>
 
 <!-- Song info -->
@@ -3318,6 +3330,12 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; gap:8px; flex-wrap:wrap;">
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
         <button id="lyricsAutoScrollBtn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+        <button id="lyricsHighlightBtn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+          Set highlight
+        </button>
+        <button id="lyricsAiSyncBtn" style="background:none; border:1px solid #7a5cff; color:#7a5cff; border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;">
+          AI Sync
+        </button>
           Auto-scroll: On
         </button>
         <span style="font-size:10px; color:var(--ink-dim); align-self:center;">Auto-scroll may not be perfectly accurate</span>
@@ -7187,6 +7205,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         // Try word first (more precise), then line
         var word = ev.target.closest('.lyric-word');
         var line = ev.target.closest('.lyric-line');
+        if (lyricsHighlightMode && line) { ev.stopPropagation(); setLyricsHighlight(line); return; }
+
         if (word && word.dataset.wordStart != null) {
           var lineEl = word.closest('.lyric-line');
           var lineTime = parseFloat(lineEl.dataset.time) || 0;
@@ -7244,7 +7264,87 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if(container) scrollLyricsToLine(container, el, true);
   }
   let lastLyricsIdx = -1;
-  function startLyricsAutoScroll() {
+    // ---- Lyrics highlight system ----
+  var lyricsHighlightMode = false;
+  var lyricsHighlightIdx = -1;
+
+  function setLyricsHighlight(lineEl) {
+    if (!lineEl) return;
+    var lt = $("lyricsText");
+    if (!lt) return;
+    lt.querySelectorAll(".lyric-line.highlight-line").forEach(function(el) { el.classList.remove("highlight-line"); });
+    lineEl.classList.add("highlight-line");
+    var allLines = lt.querySelectorAll(".lyric-line");
+    for (var i = 0; i < allLines.length; i++) {
+      if (allLines[i] === lineEl) { lyricsHighlightIdx = i; break; }
+    }
+  }
+
+  function getLyricsHighlightLine() {
+    var lt = $("lyricsText");
+    if (!lt || lyricsHighlightIdx < 0) return null;
+    return lt.querySelectorAll(".lyric-line")[lyricsHighlightIdx] || null;
+  }
+
+  // ---- AI Sync: use Gemini to generate timestamps for unsynced lyrics ----
+  async function aiSyncLyrics() {
+    if (!_aiGeminiKey) { toast("Add a Gemini API key in Settings to use AI Sync."); return; }
+    var audio = activeAudio();
+    if (!audio) { toast("No song playing."); return; }
+    var t = allTracks.find(function(tr) { return tr.id === queue[queueIndex]; });
+    if (!t) { toast("No track info."); return; }
+    var rawLyrics = currentLyricsText || "";
+    if (!rawLyrics.trim()) { toast("No lyrics to sync."); return; }
+    if (currentLyricsSynced && /\[\d{1,2}:\d{2}/.test(rawLyrics)) { toast("Lyrics are already synced."); return; }
+    var duration = audio.duration || t.duration || 180;
+    var btn = $("lyricsAiSyncBtn");
+    if (btn) { btn.textContent = "AI Syncing..."; btn.disabled = true; }
+    try {
+      var prompt = "You are a lyrics synchronization engine. Given the plain-text lyrics below and the song duration in seconds, generate LRC-format synced lyrics with timestamps.\n\n";
+      prompt += "Song: " + (t.name || "Unknown") + "\n";
+      prompt += "Artist: " + (t.artist || "Unknown") + "\n";
+      prompt += "Duration: " + Math.round(duration) + " seconds\n\n";
+      prompt += "Rules:\n- Output ONLY the LRC text, no explanation\n- Format: [MM:SS.xx] lyric line\n- Distribute lines evenly across the song duration\n- Start first line at [00:01.00]\n- Keep original line breaks\n\nLyrics:\n" + rawLyrics;
+      var resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + _aiGeminiKey, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 8192 } })
+      });
+      if (!resp.ok) throw new Error("API error " + resp.status);
+      var data = await resp.json();
+      var text = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || "";
+      text = text.replace(/```lrc\n?/g, "").replace(/```\n?/g, "").trim();
+      if (!/\[\d{1,2}:\d{2}/.test(text)) { toast("AI could not generate valid timestamps."); return; }
+      t.lyrics = text;
+      t.lyricsSynced = true;
+      saveMeta();
+      currentLyricsText = text;
+      currentLyricsSynced = true;
+      showLyrics(text, true);
+      toast("AI Sync complete! Lyrics are now time-aligned.");
+    } catch (e) {
+      console.error("AI Sync failed:", e);
+      toast("AI Sync failed: " + (e.message || "Unknown error"));
+    } finally {
+      if (btn) { btn.textContent = "AI Sync"; btn.disabled = false; }
+    }
+  }
+
+  // Wire up highlight + AI sync buttons
+  setTimeout(function() {
+    var hlBtn = $("lyricsHighlightBtn");
+    if (hlBtn) {
+      hlBtn.addEventListener("click", function() {
+        lyricsHighlightMode = !lyricsHighlightMode;
+        hlBtn.classList.toggle("active", lyricsHighlightMode);
+        hlBtn.textContent = lyricsHighlightMode ? "Highlighting..." : "Set highlight";
+      });
+    }
+    var aiBtn = $("lyricsAiSyncBtn");
+    if (aiBtn) { aiBtn.addEventListener("click", function() { aiSyncLyrics(); }); }
+  }, 200);
+
+function startLyricsAutoScroll() {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
     const container = $('lyricsContent');
@@ -8581,7 +8681,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return 0;
   }
   const CHANGELOG = [
-  { version: '56.5', date: 'September 11, 2026', title: 'Albums, diagonal button, pinned artists & copy fixes', items: [
+  { version: '56.5', date: 'September 11, 2026', title: 'Albums, diagonal button, pinned artists, lyrics highlight & AI sync', items: [
     'Albums tab now shows your manually created albums instead of playlist names',
     'Pinned artist pictures auto-fetch from iTunes (fixed blocked by AH cancel)',
     'Share code copy more robust on Android — better clipboard fallback',
@@ -8591,6 +8691,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     'Sort mode preserved when creating new albums',
     'Export progress bar shows actual track count when byte sizes unavailable',
     'What\u2019s New update popup for new versions',
+    'Lyrics highlight: tap a line to set a visual anchor for auto-scroll',
+    'AI Sync: use Gemini to auto-generate LRC timestamps for unsynced lyrics',
   ] },
   { version: '56.2.3', date: 'September 11, 2026', title: 'Update notification + stability fixes', items: [
     'Play Store-style update popup now shows when a new version is available',
