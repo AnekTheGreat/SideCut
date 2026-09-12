@@ -13647,8 +13647,9 @@ function _fallbackCopy(text){
           // mean you had to manually hunt for it; now it lands in view.
           if(renderListInner._scrollToPlaying){
             renderListInner._scrollToPlaying = false;
-            try{ row.scrollIntoView({ block:'center', behavior:'smooth' }); }
-            catch(_e){ try{ row.scrollIntoView({ block:'center' }); }catch(_e2){} }
+            var pRect = pane.getBoundingClientRect();
+            var rRect2 = row.getBoundingClientRect();
+            pane.scrollTop = pane.scrollTop + rRect2.top - pRect2.top - (pRect2.height/2) + (rRect2.height/2);
           }
         }
       }
@@ -16454,9 +16455,7 @@ exportState.compressPct = 100;
         var paneRect = pane.getBoundingClientRect();
         var rowRect = activeRow.getBoundingClientRect();
         var offset = rowRect.top - paneRect.top - (paneRect.height / 2) + (rowRect.height / 2);
-        pane.scrollTo({ top: pane.scrollTop + offset, behavior: 'smooth' });
-      } else {
-        activeRow.scrollIntoView({ behavior:'smooth', block:'center' });
+        pane.scrollTop = pane.scrollTop + offset;
       }
     }
     // Auto-expand album cards containing the playing track and scroll to it
@@ -16492,12 +16491,24 @@ exportState.compressPct = 100;
               body.appendChild(row);
               if(typeof selectMode === 'undefined' || !selectMode){ try{ attachLongPressChoice(row, tid); }catch(_e){} }
               if(tid === id){
-                setTimeout(function(){ row.scrollIntoView({behavior:'smooth',block:'center'}); }, 100);
+                setTimeout(function(){
+                  var bRect = body.getBoundingClientRect();
+                  var rRect = row.getBoundingClientRect();
+                  if(rRect.top < bRect.top || rRect.bottom > bRect.bottom){
+                    body.scrollTop = body.scrollTop + rRect.top - bRect.top - (bRect.height/2) + (rRect.height/2);
+                  }
+                }, 100);
               }
             });
           } else if(body && body.style.display !== 'none'){
             var pr = body.querySelector('[data-id="' + id + '"]');
-            if(pr) pr.scrollIntoView({behavior:'smooth',block:'center'});
+            if(pr){
+              var bRect2 = body.getBoundingClientRect();
+              var rRect2 = pr.getBoundingClientRect();
+              if(rRect2.top < bRect2.top || rRect2.bottom > bRect2.bottom){
+                body.scrollTop = body.scrollTop + rRect2.top - bRect2.top - (bRect2.height/2) + (rRect2.height/2);
+              }
+            }
           }
         }
       });
