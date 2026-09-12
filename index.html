@@ -8422,6 +8422,7 @@ function startLyricsAutoScroll() {
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
   const APP_VERSION = '56.5.2';
+  if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;window.__bootDone = false;
   // Diagonal split toggle
   var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false'; // default true
@@ -14708,7 +14709,7 @@ function _fallbackCopy(text){
       const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
       const FS = cap ? cap.Filesystem : null;
       const Share = cap ? cap.Share : null;
-      if(FS && Share && typeof FS.writeFile === 'function' && typeof Share.share === 'function'){
+      if(FS && typeof FS.writeFile === 'function'){
         await writeBlobToCache(blob, filename);
         // Prefer the URI from writeFile/stat/getUri — the first write's result
         // carries it, so ask once more only if absent.
@@ -14724,7 +14725,14 @@ function _fallbackCopy(text){
           }catch(_se){}
         }
         if(uri){
-          await Share.share({ title: filename, files: [uri], dialogTitle: 'Save your SideCut export' });
+          // Save to Documents directory (user's file manager) instead of share sheet
+          try{
+            await FS.writeFile({ path: filename, data: '', directory: 'DOCUMENTS', recursive: true, append: false });
+            // Copy from CACHE to DOCUMENTS by re-reading and writing
+            var cacheData = await FS.readFile({ path: filename, directory: 'CACHE' });
+            await FS.writeFile({ path: filename, data: cacheData.data, directory: 'DOCUMENTS' });
+          }catch(_docErr){}
+          toast('\u2713 Export saved to your files — ' + filename, 4000);
           return true;
         }
       }
@@ -14750,7 +14758,7 @@ function _fallbackCopy(text){
           var cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
           var FS = cap ? cap.Filesystem : null;
           var Share = cap ? cap.Share : null;
-          if(!FS || !Share || typeof FS.writeFile !== 'function' || typeof Share.share !== 'function'){ capResolve(false); return; }
+          if(!FS || typeof FS.writeFile !== 'function'){ capResolve(false); return; }
           var CHUNK = 256 * 1024;
           var offset = 0;
           var first = true;
@@ -14797,7 +14805,14 @@ function _fallbackCopy(text){
                 if(!uri){ return FS.stat({ path: filename, directory:'CACHE' }); }
               }).then(function(st){
                 if(!uri && st && st.uri) uri = st.uri;
-                if(uri){ return Share.share({ title:filename, files:[uri], dialogTitle:'Save your SideCut export' }); }
+                if(uri){
+                  // Copy from CACHE to Documents directory
+                  try{
+                    var _docData = await FS.readFile({ path: filename, directory: 'CACHE' });
+                    await FS.writeFile({ path: filename, data: _docData.data, directory: 'DOCUMENTS' });
+                  }catch(_docErr2){}
+                  return true;
+                }
                 return false;
               }).then(function(sh){ capResolve(!!uri); }, function(err3){ capReject(err3); });
             }catch(e){ capReject(e); }

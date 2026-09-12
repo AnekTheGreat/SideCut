@@ -42,6 +42,7 @@
   function appBooted(){ return typeof window.toast === 'function'; }
   function currentVersion(){
     try{ if(typeof APP_VERSION !== 'undefined') return String(APP_VERSION); }catch(e){}
+    try{ if(window.APP_VERSION) return String(window.APP_VERSION); }catch(e){}
     try{ if(window.__SC_VERSION) return String(window.__SC_VERSION); }catch(e){}
     try{
       var lbl = document.getElementById('currentVersionLabel');
@@ -429,6 +430,7 @@
       try{ man = await resp.json(); }catch(_j){}
       if(!man || !man.version || !man.url){ log('manifest missing version/url'); if(!o.silent) toast('Update check failed — the server update info was unreadable. Try again in a moment.', 4500); return { failed: true }; }
       var cur = currentVersion();
+      log('manifest version: ' + man.version + ', running version: ' + cur);
       if(!cur){ log('cannot determine the running version — skipping update check (fail safe)'); return null; }
       if(String(man.version) === String(cur)){ log('up to date (' + cur + ')'); return null; }
 
