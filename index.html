@@ -3302,6 +3302,46 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   </div>
 </div>
 
+<!-- Crop song modal (trim start/end of the audio file) -->
+<div class="modal-backdrop" id="cropSongBackdrop">
+  <div class="modal">
+    <h3>✂️ Crop song</h3>
+    <div id="cropSongNp" style="display:flex; align-items:center; gap:10px; margin:4px 0 10px; padding-bottom:10px; border-bottom:1px solid var(--line);">
+      <div id="cropSongArt" style="width:40px; height:40px; border-radius:6px; background:var(--bg-raised); background-size:cover; background-position:center; flex-shrink:0;"></div>
+      <div style="flex:1; min-width:0;">
+        <div id="cropSongTitle" style="font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+        <div id="cropSongArtist" style="font-size:11px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+      </div>
+      <div style="font-size:11px; color:var(--ink-dim);" id="cropSongOrigDur"></div>
+    </div>
+    <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Trim the song by dragging the handles — everything outside the selection is removed and the song is saved as a new file in your library.</div>
+    <div id="cropSongBody">
+      <div id="cropSongLoading" style="padding:22px 0; text-align:center; font-size:13px; color:var(--ink-dim);"></div>
+      <div id="cropSongControls" style="display:none;">
+        <div id="cropSongWave" style="position:relative; height:110px; background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-bottom:12px; overflow:hidden;">
+          <div id="cropSongWaveBars" style="position:absolute; inset:0; display:flex; align-items:center; gap:1px; padding:10px 0; opacity:0.35;"></div>
+          <div id="cropSongSel" style="position:absolute; top:0; bottom:0; background:rgba(255,111,97,0.22); border-left:2px solid var(--coral); border-right:2px solid var(--coral); border-radius:6px;"></div>
+          <div id="cropSongSelEdgeL" style="position:absolute; top:0; bottom:0; width:18px; left:0; cursor:ew-resize; z-index:3;"></div>
+          <div id="cropSongSelEdgeR" style="position:absolute; top:0; bottom:0; width:18px; right:0; cursor:ew-resize; z-index:3;"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--ink-dim); margin-bottom:4px;">
+          <span id="cropSongStartLbl"></span>
+          <span id="cropSongLenLbl"></span>
+          <span id="cropSongEndLbl"></span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0 4px;">
+          <button id="cropSongPreviewPlay" style="flex:1; min-width:120px; padding:10px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid var(--line); color:var(--ink); font-size:13px; cursor:pointer;">▶ Preview selection</button>
+          <span style="font-size:11px; color:var(--ink-dim);" id="cropSongPreviewStatus"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-btns" style="margin-top:12px;">
+      <button class="cancel" id="cropSongCancel" style="flex:1;">Cancel</button>
+      <button class="confirm" id="cropSongApply" style="flex:2; display:none;">Save cropped song</button>
+    </div>
+  </div>
+</div>
+
 <!-- Now Playing Menu (3-dot) -->
 <div class="modal-backdrop" id="npMenuBackdrop">
   <div class="modal" style="padding:0; overflow:hidden;">
@@ -6757,6 +6797,333 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   $('editSongCancel').addEventListener('click', () => { $('editSongBackdrop').style.display = 'none'; editSongTrackId = null; });
   $('editSongBackdrop').addEventListener('click', e => { if(e.target === $('editSongBackdrop')) { $('editSongBackdrop').style.display = 'none'; editSongTrackId = null; } });
 
+  // ---------------- Crop song (trim audio) ----------------
+  let cropTrack = null;
+  let cropBuf = null;            // decoded AudioBuffer (full song)
+  let cropFmt = 'wav';           // output format for the cropped file
+  let cropSelStart = 0;          // seconds
+  let cropSelEnd = 0;            // seconds
+  let cropPreviewAudio = null;   // Audio element for preview
+  let cropDragging = null;       // 'l' | 'r' | null
+
+  function cropCleanupPreview(){
+    if(cropPreviewAudio){
+      try{ cropPreviewAudio.pause(); cropPreviewAudio.src = ''; }catch(e){}
+      cropPreviewAudio = null;
+    }
+  }
+
+  function cropFmtTime(sec){
+    sec = Math.max(0, sec || 0);
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function cropUpdateFrame(){
+    const mid = $('cropSongSel');
+    if(!mid || !cropBuf) return;
+    const total = cropBuf.duration || 1;
+    const lp = (cropSelStart / total) * 100;
+    const rp = (cropSelEnd / total) * 100;
+    mid.style.left = lp + '%';
+    mid.style.width = Math.max(0, rp - lp) + '%';
+    $('cropSongStartLbl').textContent = cropFmtTime(cropSelStart);
+    $('cropSongEndLbl').textContent = cropFmtTime(cropSelEnd);
+    $('cropSongLenLbl').textContent = '— ' + cropFmtTime(cropSelEnd - cropSelStart) + ' kept —';
+    const apply = $('cropSongApply');
+    const maxMin = 0.5; // require at least half a second selected
+    apply.style.display = (cropSelEnd - cropSelStart >= maxMin) ? '' : 'none';
+  }
+
+  function cropBuildWaveform(){
+    const wrap = $('cropSongWaveBars');
+    if(!wrap || !cropBuf) return;
+    const totalSamples = cropBuf.length;
+    const channel = cropBuf.getChannelData(0);
+    const BARS = 90;
+    const step = Math.max(1, Math.floor(totalSamples / (BARS * 120)));
+    const per = Math.ceil(totalSamples / BARS);
+    const frag = document.createDocumentFragment();
+    for(let i = 0; i < BARS; i++){
+      const start = i * per;
+      const end = Math.min(start + per, totalSamples);
+      let max = 0;
+      for(let j = start; j < end; j += step){
+        const v = Math.abs(channel[j]);
+        if(v > max) max = v;
+      }
+      const bar = document.createElement('div');
+      bar.style.cssText = `flex:1; background:var(--ink); border-radius:2px; height:${Math.max(4, max * 82)}%;`;
+      frag.appendChild(bar);
+    }
+    wrap.innerHTML = '';
+    wrap.appendChild(frag);
+  }
+
+  function cropGetXFrac(x, rect){
+    return Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+  }
+
+  async function openCropSongModal(t){
+    cropCleanupPreview();
+    if(!t) return;
+    if(!t.file){
+      toast('This song has no audio file to crop.');
+      return;
+    }
+    const isMp3 = /\.(mp3|mpeg)$/i.test((t.file.name || t.name) + '');
+    cropFmt = isMp3 ? 'mp3' : 'wav';
+    cropTrack = t;
+    $('cropSongTitle').textContent = t.name || '';
+    $('cropSongArtist').textContent = t.artist || '';
+    $('cropSongOrigDur').textContent = t.duration ? 'Full: ' + cropFmtTime(t.duration) : '';
+    const artEl = $('cropSongArt');
+    if(artEl){
+      artEl.style.backgroundImage = t.artUrl ? `url("${t.artUrl}")` : '';
+      artEl.style.backgroundSize = t.artUrl ? 'cover' : '';
+      artEl.style.background = t.artUrl ? '' : 'var(--bg-raised)';
+    }
+    $('cropSongLoading').style.display = '';
+    $('cropSongLoading').textContent = 'Decoding audio…';
+    $('cropSongControls').style.display = 'none';
+    $('cropSongApply').style.display = 'none';
+    $('cropSongPreviewStatus').textContent = '';
+    $('cropSongBackdrop').style.display = 'flex';
+    try{
+      const arrBuf = await blobToArrayBufferFallbackCrop(t.file);
+      if(!arrBuf) throw new Error('could not read audio data');
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      try{ cropBuf = await ctx.decodeAudioData(arrBuf); } finally { try{ ctx.close(); }catch(e){} }
+      const total = cropBuf.duration;
+      cropSelStart = 0;
+      cropSelEnd = Math.max(0.5, total);
+      $('cropSongLoading').style.display = 'none';
+      $('cropSongControls').style.display = '';
+      cropBuildWaveform();
+      cropUpdateFrame();
+    }catch(err){
+      console.warn('Crop decode failed:', err);
+      cropBuf = null;
+      $('cropSongLoading').textContent = 'Could not decode this audio file for cropping.';
+      $('cropSongApply').style.display = 'none';
+    }
+  }
+
+  // Read a Blob to ArrayBuffer supporting the webview-safe fallbacks.
+  function blobToArrayBufferFallbackCrop(blob){
+    if(!blob) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const fail = () => {
+        try{
+          if(typeof Response !== 'undefined'){
+            new Response(blob).arrayBuffer().then(resolve, () => resolve(null));
+          } else { resolve(null); }
+        }catch(e){ resolve(null); }
+      };
+      const fileReaderFallback = () => {
+        try{
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.onerror = () => fail();
+          fr.readAsArrayBuffer(blob);
+        }catch(e){ fail(); }
+      };
+      if(blob && typeof blob.arrayBuffer === 'function'){
+        blob.arrayBuffer().then(resolve, () => fileReaderFallback());
+      } else {
+        fileReaderFallback();
+      }
+    });
+  }
+
+  function cropStartPreview(){
+    if(!cropBuf) return;
+    cropCleanupPreview();
+    // Only play the selected slice by scheduling start/stop on the source.
+    const startSec = Math.max(0, cropSelStart);
+    const lenSec = Math.max(0.05, Math.min(cropBuf.duration - startSec, cropSelEnd - cropSelStart));
+    const renderCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+      Math.max(1, Math.min(2, cropBuf.numberOfChannels || 1)),
+      Math.ceil(lenSec * cropBuf.sampleRate),
+      cropBuf.sampleRate
+    );
+    const s2 = renderCtx.createBufferSource();
+    s2.buffer = cropBuf;
+    s2.connect(renderCtx.destination);
+    s2.start(0, startSec, lenSec);
+    renderCtx.startRendering().then((rendered) => {
+      // Encode the rendered slice so preview plays exactly what will be saved.
+      try{
+        const blob = scEncodeAudio(rendered, cropFmt, null);
+        if(blob){
+          const url = URL.createObjectURL(blob);
+          cropPreviewAudio = new Audio(url);
+          cropPreviewAudio.onended = () => {
+            $('cropSongPreviewPlay').innerHTML = '▶ Preview selection';
+            if(cropPreviewAudio){ try{ URL.revokeObjectURL(cropPreviewAudio.src); }catch(e){} cropPreviewAudio = null; }
+          };
+          cropPreviewAudio.play().catch(() => {});
+          $('cropSongPreviewPlay').innerHTML = '⏸ Stop preview';
+          $('cropSongPreviewStatus').textContent = 'Previewing cropped slice…';
+        } else {
+          $('cropSongPreviewStatus').textContent = 'Preview unavailable for this format.';
+        }
+      }catch(e){
+        console.warn('Pre-encode preview failed', e);
+        $('cropSongPreviewStatus').textContent = 'Preview unavailable.';
+      }
+    }).catch((e) => {
+      console.warn('Offline render failed', e);
+      $('cropSongPreviewStatus').textContent = 'Preview unavailable.';
+    });
+  }
+
+  function cropStopPreview(){
+    cropCleanupPreview();
+    const btn = $('cropSongPreviewPlay');
+    if(btn) btn.innerHTML = '▶ Preview selection';
+    const st = $('cropSongPreviewStatus');
+    if(st) st.textContent = '';
+  }
+
+  $('cropSongPreviewPlay').addEventListener('click', () => {
+    if(cropPreviewAudio){ cropStopPreview(); }
+    else { cropStartPreview(); }
+  });
+
+  // Selection drag handles (pointer events; no external libs).
+  (function wireCropDrag(){
+    const wave = $('cropSongWave');
+    const left = $('cropSongSelEdgeL');
+    const right = $('cropSongSelEdgeR');
+    let moving = false;
+    function posFromEvent(e){
+      const rect = wave.getBoundingClientRect();
+      const cx = (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX);
+      return cropGetXFrac(cx, rect);
+    }
+    left.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); cropDragging = 'l'; wave.setPointerCapture && wave.setPointerCapture(e.pointerId); moving = true; });
+    right.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); cropDragging = 'r'; wave.setPointerCapture && wave.setPointerCapture(e.pointerId); moving = true; });
+    wave.addEventListener('pointermove', (e) => {
+      if(!cropDragging || !cropBuf) return;
+      const f = posFromEvent(e);
+      const total = cropBuf.duration;
+      const sec = f * total;
+      if(cropDragging === 'l'){
+        cropSelStart = Math.max(0, Math.min(sec, cropSelEnd - 0.5));
+      } else {
+        cropSelEnd = Math.min(total, Math.max(sec, cropSelStart + 0.5));
+      }
+      cropUpdateFrame();
+    });
+    function up(){ cropDragging = null; moving = false; }
+    wave.addEventListener('pointerup', up);
+    wave.addEventListener('pointercancel', up);
+  })();
+
+  function cropRenderSlice(buf){
+    // Copy only the selected range into a fresh (cropped) AudioBuffer. Uses an
+    // OfflineAudioContext (never creates a live AudioContext) just to allocate
+    // a properly-shaped AudioBuffer of the cropped length.
+    const sr = buf.sampleRate;
+    const start = Math.floor(cropSelStart * sr);
+    const end = Math.min(buf.length, Math.ceil(cropSelEnd * sr));
+    const len = Math.max(1, end - start);
+    const chCount = Math.max(1, Math.min(2, buf.numberOfChannels || 1));
+    const octx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(chCount, 1, sr);
+    const out = octx.createBuffer(chCount, len, sr);
+    for(let ci = 0; ci < chCount; ci++){
+      const srcData = buf.getChannelData(ci);
+      const dstData = out.getChannelData(ci);
+      for(let s = 0; s < len; s++) dstData[s] = srcData[start + s];
+    }
+    return out;
+  }
+
+  $('cropSongApply').addEventListener('click', async () => {
+    if(!cropTrack || !cropBuf || !(cropSelEnd - cropSelStart >= 0.5)) return;
+    cropStopPreview();
+    $('cropSongApply').disabled = true;
+    const btn = $('cropSongApply');
+    btn.textContent = 'Encoding…';
+    try{
+      const slice = cropRenderSlice(cropBuf);
+      const wasPlaying = queue[queueIndex] === cropTrack.id;
+      const oldUrl = cropTrack.url;
+      // Build the metadata that rides into the re-encoded file's ID3 tag.
+      let meta = null;
+      try{
+        meta = {
+          title: cropTrack.name,
+          artist: cropTrack.artist,
+          album: cropTrack.album,
+          year: cropTrack.releaseDate ? String(cropTrack.releaseDate).slice(0, 4) : null,
+          genre: cropTrack.genre,
+          track: null
+        };
+        if(cropTrack.artBlob){
+          const artBytes = new Uint8Array(await blobToArrayBufferFallbackCrop(cropTrack.artBlob));
+          meta.artBytes = artBytes;
+          meta.artMime = cropTrack.artBlob.type || 'image/jpeg';
+        }
+      }catch(e){ meta = null; }
+      const newBlob = scEncodeAudio(slice, cropFmt, meta);
+      if(!newBlob) throw new Error('encoder produced no output');
+      const ext = cropFmt === 'mp3' ? '.mp3' : '.wav';
+      const baseName = (cropTrack.file && cropTrack.file.name) ? cropTrack.file.name.replace(/\.[^/.]+$/, '') : (cropTrack.name || 'track');
+      const newFile = new File([newBlob], baseName + ext, { type: newBlob.type || (cropFmt === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
+      // Swap in the cropped file.
+      try{ if(oldUrl && oldUrl.indexOf('blob:') === 0) URL.revokeObjectURL(oldUrl); }catch(e){}
+      cropTrack.file = newFile;
+      cropTrack.url = URL.createObjectURL(newFile);
+      cropTrack.duration = slice.duration;
+      cropTrack.waveform = null;
+      persistTrackMeta(cropTrack);
+      if(wasPlaying){
+        // Re-point the current audio element at the cropped file and keep playing.
+        try{
+          const a = activeAudio();
+          const wasPaused = a.paused;
+          const cur = a.currentTime;
+          a.src = cropTrack.url;
+          a.load();
+          if(!wasPaused){
+            a.play().catch(() => {});
+          } else {
+            a.currentTime = Math.min(cur, slice.duration - 0.1);
+          }
+        }catch(e){}
+        if($('npTitle')){ $('npTitle').textContent = cropTrack.name; }
+        updateMediaSession && updateMediaSession(cropTrack);
+      }
+      renderList();
+      $('cropSongBackdrop').style.display = 'none';
+      toast('✓ Cropped "' + (cropTrack.name || 'song') + '" to ' + cropFmtTime(slice.duration));
+      cropTrack = null; cropBuf = null;
+    }catch(err){
+      console.warn('Crop failed:', err);
+      toast('Crop failed: ' + (err.message || 'could not encode the file'));
+    } finally {
+      const btn2 = $('cropSongApply');
+      btn2.disabled = false;
+      btn2.textContent = 'Save cropped song';
+    }
+  });
+
+  $('cropSongCancel').addEventListener('click', () => {
+    cropStopPreview();
+    $('cropSongBackdrop').style.display = 'none';
+    cropTrack = null; cropBuf = null;
+  });
+  $('cropSongBackdrop').addEventListener('click', e => {
+    if(e.target === $('cropSongBackdrop')) {
+      cropStopPreview();
+      $('cropSongBackdrop').style.display = 'none';
+      cropTrack = null; cropBuf = null;
+    }
+  });
+
   // ---------------- Lyrics ----------------
   let lyricsCurrentTrack = null;
   let lyricsAutoScroll = true;
@@ -8452,7 +8819,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.7.5';
+  const APP_VERSION = '56.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -8719,6 +9086,11 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '56.8', date: 'September 12, 2026 · 7:16 PM EDT', title: 'Playlist download, song cropping, and Android version fix', items: [
+    'Playlist & Library ⋮ menu: "Download to phone" saves every song as its own audio file straight to the device — no .zip needed',
+    'Song ⋮ menu: "Crop song" trims the start/end with a visual waveform scrubber, previews the cut, and saves a re-encoded file in your library',
+    'Android builds now get a fresh version code (started from 511086) so Play Console stops rejecting uploads as "version code already used"',
+  ] },
   { version: '56.7.5', date: 'September 12, 2026 · 6:47 PM EDT', title: 'Album length at a glance', items: [
     'Albums now show the total playing time next to the artist name on each album card in the Albums tab',
   ] },
@@ -12160,6 +12532,12 @@ function startLyricsAutoScroll() {
     exportBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; isAllSongs ? exportLibrary() : exportPlaylist(); });
     list.appendChild(exportBtn);
 
+    // Direct "download to phone" — no zip, just the audio files themselves.
+    const dlBtn = document.createElement('button');
+    dlBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z"/></svg> Download to phone`;
+    dlBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; downloadPlaylistToDevice(ids, isAllSongs); });
+    list.appendChild(dlBtn);
+
     const manageBtn = document.createElement('button');
     manageBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h12v2H3z"/></svg> Manage playlists`;
     manageBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; renderManagePlaylistsList(); $('managePlaylistsBackdrop').style.display='flex'; });
@@ -13838,6 +14216,14 @@ function _fallbackCopy(text){
     });
     list.appendChild(editBtn);
 
+    const cropBtn = document.createElement('button');
+    cropBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z"/></svg> Crop song`;
+    cropBtn.addEventListener('click', () => {
+      $('songActionsBackdrop').style.display='none';
+      openCropSongModal(t);
+    });
+    list.appendChild(cropBtn);
+
     const fetchCoverBtn = document.createElement('button');
     fetchCoverBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg> Fetch cover`;
     fetchCoverBtn.addEventListener('click', async () => { 
@@ -14693,6 +15079,74 @@ function _fallbackCopy(text){
       const premiumPayload = buildPremiumPayload();
       await doExportTracks(ids, `sidecut-selection-${ids.length}`, manifestPlaylists, 'selection', premiumPayload);
     });
+  }
+
+  // Chunked base64 write into an arbitrary Capacitor directory (reuses the
+  // same 256KB-chunk trick as the zip exports so a big audio file never gets
+  // materialized as one giant base64 string). Returns true on success.
+  async function writeBlobToDir(blob, path, directory){
+    const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
+    const FS = cap ? cap.Filesystem : null;
+    if(!FS || typeof FS.writeFile !== 'function') return false;
+    const CHUNK = 256 * 1024;
+    let offset = 0;
+    let first = true;
+    while(offset < blob.size){
+      const end = Math.min(blob.size, offset + CHUNK);
+      const data = await blobChunkToBase64(blob.slice(offset, end));
+      if(!data) throw new Error('could not read download data');
+      await FS.writeFile({ path, data, directory, recursive: true, append: !first });
+      offset = end;
+      first = false;
+    }
+    if(first) await FS.writeFile({ path, data: '', directory, recursive: true, append: false });
+    return true;
+  }
+
+  // "Download to phone" — save every song in the current view (playlist / All
+  // Songs / Unsorted) as its own audio file directly on the device. Unlike
+  // "Export playlist" this skips the .zip entirely: each track's existing audio
+  // blob (the same file that plays in-app) is written straight to the device's
+  // Documents folder, keeping its real file name + extension. Works on native
+  // (Capacitor Filesystem) and falls back to a per-file <a download> anchor in
+  // plain browsers.
+  async function downloadPlaylistToDevice(ids, isAllSongs){
+    const tracks = ids.map(id => allTracks.find(tr => tr.id === id)).filter(Boolean);
+    if(!tracks.length){ toast('Nothing to download yet.'); return; }
+    const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
+    const FS = cap ? cap.Filesystem : null;
+    const nativeOk = !!(FS && typeof FS.writeFile === 'function');
+    toast(`Downloading ${tracks.length} song${tracks.length===1?'':'s'}…`, 3500);
+    let done = 0, failed = 0;
+    for(const t of tracks){
+      if(!t || !t.file){ failed++; continue; }
+      const fname = (t.file.name || `${t.name}.mp3`).replace(/[\\/:*?"<>|]/g, '_');
+      const base = fname.indexOf('.') > 0 ? fname.slice(0, fname.lastIndexOf('.')) : fname;
+      const ext = (fname.match(/\.[^/.]+$/) || ['.mp3'])[0];
+      try{
+        if(nativeOk){
+          await writeBlobToDir(t.file, base + ext, 'DOCUMENTS');
+        } else {
+          // Browser fallback: plain download anchor per file.
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(t.file);
+          a.download = fname;
+          a.rel = 'noopener';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { try{ document.body.removeChild(a); }catch(e){} try{ URL.revokeObjectURL(a.href); }catch(e){} }, 4000);
+        }
+        done++;
+      }catch(e){
+        console.warn('Download failed for', t.name, e);
+        failed++;
+      }
+    }
+    if(failed){
+      toast(`Downloaded ${done} song${done===1?'':'s'}, ${failed} failed — they may be missing audio files.`, 4500);
+    } else {
+      toast(`✓ Saved ${done} song${done===1?'':'s'} to your phone's Documents`, 4000);
+    }
   }
 
   // Core export runner shared by library + playlist/selection exports. Reads each

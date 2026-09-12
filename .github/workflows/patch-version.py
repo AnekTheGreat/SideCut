@@ -10,7 +10,7 @@ one, so every build would collide with the first published version.
 versionCode is a plain sequential counter, NOT derived from the version
 string:
 
-    versionCode = max(500040, 500000 + commits on main)
+    versionCode = max(510040, 510000 + commits on main)
 
 Why: Play's real releases 5.0.31-5.0.39 used codes in the 500031-500039
 family (the old major*100000 + minor*1000 + patch scheme). A packed formula
@@ -18,15 +18,21 @@ that encodes the new 4-part version (5.0.40 -> 5,000,040) jumps roughly
 five million above the previous code, which makes Play Console warn "This
 release's version code is significantly higher than your previous version
 code" (Play warns when the jump is about 1000+, because it burns the
-2-billion code space). A sequential counter that steps just past 500039 by a
-few hundred keeps every release within a few hundred of the last and never
-trips the warning. The real version still rides along as versionName, so the
-Play listing and the app UI keep showing "5.0.40".
+2-billion code space). A sequential counter that steps just past the
+previous code by a few hundred keeps every release within a few hundred of
+the last and never trips the warning. The real version still rides along as
+versionName, so the Play listing and the app UI keep showing "5.0.40".
 
 The commit count comes from the full git history (the checkout step fetches
 with fetch-depth: 0), so it is strictly increasing across pushes. The floor
 keeps the code above every previously used code even if the count were ever
 tiny.
+
+History: the 500000 base produced 501086 (commit count 1086) and Play
+rejected that AAB with "version code already used" (a duplicate/build-reuse
+collision). The base was raised to 510000 so every new build gets a fresh,
+strictly-higher version code with plenty of headroom — the current build
+lands at 511xxx, safely above the 501xxx codes Play already has.
 """
 import json, os, re, subprocess, sys
 
@@ -45,9 +51,11 @@ if not m:
 major, minor, patch, build = (int(x) if x else 0 for x in (m.group(1), m.group(2), m.group(3), m.group(4)))
 
 # Sequential counter: strictly increasing with every push, and numerically
-# adjacent to the 500031-500039 family Play already has, so no huge jump.
+# adjacent to the 501xxx family Play already has, so no huge jump. Base is
+# 510000 (NOT 500000) so the codes stay ahead of the 501086 that Play
+# rejected as a duplicate — see the docstring above.
 commit_count = int(subprocess.check_output(['git', 'rev-list', '--count', 'HEAD']).decode().strip())
-version_code = max(500040, 500000 + commit_count)
+version_code = max(510040, 510000 + commit_count)
 
 src = open(BUILD_GRADLE).read()
 new_src, subs = re.subn(
