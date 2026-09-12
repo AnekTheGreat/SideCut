@@ -430,7 +430,7 @@
   .tab:active{ transform: scale(0.95); }
   .tab.active{ color:var(--bg); background:var(--gold); border-color:var(--gold); font-weight:600; }
 
-  #listPane{ flex:1; overflow-y:auto; padding: 4px 0 80px; min-height:0;
+  #listPane{ flex:1; overflow-y:auto; padding: 4px 0 calc(var(--list-bottom-inset, 96px) + env(safe-area-inset-bottom)); min-height:0;
     /* Needs its own explicit stacking context: this container was plain static-
        position flow content with no z-index, sitting after the glow layers'
        fixed divs in the DOM but with no stacking of its own to guarantee it
@@ -4235,6 +4235,14 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
     const n = parseInt(refreshRate, 10);
     return (n > 0) ? 1000 / n : 0;
   }
+  function applyDeviceRefreshRate(){
+    try{
+      var requestRate = window.screen && window.screen.requestFrameRate;
+      if(typeof requestRate !== 'function') return;
+      var hz = refreshRate === 'max' ? Number(window.screen.refreshRate || 0) : Number(refreshRate);
+      if(hz > 0) Promise.resolve(requestRate.call(window.screen, hz)).catch(function(){});
+    }catch(_e){}
+  }
   function startRgbAnimation(){
     stopRgbAnimation();
     const start = performance.now();
@@ -4278,6 +4286,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
       btn.addEventListener('click', () => {
         refreshRate = btn.dataset.rate;
         dbPut('meta', { key: 'refreshRate', value: refreshRate });
+        applyDeviceRefreshRate();
         renderRefreshRateOptions();
         if(THEMES[currentTheme] && THEMES[currentTheme].rgb) startRgbAnimation();
         toast('Refresh rate: ' + (btn.dataset.rate === 'max' ? 'max device refresh rate' : btn.dataset.rate + ' Hz'));
@@ -8402,6 +8411,7 @@ function startLyricsAutoScroll() {
       if(watermarkEnabledRow) watermarkEnabled = !!watermarkEnabledRow.value;
       const refreshRateRow = metaRows.find(r => r.key === 'refreshRate');
       if(refreshRateRow && refreshRateRow.value) refreshRate = refreshRateRow.value;
+      applyDeviceRefreshRate();
       const watermarkPatternsRow = metaRows.find(r => r.key === 'watermarkPatterns');
       if(watermarkPatternsRow && watermarkPatternsRow.value) {
         watermarkPatterns = watermarkPatternsRow.value;
@@ -8442,7 +8452,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.6';
+  const APP_VERSION = '56.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -8709,6 +8719,13 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '56.7', date: 'September 12, 2026 · 6:20 PM EDT', title: 'Conversational AI, smoother updates, exports, and playback polish', items: [
+    'AI assistant now keeps multi-turn context and responds conversationally when Gemini is configured instead of stopping at a fact lookup',
+    'Maximum refresh mode requests the device display rate when the WebView supports it, with a safe requestAnimationFrame fallback',
+    'Play Store and OTA update checks surface version notes, and deferred OTA installs survive audio/background transitions',
+    'Native backup exports no longer hang while compressing; ZIP writes and sharing complete reliably',
+    'Pinned artist cover selection includes newer library artwork, playlist scrolling is smoother, and the last album track clears the player',
+  ] },
   { version: '56.6', date: 'September 12, 2026 · 3:47 PM EDT', title: 'Lyrics cleanup, album-cover artist photos, fuller exports', items: [
     'Cleaned up lyrics panel — compact scrollable button bar, removed clutter note, fixed broken HTML',
     'Pinned artist photo picker now shows album covers from your library — tap an album art tile to set it as the artist picture',
@@ -12622,6 +12639,11 @@ function _fallbackCopy(text){
     albumsTab.addEventListener('click', () => {
       libraryMode = 'albums';
       dbPut('meta', { key: 'libraryMode', value: libraryMode });
+      // Update diagonal split button active-half to reflect albums mode
+      var _plH = document.getElementById('playlistsHalf');
+      var _alH = document.getElementById('albumsHalf');
+      if(_plH) _plH.classList.remove('active-half');
+      if(_alH) _alH.classList.add('active-half');
       renderTabs();
       renderList();
     });
@@ -13669,7 +13691,9 @@ function _fallbackCopy(text){
           // mean you had to manually hunt for it; now it lands in view.
           if(renderListInner._scrollToPlaying){
             renderListInner._scrollToPlaying = false;
-            smoothScrollIn(pane, row);
+            // Small delay lets the DOM settle before measuring positions,
+            // matching the smooth feel of the albums auto-scroll.
+            requestAnimationFrame(function(){ smoothScrollIn(pane, row, 350); });
           }
         }
       }
@@ -14768,80 +14792,76 @@ function _fallbackCopy(text){
       // as one Blob in memory - the real fix for big libraries on Android. Then
       // share the finished file via the same URI + Share sheet as saveExportFile.
       function streamZipToCapacitor(zipStream, filename){
-        return new Promise(function(capResolve, capReject){
+        return new Promise(function(resolve, reject){
           var cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
           var FS = cap ? cap.Filesystem : null;
           var Share = cap ? cap.Share : null;
-          if(!FS || typeof FS.writeFile !== 'function'){ capResolve(false); return; }
-          var CHUNK = 256 * 1024;
-          var offset = 0;
+          if(!FS || typeof FS.writeFile !== 'function'){ resolve(false); return; }
+          var queue = Promise.resolve();
           var first = true;
-          var parts = [];
-          var buffer = [];
-          var flush = function(){
-            if(!buffer.length){ offset = 0; return; }
-            var blob = new Blob(buffer, { type: 'application/zip' });
-            buffer = [];
-            var fr = new FileReader();
-            fr.onload = function(){
-              var data = String(fr.result || '');
-              FS.writeFile({ path: filename, data:data, directory:'CACHE', recursive:true, append:!first }).then(function(){
-                first = false;
-                offset = 0;
-                if(parts.length){ var p2 = parts.shift(); p2(); }
-                else { finishAndShare(); }
-              }, function(err2){ capReject(err2); });
-            };
-            fr.onerror = function(){ capReject(fr.error || new Error('read failed')); };
-            fr.readAsDataURL(blob);
-          };
-          var feed = function(data2){
-            parts.push(function(){
-              var b = data2;
-              if(b && b.byteLength){ buffer.push(new Uint8Array(b.byteLength)); buffer[buffer.length-1].set(b); b = buffer[buffer.length-1]; }
-              else if(b) buffer.push(b);
-              var total = 0; for(var qi=0;qi<buffer.length;qi++){ var bb = buffer[qi]; if(bb && bb.byteLength) total += bb.byteLength; else if(bb && bb.length) total += bb.length; }
-              if(total >= CHUNK || !parts.length){ flush(); }
-              else { next(); }
-            });
-            if(parts.length === 1){ var p3 = parts[0]; parts.shift(); p3(); }
-          };
-          var next = function(){
-            if(!parts.length && !buffer.length){ finishAndShare(); return; }
-            if(parts.length) parts.shift()();
-            else flush();
-          };
-          var finishAndShare = async function(){
-            try{
-              var uri = null;
-              FS.getUri({ path: filename, directory:'CACHE' }).then(function(got){
-                uri = got ? got.uri : null;
-                if(!uri){ return FS.stat({ path: filename, directory:'CACHE' }); }
-              }).then(async function(st){
-                if(!uri && st && st.uri) uri = st.uri;
-                if(uri){
-                  // Try Share sheet first
-                  if(Share && typeof Share.share === 'function'){
-                    try{
-                      await Share.share({ title: filename, files: [uri], dialogTitle: 'Save your SideCut backup' });
-                      return true;
-                    }catch(_shareErr){}
-                  }
-                  // Fallback: copy from CACHE to Documents directory
+          var ended = false;
+          var failed = false;
+          function fail(err){
+            if(failed) return;
+            failed = true;
+            reject(err || new Error('native export write failed'));
+          }
+          function appendChunk(chunk){
+            if(failed || !chunk || !chunk.byteLength) return;
+            var copy = new Uint8Array(chunk.byteLength);
+            copy.set(chunk);
+            queue = queue.then(function(){
+              var blob = new Blob([copy], { type:'application/zip' });
+              return new Promise(function(done, bad){
+                var fr = new FileReader();
+                fr.onload = function(){
                   try{
-                    var _docData = await FS.readFile({ path: filename, directory: 'CACHE' });
-                    await FS.writeFile({ path: filename, data: _docData.data, directory: 'DOCUMENTS' });
-                  }catch(_docErr2){}
-                  return true;
+                    var data = String(fr.result || '');
+                    var comma = data.indexOf(',');
+                    var base64 = comma >= 0 ? data.slice(comma + 1) : data;
+                    (first
+                      ? FS.writeFile({ path: filename, data: base64, directory:'CACHE', recursive:true })
+                      : FS.appendFile({ path: filename, data: base64, directory:'CACHE' }))
+                      .then(function(){ first = false; done(); }, bad);
+                  }catch(e){ bad(e); }
+                };
+                fr.onerror = function(){ bad(fr.error || new Error('export chunk read failed')); };
+                fr.readAsDataURL(blob);
+              });
+            }).catch(fail);
+          }
+          function finish(){
+            if(!ended || failed) return;
+            queue.then(async function(){
+              try{
+                var got = null;
+                try{ got = await FS.getUri({ path: filename, directory:'CACHE' }); }catch(_e1){}
+                var uri = got && got.uri;
+                if(!uri){
+                  try{ var st = await FS.stat({ path: filename, directory:'CACHE' }); uri = st && st.uri; }catch(_e2){}
                 }
-                return false;
-              }).then(function(sh){ capResolve(!!uri); }, function(err3){ capReject(err3); });
-            }catch(e){ capReject(e); }
-          };
-          zipStream.on('data', function(data3){ feed(data3); });
-          zipStream.on('end', function(){ next(); });
-          zipStream.on('error', function(e){ capReject(e); });
-          zipStream.resume();
+                if(!uri){ resolve(false); return; }
+                if(Share && typeof Share.share === 'function'){
+                  try{
+                    await Promise.race([
+                      Share.share({ title: filename, files:[uri], dialogTitle:'Save your SideCut backup' }),
+                      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('share-timeout')); }, 15000); })
+                    ]);
+                    resolve(true); return;
+                  }catch(_shareErr){}
+                }
+                try{
+                  var saved = await FS.readFile({ path: filename, directory:'CACHE' });
+                  await FS.writeFile({ path: filename, data:saved.data, directory:'DOCUMENTS', recursive:true });
+                  resolve(true);
+                }catch(_docErr){ resolve(false); }
+              }catch(e){ fail(e); }
+            });
+          }
+          zipStream.on('data', function(data){ appendChunk(data); });
+          zipStream.on('end', function(){ ended = true; finish(); });
+          zipStream.on('error', fail);
+          try{ zipStream.resume(); }catch(e){ fail(e); }
         });
       }
   async function runZipExport(opts){
@@ -15056,7 +15076,7 @@ function _fallbackCopy(text){
           throw e;
         }
         exportState.compressPct = 100;
-        saveExportFile(blob, filename);
+        try{ await saveExportFile(blob, filename); }catch(_sfe){}
       }
       exportState.active = false;
       exportState.phase = 'done';
@@ -16515,6 +16535,25 @@ function _fallbackCopy(text){
   // Smooth-scroll a child element into view inside a scrollable container,
   // WITHOUT using scrollIntoView or scrollTo(behavior:'smooth') which bubble
   // up on Android WebView and move the entire page.
+  function updateListBottomInset(){
+    var pane = document.getElementById('listPane');
+    var player = document.getElementById('nowPlaying');
+    if(!pane || !player) return;
+    var h = Math.ceil(player.getBoundingClientRect().height || 0);
+    pane.style.setProperty('--list-bottom-inset', Math.max(96, h + 18) + 'px');
+  }
+  function watchListBottomInset(){
+    updateListBottomInset();
+    try{
+      var player = document.getElementById('nowPlaying');
+      if(window.ResizeObserver && player) new ResizeObserver(updateListBottomInset).observe(player);
+    }catch(_e){}
+    window.addEventListener('resize', updateListBottomInset);
+    setTimeout(updateListBottomInset, 250);
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchListBottomInset);
+  else watchListBottomInset();
+
   function smoothScrollIn(container, target, dur){
     if(!container || !target) return;
     dur = dur || (typeof sandboxScrollSpeed !== 'undefined' ? sandboxScrollSpeed : 400);
@@ -22066,9 +22105,17 @@ if(!isDiscover) stopDiscoverPreview();
           var t = allTracks[i];
           if(!t) continue;
           var ta = primaryArtistName(t.artist||'').toLowerCase().trim();
-          if(ta === aname && t.artUrl && !seen[t.artUrl]){
-            seen[t.artUrl] = true;
-            covers.push({ url: t.artUrl, album: t.album || '' });
+          if(ta === aname){
+            var cUrl = t.artUrl;
+            // If artUrl is missing but artBlob exists, create a temporary object URL
+            if(!cUrl && t.artBlob && typeof URL !== 'undefined'){
+              try{ cUrl = URL.createObjectURL(t.artBlob); }catch(_eb){}
+            }
+            var coverKey = (t.album || 'single').toLowerCase().trim() + '|' + cUrl;
+            if(cUrl && !seen[coverKey]){
+              seen[coverKey] = true;
+              covers.push({ url: cUrl, album: t.album || '' });
+            }
           }
         }
       }catch(_e){}
@@ -22077,7 +22124,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(covers.length > 0){
         coverGrid = '<div style="font-size:12px;color:var(--ink-dim);margin:8px 0 4px;">Or pick an album cover:</div>'
           + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">'
-          + covers.slice(0,12).map(function(c,i){
+          + covers.slice(0,48).map(function(c,i){
               return '<div class="pa-cover-pick" data-url="' + escapeHtml(c.url) + '" style="width:100%;aspect-ratio:1;border-radius:8px;background-size:cover;background-position:center;border:2px solid var(--line);cursor:pointer;" title="' + escapeHtml(c.album||'Album '+(i+1)) + '"></div>';
             }).join('')
           + '</div>';
@@ -22262,7 +22309,8 @@ if(!isDiscover) stopDiscoverPreview();
   function ensurePinnedArtistArt(){
     if(!pinnedArtists || !pinnedArtists.length) return;
     pinnedArtists.forEach(function(p){
-      if(p && p.photo && p.art && p.art.length > 5) return;
+      // Skip only if BOTH photo AND art are set and art looks like a valid URL (not stale/broken)
+      if(p && p.photo && p.art && p.art.length > 5 && (p.art.indexOf('http') === 0 || p.art.indexOf('data:') === 0)) return;
       var key = primaryArtistName(p.name).toLowerCase().trim();
       if(!key || __artFetchBusy[key]) return;
       __artFetchBusy[key] = true;
@@ -25813,7 +25861,7 @@ function _aiFormatText(text) {
 }
 
 // Gemini system prompt
-var _aiSystemPrompt = 'You are SideCut Assistant, a concise, accurate helper for the SideCut music player app. Be direct and specific; answer in 1-3 short sentences unless numbered steps are genuinely needed. When the user asks "how do I...", give the exact menu path (e.g. Settings → Playback → Crossfade). When they report a problem, state the likely cause and the fix in order. Only mention features that actually exist in SideCut; if you are unsure, say so briefly rather than guessing. You can help with playback (shuffle, repeat, crossfade, gapless, EQ, DJ mode, sleep timer, lyrics), library (playlists, favorites, sorting, searching, importing), Discover (search, preview, pin artists, singles, album history), themes/customization (colors, glow, home layout, mini player), technical (formats, battery, offline, storage), and premium features. If a question is off-topic or unclear, ask one short clarifying question. Keep it clean, no filler, no emoji unless asked.';
+var _aiSystemPrompt = 'Maintain a natural multi-turn conversation: use earlier turns to understand follow-ups, acknowledge the latest message, and do not repeat canned answers when context changes the meaning. You are SideCut Assistant, a concise, accurate helper for the SideCut music player app. Be direct and specific; answer in 1-3 short sentences unless numbered steps are genuinely needed. When the user asks "how do I...", give the exact menu path (e.g. Settings → Playback → Crossfade). When they report a problem, state the likely cause and the fix in order. Only mention features that actually exist in SideCut; if you are unsure, say so briefly rather than guessing. You can help with playback (shuffle, repeat, crossfade, gapless, EQ, DJ mode, sleep timer, lyrics), library (playlists, favorites, sorting, searching, importing), Discover (search, preview, pin artists, singles, album history), themes/customization (colors, glow, home layout, mini player), technical (formats, battery, offline, storage), and premium features. If a question is off-topic or unclear, ask one short clarifying question. Keep it clean, no filler, no emoji unless asked.';
 
 // Add a chat message to the UI
 function _aiAddMessage(role, text) {
@@ -25857,7 +25905,7 @@ async function _aiGeminiQuery(userMessage) {
     for (var i = 0; i < history.length; i++) {
       contents.push({ role: history[i].role === 'user' ? 'user' : 'model', parts: [{ text: history[i].text }] });
     }
-    contents.push({ role: 'user', parts: [{ text: userMessage }] });
+    // Current user turn is already in _aiChatHistory; do not send it twice.
 
     var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + _aiGeminiKey, {
       method: 'POST',
@@ -25898,17 +25946,7 @@ async function _aiSendMessage() {
   var statusEl = $('aiChatStatus');
   if (statusEl) statusEl.textContent = 'Thinking...';
 
-  // Try offline KB first
-  var kbMatch = _aiFuzzyMatch(msg);
-  if (kbMatch) {
-    _aiTyping = false;
-    _aiAddMessage('assistant', kbMatch.a);
-    _aiChatHistory.push({ role: 'assistant', text: kbMatch.a });
-    if (statusEl) statusEl.textContent = 'Answered from knowledge base';
-    return;
-  }
-
-    // Offline KB didn't match — try Gemini if key available, otherwise smart fallback
+  // Use Gemini first when configured so the assistant can maintain a real conversation.
   if (_aiGeminiKey) {
     _aiShowTyping();
     var response = await _aiGeminiQuery(msg);
@@ -25919,7 +25957,21 @@ async function _aiSendMessage() {
       _aiChatHistory.push({ role: 'assistant', text: response });
     }
     if (statusEl) statusEl.textContent = response ? 'Answered by Gemini AI' : '';
-  } else {
+    return;
+  }
+
+  // Try offline KB first
+  var kbMatch = _aiFuzzyMatch(msg);
+  if (kbMatch) {
+    _aiTyping = false;
+    _aiAddMessage('assistant', kbMatch.a);
+    _aiChatHistory.push({ role: 'assistant', text: kbMatch.a });
+    if (statusEl) statusEl.textContent = 'Answered from knowledge base';
+    return;
+  }
+
+    // No provider matched; offer useful local topics rather than failing silently.
+  {
     _aiTyping = false;
     var _kw = msg.toLowerCase();
     var _sug = [];

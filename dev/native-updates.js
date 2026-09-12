@@ -370,7 +370,12 @@
     // on the quiet clean moment ((still backgrounded), so the user never sees
     // a reload or a cut-off song. Only wire these once per deferred bundle.
 
-    try{ document.addEventListener('ended', go, false); }catch(e){}
+    // Audio 'ended' does not bubble from <audio> elements. Capture it so a
+    // deferred update can apply as soon as the last playing track finishes.
+    try{ document.addEventListener('ended', go, true); }catch(e){}
+    try{ document.addEventListener('pause', function(e){
+      if(e && e.target && String(e.target.tagName || '').toUpperCase() === 'AUDIO') go();
+    }, true); }catch(e){}
     return 'deferred';
   }
 
