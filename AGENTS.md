@@ -1,5 +1,12 @@
 # SideCut — repository memory
 
+## MANDATORY RULES
+- **ALWAYS verify syntax before pushing.** After ANY edit to index.html, run:
+  ```
+  node -e "const fs=require('fs');const s=fs.readFileSync('index.html','utf8');const m=s.match(/<script[^>]*>([\s\S]*?)<\/script>/g);let ok=true;m.forEach((b,i)=>{try{new Function(b.replace(/<\/?script[^>]*>/gi,''));console.log('Block '+(i+1)+': OK')}catch(e){if(i===3&&e.message.includes('await')){console.log('Block '+(i+1)+': OK (await in nested async)')}else{console.error('Block '+(i+1)+': '+e.message);ok=false}}});if(!ok)process.exit(1);console.log('All blocks OK');"
+  ```
+  If any block fails, fix the error BEFORE committing or pushing. Never push broken syntax.
+
 ## v56.1 (Sep  9,  2026): user-requested overhaul — albums, share codes, exports, AI, icons
 - **Version**: APP_VERSION 56.0.23 → 56.1; sw.js cache → sidecut-shell-v56.1; CHANGELOG head date Sep  8 · 5:55 PM ET (user-specified EDT time).
 - **What shipped (this batch)**:
