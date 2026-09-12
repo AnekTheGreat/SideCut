@@ -26931,5 +26931,57 @@ document.addEventListener('keydown', (e) => {
   if((e.ctrlKey || e.metaKey) && ['+', '-', '=', '_', '0'].includes(e.key)) e.preventDefault();
 });
 
+// ---- Battery saver: kill expensive timers when app is hidden ----
+// Music players burn battery because Android keeps the WebView alive for
+// media session even when the screen is off. This pauses all non-essential
+// timers (widget polls, heartbeat, snapshot flush, RGB glow, lyrics scroll,
+// listening counter) when document.hidden is true, resuming on visibility.
+(function(){
+  var wasHidden = document.hidden;
+  var killTimers = [];
+  // Intercept future setInterval calls to auto-track them
+  var _origSI = window.setInterval;
+  window.setInterval = function(fn, ms){
+    // Only track intervals > 500ms (skip micro-timers like crossfade)
+    if(ms > 500){
+      var id = _origSI.call(window, fn, ms);
+      killTimers.push({id:id, fn:fn, ms:ms, alive:true});
+      return id;
+    }
+    return _origSI.call(window, fn, ms);
+  };
+  // Patch clearInterval to untrack
+  var _origCI = window.clearInterval;
+  window.clearInterval = function(id){
+    killTimers = killTimers.filter(function(t){ return t.id !== id; });
+    return _origCI.call(window, id);
+  };
+  function pauseAll(){
+    killTimers.forEach(function(t){
+      if(t.alive){ _origCI.call(window, t.id); t.alive = false; }
+    });
+  }
+  function resumeAll(){
+    killTimers.forEach(function(t){
+      if(!t.alive){ t.id = _origSI.call(window, t.fn, t.ms); t.alive = true; }
+    });
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden && !wasHidden){
+      wasHidden = true;
+      pauseAll();
+    } else if(!document.hidden && wasHidden){
+      wasHidden = false;
+      resumeAll();
+    }
+  });
+  // Also pause on pagehide (app backgrounded on Android)
+  window.addEventListener('pagehide', function(){ pauseAll(); });
+  window.addEventListener('pageshow', function(){
+    wasHidden = document.hidden;
+    if(!document.hidden) resumeAll();
+  });
+})();
+
 </script></body>
 </html>
