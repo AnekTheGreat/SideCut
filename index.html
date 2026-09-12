@@ -13647,9 +13647,7 @@ function _fallbackCopy(text){
           // mean you had to manually hunt for it; now it lands in view.
           if(renderListInner._scrollToPlaying){
             renderListInner._scrollToPlaying = false;
-            var pRect = pane.getBoundingClientRect();
-            var rRect2 = row.getBoundingClientRect();
-            pane.scrollTop = pane.scrollTop + rRect2.top - pRect2.top - (pRect2.height/2) + (rRect2.height/2);
+            smoothScrollIn(pane, row);
           }
         }
       }
@@ -16445,6 +16443,31 @@ exportState.compressPct = 100;
     }
   }
 
+  // Smooth-scroll a child element into view inside a scrollable container,
+  // WITHOUT using scrollIntoView or scrollTo(behavior:'smooth') which bubble
+  // up on Android WebView and move the entire page.
+  function smoothScrollIn(container, target, dur){
+    if(!container || !target) return;
+    dur = dur || 280;
+    var cRect = container.getBoundingClientRect();
+    var tRect = target.getBoundingClientRect();
+    var targetScroll = container.scrollTop + (tRect.top - cRect.top) - (cRect.height/2) + (tRect.height/2);
+    targetScroll = Math.max(0, Math.min(targetScroll, container.scrollHeight - container.clientHeight));
+    var start = container.scrollTop;
+    var dist = targetScroll - start;
+    if(Math.abs(dist) < 2) return; // already centered
+    var startTime = null;
+    function step(ts){
+      if(!startTime) startTime = ts;
+      var p = Math.min((ts - startTime) / dur, 1);
+      // ease-out cubic
+      var e = 1 - Math.pow(1 - p, 3);
+      container.scrollTop = start + dist * e;
+      if(p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
   function highlightPlaying(id){
     document.querySelectorAll('.track').forEach(r => r.classList.toggle('playing', r.dataset.id === id));
     const activeRow = document.querySelector(`.track[data-id="${id}"]`);
@@ -16455,7 +16478,7 @@ exportState.compressPct = 100;
         var paneRect = pane.getBoundingClientRect();
         var rowRect = activeRow.getBoundingClientRect();
         var offset = rowRect.top - paneRect.top - (paneRect.height / 2) + (rowRect.height / 2);
-        pane.scrollTop = pane.scrollTop + offset;
+        smoothScrollIn(pane, activeRow);
       }
     }
     // Auto-expand album cards containing the playing track and scroll to it
@@ -16491,24 +16514,12 @@ exportState.compressPct = 100;
               body.appendChild(row);
               if(typeof selectMode === 'undefined' || !selectMode){ try{ attachLongPressChoice(row, tid); }catch(_e){} }
               if(tid === id){
-                setTimeout(function(){
-                  var bRect = body.getBoundingClientRect();
-                  var rRect = row.getBoundingClientRect();
-                  if(rRect.top < bRect.top || rRect.bottom > bRect.bottom){
-                    body.scrollTop = body.scrollTop + rRect.top - bRect.top - (bRect.height/2) + (rRect.height/2);
-                  }
-                }, 100);
+                setTimeout(function(){ smoothScrollIn(body, row, 200); }, 100);
               }
             });
           } else if(body && body.style.display !== 'none'){
             var pr = body.querySelector('[data-id="' + id + '"]');
-            if(pr){
-              var bRect2 = body.getBoundingClientRect();
-              var rRect2 = pr.getBoundingClientRect();
-              if(rRect2.top < bRect2.top || rRect2.bottom > bRect2.bottom){
-                body.scrollTop = body.scrollTop + rRect2.top - bRect2.top - (bRect2.height/2) + (rRect2.height/2);
-              }
-            }
+            if(pr) smoothScrollIn(body, pr, 200);
           }
         }
       });
