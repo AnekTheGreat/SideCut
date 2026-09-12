@@ -3004,6 +3004,16 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         </div>
         <div style="margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px;">Scroll speed</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span id="scrollSpeedValue" style="font-size:11px; color:var(--ink-dim); min-width:32px; text-align:right;">400ms</span>
+              <input type="range" id="sandboxScrollSpeed" min="150" max="1200" step="50" value="400" style="width:120px; accent-color:var(--coral);">
+            </div>
+          </div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">How fast the list scrolls to the playing song (150ms = fast, 1200ms = slow).</div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:13px;">High-contrast text</span>
             <button class="tab" id="sandboxHighContrast" style="padding:5px 12px; font-size:12px;">Off</button>
           </div>
@@ -5753,6 +5763,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   let sandboxAlwaysSearch = false;
   let sandboxNowbarSize = 100;
   let sandboxReduceMotion = false;
+    sandboxScrollSpeed = 400;
+  let sandboxScrollSpeed = 400;
   let sandboxHighContrast = false;
   let sandboxBigSeek = false;
   let sandboxInvertColors = false;
@@ -5927,6 +5939,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     $('sandboxAlwaysSearch').textContent = sandboxAlwaysSearch ? 'On' : 'Off';
     $('sandboxAlwaysSearch').classList.toggle('active', sandboxAlwaysSearch);
     $('sandboxReduceMotion').textContent = sandboxReduceMotion ? 'On' : 'Off';
+    var _ssEl = $('sandboxScrollSpeed'); if(_ssEl) { _ssEl.value = sandboxScrollSpeed; }
+    var _ssLbl = $('scrollSpeedValue'); if(_ssLbl) { _ssLbl.textContent = sandboxScrollSpeed + 'ms'; }
     $('sandboxReduceMotion').classList.toggle('active', sandboxReduceMotion);
     $('sandboxHighContrast').textContent = sandboxHighContrast ? 'On' : 'Off';
     $('sandboxHighContrast').classList.toggle('active', sandboxHighContrast);
@@ -6334,6 +6348,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   $('sandboxCompactNowbar').addEventListener('click', () => { sandboxCompactNowbar = !sandboxCompactNowbar; dbPut('meta', { key: 'sandboxCompactNowbar', value: sandboxCompactNowbar }); updateSandboxToggles(); });
   $('sandboxAlwaysSearch').addEventListener('click', () => { sandboxAlwaysSearch = !sandboxAlwaysSearch; dbPut('meta', { key: 'sandboxAlwaysSearch', value: sandboxAlwaysSearch }); updateSandboxToggles(); });
   $('sandboxReduceMotion').addEventListener('click', () => { sandboxReduceMotion = !sandboxReduceMotion; dbPut('meta', { key: 'sandboxReduceMotion', value: sandboxReduceMotion }); updateSandboxToggles(); });
+  $('sandboxScrollSpeed').addEventListener('input', (e) => { sandboxScrollSpeed = parseInt(e.target.value) || 400; $('scrollSpeedValue').textContent = sandboxScrollSpeed + 'ms'; });
+  $('sandboxScrollSpeed').addEventListener('change', (e) => { sandboxScrollSpeed = parseInt(e.target.value) || 400; dbPut('meta', { key: 'sandboxScrollSpeed', value: sandboxScrollSpeed }); updateSandboxToggles(); });
   $('sandboxHighContrast').addEventListener('click', () => { sandboxHighContrast = !sandboxHighContrast; dbPut('meta', { key: 'sandboxHighContrast', value: sandboxHighContrast }); updateSandboxToggles(); });
   $('sandboxBigSeek').addEventListener('click', () => { sandboxBigSeek = !sandboxBigSeek; dbPut('meta', { key: 'sandboxBigSeek', value: sandboxBigSeek }); updateSandboxToggles(); });
   $('sandboxInvertColors').addEventListener('click', () => { sandboxInvertColors = !sandboxInvertColors; dbPut('meta', { key: 'sandboxInvertColors', value: sandboxInvertColors }); updateSandboxToggles(); });
@@ -6405,6 +6421,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   });
   function persistSandboxMeta(){
     const bools = { sandboxCompactRows, sandboxHideArt, sandboxDurOnTabs, sandboxLargeTouch, sandboxShowPlayCount, sandboxCompactNowbar, sandboxAlwaysSearch, sandboxReduceMotion, sandboxHighContrast, sandboxBigSeek, sandboxInvertColors, sandboxCompactHeader, sandboxBigArt, sandboxShowAlbum };
+    dbPut('meta', { key: 'sandboxScrollSpeed', value: sandboxScrollSpeed });
     Object.keys(bools).forEach(k => dbPut('meta', { key: k, value: !!bools[k] }));
     dbPut('meta', { key: 'sandboxNowbarSize', value: sandboxNowbarSize });
     dbPut('meta', { key: 'actionPillOrder', value: actionPillOrder });
@@ -6461,6 +6478,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     dbPut('meta', { key: 'sandboxAlwaysSearch', value: false });
     dbPut('meta', { key: 'sandboxNowbarSize', value: 100 });
     dbPut('meta', { key: 'sandboxReduceMotion', value: false });
+    dbPut('meta', { key: 'sandboxScrollSpeed', value: 400 });
     dbPut('meta', { key: 'sandboxHighContrast', value: false });
     dbPut('meta', { key: 'sandboxBigSeek', value: false });
     dbPut('meta', { key: 'sandboxInvertColors', value: false });
@@ -8347,6 +8365,8 @@ function startLyricsAutoScroll() {
       if(sandboxNowbarSizeRow) sandboxNowbarSize = parseInt(sandboxNowbarSizeRow.value) || 100;
       const sandboxReduceMotionRow = metaRows.find(r => r.key === 'sandboxReduceMotion');
       if(sandboxReduceMotionRow) sandboxReduceMotion = !!sandboxReduceMotionRow.value;
+      const sandboxScrollSpeedRow = metaRows.find(r => r.key === 'sandboxScrollSpeed');
+      if(sandboxScrollSpeedRow && sandboxScrollSpeedRow.value) sandboxScrollSpeed = parseInt(sandboxScrollSpeedRow.value) || 400;
       const sandboxHighContrastRow = metaRows.find(r => r.key === 'sandboxHighContrast');
       if(sandboxHighContrastRow) sandboxHighContrast = !!sandboxHighContrastRow.value;
       const sandboxBigSeekRow = metaRows.find(r => r.key === 'sandboxBigSeek');
@@ -15177,6 +15197,7 @@ exportState.compressPct = 100;
             sandboxHighContrast: sandboxHighContrast,
             sandboxInvertColors: sandboxInvertColors,
             sandboxReduceMotion: sandboxReduceMotion,
+            sandboxScrollSpeed: sandboxScrollSpeed,
             sandboxShowAlbum: sandboxShowAlbum,
 
             // Additional visual / audio
@@ -16471,7 +16492,7 @@ exportState.compressPct = 100;
   // up on Android WebView and move the entire page.
   function smoothScrollIn(container, target, dur){
     if(!container || !target) return;
-    dur = dur || 280;
+    dur = dur || (typeof sandboxScrollSpeed !== 'undefined' ? sandboxScrollSpeed : 400);
     var cRect = container.getBoundingClientRect();
     var tRect = target.getBoundingClientRect();
     var targetScroll = container.scrollTop + (tRect.top - cRect.top) - (cRect.height/2) + (tRect.height/2);
