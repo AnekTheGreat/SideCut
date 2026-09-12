@@ -14955,6 +14955,14 @@ function _fallbackCopy(text){
             }catch(_eCap){
               console.warn('Capacitor stream export failed forcing in-memory blob:', _eCap);
               doneCap = false;
+              // Delete the partial cache file so the fallback doesn't share an incomplete zip
+              try{
+                var _cap2 = (window.Capacitor && window.Capacitor.Plugins) || null;
+                var _FS2 = _cap2 ? _cap2.Filesystem : null;
+                if(_FS2 && typeof _FS2.deleteFile === 'function'){
+                  _FS2.deleteFile({ path: filename, directory: 'CACHE' }).catch(function(){});
+                }
+              }catch(_delErr){}
             }
             if(doneCap){
               streamedToFile = true;
@@ -22108,13 +22116,6 @@ if(!isDiscover) stopDiscoverPreview();
   // so the bubble always shows a real picture instead of staying blank.
   var __artFetchBusy = {};
   function ensurePinnedArtistArt(){
-    // Auto-fetch is back per user request (v56.1.7): fill in pictures for
-    // pinned artists that don't have one yet, using Apple iTunes/Music (artist
-    // lookup first, then their top song's cover as a fallback). A photo/art the
-    // user set manually is ALWAYS respected — we only fill the gap. `photo`
-    // and `art` are written together so both render paths (tile background and
-    // the no-art fallback) see the picture.
-
     if(!pinnedArtists || !pinnedArtists.length) return;
     pinnedArtists.forEach(function(p){
       if(p && p.photo && p.art && p.art.length > 5) return;
@@ -22124,9 +22125,13 @@ if(!isDiscover) stopDiscoverPreview();
       var apply = function(artRaw){
         if(!artRaw) return;
         var art = String(artRaw).indexOf('/100x100bb.jpg') !== -1 ? String(artRaw).replace('/100x100bb.jpg','/400x400bb.jpg') : String(artRaw);
-        var hit = null;
-        for(var i=0;i<pinnedArtists.length;i++){ if(primaryArtistName(pinnedArtists[i].name).toLowerCase().trim() === key){ hit = pinnedArtists[i]; break; } }
-        if(hit && art && (!hit.art || hit.art === '' || hit.art === null)){ hit.art = art; hit.photo = art; savePinnedArtists(); renderPinnedArtists(); }
+        // Apply directly to p — no re-lookup that can silently fail
+        if(art && (!p.art || p.art === '' || p.art === null)){
+          p.art = art;
+          p.photo = art;
+          savePinnedArtists();
+          renderPinnedArtists();
+        }
       };
       var want = key.replace(/[^a-z0-9]/g,'');
       function findPick(results){
@@ -22155,7 +22160,10 @@ if(!isDiscover) stopDiscoverPreview();
           var s = findPick(d2.results);
           if(s) apply(s.artworkUrl100);
         });
-      }).catch(function(){}).finally(function(){ __artFetchBusy[key] = false; });
+      }).catch(function(){
+        // On failure, clear busy flag so next render can retry
+        __artFetchBusy[key] = false;
+      }).finally(function(){ __artFetchBusy[key] = false; });
     });
   }
 
