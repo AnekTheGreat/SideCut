@@ -615,6 +615,15 @@
               // staged bundle applies at launch — immediately for users who
               // never chose "Install later", on close for those who did —
               // instead of sitting behind the update sheet forever.
+              // Auto-apply on boot if nothing is playing — instant update, no tap needed
+              if(!somethingIsPlaying() && !wantDeferredInstall(String(nb.version))){
+                log('auto-applying staged ' + nb.version + ' on boot (nothing playing)');
+                try{ localStorage.setItem('sidecut_ota_applied', String(nb.version)); }catch(_e){}
+                showSheet({ phase: 'installing', version: nb.version, title: 'Updating to SideCut ' + nb.version + '…' });
+                clearSheet();
+                setTimeout(function(){ try{ U.set({ id: nb.id }); }catch(e){ log('auto-apply set failed: ' + e); } }, 450);
+                return;
+              }
               applyInBackground(U, nb);
               if(wantDeferredInstall(String(nb.version))) return; // installs on close — don't nag
               if(sheetRefs && sheetRefs.card.style.display === 'block') return; // sheet already up
