@@ -1,5 +1,40 @@
 # SideCut — repository memory
 
+## v56.10 (Sep 12, 2026): crossfaded mix downloads + reorder-on-desktop + add-toast fix
+- **Menu layers (critical gotcha for automation)**: the LIBRARY/PLAYLIST header ⋮ is
+  `#listMoreBtn` (wired at ~13868 → `openListMoreMenu(ids, isAllSongs, canDelete)` ~12770), and
+  it hosts Export/Download to phone/Download crossfaded mix/Manage playlists/Find duplicates/
+  Delete all songs. The PER-SONG ⋮ (`.track .kebab-btn`) hosts a DIFFERENT sheet
+  (`#songActionsList` = openSongActions/song 3-dot ~14359): Favorites/Play next/Vibe/Lyrics/
+  Edit/Crop song (+ reorder entry when `!isAllSongsView`)/Fetch cover/Set cover/Song info/
+  Add to playlist/Delete/Add to albums. Both menus share the same `songActionsBackdrop` and
+  `songActionsList` container — don't get them confused when testing.
+- **`downloadCrossfadedMix(ids, isAllSongs)`** (~15422): decodes every track (skips
+  undecodable), overlaps them by the user's `crossfadeSeconds` (clamped 0.25–12s, capped at
+  half of either adjacent song), equal-power fades (`sqrt` ramps, single pass with offset
+  math), peak-normalizes to 0.55, then `scEncodeAudio` → MP3 when `lamejs` is loaded (CDN,
+  `~300` seconds threshold unnecessary — always MP3 if available), else WAV. Caps: 400 songs /
+  3600s MP3 / 720s WAV. Saves via `writeBlobToDir` (native) or `<a download>` (browser).
+  Verified end-to-end in Chromium: two 3s WAVs → "All Songs - Crossfaded Mix.mp3" (valid
+  `0xFF 0xFB` MP3), anchor captured the filename.
+- **Reorder on desktop**: song 3-dot menu now gets "Reorder this playlist" (`!=isAllSongsView`,
+  calls `enterReorderMode()`); Home greeting row has a visible `#homeReorderBtn` → the same
+  `openHbReorderConfirm()` used by the hold gesture. **`attachLongPressChoice` no longer
+  cancels on `pointerleave`** — that killed desktop mouse holds (cursor drift off the row
+  cancelled instantly); `pointermove` threshold + `pointerup`/`pointercancel` still clean up,
+  and the hold correctly no-ops while in reorder/select mode.
+- **Add-toast false failure fixed**: line ~4274 `let playlists` + `let userAlbums` were
+  swallowed into a `// comment\n  let ...` literal (garbled transport) → `saveMeta()` threw
+  `ReferenceError: userAlbums is not defined` → `__handleFileImport`'s catch showed the
+  failure toast despite success. Real newline restored. Heuristic to find siblings of this
+  class: grep for `\\n +let |\\n +const |\\n +function ` (zero hits now).
+- **Crop preview robustness**: `cropStartPreview` now plays the selected slice DIRECTLY from a
+  live `AudioContext` + `BufferSource` (primary path; `cropPreviewLive`/`cropPreviewLiveCtx`
+  vars), with the offline-render + `scEncodeAudio` path demoted to a fallback. This makes
+  preview work even when `OfflineAudioContext` is flaky or the MP3 encoder CDN is blocked.
+  Verified: selection drag shrinks the kept window, Preview button toggles "⏸ Stop preview".
+- Version 56.9 → 56.10 (sw cache sidecut-shell-v56.10). Changelog entry at head. Pushed 38ed499.
+
 ## MANDATORY RULES
 - **ALWAYS verify syntax before pushing.** After ANY edit to index.html, run:
   ```
