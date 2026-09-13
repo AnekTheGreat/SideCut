@@ -23526,61 +23526,58 @@ if(!isDiscover) stopDiscoverPreview();
     updateNotifBadge();
   }
 
-  // Backfill artwork for pinned artists saved without a picture (e.g. older
-  // pins). Uses the iTunes musicArtist lookup first; if an artist has no
-  // dedicated artist art, falls back to that artist's most popular song cover
-  // so the bubble always shows a real picture instead of staying blank.
-  var __artFetchBusy = {};
+  // Backfill artwork for pinned artists that have no picture yet.
+  // Uses ONLY the user's own library — finds a track by the artist and uses
+  // its cover art (converted to a data URL for reliability). No network fetches.
+  // Never overwrites a user-picked photo (data: URL in p.photo).
   function ensurePinnedArtistArt(){
     if(!pinnedArtists || !pinnedArtists.length) return;
     pinnedArtists.forEach(function(p){
-      // Skip if the user set a photo OR art is already a valid URL — never overwrite a user-picked picture
-      if(p && (p.photo || (p.art && p.art.length > 5 && (p.art.indexOf('http') === 0 || p.art.indexOf('data:') === 0)))) return;
+      // Skip if user explicitly set a photo
+      if(p && p.photo && String(p.photo).indexOf('data:') === 0) return;
+      // Skip if art is already a working data: URL
+      if(p && p.art && String(p.art).indexOf('data:') === 0) return;
       var key = primaryArtistName(p.name).toLowerCase().trim();
-      if(!key || __artFetchBusy[key]) return;
-      __artFetchBusy[key] = true;
-      var apply = function(artRaw){
-        if(!artRaw) return;
-        var art = String(artRaw).indexOf('/100x100bb.jpg') !== -1 ? String(artRaw).replace('/100x100bb.jpg','/400x400bb.jpg') : String(artRaw);
-        // Apply directly to p — but never overwrite a user-picked photo
-        if(art && (!p.art || p.art === '' || p.art === null)){
-          p.art = art;
-          if(!p.photo) p.photo = art;
-          savePinnedArtists();
-          renderPinnedArtists();
+      if(!key) return;
+
+      // Find a track by this artist in the library
+      try{
+        for(var i=0; i<allTracks.length; i++){
+          var t = allTracks[i];
+          if(!t) continue;
+          var ta = primaryArtistName(t.artist||'').toLowerCase().trim();
+          if(ta !== key) continue;
+          // Prefer artBlob (local cover art), fall back to artUrl
+          var src = null;
+          if(t.artBlob && typeof URL !== 'undefined'){
+            try{ src = URL.createObjectURL(t.artBlob); }catch(_e){}
+          }
+          if(!src && t.artUrl) src = t.artUrl;
+          if(!src) continue;
+          // Convert to a downscaled data URL so it works offline
+          var img = new Image();
+          if(src.indexOf('blob:') === 0 || src.indexOf('data:') === 0){} else { img.crossOrigin = 'anonymous'; }
+          img.onload = function(){
+            try{
+              var sc = Math.min(1, 256 / Math.max(img.naturalWidth||1, img.naturalHeight||1));
+              var w = Math.max(1, Math.round((img.naturalWidth||256)*sc));
+              var h = Math.max(1, Math.round((img.naturalHeight||256)*sc));
+              var cv = document.createElement('canvas');
+              cv.width = w; cv.height = h;
+              cv.getContext('2d').drawImage(img, 0, 0, w, h);
+              var du = cv.toDataURL('image/jpeg', 0.7);
+              if(du && du.length > 100){
+                p.art = du;
+                if(!p.photo) p.photo = du;
+                savePinnedArtists();
+                renderPinnedArtists();
+              }
+            }catch(_e){}
+          };
+          img.src = src;
+          break; // only need one track
         }
-      };
-      var want = key.replace(/[^a-z0-9]/g,'');
-      function findPick(results){
-        var first = null, matched = null;
-        (results||[]).forEach(function(x){
-          if(!x || !x.artworkUrl100) return;
-          if(!first) first = x;
-          if(matched) return;
-          var xk = primaryArtistName(x.artistName||'').toLowerCase().trim().replace(/[^a-z0-9]/g,'');
-          if(xk === want || (xk && want && (xk.indexOf(want) !== -1 || want.indexOf(xk) !== -1))) matched = x;
-        });
-        return matched || first;
-      }
-      // Route 1: iTunes artist lookup.
-      var u1 = 'https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=musicArtist&limit=25';
-      fetch(u1).then(function(resp){
-        return resp && resp.ok ? resp.json() : {results:[]};
-      }).then(function(d1){
-        var pick = findPick(d1.results);
-        if(pick && pick.artworkUrl100){ apply(pick.artworkUrl100); return; }
-        // Route 2: representative cover from the artist's top songs.
-        var u2 = 'https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=song&limit=25';
-        return fetch(u2).then(function(resp){
-          return resp && resp.ok ? resp.json() : {results:[]};
-        }).then(function(d2){
-          var s = findPick(d2.results);
-          if(s) apply(s.artworkUrl100);
-        });
-      }).catch(function(){
-        // On failure, clear busy flag so next render can retry
-        __artFetchBusy[key] = false;
-      }).finally(function(){ __artFetchBusy[key] = false; });
+      }catch(_e){}
     });
   }
 
@@ -23624,17 +23621,28 @@ if(!isDiscover) stopDiscoverPreview();
       var m = st.match(/url\((["']?)(.+?)\1\)/);
       if(!m) return;
       var srcUrl = m[2];
+      // Only test-load remote HTTP URLs — data: and blob: URLs always work.
+      // Don't replace user-set photos just because a transient network error
+      // fires onerror during paint.
       if(String(srcUrl||'').indexOf('data:') === 0) return;
-      var img = new Image();
-      img.onerror = function(){
-        var nm = chip.dataset.name || '?';
-        tile.style.backgroundImage = 'none';
-        tile.style.background = 'linear-gradient(135deg,#ff4f7e,#7a5cff)';
-        tile.style.display = 'flex'; tile.style.alignItems = 'center'; tile.style.justifyContent = 'center';
-        tile.style.fontSize = '22px'; tile.style.fontWeight = '700'; tile.style.color = '#fff';
-        tile.textContent = nm.trim().charAt(0).toUpperCase();
-      };
-      img.src = srcUrl;
+      if(String(srcUrl||'').indexOf('blob:') === 0) return;
+      // Give the image a moment to paint before testing — some WebViews fire
+      // onerror during the initial paint even when the URL is valid.
+      setTimeout(function(){
+        var img = new Image();
+        img.onerror = function(){
+          // Only replace if the tile still has the same broken URL
+          var curSt = tile.getAttribute('style') || '';
+          if(curSt.indexOf(srcUrl) === -1) return;
+          var nm = chip.dataset.name || '?';
+          tile.style.backgroundImage = 'none';
+          tile.style.background = 'linear-gradient(135deg,#ff4f7e,#7a5cff)';
+          tile.style.display = 'flex'; tile.style.alignItems = 'center'; tile.style.justifyContent = 'center';
+          tile.style.fontSize = '22px'; tile.style.fontWeight = '700'; tile.style.color = '#fff';
+          tile.textContent = nm.trim().charAt(0).toUpperCase();
+        };
+        img.src = srcUrl;
+      }, 2000);
     });
     try{ if(typeof ensurePinnedArtistArt === 'function') ensurePinnedArtistArt(); }catch(_ea){}
     try{ if(typeof window.wirePinnedReorder === 'function') window.wirePinnedReorder(); }catch(_wr){}
