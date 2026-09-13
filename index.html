@@ -23213,7 +23213,7 @@ if(!isDiscover) stopDiscoverPreview();
               var cv = document.createElement('canvas');
               cv.width = w; cv.height = h;
               cv.getContext('2d').drawImage(img, 0, 0, w, h);
-              var dataUrl = cv.toDataURL('image/jpeg', 0.7);
+              var dataUrl = cv.toDataURL('image/jpeg', 0.6);
               if(dataUrl && dataUrl.length > 64){
                 applyPaPhoto(artistName, dataUrl);
               } else {
@@ -23284,7 +23284,7 @@ if(!isDiscover) stopDiscoverPreview();
                 var cv = document.createElement('canvas');
                 cv.width = w; cv.height = h;
                 cv.getContext('2d').drawImage(imgEl, 0, 0, w, h);
-                var out = cv.toDataURL('image/jpeg', 0.7);
+                var out = cv.toDataURL('image/jpeg', 0.6);
                 applyPaPhoto(artistName, out && out.length > 64 ? out : raw);
               }catch(_e){ applyPaPhoto(artistName, raw); }
             };
@@ -23367,18 +23367,18 @@ if(!isDiscover) stopDiscoverPreview();
   function ensurePinnedArtistArt(){
     if(!pinnedArtists || !pinnedArtists.length) return;
     pinnedArtists.forEach(function(p){
-      // Skip only if BOTH photo AND art are set and art looks like a valid URL (not stale/broken)
-      if(p && p.photo && p.art && p.art.length > 5 && (p.art.indexOf('http') === 0 || p.art.indexOf('data:') === 0)) return;
+      // Skip if the user set a photo OR art is already a valid URL — never overwrite a user-picked picture
+      if(p && (p.photo || (p.art && p.art.length > 5 && (p.art.indexOf('http') === 0 || p.art.indexOf('data:') === 0)))) return;
       var key = primaryArtistName(p.name).toLowerCase().trim();
       if(!key || __artFetchBusy[key]) return;
       __artFetchBusy[key] = true;
       var apply = function(artRaw){
         if(!artRaw) return;
         var art = String(artRaw).indexOf('/100x100bb.jpg') !== -1 ? String(artRaw).replace('/100x100bb.jpg','/400x400bb.jpg') : String(artRaw);
-        // Apply directly to p — no re-lookup that can silently fail
+        // Apply directly to p — but never overwrite a user-picked photo
         if(art && (!p.art || p.art === '' || p.art === null)){
           p.art = art;
-          p.photo = art;
+          if(!p.photo) p.photo = art;
           savePinnedArtists();
           renderPinnedArtists();
         }
