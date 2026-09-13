@@ -12969,10 +12969,12 @@ function startLyricsAutoScroll() {
       createAlbBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; createAlbumFromPlaylist(); });
       list.appendChild(createAlbBtn);
 
-      const reorderMenuBtn = document.createElement('button');
-      reorderMenuBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 15h18v-2H3v2zm0-4h18V9H3v2zm0-6v2h18V5H3z"/></svg> Reorder this playlist`;
-      reorderMenuBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; enterReorderMode(); });
-      list.appendChild(reorderMenuBtn);
+      if(libraryMode !== 'albums'){
+        const reorderMenuBtn = document.createElement('button');
+        reorderMenuBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 15h18v-2H3v2zm0-4h18V9H3v2zm0-6v2h18V5H3z"/></svg> Reorder this playlist`;
+        reorderMenuBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; enterReorderMode(); });
+        list.appendChild(reorderMenuBtn);
+      }
 
       const mixKebabBtn = document.createElement('button');
       mixKebabBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg> Mix this playlist`;
@@ -13995,7 +13997,7 @@ function _fallbackCopy(text){
         </div>
         <div class="pane-actions" style="gap:4px;">
           <select id="sortSelect" style="background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); border-radius:8px; font-size:11px; padding:5px 8px; font-family:'JetBrains Mono',monospace; white-space:nowrap;">
-            <option value="default">Playlist order</option>
+            <option value="default">${libraryMode === "albums" ? "Album order" : "Playlist order"}</option>
             <option value="alpha">A–Z</option>
             <option value="artist">By artist</option>
             <option value="album">By album</option>
@@ -14770,7 +14772,7 @@ function _fallbackCopy(text){
     // Reorder this playlist — reachable with a single click on desktop, where
     // the hold gesture on a song row is awkward with a mouse. Available on real
     // playlists and All Songs (they have a stored order); Unsorted is a filter.
-    if(canReorderPlaylist()){
+    if(canReorderPlaylist() && libraryMode !== 'albums'){
       const reorderSongBtn = document.createElement('button');
       reorderSongBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h2v18H9zm4 0h2v18h-2z"/></svg> Reorder this playlist`;
       reorderSongBtn.addEventListener('click', () => {
@@ -23649,7 +23651,7 @@ if(!isDiscover) stopDiscoverPreview();
       return;
     }
     list.innerHTML = pinnedArtists.map(a => {
-      const bg = a.photo || a.art ? `background-image:url("${a.photo || a.art}");` : 'background:var(--bg-raised);';
+      const bg = a.photo || a.art ? `background-image:url(${a.photo || a.art});` : 'background:var(--bg-raised);';
       return `<div class="pinned-artist-chip" data-name="${escapeHtml(a.name)}" style="flex:0 0 auto;width:72px;text-align:center;cursor:pointer;position:relative;padding-top:4px;">
         <button class="unpin-artist" data-name="${escapeHtml(a.name)}" title="Unpin ${escapeHtml(a.name)}" style="position:absolute;top:0;right:-4px;width:17px;height:17px;border-radius:50%;background:rgba(0,0,0,0.65);color:#fff;border:1px solid var(--line);font-size:10px;line-height:16px;cursor:pointer;z-index:3;">×</button>
         ${a.photo || a.art
@@ -23729,7 +23731,7 @@ if(!isDiscover) stopDiscoverPreview();
     list.innerHTML = recent.map(rel => {
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date + 'T00:00:00Z').getTime())/86400000) : null;
       const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
-      const bg = rel.art ? `background-image:url("${rel.art}");` : 'background:var(--bg-raised);';
+      const bg = rel.art ? `background-image:url(${rel.art});` : 'background:var(--bg-raised);';
       const playBtn = rel.previewUrl
         ? `<button class="nr-play discover-preview-btn" data-preview="${escapeHtml(rel.previewUrl)}" data-art="${escapeHtml(rel.art || '')}" data-title="${escapeHtml(rel.title || '')}" data-artist="${escapeHtml(rel.artist || '')}" title="Play 30s preview" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:50%; width:30px; height:30px; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;"><svg viewBox="0 0 24 24" style="width:14px; height:14px;"><path d="M8 5v14l11-7z"/></svg></button>`
         : '';
