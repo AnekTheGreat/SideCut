@@ -11980,13 +11980,12 @@ function startLyricsAutoScroll() {
         tx.objectStore(storeName).put(value);
         tx.oncomplete = () => {
           resolve();
-          // Data-loss safety net: meta writes (playlists, counters, pins) also
-          // mark the file snapshot dirty so it stays current.
           try{ if(storeName === 'meta' && window.__scSnapDirty) window.__scSnapDirty(); }catch(e){}
         };
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => { console.error('dbPut tx error:', tx.error); reject(tx.error); };
+        tx.onabort = () => { console.error('dbPut tx aborted:', tx.error); reject(tx.error || new Error('aborted')); };
       });
-    }catch(e){ console.error('Storage save failed', e); }
+    }catch(e){ console.error('Storage save failed', e); throw e; }
   }
   async function dbDelete(storeName, key){
     try{
@@ -23127,8 +23126,10 @@ if(!isDiscover) stopDiscoverPreview();
     updateNotifBadge();
   }
   function savePinnedArtists(){
-    dbPut('meta', { key: 'pinnedArtists', value: pinnedArtists });
-    dbPut('meta', { key: 'pinnedReleases', value: pinnedReleases });
+    return Promise.all([
+      dbPut('meta', { key: 'pinnedArtists', value: pinnedArtists }),
+      dbPut('meta', { key: 'pinnedReleases', value: pinnedReleases })
+    ]);
   }
   // Let the user set their own artist picture — persists in pinnedArtists[].art,
   // which is saved to meta and survives app updates (never wiped).
@@ -23200,13 +23201,13 @@ if(!isDiscover) stopDiscoverPreview();
           if(url.indexOf('blob:') !== 0 && url.indexOf('data:') !== 0) img.crossOrigin = 'anonymous';
           img.onload = function(){
             try{
-              var s = Math.min(1, 256 / Math.max(img.naturalWidth||1, img.naturalHeight||1));
+              var s = Math.min(1, 128 / Math.max(img.naturalWidth||1, img.naturalHeight||1));
               var w = Math.max(1, Math.round((img.naturalWidth||256)*s));
               var h = Math.max(1, Math.round((img.naturalHeight||256)*s));
               var cv = document.createElement('canvas');
               cv.width = w; cv.height = h;
               cv.getContext('2d').drawImage(img, 0, 0, w, h);
-              var dataUrl = cv.toDataURL('image/jpeg', 0.85);
+              var dataUrl = cv.toDataURL('image/jpeg', 0.7);
               if(dataUrl && dataUrl.length > 64){
                 applyPaPhoto(artistName, dataUrl);
               } else {
@@ -23242,10 +23243,14 @@ if(!isDiscover) stopDiscoverPreview();
           break;
         }
       }
-      savePinnedArtists();
       renderPinnedArtists();
-      toast('Artist picture saved — it stays across updates.', 2600);
-    }catch(_e){}
+      savePinnedArtists().then(function(){
+        toast('Artist picture saved — it stays across updates.', 2600);
+      }).catch(function(e){
+        console.error('Photo save failed:', e);
+        toast('Save failed — try a smaller image.', 3500);
+      });
+    }catch(e){ console.error('applyPaPhoto error:', e); }
     var m = document.getElementById('paPhotoModal');
     if(m) m.remove();
   }
@@ -23273,7 +23278,7 @@ if(!isDiscover) stopDiscoverPreview();
                 var cv = document.createElement('canvas');
                 cv.width = w; cv.height = h;
                 cv.getContext('2d').drawImage(imgEl, 0, 0, w, h);
-                var out = cv.toDataURL('image/jpeg', 0.85);
+                var out = cv.toDataURL('image/jpeg', 0.7);
                 applyPaPhoto(artistName, out && out.length > 64 ? out : raw);
               }catch(_e){ applyPaPhoto(artistName, raw); }
             };
