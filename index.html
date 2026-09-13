@@ -14254,7 +14254,6 @@ function _fallbackCopy(text){
           + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.artist || 'Unknown artist') + (albTotalStr ? ' \u00b7 ' + albTotalStr : '') + '</div>'
           + '</div>'
           + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'
-          + '<button class="grip-handle" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg></button>';
         card.appendChild(hdr);
         var body = document.createElement('div');
         body.id = cardId;
@@ -14297,11 +14296,131 @@ function _fallbackCopy(text){
         card.dataset.albumName = aName;
         card.dataset.id = aName;
         pane.appendChild(card);
-        // Wire up grip drag for album reorder
+        // Hold-to-reorder: long-press on the album card starts drag
         (function(){
-          var gripBtn = card.querySelector('.grip-handle');
-          if(!gripBtn) return;
-          attachAlbumGripDrag(card, gripBtn, aName);
+          var holdTimer = null;
+          card.addEventListener('pointerdown', function(e){
+            if(e.target.closest('button') || e.target.closest('img') || e.target.closest('a')) return;
+            var sx = e.clientX, sy = e.clientY;
+            holdTimer = setTimeout(function(){
+              holdTimer = null;
+              try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
+              // Enter reorder mode visually
+              card.style.opacity = '0.85';
+              card.style.zIndex = '30';
+              card.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
+              card.style.transition = 'none';
+              var pane = card.parentElement;
+              var siblings = Array.from(pane.querySelectorAll('[data-album-name]'));
+              var startIndex = siblings.indexOf(card);
+              var rowHeight = card.getBoundingClientRect().height;
+              var startY = e.clientY;
+              var currentIndex = startIndex;
+              function updateDragIndex(dy){
+                var crossed = 0;
+                for(var i=0;i<siblings.length;i++){
+                  if(siblings[i] === card) continue;
+                  var sibMid = (i + 0.5) * rowHeight;
+                  var rowMid = (startIndex + 0.5) * rowHeight + dy;
+                  if(i < startIndex && rowMid < sibMid) crossed--;
+                  if(i > startIndex && rowMid > sibMid) crossed++;
+                }
+                var ni = Math.max(0, Math.min(siblings.length - 1, startIndex + crossed));
+                if(ni !== currentIndex){
+                  currentIndex = ni;
+                  siblings.forEach(function(s, i){
+                    if(s === card) return;
+                    var shift = 0;
+                    if(currentIndex > startIndex && i > startIndex && i <= currentIndex) shift = -rowHeight;
+                    else if(currentIndex < startIndex && i < startIndex && i >= currentIndex) shift = rowHeight;
+                    s.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+                  });
+                }
+              }
+              siblings.forEach(function(s){ if(s !== card) s.style.transition = 'transform 0.18s ease'; });
+              var lastPointer = e;
+              var autoScrollRAF = null;
+              function onMove(ev){
+                lastPointer = ev;
+                var dy = ev.clientY - startY;
+                card.style.transform = 'translateY(' + dy + 'px)';
+                updateDragIndex(dy);
+                var paneRect = pane.getBoundingClientRect();
+                var edge = 56, dir = 0;
+                if(ev.clientY - paneRect.top < edge) dir = -1;
+                else if(paneRect.bottom - ev.clientY < edge) dir = 1;
+                if(dir !== 0){
+                  if(!autoScrollRAF){
+                    var step = function(){
+                      var r = pane.getBoundingClientRect();
+                      var p = lastPointer;
+                      var still = false;
+                      if(dir < 0 && p && p.clientY - r.top < edge) still = true;
+                      if(dir > 0 && p && r.bottom - p.clientY < edge) still = true;
+                      if(!still){ autoScrollRAF = null; return; }
+                      pane.scrollTop += dir * 8;
+                      startY -= dir * 8;
+                      card.style.transform = 'translateY(' + (lastPointer.clientY - startY) + 'px)';
+                      updateDragIndex(lastPointer.clientY - startY);
+                      autoScrollRAF = requestAnimationFrame(step);
+                    };
+                    autoScrollRAF = requestAnimationFrame(step);
+                  }
+                } else if(autoScrollRAF){ cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
+              }
+              function onUp(){
+                if(autoScrollRAF){ cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
+                card.style.opacity = '';
+                card.style.zIndex = '';
+                card.style.boxShadow = '';
+                card.style.transition = 'transform 0.15s ease';
+                var finalShift = (currentIndex - startIndex) * rowHeight;
+                card.style.transform = 'translateY(' + finalShift + 'px)';
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onCancel);
+                setTimeout(function(){
+                  var keys = siblings.map(function(s){ return s.dataset.albumName; });
+                  var moved = keys.splice(startIndex, 1)[0];
+                  keys.splice(currentIndex, 0, moved);
+                  var newObj = {};
+                  keys.forEach(function(k){ if(userAlbums[k]) newObj[k] = userAlbums[k]; });
+                  userAlbums = newObj;
+                  saveMeta();
+                  renderList();
+                }, 150);
+              }
+              function onCancel(){
+                if(autoScrollRAF){ cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
+                card.style.opacity = '';
+                card.style.zIndex = '';
+                card.style.boxShadow = '';
+                card.style.transition = '';
+                card.style.transform = '';
+                siblings.forEach(function(s){ s.style.transform = ''; s.style.transition = ''; });
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onCancel);
+              }
+              document.addEventListener('pointermove', onMove);
+              document.addEventListener('pointerup', onUp);
+              document.addEventListener('pointercancel', onCancel);
+            }, 350);
+            function cancelHold(){
+              clearTimeout(holdTimer);
+              holdTimer = null;
+              card.removeEventListener('pointermove', checkMove);
+              card.removeEventListener('pointerup', cancelHold);
+              card.removeEventListener('pointercancel', cancelHold);
+            }
+            function checkMove(ev){
+              var dx = ev.clientX - sx, dy = ev.clientY - sy;
+              if(dx*dx + dy*dy > 100) cancelHold();
+            }
+            card.addEventListener('pointermove', checkMove, { passive: true });
+            card.addEventListener('pointerup', cancelHold, { passive: true });
+            card.addEventListener('pointercancel', cancelHold, { passive: true });
+          });
         })();
         if(!collapsed){
           alb.tracks.forEach(function(tid, ti){
