@@ -461,7 +461,7 @@
   .pane-header > div:first-child{ flex-shrink:0; }
   .pane-header-spacer{ flex:1 0 auto; min-width:16px; }
   .pane-actions{ display:flex; gap:8px; flex-shrink:0; }
-  .pane-actions #mixBtn,.pane-actions #reorderModeBtn{ display:none; }
+  .pane-actions #mixBtn{ display:none; } .pane-actions #reorderModeBtn{ display:flex; }
   .icon-btn{
     background:none; border:1px solid var(--line); color:var(--ink-dim);    width:32px;     height: 32px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;
     transition: transform 0.1s ease, background 0.2s ease, border-color 0.25s ease, color 0.25s ease;
@@ -9049,7 +9049,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.10';
+  const APP_VERSION = '56.10.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9316,6 +9316,12 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '56.10.1', date: 'September 12, 2026 · 8:10 PM EDT', title: 'Reorder songs now works from All Songs', items: [
+    'Holding down a song anywhere — including the All Songs list — now offers "Reorder songs": the hold sheet and the song ⋮ menu both show it',
+    'Reorder mode works on All Songs just like playlists: drag the ≡ handle or tap the ▲/▼ arrows, and your custom order is saved to the device',
+    'The library headline band also gained a pencil reorder button next to the sort dropdown for playlists and All Songs alike',
+    'The "Unsorted" tab stays non-reorderable — it is a live filter, not a stored list — and now tells you why if you tap Reorder there',
+  ] },
   { version: '56.10', date: 'September 12, 2026 · 7:45 PM EDT', title: 'Crossfaded mix downloads + reorder on computer + adding songs fixed', items: [
     'New "Download crossfaded mix" in the playlist/library ⋮ menu: blends the whole list into one continuous DJ-style file using your crossfade setting (Settings → Playback), with equal-power fades and MP3 export',
     'Reorder songs popup now works on computer: the song ⋮ menu gained "Reorder this playlist" so you can rearrange tracks with a single click instead of a long-press',
@@ -13679,13 +13685,21 @@ function _fallbackCopy(text){
 
   // ---------------- List rendering ----------------
   // Shared entry into reorder mode for both the header toggle and the
-  // long-press "Reorder this playlist" choice. Reorder only makes sense in
-  // true playlist order, and the list's effective sort is
-  // perPlaylistSort[activePlaylist] (when that feature is on), NOT currentSort —
-  // so we reset the *effective* sort to 'default', otherwise reordering writes
-  // a new order that getSortedIds immediately re-sorts away on the next render,
-  // making it look like nothing moved (and the grip handles never even show).
+  // long-press / ⋮ "Reorder this playlist" choices. Reorder needs a stored
+  // order, so it's available on real playlists AND All Songs (which keeps the
+  // library's insertion order), but not the virtual Unsorted filter. The
+  // list's effective sort is perPlaylistSort[activePlaylist] (when that
+  // feature is on), NOT currentSort — so we reset the *effective* sort to
+  // 'default' first, otherwise the new order is re-sorted away on the next
+  // render and it looks like nothing moved (and the grip handles never show).
+  function canReorderPlaylist(){
+    return activePlaylist !== UNSORTED_VIEW;
+  }
   function enterReorderMode(){
+    if(!canReorderPlaylist()){
+      toast('Unsorted is a filter — open a playlist or All Songs to reorder.');
+      return;
+    }
     const effective = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
     if(effective !== 'default'){
       const arr = playlists[activePlaylist];
@@ -13810,7 +13824,7 @@ function _fallbackCopy(text){
 
       $('selectExportBtn').addEventListener('click', exportSelected);
       $('selectDeleteBtn').addEventListener('click', deleteSelected);
-    } else if(reorderMode && !isAllSongs && effectiveSort === 'default'){
+    } else if(reorderMode && effectiveSort === 'default'){
       header.innerHTML = `
         <div><h2>Reordering</h2><div class="sub">Drag the ≡ handle to move a song</div></div>
         <div class="pane-header-spacer"></div>
@@ -13840,7 +13854,7 @@ function _fallbackCopy(text){
             <option value="recent">Recently added</option>
           </select>
           <button class="icon-btn" id="mixBtn" title="Mix this playlist" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg></button>
-          ${!isAllSongs ? `<button class="icon-btn" id="reorderModeBtn" title="Reorder tracks" style="flex-shrink:0;${reorderMode ? 'background:var(--coral); color:#161616; border-color:var(--coral);' : ''}}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>` : ''}
+          ${canReorderPlaylist() ? `<button class="icon-btn" id="reorderModeBtn" title="Reorder tracks" style="flex-shrink:0;${reorderMode ? 'background:var(--coral); color:#161616; border-color:var(--coral);' : ''}}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>` : ''}
           <button class="icon-btn" id="listMoreBtn" title="More options" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>
         </div>
       `;
@@ -13857,9 +13871,10 @@ function _fallbackCopy(text){
         renderList();
       });
       $('mixBtn').addEventListener('click', () => startMix(ids));
-      if(!isAllSongs) $('reorderModeBtn').addEventListener('click', () => {
-        // Reorder only makes sense in true playlist order. The list's effective
-        // sort is perPlaylistSort[activePlaylist] (when that feature is on), NOT
+      if(canReorderPlaylist()) $('reorderModeBtn').addEventListener('click', () => {
+        // Reorder only makes sense where there's a stored order (real playlists
+        // + All Songs). The list's effective sort is
+        // perPlaylistSort[activePlaylist] (when that feature is on), NOT
         // currentSort — so we have to reset the *effective* sort to 'default',
         // otherwise reordering writes a new order that getSortedIds immediately
         // re-sorts away on the next render, making it look like nothing moved.
@@ -14256,7 +14271,7 @@ function _fallbackCopy(text){
         }
       }
       const row = document.createElement('div');
-      const showReorder = reorderMode && !isAllSongs;
+      const showReorder = reorderMode;
       row.className = 'track' + (selectMode && selectedIds.has(id) ? ' selected' : '');
       row.dataset.id = id;
       const artStyle = t.artUrl ? `background-image:url('${t.artUrl}');` : '';
@@ -14396,9 +14411,9 @@ function _fallbackCopy(text){
     });
     list.appendChild(selectBtn);
 
-    if(!isAllSongsView){
+    if(canReorderPlaylist()){
       const reorderBtn = document.createElement('button');
-      reorderBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h2v18H9zm4 0h2v18h-2z"/></svg> Reorder this playlist`;
+      reorderBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h2v18H9zm4 0h2v18h-2z"/></svg> Reorder songs`;
       reorderBtn.addEventListener('click', () => {
         $('holdChoiceBackdrop').style.display = 'none';
         enterReorderMode();
@@ -14482,10 +14497,9 @@ function _fallbackCopy(text){
     list.appendChild(cropBtn);
 
     // Reorder this playlist — reachable with a single click on desktop, where
-    // the 3.5s hold gesture on a song row is awkward with a mouse. Only makes
-    // sense in a real playlist (not All Songs / Unsorted), and it resets the
-    // sort to playlist order so the drag/arrow controls mean something.
-    if(!isAllSongsView){
+    // the hold gesture on a song row is awkward with a mouse. Available on real
+    // playlists and All Songs (they have a stored order); Unsorted is a filter.
+    if(canReorderPlaylist()){
       const reorderSongBtn = document.createElement('button');
       reorderSongBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h2v18H9zm4 0h2v18h-2z"/></svg> Reorder this playlist`;
       reorderSongBtn.addEventListener('click', () => {
