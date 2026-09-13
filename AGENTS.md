@@ -1,5 +1,24 @@
 # SideCut — repository memory
 
+## v56.10.1 (Sep 12, 2026): reorder songs works from All Songs (hold, kebab, header)
+- **User complaint**: "Like holding down the song the reorder function doesn't show" — the
+  reorder entry points were gated on `activePlaylist !== 'All Songs'/'__unsorted__'`
+  (`!isAllSongsView` at 14399/14488, `!isAllSongs` header gates, `showReorder = reorderMode && !isAllSongs`),
+  so the user holding a song in the main **All Songs** list saw no Reorder option anywhere.
+- **Fix**: reorder is a stored order, so it's valid on real playlists AND All Songs (whose
+  array holds the library insertion order and only ever gets missing tracks APPENDED at boot
+  ~12091 — a saved custom order survives reload; verified by CDP). Added
+  `canReorderPlaylist()` (false only for `UNSORTED_VIEW`, a live filter — toasts an
+  explanation instead), and un-gated: hold sheet "Reorder songs" (label changed to match),
+  song ⋮ "Reorder this playlist", header `#reorderModeBtn` render + handler, reorder-mode
+  header + per-row grip/arrow rendering (`showReorder = reorderMode`, header
+  `else if(reorderMode && effectiveSort === 'default')`). CSS: `.pane-actions #reorderModeBtn`
+  was `display:none` (v56.1 moved reorder into kebab) — now `display:flex` so the pencil icon
+  shows next to the sort dropdown; `#mixBtn` stays hidden.
+- **Verified in Chromium**: hold sheet + kebab + header pencil all enter reorder mode on All
+  Songs (Reordering header, 31 grips), ▲/▼ moves persist through `Page.reload`.
+- Version 56.10 → 56.10.1, sw.js sidecut-shell-v56.10.1. Commit 0f90bcc pushed to main.
+
 ## v56.10 (Sep 12, 2026): crossfaded mix downloads + reorder-on-desktop + add-toast fix
 - **Menu layers (critical gotcha for automation)**: the LIBRARY/PLAYLIST header ⋮ is
   `#listMoreBtn` (wired at ~13868 → `openListMoreMenu(ids, isAllSongs, canDelete)` ~12770), and
