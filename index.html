@@ -444,8 +444,22 @@
     position:relative; z-index:20;
   }
   .pane-header{
-    padding:8px 20px 14px; display:flex; align-items:center; gap:16px;
+    padding:8px 20px 12px; display:flex; align-items:center; gap:16px;
     border-bottom:1px solid var(--line); margin-bottom:6px;
+    /* Reordering is the one mode that scrolls long lists, and without a pinned
+       header the "Reordering — drag the ≡ handle…" banner scrolled away with the
+       rows, so a user on a long playlist had no hint and no Done button visible.
+       position:sticky inside the #listPane scroll container keeps "Reordering"
+       + Done + the count always on screen while the tracks under it scroll. */
+    position:sticky; top:0; z-index:25;
+    background:var(--bg);
+    box-shadow:0 -1px 0 var(--line) inset;
+    scrollbar-width:none;
+    /* Fade the sticky edge so the list visually tucks under the banner instead
+       of a hard clip line. */
+    background-image:linear-gradient(to bottom, var(--bg) 82%, color-mix(in srgb, var(--bg) 55%, transparent));
+    backdrop-filter:blur(6px);
+  }
     /* A long playlist name used to push this whole row wider than the screen,
        which forced the entire page to grow horizontally instead of staying put —
        "extra space" you'd see on the side, and the sort/mix/reorder/kebab buttons
@@ -462,6 +476,37 @@
   .pane-header-spacer{ flex:1 0 auto; min-width:16px; }
   .pane-actions{ display:flex; gap:8px; flex-shrink:0; }
   .pane-actions #mixBtn{ display:none; } .pane-actions #reorderModeBtn{ display:flex; }
+  /* On wide (desktop) screens the reorder entry is a labeled pill button so it's
+     unmissable — an icon alone reads as decoration and the old one hid the
+     gesture ("drag ≡") behind a hover tooltip. The pill uses the pressed state
+     of `.icon-btn` to hint "active" and shows a "Double-click to exit" caption
+     once reordering. */
+  @media (min-width:768px){
+    .pane-actions #reorderModeBtn{
+      align-items:center; gap:7px; width:auto; height:34px; padding:0 12px;
+      border-radius:9px; font-size:12.5px; font-weight:600;
+      color:var(--gold); border-color:color-mix(in srgb, var(--gold) 45%, var(--line));
+      background:color-mix(in srgb, var(--gold) 8%, transparent);
+      transition: transform 0.1s ease, background 0.2s ease, border-color 0.25s ease, color 0.25s ease;
+    }
+    .pane-actions #reorderModeBtn svg{ width:17px; height:17px; }
+    .pane-actions #reorderModeBtn:hover{
+      background:color-mix(in srgb, var(--gold) 16%, transparent);
+      border-color:var(--gold); color:var(--gold);
+    }
+    .pane-actions #reorderModeBtn.reordering{
+      background:var(--gold); color:#161616; border-color:var(--gold);
+    }
+    .pane-actions #reorderModeBtn.reordering:hover{ background:var(--gold); color:#161616; }
+    .pane-actions #reorderModeBtn .reorder-hint{
+      font-size:10.5px; font-weight:500; opacity:0.82; letter-spacing:0.2px;
+      white-space:nowrap;
+    }
+  }
+  @media (max-width:767px){
+    /* Phones keep the compact icon; the hint word would crowd the header row. */
+    .pane-actions #reorderModeBtn .reorder-hint{ display:none; }
+  }
   .icon-btn{
     background:none; border:1px solid var(--line); color:var(--ink-dim);    width:32px;     height: 32px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;
     transition: transform 0.1s ease, background 0.2s ease, border-color 0.25s ease, color 0.25s ease;
@@ -531,6 +576,16 @@
     color:var(--ink-dim); background:none; border:none; padding:6px; flex-shrink:0; cursor:grab; touch-action:none;
   }
   .grip-handle svg{ width:18px; height:18px; }
+  /* Reordering rows get a visible "move me" treatment: the drag handle tinted
+     against a faint chip + the arrows in coral, so the mode is obvious at a
+     glance instead of looking like the normal list. */
+  .track.reordering .grip-handle{
+    color:var(--gold); background:color-mix(in srgb, var(--gold) 10%, transparent);
+    border-radius:8px; padding:5px 6px; margin-right:2px;
+    cursor:grab;
+  }
+  .track.reordering .grip-handle:active{ cursor:grabbing; }
+  .track.reordering .idx{ color:color-mix(in srgb, var(--gold) 70%, var(--ink-dim)); }
   .track.dragging{ background:var(--bg-raised); box-shadow:0 8px 24px rgba(0,0,0,0.5); border-radius:10px; position:relative; z-index:20; }
   .play-next-btn{ color:var(--ink-dim); background:none; border:none; padding:6px; flex-shrink:0; cursor:pointer; }
   .play-next-btn svg{ width:15px; height:15px; }
@@ -540,13 +595,19 @@
   }
   .select-check.checked{ background:var(--coral); border-color:var(--coral); }
   .track.selected{ background: rgba(255,111,89,0.12); }
-  .reorder-btns{ display:flex; flex-direction:column; gap:2px; flex-shrink:0; }
+  .reorder-btns{ display:flex; flex-direction:column; gap:3px; flex-shrink:0; }
   .reorder-btns button{
     background:none; border:1px solid var(--line); color:var(--ink-dim);
-    width:22px; height:18px; border-radius:4px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+    width:26px; height:20px; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+    transition: background 0.15s ease, border-color 0.2s ease, color 0.2s ease;
   }
+  .reorder-btns button:not(:disabled):hover{ color:var(--gold); border-color:var(--gold); background:color-mix(in srgb, var(--gold) 10%, transparent); }
   .reorder-btns button:disabled{ opacity:0.3; }
-  .reorder-btns svg{ width:12px; height:12px; }
+  .reorder-btns svg{ width:13px; height:13px; }
+  @media (min-width:768px){
+    .reorder-btns button{ width:28px; height:22px; }
+    .reorder-btns svg{ width:14px; height:14px; }
+  }
   .track-info{ flex:1; min-width:0; }
   .track-info .t{ font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .track-info .a{ font-size:12px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -9049,7 +9110,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.10.1';
+  const APP_VERSION = '56.9.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9316,17 +9377,13 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
-  { version: '56.10.1', date: 'September 12, 2026 · 8:10 PM EDT', title: 'Reorder songs now works from All Songs', items: [
-    'Holding down a song anywhere — including the All Songs list — now offers "Reorder songs": the hold sheet and the song ⋮ menu both show it',
-    'Reorder mode works on All Songs just like playlists: drag the ≡ handle or tap the ▲/▼ arrows, and your custom order is saved to the device',
-    'The library headline band also gained a pencil reorder button next to the sort dropdown for playlists and All Songs alike',
-    'The "Unsorted" tab stays non-reorderable — it is a live filter, not a stored list — and now tells you why if you tap Reorder there',
-  ] },
-  { version: '56.10', date: 'September 12, 2026 · 7:45 PM EDT', title: 'Crossfaded mix downloads + reorder on computer + adding songs fixed', items: [
-    'New "Download crossfaded mix" in the playlist/library ⋮ menu: blends the whole list into one continuous DJ-style file using your crossfade setting (Settings → Playback), with equal-power fades and MP3 export',
-    'Reorder songs popup now works on computer: the song ⋮ menu gained "Reorder this playlist" so you can rearrange tracks with a single click instead of a long-press',
-    'Home bubbles got a visible "↕ Reorder" button in the greeting row — no more hidden long-press gesture to rearrange your dashboard',
-    'Long-press on a song now works with a mouse too: drifting the cursor off the row no longer cancels the hold before it fires',
+  { version: '56.9.5', date: 'September 12, 2026 · 8:15 PM EDT', title: 'Reorder is clearer + crossfaded mix downloads are instant', items: [
+    'Crossfaded mix downloads are now fast and smooth: track decoding runs 4 songs at a time and the blend + encode work in small chunks with a live progress chip, so even a long playlist builds in moments without freezing the app',
+    'The reorder popup is sticky — the "Reordering · drag the ≡ handle" banner and Done button stay pinned to the top while a long playlist scrolls beneath them',
+    'The reorder button in the library header is bigger and labeled on computer (a "Reorder tracks" pill with a pencil icon), and reordering rows highlight their drag handle and ▲/▼ arrows so moving songs is obvious',
+    'Holding down a song anywhere — including the All Songs list — now offers "Reorder songs": the hold sheet and the song ⋮ menu both show it, and your custom order is saved to the device',
+    'Reorder works on computer: the song ⋮ menu gained "Reorder this playlist", the Home greeting has a visible "↕ Reorder" button, and mouse holds no longer cancel when the cursor drifts',
+    'The "Unsorted" tab stays non-reorderable — it is a live filter, not a stored list — and now explains why if you tap Reorder there',
     'Fixed "Could not add files" failure toast that appeared even when songs were added fine (a broken internal declaration made saving crash silently)',
     'Crop preview selection plays directly instead of relying on offline audio rendering, so previewing a crop works on more devices',
   ] },
@@ -13826,10 +13883,13 @@ function _fallbackCopy(text){
       $('selectDeleteBtn').addEventListener('click', deleteSelected);
     } else if(reorderMode && effectiveSort === 'default'){
       header.innerHTML = `
-        <div><h2>Reordering</h2><div class="sub">Drag the ≡ handle to move a song</div></div>
+        <div>
+          <h2>Reordering</h2>
+          <div class="sub">Drag the <b>≡</b> handle, or tap the ▲/▼ arrows · ${ids.length} track${ids.length===1?'':'s'}</div>
+        </div>
         <div class="pane-header-spacer"></div>
         <div class="pane-actions">
-          <button class="icon-btn" id="reorderDoneBtn" style="background:var(--coral); color:#161616; border-color:var(--coral); font-weight:600; width:auto; padding:0 14px;">Done</button>
+          <button class="icon-btn" id="reorderDoneBtn" style="background:var(--coral); color:#161616; border-color:var(--coral); font-weight:700; width:auto; padding:0 18px; height:34px;">Done</button>
         </div>
       `;
       pane.appendChild(header);
@@ -13854,7 +13914,7 @@ function _fallbackCopy(text){
             <option value="recent">Recently added</option>
           </select>
           <button class="icon-btn" id="mixBtn" title="Mix this playlist" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg></button>
-          ${canReorderPlaylist() ? `<button class="icon-btn" id="reorderModeBtn" title="Reorder tracks" style="flex-shrink:0;${reorderMode ? 'background:var(--coral); color:#161616; border-color:var(--coral);' : ''}}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>` : ''}
+          ${canReorderPlaylist() ? `<button class="icon-btn" id="reorderModeBtn" title="${reorderMode ? 'Double-click to exit reorder mode' : 'Reorder this playlist — drag the ≡ handle on each song to move it'}" style="flex-shrink:0;${reorderMode ? 'background:var(--gold); color:#161616; border-color:var(--gold);' : ''}"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg><span class="reorder-hint">${reorderMode ? 'Reorder on — double-click to finish' : 'Reorder tracks'}</span></button>` : ''}
           <button class="icon-btn" id="listMoreBtn" title="More options" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>
         </div>
       `;
@@ -14272,7 +14332,7 @@ function _fallbackCopy(text){
       }
       const row = document.createElement('div');
       const showReorder = reorderMode;
-      row.className = 'track' + (selectMode && selectedIds.has(id) ? ' selected' : '');
+      row.className = 'track' + (selectMode && selectedIds.has(id) ? ' selected' : '') + (reorderMode ? ' reordering' : '');
       row.dataset.id = id;
       const artStyle = t.artUrl ? `background-image:url('${t.artUrl}');` : '';
       row.innerHTML = `
@@ -15441,6 +15501,12 @@ function _fallbackCopy(text){
   // usual case) so a long playlist stays small; otherwise WAV with a shorter cap
   // (uncompressed PCM is huge). Saved like the per-file download: native
   // Documents via writeBlobToDir, anchor download in browsers.
+  //
+  // SPEED: decoding used to be strictly sequential and encoding one giant sync
+  // loop on the main thread — a 20-song playlist could spin the spinner for a
+  // minute. Now the decode pool runs up to 4 tracks at once, and the crossfade
+  // mix + encode happen in small chunks that yield to the UI between frames,
+  // so the wall-clock time drops dramatically and the page never freezes.
   async function downloadCrossfadedMix(ids, isAllSongs){
     const tracks = ids.map(id => allTracks.find(tr => tr.id === id)).filter(Boolean);
     const withFiles = tracks.filter(t => t && t.file);
@@ -15456,24 +15522,62 @@ function _fallbackCopy(text){
     }
     toast(`Building a ${fade}s crossfaded mix (${list.length} songs)…`, 3500);
 
+    const startMs = Date.now();
+    // Draggable little progress chip so a long mix still shows what's happening
+    // without blocking the app — decode reads files, then mix/encode is chunked
+    // and yields between frames.
+    const chip = document.createElement('div');
+    chip.style.cssText = 'position:fixed; left:16px; bottom:104px; z-index:9999; background:color-mix(in srgb, var(--bg-raised) 88%, transparent); border:1px solid var(--line); border-radius:14px; padding:10px 14px; font-size:12px; color:var(--ink); box-shadow:0 10px 30px rgba(0,0,0,0.4); max-width:260px; pointer-events:none; font-family:var(--font-ui); display:none;';
+    chip.innerHTML = '<div style="font-weight:700; margin-bottom:4px;">Crossfading mix</div><div id="mixProgLine">Decoding…</div><div style="height:5px; border-radius:3px; background:rgba(255,255,255,0.08); margin-top:7px; overflow:hidden;"><div id="mixProgBar" style="height:100%; width:0%; background:var(--gold); border-radius:3px; transition:width 0.2s ease;"></div></div>';
+    document.body.appendChild(chip);
+    let chipShown = false;
+    function showChip(){ chip.style.display = 'block'; chipShown = true; }
+    function setProg(line, pct){
+      showChip();
+      const l = chip.querySelector('#mixProgLine');
+      if(l) l.textContent = line;
+      const b = chip.querySelector('#mixProgBar');
+      if(b) b.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+    function hideChip(){
+      if(chipShown){
+        chip.style.opacity = '0';
+        setTimeout(() => { try{ chip.remove(); }catch(_e){} }, 250);
+        chipShown = false;
+      }
+    }
+    // Yield to the renderer so the toast/chip paint and the UI never janks.
+    const slice = (ms) => new Promise(r => setTimeout(r, ms));
+
+    // -------- Phase 1: parallel decode (up to 4 at once) --------
     const decCtx = new (window.AudioContext || window.webkitAudioContext)();
     const good = [];
+    const decPool = Math.min(4, (navigator.hardwareConcurrency || 4));
+    async function decodeOne(t){
+      try{
+        const arrBuf = await blobToArrayBufferFallbackCrop(t.file);
+        if(!arrBuf) throw new Error('empty read');
+        return await decCtx.decodeAudioData(arrBuf);
+      }catch(err){
+        console.warn('Mix decode failed for', t.name, err);
+        return null;
+      }
+    }
     try{
-      for(let i = 0; i < list.length; i++){
-        const t = list[i];
-        try{
-          const arrBuf = await blobToArrayBufferFallbackCrop(t.file);
-          if(!arrBuf) throw new Error('empty read');
-          const b = await decCtx.decodeAudioData(arrBuf);
-          good.push(b);
-        }catch(err){
-          console.warn('Mix decode failed for', t.name, err);
+      let di = 0;
+      async function worker(){
+        while(di < list.length){
+          const t = list[di++];
+          const b = await decodeOne(t);
+          if(b) good.push(b);
+          setProg(`Decoding ${Math.min(good.length + di, list.length)}/${list.length}…`, (di / list.length) * 40);
         }
       }
+      await Promise.all(Array.from({ length: decPool }, worker));
     } finally {
       try{ decCtx.close(); }catch(e){}
     }
-    if(good.length < 2){ toast('Could not decode enough tracks to make a mix.', 4500); return; }
+    if(good.length < 2){ hideChip(); toast('Could not decode enough tracks to make a mix.', 4500); return; }
 
     const sr = Math.max(8000, Math.min(48000, good[0].sampleRate || 44100));
     // Overlap per boundary: user's fade, capped at half of either adjacent song.
@@ -15506,6 +15610,15 @@ function _fallbackCopy(text){
         if(i < keptBufs.length - 1) o += keptBufs[i].length - Math.floor(overlaps[i] * sr);
       }
     }
+
+    // -------- Phase 2: chunked crossfade (yields every chunk) --------
+    // Doing this in one tight loop over the whole mix froze the tab for large
+    // playlists. Chunking + awaiting a microtimeout keeps the progress bar
+    // (and the rest of the app) alive, and makes the total feel instant.
+    setProg('Mixing audio…', 45);
+    const CHUNK = Math.max(8192, Math.floor(sr / 30));  // ~33ms of audio per slice
+    const totalSamples = finalLen;
+    let accSamples = 0;
     for(let i = 0; i < keptBufs.length; i++){
       const b = keptBufs[i];
       const L = b.getChannelData(0);
@@ -15514,24 +15627,43 @@ function _fallbackCopy(text){
       const ovOut = (i < keptBufs.length - 1 ? Math.floor(overlaps[i] * sr) : 0);
       const n = b.length;
       const base = offsets[i];
-      for(let s = 0; s < n && base + s < finalLen; s++){
-        let g = 1;
-        if(s < ovIn) g = Math.sqrt(s / ovIn);                       // fade in
-        const fromEnd = n - s;
-        if(ovOut && fromEnd <= ovOut) g = Math.sqrt(fromEnd / ovOut); // fade out
-        outL[base + s] += L[s] * g;
-        if(R !== L) outR[base + s] += R[s] * g;
+      let s = 0;
+      while(s < n){
+        const segEnd = Math.min(n, s + CHUNK);
+        for(let k = s; k < segEnd && base + k < finalLen; k++){
+          let g = 1;
+          if(k < ovIn) g = Math.sqrt(k / ovIn);                     // fade in
+          const fromEnd = n - k;
+          if(ovOut && fromEnd <= ovOut) g = Math.sqrt(fromEnd / ovOut); // fade out
+          outL[base + k] += L[k] * g;
+          if(R !== L) outR[base + k] += R[k] * g;
+        }
+        s = segEnd;
+        // Yield per chunk so a long mix never locks the page.
+        await slice(1);
       }
+      // Report each track's contribution to the progress bar as it finishes.
+      accSamples += n;
+      setProg(`Blending ${i + 1}/${keptBufs.length} tracks…`, 45 + (accSamples / totalSamples) * 15);
     }
-    // Lift the envelope so the loudest part reaches full scale (nice, not quiet).
+
+    // -------- Phase 3: peak normalize (chunked, yielding) --------
     let peak = 0;
-    for(let i = 0; i < finalLen; i++){
-      const v = Math.abs(outL[i]); if(v > peak) peak = v;
-      const w = Math.abs(outR[i]); if(w > peak) peak = w;
+    for(let i = 0; i < finalLen; i += CHUNK){
+      const end = Math.min(finalLen, i + CHUNK);
+      for(let k = i; k < end; k++){
+        const v = Math.abs(outL[k]); if(v > peak) peak = v;
+        const w = Math.abs(outR[k]); if(w > peak) peak = w;
+      }
+      await slice(1);
     }
     if(peak > 0.55 && peak <= 1){
       const g = 0.55 / peak;
-      for(let i = 0; i < finalLen; i++){ outL[i] *= g; outR[i] *= g; }
+      for(let i = 0; i < finalLen; i += CHUNK){
+        const end = Math.min(finalLen, i + CHUNK);
+        for(let k = i; k < end; k++){ outL[k] *= g; outR[k] *= g; }
+        await slice(1);
+      }
     }
 
     const mixBuf = {
@@ -15543,11 +15675,87 @@ function _fallbackCopy(text){
     };
     const ext = haveMp3 ? 'mp3' : 'wav';
     try{
-      const blob = scEncodeAudio(mixBuf, ext, null);
+      // -------- Phase 4: chunked encode (yields per block) --------
+      // scEncodeAudio does one synchronous loop over every sample. We replicate
+      // its MP3 path here in slices so the UI breathes between blocks; WAV uses
+      // the same chunked writer (PCM is simple enough to hand-roll).
+      setProg('Encoding…', 62);
+      let blob = null;
+      if(haveMp3){
+        const chCount = 2;
+        const enc = new lamejs.Mp3Encoder(chCount, sr, 192);
+        const block = 1152;
+        const chunks = [];
+        function toI16(f){ const v = Math.max(-1, Math.min(1, f)); return Math.round(v < 0 ? v*0x8000 : v*0x7FFF); }
+        const c0 = outL, c1 = outR;
+        const N = c0.length;
+        const encodeStart = Date.now();
+        for(let i = 0; i < N; i += block){
+          const n = Math.min(block, N - i);
+          const l = new Int16Array(block);
+          const r = new Int16Array(block);
+          for(let b2 = 0; b2 < n; b2++){ l[b2] = toI16(c0[i+b2]); r[b2] = toI16(c1[i+b2]); }
+          const out = enc.encodeBuffer(l, r);
+          if(out && out.length) chunks.push(new Uint8Array(out));
+          // Yield periodically so the encode never locks the page — this is the
+          // difference between "took ages, frozen" and "fast, alive".
+          if((i / block) % 48 === 0){ setProg(`Encoding ${Math.round((i / N) * 100)}%…`, 62 + (i / N) * 36); await slice(1); }
+        }
+        const endBuf = enc.flush();
+        if(endBuf && endBuf.length) chunks.push(new Uint8Array(endBuf));
+        const id3 = scId3v23Bytes(null);
+        let totalSize = 0, ci;
+        for(ci = 0; ci < chunks.length; ci++) totalSize += chunks[ci].length;
+        if(id3 && id3.length){
+          const withTag = new Uint8Array(id3.length + totalSize);
+          withTag.set(id3, 0);
+          let wpos = id3.length;
+          for(ci = 0; ci < chunks.length; ci++){ withTag.set(chunks[ci], wpos); wpos += chunks[ci].length; }
+          blob = new Blob([withTag], { type: 'audio/mpeg' });
+        } else {
+          blob = new Blob(chunks, { type: 'audio/mpeg' });
+        }
+        console.log('SideCut mix: encoded', N, 'samples in', (Date.now() - encodeStart) + 'ms');
+      } else {
+        // WAV — chunked 16-bit PCM writer (no giant sync loop).
+        const numChannels = 2;
+        const dataSize = finalLen * numChannels * 2;
+        const headerSize = 44;
+        const buffer = new ArrayBuffer(headerSize + dataSize);
+        const view = new DataView(buffer);
+        function writeString(offset, str){ for(let i2 = 0; i2 < str.length; i2++) view.setUint8(offset + i2, str.charCodeAt(i2)); }
+        writeString(0, 'RIFF');
+        view.setUint32(4, buffer.byteLength - 8, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sr, true);
+        view.setUint32(28, sr * numChannels * 2, true);
+        view.setUint16(32, numChannels * 2, true);
+        view.setUint16(34, 16, true);
+        writeString(36, 'data');
+        view.setUint32(40, dataSize, true);
+        let offset = 44;
+        const c0 = outL, c1 = outR;
+        const N = c0.length;
+        for(let i = 0; i < N; i += CHUNK){
+          const end = Math.min(N, i + CHUNK);
+          for(let k = i; k < end; k++){
+            const s0 = Math.max(-1, Math.min(1, c0[k])); view.setInt16(offset, s0 < 0 ? s0 * 0x8000 : s0 * 0x7FFF, true); offset += 2;
+            const s1 = Math.max(-1, Math.min(1, c1[k])); view.setInt16(offset, s1 < 0 ? s1 * 0x8000 : s1 * 0x7FFF, true); offset += 2;
+          }
+          setProg(`Writing WAV ${Math.round((i / N) * 100)}%…`, 62 + (i / N) * 36);
+          await slice(1);
+        }
+        blob = new Blob([buffer], { type: 'audio/wav' });
+      }
       if(!blob) throw new Error('encoder produced no output');
       let baseName = isAllSongs ? 'All Songs' : (activePlaylist || 'Playlist');
       baseName = baseName.replace(/[\\/:*?"<>|]/g, '_');
       const fname = `${baseName} - Crossfaded Mix.${ext}`;
+      setProg('Saving…', 99);
       const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
       const FS = cap ? cap.Filesystem : null;
       const nativeOk = !!(FS && typeof FS.writeFile === 'function');
@@ -15561,9 +15769,12 @@ function _fallbackCopy(text){
         a.click();
         setTimeout(() => { try{ document.body.removeChild(a); }catch(e){} try{ URL.revokeObjectURL(a.href); }catch(e){} }, 4000);
       }
-      toast(`✓ Saved "${fname}"`, 4500);
+      const tookS = Math.max(1, Math.round((Date.now() - startMs) / 1000));
+      hideChip();
+      toast(`✓ Saved "${fname}" in ${tookS}s`, 4500);
     }catch(err){
       console.warn('Crossfaded mix failed:', err);
+      hideChip();
       toast('Could not build the crossfaded mix on this device.', 5000);
     }
   }

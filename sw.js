@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sidecut-shell-v56.10.1';
+const CACHE_NAME = 'sidecut-shell-v56.9.5';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
