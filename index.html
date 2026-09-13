@@ -16037,57 +16037,10 @@ function _fallbackCopy(text){
       // Fallback: in-memory generateAsync → Blob → anchor download (older
       // webviews / iOS Safari / the APK shell). On a RangeError there we tell
       // the user to export a smaller batch.
-      const hasFSA = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
+      // FSA (showSaveFilePicker) skipped — it opens a file dialog before the zip
+      // is built, creating a 0-byte file. The in-memory blob path below handles
+      // save/share correctly after the zip is fully assembled.
       let streamedToFile = false;
-      if(hasFSA){
-        try{
-          let handle;
-          try{
-            handle = await window.showSaveFilePicker({
-              suggestedName: filename,
-              types: [{ description: 'Zip archive', accept: { 'application/zip': ['.zip'] } }]
-            });
-          }catch(pickErr){
-            // User cancelled the save dialog — abort the export cleanly.
-            if(pickErr && pickErr.name === 'AbortError'){ exportState.active=false; exportState.phase='done'; exportState.seen=true; return; }
-            throw pickErr;
-          }
-          const writable = await handle.createWritable();
-          // JSZip's internal stream emits chunks as Uint8Array; write each to
-          // the file handle and release it, so peak memory stays tiny.
-          await new Promise((resolve, reject) => {
-            const stream = zip.generateInternalStream({ type: 'uint8array', compression: 'STORE', streamFiles: true });
-            let written = 0;
-            stream.on('data', (data) => {
-              // data may be a Uint8Array view over a larger buffer; slice to the
-              // exact bytes so we don't keep the whole backing buffer alive.
-              const chunk = data.buffer && data.byteLength < data.buffer.byteLength
-                ? new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength))
-                : data;
-              writable.write(chunk);
-              written += chunk.byteLength;
-              var _tB1 = exportState.totalBytes || (exportState.total || 1);
-                exportState.compressPct = Math.min(99, Math.round((written / _tB1) * 100));
-                if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 250){
-                  exportState._lastCompressTick = Date.now();
-                  refreshExportNotif();
-                }
-            });
-            stream.on('end', () => { writable.close().then(resolve, reject); });
-            stream.on('error', (e) => { writable.abort().then(() => reject(e), () => reject(e)); });
-            stream.resume();
-          });
-          exportState.compressPct = 100;
-          streamedToFile = true;
-        }catch(fsaErr){
-          // FSA path failed (permission, unsupported despite feature check,
-          // interrupted) — fall through to the in-memory path as a last resort
-          // rather than failing the whole export.
-          console.warn('Streaming export to file failed, falling back to in-memory blob:', fsaErr);
-          streamedToFile = false;
-        }
-      }
-
       if(!streamedToFile){
         // Native Capacitor path: stream JSZip's chunks straight to the app's
         // cache file (append per chunk), so no giant zip Blob is ever assembled
