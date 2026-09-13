@@ -3274,6 +3274,16 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
           </div>
           <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Flips the whole color scheme (album art stays normal) — a night-mode style inversion.</div>
         </div>
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px;">Default view on boot</span>
+            <select id="sandboxDefaultViewSel" style="background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:5px 10px; font-size:12px;">
+              <option value="playlists">Playlists</option>
+              <option value="albums">Albums</option>
+            </select>
+          </div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Which view the Library tab opens to when the app starts.</div>
+        </div>
       </div>
 
       <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:8px;">
@@ -6061,6 +6071,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   let sandboxCompactHeader = false;
   let sandboxBigArt = false;
   let sandboxShowAlbum = false;
+  let sandboxDefaultView = 'playlists';
   let actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle']; // strip items in default order
   let customQuickActions = []; // {id, label, type, value} — type: 'url' | 'playlist' | 'play'
   const HOME_BUBBLE_KINDS = ['stats','notifications','newreleases','pinnedartists','library','nowplaying','topsong','artists','favorites','playlists','shortcuts'];
@@ -6244,6 +6255,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     $('sandboxBigArt').classList.toggle('active', sandboxBigArt);
     $('sandboxShowAlbum').textContent = sandboxShowAlbum ? 'On' : 'Off';
     $('sandboxShowAlbum').classList.toggle('active', sandboxShowAlbum);
+    var _sdv = $('sandboxDefaultViewSel'); if(_sdv) _sdv.value = sandboxDefaultView;
     $('nowbarSizeValue').textContent = sandboxNowbarSize + '%';
     applySandboxStyles();
   }
@@ -6643,6 +6655,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   $('sandboxHighContrast').addEventListener('click', () => { sandboxHighContrast = !sandboxHighContrast; dbPut('meta', { key: 'sandboxHighContrast', value: sandboxHighContrast }); updateSandboxToggles(); });
   $('sandboxBigSeek').addEventListener('click', () => { sandboxBigSeek = !sandboxBigSeek; dbPut('meta', { key: 'sandboxBigSeek', value: sandboxBigSeek }); updateSandboxToggles(); });
   $('sandboxInvertColors').addEventListener('click', () => { sandboxInvertColors = !sandboxInvertColors; dbPut('meta', { key: 'sandboxInvertColors', value: sandboxInvertColors }); updateSandboxToggles(); });
+    $('sandboxDefaultViewSel').addEventListener('change', (e) => { sandboxDefaultView = e.target.value; dbPut('meta', { key: 'sandboxDefaultView', value: sandboxDefaultView }); });
   $('sandboxCompactHeader').addEventListener('click', () => { sandboxCompactHeader = !sandboxCompactHeader; dbPut('meta', { key: 'sandboxCompactHeader', value: sandboxCompactHeader }); updateSandboxToggles(); });
   $('sandboxBigArt').addEventListener('click', () => { sandboxBigArt = !sandboxBigArt; dbPut('meta', { key: 'sandboxBigArt', value: sandboxBigArt }); updateSandboxToggles(); renderList(); });
   $('sandboxShowAlbum').addEventListener('click', () => { sandboxShowAlbum = !sandboxShowAlbum; dbPut('meta', { key: 'sandboxShowAlbum', value: sandboxShowAlbum }); updateSandboxToggles(); renderList(); });
@@ -6722,6 +6735,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     dbPut('meta', { key: 'homeBubbleSize', value: homeBubbleSize });
     dbPut('meta', { key: 'homeBubbleSizes', value: homeBubbleSizes });
     dbPut('meta', { key: 'homePanelHeight', value: homePanelHeight });
+    dbPut('meta', { key: 'sandboxDefaultView', value: sandboxDefaultView });
   }
   $('saveSandboxBtn').addEventListener('click', () => {
     persistSandboxMeta();
@@ -6759,6 +6773,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     dbPut('meta', { key: 'homeBubbleSize', value: 100 });
     dbPut('meta', { key: 'homeBubbleSizes', value: {} });
     dbPut('meta', { key: 'homePanelHeight', value: null });
+    sandboxDefaultView = 'playlists';
+    dbPut('meta', { key: 'sandboxDefaultView', value: 'playlists' });
     dbPut('meta', { key: 'sandboxCompactRows', value: false });
     dbPut('meta', { key: 'sandboxHideArt', value: false });
     dbPut('meta', { key: 'sandboxDurOnTabs', value: false });
@@ -9036,6 +9052,8 @@ function startLyricsAutoScroll() {
       if(sandboxBigArtRow) sandboxBigArt = !!sandboxBigArtRow.value;
       const sandboxShowAlbumRow = metaRows.find(r => r.key === 'sandboxShowAlbum');
       if(sandboxShowAlbumRow) sandboxShowAlbum = !!sandboxShowAlbumRow.value;
+      const sandboxDefaultViewRow = metaRows.find(r => r.key === 'sandboxDefaultView');
+      if(sandboxDefaultViewRow && sandboxDefaultViewRow.value) sandboxDefaultView = sandboxDefaultViewRow.value;
       const actionPillOrderRow = metaRows.find(r => r.key === 'actionPillOrder');
       if(actionPillOrderRow && Array.isArray(actionPillOrderRow.value) && actionPillOrderRow.value.length > 0) {
         actionPillOrder = actionPillOrderRow.value;
@@ -12133,7 +12151,7 @@ function startLyricsAutoScroll() {
 
 
     userAlbums = metaMap.userAlbums || {};
-    if(metaMap.libraryMode) libraryMode = metaMap.libraryMode;
+    if(sandboxDefaultView === 'albums' || sandboxDefaultView === 'playlists') libraryMode = sandboxDefaultView;
     playlists = metaMap.playlists || {
         'All Songs': allTracks.map(t => t.id)
     };
@@ -15955,7 +15973,7 @@ function _fallbackCopy(text){
     // Pre-count total bytes for the ETA/progress, then surface the bell badge.
     tracks.forEach(t => {
       if(t.file) exportState.totalBytes += t.file.size || 0;
-      if(t.artBlob) exportState.totalBytes += t.artBlob.size || 0;
+      if(!opts.songsOnly && t.artBlob) exportState.totalBytes += t.artBlob.size || 0;
     });
     refreshExportNotif();
     toast('Exporting — keep playing music! Progress shows on Home 📦', 4000);
@@ -16005,16 +16023,17 @@ function _fallbackCopy(text){
       exportState.compressStartedAt = Date.now();
       exportState.compressPct = 0;
       if(!exportState.totalBytes) exportState.totalBytes = tracks.length;
+      exportState._compressTotalInput = exportState.totalBytes;
       refreshExportNotif();
       var _compressFallback = setInterval(function(){
         if(exportState.phase !== 'compressing' || exportState.compressPct >= 100){ clearInterval(_compressFallback); return; }
-        if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 1500){
-          var elapsed = Date.now() - (exportState.compressStartedAt || Date.now());
-          var fakePct = Math.min(98, Math.round(Math.sqrt(elapsed / 100)));
-          if(fakePct > (exportState.compressPct || 0)){
-            exportState.compressPct = fakePct;
-            refreshExportNotif();
-          }
+        var elapsed = Date.now() - (exportState.compressStartedAt || Date.now());
+        // Estimate progress from time if no data events are firing
+        var fakePct = Math.min(98, Math.round((elapsed / (elapsed + 8000)) * 100));
+        if(fakePct > (exportState.compressPct || 0)){
+          exportState.compressPct = fakePct;
+          exportState._lastCompressTick = Date.now();
+          refreshExportNotif();
         }
       }, 2000);
 
@@ -16096,8 +16115,8 @@ function _fallbackCopy(text){
               }
               parts.push(chunk);
               written += chunk.byteLength;
-              var _tB2 = exportState.totalBytes || (exportState.total || 1);
-                exportState.compressPct = Math.min(99, Math.round((written / _tB2) * 100));
+              var _tB2 = exportState._compressTotalInput || exportState.totalBytes || (exportState.total || 1);
+              exportState.compressPct = Math.min(99, Math.round((written / _tB2) * 100));
                 if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick >   250){ exportState._lastCompressTick = Date.now(); refreshExportNotif(); }
             });
             stream.on('end', () => { try{ resolve(new Blob(parts, { type: 'application/zip' })); }catch(e){ reject(e); } });
