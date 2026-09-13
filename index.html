@@ -16107,7 +16107,16 @@ function _fallbackCopy(text){
               }catch(e){ fail(e); }
             });
           }
-          zipStream.on('data', function(data){ appendChunk(data); });
+          zipStream.on('data', function(data){
+            appendChunk(data);
+            // Track real byte-based progress so the bar moves smoothly
+            try{
+              if(data && data.byteLength){
+                exportState.compressPct = Math.min(99, Math.round(((exportState._capBytesWritten = (exportState._capBytesWritten||0) + data.byteLength) / (exportState._compressTotalInput || exportState.totalBytes || 1)) * 100));
+                if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 300){ exportState._lastCompressTick = Date.now(); refreshExportNotif(); }
+              }
+            }catch(_e){}
+          });
           zipStream.on('end', function(){ ended = true; finish(); });
           zipStream.on('error', fail);
           try{ zipStream.resume(); }catch(e){ fail(e); }
@@ -16179,17 +16188,8 @@ function _fallbackCopy(text){
       if(!exportState.totalBytes) exportState.totalBytes = tracks.length;
       exportState._compressTotalInput = exportState.totalBytes;
       refreshExportNotif();
-      var _compressFallback = setInterval(function(){
-        if(exportState.phase !== 'compressing' || exportState.compressPct >= 100){ clearInterval(_compressFallback); return; }
-        var elapsed = Date.now() - (exportState.compressStartedAt || Date.now());
-        // Linear time estimate: assume ~15s total compression, cap at 95% (actual completion sets 100%)
-        var fakePct = Math.min(95, Math.round((elapsed / 15000) * 100));
-        if(fakePct > (exportState.compressPct || 0)){
-          exportState.compressPct = fakePct;
-          exportState._lastCompressTick = Date.now();
-          refreshExportNotif();
-        }
-      }, 1500);
+      // No fake timer — real progress is tracked by byte counts in the
+      // Capacitor streaming path and the in-memory fallback path.
 
       // Generate the .zip. The output is written incrementally so a big library
       // never materializes as one giant in-memory buffer (the cause of
@@ -23317,7 +23317,9 @@ if(!isDiscover) stopDiscoverPreview();
       modal.className = 'modal-backdrop';
       modal.style.display = 'flex';
 
-      // Gather album covers from tracks matching this artist
+      // Gather album covers from tracks matching this artist. Convert to
+      // data URLs before showing the picker so they work on Android WebView
+      // (blob URLs from URL.createObjectURL fail in Image elements there).
       var covers = [];
       var seen = {};
       var aname = primaryArtistName(artistName).toLowerCase().trim();
@@ -23328,50 +23330,72 @@ if(!isDiscover) stopDiscoverPreview();
           var ta = primaryArtistName(t.artist||'').toLowerCase().trim();
           if(ta === aname){
             var cUrl = t.artUrl;
-            // If artUrl is missing but artBlob exists, create a temporary object URL
             if(!cUrl && t.artBlob && typeof URL !== 'undefined'){
               try{ cUrl = URL.createObjectURL(t.artBlob); }catch(_eb){}
             }
-            var coverKey = (t.album || 'single').toLowerCase().trim() + '|' + cUrl;
+            var coverKey = (t.album || 'single').toLowerCase().trim() + '|' + (cUrl||'');
             if(cUrl && !seen[coverKey]){
               seen[coverKey] = true;
-              covers.push({ url: cUrl, album: t.album || '' });
+              covers.push({ url: cUrl, album: t.album || '', dataUrl: null, blob: t.artBlob || null });
             }
           }
         }
       }catch(_e){}
 
-      var coverGrid = '';
-      if(covers.length > 0){
-        coverGrid = '<div style="font-size:12px;color:var(--ink-dim);margin:8px 0 4px;">Or pick an album cover:</div>'
-          + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">'
-          + covers.slice(0,48).map(function(c,i){
-              return '<div class="pa-cover-pick" data-url="' + escapeHtml(c.url) + '" style="width:100%;aspect-ratio:1;border-radius:8px;background-size:cover;background-position:center;border:2px solid var(--line);cursor:pointer;" title="' + escapeHtml(c.album||'Album '+(i+1)) + '"></div>';
-            }).join('')
+      // Pre-convert all covers to data URLs via FileReader, then build the picker.
+      var pending = covers.length;
+      function buildPicker(){
+        if(pending > 0) return;
+        var coverGrid = '';
+        if(covers.length > 0){
+          coverGrid = '<div style="font-size:12px;color:var(--ink-dim);margin:8px 0 4px;">Or pick an album cover:</div>'
+            + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">'
+            + covers.slice(0,48).map(function(c,i){
+                var du = c.dataUrl || '';
+                return '<div class="pa-cover-pick" data-idx="' + i + '" style="width:100%;aspect-ratio:1;border-radius:8px;background-size:cover;background-position:center;border:2px solid var(--line);cursor:pointer;' + (du ? 'background-image:url(' + du + ');' : '') + '" title="' + escapeHtml(c.album||'Album '+(i+1)) + '"></div>';
+              }).join('')
+            + '</div>';
+        }
+        modal.innerHTML = '<div class="modal" style="max-height:70vh;">'
+          + '<h3 style="font-size:15px;">Set picture for ' + escapeHtml(artistName) + '</h3>'
+          + '<button id="paPickDevice" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink);font-size:13px;cursor:pointer;text-align:left;">\ud83d\udcf7 Pick from device</button>'
+          + coverGrid
+          + '<button id="paPhotoCancel" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;cursor:pointer;margin-top:4px;">Cancel</button>'
           + '</div>';
+        document.body.appendChild(modal);
+        // Wire up album cover taps — data URL is already pre-converted
+        modal.querySelectorAll('.pa-cover-pick').forEach(function(el){
+          el.addEventListener('click', function(){
+            var idx = parseInt(el.dataset.idx, 10);
+            var c = covers[idx];
+            if(!c) return;
+            applyPaPhoto(artistName, c.dataUrl || c.url);
+          });
+        });
+        document.getElementById('paPickDevice').addEventListener('click', function(){
+          modal.remove();
+          pickDevicePhoto(artistName);
+        });
+        document.getElementById('paPhotoCancel').addEventListener('click', function(){
+          modal.remove();
+        });
+        modal.addEventListener('click', function(e){ if(e.target === modal) modal.remove(); });
       }
 
-      modal.innerHTML = '<div class="modal" style="max-height:70vh;">'
-        + '<h3 style="font-size:15px;">Set picture for ' + escapeHtml(artistName) + '</h3>'
-        + '<button id="paPickDevice" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink);font-size:13px;cursor:pointer;text-align:left;">📷 Pick from device</button>'
-        + coverGrid
-        + '<button id="paPhotoCancel" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;cursor:pointer;margin-top:4px;">Cancel</button>'
-        + '</div>';
-      document.body.appendChild(modal);
-
-      // Style cover thumbnails
-      modal.querySelectorAll('.pa-cover-pick').forEach(function(el){
-        el.style.backgroundImage = 'url(' + el.dataset.url + ')';
-      });
-
-      // Apply from album cover
-      modal.querySelectorAll('.pa-cover-pick').forEach(function(el){
-        el.addEventListener('click', function(){
-          var url = el.dataset.url;
-          if(!url) return;
-          // Downscale to 256px
+      covers.forEach(function(c){
+        if(c.blob){
+          var fr = new FileReader();
+          fr.onload = function(){ c.dataUrl = String(fr.result || ''); pending--; buildPicker(); };
+          fr.onerror = function(){ pending--; buildPicker(); };
+          try{ fr.readAsDataURL(c.blob); }catch(_e){ pending--; buildPicker(); }
+        } else if(c.url && c.url.indexOf('data:') === 0){
+          c.dataUrl = c.url;
+          pending--;
+          buildPicker();
+        } else if(c.url){
+          // HTTP URL — fetch via canvas
           var img = new Image();
-          if(url.indexOf('blob:') !== 0 && url.indexOf('data:') !== 0) img.crossOrigin = 'anonymous';
+          img.crossOrigin = 'anonymous';
           img.onload = function(){
             try{
               var s = Math.min(1, 128 / Math.max(img.naturalWidth||1, img.naturalHeight||1));
@@ -23380,29 +23404,21 @@ if(!isDiscover) stopDiscoverPreview();
               var cv = document.createElement('canvas');
               cv.width = w; cv.height = h;
               cv.getContext('2d').drawImage(img, 0, 0, w, h);
-              var dataUrl = cv.toDataURL('image/jpeg', 0.6);
-              if(dataUrl && dataUrl.length > 64){
-                applyPaPhoto(artistName, dataUrl);
-              } else {
-                applyPaPhoto(artistName, url);
-              }
-            }catch(_e){ applyPaPhoto(artistName, url); }
+              c.dataUrl = cv.toDataURL('image/jpeg', 0.6);
+            }catch(_e){}
+            pending--;
+            buildPicker();
           };
-          img.onerror = function(){ applyPaPhoto(artistName, url); };
-          img.src = url;
-        });
+          img.onerror = function(){ pending--; buildPicker(); };
+          img.src = c.url;
+        } else {
+          pending--;
+        }
       });
+      // Build immediately in case there are zero covers
+      buildPicker();
 
-      // Apply from device file
-      document.getElementById('paPickDevice').addEventListener('click', function(){
-        modal.remove();
-        pickDevicePhoto(artistName);
-      });
-
-      document.getElementById('paPhotoCancel').addEventListener('click', function(){
-        modal.remove();
-      });
-      modal.addEventListener('click', function(e){ if(e.target === modal) modal.remove(); });
+      // Device pick, cancel, and backdrop click are wired inside buildPicker()
     }catch(e){}
   };
 
@@ -23528,14 +23544,13 @@ if(!isDiscover) stopDiscoverPreview();
 
   // Backfill artwork for pinned artists that have no picture yet.
   // Uses ONLY the user's own library — finds a track by the artist and uses
-  // its cover art (converted to a data URL for reliability). No network fetches.
-  // Never overwrites a user-picked photo (data: URL in p.photo).
+  // its cover art (converted to a data URL via FileReader for reliability).
+  // No network fetches. Never overwrites a user-picked photo.
   function ensurePinnedArtistArt(){
     if(!pinnedArtists || !pinnedArtists.length) return;
     pinnedArtists.forEach(function(p){
-      // Skip if user explicitly set a photo
+      // Skip if user explicitly set a photo (data: URL)
       if(p && p.photo && String(p.photo).indexOf('data:') === 0) return;
-      // Skip if art is already a working data: URL
       if(p && p.art && String(p.art).indexOf('data:') === 0) return;
       var key = primaryArtistName(p.name).toLowerCase().trim();
       if(!key) return;
@@ -23547,34 +23562,26 @@ if(!isDiscover) stopDiscoverPreview();
           if(!t) continue;
           var ta = primaryArtistName(t.artist||'').toLowerCase().trim();
           if(ta !== key) continue;
-          // Prefer artBlob (local cover art), fall back to artUrl
-          var src = null;
-          if(t.artBlob && typeof URL !== 'undefined'){
-            try{ src = URL.createObjectURL(t.artBlob); }catch(_e){}
-          }
-          if(!src && t.artUrl) src = t.artUrl;
-          if(!src) continue;
-          // Convert to a downscaled data URL so it works offline
-          var img = new Image();
-          if(src.indexOf('blob:') === 0 || src.indexOf('data:') === 0){} else { img.crossOrigin = 'anonymous'; }
-          img.onload = function(){
-            try{
-              var sc = Math.min(1, 256 / Math.max(img.naturalWidth||1, img.naturalHeight||1));
-              var w = Math.max(1, Math.round((img.naturalWidth||256)*sc));
-              var h = Math.max(1, Math.round((img.naturalHeight||256)*sc));
-              var cv = document.createElement('canvas');
-              cv.width = w; cv.height = h;
-              cv.getContext('2d').drawImage(img, 0, 0, w, h);
-              var du = cv.toDataURL('image/jpeg', 0.7);
-              if(du && du.length > 100){
+          // Prefer artBlob (local cover art) — convert via FileReader for
+          // Android WebView reliability (blob URLs don't work in Image there)
+          if(t.artBlob){
+            var fr = new FileReader();
+            fr.onload = function(){
+              var du = String(fr.result || '');
+              if(du && du.length > 100 && du.indexOf('data:') === 0){
                 p.art = du;
                 if(!p.photo) p.photo = du;
                 savePinnedArtists();
                 renderPinnedArtists();
               }
-            }catch(_e){}
-          };
-          img.src = src;
+            };
+            try{ fr.readAsDataURL(t.artBlob); }catch(_fe){}
+          } else if(t.artUrl && t.artUrl.indexOf('data:') === 0){
+            p.art = t.artUrl;
+            if(!p.photo) p.photo = t.artUrl;
+            savePinnedArtists();
+            renderPinnedArtists();
+          }
           break; // only need one track
         }
       }catch(_e){}
