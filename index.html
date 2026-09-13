@@ -22276,7 +22276,7 @@ function _renderAhFromData(artistAlbums){
           html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
           html += '<span style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(artist) + '</span>';
           html += '<span class="dp-si-count" style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + singles.length + ' single' + (singles.length!==1?'s':'') + '</span>';
-          html += '<span class="dp-si-refetch" data-artist="' + escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span>';
+          html += '<span class="dp-si-refetch" data-artist="' + escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span><span class="dp-si-deep-refetch" data-artist="' + escapeHtml(artist) + '" title="Refetch ALL singles (including removed)" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,80,80,0.12);color:#ff6b6b;font-size:11px;cursor:pointer;flex-shrink:0;margin-left:1px;">⚡</span>';
           html += '</div>';
           html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
           for(var sri=0; sri<singles.length; sri++){
@@ -27649,7 +27649,7 @@ window.__refetchSingles = async function(){
     html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
     html += '<span style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(artist) + '</span>';
     html += '<span class="dp-si-count" style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + singles.length + ' single' + (singles.length!==1?'s':'') + '</span>';
-    html += '<span class="dp-si-refetch" data-artist="' + window.escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span>';
+    html += '<span class="dp-si-refetch" data-artist="' + window.escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span><span class="dp-si-deep-refetch" data-artist="' + window.escapeHtml(artist) + '" title="Refetch ALL singles (including removed)" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,80,80,0.12);color:#ff6b6b;font-size:11px;cursor:pointer;flex-shrink:0;margin-left:1px;">⚡</span>';
     html += '</div>';
     html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
     for(var sri=0; sri<singles.length; sri++){
@@ -27947,6 +27947,117 @@ document.addEventListener('click', function(e){
   var group = chip.closest('.dp-ah-artist');
   if(group && typeof window.__singlesRefreshArtistGroup === 'function') window.__singlesRefreshArtistGroup(group);
 }, true);
+
+// Deep refetch: refetch ALL singles for an artist, ignoring hidden list
+// Shows a confirmation prompt first
+document.addEventListener('click', function(e){
+  var chip = e.target && e.target.closest ? e.target.closest('#discPopupBody .dp-si-deep-refetch') : null;
+  if(!chip) return;
+  e.stopPropagation();
+  e.preventDefault();
+  var group = chip.closest('.dp-ah-artist');
+  if(!group) return;
+  var hdr = group.querySelector('.dp-ah-artist-hdr');
+  var artist = chip.getAttribute('data-artist') || '';
+  if(!artist && hdr){
+    var nmEl = hdr.querySelector('span[style*="flex:1"]');
+    artist = nmEl ? (nmEl.textContent || '').trim() : '';
+  }
+  if(!artist) return;
+  // Show confirmation prompt
+  var confirmEl = document.createElement('div');
+  confirmEl.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(255,80,80,0.1);border:1px solid rgba(255,80,80,0.3);border-radius:8px;margin:4px 0;font-size:11px;';
+  confirmEl.innerHTML = '<span style="color:#ff6b6b;flex:1;">Refetch ALL singles for ' + (artist || 'this artist') + '? Previously removed songs will reappear.</span>'
+    + '<button style="padding:3px 10px;border-radius:6px;border:1px solid #ff6b6b;background:#ff6b6b;color:#fff;font-size:11px;font-weight:600;cursor:pointer;">Yes</button>'
+    + '<button style="padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;">Cancel</button>';
+  // Insert after the header
+  group.insertBefore(confirmEl, group.children[1] || null);
+  // Wire buttons
+  var btns = confirmEl.querySelectorAll('button');
+  btns[0].addEventListener('click', function(){
+    confirmEl.remove();
+    // Run deep refetch (ignore hidden list)
+    if(typeof window.__singlesDeepRefreshArtistGroup === 'function') window.__singlesDeepRefreshArtistGroup(group);
+  });
+  btns[1].addEventListener('click', function(){ confirmEl.remove(); });
+}, true);
+
+// Deep refetch function — same as normal refetch but skips hidden-list filtering
+window.__singlesDeepRefreshArtistGroup = async function(groupEl){
+  if(!groupEl || groupEl._siRefreshing) return;
+  var hdr = groupEl.querySelector('.dp-ah-artist-hdr');
+  var chip = hdr ? hdr.querySelector('.dp-si-deep-refetch') : null;
+  var artist = chip ? (chip.getAttribute('data-artist') || '') : '';
+  if(!artist && hdr){
+    var nmEl = hdr.querySelector('span[style*="flex:1"]');
+    artist = nmEl ? (nmEl.textContent || '').trim() : '';
+  }
+  if(!artist) return;
+  groupEl._siRefreshing = true;
+  var chipOld = chip ? chip.innerHTML : '';
+  if(chip){ chip.innerHTML = '...'; chip.style.opacity = '0.55'; chip.style.cursor = 'wait'; }
+  var cntEl = hdr ? hdr.querySelector('.dp-si-count') : null;
+  var cntOld = cntEl ? cntEl.textContent : '';
+  if(cntEl) cntEl.textContent = '…';
+  var ok = false;
+  try{
+    var sresp = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=song&limit=200');
+    if(!sresp || !sresp.ok) throw new Error('request failed');
+    var sdata = await sresp.json();
+    function normNm(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim(); }
+    var want = normNm(artist);
+    // NO hidden-list filtering — show everything
+    var matched = (sdata.results || []).filter(function(sr){
+      if(!sr || !sr.trackName) return false;
+      var ra = normNm(sr.artistName || '');
+      if(!want || (ra !== want && ra.indexOf(want) === -1 && want.indexOf(ra) === -1)) return false;
+      var cn = String(sr.collectionName || '').toLowerCase();
+      var tn = String(sr.trackName || '').toLowerCase();
+      var tc = sr.trackCount || 0;
+      if(/\bsingle\b/.test(cn)) return true;
+      if(cn === tn && tc <= 1) return true;
+      if(tc === 1 && cn.length < 80) return true;
+      return false;
+    });
+    matched.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
+    var bodyEl = groupEl.querySelector('.dp-ah-albums');
+    var ki = 0;
+    var frow = groupEl.querySelector('.dp-track[data-si]');
+    if(frow && frow.dataset.si && String(frow.dataset.si).indexOf('-') !== -1){
+      var pk = parseInt(String(frow.dataset.si).split('-')[0], 10);
+      if(!isNaN(pk)) ki = pk;
+    }
+    if(bodyEl){
+      bodyEl.innerHTML = matched.length
+        ? window.__singlesRowsHTML(artist, matched, ki)
+        : '<div class="dp-empty" style="padding:8px 12px;">No singles found for this artist right now.</div>';
+      bodyEl.style.display = 'block';
+    }
+    if(cntEl) cntEl.textContent = matched.length + ' single' + (matched.length !== 1 ? 's' : '');
+    var chv = hdr ? hdr.querySelector('.dp-ah-chevron') : null;
+    if(chv) chv.style.transform = 'rotate(90deg)';
+    if(bodyEl){
+      bodyEl.querySelectorAll('.dp-track-play').forEach(function(pb){
+        pb.addEventListener('click', function(e){
+          e.stopPropagation();
+          e.preventDefault();
+          var _r = pb.closest('.dp-track');
+          if(_r && _r.dataset.preview && typeof window.playDiscoverTrack === 'function') window.playDiscoverTrack(_r.dataset.preview, _r, { trackName: _r.dataset.trackname || '', artistName: _r.dataset.artist || '', art: _r.dataset.art || '' });
+        });
+      });
+    }
+    try{ localStorage.removeItem('discPopupCache_' + '\ud83c\udfb5 Singles'); }catch(_e){}
+    try{ localStorage.removeItem('discPopupCache_' + '\u2728 Singles'); }catch(_e){}
+    ok = true;
+    window.toast('\u21bb ' + artist + ': ' + matched.length + ' single' + (matched.length !== 1 ? 's' : '') + ' refetched (all, including removed).', 3000);
+  }catch(_err){
+    window.toast('Couldn\'t refetch ' + artist + ' \u2014 check your connection.', 3000);
+  }finally{
+    groupEl._siRefreshing = false;
+    if(chip){ chip.innerHTML = chipOld; chip.style.opacity = ''; chip.style.cursor = ''; }
+    if(cntEl && !ok) cntEl.textContent = cntOld;
+  }
+};
 
 // Remove button on Old-songs rows — persists the deletion (hideSingle) so the
 // song stays gone across refetch and app updates, and shows an undo toast.
