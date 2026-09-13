@@ -6953,6 +6953,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       ['Released', t.releaseDate ? new Date(t.releaseDate).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : 'Unknown'],
       ['File size', t.file ? (t.file.size/1024/1024).toFixed(1) + ' MB' : 'Unknown'],
     ];
+    // Show cropped status with undo option
+    if(t.cropped){
+      rows.push(['Cropped', '<span style="color:var(--coral);">Yes</span> — <button onclick="uncropSong(\'' + t.id + '\')" style="background:none;border:1px solid var(--coral);color:var(--coral);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;margin-left:4px;">Undo crop</button>']);
+    }
     body.innerHTML = rows.map(([k,v]) => `
       <div style="display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid var(--line); padding-bottom:6px;">
         <span style="color:var(--ink-dim);">${k}</span><span ${k === 'Released' ? 'id="songInfoReleasedVal" ' : ''}style="text-align:right; word-break:break-word;">${escapeHtml(String(v))}</span>
@@ -7356,8 +7360,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       const ext = cropFmt === 'mp3' ? '.mp3' : '.wav';
       const baseName = (cropTrack.file && cropTrack.file.name) ? cropTrack.file.name.replace(/\.[^/.]+$/, '') : (cropTrack.name || 'track');
       const newFile = new File([newBlob], baseName + ext, { type: newBlob.type || (cropFmt === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
-      // Swap in the cropped file.
+      // Save original for undo, then swap in the cropped file.
       try{ if(oldUrl && oldUrl.indexOf('blob:') === 0) URL.revokeObjectURL(oldUrl); }catch(e){}
+      cropTrack._originalFile = cropTrack.file;
+      cropTrack._originalDuration = cropTrack.duration;
+      cropTrack.cropped = true;
       cropTrack.file = newFile;
       cropTrack.url = URL.createObjectURL(newFile);
       cropTrack.duration = slice.duration;
@@ -9104,7 +9111,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '56.9.5';
+  const APP_VERSION = '56.9.75';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9371,6 +9378,16 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '56.9.75', date: 'September 13, 2026 · 12:15 AM EDT', title: 'Crop undo, toast fixes, and pinned artist photos', items: [
+    'Cropped songs now show an undo option: a toast with "Undo" appears after cropping, and Song info shows "Cropped — Undo crop" so you can restore the original anytime during the session',
+    'Toast notifications no longer block the media player — z-index lowered so play/pause/skip controls are always tappable',
+    'Pinned artist photos no longer get silently overwritten by auto-fetched iTunes artwork — your custom picture is preserved',
+    'Lyrics button bar (Auto-scroll, Highlight, AI Sync, etc.) now scrolls horizontally when buttons overflow',
+    'Current song now auto-highlights and scrolls into view when switching to Playlists/Albums from Home or Discover',
+    'Export compression progress bar moves smoothly instead of stalling at 80%',
+    'Mini record player in the now bar is smaller and better proportioned',
+    'Home greeting gap removed — "Good afternoon" text sits flush with the first bubble',
+  ] },
   { version: '56.9.5', date: 'September 12, 2026 · 9:30 PM EDT', title: 'Reorder is clearer + crossfaded mix downloads are instant', items: [
     'Crossfaded mix downloads are now fast and smooth: track decoding runs 4 songs at a time and the blend + encode work in small chunks with a live progress chip, so even a long playlist builds in moments without freezing the app',
     'The reorder popup is sticky — the "Reordering · drag the ≡ handle" banner and Done button stay pinned to the top while a long playlist scrolls beneath them',
@@ -12048,10 +12065,39 @@ function startLyricsAutoScroll() {
       notes: t.notes || '',
       lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
       manualOverride: t.manualOverride || false,
+      cropped: t.cropped || false,
+      originalDuration: t.originalDuration || null,
     };
   }
   function persistTrackMeta(t){
     dbPut('tracks', buildTrackRecord(t));
+  }
+  // Uncrop: restore the original file before a crop was applied
+  function uncropSong(trackId){
+    const t = allTracks.find(tr => tr.id === trackId);
+    if(!t || !t._originalFile){ toast('Original file not available — undo is only possible during this session.', 3500); return; }
+    // Restore original file
+    try{ if(t.url && t.url.indexOf('blob:') === 0) URL.revokeObjectURL(t.url); }catch(e){}
+    t.file = t._originalFile;
+    t.url = URL.createObjectURL(t._originalFile);
+    t.duration = t._originalDuration || t.duration;
+    t.cropped = false;
+    t._originalFile = null;
+    t._originalDuration = null;
+    persistTrackMeta(t);
+    // Re-point current audio if playing
+    try{
+      if(queue[queueIndex] === t.id){
+        const a = activeAudio();
+        const wasPaused = a.paused;
+        a.src = t.url; a.load();
+        if(!wasPaused) a.play().catch(()=>{});
+        if($('npTitle')) $('npTitle').textContent = t.name;
+        updateMediaSession && updateMediaSession(t);
+      }
+    }catch(e){}
+    renderList();
+    toast('Crop undone — original song restored.', 2500);
   }
 
   // Batch-write many track records to the tracks store in as few transactions as
