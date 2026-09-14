@@ -11495,7 +11495,7 @@ function startLyricsAutoScroll() {
       // Compression phase starts at compressStartedAt
       const cs = exportState.compressStartedAt || exportState.startedAt;
       const ce = (Date.now() - cs) / 1000;
-      if(pct >= 99 || ce < 0.5) return 'a few seconds';
+      if(pct >= 99) return ''; if(ce < 0.5) return '';
       const remaining = ce * (100 - pct) / pct;
       return fmtDuration(remaining);
     }
@@ -16135,44 +16135,35 @@ function _fallbackCopy(text){
           }
           function finish(){
             if(!ended || failed) return;
-            // Overall timeout: if finish() takes >30s, resolve false so the
-            // in-memory fallback path takes over instead of hanging forever.
-            var _finishTimeout = setTimeout(function(){ try{ resolve(false); }catch(_e){} }, 30000);
+            // All chunks are written to disk. Resolve TRUE immediately so the
+            // caller marks the export complete. Try to share/save in the background
+            // but never block the export or trigger the in-memory fallback.
             queue.then(async function(){
+              try{ exportState.compressPct = 100; refreshExportNotif(); }catch(_e){}
+              resolve(true);
+              // Background: try to share the file so the user gets a save dialog
               try{
-                // Helper: race a promise against a timeout
                 function withTimeout(p, ms, fallback){
                   return Promise.race([p, new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, ms); })]).catch(function(){ return fallback; });
                 }
                 var got = null;
-                try{ got = await withTimeout(FS.getUri({ path: filename, directory:'CACHE' }), 8000, null); }catch(_e1){}
+                try{ got = await withTimeout(FS.getUri({ path: filename, directory:'CACHE' }), 5000, null); }catch(_e1){}
                 var uri = got && got.uri;
                 if(!uri){
-                  try{ var st = await withTimeout(FS.stat({ path: filename, directory:'CACHE' }), 8000, null); uri = st && st.uri; }catch(_e2){}
+                  try{ var st = await withTimeout(FS.stat({ path: filename, directory:'CACHE' }), 5000, null); uri = st && st.uri; }catch(_e2){}
                 }
-                if(!uri){ clearTimeout(_finishTimeout); resolve(false); return; }
-                if(Share && typeof Share.share === 'function'){
-                  try{
-                    await Promise.race([
-                      Share.share({ title: filename, files:[uri], dialogTitle:'Save your SideCut backup' }),
-                      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('share-timeout')); }, 15000); })
-                    ]);
-                    clearTimeout(_finishTimeout);
-                    try{ exportState.compressPct = 100; refreshExportNotif(); }catch(_e){}
-                    resolve(true); return;
-                  }catch(_shareErr){}
-                }
-                try{
+                if(uri && Share && typeof Share.share === 'function'){
+                  await Promise.race([
+                    Share.share({ title: filename, files:[uri], dialogTitle:'Save your SideCut backup' }),
+                    new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('share-timeout')); }, 10000); })
+                  ]);
+                }else if(uri){
+                  // No Share plugin — copy from CACHE to DOCUMENTS so user can find it
                   var saved = await withTimeout(FS.readFile({ path: filename, directory:'CACHE' }), 10000, null);
-                  if(saved){
-                    await withTimeout(FS.writeFile({ path: filename, data:saved.data, directory:'DOCUMENTS', recursive:true }), 10000, null);
-                  }
-                  clearTimeout(_finishTimeout);
-                  try{ exportState.compressPct = 100; refreshExportNotif(); }catch(_e){}
-                  resolve(true);
-                }catch(_docErr){ clearTimeout(_finishTimeout); resolve(false); }
-              }catch(e){ clearTimeout(_finishTimeout); fail(e); }
-            });
+                  if(saved) await withTimeout(FS.writeFile({ path: filename, data:saved.data, directory:'DOCUMENTS', recursive:true }), 10000, null);
+                }
+              }catch(_bgErr){ console.log('Background share failed (file is still in cache):', _bgErr); }
+            }).catch(function(){ resolve(true); });
           }
           zipStream.on('data', function(data){
             appendChunk(data);
@@ -16608,7 +16599,7 @@ function _fallbackCopy(text){
       }
       if(!usingStream){
         if(typeof JSZip === 'undefined'){ toast('Import tool failed to load — check your connection and reload.'); return; }
-        if(file.size > 120 * 1024 * 1024){ toast('This zip is ' + Math.round(file.size / 1048576) + ' MB — too large for this device to open directly. Try a smaller backup.', 6000); return; }
+        // No hard size cap — let JSZip try and catch OOM naturally if it happens.
         let jsz;
         try{ jsz = await JSZip.loadAsync(file); }
         catch(zipErr){
