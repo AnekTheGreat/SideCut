@@ -13329,23 +13329,24 @@ function _fallbackCopy(text){
     const old = btn.textContent;
     btn.disabled = true; btn.textContent = 'Checking…';
     try{
-      if(!window.__SideCutOTA || !window.__SideCutOTA.IS_NATIVE){
+      var man = null;
+      // Always try native updater first if available
+      if(window.__SideCutOTA && window.__SideCutOTA.IS_NATIVE){
+        try{ man = await window.__SideCutOTA.checkForUpdate({ silent: false }); }catch(_nativeErr){}
+      }
+      // If native check failed/threw, or we're not native, try proxy fallback
+      if(!man || (man && man.failed)){
+        var proxyResult = await nativeOtaCheckViaProxy();
+        if(proxyResult) man = proxyResult;
+      }
+      // Last resort: browser check (works on desktop browsers)
+      if(!man){
         const r = await checkBrowserUpdate();
         if(r === 'up-to-date'){ toast('You\'re on the latest version ✓', 2500); }
         else if(r === 'newer'){ /* toast already shown */ }
-        return;
+      } else if(!man.unavailable && !man.dismissed && man.failed !== true && !man.upToDate && !man.staged){
+        toast('You\'re on the latest version ✓', 2500);
       }
-      var man = null;
-      try{ man = await window.__SideCutOTA.checkForUpdate({ silent: false }); }catch(_nativeErr){}
-      // If native check failed or threw (common on Android WebView), try proxy fallback
-      if(!man || (man && man.failed)){ man = await nativeOtaCheckViaProxy(); }
-      // A result with .unavailable means this APK predates the updater — the
-      // module already explained that. A { dismissed: true } result means the
-      // user picked Install later on the update sheet — the module already
-      // handled that too. { failed:true } means a real network error already
-      // surfaced by the updater module. Only report "latest" for a genuine
-      // check with nothing new.
-      if(man && !man.unavailable && !man.dismissed && man.failed !== true) toast('You\'re on the latest version ✓', 2500);
     } catch(_e){ toast('Update check failed — try again.'); }
     finally { btn.disabled = false; btn.textContent = old; }
   });
@@ -13380,15 +13381,23 @@ function _fallbackCopy(text){
     const sold = sbtn.textContent;
     sbtn.disabled = true; sbtn.textContent = 'Checking…';
     try{
-      if(!window.__SideCutOTA || !window.__SideCutOTA.IS_NATIVE){
+      var man = null;
+      // Always try native updater first if available
+      if(window.__SideCutOTA && window.__SideCutOTA.IS_NATIVE){
+        try{ man = await window.__SideCutOTA.checkForUpdate({ silent: false }); }catch(_nativeErr){}
+      }
+      // If native check failed/threw, or we're not native, try proxy fallback
+      if(!man || (man && man.failed)){
+        var proxyResult = await nativeOtaCheckViaProxy();
+        if(proxyResult) man = proxyResult;
+      }
+      // Last resort: browser check (works on desktop browsers)
+      if(!man){
         const r = await checkBrowserUpdate();
         if(r === 'up-to-date'){ toast('You\'re on the latest version ✓', 2500); }
-        return;
+      } else if(!man.unavailable && !man.dismissed && man.failed !== true && !man.upToDate && !man.staged){
+        toast('You\'re on the latest version ✓', 2500);
       }
-      var man = null;
-      try{ man = await window.__SideCutOTA.checkForUpdate({ silent: false }); }catch(_nativeErr){}
-      if(!man || (man && man.failed)){ man = await nativeOtaCheckViaProxy(); }
-      if(man && !man.unavailable && !man.dismissed && man.failed !== true && !man.upToDate && !man.staged) toast('You\'re on the latest version ✓', 2500);
     } catch(_e){ toast('Update check failed — try again.'); }
     finally { sbtn.disabled = false; sbtn.textContent = sold; }
   });
