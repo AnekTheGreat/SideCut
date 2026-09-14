@@ -23414,6 +23414,62 @@ if(!isDiscover) stopDiscoverPreview();
           }
         }
       }catch(_e){}
+      // Also fetch EPs, albums, and singles covers from iTunes so the picker
+      // shows all available art for this artist — not just library tracks.
+      (async function(){
+        try{
+          var iresp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=album&limit=50');
+          if(iresp && iresp.ok){
+            var idata = await iresp.json();
+            var results = idata.results || [];
+            for(var j=0; j<results.length; j++){
+              var r = results[j];
+              if(!r || !r.artworkUrl100) continue;
+              var rName = (r.artistName || '').toLowerCase().trim();
+              if(rName !== aname && rName.indexOf(aname) === -1 && aname.indexOf(rName) === -1) continue;
+              // Upgrade to 600px artwork
+              var artUrl = r.artworkUrl100.replace(/100x100/, '600x600');
+              var albumName = r.collectionName || r.trackName || '';
+              var coverKey2 = albumName.toLowerCase().trim() + '|' + artUrl;
+              if(!seen[coverKey2]){
+                seen[coverKey2] = true;
+                covers.push({ url: artUrl, album: albumName, dataUrl: null, blob: null });
+              }
+            }
+          }
+        }catch(_fetchErr){}
+        // Re-build the picker with iTunes covers included — reset pending to
+        // account for the new HTTP URLs that need canvas conversion.
+        var newPending = 0;
+        covers.forEach(function(c){
+          if(!c.dataUrl && c.url && c.url.indexOf('data:') !== 0) newPending++;
+        });
+        pending = newPending;
+        if(pending === 0) buildPicker();
+        // Convert any new HTTP covers via canvas (crossOrigin)
+        covers.forEach(function(c){
+          if(c.dataUrl || !c.url || c.url.indexOf('data:') === 0) return;
+          if(c._converting) return;
+          c._converting = true;
+          var img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function(){
+            try{
+              var s = Math.min(1, 256 / Math.max(img.naturalWidth||1, img.naturalHeight||1));
+              var w = Math.max(1, Math.round((img.naturalWidth||256)*s));
+              var h = Math.max(1, Math.round((img.naturalHeight||256)*s));
+              var cv = document.createElement('canvas');
+              cv.width = w; cv.height = h;
+              cv.getContext('2d').drawImage(img, 0, 0, w, h);
+              c.dataUrl = cv.toDataURL('image/jpeg', 0.7);
+            }catch(_e){}
+            pending--;
+            buildPicker();
+          };
+          img.onerror = function(){ pending--; buildPicker(); };
+          img.src = c.url;
+        });
+      })();
 
       // Pre-convert all covers to data URLs via FileReader, then build the picker.
       var pending = covers.length;
@@ -23629,6 +23685,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(!key) return;
 
       // Find a track by this artist in the library
+      var foundLibArt = false;
       try{
         for(var i=0; i<allTracks.length; i++){
           var t = allTracks[i];
@@ -23655,9 +23712,56 @@ if(!isDiscover) stopDiscoverPreview();
             savePinnedArtists();
             renderPinnedArtists();
           }
+          foundLibArt = true;
           break; // only need one track
         }
       }catch(_e){}
+      // If no library track found, fetch best album art from iTunes (EPs,
+      // albums, singles) so even artists not yet imported show a cover.
+      if(!foundLibArt && typeof fetchWithProxy === 'function'){
+        (async function(){
+          try{
+            var resp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(p.name) + '&media=music&entity=album&limit=10');
+            if(!resp || !resp.ok) return;
+            var data = await resp.json();
+            var results = data.results || [];
+            // Pick the most-recent album whose artist matches
+            for(var j=0; j<results.length; j++){
+              var r = results[j];
+              if(!r || !r.artworkUrl100) continue;
+              var rn = (r.artistName || '').toLowerCase().trim();
+              if(rn !== key && rn.indexOf(key) === -1 && key.indexOf(rn) === -1) continue;
+              var art600 = r.artworkUrl100.replace(/100x100/, '600x600');
+              // Convert to data URL via canvas for Android reliability
+              var img = new Image();
+              img.crossOrigin = 'anonymous';
+              await new Promise(function(res){
+                img.onload = function(){
+                  try{
+                    var s = Math.min(1, 256 / Math.max(img.naturalWidth||1, img.naturalHeight||1));
+                    var w = Math.max(1, Math.round((img.naturalWidth||256)*s));
+                    var h = Math.max(1, Math.round((img.naturalHeight||256)*s));
+                    var cv = document.createElement('canvas');
+                    cv.width = w; cv.height = h;
+                    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+                    var du = cv.toDataURL('image/jpeg', 0.7);
+                    if(du && du.length > 100){
+                      p.art = du;
+                      if(!p.photo) p.photo = du;
+                      savePinnedArtists();
+                      renderPinnedArtists();
+                    }
+                  }catch(_ce){}
+                  res();
+                };
+                img.onerror = function(){ res(); };
+                img.src = art600;
+              });
+              break; // got the best match
+            }
+          }catch(_e){}
+        })();
+      }
     });
   }
 
