@@ -4361,6 +4361,33 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
       });
     }
   }
+
+  // Android WebView blocks native prompt() — use a proper modal instead
+  function modalPrompt(title, defaultVal){
+    return new Promise(function(resolve){
+      var bd = document.createElement('div');
+      bd.className = 'modal-backdrop';
+      bd.style.zIndex = '250';
+      var sh = document.createElement('div');
+      sh.className = 'modal';
+      sh.style.maxWidth = '340px';
+      sh.innerHTML = '<h3>' + escapeHtml(title) + '</h3>' +
+        '<input type="text" id="_modalPromptInput" value="' + escapeHtml(defaultVal || '') + '" style="width:100%;box-sizing:border-box;padding:10px;font-size:14px;border-radius:8px;border:1px solid var(--line);background:var(--bg-raised);color:var(--ink);margin-bottom:10px;" />' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button id="_modalPromptOk" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-weight:600;font-size:13px;">OK</button>' +
+        '<button id="_modalPromptCancel" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--bg-raised);color:var(--ink-dim);font-size:13px;">Cancel</button></div>';
+      bd.appendChild(sh);
+      document.body.appendChild(bd);
+      var inp = document.getElementById('_modalPromptInput');
+      inp.focus();
+      inp.select();
+      function done(val){ bd.remove(); resolve(val); }
+      document.getElementById('_modalPromptOk').addEventListener('click', function(){ done(inp.value); });
+      document.getElementById('_modalPromptCancel').addEventListener('click', function(){ done(null); });
+      inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') done(inp.value); if(e.key === 'Escape') done(null); });
+      bd.addEventListener('click', function(e){ if(e.target === bd) done(null); });
+    });
+  }
   // Toast with an inline Undo action (used by unpin). Reuses the #toast element,
   // keeps the message + Undo button up for 6 seconds, then clears itself.
   function toastWithUndo(msg, onUndo){
@@ -13835,8 +13862,8 @@ function _fallbackCopy(text){
     });
   }
 
-  function renamePlaylist(oldName){
-    const newName = (prompt(`Rename "${oldName}" to:`, oldName) || '').trim();
+  async function renamePlaylist(oldName){
+    const newName = ((await modalPrompt('Rename playlist:', oldName)) || '').trim();
     if(!newName || newName === oldName) return;
     if(playlists[newName]){ toast('A playlist with that name already exists.'); return; }
     // Rebuild the playlists object preserving key order, so the tab it renders as
@@ -14018,11 +14045,22 @@ function _fallbackCopy(text){
     saveMeta();
     renderList();
   }
+  var _renderListRAF = null;
+  var _renderListPending = false;
   function renderList(){
-    try{ renderListInner(); }
-    catch(e){
-      console.error('renderList failed', e);
-    }
+    // Debounce: coalesce rapid renderList calls (from metadata loads,
+    // playback updates, etc.) into a single rAF to reduce DOM thrashing
+    _renderListPending = true;
+    if(_renderListRAF) return;
+    _renderListRAF = requestAnimationFrame(function(){
+      _renderListRAF = null;
+      if(!_renderListPending) return;
+      _renderListPending = false;
+      try{ renderListInner(); }
+      catch(e){
+        console.error('renderList failed', e);
+      }
+    });
   }
   function renderListInner(){
     const pane = $('listPane');
@@ -15275,12 +15313,12 @@ function _fallbackCopy(text){
     return out;
   }
 
-  function createAlbumFromIds(ids, sourceLabel, existingName){
+  async function createAlbumFromIds(ids, sourceLabel, existingName){
     ids = Array.from(ids || []);
     if(!ids.length){ toast('Select some songs first.'); return; }
     let albumName = (existingName && String(existingName).trim()) ? String(existingName).trim() : null;
     if(!albumName){
-      albumName = prompt(sourceLabel + ' — name this album:');
+      albumName = await modalPrompt(sourceLabel + ' — name this album:', '');
       if(!albumName || !albumName.trim()) return;
       albumName = albumName.trim();
     }
@@ -15292,7 +15330,7 @@ function _fallbackCopy(text){
       const t = allTracks.find(tr => tr.id === id);
       if(t) artistSet.add((t.artist || 'Unknown artist').trim());
     });
-    const primaryArtist = artistSet.size === 1 ? [...artistSet][0] : (prompt('Multiple artists selected — which artist should this album be filed under?', '') || '').trim() || 'Various Artists';
+    const primaryArtist = artistSet.size === 1 ? [...artistSet][0] : ((await modalPrompt('Multiple artists selected — which artist should this album be filed under?', '')) || '').trim() || 'Various Artists';
     if(!userAlbums[albumName]){
       userAlbums[albumName] = { artist: primaryArtist, trackIds: [], createdAt: Date.now() };
     }
@@ -15322,10 +15360,10 @@ function _fallbackCopy(text){
     pickUserAlbum(ids, ids.length + ' selected songs');
   }
 
-  function createAlbumFromSelected(){
+  async function createAlbumFromSelected(){
     const ids = Array.from(selectedIds);
     if(!ids.length){ toast('Select some songs first.'); return; }
-    const name = prompt('Name this album:');
+    const name = await modalPrompt('Name this album:', '');
     if(!name || !name.trim()) return;
     const albumName = name.trim();
     if(userAlbums[albumName]){
@@ -15336,7 +15374,7 @@ function _fallbackCopy(text){
       const t = allTracks.find(tr => tr.id === id);
       if(t){ artistSet.add((t.artist || 'Unknown artist').trim()); }
     });
-    const primaryArtist = artistSet.size === 1 ? [...artistSet][0] : (prompt('Multiple artists selected — which artist should this album be filed under?', '') || '').trim() || 'Various Artists';
+    const primaryArtist = artistSet.size === 1 ? [...artistSet][0] : ((await modalPrompt('Multiple artists selected — which artist should this album be filed under?', '')) || '').trim() || 'Various Artists';
     if(!userAlbums[albumName]){
       userAlbums[albumName] = { artist: primaryArtist, trackIds: [], createdAt: Date.now() };
     }
