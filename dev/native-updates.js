@@ -419,7 +419,7 @@
     }
     try{
       var ctrl = new AbortController();
-      var timer = setTimeout(function(){ ctrl.abort(); }, 20000);
+      var timer = setTimeout(function(){ ctrl.abort(); }, 30000);
       // NO 'cache:no-store': from the native app this fetch is cross-origin
       // (app origin is https://localhost),and the `cache` request header is not in
       // the CORS-safelisted set, so the browser sends an OPTIONS preflight first —

@@ -14,6 +14,8 @@ const files = ['index.html', 'sw.js', 'manifest.json', 'icon-192.png', 'icon-512
 for (const f of files) {
   try { await cp(join(root, f), join(dist, f)); } catch { /* optional asset, skip */ }
 }
+// Native OTA updater script — needed by the Capacitor app after an OTA bundle install.
+try { await cp(join(root, 'dev', 'native-updates.js'), join(dist, 'dev', 'native-updates.js')); } catch { /* optional */ }
 for (const d of ['.well-known', 'tools']) {
   try { await cp(join(root, d), join(dist, d), { recursive: true }); } catch { /* optional dir, skip */ }
 }
