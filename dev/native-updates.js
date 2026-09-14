@@ -202,9 +202,19 @@
           }
         });
       }catch(e){ log('progress listener unavailable: ' + ((e && e.message) || e)); }
+      // Build download URL — try raw.githubusercontent.com first (no CDN
+      // caching, direct binary), then GitHub Pages as fallback.
+      var _dlUrl = String(man.url).indexOf('http') === 0 ? man.url : OTA_BASE + 'ota/' + man.url;
+      var _rawUrl = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/update.zip';
       var dl = Updater.download({
-        url: (String(man.url).indexOf('http') === 0 ? man.url : OTA_BASE + 'ota/' + man.url),
+        url: _rawUrl,
         version: String(man.version)
+      }).catch(function(_rawErr){
+        log('raw.githubusercontent.com download failed, trying GitHub Pages: ' + ((_rawErr && _rawErr.message) || _rawErr));
+        return Updater.download({
+          url: _dlUrl,
+          version: String(man.version)
+        });
       });
       function cleanup(){ try{ if(handle && handle.remove) handle.remove(); }catch(e){} }
       dl.then(function(bundle){
@@ -418,18 +428,30 @@
       return { unavailable: true };
     }
     try{
-      var ctrl = new AbortController();
-      var timer = setTimeout(function(){ ctrl.abort(); }, 30000);
-      // NO 'cache:no-store': from the native app this fetch is cross-origin
-      // (app origin is https://localhost),and the `cache` request header is not in
-      // the CORS-safelisted set, so the browser sends an OPTIONS preflight first —
-      // GitHub Pages answers those with HTTP 405, killing every check with
-      // "Failed to fetch" -> "Update check failed — check your connection."
-      // A plain GET (default mode:cors) is safelisted and GitHub Pages serves it
-      // with access-control-allow-origin:*, so drop the cache option entirely.
-
-      var resp = await fetch(MANIFEST_URL, { signal: ctrl.signal });
-      clearTimeout(timer);
+      // Try multiple URLs and CORS proxies — the native WebView (origin
+      // https://localhost) often fails cross-origin fetch to GitHub Pages
+      // due to Android WebView CORS restrictions. The proxy chain ensures
+      // at least one path works.
+      var _rawManifest = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json';
+      var _fetchAttempts = [
+        _rawManifest,
+        MANIFEST_URL,
+        'https://corsproxy.io/?' + encodeURIComponent(MANIFEST_URL),
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent(MANIFEST_URL),
+        'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(MANIFEST_URL)
+      ];
+      var resp = null;
+      for(var _fi = 0; _fi < _fetchAttempts.length; _fi++){
+        try{
+          var ctrl = new AbortController();
+          var timer = setTimeout(function(){ ctrl.abort(); }, 12000);
+          resp = await fetch(_fetchAttempts[_fi], { signal: ctrl.signal });
+          clearTimeout(timer);
+          if(resp && resp.ok) break;
+          resp = null;
+        }catch(_fe){ resp = null; }
+      }
+      if(!resp){ log('manifest fetch failed on all attempts'); if(!o.silent) toast('Update check failed — could not reach the update server. Check your connection and try again.', 4500); return { failed: true }; }
       if(!resp || !resp.ok){ log('manifest fetch failed: ' + (resp ? resp.status : 'no response')); if(!o.silent) toast('Update check failed — could not reach the update server (' + (resp ? resp.status : 'no connection') + '). Check your connection and try again.', 4500); return { failed: true }; }
       var man = null;
       try{ man = await resp.json(); }catch(_j){}

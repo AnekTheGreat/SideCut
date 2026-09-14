@@ -13211,6 +13211,87 @@ function _fallbackCopy(text){
   // library still lives under that origin INSIDE this app's WebView storage.
   // Navigating there (allowed via allowNavigation, with the plugin bridge) lets
   // the site export that library through the share sheet; the zip then imports
+  // Proxy-backed OTA manifest check — used when the native updater's own fetch
+  // fails (common on Android WebView where cross-origin fetch from localhost
+  // to GitHub Pages is blocked). This function fetches the manifest via the
+  // same proxy chain that fetchWithProxy uses, then delegates to the native
+  // Updater for the actual download.
+  async function nativeOtaCheckViaProxy(){
+    try{
+      var rawManifest = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json';
+      var githubPagesManifest = 'https://anekthegreat.github.io/SideCut/ota/updates.json';
+      var attempts = [
+        rawManifest,
+        'https://corsproxy.io/?' + encodeURIComponent(githubPagesManifest),
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent(githubPagesManifest),
+        'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(githubPagesManifest)
+      ];
+      var resp = null;
+      for(var i = 0; i < attempts.length; i++){
+        try{
+          var ctrl = new AbortController();
+          var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
+          resp = await fetch(attempts[i], { signal: ctrl.signal });
+          clearTimeout(timer);
+          if(resp && resp.ok) break;
+          resp = null;
+        }catch(_e){ resp = null; }
+      }
+      if(!resp || !resp.ok) return null;
+      var man = await resp.json();
+      if(!man || !man.version || !man.url) return null;
+      var cur = (typeof APP_VERSION !== 'undefined') ? String(APP_VERSION) : '';
+      if(!cur) return null;
+      // Compare versions
+      function cmpVer(a, b){
+        var pa = String(a).split('.').map(Number);
+        var pb = String(b).split('.').map(Number);
+        for(var i = 0; i < Math.max(pa.length, pb.length); i++){
+          var na = pa[i] || 0, nb = pb[i] || 0;
+          if(na > nb) return 1;
+          if(na < nb) return -1;
+        }
+        return 0;
+      }
+      if(cmpVer(man.version, cur) <= 0) return { upToDate: true };
+      // New version found — try native Updater download if available
+      var Updater = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+      if(Updater && typeof Updater.download === 'function'){
+        // Show the OTA sheet from native-updates.js if available
+        if(window.__SideCutOTA && typeof window.__SideCutOTA.checkForUpdate === 'function'){
+          // Re-attempt native check — maybe proxy fetch fixed it
+          return { newVersion: man.version };
+        }
+        // Direct download via Updater
+        var zipUrl = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/update.zip';
+        toast('Downloading SideCut ' + man.version + '…', 3000);
+        try{
+          var bundle = await Updater.download({ url: zipUrl, version: String(man.version) });
+          if(bundle && bundle.id){
+            await Updater.next({ id: bundle.id });
+            toast('Update staged — will install when you close the app.', 4500);
+            return { staged: true };
+          }
+        }catch(_dlErr){
+          // Try GitHub Pages fallback
+          try{
+            var gpUrl = githubPagesManifest.replace('updates.json', '') + man.url;
+            var bundle2 = await Updater.download({ url: gpUrl, version: String(man.version) });
+            if(bundle2 && bundle2.id){
+              await Updater.next({ id: bundle2.id });
+              toast('Update staged — will install when you close the app.', 4500);
+              return { staged: true };
+            }
+          }catch(_dlErr2){}
+        }
+        return { downloadFailed: true };
+      }
+      // No native updater — browser/PWA path
+      toast('Version ' + man.version + ' available — reload to update.', 6000);
+      return { newVersion: man.version };
+    }catch(_e){ return null; }
+  }
+
   // here. Only shown in the installed app — in browsers this origin is just us.
   // Native OTA: manual "Check for updates" (auto-checks also run at boot,
   // every 30 min, and on foreground — see dev/native-updates.js). Mirrors the
@@ -13226,7 +13307,9 @@ function _fallbackCopy(text){
         else if(r === 'newer'){ /* toast already shown */ }
         return;
       }
-      const man = await window.__SideCutOTA.checkForUpdate({ silent: false });
+      var man = await window.__SideCutOTA.checkForUpdate({ silent: false });
+      // If native check failed (common on Android WebView), try proxy fallback
+      if(!man || (man && man.failed)){ man = await nativeOtaCheckViaProxy(); }
       // A result with .unavailable means this APK predates the updater — the
       // module already explained that. A { dismissed: true } result means the
       // user picked Install later on the update sheet — the module already
@@ -13273,8 +13356,9 @@ function _fallbackCopy(text){
         if(r === 'up-to-date'){ toast('You\'re on the latest version ✓', 2500); }
         return;
       }
-      const man = await window.__SideCutOTA.checkForUpdate({ silent: false });
-      if(man && !man.unavailable && !man.dismissed && man.failed !== true) toast('You\'re on the latest version ✓', 2500);
+      var man = await window.__SideCutOTA.checkForUpdate({ silent: false });
+      if(!man || (man && man.failed)){ man = await nativeOtaCheckViaProxy(); }
+      if(man && !man.unavailable && !man.dismissed && man.failed !== true && !man.upToDate && !man.staged) toast('You\'re on the latest version ✓', 2500);
     } catch(_e){ toast('Update check failed — try again.'); }
     finally { sbtn.disabled = false; sbtn.textContent = sold; }
   });
