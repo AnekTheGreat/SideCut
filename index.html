@@ -15221,10 +15221,6 @@ function _fallbackCopy(text){
         const t = allTracks.find(tr => tr.id === id);
         if(!t) return;
         if(entry.trackIds.indexOf(id) === -1) entry.trackIds.push(id);
-        if((t.album || '').trim() !== albumName){
-          t.album = albumName;
-          persistTrackMeta(t);
-        }
         added++;
       });
       saveMeta();
@@ -15291,13 +15287,7 @@ function _fallbackCopy(text){
       const t = allTracks.find(tr => tr.id === id);
       if(!t) return;
       if(entry.trackIds.indexOf(id) === -1) entry.trackIds.push(id);
-      if((t.album || '').trim() !== albumName){
-        t.album = albumName;
-        persistTrackMeta(t);
-        added++;
-      } else {
-        added++;
-      }
+      added++;
     });
     if(added){
       saveMeta();
@@ -15340,10 +15330,6 @@ function _fallbackCopy(text){
       const t = allTracks.find(tr => tr.id === id);
       if(!t) return;
       if(entry.trackIds.indexOf(id) === -1) entry.trackIds.push(id);
-      if((t.album || '').trim() !== albumName){
-        t.album = albumName;
-        persistTrackMeta(t);
-      }
     });
     if(entry.trackIds.length){
       saveMeta();
@@ -15361,27 +15347,41 @@ function _fallbackCopy(text){
 
   function deleteSelected(){
     const isAllSongs = activePlaylist === 'All Songs' || activePlaylist === UNSORTED_VIEW;
+    const isAlbums = libraryMode === 'albums';
     const count = selectedIds.size;
     if(!count) return;
-    const scopeText = isAllSongs ? 'from your library' : 'from this playlist';
-    if(!confirm(`Delete ${count} song${count===1?'':'s'} ${scopeText}? ${isAllSongs ? 'This removes them from every playlist too.' : ''}`)) return;
-    if(isAllSongs){
-      Array.from(selectedIds).forEach(id => deleteTrack(id, true));
-    } else {
-      playlists[activePlaylist] = playlists[activePlaylist].filter(x => !selectedIds.has(x));
+    if(isAlbums){
+      if(!confirm(`Remove ${count} song${count===1?'':'s'} from albums? (Songs stay in your library.)`)) return;
+      Object.keys(userAlbums).forEach(name => {
+        const ua = userAlbums[name];
+        if(ua && Array.isArray(ua.trackIds)){
+          ua.trackIds = ua.trackIds.filter(id => !selectedIds.has(id));
+        }
+      });
       saveMeta();
+    } else {
+      const scopeText = isAllSongs ? 'from your library' : 'from this playlist';
+      if(!confirm(`Delete ${count} song${count===1?'':'s'} ${scopeText}? ${isAllSongs ? 'This removes them from every playlist too.' : ''}`)) return;
+      if(isAllSongs){
+        Array.from(selectedIds).forEach(id => deleteTrack(id, true));
+      } else {
+        playlists[activePlaylist] = playlists[activePlaylist].filter(x => !selectedIds.has(x));
+        saveMeta();
+      }
     }
     exitSelectMode();
   }
 
   function deleteAllInView(ids, isAllSongs){
     if(!ids.length){ toast('Nothing here to delete.'); return; }
-    const scopeText = isAllSongs ? `delete all ${ids.length} songs from your library` : `clear all ${ids.length} songs from "${activePlaylist}"`;
-    if(!confirm(`Are you sure you want to ${scopeText}? This can't be undone.`)) return;
-    if(isAllSongs){
-      ids.slice().forEach(id => deleteTrack(id, true));
-    } else {
-      playlists[activePlaylist] = [];
+    if(libraryMode === 'albums'){
+      if(!confirm(`Remove all ${ids.length} songs from albums? (Songs stay in your library.)`)) return;
+      Object.keys(userAlbums).forEach(name => {
+        const ua = userAlbums[name];
+        if(ua && Array.isArray(ua.trackIds)){
+          ua.trackIds = ua.trackIds.filter(id => !ids.includes(id));
+        }
+      });
       saveMeta();
       renderList();
     }
