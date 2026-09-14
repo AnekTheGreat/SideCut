@@ -2863,6 +2863,13 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
           </div>
           <button id="diagonalSplitToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Loading…</button>
         </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0 4px;">
+          <div>
+            <div style="font-size:13px; font-weight:600;">Auto-scroll to song</div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Jump to the playing song when switching tabs</div>
+          </div>
+          <button id="autoScrollToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Off</button>
+        </div>
       </div>
 
       <!-- Collapsible: Tutorial summary (text) -->
@@ -9206,9 +9213,18 @@ function startLyricsAutoScroll() {
       localStorage.setItem('sidecut_diagonalSplit', useDiagonalSplit);
       applyLibraryButtonMode();
     }
+    if(e.target.id === 'autoScrollToggle'){
+      autoScrollToSong = !autoScrollToSong;
+      localStorage.setItem('sidecut_autoScrollToSong', autoScrollToSong ? 'true' : 'false');
+      e.target.textContent = autoScrollToSong ? 'On \u2713' : 'Off';
+    }
   });
   // Apply on load
-  setTimeout(function(){ applyLibraryButtonMode(); }, 100);
+  setTimeout(function(){
+    applyLibraryButtonMode();
+    var asBtn = document.getElementById('autoScrollToggle');
+    if(asBtn) asBtn.textContent = autoScrollToSong ? 'On \u2713' : 'Off';
+  }, 100);
 
   // Keep discover caches (Album History data + popup HTML, Singles) across app
   // updates: bumping the version must NOT force a refetch of the user's albums.
@@ -14710,11 +14726,13 @@ function _fallbackCopy(text){
           // Auto-scroll to the currently playing / most-recently-played song when
           // the user just switched INTO the Playlists tab. Highlight-only used to
           // mean you had to manually hunt for it; now it lands in view.
-          if(renderListInner._scrollToPlaying){
+          if(renderListInner._scrollToPlaying && autoScrollToSong){
             renderListInner._scrollToPlaying = false;
             // Small delay lets the DOM settle before measuring positions,
             // matching the smooth feel of the albums auto-scroll.
             requestAnimationFrame(function(){ smoothScrollIn(pane, row, 350); });
+          } else {
+            renderListInner._scrollToPlaying = false;
           }
         }
       }
@@ -16267,7 +16285,7 @@ function _fallbackCopy(text){
             try{
               if(data && data.byteLength){
                 exportState.compressPct = Math.min(95, Math.round(((exportState._capBytesWritten = (exportState._capBytesWritten||0) + data.byteLength) / (exportState._compressTotalInput || exportState.totalBytes || 1)) * 100));
-                if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick > 300){ exportState._lastCompressTick = Date.now(); refreshExportNotif(); }
+                if(Date.now() - (exportState._lastCompressTick || 0) > 500){ exportState._lastCompressTick = Date.now(); refreshExportNotif(); }
               }
             }catch(_e){}
           });
@@ -16333,7 +16351,12 @@ function _fallbackCopy(text){
           exportState.bytesDone += (t.artBlob.size || 0);
         }
         exportState.done++;
-        refreshExportNotif();
+        // Throttle UI updates during file reading — rebuilding the DOM for
+        // every track (379+ times) causes severe lag. Update at most every 400ms.
+        if(Date.now() - (exportState._lastReadTick || 0) > 400){
+          exportState._lastReadTick = Date.now();
+          refreshExportNotif();
+        }
       }
       // Optional settings/stats (library export only) injected by the caller.
       if(!opts.songsOnly){
@@ -16430,7 +16453,7 @@ function _fallbackCopy(text){
               written += chunk.byteLength;
               var _tB2 = exportState._compressTotalInput || exportState.totalBytes || (exportState.total || 1);
               exportState.compressPct = Math.min(99, Math.round((written / _tB2) * 100));
-                if(!exportState._lastCompressTick || Date.now() - exportState._lastCompressTick >   250){ exportState._lastCompressTick = Date.now(); refreshExportNotif(); }
+                if(Date.now() - (exportState._lastCompressTick || 0) > 500){ exportState._lastCompressTick = Date.now(); refreshExportNotif(); }
             });
             stream.on('end', () => { try{ resolve(new Blob(parts, { type: 'application/zip' })); }catch(e){ reject(e); } });
             stream.on('error', (e) => { reject(e); });
@@ -22615,7 +22638,7 @@ if(!isDiscover) stopDiscoverPreview();
       return 'All Songs';
     };
     activePlaylist = pickReal();
-    renderListInner._scrollToPlaying = true; // land on the currently playing song — must be set BEFORE navigate() which calls renderList()
+    if(autoScrollToSong) renderListInner._scrollToPlaying = true; // land on the currently playing song — must be set BEFORE navigate() which calls renderList()
     navigate('library');
     renderTabs();
   });
