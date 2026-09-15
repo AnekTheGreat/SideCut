@@ -4317,7 +4317,8 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     // Visible-session heartbeat: touch scAliveAt every 2 s while in the
     // foreground. A swiped-away / killed process stops beating immediately,
     // so on the next boot a marker the app visibly outlived is not a crash.
-    function __scBeat(){ if(!document.hidden){ try{ localStorage.setItem('scAliveAt', String(Date.now())); }catch(e){ } } }
+    var _lastBeat = 0;
+    function __scBeat(){ if(!document.hidden && (Date.now() - _lastBeat > 10000)){ _lastBeat = Date.now(); try{ localStorage.setItem('scAliveAt', String(Date.now())); }catch(e){ } } }
     document.addEventListener('visibilitychange', function(){ if(document.hidden) __scNoteHidden(); else __scBeat(); });
     window.addEventListener('pagehide', __scNoteHidden);
     if(document.hidden){ __scNoteHidden(); } else { __scBeat(); }
@@ -18481,6 +18482,9 @@ function _fallbackCopy(text){
   function startMediaSessionHeartbeat(){
     stopMediaSessionHeartbeat();
     mediaSessionHeartbeat = setInterval(() => {
+      // Don't waste battery when truly backgrounded — only run while screen is on
+      // or while actively playing (the OS notification keeps the session alive)
+      if(document.hidden && (!activeAudio() || activeAudio().paused)) return;
       const a = activeAudio();
       if(!a) return;
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
