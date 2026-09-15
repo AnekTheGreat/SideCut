@@ -12990,7 +12990,7 @@ function startLyricsAutoScroll() {
   }
 
   function openListMoreMenu(ids, isAllSongs, canDelete){
-    $('songActionsTitle').textContent = libraryMode === 'albums' ? 'Albums' : (isAllSongs ? 'All Songs' : activePlaylist);
+    $('songActionsTitle').textContent = libraryMode === 'albums' ? 'Albums' : (isAllSongs ? 'Library' : activePlaylist);
     const list = $('songActionsList');
     list.innerHTML = '';
 
@@ -13528,12 +13528,14 @@ function _fallbackCopy(text){
       el.className = 'tab' + (name === activePlaylist ? ' active' : '');
       
       // Show duration on tabs if sandbox mode enabled
-      let tabText = name;
+      // Display "Library" instead of "All Songs" in the tab
+      var displayName = name === 'All Songs' ? 'Library' : name;
+      let tabText = displayName;
       if(sandboxDurOnTabs && name !== 'All Songs' && name !== 'Favorites'){
         const ids = playlists[name] || [];
         const totalSec = ids.reduce((s, id) => { const t = allTracks.find(tr => tr.id === id); return s + (t && t.duration ? t.duration : 0); }, 0);
         if(totalSec > 0){
-          tabText = name + ' <span class="tab-label" style="display:none; font-size:10px; opacity:0.7;">' + fmtDuration(totalSec) + '</span>';
+          tabText = displayName + ' <span class="tab-label" style="display:none; font-size:10px; opacity:0.7;">' + fmtDuration(totalSec) + '</span>';
           el.innerHTML = tabText;
         } else {
           el.textContent = name;
@@ -14482,7 +14484,20 @@ function _fallbackCopy(text){
           + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.artist || 'Unknown artist') + (albTotalStr ? ' \u00b7 ' + albTotalStr : '') + '</div>'
           + '</div>'
           + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'
+          + '<button class="alb-delete-btn" style="background:none;border:none;color:var(--ink-dim);font-size:16px;padding:2px 6px;cursor:pointer;flex-shrink:0;border-radius:50%;line-height:1;" title="Delete album (keeps songs)">&times;</button>'
         card.appendChild(hdr);
+        // Wire delete album button
+        (function(){
+          var delBtn = card.querySelector('.alb-delete-btn');
+          if(delBtn) delBtn.addEventListener('click', function(e){
+            e.stopPropagation();
+            if(!confirm('Delete album "' + aName + '"? The songs stay in your library.')) return;
+            delete userAlbums[aName];
+            saveMeta();
+            renderList();
+            toast('Album "' + aName + '" deleted — songs kept.');
+          });
+        })();
         var body = document.createElement('div');
         body.id = cardId;
         body.style.cssText = collapsed ? 'display:none;' : 'display:block;padding:0 6px 6px;';
@@ -15026,7 +15041,8 @@ function _fallbackCopy(text){
     } else {
       const removeBtn = document.createElement('button');
       removeBtn.className = 'danger';
-      removeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg> Remove from "${escapeHtml(activePlaylist)}"`;
+      var _rmLabel = activePlaylist === "All Songs" ? "Library" : activePlaylist;
+      removeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg> Remove from "${escapeHtml(_rmLabel)}"`;
       removeBtn.addEventListener('click', () => {
         $('songActionsBackdrop').style.display='none';
         playlists[activePlaylist] = playlists[activePlaylist].filter(x => x !== id);
@@ -16172,7 +16188,7 @@ function _fallbackCopy(text){
         blob = new Blob([buffer], { type: 'audio/wav' });
       }
       if(!blob) throw new Error('encoder produced no output');
-      let baseName = isAllSongs ? 'All Songs' : (activePlaylist || 'Playlist');
+      let baseName = isAllSongs ? 'Library' : (activePlaylist || 'Playlist');
       baseName = baseName.replace(/[\\/:*?"<>|]/g, '_');
       const fname = `${baseName} - Crossfaded Mix.${ext}`;
       setProg('Saving…', 99);
