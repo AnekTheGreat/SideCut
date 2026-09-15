@@ -17616,6 +17616,7 @@ function _fallbackCopy(text){
   }
   let _lastListenPos = -1;
   setInterval(() => {
+    if(document.hidden) return; // Don't count time when app is backgrounded
     // Count only REAL, audible playback: the active element must be playing a
     // loaded source and its currentTime must actually advance between ticks.
     // A frozen position means buffering / stalled / ended — no sound is coming
@@ -18316,7 +18317,7 @@ function _fallbackCopy(text){
       // case where Android reclaimed memory and the old URL went dead while suspended.
       // Skip while DJ Mode is open: it owns sound via the deck engine and the main
       // <audio> element is intentionally idle there, so reviving it would double up.
-      if(a.paused && !userPaused && $('djModeBackdrop').style.display !== 'flex'
+      if(a.paused && !userPaused && !document.hidden && $('djModeBackdrop').style.display !== 'flex'
          && queueIndex >= 0 && queueIndex < queue.length){
         const t = allTracks.find(tr => tr.id === queue[queueIndex]);
         if(t && t.file && (!t.url || a.error)){
@@ -18354,7 +18355,7 @@ function _fallbackCopy(text){
       if(a.duration){
         mediaSetPositionState(a.duration, a.playbackRate || 1, Math.min(a.currentTime, a.duration));
       }
-    }, 15000);
+    }, 30000);
   }
   function stopMediaSessionHeartbeat(){
     if(mediaSessionHeartbeat){ clearInterval(mediaSessionHeartbeat); mediaSessionHeartbeat = null; }
@@ -18372,6 +18373,7 @@ function _fallbackCopy(text){
   // Re-acquire the wake lock if the page comes back into view after the OS revoked it.
   document.addEventListener('visibilitychange', () => {
     if(document.visibilityState === 'visible' && activeAudio() && !activeAudio().paused) requestWakeLock();
+    else releaseWakeLock();
   });
   // Recreates a track's blob URL and retries playback — handles the case where
   // Android reclaims memory while backgrounded and the old blob URL goes dead.
