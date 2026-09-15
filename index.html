@@ -14994,7 +14994,25 @@ function _fallbackCopy(text){
     infoBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; showSongInfo(t); });
     list.appendChild(infoBtn);
 
-    if(isAllSongsView){
+    if(libraryMode === 'albums'){
+      // In albums mode: remove from album, no delete from library
+      const removeAlbumBtn = document.createElement('button');
+      removeAlbumBtn.className = 'danger';
+      removeAlbumBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg> Remove from albums`;
+      removeAlbumBtn.addEventListener('click', () => {
+        $('songActionsBackdrop').style.display='none';
+        Object.keys(userAlbums).forEach(name => {
+          const ua = userAlbums[name];
+          if(ua && Array.isArray(ua.trackIds)){
+            ua.trackIds = ua.trackIds.filter(tid => tid !== id);
+          }
+        });
+        saveMeta();
+        renderList();
+        toast('Removed from all albums');
+      });
+      list.appendChild(removeAlbumBtn);
+    } else if(isAllSongsView){
       const addBtn = document.createElement('button');
       addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> Add to playlist`;
       addBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; promptAddToPlaylist(id); });
@@ -15247,15 +15265,21 @@ function _fallbackCopy(text){
     sheet.innerHTML = '<h3>Add to album</h3><div style="font-size:12.5px; color:var(--ink-dim); margin:2px 0 10px;">' + escapeHtml(sourceLabel) + ' — ' + ids.length + ' song' + (ids.length === 1 ? '' : 's') + '</div>';
     const listEl = document.createElement('div');
     listEl.style.cssText = 'display:flex; flex-direction:column; gap:6px; max-height:34vh; overflow-y:auto; margin-bottom:8px;';
+    // Style album buttons
+    function styleAlbumBtn(btn){
+      btn.style.cssText = 'display:flex; align-items:center; gap:8px; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg-raised); color:var(--ink); font-size:13.5px; text-align:left; width:100%; cursor:pointer;';
+    }
     names.forEach(name => {
       const b = document.createElement('button');
-      b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg> ' + escapeHtml(name) + ' <span style="opacity:.55; font-size:11px;">(' + (userAlbums[name].trackIds ? userAlbums[name].trackIds.length : 0) + ' songs)</span>';
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;flex-shrink:0;"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg> ' + escapeHtml(name) + ' <span style="opacity:.55; font-size:11px;">(' + (userAlbums[name].trackIds ? userAlbums[name].trackIds.length : 0) + ' songs)</span>';
       b.addEventListener('click', () => { backdrop.remove(); addTracksToAlbum(ids, name, sourceLabel); });
+      styleAlbumBtn(b);
       listEl.appendChild(b);
     });
     const newBtn = document.createElement('button');
-    newBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> New album…';
+    newBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;flex-shrink:0;"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg> New album…';
     newBtn.addEventListener('click', () => { backdrop.remove(); createAlbumFromIds(ids, sourceLabel, null); });
+    styleAlbumBtn(newBtn);
     const doneBtn = document.createElement('button');
     doneBtn.textContent = 'Cancel';
     doneBtn.style.cssText = 'border:none; background:none; color:var(--ink-dim); padding:8px;';
