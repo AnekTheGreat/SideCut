@@ -9200,11 +9200,12 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '57.0';
+  const APP_VERSION = '57.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
   var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false'; // default true
+  var autoScrollToSong = localStorage.getItem('sidecut_autoScrollToSong') !== 'false'; // default true
   function applyLibraryButtonMode(){
     var libBtn = document.getElementById('libraryBtn');
     if(!libBtn) return;
@@ -9476,6 +9477,18 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '57.1', date: 'September 15, 2026 · 7:45 PM EDT', title: 'Sort fixes, export completeness, and performance overhaul', items: [
+    'Sort by album now groups tracks by cover art — songs with the same cover art stay together even if their album names differ slightly',
+    'Export everything now includes all album history, hidden albums/singles, recently deleted albums, album edits, pinned releases, and pinned artists',
+    'Import restores all exported discovery data and clears cached popups so restored data appears immediately',
+    'Old songs popup now shows a play button on each row for 30-second previews, same as Singles',
+    'Album settings (\u22ee) replaces the visible delete button — tap \u22ee then Delete album from the dropdown',
+    'Song settings popup always opens scrolled to the top instead of the bottom',
+    'Album sort ordering improved — tracks from the same album group together reliably',
+    'Fixed autoScrollToSong ReferenceError that showed a red error bar on launch',
+    'Performance overhaul: sort comparators use a cached Map instead of linear scans, eliminating O(n\u00b2) lag during reordering and rendering',
+    'Search filter and duration calculations in the list view now use the cached Map for instant lookups',
+  ] },
   { version: '57.0', date: 'September 14, 2026 · 3:00 PM EDT', title: 'Exports, playlists, pinned artists, and battery fixes', items: [
     'Export progress bar now shows real compression progress based on actual bytes written \u2014 no more stalling at 95% or 99%',
     'Export save/share step has proper timeouts so exports never hang \u2014 the file lands in your cache even if the share sheet is slow',
@@ -13533,7 +13546,7 @@ function _fallbackCopy(text){
       let tabText = displayName;
       if(sandboxDurOnTabs && name !== 'All Songs' && name !== 'Favorites'){
         const ids = playlists[name] || [];
-        const totalSec = ids.reduce((s, id) => { const t = allTracks.find(tr => tr.id === id); return s + (t && t.duration ? t.duration : 0); }, 0);
+        const _tabMap = _ensureTrackMap(); const totalSec = ids.reduce((s, id) => { const t = _tabMap.get(id); return s + (t && t.duration ? t.duration : 0); }, 0);
         if(totalSec > 0){
           tabText = displayName + ' <span class="tab-label" style="display:none; font-size:10px; opacity:0.7;">' + fmtDuration(totalSec) + '</span>';
           el.innerHTML = tabText;
@@ -13938,6 +13951,15 @@ function _fallbackCopy(text){
     toast(`Created "${name}"`);
   });
 
+  // Global track lookup map — rebuilt when allTracks changes, reused everywhere
+  var _trackMap = null;
+  function _ensureTrackMap(){
+    if(!_trackMap || _trackMap.size !== allTracks.length){
+      _trackMap = new Map();
+      for(const _t of allTracks){ _trackMap.set(_t.id, _t); }
+    }
+    return _trackMap;
+  }
   function _isUserAlbumTrack(t){
     if(!t || typeof userAlbums === 'undefined') return false;
     return !!(t.album && userAlbums[t.album]);
@@ -13945,44 +13967,73 @@ function _fallbackCopy(text){
   function getSortedIds(ids){
     const sortKey = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
     const arr = ids.slice();
+    // Build a fast O(1) lookup map ONCE for all sort paths — eliminates the
+    // O(n) allTracks.find() inside every comparator, which was O(n^2 log n).
+    const _tMap = new Map();
+    for(const _t of allTracks){ _tMap.set(_t.id, _t); }
     if(sortKey === 'alpha'){
-      arr.sort((a,b) => (allTracks.find(t=>t.id===a)?.name||'').localeCompare(allTracks.find(t=>t.id===b)?.name||''));
+      arr.sort((a,b) => (_tMap.get(a)?.name||'').localeCompare(_tMap.get(b)?.name||''));
     } else if(sortKey === 'artist'){
-      arr.sort((a,b) => (allTracks.find(t=>t.id===a)?.artist||'').localeCompare(allTracks.find(t=>t.id===b)?.artist||''));
+      arr.sort((a,b) => (_tMap.get(a)?.artist||'').localeCompare(_tMap.get(b)?.artist||''));
     } else if(sortKey === 'album'){
+      // Build a cover-art grouping map so tracks with the same cover art
+      // stay together even if their album names differ slightly.
+      var _albumCoverMap = {};
+      var _albumCoverGroup = 0;
+      arr.forEach(id => {
+        const t = _tMap.get(id) || {};
+        const nk = (t.album||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        const ck = nk || (t.artUrl || '') || (t.artBlob ? String(t.artBlob) : '');
+        if(!_albumCoverMap[ck]) _albumCoverMap[ck] = nk || ('_cover_' + (++_albumCoverGroup));
+      });
       arr.sort((a,b) => {
-        const ta = allTracks.find(t=>t.id===a) || {};
-        const tb = allTracks.find(t=>t.id===b) || {};
+        const ta = _tMap.get(a) || {};
+        const tb = _tMap.get(b) || {};
         const artistCmp = (ta.artist||'').localeCompare(tb.artist||'');
         if(artistCmp !== 0) return artistCmp;
-
-        // User albums first under each artist, then singles/others below.
-
         const au = _isUserAlbumTrack(ta) ? 0 : 1;
         const bu = _isUserAlbumTrack(tb) ? 0 : 1;
         if(au !== bu) return au - bu;
-
-        return (ta.album||'').localeCompare(tb.album||'');
+        const an = (ta.album||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        const bn = (tb.album||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        const aKey = _albumCoverMap[an || ((ta.artUrl||'') || (ta.artBlob ? String(ta.artBlob) : ''))] || an;
+        const bKey = _albumCoverMap[bn || ((tb.artUrl||'') || (tb.artBlob ? String(tb.artBlob) : ''))] || bn;
+        if(aKey !== bKey){
+          if(!an) return 1;
+          if(!bn) return -1;
+          return aKey.localeCompare(bKey);
+        }
+        const aln = (ta.album || '').localeCompare(tb.album||'');
+        if(aln !== 0) return aln;
+        if(ta.trackNumber && tb.trackNumber) return (ta.trackNumber||0) - (tb.trackNumber||0);
+        return (ta.name||'').localeCompare(tb.name||'');
       });
     } else if(sortKey === 'artist-album'){
+      // Build cover-art groups for the artist-album sort too
+      var _aaCoverMap = {};
+      var _aaCoverGroup = 0;
+      arr.forEach(id => {
+        const t = _tMap.get(id) || {};
+        const nk = (t.album||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        const ck = nk || (t.artUrl || '') || (t.artBlob ? String(t.artBlob) : '');
+        if(!_aaCoverMap[ck]) _aaCoverMap[ck] = nk || ('_cover_' + (++_aaCoverGroup));
+      });
       arr.sort((a,b) => {
-        const ta = allTracks.find(t=>t.id===a) || {};
-        const tb = allTracks.find(t=>t.id===b) || {};
+        const ta = _tMap.get(a) || {};
+        const tb = _tMap.get(b) || {};
         const artistCmp = (ta.artist||'').localeCompare(tb.artist||'');
         if(artistCmp !== 0) return artistCmp;
-
-        // User albums first under each artist, then singles/others below.
-
         const au2 = _isUserAlbumTrack(ta) ? 0 : 1;
         const bu2 = _isUserAlbumTrack(tb) ? 0 : 1;
         if(au2 !== bu2) return au2 - bu2;
-
-        const al = (ta.album || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
-        const bl = (tb.album || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
-        if(al !== bl){
-          if(!al) return 1;
-          if(!bl) return -1;
-          return al.localeCompare(bl);
+        const an = (ta.album||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        const bn = (tb.album||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        const aKey = _aaCoverMap[an || ((ta.artUrl||'') || (ta.artBlob ? String(ta.artBlob) : ''))] || an;
+        const bKey = _aaCoverMap[bn || ((tb.artUrl||'') || (tb.artBlob ? String(tb.artBlob) : ''))] || bn;
+        if(aKey !== bKey){
+          if(!an) return 1;
+          if(!bn) return -1;
+          return aKey.localeCompare(bKey);
         }
         const aln = (ta.album || '').localeCompare(tb.album||'');
         if(aln !== 0) return aln;
@@ -13990,8 +14041,8 @@ function _fallbackCopy(text){
       });
     } else if(sortKey === 'genre'){
       arr.sort((a,b) => {
-        const ga = allTracks.find(t=>t.id===a)?.genre || 'zzz_Unknown';
-        const gb = allTracks.find(t=>t.id===b)?.genre || 'zzz_Unknown';
+        const ga = _tMap.get(a)?.genre || 'zzz_Unknown';
+        const gb = _tMap.get(b)?.genre || 'zzz_Unknown';
         return ga.localeCompare(gb);
       });
     } else if(sortKey === 'recent'){
@@ -14106,9 +14157,10 @@ function _fallbackCopy(text){
       ids = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : ids;
     }
     const fullIds = ids.slice(); // full playlist order, before search narrows what's shown — this is what playback should queue
+    const _rlMap = _ensureTrackMap();
     if(searchQuery){
       ids = ids.filter(id => {
-        const t = allTracks.find(tr => tr.id === id);
+        const t = _rlMap.get(id);
         if(!t) return false;
         return (t.name||'').toLowerCase().includes(searchQuery) || (t.artist||'').toLowerCase().includes(searchQuery) || (t.album||'').toLowerCase().includes(searchQuery);
       });
@@ -14121,7 +14173,7 @@ function _fallbackCopy(text){
 
     pane.innerHTML = '';
     const totalSeconds = ids.reduce((sum, id) => {
-      const t = allTracks.find(tr => tr.id === id);
+      const t = _rlMap.get(id);
       return sum + (t && t.duration ? t.duration : 0);
     }, 0);
     const durLabel = totalSeconds > 0 ? ' · ' + fmtDurationLong(totalSeconds) : '';
@@ -14484,18 +14536,30 @@ function _fallbackCopy(text){
           + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.artist || 'Unknown artist') + (albTotalStr ? ' \u00b7 ' + albTotalStr : '') + '</div>'
           + '</div>'
           + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'
-          + '<button class="alb-delete-btn" style="background:none;border:none;color:var(--ink-dim);font-size:16px;padding:2px 6px;cursor:pointer;flex-shrink:0;border-radius:50%;line-height:1;" title="Delete album (keeps songs)">&times;</button>'
+          + '<button class="alb-manage-btn" style="background:none;border:none;color:var(--ink-dim);font-size:16px;padding:2px 6px;cursor:pointer;flex-shrink:0;border-radius:50%;line-height:1;" title="Manage album">⋮</button>'
         card.appendChild(hdr);
         // Wire delete album button
         (function(){
-          var delBtn = card.querySelector('.alb-delete-btn');
-          if(delBtn) delBtn.addEventListener('click', function(e){
+          var mgrBtn = card.querySelector('.alb-manage-btn');
+          if(mgrBtn) mgrBtn.addEventListener('click', function(e){
             e.stopPropagation();
-            if(!confirm('Delete album "' + aName + '"? The songs stay in your library.')) return;
-            delete userAlbums[aName];
-            saveMeta();
-            renderList();
-            toast('Album "' + aName + '" deleted — songs kept.');
+            var old = card.querySelector('.alb-mgr-dropdown'); if(old) old.remove();
+            var dd = document.createElement('div');
+            dd.className = 'alb-mgr-dropdown';
+            dd.style.cssText = 'position:absolute;right:8px;top:100%;z-index:20;background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;padding:6px 0;box-shadow:0 4px 16px rgba(0,0,0,0.4);min-width:140px;';
+            var delItem = document.createElement('button');
+            delItem.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:none;color:#FF6F59;font-size:13px;cursor:pointer;text-align:left;font-family:var(--font-ui);';
+            delItem.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg> Delete album';
+                        delItem.addEventListener('click', function(ev){
+              ev.stopPropagation(); dd.remove();
+              if(!confirm('Delete album "' + aName + '"? The songs stay in your library.')) return;
+              delete userAlbums[aName]; saveMeta(); renderList();
+              toast('Album "' + aName + '" deleted \u2014 songs kept.');
+            });
+            dd.appendChild(delItem);
+            card.style.position = 'relative';
+            card.appendChild(dd);
+            setTimeout(function(){ document.addEventListener('click', function _close(){ dd.remove(); document.removeEventListener('click', _close); }); }, 10);
           });
         })();
         var body = document.createElement('div');
@@ -14911,6 +14975,9 @@ function _fallbackCopy(text){
     const t = allTracks.find(tr => tr.id === id);
     if(!t) return;
     $('songActionsTitle').textContent = t.name;
+    // Scroll the modal to the top so it always starts from the beginning
+    var _saModal = $('songActionsBackdrop').querySelector('.modal');
+    if(_saModal) _saModal.scrollTop = 0;
     const isFav = playlists['Favorites'].includes(id);
     const isAllSongsView = activePlaylist === 'All Songs' || activePlaylist === UNSORTED_VIEW;
     const list = $('songActionsList');
@@ -16802,6 +16869,17 @@ function _fallbackCopy(text){
             const longestStreak = await dbGet('meta', 'longestStreak');
             if(longestStreak) manifest.stats.longestStreak = longestStreak.value;
           }catch(e){ console.log('Could not export stats:', e); }
+          // Export album history, hidden albums/singles, album edits, recently deleted, and new releases
+          try{
+            manifest.ahArtistData = JSON.parse(localStorage.getItem('sidecut_ahArtistData') || 'null');
+            manifest.hiddenAlbums = JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]');
+            manifest.hiddenSingles = JSON.parse(localStorage.getItem('sidecut_hiddenSingles') || '[]');
+            manifest.albumEdits = JSON.parse(localStorage.getItem('sidecut_albumEdits') || '{}');
+            manifest.recentlyDeleted = JSON.parse(localStorage.getItem('sidecut_recentlyDeleted') || '[]');
+            manifest.recentlyDeletedSingles = JSON.parse(localStorage.getItem('sidecut_recentlyDeletedSingles') || '[]');
+            manifest.pinnedReleases = typeof pinnedReleases !== "undefined" ? pinnedReleases : {};
+            manifest.pinnedArtists = typeof pinnedArtists !== "undefined" ? pinnedArtists : [];
+          }catch(e){ console.log('Could not export discovery data:', e); }
         },
       });
     });
@@ -17359,6 +17437,18 @@ function _fallbackCopy(text){
           toast('Premium restored from your backup. ✨', 3200);
         }
       }
+
+      // Restore discovery data (album history, hidden albums/singles, album edits, recently deleted, releases)
+      if(manifest.ahArtistData){ try{ localStorage.setItem('sidecut_ahArtistData', JSON.stringify(manifest.ahArtistData)); }catch(e){} }
+      if(manifest.hiddenAlbums && Array.isArray(manifest.hiddenAlbums)){ try{ localStorage.setItem('sidecut_hiddenAlbums', JSON.stringify(manifest.hiddenAlbums)); }catch(e){} }
+      if(manifest.hiddenSingles && Array.isArray(manifest.hiddenSingles)){ try{ localStorage.setItem('sidecut_hiddenSingles', JSON.stringify(manifest.hiddenSingles)); }catch(e){} }
+      if(manifest.albumEdits && typeof manifest.albumEdits === 'object'){ try{ localStorage.setItem('sidecut_albumEdits', JSON.stringify(manifest.albumEdits)); }catch(e){} }
+      if(manifest.recentlyDeleted && Array.isArray(manifest.recentlyDeleted)){ try{ localStorage.setItem('sidecut_recentlyDeleted', JSON.stringify(manifest.recentlyDeleted)); }catch(e){} }
+      if(manifest.recentlyDeletedSingles && Array.isArray(manifest.recentlyDeletedSingles)){ try{ localStorage.setItem('sidecut_recentlyDeletedSingles', JSON.stringify(manifest.recentlyDeletedSingles)); }catch(e){} }
+      if(manifest.pinnedReleases && typeof manifest.pinnedReleases === 'object'){ Object.keys(manifest.pinnedReleases).forEach(k => { if(!pinnedReleases[k]) pinnedReleases[k] = manifest.pinnedReleases[k]; }); dbPut('meta', { key: 'pinnedReleases', value: pinnedReleases }); }
+      if(manifest.pinnedArtists && Array.isArray(manifest.pinnedArtists)){ manifest.pinnedArtists.forEach(a => { const h = new Set(pinnedArtists.map(x => (x.name||'').toLowerCase().trim())); if(a && a.name && !h.has(a.name.toLowerCase().trim())) pinnedArtists.push(a); }); dbPut('meta', { key: 'pinnedArtists', value: pinnedArtists }); }
+      // Clear all cached popups so restored data shows up fresh
+      try{ Object.keys(localStorage).filter(k => k.indexOf('discPopupCache_') === 0).forEach(k => localStorage.removeItem(k)); }catch(e){}
 
       // Apply sandbox CSS classes
       applySandboxStyles();
@@ -21263,7 +21353,8 @@ function _fallbackCopy(text){
             var when = daysAgo + 'd ago';
             var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
             var _lyId = r.trackId || r.collectionId || ('manual_' + Date.now() + '_' + ri);
-            html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '">';
+            html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '"' + (r.previewUrl ? ' data-preview="' + escapeHtml(r.previewUrl) + '"' : '') + ' data-trackname="' + escapeHtml(r.trackName) + '" data-artist="' + escapeHtml(r.artistName) + '">';
+            if(r.previewUrl) html += '<span class="dp-track-play" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.08);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u25b6</span>';
             html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (art ? 'background-image:url(' + cssUrl(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName) + '</div>';
             html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + ' · ' + when + (r.releaseDate ? ' (' + r.releaseDate.slice(0,10) + ')' : '') + '</div></div>';
@@ -21275,8 +21366,14 @@ function _fallbackCopy(text){
         if(!html){ if(navigator.onLine === false && loadCachedDiscoverPopup('📅 Old songs')){ this.textContent = '📅 Old songs'; this.disabled = false; return; } html = '<div class="dp-empty">No songs between 1 and 3 years old found.</div>'; }
         openDiscoverPopup('📅 Old songs', html, totalFound + ' song' + (totalFound!==1?'s':'') + ' from 1–3 years ago across ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
         document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
+          if(row._lyWired) return; row._lyWired = true;
+          var playBtn = row.querySelector('.dp-track-play');
+          if(playBtn) playBtn.addEventListener('click', function(e){
+            e.stopPropagation(); e.preventDefault();
+            if(row.dataset.preview && typeof window.playDiscoverTrack === 'function') window.playDiscoverTrack(row.dataset.preview, row, { trackName: row.dataset.trackname||'', artistName: row.dataset.artist||'', art: row.dataset.art||'' });
+          });
           row.addEventListener('click', function(e){
-            if(e.target && e.target.closest && e.target.closest('.dp-ly-x')) return;
+            if(e.target && e.target.closest && (e.target.closest('.dp-ly-x') || e.target.closest('.dp-track-play'))) return;
             $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
           });
         });
