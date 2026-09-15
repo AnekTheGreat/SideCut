@@ -4783,7 +4783,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
     // the rAF loop below now only ever reads the last value setInterval computed and
     // writes styles, no audio-graph calls on the paint path.
     if(glowAudioReadInterval) clearInterval(glowAudioReadInterval);
-    glowAudioReadInterval = setInterval(() => { if(document.hidden) return;
+    glowAudioReadInterval = setInterval(() => { if(document.hidden || !widgetPlaying) return;
       const analyser = glowAnalysers[activeIdx];
       if(!analyser){ ensureGlowAnalyser(activeIdx); return; }
       if(!reuseBuffer || reuseBuffer.length !== analyser.frequencyBinCount){
@@ -17961,19 +17961,37 @@ function _fallbackCopy(text){
   // (State was previously only pushed on track / play-pause CHANGE, which left a
   // freshly-placed widget stuck on the default "SideCut" until the song changed.)
   (function(){
+    // Widget timeout: after 25s of no user interaction, stop pushing state
+    // to the widget to save battery. Resume on next touch/click.
+    var _widgetLastInteraction = Date.now();
+    var _widgetTimeoutMs = 25000;
+    var _widgetDimmed = false;
+    function _widgetUserInteracted(){ _widgetLastInteraction = Date.now(); if(_widgetDimmed){ _widgetDimmed = false; } }
+    document.addEventListener('touchstart', _widgetUserInteracted, {passive:true});
+    document.addEventListener('click', _widgetUserInteracted, {passive:true});
     window.__scWidgetHeartbeat = function(){
       try{
         if(!widgetTrack) return;
-        // Push unconditionally every tick: an already-placed widget only updates
-        // when Android re-renders it, and that is triggered by the native
-        // update() -> pushAll() call. Removing the change-gate guarantees a
-        // widget placed EARLIER (while a song was already playing) still gets
-        // filled within ~1.5s instead of staying on the default SideCut.
+        // After 25s of no interaction, stop pushing to save battery
+        if(Date.now() - _widgetLastInteraction > _widgetTimeoutMs){
+          if(!_widgetDimmed){
+            _widgetDimmed = true;
+            // Push a dimmed/idle state once, then stop
+            try{
+              var C = window.Capacitor; var W = C && C.Plugins && C.Plugins.SideCutWidget;
+              var body = { data: JSON.stringify({ title: 'SideCut', artist: 'Tap to show', art: '', playing: false, seq: 0, boot: 0, pulse: 0 }), theme: JSON.stringify(getWidgetTheme()) };
+              if(W && typeof W.update === 'function') W.update(body);
+              else if(C && typeof C.nativePromise === 'function') C.nativePromise('SideCutWidget', 'update', body).catch(function(){});
+            }catch(e){}
+          }
+          return;
+        }
+        _widgetDimmed = false;
         if(widgetPlaying) window.__scWidgetPulse = ((window.__scWidgetPulse || 0) + 1) % 16;
         pushWidgetState(widgetTrack, widgetPlaying);
       }catch(e){}
     };
-    setInterval(function(){ if(document.hidden) return; try{ window.__scWidgetHeartbeat(); }catch(e){} }, 1000);
+    setInterval(function(){ if(document.hidden) return; try{ window.__scWidgetHeartbeat(); }catch(e){} }, 3000);
   })();
   // Switch the playing playlist when the user taps a pill on the home widget.
   // The widget writes the target name to prefs; we poll the plugin and switch.
