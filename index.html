@@ -15987,32 +15987,36 @@ function _fallbackCopy(text){
 
     // -------- Phase 1: parallel decode (up to 4 at once) --------
     const decCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const good = [];
+    // Indexed array — preserves input order even with parallel decode
+    const decoded = new Array(list.length).fill(null);
+    let decodedCount = 0;
     const decPool = Math.min(4, (navigator.hardwareConcurrency || 4));
-    async function decodeOne(t){
+    async function decodeOne(t, idx){
       try{
         const arrBuf = await blobToArrayBufferFallbackCrop(t.file);
         if(!arrBuf) throw new Error('empty read');
-        return await decCtx.decodeAudioData(arrBuf);
+        const buf = await decCtx.decodeAudioData(arrBuf);
+        decoded[idx] = buf;
+        decodedCount++;
       }catch(err){
         console.warn('Mix decode failed for', t.name, err);
-        return null;
       }
     }
     try{
       let di = 0;
       async function worker(){
         while(di < list.length){
-          const t = list[di++];
-          const b = await decodeOne(t);
-          if(b) good.push(b);
-          setProg(`Decoding ${Math.min(good.length + di, list.length)}/${list.length}…`, (di / list.length) * 40);
+          const idx = di++;
+          await decodeOne(list[idx], idx);
+          setProg(`Decoding ${decodedCount}/${list.length}…`, (decodedCount / list.length) * 40);
         }
       }
       await Promise.all(Array.from({ length: decPool }, worker));
     } finally {
       try{ decCtx.close(); }catch(e){}
     }
+    // Filter out nulls (failed decodes) while preserving order
+    const good = decoded.filter(Boolean);
     if(good.length < 2){ hideChip(); toast('Could not decode enough tracks to make a mix.', 4500); return; }
 
     const sr = Math.max(8000, Math.min(48000, good[0].sampleRate || 44100));
