@@ -432,24 +432,38 @@
       // https://localhost) often fails cross-origin fetch to GitHub Pages
       // due to Android WebView CORS restrictions. The proxy chain ensures
       // at least one path works.
+      // Use CapacitorHttp first — it bypasses WebView CORS entirely by using
+      // native Android HTTP. Only fall back to fetch() if CapacitorHttp isn't available.
+      var _capHttp = null;
+      try{ var _cap = window.Capacitor && window.Capacitor.Plugins; _capHttp = _cap && _cap.CapacitorHttp; }catch(_e){}
       var _rawManifest = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json';
-      var _fetchAttempts = [
-        _rawManifest,
-        MANIFEST_URL,
-        'https://corsproxy.io/?' + encodeURIComponent(MANIFEST_URL),
-        'https://api.allorigins.win/raw?url=' + encodeURIComponent(MANIFEST_URL),
-        'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(MANIFEST_URL)
-      ];
       var resp = null;
-      for(var _fi = 0; _fi < _fetchAttempts.length; _fi++){
+      // 1) CapacitorHttp — native, no CORS restrictions
+      if(_capHttp && typeof _capHttp.request === 'function'){
         try{
-          var ctrl = new AbortController();
-          var timer = setTimeout(function(){ ctrl.abort(); }, 12000);
-          resp = await fetch(_fetchAttempts[_fi], { signal: ctrl.signal });
-          clearTimeout(timer);
-          if(resp && resp.ok) break;
-          resp = null;
-        }catch(_fe){ resp = null; }
+          var _r = await _capHttp.request({ url: _rawManifest, method: 'GET', headers: { 'Accept': 'application/json' } });
+          if(_r && _r.data){ resp = { ok: true, json: async function(){ return (typeof _r.data === 'string') ? JSON.parse(_r.data) : _r.data; } }; }
+        }catch(_ce){ resp = null; }
+      }
+      // 2) Fallback to fetch with CORS proxy chain
+      if(!resp){
+        var _fetchAttempts = [
+          _rawManifest,
+          MANIFEST_URL,
+          'https://corsproxy.io/?' + encodeURIComponent(MANIFEST_URL),
+          'https://api.allorigins.win/raw?url=' + encodeURIComponent(MANIFEST_URL),
+          'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(MANIFEST_URL)
+        ];
+        for(var _fi = 0; _fi < _fetchAttempts.length; _fi++){
+          try{
+            var ctrl = new AbortController();
+            var timer = setTimeout(function(){ ctrl.abort(); }, 12000);
+            resp = await fetch(_fetchAttempts[_fi], { signal: ctrl.signal });
+            clearTimeout(timer);
+            if(resp && resp.ok) break;
+            resp = null;
+          }catch(_fe){ resp = null; }
+        }
       }
       if(!resp){ log('manifest fetch failed on all attempts'); if(!o.silent) toast('Update check failed — could not reach the update server. Check your connection and try again.', 4500); return { failed: true }; }
       if(!resp || !resp.ok){ log('manifest fetch failed: ' + (resp ? resp.status : 'no response')); if(!o.silent) toast('Update check failed — could not reach the update server (' + (resp ? resp.status : 'no connection') + '). Check your connection and try again.', 4500); return { failed: true }; }

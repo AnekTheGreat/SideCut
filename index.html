@@ -13310,24 +13310,35 @@ function _fallbackCopy(text){
   // Updater for the actual download.
   async function nativeOtaCheckViaProxy(){
     try{
+      // CapacitorHttp first — native, bypasses CORS entirely
+      var _capHttp = null;
+      try{ var _cap = window.Capacitor && window.Capacitor.Plugins; _capHttp = _cap && _cap.CapacitorHttp; }catch(_e){}
       var rawManifest = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json';
       var githubPagesManifest = 'https://anekthegreat.github.io/SideCut/ota/updates.json';
-      var attempts = [
-        rawManifest,
-        'https://corsproxy.io/?' + encodeURIComponent(githubPagesManifest),
-        'https://api.allorigins.win/raw?url=' + encodeURIComponent(githubPagesManifest),
-        'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(githubPagesManifest)
-      ];
       var resp = null;
-      for(var i = 0; i < attempts.length; i++){
+      if(_capHttp && typeof _capHttp.request === 'function'){
         try{
-          var ctrl = new AbortController();
-          var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
-          resp = await fetch(attempts[i], { signal: ctrl.signal });
-          clearTimeout(timer);
-          if(resp && resp.ok) break;
-          resp = null;
-        }catch(_e){ resp = null; }
+          var _r = await _capHttp.request({ url: rawManifest, method: 'GET', headers: { 'Accept': 'application/json' } });
+          if(_r && _r.data){ resp = { ok: true, json: async function(){ return (typeof _r.data === 'string') ? JSON.parse(_r.data) : _r.data; } }; }
+        }catch(_ce){ resp = null; }
+      }
+      if(!resp){
+        var attempts = [
+          rawManifest,
+          'https://corsproxy.io/?' + encodeURIComponent(githubPagesManifest),
+          'https://api.allorigins.win/raw?url=' + encodeURIComponent(githubPagesManifest),
+          'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(githubPagesManifest)
+        ];
+        for(var i = 0; i < attempts.length; i++){
+          try{
+            var ctrl = new AbortController();
+            var timer = setTimeout(function(){ ctrl.abort(); }, 10000);
+            resp = await fetch(attempts[i], { signal: ctrl.signal });
+            clearTimeout(timer);
+            if(resp && resp.ok) break;
+            resp = null;
+          }catch(_e){ resp = null; }
+        }
       }
       if(!resp || !resp.ok) return null;
       var man = await resp.json();
