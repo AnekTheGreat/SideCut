@@ -441,7 +441,7 @@
       // 1) CapacitorHttp — native, no CORS restrictions
       if(_capHttp && typeof _capHttp.request === 'function'){
         try{
-          var _r = await _capHttp.request({ url: _rawManifest, method: 'GET', headers: { 'Accept': 'application/json' } });
+          var _r = await _capHttp.request({ url: _rawManifest, method: 'GET' });
           if(_r && _r.data){ resp = { ok: true, json: async function(){ return (typeof _r.data === 'string') ? JSON.parse(_r.data) : _r.data; } }; }
         }catch(_ce){ resp = null; }
       }
