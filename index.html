@@ -4322,7 +4322,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     document.addEventListener('visibilitychange', function(){ if(document.hidden) __scNoteHidden(); else __scBeat(); });
     window.addEventListener('pagehide', __scNoteHidden);
     if(document.hidden){ __scNoteHidden(); } else { __scBeat(); }
-    setInterval(__scBeat, 2000);
+    setInterval(__scBeat, 5000);
   })();
 
   // Discover dropdown toggles, defined EARLY so no later boot failure can ever
@@ -4635,12 +4635,17 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
       maybeUpdateFavicon(now);
     }
     let last = 0;
+    var _rgbLastCss = 0;
     function frame(now){
       if(intervalMs > 0 && now - last < intervalMs){
         rgbAnimHandle = requestAnimationFrame(frame);
         return;
       }
       last = now;
+      // Throttle CSS property writes to max 4/sec — the hue cycle takes 8s
+      // so 4fps is imperceptible but saves ~97% of compositor work at 120Hz
+      if(now - _rgbLastCss < 250){ rgbAnimHandle = requestAnimationFrame(frame); return; }
+      _rgbLastCss = now;
       tick(now);
       rgbAnimHandle = requestAnimationFrame(frame);
     }
@@ -17814,7 +17819,7 @@ function _fallbackCopy(text){
         const now = a.currentTime || 0;
         if(now > _lastListenPos || _lastListenPos < 0){
           totalListenSeconds++;
-          if(totalListenSeconds % 15 === 0) dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
+          if(totalListenSeconds % 60 === 0) dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
         }
         _lastListenPos = now;
       } else {
@@ -18704,7 +18709,7 @@ function _fallbackCopy(text){
       stuckTicks = 0;
     }
     lastWatchdogTime = a.currentTime;
-  }, 2000);
+  }, 5000);
 
   $('playPauseBtn').addEventListener('click', () => {
     $('playPauseBtn').classList.remove('pulse-cue');
