@@ -9218,7 +9218,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '57.4';
+  const APP_VERSION = '57.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9495,6 +9495,11 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '57.5', date: 'September 16, 2026 · 11:40 PM ET', title: 'Better song matching in all 3 downloaders', items: [
+    'YouTube search no longer appends "audio" to queries — the old suffix pushed official uploads down and surfaced lyric videos, covers, and karaoke tracks',
+    'Quoted title search now runs as PRIMARY (not just a fallback when no AI key) — pins the exact track before heuristic ranking',
+    'Spotify converter, YouTube converter, and Save button all benefit from the improved matching',
+  ] },
   { version: '57.4', date: 'September 16, 2026 · 11:33 PM ET', title: 'RGB animation fix + improved AI error messages', items: [
     'RGB+ animation no longer cycles UI accent colors — chat bubbles, settings tabs, and buttons keep their stable theme color instead of shifting with the glow',
     'Glow effects (edge lines, corner glow, top/bottom bands, turntable ambient) still animate correctly using dedicated glow variables',
@@ -26119,7 +26124,7 @@ if(!isDiscover) stopDiscoverPreview();
     try{
       var body = JSON.stringify({
         context: { client: { clientName: 'WEB', clientVersion: '2.20240801.00.00', hl: 'en' } },
-        query: query + ' audio'
+        query: query
       });
       var d = await scHttpJson('https://www.youtube.com/youtubei/v1/search?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', JSON.parse(body));
       if(!d) return null;
@@ -26432,16 +26437,19 @@ if(!isDiscover) stopDiscoverPreview();
     // skipped. If none verify we still fall back to the best-ranked source so a
     // mismatch in the metadata never dead-ends the conversion.
     var audio = null, fallback = null;
-    // Without an AI key the ranked order is heuristic-only; a stricter quoted
-    // title search first keeps common titles from drifting to lyric videos and
-    // remixes. Its results are merged ahead of the plain search's.
-    if((typeof _aiGeminiKey === 'undefined' || !_aiGeminiKey) && cands.length > 0){
-      var q2 = await scYtSearch('"' + title + '" ' + artist, artist);
-      if(q2 && q2.length && q2[0].videoId !== cands[0].videoId){
+    // Always run a stricter quoted-title search to pin the exact track —
+    // this prevents common titles from drifting to lyric videos, remixes,
+    // and covers. Results are merged ahead of the plain search's.
+    if(title && cands.length > 0){
+      var q2 = await scYtSearch('\"' + title + '\" ' + artist, artist);
+      if(q2 && q2.length){
         var seenIds = {};
-        for(var m2 = 0; m2 < q2.length; m2++) seenIds[q2[m2].videoId] = true;
-        for(var m1 = 0; m1 < cands.length; m1++){ if(!seenIds[cands[m1].videoId]) q2.push(cands[m1]); }
-        cands = q2;
+        for(var m2 = 0; m2 < cands.length; m2++) seenIds[cands[m2].videoId] = true;
+        var merged = [];
+        for(var m2b = 0; m2b < q2.length; m2b++){
+          if(!seenIds[q2[m2b].videoId]){ merged.push(q2[m2b]); seenIds[q2[m2b].videoId] = true; }
+        }
+        cands = merged.concat(cands);
       }
     }
     for(var ci = 0; ci < cands.length && ci < 6; ci++){
