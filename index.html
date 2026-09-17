@@ -662,6 +662,7 @@
   body.sandbox-nowbar-size-150 #nowPlaying { transform: scale(1.5); transform-origin: left bottom; }
   #miniBar{
     display:none; height:4px; width:100%; background:var(--line); position:relative; cursor:pointer;
+    padding:10px 0; margin:-10px 0; box-sizing:content-box;
   }
   #miniBar .fill{ height:100%; background:var(--coral); width:0%; }
   .speed-row{ display:flex; align-items:center; gap:8px; }
@@ -1064,7 +1065,7 @@
   .seek-row{ display:flex; align-items:center; gap:8px; }
   .seek-row span{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-dim); width:32px; flex-shrink:0; }
   .seek-row span:last-child{ text-align:right; }
-  #seekBar{ flex:1; -webkit-appearance:none; appearance:none; height:8px; border-radius:999px; outline:none;
+  #seekBar{ flex:1; -webkit-appearance:none; appearance:none; height:8px; border-radius:999px; outline:none; touch-action:pan-x;
     background:linear-gradient(to right, var(--coral) 0%, var(--coral) var(--seek-fill,0%), var(--line) var(--seek-fill,0%), var(--line) 100%); }
   #seekBar::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--coral);
     border:2px solid #161616; box-sizing:border-box; box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 25%, transparent); margin-top:-4px; cursor:pointer; }
@@ -2016,6 +2017,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button id="importLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Import library</button>
       <button id="exportSongsBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export songs only</button>
       <button id="exportLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export everything (backup)</button>
+      <div style="font-size:11px; color:var(--ink-dim, #8a9bae); padding:4px 2px 0; line-height:1.4; opacity:0.7;">For a 500-song library, exports normally take around 5–7 minutes. Keep playing music while it runs!</div>
     </div>
   </div>
 </div>
@@ -11577,9 +11579,11 @@ function startLyricsAutoScroll() {
       const pct = exportState.phase === 'compressing'
         ? Math.round(exportState.compressPct || 0)
         : (exportState.total ? Math.round((exportState.done / exportState.total) * 100) : 0);
-      const label = exportState.phase === 'compressing'
-        ? (pct >= 96 ? `Saving your export — ${pct}%` : `Compressing the .zip — ${pct}%`)
-        : `Bundling songs — ${exportState.done}/${exportState.total}`;
+      const label = exportState.phase === 'saving'
+        ? `Saving to disk — ${pct}%`
+        : exportState.phase === 'compressing'
+          ? (pct >= 96 ? `Saving your export — ${pct}%` : `Compressing the .zip — ${pct}%`)
+          : `Bundling songs — ${exportState.done}/${exportState.total}`;
       const eta = exportEtaText();
       html += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
@@ -11603,7 +11607,22 @@ function startLyricsAutoScroll() {
   }
 
   function exportEtaText(){
-    if(exportState.phase !== 'compressing' && exportState.done <= 0) return '';
+    if(exportState.phase !== 'compressing' && exportState.phase !== 'saving' && exportState.done <= 0) return '';
+    if(exportState.phase === 'saving'){
+      const pct = exportState.compressPct || 0;
+      const sd = exportState._saveDoneBytes || 0;
+      const st = exportState._saveTotalBytes || 0;
+      const ss = exportState._savePhaseStart || 0;
+      if(st > 0 && sd > 0 && ss > 0){
+        const elapsed = (Date.now() - ss) / 1000;
+        if(elapsed < 1) return '';
+        const rate = sd / elapsed;
+        const remaining = (st - sd) / rate;
+        if(remaining < 2) return '';
+        return fmtDuration(remaining);
+      }
+      return '';
+    }
     if(exportState.phase === 'compressing'){
       const pct = exportState.compressPct || 0;
       if(pct <= 0) return '';
@@ -11622,7 +11641,7 @@ function startLyricsAutoScroll() {
       // Compression phase: starts at compressStartedAt
       const cs = exportState.compressStartedAt || exportState.startedAt;
       const ce = (Date.now() - cs) / 1000;
-      if(pct >= 99) return ''; if(ce < 0.5) return '';
+      if(pct >= 100) return ''; if(ce < 0.5) return '';
       const remaining = ce * (100 - pct) / pct;
       return fmtDuration(remaining);
     }
@@ -11832,9 +11851,11 @@ function startLyricsAutoScroll() {
       const pct = exportState.phase === 'compressing'
         ? Math.round(exportState.compressPct || 0)
         : (exportState.total ? Math.round((exportState.done / exportState.total) * 100) : 0);
-      const label = exportState.phase === 'compressing'
-        ? `Compressing the .zip — ${pct}%`
-        : `Bundling songs — ${exportState.done}/${exportState.total}`;
+      const label = exportState.phase === 'saving'
+        ? `Saving to disk — ${pct}%`
+        : exportState.phase === 'compressing'
+          ? `Compressing the .zip — ${pct}%`
+          : `Bundling songs — ${exportState.done}/${exportState.total}`;
       const eta = exportEtaText();
       inner = `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
@@ -12268,7 +12289,7 @@ function startLyricsAutoScroll() {
     persistTrackMeta(t);
     // Re-point current audio if playing
     try{
-      if(queue[queueIndex] === t.id){
+      if(queue[queueIndex] === t.id && t.url){
         const a = activeAudio();
         const wasPaused = a.paused;
         a.src = t.url; a.load();
@@ -12331,14 +12352,14 @@ function startLyricsAutoScroll() {
     // Load only real audio files
     // Ignore broken Spotify-only entries that have no blob
     allTracks = trackRows
-        .filter(r => r.blob)
         .map(r => ({
             id: r.id,
-            file: r.blob,
+            file: r.blob || null,
             name: r.name || 'Untitled',
             artist: r.artist || 'Unknown artist',
             album: r.album || null,
-            url: URL.createObjectURL(r.blob),
+            url: r.blob ? URL.createObjectURL(r.blob) : null,
+            _noAudio: !r.blob,
 
             duration: r.duration || null,
             bpm: r.bpm ?? null,
@@ -12384,9 +12405,10 @@ function startLyricsAutoScroll() {
     }
 
 
-    // Recover tracks missing from All Songs
+    // Recover tracks missing from All Songs — aggressive rebuild when
+    // the playlist is significantly shorter than allTracks (corrupted by
+    // album-mode reorder bug in earlier versions).
     const allSongsSet = new Set(playlists['All Songs']);
-
     let recovered = 0;
 
     allTracks.forEach(t => {
@@ -12397,8 +12419,19 @@ function startLyricsAutoScroll() {
         }
     });
 
+    // Clean stale IDs from other playlists (tracks that no longer exist in
+    // allTracks — e.g. deleted or lost blob). Do NOT dump all tracks into
+    // every playlist; that would destroy intentionally curated playlists.
+    const allTrackIds = new Set(allTracks.map(t => t.id));
+    let staleCleaned = 0;
+    Object.keys(playlists).forEach(name => {
+        if(name === 'All Songs') return;
+        const before = playlists[name].length;
+        playlists[name] = playlists[name].filter(id => allTrackIds.has(id));
+        staleCleaned += before - playlists[name].length;
+    });
 
-    if(recovered > 0){
+    if(recovered > 0 || staleCleaned > 0){
         dbPut('meta', {
             key:'playlists',
             value:playlists
@@ -13032,6 +13065,7 @@ function startLyricsAutoScroll() {
 
   // Lazy duration + tag/art extraction shared by both import paths.
   function readLazyMeta(t){
+    if(!t.url || !t.file) return;
     const a = new Audio();
     a.preload = 'metadata';
     a.src = t.url;
@@ -13678,6 +13712,7 @@ function _fallbackCopy(text){
     albumsTab.title = 'Your albums — user-made only';
     albumsTab.addEventListener('click', () => {
       libraryMode = 'albums';
+      reorderMode = false;
       dbPut('meta', { key: 'libraryMode', value: libraryMode });
       // Update diagonal split button active-half to reflect albums mode
       var _plH = document.getElementById('playlistsHalf');
@@ -14190,6 +14225,32 @@ function _fallbackCopy(text){
     });
   }
   function renderListInner(){
+    // Mid-session self-heal: if All Songs has fewer tracks than allTracks,
+    // the reorder bug corrupted it. Rebuild immediately and persist.
+    if(activePlaylist === 'All Songs' && playlists['All Songs'] && allTracks.length > playlists['All Songs'].length + 5){
+        const _hs = new Set(playlists['All Songs']);
+        let _added = 0;
+        allTracks.forEach(t => { if(!_hs.has(t.id)){ playlists['All Songs'].push(t.id); _hs.add(t.id); _added++; }});
+        if(_added > 0){ saveMeta(); toast('Auto-recovered ' + _added + ' missing song' + (_added === 1 ? '' : 's') + ' in All Songs'); }
+    }
+    // Also heal user playlists that got overwritten with only album songs
+    // by the album-reorder bug. Detect: every ID in the playlist is also in
+    // buildAlbumsIds() but the playlist is much shorter than allTracks.
+    if(activePlaylist !== 'All Songs' && activePlaylist !== UNSORTED_VIEW && playlists[activePlaylist]){
+        const _plIds = playlists[activePlaylist];
+        if(_plIds.length > 0 && allTracks.length > _plIds.length + 10){
+            const _albumIds = new Set(typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : []);
+            if(_albumIds.size > 0 && _plIds.length < _albumIds.size){
+                const _allInAlbums = _plIds.every(id => _albumIds.has(id));
+                if(_allInAlbums){
+                    const _plSet = new Set(_plIds);
+                    let _added = 0;
+                    allTracks.forEach(t => { if(!_plSet.has(t.id)){ playlists[activePlaylist].push(t.id); _plSet.add(t.id); _added++; }});
+                    if(_added > 0){ saveMeta(); toast('Auto-recovered ' + _added + ' missing song' + (_added === 1 ? '' : 's') + ' in "' + activePlaylist + '"'); }
+                }
+            }
+        }
+    }
     const pane = $('listPane');
     // renderList rebuilds the whole pane (pane.innerHTML = '') which resets
     // scrollTop to 0 as a side effect. This function gets called constantly
@@ -14226,7 +14287,7 @@ function _fallbackCopy(text){
     } else {
       ids = getSortedIds(rawIds);
     }
-    if(libraryMode === 'albums'){
+    if(libraryMode === 'albums' && !reorderMode){
       ids = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : ids;
     }
     const fullIds = ids.slice(); // full playlist order, before search narrows what's shown — this is what playback should queue
@@ -14326,7 +14387,7 @@ function _fallbackCopy(text){
         });
       }
       $('mixBtn').addEventListener('click', () => startMix(ids));
-      if(canReorderPlaylist() && $('reorderModeBtn')) $('reorderModeBtn').addEventListener('click', () => {
+      if(canReorderPlaylist() && libraryMode !== 'albums' && $('reorderModeBtn')) $('reorderModeBtn').addEventListener('click', () => {
         // Reorder only makes sense where there's a stored order (real playlists
         // + All Songs). The list's effective sort is
         // perPlaylistSort[activePlaylist] (when that feature is on), NOT
@@ -14740,7 +14801,7 @@ function _fallbackCopy(text){
         }
       }
       const row = document.createElement('div');
-      const showReorder = reorderMode;
+      const showReorder = reorderMode && libraryMode !== 'albums';
       row.className = 'track' + (selectMode && selectedIds.has(id) ? ' selected' : '') + (reorderMode ? ' reordering' : '');
       row.dataset.id = id;
       const artStyle = t.artUrl ? `background-image:url('${t.artUrl}');` : '';
@@ -14751,7 +14812,7 @@ function _fallbackCopy(text){
           <div class="t">${escapeHtml(t.name)}</div>
           <div class="a">${escapeHtml(t.artist)}${sandboxShowAlbum && t.album ? ' • ' + escapeHtml(t.album) : ''}</div>
         </div>
-        ${!selectMode && !showReorder ? `<div class="dur">${t.duration ? fmtTime(t.duration) : '--:--'}</div>` : ''}
+        ${!selectMode && !showReorder ? `<div class="dur">${t._noAudio ? '<span style="color:var(--coral);font-size:10px;" title="Audio missing — re-import this song">⚠ No audio</span>' : (t.duration ? fmtTime(t.duration) : '--:--')}</div>` : ''}
         ${!selectMode && !showReorder && t.genre && t.genre.toLowerCase() !== 'music' ? `<div class="genre-tag">${escapeHtml(t.genre)}</div>` : ''}
         ${!selectMode && !showReorder ? `<button class="kebab-btn" data-kebab="${id}" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>` : ''}
         ${showReorder ? `<div class="reorder-btns"><button class="reorder-up" title="Move up" disabled><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14l5-5 5 5z"/></svg></button><button class="reorder-down" title="Move down" disabled><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button></div>` : ''}
@@ -14882,7 +14943,7 @@ function _fallbackCopy(text){
     });
     list.appendChild(selectBtn);
 
-    if(canReorderPlaylist()){
+    if(canReorderPlaylist() && libraryMode !== 'albums'){
       const reorderBtn = document.createElement('button');
       reorderBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h2v18H9zm4 0h2v18h-2z"/></svg> Reorder songs`;
       reorderBtn.addEventListener('click', () => {
@@ -16302,7 +16363,7 @@ function _fallbackCopy(text){
       r.readAsDataURL(blob);
     });
   }
-  async function writeBlobToCache(blob, path){
+  async function writeBlobToCache(blob, path, onProgress){
     const cap = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins) || null;
     const FS = cap ? cap.Filesystem : null;
     if(!FS || typeof FS.writeFile !== 'function') return false;
@@ -16316,6 +16377,7 @@ function _fallbackCopy(text){
       await FS.writeFile({ path, data, directory: 'CACHE', recursive: true, append: !first });
       offset = end;
       first = false;
+      if(onProgress) try{ onProgress(offset, blob.size); }catch(_e){}
     }
     if(first){
       await FS.writeFile({ path, data: '', directory: 'CACHE', recursive: true, append: false });
@@ -16328,7 +16390,15 @@ function _fallbackCopy(text){
       const FS = cap ? cap.Filesystem : null;
       const Share = cap ? cap.Share : null;
       if(FS && typeof FS.writeFile === 'function'){
-        await writeBlobToCache(blob, filename);
+        try{ exportState._savePhaseStart = Date.now(); exportState._saveTotalBytes = blob.size; exportState._saveDoneBytes = 0; }catch(_e){}
+        await writeBlobToCache(blob, filename, function(done, total){
+          try{
+            exportState.compressPct = total > 0 ? Math.round((done / total) * 100) : 0;
+            exportState._saveDoneBytes = done;
+            exportState._saveTotalBytes = total;
+            if(Date.now() - (exportState._lastSaveTick || 0) > 400){ exportState._lastSaveTick = Date.now(); refreshExportNotif(); }
+          }catch(_e){}
+        });
         // Prefer the URI from writeFile/stat/getUri — the first write's result
         // carries it, so ask once more only if absent.
         let uri = null;
@@ -16412,44 +16482,58 @@ function _fallbackCopy(text){
               }
             }catch(_e){}
           }
+          // Batch chunks into ~512KB base64 buffers before flushing to disk,
+          // reducing native bridge calls from thousands to tens.
+          var _batchBuf = '';
+          var _batchRawBytes = 0;
+          var _batchFlushThreshold = 512 * 1024;
+          function b64Encode(bytes){
+            var len = bytes.length;
+            var outLen = (len + 2 - ((len + 2) % 3)) / 3 * 4;
+            var out = new Uint8Array(outLen);
+            var L = [65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,48,49,50,51,52,53,54,55,56,57,43,47];
+            var j = 0, i = 0;
+            for(; i + 2 < len; i += 3){
+              var n = (bytes[i] << 16) | (bytes[i+1] << 8) | bytes[i+2];
+              out[j++]=L[(n>>18)&63]; out[j++]=L[(n>>12)&63]; out[j++]=L[(n>>6)&63]; out[j++]=L[n&63];
+            }
+            if(i + 1 === len){ var p = bytes[len-1]; out[j++]=L[(p>>2)&63]; out[j++]=61; out[j++]=61; }
+            else if(i + 2 === len){ var p = (bytes[len-2]<<8)|bytes[len-1]; out[j++]=L[(p>>10)&63]; out[j++]=L[(p>>4)&63]; out[j++]=61; }
+            var parts = [], bs = 8192;
+            for(var k = 0; k < outLen; k += bs){
+              parts.push(String.fromCharCode.apply(null, out.subarray(k, Math.min(k + bs, outLen))));
+            }
+            return parts.join('');
+          }
+          function flushBatch(){
+            if(!_batchBuf) return;
+            var data = _batchBuf;
+            var isFirst = first;
+            first = false;
+            _batchBuf = '';
+            _batchRawBytes = 0;
+            queue = queue.then(function(){
+              return (isFirst
+                ? FS.writeFile({ path: filename, data: data, directory:'CACHE', recursive:true })
+                : FS.appendFile({ path: filename, data: data, directory:'CACHE' }))
+                .then(function(){ _writtenChunks++; updateWriteProgress(); }, function(err){ console.warn('Export chunk write failed:', err); _writtenChunks++; updateWriteProgress(); });
+            }).catch(function(err){ console.warn('Export queue error:', err); _writtenChunks++; updateWriteProgress(); });
+          }
           function appendChunk(chunk){
             if(failed || !chunk || !chunk.byteLength) return;
             _totalChunks++;
-            // Inline sync base64 instead of FileReader.readAsDataURL — FileReader
-            // is async and creates a Blob + base64 prefix per chunk; this skips both
-            // and converts bytes synchronously, making export 10-50x faster.
-            // Base64 encode via Uint8Array buffer + batched string conversion.
-            // Avoids FileReader async overhead and string-concat O(n^2) copies.
-            var b64;
-            { var bytes = chunk; var len = bytes.length;
-              var outLen = (len + 2 - ((len + 2) % 3)) / 3 * 4;
-              var out = new Uint8Array(outLen);
-              var L = [65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,48,49,50,51,52,53,54,55,56,57,43,47];
-              var j = 0, i = 0;
-              for(; i + 2 < len; i += 3){
-                var n = (bytes[i] << 16) | (bytes[i+1] << 8) | bytes[i+2];
-                out[j++]=L[(n>>18)&63]; out[j++]=L[(n>>12)&63];
-                out[j++]=L[(n>>6)&63]; out[j++]=L[n&63];
-              }
-              if(i + 1 === len){ var p = bytes[len-1]; out[j++]=L[(p>>2)&63]; out[j++]=61; out[j++]=61; }
-              else if(i + 2 === len){ var p = (bytes[len-2]<<8)|bytes[len-1]; out[j++]=L[(p>>10)&63]; out[j++]=L[(p>>4)&63]; out[j++]=61; }
-              // Batched string conversion — apply() with >~65K args blows the stack
-              var parts = [], bs = 8192;
-              for(var k = 0; k < outLen; k += bs){
-                parts.push(String.fromCharCode.apply(null, out.subarray(k, Math.min(k + bs, outLen))));
-              }
-              b64 = parts.join(''); }
-            queue = queue.then(function(){
-              return (first
-                ? FS.writeFile({ path: filename, data: b64, directory:'CACHE', recursive:true })
-                : FS.appendFile({ path: filename, data: b64, directory:'CACHE' }))
-                .then(function(){ first = false; _writtenChunks++; updateWriteProgress(); }, function(err){ console.warn('Export chunk write failed:', err); _writtenChunks++; updateWriteProgress(); });
-            }).catch(function(err){ console.warn('Export queue error:', err); _writtenChunks++; updateWriteProgress(); });
+_batchBuf += b64Encode(chunk);
+            _batchRawBytes += chunk.byteLength;
+            if(_batchRawBytes >= _batchFlushThreshold){
+              flushBatch();
+            }
           }
           function finish(){
             if(!ended) return;
             _writePhaseStart = Date.now();
             updateWriteProgress();
+            // Flush any remaining buffered base64 data before queue drain.
+            flushBatch();
             // All chunks are written to disk. Resolve TRUE immediately so the
             // caller marks the export complete. Try to share/save in the background
             // but never block the export or trigger the in-memory fallback.
@@ -16672,17 +16756,19 @@ function _fallbackCopy(text){
           }
           throw e;
         }
-        exportState.compressPct = 100;
+        try{ exportState.phase = 'saving'; exportState.compressPct = 0; exportState._saveTotalBytes = blob.size; exportState._saveDoneBytes = 0; refreshExportNotif(); }catch(_e){}
         try{ await saveExportFile(blob, filename); }catch(_sfe){}
       }
       exportState.active = false;
       exportState.phase = 'done';
       exportState.finishedAt = Date.now();
       exportState.seen = false;
+      const withAudio = tracks.filter(t => t && t.file).length;
+      const withoutAudio = tracks.filter(t => t && !t.file).length;
       const okMsg = opts.toastOk
         ? (missing ? `Exported (${missing} track${missing>1?'s':''} skipped — file missing)` : opts.toastOk)
         : 'Exported';
-      toast(okMsg);
+      toast(okMsg + (withoutAudio > 0 ? ` — ${withoutAudio} song${withoutAudio>1?'s':''} had no audio blob` : ''), withoutAudio > 0 ? 8000 : 4000);
       refreshExportNotif();
     }catch(e){
       console.error('Export failed', e);
@@ -16714,7 +16800,7 @@ function _fallbackCopy(text){
   // "Export everything" button.
   async function exportSongsOnly(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export ${allTracks.length} song${allTracks.length>1?'s':''} as a .zip of JUST the audio files? (No playlists, settings, stats, or cover art.)`, async () => {
+    showExportConfirm(`Export ${allTracks.length} song${allTracks.length>1?'s':''} (${allTracks.filter(t=>t.file).length} with audio) as a .zip of JUST the audio files? (No playlists, settings, stats, or cover art.)`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
       await runZipExport({
         kindLabel: 'songs',
@@ -16731,7 +16817,7 @@ function _fallbackCopy(text){
   // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} PLUS playlists, listening stats, streak, theme, EQ, all settings, and your premium unlock code (if you have one) — as a full restorable backup .zip?`, async () => {
+    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} (${allTracks.filter(t=>t.file).length} with audio, ${allTracks.filter(t=>!t.file).length} metadata only) PLUS playlists, listening stats, streak, theme, EQ, all settings, and your premium unlock code (if you have one) — as a full restorable backup .zip?`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
       const premiumPayload = buildPremiumPayload();
       await runZipExport({
@@ -17655,6 +17741,7 @@ function _fallbackCopy(text){
     if(queueIndex < 0 || queueIndex >= queue.length) return;
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(!t) return;
+    if(!t.file || !t.url){ toast('This song needs to be re-imported — the audio file is missing.'); return; }
     if(hardSwitch) cancelCrossfade();
     // Safety: stop BOTH audio elements so two tracks can never overlap
     try{ audio.pause(); audio2.pause(); }catch(_){}
@@ -18322,7 +18409,7 @@ function _fallbackCopy(text){
     let nextIndex = queueIndex + 1;
     if(nextIndex >= queue.length) nextIndex = 0;
     const nextTrack = allTracks.find(tr => tr.id === queue[nextIndex]);
-    if(!nextTrack) return;
+    if(!nextTrack || !nextTrack.url) return;
     const nxt = inactiveAudio();
     nxt.src = nextTrack.url;
     nxt.volume = 1;
@@ -18335,7 +18422,7 @@ function _fallbackCopy(text){
     let nextIndex = queueIndex + 1;
     if(nextIndex >= queue.length) nextIndex = 0; // playlist always loops back to the start
     const nextTrack = allTracks.find(tr => tr.id === queue[nextIndex]);
-    if(!nextTrack) return;
+    if(!nextTrack || !nextTrack.url) return;
 
     crossfadeTriggered = true;
     pendingNextIndex = nextIndex;
@@ -18537,7 +18624,7 @@ function _fallbackCopy(text){
     // Don't auto-restart playback if the user deliberately paused
     if(userPaused) return;
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
-    if(!t || !t.file) { toast('Playback error — could not recover this track'); return; }
+    if(!t || !t.file) { toast('This song needs to be re-imported — the audio file is missing.'); return; }
     console.warn('Recovering audio after', reason);
     const resumeAt = a.currentTime || 0;
     try{ URL.revokeObjectURL(t.url); }catch(e){}
@@ -18835,7 +18922,41 @@ function _fallbackCopy(text){
       actionSlider.style.setProperty('--speed-fill', pct + '%');
     }
   }
-  $('miniBar').addEventListener('click', () => { $('nowPlaying').classList.remove('mini'); });
+  // Mini bar: drag to seek, tap to expand
+  (function(){
+    const mb = $('miniBar');
+    let dragStart = null, didDrag = false;
+    mb.addEventListener('pointerdown', (e) => {
+      const rect = mb.getBoundingClientRect();
+      dragStart = { x: e.clientX, rect };
+      didDrag = false;
+      mb.setPointerCapture(e.pointerId);
+    });
+    mb.addEventListener('pointermove', (e) => {
+      if(!dragStart) return;
+      const dx = Math.abs(e.clientX - dragStart.x);
+      if(dx > 8) didDrag = true;
+      if(!didDrag) return;
+      const a = activeAudio();
+      if(!a || !a.duration) return;
+      const rect = dragStart.rect;
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      a.currentTime = pct * a.duration;
+      $('miniFill').style.width = (pct * 100) + '%';
+      $('curTime').textContent = fmtTime(a.currentTime);
+      updateSeekDisplay(pct * 100);
+      savePlaybackState(true);
+    });
+    mb.addEventListener('pointerup', (e) => {
+      if(dragStart) try{ mb.releasePointerCapture(e.pointerId); }catch(_e){}
+      if(!didDrag && dragStart){
+        // Tap — expand
+        $('nowPlaying').classList.remove('mini');
+      }
+      dragStart = null; didDrag = false;
+    });
+    mb.addEventListener('pointercancel', () => { dragStart = null; didDrag = false; });
+  })();
   // ---------------- Tap song title/artist for a full-name pop-out bubble ----------------
   $('npInfo').addEventListener('click', (e) => {
     if(e.target.closest('.name-bubble')) return;
@@ -20989,6 +21110,9 @@ function _fallbackCopy(text){
     if(!validQueue.length) return;
     const track = allTracks.find(t => t.id === state.trackId);
     if(!track) return;
+
+    // If the track has no audio blob, skip playback restoration
+    if(!track.file || !track.url){ queue = validQueue; queueIndex = validQueue.indexOf(state.trackId); if(queueIndex < 0) queueIndex = 0; return; }
 
     queue = validQueue;
     queueIndex = validQueue.indexOf(state.trackId);
