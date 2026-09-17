@@ -12246,6 +12246,13 @@ function startLyricsAutoScroll() {
   }
 
   function saveMeta(){
+    // Nuclear safety net: never persist playlist changes while in album mode.
+    // Album-mode operations should only modify userAlbums, never playlists.
+    if(libraryMode === 'albums'){
+      dbPut('meta', { key: 'idCounter', value: idCounter });
+      dbPut('meta', { key: 'userAlbums', value: userAlbums });
+      return;
+    }
     dbPut('meta', { key: 'playlists', value: playlists });
     dbPut('meta', { key: 'idCounter', value: idCounter });
     dbPut('meta', { key: 'userAlbums', value: userAlbums });
@@ -14172,6 +14179,10 @@ function _fallbackCopy(text){
     return activePlaylist !== UNSORTED_VIEW;
   }
   function enterReorderMode(){
+    if(libraryMode === 'albums'){
+      toast('Reorder is not available in album view.');
+      return;
+    }
     if(!canReorderPlaylist()){
       toast('Unsorted is a filter — open a playlist or All Songs to reorder.');
       return;
@@ -14196,6 +14207,7 @@ function _fallbackCopy(text){
   // Move a song one slot up (dir=-1) or down (dir=1) in the active playlist.
   // The tap-the-arrow path for reordering — the drag grip is the other path.
   function moveSongInPlaylist(id, dir){
+    if(libraryMode === 'albums') return;
     const arr = playlists[activePlaylist];
     if(!arr) return;
     const i = arr.indexOf(id);
@@ -15167,6 +15179,7 @@ function _fallbackCopy(text){
       removeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg> Remove from "${escapeHtml(_rmLabel)}"`;
       removeBtn.addEventListener('click', () => {
         $('songActionsBackdrop').style.display='none';
+        if(libraryMode === 'albums'){ toast('Use "Remove from album" instead.'); return; }
         playlists[activePlaylist] = playlists[activePlaylist].filter(x => x !== id);
         saveMeta();
         renderList();
@@ -15342,6 +15355,7 @@ function _fallbackCopy(text){
         setTimeout(() => {
           // Build the new id order from startIndex -> currentIndex, then re-render
           // cleanly so every inline transform/position/zIndex hack is wiped.
+          if(libraryMode === 'albums'){ renderList(); return; }
           const ids = siblings.map(s => s.dataset.id);
           const moved = ids.splice(startIndex, 1)[0];
           ids.splice(currentIndex, 0, moved);
@@ -15579,6 +15593,7 @@ function _fallbackCopy(text){
       if(isAllSongs){
         Array.from(selectedIds).forEach(id => deleteTrack(id, true));
       } else {
+        if(libraryMode === 'albums'){ toast('Use album remove instead.'); exitSelectMode(); return; }
         playlists[activePlaylist] = playlists[activePlaylist].filter(x => !selectedIds.has(x));
         saveMeta();
       }
@@ -22101,7 +22116,7 @@ _batchBuf += b64Encode(chunk);
               }
               return finishTracks(tracks);
             });
-})(trackSources).catch(function(){
+})(trackSources).catch(function _catchFallback(){
               if(!container.dataset.searchFallbackDone){
                 container.dataset.searchFallbackDone = '1';
                 var _fbSources2 = [
@@ -22110,7 +22125,44 @@ _batchBuf += b64Encode(chunk);
                   { kind: 'it', url: 'https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=song&limit=200' }
                 ];
                 trackSources = _fbSources2;
-                return fetchTracks(trackSources).then(function(){}, function(){
+                return (function _retryFetch(sources){
+                  if(!sources.length){
+                    container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:8px 0;">No tracks found.</div>';
+                    return;
+                  }
+                  var src = sources[0];
+                  return fetchWithProxy(src.url).then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(data){
+                    var tracks;
+                    if(src.kind === 'dz'){
+                      tracks = ((data.data)||[]).map(function(t, ix){
+                        return { trackName: t.title, artistName: (t.artist && t.artist.name) || artistName, trackTimeMillis: t.duration ? t.duration*1000 : 0, trackNumber: ix + 1 };
+                      });
+                    } else {
+                      tracks = (data.results||[]).filter(function(r){
+                        if(!r || !r.trackName) return false;
+                        if(collectionId) return true;
+                        return r.collectionName && r.collectionName.toLowerCase().trim() === albumName.toLowerCase().trim();
+                      }).sort(function(a,b){ return (a.trackNumber||0) - (b.trackNumber||0); });
+                    }
+                    if(!tracks.length) return _retryFetch(sources.slice(1));
+                    // success — render tracks
+                    var h = container.closest('.dp-ah-album');
+                    if(h){
+                      var dlLink = 'https://open.spotify.com/search/' + encodeURIComponent(artistName + ' ' + albumName);
+                      var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-dl-album-btn" data-album="' + escapeHtml(artistName + ' - ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">⬇ Download preview</button><a href="' + dlLink + '" target="_blank" rel="noopener" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;">✨ Find on Spotify</a><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
+                      for(var ti=0; ti<tracks.length; ti++){
+                        var tr = tracks[ti];
+                        var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
+                        h2 += '<div class="dp-ah-track" data-search="' + escapeHtml('"' + (tr.trackName||'').replace(/"/g,'') + '" "' + String(albumName).replace(/"/g,'') + '" ' + (tr.artistName || artistName)) + '">';
+                        h2 += '<span style="color:var(--ink-dim);min-width:18px;text-align:right;">' + (tr.trackNumber||'') + '</span>';
+                        h2 += '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(tr.trackName) + '</span>';
+                        h2 += '<span style="color:var(--ink-dim);font-size:11px;">' + dur + '</span></div>';
+                      }
+                      container.innerHTML = h2;
+                    }
+                  });
+                })(trackSources);
+              }
                   // iTunes search failed - try Deezer
                   if(container.dataset.dzFallbackDone) return;
                   container.dataset.dzFallbackDone = '1';
