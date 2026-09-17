@@ -29262,7 +29262,7 @@ window.__ahCancelToast = function(){
 };
 
 
-// ---------------- Hold-to-drag reorder for album song rows ----------------
+// ---------------- Album reorder: popup first, then drag ----------------
 window.wireAlbumSongReorder = function(bodyEl, albumName){
   if(!bodyEl) return;
   var rows = Array.prototype.slice.call(bodyEl.querySelectorAll('.track'));
@@ -29273,17 +29273,35 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
     function begin(e){
       if(drag || !e.pointerId) return;
       if(e.target.closest('.kebab-btn')) return;
-      drag = row;
-      lastPt = e;
-      try{ document.body.classList.add('reordering'); }catch(_e){}
-      row._dragging = false;
-      row._startX = e.clientX; row._startY = e.clientY;
-      row.style.opacity = '0.85';
-      row.style.zIndex = '99';
-      row.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
-      row.style.background = 'rgba(255,255,255,0.06)';
-      row.style.transition = 'none';
-      try{ row.setPointerCapture(e.pointerId); }catch(_e){}
+      // Show reorder popup instead of silently dragging
+      var existingSheet = document.querySelector('.album-reorder-popup');
+      if(existingSheet) existingSheet.remove();
+      var existingBd = document.querySelector('.album-reorder-backdrop');
+      if(existingBd) existingBd.remove();
+      var bd = document.createElement('div');
+      bd.className = 'album-reorder-backdrop';
+      bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:flex-end;justify-content:center;';
+      var sheet = document.createElement('div');
+      sheet.className = 'album-reorder-popup';
+      sheet.style.cssText = 'width:100%;max-width:400px;background:var(--bg);border-radius:16px 16px 0 0;padding:24px 20px 32px;box-shadow:0 -4px 20px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:16px;';
+      sheet.innerHTML = '<div style="font-size:16px;font-weight:600;text-align:center;">Reorder the songs in this album</div><div style="font-size:13px;color:var(--ink-dim);text-align:center;">Drag songs to rearrange their order within this album.</div><div style="display:flex;gap:10px;margin-top:8px;"><button class="album-reorder-start" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--coral);color:#161616;font-size:14px;font-weight:600;cursor:pointer;">Start reordering</button><button class="album-reorder-cancel" style="flex:0.6;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg-raised);color:var(--ink-dim);font-size:14px;font-weight:600;cursor:pointer;">Cancel</button></div>';
+      bd.appendChild(sheet);
+      document.body.appendChild(bd);
+      function closePopup(){ bd.remove(); }
+      bd.addEventListener('click', function(ev){ if(ev.target === bd) closePopup(); });
+      sheet.querySelector('.album-reorder-cancel').addEventListener('click', closePopup);
+      sheet.querySelector('.album-reorder-start').addEventListener('click', function(){
+        closePopup();
+        // Enter reorder mode for this album
+        if(typeof activePlaylist !== 'undefined' && activePlaylist !== albumName){
+          activePlaylist = albumName;
+          if(typeof renderTabs === 'function') renderTabs();
+        }
+        reorderMode = true;
+        if(typeof renderList === 'function') renderList();
+      });
+      try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_v){}
+      return; // Don't start drag yet - user must tap 'Start reordering'
     }
     function move(e){
       lastPt = e;
