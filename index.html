@@ -14525,13 +14525,14 @@ function _fallbackCopy(text){
               });
               body.appendChild(row);
               if(!selectMode){
-                attachLongPressChoice(row, tid);
                 row.querySelector('[data-kebab]').addEventListener('click', function(e){
                   e.stopPropagation();
                   openSongActions(tid);
                 });
               }
             });
+            // Wire hold-to-drag reorder on album song rows
+            wireAlbumSongReorder(body, aName);
           }
         });
         card.dataset.albumName = aName;
@@ -18869,7 +18870,74 @@ function _fallbackCopy(text){
     // Navigate to library if not already there, then scroll to the song
     var libVis = document.getElementById('library') && document.getElementById('library').style.display !== 'none';
     if(!libVis) navigate('library');
-    // Jump to a view that's guaranteed to contain the song, then scroll + glow it
+    // If we're in albums view, find the album containing this song,
+    // expand it, and highlight the track inside.
+    if(typeof libraryMode !== 'undefined' && libraryMode === 'albums'){
+      var _foundAlb = null;
+      for(var _k in userAlbums){
+        var _ua = userAlbums[_k];
+        if(_ua && _ua.trackIds && _ua.trackIds.indexOf(t.id) !== -1){ _foundAlb = _k; break; }
+      }
+      if(!_foundAlb && t.album){
+        document.querySelectorAll('[data-album-name]').forEach(function(_c){
+          if(_c.dataset.albumName === t.album) _foundAlb = t.album;
+        });
+      }
+      searchQuery = '';
+      $('searchInput').value = '';
+      renderTabs();
+      renderList();
+      if(_foundAlb){
+        var _card = document.querySelector('[data-album-name="' + CSS.escape(_foundAlb) + '"]');
+        if(_card){
+          var _body = _card.querySelector('[id^="alb_card_"]');
+          var _hdr = _card.querySelector('div');
+          if(_body && _body.style.display === 'none'){
+            _body.style.display = 'block';
+            if(_hdr){ var _ch = _hdr.querySelector('span'); if(_ch) _ch.style.transform = 'rotate(90deg)'; }
+            try{ localStorage.setItem('sidecut_albColl_' + _foundAlb, '0'); }catch(_e){}
+            _body.innerHTML = '';
+            var _alb = userAlbums[_foundAlb];
+            if(_alb && _alb.trackIds){
+              _alb.trackIds.forEach(function(_tid, _ti){
+                var _tt = allTracks.find(function(tr){ return tr.id === _tid; });
+                if(!_tt) return;
+                var _row = document.createElement('div');
+                _row.className = 'track' + (_tid === t.id ? ' playing' : '');
+                _row.dataset.id = _tid;
+                var _as = _tt.artUrl ? "background-image:url('" + _tt.artUrl + "');" : '';
+                _row.innerHTML = '<div class="idx">' + (_ti+1) + '</div>'
+                  + '<div class="track-art" style="' + _as + '"></div>'
+                  + '<div class="track-info"><div class="t">' + escapeHtml(_tt.name) + '</div>'
+                  + '<div class="a">' + escapeHtml(_tt.artist) + '</div></div>'
+                  + '<div class="dur">' + (_tt.duration ? fmtTime(_tt.duration) : '--:--') + '</div>'
+                  + '<button class="kebab-btn" data-kebab="' + _tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
+                _row.addEventListener('click', function(e){
+                  if(e.target.closest('.kebab-btn')) return;
+                  playFromList(_alb.trackIds, _tid);
+                });
+                _body.appendChild(_row);
+                try{ attachLongPressChoice(_row, _tid); }catch(_e){}
+                var _kb = _row.querySelector('[data-kebab]');
+                if(_kb) _kb.addEventListener('click', function(e){ e.stopPropagation(); openSongActions(_tid); });
+                if(_tid === t.id){
+                  setTimeout(function(){ smoothScrollIn(_body, _row, 200); }, 100);
+                }
+              });
+              wireAlbumSongReorder(_body, _foundAlb);
+            }
+          } else if(_body && _body.style.display !== 'none'){
+            var _pr = _body.querySelector('[data-id="' + t.id + '"]');
+            if(_pr){
+              _pr.classList.add('playing');
+              setTimeout(function(){ smoothScrollIn(_body, _pr, 200); }, 100);
+            }
+          }
+        }
+      }
+      return;
+    }
+    // Non-albums view: jump to a view that's guaranteed to contain the song
     if(!(playlists[activePlaylist] || []).includes(t.id)){
       activePlaylist = 'All Songs';
     }
@@ -29019,6 +29087,119 @@ window.toastWithCancel = function(){
 window.__ahCancelToast = function(){
   window.__ahCancelled = true;
   if(typeof toast === 'function') window.toast('\ud83d\udcc0 Cancelling\u2026', 2000);
+};
+
+
+// ---------------- Hold-to-drag reorder for album song rows ----------------
+window.wireAlbumSongReorder = function(bodyEl, albumName){
+  if(!bodyEl) return;
+  var rows = Array.prototype.slice.call(bodyEl.querySelectorAll('.track'));
+  rows.forEach(function(row){
+    if(row._asrReady) return;
+    row._asrReady = true;
+    var holdTimer = null, drag = null, autoRaf = null, lastPt = null;
+    function begin(e){
+      if(drag || !e.pointerId) return;
+      if(e.target.closest('.kebab-btn')) return;
+      drag = row;
+      lastPt = e;
+      try{ document.body.classList.add('reordering'); }catch(_e){}
+      row._dragging = false;
+      row._startX = e.clientX; row._startY = e.clientY;
+      row.style.opacity = '0.85';
+      row.style.zIndex = '99';
+      row.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
+      row.style.background = 'rgba(255,255,255,0.06)';
+      row.style.transition = 'none';
+      try{ row.setPointerCapture(e.pointerId); }catch(_e){}
+    }
+    function move(e){
+      lastPt = e;
+      if(drag !== row){
+        if(!drag && holdTimer && row._startX != null){
+          var pdx = e.clientX - row._startX, pdy = e.clientY - row._startY;
+          if((pdx*pdx + pdy*pdy) > 144){ clearTimeout(holdTimer); holdTimer = null; }
+        }
+        return;
+      }
+      if(!row._dragging){
+        var ddx = e.clientX - row._startX, ddy = e.clientY - row._startY;
+        if((ddx*ddx + ddy*ddy) < 100) return;
+        row._dragging = true;
+        try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
+      }
+      e.preventDefault();
+      var y = e.clientY;
+      var before = null;
+      var sibs = Array.prototype.filter.call(bodyEl.children, function(k){ return k !== row && k.classList && k.classList.contains('track'); });
+      for(var i = 0; i < sibs.length; i++){
+        var r = sibs[i].getBoundingClientRect();
+        if(y < r.top + r.height / 2){ before = sibs[i]; break; }
+      }
+      if(before){
+        if(before.previousElementSibling !== row) bodyEl.insertBefore(row, before);
+      } else {
+        if(row !== bodyEl.lastElementChild) bodyEl.appendChild(row);
+      }
+      // Auto-scroll near edges
+      var rect = bodyEl.getBoundingClientRect();
+      var edge = 56, dir = 0;
+      if(e.clientY - rect.top < edge) dir = -1;
+      else if(rect.bottom - e.clientY < edge) dir = 1;
+      if(dir !== 0){
+        if(!autoRaf){
+          var step = function(){
+            var p = lastPt, still = false;
+            if(p){
+              var rr = bodyEl.getBoundingClientRect();
+              if(dir < 0 && p.clientY - rr.top < edge) still = true;
+              if(dir > 0 && rr.bottom - p.clientY < edge) still = true;
+            }
+            if(!still){ autoRaf = null; return; }
+            bodyEl.scrollTop += dir * 8;
+            autoRaf = requestAnimationFrame(step);
+          };
+          autoRaf = requestAnimationFrame(step);
+        }
+      } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
+    }
+    function finish(){
+      clearTimeout(holdTimer);
+      if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
+      try{ document.body.classList.remove('reordering'); }catch(_e){}
+      if(drag){
+        row.style.opacity = ''; row.style.zIndex = ''; row.style.boxShadow = ''; row.style.background = ''; row.style.transition = '';
+        if(row._dragging){
+          try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
+          // Persist the new order to userAlbums
+          var newOrder = [];
+          Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r){
+            if(r.dataset.id) newOrder.push(r.dataset.id);
+          });
+          if(newOrder.length && typeof userAlbums !== 'undefined' && userAlbums[albumName]){
+            userAlbums[albumName].trackIds = newOrder;
+            saveMeta();
+            // Re-number the index labels
+            Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r, idx){
+              var idxEl = r.querySelector('.idx');
+              if(idxEl) idxEl.textContent = idx + 1;
+            });
+          }
+        }
+        drag = null;
+      }
+    }
+    row.addEventListener('pointerdown', function(e){
+      if(e.target.closest('.kebab-btn,button,a,input,select')) return;
+      clearTimeout(holdTimer);
+      row._dragging = false;
+      row._startX = e.clientX; row._startY = e.clientY;
+      holdTimer = setTimeout(function(){ begin(e); }, 350);
+    });
+    row.addEventListener('pointermove', move);
+    row.addEventListener('pointerup', finish);
+    row.addEventListener('pointercancel', finish);
+  });
 };
 
 // ---------------- Screen lock: prevent whole-page drag/bounce ----------------
