@@ -14401,7 +14401,7 @@ function _fallbackCopy(text){
         </div>
         <div class="pane-actions" style="gap:4px;">
           <select id="sortSelect" style="background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); border-radius:8px; font-size:11px; padding:5px 8px; font-family:'JetBrains Mono',monospace; white-space:nowrap;${libraryMode === "albums" ? ";display:none" : ""}>
-            <option value="default">${libraryMode === "albums" ? "" : "Playlist order"}</option>
+            <option value="default">Playlist order</option>
             <option value="alpha">A–Z</option>
             <option value="artist">By artist</option>
             <option value="album">By album</option>
@@ -14737,10 +14737,18 @@ function _fallbackCopy(text){
                   var keys = siblings.map(function(s){ return s.dataset.albumName; });
                   var moved = keys.splice(startIndex, 1)[0];
                   keys.splice(currentIndex, 0, moved);
+                  // Rebuild userAlbums preserving ALL albums (not just visible ones)
                   var newObj = {};
+                  // First add albums in the new visible order
                   keys.forEach(function(k){ if(userAlbums[k]) newObj[k] = userAlbums[k]; });
+                  // Then add any albums NOT in the DOM (preserved, not lost)
+                  Object.keys(userAlbums).forEach(function(k){ if(!newObj[k]) newObj[k] = userAlbums[k]; });
                   userAlbums = newObj;
-                  saveMeta();
+                  if(typeof dbPut === 'function'){
+                    dbPut('meta', { key: 'userAlbums', value: userAlbums });
+                  } else {
+                    saveMeta();
+                  }
                   renderList();
                 }, 150);
               }
