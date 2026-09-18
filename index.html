@@ -14794,17 +14794,7 @@ function _fallbackCopy(text){
             }
           });
             // Wire hold-to-drag reorder on album song rows (non-collapsed path)
-            // Hold a song to open the nice reorder popup for this album
-            (function(_bodyEl, _aName){
-              _bodyEl.addEventListener("pointerdown", function(e){
-                var _row = e.target.closest(".track");
-                if(!_row || e.target.closest(".kebab-btn,button")) return;
-                var _t = setTimeout(function(){ showAlbumReorderPopup(_aName); }, 400);
-                function _cancel(){ clearTimeout(_t); _bodyEl.removeEventListener("pointerup", _cancel); _bodyEl.removeEventListener("pointercancel", _cancel); }
-                _bodyEl.addEventListener("pointerup", _cancel, {once:true});
-                _bodyEl.addEventListener("pointercancel", _cancel, {once:true});
-              });
-            })(body, aName);
+            wireAlbumSongReorder(body, aName);
         }
       });
       return;
@@ -15192,22 +15182,6 @@ function _fallbackCopy(text){
       });
       list.appendChild(removeAlbumBtn);
 
-      // Reorder album — accessible from song kebab in albums mode
-      const reorderAlbumBtn = document.createElement('button');
-      reorderAlbumBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h2v18H9zm4 0h2v18h-2z"/></svg> ↕ Reorder album`;
-      reorderAlbumBtn.addEventListener('click', () => {
-        $('songActionsBackdrop').style.display='none';
-        // Find which album this song belongs to
-        let _albName = null;
-        for(const _k in userAlbums){
-          if(userAlbums[_k] && userAlbums[_k].trackIds && userAlbums[_k].trackIds.indexOf(id) !== -1){
-            _albName = _k; break;
-          }
-        }
-        if(!_albName){ toast('Song is not in an album.'); return; }
-        showAlbumReorderPopup(_albName);
-      });
-      list.appendChild(reorderAlbumBtn);
 
     } else if(isAllSongsView){
       const addBtn = document.createElement('button');
@@ -19108,17 +19082,7 @@ _batchBuf += b64Encode(chunk);
                   setTimeout(function(){ smoothScrollIn(_body, _row, 200); }, 100);
                 }
               });
-              // Hold a song to open the nice reorder popup for this album
-              (function(_bEl, _aN){
-                _bEl.addEventListener("pointerdown", function(e){
-                  var _r = e.target.closest(".track");
-                  if(!_r || e.target.closest(".kebab-btn,button")) return;
-                  var _tm = setTimeout(function(){ showAlbumReorderPopup(_aN); }, 400);
-                  function _cn(){ clearTimeout(_tm); _bEl.removeEventListener("pointerup", _cn); _bEl.removeEventListener("pointercancel", _cn); }
-                  _bEl.addEventListener("pointerup", _cn, {once:true});
-                  _bEl.addEventListener("pointercancel", _cn, {once:true});
-                });
-              })(_body, _foundAlb);
+              wireAlbumSongReorder(_body, _foundAlb);
             }
           } else if(_body && _body.style.display !== 'none'){
             var _pr = _body.querySelector('[data-id="' + t.id + '"]');
@@ -29574,10 +29538,10 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       try{ document.body.classList.add('reordering'); }catch(_e){}
       row._dragging = false;
       row._startX = e.clientX; row._startY = e.clientY;
-      row.style.opacity = '0.85';
       row.style.zIndex = '99';
-      row.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
-      row.style.background = 'rgba(255,255,255,0.06)';
+      row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
+      row.style.background = 'rgba(227,178,60,0.12)';
+      row.style.transform = 'scale(1.02)';
       row.style.transition = 'none';
       try{ row.setPointerCapture(e.pointerId); }catch(_e){}
     }
@@ -29636,7 +29600,7 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
       try{ document.body.classList.remove('reordering'); }catch(_e){}
       if(drag){
-        row.style.opacity = ''; row.style.zIndex = ''; row.style.boxShadow = ''; row.style.background = ''; row.style.transition = '';
+        row.style.opacity = ''; row.style.zIndex = ''; row.style.boxShadow = ''; row.style.background = ''; row.style.transform = ''; row.style.transition = '';
         if(row._dragging){
           try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
           // Persist the new order to userAlbums
