@@ -4438,6 +4438,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   let currentSort = 'default'; // default | alpha | artist | genre | recent
   let libraryMode = 'playlists'; // 'playlists' | 'albums'
   let reorderMode = false;
+let albumReorderTarget = null; // album name when reordering songs within an album card
   let queue = [];          // track ids, current playback order
   let queueIndex = -1;
   let queueSourcePlaylist = 'All Songs';
@@ -14196,11 +14197,14 @@ function _fallbackCopy(text){
   function canReorderPlaylist(){
     return activePlaylist !== UNSORTED_VIEW;
   }
-  function enterReorderMode(){
-    if(libraryMode === 'albums'){
-      toast('Reorder is not available in album view.');
+  function enterReorderMode(targetAlbum){
+    if(targetAlbum || libraryMode === 'albums'){
+      if(!targetAlbum){ toast('Select an album to reorder.'); return; }
+      reorderMode = false;
+      showAlbumReorderPopup(targetAlbum);
       return;
     }
+    albumReorderTarget = null;
     if(!canReorderPlaylist()){
       toast('Unsorted is a filter — open a playlist or All Songs to reorder.');
       return;
@@ -14584,14 +14588,20 @@ function _fallbackCopy(text){
           + '<div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.name) + '</div>'
           + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.artist || 'Unknown artist') + (albTotalStr ? ' \u00b7 ' + albTotalStr : '') + '</div>'
           + '</div>'
-          + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'
+          + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>' + '<button class="alb-reorder-btn" data-alb="' + aName + '" title="Reorder songs" style="background:none;border:1px solid var(--gold);color:var(--gold);border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer;margin-left:6px;flex-shrink:0;display:flex;align-items:center;gap:4px;"><svg viewBox="0 0 24 24" fill="currentColor" style="width:12px;height:12px;"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg>Reorder</button>'
           
         card.appendChild(hdr);
         var body = document.createElement('div');
         body.id = cardId;
         body.style.cssText = collapsed ? 'display:none;' : 'display:block;padding:0 6px 6px;';
         card.appendChild(body);
-                hdr.addEventListener('click', function(){
+                // Wire album reorder button
+        var _albRb = hdr.querySelector('.alb-reorder-btn');
+        if(_albRb){ _albRb.addEventListener('click', function(ev){
+          ev.stopPropagation();
+          enterReorderMode(aName);
+        }); }
+        hdr.addEventListener('click', function(){
           var isHidden = body.style.display === 'none';
           body.style.display = isHidden ? 'block' : 'none';
           hdr.querySelector('span').style.transform = isHidden ? 'rotate(90deg)' : '';
@@ -14609,7 +14619,7 @@ function _fallbackCopy(text){
                 + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
                 + '<div class="a">' + escapeHtml(tt.artist) + '</div></div>'
                 + '<div class="dur">' + (tt.duration ? fmtTime(tt.duration) : '--:--') + '</div>'
-                + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
+                + ''<div class="grip-handle" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg></div>' + <button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
               row.addEventListener('click', function(e){
                 if(e.target.closest('.kebab-btn')) return;
                 playFromList(alb.tracks, tid);
@@ -14623,7 +14633,8 @@ function _fallbackCopy(text){
               }
             });
             // Wire hold-to-drag reorder on album song rows
-            wireAlbumSongReorder(body, aName);
+            
+            
           }
         });
         card.dataset.albumName = aName;
@@ -29262,7 +29273,7 @@ window.__ahCancelToast = function(){
 };
 
 
-// ---------------- Album reorder: popup first, then drag ----------------
+// ---------------- Album reorder: hold-to-drag (playlist-style) ----------------
 window.wireAlbumSongReorder = function(bodyEl, albumName){
   if(!bodyEl) return;
   var rows = Array.prototype.slice.call(bodyEl.querySelectorAll('.track'));
@@ -29273,37 +29284,19 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
     function begin(e){
       if(drag || !e.pointerId) return;
       if(e.target.closest('.kebab-btn')) return;
-      // Show reorder popup instead of silently dragging
-      var existingSheet = document.querySelector('.album-reorder-popup');
-      if(existingSheet) existingSheet.remove();
-      var existingBd = document.querySelector('.album-reorder-backdrop');
-      if(existingBd) existingBd.remove();
-      var bd = document.createElement('div');
-      bd.className = 'album-reorder-backdrop';
-      bd.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:flex-end;justify-content:center;';
-      var sheet = document.createElement('div');
-      sheet.className = 'album-reorder-popup';
-      sheet.style.cssText = 'width:100%;max-width:400px;background:var(--bg);border-radius:16px 16px 0 0;padding:24px 20px 32px;box-shadow:0 -4px 20px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:16px;';
-      sheet.innerHTML = '<div style="font-size:16px;font-weight:600;text-align:center;">Reorder the songs in this album</div><div style="font-size:13px;color:var(--ink-dim);text-align:center;">Drag songs to rearrange their order within this album.</div><div style="display:flex;gap:10px;margin-top:8px;"><button class="album-reorder-start" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--coral);color:#161616;font-size:14px;font-weight:600;cursor:pointer;">Start reordering</button><button class="album-reorder-cancel" style="flex:0.6;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg-raised);color:var(--ink-dim);font-size:14px;font-weight:600;cursor:pointer;">Cancel</button></div>';
-      bd.appendChild(sheet);
-      document.body.appendChild(bd);
-      function closePopup(){ bd.remove(); }
-      bd.addEventListener('click', function(ev){ if(ev.target === bd) closePopup(); });
-      sheet.querySelector('.album-reorder-cancel').addEventListener('click', closePopup);
-      sheet.querySelector('.album-reorder-start').addEventListener('click', function(){
-        closePopup();
-        // Enter reorder mode for this album
-        if(typeof activePlaylist !== 'undefined' && activePlaylist !== albumName){
-          activePlaylist = albumName;
-          if(typeof renderTabs === 'function') renderTabs();
-        }
-        reorderMode = true;
-        if(typeof renderList === 'function') renderList();
-      });
-      try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_v){}
-      return; // Don't start drag yet - user must tap 'Start reordering'
+      drag = row;
+      lastPt = e;
+      try{ document.body.classList.add('reordering'); }catch(_e){}
+      row._dragging = false;
+      row._startX = e.clientX; row._startY = e.clientY;
+      row.style.opacity = '0.85';
+      row.style.zIndex = '99';
+      row.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
+      row.style.background = 'rgba(255,255,255,0.06)';
+      row.style.transition = 'none';
+      try{ row.setPointerCapture(e.pointerId); }catch(_e){}
     }
-    function move(e){
+        function move(e){
       lastPt = e;
       if(drag !== row){
         if(!drag && holdTimer && row._startX != null){
