@@ -14648,6 +14648,9 @@ function _fallbackCopy(text){
           card.addEventListener('pointerdown', function(e){
             if(e.target.closest('button') || e.target.closest('img') || e.target.closest('a') || e.target.closest('.track')) return;
             var sx = e.clientX, sy = e.clientY;
+            // Capture pointer immediately to prevent browser from stealing the gesture
+            try{ card.setPointerCapture(e.pointerId); }catch(_pc){}
+            var _cardPtrId = e.pointerId;
             holdTimer = setTimeout(function(){
               holdTimer = null;
               try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
@@ -14762,6 +14765,7 @@ function _fallbackCopy(text){
             function cancelHold(){
               clearTimeout(holdTimer);
               holdTimer = null;
+              try{ card.releasePointerCapture(_cardPtrId); }catch(_pc){}
               card.removeEventListener('pointermove', checkMove);
               card.removeEventListener('pointerup', cancelHold);
               card.removeEventListener('pointercancel', cancelHold);
@@ -29514,7 +29518,7 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
   rows.forEach(function(row){
     if(row._asrReady) return;
     row._asrReady = true;
-    var holdTimer = null, drag = null, autoRaf = null, lastPt = null, savedTouchAction = null;
+    var holdTimer = null, drag = null, autoRaf = null, lastPt = null, savedTouchAction = null, _rowPtrId = null, _docMoveHandler = null, _docUpHandler = null;
 
     function reIndex(){
       var tracks = bodyEl.querySelectorAll('.track');
@@ -29528,18 +29532,20 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       if(drag) return;
       drag = row;
       lastPt = e;
-      try{ document.body.classList.add('reordering'); }catch(_e){}
       row._dragging = false;
       row._startX = e.clientX; row._startY = e.clientY;
+      // Visual feedback
       row.style.transition = 'box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease';
       row.style.zIndex = '99';
       row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
       row.style.background = 'rgba(227,178,60,0.12)';
       row.style.transform = 'scale(1.02)';
-      // Set touch-action:none immediately to prevent scroll interference
+      // Capture pointer now that hold fired
       savedTouchAction = row.style.touchAction;
       row.style.touchAction = 'none';
       try{ row.setPointerCapture(e.pointerId); }catch(_e){}
+      try{ document.body.classList.add('reordering'); }catch(_e){}
+      try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
     }
 
     function move(e){
@@ -29588,29 +29594,36 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
     }
 
-    function finish(){
+    function finish(ev){
       clearTimeout(holdTimer);
+      holdTimer = null;
       if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
       try{ document.body.classList.remove('reordering'); }catch(_e){}
+      // Clean up document-level listeners
+      if(_docMoveHandler){
+        document.removeEventListener('pointermove', _docMoveHandler);
+        document.removeEventListener('pointerup', _docUpHandler);
+        document.removeEventListener('pointercancel', _docUpHandler);
+        _docMoveHandler = null; _docUpHandler = null;
+      }
       if(drag){
         row.style.zIndex = '';
         row.style.boxShadow = '';
         row.style.background = '';
         row.style.transition = 'transform 0.15s ease';
         row.style.transform = 'scale(1)';
-        // Restore touch-action
         if(savedTouchAction !== null){ row.style.touchAction = savedTouchAction; savedTouchAction = null; }
+        try{ row.releasePointerCapture(_rowPtrId); }catch(_e){}
+        _rowPtrId = null;
         setTimeout(function(){ row.style.transition = ''; row.style.transform = ''; }, 150);
         if(row._dragging){
           try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
-          // Persist the new order to userAlbums ONLY - never touch playlists
           var newOrder = [];
           Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r){
             if(r.dataset.id) newOrder.push(r.dataset.id);
           });
           if(newOrder.length && typeof userAlbums !== 'undefined' && userAlbums[albumName]){
             userAlbums[albumName].trackIds = newOrder;
-            // Save ONLY userAlbums and idCounter - skip playlists to prevent corruption
             if(typeof dbPut === 'function'){
               dbPut('meta', { key: 'userAlbums', value: userAlbums });
             }
@@ -29626,13 +29639,16 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       clearTimeout(holdTimer);
       row._dragging = false;
       row._startX = e.clientX; row._startY = e.clientY;
-      // Capture pointer immediately to prevent scroll interference
-      var _ptrId = e.pointerId;
-      try{ row.setPointerCapture(_ptrId); }catch(_e){}
+      _rowPtrId = e.pointerId;
+      // DO NOT capture pointer here — let the browser scroll naturally
+      // Only capture after the hold fires
       holdTimer = setTimeout(function(){ begin(e); }, 200);
     });
-    row.addEventListener('pointermove', move);
-    row.addEventListener('pointerup', finish);
-    row.addEventListener('pointercancel', finish);
+    // Listen on document so we receive events even without pointer capture
+    _docMoveHandler = move;
+    _docUpHandler = finish;
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);
   });
 };
