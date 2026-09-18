@@ -29538,29 +29538,25 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       try{ document.body.classList.add('reordering'); }catch(_e){}
       row._dragging = false;
       row._startX = e.clientX; row._startY = e.clientY;
+      // Smooth gold-lift animation
+      row.style.transition = 'box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease';
       row.style.zIndex = '99';
       row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
       row.style.background = 'rgba(227,178,60,0.12)';
       row.style.transform = 'scale(1.02)';
-      row.style.transition = 'none';
       try{ row.setPointerCapture(e.pointerId); }catch(_e){}
     }
-        function move(e){
+    function move(e){
       lastPt = e;
-      if(drag !== row){
-        if(!drag && holdTimer && row._startX != null){
-          var pdx = e.clientX - row._startX, pdy = e.clientY - row._startY;
-          if((pdx*pdx + pdy*pdy) > 144){ clearTimeout(holdTimer); holdTimer = null; }
-        }
-        return;
-      }
+      if(drag !== row) return;
+      e.preventDefault();
       if(!row._dragging){
         var ddx = e.clientX - row._startX, ddy = e.clientY - row._startY;
-        if((ddx*ddx + ddy*ddy) < 100) return;
+        if((ddx*ddx + ddy*ddy) < 64) return;
         row._dragging = true;
+        row.style.transition = 'none';
         try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
       }
-      e.preventDefault();
       var y = e.clientY;
       var before = null;
       var sibs = Array.prototype.filter.call(bodyEl.children, function(k){ return k !== row && k.classList && k.classList.contains('track'); });
@@ -29600,7 +29596,15 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
       try{ document.body.classList.remove('reordering'); }catch(_e){}
       if(drag){
-        row.style.opacity = ''; row.style.zIndex = ''; row.style.boxShadow = ''; row.style.background = ''; row.style.transform = ''; row.style.transition = '';
+        row.style.zIndex = '';
+        row.style.boxShadow = '';
+        row.style.background = '';
+        row.style.transition = 'transform 0.15s ease';
+        row.style.transform = 'scale(1)';
+        setTimeout(function(){
+          row.style.transition = '';
+          row.style.transform = '';
+        }, 150);
         if(row._dragging){
           try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
           // Persist the new order to userAlbums
@@ -29626,7 +29630,7 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       clearTimeout(holdTimer);
       row._dragging = false;
       row._startX = e.clientX; row._startY = e.clientY;
-      holdTimer = setTimeout(function(){ begin(e); }, 350);
+      holdTimer = setTimeout(function(){ begin(e); }, 200);
     });
     row.addEventListener('pointermove', move);
     row.addEventListener('pointerup', finish);
