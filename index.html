@@ -29506,9 +29506,8 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
   rows.forEach(function(row){
     if(row._asrReady) return;
     row._asrReady = true;
-    var holdTimer = null, drag = null, autoRaf = null, lastPt = null;
+    var holdTimer = null, drag = null, autoRaf = null, lastPt = null, savedTouchAction = null;
 
-    // Re-index all .idx labels in the body
     function reIndex(){
       var tracks = bodyEl.querySelectorAll('.track');
       for(var i = 0; i < tracks.length; i++){
@@ -29518,8 +29517,7 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
     }
 
     function begin(e){
-      if(drag || !e.pointerId) return;
-      if(e.target.closest('.kebab-btn')) return;
+      if(drag) return;
       drag = row;
       lastPt = e;
       try{ document.body.classList.add('reordering'); }catch(_e){}
@@ -29530,8 +29528,12 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
       row.style.background = 'rgba(227,178,60,0.12)';
       row.style.transform = 'scale(1.02)';
+      // Set touch-action:none immediately to prevent scroll interference
+      savedTouchAction = row.style.touchAction;
+      row.style.touchAction = 'none';
       try{ row.setPointerCapture(e.pointerId); }catch(_e){}
     }
+
     function move(e){
       lastPt = e;
       if(drag !== row) return;
@@ -29551,15 +29553,9 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
         if(y < r.top + r.height / 2){ before = sibs[i]; break; }
       }
       if(before){
-        if(before.previousElementSibling !== row){
-          bodyEl.insertBefore(row, before);
-          reIndex();
-        }
+        if(before.previousElementSibling !== row){ bodyEl.insertBefore(row, before); reIndex(); }
       } else {
-        if(row !== bodyEl.lastElementChild){
-          bodyEl.appendChild(row);
-          reIndex();
-        }
+        if(row !== bodyEl.lastElementChild){ bodyEl.appendChild(row); reIndex(); }
       }
       // Auto-scroll near edges
       var rect = bodyEl.getBoundingClientRect();
@@ -29583,6 +29579,7 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
         }
       } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
     }
+
     function finish(){
       clearTimeout(holdTimer);
       if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
@@ -29593,28 +29590,37 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
         row.style.background = '';
         row.style.transition = 'transform 0.15s ease';
         row.style.transform = 'scale(1)';
+        // Restore touch-action
+        if(savedTouchAction !== null){ row.style.touchAction = savedTouchAction; savedTouchAction = null; }
         setTimeout(function(){ row.style.transition = ''; row.style.transform = ''; }, 150);
         if(row._dragging){
           try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
-          // Persist the new order to userAlbums
+          // Persist the new order to userAlbums ONLY - never touch playlists
           var newOrder = [];
           Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r){
             if(r.dataset.id) newOrder.push(r.dataset.id);
           });
           if(newOrder.length && typeof userAlbums !== 'undefined' && userAlbums[albumName]){
             userAlbums[albumName].trackIds = newOrder;
-            saveMeta();
+            // Save ONLY userAlbums and idCounter - skip playlists to prevent corruption
+            if(typeof dbPut === 'function'){
+              dbPut('meta', { key: 'userAlbums', value: userAlbums });
+            }
             reIndex();
           }
         }
         drag = null;
       }
     }
+
     row.addEventListener('pointerdown', function(e){
       if(e.target.closest('.kebab-btn,button,a,input,select')) return;
       clearTimeout(holdTimer);
       row._dragging = false;
       row._startX = e.clientX; row._startY = e.clientY;
+      // Capture pointer immediately to prevent scroll interference
+      var _ptrId = e.pointerId;
+      try{ row.setPointerCapture(_ptrId); }catch(_e){}
       holdTimer = setTimeout(function(){ begin(e); }, 200);
     });
     row.addEventListener('pointermove', move);
