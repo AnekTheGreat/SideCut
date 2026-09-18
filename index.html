@@ -29530,6 +29530,16 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
     if(row._asrReady) return;
     row._asrReady = true;
     var holdTimer = null, drag = null, autoRaf = null, lastPt = null;
+
+    // Re-index all .idx labels in the body
+    function reIndex(){
+      var tracks = bodyEl.querySelectorAll('.track');
+      for(var i = 0; i < tracks.length; i++){
+        var idx = tracks[i].querySelector('.idx');
+        if(idx) idx.textContent = i + 1;
+      }
+    }
+
     function begin(e){
       if(drag || !e.pointerId) return;
       if(e.target.closest('.kebab-btn')) return;
@@ -29538,7 +29548,6 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       try{ document.body.classList.add('reordering'); }catch(_e){}
       row._dragging = false;
       row._startX = e.clientX; row._startY = e.clientY;
-      // Smooth gold-lift animation
       row.style.transition = 'box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease';
       row.style.zIndex = '99';
       row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
@@ -29565,9 +29574,15 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
         if(y < r.top + r.height / 2){ before = sibs[i]; break; }
       }
       if(before){
-        if(before.previousElementSibling !== row) bodyEl.insertBefore(row, before);
+        if(before.previousElementSibling !== row){
+          bodyEl.insertBefore(row, before);
+          reIndex();
+        }
       } else {
-        if(row !== bodyEl.lastElementChild) bodyEl.appendChild(row);
+        if(row !== bodyEl.lastElementChild){
+          bodyEl.appendChild(row);
+          reIndex();
+        }
       }
       // Auto-scroll near edges
       var rect = bodyEl.getBoundingClientRect();
@@ -29587,6 +29602,49 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
             bodyEl.scrollTop += dir * 8;
             autoRaf = requestAnimationFrame(step);
           };
+          autoRaf = requestAnimationFrame(step);
+        }
+      } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
+    }
+    function finish(){
+      clearTimeout(holdTimer);
+      if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
+      try{ document.body.classList.remove('reordering'); }catch(_e){}
+      if(drag){
+        row.style.zIndex = '';
+        row.style.boxShadow = '';
+        row.style.background = '';
+        row.style.transition = 'transform 0.15s ease';
+        row.style.transform = 'scale(1)';
+        setTimeout(function(){ row.style.transition = ''; row.style.transform = ''; }, 150);
+        if(row._dragging){
+          try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
+          // Persist the new order to userAlbums
+          var newOrder = [];
+          Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r){
+            if(r.dataset.id) newOrder.push(r.dataset.id);
+          });
+          if(newOrder.length && typeof userAlbums !== 'undefined' && userAlbums[albumName]){
+            userAlbums[albumName].trackIds = newOrder;
+            saveMeta();
+            reIndex();
+          }
+        }
+        drag = null;
+      }
+    }
+    row.addEventListener('pointerdown', function(e){
+      if(e.target.closest('.kebab-btn,button,a,input,select')) return;
+      clearTimeout(holdTimer);
+      row._dragging = false;
+      row._startX = e.clientX; row._startY = e.clientY;
+      holdTimer = setTimeout(function(){ begin(e); }, 200);
+    });
+    row.addEventListener('pointermove', move);
+    row.addEventListener('pointerup', finish);
+    row.addEventListener('pointercancel', finish);
+  });
+};
           autoRaf = requestAnimationFrame(step);
         }
       } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
