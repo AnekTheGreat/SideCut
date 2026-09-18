@@ -29273,6 +29273,264 @@ window.__ahCancelToast = function(){
 };
 
 
+
+// ---------------- Album Reorder Popup ----------------
+window.showAlbumReorderPopup = function(albumName){
+  var album = null;
+  if(typeof userAlbums !== 'undefined' && userAlbums[albumName]) album = userAlbums[albumName];
+  if(!album){ toast('Album not found.'); return; }
+
+  // Build list of all album names for switching
+  var allAlbumNames = Object.keys(userAlbums || {});
+
+  // Create overlay
+  var overlay = document.createElement('div');
+  overlay.id = 'albumReorderPopup';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.7);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0;';
+
+  var card = document.createElement('div');
+  card.style.cssText = 'width:100%;max-width:420px;max-height:85vh;background:var(--card,#1a2c33);border-top-left-radius:16px;border-top-right-radius:16px;border:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;';
+
+  // Header
+  var header = document.createElement('div');
+  header.style.cssText = 'padding:16px 16px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px;position:relative;flex-shrink:0;';
+  var headerInfo = document.createElement('div');
+  headerInfo.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+  var headerText = document.createElement('div');
+  var headerTitle = document.createElement('div');
+  headerTitle.style.cssText = 'font-size:15px;font-weight:700;color:var(--ink);';
+  headerTitle.textContent = 'Reorder Songs';
+  var headerSub = document.createElement('div');
+  headerSub.style.cssText = 'font-size:12px;color:var(--ink-dim);margin-top:2px;';
+  headerText.appendChild(headerTitle);
+  headerText.appendChild(headerSub);
+  headerInfo.appendChild(headerText);
+  var closeBtn = document.createElement('button');
+  closeBtn.style.cssText = 'width:30px;height:30px;border-radius:50%;border:none;background:rgba(255,255,255,0.1);color:var(--ink);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+  closeBtn.textContent = '\u2715';
+  headerInfo.appendChild(closeBtn);
+  header.appendChild(headerInfo);
+  var headerHint = document.createElement('div');
+  headerHint.style.cssText = 'font-size:11px;color:var(--ink-dim);margin-top:4px;';
+  headerHint.textContent = 'Drag \u2261 handles to reorder. Tap Done to save.';
+  header.appendChild(headerHint);
+  card.appendChild(header);
+
+  // Song list
+  var listEl = document.createElement('div');
+  listEl.style.cssText = 'flex:1;overflow-y:auto;padding:4px 0;min-height:100px;';
+  card.appendChild(listEl);
+
+  var currentPopupAlbum = albumName;
+
+  function renderSongList(targetAlbumName) {
+    currentPopupAlbum = targetAlbumName;
+    var targetAlbum = userAlbums[targetAlbumName];
+    if(!targetAlbum) return;
+    listEl.innerHTML = '';
+    headerSub.innerHTML = escapeHtml(targetAlbumName) + ' \u00b7 ' + targetAlbum.trackIds.length + ' track' + (targetAlbum.trackIds.length !== 1 ? 's' : '');
+
+    targetAlbum.trackIds.forEach(function(tid, ti){
+      var tt = allTracks.find(function(tr){ return tr.id === tid; });
+      if(!tt) return;
+      var row = document.createElement('div');
+      row.dataset.id = tid;
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;user-select:none;transition:background 0.15s;border-bottom:1px solid rgba(255,255,255,0.04);';
+      var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+      var gripDiv = document.createElement('div');
+      gripDiv.className = 'ar-grip';
+      gripDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;width:20px;flex-shrink:0;color:var(--ink-dim);font-size:13px;font-weight:600;cursor:grab;';
+      gripDiv.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg>';
+      var numDiv = document.createElement('div');
+      numDiv.style.cssText = 'font-size:12px;color:var(--ink-dim);width:22px;text-align:center;flex-shrink:0;';
+      numDiv.textContent = ti + 1;
+      var artDiv = document.createElement('div');
+      artDiv.style.cssText = 'width:36px;height:36px;border-radius:6px;flex-shrink:0;background-size:cover;background-position:center;background-color:rgba(255,255,255,0.06);' + artStyle;
+      var infoDiv = document.createElement('div');
+      infoDiv.style.cssText = 'flex:1;min-width:0;';
+      var nameEl = document.createElement('div');
+      nameEl.style.cssText = 'font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      nameEl.textContent = tt.name;
+      var artistEl = document.createElement('div');
+      artistEl.style.cssText = 'font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      artistEl.textContent = tt.artist;
+      infoDiv.appendChild(nameEl);
+      infoDiv.appendChild(artistEl);
+      var durDiv = document.createElement('div');
+      durDiv.style.cssText = 'font-size:11px;color:var(--ink-dim);flex-shrink:0;';
+      durDiv.textContent = tt.duration ? fmtTime(tt.duration) : '';
+      row.appendChild(gripDiv);
+      row.appendChild(numDiv);
+      row.appendChild(artDiv);
+      row.appendChild(infoDiv);
+      row.appendChild(durDiv);
+      listEl.appendChild(row);
+
+      // Hold-to-drag reorder on the row itself
+      (function(r){
+        var holdTimer = null, dragging = null, lastPt = null;
+        function begin(e){
+          if(dragging || !e.pointerId) return;
+          dragging = r;
+          lastPt = e;
+          r.style.zIndex = '99';
+          r.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
+          r.style.background = 'rgba(227,178,60,0.12)';
+          r.style.transform = 'scale(1.02)';
+          r.style.transition = 'none';
+          try{ r.setPointerCapture(e.pointerId); }catch(_e){}
+        }
+        function move(e){
+          lastPt = e;
+          if(dragging !== r) return;
+          e.preventDefault();
+          var y = e.clientY;
+          var before = null;
+          var sibs = Array.prototype.filter.call(listEl.children, function(k){ return k !== r; });
+          for(var i = 0; i < sibs.length; i++){
+            var rect = sibs[i].getBoundingClientRect();
+            if(y < rect.top + rect.height / 2){ before = sibs[i]; break; }
+          }
+          if(before){
+            if(before.previousElementSibling !== r) listEl.insertBefore(r, before);
+          } else {
+            if(r !== listEl.lastElementChild) listEl.appendChild(r);
+          }
+        }
+        function finish(){
+          clearTimeout(holdTimer);
+          try{ document.body.classList.remove('reordering'); }catch(_e){}
+          if(dragging){
+            r.style.zIndex = ''; r.style.boxShadow = ''; r.style.background = ''; r.style.transform = ''; r.style.transition = '';
+            Array.prototype.forEach.call(listEl.children, function(row, idx){
+              var numEl = row.children[1];
+              if(numEl) numEl.textContent = idx + 1;
+            });
+            dragging = null;
+          }
+        }
+        r.addEventListener('pointerdown', function(e){
+          if(e.target.closest('button')) return;
+          holdTimer = setTimeout(function(){ begin(e); }, 350);
+        });
+        r.addEventListener('pointermove', move);
+        r.addEventListener('pointerup', finish);
+        r.addEventListener('pointercancel', finish);
+      })(row);
+    });
+
+    // Wire grip handles for immediate drag
+    Array.prototype.forEach.call(listEl.querySelectorAll('.ar-grip'), function(grip){
+      grip.addEventListener('pointerdown', function(e){
+        e.stopPropagation();
+        var row = grip.closest('[data-id]');
+        if(!row) return;
+        row.style.zIndex = '99';
+        row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
+        row.style.background = 'rgba(227,178,60,0.12)';
+        row.style.transform = 'scale(1.02)';
+        row.style.transition = 'none';
+        try{ row.setPointerCapture(e.pointerId); }catch(_e){}
+
+        function gMove(ev){
+          ev.preventDefault();
+          var y = ev.clientY;
+          var before = null;
+          var sibs = Array.prototype.filter.call(listEl.children, function(k){ return k !== row; });
+          for(var i = 0; i < sibs.length; i++){
+            var rect = sibs[i].getBoundingClientRect();
+            if(y < rect.top + rect.height / 2){ before = sibs[i]; break; }
+          }
+          if(before){
+            if(before.previousElementSibling !== row) listEl.insertBefore(row, before);
+          } else {
+            if(row !== listEl.lastElementChild) listEl.appendChild(row);
+          }
+        }
+        function gFinish(){
+          document.removeEventListener('pointermove', gMove);
+          document.removeEventListener('pointerup', gFinish);
+          document.removeEventListener('pointercancel', gFinish);
+          row.style.zIndex = ''; row.style.boxShadow = ''; row.style.background = ''; row.style.transform = ''; row.style.transition = '';
+          Array.prototype.forEach.call(listEl.children, function(r, idx){
+            var numEl = r.children[1];
+            if(numEl) numEl.textContent = idx + 1;
+          });
+        }
+        document.addEventListener('pointermove', gMove);
+        document.addEventListener('pointerup', gFinish);
+        document.addEventListener('pointercancel', gFinish);
+      });
+    });
+
+    // Update album switcher active states
+    if(typeof switcher !== 'undefined' && switcher){
+      Array.prototype.forEach.call(switcher.querySelectorAll('button'), function(b){
+        b.style.background = b.textContent === targetAlbumName ? 'rgba(227,178,60,0.15)' : 'rgba(255,255,255,0.04)';
+        b.style.borderColor = b.textContent === targetAlbumName ? 'var(--gold)' : 'var(--line)';
+      });
+    }
+  }
+
+  renderSongList(albumName);
+
+  // Album switcher bar at bottom
+  var switcher;
+  if(allAlbumNames.length > 1){
+    switcher = document.createElement('div');
+    switcher.style.cssText = 'border-top:1px solid var(--line);padding:8px 12px;max-height:120px;overflow-y:auto;flex-shrink:0;';
+    var switchLabel = document.createElement('div');
+    switchLabel.style.cssText = 'font-size:11px;font-weight:600;color:var(--ink-dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;';
+    switchLabel.textContent = 'Switch Album';
+    switcher.appendChild(switchLabel);
+    allAlbumNames.forEach(function(name){
+      var btn = document.createElement('button');
+      btn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:5px 10px;margin:2px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,0.04);color:var(--ink);font-size:11px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      btn.textContent = name;
+      btn.addEventListener('click', function(){
+        renderSongList(name);
+      });
+      if(name === currentPopupAlbum) {
+        btn.style.background = 'rgba(227,178,60,0.15)';
+        btn.style.borderColor = 'var(--gold)';
+      }
+      switcher.appendChild(btn);
+    });
+    card.appendChild(switcher);
+  }
+
+  // Done button
+  var footer = document.createElement('div');
+  footer.style.cssText = 'padding:12px 16px;border-top:1px solid var(--line);flex-shrink:0;';
+  var doneBtn = document.createElement('button');
+  doneBtn.style.cssText = 'width:100%;padding:12px;border-radius:10px;border:none;background:var(--coral);color:#161616;font-size:14px;font-weight:700;cursor:pointer;';
+  doneBtn.textContent = 'Done';
+  doneBtn.addEventListener('click', function(){
+    var tracks = Array.prototype.slice.call(listEl.querySelectorAll('[data-id]'));
+    var newOrder = tracks.map(function(r){ return r.dataset.id; });
+    if(newOrder.length && currentPopupAlbum && userAlbums[currentPopupAlbum]){
+      userAlbums[currentPopupAlbum].trackIds = newOrder;
+      if(typeof saveMeta === 'function') saveMeta();
+    }
+    overlay.remove();
+    renderList();
+    toast('\u2713 Order saved', 1500);
+  });
+  footer.appendChild(doneBtn);
+  card.appendChild(footer);
+
+  overlay.appendChild(card);
+
+  // Close on backdrop tap
+  overlay.addEventListener('click', function(e){
+    if(e.target === overlay) overlay.remove();
+  });
+  // Close button
+  closeBtn.addEventListener('click', function(){ overlay.remove(); });
+
+  document.body.appendChild(overlay);
+};
+
 // ---------------- Album reorder: hold-to-drag (playlist-style) ----------------
 window.wireAlbumSongReorder = function(bodyEl, albumName){
   if(!bodyEl) return;
