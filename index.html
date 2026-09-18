@@ -14259,31 +14259,39 @@ function _fallbackCopy(text){
     });
   }
   function renderListInner(){
-    // Mid-session self-heal: if All Songs has fewer tracks than allTracks,
-    // the reorder bug corrupted it. Rebuild immediately and persist.
-    if(activePlaylist === 'All Songs' && playlists['All Songs'] && allTracks.length > playlists['All Songs'].length + 5){
-        const _hs = new Set(playlists['All Songs']);
-        let _added = 0;
-        allTracks.forEach(t => { if(!_hs.has(t.id)){ playlists['All Songs'].push(t.id); _hs.add(t.id); _added++; }});
-        if(_added > 0){ saveMeta(); toast('Auto-recovered ' + _added + ' missing song' + (_added === 1 ? '' : 's') + ' in All Songs'); }
+    // Self-heal: recover playlists corrupted by album-reorder bug.
+    // If a playlist only contains songs that are in albums AND is shorter
+    // than allTracks, add back all missing songs.
+    var _allAlbumIds = new Set(typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : []);
+    var _healedCount = 0;
+    function _healPlaylist(plName){
+        if(!playlists[plName] || playlists[plName].length === 0) return;
+        var _pl = playlists[plName];
+        if(_pl.length >= allTracks.length) return; // already has everything
+        if(_allAlbumIds.size === 0) return;
+        // Check if every song in the playlist is an album song
+        var _allInAlbums = _pl.every(function(id){ return _allAlbumIds.has(id); });
+        if(!_allInAlbums) return; // playlist has non-album songs — not corrupted
+        // Playlist was overwritten with only album songs — add back the rest
+        var _plSet = new Set(_pl);
+        var _added = 0;
+        allTracks.forEach(function(t){ if(!_plSet.has(t.id)){ playlists[plName].push(t.id); _plSet.add(t.id); _added++; }});
+        if(_added > 0){ _healedCount++; toast('Auto-recovered ' + _added + ' missing song' + (_added === 1 ? '' : 's') + ' in "' + plName + '"'); }
     }
-    // Also heal user playlists that got overwritten with only album songs
-    // by the album-reorder bug. Detect: every ID in the playlist is also in
-    // buildAlbumsIds() but the playlist is much shorter than allTracks.
-    if(activePlaylist !== 'All Songs' && activePlaylist !== UNSORTED_VIEW && playlists[activePlaylist]){
-        const _plIds = playlists[activePlaylist];
-        if(_plIds.length > 0 && allTracks.length > _plIds.length + 10){
-            const _albumIds = new Set(typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : []);
-            if(_albumIds.size > 0 && _plIds.length < _albumIds.size){
-                const _allInAlbums = _plIds.every(id => _albumIds.has(id));
-                if(_allInAlbums){
-                    const _plSet = new Set(_plIds);
-                    let _added = 0;
-                    allTracks.forEach(t => { if(!_plSet.has(t.id)){ playlists[activePlaylist].push(t.id); _plSet.add(t.id); _added++; }});
-                    if(_added > 0){ saveMeta(); toast('Auto-recovered ' + _added + ' missing song' + (_added === 1 ? '' : 's') + ' in "' + activePlaylist + '"'); }
-                }
-            }
-        }
+    // Heal the active playlist
+    if(activePlaylist !== 'All Songs' && activePlaylist !== UNSORTED_VIEW){ _healPlaylist(activePlaylist); }
+    // Also heal All Songs if corrupted
+    if(activePlaylist === 'All Songs' && playlists['All Songs'] && playlists['All Songs'].length < allTracks.length){ _healPlaylist('All Songs'); }
+    // Heal ALL playlists on every render (catches corruption from any album operation)
+    Object.keys(playlists).forEach(function(pn){ if(pn !== activePlaylist && pn !== 'All Songs' && pn !== UNSORTED_VIEW){ _healPlaylist(pn); }});
+    // Persist if any playlists were healed — save DIRECTLY to IndexedDB
+    // (saveMeta() skips playlists in album mode, so we must bypass it)
+    if(_healedCount > 0){
+      if(typeof dbPut === 'function'){
+        dbPut('meta', { key: 'playlists', value: playlists });
+        dbPut('meta', { key: 'idCounter', value: idCounter });
+        dbPut('meta', { key: 'userAlbums', value: userAlbums });
+      }
     }
     const pane = $('listPane');
     // renderList rebuilds the whole pane (pane.innerHTML = '') which resets
@@ -14393,7 +14401,7 @@ function _fallbackCopy(text){
         </div>
         <div class="pane-actions" style="gap:4px;">
           <select id="sortSelect" style="background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); border-radius:8px; font-size:11px; padding:5px 8px; font-family:'JetBrains Mono',monospace; white-space:nowrap;${libraryMode === "albums" ? ";display:none" : ""}>
-            <option value="default">${libraryMode === "albums" ? "Album order" : "Playlist order"}</option>
+            <option value="default">${libraryMode === "albums" ? "" : "Playlist order"}</option>
             <option value="alpha">A–Z</option>
             <option value="artist">By artist</option>
             <option value="album">By album</option>
@@ -14409,6 +14417,7 @@ function _fallbackCopy(text){
       pane.appendChild(header);
       var _ss = $('sortSelect');
       if(_ss){
+        if(libraryMode === 'albums'){ _ss.style.display = 'none'; }
         _ss.value = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort;
         _ss.addEventListener('change', (e) => {
           if(perPlaylistSortEnabled){
