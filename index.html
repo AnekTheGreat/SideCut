@@ -583,6 +583,8 @@
   }
   .track.reordering .grip-handle:active{ cursor:grabbing; }
   .track.reordering .idx{ color:color-mix(in srgb, var(--gold) 70%, var(--ink-dim)); }
+  .alb-song-grip{ position:absolute; top:0; left:0; right:0; bottom:0; z-index:1; touch-action:none; cursor:grab; }
+  body.reordering .track{ touch-action:none !important; }
   body.reordering .track{ touch-action:none !important; pointer-events:auto !important; }
 
   .track.dragging{ background:var(--bg-raised); box-shadow:0 8px 24px rgba(0,0,0,0.5); border-radius:10px; position:relative; z-index:20; }
@@ -14623,7 +14625,7 @@ function _fallbackCopy(text){
                 + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
                 + '<div class="a">' + escapeHtml(tt.artist) + '</div></div>'
                 + '<div class="dur">' + (tt.duration ? fmtTime(tt.duration) : '--:--') + '</div>'
-                + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
+                + '<div class="alb-song-grip" data-alb-grip></div>' + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
               row.addEventListener('click', function(e){
                 if(e.target.closest('.kebab-btn')) return;
                 playFromList(alb.tracks, tid);
@@ -29536,17 +29538,19 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       }
     }
 
-    row.addEventListener('pointerdown', function(e){
+    // Use the transparent grip overlay for pointer capture.
+    // It has touch-action:none in CSS, so the browser won't steal the gesture.
+    var gripEl = row.querySelector('.alb-song-grip');
+    var target = gripEl || row;
+    
+    target.addEventListener('pointerdown', function(e){
       if(e.target.closest('.kebab-btn,button,a,input,select')) return;
       var sx = e.clientX, sy = e.clientY;
-      // Set touch-action:none IMMEDIATELY to prevent browser scroll
-      row.style.touchAction = 'none';
-      // Capture pointer immediately
-      try{ row.setPointerCapture(e.pointerId); }catch(_pc){}
+      // Capture pointer immediately on the grip (which has touch-action:none)
+      try{ target.setPointerCapture(e.pointerId); }catch(_pc){}
       var _ptrId = e.pointerId;
       var holdTimer = setTimeout(function(){
         holdTimer = null;
-        // Hold fired — begin drag mode
         try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
         row.style.transition = 'box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease';
         row.style.zIndex = '99';
@@ -29578,14 +29582,10 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
           } else {
             if(row !== bodyEl.lastElementChild){ bodyEl.appendChild(row); reIndex(); }
           }
-          // Auto-scroll near edges
           var bodyRect = bodyEl.getBoundingClientRect();
           var edge = 56;
-          if(ev.clientY - bodyRect.top < edge){
-            bodyEl.scrollTop -= 8;
-          } else if(bodyRect.bottom - ev.clientY < edge){
-            bodyEl.scrollTop += 8;
-          }
+          if(ev.clientY - bodyRect.top < edge){ bodyEl.scrollTop -= 8; }
+          else if(bodyRect.bottom - ev.clientY < edge){ bodyEl.scrollTop += 8; }
         }
 
         function onUp(){
@@ -29598,8 +29598,7 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
           row.style.background = '';
           row.style.transition = 'transform 0.15s ease';
           row.style.transform = 'scale(1)';
-          row.style.touchAction = '';
-          try{ row.releasePointerCapture(_ptrId); }catch(_pc){}
+          try{ target.releasePointerCapture(_ptrId); }catch(_pc){}
           setTimeout(function(){ row.style.transition = ''; row.style.transform = ''; }, 150);
           if(dragging){
             try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
@@ -29625,19 +29624,18 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       function cancelHold(){
         clearTimeout(holdTimer);
         holdTimer = null;
-        row.style.touchAction = '';
-        try{ row.releasePointerCapture(_ptrId); }catch(_pc){}
-        row.removeEventListener('pointermove', checkMove);
-        row.removeEventListener('pointerup', cancelHold);
-        row.removeEventListener('pointercancel', cancelHold);
+        try{ target.releasePointerCapture(_ptrId); }catch(_pc){}
+        target.removeEventListener('pointermove', checkMove);
+        target.removeEventListener('pointerup', cancelHold);
+        target.removeEventListener('pointercancel', cancelHold);
       }
       function checkMove(ev){
         var dx = ev.clientX - sx, dy = ev.clientY - sy;
         if(dx*dx + dy*dy > 100) cancelHold();
       }
-      row.addEventListener('pointermove', checkMove, { passive: true });
-      row.addEventListener('pointerup', cancelHold, { passive: true });
-      row.addEventListener('pointercancel', cancelHold, { passive: true });
+      target.addEventListener('pointermove', checkMove, { passive: true });
+      target.addEventListener('pointerup', cancelHold, { passive: true });
+      target.addEventListener('pointercancel', cancelHold, { passive: true });
     });
   });
 };
