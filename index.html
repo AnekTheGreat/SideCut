@@ -29525,7 +29525,6 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
   rows.forEach(function(row){
     if(row._asrReady) return;
     row._asrReady = true;
-    var holdTimer = null, drag = null, autoRaf = null, lastPt = null, savedTouchAction = null, _rowPtrId = null, _docMoveHandler = null, _docUpHandler = null;
 
     function reIndex(){
       var tracks = bodyEl.querySelectorAll('.track');
@@ -29535,127 +29534,106 @@ window.wireAlbumSongReorder = function(bodyEl, albumName){
       }
     }
 
-    function begin(e){
-      if(drag) return;
-      drag = row;
-      lastPt = e;
-      row._dragging = false;
-      row._startX = e.clientX; row._startY = e.clientY;
-      // Visual feedback
-      row.style.transition = 'box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease';
-      row.style.zIndex = '99';
-      row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
-      row.style.background = 'rgba(227,178,60,0.12)';
-      row.style.transform = 'scale(1.02)';
-      // Capture pointer now that hold fired
-      savedTouchAction = row.style.touchAction;
-      row.style.touchAction = 'none';
-      try{ row.setPointerCapture(e.pointerId); }catch(_e){}
-      try{ document.body.classList.add('reordering'); }catch(_e){}
-      try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
-    }
-
-    function move(e){
-      lastPt = e;
-      if(drag !== row) return;
-      e.preventDefault();
-      if(!row._dragging){
-        var ddx = e.clientX - row._startX, ddy = e.clientY - row._startY;
-        if((ddx*ddx + ddy*ddy) < 64) return;
-        row._dragging = true;
-        row.style.transition = 'none';
-        try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
-      }
-      var y = e.clientY;
-      var before = null;
-      var sibs = Array.prototype.filter.call(bodyEl.children, function(k){ return k !== row && k.classList && k.classList.contains('track'); });
-      for(var i = 0; i < sibs.length; i++){
-        var r = sibs[i].getBoundingClientRect();
-        if(y < r.top + r.height / 2){ before = sibs[i]; break; }
-      }
-      if(before){
-        if(before.previousElementSibling !== row){ bodyEl.insertBefore(row, before); reIndex(); }
-      } else {
-        if(row !== bodyEl.lastElementChild){ bodyEl.appendChild(row); reIndex(); }
-      }
-      // Auto-scroll near edges
-      var rect = bodyEl.getBoundingClientRect();
-      var edge = 56, dir = 0;
-      if(e.clientY - rect.top < edge) dir = -1;
-      else if(rect.bottom - e.clientY < edge) dir = 1;
-      if(dir !== 0){
-        if(!autoRaf){
-          var step = function(){
-            var p = lastPt, still = false;
-            if(p){
-              var rr = bodyEl.getBoundingClientRect();
-              if(dir < 0 && p.clientY - rr.top < edge) still = true;
-              if(dir > 0 && rr.bottom - p.clientY < edge) still = true;
-            }
-            if(!still){ autoRaf = null; return; }
-            bodyEl.scrollTop += dir * 8;
-            autoRaf = requestAnimationFrame(step);
-          };
-          autoRaf = requestAnimationFrame(step);
-        }
-      } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
-    }
-
-    function finish(ev){
-      clearTimeout(holdTimer);
-      holdTimer = null;
-      if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
-      try{ document.body.classList.remove('reordering'); }catch(_e){}
-      // Clean up document-level listeners
-      if(_docMoveHandler){
-        document.removeEventListener('pointermove', _docMoveHandler);
-        document.removeEventListener('pointerup', _docUpHandler);
-        document.removeEventListener('pointercancel', _docUpHandler);
-        _docMoveHandler = null; _docUpHandler = null;
-      }
-      if(drag){
-        row.style.zIndex = '';
-        row.style.boxShadow = '';
-        row.style.background = '';
-        row.style.transition = 'transform 0.15s ease';
-        row.style.transform = 'scale(1)';
-        if(savedTouchAction !== null){ row.style.touchAction = savedTouchAction; savedTouchAction = null; }
-        try{ row.releasePointerCapture(_rowPtrId); }catch(_e){}
-        _rowPtrId = null;
-        setTimeout(function(){ row.style.transition = ''; row.style.transform = ''; }, 150);
-        if(row._dragging){
-          try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
-          var newOrder = [];
-          Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r){
-            if(r.dataset.id) newOrder.push(r.dataset.id);
-          });
-          if(newOrder.length && typeof userAlbums !== 'undefined' && userAlbums[albumName]){
-            userAlbums[albumName].trackIds = newOrder;
-            if(typeof dbPut === 'function'){
-              dbPut('meta', { key: 'userAlbums', value: userAlbums });
-            }
-            reIndex();
-          }
-        }
-        drag = null;
-      }
-    }
-
     row.addEventListener('pointerdown', function(e){
       if(e.target.closest('.kebab-btn,button,a,input,select')) return;
-      clearTimeout(holdTimer);
-      row._dragging = false;
-      row._startX = e.clientX; row._startY = e.clientY;
-      _rowPtrId = e.pointerId;
-      // DO NOT capture pointer here — let the browser scroll naturally
-      // Only capture after the hold fires
-      holdTimer = setTimeout(function(){ begin(e); }, 200);
+      var sx = e.clientX, sy = e.clientY;
+      // Capture pointer IMMEDIATELY to prevent browser from stealing the gesture
+      try{ row.setPointerCapture(e.pointerId); }catch(_pc){}
+      var _ptrId = e.pointerId;
+      var holdTimer = setTimeout(function(){
+        holdTimer = null;
+        // Hold fired — begin drag mode
+        try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
+        row.style.transition = 'box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease';
+        row.style.zIndex = '99';
+        row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
+        row.style.background = 'rgba(227,178,60,0.12)';
+        row.style.transform = 'scale(1.02)';
+        row.style.touchAction = 'none';
+        try{ document.body.classList.add('reordering'); }catch(_e){}
+        var dragging = false;
+        var startX = sx, startY = sy;
+
+        function onMove(ev){
+          ev.preventDefault();
+          if(!dragging){
+            var ddx = ev.clientX - startX, ddy = ev.clientY - startY;
+            if((ddx*ddx + ddy*ddy) < 64) return;
+            dragging = true;
+            row.style.transition = 'none';
+            try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
+          }
+          var y = ev.clientY;
+          var before = null;
+          var sibs = Array.prototype.filter.call(bodyEl.children, function(k){ return k !== row && k.classList && k.classList.contains('track'); });
+          for(var i = 0; i < sibs.length; i++){
+            var rect = sibs[i].getBoundingClientRect();
+            if(y < rect.top + rect.height / 2){ before = sibs[i]; break; }
+          }
+          if(before){
+            if(before.previousElementSibling !== row){ bodyEl.insertBefore(row, before); reIndex(); }
+          } else {
+            if(row !== bodyEl.lastElementChild){ bodyEl.appendChild(row); reIndex(); }
+          }
+          // Auto-scroll near edges
+          var bodyRect = bodyEl.getBoundingClientRect();
+          var edge = 56;
+          if(ev.clientY - bodyRect.top < edge){
+            bodyEl.scrollTop -= 8;
+          } else if(bodyRect.bottom - ev.clientY < edge){
+            bodyEl.scrollTop += 8;
+          }
+        }
+
+        function onUp(){
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+          document.removeEventListener('pointercancel', onUp);
+          try{ document.body.classList.remove('reordering'); }catch(_e){}
+          row.style.zIndex = '';
+          row.style.boxShadow = '';
+          row.style.background = '';
+          row.style.transition = 'transform 0.15s ease';
+          row.style.transform = 'scale(1)';
+          row.style.touchAction = '';
+          try{ row.releasePointerCapture(_ptrId); }catch(_pc){}
+          setTimeout(function(){ row.style.transition = ''; row.style.transform = ''; }, 150);
+          if(dragging){
+            try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
+            var newOrder = [];
+            Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r){
+              if(r.dataset.id) newOrder.push(r.dataset.id);
+            });
+            if(newOrder.length && typeof userAlbums !== 'undefined' && userAlbums[albumName]){
+              userAlbums[albumName].trackIds = newOrder;
+              if(typeof dbPut === 'function'){
+                dbPut('meta', { key: 'userAlbums', value: userAlbums });
+              }
+              reIndex();
+            }
+          }
+        }
+
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onUp);
+      }, 200);
+
+      function cancelHold(){
+        clearTimeout(holdTimer);
+        holdTimer = null;
+        try{ row.releasePointerCapture(_ptrId); }catch(_pc){}
+        row.removeEventListener('pointermove', checkMove);
+        row.removeEventListener('pointerup', cancelHold);
+        row.removeEventListener('pointercancel', cancelHold);
+      }
+      function checkMove(ev){
+        var dx = ev.clientX - sx, dy = ev.clientY - sy;
+        if(dx*dx + dy*dy > 100) cancelHold();
+      }
+      row.addEventListener('pointermove', checkMove, { passive: true });
+      row.addEventListener('pointerup', cancelHold, { passive: true });
+      row.addEventListener('pointercancel', cancelHold, { passive: true });
     });
-    // Listen on document so we receive events even without pointer capture
-    _docMoveHandler = move;
-    _docUpHandler = finish;
-    document.addEventListener('pointermove', move);
-    document.addEventListener('pointerup', finish);
-    document.addEventListener('pointercancel', finish);
   });
 };
