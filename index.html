@@ -30190,53 +30190,72 @@ window.showAlbumReorderPopup = function(albumName){
 // wired (or forgot to wire) its own hold listener. This single delegated
 // listener covers every album row no matter which path drew it, so holding a
 // song always opens the Reorder Songs sheet.
-// It also has to survive the way a phone actually delivers a press: Android can
-// fire pointercancel for a stationary finger (it decided to drive the gesture
-// itself), and a real long press ends with a click that lands on whatever is
-// under the finger when it lifts — which is the sheet that just appeared.
+//
+// It has to survive how a phone actually delivers a long press, because every
+// one of these used to end in silence:
+//   * the browser fires a click when the press is released, and hit-tests it
+//     against whatever is under the finger then — the sheet backdrop that just
+//     appeared — so the sheet closed the instant it opened;
+//   * Android fires pointercancel for a stationary finger when it takes the
+//     gesture itself, which used to kill the hold timer;
+//   * some WebViews never deliver pointer events at all, only touch events.
+// So the sheet opens from whichever of these happens first: the hold timer, or
+// the finger coming up after a long enough, unmoved press.
 (function(){
   if(window.__albumSongHoldWired) return;
   window.__albumSongHoldWired = true;
-  var holdTimer = null, pressStart = 0, startX = 0, startY = 0, moved = false, pressed = false;
+  var HOLD_MS = 320;
+  var holdTimer = null, pressStart = 0, startX = 0, startY = 0;
+  var moved = false, pressed = false, currentRow = null, currentAlbum = '';
 
   function stopTracking(){
     document.removeEventListener('pointermove', onMove, true);
-    document.removeEventListener('pointerup', clearHold, true);
+    document.removeEventListener('pointerup', onRelease, true);
     document.removeEventListener('pointercancel', onCancel, true);
     document.removeEventListener('touchmove', onTouchMove, true);
-    document.removeEventListener('touchend', clearHold, true);
-    document.removeEventListener('touchcancel', onCancel, true);
+    document.removeEventListener('touchend', onRelease, true);
+    document.removeEventListener('touchcancel', clearHold, true);
   }
   function clearHold(){
     if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
     pressed = false;
+    currentRow = null;
+    currentAlbum = '';
     stopTracking();
   }
   function movedTooFar(x, y){
     return Math.abs(x - startX) > 12 || Math.abs(y - startY) > 12;
   }
   function onMove(ev){
-    if(!holdTimer) return;
-    if(movedTooFar(ev.clientX, ev.clientY)) clearHold();   // a scroll, not a reorder
+    if(!pressed) return;
+    if(movedTooFar(ev.clientX, ev.clientY)){ moved = true; clearHold(); }  // a scroll, not a reorder
   }
   function onTouchMove(ev){
+    if(!pressed) return;
     var t = ev.touches && ev.touches[0];
     if(!t) return;
-    if(!holdTimer) return;
-    if(movedTooFar(t.clientX, t.clientY)) clearHold();
+    if(movedTooFar(t.clientX, t.clientY)){ moved = true; clearHold(); }
   }
   function onCancel(){
-    // Cancelled before the hold completed. Keep it alive when the finger never
-    // moved (the browser took the gesture for a pan we were not doing); drop it
-    // when it did move, or when it was cancelled almost immediately.
-    if(holdTimer && !moved && (Date.now() - pressStart) > 180){
-      // stop tracking this pointer but let the timer finish
-      document.removeEventListener('pointermove', onMove, true);
-      document.removeEventListener('pointerup', clearHold, true);
-      document.removeEventListener('pointercancel', onCancel, true);
-      return;
-    }
+    // The browser took the gesture. If the finger never moved this is still the
+    // long press the user meant, so let the timer finish instead of dropping it
+    // (a real scroll has already cleared the hold above, by movement).
+    if(!pressed) return;
+    if(moved){ clearHold(); return; }
+    document.removeEventListener('pointermove', onMove, true);
+    document.removeEventListener('pointercancel', onCancel, true);
+  }
+  function onRelease(){
+    // Belt and braces: if the press was long enough and never moved, open the
+    // sheet here too, so a cancelled timer can't turn a hold into a no-op.
+    if(!pressed) return;
+    var held = Date.now() - pressStart;
+    var wasMoved = moved;
+    var row = currentRow, album = currentAlbum;
     clearHold();
+    if(wasMoved || held < HOLD_MS || !row || !album) return;
+    if(document.getElementById('albumReorderPopup')) return;
+    openFor(row, album);
   }
   function openFor(row, album){
     if(document.getElementById('albumReorderPopup')) return;
@@ -30269,19 +30288,22 @@ window.showAlbumReorderPopup = function(albumName){
     moved = false;
     pressStart = Date.now();
     startX = x; startY = y;
+    currentRow = row;
+    currentAlbum = album;
     holdTimer = setTimeout(function(){
       holdTimer = null;
       pressed = false;
+      var r = currentRow, a = currentAlbum;
       stopTracking();
-      if(document.getElementById('albumReorderPopup')) return;
-      openFor(row, album);
-    }, 320);
+      if(!r || !a) return;
+      openFor(r, a);
+    }, HOLD_MS);
     document.addEventListener('pointermove', onMove, true);
-    document.addEventListener('pointerup', clearHold, true);
+    document.addEventListener('pointerup', onRelease, true);
     document.addEventListener('pointercancel', onCancel, true);
     document.addEventListener('touchmove', onTouchMove, true);
-    document.addEventListener('touchend', clearHold, true);
-    document.addEventListener('touchcancel', onCancel, true);
+    document.addEventListener('touchend', onRelease, true);
+    document.addEventListener('touchcancel', clearHold, true);
   }
 
   document.addEventListener('pointerdown', function(e){

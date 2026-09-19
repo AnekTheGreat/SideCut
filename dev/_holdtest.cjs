@@ -249,6 +249,21 @@ function check(name, cond, extra) {
     check('sheet rows present for drag test', false);
   }
 
+  // ---- 6b. OS cancels the pointer almost immediately, finger keeps holding ----
+  console.log('\n6b) early pointercancel then release still opens the sheet');
+  if (popup()) { const o = popup(); ev('pointerdown', o, { clientX: 5, clientY: 5 }); ev('click', o, { clientX: 5, clientY: 5 }); }
+  await sleep(800);
+  ev('pointerdown', liveRows()[0]);
+  await sleep(100);
+  ev('pointercancel', doc, { buttons: 0 });
+  await sleep(80);
+  const openedEarly = !!popup();
+  ev('pointerup', doc, { buttons: 0 });
+  await sleep(120);
+  check('sheet opened after an early cancel + release', !!popup(), openedEarly ? 'opened by timer' : 'opened by release');
+  if (popup()) { const o = popup(); ev('pointerdown', o, { clientX: 5, clientY: 5 }); ev('click', o, { clientX: 5, clientY: 5 }); }
+  await sleep(800);
+
   // ---- 7. drag with touch events only (WebView fallback) ----
   console.log('\n7) drag using touchmove/touchend only');
   if (popup()) { const o = popup(); ev('pointerdown', o, { clientX: 5, clientY: 5 }); ev('click', o, { clientX: 5, clientY: 5 }); }

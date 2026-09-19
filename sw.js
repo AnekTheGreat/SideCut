@@ -29,8 +29,17 @@ self.addEventListener('fetch', (event) => {
   // Skip non-http(s) requests (blob:, data:, about:, etc.) and cross-origin requests
   if (!url.protocol.startsWith('http') || url.origin !== self.location.origin) return;
 
+  // A reload must always be able to pick up a newer build. GitHub Pages serves
+  // index.html with a 10 minute max-age, and a plain fetch() happily answers
+  // from that HTTP cache — which is why new versions looked like they never
+  // arrived. Bypass the HTTP cache for page loads so the newest HTML wins.
+  const isDocument = event.request.mode === 'navigate' || event.request.destination === 'document';
+  const netRequest = isDocument
+    ? new Request(event.request.url, { cache: 'no-store', credentials: 'same-origin', mode: 'same-origin' })
+    : event.request;
+
   event.respondWith(
-    fetch(event.request)
+    fetch(netRequest)
       .then((networkResponse) => {
         // Only cache successful responses
         if (networkResponse.ok) {
