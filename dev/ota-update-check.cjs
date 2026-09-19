@@ -212,6 +212,45 @@ function btn(id) { return dom.window.document.getElementById(id); }
   ok('no update is offered when the manifest matches the running version', r3 === null, JSON.stringify(r3));
   ok('and nothing is downloaded', calls.downloads.length === 0, JSON.stringify(calls.downloads));
 
+  console.log('\n— a stale published bundle can never be installed as a downgrade —');
+  // This is what was actually on the live site: an older manifest, written by a
+  // different tool, in an older schema.
+  manifestVersion = '57.5';
+  const staleRes = await win.__SideCutOTA.checkForUpdate({ silent: true });
+  await wait(400);
+  ok('an older manifest is reported as nothing to install', staleRes === null, JSON.stringify(staleRes));
+  ok('an older manifest offers nothing on screen', !/57\.5/.test(sheetText()), JSON.stringify(sheetText().slice(0, 80)));
+  ok('and downloads nothing', calls.downloads.length === 0, JSON.stringify(calls.downloads.map((d) => d.url)));
+
+  console.log('\n— versions are ordered numerically, not as strings —');
+  const cmpSrc = (OTA_SRC.match(/function compareVersions\(a, b\)\{[\s\S]*?\n  \}/) || [])[0];
+  ok('the comparator is present in the shipped client', !!cmpSrc);
+  if (cmpSrc) {
+    const cmp = new Function(cmpSrc + '; return compareVersions;')();
+    ok('58.10 is newer than 58.9 (a string compare would install a downgrade here)', cmp('58.10', '58.9') === 1, String(cmp('58.10', '58.9')));
+    ok('57.5 is older than 58.4', cmp('57.5', '58.4') === -1, String(cmp('57.5', '58.4')));
+    ok('the same version compares equal', cmp('58.4', '58.4') === 0, String(cmp('58.4', '58.4')));
+    ok('an extra segment only moves forward', cmp('58.4.1', '58.4') === 1, String(cmp('58.4.1', '58.4')));
+  }
+  manifestVersion = NEXT_VERSION;
+
+  console.log('\n— the committed bundle is what gets published (Pages is legacy-branch) —');
+  const otaMan = JSON.parse(fs.readFileSync(path.join(ROOT, 'ota/updates.json'), 'utf8'));
+  ok('ota/updates.json is on the current version', String(otaMan.version) === String(APP_VERSION),
+     'manifest v' + otaMan.version + ' vs APP_VERSION v' + APP_VERSION);
+  ok('it carries real patch notes', Array.isArray(otaMan.notes) && otaMan.notes.length > 0, JSON.stringify(otaMan.notes || []).slice(0, 60));
+  const zipList = require('child_process').execFileSync('unzip', ['-Z1', path.join(ROOT, 'ota/update.zip')], { encoding: 'utf8' }).split('\n').filter(Boolean);
+  for (const f of ['index.html', 'sw.js', 'manifest.json', 'icon-192.png', 'icon-512.png', 'dev/native-updates.js']) {
+    ok('ota/update.zip contains ' + f, zipList.indexOf(f) !== -1, zipList.join(', '));
+  }
+  const zippedHtml = require('child_process').execFileSync('unzip', ['-p', path.join(ROOT, 'ota/update.zip'), 'index.html'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  ok('the index.html inside the zip is the current version',
+     String((zippedHtml.match(/const APP_VERSION = '([^']+)'/) || [])[1]) === String(APP_VERSION),
+     String((zippedHtml.match(/const APP_VERSION = '([^']+)'/) || [])[1]));
+  const zippedClient = require('child_process').execFileSync('unzip', ['-p', path.join(ROOT, 'ota/update.zip'), 'dev/native-updates.js'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  ok('the zip carries the fixed OTA client (sheet shown + ordered versions)',
+     zippedClient.indexOf('var refs = ensureSheet();') !== -1 && zippedClient.indexOf('function compareVersions') !== -1);
+
   console.log('\n— the published bundle contains every local file the page needs —');
   const localRefs = new Set();
   const re = /(?:src|href)\s*=\s*"([^">]+)"/g;
@@ -222,18 +261,24 @@ function btn(id) { return dom.window.document.getElementById(id); }
     if (/\$\{|\+/.test(v)) continue;
     localRefs.add(v.split('?')[0]);
   }
-  const zipLine = (workflow.match(/zip -q -r ota\/update\.zip ([^\n]+)/) || [])[1] || '';
-  const missing = Array.from(localRefs).filter((f) => zipLine.indexOf(f) === -1);
-  ok('every local asset is listed in the OTA zip step', missing.length === 0,
-     'missing: ' + JSON.stringify(missing) + ' | zip line: ' + zipLine);
+  const bundleSrc = fs.readFileSync(path.join(ROOT, 'dev/ota-bundle.mjs'), 'utf8');
+  const missing = Array.from(localRefs).filter((f) => bundleSrc.indexOf(f) === -1);
+  ok('every local asset is included by the bundle generator', missing.length === 0,
+     'missing: ' + JSON.stringify(missing));
 
-  console.log('\n— the CI manifest matches what the client expects —');
-  ok('deploy.yml publishes ota/updates.json', /ota\/updates\.json/.test(workflow));
-  ok('deploy.yml publishes ota/update.zip', /ota\/update\.zip/.test(workflow));
-  ok('the manifest version comes from APP_VERSION in index.html', /APP_VERSION/.test(workflow) && /version: v/.test(workflow));
+  console.log('\n— the publish path matches what the client expects —');
+  ok('the generator writes ota/updates.json', /ota\/updates\.json/.test(bundleSrc));
+  ok('the generator writes ota/update.zip', /ota\/update\.zip/.test(bundleSrc));
+  ok('deploy.yml runs the generator', /dev\/ota-bundle\.mjs/.test(workflow));
+  ok('deploy.yml fails the build when the bundle is stale', /ota-bundle\.mjs --check/.test(workflow));
+  ok('deploy.yml commits the bundle (Pages is legacy-branch, so committed files are what ships)',
+     /git push/.test(workflow) && /contents: write/.test(workflow), 'no auto-publish');
+  ok('the manifest version comes from APP_VERSION in index.html', /APP_VERSION/.test(bundleSrc));
+  ok('the generator re-reads the version out of the bundled index.html when verifying',
+     /--check/.test(bundleSrc) && /const APP_VERSION/.test(bundleSrc));
   ok('the client reads the same version field', /man\.version/.test(OTA_SRC));
   ok('the manifest url field points at a file the client can resolve',
-     /update\.zip/.test(workflow) && /ota\/' \+ man\.url|man\.url/.test(OTA_SRC));
+     /update\.zip/.test(bundleSrc) && /man\.url/.test(OTA_SRC));
 
   console.log('\n— no runtime errors —');
   ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

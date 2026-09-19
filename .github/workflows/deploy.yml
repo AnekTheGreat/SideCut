@@ -12,7 +12,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     permissions:
-      contents: read
+      contents: write   # the OTA publish step commits ota/ back to main
       pages: write
       id-token: write
     concurrency:
@@ -27,38 +27,33 @@ jobs:
 
       - name: Publish OTA bundle for the native app
         run: |
-          mkdir -p ota
-          rm -f ota/SideCut-web.zip ota/update.zip
-          zip -q -r ota/update.zip index.html sw.js manifest.json icon-192.png icon-512.png dev/native-updates.js
-          cp ota/update.zip ota/SideCut-web.zip
-          # Manifest carries the real zip size (progress-bar ETA) and the real
-          # patch notes (update sheet) — pulled from the in-app CHANGELOG so
-          # users always see what actually changed in the version they install.
-          SIZE=$(stat -c%s ota/update.zip)
-          node -e "
-            const fs = require('fs');
-            const src = fs.readFileSync('index.html','utf8');
-            const m = src.match(/const APP_VERSION = '([^']+)'/);
-            const v = m ? m[1] : '0.0.0';
-            const block = src.match(/const CHANGELOG = \\[([\\s\\S]*?)\\n  \\];/);
-            let notes = [];
-            if (block) {
-              try {
-                const entries = eval('[' + block[1] + ']');
-                const e = entries.find(e => String(e.version) === v) || entries[0];
-                if (e) {
-                  notes = (e.items || []).slice(0, 6);
-                  var dateField = e.date ? String(e.date) : '';
-                }
-              } catch (err) { console.log('changelog parse failed:', err.message); }
-            }
-            fs.writeFileSync('ota/updates.json', JSON.stringify({ version: v, url: 'update.zip', size: process.argv[1], notes, date: dateField || '' }));
-            fs.writeFileSync('ota/manifest.json', JSON.stringify({ version: v, url: 'SideCut-web.zip', size: process.argv[1], notes, date: dateField || '' }));
-            console.log('OTA manifest:', v, process.argv[1], 'bytes,', notes.length, 'notes');
-          " "$SIZE"
+          # One source of truth (dev/ota-bundle.mjs) for the bundle the installed
+          # app downloads: zip + manifest, both derived from index.html.
+          node dev/ota-bundle.mjs
           echo '--- ota/ contents ---' && ls -la ota/
           echo '--- ota/updates.json ---' && cat ota/updates.json
-          echo '--- ota/manifest.json (legacy path) ---' && cat ota/manifest.json
+
+      - name: Commit the published bundle
+        # This repo's Pages site is in LEGACY mode (source: branch main, path /),
+        # so what an installed app receives is the *committed* ota/ directory — the
+        # artifact uploaded below is ignored. Without this commit the published
+        # bundle silently stays behind index.html, which is how it got stuck at
+        # v57.5 while the app moved on to 58.x and no update would ever install.
+        continue-on-error: true   # a protected branch must not break the deploy
+        run: |
+          if git diff --quiet -- ota updates.json; then
+            echo 'OTA bundle already current — nothing to commit.'
+            exit 0
+          fi
+          git config user.name 'SideCut OTA'
+          git config user.email 'actions@github.com'
+          git add ota updates.json
+          git commit -m "Publish OTA bundle $(node -p "require('./ota/updates.json').version")"
+          git push
+
+      - name: Verify the published bundle is current
+        # Fails the build instead of quietly shipping an app that can never update.
+        run: node dev/ota-bundle.mjs --check
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

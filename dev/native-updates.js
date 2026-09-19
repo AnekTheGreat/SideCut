@@ -40,6 +40,18 @@
   // The main app script defines toast() early; if it crashed, the bundle is
   // broken and must NOT be confirmed healthy.
   function appBooted(){ return typeof window.toast === 'function'; }
+  // 1 when a is newer, -1 when older, 0 when the same. The check below used to be
+  // `man.version === running`, so an OLDER published manifest counted as an update
+  // and the app would happily install a downgrade over itself.
+  function compareVersions(a, b){
+    var pa = String(a || '').split('.'), pb = String(b || '').split('.');
+    var len = Math.max(pa.length, pb.length);
+    for(var i = 0; i < len; i++){
+      var na = parseInt(pa[i], 10) || 0, nb = parseInt(pb[i], 10) || 0;
+      if(na !== nb) return na > nb ? 1 : -1;
+    }
+    return 0;
+  }
   function currentVersion(){
     try{ if(typeof APP_VERSION !== 'undefined') return String(APP_VERSION); }catch(e){}
     try{ if(window.APP_VERSION) return String(window.APP_VERSION); }catch(e){}
@@ -481,7 +493,16 @@
       var cur = currentVersion();
       log('manifest version: ' + man.version + ', running version: ' + cur);
       if(!cur){ log('cannot determine the running version — skipping update check (fail safe)'); return null; }
-      if(String(man.version) === String(cur)){ log('up to date (' + cur + ')'); return null; }
+      var _cmp = compareVersions(man.version, cur);
+      if(_cmp <= 0){
+        // Only ever move forward. A manifest that is older than what is already
+        // installed means the published bundle is stale (the committed ota/ copy
+        // lagging behind index.html is exactly how that happened here) — say so
+        // and change nothing, instead of downloading it over the top.
+        log(_cmp === 0 ? ('up to date (' + cur + ')')
+                       : ('published bundle is older (v' + man.version + ') than this build (v' + cur + ') — nothing to install'));
+        return null;
+      }
 
       // Already staged but not yet applied (waiting for background/relaunch)?
       // Surface the staged state in the sheet so the user can apply it now.
