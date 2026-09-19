@@ -14805,34 +14805,6 @@ function _fallbackCopy(text){
                 });
               }
             });
-            // Wire hold-to-drag reorder on album song rows
-            // Hold a song to open the reorder popup for this album
-(function(){
-  var _rows = body.querySelectorAll('.track');
-  for(var _ri = 0; _ri < _rows.length; _ri++){
-    (function(row){
-      var _ht = null;
-      row.addEventListener('pointerdown', function(e){
-        if(e.target.closest('.kebab-btn,button,a,input,select')) return;
-        var _hsx = e.clientX, _hsy = e.clientY;
-        _ht = setTimeout(function(){ _ht = null; showAlbumReorderPopup(aName); }, 300);
-        function _hmove(ev){
-          var dx = ev.clientX - _hsx, dy = ev.clientY - _hsy;
-          if(dx*dx + dy*dy > 100){ clearTimeout(_ht); _ht = null; cleanup(); }
-        }
-        function _hup(){ clearTimeout(_ht); _ht = null; cleanup(); }
-        function cleanup(){
-          document.removeEventListener('pointermove', _hmove);
-          document.removeEventListener('pointerup', _hup);
-          document.removeEventListener('pointercancel', _hup);
-        }
-        document.addEventListener('pointermove', _hmove, { passive: true });
-        document.addEventListener('pointerup', _hup, { passive: true });
-        document.addEventListener('pointercancel', _hup, { passive: true });
-      });
-    })(_rows[_ri]);
-  }
-})();;
           }
         });
         card.dataset.albumName = aName;
@@ -15012,34 +14984,6 @@ function _fallbackCopy(text){
               });
             }
           });
-            // Wire hold-to-drag reorder on album song rows (non-collapsed path)
-            // Hold a song to open the reorder popup for this album
-(function(){
-  var _rows = body.querySelectorAll('.track');
-  for(var _ri = 0; _ri < _rows.length; _ri++){
-    (function(row){
-      var _ht = null;
-      row.addEventListener('pointerdown', function(e){
-        if(e.target.closest('.kebab-btn,button,a,input,select')) return;
-        var _hsx = e.clientX, _hsy = e.clientY;
-        _ht = setTimeout(function(){ _ht = null; showAlbumReorderPopup(aName); }, 300);
-        function _hmove(ev){
-          var dx = ev.clientX - _hsx, dy = ev.clientY - _hsy;
-          if(dx*dx + dy*dy > 100){ clearTimeout(_ht); _ht = null; cleanup(); }
-        }
-        function _hup(){ clearTimeout(_ht); _ht = null; cleanup(); }
-        function cleanup(){
-          document.removeEventListener('pointermove', _hmove);
-          document.removeEventListener('pointerup', _hup);
-          document.removeEventListener('pointercancel', _hup);
-        }
-        document.addEventListener('pointermove', _hmove, { passive: true });
-        document.addEventListener('pointerup', _hup, { passive: true });
-        document.addEventListener('pointercancel', _hup, { passive: true });
-      });
-    })(_rows[_ri]);
-  }
-})();;
         }
       });
       return;
@@ -29999,10 +29943,19 @@ window.showAlbumReorderPopup = function(albumName){
           document.addEventListener('pointermove', move, { passive: false });
           document.addEventListener('pointerup', finish);
           document.addEventListener('pointercancel', finish);
-          document.addEventListener('touchmove', blockTouch, { passive: false });
+          document.addEventListener('touchmove', dragTouch, { passive: false });
+          document.addEventListener('touchend', finish);
+          document.addEventListener('touchcancel', finish);
         }
-        function blockTouch(ev){
-          if(dragging && ev.cancelable) ev.preventDefault();
+        // Some Android WebViews stop delivering pointermove once the browser
+        // takes the gesture, and only send touchmove. Track the drag there too —
+        // both paths use the same maths, so the row follows the finger either way.
+        function dragTouch(ev){
+          if(dragging !== r) return;
+          var t = ev.touches && ev.touches[0];
+          if(!t) return;
+          if(ev.cancelable) ev.preventDefault();
+          move({ clientY: t.clientY, preventDefault: function(){}, cancelable: false });
         }
         function move(e){
           lastPt = e;
@@ -30030,7 +29983,9 @@ window.showAlbumReorderPopup = function(albumName){
           document.removeEventListener('pointermove', move);
           document.removeEventListener('pointerup', finish);
           document.removeEventListener('pointercancel', finish);
-          document.removeEventListener('touchmove', blockTouch);
+          document.removeEventListener('touchmove', dragTouch);
+          document.removeEventListener('touchend', finish);
+          document.removeEventListener('touchcancel', finish);
           try{ document.body.classList.remove('reordering'); }catch(_e){}
           if(dragging){
             r.style.zIndex = ''; r.style.boxShadow = ''; r.style.background = ''; r.style.transform = ''; r.style.transition = '';
@@ -30103,13 +30058,25 @@ window.showAlbumReorderPopup = function(albumName){
           document.removeEventListener('pointermove', gMove);
           document.removeEventListener('pointerup', gFinish);
           document.removeEventListener('pointercancel', gFinish);
+          document.removeEventListener('touchmove', gTouch);
+          document.removeEventListener('touchend', gFinish);
+          document.removeEventListener('touchcancel', gFinish);
           row.style.zIndex = ''; row.style.boxShadow = ''; row.style.background = ''; row.style.transform = ''; row.style.transition = '';
           refreshNums();
           commitOrder();
         }
+        function gTouch(ev){
+          var t = ev.touches && ev.touches[0];
+          if(!t) return;
+          if(ev.cancelable) ev.preventDefault();
+          gMove({ clientY: t.clientY, preventDefault: function(){}, cancelable: false });
+        }
         document.addEventListener('pointermove', gMove);
         document.addEventListener('pointerup', gFinish);
         document.addEventListener('pointercancel', gFinish);
+        document.addEventListener('touchmove', gTouch, { passive: false });
+        document.addEventListener('touchend', gFinish);
+        document.addEventListener('touchcancel', gFinish);
       });
     });
 
@@ -30168,9 +30135,22 @@ window.showAlbumReorderPopup = function(albumName){
 
   overlay.appendChild(card);
 
-  // Close on backdrop tap
+  // Close on backdrop tap.
+  // A long press ends with a click that the browser hit-tests at the release
+  // point — which is this overlay, because it now covers the screen. That click
+  // used to close the sheet the instant it appeared, which is exactly why
+  // holding a song in an album looked like it did nothing at all. So: only a
+  // real tap that STARTS on the backdrop (pointerdown, not just a click) may
+  // close it, and never within the first few hundred ms of opening.
+  var _openedAt = Date.now();
+  var _backdropPressed = false;
+  overlay.addEventListener('pointerdown', function(e){
+    _backdropPressed = (e.target === overlay);
+  }, true);
   overlay.addEventListener('click', function(e){
-    if(e.target === overlay){
+    var realTap = (e.target === overlay) && _backdropPressed && (Date.now() - _openedAt > 350);
+    _backdropPressed = false;
+    if(realTap){
       try{ overlay.remove(); }catch(_e){}
       try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
     }
@@ -30189,10 +30169,16 @@ window.showAlbumReorderPopup = function(albumName){
   // reorder it doesn't also play it.
   try{
     var _swallowClick = function(ev){
-      if(overlay.contains(ev.target)) return;
+      // Anything outside the sheet's card is the tail of the long press, not a
+      // deliberate tap — swallow it so it can't close the sheet or start
+      // playback behind it. A real tap that STARTED on the backdrop is the one
+      // exception: that one is allowed through to close the sheet.
+      if(card.contains(ev.target)) return;
+      var deliberateBackdropTap = (ev.target === overlay) && _backdropPressed;
+      document.removeEventListener('click', _swallowClick, true);
+      if(deliberateBackdropTap) return;
       ev.stopPropagation();
       ev.preventDefault();
-      document.removeEventListener('click', _swallowClick, true);
     };
     document.addEventListener('click', _swallowClick, true);
     setTimeout(function(){ document.removeEventListener('click', _swallowClick, true); }, 700);
@@ -30204,27 +30190,71 @@ window.showAlbumReorderPopup = function(albumName){
 // wired (or forgot to wire) its own hold listener. This single delegated
 // listener covers every album row no matter which path drew it, so holding a
 // song always opens the Reorder Songs sheet.
+// It also has to survive the way a phone actually delivers a press: Android can
+// fire pointercancel for a stationary finger (it decided to drive the gesture
+// itself), and a real long press ends with a click that lands on whatever is
+// under the finger when it lifts — which is the sheet that just appeared.
 (function(){
   if(window.__albumSongHoldWired) return;
   window.__albumSongHoldWired = true;
-  var holdTimer = null, startY = 0;
-  function clearHold(){
-    if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+  var holdTimer = null, pressStart = 0, startX = 0, startY = 0, moved = false, pressed = false;
+
+  function stopTracking(){
     document.removeEventListener('pointermove', onMove, true);
     document.removeEventListener('pointerup', clearHold, true);
-    document.removeEventListener('pointercancel', clearHold, true);
+    document.removeEventListener('pointercancel', onCancel, true);
+    document.removeEventListener('touchmove', onTouchMove, true);
+    document.removeEventListener('touchend', clearHold, true);
+    document.removeEventListener('touchcancel', onCancel, true);
+  }
+  function clearHold(){
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+    pressed = false;
+    stopTracking();
+  }
+  function movedTooFar(x, y){
+    return Math.abs(x - startX) > 12 || Math.abs(y - startY) > 12;
   }
   function onMove(ev){
-    // Moved before the hold completed: this was a scroll, not a reorder.
-    if(holdTimer && Math.abs(ev.clientY - startY) > 12) clearHold();
+    if(!holdTimer) return;
+    if(movedTooFar(ev.clientX, ev.clientY)) clearHold();   // a scroll, not a reorder
   }
-  document.addEventListener('pointerdown', function(e){
-    if(!e.target || !e.target.closest) return;
-    if(e.target.closest('button,a,input,select,.kebab-btn,.grip-handle,.reorder-btns')) return;
+  function onTouchMove(ev){
+    var t = ev.touches && ev.touches[0];
+    if(!t) return;
+    if(!holdTimer) return;
+    if(movedTooFar(t.clientX, t.clientY)) clearHold();
+  }
+  function onCancel(){
+    // Cancelled before the hold completed. Keep it alive when the finger never
+    // moved (the browser took the gesture for a pan we were not doing); drop it
+    // when it did move, or when it was cancelled almost immediately.
+    if(holdTimer && !moved && (Date.now() - pressStart) > 180){
+      // stop tracking this pointer but let the timer finish
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', clearHold, true);
+      document.removeEventListener('pointercancel', onCancel, true);
+      return;
+    }
+    clearHold();
+  }
+  function openFor(row, album){
+    if(document.getElementById('albumReorderPopup')) return;
+    try{ showAlbumReorderPopup(album); }
+    catch(err){
+      // Never fail silently — if this breaks again the user (and the log) sees
+      // why instead of a dead long press.
+      try{ toast('Could not open reorder: ' + (err && err.message ? err.message : err)); }catch(_e){}
+      try{ console.error('album reorder open failed', err); }catch(_e){}
+    }
+  }
+  function beginHold(x, y, target){
+    if(pressed || !target || !target.closest) return;
+    if(target.closest('button,a,input,select,.kebab-btn,.grip-handle,.reorder-btns')) return;
     // Album song rows only exist in the Albums view.
     var _mode = (typeof window.__scGetLibraryMode === 'function') ? window.__scGetLibraryMode() : '';
     if(_mode !== 'albums') return;
-    var row = e.target.closest('.track');
+    var row = target.closest('.track');
     if(!row) return;
     // Prefer the card's album name, but fall back to the album the track is
     // actually filed under. Relying on the card attribute alone meant any
@@ -30235,22 +30265,37 @@ window.showAlbumReorderPopup = function(albumName){
     if(!album && typeof window.__scAlbumForTrack === 'function' && row.dataset) album = window.__scAlbumForTrack(row.dataset.id);
     if(!album) return;
     if(document.getElementById('albumReorderPopup')) return;
-    clearHold();
-    startY = e.clientY;
+    pressed = true;
+    moved = false;
+    pressStart = Date.now();
+    startX = x; startY = y;
     holdTimer = setTimeout(function(){
       holdTimer = null;
-      clearHold();
+      pressed = false;
+      stopTracking();
       if(document.getElementById('albumReorderPopup')) return;
-      try{ showAlbumReorderPopup(album); }
-      catch(err){
-        // Never fail silently — if this breaks again the user (and the log)
-        // sees why instead of a dead long press.
-        try{ toast('Could not open reorder: ' + (err && err.message ? err.message : err)); }catch(_e){}
-        try{ console.error('album reorder open failed', err); }catch(_e){}
-      }
+      openFor(row, album);
     }, 320);
     document.addEventListener('pointermove', onMove, true);
     document.addEventListener('pointerup', clearHold, true);
-    document.addEventListener('pointercancel', clearHold, true);
+    document.addEventListener('pointercancel', onCancel, true);
+    document.addEventListener('touchmove', onTouchMove, true);
+    document.addEventListener('touchend', clearHold, true);
+    document.addEventListener('touchcancel', onCancel, true);
+  }
+
+  document.addEventListener('pointerdown', function(e){
+    beginHold(e.clientX, e.clientY, e.target);
+  }, true);
+  // Fallback for WebViews that only deliver touch events. In Chrome pointerdown
+  // has already marked the press as active, so this is a no-op there.
+  document.addEventListener('touchstart', function(e){
+    var t = e.touches && e.touches[0];
+    if(!t) return;
+    beginHold(t.clientX, t.clientY, e.target);
+  }, true);
+  // A long press must not pop the OS text/selection menu over the sheet.
+  document.addEventListener('contextmenu', function(e){
+    if(e.target && e.target.closest && e.target.closest('.track')) e.preventDefault();
   }, true);
 })();
