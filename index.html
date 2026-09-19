@@ -9592,7 +9592,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8.3';
+  const APP_VERSION = '58.8.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9896,6 +9896,13 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8.4', date: 'September 19, 2026 \u00b7 6:50 PM EDT', title: 'Playback: the app stopped competing with its own WebView for audio focus', items: [
+    'Playback no longer stops a second or two after you press play. The cause was the app\u2019s own audio-focus helper: this app\u2019s sound comes from a WebView, the WebView holds audio focus for it, and asking for focus on the app\u2019s behalf took that focus away from our own player \u2014 and the WebView\u2019s answer to losing focus is to pause the song. The app never takes audio focus for itself any more, so nothing can pause it that way',
+    'If anything else ever pauses the song in its opening seconds, it is put straight back and never reaches the screen \u2014 up to three times, never within 700 ms of each other \u2014 and what happened is recorded on the device so it can be read back instead of guessed at',
+    'A waiting app update still cannot be applied from a pause you did not make, so a one-second hiccup can no longer turn into a mid-song reload',
+    'Interruptions still work: if the system does send one (a call taking over), playback pauses and comes straight back when focus returns',
+    'Album song reordering keeps its three-second hold, with the row filling as you hold it',
+  ]},
   { version: '58.8.3', date: 'September 19, 2026 \u00b7 6:30 PM EDT', title: 'Playback stops are fixed, and album reordering needs a 3-second hold', items: [
     'Playback no longer stops about a second after you press play: the WebView pauses its own media element the moment the audio-focus request is superseded (including by this app\u2019s own native audio-focus helper), so an unrequested pause in the opening seconds of a song is now recognised and the song is put straight back \u2014 it never reaches the screen, and what happened is recorded on the device so it can be read back instead of guessed at',
     'Audio focus is no longer re-asked for while a song is playing. Re-requesting mid-song handed the system\u2019s focus loss to the WebView\u2019s own audio stream, and the WebView\u2019s answer to losing focus is to pause the song \u2014 that was the \u201cstops a second in\u201d bug. Focus is asked for once when playback starts, and again the next time you press play',
@@ -19676,6 +19683,7 @@ _batchBuf += b64Encode(chunk);
   let focusFightTold = false;   // the user is told about the fight once per session
   let spuriousStopsBlocked = 0; // automatic pauses refused during this attempt
   let autoRevives = 0;          // automatic resumes already spent on this attempt
+  let lastAutoReviveAt = 0;     // when the last one happened (rate limit)
   let revivingAudio = false;    // true while WE are restarting a paused element
   // Set while WE were paused by a focus loss (a call, another app taking over) —
   // not by the user. Only then do we put the song back when focus returns.
@@ -19696,7 +19704,20 @@ _batchBuf += b64Encode(chunk);
   }
   let audioFocusFirstAskDone = false;
   let audioFocusDeferTimer = null;
+  // OFF, on purpose. This app's audio lives in a WebView, and the WebView holds
+  // audio focus itself for that <audio> element. Asking for focus on the app's
+  // behalf takes it away from our own WebView — and Chromium's answer to losing
+  // focus is to PAUSE the media element it owns. That is the "the song stops a
+  // second or two after you press play" report, and it is why it started when the
+  // focus helper shipped: press play, Chromium takes focus, this helper asks for it
+  // a moment later, Chromium is told it lost focus, and it pauses our song.
+  // The helper is therefore not used to take focus any more. Chromium keeps what it
+  // takes for the WebView's own audio, which is also what makes Android hand
+  // playback back to SideCut after a call. The listener below stays wired, so an
+  // interruption the system does send us still pauses and still resumes.
+  const AUDIO_FOCUS_REQUESTS_OFF = true;
   function requestAudioFocus(){
+    if(AUDIO_FOCUS_REQUESTS_OFF){ audioFocusHeld = false; return; }
     // A re-ask (the focus tug-of-war, or a fresh play after a permanent loss) is
     // immediate: taking focus back is the whole point of it.
     if(audioFocusFirstAskDone){
@@ -19867,11 +19888,13 @@ _batchBuf += b64Encode(chunk);
     // back and never let it reach the UI: to anything watching, the song never
     // stopped. A real interruption (audioFocusInterrupted), a background pause, DJ
     // Mode, or a song that genuinely ended is left alone.
-    if(!userPaused && !audioFocusInterrupted && !_pa.ended && autoRevives < 2
-       && !document.hidden && msSincePlayStarted() < 6000
+    if(!userPaused && !audioFocusInterrupted && !_pa.ended && autoRevives < 3
+       && (Date.now() - lastAutoReviveAt) > 700
+       && !document.hidden && msSincePlayStarted() < 8000
        && queueIndex >= 0 && queueIndex < queue.length
        && $('djModeBackdrop').style.display !== 'flex'){
       autoRevives++;
+      lastAutoReviveAt = Date.now();
       recordPlaybackStop('platform-pause after ' + Math.round(msSincePlayStarted()) + 'ms — replayed');
       revivingAudio = true;
       try{ _pa.play().catch(function(){}); }catch(_e){}

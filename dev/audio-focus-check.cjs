@@ -1,7 +1,10 @@
-// Audio-focus audit: proves the app asks Android for audio focus while a song
-// plays (so the system hands focus back to SideCut after a call instead of
-// resuming another music app), releases it only on a deliberate pause, and pauses
-// then resumes around an interruption without ever treating it as a user pause.
+// Audio-focus audit. The rule now: the app NEVER takes audio focus for itself.
+// Its audio lives in a WebView, Chromium holds focus for that element, and taking
+// it away makes Chromium pause the element it owns — which is the "the song stops a
+// second or two after you press play" bug. The audit proves no request is ever
+// made, that an unrequested pause in the opening seconds is undone (and cannot
+// reload the page), and that an interruption the system does send us still pauses
+// and still resumes without ever being treated as a user pause.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole, requestInterceptor } = require('/tmp/h/node_modules/jsdom');
@@ -145,43 +148,56 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   played.count = 0; played.pausedCount = 0; calls.request = 0; calls.abandon = 0;
   const playingNow = () => el.paused === false;
 
-  console.log('\n— playing takes audio focus —');
+  console.log('\n— the app never takes focus from its own WebView —');
   setPlaying();
-  // v58.8.1: the FIRST focus ask of each play attempt is deliberately deferred a
-  // moment, because a native call in the very first frame of a song is the riskiest
-  // place in the whole play path (it is what the crash recorder blamed for a death
-  // during "starting playback"). The song is unaffected; focus still arrives.
+  // v58.8.4: the app never asks for audio focus. Asking for it takes focus away
+  // from this app's OWN WebView (Chromium holds it for the <audio> element), and
+  // Chromium's answer to losing focus is to pause the element it owns — which is
+  // exactly the "the song stops a second or two after you press play" report, on
+  // every start, from the moment the focus helper shipped.
   await wait(120);
-  ok('the native focus call is kept out of the first frames of the song', calls.request === 0, 'requests=' + calls.request);
-  await wait(1700);
-  ok('a started song still takes audio focus', calls.request >= 1, 'requests=' + calls.request);
-  ok('it does not abandon focus right away', calls.abandon === 0, 'abandons=' + calls.abandon);
+  ok('nothing is requested in the first frames of the song', calls.request === 0, 'requests=' + calls.request);
+  await wait(2500);
+  ok('and audio focus is never taken, even once the song is underway', calls.request === 0, 'requests=' + calls.request);
+  ok('nothing is abandoned either (there is nothing to give back)', calls.abandon === 0, 'abandons=' + calls.abandon);
   ok('and the queue is real (resume has something to play)', win.document.querySelectorAll('#listPane .track').length >= 0);
 
+  // The user's symptom, modelled exactly: Chromium pauses the media element the
+  // moment this app's audio-focus request supersedes the focus Chromium holds for
+  // it. With requests off there is nothing to react to, so the song simply plays.
+  console.log('\n— a WebView that pauses on a focus request cannot stop the song —');
+  played.pausedCount = 0; played.count = 0; calls.request = 0;
+  el.paused = true; setPlaying();
+  let reqSeen = 0, webviewPauses = 0;
+  const chromium = setInterval(() => {
+    if (calls.request > reqSeen) {
+      reqSeen = calls.request;
+      setTimeout(() => { if (!el.paused) { webviewPauses++; el.paused = true; el.dispatchEvent(new win.Event('pause')); } }, 60);
+    }
+  }, 50);
+  await wait(6000);
+  clearInterval(chromium);
+  ok('the song is still playing six seconds after pressing play', el.paused === false, 'paused=' + el.paused);
+  ok('it never stopped along the way (no pause to recover from)', webviewPauses === 0,
+     'webview pauses=' + webviewPauses + ' replays=' + played.count);
+  ok('because audio focus was never taken from it', calls.request === 0, 'requests=' + calls.request);
+
   console.log('\n— a focus loss at the very start of a song cannot stop it —');
-  // The bug being fixed: another app with a live media session grabs focus back
-  // the instant we ask for it, and obeying that loss meant "press play, the song
-  // dies a millisecond later" — every single time.
+  // The bug being fixed (twice over): another app with a live media session grabs
+  // focus back the instant anyone asks for it, and obeying that loss meant "press
+  // play, the song dies a millisecond later" — every single time.
   played.pausedCount = 0; played.count = 0; calls.request = 0;
   el.paused = true; setPlaying();
   await wait(30);
-  const reqAfterStart = calls.request;
   emit('loss');
   await wait(750);                        // the take-back is deliberately unhurried
   ok('a loss straight after play does NOT pause the song', played.pausedCount === 0, 'pauses=' + played.pausedCount);
   ok('the song is still playing', el.paused === false, 'paused=' + el.paused);
-  // v58.8.3: and it must NOT ask for focus again while the song is playing. That
-  // re-request is what hands AUDIOFOCUS_LOSS to the WebView's own audio stream, and
-  // Chromium answers a focus loss by pausing the <audio> element — the "song stops
-  // about a second after you press play" report. One request per start is enough.
-  // Let this attempt's own deferred first ask land before measuring.
-  for (let i = 0; i < 30 && calls.request === 0; i++) await wait(100);
-  ok('the attempt still takes focus once', calls.request >= 1, 'requests=' + calls.request);
-  const reqBaseline = calls.request;
   emit('loss'); emit('lossTransient');   // the other app grabs it again
-  await wait(1200);                      // long enough that a re-request would show
-  ok('focus is NOT re-requested while the song is playing',
-     calls.request === reqBaseline, 'requests=' + calls.request + ' baseline=' + reqBaseline);
+  await wait(1200);                      // long enough that a reaction would show
+  ok('nothing is asked for in reaction to it', calls.request === 0, 'requests=' + calls.request);
+  ok('and the song is still playing through the whole exchange',
+     played.pausedCount === 0 && el.paused === false, 'pauses=' + played.pausedCount + ' paused=' + el.paused);
 
   // A fight repeats: the other app keeps taking it back. Playback must survive.
   emit('loss'); emit('lossTransient');
@@ -213,10 +229,18 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // A second one is still tolerated; a third is not (never fight forever).
   el.paused = true; el.dispatchEvent(new win.Event('pause'));
   await wait(80);
-  ok('a second platform pause is also undone', el.paused === false, 'paused=' + el.paused);
+  await wait(800);                                            // the revive rate limit
   el.paused = true; el.dispatchEvent(new win.Event('pause'));
   await wait(80);
-  ok('a third is left alone rather than fought forever', el.paused === true, 'paused=' + el.paused);
+  ok('a second platform pause is also undone', el.paused === false, 'paused=' + el.paused);
+  await wait(800);
+  el.paused = true; el.dispatchEvent(new win.Event('pause'));
+  await wait(80);
+  ok('a third is undone too (that is the budget)', el.paused === false, 'paused=' + el.paused);
+  await wait(800);
+  el.paused = true; el.dispatchEvent(new win.Event('pause'));
+  await wait(80);
+  ok('a fourth is left alone rather than fought forever', el.paused === true, 'paused=' + el.paused);
   win.__pendingSWReload = false;
   el.paused = false;
 
@@ -256,25 +280,26 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('the app is playing again', playingNow(), 'paused=' + el.paused);
   ok('focus was never abandoned through the whole interruption', calls.abandon === 0, 'abandons=' + calls.abandon);
 
-  console.log('\n— a permanent loss is re-requested on the next play —');
+  console.log('\n— an interruption the system does send us still pauses and resumes —');
   played.pausedCount = 0;
   emit('loss');
   await wait(50);
   ok('a permanent loss later in the song does pause us', played.pausedCount === 1, 'pauses=' + played.pausedCount);
   const reqBefore = calls.request;
   setPlaying();
-  await wait(1100);   // the first ask of an attempt is deliberately deferred
-  ok('the next start asks for focus again instead of assuming we still hold it',
-     calls.request > reqBefore, 'requests=' + calls.request + ' before=' + reqBefore);
+  await wait(1100);
+  ok('a fresh start still leaves audio focus alone',
+     calls.request === reqBefore && calls.request === 0, 'requests=' + calls.request + ' before=' + reqBefore);
 
-  console.log('\n— a deliberate pause gives focus back —');
+  console.log('\n— a deliberate pause is honoured, and nothing is taken from anyone —');
   const abandonAtPause = calls.abandon;
   el.paused = false;                       // playing, so the button means "pause"
   win.document.getElementById('playPauseBtn').click();
   await wait(80);
-  ok('the user pause releases focus so another app can take over cleanly',
-     calls.abandon > abandonAtPause, 'abandons=' + calls.abandon + ' before=' + abandonAtPause);
-  ok('and it actually paused the element', el.paused === true);
+  ok('the user pause stops the song', el.paused === true);
+  ok('and it does not have to hand focus back to anyone',
+     calls.abandon === abandonAtPause && calls.abandon === 0,
+     'abandons=' + calls.abandon + ' before=' + abandonAtPause);
 
   console.log('\n— nothing resumes after a pause the user asked for —');
   played.count = 0;
