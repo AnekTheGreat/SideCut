@@ -13224,6 +13224,23 @@ function startLyricsAutoScroll() {
     }
     list.appendChild(manageBtn);
 
+    // Albums: jump straight into reordering one album's songs. Pick the album,
+    // drag its songs in the sheet, tap Done — the order is saved either way.
+    if(libraryMode === 'albums'){
+      const reorderAlbBtn = document.createElement('button');
+      reorderAlbBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 15h18v-2H3v2zm0-4h18V9H3v2zm0-6v2h18V5H3z"/></svg> Reorder an album's songs`;
+      reorderAlbBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; openAlbumPickerForReorder(); });
+      list.appendChild(reorderAlbBtn);
+    }
+
+    // Library + playlists: one tap to the sort sheet, "Playlist order" included.
+    if(libraryMode !== 'albums'){
+      const sortMenuBtn = document.createElement('button');
+      sortMenuBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/></svg> Sort songs (${escapeHtml(sortLabel(currentSortKey()))})`;
+      sortMenuBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; openSortSheet(); });
+      list.appendChild(sortMenuBtn);
+    }
+
     if(!isAllSongs && libraryMode !== 'albums'){
       // Share this playlist as a tiny code the user can paste on another device
       const shareBtn = document.createElement('button');
@@ -14480,34 +14497,19 @@ function _fallbackCopy(text){
           <div class="sub" style="margin-top:2px; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${ids.length} track${ids.length===1?'':'s'}${durLabel}</div>
         </div>
         <div class="pane-actions" style="gap:4px;">
-          <select id="sortSelect" style="background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); border-radius:8px; font-size:11px; padding:5px 8px; font-family:'JetBrains Mono',monospace; white-space:nowrap;${libraryMode === "albums" ? ";display:none" : ""}>
-            <option value="default">Playlist order</option>
-            <option value="alpha">A–Z</option>
-            <option value="artist">By artist</option>
-            <option value="album">By album</option>
-            <option value="artist-album">Artist + album</option>
-            <option value="genre">By genre</option>
-            <option value="recent">Recent</option>
-          </select>
+          <button id="sortBtn" title="Sort songs" style="background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); border-radius:8px; font-size:11px; padding:5px 8px; font-family:'JetBrains Mono',monospace; white-space:nowrap; cursor:pointer; display:${libraryMode === "albums" ? "none" : "inline-flex"}; align-items:center; gap:4px;"></button>
           <button class="icon-btn" id="mixBtn" title="Mix this playlist" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.83 13.41l1.41-1.41 3.83 3.83-3.83 3.83-1.41-1.41 1.42-1.42H14a3 3 0 01-2.24-1l-3.28-3.65A1 1 0 007.76 13H3v-2h4.76a3 3 0 012.24 1l3.28 3.65a1 1 0 00.72.35h2.24l-1.42-1.42zM14.83 4.59L16.24 3.18 20.07 7l-3.83 3.83-1.41-1.41L16.24 8H14a1 1 0 00-.72.35L11.15 10.6 9.7 9.03l1.83-2.03a3 3 0 012.24-1h2.24l-1.42-1.41zM3 7h2.76a3 3 0 012.24 1l.7.78-1.45 1.57-.7-.78a1 1 0 00-.72-.35H3z"/></svg></button>
           <button class="icon-btn" id="listMoreBtn" title="More options" style="flex-shrink:0;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>
         </div>
       `;
 
       pane.appendChild(header);
-      var _ss = $('sortSelect');
-      if(_ss){
-        if(libraryMode === 'albums'){ _ss.style.display = 'none'; }
-        var _sortVal = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort || "default"; if(["default","alpha","artist","album","artist-album","genre","recent"].indexOf(_sortVal) === -1) _sortVal = "default"; _ss.value = _sortVal;
-        _ss.addEventListener('change', (e) => {
-          if(perPlaylistSortEnabled){
-            perPlaylistSort[activePlaylist] = e.target.value;
-            dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
-          } else {
-            currentSort = e.target.value;
-          }
-          renderList();
-        });
+      var _sb = $('sortBtn');
+      if(_sb){
+        // Shows the sort actually in effect, "Playlist order" when it's your order.
+        _sb.innerHTML = escapeHtml(sortLabel(currentSortKey()))
+          + ' <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="flex-shrink:0;"><path d="M7 10l5 5 5-5z"/></svg>';
+        _sb.addEventListener('click', (e) => { e.stopPropagation(); openSortSheet(); });
       }
       $('mixBtn').addEventListener('click', () => startMix(ids));
       if(canReorderPlaylist() && libraryMode !== 'albums' && $('reorderModeBtn')) $('reorderModeBtn').addEventListener('click', () => {
@@ -15268,6 +15270,104 @@ function _fallbackCopy(text){
       try{ toast('Could not open Manage albums: ' + (err && err.message ? err.message : err)); }catch(_e){}
       try{ console.error('openManageAlbums failed', err); }catch(_e){}
     }
+  }
+
+  // ---------------- Sorting (Library + playlists) ----------------
+  // The native <select> this used to be rendered as an Android system dialog
+  // that clipped the first entry (so "Playlist order" looked like it had
+  // vanished). This is a normal in-app sheet: every option visible, always.
+  const SORT_OPTIONS = [
+    ['default', 'Playlist order', 'Your saved order'],
+    ['alpha', 'A\u2013Z', 'Track title'],
+    ['artist', 'By artist', 'Artist name'],
+    ['album', 'By album', 'Album name'],
+    ['artist-album', 'Artist + album', 'Artist, then album'],
+    ['genre', 'By genre', 'Genre tag'],
+    ['recent', 'Recent', 'Recently added first']
+  ];
+
+  function sortLabel(key){
+    for(let i = 0; i < SORT_OPTIONS.length; i++){ if(SORT_OPTIONS[i][0] === key) return SORT_OPTIONS[i][1]; }
+    return 'Playlist order';
+  }
+
+  function currentSortKey(){
+    let v = (perPlaylistSortEnabled && perPlaylistSort[activePlaylist]) || currentSort || 'default';
+    if(!SORT_OPTIONS.some(function(o){ return o[0] === v; })) v = 'default';
+    return v;
+  }
+
+  function applySortKey(key){
+    if(perPlaylistSortEnabled){
+      perPlaylistSort[activePlaylist] = key;
+      dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort });
+    } else {
+      currentSort = key;
+    }
+    renderList();
+  }
+
+  function openSortSheet(){
+    if(document.getElementById('sortSheet')) return;
+    const key = currentSortKey();
+    const ov = document.createElement('div');
+    ov.id = 'sortSheet';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.7);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;';
+    const card = document.createElement('div');
+    card.style.cssText = 'width:100%;max-width:420px;max-height:80vh;background:var(--bg-raised);border-top-left-radius:16px;border-top-right-radius:16px;border:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;';
+    const head = document.createElement('div');
+    head.style.cssText = 'padding:14px 16px 8px;font-size:14px;font-weight:700;color:var(--ink);flex-shrink:0;';
+    head.textContent = 'Sort songs';
+    card.appendChild(head);
+    const list = document.createElement('div');
+    list.style.cssText = 'padding:0 10px 12px;overflow-y:auto;';
+    card.appendChild(list);
+    SORT_OPTIONS.forEach(function(opt){
+      const active = opt[0] === key;
+      const b = document.createElement('button');
+      b.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px;margin-bottom:4px;border-radius:10px;cursor:pointer;'
+        + 'border:1px solid ' + (active ? 'var(--coral)' : 'var(--line)') + ';'
+        + 'background:' + (active ? 'rgba(227,178,60,0.14)' : 'rgba(255,255,255,0.03)') + ';'
+        + 'color:var(--ink);font-size:14px;';
+      b.innerHTML = '<span style="flex:1;min-width:0;"><span style="font-weight:600;display:block;">' + opt[1] + '</span>'
+        + '<span style="font-size:11px;color:var(--ink-dim);display:block;margin-top:2px;">' + opt[2] + '</span></span>'
+        + (active ? '<span style="color:var(--coral);font-weight:700;font-size:15px;">\u2713</span>' : '');
+      b.addEventListener('click', function(){
+        try{ ov.remove(); }catch(_e){}
+        applySortKey(opt[0]);
+      });
+      list.appendChild(b);
+    });
+    ov.appendChild(card);
+    ov.addEventListener('click', function(e){ if(e.target === ov){ try{ ov.remove(); }catch(_e){} } });
+    document.body.appendChild(ov);
+  }
+
+  // ---------------- Albums: pick one, then reorder its songs ----------------
+  function openAlbumPickerForReorder(){
+    const names = Object.keys(userAlbums || {});
+    if(!names.length){ toast('No albums to reorder yet.'); return; }
+    let html = '<div style="padding:12px;">';
+    names.forEach(function(name, i){
+      const alb = userAlbums[name] || {};
+      const n = (alb.trackIds || []).length;
+      html += '<button class="ap-pick" data-i="' + i + '" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px;margin-bottom:6px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.04);color:var(--ink);font-size:13.5px;cursor:pointer;">'
+        + '<span style="flex:1;min-width:0;font-weight:600;">' + escapeHtml(name) + '</span>'
+        + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + n + ' track' + (n !== 1 ? 's' : '') + '</span></button>';
+    });
+    html += '</div>';
+    openDiscoverPopup('Reorder an album', html, 'Pick an album, drag its songs, then tap Done.');
+    const bEl = document.getElementById('discPopupBody');
+    if(!bEl) return;
+    Array.prototype.forEach.call(bEl.querySelectorAll('.ap-pick'), function(btn){
+      btn.addEventListener('click', function(){
+        const name = names[parseInt(this.getAttribute('data-i'), 10)];
+        if(!name) return;
+        try{ closeDiscoverPopup(); }catch(_e){}
+        if(typeof window.showAlbumReorderPopup === 'function') window.showAlbumReorderPopup(name);
+        else toast('Reorder sheet unavailable.');
+      });
+    });
   }
 
   // Album rows are drawn by several code paths; any of them forgetting to wire
