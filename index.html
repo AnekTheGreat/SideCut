@@ -441,6 +441,15 @@
     transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease, transform 0.1s ease;
   }
   .tab:active{ transform: scale(0.95); }
+  /* Album reorder sheet: a real press response and a drag handle you can hit.
+     The grip was a 20px strip; it is now a 34px target with its own feedback. */
+  #albumReorderPopup button{ transition: transform 0.12s ease, background 0.2s ease, opacity 0.2s ease, border-color 0.2s ease; }
+  #albumReorderPopup button:active{ transform: scale(0.96); }
+  #albumReorderPopup .ar-grip{
+    width:34px !important; height:38px; border-radius:8px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  #albumReorderPopup .ar-grip:active{ background: rgba(255,255,255,0.10); color: var(--ink); }
   .tab.active{ color:var(--bg); background:var(--gold); border-color:var(--gold); font-weight:600; }
 
   #listPane{ flex:1; overflow-y:auto; overscroll-behavior: contain; padding: 4px 0 calc(var(--list-bottom-inset, 96px) + env(safe-area-inset-bottom)); min-height:0;
@@ -14614,40 +14623,16 @@ function _fallbackCopy(text){
     });
   }
   function renderListInner(){
-    // Self-heal: recover playlists corrupted by album-reorder bug.
-    // If a playlist only contains songs that are in albums AND is shorter
-    // than allTracks, add back all missing songs.
-    var _allAlbumIds = new Set(typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : []);
-    var _healedCount = 0;
-    function _healPlaylist(plName){
-        if(!playlists[plName] || playlists[plName].length === 0) return;
-        var _pl = playlists[plName];
-        if(_pl.length >= allTracks.length) return; // already has everything
-        if(_allAlbumIds.size === 0) return;
-        // Check if every song in the playlist is an album song
-        var _allInAlbums = _pl.every(function(id){ return _allAlbumIds.has(id); });
-        if(!_allInAlbums) return; // playlist has non-album songs — not corrupted
-        // Playlist was overwritten with only album songs — add back the rest
-        var _plSet = new Set(_pl);
-        var _added = 0;
-        allTracks.forEach(function(t){ if(!_plSet.has(t.id)){ playlists[plName].push(t.id); _plSet.add(t.id); _added++; }});
-        if(_added > 0){ _healedCount++; toast('Auto-recovered ' + _added + ' missing song' + (_added === 1 ? '' : 's') + ' in "' + plName + '"'); }
-    }
-    // Heal the active playlist
-    if(activePlaylist !== 'All Songs' && activePlaylist !== UNSORTED_VIEW){ _healPlaylist(activePlaylist); }
-    // Also heal All Songs if corrupted
-    if(activePlaylist === 'All Songs' && playlists['All Songs'] && playlists['All Songs'].length < allTracks.length){ _healPlaylist('All Songs'); }
-    // Heal ALL playlists on every render (catches corruption from any album operation)
-    Object.keys(playlists).forEach(function(pn){ if(pn !== activePlaylist && pn !== 'All Songs' && pn !== UNSORTED_VIEW){ _healPlaylist(pn); }});
-    // Persist if any playlists were healed — save DIRECTLY to IndexedDB
-    // (saveMeta() skips playlists in album mode, so we must bypass it)
-    if(_healedCount > 0){
-      if(typeof dbPut === 'function'){
-        dbPut('meta', { key: 'playlists', value: playlists });
-        dbPut('meta', { key: 'idCounter', value: idCounter });
-        dbPut('meta', { key: 'userAlbums', value: userAlbums });
-      }
-    }
+    // NOTE: a render-time playlist "self-heal" used to live here. Whenever a
+    // playlist happened to contain only songs that also belong to an album, it
+    // appended EVERY other track in the library to that playlist (toast: "Auto-
+    // recovered N missing songs") and wrote it straight to IndexedDB, bypassing
+    // saveMeta()'s album-mode guard that exists precisely so browsing albums can
+    // never touch playlists. A playlist made of just an album's songs is a
+    // completely legitimate playlist, so that heuristic destroyed real data on
+    // every render. No album path writes playlists any more (the single one that
+    // could was already gated on libraryMode === 'albums'), so there is nothing
+    // left to heal.
     const pane = $('listPane');
     // renderList rebuilds the whole pane (pane.innerHTML = '') which resets
     // scrollTop to 0 as a side effect. This function gets called constantly
@@ -14685,7 +14670,29 @@ function _fallbackCopy(text){
       ids = getSortedIds(rawIds);
     }
     if(libraryMode === 'albums' && !reorderMode){
-      ids = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : ids;
+      // Albums mode lists albums, and an album can exist purely as a file tag —
+      // that is how a tagged library arrives. buildAlbumsIds() only knows albums
+      // the user explicitly saved, so on its own it left this empty, the
+      // empty-state guard just below bailed out before the album cards were ever
+      // built, and the Albums tab announced "This playlist is empty" over a
+      // library full of albums. Add the tag-derived album tracks so the header
+      // count, the play-all queue and the cards all agree on what is here.
+      // A track whose album name belongs to a SAVED album is left out on purpose:
+      // that card renders from the saved trackIds, so counting a tag-mate here
+      // would count a song no card shows.
+      var _albumIds = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : [];
+      var _albumIdSet = {};
+      _albumIds.forEach(function(aid){ _albumIdSet[aid] = true; });
+      var _savedAlbumNames = {};
+      Object.keys(userAlbums || {}).forEach(function(nm){ _savedAlbumNames[nm] = true; });
+      allTracks.forEach(function(tr){
+        if(!tr || !tr.id || _albumIdSet[tr.id]) return;
+        var _an = String(tr.album || '').trim();
+        if(!_an || _savedAlbumNames[_an]) return;
+        _albumIdSet[tr.id] = true;
+        _albumIds.push(tr.id);
+      });
+      ids = _albumIds;
     }
     const fullIds = ids.slice(); // full playlist order, before search narrows what's shown — this is what playback should queue
     const _rlMap = _ensureTrackMap();
@@ -14786,7 +14793,9 @@ function _fallbackCopy(text){
     if(!ids.length){
       const empty = document.createElement('div');
       empty.className = 'empty-list';
-      empty.textContent = isAllSongs ? 'Add some songs using the button up top.' : 'This playlist is empty. Add tracks from "All Songs".';
+      empty.textContent = (libraryMode === 'albums')
+        ? 'No albums yet — select songs and choose Create album, or use ⋮ → Add to albums on any song.'
+        : (isAllSongs ? 'Add some songs using the button up top.' : 'This playlist is empty. Add tracks from "All Songs".');
       pane.appendChild(empty);
       return;
     }
@@ -14876,6 +14885,10 @@ function _fallbackCopy(text){
     if(libraryMode === 'albums' && !reorderMode && !selectMode && !searchQuery && !inInsertPick){
       var _albumMap = {};
       var _albumOrder = [];
+      // Album card rows never carried the playing highlight — only the flat list
+      // did — so the song that is actually playing looked unmarked inside a card
+      // until the next track change re-rendered it. Resolve it once here.
+      var _nowPlayingId = (typeof queueIndex === 'number' && queueIndex >= 0 && queue && queueIndex < queue.length) ? queue[queueIndex] : null;
       // Use userAlbums as primary source - these are the albums the user explicitly created
       var _uaKeys = Object.keys(userAlbums);
       _uaKeys.forEach(function(aName){
@@ -14888,12 +14901,27 @@ function _fallbackCopy(text){
         _albumMap[aName] = { name: aName, artist: (ua.artist || (firstTrack ? (firstTrack.artist||'').trim() : 'Unknown artist')), tracks: visibleTracks, cover: (firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '' };
         _albumOrder.push(aName);
       });
-      // Also add albums from track metadata that aren't in userAlbums
-      ids.forEach(function(id){
+      // Also add albums from track metadata that aren't in userAlbums. This has
+      // to scan the whole library rather than `ids`: in Albums mode `ids` has
+      // already been replaced by buildAlbumsIds() (user-album tracks only), so
+      // scanning it here meant an album that exists only as file tags never got a
+      // card at all — every song in it was invisible in the Albums tab until
+      // somebody saved an album. A tagged library (downloaded files carrying an
+      // album tag) is the common case, not an edge case.
+      var _tagScanIds = allTracks.map(function(tr){ return tr.id; });
+      // Album names the pass above already built a card for.
+      var _savedAlbumNameSet = {};
+      _uaKeys.forEach(function(nm){ _savedAlbumNameSet[nm] = true; });
+      _tagScanIds.forEach(function(id){
         var t = allTracks.find(function(tr){ return tr.id === id; });
         if(!t) return;
         var aName = (t.album || '').trim();
-        if(!aName || _albumMap[aName]) return; // Skip if no album tag or already in userAlbums
+        if(!aName) return;
+        // Skip only albums a SAVED album already covers. The old test was
+        // `_albumMap[aName]`, which the first track of a tag-only album had just
+        // set — so every remaining track of that album bailed out here and the
+        // card could only ever list one song out of the tag group.
+        if(_savedAlbumNameSet[aName]) return;
         // Check if this track belongs to a userAlbum
         var inUserAlbum = _uaKeys.some(function(uaName){ return userAlbums[uaName] && userAlbums[uaName].trackIds && userAlbums[uaName].trackIds.indexOf(id) !== -1; });
         if(inUserAlbum) return; // Already covered by userAlbums
@@ -14953,7 +14981,7 @@ function _fallbackCopy(text){
               var tt = allTracks.find(function(tr){ return tr.id === tid; });
               if(!tt) return;
               var row = document.createElement('div');
-              row.className = 'track';
+              row.className = 'track' + (tid === _nowPlayingId ? ' playing' : '');
               row.dataset.id = tid;
               var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
               row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
@@ -14978,9 +15006,25 @@ function _fallbackCopy(text){
               }
             });
           }
+          // Expanding used to hard-snap the panel open. Ease it in so the card
+          // settles instead of jumping, and so expand/collapse reads as a pair.
+          if(isHidden){
+            try{
+              body.style.opacity = '0';
+              body.style.transform = 'translateY(-4px)';
+              body.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+              requestAnimationFrame(function(){
+                body.style.opacity = '1';
+                body.style.transform = 'translateY(0)';
+              });
+            }catch(_eExpand){}
+          }
         });
         card.dataset.albumName = aName;
         card.dataset.id = aName;
+        // Consumed by highlightPlaying() so the card around the playing song can
+        // still auto-expand when the album is tag-only (no saved album entry).
+        card.dataset.albumIds = alb.tracks.join(',');
         pane.appendChild(card);
         // Hold-to-reorder: long-press on the album card starts drag
         (function(){
@@ -15078,6 +15122,15 @@ function _fallbackCopy(text){
                   var keys = siblings.map(function(s){ return s.dataset.albumName; });
                   var moved = keys.splice(startIndex, 1)[0];
                   keys.splice(currentIndex, 0, moved);
+                  // Tag-only albums have no saved entry, so the new position had
+                  // nowhere to go and the card snapped back on the next render —
+                  // the drag looked broken. Materialise them (exactly what opening
+                  // the reorder sheet does) so the order actually sticks.
+                  keys.forEach(function(k){
+                    if(!userAlbums[k] && typeof ensureAlbumSaved === 'function'){
+                      try{ ensureAlbumSaved(k); }catch(_eMat){}
+                    }
+                  });
                   // Rebuild userAlbums preserving ALL albums (not just visible ones)
                   var newObj = {};
                   // First add albums in the new visible order
@@ -15134,7 +15187,7 @@ function _fallbackCopy(text){
             var tt = allTracks.find(function(tr){ return tr.id === tid; });
             if(!tt) return;
             var row = document.createElement('div');
-            row.className = 'track';
+            row.className = 'track' + (tid === _nowPlayingId ? ' playing' : '');
             row.dataset.id = tid;
             var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
             row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
@@ -16101,6 +16154,39 @@ function _fallbackCopy(text){
     });
     return out;
   }
+
+  // Give a tag-only album a saved entry so it has somewhere to store a position.
+  // Mirrors the reorder sheet's materialisation: it claims the tracks carrying
+  // that album tag, minus any another saved album already owns, so nothing is
+  // ever taken away from an album you built by hand.
+  function ensureAlbumSaved(albumName){
+    var name = String(albumName || '').trim();
+    if(!name || userAlbums[name]) return false;
+    var ids = [];
+    allTracks.forEach(function(tr){
+      if(tr && String(tr.album || '').trim() === name) ids.push(tr.id);
+    });
+    if(!ids.length) return false;
+    var claimed = {};
+    Object.keys(userAlbums).forEach(function(k){
+      var e = userAlbums[k];
+      if(e && Array.isArray(e.trackIds)) e.trackIds.forEach(function(id){ claimed[id] = true; });
+    });
+    ids = ids.filter(function(id){ return !claimed[id]; });
+    if(!ids.length) return false;
+    var first = null;
+    for(var i = 0; i < allTracks.length; i++){
+      if(allTracks[i] && allTracks[i].id === ids[0]){ first = allTracks[i]; break; }
+    }
+    userAlbums[name] = {
+      artist: (first && String(first.artist || '').trim()) || 'Unknown artist',
+      trackIds: ids,
+      createdAt: Date.now()
+    };
+    if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums });
+    return true;
+  }
+  window.__scEnsureAlbumSaved = ensureAlbumSaved;
 
   async function createAlbumFromIds(ids, sourceLabel, existingName){
     ids = Array.from(ids || []);
@@ -19045,7 +19131,11 @@ _batchBuf += b64Encode(chunk);
       document.querySelectorAll('[data-album-name]').forEach(function(card){
         var albName = card.dataset.albumName;
         var ua = (typeof userAlbums !== 'undefined' && userAlbums) ? userAlbums[albName] : null;
-        if(ua && ua.trackIds && ua.trackIds.indexOf(id) !== -1){
+        // Tag-only albums have no userAlbums entry; fall back to the id list the
+        // card was rendered with so the playing song's album still opens up.
+        var _cardIds = (ua && ua.trackIds) ? ua.trackIds
+          : (card.dataset.albumIds ? card.dataset.albumIds.split(',') : null);
+        if(_cardIds && _cardIds.indexOf(id) !== -1){
           var body = card.querySelector('[id^="alb_card_"]');
           if(body && body.style.display === 'none'){
             body.style.display = 'block';
@@ -19053,7 +19143,7 @@ _batchBuf += b64Encode(chunk);
             if(chev) chev.style.transform = 'rotate(90deg)';
             try{ localStorage.setItem('sidecut_albColl_' + albName, '0'); }catch(_e){}
             body.innerHTML = '';
-            ua.trackIds.forEach(function(tid, ti){
+            _cardIds.forEach(function(tid, ti){
               var tt = allTracks.find(function(tr){ return tr.id === tid; });
               if(!tt) return;
               var row = document.createElement('div');
@@ -19068,7 +19158,7 @@ _batchBuf += b64Encode(chunk);
                 + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
               row.addEventListener('click', function(e){
                 if(e.target.closest('.kebab-btn')) return;
-                playFromList(ua.trackIds, tid);
+                playFromList(_cardIds, tid);
               });
               body.appendChild(row);
               try{ wireAlbumRowHold(row, albName); }catch(_e){}
@@ -30161,7 +30251,7 @@ window.showAlbumReorderPopup = function(albumName){
       var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
       var gripDiv = document.createElement('div');
       gripDiv.className = 'ar-grip';
-      gripDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;width:20px;flex-shrink:0;color:var(--ink-dim);font-size:13px;font-weight:600;cursor:grab;touch-action:none;';
+      gripDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--ink-dim);cursor:grab;touch-action:none;';
       gripDiv.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg>';
       var numDiv = document.createElement('div');
       numDiv.style.cssText = 'font-size:12px;color:var(--ink-dim);width:22px;text-align:center;flex-shrink:0;';
@@ -30433,6 +30523,20 @@ window.showAlbumReorderPopup = function(albumName){
   });
 
   document.body.appendChild(overlay);
+  // Entrance: the sheet popped in with no transition at all. Slide it up and fade
+  // it in so the long press resolves into something deliberate instead of a flash.
+  try{
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.18s ease';
+    card.style.transform = 'translateY(28px)';
+    card.style.transition = 'transform 0.24s cubic-bezier(0.22,0.61,0.36,1)';
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        overlay.style.opacity = '1';
+        card.style.transform = 'translateY(0)';
+      });
+    });
+  }catch(_eEnter){}
 
   // The long-press that opened this sheet also lands as a click on the song
   // row underneath, which started playback right as the sheet appeared. Swallow
