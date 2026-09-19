@@ -9234,7 +9234,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.1';
+  const APP_VERSION = '58.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9511,6 +9511,13 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.2', date: 'September 19, 2026 \u00b7 1:00 AM EDT', title: 'Album song reordering finally drags', items: [
+    'Holding a song inside an album opens the Reorder Songs sheet, and the drag now survives touch scrolling \u2014 the browser was cancelling the gesture the moment your finger moved, which is why nothing ever moved',
+    'Album cards that were never saved as an album (like the one that auto-expands around the song that is playing) can be reordered too, instead of failing with \"Album not found.\"',
+    'Dragging near the top or bottom of the sheet scrolls the list with you, and the new order saves as you move',
+    'Rows are renumbered live and the album list refreshes when you tap Done',
+    'Version bumped so the update actually reaches your device \u2014 58.1 was never published',
+  ] },
   { version: '58.1', date: 'September 19, 2026 \u00b7 12:30 AM EDT', title: 'Album song reordering works now', items: [
     'Holding a song inside an album now really opens the Reorder Songs sheet \u2014 it was silently failing with \"Album not found.\"',
     'In the sheet, drag the grip handle or tap the up/down arrows on any row, then tap Done',
@@ -29379,6 +29386,42 @@ window.showAlbumReorderPopup = function(albumName){
   var allTracks = (typeof window.__scGetAllTracks === 'function' ? window.__scGetAllTracks() : window.allTracks) || [];
   var album = null;
   if(userAlbums[albumName]) album = userAlbums[albumName];
+  if(!album){
+    // Some album cards are shown straight from track metadata without ever
+    // being saved as a user album (for example the card that auto-expands
+    // around the song that is currently playing). Those used to bail out here
+    // with "Album not found.", so holding a song inside them did nothing at
+    // all. Materialise + persist the album so its songs can be reordered too.
+    var _metaIds = [];
+    (allTracks || []).forEach(function(tr){
+      if(!tr || String(tr.album || '').trim() !== String(albumName || '').trim()) return;
+      _metaIds.push(tr.id);
+    });
+    if(_metaIds.length){
+      // Don't steal songs that already belong to a saved album.
+      Object.keys(userAlbums).forEach(function(k){
+        var _e = userAlbums[k];
+        if(_e && Array.isArray(_e.trackIds)){
+          _metaIds = _metaIds.filter(function(id){ return _e.trackIds.indexOf(id) === -1; });
+        }
+      });
+    }
+    if(_metaIds.length){
+      var _firstTr = null;
+      for(var _fi = 0; _fi < allTracks.length; _fi++){
+        if(allTracks[_fi] && allTracks[_fi].id === _metaIds[0]){ _firstTr = allTracks[_fi]; break; }
+      }
+      userAlbums[albumName] = {
+        artist: (_firstTr && String(_firstTr.artist || '').trim()) || 'Unknown artist',
+        trackIds: _metaIds,
+        createdAt: Date.now()
+      };
+      album = userAlbums[albumName];
+      try{
+        if(typeof window.dbPut === 'function') window.dbPut('meta', { key: 'userAlbums', value: userAlbums });
+      }catch(_e2){}
+    }
+  }
   if(!album){ toast('Album not found.'); return; }
 
   // Build list of all album names for switching
@@ -29413,7 +29456,7 @@ window.showAlbumReorderPopup = function(albumName){
   header.appendChild(headerInfo);
   var headerHint = document.createElement('div');
   headerHint.style.cssText = 'font-size:11px;color:var(--ink-dim);margin-top:4px;';
-  headerHint.textContent = 'Hold a song to pick it up, drag to move it, then tap Done.';
+  headerHint.textContent = 'Hold a song for a moment, then drag it up or down. Tap Done to finish.';
   header.appendChild(headerHint);
   card.appendChild(header);
 
@@ -29494,7 +29537,7 @@ window.showAlbumReorderPopup = function(albumName){
       (function(r){
         var holdTimer = null, dragging = null, lastPt = null;
         function begin(e){
-          if(dragging || !e.pointerId) return;
+          if(dragging) return;
           dragging = r;
           lastPt = e;
           r.style.zIndex = '99';
@@ -29502,7 +29545,24 @@ window.showAlbumReorderPopup = function(albumName){
           r.style.background = 'rgba(227,178,60,0.12)';
           r.style.transform = 'scale(1.02)';
           r.style.transition = 'none';
+          // The browser claims a touch gesture for scrolling unless the element
+          // says touch-action:none, and once it does it fires pointercancel and
+          // the drag dies on the spot. Same trick the album-card drag uses.
+          r.style.touchAction = 'none';
+          try{ document.body.classList.add('reordering'); }catch(_e){}
+          try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_e){}
           try{ r.setPointerCapture(e.pointerId); }catch(_e){}
+          // Listen on document rather than the row: moving a row reparents it
+          // with insertBefore(), which drops the pointer capture, so row-level
+          // listeners stopped firing after the first swap (and pointerup never
+          // arrived, leaving the row stuck in its lifted state).
+          document.addEventListener('pointermove', move, { passive: false });
+          document.addEventListener('pointerup', finish);
+          document.addEventListener('pointercancel', finish);
+          document.addEventListener('touchmove', blockTouch, { passive: false });
+        }
+        function blockTouch(ev){
+          if(dragging && ev.cancelable) ev.preventDefault();
         }
         function move(e){
           lastPt = e;
@@ -29520,24 +29580,54 @@ window.showAlbumReorderPopup = function(albumName){
           } else {
             if(r !== listEl.lastElementChild) listEl.appendChild(r);
           }
+          // Hold at the top/bottom edge of the sheet to scroll the list while dragging.
+          var lr = listEl.getBoundingClientRect();
+          if(y - lr.top < 60) listEl.scrollTop -= 9;
+          else if(lr.bottom - y < 60) listEl.scrollTop += 9;
         }
         function finish(){
           clearTimeout(holdTimer);
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', finish);
+          document.removeEventListener('pointercancel', finish);
+          document.removeEventListener('touchmove', blockTouch);
           try{ document.body.classList.remove('reordering'); }catch(_e){}
           if(dragging){
             r.style.zIndex = ''; r.style.boxShadow = ''; r.style.background = ''; r.style.transform = ''; r.style.transition = '';
+            r.style.touchAction = '';
             refreshNums();
             commitOrder();
             dragging = null;
+            try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_e){}
           }
         }
         r.addEventListener('pointerdown', function(e){
           if(e.target.closest('button')) return;
-          holdTimer = setTimeout(function(){ begin(e); }, 350);
+          var _hsy = e.clientY;
+          // If the finger moves before the hold completes, this was a scroll —
+          // drop the hold so the list scrolls exactly like it always did.
+          function cancelHold(ev){
+            if(ev && ev.type === 'pointermove'){
+              var _dy = ev.clientY - _hsy;
+              if(_dy * _dy < 144) return;
+            }
+            clearTimeout(holdTimer);
+            holdTimer = null;
+            document.removeEventListener('pointermove', cancelHold);
+            document.removeEventListener('pointerup', cancelHold);
+            document.removeEventListener('pointercancel', cancelHold);
+          }
+          holdTimer = setTimeout(function(){
+            holdTimer = null;
+            document.removeEventListener('pointermove', cancelHold);
+            document.removeEventListener('pointerup', cancelHold);
+            document.removeEventListener('pointercancel', cancelHold);
+            begin(e);
+          }, 320);
+          document.addEventListener('pointermove', cancelHold, { passive: true });
+          document.addEventListener('pointerup', cancelHold, { passive: true });
+          document.addEventListener('pointercancel', cancelHold, { passive: true });
         });
-        r.addEventListener('pointermove', move);
-        r.addEventListener('pointerup', finish);
-        r.addEventListener('pointercancel', finish);
       })(row);
     });
 
@@ -29652,6 +29742,21 @@ window.showAlbumReorderPopup = function(albumName){
   });
 
   document.body.appendChild(overlay);
+
+  // The long-press that opened this sheet also lands as a click on the song
+  // row underneath, which started playback right as the sheet appeared. Swallow
+  // that one click (only if it lands outside the sheet) so holding a song to
+  // reorder it doesn't also play it.
+  try{
+    var _swallowClick = function(ev){
+      if(overlay.contains(ev.target)) return;
+      ev.stopPropagation();
+      ev.preventDefault();
+      document.removeEventListener('click', _swallowClick, true);
+    };
+    document.addEventListener('click', _swallowClick, true);
+    setTimeout(function(){ document.removeEventListener('click', _swallowClick, true); }, 700);
+  }catch(_e3){}
 };
 
 // ---------------- Album reorder: hold-to-drag (playlist-style) ----------------
