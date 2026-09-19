@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const html = fs.readFileSync(process.env.SC_HTML || path.join(__dirname, '..', 'index.html'), 'utf8');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -122,13 +122,16 @@ async function resetSheet(win) {
   ok('every row is wired for hold directly', rows.every((r) => r.__scHoldWired === true));
   ok('helper exported for other paths', typeof win.__scWireAlbumRowHold === 'function');
 
-  // 1. hold opens the sheet
+  // 1. a three-second hold opens the sheet — and a shorter press must not
   let row = rows[1];
   pev(win, row, 'pointerdown');
   await wait(150);
   ok('row shows armed state while held', row.classList.contains('alb-hold-armed'));
-  await wait(250);
-  ok('hold opens the reorder sheet', !!sheet(win));
+  ok('the armed row shows a three-second fill', /albHoldFill 3000ms linear/.test(html));
+  await wait(1000);
+  ok('a one-second press does NOT open the reorder sheet', !sheet(win));
+  await wait(2200);   // ~3.35s of holding in total
+  ok('holding for three seconds opens the reorder sheet', !!sheet(win));
   ok('sheet lists the album songs', sheet(win) ? sheet(win).querySelectorAll('[data-id]').length === 3 : false);
   // the release click a real browser fires must not close it
   cev(win, sheet(win) || win.document.body, 'click');
@@ -145,11 +148,14 @@ async function resetSheet(win) {
   ok('scrolling a row does not open the sheet', !sheet(win));
   pev(win, row, 'pointerup', { clientY: 360 });
 
-  // 3. Android taking the gesture (pointercancel) must not kill the hold
+  // 3. Android taking the gesture (pointercancel) must not kill the hold —
+  //    but it still has to be a real three-second press.
   pev(win, row, 'pointerdown');
   await wait(140);
   pev(win, row, 'pointercancel');
-  await wait(320);
+  await wait(500);
+  ok('pointercancel alone does not open the sheet early', !sheet(win));
+  await wait(2900);
   ok('pointercancel mid-hold still opens the sheet', !!sheet(win));
   await resetSheet(win);
 
@@ -158,7 +164,9 @@ async function resetSheet(win) {
   tev(win, row, 'touchstart');
   await wait(140);
   tev(win, row, 'touchcancel');
-  await wait(320);
+  await wait(500);
+  ok('touchcancel alone does not open the sheet early', !sheet(win));
+  await wait(2900);
   ok('touchcancel mid-hold still opens the sheet', !!sheet(win));
   await resetSheet(win);
 
@@ -173,8 +181,8 @@ async function resetSheet(win) {
 
   // 6. a sheet that just closed must not eat the next tap
   pev(win, rows[2], 'pointerdown');
-  await wait(400);
-  ok('holding the third row also opens the sheet', !!sheet(win));
+  await wait(3000);
+  ok('holding the third row for three seconds also opens the sheet', !!sheet(win));
   await resetSheet(win);
   let swallowEaten = false;
   win.document.body.addEventListener('click', () => { swallowEaten = true; });
@@ -212,7 +220,7 @@ async function resetSheet(win) {
   // 8. inside the sheet, holding + dragging a row still reorders and persists
   row = rows[0];
   pev(win, row, 'pointerdown', { clientY: 40 });
-  await wait(400);
+  await wait(3300);
   const s = sheet(win);
   ok('sheet opened for the drag test', !!s);
   if (s) {

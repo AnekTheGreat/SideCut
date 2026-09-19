@@ -170,8 +170,18 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await wait(750);                        // the take-back is deliberately unhurried
   ok('a loss straight after play does NOT pause the song', played.pausedCount === 0, 'pauses=' + played.pausedCount);
   ok('the song is still playing', el.paused === false, 'paused=' + el.paused);
-  ok('and focus is asked for again instead of being given up',
-     calls.request > reqAfterStart, 'requests=' + calls.request + ' before=' + reqAfterStart);
+  // v58.8.3: and it must NOT ask for focus again while the song is playing. That
+  // re-request is what hands AUDIOFOCUS_LOSS to the WebView's own audio stream, and
+  // Chromium answers a focus loss by pausing the <audio> element — the "song stops
+  // about a second after you press play" report. One request per start is enough.
+  // Let this attempt's own deferred first ask land before measuring.
+  for (let i = 0; i < 30 && calls.request === 0; i++) await wait(100);
+  ok('the attempt still takes focus once', calls.request >= 1, 'requests=' + calls.request);
+  const reqBaseline = calls.request;
+  emit('loss'); emit('lossTransient');   // the other app grabs it again
+  await wait(1200);                      // long enough that a re-request would show
+  ok('focus is NOT re-requested while the song is playing',
+     calls.request === reqBaseline, 'requests=' + calls.request + ' baseline=' + reqBaseline);
 
   // A fight repeats: the other app keeps taking it back. Playback must survive.
   emit('loss'); emit('lossTransient');
@@ -181,6 +191,34 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('the fight is recorded so it can be diagnosed on the phone',
      /at play start/.test(String(win.localStorage.getItem('sidecut_playback_stops') || '')),
      String(win.localStorage.getItem('sidecut_playback_stops') || '').slice(0, 90));
+
+  console.log('\n— a platform pause a second in is undone, and cannot reload the page —');
+  // The reported symptom: press play, and about a second later the song stops. The
+  // pause does not come from this app at all — the WebView pauses its media element
+  // when the audio-focus request is superseded — so the app has to recognise an
+  // automatic pause in the opening seconds and put the song straight back.
+  played.pausedCount = 0; played.count = 0;
+  el.paused = true; setPlaying();                            // a fresh attempt
+  await wait(1000);                                          // ~a second into the song
+  win.__pendingSWReload = true;                              // an update is waiting
+  el.paused = true; el.dispatchEvent(new win.Event('pause')); // the platform pauses us
+  await wait(120);
+  ok('the song is put straight back instead of stopping', el.paused === false && played.count >= 1,
+     'paused=' + el.paused + ' plays=' + played.count);
+  ok('the pause is recorded as a platform pause',
+     /platform-pause/.test(String(win.localStorage.getItem('sidecut_playback_stops') || '')),
+     String(win.localStorage.getItem('sidecut_playback_stops') || '').slice(0, 120));
+  ok('a waiting update is NOT applied off that pause (no reload mid-song)',
+     win.__pendingSWReload === true);
+  // A second one is still tolerated; a third is not (never fight forever).
+  el.paused = true; el.dispatchEvent(new win.Event('pause'));
+  await wait(80);
+  ok('a second platform pause is also undone', el.paused === false, 'paused=' + el.paused);
+  el.paused = true; el.dispatchEvent(new win.Event('pause'));
+  await wait(80);
+  ok('a third is left alone rather than fought forever', el.paused === true, 'paused=' + el.paused);
+  win.__pendingSWReload = false;
+  el.paused = false;
 
   console.log('\n— a pause from the lock screen right after play is refused —');
   // A stale media-button event / session handover must not silence a song that
@@ -203,7 +241,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // for the first seconds of a song must not make the app deaf to a call.
   played.pausedCount = 0; played.count = 0; calls.abandon = 0;
   el.paused = false;
-  await wait(2600);                       // enough real playing to be interrupted
+  // The opening-seconds guard is six seconds long, so the song has to be genuinely
+  // underway before an interruption counts.
+  await wait(6200);
   emit('lossTransient');
   await wait(50);
   ok('the song is paused for the interruption', played.pausedCount === 1, 'pauses=' + played.pausedCount);
