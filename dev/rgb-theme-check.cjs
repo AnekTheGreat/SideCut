@@ -1,9 +1,12 @@
-// RGB theme audit, v58.8.1: RGB must behave EXACTLY as it did before v58.
-//   • the glow vars (--glow-a/--glow-b) cycle, starting on the pre-v58 phase
-//   • the theme's own visible accents (--coral/--gold) are NOT repainted — v58.3
-//     cycled them, which turned every button, border, ring and highlight into a
-//     random rainbow colour ("the RGB colour is completely off")
-//   • the cycle can never freeze, even if the tab-icon canvas redraw throws
+// RGB theme audit, v58.8.2: RGB must look animated — visibly.
+//   • plain RGB cycles the VISIBLE accents (--coral/--gold), so buttons, borders,
+//     rings and highlights move with the glow. That is what "RGB (animated)"
+//     means, and what it did from v58.3 on; v58.8.1 left RGB looking like the
+//     plain pink theme because only the invisible-to-RGB glow vars moved.
+//   • the cycle opens on the theme's own pink (hue 325) and blue (hue 205) rather
+//     than snapping to pure red/green (hue 0 / 130) on every start and restart.
+//   • RGB+ keeps its stable accents (v57.4) and animates the glow overlays.
+//   • the cycle can never freeze, even if the tab-icon canvas redraw throws.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
@@ -107,91 +110,105 @@ function hueOf(raw) {
   }
   return null;
 }
+const isHsl = (raw) => /^hsl\(/i.test(String(raw || '').trim());
 const rawVar = (win, name) => String(win.getComputedStyle(win.document.documentElement).getPropertyValue(name) || '').trim();
 // The hooks are part of the test surface, so ask for them defensively: without
 // them the checks below have to FAIL rather than crash the run.
 const getTheme = (win) => (typeof win.__scGetTheme === 'function' ? win.__scGetTheme() : null);
 function applyTheme(win, key) { if (typeof win.__scApplyTheme === 'function') win.__scApplyTheme(key); }
 function hueDistance(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+const GAP = 240; // (gold - coral + 360) % 360 for the theme's pink(325) -> blue(205)
+
+async function sample(win, ms, times) {
+  const out = [];
+  for (let i = 0; i < times; i++) {
+    out.push({ coral: rawVar(win, '--coral'), gold: rawVar(win, '--gold'), glowA: rawVar(win, '--glow-a'), glowB: rawVar(win, '--glow-b') });
+    await wait(ms);
+  }
+  return out;
+}
 
 (async () => {
   // ---------------------------------------------------------------------
-  console.log('\n— the visible accents are the theme’s own, and they never move —');
-  // v58.3 cycled --coral/--gold, so the entire UI (buttons, borders, rings,
-  // highlights) drifted through the rainbow while you looked at it.
+  console.log('\n— plain RGB cycles the visible accents —');
   let { dom, errors } = boot({ theme: 'rgb', speed: 2, canvas: 'ok' });
   let win = dom.window;
   await wait(2500);
 
   ok('the app restored the RGB theme', getTheme(win) === 'rgb', String(getTheme(win)));
   ok('theme hooks are exposed for this suite', typeof win.__scApplyTheme === 'function');
-  const coral0 = rawVar(win, '--coral'), gold0 = rawVar(win, '--gold');
-  const coralHue = hueOf(coral0), goldHue = hueOf(gold0);
-  ok('the accent is the RGB theme’s pink', coralHue !== null && hueDistance(coralHue, 325) <= 12,
-     'coral=' + coral0 + ' (hue ' + coralHue + ')');
-  ok('the second accent is the theme’s blue', goldHue !== null && hueDistance(goldHue, 205) <= 12,
-     'gold=' + gold0 + ' (hue ' + goldHue + ')');
-  ok('the two accents sit the theme’s 120° apart', coralHue !== null && goldHue !== null && Math.abs(((coralHue - goldHue + 360) % 360) - 120) <= 2,
-     'gap=' + ((coralHue - goldHue + 360) % 360));
 
-  const coralSamples = [], goldSamples = [];
-  for (let i = 0; i < 6; i++) { coralSamples.push(rawVar(win, '--coral')); goldSamples.push(rawVar(win, '--gold')); await wait(300); }
-  ok('the accent colour stays put while the cycle runs', new Set(coralSamples).size === 1 && new Set(goldSamples).size === 1,
-     coralSamples.join(' → ') + ' | ' + goldSamples.join(' → '));
-  ok('neither accent is being turned into a hsl() hue', !/^hsl\(/i.test(coral0) && !/^hsl\(/i.test(gold0),
-     coral0 + ' | ' + gold0);
+  const s = await sample(win, 300, 8);
+  const coralHues = s.map((x) => hueOf(x.coral));
+  const goldHues = s.map((x) => hueOf(x.gold));
+  ok('the accent is a live hsl() colour while RGB runs', s.every((x) => isHsl(x.coral) && isHsl(x.gold)),
+     s[0].coral + ' | ' + s[0].gold);
+  ok('the accent keeps changing colour', new Set(coralHues).size >= 5, coralHues.join(' → '));
+  ok('the second accent keeps changing with it', new Set(goldHues).size >= 5, goldHues.join(' → '));
+  ok('the pair stays 120° apart the whole way round',
+     s.every((x) => Math.abs((((hueOf(x.gold) - hueOf(x.coral)) + 360) % 360) - GAP) <= 3),
+     s.map((x) => Math.round(((hueOf(x.gold) - hueOf(x.coral)) + 360) % 360)).join(','));
+  // Sum the signed steps rather than comparing the ends: at this test speed the
+  // samples wrap the whole wheel, so the last hue lands back near the first.
+  let swept = 0;
+  for (let i = 1; i < coralHues.length; i++) {
+    let d = coralHues[i] - coralHues[i - 1];
+    while (d > 180) d -= 360;
+    while (d < -180) d += 360;
+    swept += d;
+  }
+  ok('the accents actually sweep a wide arc of the wheel', Math.abs(swept) > 120, 'swept=' + swept.toFixed(1) + '°');
   dom.window.close();
 
   // ---------------------------------------------------------------------
-  console.log('\n— the glow is what cycles, from the pre-v58 starting phase —');
+  console.log('\n— the cycle opens on the theme’s own pink and blue —');
   // Speed 3600s keeps the hue effectively fixed, so the *starting* phase is what is
-  // measured. Pre-v58 the cycle opened at hue 0 with the second accent at +130.
+  // measured. v58.8.1 opened at hue 0 (pure red) with the second accent at +130
+  // (green) — colours that matched nothing on screen.
   ({ dom, errors } = boot({ theme: 'rgb', speed: 3600, canvas: 'ok' }));
   win = dom.window;
   await wait(2500);
+  let c1 = hueOf(rawVar(win, '--coral')), c2 = hueOf(rawVar(win, '--gold'));
   let g1 = hueOf(rawVar(win, '--glow-a')), g2 = hueOf(rawVar(win, '--glow-b'));
-  ok('the glow opens on the pre-v58 starting hue', g1 !== null && hueDistance(g1, 0) <= 8, 'glow-a=' + rawVar(win, '--glow-a') + ' (hue ' + g1 + ')');
-  ok('the second glow sits 130° ahead, as it did before v58', g1 !== null && g2 !== null && Math.abs(((g2 - g1 + 360) % 360) - 130) <= 2,
-     'gap=' + ((g2 - g1 + 360) % 360));
-  // Re-applying the theme restarts the cycle from the same phase.
+  ok('the accent opens on the RGB theme’s pink', c1 !== null && hueDistance(c1, 325) <= 8, rawVar(win, '--coral') + ' (hue ' + c1 + ')');
+  ok('the second accent opens on the theme’s blue', c2 !== null && hueDistance(c2, 205) <= 8, rawVar(win, '--gold') + ' (hue ' + c2 + ')');
+  ok('it no longer opens on pure red', c1 !== null && hueDistance(c1, 0) > 20, 'hue ' + c1);
+  ok('the second accent is no longer the old green', c2 !== null && hueDistance(c2, 130) > 20, 'hue ' + c2);
+  ok('the glow opens on the same pair', g1 !== null && g2 !== null && hueDistance(g1, 325) <= 8 && hueDistance(g2, 205) <= 8,
+     rawVar(win, '--glow-a') + ' | ' + rawVar(win, '--glow-b'));
+
+  // Re-applying the theme restarts the cycle from that same phase, not from red.
   applyTheme(win, 'rgb');
-  await wait(400);
-  const restartHue = hueOf(rawVar(win, '--glow-a'));
-  ok('restarting the cycle starts from that same phase', restartHue !== null && hueDistance(restartHue, 0) <= 12, 'hue ' + restartHue);
+  await wait(500);
+  const rh = hueOf(rawVar(win, '--coral'));
+  ok('restarting the cycle starts from the theme, not from red', rh !== null && hueDistance(rh, 325) <= 14, 'hue ' + rh);
   dom.window.close();
 
+  // ---------------------------------------------------------------------
+  console.log('\n— the glow animates too, and RGB+ keeps stable accents —');
   ({ dom, errors } = boot({ theme: 'rgb', speed: 2, canvas: 'ok' }));
   win = dom.window;
   await wait(2500);
-  const glowSamples = [];
-  for (let i = 0; i < 8; i++) { glowSamples.push(rawVar(win, '--glow-a')); await wait(300); }
-  ok('the glow keeps changing over time', new Set(glowSamples).size >= 4, glowSamples.join(' → '));
-  ok('every frame is a real hue', glowSamples.every((s) => hueOf(s) !== null), JSON.stringify(glowSamples));
-  const gapSamples = [];
-  for (let i = 0; i < 4; i++) {
-    const a = hueOf(rawVar(win, '--glow-a')), b = hueOf(rawVar(win, '--glow-b'));
-    if (a !== null && b !== null) gapSamples.push(Math.round((b - a + 360) % 360));
-    await wait(300);
-  }
-  ok('the pair stays 130° apart all the way round', gapSamples.length > 0 && gapSamples.every((g) => g === 130), JSON.stringify(gapSamples));
+  const g = await sample(win, 300, 6);
+  ok('the glow keeps changing over time', new Set(g.map((x) => x.glowA)).size >= 4, g.map((x) => x.glowA).join(' → '));
+  ok('every glow frame is a real hue', g.every((x) => hueOf(x.glowA) !== null), JSON.stringify(g.map((x) => x.glowA)));
+  ok('the glow pair stays 120° apart', g.every((x) => Math.abs((((hueOf(x.glowB) - hueOf(x.glowA)) + 360) % 360) - GAP) <= 3),
+     g.map((x) => Math.round(((hueOf(x.glowB) - hueOf(x.glowA)) + 360) % 360)).join(','));
 
-  // RGB+ keeps its stable accents and still animates the glow.
+  // RGB+ keeps stable accents (v57.4) and still animates the glow overlays.
   applyTheme(win, 'rgbplus');
-  await wait(400);
-  const plus1 = rawVar(win, '--coral'), plusGlow1 = rawVar(win, '--glow-a');
   await wait(600);
-  const plus2 = rawVar(win, '--coral'), plusGlow2 = rawVar(win, '--glow-a');
-  ok('RGB+ holds the accent steady', plus1 === plus2 && plus1 !== '', plus1 + ' vs ' + plus2);
-  ok('RGB+ still animates the glow', plusGlow1 !== plusGlow2, plusGlow1 + ' vs ' + plusGlow2);
+  const p = await sample(win, 400, 4);
+  ok('RGB+ holds the accent steady', new Set(p.map((x) => x.coral)).size === 1 && p[0].coral !== '', p.map((x) => x.coral).join(' → '));
+  ok('RGB+ still animates the glow', new Set(p.map((x) => x.glowA)).size >= 3, p.map((x) => x.glowA).join(' → '));
 
-  // Leaving RGB releases the animated glow back to the static theme.
+  // Leaving RGB releases the animated values back to the static theme.
   applyTheme(win, 'coral');
-  await wait(500);
-  const back1 = rawVar(win, '--coral');
-  await wait(400);
-  const back2 = rawVar(win, '--coral');
-  ok('switching away restores the theme colour and stops the cycle', back1 === back2 && /^#?ff6f59$/i.test(back1), back1 + ' vs ' + back2);
-  ok('the animated glow values are cleaned up', !/^hsl\(/i.test(rawVar(win, '--glow-a')), rawVar(win, '--glow-a'));
+  await wait(600);
+  const back = await sample(win, 400, 3);
+  ok('switching away restores the theme colour and stops the cycle',
+     new Set(back.map((x) => x.coral)).size === 1 && /^#?ff6f59$/i.test(back[0].coral), back.map((x) => x.coral).join(' → '));
+  ok('the animated glow values are cleaned up', !isHsl(rawVar(win, '--glow-a')), rawVar(win, '--glow-a'));
   const unharmed = errors.filter((e) => e.indexOf('dbPromise') === -1 && e.indexOf('Not implemented') === -1);
   ok('no page errors during the RGB session', unharmed.length === 0, unharmed.slice(0, 2).join(' | '));
   dom.window.close();
@@ -200,15 +217,14 @@ function hueDistance(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 3
   console.log('\n— a frame that throws can no longer kill the cycle —');
   // The reported freeze: the tab-icon redraw threw inside the hue loop's frame, the
   // next frame was never scheduled, and the accents stuck on one hue for the rest
-  // of the session.
+  // of the session — which is "the colour is completely off and it doesn't cycle".
   ({ dom, errors } = boot({ theme: 'rgb', speed: 2, canvas: 'hostile' }));
   win = dom.window;
   await wait(2500);
-  const hostile = [], hostileCoral = [];
-  for (let i = 0; i < 8; i++) { hostile.push(rawVar(win, '--glow-a')); hostileCoral.push(rawVar(win, '--coral')); await wait(300); }
-  ok('the cycle survives a failing favicon redraw', new Set(hostile).size >= 4, hostile.join(' → '));
-  ok('and the accent still never moves', new Set(hostileCoral).size === 1, hostileCoral.join(' → '));
-  ok('the frozen-hue failure is gone', new Set(hostile).size !== 1, 'distinct=' + new Set(hostile).size);
+  const h = await sample(win, 300, 8);
+  ok('the cycle survives a failing favicon redraw', new Set(h.map((x) => x.glowA)).size >= 4, h.map((x) => x.glowA).join(' → '));
+  ok('and the accents keep moving too', new Set(h.map((x) => x.coral)).size >= 4, h.map((x) => x.coral).join(' → '));
+  ok('the frozen-hue failure is gone', new Set(h.map((x) => x.coral)).size !== 1, 'distinct=' + new Set(h.map((x) => x.coral)).size);
   const hur = errors.filter((e) => e.indexOf('dbPromise') === -1 && e.indexOf('Not implemented') === -1);
   ok('no page errors with the hostile canvas either', hur.length === 0, hur.slice(0, 2).join(' | '));
   dom.window.close();
