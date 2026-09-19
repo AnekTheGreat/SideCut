@@ -9498,7 +9498,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.6';
+  const APP_VERSION = '58.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9584,6 +9584,11 @@ function startLyricsAutoScroll() {
   (function(){
     var SNAP_NAME = 'sidecut-snapshot.json';
     var SNAP_MARKER = 'sidecut_snapshot_marker';
+    // How many times this install has already run the restore-and-reload dance.
+    // 0 = never, 1 = done once. It exists so the restore can never loop: when the
+    // hydrate cannot stick, reloading again just means an app that never finishes
+    // booting — which is what "it kept refreshing and nothing would play" was.
+    var RESTORE_TRIES = 'sidecut_snap_restore_tries';
     var MAX_ITEM = 262144; // skip oversized values (discovery caches, etc.)
     var dirty = false, timer = null, writing = false;
     function isNative(){
@@ -9732,7 +9737,18 @@ function startLyricsAutoScroll() {
           var idc = await dbGet('meta', 'idCounter');
           metaWiped = !idc;
         }catch(e){ metaWiped = true; }
-        if(!lsWiped && !metaWiped) return false;
+        if(!lsWiped && !metaWiped){
+          // The stores are healthy — forget the attempt count so a future wipe
+          // (a reinstall, a phone transfer) is still allowed to restore once.
+          try{ localStorage.removeItem(RESTORE_TRIES); }catch(e){}
+          return false;
+        }
+        var _tries = 0;
+        try{ _tries = parseInt(localStorage.getItem(RESTORE_TRIES) || '0', 10) || 0; }catch(e){}
+        // A restore already ran and the stores are STILL empty. Hydrate in place
+        // (loadFromDB below picks the restored rows up) and do NOT reload again:
+        // another reload here is an endless refresh with no data and no playback.
+        var _reloadAfter = _tries < 1;
         if(lsWiped && snap.localStorage){
           for(var k in snap.localStorage){
             try{ localStorage.setItem(k, snap.localStorage[k]); }catch(e){}
@@ -9743,8 +9759,14 @@ function startLyricsAutoScroll() {
             try{ await dbPut('meta', { key: mk, value: snap.meta[mk] }); }catch(e){}
           }
         }
-        // Ensure the marker exists before reload so the next boot skips this.
+        // Ensure the marker exists before the reload so the next boot skips this,
+        // and count the attempt so a restore that did not stick cannot loop.
         try{ if(lsWiped && localStorage.getItem(SNAP_MARKER) === null) localStorage.setItem(SNAP_MARKER, 'restored'); }catch(e){}
+        try{ localStorage.setItem(RESTORE_TRIES, String(_tries + 1)); }catch(e){}
+        if(!_reloadAfter){
+          try{ if(typeof toast === 'function') toast('Recovered your library from the on-device backup. Close and reopen SideCut once if a setting looks off.', 8000); }catch(e){}
+          return true;
+        }
         try{ location.reload(); }catch(e){}
         return true;
       }catch(e){
@@ -9775,6 +9797,12 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.7', date: 'September 19, 2026 \u00b7 9:35 PM EDT', title: 'Updates can no longer put the app in a refresh loop', items: [
+    'A newly installed update now confirms itself the moment the app script is up, instead of 4 seconds after the page finished loading \u2014 on a slow phone the old timing made a perfectly good update look like one that never started, so it was rolled back and then offered again on every launch (install, reload, roll back, install\u2026)',
+    'An update that fails to take over is marked as bad on your device and never auto-installed again. The app stays on the version that works and tells you once, instead of you being stuck refreshing',
+    'Fixed the library snapshot restore re-running its reload on every launch after an update \u2014 it is now a one-shot repair, so it cannot loop',
+    'Restores the album and RGB fixes from 58.6, which were rolled back before they could stick',
+  ] },
   { version: '58.6', date: 'September 19, 2026 \u00b7 4:16 PM EDT', title: 'Your albums are yours again, and RGB cycles properly', items: [
     'The Albums tab is manual-only again: it lists the albums YOU created, and no longer invents cards for albums that exist only as album tags on your files',
     'Fixed the Albums tab counting every tagged song in your library \u2014 the header total and the play-all queue now cover just the songs in your albums',

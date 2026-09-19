@@ -32,6 +32,8 @@
   var INSTALL_PROMPT_SEEN = 'sidecut_ota_prompt_'; // + version — set when the user picks "later"
   var READY_TOAST_KEY = 'sidecut_ota_ready_toast_'; // + version - "update is ready" toast fires at most once per staged version
   var STAGED_SHOWN_KEY = 'sidecut_ota_staged_shown_'; // + version - play-time staged sheet surfaces at most once per staged version
+  var PENDING_KEY = 'sidecut_ota_pending';     // { version, at } written when we hand over with set(), cleared once that version boots
+  var BAD_KEY = 'sidecut_ota_bad_';            // + version - a bundle that failed to take over; never auto-installed again
 
   function log(msg){ try{ console.log('[SideCut OTA] ' + msg); }catch(e){} }
   function toast(msg, ms){
@@ -258,6 +260,9 @@
   // repainting it over the deferral message.
   function applyStagedNow(Updater, nb){
     if(!nb || !nb.id) return false;
+    // Remember what we are handing over to before the WebView reloads away: the
+    // next boot compares this with what actually came up (noteBootOutcome).
+    try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version || ''), at: Date.now() })); }catch(e){}
     if(somethingIsPlaying()){
       // Defer for real instead of just talking about it: install the moment the
       // user leaves the app (music must not be killed mid-play) and remember
@@ -299,6 +304,7 @@
     if(!U || typeof U.getNextBundle !== 'function') return;
     U.getNextBundle().then(function(nb){
       if(!nb || !nb.version) return;
+      if(isBadVersion(String(nb.version))) return; // a failed bundle is not re-offered either
       if(!wantDeferredInstall(String(nb.version))) return; // auto-apply path already handled it
       if(sheetRefs && sheetRefs.card && sheetRefs.card.style.display === 'block') return;
       var st = readSheet();
@@ -333,6 +339,11 @@
   function applyInBackground(Updater, nb){
     if(!Updater || !nb || !nb.id) return false;
     var version = String(nb.version || '');
+    // A bundle that already failed to take over is never applied automatically.
+    if(isBadVersion(version)){
+      log('staged ' + version + ' failed to start before — not applying it automatically');
+      return false;
+    }
     if(!wantDeferredInstall(version)){
       var r = applyStagedNow(Updater, nb); // true = deferred to close (music playing)
       return r ? 'deferred' : 'immediate';
@@ -380,8 +391,13 @@
       window.__scOtaDeferred = null;
       Updater.getNextBundle().then(function(cur){
         if(cur && cur.id === d.id){
+          if(isBadVersion(String(d.version))){
+            log('staged ' + d.version + ' failed before — not installing it on the way out either');
+            return;
+          }
           log('app left foreground — installing staged ' + d.version);
           try{ localStorage.setItem('sidecut_ota_applied', d.version); }catch(e){}
+          try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(d.version), at: Date.now() })); }catch(e){}
           try{ Updater.set({ id: d.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
         }
       }).catch(function(){});
@@ -417,6 +433,71 @@
       var p = window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
       if(p && typeof p.notifyAppReady === 'function') p.notifyAppReady().catch(function(){});
     }catch(e){}
+  }
+  function pendingInstall(){
+    try{ var raw = localStorage.getItem(PENDING_KEY); if(raw){ var d = JSON.parse(raw); if(d && d.version) return d; } }catch(e){}
+    return null;
+  }
+  function clearPending(){ try{ localStorage.removeItem(PENDING_KEY); }catch(e){} }
+  function markBadVersion(version, why){
+    if(!version) return;
+    try{ localStorage.setItem(BAD_KEY + version, String(Date.now())); }catch(e){}
+    log('v' + version + ' did not take over (' + (why || 'unknown') + ') — it will never be auto-installed again');
+  }
+  function isBadVersion(version){
+    if(!version) return false;
+    try{ return !!localStorage.getItem(BAD_KEY + version); }catch(e){ return false; }
+  }
+  // Runs the moment the running app is confirmed healthy. Either the version we
+  // handed over to IS what is running (update confirmed — forget it), or it is
+  // not: the bundle was rolled back, and putting it back on every boot is what
+  // turned one bad update into an endless refresh. That version is marked failed
+  // and the user is told, once.
+  function noteBootOutcome(){
+    var pend = pendingInstall();
+    if(!pend) return;
+    var cur = String(currentVersion() || '');
+    if(cur && cur === String(pend.version)){
+      clearPending();
+      try{ localStorage.removeItem(BAD_KEY + pend.version); }catch(e){}
+      log('v' + pend.version + ' is running — hand-over confirmed');
+      return;
+    }
+    markBadVersion(String(pend.version), 'rolled back to v' + (cur || 'the previous version'));
+    clearPending();
+    try{
+      if(localStorage.getItem('sidecut_ota_notified_' + pend.version) !== '1'){
+        localStorage.setItem('sidecut_ota_notified_' + pend.version, '1');
+        toast('Update ' + pend.version + ' did not start, so SideCut stayed on v' + (cur || 'your current version') + '. Nothing is broken — you can try it again from Settings.', 7000);
+      }
+    }catch(e){}
+  }
+  // Confirms a freshly installed bundle as soon as the app has REALLY booted, and
+  // never reverts one just because the app was slow to start.
+  //
+  // This used to be a single check 4 seconds after 'load': a bundle whose app had
+  // not finished booting by then stayed unconfirmed, the plugin rolled it back,
+  // and the version it rolled back to offered the same update again — install,
+  // reload, roll back, install… a phone stuck refreshing with nothing playing.
+  // Polling from the moment this script runs, with a long deadline, confirms a
+  // working bundle promptly at any boot speed, while a bundle whose app genuinely
+  // never boots is still rolled back (just seconds later, instead of never).
+  function markAppReadyWhenBooted(){
+    if(!IS_NATIVE) return;
+    var startedAt = Date.now();
+    var deadline = 20000;
+    (function poll(){
+      if(appBooted()){
+        markAppReady();
+        noteBootOutcome();
+        return;
+      }
+      if(Date.now() - startedAt > deadline){
+        log('app did not finish booting within ' + deadline + 'ms — leaving the bundle unconfirmed so it rolls back');
+        return;
+      }
+      setTimeout(poll, 250);
+    })();
   }
 
   function persistSheet(state){
@@ -493,6 +574,13 @@
       var cur = currentVersion();
       log('manifest version: ' + man.version + ', running version: ' + cur);
       if(!cur){ log('cannot determine the running version — skipping update check (fail safe)'); return null; }
+      // Silent (automatic) checks never re-download a version that already failed
+      // on this device — that is loop fuel. A deliberate Check for updates still
+      // offers it, so the user can retry.
+      if(o.silent && isBadVersion(String(man.version))){
+        log('v' + man.version + ' failed to start here before — not re-downloading it automatically');
+        return null;
+      }
       var _cmp = compareVersions(man.version, cur);
       if(_cmp <= 0){
         // Only ever move forward. A manifest that is older than what is already
@@ -657,6 +745,7 @@
   }
 
   window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, staged: staged, OTA_BASE: OTA_BASE };
+    markAppReadyWhenBooted();
   if(IS_NATIVE){
     // Give the main app script time to finish booting; only then confirm the
     // bundle is healthy and start checking for newer ones.
@@ -688,9 +777,18 @@
               // never chose "Install later", on close for those who did —
               // instead of sitting behind the update sheet forever.
               // Auto-apply on boot if nothing is playing — instant update, no tap needed
+              if(isBadVersion(String(nb.version))){
+                // This exact bundle already failed to take over once. Re-applying it
+                // on every boot is what turned a single bad update into an endless
+                // refresh, so it is never auto-applied again — the in-app Check for
+                // updates button can still try it by hand.
+                log('staged ' + nb.version + ' failed to start before — not auto-applying it');
+                return;
+              }
               if(!somethingIsPlaying() && !wantDeferredInstall(String(nb.version))){
                 log('auto-applying staged ' + nb.version + ' on boot (nothing playing)');
                 try{ localStorage.setItem('sidecut_ota_applied', String(nb.version)); }catch(_e){}
+                try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version), at: Date.now() })); }catch(_e){}
                 showSheet({ phase: 'installing', version: nb.version, title: 'Updating to SideCut ' + nb.version + '…' });
                 clearSheet();
                 setTimeout(function(){ try{ U.set({ id: nb.id }); }catch(e){ log('auto-apply set failed: ' + e); } }, 450);
