@@ -554,7 +554,7 @@
   .fav-btn{ color:var(--ink-dim); background:none; border:none; padding:6px; flex-shrink:0; cursor:pointer; }
   .fav-btn svg{ width:16px; height:16px; }
   .fav-btn.active{ color:var(--coral); }
-  .kebab-btn{ color:var(--ink-dim); background:none; border:none; padding:6px 4px; flex-shrink:0; cursor:pointer; }
+  .kebab-btn{ color:var(--ink-dim); background:none; border:none; padding:6px 4px; flex-shrink:0; cursor:pointer; position:relative; z-index:2; }
   .kebab-btn svg{ width:17px; height:17px; }
   .action-sheet{
     display:flex; flex-direction:column; gap:4px;
@@ -583,7 +583,6 @@
   }
   .track.reordering .grip-handle:active{ cursor:grabbing; }
   .track.reordering .idx{ color:color-mix(in srgb, var(--gold) 70%, var(--ink-dim)); }
-  .alb-song-grip{ position:absolute; top:0; left:0; right:0; bottom:0; z-index:1; touch-action:none; cursor:grab; }
   body.reordering .track{ touch-action:none !important; pointer-events:auto !important; }
 
   .track.dragging{ background:var(--bg-raised); box-shadow:0 8px 24px rgba(0,0,0,0.5); border-radius:10px; position:relative; z-index:20; }
@@ -14702,14 +14701,16 @@ function _fallbackCopy(text){
                 + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
                 + '<div class="a">' + escapeHtml(tt.artist) + '</div></div>'
                 + '<div class="dur">' + (tt.duration ? fmtTime(tt.duration) : '--:--') + '</div>'
-                + '<div class="alb-song-grip" data-alb-grip></div>' + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
+                + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
               row.addEventListener('click', function(e){
                 if(e.target.closest('.kebab-btn')) return;
                 playFromList(alb.tracks, tid);
               });
               body.appendChild(row);
-              if(!selectMode){
-                row.querySelector('[data-kebab]').addEventListener('click', function(e){
+              var _kbk = row.querySelector('[data-kebab]');
+              if(!selectMode && _kbk){
+                _kbk._kebabWired = true;
+                _kbk.addEventListener('click', function(e){
                   e.stopPropagation();
                   openSongActions(tid);
                 });
@@ -14913,8 +14914,10 @@ function _fallbackCopy(text){
               playFromList(alb.tracks, tid);
             });
             body.appendChild(row);
-            if(!selectMode){
-              row.querySelector('[data-kebab]').addEventListener('click', function(e){
+            var _kbk2 = row.querySelector('[data-kebab]');
+            if(!selectMode && _kbk2){
+              _kbk2._kebabWired = true;
+              _kbk2.addEventListener('click', function(e){
                 e.stopPropagation();
                 openSongActions(tid);
               });
@@ -15266,6 +15269,21 @@ function _fallbackCopy(text){
       try{ console.error('openManageAlbums failed', err); }catch(_e){}
     }
   }
+
+  // Album rows are drawn by several code paths; any of them forgetting to wire
+  // a row's ⋮ (or an overlay eating the tap) left the button dead. This
+  // catches those cases without double-opening for the rows that are wired.
+  (function wireAlbumKebabFallback(){
+    document.addEventListener('click', function(e){
+      if(!e.target || !e.target.closest) return;
+      var kb = e.target.closest('.kebab-btn[data-kebab]');
+      if(!kb || kb._kebabWired) return;
+      if(!kb.closest('[data-album-name], [id^="alb_card_"]')) return;
+      e.stopPropagation();
+      var id = kb.getAttribute('data-kebab');
+      if(id) openSongActions(id);
+    }, true);
+  })();
 
   function openSongActions(id){
     const t = allTracks.find(tr => tr.id === id);
@@ -19301,7 +19319,10 @@ _batchBuf += b64Encode(chunk);
                 _body.appendChild(_row);
                 // hold handler below opens reorder popup
                 var _kb = _row.querySelector('[data-kebab]');
-                if(_kb) _kb.addEventListener('click', function(e){ e.stopPropagation(); openSongActions(_tid); });
+                if(_kb){
+                  _kb._kebabWired = true;
+                  _kb.addEventListener('click', function(e){ e.stopPropagation(); openSongActions(_tid); });
+                }
                 if(_tid === t.id){
                   setTimeout(function(){ smoothScrollIn(_body, _row, 200); }, 100);
                 }
@@ -29978,121 +29999,3 @@ window.showAlbumReorderPopup = function(albumName){
     document.addEventListener('pointercancel', clearHold, true);
   }, true);
 })();
-
-// ---------------- Album reorder: hold-to-drag (playlist-style) ----------------
-window.wireAlbumSongReorder = function(bodyEl, albumName){
-  if(!bodyEl) return;
-  var rows = Array.prototype.slice.call(bodyEl.querySelectorAll('.track'));
-  rows.forEach(function(row){
-    if(row._asrReady) return;
-    row._asrReady = true;
-
-    function reIndex(){
-      var tracks = bodyEl.querySelectorAll('.track');
-      for(var i = 0; i < tracks.length; i++){
-        var idx = tracks[i].querySelector('.idx');
-        if(idx) idx.textContent = i + 1;
-      }
-    }
-
-    // Use the transparent grip overlay for pointer capture.
-    // It has touch-action:none in CSS, so the browser won't steal the gesture.
-    var gripEl = row.querySelector('.alb-song-grip');
-    var target = gripEl || row;
-    
-    target.addEventListener('pointerdown', function(e){
-      if(e.target.closest('.kebab-btn,button,a,input,select')) return;
-      var sx = e.clientX, sy = e.clientY;
-      // Capture pointer immediately on the grip (which has touch-action:none)
-      try{ target.setPointerCapture(e.pointerId); }catch(_pc){}
-      var _ptrId = e.pointerId;
-      var holdTimer = setTimeout(function(){
-        holdTimer = null;
-        try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
-        row.style.transition = 'box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease';
-        row.style.zIndex = '99';
-        row.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
-        row.style.background = 'rgba(227,178,60,0.12)';
-        row.style.transform = 'scale(1.02)';
-        try{ document.body.classList.add('reordering'); }catch(_e){}
-        var dragging = false;
-        var startX = sx, startY = sy;
-
-        function onMove(ev){
-          ev.preventDefault();
-          if(!dragging){
-            var ddx = ev.clientX - startX, ddy = ev.clientY - startY;
-            if((ddx*ddx + ddy*ddy) < 64) return;
-            dragging = true;
-            row.style.transition = 'none';
-            try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
-          }
-          var y = ev.clientY;
-          var before = null;
-          var sibs = Array.prototype.filter.call(bodyEl.children, function(k){ return k !== row && k.classList && k.classList.contains('track'); });
-          for(var i = 0; i < sibs.length; i++){
-            var rect = sibs[i].getBoundingClientRect();
-            if(y < rect.top + rect.height / 2){ before = sibs[i]; break; }
-          }
-          if(before){
-            if(before.previousElementSibling !== row){ bodyEl.insertBefore(row, before); reIndex(); }
-          } else {
-            if(row !== bodyEl.lastElementChild){ bodyEl.appendChild(row); reIndex(); }
-          }
-          var bodyRect = bodyEl.getBoundingClientRect();
-          var edge = 56;
-          if(ev.clientY - bodyRect.top < edge){ bodyEl.scrollTop -= 8; }
-          else if(bodyRect.bottom - ev.clientY < edge){ bodyEl.scrollTop += 8; }
-        }
-
-        function onUp(){
-          document.removeEventListener('pointermove', onMove);
-          document.removeEventListener('pointerup', onUp);
-          document.removeEventListener('pointercancel', onUp);
-          try{ document.body.classList.remove('reordering'); }catch(_e){}
-          row.style.zIndex = '';
-          row.style.boxShadow = '';
-          row.style.background = '';
-          row.style.transition = 'transform 0.15s ease';
-          row.style.transform = 'scale(1)';
-          try{ target.releasePointerCapture(_ptrId); }catch(_pc){}
-          setTimeout(function(){ row.style.transition = ''; row.style.transform = ''; }, 150);
-          if(dragging){
-            try{ if(navigator.vibrate) navigator.vibrate(8); }catch(_v){}
-            var newOrder = [];
-            Array.prototype.forEach.call(bodyEl.querySelectorAll('.track'), function(r){
-              if(r.dataset.id) newOrder.push(r.dataset.id);
-            });
-            if(newOrder.length && typeof userAlbums !== 'undefined' && userAlbums[albumName]){
-              userAlbums[albumName].trackIds = newOrder;
-              if(typeof dbPut === 'function'){
-                dbPut('meta', { key: 'userAlbums', value: userAlbums });
-              }
-              reIndex();
-            }
-          }
-        }
-
-        document.addEventListener('pointermove', onMove);
-        document.addEventListener('pointerup', onUp);
-        document.addEventListener('pointercancel', onUp);
-      }, 200);
-
-      function cancelHold(){
-        clearTimeout(holdTimer);
-        holdTimer = null;
-        try{ target.releasePointerCapture(_ptrId); }catch(_pc){}
-        target.removeEventListener('pointermove', checkMove);
-        target.removeEventListener('pointerup', cancelHold);
-        target.removeEventListener('pointercancel', cancelHold);
-      }
-      function checkMove(ev){
-        var dx = ev.clientX - sx, dy = ev.clientY - sy;
-        if(dx*dx + dy*dy > 100) cancelHold();
-      }
-      target.addEventListener('pointermove', checkMove, { passive: true });
-      target.addEventListener('pointerup', cancelHold, { passive: true });
-      target.addEventListener('pointercancel', cancelHold, { passive: true });
-    });
-  });
-};
