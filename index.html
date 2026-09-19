@@ -15097,35 +15097,114 @@ function _fallbackCopy(text){
   $('holdChoiceBackdrop').addEventListener('click', e => { if(e.target === $('holdChoiceBackdrop')) $('holdChoiceBackdrop').style.display = 'none'; });
 
   // ---------------- Song action sheet (kebab menu) ----------------
-  function openManageAlbums(){
-    // Show a list of all user albums with delete options
-    var albumNames = Object.keys(userAlbums || {});
-    if(!albumNames.length){ toast('No albums yet.'); return; }
+  function manageAlbumsHTML(){
+    var names = Object.keys(userAlbums || {});
+    if(!names.length) return '<div class="dp-empty">No albums yet.</div>';
     var html = '<div style="padding:12px;">';
-    albumNames.forEach(function(name){
-      var alb = userAlbums[name];
-      var trackCount = alb && alb.tracks ? alb.tracks.length : 0;
-      html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);">';
-      html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(name) + '</div>';
-      html += '<div style="font-size:11px;color:var(--ink-dim);">' + trackCount + ' track' + (trackCount !== 1 ? 's' : '') + '</div></div>';
-      html += '<button class="mgr-alb-del" data-name="' + escapeHtml(name) + '" style="padding:4px 10px;border-radius:6px;border:1px solid #FF6F59;background:none;color:#FF6F59;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Delete</button>';
+    names.forEach(function(name, i){
+      var alb = userAlbums[name] || {};
+      // userAlbums entries store trackIds, not tracks - the old "N tracks"
+      // count read the wrong field and always said 0.
+      var n = (alb.trackIds || []).length;
+      html += '<div class="mgr-alb-row" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);">';
+      html += '<div style="flex:1;min-width:0;">';
+      html += '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(name) + '</div>';
+      html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + n + ' track' + (n !== 1 ? 's' : '') + (alb.artist ? ' \u00b7 ' + escapeHtml(alb.artist) : '') + '</div>';
+      html += '</div>';
+      html += '<button class="mgr-alb-rename" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink);font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Rename</button>';
+      html += '<button class="mgr-alb-del" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid #FF6F59;background:none;color:#FF6F59;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Delete</button>';
       html += '</div>';
     });
     html += '</div>';
-    openDiscoverPopup('Manage albums', html, albumNames.length + ' album' + (albumNames.length !== 1 ? 's' : ''));
-    // Wire delete buttons
-    document.querySelectorAll('#discPopupBody .mgr-alb-del').forEach(function(btn){
+    return html;
+  }
+
+  function wireManageAlbums(){
+    var bEl = document.getElementById('discPopupBody');
+    if(!bEl) return;
+    var names = Object.keys(userAlbums || {});
+    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-rename'), function(btn){
       btn.addEventListener('click', function(e){
         e.stopPropagation();
-        var n = this.dataset.name;
-        if(!confirm('Delete album "' + n + '"? Songs stay in your library.')) return;
-        delete userAlbums[n]; saveMeta(); renderList();
-        this.closest('div[style]').remove();
-        toast('Album "' + n + '" deleted.');
-        var remaining = document.querySelectorAll('#discPopupBody .mgr-alb-del').length;
-        if(remaining === 0) openDiscoverPopup('Manage albums', '<div class="dp-empty">No albums.</div>', '');
+        var name = names[parseInt(this.getAttribute('data-i'), 10)];
+        if(name) renameUserAlbum(name);
       });
     });
+    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-del'), function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var name = names[parseInt(this.getAttribute('data-i'), 10)];
+        if(!name) return;
+        if(this.dataset.armed === '1'){ deleteUserAlbum(name); return; }
+        // Two taps instead of window.confirm(): the Android WebView can
+        // silently swallow confirm() (it returns false), which is what made
+        // this Delete button look broken.
+        this.dataset.armed = '1';
+        this.textContent = 'Tap to confirm';
+        this.style.background = '#FF6F59';
+        this.style.color = '#161616';
+        var self = this;
+        setTimeout(function(){
+          if(self.dataset.armed !== '1') return;
+          self.dataset.armed = '';
+          self.textContent = 'Delete';
+          self.style.background = 'none';
+          self.style.color = '#FF6F59';
+        }, 4000);
+      });
+    });
+  }
+
+  function refreshManageAlbums(){
+    var names = Object.keys(userAlbums || {});
+    openDiscoverPopup('Manage albums', manageAlbumsHTML(), names.length + ' album' + (names.length !== 1 ? 's' : ''));
+    wireManageAlbums();
+  }
+
+  function renameUserAlbum(oldName){
+    if(!userAlbums[oldName]) return;
+    modalPrompt('Rename album', oldName).then(function(v){
+      if(v == null) return;
+      var nn = String(v).trim();
+      if(!nn || nn === oldName) return;
+      if(userAlbums[nn]){ toast('You already have an album called "' + nn + '".'); return; }
+      var entry = userAlbums[oldName];
+      // Rebuild the map so the renamed album keeps its position in album order.
+      var rebuilt = {};
+      Object.keys(userAlbums).forEach(function(k){
+        if(k === oldName) rebuilt[nn] = entry; else rebuilt[k] = userAlbums[k];
+      });
+      userAlbums = rebuilt;
+      // Keep every song's album tag in step, otherwise the album splits apart
+      // the next time songs are grouped by their tags.
+      (entry.trackIds || []).forEach(function(id){
+        var t = allTracks.find(function(tr){ return tr.id === id; });
+        if(t){ t.album = nn; try{ persistTrackMeta(t); }catch(_e){} }
+      });
+      dbPut('meta', { key: 'userAlbums', value: userAlbums });
+      renderList();
+      refreshManageAlbums();
+      toast('Renamed to "' + nn + '".');
+    });
+  }
+
+  function deleteUserAlbum(name){
+    if(!userAlbums[name]) return;
+    delete userAlbums[name];
+    dbPut('meta', { key: 'userAlbums', value: userAlbums });
+    renderList();
+    refreshManageAlbums();
+    toast('Deleted "' + name + '" \u2014 the songs stay in your library.');
+  }
+
+  function openManageAlbums(){
+    try{
+      refreshManageAlbums();
+    }catch(err){
+      // Surface the failure instead of a dead button.
+      try{ toast('Could not open Manage albums: ' + (err && err.message ? err.message : err)); }catch(_e){}
+      try{ console.error('openManageAlbums failed', err); }catch(_e){}
+    }
   }
 
   function openSongActions(id){
@@ -28228,6 +28307,22 @@ window.showSettingsTab = showSettingsTab;
   // needs these to resolve album data at all.
   window.__scGetUserAlbums = function(){ return userAlbums; };
   window.__scGetAllTracks = function(){ return allTracks; };
+  window.__scGetLibraryMode = function(){ return libraryMode; };
+  // Which user album a track belongs to. Used by the album reorder hold so it
+  // doesn't depend on the album card carrying a data attribute.
+  window.__scAlbumForTrack = function(tid){
+    if(tid == null) return '';
+    var _keys = Object.keys(userAlbums || {});
+    for(var _i = 0; _i < _keys.length; _i++){
+      var _e = userAlbums[_keys[_i]];
+      if(_e && Array.isArray(_e.trackIds) && _e.trackIds.indexOf(tid) !== -1) return _keys[_i];
+    }
+    var _t = null;
+    for(var _j = 0; _j < allTracks.length; _j++){
+      if(allTracks[_j] && allTracks[_j].id === tid){ _t = allTracks[_j]; break; }
+    }
+    return (_t && String(_t.album || '').trim()) || '';
+  };
   window.fmtTime = fmtTime;
   window.renderThemeOptions = renderThemeOptions;
   window.runDiscoverSearch = runDiscoverSearch;
@@ -29790,11 +29885,18 @@ window.showAlbumReorderPopup = function(albumName){
   document.addEventListener('pointerdown', function(e){
     if(!e.target || !e.target.closest) return;
     if(e.target.closest('button,a,input,select,.kebab-btn,.grip-handle,.reorder-btns')) return;
+    // Album song rows only exist in the Albums view.
+    var _mode = (typeof window.__scGetLibraryMode === 'function') ? window.__scGetLibraryMode() : '';
+    if(_mode !== 'albums') return;
     var row = e.target.closest('.track');
     if(!row) return;
+    // Prefer the card's album name, but fall back to the album the track is
+    // actually filed under. Relying on the card attribute alone meant any
+    // render path that didn't set it silently did nothing on hold.
+    var album = '';
     var cardEl = row.closest('[data-album-name]');
-    if(!cardEl) return;
-    var album = cardEl.dataset ? cardEl.dataset.albumName : '';
+    if(cardEl && cardEl.dataset && cardEl.dataset.albumName) album = cardEl.dataset.albumName;
+    if(!album && typeof window.__scAlbumForTrack === 'function' && row.dataset) album = window.__scAlbumForTrack(row.dataset.id);
     if(!album) return;
     if(document.getElementById('albumReorderPopup')) return;
     clearHold();
@@ -29803,7 +29905,13 @@ window.showAlbumReorderPopup = function(albumName){
       holdTimer = null;
       clearHold();
       if(document.getElementById('albumReorderPopup')) return;
-      showAlbumReorderPopup(album);
+      try{ showAlbumReorderPopup(album); }
+      catch(err){
+        // Never fail silently — if this breaks again the user (and the log)
+        // sees why instead of a dead long press.
+        try{ toast('Could not open reorder: ' + (err && err.message ? err.message : err)); }catch(_e){}
+        try{ console.error('album reorder open failed', err); }catch(_e){}
+      }
     }, 320);
     document.addEventListener('pointermove', onMove, true);
     document.addEventListener('pointerup', clearHold, true);
