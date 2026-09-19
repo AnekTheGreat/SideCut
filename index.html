@@ -423,6 +423,17 @@
   .tabs::-webkit-scrollbar{ display:none; }
   #listPane::-webkit-scrollbar{ display:none; }
   #listPane{ scrollbar-width: none; }
+  /* Back-to-top button: fades and slides in/out as soon as the list has anything
+     to scroll back from. It used to snap between opacity 0.7 and 0.9 (two values
+     you cannot tell apart) with no transition at all, which read as a dead button.
+     Idle state also drops pointer-events so a hidden button can never eat a tap. */
+  #backToTopBtn{
+    transition: opacity 0.26s ease, transform 0.26s cubic-bezier(0.22,0.61,0.36,1), background 0.2s ease, border-color 0.25s ease, color 0.25s ease;
+    will-change: opacity, transform;
+  }
+  #backToTopBtn.is-idle{ opacity:0; transform: translateY(-6px) scale(0.84); pointer-events:none; }
+  #backToTopBtn:not(.is-idle){ opacity:0.88; }
+  #backToTopBtn:active{ transform: scale(0.9); }
   .tab{
     flex-shrink:0; padding:7px 15px; border-radius:20px; font-size:12.5px;
     color:var(--ink-dim); background: var(--bg-raised); border:1px solid var(--line);
@@ -432,7 +443,7 @@
   .tab:active{ transform: scale(0.95); }
   .tab.active{ color:var(--bg); background:var(--gold); border-color:var(--gold); font-weight:600; }
 
-  #listPane{ flex:1; overflow-y:auto; padding: 4px 0 calc(var(--list-bottom-inset, 96px) + env(safe-area-inset-bottom)); min-height:0;
+  #listPane{ flex:1; overflow-y:auto; overscroll-behavior: contain; padding: 4px 0 calc(var(--list-bottom-inset, 96px) + env(safe-area-inset-bottom)); min-height:0;
     /* Needs its own explicit stacking context: this container was plain static-
        position flow content with no z-index, sitting after the glow layers'
        fixed divs in the DOM but with no stacking of its own to guarantee it
@@ -2101,7 +2112,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
   </div>
   <div style="display:flex; align-items:center; gap:6px; padding:0 20px 4px;">
     <div class="tabs" id="tabs" style="flex:1; padding:4px 0 10px;"></div>
-    <button class="icon-btn" id="backToTopBtn" title="Back to top" style="flex-shrink:0; opacity:0.7;">
+    <button class="icon-btn" id="backToTopBtn" title="Back to top" aria-hidden="true" tabindex="-1" style="flex-shrink:0;">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>
     </button>
   </div>
@@ -4151,6 +4162,25 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="dev/native-updates.js"></script>
 <script>
+// ---- Frame-rate independent drag auto-scroll ---------------------------------
+// The drag loops (tab strip, list reorder, home bubbles, artist groups) each used
+// to move a fixed 8px per animation frame. That is 480px/s at 60Hz but 960px/s on
+// a 120Hz display - and this app ships a Maximum refresh mode - so dragging near
+// an edge made the list fly away from the finger on high-refresh screens. This
+// converts pixels-per-frame into pixels-per-second using the real frame gap, and
+// treats a long gap as a fresh start so the first frame of a new drag can't jump.
+// Defined at the very top of the app script, before anything that could use it.
+window.__scDragDelta = function(key, pxPerSec){
+  var now = (window.performance && performance.now) ? performance.now() : Date.now();
+  var clocks = window.__scDragClocks || (window.__scDragClocks = {});
+  var prev = clocks[key];
+  clocks[key] = now;
+  var dt = (prev && (now - prev) < 100) ? (now - prev) : 16.7;
+  if(dt < 1) dt = 1;
+  if(dt > 64) dt = 64;
+  return pxPerSec * dt / 1000;
+};
+
 // ---- Battery saver: kill expensive timers when app is hidden ----
 // Music players burn battery because Android keeps the WebView alive for
 // media session even when the screen is off. This pauses all non-essential
@@ -8308,7 +8338,11 @@ function startLyricsAutoScroll() {
     const container = $('lyricsContent');
     if (!container) return;
     
-    // Start at top — suppress scroll event so it doesn't set manualScrollGrace
+    // Start at top — suppress scroll event so it doesn't set manualScrollGrace.
+    // Cancel any glide still running first (its onDone clears the flag, so it has
+    // to happen BEFORE we raise it), otherwise the jump trips the user-scroll grace
+    // window and auto-scroll sits still for 1.5s after every lyrics open.
+    if(typeof window.__scCancelScroll === 'function') window.__scCancelScroll(container);
     isProgrammaticScroll = true;
     container.scrollTop = 0;
     setTimeout(() => { isProgrammaticScroll = false; }, 100);
@@ -8458,10 +8492,19 @@ function startLyricsAutoScroll() {
     // Tiny dead-zone so a line that's already parked doesn't micro-jitter.
     if (Math.abs(clamped - lastLyricsScrollTarget) < 3) return;
     lastLyricsScrollTarget = clamped;
+    // The WebView ignores scrollTo({behavior:'smooth'}) on a scrollable element, so
+    // lyric lines snapped instantly instead of gliding. Drive it through the shared
+    // scroll engine and clear the flag when the glide actually ends (or is taken
+    // over), instead of guessing a fixed 600ms.
+    var _clearProgrammaticScroll = function(){ isProgrammaticScroll = false; };
+    if(typeof window.__scCancelScroll === 'function') window.__scCancelScroll(container);
     isProgrammaticScroll = true;
-    container.scrollTo({ top: clamped, behavior: 'smooth' });
-    // Clear the flag after the smooth scroll has had time to settle.
-    setTimeout(() => { isProgrammaticScroll = false; }, 600);
+    if(typeof window.__scAnimateScroll === 'function'){
+      window.__scAnimateScroll(container, clamped, 520, _clearProgrammaticScroll, null);
+    } else {
+      container.scrollTop = clamped;
+      setTimeout(_clearProgrammaticScroll, 120);
+    }
   }
   
   function formatSyncedLyrics(lrc) {
@@ -14000,11 +14043,12 @@ function _fallbackCopy(text){
               if(tabScrollDir < 0 && p && p.clientX - r.left < tEdge) still = true;
               if(tabScrollDir > 0 && p && r.right - p.clientX < tEdge) still = true;
               if(!still){ tabScrollRAF = null; return; }
+              const stepPx = window.__scDragDelta('tabs', 480);
               const before = tabsEl.scrollLeft;
-              tabsEl.scrollLeft += tabScrollDir * 8;
+              tabsEl.scrollLeft += tabScrollDir * stepPx;
               if(tabsEl.scrollLeft === before){ tabScrollRAF = null; return; }
               // Keep the dragged tab glued to the finger while the bar scrolls.
-              startX -= tabScrollDir * 8;
+              startX -= tabScrollDir * stepPx;
               el.style.transform = `translateX(${(lastTabPointer.clientX - startX)}px) scale(1.05)`;
               tabSwapCheck(lastTabPointer.clientX);
               tabScrollRAF = requestAnimationFrame(tstep);
@@ -14250,10 +14294,17 @@ function _fallbackCopy(text){
       const btn = $('backToTopBtn');
       if(!btn) return;
       const up = listPane.scrollTop > _bttThreshold;
-      btn.style.opacity = up ? '0.9' : '0.7';
-      btn.style.pointerEvents = up ? 'auto' : 'none';
+      // The look lives in CSS now (#backToTopBtn.is-idle): a real fade + slide with
+      // a transition. The old code stepped inline opacity between 0.7 and 0.9, two
+      // values you cannot tell apart, so the button looked like it never changed.
+      btn.classList.toggle('is-idle', !up);
+      btn.setAttribute('aria-hidden', up ? 'false' : 'true');
+      btn.tabIndex = up ? 0 : -1;
     };
-    listPane.addEventListener('scroll', _syncBackToTop);
+    listPane.addEventListener('scroll', _syncBackToTop, { passive: true });
+    // Self-heal any inline opacity/pointer-events left over from the old code.
+    const _btt = $('backToTopBtn');
+    if(_btt){ _btt.style.opacity = ''; _btt.style.pointerEvents = ''; }
     _syncBackToTop();
   }
 
@@ -14999,8 +15050,9 @@ function _fallbackCopy(text){
                       if(dir < 0 && p && p.clientY - r.top < edge) still = true;
                       if(dir > 0 && p && r.bottom - p.clientY < edge) still = true;
                       if(!still){ autoScrollRAF = null; return; }
-                      pane.scrollTop += dir * 8;
-                      startY -= dir * 8;
+                      const stepPx = window.__scDragDelta('cardDrag', 480);
+                      pane.scrollTop += dir * stepPx;
+                      startY -= dir * stepPx;
                       card.style.transform = 'translateY(' + (lastPointer.clientY - startY) + 'px)';
                       updateDragIndex(lastPointer.clientY - startY);
                       autoScrollRAF = requestAnimationFrame(step);
@@ -15874,12 +15926,13 @@ function _fallbackCopy(text){
               if(dir < 0 && p && p.clientY - r.top < edge) still = true;
               if(dir > 0 && p && r.bottom - p.clientY < edge) still = true;
               if(!still){ gripAutoScrollRAF = null; return; }
+              const stepPx = window.__scDragDelta('gripDrag', 480);
               const before = pane.scrollTop;
-              pane.scrollTop += dir * 8;
+              pane.scrollTop += dir * stepPx;
               if(pane.scrollTop === before){ gripAutoScrollRAF = null; return; }
               // Keep the dragged row glued to the finger: the scroll moved the
               // content under it, so shift the drag baseline the opposite way.
-              const moved = dir * 8;
+              const moved = dir * stepPx;
               startY -= moved;
               row.style.transform = `translateY(${(lastGripPointer.clientY - startY)}px)`;
               // Re-evaluate which slot the row is over while the list scrolls,
@@ -18853,52 +18906,126 @@ _batchBuf += b64Encode(chunk);
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchListBottomInset);
   else watchListBottomInset();
 
-  function smoothScrollIn(container, target, dur){
+  // Centre a row inside its scroll container. Keeps the gentle ease-in-out curve
+  // (a soft start suits a small move) and hands off to the shared engine below.
+  function smoothScrollIn(container, target, dur, onDone){
     if(!container || !target) return;
-    dur = dur || (typeof sandboxScrollSpeed !== 'undefined' ? sandboxScrollSpeed : 400);
     var cRect = container.getBoundingClientRect();
     var tRect = target.getBoundingClientRect();
     var targetScroll = container.scrollTop + (tRect.top - cRect.top) - (cRect.height/2) + (tRect.height/2);
     targetScroll = Math.max(0, Math.min(targetScroll, container.scrollHeight - container.clientHeight));
-    var start = container.scrollTop;
-    var dist = targetScroll - start;
-    if(Math.abs(dist) < 2) return; // already centered
-    var startTime = null;
-    function step(ts){
-      if(!startTime) startTime = ts;
-      var p = Math.min((ts - startTime) / dur, 1);
-      // ease-in-out cubic for smooth feel
-      var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-      container.scrollTop = start + dist * e;
-      if(p < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
+    if(Math.abs(targetScroll - container.scrollTop) < 2) return; // already centered
+    animateScrollTop(container, targetScroll, dur, onDone, _scEaseInOutCubic);
   }
 
-  // Animate a container to an absolute scrollTop. The back-to-top button used
-  // to call scrollTo({behavior:'smooth'}), which the Android WebView ignores for
-  // element scrolling (the same reason smoothScrollIn above avoids it) — the
-  // button looked alive and did nothing. This drives scrollTop by hand instead,
-  // honouring the user's scroll-speed setting.
-  function animateScrollTop(container, targetTop, dur){
+  // -- Shared smooth-scroll engine -------------------------------------------
+  // One cancellable animator behind every programmatic scroll in the app.
+  //
+  // Three things make it feel smooth rather than merely animated:
+  //   - Only ONE animation per container. Starting a new scroll cancels the one in
+  //     flight. Two rAF loops used to be able to write scrollTop on the same frame
+  //     (back-to-top overlapping the auto-scroll-to-playing-row) and fought each
+  //     other every frame: that is jitter, not gliding.
+  //   - Duration scales with distance, so a 40px nudge doesn't crawl for as long as
+  //     a 6000px jump, and a 6000px jump isn't a teleport with a long tail. The
+  //     user's Scroll speed setting stays the baseline.
+  //   - A real gesture takes control back instantly (wheel / touch / pointer down
+  //     cancels it), so the app never fights the user's finger.
+  function _scEaseOutQuart(p){ return 1 - Math.pow(1 - p, 4); }
+  function _scEaseInOutCubic(p){ return p < 0.5 ? 4*p*p*p : 1 - Math.pow(-2*p+2, 3)/2; }
+  function _scScrollSpeed(){
+    try{ return (typeof sandboxScrollSpeed !== 'undefined' && sandboxScrollSpeed) || 400; }
+    catch(_e){ return 400; }
+  }
+  function _scInstantScroll(){
+    // The app's own Reduce motion setting (Sandbox -> Accessibility). Jumping is
+    // exactly what that toggle asks for, so never animate for it.
+    try{ return !!(typeof sandboxReduceMotion !== 'undefined' && sandboxReduceMotion); }
+    catch(_e){ return false; }
+  }
+  // Stop whatever is animating in this container. Any onDone callback still fires
+  // (with finished=false), so a caller waiting to clear its own "programmatic
+  // scroll" flag can never be left stuck true.
+  function cancelScrollAnim(container){
+    var cur = container && container.__scScrollAnim;
+    if(cur && typeof cur.finish === 'function') cur.finish(false);
+    else if(container) container.__scScrollAnim = null;
+  }
+
+  // Animate a container to an absolute scrollTop. dur is optional: omit it and the
+  // Scroll speed setting decides, scaled by distance. onDone(finished) fires once,
+  // whether the glide completed or was taken over by the user. ease is optional.
+  function animateScrollTop(container, targetTop, dur, onDone, ease){
     if(!container) return;
-    dur = dur || (typeof sandboxScrollSpeed !== 'undefined' ? sandboxScrollSpeed : 400);
+    cancelScrollAnim(container);
     var max = Math.max(0, container.scrollHeight - container.clientHeight);
     var to = Math.max(0, Math.min(targetTop, max));
     var start = container.scrollTop;
     var dist = to - start;
-    if(Math.abs(dist) < 1){ container.scrollTop = to; return; }
-    var startTime = null;
-    function step(ts){
-      if(!startTime) startTime = ts;
-      var p = Math.min((ts - startTime) / dur, 1);
-      var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-      container.scrollTop = start + dist * e;
-      if(p < 1) requestAnimationFrame(step);
-      else container.scrollTop = to;
+    var done = false;
+    var anim = {};
+    function finish(finished){
+      if(done) return;
+      done = true;
+      if(anim.raf) cancelAnimationFrame(anim.raf);
+      anim.raf = 0;
+      if(anim.cleanup){ anim.cleanup(); anim.cleanup = null; }
+      if(container.__scScrollAnim === anim) container.__scScrollAnim = null;
+      if(finished) container.scrollTop = to;
+      if(typeof onDone === 'function') onDone(!!finished);
     }
-    requestAnimationFrame(step);
+    anim.finish = finish;
+
+    if(Math.abs(dist) < 1 || _scInstantScroll()){
+      container.scrollTop = to;
+      finish(true);
+      return;
+    }
+
+    var ms;
+    if(dur){
+      ms = Math.max(120, Math.min(1200, dur));
+    } else {
+      // sqrt keeps the growth gentle: ~100px is 0.6x the setting, 500px is 1x,
+      // ~1300px and up is 1.8x, plus a small long-jump term so a 20000px list
+      // still lands in about a second instead of blurring past in 400ms.
+      var scale = Math.sqrt(Math.max(0.35, Math.min(4, Math.abs(dist) / 500)));
+      ms = _scScrollSpeed() * Math.max(0.5, Math.min(1.8, scale)) + Math.max(0, Math.abs(dist) - 3000) / 50;
+      ms = Math.max(150, Math.min(1400, ms));
+    }
+
+    var easeFn = ease || _scEaseOutQuart;
+    var clock = function(){
+      return (window.performance && performance.now) ? performance.now() : Date.now();
+    };
+    var t0 = clock();
+
+    function step(){
+      if(done) return;
+      var p = Math.min((clock() - t0) / ms, 1);
+      if(p >= 1){ finish(true); return; }
+      container.scrollTop = start + dist * easeFn(p);
+      anim.raf = requestAnimationFrame(step);
+    }
+
+    // Hand control straight back to the user the moment they touch the list.
+    function yieldToUser(){ finish(false); }
+    container.addEventListener('wheel', yieldToUser, { passive: true });
+    container.addEventListener('touchstart', yieldToUser, { passive: true });
+    container.addEventListener('pointerdown', yieldToUser, { passive: true });
+    anim.cleanup = function(){
+      container.removeEventListener('wheel', yieldToUser);
+      container.removeEventListener('touchstart', yieldToUser);
+      container.removeEventListener('pointerdown', yieldToUser);
+    };
+
+    container.__scScrollAnim = anim;
+    anim.raf = requestAnimationFrame(step);
   }
+  // Reachable from anywhere: the lyrics auto-scroll lives in a different part of
+  // the file and falls back to an instant jump if these aren't set yet.
+  window.__scAnimateScroll = animateScrollTop;
+  window.__scCancelScroll = cancelScrollAnim;
 
   function highlightPlaying(id){
     document.querySelectorAll('.track').forEach(r => r.classList.toggle('playing', r.dataset.id === id));
@@ -24069,9 +24196,12 @@ if(!isDiscover) stopDiscoverPreview();
     const EDGE = 72;
     const topGap = hbDrag.lastY - r.top;
     const bottomGap = r.bottom - hbDrag.lastY;
+    // 840px/s at the edge, easing off with distance from it - and scaled by the
+    // real frame gap so the page doesn't crawl twice as fast on a 120Hz screen.
+    const framePx = window.__scDragDelta('homeBubble', 840);
     let delta = 0;
-    if(topGap < EDGE) delta = -Math.ceil(Math.pow((EDGE - Math.max(topGap, 0)) / EDGE, 2) * 14);
-    else if(bottomGap < EDGE) delta = Math.ceil(Math.pow((EDGE - Math.max(bottomGap, 0)) / EDGE, 2) * 14);
+    if(topGap < EDGE) delta = -Math.pow((EDGE - Math.max(topGap, 0)) / EDGE, 2) * framePx;
+    else if(bottomGap < EDGE) delta = Math.pow((EDGE - Math.max(bottomGap, 0)) / EDGE, 2) * framePx;
     if(delta !== 0 && (delta > 0 ? v.scrollTop < v.scrollHeight - v.clientHeight : v.scrollTop > 0)){
       v.scrollTop += delta;
       updateHbDragPosition();
@@ -29745,7 +29875,7 @@ window.setupGroupReorder = function(persistKey){
               if(dir > 0 && rr.bottom - p.clientY < edge) still = true;
             }
             if(!still){ autoRaf = null; return; }
-            bodyEl.scrollTop += dir * 8;
+            bodyEl.scrollTop += dir * window.__scDragDelta('artistGroups', 480);
             autoRaf = requestAnimationFrame(step);
           };
           autoRaf = requestAnimationFrame(step);
