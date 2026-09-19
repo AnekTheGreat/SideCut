@@ -7760,6 +7760,228 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     result = result.replace(/  +/g, ' ').trim();
     return result;
   }
+  // ── Lyrics lookup (one resolver for every entry point) ─────────────────────
+  // The lyrics sheet, the "refetch missing lyrics" batch and the custom search box
+  // all go through here now; they each had their own copy of this logic and had
+  // drifted (the batch path accepted the first search hit that contained any text
+  // at all, whatever artist it was).
+  //
+  // Why this finds songs the old code reported as "no lyrics found": a new release
+  // almost always credits several artists ("Diljit Dosanjh & thiarajxtt"), and
+  // LRCLIB files that credit string its own way ("DILJIT DOSANJH;Intense;HIZZY
+  // HUNDAL"). A search query containing the raw multi-artist string returns nothing
+  // at all — and the old matcher compared whole artist strings, so the entry could
+  // be sitting right there and the song was still reported as having no lyrics.
+  // Artists are now split into candidates and compared word by word, and a tight
+  // duration match may stand in for the artist so an odd credit can't hide a hit.
+  var SC_LYRICS_STOPWORDS = { the:1, and:1, feat:1, ft:1, with:1, music:1, records:1, official:1, video:1, label:1, remix:1, prod:1, from:1 };
+  function scLyricsArtistVariants(artist){
+    var raw = String(artist || '');
+    var out = [];
+    function push(v){
+      v = String(v || '').replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
+      if(!v) return;
+      var low = v.toLowerCase();
+      if(low === 'unknown' || low === 'unknown artist' || low === 'various artists') return;
+      if(out.indexOf(v) === -1) out.push(v);
+    }
+    push(raw);
+    raw.split(/\s*(?:,|&|;|\/|×|\band\b|\bwith\b|\bx\b|\bfeat\.?\b|\bft\.?\b|\bpres(?:ent)?s?\b|\bvs\.?\b)\s*/i).forEach(push);
+    return out.length ? out : ['Unknown'];
+  }
+  function scLyricsArtistTokens(artist){
+    return String(artist || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+  }
+  function scLyricsTitleKey(title){
+    return String(title || '').toLowerCase()
+      .replace(/\(.*?\)|\[.*?\]/g, ' ')
+      .replace(/\b(?:feat|ft|featuring)\.?\s+.*$/i, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+  function scLyricsTitleVariants(title){
+    var out = [];
+    function push(v){ v = String(v || '').replace(/\s+/g, ' ').trim(); if(v && out.indexOf(v) === -1) out.push(v); }
+    push(title);
+    push(titleCleanup(title));                     // drops (brackets) and "- feat. ..." tails
+    var words = String(title || '').trim().split(/\s+/);
+    if(words.length > 3) push(words.slice(0, 3).join(' '));
+    return out;
+  }
+  // LRCLIB throttles under load (429/502/503 were all seen in the wild); a single
+  // delayed retry is enough to turn a miss into a hit.
+  function scLyricsJson(url){
+    function once(){
+      return fetch(url).then(function(r){
+        if(r.ok) return r.json().catch(function(){ return null; });
+        return { __status: r.status };
+      }).catch(function(){ return { __status: 0 }; });
+    }
+    return once().then(function(j){
+      var st = j && j.__status;
+      if(st === 429 || st === 502 || st === 503){
+        return new Promise(function(res){ setTimeout(res, 1300); }).then(once);
+      }
+      return j;
+    });
+  }
+  // Title has to line up; then a recognisable artist OR a tight length match has to
+  // confirm it. A loose title match with an unconfirmed length is refused — that is
+  // how a same-titled song by someone else ends up as "your" lyrics.
+  // How well one LRCLIB entry matches, as components. `acceptable` is a hard
+  // yes/no (used for automatic lookup); `rank` is a continuous ordering used to
+  // put the most likely entry first in the candidate picker, including entries the
+  // hard checks refuse — a user picking by hand should see the closest length
+  // first rather than the API's arbitrary order.
+  function scLyricsRank(res, titleKey, artistTokens, duration){
+    if(!res || !(res.syncedLyrics || res.plainLyrics)) return null;
+    var rKey = scLyricsTitleKey(res.trackName);
+    var tScore = 0;
+    if(rKey && titleKey){
+      if(rKey === titleKey) tScore = 2;
+      else if(rKey.indexOf(titleKey) !== -1 || titleKey.indexOf(rKey) !== -1) tScore = 1;
+    }
+    if(!tScore) return null;                        // a different song entirely
+    var rTokens = scLyricsArtistTokens(res.artistName);
+    var strong = 0, weak = 0;
+    artistTokens.forEach(function(w){
+      if(w.length < 3 || SC_LYRICS_STOPWORDS[w]) return;
+      if(rTokens.indexOf(w) === -1) return;
+      if(w.length >= 4) strong++; else weak++;
+    });
+    var aHit = strong >= 1 || weak >= 2;
+    var rd = Number(res.duration) || 0;
+    var dScore = 1;                                 // length unknown on one side: neutral
+    var durProx = 0;
+    if(duration > 0 && rd > 0){
+      var diff = Math.abs(rd - duration);
+      // <=2s is a confident match on its own; up to 8s only counts alongside an
+      // artist hit (editions of the same track drift by a few seconds).
+      dScore = diff <= 2 ? 2 : (diff <= 8 ? 1 : 0);
+      durProx = Math.max(0, 1 - diff / 30);
+    }
+    return {
+      tScore: tScore,
+      aHit: aHit,
+      dScore: dScore,
+      duration: rd,
+      acceptable: !!(aHit || dScore >= 2),
+      rank: tScore * 2 + (aHit ? 2 : 0) + dScore * 1.5 + durProx * 1.5 + (res.syncedLyrics ? 0.5 : 0)
+    };
+  }
+  function scScoreLyricsResult(res, titleKey, artistTokens, duration){
+    var r = scLyricsRank(res, titleKey, artistTokens, duration);
+    if(!r || !r.acceptable) return null;
+    return {
+      lyrics: res.syncedLyrics || res.plainLyrics,
+      isSynced: !!res.syncedLyrics,
+      title: res.trackName || '',
+      artist: res.artistName || '',
+      duration: r.duration,
+      source: 'LRCLIB',
+      score: r.tScore * 2 + (r.aHit ? 2 : 0) + r.dScore + (res.syncedLyrics ? 0.5 : 0)
+    };
+  }
+  async function scLookupLyrics(artistRaw, titleRaw, duration){
+    var artist = applyWatermarkPatterns(artistRaw || '', true);
+    var title = applyWatermarkPatterns(titleRaw || '', false);
+    var titleKey = scLyricsTitleKey(title);
+    var titleVars = scLyricsTitleVariants(title);
+    var artistVars = scLyricsArtistVariants(artist);
+    var primary = artistVars.length > 1 ? artistVars[1] : artistVars[0];   // [0] is the whole credit string
+    var primaryTokens = scLyricsArtistTokens(primary);
+    if(!primaryTokens.length) primaryTokens = scLyricsArtistTokens(artistVars[0]);
+    var dur = Math.round(duration || 0);
+    var best = null;
+    function consider(res){
+      var sc = scScoreLyricsResult(res, titleKey, primaryTokens, dur);
+      if(sc && (!best || sc.score > best.score)) best = sc;
+      return sc;
+    }
+    // 1. /api/get — needs artist + title, and only accepts a duration within ~2s.
+    //    Sending duration=0 for a track whose length isn't known can never match,
+    //    so omit it then; and retry without it when the duration-carrying call
+    //    misses, which is exactly how an alternate-length release looks.
+    for(var ai = 0; ai < Math.min(artistVars.length, 3) && !best; ai++){
+      var getUrl = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artistVars[ai]) +
+                   '&track_name=' + encodeURIComponent(titleVars[0]) + (dur > 0 ? '&duration=' + dur : '');
+      var got = await scLyricsJson(getUrl);
+      if(got && !got.__status && consider(got)) break;
+      if(dur > 0){
+        var got2 = await scLyricsJson('https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artistVars[ai]) +
+                                      '&track_name=' + encodeURIComponent(titleVars[0]));
+        if(got2 && !got2.__status && consider(got2)) break;
+      }
+    }
+    // 2. Search with each artist candidate. This is where the semicolon-credited
+    //    entries surface ("DILJIT DOSANJH;Intense;HIZZY HUNDAL").
+    for(var ai2 = 0; ai2 < Math.min(artistVars.length, 3) && !best; ai2++){
+      for(var ti = 0; ti < Math.min(titleVars.length, 2); ti++){
+        var res = await scLyricsJson('https://lrclib.net/api/search?q=' + encodeURIComponent(artistVars[ai2] + ' ' + titleVars[ti]));
+        if(Array.isArray(res)) for(var ri = 0; ri < Math.min(res.length, 25); ri++) consider(res[ri]);
+        if(best && best.score >= 5.5) break;        // good enough; stop spending requests
+        await new Promise(function(r){ setTimeout(r, 200); });
+      }
+    }
+    // 3. Title only — for when the artist tag is a label, a channel or just wrong.
+    //    Accepted only on an exact title plus a confirmed length (or a real artist
+    //    hit), so a same-titled song by someone else can never be served here.
+    if(!best && titleVars.length){
+      var tRes = await scLyricsJson('https://lrclib.net/api/search?track_name=' + encodeURIComponent(titleVars[0]));
+      if(Array.isArray(tRes)) for(var ti2 = 0; ti2 < Math.min(tRes.length, 25); ti2++) consider(tRes[ti2]);
+    }
+    if(best) return best;
+    // 4. lyrics.ovh — an old database with almost nothing recent, but free.
+    try{
+      var ovh = await fetch('https://api.lyrics.ovh/v1/' + encodeURIComponent(primary) + '/' + encodeURIComponent(titleVars[0]));
+      if(ovh.ok){
+        var od = await ovh.json();
+        if(od && od.lyrics && od.lyrics.trim() && od.lyrics.toLowerCase().trim() !== 'instrumental'){
+          return { lyrics: od.lyrics, isSynced: false, title: titleVars[0], artist: primary, duration: dur, source: 'lyrics.ovh', score: 1 };
+        }
+      }
+    }catch(_oe){}
+    return null;
+  }
+  // Every title-matching candidate, including ones the automatic score refuses, so
+  // a wrong credit guess or an unusual title can be overridden by hand.
+  async function scListLyricsCandidates(artistRaw, titleRaw, duration){
+    var artist = applyWatermarkPatterns(artistRaw || '', true);
+    var title = applyWatermarkPatterns(titleRaw || '', false);
+    var titleKey = scLyricsTitleKey(title);
+    var titleVars = scLyricsTitleVariants(title);
+    var artistVars = scLyricsArtistVariants(artist);
+    var primary = artistVars.length > 1 ? artistVars[1] : artistVars[0];
+    var primaryTokens = scLyricsArtistTokens(primary);
+    var dur = Math.round(duration || 0);
+    var seen = {}, out = [];
+    function add(res){
+      if(!res || !(res.syncedLyrics || res.plainLyrics)) return;
+      var rKey = scLyricsTitleKey(res.trackName);
+      if(!(rKey && titleKey && (rKey === titleKey || rKey.indexOf(titleKey) !== -1 || titleKey.indexOf(rKey) !== -1))) return;
+      var k = String(res.id || (res.trackName + '|' + res.artistName + '|' + res.duration));
+      if(seen[k]) return;
+      seen[k] = 1;
+      var rk = scLyricsRank(res, titleKey, primaryTokens, dur);
+      out.push({ title: res.trackName || '', artist: res.artistName || '', duration: Number(res.duration) || 0,
+                 synced: !!res.syncedLyrics, lyrics: res.syncedLyrics || res.plainLyrics,
+                 // A confirmed match always sorts above an unconfirmed one, then the
+                 // closest length wins — so the obvious pick is at the top.
+                 score: (rk.acceptable ? 100 : 0) + rk.rank });
+    }
+    var urls = ['https://lrclib.net/api/search?track_name=' + encodeURIComponent(titleVars[0])];
+    if(artistVars[0]) urls.push('https://lrclib.net/api/search?q=' + encodeURIComponent(artistVars[0] + ' ' + titleVars[0]));
+    if(titleVars.length > 1) urls.push('https://lrclib.net/api/search?track_name=' + encodeURIComponent(titleVars[1]));
+    for(var i = 0; i < urls.length; i++){
+      var r = await scLyricsJson(urls[i]);
+      if(Array.isArray(r)) r.forEach(add);
+      await new Promise(function(x){ setTimeout(x, 200); });
+    }
+    out.sort(function(a, b){ return b.score - a.score; });
+    return out;
+  }
+  window.__scLookupLyrics = scLookupLyrics;
+
   function getSearchVariants(artist, title) {
     var variants = [];
     // Always try original
@@ -7803,6 +8025,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     $('lyricsLoading').style.display = 'block';
     $('lyricsText').style.display = 'none';
     $('lyricsNotFound').style.display = 'none';
+    // A candidate list left over from a manual search would otherwise sit on top
+    // of the new song's lyrics.
+    var _staleLyricsPicker = document.getElementById('lyricsCandidatePicker');
+    if(_staleLyricsPicker) _staleLyricsPicker.remove();
     $('lyricsBackdrop').style.display = 'flex';
     syncLyricsPlayPauseIcon();
     
@@ -7828,140 +8054,16 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const cleanTitle = applyWatermarkPatterns(title, false); // title doesn't get number patterns
     
     try {
-      // Try multiple APIs for best coverage
-      
-      // 1. LRCLIB exact match with duration
-      const lrclibUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(cleanArtist)}&track_name=${encodeURIComponent(cleanTitle)}&duration=${Math.round(track.duration || 0)}`;
-      const lrclibResp = await fetch(lrclibUrl);
-      if (lrclibResp.ok) {
-        const data = await lrclibResp.json();
-        if (data && (data.syncedLyrics || data.plainLyrics)) {
-          const lyrics = data.syncedLyrics || data.plainLyrics;
-          const isSynced = !!data.syncedLyrics;
-          // Save to track
-          track.lyrics = lyrics;
-          track.lyricsSynced = isSynced;
-          persistTrackMeta(track);
-          showLyrics(lyrics, isSynced);
-          return;
-        }
+      // One shared resolver (scLookupLyrics) — the sheet, the batch fetch and the
+      // custom search all use it, so they cannot disagree about what is a match.
+      var _found = await scLookupLyrics(cleanArtist, cleanTitle, track.duration);
+      if(_found){
+        track.lyrics = _found.lyrics;
+        track.lyricsSynced = _found.isSynced;
+        persistTrackMeta(track);
+        showLyrics(_found.lyrics, _found.isSynced);
+        return;
       }
-      
-      // 2. LRCLIB search with variant queries (handles Punjabi/Devanagari/Gurmukhi)
-      var _variants = getSearchVariants(cleanArtist, cleanTitle);
-      var _sArtist = cleanArtist.toLowerCase().trim();
-      var _sTitle = cleanTitle.toLowerCase().trim();
-      var _strip = function(s){ return s.replace(/[^a-z0-9 ]/g,''); };
-      var _sN = _strip(_sArtist);
-      var _sTN = _strip(_sTitle);
-      function _tClose(rt) {
-        rt = (rt||'').toLowerCase().trim();
-        var rtn = _strip(rt);
-        return rt===_sTitle||rtn===_sTN||rt.indexOf(_sTitle)!==-1||_sTitle.indexOf(rt)!==-1||rtn.indexOf(_sTN)!==-1||_sTN.indexOf(rtn)!==-1;
-      }
-      function _hasWrongScriptLyrics(lyrics, origTitle) {
-        // If the original title is Latin, reject lyrics that are mostly non-Latin (Portuguese/etc)
-        var isOrigLatin = /^[a-zA-Z0-9 \-']+$/.test((origTitle||'').replace(/\s+/g,' '));
-        if (!isOrigLatin) return false;
-        var sample = (lyrics || '').substring(0, 500);
-        var nonLatin = (sample.match(/[\u00C0-\u024F\u1E00-\u1EFF]/g) || []).length;
-        var total = sample.replace(/\s/g,'').length;
-        if (total > 10 && nonLatin / total > 0.15) return true;
-        return false;
-      }
-      function _matchResults(results) {
-        if (!results || results.length === 0) return false;
-        // P1: exact artist + close title (strict)
-        for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
-          var rA = (results[ri].artistName||'').toLowerCase().trim();
-          var rN = _strip(rA);
-          if (rA!==_sArtist && rN!==_sN) continue;
-          if (!_tClose(results[ri].trackName)) continue;
-          var l = results[ri].syncedLyrics || results[ri].plainLyrics;
-          if (!l) continue;
-          if (_hasWrongScriptLyrics(l, cleanTitle)) continue;
-          track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
-          persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
-          return true;
-        }
-        // P2: fuzzy artist + close title (only if both are 3+ chars)
-        if (_sArtist.length >= 3) {
-          for (var ri = 0; ri < Math.min(results.length, 10); ri++) {
-            var rA = (results[ri].artistName||'').toLowerCase().trim();
-            var rN = _strip(rA);
-            if (rA.length < 3) continue;
-            var fA = rA===_sArtist||rA.indexOf(_sArtist)!==-1||_sArtist.indexOf(rA)!==-1||rN.indexOf(_sN)!==-1||_sN.indexOf(rN)!==-1;
-            if (!fA) continue;
-            if (!_tClose(results[ri].trackName)) continue;
-            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
-            if (!l) continue;
-            if (_hasWrongScriptLyrics(l, cleanTitle)) continue;
-            track.lyrics = l; track.lyricsSynced = !!results[ri].syncedLyrics;
-            persistTrackMeta(track); showLyrics(l, !!results[ri].syncedLyrics);
-            return true;
-          }
-        }
-        return false;
-      }
-      for (var vi = 0; vi < _variants.length; vi++) {
-        var v = _variants[vi];
-        var sUrl = 'https://lrclib.net/api/search?q=' + encodeURIComponent(v.artist + ' ' + v.title);
-        try {
-          var sResp = await fetch(sUrl);
-          if (sResp.ok) {
-            var sData = await sResp.json();
-            if (_matchResults(sData)) return;
-          }
-        } catch(_e) {}
-      }
-      
-      // 3. lyrics.ovh (simple API)
-      const ovhResp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`);
-      if (ovhResp.ok) {
-        const data = await ovhResp.json();
-        if (data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental') {
-          track.lyrics = data.lyrics;
-          track.lyricsSynced = false;
-          persistTrackMeta(track);
-          showLyrics(data.lyrics, false);
-          return;
-        }
-      }
-      
-      // 4. Genius search fallback (good for Punjabi/Indian music)
-      try {
-        for (var _gi = 0; _gi < _variants.length; _gi++) {
-          var gv = _variants[_gi];
-          var gUrl = 'https://genius.com/api/search?q=' + encodeURIComponent(gv.artist + ' ' + gv.title);
-          var gResp = await fetchWithProxy(gUrl);
-          if (gResp && gResp.ok) {
-            var gData = await gResp.json();
-            if (gData && gData.response && gData.response.hits && gData.response.hits.length > 0) {
-              var hit = gData.response.hits[0];
-              if (hit.result && hit.result.url) {
-                // Try to get lyrics from Genius page
-                var pageResp = await fetchWithProxy(hit.result.url);
-                if (pageResp && pageResp.ok) {
-                  var html = await pageResp.text();
-                  // Extract lyrics from Genius page HTML
-                  var match = html.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/i);
-                  if (match) {
-                    var gLyrics = match[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
-                    if (gLyrics && gLyrics.length > 20) {
-                      track.lyrics = gLyrics;
-                      track.lyricsSynced = false;
-                      persistTrackMeta(track);
-                      showLyrics(gLyrics, false);
-                      return;
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      } catch(_ge) { /* Genius fallback failed, continue */ }
-      
       $('lyricsLoading').style.display = 'none';
       $('lyricsNotFound').style.display = 'block';
     } catch(e) {
@@ -8671,139 +8773,61 @@ function startLyricsAutoScroll() {
       $('lyricsLoading').style.display = 'block';
       $('lyricsText').style.display = 'none';
       try {
-        // Try LRCLIB first with custom search terms
-        var lrclibUrl = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(searchArtist) + '&track_name=' + encodeURIComponent(searchTitle) + '&duration=' + Math.round(t.duration || 0);
-        var lrclibResp = await fetchWithProxy(lrclibUrl);
-        if(lrclibResp && lrclibResp.ok){
-          var data = await lrclibResp.json();
-          if(data && (data.syncedLyrics || data.plainLyrics)){
-            var lyrics = data.syncedLyrics || data.plainLyrics;
-            var isSynced = !!data.syncedLyrics;
-            t.lyrics = lyrics;
-            t.lyricsSynced = isSynced;
-            persistTrackMeta(t);
-            showLyrics(lyrics, isSynced);
-            toast('Lyrics found!', 2000);
-            return;
-          }
-        }
-        // Try LRCLIB search with variants (handles romanized Punjabi/etc)
-        var _rVariants = getSearchVariants(searchArtist, searchTitle);
-        if(searchGenre) _rVariants.push({artist: searchArtist, title: searchTitle + ' ' + searchGenre});
-        var _rsA = searchArtist.toLowerCase().trim();
-        var _rsAn = _rsA.replace(/[^a-z0-9 ]/g,'').trim();
-        var _rsT = searchTitle.toLowerCase().trim();
-        var _rsTn = _rsT.replace(/[^a-z0-9 ]/g,'').trim();
-        function _rrtClose(rt){
-          rt = (rt||'').toLowerCase().trim();
-          var rtn = rt.replace(/[^a-z0-9 ]/g,'').trim();
-          return rt===_rsT||rtn===_rsTn||rt.indexOf(_rsT)!==-1||_rsT.indexOf(rt)!==-1||rtn.indexOf(_rsTn)!==-1||_rsTn.indexOf(rtn)!==-1;
-        }
-        function _rHasWrongScript(lyrics, origTitle) {
-          var isOrigLatin = /^[a-zA-Z0-9 \-']+$/.test((origTitle||'').replace(/\s+/g,' '));
-          if (!isOrigLatin) return false;
-          var sample = (lyrics || '').substring(0, 500);
-          var nonLatin = (sample.match(/[\u00C0-\u024F\u1E00-\u1EFF]/g) || []).length;
-          var total = sample.replace(/\s/g,'').length;
-          if (total > 10 && nonLatin / total > 0.15) return true;
-          return false;
-        }
-        function _rMatchResults(results) {
-          if(!results || results.length === 0) return false;
-          // P1: exact artist + title
-          for(var ri = 0; ri < Math.min(results.length, 10); ri++){
-            var rA = (results[ri].artistName||'').toLowerCase().trim();
-            var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
-            if(rA !== _rsA && rAn !== _rsAn) continue;
-            if(!_rrtClose(results[ri].trackName)) continue;
-            var l = results[ri].syncedLyrics || results[ri].plainLyrics;
-            if (!l) continue;
-            if (_rHasWrongScript(l, searchTitle)) continue;
-            t.lyrics = l; t.lyricsSynced = !!results[ri].syncedLyrics;
-            persistTrackMeta(t); showLyrics(l, !!results[ri].syncedLyrics);
-            toast('Lyrics found!', 2000);
-            return true;
-          }
-          // P2: fuzzy artist + title (only if artist 3+ chars)
-          if (_rsA.length >= 3) {
-            for(var ri2 = 0; ri2 < Math.min(results.length, 10); ri2++){
-              var rA = (results[ri2].artistName||'').toLowerCase().trim();
-              var rAn = rA.replace(/[^a-z0-9 ]/g,'').trim();
-              if (rA.length < 3) continue;
-              var fA = rA===_rsA||rA.indexOf(_rsA)!==-1||_rsA.indexOf(rA)!==-1||rAn.indexOf(_rsAn)!==-1||_rsAn.indexOf(rAn)!==-1;
-              if(!fA) continue;
-              if(!_rrtClose(results[ri2].trackName)) continue;
-              var l = results[ri2].syncedLyrics || results[ri2].plainLyrics;
-              if (!l) continue;
-              if (_rHasWrongScript(l, searchTitle)) continue;
-              t.lyrics = l; t.lyricsSynced = !!results[ri2].syncedLyrics;
-              persistTrackMeta(t); showLyrics(l, !!results[ri2].syncedLyrics);
-              toast('Lyrics found!', 2000);
-              return true;
-            }
-          }
-          return false;
-        }
-        for(var rvi = 0; rvi < _rVariants.length; rvi++){
-          var rv = _rVariants[rvi];
-          var rSearchUrl = 'https://lrclib.net/api/search?q=' + encodeURIComponent(rv.artist + ' ' + rv.title);
-          try {
-            var rSearchResp = await fetchWithProxy(rSearchUrl);
-            if(rSearchResp && rSearchResp.ok){
-              var rResults = await rSearchResp.json();
-              if(_rMatchResults(rResults)) return;
-            }
-          } catch(_re) {}
-        }
-        // Try lyrics.ovh
-        var ovhResp = await fetchWithProxy('https://api.lyrics.ovh/v1/' + encodeURIComponent(searchArtist) + '/' + encodeURIComponent(searchTitle));
-        if(ovhResp && ovhResp.ok){
-          var data = await ovhResp.json();
-          if(data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental'){
-            t.lyrics = data.lyrics;
-            t.lyricsSynced = false;
-            persistTrackMeta(t);
-            showLyrics(data.lyrics, false);
-            toast('Lyrics found!', 2000);
-            return;
-          }
-        }
-        // Try Genius (good for Indian/Punjabi music)
-        try {
-          for(var _gvi = 0; _gvi < _rVariants.length; _gvi++){
-            var gv = _rVariants[_gvi];
-            var gUrl = 'https://genius.com/api/search?q=' + encodeURIComponent(gv.artist + ' ' + gv.title);
-            var gResp = await fetchWithProxy(gUrl);
-            if(gResp && gResp.ok){
-              var gData = await gResp.json();
-              if(gData && gData.response && gData.response.hits && gData.response.hits.length > 0){
-                var hit = gData.response.hits[0];
-                if(hit.result && hit.result.url){
-                  var pageResp = await fetchWithProxy(hit.result.url);
-                  if(pageResp && pageResp.ok){
-                    var pageHtml = await pageResp.text();
-                    var match = pageHtml.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/i);
-                    if(match){
-                      var gLyrics = match[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
-                      if(gLyrics && gLyrics.length > 20){
-                        t.lyrics = gLyrics;
-                        t.lyricsSynced = false;
-                        persistTrackMeta(t);
-                        showLyrics(gLyrics, false);
-                        toast('Lyrics found via Genius!', 2000);
-                        return;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        } catch(_gErr) {}
-        // Nothing found
+        // Show what actually exists instead of silently taking the first guess.
+        // The batch/sheet lookup takes the best verified candidate automatically;
+        // this is the escape hatch when that guess is refused (a same-titled song,
+        // a credit string nothing matches) or when the title needs fixing.
+        var _picks = await scListLyricsCandidates(searchArtist, searchTitle, t.duration);
         $('lyricsLoading').style.display = 'none';
-        $('lyricsNotFound').style.display = 'block';
-        toast('No lyrics found for "' + searchTitle + '" by ' + searchArtist + '. Try editing the search terms.', 3000);
+        var _oldPick = document.getElementById('lyricsCandidatePicker');
+        if(_oldPick) _oldPick.remove();
+        if(!_picks.length){
+          $('lyricsNotFound').style.display = 'block';
+          toast('Nothing on LRCLIB for "' + searchTitle + '". Try a shorter title — just the song name, no brackets.', 4200);
+          return;
+        }
+        var _pickWrap = document.createElement('div');
+        _pickWrap.id = 'lyricsCandidatePicker';
+        _pickWrap.style.cssText = 'padding:12px;background:var(--bg-raised);border-radius:12px;margin:12px;border:1px solid var(--line);';
+        var _pickHead = document.createElement('div');
+        _pickHead.style.cssText = 'font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;';
+        _pickHead.textContent = _picks.length + ' match' + (_picks.length === 1 ? '' : 'es') + ' on LRCLIB — tap the right song:';
+        _pickWrap.appendChild(_pickHead);
+        _picks.slice(0, 12).forEach(function(c){
+          var row = document.createElement('button');
+          row.className = 'lyr-cand';
+          row.style.cssText = 'display:block;width:100%;text-align:left;padding:9px 11px;margin-bottom:6px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,0.04);color:var(--ink);font-size:12.5px;cursor:pointer;line-height:1.35;box-sizing:border-box;';
+          var nm = document.createElement('div');
+          nm.style.cssText = 'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+          nm.textContent = c.title || '(untitled)';
+          var sub = document.createElement('div');
+          sub.style.cssText = 'font-size:11px;color:var(--ink-dim);margin-top:2px;';
+          sub.textContent = (c.artist || 'unknown artist') +
+            (c.duration ? ' \u00b7 ' + fmtTime(c.duration) : '') +
+            (c.synced ? ' \u00b7 synced' : '');
+          row.appendChild(nm);
+          row.appendChild(sub);
+          row.addEventListener('click', function(){
+            t.lyrics = c.lyrics;
+            t.lyricsSynced = c.synced;
+            persistTrackMeta(t);
+            try{ _pickWrap.remove(); }catch(_e){}
+            showLyrics(c.lyrics, c.synced);
+            toast('Lyrics added for "' + (c.title || searchTitle) + '"', 2200);
+          });
+          _pickWrap.appendChild(row);
+        });
+        var _cancelRow = document.createElement('button');
+        _cancelRow.style.cssText = 'width:100%;padding:8px;border-radius:9px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;font-weight:600;cursor:pointer;';
+        _cancelRow.textContent = 'Cancel';
+        _cancelRow.addEventListener('click', function(){
+          try{ _pickWrap.remove(); }catch(_e){}
+          if(currentLyricsText) $('lyricsText').style.display = 'block';
+          else $('lyricsNotFound').style.display = 'block';
+        });
+        _pickWrap.appendChild(_cancelRow);
+        container.insertBefore(_pickWrap, container.firstChild);
+        $('lyricsNotFound').style.display = 'none';
       } catch(e) {
         console.error('Lyrics refetch error:', e);
         $('lyricsLoading').style.display = 'none';
@@ -11259,45 +11283,18 @@ function startLyricsAutoScroll() {
   // Batch fetch lyrics for all songs
   let lyricsFetchActive = false;
   
-  async function fetchSingleLyrics(track) {
-    const title = track.name || '';
-    const artist = track.artist || 'Unknown';
-    
-    const cleanArtist = applyWatermarkPatterns(artist, true); // artist gets number patterns
-    const cleanTitle = applyWatermarkPatterns(title, false); // title doesn't get number patterns
-    
-    try {
-      // Try LRCLIB search
-      const searchQuery = `${cleanArtist} ${cleanTitle}`;
-      const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(searchQuery)}`;
-      const searchResp = await fetch(searchUrl);
-      
-      if (searchResp.ok) {
-        const results = await searchResp.json();
-        if (results && results.length > 0) {
-          // Try first result or find best match by duration
-          for (const result of results.slice(0, 5)) {
-            if (result.syncedLyrics || result.plainLyrics) {
-              const lyrics = result.syncedLyrics || result.plainLyrics;
-              const isSynced = !!result.syncedLyrics;
-              return { lyrics, isSynced };
-            }
-          }
-        }
-      }
-      
-      // Fallback to lyrics.ovh
-      const ovhResp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`);
-      if (ovhResp.ok) {
-        const data = await ovhResp.json();
-        if (data && data.lyrics && data.lyrics.toLowerCase() !== 'instrumental') {
-          return { lyrics: data.lyrics, isSynced: false };
-        }
-      }
-    } catch(e) {}
+  // Batch path: the same resolver the sheet uses. This used to take the first
+  // search result that had any text in it — no artist or title verification at
+  // all — which both missed multi-credit releases and could attach the wrong song.
+  async function fetchSingleLyrics(track){
+    try{
+      var found = await scLookupLyrics(track.artist || '', track.name || '', track.duration);
+      if(found) return { lyrics: found.lyrics, isSynced: found.isSynced };
+    }catch(_e){}
     return null;
   }
-  
+  window.__scFetchSingleLyrics = fetchSingleLyrics;
+
   $('fetchMissingLyricsBtn').addEventListener('click', async () => {
     if(window.lyricsFetchState && window.lyricsFetchState.active){ toast('Already fetching lyrics...'); return; }
     
