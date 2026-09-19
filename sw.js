@@ -4,7 +4,11 @@ const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './ico
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_FILES))
+      // no-store for the same reason as the fetch handler below: the offline
+      // copy of index.html must not come from GitHub Pages' 10 minute HTTP cache.
+      .then((cache) => Promise.all(
+        SHELL_FILES.map((f) => cache.add(new Request(f, { cache: 'no-store' })).catch(() => {}))
+      ))
       .then(() => self.skipWaiting()) // Wait for cache before activating
   );
 });
