@@ -3588,6 +3588,11 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
           <div id="cropSongSel" style="position:absolute; top:0; bottom:0; background:rgba(255,111,97,0.22); border-left:2px solid var(--coral); border-right:2px solid var(--coral); border-radius:6px;"></div>
           <div id="cropSongSelEdgeL" style="position:absolute; top:0; bottom:0; width:18px; left:0; cursor:ew-resize; z-index:3;"></div>
           <div id="cropSongSelEdgeR" style="position:absolute; top:0; bottom:0; width:18px; right:0; cursor:ew-resize; z-index:3;"></div>
+          <!-- Playhead: rides the waveform while a preview plays so you can see
+               how far into the song (and into the kept slice) you are. -->
+          <div id="cropSongPlayhead" style="display:none; position:absolute; top:0; bottom:0; width:2px; left:0; background:#fff; box-shadow:0 0 8px rgba(255,255,255,0.85); z-index:4; pointer-events:none;">
+            <span style="position:absolute; top:-3px; left:50%; transform:translateX(-50%); width:9px; height:9px; border-radius:50%; background:#fff; box-shadow:0 0 8px rgba(255,255,255,0.9);"></span>
+          </div>
         </div>
         <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--ink-dim); margin-bottom:4px;">
           <span id="cropSongStartLbl"></span>
@@ -7175,8 +7180,50 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   let cropPreviewLive = null;    // live AudioBufferSourceNode (direct playback path)
   let cropPreviewLiveCtx = null; // freshly created live context if the app's is suspended
   let cropDragging = null;       // 'l' | 'r' | null
+  let cropPlayheadRAF = null;    // rAF handle for the moving preview playhead
+  let cropPreviewCtx = null;     // audio context the live preview plays in
+  let cropPreviewT0 = 0;         // that context's currentTime when preview started
+  let cropPreviewStartSec = 0;   // song second the preview began at
+  let cropPreviewLenSec = 0;     // how many seconds the preview runs for
+
+  function cropStopPlayhead(){
+    if(cropPlayheadRAF){ cancelAnimationFrame(cropPlayheadRAF); cropPlayheadRAF = null; }
+    const ph = $('cropSongPlayhead');
+    if(ph){ ph.style.display = 'none'; ph.style.left = '0%'; }
+  }
+
+  // Rides the crop waveform while a preview plays. The live BufferSource path
+  // is timed off the audio context clock; the encoded-blob fallback is timed
+  // off the <audio> element. Either way the line lands where the sound is.
+  function cropStartPlayhead(){
+    cropStopPlayhead();
+    const ph = $('cropSongPlayhead');
+    if(!ph || !cropBuf) return;
+    const total = cropBuf.duration || 1;
+    ph.style.display = 'block';
+    const tick = () => {
+      let pos = null;
+      if(cropPreviewCtx && cropPreviewLive){
+        pos = cropPreviewStartSec + Math.max(0, cropPreviewCtx.currentTime - cropPreviewT0);
+      } else if(cropPreviewAudio && !cropPreviewAudio._live){
+        pos = cropPreviewStartSec + (cropPreviewAudio.currentTime || 0);
+      }
+      if(pos == null){ cropStopPlayhead(); return; }
+      const clamped = Math.max(0, Math.min(total, pos));
+      ph.style.left = ((clamped / total) * 100) + '%';
+      const st = $('cropSongPreviewStatus');
+      if(st){
+        const rel = Math.max(0, Math.min(cropPreviewLenSec, pos - cropPreviewStartSec));
+        st.textContent = 'Previewing ' + cropFmtTime(rel) + ' / ' + cropFmtTime(cropPreviewLenSec);
+      }
+      if(pos >= cropPreviewStartSec + cropPreviewLenSec){ cropStopPlayhead(); return; }
+      cropPlayheadRAF = requestAnimationFrame(tick);
+    };
+    cropPlayheadRAF = requestAnimationFrame(tick);
+  }
 
   function cropCleanupPreview(){
+    cropStopPlayhead();
     if(cropPreviewLive){
       try{ cropPreviewLive.stop(); }catch(e){}
       cropPreviewLive = null;
@@ -7339,11 +7386,18 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           try{ src.stop(); }catch(_e){}
           if(cropPreviewLive === src) cropPreviewLive = null;
           $('cropSongPreviewPlay').innerHTML = '▶ Preview selection';
+          cropStopPlayhead();
+          const _st = $('cropSongPreviewStatus');
+          if(_st) _st.textContent = '';
         };
         src.onended = stopLive;
         cropPreviewAudio = { _live: true, pause: stopLive, src: '' };   // reuse cleanup path
         $('cropSongPreviewPlay').innerHTML = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;fill:currentColor;"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg> Stop preview';
-        $('cropSongPreviewStatus').textContent = 'Previewing cropped slice…';
+        cropPreviewCtx = ctx;
+        cropPreviewT0 = ctx.currentTime;
+        cropPreviewStartSec = startSec;
+        cropPreviewLenSec = lenSec;
+        cropStartPlayhead();
         return;
       }
     }catch(e){
@@ -7369,11 +7423,17 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           cropPreviewAudio = new Audio(url);
           cropPreviewAudio.onended = () => {
             $('cropSongPreviewPlay').innerHTML = '▶ Preview selection';
+            cropStopPlayhead();
+            const _st = $('cropSongPreviewStatus');
+            if(_st) _st.textContent = '';
             if(cropPreviewAudio){ try{ URL.revokeObjectURL(cropPreviewAudio.src); }catch(e){} cropPreviewAudio = null; }
           };
           cropPreviewAudio.play().catch(() => {});
           $('cropSongPreviewPlay').innerHTML = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle;margin-right:4px;fill:currentColor;"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg> Stop preview';
-          $('cropSongPreviewStatus').textContent = 'Previewing cropped slice…';
+          cropPreviewCtx = null;
+          cropPreviewStartSec = startSec;
+          cropPreviewLenSec = lenSec;
+          cropStartPlayhead();
         } else {
           $('cropSongPreviewStatus').textContent = 'Preview unavailable for this format.';
         }
