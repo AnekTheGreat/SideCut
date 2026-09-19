@@ -9234,7 +9234,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.2';
+  const APP_VERSION = '58.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9511,6 +9511,11 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.3', date: 'September 19, 2026 \u00b7 1:20 AM EDT', title: 'Hold any album song to reorder it', items: [
+    'Holding a song in an album now goes through one shared handler that every album card uses, so it opens the Reorder Songs sheet no matter which view drew the card',
+    'Only one reorder sheet can be open at a time \u2014 a double-fired long press no longer stacks a second sheet on top and hides the result',
+    'Verified the whole flow end to end: sheet opens, hold lifts the row, dragging above another row moves it, the album order is written to storage, and Done refreshes the album list',
+  ] },
   { version: '58.2', date: 'September 19, 2026 \u00b7 1:00 AM EDT', title: 'Album song reordering finally drags', items: [
     'Holding a song inside an album opens the Reorder Songs sheet, and the drag now survives touch scrolling \u2014 the browser was cancelling the gesture the moment your finger moved, which is why nothing ever moved',
     'Album cards that were never saved as an album (like the one that auto-expands around the song that is playing) can be reordered too, instead of failing with \"Album not found.\"',
@@ -29378,6 +29383,10 @@ window.__ahCancelToast = function(){
 
 // ---------------- Album Reorder Popup ----------------
 window.showAlbumReorderPopup = function(albumName){
+  // One sheet at a time: the long-press can be delivered by both the per-path
+  // handler and the delegated one, and stacking two overlays made the reorder
+  // look like it did nothing.
+  try{ if(document.getElementById('albumReorderPopup')) return; }catch(_e0){}
   // This popup lives in the second top-level <script> block, which cannot see
   // the main IIFE's locals. Without these aliases userAlbums/allTracks were
   // undefined here, so the popup always bailed out with "Album not found." —
@@ -29758,6 +29767,49 @@ window.showAlbumReorderPopup = function(albumName){
     setTimeout(function(){ document.removeEventListener('click', _swallowClick, true); }, 700);
   }catch(_e3){}
 };
+
+// ---------------- Album song rows: one delegated hold handler ----------------
+// Album song rows are rendered from several different code paths, and each one
+// wired (or forgot to wire) its own hold listener. This single delegated
+// listener covers every album row no matter which path drew it, so holding a
+// song always opens the Reorder Songs sheet.
+(function(){
+  if(window.__albumSongHoldWired) return;
+  window.__albumSongHoldWired = true;
+  var holdTimer = null, startY = 0;
+  function clearHold(){
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+    document.removeEventListener('pointermove', onMove, true);
+    document.removeEventListener('pointerup', clearHold, true);
+    document.removeEventListener('pointercancel', clearHold, true);
+  }
+  function onMove(ev){
+    // Moved before the hold completed: this was a scroll, not a reorder.
+    if(holdTimer && Math.abs(ev.clientY - startY) > 12) clearHold();
+  }
+  document.addEventListener('pointerdown', function(e){
+    if(!e.target || !e.target.closest) return;
+    if(e.target.closest('button,a,input,select,.kebab-btn,.grip-handle,.reorder-btns')) return;
+    var row = e.target.closest('.track');
+    if(!row) return;
+    var cardEl = row.closest('[data-album-name]');
+    if(!cardEl) return;
+    var album = cardEl.dataset ? cardEl.dataset.albumName : '';
+    if(!album) return;
+    if(document.getElementById('albumReorderPopup')) return;
+    clearHold();
+    startY = e.clientY;
+    holdTimer = setTimeout(function(){
+      holdTimer = null;
+      clearHold();
+      if(document.getElementById('albumReorderPopup')) return;
+      showAlbumReorderPopup(album);
+    }, 320);
+    document.addEventListener('pointermove', onMove, true);
+    document.addEventListener('pointerup', clearHold, true);
+    document.addEventListener('pointercancel', clearHold, true);
+  }, true);
+})();
 
 // ---------------- Album reorder: hold-to-drag (playlist-style) ----------------
 window.wireAlbumSongReorder = function(bodyEl, albumName){
