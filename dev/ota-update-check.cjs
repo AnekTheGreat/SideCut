@@ -247,6 +247,14 @@ function btn(id) { return dom.window.document.getElementById(id); }
   ok('the index.html inside the zip is the current version',
      String((zippedHtml.match(/const APP_VERSION = '([^']+)'/) || [])[1]) === String(APP_VERSION),
      String((zippedHtml.match(/const APP_VERSION = '([^']+)'/) || [])[1]));
+  // The service worker drops every cache whose name is not the current one, so a
+  // version-pinned name that is never bumped keeps serving the previous build's
+  // shell from cache after an OTA swap.
+  const swSrc = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+  const swCache = (swSrc.match(/CACHE_NAME = '([^']+)'/) || [])[1];
+  ok('the service worker cache name tracks the app version',
+     !!swCache && swCache.indexOf(String(APP_VERSION)) !== -1, JSON.stringify(swCache) + ' vs v' + APP_VERSION);
+
   const zippedClient = require('child_process').execFileSync('unzip', ['-p', path.join(ROOT, 'ota/update.zip'), 'dev/native-updates.js'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   ok('the zip carries the fixed OTA client (sheet shown + ordered versions)',
      zippedClient.indexOf('var refs = ensureSheet();') !== -1 && zippedClient.indexOf('function compareVersions') !== -1);
