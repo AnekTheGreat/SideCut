@@ -119,7 +119,15 @@
   }
   function showSheet(opts){
     var o = opts || {};
-    ensureSheet();
+    // `card` used to be resolved here, but it is only ever declared inside
+    // ensureSheet() — so the final `card.style.display = 'block'` below threw a
+    // ReferenceError on every call. The sheet was built and populated, then never
+    // shown: the update check found the update, wrote the patch notes into a
+    // hidden element, and died before making it visible. Nothing appeared, which
+    // is exactly why OTA looked like it had never worked at all.
+    var refs = ensureSheet();
+    var card = refs && refs.card;
+    if(!card) return;
     var title = $('scOtaTitle'), date = $('scOtaDate'), notes = $('scOtaNotes'),
         wrap = $('scOtaProgressWrap'), btns = $('scOtaBtns'), now = $('scOtaNow'), later = $('scOtaLater');
     if(!title) return;
