@@ -288,8 +288,9 @@
       toast('Update ' + nb.version + ' is ready — it installs when you close the app.', 4500);
       return true;
     }
-    log('applying staged bundle ' + nb.version + ' now');
+    log('applying staged bundle ' + nb.version + ' now (user asked)');
     markAutoHandled(String(nb.version || ''));
+    clearInstallDelay(Updater);
     // Show the Installing state in the sheet (not just a toast) — the set()
     // reload below destroys the JS context, so this is the last thing the
     // user sees before the app comes back on the new version.
@@ -338,28 +339,48 @@
     return false;
   }
 
-  // The "Install later" contract, kept: a staged bundle installs as soon as the
-  // user leaves the app — not on the relaunch AFTER that (which is what the
-  // user saw as "I closed it, reopened it, still old version"). resume /
-  // visibilitychange are the reliable hooks (the context may freeze mid-call on
-  // 'pause', but the native side still completes an in-flight set(); if the
-  // plugin's own background handler applied it first, getNextBundle() returns
-  // null and this no-ops). Users who never chose "later" get the immediate
-  // v56.0.16 behavior: apply right away (or at next launch).
-  // Returns 'immediate' when an apply was just started (sheet now shows
-  // "Installing…", app reloads within ~450ms), 'deferred' when the bundle will
-  // install on app-close, or false when nothing could be done.
+  // v58.8.5: an update staged while a song is playing is handed to the native
+  // updater with a "when the app is killed" condition, instead of letting it swap
+  // the bundle on the next background. A swap is a reload, and a reload takes the
+  // song with it — then the user reopens a fresh app that is not playing and has
+  // to press play. With this, "it installs when you close the app" is literally
+  // what happens.
+  function waitForRelaunch(Updater){
+    try{
+      if(!Updater || typeof Updater.setMultiDelay !== 'function') return;
+      Updater.setMultiDelay({ delayConditions: [{ kind: 'kill' }] }).catch(function(){});
+    }catch(e){}
+  }
+  // The user asked to install now: any "wait for a kill" condition must be lifted
+  // or the deliberate install would sit behind it.
+  function clearInstallDelay(Updater){
+    try{
+      if(!Updater || typeof Updater.cancelDelay !== 'function') return;
+      Updater.cancelDelay().catch(function(){});
+    }catch(e){}
+  }
+
+  // Stage-only. This used to be the "installs the moment you leave the app" path,
+  // and every version of it ended in a reload the user did not ask for: a bundle
+  // swap mid-background shows up as "I open the app and it refreshes by itself",
+  // and it lands on top of playback, so the song is gone and play has to be
+  // pressed again. Nothing here calls set() any more. The bundle stays staged and
+  // the native updater activates it on the next real app kill/relaunch — which is
+  // exactly what "it installs when you close the app" told the user.
+  //
+  // Returns 'deferred' when the bundle is staged for the next launch, or false
+  // when the bundle must not be staged at all (known-bad, boot loop, …).
   function applyInBackground(Updater, nb){
     if(!Updater || !nb || !nb.id) return false;
     var version = String(nb.version || '');
-    // A bundle that already failed to take over is never applied automatically.
+    // A bundle that already failed to take over is never used again.
     if(isBadVersion(version)){
-      log('staged ' + version + ' failed to start before — not applying it automatically');
+      log('staged ' + version + ' failed to start before — leaving it alone');
       return false;
     }
-    // A boot loop means every automatic action is off for this session.
+    // A boot loop means the updater must not touch bundles at all this session.
     if(bootLooping()){
-      log('boot loop detected — not applying ' + version + ' automatically');
+      log('boot loop detected — not touching ' + version);
       return false;
     }
     // Already handed over to once without it sticking: never again automatically.
@@ -367,84 +388,13 @@
       markBadVersion(version, 'auto-handled once without taking over');
       return false;
     }
-    if(!wantDeferredInstall(version)){
-      var r = applyStagedNow(Updater, nb); // true = deferred to close (music playing)
-      return r ? 'deferred' : 'immediate';
+    // A staged record that is the running version is stale, not an update.
+    if(version === String(currentVersion())){
+      log('staged ' + version + ' is already the running version — nothing to do');
+      return false;
     }
-    try{ window.__scOtaDeferred = { id: nb.id, version: version }; }catch(e){}
-    log('staged ' + version + ' will install when the app is closed/backgrounded');
-    // Wire the transition listeners ONCE per deferred bundle (re-checks of the
-    // same staged version call this repeatedly — duplicate listeners would fire
-    // go() multiple times per event).
-    if(window.__scOtaDeferredWired === version) return 'deferred';
-    try{ window.__scOtaDeferredWired = version; }catch(e){}
-    function go(){
-      // The user complaint: leaving the app while music plays must NOT reload
-      // the WebView. set() swaps the bundle and the JS context dies - playback
-      // dies with it. If music is (still) playing, keep the staged bundle
-      // around:the boot path applies it on the next clean relaunch.
-      if(somethingIsPlaying()){
-        // Keep the deferred marker — when the song pauses or ends (while
-        // backgrounded) punchs the install then, on the quiet clean moment.
-
-        // A foreground pause while music plays must NOT reload mid-use either:
-        // only install when the app has actually been backgrounded (Home gesture /
-        // close / task-mart removal), which is exactly the user complaint fix.
-
-
-        if(document.visibilityState === 'visible'){
-          // Playback still active, foreground: leave the staged bundle alone.
-
-          return;
-        }
-        log('app backgrounded while music is playing — updating when the music pauses');
-        return;
-      }
-      if(document.visibilityState === 'visible'){
-        // Never reload the app in the middle of a foreground session — only
-        // the background/close transitions (and the boot path, and the play-time
-        // staged() choice) may apply the update. A stale resume event while
-        // foreground (e.g. a notification shade pull) must not reload.now.
-
-        return;
-      }
-      var d = window.__scOtaDeferred;
-
-      if(!d) return;
-      window.__scOtaDeferred = null;
-      Updater.getNextBundle().then(function(cur){
-        if(cur && cur.id === d.id){
-          if(isBadVersion(String(d.version))){
-            log('staged ' + d.version + ' failed before — not installing it on the way out either');
-            return;
-          }
-          log('app left foreground — installing staged ' + d.version);
-          try{ localStorage.setItem('sidecut_ota_applied', d.version); }catch(e){}
-          try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(d.version), at: Date.now() })); }catch(e){}
-          try{ Updater.set({ id: d.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
-        }
-      }).catch(function(){});
-    }
-    try{ document.addEventListener('pause', go, false); }catch(e){}
-    try{ document.addEventListener('resume', go, false); }catch(e){}
-    document.addEventListener('visibilitychange', function(){
-      // Fire on BOTH transitions: 'hidden' catches a normal Home-gesture close
-      // while the webview is still alive, and the 'visible' pass on reopen
-      // catches every other close style (swipe-away, task-manager kill).
-      go();
-    }, false);
-    try{ if(document.visibilityState !== 'visible') go(); }catch(e){}
-    // When music was playing at background-time, defer the install until the
-    // song pauses or ends — the pause/ended event then runs go() and installs
-    // on the quiet clean moment ((still backgrounded), so the user never sees
-    // a reload or a cut-off song. Only wire these once per deferred bundle.
-
-    // Audio 'ended' does not bubble from <audio> elements. Capture it so a
-    // deferred update can apply as soon as the last playing track finishes.
-    try{ document.addEventListener('ended', go, true); }catch(e){}
-    try{ document.addEventListener('pause', function(e){
-      if(e && e.target && String(e.target.tagName || '').toUpperCase() === 'AUDIO') go();
-    }, true); }catch(e){}
+    if(somethingIsPlaying() || wantDeferredInstall(version)) waitForRelaunch(Updater);
+    log('v' + version + ' stays staged — it installs on the next app launch');
     return 'deferred';
   }
 
@@ -852,17 +802,14 @@
                 log('staged ' + nb.version + ' failed to start before — not auto-applying it');
                 return;
               }
-              if(!somethingIsPlaying() && !wantDeferredInstall(String(nb.version))){
-                log('auto-applying staged ' + nb.version + ' on boot (nothing playing)');
-                markAutoHandled(String(nb.version));
-                try{ localStorage.setItem(BOOTAPPLY_KEY + nb.version, '1'); }catch(_e){}
-                try{ localStorage.setItem('sidecut_ota_applied', String(nb.version)); }catch(_e){}
-                try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version), at: Date.now() })); }catch(_e){}
-                showSheet({ phase: 'installing', version: nb.version, title: 'Updating to SideCut ' + nb.version + '…' });
-                clearSheet();
-                setTimeout(function(){ try{ U.set({ id: nb.id }); }catch(e){ log('auto-apply set failed: ' + e); } }, 450);
-                return;
-              }
+              // v58.8.5: the app NEVER reloads itself into a staged bundle.
+              // "Auto-applying on boot" was exactly the "I open the app and it
+              // refreshes by itself" report, and that refresh lands on top of
+              // restored playback: the song is gone and play has to be pressed
+              // again. The bundle is left staged (the native updater activates it
+              // on the next app kill/relaunch, which is the "it installs when I
+              // close the app" the user was already promised) and the sheet below
+              // offers to install it on the spot.
               applyInBackground(U, nb);
               if(wantDeferredInstall(String(nb.version))) return; // installs on close — don't nag
               if(sheetRefs && sheetRefs.card.style.display === 'block') return; // sheet already up

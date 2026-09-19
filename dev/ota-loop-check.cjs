@@ -243,24 +243,43 @@ function boot(opts) {
   ok('so no boot reloads the app into the same build', staleReloads === 0, 'reloads=' + staleReloads);
 
   // ------------------------------------------------------------------
-  console.log('\n— one automatic hand-over per version, then it stops —');
-  // A bundle that is genuinely newer may be installed automatically ONCE. If the
-  // version did not change afterwards, it never took over: it must be marked bad
-  // instead of being re-applied on the next boot (which is the loop).
+  console.log('\n— a staged bundle is never applied by the app itself —');
+  // The report: "I open the app it refreshes automatically and then I have to
+  // click play". The app used to hand over to a staged bundle by itself (on boot,
+  // or on the way out of the app). Both are reloads the user did not ask for,
+  // and a reload kills playback — restored or live — so the song was gone and
+  // play had to be pressed again. Now the bundle is only ever staged: the sheet
+  // offers it, one tap installs it, and nothing reloads on its own.
   let ls2 = {};
-  let handovers = 0, handoverReloads = 0;
+  let autoSets = 0, autoReloads = 0, offered = 0;
   for (let i = 0; i < 3; i++) {
     const w = boot({ manifestVersion: NEXT_VERSION, stagedVersion: NEXT_VERSION, localStorage: ls2 });
     await wait(9000);
-    handovers += w.calls.set.length;
-    handoverReloads += w.navs.length;
+    autoSets += w.calls.set.length;
+    autoReloads += w.navs.length;
+    const sheet = w.win.document.getElementById('scOtaSheet');
+    if (i === 0 && sheet && sheet.style.display === 'block') offered++;
     ls2 = snapLS(w.win);
     w.dom.window.close();
   }
-  ok('the newer bundle is handed over to once', handovers === 1, 'set() calls=' + handovers);
-  ok('and never again on the boots that follow', handovers === 1, 'set() calls=' + handovers + ' over 3 boots');
-  ok('the version that never took over is remembered as bad', !!ls2['sidecut_ota_bad_' + NEXT_VERSION],
-     String(ls2['sidecut_ota_bad_' + NEXT_VERSION]));
+  ok('no boot applies a staged bundle (no set() call)', autoSets === 0, 'set() calls=' + autoSets + ' over 3 boots');
+  ok('so the app never refreshes itself on launch', autoReloads === 0, 'reloads=' + autoReloads);
+  ok('the staged update is still offered to the user', offered === 1, 'sheet shown=' + offered);
+  ok('and it is still staged for the native updater (never marked bad)',
+     !ls2['sidecut_ota_bad_' + NEXT_VERSION], String(ls2['sidecut_ota_bad_' + NEXT_VERSION]));
+
+  // One tap still installs it — the update path has to keep working.
+  const oneTap = boot({ manifestVersion: NEXT_VERSION, stagedVersion: NEXT_VERSION });
+  await wait(6000);
+  const tapNow = oneTap.win.document.getElementById('scOtaNow');
+  ok('the update sheet offers Install now', !!tapNow);
+  if (tapNow) tapNow.click();
+  await wait(1500);
+  ok('tapping it installs the bundle (one set() call)', oneTap.calls.set.length === 1, JSON.stringify(oneTap.calls.set));
+  ok('and the sheet says it is installing instead of going silent',
+     /Installing/i.test(String(oneTap.win.document.body.textContent)),
+     JSON.stringify(String(oneTap.win.document.body.textContent).replace(/\s+/g, ' ').slice(-120)));
+  oneTap.dom.window.close();
 
   // ------------------------------------------------------------------
   console.log('\n— the app stops refreshing itself even if something else loops —');

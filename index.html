@@ -9592,7 +9592,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8.4';
+  const APP_VERSION = '58.8.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9896,6 +9896,13 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8.5', date: 'September 19, 2026 \u00b7 7:20 PM EDT', title: 'Playback keeps its own truth in the background, and the app stops refreshing itself', items: [
+    'The app no longer claims a song is playing when it is not. When the screen goes off or you leave the app, Android freezes the WebView and the audio dies with it \u2014 while the player still reported \u201cplaying\u201d, with a playhead that never moved. The app now compares the real playhead against the time actually spent away, so it can tell a song that survived the trip from one that was silently killed',
+    'When the audio was killed in the background, the song is put back where it left off as soon as you return \u2014 you no longer have to press play. If the system refuses to restart without a tap, the app shows an honest paused state instead of a playing display over silence',
+    'The app never reloads itself into a staged update any more. That automatic hand-over (on launch, and on the way out of the app) is what made the app \u201crefresh by itself\u201d when you opened it \u2014 and the refresh landed on top of playback, so the song was gone. Updates now wait for the native updater to install them on a real app close/relaunch, and the sheet offers to install one on the spot',
+    'An update staged while a song is playing is handed to the updater with a \u201cwhen the app is closed\u201d condition, so it can no longer swap itself in under a playing song',
+    'Every background stall is recorded on the device (tap the version label in Settings five times to see it), so if a song still stops the reason is on screen instead of guessed at',
+  ]},
   { version: '58.8.4', date: 'September 19, 2026 \u00b7 6:50 PM EDT', title: 'Playback: the app stopped competing with its own WebView for audio focus', items: [
     'Playback no longer stops a second or two after you press play. The cause was the app\u2019s own audio-focus helper: this app\u2019s sound comes from a WebView, the WebView holds audio focus for it, and asking for focus on the app\u2019s behalf took that focus away from our own player \u2014 and the WebView\u2019s answer to losing focus is to pause the song. The app never takes audio focus for itself any more, so nothing can pause it that way',
     'If anything else ever pauses the song in its opening seconds, it is put straight back and never reaches the screen \u2014 up to three times, never within 700 ms of each other \u2014 and what happened is recorded on the device so it can be read back instead of guessed at',
@@ -19985,10 +19992,15 @@ _batchBuf += b64Encode(chunk);
           });
         }
       }
+      // While we are away the notification must not claim a song is playing that
+      // Android has already silenced: the element still says `paused === false`
+      // once the WebView is frozen, so the playhead is the only honest witness.
+      const bgDead = !userPaused && !playbackSurvivedBackground();
+      if(bgDead) mediaSetPlaybackState('paused');
       if(!capMediaSession && !('mediaSession' in navigator)) return;
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
       if(t) updateMediaSession(t);
-      mediaSetPlaybackState(a.paused ? 'paused' : 'playing');
+      if(!bgDead) mediaSetPlaybackState(a.paused ? 'paused' : 'playing');
       if(a.duration){
         mediaSetPositionState(a.duration, a.playbackRate || 1, Math.min(a.currentTime, a.duration));
       }
@@ -19997,6 +20009,105 @@ _batchBuf += b64Encode(chunk);
   function stopMediaSessionHeartbeat(){
     if(mediaSessionHeartbeat){ clearInterval(mediaSessionHeartbeat); mediaSessionHeartbeat = null; }
   }
+  // ---- The truth about playback while the app is away ------------------------
+  // Android freezes this WebView when the screen goes off (or the app is left)
+  // and the audio dies with it — while the <audio> element still reports
+  // `paused === false`. The app then kept telling the lock screen and the mini
+  // player "playing", with a playhead that never moved: "it says it's playing but
+  // it's not". These helpers compare the real playhead against the time actually
+  // spent in the background, so the app can tell a song that survived the trip
+  // from one that was silently killed — and, when it was killed, put it back
+  // instead of making the user press play.
+  let bgTrip = { at: 0, pos: 0, trackId: null, believedPlaying: false };
+  function noteBackgroundStart(){
+    try{
+      const a = activeAudio();
+      bgTrip = {
+        at: Date.now(),
+        pos: a ? (a.currentTime || 0) : 0,
+        trackId: (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null,
+        believedPlaying: !!(a && !a.paused && !userPaused
+                            && queueIndex >= 0 && queueIndex < queue.length),
+      };
+    }catch(e){ }
+  }
+  // Did the playhead really advance for the time we were away? Real playback
+  // advances about one second per second; a few seconds of slack is timer drift,
+  // tens of seconds of silence is a WebView that was frozen.
+  function playbackSurvivedBackgroundFrom(trip){
+    if(!trip.at || !trip.believedPlaying) return true;    // nothing to judge
+    const a = activeAudio();
+    if(!a) return false;
+    const awaySec = (Date.now() - trip.at) / 1000;
+    if(awaySec < 4) return true;                          // too soon to judge
+    if(a.paused) return false;                            // the element stopped
+    const nowTrack = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
+    if(trip.trackId !== nowTrack) return true;            // the playlist moved on by itself
+    const moved = (a.currentTime || 0) - trip.pos;
+    if(moved < 0) return true;                            // a seek — none of our business
+    return (awaySec - moved) < 3;
+  }
+  function playbackSurvivedBackground(){ return playbackSurvivedBackgroundFrom(bgTrip); }
+  // The honest paused presentation, for when playback is NOT running and no pause
+  // event is coming (a WebView that was frozen, or a resume the platform refused).
+  function showPausedPlaybackState(){
+    try{
+      $('npDisc').classList.remove('spinning');
+      $('npPlayerBody').classList.remove('playing'); $('npTt3d').classList.remove('playing');
+      $('playIcon').innerHTML = '<path d="M8 5v14l11-7z"/>';
+      mediaSetPlaybackState('paused');
+      if(typeof syncLyricsPlayPauseIcon === 'function') syncLyricsPlayPauseIcon();
+    }catch(e){ }
+  }
+  // Called when the app comes back into view. Returns true when nothing had to be
+  // done (the song played through the trip), false when it was found dead — in
+  // which case the state already reflects a paused session.
+  function checkBackgroundPlayback(){
+    if(!bgTrip.at) return true;
+    const trip = bgTrip;
+    bgTrip = { at: 0, pos: 0, trackId: null, believedPlaying: false };
+    if(!trip.believedPlaying) return true;
+    if(userPaused || audioFocusInterrupted) return true;    // the user/interruption said so
+    if(document.hidden) return true;                        // still away
+    if(playbackSurvivedBackgroundFrom(trip)) return true;   // it played through
+    if(queueIndex < 0 || queueIndex >= queue.length) return true;
+    const away = Math.round((Date.now() - trip.at) / 1000);
+    if($('djModeBackdrop').style.display === 'flex'){
+      // DJ Mode owns the sound through its own deck engine while the main element
+      // sits idle on purpose — never start it underneath.
+      showPausedPlaybackState();
+      return false;
+    }
+    recordPlaybackStop('background-stall: no audio for ' + away + 's — reviving');
+    // Say the truth before the revive: in the moment between now and audio actually
+    // coming back, the session must not claim to be playing.
+    try{ mediaSetPlaybackState('paused'); }catch(e){ }
+    revivingAudio = true;
+    let revived;
+    try{ revived = recoverAudio(activeAudio(), 'background stall'); }catch(e){ }
+    const settle = function(started){
+      revivingAudio = false;
+      if(started === true) return;             // audio is back — nothing to correct
+      if(started === false){
+        // The platform refused to start audio without a tap. Never keep showing a
+        // song as playing when there is nothing to hear.
+        recordPlaybackStop('background-stall: resume refused — showing paused');
+        showPausedPlaybackState();
+        return;
+      }
+      // Nothing to play, or the revive could not start at all: believe the element.
+      const b = activeAudio();
+      if(!b || b.paused){
+        recordPlaybackStop('background-stall: still silent — showing paused');
+        showPausedPlaybackState();
+      }
+    };
+    if(revived && typeof revived.then === 'function') revived.then(settle, function(){ settle(false); });
+    else setTimeout(function(){ settle(undefined); }, 2500);
+    return false;
+  }
+  window.__scCheckBackgroundPlayback = checkBackgroundPlayback;
+  window.__scNoteBackgroundStart = noteBackgroundStart;
 
   let wakeLockHandle = null;
   async function requestWakeLock(){
@@ -20029,7 +20140,10 @@ _batchBuf += b64Encode(chunk);
       a.currentTime = Math.min(resumeAt, a.duration || resumeAt);
       a.removeEventListener('loadedmetadata', onMeta);
     }, { once:true });
-    a.play().catch(() => { toast('Tap play to resume — playback was interrupted'); });
+    // Returned so a caller that needs to know whether audio really came back (the
+    // background-stall revive) reports the truth instead of guessing: `true` when
+    // playback started, `false` when the platform refused to start without a tap.
+    return a.play().then(() => true, () => { toast('Tap play to resume — playback was interrupted'); return false; });
   }
 
   function onEnded(e){
@@ -22222,9 +22336,10 @@ _batchBuf += b64Encode(chunk);
     djCrossfadeToNext();
   }
 
-  window.addEventListener('pagehide', () => savePlaybackState(true));
+  window.addEventListener('pagehide', () => { noteBackgroundStart(); savePlaybackState(true); });
   document.addEventListener('visibilitychange', () => {
     if(document.hidden){
+      noteBackgroundStart();
       savePlaybackState(true);
       // Re-assert the media session right when backgrounding, not just when coming
       // back. Previously this only reacted after the fact (once the tab was already
@@ -22245,12 +22360,17 @@ _batchBuf += b64Encode(chunk);
     // to another app (e.g. Spotify) while backgrounded, or suspend the AudioContext
     // outright. Reassert our own state so playback controls act on us again.
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-    // Never auto-resume audio on foreground — playback resumes only on explicit
-    // user action, even if it was playing when we went into the background.
     const a = activeAudio();
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
     if(t) updateMediaSession(t);
-    mediaSetPlaybackState(a.paused ? 'paused' : 'playing');
+    // Was the song still playing while we were away, or did Android quietly kill
+    // the audio (it freezes the WebView with the screen off, and the element keeps
+    // reporting `paused === false`)? That is the "it says it's playing but it's
+    // not" report. Decide honestly: if the song survived, re-assert "playing";
+    // if it was killed, the session is corrected and the song is put back so the
+    // user is not left pressing play.
+    const survived = checkBackgroundPlayback();
+    if(survived) mediaSetPlaybackState(a.paused ? 'paused' : 'playing');
   });
 
   // ---------------- Mini-player: collapse now-playing bar while scrolling down ----------------
@@ -26458,7 +26578,7 @@ if(!isDiscover) stopDiscoverPreview();
   // Play Billing: re-verify purchases on launch and whenever the app regains
   // focus (e.g. after returning from the Play billing sheet).
   syncPlayEntitlement();
-  window.addEventListener('focus', () => syncPlayEntitlement());
+  window.addEventListener('focus', () => { syncPlayEntitlement(); if(window.__scCheckBackgroundPlayback) window.__scCheckBackgroundPlayback(); });
   document.addEventListener('visibilitychange', () => { if(!document.hidden) syncPlayEntitlement(); });
   // New-release checks only run when the user asks for them — via the Discover
   // "Fetch latest" / pinned-section "Check now" buttons (no boot/focus auto-checks).
