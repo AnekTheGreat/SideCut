@@ -526,6 +526,14 @@
     position:relative; touch-action:manipulation;
   }
   .track:active{ background: rgba(255,255,255,0.05); }
+  /* Album song rows: while a hold is armed, show it; touch-action is pinned too so
+     Android can't hand the gesture to the scroller out from under the press. */
+  [id^="alb_card_"] .track.alb-hold-armed{
+    touch-action:none;
+    background: rgba(227,178,60,0.10);
+    box-shadow: inset 0 0 0 1px rgba(227,178,60,0.5);
+    transform: scale(0.985);
+  }
   .track .idx{ width:20px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; font-size:12px; text-align:center; flex-shrink:0; }
   .track.playing .idx::before{ content:'♪'; color:var(--coral); }
   .track-art{ width:48px; height:48px; border-radius:8px; background:var(--bg-raised); background-size:cover; background-position:center; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.3); }
@@ -30204,8 +30212,9 @@ window.showAlbumReorderPopup = function(albumName){
 (function(){
   if(window.__albumSongHoldWired) return;
   window.__albumSongHoldWired = true;
-  var HOLD_MS = 320;
-  var holdTimer = null, pressStart = 0, startX = 0, startY = 0;
+  var HOLD_MS = 300;          // press length that opens the Reorder Songs sheet
+  var RELEASE_MIN_MS = 250;   // a press this long still counts if Android cancels it early
+  var holdTimer = null, armTimer = null, pressStart = 0, startX = 0, startY = 0;
   var moved = false, pressed = false, currentRow = null, currentAlbum = '';
 
   function stopTracking(){
@@ -30214,10 +30223,15 @@ window.showAlbumReorderPopup = function(albumName){
     document.removeEventListener('pointercancel', onCancel, true);
     document.removeEventListener('touchmove', onTouchMove, true);
     document.removeEventListener('touchend', onRelease, true);
-    document.removeEventListener('touchcancel', clearHold, true);
+    document.removeEventListener('touchcancel', onTouchCancel, true);
+  }
+  function disarm(){
+    if(armTimer){ clearTimeout(armTimer); armTimer = null; }
+    try{ if(currentRow) currentRow.classList.remove('alb-hold-armed'); }catch(_e){}
   }
   function clearHold(){
     if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+    disarm();
     pressed = false;
     currentRow = null;
     currentAlbum = '';
@@ -30245,6 +30259,18 @@ window.showAlbumReorderPopup = function(albumName){
     document.removeEventListener('pointermove', onMove, true);
     document.removeEventListener('pointercancel', onCancel, true);
   }
+  // Android sends touchcancel -- not only pointercancel -- the moment Chrome
+  // takes the gesture for itself (scroll steering, a native drag, selection).
+  // That used to call clearHold() and kill the hold outright: no sheet, no
+  // toast, no feedback, just "I held the song and nothing happened". A cancel
+  // only really ends the press if the finger moved; otherwise the hold timer is
+  // allowed to finish, and a genuine scroll has already cleared it by movement.
+  function onTouchCancel(){
+    if(!pressed) return;
+    if(moved){ clearHold(); return; }
+    document.removeEventListener('touchmove', onTouchMove, true);
+    document.removeEventListener('touchcancel', onTouchCancel, true);
+  }
   function onRelease(){
     // Belt and braces: if the press was long enough and never moved, open the
     // sheet here too, so a cancelled timer can't turn a hold into a no-op.
@@ -30253,7 +30279,7 @@ window.showAlbumReorderPopup = function(albumName){
     var wasMoved = moved;
     var row = currentRow, album = currentAlbum;
     clearHold();
-    if(wasMoved || held < HOLD_MS || !row || !album) return;
+    if(wasMoved || held < RELEASE_MIN_MS || !row || !album) return;
     if(document.getElementById('albumReorderPopup')) return;
     openFor(row, album);
   }
@@ -30283,17 +30309,30 @@ window.showAlbumReorderPopup = function(albumName){
     if(cardEl && cardEl.dataset && cardEl.dataset.albumName) album = cardEl.dataset.albumName;
     if(!album && typeof window.__scAlbumForTrack === 'function' && row.dataset) album = window.__scAlbumForTrack(row.dataset.id);
     if(!album) return;
-    if(document.getElementById('albumReorderPopup')) return;
+    var _existing = document.getElementById('albumReorderPopup');
+    if(_existing){
+      // A sheet that is really on screen wins. A leftover invisible one used to
+      // swallow every later hold silently, so drop it and carry on.
+      if(_existing.style.display !== 'none') return;
+      try{ _existing.remove(); }catch(_e){}
+    }
     pressed = true;
     moved = false;
     pressStart = Date.now();
     startX = x; startY = y;
     currentRow = row;
     currentAlbum = album;
+    // Show that the press is registered while it is still being held, so a long
+    // press never looks dead while the sheet is being built.
+    armTimer = setTimeout(function(){
+      armTimer = null;
+      if(pressed && !moved && currentRow) currentRow.classList.add('alb-hold-armed');
+    }, 110);
     holdTimer = setTimeout(function(){
       holdTimer = null;
       pressed = false;
       var r = currentRow, a = currentAlbum;
+      disarm();
       stopTracking();
       if(!r || !a) return;
       openFor(r, a);
@@ -30303,7 +30342,7 @@ window.showAlbumReorderPopup = function(albumName){
     document.addEventListener('pointercancel', onCancel, true);
     document.addEventListener('touchmove', onTouchMove, true);
     document.addEventListener('touchend', onRelease, true);
-    document.addEventListener('touchcancel', clearHold, true);
+    document.addEventListener('touchcancel', onTouchCancel, true);
   }
 
   document.addEventListener('pointerdown', function(e){
@@ -30321,3 +30360,6 @@ window.showAlbumReorderPopup = function(albumName){
     if(e.target && e.target.closest && e.target.closest('.track')) e.preventDefault();
   }, true);
 })();
+</script>
+</body>
+</html>
