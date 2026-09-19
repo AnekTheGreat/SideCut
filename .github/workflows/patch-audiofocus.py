@@ -78,23 +78,32 @@ public class SideCutAudioFocusPlugin extends Plugin {
             focusListener = new AudioManager.OnAudioFocusChangeListener() {
                 @Override
                 public void onAudioFocusChange(int change) {
-                    String event;
-                    switch (change) {
-                        case AudioManager.AUDIOFOCUS_LOSS:                    event = "loss"; break;
-                        case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:          event = "lossTransient"; break;
-                        case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: event = "duck"; break;
-                        case AudioManager.AUDIOFOCUS_GAIN:                    event = "gain"; break;
-                        case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT:          event = "gainTransient"; break;
-                        case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK: event = "gainTransientMayDuck"; break;
-                        default:                                             event = "unknown"; break;
+                    // This runs on the main thread from AudioManager. An exception
+                    // escaping a main-thread callback kills the whole process (the
+                    // app just disappears mid-song), so the body can never throw.
+                    try {
+                        String event;
+                        switch (change) {
+                            case AudioManager.AUDIOFOCUS_LOSS:                    event = "loss"; break;
+                            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:          event = "lossTransient"; break;
+                            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: event = "duck"; break;
+                            case AudioManager.AUDIOFOCUS_GAIN:                    event = "gain"; break;
+                            case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT:          event = "gainTransient"; break;
+                            case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK: event = "gainTransientMayDuck"; break;
+                            default:                                             event = "unknown"; break;
+                        }
+                        holdingFocus = "gain".equals(event) || "gainTransient".equals(event)
+                                || "gainTransientMayDuck".equals(event);
+                        JSObject data = new JSObject();
+                        data.put("event", event);
+                        // Delivered to the web layer, which pauses on a real
+                        // interruption and puts the song back when focus returns.
+                        // Not retained: a stale event replayed into a listener that
+                        // registers later would pause a song nobody interrupted.
+                        notifyListeners("focusChange", data, false);
+                    } catch (Exception e) {
+                        // Never crash the process over a focus notification.
                     }
-                    holdingFocus = "gain".equals(event) || "gainTransient".equals(event)
-                            || "gainTransientMayDuck".equals(event);
-                    JSObject data = new JSObject();
-                    data.put("event", event);
-                    // Delivered to the web layer, which pauses on a loss and puts the
-                    // song back when focus returns — never leaving the user silent.
-                    notifyListeners("focusChange", data, true);
                 }
             };
         }

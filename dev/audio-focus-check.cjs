@@ -58,6 +58,11 @@ function fakeIndexedDB() {
 
 const calls = { request: 0, abandon: 0, isHolding: 0 };
 let focusListener = null;
+// Handlers the app registers on the phone's media session (lock screen /
+// notification player). Captured so the test can drive a pause the way the
+// native bridge would.
+const mediaHandlers = {};
+const nativePauseHandler = () => mediaHandlers.pause || null;
 
 const serveLocalScript = requestInterceptor((request) => {
   if (/dev\/native-updates\.js/.test(request.url)) {
@@ -83,9 +88,20 @@ const dom = new JSDOM(html, {
     win.HTMLCanvasElement.prototype.getContext = function () { return makeCtx(); };
     win.HTMLCanvasElement.prototype.toDataURL = function () { return 'data:image/png;base64,'; };
     win.indexedDB = idb;
+    // The bridge the app uses for native plugins that have no JS module: the
+    // media session (lock screen controls) goes through these two.
+    win.CapacitorNativeCalls = [];
     win.Capacitor = {
       isNativePlatform: () => true,
       getPlatform: () => 'android',
+      nativePromise: (plugin, method, opts) => { win.CapacitorNativeCalls.push(plugin + '.' + method); return Promise.resolve({}); },
+      nativeCallback: (plugin, method, opts, cb) => {
+        win.CapacitorNativeCalls.push(plugin + '.' + method);
+        if (plugin === 'MediaSession' && method === 'setActionHandler' && opts && opts.action) {
+          mediaHandlers[opts.action] = cb;
+        }
+        return Promise.resolve();
+      },
       Plugins: {
         SideCutAudioFocus: {
           request: () => { calls.request++; return Promise.resolve({ granted: true }); },
@@ -136,7 +152,52 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('it does not abandon focus right away', calls.abandon === 0, 'abandons=' + calls.abandon);
   ok('and the queue is real (resume has something to play)', win.document.querySelectorAll('#listPane .track').length >= 0);
 
-  console.log('\n— a call (transient focus loss) pauses without losing focus —');
+  console.log('\n— a focus loss at the very start of a song cannot stop it —');
+  // The bug being fixed: another app with a live media session grabs focus back
+  // the instant we ask for it, and obeying that loss meant "press play, the song
+  // dies a millisecond later" — every single time.
+  played.pausedCount = 0; played.count = 0; calls.request = 0;
+  el.paused = true; setPlaying();
+  await wait(30);
+  const reqAfterStart = calls.request;
+  emit('loss');
+  await wait(750);                        // the take-back is deliberately unhurried
+  ok('a loss straight after play does NOT pause the song', played.pausedCount === 0, 'pauses=' + played.pausedCount);
+  ok('the song is still playing', el.paused === false, 'paused=' + el.paused);
+  ok('and focus is asked for again instead of being given up',
+     calls.request > reqAfterStart, 'requests=' + calls.request + ' before=' + reqAfterStart);
+
+  // A fight repeats: the other app keeps taking it back. Playback must survive.
+  emit('loss'); emit('lossTransient');
+  await wait(80);
+  ok('a repeated fight still does not stop the song', played.pausedCount === 0 && el.paused === false,
+     'pauses=' + played.pausedCount + ' paused=' + el.paused);
+  ok('the fight is recorded so it can be diagnosed on the phone',
+     /at play start/.test(String(win.localStorage.getItem('sidecut_playback_stops') || '')),
+     String(win.localStorage.getItem('sidecut_playback_stops') || '').slice(0, 90));
+
+  console.log('\n— a pause from the lock screen right after play is refused —');
+  // A stale media-button event / session handover must not silence a song that
+  // has only just started. Driven through the real handler the native bridge calls.
+  played.pausedCount = 0; played.count = 0;
+  el.paused = true; setPlaying();
+  await wait(30);
+  let handler = nativePauseHandler();
+  for (let i = 0; i < 25 && !handler; i++) { await wait(200); handler = nativePauseHandler(); }
+  ok('the lock-screen pause handler really is wired up', !!handler);
+  if (handler) handler({});
+  await wait(60);
+  ok('an auto-pause that early is refused', played.pausedCount === 0, 'pauses=' + played.pausedCount);
+  ok('and the song keeps playing', el.paused === false, 'paused=' + el.paused);
+  ok('the refusal is recorded too',
+     /refused-auto-pause/.test(String(win.localStorage.getItem('sidecut_playback_stops') || '')));
+
+  console.log('\n— a call later in the song still pauses it —');
+  // Real interruptions are the whole point of holding focus: unbroken playback
+  // for the first seconds of a song must not make the app deaf to a call.
+  played.pausedCount = 0; played.count = 0; calls.abandon = 0;
+  el.paused = false;
+  await wait(2600);                       // enough real playing to be interrupted
   emit('lossTransient');
   await wait(50);
   ok('the song is paused for the interruption', played.pausedCount === 1, 'pauses=' + played.pausedCount);
@@ -150,20 +211,23 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('focus was never abandoned through the whole interruption', calls.abandon === 0, 'abandons=' + calls.abandon);
 
   console.log('\n— a permanent loss is re-requested on the next play —');
+  played.pausedCount = 0;
   emit('loss');
   await wait(50);
-  ok('a permanent loss pauses us too', played.pausedCount === 2, 'pauses=' + played.pausedCount);
+  ok('a permanent loss later in the song does pause us', played.pausedCount === 1, 'pauses=' + played.pausedCount);
+  const reqBefore = calls.request;
   setPlaying();
   await wait(50);
   ok('the next start asks for focus again instead of assuming we still hold it',
-     calls.request === 2, 'requests=' + calls.request);
+     calls.request > reqBefore, 'requests=' + calls.request + ' before=' + reqBefore);
 
   console.log('\n— a deliberate pause gives focus back —');
+  const abandonAtPause = calls.abandon;
   el.paused = false;                       // playing, so the button means "pause"
   win.document.getElementById('playPauseBtn').click();
   await wait(80);
   ok('the user pause releases focus so another app can take over cleanly',
-     calls.abandon === 1, 'abandons=' + calls.abandon);
+     calls.abandon > abandonAtPause, 'abandons=' + calls.abandon + ' before=' + abandonAtPause);
   ok('and it actually paused the element', el.paused === true);
 
   console.log('\n— nothing resumes after a pause the user asked for —');

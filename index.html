@@ -9498,7 +9498,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.7';
+  const APP_VERSION = '58.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9797,6 +9797,14 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8', date: 'September 19, 2026 \u00b7 11:05 PM EDT', title: 'Playback no longer dies a moment after it starts', items: [
+    'Fixed a song stopping a fraction of a second after you press play: if another app grabbed audio focus back at the very start, SideCut obeyed the loss and paused. That early loss is the hand-over itself, not an interruption \u2014 nothing has played yet \u2014 so the song now keeps going and SideCut takes focus back',
+    'A call still pauses your song and it still comes back when the call ends \u2014 that applies once the song is genuinely under way, not during the opening second',
+    'A pause command from the lock screen or the notification player that arrives before any audio has played is refused as well, so a stale media-button event cannot silence a song that has only just started',
+    'When SideCut takes audio back from another app it tells you once, and every playback stop (or refused stop) is recorded \u2014 5 taps on the version label shows it on screen, so a stop that only happens on your phone can be read instead of guessed at',
+    'The audio-focus plugin can no longer take the app down with it: a focus callback that threw used to kill the app process mid-song',
+    'Includes the album and RGB fixes from 58.6 that were rolled back before they stuck',
+  ] },
   { version: '58.7', date: 'September 19, 2026 \u00b7 9:35 PM EDT', title: 'Updates can no longer put the app in a refresh loop', items: [
     'A newly installed update now confirms itself the moment the app script is up, instead of 4 seconds after the page finished loading \u2014 on a slow phone the old timing made a perfectly good update look like one that never started, so it was rolled back and then offered again on every launch (install, reload, roll back, install\u2026)',
     'An update that fails to take over is marked as bad on your device and never auto-installed again. The app stays on the version that works and tells you once, instead of you being stuck refreshing',
@@ -18934,7 +18942,13 @@ _batchBuf += b64Encode(chunk);
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       activeAudio().play().catch(() => recoverAudio(activeAudio(), 'media session play failed'));
     });
-    mediaSetActionHandler('pause', () => { userPaused = true; activeAudio().pause(); });
+    mediaSetActionHandler('pause', () => {
+      const _a = activeAudio();
+      const _wasPlaying = !!_a && !_a.paused;
+      if(_wasPlaying && blockSpuriousStop('media-session')) return;
+      if(_wasPlaying) recordPlaybackStop('media-session-pause');
+      userPaused = true; _a.pause();
+    });
     mediaSetActionHandler('previoustrack', () => {
       if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
       hardAdvance(-1, true);
@@ -19393,6 +19407,17 @@ _batchBuf += b64Encode(chunk);
   // (.github/workflows/patch-audiofocus.py); in a browser this is a no-op.
   const capAudioFocus = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutAudioFocus) ? window.Capacitor.Plugins.SideCutAudioFocus : null;
   let audioFocusHeld = false;
+  // When the CURRENT play attempt started. A focus loss that arrives moments
+  // after we ask for focus is not an interruption — it is the tug-of-war over
+  // the focus request itself: another app (a music player with a live media
+  // session in the background does this) takes focus straight back. Obeying
+  // that loss is what made "press play and the song dies a millisecond later"
+  // happen every single time. Nothing has played yet, so there is nothing to
+  // interrupt, and the song keeps going while we take focus back.
+  let audioFocusPlayAt = 0;
+  let focusFights = 0;          // re-requests already spent on this attempt
+  let focusFightTold = false;   // the user is told about the fight once per session
+  let spuriousStopsBlocked = 0; // automatic pauses refused during this attempt
   // Set while WE were paused by a focus loss (a call, another app taking over) —
   // not by the user. Only then do we put the song back when focus returns.
   let audioFocusInterrupted = false;
@@ -19426,9 +19451,28 @@ _batchBuf += b64Encode(chunk);
       capAudioFocus.addListener('focusChange', function(d){
         const ev = String((d && d.event) || '');
         if(ev === 'loss' || ev === 'lossTransient'){
+          // A loss in the first moments of a song is the focus handover itself,
+          // not an interruption: we asked for focus and another app grabbed it
+          // back before a note played. Pausing here is the "song dies a
+          // millisecond after you press play" bug — keep playing and take focus
+          // back. A loss later in the song IS a real interruption and pauses.
+          if(msSincePlayStarted() < 2500){
+            recordPlaybackStop('focus-' + ev + ' at play start — kept playing');
+            if(ev === 'loss') audioFocusHeld = false;
+            if(focusFights < 3){
+              focusFights++;
+              if(!focusFightTold){
+                focusFightTold = true;
+                try{ toast('Another app kept grabbing audio — SideCut took it back, so the song keeps playing.', 4500); }catch(e){}
+              }
+              setTimeout(function(){ audioFocusHeld = false; requestAudioFocus(); }, 600);
+            }
+            return;
+          }
           // A call answered, or another app took over. Pause WITHOUT setting
           // userPaused — this is an interruption, not the user's choice — so the
           // song is put back when focus returns.
+          recordPlaybackStop('focus-' + ev);
           audioFocusInterrupted = true;
           // A permanent loss means the system has taken focus away for good: ask
           // for it again the next time playback starts. A transient loss (a call)
@@ -19451,9 +19495,52 @@ _batchBuf += b64Encode(chunk);
     }catch(e){}
   }
 
+  // Records why playback stopped — or why it refused to. Kept on the device so a
+  // stop that cannot be reproduced here (a phone, a car kit, a call) can be read
+  // back instead of guessed at. Test mode (5 taps on the version label) shows it
+  // on screen; the console always gets it.
+  function recordPlaybackStop(why){
+    try{
+      var arr = [];
+      try{ arr = JSON.parse(localStorage.getItem('sidecut_playback_stops') || '[]'); }catch(e){ arr = []; }
+      if(!Array.isArray(arr)) arr = [];
+      arr.push({ why: String(why), v: APP_VERSION, at: Date.now() });
+      while(arr.length > 8) arr.shift();
+      localStorage.setItem('sidecut_playback_stops', JSON.stringify(arr));
+      console.log('[SideCut] playback: ' + why);
+      if(window.__scTestMode && window.__scTestMode() && typeof window.__scShowBootError === 'function'){
+        window.__scShowBootError('Playback: ' + why);
+      }
+    }catch(e){}
+  }
+  // How long the current attempt has been going. HUGE means "not playing".
+  function msSincePlayStarted(){
+    return audioFocusPlayAt ? (Date.now() - audioFocusPlayAt) : 1e9;
+  }
+  // True when an automatic stop arrived too early in the attempt to be believed:
+  // no audio has played yet, so nobody has anything to interrupt. Used by the
+  // lock-screen / notification pause handlers, which a stale media-button event
+  // or a session handover can otherwise use to silence a song that just started.
+  function blockSpuriousStop(why){
+    try{
+      if(userPaused) return false;
+      const a = activeAudio();
+      if(!a || a.paused) return false;
+      if(msSincePlayStarted() > 1200) return false;
+      if((a.currentTime || 0) > 0.5) return false;   // audio really did play
+      if(spuriousStopsBlocked >= 2) return false;    // never fight forever
+      spuriousStopsBlocked++;
+      recordPlaybackStop('refused-auto-pause-' + why);
+      try{ a.play().catch(function(){}); }catch(e){}
+      return true;
+    }catch(e){ return false; }
+  }
   function onPlayEvt(e){
     if(e.target !== activeAudio()) return;
     userPaused = false; // playback is (re)starting — clear any prior deliberate-stop marker
+    audioFocusPlayAt = Date.now();
+    focusFights = 0;
+    spuriousStopsBlocked = 0;
     // Only now does the system know this app owns the speakers: it will hand focus
     // back to SideCut after a call instead of resuming another music app, and a
     // reconnecting headset targets us.
@@ -21848,7 +21935,13 @@ _batchBuf += b64Encode(chunk);
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       activeAudio().play().catch(() => recoverAudio(activeAudio(), 'media session play failed'));
     });
-    navigator.mediaSession.setActionHandler('pause', () => { userPaused = true; activeAudio().pause(); });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      const _a = activeAudio();
+      const _wasPlaying = !!_a && !_a.paused;
+      if(_wasPlaying && blockSpuriousStop('web-media-session')) return;
+      if(_wasPlaying) recordPlaybackStop('web-media-session-pause');
+      userPaused = true; _a.pause();
+    });
     navigator.mediaSession.setActionHandler('previoustrack', () => {
       if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
       hardAdvance(-1, true);
