@@ -3582,11 +3582,14 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
     <div id="cropSongBody">
       <div id="cropSongLoading" style="padding:22px 0; text-align:center; font-size:13px; color:var(--ink-dim);"></div>
       <div id="cropSongControls" style="display:none;">
-        <div id="cropSongWave" style="position:relative; height:110px; background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-bottom:12px; overflow:hidden;">
-          <div id="cropSongWaveBars" style="position:absolute; inset:0; display:flex; align-items:center; gap:1px; padding:10px 0; opacity:0.35;"></div>
-          <div id="cropSongSel" style="position:absolute; top:0; bottom:0; background:rgba(255,111,97,0.22); border-left:2px solid var(--coral); border-right:2px solid var(--coral); border-radius:6px;"></div>
-          <div id="cropSongSelEdgeL" style="position:absolute; top:0; bottom:0; width:18px; left:0; cursor:ew-resize; z-index:3;"></div>
-          <div id="cropSongSelEdgeR" style="position:absolute; top:0; bottom:0; width:18px; right:0; cursor:ew-resize; z-index:3;"></div>
+        <div id="cropSongWave" style="position:relative; height:110px; background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-bottom:12px; overflow:hidden; touch-action:pan-y;">
+          <div id="cropSongWaveBars" style="position:absolute; inset:0; display:flex; align-items:center; gap:1px; padding:10px 0; opacity:0.35; pointer-events:none;"></div>
+          <div id="cropSongSel" style="position:absolute; top:0; bottom:0; background:rgba(255,111,97,0.22); border-left:2px solid var(--coral); border-right:2px solid var(--coral); border-radius:6px; pointer-events:none;"></div>
+          <!-- Grab bars sitting ON the selection edges. They used to be invisible 18px
+               strips pinned to the far ends of the waveform (never on the selection),
+               so there was nothing to grab where the selection actually was. -->
+          <div id="cropSongSelEdgeL" style="position:absolute; top:0; bottom:0; width:26px; left:0; margin-left:-13px; cursor:ew-resize; z-index:3; display:flex; align-items:center; justify-content:center; touch-action:none;"><span style="width:6px; height:76%; min-height:34px; border-radius:3px; background:rgba(255,255,255,0.9); box-shadow:0 0 7px rgba(0,0,0,0.5);"></span></div>
+          <div id="cropSongSelEdgeR" style="position:absolute; top:0; bottom:0; width:26px; left:100%; margin-left:-13px; cursor:ew-resize; z-index:3; display:flex; align-items:center; justify-content:center; touch-action:none;"><span style="width:6px; height:76%; min-height:34px; border-radius:3px; background:rgba(255,255,255,0.9); box-shadow:0 0 7px rgba(0,0,0,0.5);"></span></div>
           <!-- Playhead: rides the waveform while a preview plays so you can see
                how far into the song (and into the kept slice) you are. -->
           <div id="cropSongPlayhead" style="display:none; position:absolute; top:0; bottom:0; width:2px; left:0; background:#fff; box-shadow:0 0 8px rgba(255,255,255,0.85); z-index:4; pointer-events:none;">
@@ -7178,7 +7181,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   let cropPreviewAudio = null;   // Audio element for preview
   let cropPreviewLive = null;    // live AudioBufferSourceNode (direct playback path)
   let cropPreviewLiveCtx = null; // freshly created live context if the app's is suspended
-  let cropDragging = null;       // 'l' | 'r' | null
+  let cropDragging = null;       // 'l' | 'r' | 'move' | null
+  let cropEndDrag = null;        // set by wireCropDrag so closing the sheet stops a drag
   let cropPlayheadRAF = null;    // rAF handle for the moving preview playhead
   let cropPreviewCtx = null;     // audio context the live preview plays in
   let cropPreviewT0 = 0;         // that context's currentTime when preview started
@@ -7252,6 +7256,19 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const rp = (cropSelEnd / total) * 100;
     mid.style.left = lp + '%';
     mid.style.width = Math.max(0, rp - lp) + '%';
+    // Keep the grab bars sitting on the selection edges (clamped so they stay
+    // fully inside the waveform even when an edge is at 0% or 100%).
+    const waveEl = $('cropSongWave');
+    const lEdge = $('cropSongSelEdgeL');
+    const rEdge = $('cropSongSelEdgeR');
+    if(waveEl && lEdge && rEdge){
+      const w = waveEl.clientWidth || 0;
+      const hw = 13;   // half of a handle's 26px width
+      if(w > hw * 2 + 4){
+        lEdge.style.left = Math.max(hw, Math.min(w - hw, (cropSelStart / total) * w)) + 'px';
+        rEdge.style.left = Math.max(hw, Math.min(w - hw, (cropSelEnd / total) * w)) + 'px';
+      }
+    }
     $('cropSongStartLbl').textContent = cropFmtTime(cropSelStart);
     $('cropSongEndLbl').textContent = cropFmtTime(cropSelEnd);
     $('cropSongLenLbl').textContent = '— ' + cropFmtTime(cropSelEnd - cropSelStart) + ' kept —';
@@ -7291,6 +7308,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
 
   async function openCropSongModal(t){
     cropCleanupPreview();
+    if(cropEndDrag) cropEndDrag();   // never inherit a drag from the previous song
     if(!t) return;
     if(!t.file){
       toast('This song has no audio file to crop.');
@@ -7460,33 +7478,89 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   });
 
   // Selection drag handles (pointer events; no external libs).
+  //
+  // This used to be a one-shot drag. Three things broke it: the "handles" were
+  // invisible 18px strips pinned to the far ends of the WAVEFORM (never to the
+  // selection edges, so there was rarely anything under your finger to grab),
+  // move/up were listened for on the waveform itself (a captured pointer that
+  // left that small box stopped reporting, and a missed pointerup left the drag
+  // state stuck), and the gesture was never marked touch-action:none, so the
+  // sheet's scrolling could claim the touch and fire pointercancel mid-drag.
+  // Now: visible bars ride the selection edges, move/up/cancel are tracked on
+  // document (so a drag always ends and a new one always starts), touch-action
+  // is locked for the duration, and you can re-grab as often as you like.
   (function wireCropDrag(){
     const wave = $('cropSongWave');
     const left = $('cropSongSelEdgeL');
     const right = $('cropSongSelEdgeR');
-    let moving = false;
-    function posFromEvent(e){
+    if(!wave || !left || !right) return;
+    const EDGE_GRAB = 28;   // px either side of an edge that still grabs that edge
+    let active = null;      // 'l' | 'r' | 'move'
+    let moveGrab = 0;       // seconds between the finger and the window start
+
+    function dur(){ return (cropBuf && cropBuf.duration) || 0; }
+    function xToSec(clientX){
       const rect = wave.getBoundingClientRect();
-      const cx = (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX);
-      return cropGetXFrac(cx, rect);
+      return cropGetXFrac(clientX, rect) * dur();
     }
-    left.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); cropDragging = 'l'; wave.setPointerCapture && wave.setPointerCapture(e.pointerId); moving = true; });
-    right.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); cropDragging = 'r'; wave.setPointerCapture && wave.setPointerCapture(e.pointerId); moving = true; });
-    wave.addEventListener('pointermove', (e) => {
-      if(!cropDragging || !cropBuf) return;
-      const f = posFromEvent(e);
-      const total = cropBuf.duration;
-      const sec = f * total;
-      if(cropDragging === 'l'){
+
+    function endDrag(){
+      if(!active) return;
+      active = null;
+      cropDragging = null;
+      wave.style.touchAction = '';
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', endDrag);
+      document.removeEventListener('pointercancel', endDrag);
+    }
+    function onMove(e){
+      if(!active || !cropBuf) return;
+      if(e.cancelable) e.preventDefault();
+      const total = dur();
+      const sec = xToSec(e.clientX);
+      if(active === 'l'){
         cropSelStart = Math.max(0, Math.min(sec, cropSelEnd - 0.5));
-      } else {
+      } else if(active === 'r'){
         cropSelEnd = Math.min(total, Math.max(sec, cropSelStart + 0.5));
+      } else {
+        // Sliding the window keeps its length and cannot leave the song.
+        const len = cropSelEnd - cropSelStart;
+        const s = Math.max(0, Math.min(Math.max(0, total - len), sec - moveGrab));
+        cropSelStart = s;
+        cropSelEnd = s + len;
       }
       cropUpdateFrame();
+    }
+
+    wave.addEventListener('pointerdown', function(e){
+      if(!cropBuf || dur() <= 0) return;
+      if(e.pointerType && e.pointerType !== 'touch' && e.button !== 0) return;
+      const rect = wave.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const width = rect.width || 1;
+      const lp = (cropSelStart / dur()) * width;
+      const rp = (cropSelEnd / dur()) * width;
+      const dL = Math.abs(x - lp);
+      const dR = Math.abs(x - rp);
+      if(dL <= EDGE_GRAB || dR <= EDGE_GRAB){
+        active = (dL < dR) ? 'l' : 'r';          // grabbing a bar (or near one)
+      } else if(x > lp && x < rp){
+        active = 'move';                          // inside the selection: slide it
+      } else {
+        active = (dL < dR) ? 'l' : 'r';           // the dimmed area: pull the nearer edge
+      }
+      if(active === 'move') moveGrab = xToSec(e.clientX) - cropSelStart;
+      cropDragging = active;
+      wave.style.touchAction = 'none';            // the sheet must not scroll under the drag
+      try{ wave.setPointerCapture(e.pointerId); }catch(_e){}
+      document.addEventListener('pointermove', onMove, { passive: false });
+      document.addEventListener('pointerup', endDrag);
+      document.addEventListener('pointercancel', endDrag);
+      e.preventDefault();
+      e.stopPropagation();
     });
-    function up(){ cropDragging = null; moving = false; }
-    wave.addEventListener('pointerup', up);
-    wave.addEventListener('pointercancel', up);
+
+    cropEndDrag = endDrag;
   })();
 
   function cropRenderSlice(buf){
@@ -7568,6 +7642,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         updateMediaSession && updateMediaSession(cropTrack);
       }
       renderList();
+      if(cropEndDrag) cropEndDrag();
       $('cropSongBackdrop').style.display = 'none';
       const _cropId = cropTrack ? cropTrack.id : null;
       const _cropName = cropTrack ? (cropTrack.name || 'song') : 'song';
@@ -7585,12 +7660,14 @@ $('crossfadeSlider').addEventListener('input', (e) => {
 
   $('cropSongCancel').addEventListener('click', () => {
     cropStopPreview();
+    if(cropEndDrag) cropEndDrag();
     $('cropSongBackdrop').style.display = 'none';
     cropTrack = null; cropBuf = null;
   });
   $('cropSongBackdrop').addEventListener('click', e => {
     if(e.target === $('cropSongBackdrop')) {
       cropStopPreview();
+      if(cropEndDrag) cropEndDrag();
       $('cropSongBackdrop').style.display = 'none';
       cropTrack = null; cropBuf = null;
     }
