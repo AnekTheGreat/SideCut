@@ -15489,15 +15489,27 @@ function _fallbackCopy(text){
       if(!nn || nn === oldName) return;
       if(userAlbums[nn]){ toast('You already have an album called "' + nn + '".'); return; }
       var entry = userAlbums[oldName];
+      // Every song carrying the old album tag travels with the name, not only the
+      // ones the saved entry happens to list. An album is derived from its tags, so
+      // a song that picked the tag up after the entry was created (imported later,
+      // or claimed by a card drag) would otherwise keep the old name and reappear
+      // as a ghost one-song album right beside the renamed one.
+      var movedIds = (entry.trackIds || []).slice();
+      allTracks.forEach(function(tr){
+        if(tr && String(tr.album || '').trim() === oldName && movedIds.indexOf(tr.id) === -1) movedIds.push(tr.id);
+      });
+      var movedEntry = {};
+      Object.keys(entry).forEach(function(k){ if(k !== 'trackIds') movedEntry[k] = entry[k]; });
+      movedEntry.trackIds = movedIds;
       // Rebuild the map so the renamed album keeps its position in album order.
       var rebuilt = {};
       Object.keys(userAlbums).forEach(function(k){
-        if(k === oldName) rebuilt[nn] = entry; else rebuilt[k] = userAlbums[k];
+        if(k === oldName) rebuilt[nn] = movedEntry; else rebuilt[k] = userAlbums[k];
       });
       userAlbums = rebuilt;
       // Keep every song's album tag in step, otherwise the album splits apart
       // the next time songs are grouped by their tags.
-      (entry.trackIds || []).forEach(function(id){
+      movedIds.forEach(function(id){
         var t = allTracks.find(function(tr){ return tr.id === id; });
         if(t){ t.album = nn; try{ persistTrackMeta(t); }catch(_e){} }
       });
