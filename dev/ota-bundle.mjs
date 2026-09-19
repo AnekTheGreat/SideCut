@@ -93,6 +93,12 @@ if (CHECK) {
 
 // Build the zip in a temp dir so entries sit at the zip root (the plugin unpacked
 // them relative to the bundle root before).
+//
+// Every staged file gets the SAME fixed timestamp before zipping: a zip records
+// each entry's mtime in its header, so otherwise the bundle's bytes changed on
+// every run even when nothing about the app did — which made the CI publish step
+// re-commit the bundle (and start another Android build) after every single push.
+const FIXED_MTIME = new Date('2020-01-01T00:00:00Z');
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecut-ota-'));
 for (const f of OTA_FILES) {
   const src = path.join(ROOT, f);
@@ -100,6 +106,7 @@ for (const f of OTA_FILES) {
   const dst = path.join(stage, f);
   fs.mkdirSync(path.dirname(dst), { recursive: true });
   fs.copyFileSync(src, dst);
+  fs.utimesSync(dst, FIXED_MTIME, FIXED_MTIME);
 }
 fs.mkdirSync(path.join(ROOT, 'ota'), { recursive: true });
 const zipPath = path.join(ROOT, 'ota/update.zip');

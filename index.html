@@ -9454,7 +9454,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.4';
+  const APP_VERSION = '58.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9731,6 +9731,14 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.5', date: 'September 19, 2026 \u00b7 7:10 PM EDT', title: 'Your music comes back after a call', items: [
+    'Fixed why another music app would start playing on its own after a phone call or when a headset reconnected: SideCut never asked Android for audio focus, so the system handed playback back to whatever app last held it \u2014 even one that was not open. SideCut now holds focus while a song plays',
+    'A call pauses your song, and it resumes by itself the moment the call ends \u2014 instead of staying silent or handing the speakers to another app',
+    'Reconnecting Bluetooth / the car now targets SideCut while it is playing, rather than the last music app Android remembers',
+    'Pausing on purpose still releases the speakers cleanly, so another app can take over exactly when you want it to',
+    'Duck requests (a navigation prompt, a notification) no longer fight over the volume the crossfade is using',
+    'Under the hood: an injected native plugin (SideCutAudioFocus) reports focus changes to the player; nothing changes in the browser version',
+  ] },
   { version: '58.4', date: 'September 19, 2026 \u00b7 6:00 PM EDT', title: 'Updates install again, plus rename, lyrics & scrolling', items: [
     'Fixed why app updates never arrived: the update sheet threw a JavaScript error the moment it tried to appear, so the check found the update, wrote the patch notes, and never showed you anything',
     'The update sheet now opens with the real patch notes for the version you are installing, and Download & install still stages it so a playing song is never interrupted',
@@ -19336,9 +19344,82 @@ _batchBuf += b64Encode(chunk);
       }
     }
   }
+  // ---------------- Android audio focus ----------------
+  // This app never asked Android for audio focus, so the focus stack still belonged
+  // to whatever last took it. Another music app keeps its media session alive in the
+  // background even when it is not open, so it was THAT app the system resumed the
+  // moment a phone call ended or a headset reconnected — and Bluetooth/AVRCP
+  // followed it. Holding focus while a song plays makes SideCut the app Android
+  // hands back to, and it is also what makes the system interrupt us for a call
+  // rather than playing over it. The native half is injected in CI
+  // (.github/workflows/patch-audiofocus.py); in a browser this is a no-op.
+  const capAudioFocus = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutAudioFocus) ? window.Capacitor.Plugins.SideCutAudioFocus : null;
+  let audioFocusHeld = false;
+  // Set while WE were paused by a focus loss (a call, another app taking over) —
+  // not by the user. Only then do we put the song back when focus returns.
+  let audioFocusInterrupted = false;
+  function audioFocusCall(method, body){
+    try{
+      if(capAudioFocus && typeof capAudioFocus[method] === 'function'){
+        const p = capAudioFocus[method](body || {});
+        if(p && typeof p.catch === 'function') p.catch(function(){});
+        return;
+      }
+      const C = window.Capacitor;
+      if(C && typeof C.nativePromise === 'function'){
+        const q = C.nativePromise('SideCutAudioFocus', method, body || {});
+        if(q && typeof q.catch === 'function') q.catch(function(){});
+      }
+    }catch(e){}
+  }
+  function requestAudioFocus(){
+    if(audioFocusHeld) return;
+    audioFocusHeld = true;
+    audioFocusCall('request');
+  }
+  function releaseAudioFocus(){
+    audioFocusInterrupted = false;
+    if(!audioFocusHeld) return;
+    audioFocusHeld = false;
+    audioFocusCall('abandon');
+  }
+  if(capAudioFocus && typeof capAudioFocus.addListener === 'function'){
+    try{
+      capAudioFocus.addListener('focusChange', function(d){
+        const ev = String((d && d.event) || '');
+        if(ev === 'loss' || ev === 'lossTransient'){
+          // A call answered, or another app took over. Pause WITHOUT setting
+          // userPaused — this is an interruption, not the user's choice — so the
+          // song is put back when focus returns.
+          audioFocusInterrupted = true;
+          // A permanent loss means the system has taken focus away for good: ask
+          // for it again the next time playback starts. A transient loss (a call)
+          // is handed back to us by the 'gain' event, so the flag stays set.
+          if(ev === 'loss') audioFocusHeld = false;
+          const a = activeAudio();
+          if(a && !a.paused){ try{ a.pause(); }catch(e){} }
+        } else if(ev === 'gain' || ev === 'gainTransient' || ev === 'gainTransientMayDuck'){
+          audioFocusHeld = true;
+          const a = activeAudio();
+          if(audioFocusInterrupted && !userPaused && a && a.paused && queueIndex >= 0 && queueIndex < queue.length){
+            try{ a.play().catch(function(){}); }catch(e){}
+          }
+          audioFocusInterrupted = false;
+        }
+        // 'duck' is deliberately ignored: this player has its own volume and
+        // crossfade handling, so it keeps playing under a duck request instead of
+        // fighting the system over the element's volume.
+      });
+    }catch(e){}
+  }
+
   function onPlayEvt(e){
     if(e.target !== activeAudio()) return;
     userPaused = false; // playback is (re)starting — clear any prior deliberate-stop marker
+    // Only now does the system know this app owns the speakers: it will hand focus
+    // back to SideCut after a call instead of resuming another music app, and a
+    // reconnecting headset targets us.
+    requestAudioFocus();
     $('npDisc').classList.add('spinning');
     $('npPlayerBody').classList.add('playing'); $('npTt3d').classList.add('playing');
     $('playIcon').innerHTML = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
@@ -19365,6 +19446,10 @@ _batchBuf += b64Encode(chunk);
     $('npPlayerBody').classList.remove('playing'); $('npTt3d').classList.remove('playing');
     $('playIcon').innerHTML = '<path d="M8 5v14l11-7z"/>';
     mediaSetPlaybackState('paused');
+    // A deliberate pause gives the speakers back to the system (so another app can
+    // take over cleanly). An interruption-driven pause must NOT: we keep focus so
+    // the song can come back when the call ends.
+    if(userPaused) releaseAudioFocus();
     stopGlowSync();
     savePlaybackState(true);
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();

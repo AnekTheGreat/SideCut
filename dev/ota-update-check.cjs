@@ -274,6 +274,14 @@ function btn(id) { return dom.window.document.getElementById(id); }
   ok('every local asset is included by the bundle generator', missing.length === 0,
      'missing: ' + JSON.stringify(missing));
 
+  console.log('\n— regenerating the bundle is byte-identical (so CI never re-publishes noise) —');
+  const crypto = require('crypto');
+  const zipHash = () => crypto.createHash('md5').update(fs.readFileSync(path.join(ROOT, 'ota/update.zip'))).digest('hex');
+  const before = zipHash();
+  require('child_process').execFileSync('node', [path.join(ROOT, 'dev/ota-bundle.mjs')], { cwd: ROOT });
+  const after = zipHash();
+  ok('a second generation produces the same bytes', before === after, before.slice(0, 10) + ' -> ' + after.slice(0, 10));
+
   console.log('\n— the publish path matches what the client expects —');
   ok('the generator writes ota/updates.json', /ota\/updates\.json/.test(bundleSrc));
   ok('the generator writes ota/update.zip', /ota\/update\.zip/.test(bundleSrc));
