@@ -4526,17 +4526,26 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       coral = _preset[1];
     }
 
-    const ctx = faviconCanvas.getContext('2d');
-    ctx.clearRect(0, 0, 64, 64);
-    const grad = ctx.createRadialGradient(24, 20, 2, 32, 32, 36);
-    grad.addColorStop(0, gold);
-    grad.addColorStop(1, coral);
-    ctx.beginPath();
-    ctx.arc(32, 32, 30, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
-    const link = $('faviconLink');
-    if(link) link.href = faviconCanvas.toDataURL('image/png');
+    // A WebView can hand back no 2D context at all, or fail the PNG encode, under
+    // memory pressure. This used to throw straight into the RGB hue loop's frame,
+    // where the unguarded throw ended the cycling for the rest of the session.
+    try{
+      const ctx = faviconCanvas.getContext('2d');
+      if(ctx){
+        ctx.clearRect(0, 0, 64, 64);
+        const grad = ctx.createRadialGradient(24, 20, 2, 32, 32, 36);
+        grad.addColorStop(0, gold);
+        grad.addColorStop(1, coral);
+        ctx.beginPath();
+        ctx.arc(32, 32, 30, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        const link = $('faviconLink');
+        if(link) link.href = faviconCanvas.toDataURL('image/png');
+      }
+    }catch(_eFavicon){
+      // The tab icon is cosmetic — never let it break a frame.
+    }
     if(fullUpdate){
       const themeColorMeta = $('themeColorMeta');
       if(themeColorMeta) themeColorMeta.setAttribute('content', getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#161616');
@@ -4685,14 +4694,37 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       if(hz > 0) Promise.resolve(requestRate.call(window.screen, hz)).catch(function(){});
     }catch(_e){}
   }
+  // Hue of a #rrggbb colour, so the cycle can start where the theme's own accent
+  // sits. hue 0 is pure red: a fresh RGB start painted red and green accents that
+  // matched neither the theme nor anything else on screen, which is exactly the
+  // "the colour is completely off" report.
+  function hueOfHex(css, fallback){
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(css || '').trim());
+    if(!m) return fallback;
+    const n = parseInt(m[1], 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    if(!d) return fallback; // a grey has no hue to start from
+    let h;
+    if(max === r) h = ((g - b) / d) % 6;
+    else if(max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if(h < 0) h += 360;
+    return h;
+  }
   function startRgbAnimation(){
     stopRgbAnimation();
     const start = performance.now();
     const intervalMs = frameRateIntervalMs();
+    // Start at the theme's own accent hue (pink #ff2ea8 -> 325 deg) and keep the
+    // second accent 120 deg behind it, which is where the theme's blue sits — so
+    // frame one is the theme you picked and the cycle sweeps away from there.
+    const baseHue = hueOfHex(THEMES.rgb && THEMES.rgb.coral, 325);
+    const accentGap = -120;
     function tick(now){
       const t = ((now - start) / 1000 / rgbSpeedSec) % 1;
-      const hue1 = t * 360;
-      const hue2 = (t * 360 + 130) % 360; // offset so the two accent colors stay complementary-ish, not identical
+      const hue1 = (baseHue + t * 360) % 360;
+      const hue2 = (hue1 + accentGap + 360) % 360;
       document.documentElement.style.setProperty('--glow-a', `hsl(${hue1}, 85%, 62%)`);
       document.documentElement.style.setProperty('--glow-b', `hsl(${hue2}, 85%, 62%)`);
       // Plain RGB cycles the visible accent colors so buttons/borders/highlights shift with the glow.
@@ -4706,17 +4738,24 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     let last = 0;
     var _rgbLastCss = 0;
     function frame(now){
-      if(intervalMs > 0 && now - last < intervalMs){
+      // One bad frame must never end the cycle. Anything thrown in here used to
+      // escape before the next requestAnimationFrame was scheduled: the loop died
+      // and the accents stayed frozen on the hue of that first frame, which is the
+      // "RGB is stuck on the wrong colour and doesn't cycle" report. The reschedule
+      // now lives in `finally`, so the cycle always continues.
+      try{
+        if(intervalMs > 0 && now - last < intervalMs) return;
+        last = now;
+        // Throttle CSS property writes to max 4/sec — the hue cycle takes 8s
+        // so 4fps is imperceptible but saves ~97% of compositor work at 120Hz
+        if(now - _rgbLastCss < 250) return;
+        _rgbLastCss = now;
+        tick(now);
+      }catch(_eFrame){
+        // Swallow it and keep cycling — a frozen hue is far worse than a missed frame.
+      }finally{
         rgbAnimHandle = requestAnimationFrame(frame);
-        return;
       }
-      last = now;
-      // Throttle CSS property writes to max 4/sec — the hue cycle takes 8s
-      // so 4fps is imperceptible but saves ~97% of compositor work at 120Hz
-      if(now - _rgbLastCss < 250){ rgbAnimHandle = requestAnimationFrame(frame); return; }
-      _rgbLastCss = now;
-      tick(now);
-      rgbAnimHandle = requestAnimationFrame(frame);
     }
     rgbAnimHandle = requestAnimationFrame(frame);
   }
@@ -4957,6 +4996,11 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     root.setProperty('--bg', th.bg);
     root.setProperty('--bg-raised', th.bgRaised);
     if(th.rgb){
+      // currentTheme must be set BEFORE the cycle starts: the loop decides on its
+      // very first frame whether it owns --coral/--gold (plain RGB does, RGB+ does
+      // not), and it used to read the theme being switched AWAY from — so frame one
+      // skipped the accents and the theme looked half-applied until the next tick.
+      currentTheme = key;
       // Set initial accent colors from the theme definition, then start cycling
       root.setProperty('--coral', th.coral);
       root.setProperty('--gold', th.gold);
@@ -9454,7 +9498,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.5';
+  const APP_VERSION = '58.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9731,6 +9775,14 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.6', date: 'September 19, 2026 \u00b7 4:16 PM EDT', title: 'Your albums are yours again, and RGB cycles properly', items: [
+    'The Albums tab is manual-only again: it lists the albums YOU created, and no longer invents cards for albums that exist only as album tags on your files',
+    'Fixed the Albums tab counting every tagged song in your library \u2014 the header total and the play-all queue now cover just the songs in your albums',
+    'Dragging an album card can no longer save a tag-only album as a new album behind your back',
+    'Fixed the RGB theme colouring everything red and green: the hue cycle now starts from the theme\u2019s own pink and blue and sweeps from there',
+    'RGB can no longer freeze on one colour. A failed tab-icon redraw used to end the animation for the rest of the session, leaving the accents stuck mid-cycle',
+    'RGB+ keeps its accent colour steady through a theme switch (its first frame used to read the theme you were leaving)',
+  ] },
   { version: '58.5', date: 'September 19, 2026 \u00b7 7:10 PM EDT', title: 'Your music comes back after a call', items: [
     'Fixed why another music app would start playing on its own after a phone call or when a headset reconnected: SideCut never asked Android for audio focus, so the system handed playback back to whatever app last held it \u2014 even one that was not open. SideCut now holds focus while a song plays',
     'A call pauses your song, and it resumes by itself the moment the call ends \u2014 instead of staying silent or handing the speakers to another app',
@@ -14683,29 +14735,13 @@ function _fallbackCopy(text){
       ids = getSortedIds(rawIds);
     }
     if(libraryMode === 'albums' && !reorderMode){
-      // Albums mode lists albums, and an album can exist purely as a file tag —
-      // that is how a tagged library arrives. buildAlbumsIds() only knows albums
-      // the user explicitly saved, so on its own it left this empty, the
-      // empty-state guard just below bailed out before the album cards were ever
-      // built, and the Albums tab announced "This playlist is empty" over a
-      // library full of albums. Add the tag-derived album tracks so the header
-      // count, the play-all queue and the cards all agree on what is here.
-      // A track whose album name belongs to a SAVED album is left out on purpose:
-      // that card renders from the saved trackIds, so counting a tag-mate here
-      // would count a song no card shows.
-      var _albumIds = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : [];
-      var _albumIdSet = {};
-      _albumIds.forEach(function(aid){ _albumIdSet[aid] = true; });
-      var _savedAlbumNames = {};
-      Object.keys(userAlbums || {}).forEach(function(nm){ _savedAlbumNames[nm] = true; });
-      allTracks.forEach(function(tr){
-        if(!tr || !tr.id || _albumIdSet[tr.id]) return;
-        var _an = String(tr.album || '').trim();
-        if(!_an || _savedAlbumNames[_an]) return;
-        _albumIdSet[tr.id] = true;
-        _albumIds.push(tr.id);
-      });
-      ids = _albumIds;
+      // Albums mode is manual-only — the same rule buildAlbumsIds documents: the
+      // tab lists the albums YOU created by hand and nothing else. Counting
+      // tag-derived albums here flooded the header and the play-all queue with
+      // every song in the library that happened to carry an album tag, so a
+      // 400-file tagged library read as "400 songs in my albums" while the tab
+      // listed albums nobody ever made.
+      ids = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : [];
     }
     const fullIds = ids.slice(); // full playlist order, before search narrows what's shown — this is what playback should queue
     const _rlMap = _ensureTrackMap();
@@ -14914,37 +14950,11 @@ function _fallbackCopy(text){
         _albumMap[aName] = { name: aName, artist: (ua.artist || (firstTrack ? (firstTrack.artist||'').trim() : 'Unknown artist')), tracks: visibleTracks, cover: (firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '' };
         _albumOrder.push(aName);
       });
-      // Also add albums from track metadata that aren't in userAlbums. This has
-      // to scan the whole library rather than `ids`: in Albums mode `ids` has
-      // already been replaced by buildAlbumsIds() (user-album tracks only), so
-      // scanning it here meant an album that exists only as file tags never got a
-      // card at all — every song in it was invisible in the Albums tab until
-      // somebody saved an album. A tagged library (downloaded files carrying an
-      // album tag) is the common case, not an edge case.
-      var _tagScanIds = allTracks.map(function(tr){ return tr.id; });
-      // Album names the pass above already built a card for.
-      var _savedAlbumNameSet = {};
-      _uaKeys.forEach(function(nm){ _savedAlbumNameSet[nm] = true; });
-      _tagScanIds.forEach(function(id){
-        var t = allTracks.find(function(tr){ return tr.id === id; });
-        if(!t) return;
-        var aName = (t.album || '').trim();
-        if(!aName) return;
-        // Skip only albums a SAVED album already covers. The old test was
-        // `_albumMap[aName]`, which the first track of a tag-only album had just
-        // set — so every remaining track of that album bailed out here and the
-        // card could only ever list one song out of the tag group.
-        if(_savedAlbumNameSet[aName]) return;
-        // Check if this track belongs to a userAlbum
-        var inUserAlbum = _uaKeys.some(function(uaName){ return userAlbums[uaName] && userAlbums[uaName].trackIds && userAlbums[uaName].trackIds.indexOf(id) !== -1; });
-        if(inUserAlbum) return; // Already covered by userAlbums
-        if(!_albumMap[aName]){
-          _albumMap[aName] = { name: aName, artist: (t.artist||'').trim(), tracks: [], cover: t.artUrl || '' };
-          _albumOrder.push(aName);
-        }
-        _albumMap[aName].tracks.push(id);
-        if(!_albumMap[aName].cover && t.artUrl) _albumMap[aName].cover = t.artUrl;
-      });
+      // Cards come from userAlbums only. This used to add one card per album
+      // *tag* found on the files, which listed albums the user never created —
+      // library auto-grouping dressed up as their albums. A tag-only album is
+      // still reachable on purpose: the kebab -> "Reorder songs in this album"
+      // picker takes it in, and once it is saved it shows here like any album.
       _albumOrder.sort(function(a,b){
         // When sort is default (Playlist order), preserve userAlbums key order
         var _uaKeys = Object.keys(userAlbums);
@@ -29026,6 +29036,11 @@ window.showSettingsTab = showSettingsTab;
   window.cycleHomeBubbleSize = cycleHomeBubbleSize;
   window.dbGetAll = dbGetAll;
   window.dbPut = dbPut;
+  // Theme entry points, exposed like the other hooks below so the theme
+  // behaviour (RGB hue cycling in particular) can be driven and asserted in
+  // a DOM instead of by eye.
+  window.__scApplyTheme = applyTheme;
+  window.__scGetTheme = function(){ return currentTheme; };
   window.escapeHtml = escapeHtml;
   window.getSortedIds = getSortedIds;
   window.isPremiumActive = isPremiumActive;

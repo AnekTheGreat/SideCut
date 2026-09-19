@@ -1,6 +1,9 @@
-// Album isolation audit: proves album reordering can only ever write userAlbums,
-// that every playlist survives it byte-for-byte, that no song is dropped from an
-// album by a reorder, and that album tracks are never hidden from the Albums view.
+// Album isolation audit. Two rules are under test:
+//   1. Album work can only ever write userAlbums — every playlist survives it
+//      byte-for-byte, and no reorder drops a song from an album.
+//   2. The Albums tab is MANUAL-ONLY: it lists the albums the user created by
+//      hand, and never invents cards for albums that exist only as file tags
+//      (the "why are there 400 songs in my albums" report).
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
@@ -31,8 +34,9 @@ function makeCtx() {
   });
 }
 
-// Three tracks tagged 'MoonChild Era', two tagged 'Other Album'. No saved albums
-// at all, which is exactly the shape of a library imported from tagged files.
+// Five downloaded files carrying album TAGS, and ONE album the user made by hand
+// ('My Mix', holding t1..t3). The tagged-only albums ('MoonChild Era', 'Other
+// Album') must never get cards of their own.
 const TRACKS = [
   { id: 't1', name: 'Luna', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 186 },
   { id: 't2', name: 'Vibe', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 155 },
@@ -40,8 +44,11 @@ const TRACKS = [
   { id: 't4', name: 'Other One', artist: 'Someone', album: 'Other Album', duration: 100 },
   { id: 't5', name: 'Other Two', artist: 'Someone', album: 'Other Album', duration: 120 },
 ];
+const ALBUMS_START = {
+  'My Mix': { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 1 },
+};
 // The point of the suite: 'Moon Faves' contains ONLY album songs. That shape is
-// what the render-time "playlist looks corrupted, refill it with the whole
+// what the old render-time "playlist looks corrupted, refill it with the whole
 // library" heuristic used to rewrite.
 const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5'], Favorites: [], 'Moon Faves': ['t1', 't2'] };
 
@@ -50,7 +57,10 @@ function fakeIndexedDB() {
     tracks: new Map(TRACKS.map((t) => [t.id, t])),
     // Deep copy: the app mutates whatever object it loads, so handing it the
     // constant itself would make the "unchanged?" comparisons tautological.
-    meta: new Map([['playlists', { key: 'playlists', value: JSON.parse(JSON.stringify(PLAYLISTS_START)) }]]),
+    meta: new Map([
+      ['playlists', { key: 'playlists', value: JSON.parse(JSON.stringify(PLAYLISTS_START)) }],
+      ['userAlbums', { key: 'userAlbums', value: JSON.parse(JSON.stringify(ALBUMS_START)) }],
+    ]),
   };
   function tx(store) {
     const t = { oncomplete: null, onerror: null, onabort: null, error: null };
@@ -97,6 +107,12 @@ function ourPlaylists() {
   return { 'All Songs': p['All Songs'], Favorites: p['Favorites'], 'Moon Faves': p['Moon Faves'] };
 }
 function storedAlbums() { const m = idb._data.meta.get('userAlbums'); return m ? m.value : undefined; }
+function cardEls(win) { return Array.from(win.document.querySelectorAll('#listPane [data-album-name]')); }
+function cardNames(win) { return cardEls(win).map((c) => c.dataset.albumName); }
+function paneHeader(win) {
+  const h = win.document.querySelector('#listPane .pane-header');
+  return h ? h.textContent.replace(/\s+/g, ' ').trim() : '';
+}
 function pev(win, el, type, opts) {
   const o = Object.assign({ bubbles: true, cancelable: true, clientX: 120, clientY: 300, pointerId: 9, pointerType: 'touch', button: 0, isPrimary: true }, opts || {});
   let ev;
@@ -124,22 +140,21 @@ let toasts = [];
   const win = dom.window;
   const realToast = win.toast;
   await wait(3000);
-
-  console.log('\n— baseline —');
-  ok('library loaded', win.document.querySelectorAll('#listPane .track').length >= 0);
-  ok('playlists loaded from storage', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
   win.toast = function (m) { toasts.push(String(m)); return realToast ? realToast.apply(null, arguments) : undefined; };
 
-  console.log('\n— album cards come from file tags (no saved albums yet) —');
+  console.log('\n— the Albums tab is the albums the user created —');
   win.navigate('albums');
   await wait(800);
-  let cards = Array.from(win.document.querySelectorAll('[data-album-name]'));
-  const cardNames = cards.map((c) => c.dataset.albumName);
-  ok('both tag-only albums are visible in the Albums tab', cardNames.length === 2 && cardNames.indexOf('MoonChild Era') !== -1 && cardNames.indexOf('Other Album') !== -1,
-     'cards=' + JSON.stringify(cardNames));
-  const moonCard = cards.find((c) => c.dataset.albumName === 'MoonChild Era');
-  ok('the album shows all three of its songs', !!moonCard && moonCard.querySelectorAll('.track').length === 3,
-     moonCard ? String(moonCard.querySelectorAll('.track').length) : 'no card');
+  ok('only the hand-made album has a card', eq(cardNames(win), ['My Mix']), JSON.stringify(cardNames(win)));
+  ok('the album tagged on the files is NOT listed', cardNames(win).indexOf('MoonChild Era') === -1, JSON.stringify(cardNames(win)));
+  ok('nor is the other tag-only album', cardNames(win).indexOf('Other Album') === -1, JSON.stringify(cardNames(win)));
+  ok('no album the user never created exists in storage', eq(Object.keys(storedAlbums() || {}), ['My Mix']),
+     JSON.stringify(Object.keys(storedAlbums() || {})));
+  const myCard = cardEls(win).find((c) => c.dataset.albumName === 'My Mix');
+  ok('the album shows all three of its songs', !!myCard && myCard.querySelectorAll('.track').length === 3,
+     myCard ? String(myCard.querySelectorAll('.track').length) : 'no card');
+  ok('the header counts only the albums’ songs (3, not the whole library)', /\b3 tracks\b/.test(paneHeader(win)), paneHeader(win));
+  ok('the tag-only songs are not smuggled into the count', !/\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
 
   console.log('\n— rendering the Albums tab must not rewrite playlists —');
   ok('playlist backed by only album songs is untouched', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
@@ -163,10 +178,10 @@ let toasts = [];
   console.log('\n— album reorder via the sheet —');
   win.navigate('albums');
   await wait(600);
-  win.showAlbumReorderPopup('MoonChild Era');
+  win.showAlbumReorderPopup('My Mix');
   await wait(300);
   let sheet = win.document.getElementById('albumReorderPopup');
-  ok('reorder sheet opens for the tag-only album', !!sheet);
+  ok('reorder sheet opens for the album', !!sheet);
   let sheetRows = Array.from(sheet.querySelectorAll('[data-id]')).map((r) => r.dataset.id);
   ok('sheet lists the album songs unchanged', eq(sheetRows, ['t1', 't2', 't3']), JSON.stringify(sheetRows));
   ok('opening it still left playlists alone', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
@@ -181,55 +196,36 @@ let toasts = [];
   sheetRows = Array.from(sheet.querySelectorAll('[data-id]')).map((r) => r.dataset.id);
   ok('dragging reorders the album', eq(sheetRows, ['t2', 't3', 't1']), JSON.stringify(sheetRows));
   const albumsAfter = storedAlbums() || {};
-  ok('the new order is persisted to userAlbums', eq((albumsAfter['MoonChild Era'] || {}).trackIds, ['t2', 't3', 't1']),
-     JSON.stringify((albumsAfter['MoonChild Era'] || {}).trackIds));
-  ok('no song was dropped from the album', ((albumsAfter['MoonChild Era'] || {}).trackIds || []).length === 3);
+  ok('the new order is persisted to userAlbums', eq((albumsAfter['My Mix'] || {}).trackIds, ['t2', 't3', 't1']),
+     JSON.stringify((albumsAfter['My Mix'] || {}).trackIds));
+  ok('no song was dropped from the album', ((albumsAfter['My Mix'] || {}).trackIds || []).length === 3);
+  ok('reordering invented no album', eq(Object.keys(albumsAfter), ['My Mix']), JSON.stringify(Object.keys(albumsAfter)));
   ok('playlists untouched by the album reorder', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   // Done -> refresh the library view.
-  const doneBtn = sheet.querySelector('button');
   Array.from(sheet.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Done').click();
   await wait(500);
   ok('sheet closed', !win.document.getElementById('albumReorderPopup'));
-  cards = Array.from(win.document.querySelectorAll('[data-album-name]'));
-  const moonAfter = cards.find((c) => c.dataset.albumName === 'MoonChild Era');
-  ok('album card still shows every song after the reorder', !!moonAfter && moonAfter.querySelectorAll('.track').length === 3,
-     moonAfter ? String(moonAfter.querySelectorAll('.track').length) : 'no card');
-  ok('album card rows reflect the new order', !!moonAfter && JSON.stringify(Array.from(moonAfter.querySelectorAll('.track')).map((r) => r.dataset.id)) === JSON.stringify(['t2', 't3', 't1']),
-     moonAfter ? JSON.stringify(Array.from(moonAfter.querySelectorAll('.track')).map((r) => r.dataset.id)) : 'no card');
+  const myAfter = cardEls(win).find((c) => c.dataset.albumName === 'My Mix');
+  ok('album card still shows every song after the reorder', !!myAfter && myAfter.querySelectorAll('.track').length === 3,
+     myAfter ? String(myAfter.querySelectorAll('.track').length) : 'no card');
+  ok('album card rows reflect the new order', !!myAfter && eq(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id), ['t2', 't3', 't1']),
+     myAfter ? JSON.stringify(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id)) : 'no card');
+  ok('still no tag-only album card after a reorder', eq(cardNames(win), ['My Mix']), JSON.stringify(cardNames(win)));
   ok('playlists still untouched after closing', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
-  ok('other album untouched', !!cards.find((c) => c.dataset.albumName === 'Other Album'));
 
-  console.log('\n— album card drag (the other reorder path) —');
-  const albumsBeforeDrag = Object.keys(storedAlbums() || {});
-  const cardsBeforeDrag = Array.from(win.document.querySelectorAll('[data-album-name]')).map((c) => c.dataset.albumName);
-  ok('cards are ordered saved-album first', eq(cardsBeforeDrag, ['MoonChild Era', 'Other Album']), JSON.stringify(cardsBeforeDrag));
-  // Drag the first card past the second (jsdom has no layout, so a downward move
-  // simply lands it last — deterministic and enough to prove the persist path).
-  const dragCard = Array.from(win.document.querySelectorAll('[data-album-name]')).find((c) => c.dataset.albumName === 'MoonChild Era');
+  console.log('\n— dragging a card can never invent an album —');
+  const albumsBeforeDrag = JSON.stringify(storedAlbums() || {});
+  const dragCard = cardEls(win)[0];
   pev(win, dragCard, 'pointerdown', { clientY: 200 });
   await wait(420);                                  // hold to enter the drag
   docEv(win, 'pointermove', { clientY: 1200 });
   await wait(120);
   docEv(win, 'pointerup', { clientY: 1200 });
   await wait(700);
-  const albumsAfterDrag = storedAlbums() || {};
-  ok('no saved album was lost', Object.keys(albumsAfterDrag).length >= albumsBeforeDrag.length,
-     JSON.stringify(Object.keys(albumsAfterDrag)));
-  ok('the dragged album is now last', eq(Object.keys(albumsAfterDrag), ['Other Album', 'MoonChild Era']),
-     JSON.stringify(Object.keys(albumsAfterDrag)));
-  ok('dragging brought the tag-only album in as a real album', eq((albumsAfterDrag['Other Album'] || {}).trackIds, ['t4', 't5']),
-     JSON.stringify((albumsAfterDrag['Other Album'] || {}).trackIds));
-  const cardsAfterDrag = Array.from(win.document.querySelectorAll('[data-album-name]'));
-  ok('both album cards survive the card drag', cardsAfterDrag.length === 2, 'cards=' + cardsAfterDrag.length);
-  ok('the rendered order matches what was stored', eq(cardsAfterDrag.map((c) => c.dataset.albumName), ['Other Album', 'MoonChild Era']),
-     JSON.stringify(cardsAfterDrag.map((c) => c.dataset.albumName)));
-  ok('the dragged album kept every song', eq((albumsAfterDrag['MoonChild Era'] || {}).trackIds, ['t2', 't3', 't1']),
-     JSON.stringify((albumsAfterDrag['MoonChild Era'] || {}).trackIds));
-  const otherAfter = cardsAfterDrag.find((c) => c.dataset.albumName === 'Other Album');
-  ok('and still shows its two songs', !!otherAfter && otherAfter.dataset.albumIds === 't4,t5',
-     otherAfter ? otherAfter.dataset.albumIds : 'no card');
-  ok('card drag never touched playlists', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
+  ok('the drag changed no album content', JSON.stringify(storedAlbums() || {}) === albumsBeforeDrag,
+     JSON.stringify(storedAlbums() || {}));
+  ok('and card drag never touched playlists', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   console.log('\n— picker route (⋮ → Reorder an album\'s songs) —');
   win.navigate('albums');
@@ -238,10 +234,13 @@ let toasts = [];
   win.__scOpenAlbumReorderPicker();
   await wait(400);
   const picks = Array.from(win.document.querySelectorAll('.ap-pick'));
-  ok('picker lists every album (saved + tag-only)', picks.length === 2, 'picks=' + picks.length + ' ' + picks.map((b) => b.textContent.trim()).join(' | '));
-  ok('picker counts every track', /3 tracks/.test(picks.map((b) => b.textContent).join('|')) && /2 tracks/.test(picks.map((b) => b.textContent).join('|')),
-     picks.map((b) => b.textContent.trim().replace(/\s+/g, ' ')).join(' | '));
+  // The saved album, plus the tag-only album whose songs no saved album claims.
+  // 'MoonChild Era' is not offered separately because t1..t3 already belong to
+  // 'My Mix' — offering it would split the same songs across two albums.
+  ok('picker offers the saved album and the unclaimed tag-only album', picks.length === 2,
+     'picks=' + picks.length + ' ' + picks.map((b) => b.textContent.trim().replace(/\s+/g, ' ')).join(' | '));
   const pickOther = picks.find((b) => b.textContent.indexOf('Other Album') !== -1);
+  ok('the tag-only album is offered by the picker', !!pickOther);
   pickOther.click();
   await wait(400);
   const sheet2 = win.document.getElementById('albumReorderPopup');
@@ -251,7 +250,11 @@ let toasts = [];
   ok('picker route left playlists alone', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
   Array.from(sheet2.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Done').click();
   await wait(500);
-  ok('closing it refreshed the album view', !!win.document.querySelector('[data-album-name="Other Album"]'));
+  // Only an explicit "reorder this tag album" action saves it — then it is an
+  // album the user asked for, and it shows up like any other.
+  ok('the album the user explicitly took in now has a card', cardNames(win).indexOf('Other Album') !== -1, JSON.stringify(cardNames(win)));
+  ok('and the hand-made album is still there, unmoved', cardNames(win)[0] === 'My Mix', JSON.stringify(cardNames(win)));
+  ok('no other album appeared', cardNames(win).length === 2, JSON.stringify(cardNames(win)));
 
   console.log('\n— everything still reachable in the normal views —');
   win.navigate('playlists');
@@ -264,30 +267,21 @@ let toasts = [];
   await wait(500);
   rows = Array.from(win.document.querySelectorAll('#listPane .track')).map((r) => r.dataset.id);
   ok('All Songs still has all five', eq(rows, ['t1', 't2', 't3', 't4', 't5']), JSON.stringify(rows));
-  win.navigate('albums');
-  await wait(600);
-  const finalCards = Array.from(win.document.querySelectorAll('[data-album-name]'));
-  const memberIds = finalCards.reduce((all, c) => all.concat(c.dataset.albumIds ? c.dataset.albumIds.split(',') : []), []);
-  ok('Albums tab exposes all five songs across both albums', memberIds.length === 5 && new Set(memberIds).size === 5, JSON.stringify(memberIds));
-  ok('no track is missing from its album', ['t1', 't2', 't3', 't4', 't5'].every((id) => memberIds.indexOf(id) !== -1), JSON.stringify(memberIds));
-  // And the collapsed/expanded card actually renders them on demand.
-  const head = finalCards.find((c) => c.dataset.albumName === 'Other Album').querySelector('div');
-  const bodyOther = finalCards.find((c) => c.dataset.albumName === 'Other Album').querySelector('[id^="alb_card_"]');
-  if (bodyOther && bodyOther.style.display === 'none') { head.click(); await wait(300); }
-  ok('expanding a card renders its rows', bodyOther.querySelectorAll('.track').length === 2, String(bodyOther.querySelectorAll('.track').length));
 
   console.log('\n— the playing song is highlighted inside album cards —');
-  try { win.playFromList(['t1', 't2', 't3', 't4', 't5'], 't5'); } catch (e) {}
+  win.navigate('albums');
   await wait(700);
+  try { win.playFromList(['t1', 't2', 't3'], 't3'); } catch (e) {}
+  await wait(900);
   win.navigate('albums');
   await wait(900);
-  const playingRows = Array.from(win.document.querySelectorAll('[data-album-name] .track.playing')).map((r) => r.dataset.id);
-  ok('its song row is marked as playing inside the card', playingRows.indexOf('t5') !== -1, JSON.stringify(playingRows));
-  const otherBody = win.document.querySelector('[data-album-name="Other Album"] [id^="alb_card_"]');
-  ok('a tag-only album card auto-opens and fills for the playing song',
-     !!otherBody && otherBody.style.display !== 'none' && otherBody.querySelectorAll('.track').length === 2,
-     otherBody ? ('display=' + otherBody.style.display + ' rows=' + otherBody.querySelectorAll('.track').length) : 'no body');
-  ok('auto-expand still left playlists alone', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
+  const playingRows = Array.from(win.document.querySelectorAll('#listPane [data-album-name] .track.playing')).map((r) => r.dataset.id);
+  ok('its song row is marked as playing inside the card', playingRows.indexOf('t3') !== -1, JSON.stringify(playingRows));
+  const myBody = win.document.querySelector('[data-album-name="My Mix"] [id^="alb_card_"]');
+  ok('the card is open and lists all three songs',
+     !!myBody && myBody.querySelectorAll('.track').length === 3,
+     myBody ? ('display=' + myBody.style.display + ' rows=' + myBody.querySelectorAll('.track').length) : 'no body');
+  ok('the playing highlight did not add or remove any album card', eq(cardNames(win), ['My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
 
   // jsdom cannot actually play audio ('Not implemented: HTMLMediaElement.play')
   // plus the app's known boot-order race; neither is an app error.
