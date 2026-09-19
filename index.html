@@ -9234,7 +9234,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.0';
+  const APP_VERSION = '58.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9511,6 +9511,12 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.1', date: 'September 19, 2026 \u00b7 12:30 AM EDT', title: 'Album song reordering works now', items: [
+    'Holding a song inside an album now really opens the Reorder Songs sheet \u2014 it was silently failing with \"Album not found.\"',
+    'In the sheet, drag the grip handle or tap the up/down arrows on any row, then tap Done',
+    'Your album order saves as you move songs, and the album list refreshes right away',
+    'Songs that are not in your library anymore stay in place instead of being dropped when you save a new order',
+  ] },
   { version: '58.0', date: 'September 17, 2026 · 12:00 AM EDT', title: 'Export fix, playlist safety, RGB themes & miniBar seek', items: [
     'Fixed export progress — estimates now track actual progress and exports no longer skip to 95%',
     'Album operations (reorder, create, edit) no longer affect playlist sort order',
@@ -28206,6 +28212,11 @@ window.showSettingsTab = showSettingsTab;
   window.renderList = renderList;
   window.renderStats = renderStats;
   window.renderTabs = renderTabs;
+  // Album reorder popup lives in the second top-level <script> block and
+  // needs these to resolve album data at all.
+  window.__scGetUserAlbums = function(){ return userAlbums; };
+  window.__scGetAllTracks = function(){ return allTracks; };
+  window.fmtTime = fmtTime;
   window.renderThemeOptions = renderThemeOptions;
   window.runDiscoverSearch = runDiscoverSearch;
   window.toggleDiscoverPreview = toggleDiscoverPreview;
@@ -29360,8 +29371,14 @@ window.__ahCancelToast = function(){
 
 // ---------------- Album Reorder Popup ----------------
 window.showAlbumReorderPopup = function(albumName){
+  // This popup lives in the second top-level <script> block, which cannot see
+  // the main IIFE's locals. Without these aliases userAlbums/allTracks were
+  // undefined here, so the popup always bailed out with "Album not found." —
+  // exactly why holding a song in an album never opened the reorder sheet.
+  var userAlbums = (typeof window.__scGetUserAlbums === 'function' ? window.__scGetUserAlbums() : window.userAlbums) || {};
+  var allTracks = (typeof window.__scGetAllTracks === 'function' ? window.__scGetAllTracks() : window.allTracks) || [];
   var album = null;
-  if(typeof userAlbums !== 'undefined' && userAlbums[albumName]) album = userAlbums[albumName];
+  if(userAlbums[albumName]) album = userAlbums[albumName];
   if(!album){ toast('Album not found.'); return; }
 
   // Build list of all album names for switching
@@ -29396,7 +29413,7 @@ window.showAlbumReorderPopup = function(albumName){
   header.appendChild(headerInfo);
   var headerHint = document.createElement('div');
   headerHint.style.cssText = 'font-size:11px;color:var(--ink-dim);margin-top:4px;';
-  headerHint.textContent = 'Drag \u2261 handles to reorder. Tap Done to save.';
+  headerHint.textContent = 'Drag \u2261 or tap \u25b2\u25bc to reorder, then tap Done.';
   header.appendChild(headerHint);
   card.appendChild(header);
 
@@ -29412,6 +29429,34 @@ window.showAlbumReorderPopup = function(albumName){
     var targetAlbum = userAlbums[targetAlbumName];
     if(!targetAlbum) return;
     listEl.innerHTML = '';
+    // Renumber rows and refresh the arrow disabled-states.
+    function refreshNums(){
+      var kids = listEl.children;
+      for(var _i = 0; _i < kids.length; _i++){
+        var _rw = kids[_i];
+        var _num = _rw.children[1];
+        if(_num) _num.textContent = _i + 1;
+        var _up = _rw.querySelector ? _rw.querySelector('.reorder-up') : null;
+        var _dn = _rw.querySelector ? _rw.querySelector('.reorder-down') : null;
+        if(_up) _up.disabled = (_i === 0);
+        if(_dn) _dn.disabled = (_i === kids.length - 1);
+      }
+    }
+    // Persist the popup's current DOM order into the album. Any album tracks
+    // that aren't rendered (missing/deleted locally) keep their relative order
+    // at the end instead of being dropped.
+    function commitOrder(){
+      var rowsNow = Array.prototype.slice.call(listEl.querySelectorAll('[data-id]'));
+      var shown = rowsNow.map(function(rw){ return rw.dataset.id; });
+      var live = (typeof window.__scGetUserAlbums === 'function' ? window.__scGetUserAlbums() : userAlbums) || {};
+      var alb = live[currentPopupAlbum];
+      if(!alb) return;
+      var missing = (alb.trackIds || []).filter(function(id){ return shown.indexOf(id) === -1; });
+      alb.trackIds = shown.concat(missing);
+      try{
+        if(typeof window.dbPut === 'function') window.dbPut('meta', { key: 'userAlbums', value: live });
+      }catch(_e){}
+    }
     headerSub.innerHTML = escapeHtml(targetAlbumName) + ' \u00b7 ' + targetAlbum.trackIds.length + ' track' + (targetAlbum.trackIds.length !== 1 ? 's' : '');
 
     targetAlbum.trackIds.forEach(function(tid, ti){
@@ -29423,7 +29468,7 @@ window.showAlbumReorderPopup = function(albumName){
       var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
       var gripDiv = document.createElement('div');
       gripDiv.className = 'ar-grip';
-      gripDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;width:20px;flex-shrink:0;color:var(--ink-dim);font-size:13px;font-weight:600;cursor:grab;';
+      gripDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;width:20px;flex-shrink:0;color:var(--ink-dim);font-size:13px;font-weight:600;cursor:grab;touch-action:none;';
       gripDiv.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg>';
       var numDiv = document.createElement('div');
       numDiv.style.cssText = 'font-size:12px;color:var(--ink-dim);width:22px;text-align:center;flex-shrink:0;';
@@ -29448,6 +29493,23 @@ window.showAlbumReorderPopup = function(albumName){
       row.appendChild(artDiv);
       row.appendChild(infoDiv);
       row.appendChild(durDiv);
+      var arrowWrap = document.createElement('div');
+      arrowWrap.className = 'reorder-btns';
+      arrowWrap.style.cssText = 'flex-shrink:0;';
+      arrowWrap.innerHTML = '<button class="reorder-up" title="Move up"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14l5-5 5 5z"/></svg></button><button class="reorder-down" title="Move down"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button>';
+      (function(rw, wrap){
+        wrap.querySelector('.reorder-up').addEventListener('click', function(ev){
+          ev.stopPropagation();
+          var prev = rw.previousElementSibling;
+          if(prev){ listEl.insertBefore(rw, prev); refreshNums(); commitOrder(); }
+        });
+        wrap.querySelector('.reorder-down').addEventListener('click', function(ev){
+          ev.stopPropagation();
+          var next = rw.nextElementSibling;
+          if(next){ listEl.insertBefore(next, rw); refreshNums(); commitOrder(); }
+        });
+      })(row, arrowWrap);
+      row.appendChild(arrowWrap);
       listEl.appendChild(row);
 
       // Hold-to-drag reorder on the row itself
@@ -29486,10 +29548,8 @@ window.showAlbumReorderPopup = function(albumName){
           try{ document.body.classList.remove('reordering'); }catch(_e){}
           if(dragging){
             r.style.zIndex = ''; r.style.boxShadow = ''; r.style.background = ''; r.style.transform = ''; r.style.transition = '';
-            Array.prototype.forEach.call(listEl.children, function(row, idx){
-              var numEl = row.children[1];
-              if(numEl) numEl.textContent = idx + 1;
-            });
+            refreshNums();
+            commitOrder();
             dragging = null;
           }
         }
@@ -29536,10 +29596,8 @@ window.showAlbumReorderPopup = function(albumName){
           document.removeEventListener('pointerup', gFinish);
           document.removeEventListener('pointercancel', gFinish);
           row.style.zIndex = ''; row.style.boxShadow = ''; row.style.background = ''; row.style.transform = ''; row.style.transition = '';
-          Array.prototype.forEach.call(listEl.children, function(r, idx){
-            var numEl = r.children[1];
-            if(numEl) numEl.textContent = idx + 1;
-          });
+          refreshNums();
+          commitOrder();
         }
         document.addEventListener('pointermove', gMove);
         document.addEventListener('pointerup', gFinish);
@@ -29590,13 +29648,11 @@ window.showAlbumReorderPopup = function(albumName){
   doneBtn.style.cssText = 'width:100%;padding:12px;border-radius:10px;border:none;background:var(--coral);color:#161616;font-size:14px;font-weight:700;cursor:pointer;';
   doneBtn.textContent = 'Done';
   doneBtn.addEventListener('click', function(){
-    var tracks = Array.prototype.slice.call(listEl.querySelectorAll('[data-id]'));
-    var newOrder = tracks.map(function(r){ return r.dataset.id; });
-    if(newOrder.length && currentPopupAlbum && userAlbums[currentPopupAlbum]){
-      userAlbums[currentPopupAlbum].trackIds = newOrder;
-      if(typeof dbPut === 'function'){ dbPut('meta', { key: 'userAlbums', value: userAlbums }); }
-    }
-    overlay.remove();
+    // The order is written as you drag/tap, so closing only has to refresh the
+    // library — otherwise the album card kept showing the old order and the
+    // reorder looked like it did nothing.
+    try{ overlay.remove(); }catch(_e){}
+    try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
     toast('\u2713 Order saved', 1500);
   });
   footer.appendChild(doneBtn);
@@ -29606,10 +29662,16 @@ window.showAlbumReorderPopup = function(albumName){
 
   // Close on backdrop tap
   overlay.addEventListener('click', function(e){
-    if(e.target === overlay) overlay.remove();
+    if(e.target === overlay){
+      try{ overlay.remove(); }catch(_e){}
+      try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
+    }
   });
   // Close button
-  closeBtn.addEventListener('click', function(){ overlay.remove(); });
+  closeBtn.addEventListener('click', function(){
+    try{ overlay.remove(); }catch(_e){}
+    try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
+  });
 
   document.body.appendChild(overlay);
 };
