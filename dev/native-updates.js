@@ -34,6 +34,8 @@
   var STAGED_SHOWN_KEY = 'sidecut_ota_staged_shown_'; // + version - play-time staged sheet surfaces at most once per staged version
   var PENDING_KEY = 'sidecut_ota_pending';     // { version, at } written when we hand over with set(), cleared once that version boots
   var BAD_KEY = 'sidecut_ota_bad_';            // + version - a bundle that failed to take over; never auto-installed again
+  var AUTOHANDLED_KEY = 'sidecut_ota_autohandled_'; // + version - a version already handed over to AUTOMATICALLY once
+  var BOOTAPPLY_KEY = 'sidecut_ota_bootapply_';     // + version - the boot hand-over already ran for this version
 
   function log(msg){ try{ console.log('[SideCut OTA] ' + msg); }catch(e){} }
   function toast(msg, ms){
@@ -260,6 +262,15 @@
   // repainting it over the deferral message.
   function applyStagedNow(Updater, nb){
     if(!nb || !nb.id) return false;
+    if(String(nb.version || '') === String(currentVersion())){
+      // The staged record points at the bundle we are ALREADY running: the plugin
+      // only clears "next" once a boot confirms it, so a stale record survives a
+      // reload. Applying it again reloads into the same version — the endless
+      // refresh. Nothing to do but forget it.
+      log('staged ' + nb.version + ' is already the running version — nothing to apply');
+      clearSheet();
+      return false;
+    }
     // Remember what we are handing over to before the WebView reloads away: the
     // next boot compares this with what actually came up (noteBootOutcome).
     try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version || ''), at: Date.now() })); }catch(e){}
@@ -278,6 +289,7 @@
       return true;
     }
     log('applying staged bundle ' + nb.version + ' now');
+    markAutoHandled(String(nb.version || ''));
     // Show the Installing state in the sheet (not just a toast) — the set()
     // reload below destroys the JS context, so this is the last thing the
     // user sees before the app comes back on the new version.
@@ -305,6 +317,7 @@
     U.getNextBundle().then(function(nb){
       if(!nb || !nb.version) return;
       if(isBadVersion(String(nb.version))) return; // a failed bundle is not re-offered either
+      if(String(nb.version) === String(currentVersion())) return; // already running it
       if(!wantDeferredInstall(String(nb.version))) return; // auto-apply path already handled it
       if(sheetRefs && sheetRefs.card && sheetRefs.card.style.display === 'block') return;
       var st = readSheet();
@@ -342,6 +355,16 @@
     // A bundle that already failed to take over is never applied automatically.
     if(isBadVersion(version)){
       log('staged ' + version + ' failed to start before — not applying it automatically');
+      return false;
+    }
+    // A boot loop means every automatic action is off for this session.
+    if(bootLooping()){
+      log('boot loop detected — not applying ' + version + ' automatically');
+      return false;
+    }
+    // Already handed over to once without it sticking: never again automatically.
+    if(autoHandledAlready(version)){
+      markBadVersion(version, 'auto-handled once without taking over');
       return false;
     }
     if(!wantDeferredInstall(version)){
@@ -447,6 +470,25 @@
   function isBadVersion(version){
     if(!version) return false;
     try{ return !!localStorage.getItem(BAD_KEY + version); }catch(e){ return false; }
+  }
+  // One AUTOMATIC hand-over per version, shared by every automatic path (the boot
+  // hand-over and the update check). If we already handed over to this exact bundle
+  // and the running version still is not it, it never took over — reloading into it
+  // again is the endless refresh the user sees, so it is never auto-attempted twice.
+  function autoHandledAlready(version){
+    if(!version) return false;
+    try{ return localStorage.getItem(AUTOHANDLED_KEY + version) === '1'; }catch(e){ return false; }
+  }
+  function markAutoHandled(version){
+    if(!version) return;
+    try{ localStorage.setItem(AUTOHANDLED_KEY + version, '1'); }catch(e){}
+  }
+  // True while the app is stuck restarting itself (see the boot-loop breaker in
+  // index.html): the updater must not touch bundles at all in that state.
+  function bootLooping(){
+    try{ if(window.__scBootLooping) return true; }catch(e){}
+    try{ if(typeof window.__scAutoReloadAllowed === 'function' && !window.__scAutoReloadAllowed()) return true; }catch(e){}
+    return false;
   }
   // Runs the moment the running app is confirmed healthy. Either the version we
   // handed over to IS what is running (update confirmed — forget it), or it is
@@ -772,6 +814,31 @@
           if(U && typeof U.getNextBundle === 'function'){
             U.getNextBundle().then(function(nb){
               if(!nb || !nb.version) return;
+              // A staged bundle that IS the running version is a stale record, not an
+              // update: re-applying it reloads into the same build, which is exactly
+              // the endless refresh the user sees after an update.
+              if(String(nb.version) === String(currentVersion())){ log('staged ' + nb.version + ' is already the running version — ignoring it'); return; }
+              // One automatic hand-over per version. If we already auto-applied this
+              // exact bundle on a boot and the version did not change, it never took
+              // over: treat it as failed instead of reloading into it forever.
+              var bootApplyKey = BOOTAPPLY_KEY + nb.version;
+              try{
+                if(localStorage.getItem(bootApplyKey) === '1'){
+                  markBadVersion(String(nb.version), 'auto-applied on boot without taking over');
+                  return;
+                }
+              }catch(e){}
+              // A boot loop (the app restarting itself over and over) means the
+              // updater must not touch bundles at all this session.
+              if(bootLooping()){
+                log('boot loop detected — not auto-applying anything');
+                return;
+              }
+              // This version was already handed over to automatically once.
+              if(autoHandledAlready(String(nb.version))){
+                markBadVersion(String(nb.version), 'auto-applied once without taking over');
+                return;
+              }
               // v56.0.16 behavior restored (the sheet rewrite dropped it): a
               // staged bundle applies at launch — immediately for users who
               // never chose "Install later", on close for those who did —
@@ -787,6 +854,8 @@
               }
               if(!somethingIsPlaying() && !wantDeferredInstall(String(nb.version))){
                 log('auto-applying staged ' + nb.version + ' on boot (nothing playing)');
+                markAutoHandled(String(nb.version));
+                try{ localStorage.setItem(BOOTAPPLY_KEY + nb.version, '1'); }catch(_e){}
                 try{ localStorage.setItem('sidecut_ota_applied', String(nb.version)); }catch(_e){}
                 try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version), at: Date.now() })); }catch(_e){}
                 showSheet({ phase: 'installing', version: nb.version, title: 'Updating to SideCut ' + nb.version + '…' });

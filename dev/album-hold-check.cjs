@@ -35,7 +35,10 @@ const TRACKS = [
   { id: 't3', name: 'Champagne (SPOTISAVER)', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 182 },
 ];
 const META = [
-  { key: 'userAlbums', value: { 'MoonChild Era': { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 1 } } },
+  // v58.8.1: an album the user took in carries `manual: true`; without it the
+  // manual-only migration would treat a tag-identical entry as auto-added and keep
+  // it out of the tab (so there would be no card to hold on).
+  { key: 'userAlbums', value: { 'MoonChild Era': { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 1, manual: true } } },
   { key: 'playlists', value: { 'All Songs': ['t1', 't2', 't3'], Favorites: [] } },
 ];
 

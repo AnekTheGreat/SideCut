@@ -147,8 +147,14 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   console.log('\n— playing takes audio focus —');
   setPlaying();
-  await wait(50);
-  ok('a started song requests focus', calls.request === 1, 'requests=' + calls.request);
+  // v58.8.1: the FIRST focus ask of each play attempt is deliberately deferred a
+  // moment, because a native call in the very first frame of a song is the riskiest
+  // place in the whole play path (it is what the crash recorder blamed for a death
+  // during "starting playback"). The song is unaffected; focus still arrives.
+  await wait(120);
+  ok('the native focus call is kept out of the first frames of the song', calls.request === 0, 'requests=' + calls.request);
+  await wait(1700);
+  ok('a started song still takes audio focus', calls.request >= 1, 'requests=' + calls.request);
   ok('it does not abandon focus right away', calls.abandon === 0, 'abandons=' + calls.abandon);
   ok('and the queue is real (resume has something to play)', win.document.querySelectorAll('#listPane .track').length >= 0);
 
@@ -217,7 +223,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('a permanent loss later in the song does pause us', played.pausedCount === 1, 'pauses=' + played.pausedCount);
   const reqBefore = calls.request;
   setPlaying();
-  await wait(50);
+  await wait(1100);   // the first ask of an attempt is deliberately deferred
   ok('the next start asks for focus again instead of assuming we still hold it',
      calls.request > reqBefore, 'requests=' + calls.request + ' before=' + reqBefore);
 

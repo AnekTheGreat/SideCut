@@ -4343,8 +4343,16 @@ window.__scDragDelta = function(key, pxPerSec){
       var _scAlive = parseInt(localStorage.getItem('scAliveAt') || '0', 10) || 0;
       try{ localStorage.removeItem('scLeftFgAt'); }catch(e){ }
       try{ localStorage.removeItem('scAliveAt'); }catch(e){ }
+      // Boot stamp: the gap between two boots is how a RESTART is told apart from
+      // a crash. Anything that reloads the app (OTA apply, snapshot repair, a
+      // WebView restart) leaves the last risky op marked; without this the next
+      // boot reported it as a crash even though nothing died.
+      var _scPrevBoot = 0;
+      try{ _scPrevBoot = parseInt(localStorage.getItem('scBootAt') || '0', 10) || 0; }catch(e){}
+      try{ localStorage.setItem('scBootAt', String(Date.now())); }catch(e){}
       if(_scLast && _scLast.op){
         var _scAge = Date.now() - (_scLast.at || 0);
+        var _scRestart = !!(_scPrevBoot && (Date.now() - _scPrevBoot) < 30000);
         // v55.9: a marker left over from a session where the app was
         // backgrounded or left AFTER the op started is a normal process
         // death (swipe from recents, launcher cleanup, memory reclaim) —
@@ -4358,11 +4366,21 @@ window.__scDragDelta = function(key, pxPerSec){
         // demonstrably outlived the risky part of the op. Applied only to
         // the quick ops — long import markers must keep full reporting.
         var _scQuick = _scLast.op === 'starting up' || _scLast.op === 'starting playback' || _scLast.op === 'the media player notification';
-        var _scNormalDeath = (_scLeftAt && _scLeftAt >= (_scLast.at || 0))
+        var _scNormalDeath = _scRestart
+          || (_scLeftAt && _scLeftAt >= (_scLast.at || 0))
           || (_scQuick && _scAlive && _scAlive >= ((_scLast.at || 0) + 15 * 1000))
           || _scAge >= 5 * 60 * 1000;
         if(!_scNormalDeath){
           setTimeout(function(){ __scShowBootError('The app previously crashed during: ' + _scLast.op + ' — screenshot this message'); }, 1200);
+          if(_scLast.op === 'starting playback'){
+            // A death in the opening moments of playback is the riskiest point of
+            // the whole play path, and the only NATIVE call in it is the injected
+            // audio-focus helper. Switch it off for THIS build (a newer build is
+            // assumed to have fixed it and re-enables it automatically) so it can
+            // never block playback twice, and say so once.
+            try{ localStorage.setItem('sidecut_audiofocus_off', JSON.stringify({ off: true, v: APP_VERSION })); }catch(e){}
+            setTimeout(function(){ __scShowBootError('Playback stopped while it was starting, so the audio-focus helper has been switched off — songs play normally now. It comes back in the next update.'); }, 2000);
+          }
           if(_scLast.op === 'the media player notification'){
             try{ localStorage.setItem('sidecut_native_media', JSON.stringify({ off: true, v: APP_VERSION })); }catch(e){ }
             setTimeout(function(){ __scShowBootError('The notification player crashed the app — it has been switched off automatically.'); }, 1800);
@@ -4383,9 +4401,65 @@ window.__scDragDelta = function(key, pxPerSec){
     function __scBeat(){ if(!document.hidden && (Date.now() - _lastBeat > 10000)){ _lastBeat = Date.now(); try{ localStorage.setItem('scAliveAt', String(Date.now())); }catch(e){ } } }
     document.addEventListener('visibilitychange', function(){ if(document.hidden) __scNoteHidden(); else __scBeat(); });
     window.addEventListener('pagehide', __scNoteHidden);
+    // A reload is not a crash. An OTA apply, a snapshot repair or a WebView
+    // restart can tear the page down without 'pagehide' ever firing (the reload
+    // is issued by the native side), and the recorder then blamed the last risky
+    // op for a death that never happened — "previously crashed during: starting
+    // playback" on a phone that had simply refreshed itself mid-song. All of
+    // these fire on the way out, so a restart is stamped as a normal exit too.
+    window.addEventListener('beforeunload', __scNoteHidden);
+    window.addEventListener('unload', __scNoteHidden);
+    document.addEventListener('freeze', __scNoteHidden);
     if(document.hidden){ __scNoteHidden(); } else { __scBeat(); }
     setInterval(__scBeat, 5000);
   })();
+
+  // ---- Boot-loop breaker -----------------------------------------------------
+  // Some failures make the app reload itself over and over (a bundle that never
+  // takes over, a self-repair that re-runs, a native restart). Whatever the cause,
+  // the phone must not be stuck refreshing: once this many boots land inside this
+  // window, no automatic reload is allowed for the rest of the session and the OTA
+  // client is told to stop touching bundles. Nothing is lost — the app just runs
+  // the build it already has.
+  (function(){
+    try{
+      var _blNow = Date.now();
+      var _blTimes = [];
+      try{ _blTimes = JSON.parse(localStorage.getItem('scBootTimes') || '[]'); }catch(e){ _blTimes = []; }
+      if(!Array.isArray(_blTimes)) _blTimes = [];
+      _blTimes = _blTimes.filter(function(t){ return typeof t === 'number' && _blNow - t < 90000; });
+      _blTimes.push(_blNow);
+      while(_blTimes.length > 8) _blTimes.shift();
+      try{ localStorage.setItem('scBootTimes', JSON.stringify(_blTimes)); }catch(e){}
+      window.__scBootCount = _blTimes.length;
+      window.__scBootLooping = _blTimes.length >= 4;
+      if(window.__scBootLooping){
+        try{ localStorage.setItem('scBootLoopStop', String(_blNow)); }catch(e){}
+        console.warn('[SideCut] boot loop detected (' + _blTimes.length + ' boots in 90s) — automatic reloads are off for this session');
+        if(typeof window.__scShowBootError === 'function'){
+          setTimeout(function(){ window.__scShowBootError('SideCut was restarting itself in a loop — it has been stopped. Nothing was lost.'); }, 1500);
+        }
+      }
+    }catch(e){ }
+  })();
+  // Every automatic reload in the app asks this first.
+  window.__scAutoReloadAllowed = function(){
+    try{ if(window.__scBootLooping) return false; }catch(e){}
+    try{
+      var _blStop = parseInt(localStorage.getItem('scBootLoopStop') || '0', 10) || 0;
+      return !(_blStop && Date.now() - _blStop < 10 * 60 * 1000);
+    }catch(e){ return true; }
+  };
+  // A healthy, settled boot clears the breaker so a later legitimate restart is
+  // never blocked by it.
+  setTimeout(function(){
+    try{
+      if(!window.__scBootLooping && window.__scAutoReloadAllowed && window.__scAutoReloadAllowed()){
+        localStorage.removeItem('scBootLoopStop');
+        localStorage.removeItem('scBootTimes');
+      }
+    }catch(e){}
+  }, 45000);
 
   // Discover dropdown toggles, defined EARLY so no later boot failure can ever
   // remove them. The inline onclick handlers on the Discover buttons call these
@@ -4694,45 +4768,22 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       if(hz > 0) Promise.resolve(requestRate.call(window.screen, hz)).catch(function(){});
     }catch(_e){}
   }
-  // Hue of a #rrggbb colour, so the cycle can start where the theme's own accent
-  // sits. hue 0 is pure red: a fresh RGB start painted red and green accents that
-  // matched neither the theme nor anything else on screen, which is exactly the
-  // "the colour is completely off" report.
-  function hueOfHex(css, fallback){
-    const m = /^#?([0-9a-f]{6})$/i.exec(String(css || '').trim());
-    if(!m) return fallback;
-    const n = parseInt(m[1], 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
-    if(!d) return fallback; // a grey has no hue to start from
-    let h;
-    if(max === r) h = ((g - b) / d) % 6;
-    else if(max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60;
-    if(h < 0) h += 360;
-    return h;
-  }
+  // RGB (and RGB +): the glow vars --glow-a/--glow-b cycle through the hue wheel
+  // exactly as they did before v58 — same starting hue, same 130deg accent gap.
+  // The reschedule lives in `finally` so nothing a frame throws can freeze it.
   function startRgbAnimation(){
     stopRgbAnimation();
     const start = performance.now();
     const intervalMs = frameRateIntervalMs();
-    // Start at the theme's own accent hue (pink #ff2ea8 -> 325 deg) and keep the
-    // second accent 120 deg behind it, which is where the theme's blue sits — so
-    // frame one is the theme you picked and the cycle sweeps away from there.
-    const baseHue = hueOfHex(THEMES.rgb && THEMES.rgb.coral, 325);
-    const accentGap = -120;
     function tick(now){
       const t = ((now - start) / 1000 / rgbSpeedSec) % 1;
-      const hue1 = (baseHue + t * 360) % 360;
-      const hue2 = (hue1 + accentGap + 360) % 360;
+      const hue1 = t * 360;
+      const hue2 = (t * 360 + 130) % 360; // pre-v58 offset — the two accents stay complementary-ish
       document.documentElement.style.setProperty('--glow-a', `hsl(${hue1}, 85%, 62%)`);
       document.documentElement.style.setProperty('--glow-b', `hsl(${hue2}, 85%, 62%)`);
-      // Plain RGB cycles the visible accent colors so buttons/borders/highlights shift with the glow.
-      // RGB+ keeps stable accents per the v57.4 changelog — only the glow overlays animate.
-      if(THEMES[currentTheme] && THEMES[currentTheme].rgb && !THEMES[currentTheme].rgbPlus){
-        document.documentElement.style.setProperty('--coral', `hsl(${hue1}, 85%, 62%)`);
-        document.documentElement.style.setProperty('--gold', `hsl(${hue2}, 85%, 62%)`);
-      }
+      // v58.8.1: the cycle drives the glow vars ONLY, exactly as it did before v58.
+      // v58.3 also repainted --coral/--gold — every button, border, ring and
+      // highlight in the app — through the rainbow. That is the "weird colour".
       maybeUpdateFavicon(now);
     }
     let last = 0;
@@ -4996,12 +5047,11 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     root.setProperty('--bg', th.bg);
     root.setProperty('--bg-raised', th.bgRaised);
     if(th.rgb){
-      // currentTheme must be set BEFORE the cycle starts: the loop decides on its
-      // very first frame whether it owns --coral/--gold (plain RGB does, RGB+ does
-      // not), and it used to read the theme being switched AWAY from — so frame one
-      // skipped the accents and the theme looked half-applied until the next tick.
+      // currentTheme is set before the cycle starts, so nothing in its first frame
+      // can read the theme being switched away from.
       currentTheme = key;
-      // Set initial accent colors from the theme definition, then start cycling
+      // The theme's OWN accents, set once and never cycled (pre-v58 behaviour).
+      // Setting them here also stops RGB inheriting the previous theme's colours.
       root.setProperty('--coral', th.coral);
       root.setProperty('--gold', th.gold);
       startRgbAnimation();
@@ -9498,7 +9548,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8';
+  const APP_VERSION = '58.8.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9767,6 +9817,11 @@ function startLyricsAutoScroll() {
           try{ if(typeof toast === 'function') toast('Recovered your library from the on-device backup. Close and reopen SideCut once if a setting looks off.', 8000); }catch(e){}
           return true;
         }
+        if(typeof window.__scAutoReloadAllowed === 'function' && !window.__scAutoReloadAllowed()){
+          // Refuse the reload but still report success, or the caller loops.
+          try{ if(typeof toast === 'function') toast('Using the build already on this device — stopped the refresh loop.', 6000); }catch(_e){}
+          return true;
+        }
         try{ location.reload(); }catch(e){}
         return true;
       }catch(e){
@@ -9797,6 +9852,14 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8.1', date: 'September 19, 2026 \u00b7 11:59 PM EDT', title: 'No more refresh loops, RGB as it was, and Albums that are yours', items: [
+    'Fixed the app refreshing itself over and over after an update until you force-closed it: a staged update whose version is already the one running is now ignored, an update that does not take over is never auto-applied twice, and only one automatic hand-over is allowed per version',
+    'Added a hard stop to refreshing: if SideCut ever boots four times inside 90 seconds it turns automatic reloads off for that session and tells you, instead of leaving you with a phone stuck on a refresh loop — every automatic reload in the app now asks that breaker first, so no single failure can leave it refreshing',
+    'A restart is no longer reported as a crash — the "previously crashed during: starting playback" banner was shown for a phone that had simply refreshed itself mid-song',
+    'RGB is back to exactly how it was before v58: the glow cycles and the theme’s own pink/blue accents stay put. v58.3 was repainting every button, border and highlight through the rainbow, which is the "weird colour"',
+    'Fixed albums you never created appearing in Albums: entries that were only ever added automatically (an old card-drag auto-save, or a tag album materialised so a reorder had somewhere to live) are kept out of the Albums tab. Nothing is deleted — Manage albums lists them under "Not created by you" with an "It is mine" button, and renaming or reordering an album makes it yours for good',
+    'Made starting playback harder to knock over: the native audio-focus call now happens just after the song starts instead of in its first frames, and if starting playback ever takes the app down, the audio-focus helper switches itself off for that version so songs still play',
+  ] },
   { version: '58.8', date: 'September 19, 2026 \u00b7 11:05 PM EDT', title: 'Playback no longer dies a moment after it starts', items: [
     'Fixed a song stopping a fraction of a second after you press play: if another app grabbed audio focus back at the very start, SideCut obeyed the loss and paused. That early loss is the hand-over itself, not an interruption \u2014 nothing has played yet \u2014 so the song now keeps going and SideCut takes focus back',
     'A call still pauses your song and it still comes back when the call ends \u2014 that applies once the song is genuinely under way, not during the opening second',
@@ -14975,7 +15038,8 @@ function _fallbackCopy(text){
       // until the next track change re-rendered it. Resolve it once here.
       var _nowPlayingId = (typeof queueIndex === 'number' && queueIndex >= 0 && queue && queueIndex < queue.length) ? queue[queueIndex] : null;
       // Use userAlbums as primary source - these are the albums the user explicitly created
-      var _uaKeys = Object.keys(userAlbums);
+      // Manual-only: entries flagged auto never appear as cards.
+      var _uaKeys = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums);
       _uaKeys.forEach(function(aName){
         var ua = userAlbums[aName];
         if(!ua || !ua.trackIds || !ua.trackIds.length) return;
@@ -15190,6 +15254,8 @@ function _fallbackCopy(text){
                       try{ ensureAlbumSaved(k); }catch(_eMat){}
                     }
                   });
+                  // Reordering a card is a deliberate act about those albums.
+                  keys.forEach(function(k){ if(userAlbums[k] && typeof markAlbumManual === 'function') markAlbumManual(k); });
                   // Rebuild userAlbums preserving ALL albums (not just visible ones)
                   var newObj = {};
                   // First add albums in the new visible order
@@ -15480,9 +15546,13 @@ function _fallbackCopy(text){
 
   // ---------------- Song action sheet (kebab menu) ----------------
   function manageAlbumsHTML(){
-    var names = Object.keys(userAlbums || {});
-    if(!names.length) return '<div class="dp-empty">No albums yet.</div>';
+    // Only albums the user actually made are listed as albums; anything that was
+    // added automatically is listed separately below, with an "It is mine" button.
+    var names = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums || {});
+    var autos = (typeof autoAlbumNames === 'function') ? autoAlbumNames() : [];
+    if(!names.length && !autos.length) return '<div class="dp-empty">No albums yet.</div>';
     var html = '<div style="padding:12px;">';
+    if(!names.length) html += '<div style="font-size:12px;color:var(--ink-dim);padding:2px 0 8px;">No albums you created yet.</div>';
     names.forEach(function(name, i){
       var alb = userAlbums[name] || {};
       // userAlbums entries store trackIds, not tracks - the old "N tracks"
@@ -15497,6 +15567,23 @@ function _fallbackCopy(text){
       html += '<button class="mgr-alb-del" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid #FF6F59;background:none;color:#FF6F59;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Delete</button>';
       html += '</div>';
     });
+    if(autos.length){
+      html += '<div style="margin-top:14px;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-dim);">Not created by you (' + autos.length + ')</div>';
+      html += '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0 8px;">Albums that were added automatically from your files. They stay out of the Albums tab unless you restore them.</div>';
+      autos.forEach(function(name, i){
+        var albA = userAlbums[name] || {};
+        var nA = (albA.trackIds || []).length;
+        html += '<div class="mgr-alb-row" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);">';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(name) + '</div>';
+        html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + nA + ' track' + (nA !== 1 ? 's' : '') + (albA.artist ? ' \u00b7 ' + escapeHtml(albA.artist) : '') + '</div>';
+        html += '</div>';
+        html += '<button class="mgr-alb-restore" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink);font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">It is mine</button>';
+        html += '<button class="mgr-alb-rename-auto" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink);font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Rename</button>';
+        html += '<button class="mgr-alb-del-auto" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid #FF6F59;background:none;color:#FF6F59;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Delete</button>';
+        html += '</div>';
+      });
+    }
     html += '</div>';
     return html;
   }
@@ -15504,7 +15591,48 @@ function _fallbackCopy(text){
   function wireManageAlbums(){
     var bEl = document.getElementById('discPopupBody');
     if(!bEl) return;
-    var names = Object.keys(userAlbums || {});
+    var names = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums || {});
+    var autos = (typeof autoAlbumNames === 'function') ? autoAlbumNames() : [];
+    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-restore'), function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var name = autos[parseInt(this.getAttribute('data-i'), 10)];
+        if(!name) return;
+        markAlbumManual(name);
+        try{ dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(_e){}
+        renderList();
+        refreshManageAlbums();
+        toast('"' + name + '" is yours again — it shows in Albums now.');
+      });
+    });
+    // A hidden album can still be renamed (which makes it yours for good) or deleted.
+    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-rename-auto'), function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var name = autos[parseInt(this.getAttribute('data-i'), 10)];
+        if(name) renameUserAlbum(name);
+      });
+    });
+    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-del-auto'), function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var name = autos[parseInt(this.getAttribute('data-i'), 10)];
+        if(!name) return;
+        if(this.dataset.armed === '1'){ deleteUserAlbum(name); return; }
+        this.dataset.armed = '1';
+        this.textContent = 'Tap to confirm';
+        this.style.background = '#FF6F59';
+        this.style.color = '#161616';
+        var self = this;
+        setTimeout(function(){
+          if(self.dataset.armed !== '1') return;
+          self.dataset.armed = '';
+          self.textContent = 'Delete';
+          self.style.background = 'none';
+          self.style.color = '#FF6F59';
+        }, 4000);
+      });
+    });
     Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-rename'), function(btn){
       btn.addEventListener('click', function(e){
         e.stopPropagation();
@@ -15538,8 +15666,10 @@ function _fallbackCopy(text){
   }
 
   function refreshManageAlbums(){
-    var names = Object.keys(userAlbums || {});
-    openDiscoverPopup('Manage albums', manageAlbumsHTML(), names.length + ' album' + (names.length !== 1 ? 's' : ''));
+    var names = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums || {});
+    var _autos = (typeof autoAlbumNames === 'function') ? autoAlbumNames() : [];
+    var _sub = names.length + ' album' + (names.length !== 1 ? 's' : '') + (_autos.length ? ' \u00b7 ' + _autos.length + ' not created by you' : '');
+    openDiscoverPopup('Manage albums', manageAlbumsHTML(), _sub);
     wireManageAlbums();
   }
 
@@ -15563,6 +15693,7 @@ function _fallbackCopy(text){
       var movedEntry = {};
       Object.keys(entry).forEach(function(k){ if(k !== 'trackIds') movedEntry[k] = entry[k]; });
       movedEntry.trackIds = movedIds;
+      movedEntry.manual = true; delete movedEntry.auto; // renamed by hand
       // Rebuild the map so the renamed album keeps its position in album order.
       var rebuilt = {};
       Object.keys(userAlbums).forEach(function(k){
@@ -16217,6 +16348,7 @@ function _fallbackCopy(text){
     albKeys.forEach(function(ak){
       const e = userAlbums[ak];
       if(!e || !Array.isArray(e.trackIds)) return;
+      if(albumIsAuto(ak)) return; // added as a side effect, not an album you made
       e.trackIds.forEach(function(id){
         if(id == null || seen[id] || !allTracks.some(t => t && t.id === id)) return;
         seen[id] = true;
@@ -16252,12 +16384,66 @@ function _fallbackCopy(text){
     userAlbums[name] = {
       artist: (first && String(first.artist || '').trim()) || 'Unknown artist',
       trackIds: ids,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      auto: true // created for a reorder, not by hand — see migrateAutoFlaggedAlbums
     };
     if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums });
     return true;
   }
   window.__scEnsureAlbumSaved = ensureAlbumSaved;
+
+  // ---- Manual-only albums ----------------------------------------------------
+  // "Albums" means the albums YOU made. An entry created as a side effect (the
+  // old card-drag auto-save, or a tag-only album materialised so a reorder had
+  // somewhere to live) is flagged `auto` and stays out of the Albums tab: it is
+  // still reachable from the kebab's album picker, and any deliberate edit
+  // (rename, reorder, add songs, "It is mine") clears the flag for good.
+  function markAlbumManual(name){
+    var e = userAlbums[name];
+    if(!e) return;
+    e.manual = true;
+    delete e.auto;
+  }
+  function albumIsAuto(name){
+    var e = userAlbums[name];
+    return !!(e && e.auto === true && e.manual !== true);
+  }
+  function visibleAlbumNames(){
+    return Object.keys(userAlbums || {}).filter(function(n){ return !albumIsAuto(n); });
+  }
+  function autoAlbumNames(){
+    return Object.keys(userAlbums || {}).filter(function(n){ return albumIsAuto(n); });
+  }
+  // One-time tidy-up: an entry that is NOTHING but a copy of one of your file-tag
+  // groups (same songs, same order, nothing added) can only have come from the
+  // automatic paths, so it is flagged as such. A hand-made album — songs gathered
+  // from several places, or reordered — never matches and is left alone.
+  function migrateAutoFlaggedAlbums(){
+    try{
+      if(localStorage.getItem('sidecut_albums_manual_v1') === '1') return 0;
+      localStorage.setItem('sidecut_albums_manual_v1', '1');
+      var marked = 0;
+      Object.keys(userAlbums || {}).forEach(function(name){
+        var e = userAlbums[name];
+        if(!e || !Array.isArray(e.trackIds) || !e.trackIds.length) return;
+        if(e.manual === true || e.auto === true) return;
+        var tagged = [];
+        allTracks.forEach(function(tr){ if(tr && String(tr.album || '').trim() === String(name).trim()) tagged.push(tr.id); });
+        if(!tagged.length || tagged.length !== e.trackIds.length) return;
+        for(var i = 0; i < tagged.length; i++){ if(tagged[i] !== e.trackIds[i]) return; }
+        e.auto = true;
+        marked++;
+      });
+      if(marked){
+        try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(e){}
+      }
+      return marked;
+    }catch(e){ return 0; }
+  }
+  window.__scMarkAlbumManual = markAlbumManual;
+  window.__scVisibleAlbumNames = visibleAlbumNames;
+  window.__scAutoAlbumNames = autoAlbumNames;
+  window.__scMigrateAutoAlbums = migrateAutoFlaggedAlbums;
 
   async function createAlbumFromIds(ids, sourceLabel, existingName){
     ids = Array.from(ids || []);
@@ -16278,7 +16464,7 @@ function _fallbackCopy(text){
     });
     const primaryArtist = artistSet.size === 1 ? [...artistSet][0] : ((await modalPrompt('Multiple artists selected — which artist should this album be filed under?', '')) || '').trim() || 'Various Artists';
     if(!userAlbums[albumName]){
-      userAlbums[albumName] = { artist: primaryArtist, trackIds: [], createdAt: Date.now() };
+      userAlbums[albumName] = { artist: primaryArtist, trackIds: [], createdAt: Date.now(), manual: true };
     }
     const entry = userAlbums[albumName];
     let added = 0;
@@ -16322,7 +16508,7 @@ function _fallbackCopy(text){
     });
     const primaryArtist = artistSet.size === 1 ? [...artistSet][0] : ((await modalPrompt('Multiple artists selected — which artist should this album be filed under?', '')) || '').trim() || 'Various Artists';
     if(!userAlbums[albumName]){
-      userAlbums[albumName] = { artist: primaryArtist, trackIds: [], createdAt: Date.now() };
+      userAlbums[albumName] = { artist: primaryArtist, trackIds: [], createdAt: Date.now(), manual: true };
     }
     const entry = userAlbums[albumName];
     ids.forEach(id => {
@@ -19405,7 +19591,20 @@ _batchBuf += b64Encode(chunk);
   // hands back to, and it is also what makes the system interrupt us for a call
   // rather than playing over it. The native half is injected in CI
   // (.github/workflows/patch-audiofocus.py); in a browser this is a no-op.
-  const capAudioFocus = (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutAudioFocus) ? window.Capacitor.Plugins.SideCutAudioFocus : null;
+  const capAudioFocus = (function(){
+    try{
+      // Version-stamped opt-out written by the crash flight recorder: if starting
+      // playback ever took the process down, the native focus helper stays out of
+      // the play path for the rest of THIS version (a newer build re-enables it).
+      var raw = null;
+      try{ raw = localStorage.getItem('sidecut_audiofocus_off'); }catch(e){}
+      if(raw){
+        var j = JSON.parse(raw);
+        if(j && j.off && j.v === APP_VERSION) return null;
+      }
+    }catch(e){}
+    return (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutAudioFocus) ? window.Capacitor.Plugins.SideCutAudioFocus : null;
+  })();
   let audioFocusHeld = false;
   // When the CURRENT play attempt started. A focus loss that arrives moments
   // after we ask for focus is not an interruption — it is the tug-of-war over
@@ -19435,9 +19634,33 @@ _batchBuf += b64Encode(chunk);
       }
     }catch(e){}
   }
+  let audioFocusFirstAskDone = false;
+  let audioFocusDeferTimer = null;
   function requestAudioFocus(){
-    if(audioFocusHeld) return;
+    // A re-ask (the focus tug-of-war, or a fresh play after a permanent loss) is
+    // immediate: taking focus back is the whole point of it.
+    if(audioFocusFirstAskDone){
+      if(audioFocusHeld) return;
+      audioFocusHeld = true;
+      audioFocusCall('request');
+      return;
+    }
+    // The FIRST ask of a play attempt is the risky one: it is a NATIVE call in the
+    // opening frames of a song, which is the only native work in the play path and
+    // therefore what the crash recorder blames for a death during "starting
+    // playback". Defer it just past the start — the song is unaffected, and once it
+    // is audibly playing the system still hands focus to SideCut.
+    audioFocusFirstAskDone = true;
     audioFocusHeld = true;
+    try{
+      if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutAudioFocus){
+        clearTimeout(audioFocusDeferTimer);
+        audioFocusDeferTimer = setTimeout(function(){
+          try{ var a = activeAudio(); if(a && !a.paused) audioFocusCall('request'); }catch(e){}
+        }, 900);
+        return;
+      }
+    }catch(e){}
     audioFocusCall('request');
   }
   function releaseAudioFocus(){
@@ -19541,6 +19764,7 @@ _batchBuf += b64Encode(chunk);
     audioFocusPlayAt = Date.now();
     focusFights = 0;
     spuriousStopsBlocked = 0;
+    audioFocusFirstAskDone = false;
     // Only now does the system know this app owns the speakers: it will hand focus
     // back to SideCut after a call instead of resuming another music app, and a
     // reconnecting headset targets us.
@@ -22117,6 +22341,15 @@ _batchBuf += b64Encode(chunk);
       // Android Auto Backup, or a partial wipe), hydrate from it silently.
       try{ await window.__scSnapRestore(); }catch(e){ console.error('Snapshot restore failed', e); }
       const loaded = await loadFromDB();
+      // Manual-only albums: flag entries that were only ever created as a side
+      // effect of a reorder/auto-save so the Albums tab is your albums again.
+      var _scAutoAlbums = 0;
+      try{ _scAutoAlbums = migrateAutoFlaggedAlbums(); }catch(e){}
+      if(loaded && _scAutoAlbums){
+        setTimeout(function(){
+          try{ toast(_scAutoAlbums + ' album' + (_scAutoAlbums === 1 ? '' : 's') + ' that were added automatically are hidden from Albums — Manage albums to bring any back.', 7000); }catch(_e){}
+        }, 3000);
+      }
       if(loaded){
         // Reopen on the last playlist the user engaged with — never default to All Songs.
         // Preference order: a real last-used playlist, then the source of the last-playing
@@ -22298,6 +22531,7 @@ _batchBuf += b64Encode(chunk);
             window.__pendingSWReload = true;
             return;
           }
+          if(typeof window.__scAutoReloadAllowed === 'function' && !window.__scAutoReloadAllowed()) return;
           toast('Updating to the latest version…');
           setTimeout(() => window.location.reload(), 600);
         }, 1300);
@@ -30397,10 +30631,12 @@ window.showAlbumReorderPopup = function(albumName){
       userAlbums[albumName] = {
         artist: (_firstTr && String(_firstTr.artist || '').trim()) || 'Unknown artist',
         trackIds: _metaIds,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        manual: true // you opened this album's reorder sheet, so it is yours
       };
       album = userAlbums[albumName];
       try{
+        if(userAlbums[albumName] && typeof markAlbumManual === 'function') markAlbumManual(albumName);
         if(typeof window.dbPut === 'function') window.dbPut('meta', { key: 'userAlbums', value: userAlbums });
       }catch(_e2){}
     }

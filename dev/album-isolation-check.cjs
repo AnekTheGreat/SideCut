@@ -215,7 +215,15 @@ let toasts = [];
   ok('playlists still untouched after closing', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   console.log('\n— dragging a card can never invent an album —');
-  const albumsBeforeDrag = JSON.stringify(storedAlbums() || {});
+  // v58.8.1: a drag marks the albums it reorders as hand-made (that is how an album
+  // you take in stops being "not created by you"), so compare what the albums ARE —
+  // their songs and artist — rather than the bookkeeping flags.
+  const contentOf = (a) => {
+    const out = {};
+    Object.keys(a || {}).sort().forEach((k) => { const e = a[k] || {}; out[k] = { artist: e.artist, trackIds: e.trackIds }; });
+    return out;
+  };
+  const albumsBeforeDrag = JSON.stringify(contentOf(storedAlbums() || {}));
   const dragCard = cardEls(win)[0];
   pev(win, dragCard, 'pointerdown', { clientY: 200 });
   await wait(420);                                  // hold to enter the drag
@@ -223,8 +231,10 @@ let toasts = [];
   await wait(120);
   docEv(win, 'pointerup', { clientY: 1200 });
   await wait(700);
-  ok('the drag changed no album content', JSON.stringify(storedAlbums() || {}) === albumsBeforeDrag,
+  ok('the drag changed no album content', JSON.stringify(contentOf(storedAlbums() || {})) === albumsBeforeDrag,
      JSON.stringify(storedAlbums() || {}));
+  ok('the dragged album is still the album you made (never re-flagged as auto)',
+     (storedAlbums()['My Mix'] || {}).auto !== true, JSON.stringify(storedAlbums()['My Mix']));
   ok('and card drag never touched playlists', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   console.log('\n— picker route (⋮ → Reorder an album\'s songs) —');

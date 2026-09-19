@@ -23,7 +23,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const APP_VERSION = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const NEXT_VERSION = (() => {
-  const m = String(APP_VERSION || '0').match(/^(\d+)\.(\d+)$/);
+  // Handles two- and three-part versions (58.8 and 58.8.1 both become 58.9).
+  const m = String(APP_VERSION || '0').match(/^(\d+)\.(\d+)/);
   return m ? (m[1] + '.' + (Number(m[2]) + 1)) : '99.9';
 })();
 
@@ -66,6 +67,19 @@ const serveLocalScript = requestInterceptor((request) => {
   }
   return undefined;
 });
+
+// Carry a session's localStorage into the next boot, so a multi-boot refresh
+// loop can actually be reproduced (and counted) instead of guessed at.
+function snapLS(win) {
+  const out = {};
+  try {
+    for (let i = 0; i < win.localStorage.length; i++) {
+      const k = win.localStorage.key(i);
+      out[k] = win.localStorage.getItem(k);
+    }
+  } catch (e) {}
+  return out;
+}
 
 const SNAPSHOT = {
   v: 1,
@@ -206,6 +220,68 @@ function boot(opts) {
   await wait(300);
   ok('a third pass adds no reload either', c.navs.length === 1, 'reloads=' + c.navs.length);
   c.dom.window.close();
+
+  // ------------------------------------------------------------------
+  console.log('\n— a stale staged record can no longer restart the app forever —');
+  // The reported loop: the native plugin keeps reporting a "next" bundle whose
+  // version is the one ALREADY running (it only clears "next" once a boot
+  // confirms it, and a native reload does not always run that confirm).
+  // Auto-applying it reloads into the same build — apply, reload, apply, reload —
+  // for as long as the app is open, which is exactly "it just kept refreshing
+  // after I updated until I force-closed it".
+  let ls = {};
+  let staleSets = 0, staleReloads = 0;
+  for (let i = 0; i < 3; i++) {
+    const w = boot({ manifestVersion: NEXT_VERSION, stagedVersion: APP_VERSION, localStorage: ls });
+    await wait(9000);
+    staleSets += w.calls.set.length;
+    staleReloads += w.navs.length;
+    ls = snapLS(w.win);
+    w.dom.window.close();
+  }
+  ok('a staged bundle that is already running is never applied', staleSets === 0, 'set() calls=' + staleSets);
+  ok('so no boot reloads the app into the same build', staleReloads === 0, 'reloads=' + staleReloads);
+
+  // ------------------------------------------------------------------
+  console.log('\n— one automatic hand-over per version, then it stops —');
+  // A bundle that is genuinely newer may be installed automatically ONCE. If the
+  // version did not change afterwards, it never took over: it must be marked bad
+  // instead of being re-applied on the next boot (which is the loop).
+  let ls2 = {};
+  let handovers = 0, handoverReloads = 0;
+  for (let i = 0; i < 3; i++) {
+    const w = boot({ manifestVersion: NEXT_VERSION, stagedVersion: NEXT_VERSION, localStorage: ls2 });
+    await wait(9000);
+    handovers += w.calls.set.length;
+    handoverReloads += w.navs.length;
+    ls2 = snapLS(w.win);
+    w.dom.window.close();
+  }
+  ok('the newer bundle is handed over to once', handovers === 1, 'set() calls=' + handovers);
+  ok('and never again on the boots that follow', handovers === 1, 'set() calls=' + handovers + ' over 3 boots');
+  ok('the version that never took over is remembered as bad', !!ls2['sidecut_ota_bad_' + NEXT_VERSION],
+     String(ls2['sidecut_ota_bad_' + NEXT_VERSION]));
+
+  // ------------------------------------------------------------------
+  console.log('\n— the app stops refreshing itself even if something else loops —');
+  // Whatever the cause of a wake-up/restart storm, the phone must not be stuck on
+  // a refresh: four boots inside 90 seconds turn automatic reloads off for the
+  // session, and the OTA client stops touching bundles for it too.
+  const g = boot({
+    manifestVersion: NEXT_VERSION,
+    stagedVersion: NEXT_VERSION,
+    localStorage: { scBootTimes: JSON.stringify([Date.now() - 5000, Date.now() - 4000, Date.now() - 3000, Date.now() - 2000]) },
+  });
+  await wait(1600);
+  ok('four boots inside the window mark the session as looping', g.win.__scBootLooping === true,
+     'count=' + g.win.__scBootCount);
+  ok('automatic reloads are refused', typeof g.win.__scAutoReloadAllowed === 'function' && g.win.__scAutoReloadAllowed() === false,
+     'hook=' + typeof g.win.__scAutoReloadAllowed);
+  ok('the app says so instead of silently refreshing', /restarting itself in a loop/i.test(g.win.document.body.textContent),
+     JSON.stringify(String(g.win.document.body.textContent).replace(/\s+/g, ' ').slice(-100)));
+  await wait(9000);
+  ok('nothing is auto-applied while the app is looping', g.calls.set.length === 0, JSON.stringify(g.calls.set));
+  g.dom.window.close();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
