@@ -14222,21 +14222,31 @@ function _fallbackCopy(text){
   $('managePlaylistsClose').addEventListener('click', () => { $('managePlaylistsBackdrop').style.display = 'none'; });
   $('managePlaylistsBackdrop').addEventListener('click', e => { if(e.target === $('managePlaylistsBackdrop')) $('managePlaylistsBackdrop').style.display = 'none'; });
 
-  // Back to top button — direct smooth scroll, as before v56.1.77
+  // Back to top button — hand-animated scroll (see animateScrollTop: element
+  // scrollTo({behavior:'smooth'}) is a no-op inside the Android WebView, which
+  // is why tapping this button appeared to do nothing).
   $('backToTopBtn').addEventListener('click', () => {
     const lp = $('listPane');
-    if(lp) lp.scrollTo({ top: 0, behavior: 'smooth' });
+    if(!lp) return;
+    if(typeof animateScrollTop === 'function') animateScrollTop(lp, 0);
+    else lp.scrollTop = 0;
   });
-  // Show/hide back to top button based on scroll position
+  // Show/hide back to top button based on scroll position. The threshold used to
+  // be 200px, which a short list (a few albums) never reaches — the button stayed
+  // pointer-events:none, so it could not be tapped at all. A small threshold lets
+  // it come alive as soon as there is anything to scroll back from.
   const listPane = $('listPane');
   if(listPane) {
-    listPane.addEventListener('scroll', () => {
-      const backToTopBtn = $('backToTopBtn');
-      if(backToTopBtn) {
-        backToTopBtn.style.opacity = listPane.scrollTop > 200 ? '0.85' : '0';
-        backToTopBtn.style.pointerEvents = listPane.scrollTop > 200 ? 'auto' : 'none';
-      }
-    });
+    const _bttThreshold = 40;
+    const _syncBackToTop = () => {
+      const btn = $('backToTopBtn');
+      if(!btn) return;
+      const up = listPane.scrollTop > _bttThreshold;
+      btn.style.opacity = up ? '0.9' : '0.7';
+      btn.style.pointerEvents = up ? 'auto' : 'none';
+    };
+    listPane.addEventListener('scroll', _syncBackToTop);
+    _syncBackToTop();
   }
 
   function openNewPlaylistModal(){
@@ -15421,21 +15431,61 @@ function _fallbackCopy(text){
   }
 
   // ---------------- Albums: pick one, then reorder its songs ----------------
+  // The list has to mirror the Albums view exactly. That view shows saved albums
+  // (userAlbums) AND albums that exist only as track metadata — downloaded files
+  // carrying an album tag with no saved album behind them, which is how most
+  // people's albums arrive. Building this picker from userAlbums alone left it
+  // empty for those users, so tapping "Reorder an album's songs" did nothing at
+  // all (the only feedback was a toast hidden behind the menu that just closed).
   function openAlbumPickerForReorder(){
-    const names = Object.keys(userAlbums || {});
-    if(!names.length){ toast('No albums to reorder yet.'); return; }
+    const names = [];
+    const counts = {};
+    const seen = {};
+    const inSavedAlbum = {};
+    Object.keys(userAlbums || {}).forEach(function(name){
+      const ids = (userAlbums[name] || {}).trackIds;
+      if(!Array.isArray(ids) || !ids.length) return;
+      seen[name] = 1;
+      names.push(name);
+      counts[name] = ids.length;
+      ids.forEach(function(id){ inSavedAlbum[id] = 1; });
+    });
+    // Album tags from the library for tracks no saved album claims.
+    const metaCounts = {};
+    (allTracks || []).forEach(function(t){
+      if(!t || inSavedAlbum[t.id]) return;
+      const album = String(t.album || '').trim();
+      if(!album || seen[album]) return;
+      metaCounts[album] = (metaCounts[album] || 0) + 1;
+    });
+    Object.keys(metaCounts)
+      .sort(function(a, b){ return a.toLowerCase().localeCompare(b.toLowerCase()); })
+      .forEach(function(name){
+        if(seen[name]) return;
+        seen[name] = 1;
+        names.push(name);
+        counts[name] = metaCounts[name];
+      });
+
+    if(!names.length){
+      // Never a silent dead end: say why there is nothing to reorder.
+      openDiscoverPopup('Reorder an album',
+        '<div style="padding:24px 16px;text-align:center;color:var(--ink-dim);font-size:13px;line-height:1.55;">No albums yet.<br>Download songs that carry an album tag, or use \u201cCreate album from this playlist\u201d, and it will show up here.</div>',
+        '');
+      return;
+    }
+
     let html = '<div style="padding:12px;">';
     names.forEach(function(name, i){
-      const alb = userAlbums[name] || {};
-      const n = (alb.trackIds || []).length;
+      const n = counts[name] || 0;
       html += '<button class="ap-pick" data-i="' + i + '" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px;margin-bottom:6px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.04);color:var(--ink);font-size:13.5px;cursor:pointer;">'
-        + '<span style="flex:1;min-width:0;font-weight:600;">' + escapeHtml(name) + '</span>'
+        + '<span style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(name) + '</span>'
         + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + n + ' track' + (n !== 1 ? 's' : '') + '</span></button>';
     });
     html += '</div>';
     openDiscoverPopup('Reorder an album', html, 'Pick an album, drag its songs, then tap Done.');
     const bEl = document.getElementById('discPopupBody');
-    if(!bEl) return;
+    if(!bEl){ toast('Could not open the album list.'); return; }
     Array.prototype.forEach.call(bEl.querySelectorAll('.ap-pick'), function(btn){
       btn.addEventListener('click', function(){
         const name = names[parseInt(this.getAttribute('data-i'), 10)];
@@ -18743,6 +18793,31 @@ _batchBuf += b64Encode(chunk);
     requestAnimationFrame(step);
   }
 
+  // Animate a container to an absolute scrollTop. The back-to-top button used
+  // to call scrollTo({behavior:'smooth'}), which the Android WebView ignores for
+  // element scrolling (the same reason smoothScrollIn above avoids it) — the
+  // button looked alive and did nothing. This drives scrollTop by hand instead,
+  // honouring the user's scroll-speed setting.
+  function animateScrollTop(container, targetTop, dur){
+    if(!container) return;
+    dur = dur || (typeof sandboxScrollSpeed !== 'undefined' ? sandboxScrollSpeed : 400);
+    var max = Math.max(0, container.scrollHeight - container.clientHeight);
+    var to = Math.max(0, Math.min(targetTop, max));
+    var start = container.scrollTop;
+    var dist = to - start;
+    if(Math.abs(dist) < 1){ container.scrollTop = to; return; }
+    var startTime = null;
+    function step(ts){
+      if(!startTime) startTime = ts;
+      var p = Math.min((ts - startTime) / dur, 1);
+      var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+      container.scrollTop = start + dist * e;
+      if(p < 1) requestAnimationFrame(step);
+      else container.scrollTop = to;
+    }
+    requestAnimationFrame(step);
+  }
+
   function highlightPlaying(id){
     document.querySelectorAll('.track').forEach(r => r.classList.toggle('playing', r.dataset.id === id));
     const activeRow = document.querySelector(`.track[data-id="${id}"]`);
@@ -21319,11 +21394,11 @@ _batchBuf += b64Encode(chunk);
   // what"). The .mini class is kept for the sandbox compact-nowbar toggle and manual use,
   // but scroll no longer adds it. Only the back-to-top button reacts to scroll now.
   let lastScrollTop = 0;
+  // Only records the position now: it used to also rewrite the back-to-top
+  // button's opacity, fighting the handler above and leaving the button visible
+  // (and tappable) even at the very top.
   $('listPane').addEventListener('scroll', () => {
-    const st = $('listPane').scrollTop;
-    const backToTopBtn = $('backToTopBtn');
-    if(backToTopBtn) backToTopBtn.style.opacity = st > 300 ? '1' : '0.85';
-    lastScrollTop = st;
+    lastScrollTop = $('listPane').scrollTop;
   });
 
   // ---------------- Media Session: lock screen / notification controls ----------------
@@ -28566,6 +28641,9 @@ window.showSettingsTab = showSettingsTab;
   window.__scGetUserAlbums = function(){ return userAlbums; };
   window.__scGetAllTracks = function(){ return allTracks; };
   window.__scGetLibraryMode = function(){ return libraryMode; };
+  // Exposed for the same reason: the album reorder picker lives in this IIFE
+  // and the harness (and any future entry point) needs to be able to open it.
+  window.__scOpenAlbumReorderPicker = openAlbumPickerForReorder;
   // Which user album a track belongs to. Used by the album reorder hold so it
   // doesn't depend on the album card carrying a data attribute.
   window.__scAlbumForTrack = function(tid){
