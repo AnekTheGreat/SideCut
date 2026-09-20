@@ -45,7 +45,7 @@ const TRACKS = [
   { id: 't5', name: 'Other Two', artist: 'Someone', album: 'Other Album', duration: 120 },
 ];
 const ALBUMS_START = {
-  'My Mix': { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 1 },
+  'My Mix': { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 1, manual: true },
 };
 // The point of the suite: 'Moon Faves' contains ONLY album songs. That shape is
 // what the old render-time "playlist looks corrupted, refill it with the whole

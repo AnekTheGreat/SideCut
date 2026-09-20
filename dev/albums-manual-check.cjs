@@ -47,6 +47,10 @@ const TRACKS = [
   { id: 't4', name: 'Goat', artist: 'Sidhu Moose Wala', album: 'G.O.A.T', duration: 210 },
   { id: 't5', name: 'Legend', artist: 'Sidhu Moose Wala', album: 'G.O.A.T', duration: 190 },
 ];
+// An album is yours when the app recorded it as yours (`manual: true`) — which is
+// what Create album, Add to album, rename, reorder and "It is mine" all set. The
+// two fixtures below that carry the flag stand for albums made by hand; the two
+// without it are what the old automatic paths left behind.
 // What the store looks like on a phone that lived through the old auto-save:
 //   • 'MoonChild Era' — every track with that tag, in tag order, nothing added: auto.
 //   • 'G.O.A.T' — same shape: auto.
@@ -55,8 +59,8 @@ const TRACKS = [
 const ALBUMS_POLLUTED = {
   'MoonChild Era': { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 11 },
   'G.O.A.T': { artist: 'Sidhu Moose Wala', trackIds: ['t4', 't5'], createdAt: 12 },
-  'My Mix': { artist: 'Various Artists', trackIds: ['t1', 't4'], createdAt: 13 },
-  'DJ Set': { artist: 'Diljit Dosanjh', trackIds: ['t2', 't1', 't3'], createdAt: 14 },
+  'My Mix': { artist: 'Various Artists', trackIds: ['t1', 't4'], createdAt: 13, manual: true },
+  'DJ Set': { artist: 'Diljit Dosanjh', trackIds: ['t2', 't1', 't3'], createdAt: 14, manual: true },
 };
 const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5'], Favorites: [], 'Moon Faves': ['t1', 't4'] };
 

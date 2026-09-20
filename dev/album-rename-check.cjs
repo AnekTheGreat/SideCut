@@ -55,7 +55,7 @@ const TRACKS = [
 ];
 const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5'], Favorites: [], 'Faves From One Album': ['t1', 't2', 't3'] };
 const ALBUMS_START = {
-  'MoonChild Era': { trackIds: ['t1', 't2'], artist: 'Diljit Dosanjh' },
+  'MoonChild Era': { trackIds: ['t1', 't2'], artist: 'Diljit Dosanjh', manual: true },
   'Other Album': { trackIds: ['t4', 't5'], artist: 'Someone' },
 };
 

@@ -9662,7 +9662,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.9.5';
+  const APP_VERSION = '58.9.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10001,6 +10001,14 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.9.6', date: 'September 20, 2026 \u00b7 12:40 PM EDT', title: 'Singles that stay put and are complete, and Albums is only the albums you made', items: [
+    'Refetching singles no longer wipes the list it was refetching. The refetch deleted the saved snapshot on its first line, then fetched \u2014 and every fetch inside it failed instantly, because it called the app\u2019s private helpers by name from outside them (fetchWithProxy, primaryArtistName, isSingleHidden) so each call threw a ReferenceError straight into the catch-all. The result was always the same: the saved singles were gone and the popup said \u201cNo singles found from pinned artists\u201d. The snapshot is kept until a refetch actually returns something, and a fetch that fails says so instead',
+    'The refetch and the Singles button now share one saved list. The refetch saved its result under a different popup title (\u201c\u2728 Singles\u201d instead of \u201c\ud83c\udfb5 Singles\u201d), so the work it did could never be found again \u2014 closing the popup and reopening it went back to the older list, or to nothing. Both paths now use the same key, so what you see is what is saved',
+    'Singles you were missing are found now. The list was built from one relevance-ranked iTunes song search per artist, which only ever returns an artist\u2019s most relevant ~200 tracks \u2014 so a prolific artist\u2019s older or quieter singles were simply never in the results (\u201cI am missing songs in singles for various artists\u201d). Each artist is now looked up two ways and the results merged: that same song search, plus the artist\u2019s own release list, where a one-track release is a single by definition. Previews for those extra releases are resolved so their play buttons work',
+    'A per-artist refresh (the \u21bb on one artist) keeps everything else. It used to write into the current screen and then throw the saved list away, so the other artists lost what they had; the refresh now updates just that artist\u2019s rows and saves the whole list',
+    'Albums shows only albums you made. Anything the app created on its own \u2014 the old card-drag auto-save, or an album materialised just so a reorder had somewhere to live \u2014 is out of the Albums tab and out of the \u201cAdd to album\u201d picker. They are not deleted: they still live under \u201cNot created by you\u201d in Manage albums, and choosing one there (or renaming, reordering or adding songs to it) makes it yours for good',
+    'Songs you file into an album by hand now mark that album as yours, so an album you have actually been using stops being treated as the app\u2019s own grouping',
+  ]},
   { version: '58.9.5', date: 'September 20, 2026 · 11:23 AM EDT', title: 'The RGB cycle no longer depends on the phone handing it frames', items: [
     'The RGB themes pulse again — and this time they cannot stop. The hue cycle was driven by requestAnimationFrame, which a phone is free to stop handing over: a WebView that is on screen but not composing frames (after the screen went off, a call, a lifecycle transition, or under memory pressure) gets no frames at all while its timers keep running. The accents then stayed frozen on the hue of the last frame that did run — the RGB theme’s own pink, stuck, exactly like the plain pink theme with nothing pulsing. The cycle runs on a timer now, so it keeps moving whenever the app is on screen, and every tick works the hue out from the clock rather than from an increment — so a timer the system suspended comes back on the right colour instead of carrying on from a stale one',
     'Coming back to the app re-arms the cycle. The phone can shut timers down while the app is away (and Android hands a backgrounded page almost no frames at all), so returning now rebuilds the cycle on the spot instead of trusting whatever was left running. The hue is kept where it was, so nothing snaps back to pink when you reopen the app',
@@ -16675,7 +16683,9 @@ function _fallbackCopy(text){
 
 
   function pickUserAlbum(ids, sourceLabel){
-    const names = Object.keys(userAlbums).sort();
+    // Only albums made by hand are offered here; the library's own grouping is
+    // not something to file songs into.
+    const names = (typeof visibleAlbumNames === 'function' ? visibleAlbumNames() : Object.keys(userAlbums)).sort();
     if(!names.length){ createAlbumFromIds(ids, sourceLabel, null); return; }
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
@@ -16717,6 +16727,7 @@ function _fallbackCopy(text){
   function addTracksToAlbum(ids, albumName, sourceLabel){
     const entry = userAlbums[albumName];
     if(entry && Array.isArray(entry.trackIds)){
+      markAlbumManual(albumName);   // filing songs into it by hand makes it yours
       let added = 0;
       ids.forEach(id => {
         const t = allTracks.find(tr => tr.id === id);
@@ -16808,9 +16819,17 @@ function _fallbackCopy(text){
     e.manual = true;
     delete e.auto;
   }
+  // Strictly manual. An entry counts as an album of yours only when a hand-made
+  // action created it (Create album, Add to album, rename, reorder, "It is
+  // mine"). Anything else — the old card-drag auto-save, a tag-only album
+  // materialised so a reorder had somewhere to live, or a legacy entry from
+  // before the flag existed — is the library's own grouping, not an album you
+  // made, and stays out of Albums. Those entries are still listed under
+  // "Not created by you" in Manage albums, where you can restore or delete them.
   function albumIsAuto(name){
     var e = userAlbums[name];
-    return !!(e && e.auto === true && e.manual !== true);
+    if(!e) return true;
+    return e.manual !== true;
   }
   function visibleAlbumNames(){
     return Object.keys(userAlbums || {}).filter(function(n){ return !albumIsAuto(n); });
@@ -25183,6 +25202,164 @@ function _renderAhFromData(artistAlbums){
   })();;
         if(typeof window.__wireAH === 'function') window.__wireAH();
 
+  // ---- One place that knows what a "single" is ------------------------------
+  // Used by the Discover button, the full refetch and the per-artist ↻/⚡, so the
+  // three can never disagree about what a single is again.
+  //
+  // Two sources are unioned per artist:
+  //   * the song search, filtered to releases that are a single track; and
+  //   * the artist's own release list, where a one-track release is a single by
+  //     definition. This second half is what was missing: an iTunes *song* search
+  //     is relevance-ranked and only ever returns the artist's most relevant ~200
+  //     tracks, so a prolific artist's older or quieter singles never showed up
+  //     at all ("I am missing songs in Singles for various artists").
+  async function fetchArtistSingles(artistName, opts){
+    opts = opts || {};
+    var skipHidden = !opts.includeHidden;
+    var want = String(primaryArtistName(artistName) || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    function norm(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim(); }
+    function nameMatch(a, b){ return !!a && !!b && (a === b || a.indexOf(b) !== -1 || b.indexOf(a) !== -1); }
+    var out = [];
+    var seen = {};
+    function add(row){
+      var key = norm(row && row.trackName);
+      if(!key || seen[key]) return false;
+      seen[key] = 1;
+      out.push(row);
+      return true;
+    }
+    // --- 1. what a relevance-ranked song search knows about ---
+    try{
+      var sresp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=song&limit=200');
+      if(sresp && sresp.ok){
+        var sdata = await sresp.json();
+        (sdata.results || []).forEach(function(sr){
+          if(!sr || !sr.trackName) return;
+          if(skipHidden && isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return;
+          if(!nameMatch(norm(primaryArtistName(sr.artistName || '')), want)) return;
+          var cn = String(sr.collectionName || '').toLowerCase();
+          var tn = String(sr.trackName || '').toLowerCase();
+          var tc = Number(sr.trackCount) || 0;
+          // A one-track release IS a single. "…Single…" in the release name is
+          // Apple saying so outright; a track named like its one-track release is
+          // the same thing. The old name-length cap threw away real singles.
+          if(!(/\bsingle\b/.test(cn) || (cn === tn && tc <= 1) || tc === 1)) return;
+          add({
+            trackName: sr.trackName,
+            artistName: sr.artistName || artistName,
+            trackId: sr.trackId,
+            collectionId: sr.collectionId,
+            releaseDate: sr.releaseDate || '',
+            artworkUrl100: sr.artworkUrl100 || '',
+            previewUrl: sr.previewUrl || ''
+          });
+        });
+      }
+    }catch(_e1){}
+    // --- 2. the artist's own releases (1 track = a single) ---
+    try{
+      var artistId = 0;
+      var aresp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&entity=musicArtist&limit=5');
+      if(aresp && aresp.ok){
+        var adata = await aresp.json();
+        (adata.results || []).forEach(function(ar){
+          if(artistId || !ar || !ar.artistId) return;
+          if(nameMatch(norm(ar.artistName || ''), want)) artistId = ar.artistId;
+        });
+      }
+      if(artistId){
+        var lresp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200');
+        if(lresp && lresp.ok){
+          var ldata = await lresp.json();
+          var pending = [];
+          (ldata.results || []).forEach(function(c){
+            if(!c || c.wrapperType !== 'collection') return;
+            if(Number(c.trackCount) !== 1) return;                       // a single, by Apple's own data
+            if(!nameMatch(norm(primaryArtistName(c.artistName || '')), want)) return;
+            var title = String(c.collectionName || '').replace(/\s*[-\u2013\u2014]\s*single\s*$/i, '').trim();
+            if(!title) return;
+            if(skipHidden && isSingleHidden(c.collectionId, title)) return;
+            if(add({
+              trackName: title,
+              artistName: c.artistName || artistName,
+              trackId: c.collectionId,
+              collectionId: c.collectionId,
+              releaseDate: c.releaseDate || '',
+              artworkUrl100: c.artworkUrl100 || '',
+              previewUrl: ''
+            })) pending.push(out[out.length - 1]);
+          });
+          // The release itself has no preview URL — its one track does. Resolve
+          // the newest few so their ▶ buttons work (bounded: four at a time).
+          for(var b = 0; b < pending.length && b < 24; b += 4){
+            await Promise.all(pending.slice(b, b + 4).map(async function(row){
+              try{
+                var tresp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + row.collectionId + '&entity=song');
+                if(!tresp || !tresp.ok) return;
+                var tdata = await tresp.json();
+                var track = (tdata.results || []).filter(function(x){ return x && x.wrapperType === 'track'; })[0];
+                if(!track) return;
+                row.previewUrl = track.previewUrl || '';
+                row.trackId = track.trackId || row.trackId;
+                row.releaseDate = row.releaseDate || track.releaseDate || '';
+              }catch(_e3){}
+            }));
+          }
+        }
+      }
+    }catch(_e2){}
+    out.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
+    return out;
+  }
+  window.__scFetchArtistSingles = fetchArtistSingles;
+
+  // Groups from the saved snapshot, keyed by artist name. A pinned artist that
+  // comes back empty keeps the group it already had, so a partial or blocked
+  // fetch can never delete singles the user already had.
+  function cachedArtistGroups(title){
+    var map = {};
+    try{
+      var raw = localStorage.getItem('discPopupCache_' + title);
+      if(!raw) return map;
+      var d = JSON.parse(raw);
+      if(!d || !d.body) return map;
+      var tmp = document.createElement('div');
+      tmp.innerHTML = d.body;
+      Array.prototype.forEach.call(tmp.querySelectorAll('.dp-ah-artist'), function(g){
+        var hdr = g.querySelector('.dp-ah-artist-hdr span[style*="flex:1"]');
+        var nm = hdr ? String(hdr.textContent || '').trim() : '';
+        if(!nm) return;
+        var rows = g.querySelectorAll('.dp-track').length;
+        if(!rows) return;
+        map[nm.toLowerCase()] = { html: g.outerHTML, rows: rows };
+      });
+    }catch(_e){}
+    return map;
+  }
+  window.__scCachedArtistGroups = cachedArtistGroups;
+  function keptArtistGroupsHTML(title, freshByName, pinnedList){
+    var kept = { html: '', rows: 0, artists: [] };
+    try{
+      var saved = cachedArtistGroups(title);
+      var have = {};
+      Object.keys(freshByName || {}).forEach(function(k){ have[String(k).toLowerCase()] = 1; });
+      (pinnedList || []).forEach(function(p){
+        var nm = String((p && p.name) || '').trim();
+        if(!nm) return;
+        var key = nm.toLowerCase();
+        if(have[key]) return;
+        var primary = String(primaryArtistName(nm) || '').toLowerCase();
+        var g = saved[key] || saved[primary];
+        if(!g) return;
+        kept.html += g.html;
+        kept.rows += g.rows;
+        kept.artists.push(nm);
+      });
+    }catch(_e){}
+    return kept;
+  }
+  window.__scKeptArtistGroups = keptArtistGroupsHTML;
+
       // Singles button: search for singles from pinned artists, show in popup
       var siBtn = document.getElementById('discoverSingles');
       if(siBtn) siBtn.onclick = async function(){
@@ -25208,41 +25385,28 @@ function _renderAhFromData(artistAlbums){
         } else {
           this._isRefetch = false;
         }
-        this.textContent = '\u23f3 Searching...'; this.disabled = true;
+        this.textContent = '⏳ Searching...'; this.disabled = true;
         var artistSingles = {};
         var totalFound = 0;
         for(var si=0; si<pinnedArtists.length; si++){
           var sa = pinnedArtists[si];
           try{
-            var surl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(sa.name) + '&media=music&entity=song&limit=200';
-            var sresp = await fetchWithProxy(surl);
-            if(!sresp || !sresp.ok) continue;
-            var sdata = await sresp.json();
-            var sresults = (sdata.results||[]).filter(function(sr){
-              if(!sr || !sr.trackName) return false;
-              if(isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return false;
-              var _srA2 = primaryArtistName(sr.artistName||'').toLowerCase().trim(); var _saN2 = primaryArtistName(sa.name).toLowerCase().trim(); if(_srA2 !== _saN2 && _srA2.indexOf(_saN2) === -1 && _saN2.indexOf(_srA2) === -1) return false;
-              var cn = (sr.collectionName || '').toLowerCase();
-              var tn = (sr.trackName || '').toLowerCase();
-              var tc = sr.trackCount || 0;
-              // Definitely a single if:
-              if(/\bsingle\b/.test(cn)) return true;  // collection is literally called "...Single..."
-              if(cn === tn && tc <= 1) return true;  // standalone single (1-track release)
-              if(tc === 1 && cn.length < 80) return true;  // single-track release
-              // Everything else is an album track — skip it
-              return false;
-            });
-            if(sresults.length){
-              sresults.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
-              artistSingles[sa.name] = sresults;
-              totalFound += sresults.length;
-            }
+            var _srows = await fetchArtistSingles(sa.name);
+            if(_srows.length){ artistSingles[sa.name] = _srows; totalFound += _srows.length; }
           }catch(e){}
         }
         this.textContent = '🎵 Singles'; this.disabled = false;
-        if(!totalFound){ if(navigator.onLine === false && loadCachedDiscoverPopup('🎵 Singles')){ this.textContent='🎵 Singles'; this.disabled=false; return; } openDiscoverPopup('🎵 Singles', '<div class="dp-empty">No singles found from pinned artists.</div>', ''); return; }
-        // Build collapsible: artist → singles
-        var html = '';
+        // Whatever came back, the singles you already had stay: an artist that
+        // returned nothing keeps its group from the saved list.
+        var _kept = keptArtistGroupsHTML('🎵 Singles', artistSingles, pinnedArtists);
+        if(_kept.rows) toast('Kept ' + _kept.rows + ' saved single' + (_kept.rows===1?'':'s') + ' for ' + _kept.artists.length + ' artist' + (_kept.artists.length===1?'':'s') + ' iTunes did not return.', 3500);
+        if(!totalFound && !_kept.rows){
+          if(loadCachedDiscoverPopup('🎵 Singles')){ toast('Couldn\'t reach iTunes \u2014 showing your saved singles.', 3000); return; }
+          openDiscoverPopup('🎵 Singles', '<div class="dp-empty">No singles found from pinned artists.</div>', ''); return;
+        }
+        // Build collapsible: artist → singles (saved groups that iTunes did
+        // not return are carried over at the top).
+        var html = _kept.html;
         var artistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistSingles), 'sidecut_singlesArtistOrder') : Object.keys(artistSingles).sort());
         for(var ki=0; ki<artistKeys.length; ki++){
           var artist = artistKeys[ki];
@@ -25272,7 +25436,7 @@ function _renderAhFromData(artistAlbums){
           html += '</div></div>';
         }
         html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button><button id="singlesRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + html;
-        openDiscoverPopup('🎵 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+        openDiscoverPopup('🎵 Singles', html, (totalFound + _kept.rows) + ' single' + ((totalFound + _kept.rows)!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
 
 
         // Whole-row taps are handled by the global .dp-track[data-si] delegate
@@ -30737,6 +30901,36 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       if(chv) chv.style.transform = isOpen ? '' : 'rotate(90deg)';
     }, true);
   }
+// Persist whatever the open Discover popup shows, so it survives closing it.
+// In-place edits (a per-artist refresh, a remove, an undo) used to delete the
+// saved snapshot instead, which is how a list could vanish on the next open.
+function __scSnapshotDiscoverPopup(){
+  try{
+    var titleEl = document.getElementById('discPopupTitle');
+    var bEl = document.getElementById('discPopupBody');
+    var title = titleEl ? String(titleEl.textContent || '') : '';
+    if(!title || !bEl || !bEl.children.length) return false;
+    var clone = bEl.cloneNode(true);
+    var searchRow = clone.querySelector('#discPopupSearchWrap');
+    if(searchRow) searchRow.remove();       // injected at open time, never cached
+    var body = clone.innerHTML;
+    if(!body || /fetching|loading|spinner|dp-empty|\u23f3/i.test(body)) return false;
+    var subEl = document.getElementById('discPopupSub');
+    var pins = '';
+    try{
+      var pa = (typeof window.getPinnedArtists === 'function') ? (window.getPinnedArtists() || []) : [];
+      pins = pa.map(function(p){ return (p && p.name || '').toLowerCase().trim(); }).sort().join('|');
+    }catch(_pe){}
+    localStorage.setItem('discPopupCache_' + title, JSON.stringify({
+      title: title, body: body,
+      subtitle: subEl ? String(subEl.textContent || '') : '',
+      ts: Date.now(), pins: pins
+    }));
+    return true;
+  }catch(_e){ return false; }
+}
+window.__scSnapshotDiscoverPopup = __scSnapshotDiscoverPopup;
+
 function closeDiscoverPopup(){
   var ov = document.getElementById('discPopupOverlay');
   if(ov) ov.style.display = 'none';
@@ -30763,42 +30957,33 @@ document.addEventListener('click', function(e){
     return pop;
   };
 window.__refetchSingles = async function(){
-  try{ localStorage.removeItem('discPopupCache_' + '\ud83c\udfb5 Singles'); }catch(_e){}
-  if(!window.isPremiumActive()){ window.toast('Premium feature — unlock in Settings!'); window.openSettingsTo('premium'); return; }
-  if(!window.getPinnedArtists().length){ window.toast('Pin some artists first!'); return; }
-  var pinnedArtists = window.getPinnedArtists();
+  // NOTE: the saved snapshot is deliberately NOT deleted up front. It used to be,
+  // so a refetch that came back empty (offline, rate-limited, iTunes having a bad
+  // day) replaced every single in the list with "No singles found" and the saved
+  // list was gone as soon as the popup was reopened.
+  if(!window.isPremiumActive()){ window.toast('Premium feature \u2014 unlock in Settings!'); window.openSettingsTo('premium'); return; }
+  var pinnedList = (typeof window.getPinnedArtists === 'function') ? (window.getPinnedArtists() || []) : [];
+  if(!pinnedList.length){ window.toast('Pin some artists first!'); return; }
   var siBtn = document.getElementById('discoverSingles');
   if(siBtn){ siBtn.textContent = '⏳ Searching...'; siBtn.disabled = true; }
   var artistSingles = {};
   var totalFound = 0;
-  for(var si=0; si<pinnedArtists.length; si++){
-    var sa = pinnedArtists[si];
+  for(var si=0; si<pinnedList.length; si++){
+    var sa = pinnedList[si];
     try{
-      var surl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(sa.name) + '&media=music&entity=song&limit=200';
-      var sresp = await fetchWithProxy(surl);
-      if(!sresp || !sresp.ok) continue;
-      var sdata = await sresp.json();
-      var sresults = (sdata.results||[]).filter(function(sr){
-        if(!sr || !sr.trackName) return false;
-        if(isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return false;
-        var _srA2 = primaryArtistName(sr.artistName||'').toLowerCase().trim(); var _saN2 = primaryArtistName(sa.name).toLowerCase().trim(); if(_srA2 !== _saN2 && _srA2.indexOf(_saN2) === -1 && _saN2.indexOf(_srA2) === -1) return false;
-        var cn = (sr.collectionName || '').toLowerCase();
-        var tn = (sr.trackName || '').toLowerCase();
-        var tc = sr.trackCount || 0;
-        if(/\bsingle\b/.test(cn)) return true;
-        if(cn === tn && tc <= 1) return true;
-        if(tc === 1 && cn.length < 80) return true;
-        return false;
-      });
-      if(sresults.length){
-        sresults.sort(function(x,y){ return (y.releaseDate||'').localeCompare(x.releaseDate||''); });
-        artistSingles[sa.name] = sresults;
-        totalFound += sresults.length;
-      }
+      var srows = (typeof window.__scFetchArtistSingles === 'function') ? await window.__scFetchArtistSingles(sa.name) : [];
+      if(srows && srows.length){ artistSingles[sa.name] = srows; totalFound += srows.length; }
     }catch(e){}
   }
-  if(siBtn){ siBtn.textContent = '\u2728 Singles'; siBtn.disabled = false; }
-  if(!totalFound){ openDiscoverPopup('\u2728 Singles', '<div class="dp-empty">No singles found from pinned artists.</div>', ''); return; }
+  if(siBtn){ siBtn.textContent = '\ud83c\udfb5 Singles'; siBtn.disabled = false; }
+  var kept = (typeof window.__scKeptArtistGroups === 'function')
+    ? window.__scKeptArtistGroups('🎵 Singles', artistSingles, pinnedList)
+    : { html: '', rows: 0, artists: [] };
+  if(!totalFound && !kept.rows){
+    if(loadCachedDiscoverPopup('🎵 Singles')){ window.toast('Couldn\'t reach iTunes \u2014 showing your saved singles.', 3000); return; }
+    openDiscoverPopup('🎵 Singles', '<div class="dp-empty">No singles found from pinned artists.</div>', ''); return;
+  }
+  if(kept.rows) window.toast('Kept ' + kept.rows + ' saved single' + (kept.rows===1?'':'s') + ' for ' + kept.artists.length + ' artist' + (kept.artists.length===1?'':'s') + ' iTunes did not return.', 3500);
   var html = '';
   var artistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistSingles), 'sidecut_singlesArtistOrder') : Object.keys(artistSingles).sort());
   for(var ki=0; ki<artistKeys.length; ki++){
@@ -30830,7 +31015,7 @@ window.__refetchSingles = async function(){
     html += '</div></div>';
   }
   html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button><button id="singlesRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + html;
-  openDiscoverPopup('\u2728 Singles', html, totalFound + ' single' + (totalFound!==1?'s':'') + ' from ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
+  openDiscoverPopup('🎵 Singles', kept.html + html, (totalFound + kept.rows) + ' single' + ((totalFound + kept.rows)!==1?'s':'') + ' from ' + pinnedList.length + ' artist' + (pinnedList.length!==1?'s':''));
 
   // ▶ buttons play the 30s preview inline; whole-row taps go to the song via
   // the global .dp-track[data-si] delegate (matching album-track behaviour).
@@ -30859,6 +31044,9 @@ document.addEventListener('click', function(e){
   window._singlesRemoveConfirm(tname || 'this single', function(){
     if(tid){ try{ window.hideSingle(tid, tname); }catch(_e){} }
     if(row){ row.style.display = 'none'; }
+    // Keep the saved list in step with what is on screen (the removed row is
+    // hidden in it, so it can never come back from the snapshot).
+    try{ if(typeof window.__scSnapshotDiscoverPopup === 'function') window.__scSnapshotDiscoverPopup(); }catch(_e){}
     var undone = false;
     var undoTimer = setTimeout(function(){ undone = true; }, 5000);
     window.toastWithUndo('Removed "' + (tname || 'single') + '"', function(){
@@ -30866,6 +31054,7 @@ document.addEventListener('click', function(e){
       if(undone || !row) return;
       if(tid){ try{ window.restoreSingle(tid); }catch(_e){} }
       row.style.display = '';
+      try{ if(typeof window.__scSnapshotDiscoverPopup === 'function') window.__scSnapshotDiscoverPopup(); }catch(_e){}
       paRecountSingles();
     });
     paRecountSingles();
@@ -31025,38 +31214,9 @@ window.__singlesRefreshArtistGroup = async function(groupEl){
     var sresp = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=song&limit=200');
     if(!sresp || !sresp.ok) throw new Error('request failed');
     var sdata = await sresp.json();
-    // Same "is this a single" rules as the full Singles fetch, plus hidden-list
-    // filtering so removed tracks never come back on a per-artist refresh.
-    var hidden = (typeof window.getHiddenSingles === 'function') ? window.getHiddenSingles() : [];
-    function hidMatch(tid, tname){
-      var tidS = String(tid || '');
-      for(var hi = 0; hi < hidden.length; hi++){
-        if(tidS && String(hidden[hi]) === tidS) return true;
-        if(tname){
-          var hn = String(tname).toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-          if(hidden[hi] === 't:' + hn) return true;
-        }
-      }
-      return false;
-    }
-    function normNm(s){
-      return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-    }
-    var want = normNm(artist);
-    var matched = (sdata.results || []).filter(function(sr){
-      if(!sr || !sr.trackName) return false;
-      if(hidMatch(sr.trackId || sr.collectionId, sr.trackName)) return false;
-      var ra = normNm(sr.artistName || '');
-      if(!want || (ra !== want && ra.indexOf(want) === -1 && want.indexOf(ra) === -1)) return false;
-      var cn = String(sr.collectionName || '').toLowerCase();
-      var tn = String(sr.trackName || '').toLowerCase();
-      var tc = sr.trackCount || 0;
-      if(/\bsingle\b/.test(cn)) return true;
-      if(cn === tn && tc <= 1) return true;
-      if(tc === 1 && cn.length < 80) return true;
-      return false;
-    });
-    matched.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
+    // Same fetch as everywhere else, with the hidden list applied so removed
+    // tracks never come back on a per-artist refresh.
+    var matched = (typeof window.__scFetchArtistSingles === 'function') ? await window.__scFetchArtistSingles(artist) : [];
     var bodyEl = groupEl.querySelector('.dp-ah-albums');
     // Keep the group's own numbering prefix (used on data-si attributes).
     var ki = 0;
@@ -31087,9 +31247,10 @@ window.__singlesRefreshArtistGroup = async function(groupEl){
         });
       });
     }
-    // The stored popup snapshot is now stale — drop it so future opens rebuild.
-    try{ localStorage.removeItem('discPopupCache_' + '\ud83c\udfb5 Singles'); }catch(_e){}
-    try{ localStorage.removeItem('discPopupCache_' + '\u2728 Singles'); }catch(_e){}
+    // Persist what the popup now shows instead of deleting the snapshot: the
+    // refreshed rows — and every other artist's — have to still be there the
+    // next time the popup is opened.
+    if(typeof window.__scSnapshotDiscoverPopup === 'function') window.__scSnapshotDiscoverPopup();
     ok = true;
     window.toast('\u21bb ' + artist + ': ' + matched.length + ' single' + (matched.length !== 1 ? 's' : '') + ' refreshed.', 2500);
   }catch(_err){
@@ -31162,25 +31323,8 @@ window.__singlesDeepRefreshArtistGroup = async function(groupEl){
   if(cntEl) cntEl.textContent = '…';
   var ok = false;
   try{
-    var sresp = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=song&limit=200');
-    if(!sresp || !sresp.ok) throw new Error('request failed');
-    var sdata = await sresp.json();
-    function normNm(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim(); }
-    var want = normNm(artist);
-    // NO hidden-list filtering — show everything
-    var matched = (sdata.results || []).filter(function(sr){
-      if(!sr || !sr.trackName) return false;
-      var ra = normNm(sr.artistName || '');
-      if(!want || (ra !== want && ra.indexOf(want) === -1 && want.indexOf(ra) === -1)) return false;
-      var cn = String(sr.collectionName || '').toLowerCase();
-      var tn = String(sr.trackName || '').toLowerCase();
-      var tc = sr.trackCount || 0;
-      if(/\bsingle\b/.test(cn)) return true;
-      if(cn === tn && tc <= 1) return true;
-      if(tc === 1 && cn.length < 80) return true;
-      return false;
-    });
-    matched.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
+    // Deep refetch keeps removed singles out of the filter on purpose.
+    var matched = (typeof window.__scFetchArtistSingles === 'function') ? await window.__scFetchArtistSingles(artist, { includeHidden: true }) : [];
     var bodyEl = groupEl.querySelector('.dp-ah-albums');
     var ki = 0;
     var frow = groupEl.querySelector('.dp-track[data-si]');
@@ -31207,8 +31351,7 @@ window.__singlesDeepRefreshArtistGroup = async function(groupEl){
         });
       });
     }
-    try{ localStorage.removeItem('discPopupCache_' + '\ud83c\udfb5 Singles'); }catch(_e){}
-    try{ localStorage.removeItem('discPopupCache_' + '\u2728 Singles'); }catch(_e){}
+    if(typeof window.__scSnapshotDiscoverPopup === 'function') window.__scSnapshotDiscoverPopup();
     ok = true;
     window.toast('\u21bb ' + artist + ': ' + matched.length + ' single' + (matched.length !== 1 ? 's' : '') + ' refetched (all, including removed).', 3000);
   }catch(_err){
