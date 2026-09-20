@@ -911,6 +911,11 @@
         return null;
       }
 
+      // A newer version than this build is published (whether it is already
+      // staged, deferred, or about to be offered in the sheet): announce it once,
+      // here, so every path below is covered.
+      announceAvailable(man);
+
       // Already staged but not yet applied (waiting for background/relaunch)?
       // Surface the staged state in the sheet so the user can apply it now.
       try{
@@ -1076,6 +1081,20 @@
         checkForUpdate({ silent: true });
       }, 6000);
     });
+  }
+
+  // Tell the app that a newer build exists, so it can say so where the user will
+  // actually see it (a toast on the boot it is found, plus a permanent entry in
+  // the notification bell) instead of leaving the news inside Settings → More.
+  // This costs nothing: the check itself already ran, and this only publishes the
+  // result it returned. No network call, no timer, nothing in the background.
+  function announceAvailable(man){
+    try{
+      if(!man || !man.version) return;
+      var info = { version: String(man.version), date: man.date || '', size: man.size || 0, at: Date.now() };
+      window.__SideCutUpdateAvailable = info;
+      try{ window.dispatchEvent(new CustomEvent('sc-update-available', { detail: info })); }catch(_ev){}
+    }catch(_e){}
   }
 
   window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, staged: staged, neutralizeStaged: neutralizeStaged, isOlderBundle: isOlderBundle, OTA_BASE: OTA_BASE };
