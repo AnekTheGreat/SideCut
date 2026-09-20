@@ -4775,8 +4775,22 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     try{
       var requestRate = window.screen && window.screen.requestFrameRate;
       if(typeof requestRate !== 'function') return;
-      var hz = refreshRate === 'max' ? Number(window.screen.refreshRate || 0) : Number(refreshRate);
-      if(hz > 0) Promise.resolve(requestRate.call(window.screen, hz)).catch(function(){});
+      // "Max device refresh rate" means exactly that: no cap. It must therefore
+      // request NOTHING. It used to request screen.refreshRate — and an Android
+      // WebView reports its own nominal rate (60) rather than the panel's, so
+      // picking "max" quietly pinned the whole app to 60 Hz on a 120 Hz phone:
+      // "it doesn't feel smooth, the refresh rate is off". Requesting a rate also
+      // holds the display there while the app is open, so a wrong number was felt
+      // everywhere, not just in this app's own animation.
+      if(refreshRate === 'max'){
+        var advertised = Number((window.screen && window.screen.refreshRate) || 0);
+        // Only speak up when the platform reports a rate that is plainly above the
+        // WebView's own default; otherwise leave the display alone.
+        if(advertised > 61) Promise.resolve(requestRate.call(window.screen, advertised)).catch(function(){});
+        return;
+      }
+      var hz = Number(refreshRate);
+      if(hz > 0 && isFinite(hz)) Promise.resolve(requestRate.call(window.screen, hz)).catch(function(){});
     }catch(_e){}
   }
   // Hue of a #rrggbb colour, so the cycle can open on the theme's own accent.
@@ -9553,6 +9567,20 @@ function startLyricsAutoScroll() {
       if(watermarkEnabledRow) watermarkEnabled = !!watermarkEnabledRow.value;
       const refreshRateRow = metaRows.find(r => r.key === 'refreshRate');
       if(refreshRateRow && refreshRateRow.value) refreshRate = refreshRateRow.value;
+      // A rate that came from an old backup (or a device the app used to be on)
+      // can be one this screen cannot do — for example 165 from a gaming phone, or
+      // 60 carried over from a phone with a 120 Hz panel. Being pinned below the
+      // panel's real rate is felt as a permanently choppy app, so ask the platform
+      // and fall back to "max" when the number is simply not on offer.
+      try{
+        var _adv = Number((window.screen && window.screen.refreshRate) || 0);
+        var _want = parseInt(refreshRate, 10);
+        if(_adv > 61 && _want > 0 && _want < _adv - 1){
+          console.warn('[SideCut] stored refresh rate ' + refreshRate + ' Hz is below this display (' + _adv + ' Hz) — using the device rate');
+          refreshRate = 'max';
+          dbPut('meta', { key: 'refreshRate', value: refreshRate });
+        }
+      }catch(_rr){}
       applyDeviceRefreshRate();
       const watermarkPatternsRow = metaRows.find(r => r.key === 'watermarkPatterns');
       if(watermarkPatternsRow && watermarkPatternsRow.value) {
@@ -9594,7 +9622,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8.7';
+  const APP_VERSION = '58.8.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9898,6 +9926,12 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8.8', date: 'September 19, 2026 \u00b7 9:25 PM EDT', title: 'A properly uncapped refresh rate, a Discover pin that cannot crash, and updates that never apply themselves', items: [
+    'The refresh rate setting no longer quietly caps the app at 60 Hz. "Max device refresh rate" used to ask Android for screen.refreshRate \u2014 and a WebView reports its own nominal rate (60), not the panel\u2019s \u2014 so picking \u201cmax\u201d on a 120 Hz phone pinned the whole app to 60 Hz for as long as it was open. Asking for an explicit rate is the only thing that requests one now, so \u201cmax\u201d really is uncapped; a rate restored from an old backup that this screen cannot do falls back to the device rate instead of staying wrong',
+    'Pinning an artist in Discover can no longer take the app down. Everything the pin does after saving it is cosmetic, and a failure in any of it is now contained (the pin is kept, and the refresh failure is shown rather than thrown). Pinning also records itself in the flight recorder, so if the process ever does die in that path the next launch names it instead of leaving it to guesswork',
+    'Pinning several artists in a row no longer starts several artwork downloads and full-size image decodes at once. The backfill runs one artist at a time \u2014 the shape of that spike is what a crash right after pinning looks like on a phone that is also playing music',
+    'Updates never apply themselves on a background/foreground cycle any more. Opening the app from the widget, the notification, or the recent-apps list used to be able to hand over to a staged bundle for no reason. A staged update is now only handed over on a real app kill, or when you tap to install it from the update sheet',
+  ]},
   { version: '58.8.7', date: 'September 19, 2026 \u00b7 8:49 PM EDT', title: 'Lock-screen controls that work on both sessions, and a player that lets the phone sleep', items: [
     'Lock-screen and notification forward/back now work, and they stay there. The sound in the installed app comes out of the WebView\u2019s own audio element, and that is the media session the phone\u2019s player follows \u2014 but the controls were only being registered with the native notification plugin, so the session the system actually hands button presses to knew about play/pause and nothing else. Every control is now registered on both sessions',
     'The controls are re-asserted the moment a song starts. Android (and the plugin) rebuilds the notification whenever the session restarts \u2014 after a pause, after the player was released in the background, after the app reloaded \u2014 and a rebuilt session only knew the controls it was told about. That rebuild is why the buttons were \u201csometimes there, sometimes not\u201d. One registration path now owns all of it (a second, older copy that registered a different set has been removed)',
@@ -25892,6 +25926,11 @@ if(!isDiscover) stopDiscoverPreview();
   }
   function togglePinArtist(name, art){
     if(!name) return;
+    // Name this in the flight recorder: artwork backfill and a library scan run
+    // right after a pin, and if the process ever dies in here the next boot says
+    // so instead of leaving us to guess. Cleared a few seconds later.
+    try{ if(window.__scMark) __scMark('pinning an artist'); }catch(_e){}
+    try{ setTimeout(function(){ if(window.__scMarkDone) window.__scMarkDone(); }, 6000); }catch(_e){}
     // Normalize to primary artist so collabs don't create duplicates
     const primary = primaryArtistName(name);
     if(isPinnedArtist(primary)){
@@ -25919,20 +25958,37 @@ if(!isDiscover) stopDiscoverPreview();
     }
     savePinnedArtists();
     __bustPinPopups();
-    // Re-render the Home bubble if it's open, else just refresh Home
-    if($('homeBubbleOverlay').classList.contains('open')){
-      openHomeBubble('pinnedartists');
+    // Everything from here down is cosmetic — the pin is already saved — so a
+    // failure in any of it must not take the app down or leave the button lying
+    // about what it did.
+    try{
+      // Re-render the Home bubble if it's open, else just refresh Home
+      if($('homeBubbleOverlay').classList.contains('open')){
+        openHomeBubble('pinnedartists');
+      }
+      renderHome();
+      updateNotifBadge();
+      if(typeof renderPinnedArtists === 'function') renderPinnedArtists();
+    }catch(e){
+      try{ console.error('pin refresh failed', e); }catch(_e){}
+      try{ if(window.__scShowBootError) window.__scShowBootError('Pinned the artist, but refreshing the screen failed: ' + ((e && e.message) || e)); }catch(_e2){}
     }
-    renderHome();
-    updateNotifBadge();
   }
 
   // Backfill artwork for pinned artists that have no picture yet.
   // Uses ONLY the user's own library — finds a track by the artist and uses
   // its cover art (converted to a data URL via FileReader for reliability).
   // No network fetches. Never overwrites a user-picked photo.
+  var __artBackfillBusy = false;
   function ensurePinnedArtistArt(){
     if(!pinnedArtists || !pinnedArtists.length) return;
+    // One artist at a time. Pinning a few artists in a row used to start that many
+    // network fetches and 600px image decodes at once, in a WebView, on top of
+    // whatever is playing — which is exactly the shape of a memory spike that ends
+    // as "the app crashed after I pinned an artist".
+    if(__artBackfillBusy) return;
+    __artBackfillBusy = true;
+    setTimeout(function(){ __artBackfillBusy = false; }, 8000);
     pinnedArtists.forEach(function(p){
       // Skip if user explicitly set a photo (data: URL)
       if(p && p.photo && String(p.photo).indexOf('data:') === 0) return;
@@ -29811,6 +29867,10 @@ window.showSettingsTab = showSettingsTab;
   window.getHiddenSingles = getHiddenSingles;
   window.getHiddenAlbums = getHiddenAlbums;
   window.getPinnedArtists = function(){ return pinnedArtists; };
+  // Drives the exact path the Discover pin button uses, so the audit can prove it
+  // cannot take the app down.
+  window.__scTogglePinArtist = function(name, art){ return togglePinArtist(name, art); };
+  window.__scPinnedArtists = function(){ return pinnedArtists; };
   window.__scSavePinnedArtists = function(){ savePinnedArtists(); };
   window.__scRenderPinnedArtists = function(){ renderPinnedArtists(); };
   // Reorder pinnedArtists[] to match a name array (inside the closure), persist, re-render.

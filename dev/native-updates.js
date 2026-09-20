@@ -393,7 +393,14 @@
       log('staged ' + version + ' is already the running version — nothing to do');
       return false;
     }
-    if(somethingIsPlaying() || wantDeferredInstall(version)) waitForRelaunch(Updater);
+    // ALWAYS pin the hand-over to a real app kill, never to "the app went to the
+    // background and came back". That is the difference the user feels: opening the
+    // app from the widget, the lock screen or a headset resumes the existing
+    // WebView, and a bundle that was only waiting for a background cycle swaps
+    // itself in at that moment — "every time I open the app any other way it just
+    // auto refreshes". Waiting for a genuine kill means the swap happens during a
+    // cold start, where it reads as the app simply opening.
+    waitForRelaunch(Updater);
     log('v' + version + ' stays staged — it installs on the next app launch');
     return 'deferred';
   }
