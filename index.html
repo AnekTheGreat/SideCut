@@ -9626,7 +9626,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.9.3';
+  const APP_VERSION = '58.9.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9965,6 +9965,13 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.9.4', date: 'September 20, 2026 · 10:47 AM EDT', title: 'Add selected songs to a playlist, and stop exports saving a blank file', items: [
+    'Select several songs in the library and you can now drop them straight into a playlist. The multi-select bar had Create album, Add to album, Export and Delete but no playlist action at all, so the only way in was to open each song, tap ⋮ and add it one at a time. There is an add-to-playlist button in the bar now, and it uses the same picker as a single song — it shows which playlists already hold your selection, counts the ones that do (2/5), and still asks where in the playlist they should land. Adding several songs is one insertion, not one per song, and a song already in that playlist is never duplicated',
+    'Tapping a playlist your whole selection is already in takes them all back out again, the same toggle the single-song picker has always had, and selection mode closes when you are done',
+    'Exports saved an empty or half-finished file, and the app called it a success. Three separate faults added up to that, all of them in the native save path only — a browser export was fine. Capacitor\u2019s writeFile has no append option, so every 256KB chunk of a backup was written over the last one and only a fragment survived; chunks are now appended with appendFile, which is the only real append the plugin has',
+    'The zip-writing path batched its chunks as already-encoded base64. A 64KB chunk is not a multiple of three bytes, so each chunk ended in \u201c=\u201d padding and the phone\u2019s decoder stops at the first padding it sees — a batched write kept just its first chunk. The batch now holds raw bytes and is encoded once when it is flushed, so only the very end of the file can be padded',
+    'A written file is verified before anything is announced. The export now stats the file it just created and refuses to call it done if it is missing or holds no bytes, instead of handing the 0-byte path to the share sheet with an \u201cExported\u201d message — and a chunk write that fails no longer resolves as a finished export, so it falls back instead of lying. Downloads to your phone are checked the same way',
+  ]},
   { version: '58.9.3', date: 'September 20, 2026 · 8:34 AM EDT', title: 'An old queued bundle is cleared the moment the app opens', items: [
     'An old bundle waiting in the updater is cleared out the instant the app opens, not four seconds later. The phone-side updater installs whatever is queued by itself every time you leave the app, so an older bundle sitting there was one more chance to be swapped in — and every swap is another restart. The check now runs as soon as the app knows which version it is running',
     'The version the app reports is now the version it is really running. Settings’ version label shipped a placeholder from years ago (“v48”) behind the real one, and an app that had not finished starting could be read as version 48 — which made every version comparison nonsense. The label is stamped by the running build, and the placeholder is gone',
@@ -14021,6 +14028,14 @@ function _fallbackCopy(text){
   });
 }  function importShareCode(raw){    let payload = null;    let codeRaw = String(raw || '').trim() ;    if(!codeRaw) return false;    try{      const decoded = _scB64Decode(codeRaw) ;      if(!decoded) return false;      payload = JSON.parse(decoded) ;    }catch(_e){ return false; }    if(!payload || payload.v !== 2 || payload.kind !== 'playlist' || !payload.n || !Array.isArray(payload.ts) ) return false;    const targetName = String(payload.n) ;    const ids = [];    const missing = [];    payload.ts.forEach(song => {      if(!song || !song.t) return;      const title = String(song.t || '').toLowerCase().trim() ;      const artist = String(song.a || '').toLowerCase().trim() ;      const album = String(song.al || '' ).toLowerCase().trim() ;      let hit = null;      for(const t of allTracks){        const tTitle = (t.name || '' ).toLowerCase().trim() ;        const tArtist = (t.artist || '' ).toLowerCase().trim() ;        if(tTitle === title && artist && tArtist === artist){ hit = t; break; }        if(tTitle === title && (!tArtist || !artist) ){ hit = t; break; }      }      if(hit && ids.indexOf(hit.id) === -1) ids.push(hit.id) ;      else missing.push({ title: song.t, artist: song.a || '' }) ;    }) ;    if(!ids.length){ toast('No matching songs found on this device — add the songs first.', 4500) ; return false; }    if(!playlists[targetName]) playlists[targetName] = [];    ids.forEach(id => { if(playlists[targetName].indexOf(id) === -1) playlists[targetName].push(id) ; }) ;    saveMeta() ;    renderTabs() ;    activePlaylist = targetName ;    renderList() ;    $('shareCodeModal').style.display = 'none';    if(missing.length){      toast(`Opened "${targetName}" — ${ids.length} song${ids.length===1?'':'s'} matched, ${missing.length} not found on this device.`) ;      console.log('Share-code missing:', missing) ;    } else {      toast(`Opened "${targetName}" with ${ids.length} song${ids.length===1?'':'s'}.`) ;    }    return true;  }  function shareCodeOpenHandler(){    const raw = $('shareCodePaste').value;    const okImport = importShareCode(raw) ;    if(!okImport){ toast("That didn't look like a valid SideCut playlist code.", 3500) ; }  }  function createAlbumFromPlaylist(){    const ids = playlists[activePlaylist] || [];    if(!ids.length){ toast('This playlist is empty.') ; return; }    selectMode = true;    selectedIds = new Set(ids) ;    renderList() ;    toast('Selected the whole playlist — tap ⋮ (kebab) → Create album, or use the Create album button up top.', 4500) ;  }  function toggleShuffleFromMenu(){    shuffle = !shuffle;    if(shuffle) regenerateShuffleOrder() ;    savePlaybackState(true) ;    renderList() ;    toast(shuffle ? 'Shuffle on' : 'Shuffle off') ;  }  function getDuplicateGroups(){
   window.__scImportShareCode = importShareCode;
+  // Exposed for the export audit in dev/ — drives the real helpers against a
+  // fake native Filesystem. No behaviour change.
+  window.__scExportProbe = {
+    doExportTracks: (ids, base, pl, kind, premium) => doExportTracks(ids, base, pl, kind, premium),
+    writeBlobToCache: (blob, path, onProgress) => writeBlobToCache(blob, path, onProgress),
+    writeBlobToDir: (blob, path, directory) => writeBlobToDir(blob, path, directory),
+    streamZipToCapacitor: (stream, filename) => streamZipToCapacitor(stream, filename),
+  };
     // Better duplicate detection: matches by name + artist, and if both have
     // duration loaded, also by duration. Uses file size as additional signal when available.
     const groups = {};
@@ -15223,6 +15238,7 @@ function _fallbackCopy(text){
         <div class="pane-actions">
           <button class="icon-btn" id="selectCancelBtn" title="Cancel"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></button>
           <button class="icon-btn" id="selectAlbumAddBtn" title="Add selected songs to an album"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg></button>
+          <button class="icon-btn" id="selectPlaylistAddBtn" title="Add selected songs to a playlist"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 10H2v2h12v-2zm0-4H2v2h12V6zm4 8v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM2 16h8v-2H2v2z"/></svg></button>
           <button class="icon-btn" id="selectAlbumBtn" title="Create album from selected songs"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg></button>
           <button class="icon-btn" id="selectExportBtn" title="Export selected to .zip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h4.17v6h4V9h4.17L12 2z"/></svg></button>
           <button class="icon-btn" id="selectDeleteBtn" title="Delete selected" style="color:var(--coral); border-color:var(--coral);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
@@ -15232,6 +15248,7 @@ function _fallbackCopy(text){
       $('selectCancelBtn').addEventListener('click', exitSelectMode);
       $('selectAlbumBtn').addEventListener('click', createAlbumFromSelected);
       $('selectAlbumAddBtn').addEventListener('click', addSelectedToAlbum);
+      $('selectPlaylistAddBtn').addEventListener('click', addSelectedToPlaylist);
 
       $('selectExportBtn').addEventListener('click', exportSelected);
       $('selectDeleteBtn').addEventListener('click', deleteSelected);
@@ -16837,6 +16854,21 @@ function _fallbackCopy(text){
     pickUserAlbum(ids, ids.length + ' selected songs');
   }
 
+  // Multi-select -> "Add to playlist". Drops every selected song into a playlist
+  // from the selection bar, without leaving the library or opening each song.
+  function addSelectedToPlaylist(){
+    const ids = Array.from(selectedIds);
+    if(!ids.length){ toast('Select some songs first.'); return; }
+    promptAddToPlaylist(ids);
+  }
+  // Exposed for the multi-select audit in dev/ — enters selection mode without
+  // needing a real long-press gesture. No behaviour change.
+  window.__scEnterSelectMode = function(ids){
+    selectMode = true;
+    selectedIds = new Set(ids || []);
+    renderList();
+  };
+
   async function createAlbumFromSelected(){
     const ids = Array.from(selectedIds);
     if(!ids.length){ toast('Select some songs first.'); return; }
@@ -16959,51 +16991,84 @@ function _fallbackCopy(text){
     renderList();
   }
 
-  function promptAddToPlaylist(trackId){
+  // Playlist picker for one song (kebab menu) or many (multi-select bar).
+  // A tap adds every not-yet-present id at the chosen position; when all of them
+  // are already in, the same tap takes them back out — the toggle the single-song
+  // picker has always had.
+  function promptAddToPlaylist(trackIdOrIds){
+    const ids = (Array.isArray(trackIdOrIds) ? trackIdOrIds : [trackIdOrIds]).filter(Boolean);
+    const multi = ids.length > 1;
     const names = Object.keys(playlists).filter(n => n !== 'All Songs');
     const container = $('addToPlaylistButtons');
+    const titleEl = $('addToPlaylistBackdrop') ? $('addToPlaylistBackdrop').querySelector('h3') : null;
+    if(titleEl) titleEl.textContent = multi ? ('Add ' + ids.length + ' songs to a playlist') : 'Add to playlist';
     container.innerHTML = '';
-    if(!names.length){
-      container.innerHTML = `<div style="color:var(--ink-dim); font-size:13.5px; padding:6px 0;">No playlists yet — make one first from the "+ New playlist" tab.</div>`;
+    if(!ids.length){
+      container.innerHTML = `<div style="color:var(--ink-dim); font-size:13.5px; padding:6px 0;">Select some songs first.</div>`;
+    } else if(!names.length){
+      container.innerHTML = `<div style="color:var(--ink-dim); font-size:13.5px; padding:6px 0;">No playlists yet \u2014 make one first from the "+ New playlist" tab.</div>`;
     } else {
       names.forEach(name => {
-        const already = playlists[name].includes(trackId);
+        if(!playlists[name]) playlists[name] = [];
+        const list = playlists[name];
+        const present = ids.filter(id => list.includes(id));
+        const already = present.length === ids.length;
+        const partial = present.length > 0 && !already;
         const btn = document.createElement('button');
         btn.className = 'playlist-pick-btn' + (already ? ' already' : '');
-        btn.textContent = (already ? '✓ ' : '') + name;
+        btn.textContent = (already ? '\u2713 ' : (partial ? '+ ' : '')) + name
+          + (multi && partial ? ` (${present.length}/${ids.length})` : '');
         btn.addEventListener('click', () => {
-          if(playlists[name].includes(trackId)){
-            // Already in — tap removes it (unchanged behavior).
-            playlists[name] = playlists[name].filter(x => x !== trackId);
+          const toAdd = ids.filter(id => !list.includes(id));
+          if(!toAdd.length){
+            // Everything selected is already in — one tap takes it back out.
+            playlists[name] = list.filter(id => !ids.includes(id));
             saveMeta();
-            promptAddToPlaylist(trackId); // refresh checkmarks
-          } else {
-            // Not in yet — ask where to insert it before adding.
-            $('addToPlaylistBackdrop').style.display = 'none';
-            const t = allTracks.find(tr => tr.id === trackId);
-            promptInsertPosition(name, `1 song — ${t ? t.name : 'this track'}`, (idx) => {
-              if(idx === '__pick__'){
-                enterInsertPickMode(name, [trackId], 'Pick where to add this song', (insertIdx) => {
-                  if(!playlists[name].includes(trackId)){
-                    playlists[name].splice(Math.max(0, Math.min(insertIdx, playlists[name].length)), 0, trackId);
-                    saveMeta();
-                    toast(`Added to "${name}"`);
-                  }
-                  exitInsertPickMode();
-                });
-              } else {
-                playlists[name].splice(Math.max(0, Math.min(idx, playlists[name].length)), 0, trackId);
-                saveMeta();
-                toast(`Added to "${name}"`);
-              }
-            });
+            if(multi){
+              $('addToPlaylistBackdrop').style.display = 'none';
+              toast('Removed ' + ids.length + ' song' + (ids.length === 1 ? '' : 's') + ' from "' + name + '"');
+              exitSelectMode();
+              renderList();
+            } else {
+              toast('Removed from "' + name + '"');
+              promptAddToPlaylist(ids); // refresh checkmarks
+            }
+            return;
           }
+          $('addToPlaylistBackdrop').style.display = 'none';
+          const countLabel = multi
+            ? (toAdd.length + ' song' + (toAdd.length === 1 ? '' : 's'))
+            : ('1 song \u2014 ' + ((allTracks.find(tr => tr.id === ids[0]) || {}).name || 'this track'));
+          const commit = (insertIdx) => {
+            const at = Math.max(0, Math.min(insertIdx, playlists[name].length));
+            let added = 0;
+            toAdd.forEach(id => {
+              if(playlists[name].includes(id)) return;
+              playlists[name].splice(at + added, 0, id);
+              added++;
+            });
+            saveMeta();
+            toast('Added ' + added + ' song' + (added === 1 ? '' : 's') + ' to "' + name + '"');
+            if(multi) exitSelectMode();
+            renderList();
+          };
+          promptInsertPosition(name, countLabel, (idx) => {
+            if(idx === '__pick__'){
+              enterInsertPickMode(name, toAdd, multi ? 'Pick where to add these songs' : 'Pick where to add this song', (insertIdx) => {
+                commit(insertIdx);
+                exitInsertPickMode();
+              });
+            } else {
+              commit(idx);
+            }
+          });
         });
         container.appendChild(btn);
       });
     }
     $('addToPlaylistBackdrop').style.display = 'flex';
   }
+
   $('addToPlaylistDone').addEventListener('click', () => { $('addToPlaylistBackdrop').style.display = 'none'; renderList(); });
   $('addToPlaylistBackdrop').addEventListener('click', e => { if(e.target === $('addToPlaylistBackdrop')){ $('addToPlaylistBackdrop').style.display='none'; renderList(); } });
 
@@ -17305,15 +17370,39 @@ function _fallbackCopy(text){
     const CHUNK = 256 * 1024;
     let offset = 0;
     let first = true;
+    // Same reason as writeBlobToCache: writeFile cannot append (the option does
+    // not exist), so chunks have to go through appendFile or be written at once.
+    const canAppend = typeof FS.appendFile === 'function';
+    if(!blob || !blob.size){
+      throw new Error('nothing to write (empty file)');
+    }
+    const held = [];
     while(offset < blob.size){
       const end = Math.min(blob.size, offset + CHUNK);
       const data = await blobChunkToBase64(blob.slice(offset, end));
       if(!data) throw new Error('could not read download data');
-      await FS.writeFile({ path, data, directory, recursive: true, append: !first });
+      if(canAppend){
+        if(first){
+          await FS.writeFile({ path, data, directory, recursive: true });
+          first = false;
+        } else {
+          await FS.appendFile({ path, data, directory });
+        }
+      } else {
+        held.push(data);
+      }
       offset = end;
-      first = false;
     }
-    if(first) await FS.writeFile({ path, data: '', directory, recursive: true, append: false });
+    if(!canAppend){
+      await FS.writeFile({ path, data: held.join(''), directory, recursive: true });
+    }
+    // Same guard as writeBlobToCache: a download that wrote nothing is a
+    // failure, not a saved song.
+    let stat = null;
+    try{ stat = await FS.stat({ path, directory }); }catch(_stErr){ stat = null; }
+    if(!stat || !stat.size){
+      throw new Error('download wrote an empty file');
+    }
     return true;
   }
 
@@ -17684,17 +17773,43 @@ function _fallbackCopy(text){
     const CHUNK = 256 * 1024;
     let offset = 0;
     let first = true;
+    // writeFile has NO `append` option in the Capacitor Filesystem API — passing
+    // one is silently ignored, so every chunk used to truncate the previous one
+    // and the saved file kept only a fragment (or nothing). appendFile() is the
+    // only real append; a build without it gets the whole payload in one write.
+    const canAppend = typeof FS.appendFile === 'function';
+    if(!blob || !blob.size){
+      throw new Error('nothing to write (empty file)');
+    }
+    const held = [];
     while(offset < blob.size){
       const end = Math.min(blob.size, offset + CHUNK);
       const data = await blobChunkToBase64(blob.slice(offset, end));
       if(!data){ throw new Error('could not read export data'); }
-      await FS.writeFile({ path, data, directory: 'CACHE', recursive: true, append: !first });
+      if(canAppend){
+        if(first){
+          await FS.writeFile({ path, data, directory: 'CACHE', recursive: true });
+          first = false;
+        } else {
+          await FS.appendFile({ path, data, directory: 'CACHE' });
+        }
+      } else {
+        held.push(data);
+      }
       offset = end;
-      first = false;
       if(onProgress) try{ onProgress(offset, blob.size); }catch(_e){}
     }
-    if(first){
-      await FS.writeFile({ path, data: '', directory: 'CACHE', recursive: true, append: false });
+    if(!canAppend){
+      await FS.writeFile({ path, data: held.join(''), directory: 'CACHE', recursive: true });
+    }
+    // Prove the file is really there and holds bytes. A write that silently did
+    // nothing (locked path, plugin quirk, nothing written at all) must not be
+    // reported as a finished export — that is the 0-byte file the share sheet
+    // used to be handed.
+    let stat = null;
+    try{ stat = await FS.stat({ path, directory: 'CACHE' }); }catch(_stErr){ stat = null; }
+    if(!stat || !stat.size){
+      throw new Error('export file is empty after writing');
     }
     return true;
   }
@@ -17773,6 +17888,7 @@ function _fallbackCopy(text){
           var first = true;
           var ended = false;
           var failed = false;
+          var writeFailed = false;
           // Write-phase progress: track chunks queued vs written so the bar
           // moves from 97% → 100% while chunks are being saved to disk.
           var _totalChunks = 0;
@@ -17798,45 +17914,92 @@ function _fallbackCopy(text){
           }
           // Batch chunks into ~512KB base64 buffers before flushing to disk,
           // reducing native bridge calls from thousands to tens.
-          var _batchBuf = '';
+          // The batch holds RAW bytes, not already-encoded base64. Encoding each
+          // 64KB chunk on its own and joining the strings puts '=' padding in the
+          // middle of the buffer, and the native decoder stops at the first
+          // padding — so a batched write kept only its first chunk (a truncated
+          // or blank export). Encoding once per flush means only the final block
+          // can ever be padded.
+          var _batchParts = [];
           var _batchRawBytes = 0;
           var _batchFlushThreshold = 512 * 1024;
           function b64Encode(bytes){
-            var len = bytes.length;
-            var outLen = (len + 2 - ((len + 2) % 3)) / 3 * 4;
-            var out = new Uint8Array(outLen);
+            // Standard base64. The old tail was wrong for any length that is not
+            // a multiple of 3 (1 leftover byte emitted 3 chars instead of 4, and
+            // 2 leftover bytes emitted 3 instead of 4), and the string was built
+            // from the rounded-up length, filling the shortfall with NUL chars.
+            // Chunks here are 64KB/256KB, so almost every one hit that path and
+            // the base64 handed to Capacitor was malformed: it decoded to a
+            // truncated or empty file — the "export is a blank file" bug.
             var L = [65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,48,49,50,51,52,53,54,55,56,57,43,47];
+            var len = bytes.length;
+            if(!len) return '';
+            var wholeGroups = (len / 3) | 0;
+            var rem = len - wholeGroups * 3;
+            var outLen = wholeGroups * 4 + (rem ? 4 : 0);
+            var out = new Uint8Array(outLen);
             var j = 0, i = 0;
             for(; i + 2 < len; i += 3){
               var n = (bytes[i] << 16) | (bytes[i+1] << 8) | bytes[i+2];
               out[j++]=L[(n>>18)&63]; out[j++]=L[(n>>12)&63]; out[j++]=L[(n>>6)&63]; out[j++]=L[n&63];
             }
-            if(i + 1 === len){ var p = bytes[len-1]; out[j++]=L[(p>>2)&63]; out[j++]=61; out[j++]=61; }
-            else if(i + 2 === len){ var p = (bytes[len-2]<<8)|bytes[len-1]; out[j++]=L[(p>>10)&63]; out[j++]=L[(p>>4)&63]; out[j++]=61; }
+            if(rem === 1){
+              var p = bytes[len-1];
+              out[j++]=L[(p>>2)&63]; out[j++]=L[(p&3)<<4]; out[j++]=61; out[j++]=61;
+            } else if(rem === 2){
+              var q = (bytes[len-2]<<8)|bytes[len-1];
+              out[j++]=L[(q>>10)&63]; out[j++]=L[(q>>4)&63]; out[j++]=L[(q&15)<<2]; out[j++]=61;
+            }
             var parts = [], bs = 8192;
-            for(var k = 0; k < outLen; k += bs){
-              parts.push(String.fromCharCode.apply(null, out.subarray(k, Math.min(k + bs, outLen))));
+            for(var k = 0; k < j; k += bs){
+              parts.push(String.fromCharCode.apply(null, out.subarray(k, Math.min(k + bs, j))));
             }
             return parts.join('');
           }
           function flushBatch(){
-            if(!_batchBuf) return;
-            var data = _batchBuf;
+            if(!_batchParts.length) return;
+            var raw;
+            if(_batchParts.length === 1){
+              raw = _batchParts[0];
+            } else {
+              raw = new Uint8Array(_batchRawBytes);
+              var _off = 0;
+              for(var _bi = 0; _bi < _batchParts.length; _bi++){
+                raw.set(_batchParts[_bi], _off);
+                _off += _batchParts[_bi].length;
+              }
+            }
+            var data = b64Encode(raw);
             var isFirst = first;
             first = false;
-            _batchBuf = '';
+            _batchParts = [];
             _batchRawBytes = 0;
             queue = queue.then(function(){
-              return (isFirst
+              // appendFile is the only real append — never fall back to writeFile
+              // here, which would truncate the file it is meant to extend.
+              var write = isFirst
                 ? FS.writeFile({ path: filename, data: data, directory:'CACHE', recursive:true })
-                : FS.appendFile({ path: filename, data: data, directory:'CACHE' }))
-                .then(function(){ _writtenChunks++; updateWriteProgress(); }, function(err){ console.warn('Export chunk write failed:', err); _writtenChunks++; updateWriteProgress(); });
-            }).catch(function(err){ console.warn('Export queue error:', err); _writtenChunks++; updateWriteProgress(); });
+                : (typeof FS.appendFile === 'function'
+                    ? FS.appendFile({ path: filename, data: data, directory:'CACHE' })
+                    : Promise.reject(new Error('appendFile unavailable')));
+              return write
+                .then(function(){ _writtenChunks++; updateWriteProgress(); }, function(err){
+                  // A failed chunk must never be reported as a finished export —
+                  // that is how a blank (or partial) file reached the share sheet
+                  // with a success toast. Flag it so the caller falls back.
+                  console.warn('Export chunk write failed:', err);
+                  writeFailed = true; _writtenChunks++; updateWriteProgress();
+                });
+            }).catch(function(err){ console.warn('Export queue error:', err); writeFailed = true; _writtenChunks++; updateWriteProgress(); });
           }
           function appendChunk(chunk){
             if(failed || !chunk || !chunk.byteLength) return;
             _totalChunks++;
-_batchBuf += b64Encode(chunk);
+            // Copy: the stream may reuse its backing buffer between emits, which
+            // would corrupt everything batched before the next flush.
+            var _copy = new Uint8Array(chunk.byteLength);
+            _copy.set(chunk);
+            _batchParts.push(_copy);
             _batchRawBytes += chunk.byteLength;
             if(_batchRawBytes >= _batchFlushThreshold){
               flushBatch();
@@ -17852,6 +18015,14 @@ _batchBuf += b64Encode(chunk);
             // caller marks the export complete. Try to share/save in the background
             // but never block the export or trigger the in-memory fallback.
             queue.then(async function(){
+              if(writeFailed){ fail(new Error('export write failed')); return; }
+              // Prove the file really landed and holds bytes before claiming the
+              // export worked — a 0-byte cache file is exactly what used to be
+              // handed to the share sheet as a finished "export".
+              try{
+                var _st = await FS.stat({ path: filename, directory:'CACHE' });
+                if(!_st || !_st.size){ fail(new Error('export file is empty')); return; }
+              }catch(_statErr){ fail(new Error('export file missing after writing')); return; }
               try{ exportState.compressPct = 100; refreshExportNotif(); }catch(_e){}
               resolve(true);
               // Background: try to share the file so the user gets a save dialog
@@ -30115,6 +30286,7 @@ window.showSettingsTab = showSettingsTab;
   // needs these to resolve album data at all.
   window.__scGetUserAlbums = function(){ return userAlbums; };
   window.__scGetAllTracks = function(){ return allTracks; };
+  window.__scGetPlaylists = function(){ return playlists; };
   window.__scGetLibraryMode = function(){ return libraryMode; };
   // Exposed for the same reason: the album reorder picker lives in this IIFE
   // and the harness (and any future entry point) needs to be able to open it.
