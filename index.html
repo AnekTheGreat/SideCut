@@ -67,6 +67,12 @@
     position:relative; z-index:10;
   }
   .action-strip.menu-open{ z-index:300; }
+  /* Every nav pill is the same width. They were flex:1 items, but a flex item's
+     automatic minimum size is its min-content width, so the longest label
+     ("+ Add songs") refused to shrink and the rest came out uneven. min-width:0
+     lets all four share the row equally, and the label ellipsises if it must. */
+  .action-strip > *{ flex:1 1 0; min-width:0; }
+  .action-strip .action-pill{ width:100%; overflow:hidden; text-overflow:ellipsis; }
   .action-strip::-webkit-scrollbar{ display:none; }
   .action-pill{
     flex:1; font-size:11px; font-weight:600; padding:8px 4px; border-radius:16px; text-align:center;
@@ -445,6 +451,9 @@
      The grip was a 20px strip; it is now a 34px target with its own feedback. */
   #albumReorderPopup button{ transition: transform 0.12s ease, background 0.2s ease, opacity 0.2s ease, border-color 0.2s ease; }
   #albumReorderPopup button:active{ transform: scale(0.96); }
+  /* The song the turntable tap landed on — tinted and outlined for a moment so
+     it is obvious which row the app jumped to. */
+  .track.sc-album-focus{ background: color-mix(in srgb, var(--coral) 20%, transparent) !important; box-shadow: inset 0 0 0 1.5px var(--coral); border-radius:10px; }
   #albumReorderPopup .ar-grip{
     width:34px !important; height:38px; border-radius:8px;
     transition: background 0.15s ease, color 0.15s ease;
@@ -1457,6 +1466,81 @@ body.sandbox-reduce-motion.theme-dyn-cyberpunk::before,
 body.sandbox-reduce-motion.theme-dyn-glacier::before{ animation: none !important; }
 body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in-out infinite; }
 
+/* ── v60 dynamic theme motion ─────────────────────────────────────────────
+   Two things made the old dynamic themes read as static-ish: one gradient layer
+   moving slowly, and a hue-rotate filter doing the rest (a filter re-runs the
+   paint on the whole backdrop every frame). Now every dynamic theme gets a
+   SECOND layer that counter-moves in its own accent colours, plus a slow sheen,
+   and all of it is transform/opacity only so the compositor runs it without
+   repainting. The per-theme drift timings below keep each one distinct. */
+@keyframes sd-dyn-drift-rev{
+  0%{ transform: translate3d(7%, 5%, 0) scale(1.12) rotate(0deg); opacity:.5; }
+  25%{ transform: translate3d(-5%, 7%, 0) scale(1.02) rotate(-3deg); opacity:.8; }
+  50%{ transform: translate3d(-8%, -4%, 0) scale(1.14) rotate(2deg); opacity:.55; }
+  75%{ transform: translate3d(4%, -7%, 0) scale(1.04) rotate(3deg); opacity:.85; }
+  100%{ transform: translate3d(7%, 5%, 0) scale(1.12) rotate(0deg); opacity:.5; }
+}
+@keyframes sd-dyn-sheen{
+  0%, 100%{ opacity:.3; }
+  50%{ opacity:.6; }
+}
+body[class*="theme-dyn-"]::after{
+  content:''; position:fixed; inset:-26%; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(44% 44% at 72% 28%, color-mix(in srgb, var(--coral) 30%, transparent), transparent 68%),
+    radial-gradient(40% 40% at 28% 72%, color-mix(in srgb, var(--gold) 26%, transparent), transparent 68%);
+  animation: sd-dyn-drift-rev 22s ease-in-out infinite, sd-dyn-sheen 13s ease-in-out infinite;
+}
+body[class*="theme-dyn-"] .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in-out infinite; }
+body.sandbox-reduce-motion[class*="theme-dyn-"]::after{ animation: none !important; opacity:.35; }
+body.sandbox-reduce-motion[class*="theme-dyn-"]::before{ animation: none !important; }
+
+/* The five new ones: each with its own composition and its own speeds. */
+body.theme-dyn-nebula::before, body.theme-dyn-neonpulse::before, body.theme-dyn-solstice::before,
+body.theme-dyn-abyss::before, body.theme-dyn-orchid::before{
+  content:''; position:fixed; inset:-32%; z-index:-1; pointer-events:none;
+}
+body.theme-dyn-nebula::before{
+  background:
+    radial-gradient(42% 46% at 26% 30%, rgba(183,139,255,0.42), transparent 62%),
+    radial-gradient(36% 40% at 74% 64%, rgba(255,124,216,0.36), transparent 62%),
+    radial-gradient(30% 34% at 52% 10%, rgba(40,18,86,0.72), transparent 66%),
+    linear-gradient(158deg, #0a0618, #241046, #4a1a63, #7a2a6d);
+  animation: sd-dyn-drift 19s ease-in-out infinite, sd-dyn-hue 15s ease-in-out infinite;
+}
+body.theme-dyn-neonpulse::before{
+  background:
+    radial-gradient(40% 44% at 30% 34%, rgba(0,229,255,0.42), transparent 60%),
+    radial-gradient(34% 40% at 70% 62%, rgba(255,46,154,0.4), transparent 60%),
+    radial-gradient(28% 32% at 50% 12%, rgba(0,60,120,0.6), transparent 64%),
+    linear-gradient(160deg, #04101a, #06304a, #0a1f5c, #4a0a53);
+  animation: sd-dyn-drift 8s ease-in-out infinite, sd-dyn-hue 6s ease-in-out infinite;
+}
+body.theme-dyn-solstice::before{
+  background:
+    radial-gradient(44% 46% at 30% 28%, rgba(255,179,71,0.44), transparent 62%),
+    radial-gradient(36% 42% at 72% 66%, rgba(63,217,192,0.34), transparent 62%),
+    radial-gradient(30% 34% at 50% 12%, rgba(120,50,10,0.62), transparent 66%),
+    linear-gradient(158deg, #1a0d06, #4a2208, #7a3a12, #10443c);
+  animation: sd-dyn-drift 13s ease-in-out infinite, sd-dyn-hue 10s ease-in-out infinite;
+}
+body.theme-dyn-abyss::before{
+  background:
+    radial-gradient(40% 44% at 28% 36%, rgba(46,230,200,0.34), transparent 60%),
+    radial-gradient(36% 42% at 72% 58%, rgba(63,169,255,0.32), transparent 62%),
+    radial-gradient(30% 34% at 50% 8%, rgba(0,42,58,0.7), transparent 66%),
+    linear-gradient(160deg, #02141a, #042830, #06404a, #03242e);
+  animation: sd-dyn-drift 24s ease-in-out infinite, sd-dyn-hue 18s ease-in-out infinite;
+}
+body.theme-dyn-orchid::before{
+  background:
+    radial-gradient(42% 46% at 30% 30%, rgba(255,111,216,0.4), transparent 62%),
+    radial-gradient(36% 40% at 72% 62%, rgba(192,139,255,0.38), transparent 62%),
+    radial-gradient(30% 34% at 50% 12%, rgba(74,16,74,0.68), transparent 66%),
+    linear-gradient(158deg, #180a1a, #3a1038, #6b1a58, #3a1040);
+  animation: sd-dyn-drift 15s ease-in-out infinite, sd-dyn-hue 12s ease-in-out infinite;
+}
+
 
 /* ─────────────── Discover (online Spotify catalog browse) ─────────────── */
 #discoverView{ display:none; flex:1; flex-direction:column; padding:14px 20px 170px; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
@@ -1609,9 +1693,24 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
 .home-bubble:hover .hb-expand{ opacity:0.65; }
 .home-bubble .hb-expand:active{ transform:scale(0.88); }
 .home-bubble .hb-expand.sized{ color:var(--coral); opacity:0.75; }
+  /* Mark-all-as-read chip on the New releases bubble — mirrors the resize chip
+     on the other side, so the badge can be cleared in one tap. */
+  .home-bubble .hb-read{
+    position:absolute; left:calc(10px * var(--hb-s, 1)); bottom:calc(10px * var(--hb-s, 1));
+    width:calc(26px * var(--hb-s, 1)); height:calc(26px * var(--hb-s, 1)); border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:color-mix(in srgb, var(--coral) 22%, transparent); border:1px solid var(--coral);
+    color:var(--coral); font-size:calc(13px * var(--hb-s, 1)); font-weight:700; cursor:pointer; padding:0;
+    transition: transform 0.12s ease, background 0.2s ease;
+  }
+  .home-bubble .hb-read:active{ transform: scale(0.88); }
 /* Manual per-bubble sizes — applied only when the user picks one via the
    handle; otherwise bubbles keep their automatic template size. Grid row span
    + min-height animate smoothly through the grid layout change. */
+.home-bubble.hb-size-mini{ min-height:calc(60px * var(--hb-s, 1)); }
+.home-bubble.hb-size-mini .hb-value{ font-size:calc(17px * var(--hb-s, 1)); }
+.home-bubble.hb-size-mini .hb-label{ font-size:calc(10px * var(--hb-s, 1)); }
+.home-bubble.hb-size-xl{ grid-column:1 / -1; min-height:calc(260px * var(--hb-s, 1)); }
 .home-bubble.hb-size-small{ min-height:calc(84px * var(--hb-s, 1)); }
 .home-bubble.hb-size-tall{ min-height:calc(158px * var(--hb-s, 1)); }
 .home-bubble.hb-size-wide{ grid-column:1 / -1; min-height:calc(96px * var(--hb-s, 1)); }
@@ -2052,7 +2151,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <button id="importLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Import library</button>
       <button id="exportSongsBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export songs only</button>
       <button id="exportLibBtn" class="action-pill" style="width:100%; justify-content:flex-start;">Export everything (backup)</button>
-      <div style="font-size:11px; color:var(--ink-dim, #8a9bae); padding:4px 2px 0; line-height:1.4; opacity:0.7;">For a 500-song library, exports normally take around 5–7 minutes. Keep playing music while it runs!</div>
+      <div style="font-size:11px; color:var(--ink-dim, #8a9bae); padding:4px 2px 0; line-height:1.4; opacity:0.7;">For a 500-song library, exports normally take around 2–3 minutes. Keep playing music while it runs!</div>
     </div>
   </div>
 </div>
@@ -2218,7 +2317,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <!-- Spotify card -->
       <div style="margin-bottom:12px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
         <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎵 Spotify to MP3 / WAV / FLAC</div>
-        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.6;">Paste a Spotify <b>song, album or playlist</b> link below, pick your <b>format</b> (MP3, WAV or FLAC), and convert — done right in the app. Albums and playlists resolve their real track list, then you choose whether each song saves on its own or everything lands in <b>one ZIP</b> — every file keeps its real name, artist and cover. <b>Note:</b> WAV/FLAC are lossless (higher quality) but take up far more storage than MP3 — roughly 5–10× the size. MP3 is plenty for most listening.</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.6;"><span style="color:var(--gold);">⚠ Experimental</span> — Paste a Spotify <b>song, album or playlist</b> link below, pick your <b>format</b> (MP3, WAV or FLAC), and convert — done right in the app. Albums and playlists resolve their real track list, then you choose whether each song saves on its own or everything lands in <b>one ZIP</b> — every file keeps its real name, artist and cover. <b>Note:</b> WAV/FLAC are lossless (higher quality) but take up far more storage than MP3 — roughly 5–10× the size. MP3 is plenty for most listening.</div>
         <div style="display:flex; gap:6px;">
           <input type="text" id="spMp3Input" placeholder="Song, album or playlist link..." style="min-width:0; flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:13px;">
           <select id="spFmtDisc" style="padding:8px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:12px; cursor:pointer;" title="Output format"><option value="mp3" selected>MP3</option><option value="wav">WAV</option><option value="flac">FLAC</option></select>
@@ -2612,7 +2711,7 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
         <!-- Spotify card -->
         <div style="margin-bottom:12px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
           <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎵 Spotify to MP3 / WAV / FLAC</div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.6;">Paste a Spotify <b>song, album or playlist</b> link, pick your <b>format</b>, and convert — done right in the app. Albums and playlists resolve their real track list — save songs individually or as <b>one ZIP</b>, with real tags on every file. WAV/FLAC are lossless (higher quality) but take up <b>much more storage</b> than MP3 — roughly 5–10× the size. MP3 is plenty for most listening.</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.6;"><span style="color:var(--gold);">⚠ Experimental</span> — Paste a Spotify <b>song, album or playlist</b> link, pick your <b>format</b>, and convert — done right in the app. Albums and playlists resolve their real track list — save songs individually or as <b>one ZIP</b>, with real tags on every file. WAV/FLAC are lossless (higher quality) but take up <b>much more storage</b> than MP3 — roughly 5–10× the size. MP3 is plenty for most listening.</div>
           <div style="display:flex; gap:6px;">
             <input type="text" id="spMp3InputSettings" placeholder="Song, album or playlist link..." style="min-width:0; flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:13px;">
             <select id="spFmtSettings" style="padding:8px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:12px; cursor:pointer;" title="Output format"><option value="mp3" selected>MP3</option><option value="wav">WAV</option><option value="flac">FLAC</option></select>
@@ -3187,6 +3286,13 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px; line-height:1.5;">
         <b>Free:</b> Compact rows, hide art, duration on tabs, larger taps, play counts, always search, action bar order, home layout.<br>
         <b style="color:var(--gold);">Premium:</b> <span style="color:var(--gold);">Bigger art, album names, accessibility, scroll speed, default view, now bar, compact header, custom actions.</span>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="font-size:13px; font-weight:600; margin-bottom:4px;">Home bubble sizes</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.5;">Set each bubble to exactly the size you want — <b>W</b> is how many columns it takes (1 or 2, 2 = full width) and <b>H</b> is how tall it is (1–4×). Also available: tap the ⤢ chip on any bubble to cycle through the presets.</div>
+        <div id="sandboxBubbleSizes"></div>
+        <button class="tab" id="sandboxBubbleSizesReset" style="margin-top:8px; padding:6px 12px; font-size:12px;">↺ Reset to automatic</button>
       </div>
 
       <div style="margin-bottom:16px;">
@@ -4691,7 +4797,75 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     stage.addEventListener('click', (e) => {
       if(longPressed){ e.stopImmediatePropagation(); e.preventDefault(); longPressed = false; }
     }, true);
+    // A plain tap (not the long-press that opens the turntable popup, and not a
+    // drag) opens the album the playing song belongs to, scrolled to that song
+    // and highlighted.
+    let tapX = 0, tapY = 0, tapMoved = false;
+    stage.addEventListener('pointerdown', (e) => { tapX = e.clientX; tapY = e.clientY; tapMoved = false; });
+    stage.addEventListener('pointermove', (e) => { if(Math.abs(e.clientX - tapX) > 8 || Math.abs(e.clientY - tapY) > 8) tapMoved = true; });
+    stage.addEventListener('click', (e) => {
+      if(tapMoved || e.defaultPrevented) return;
+      e.preventDefault();
+      openAlbumForCurrentSong();
+    }, true);
   })();
+
+  // Tap the mini turntable in the now bar → open the album the playing song is
+  // in, scrolled to the song and highlighted. If the song isn't in one of your
+  // albums yet, its file tag is used to make that album yours (you tapped the
+  // record asking for it), so this can never dead-end in an empty Albums tab.
+  function openAlbumForCurrentSong(){
+    let tid = null;
+    try{
+      const djOpen = $('djModeBackdrop') && $('djModeBackdrop').style.display === 'flex';
+      if(djOpen && typeof djCurrentTrackId !== 'undefined' && djCurrentTrackId) tid = djCurrentTrackId;
+    }catch(_e){}
+    if(!tid && queueIndex >= 0 && queueIndex < queue.length) tid = queue[queueIndex];
+    const t = tid ? allTracks.find(tr => tr.id === tid) : null;
+    if(!t){ toast('Nothing is playing right now — start a song first.'); return; }
+    // 1. an album you made that already holds this song
+    let albumName = null;
+    Object.keys(userAlbums || {}).some(n => {
+      const e = userAlbums[n];
+      if(!e || !Array.isArray(e.trackIds)) return false;
+      if(albumIsAuto(n)) return false;
+      if(e.trackIds.indexOf(t.id) !== -1){ albumName = n; return true; }
+      return false;
+    });
+    // 2. otherwise the album tag on the file
+    if(!albumName){
+      const tag = String(t.album || '').trim();
+      if(tag){
+        try{
+          if(userAlbums[tag]){
+            if(albumIsAuto(tag) && typeof markAlbumManual === 'function') markAlbumManual(tag);
+          } else if(typeof ensureAlbumSaved === 'function' && ensureAlbumSaved(tag) && typeof markAlbumManual === 'function'){
+            markAlbumManual(tag);
+          }
+          albumName = tag;
+        }catch(_eTag){ albumName = tag; }
+      }
+    }
+    if(!albumName){ toast('"' + t.name + '" isn\'t in one of your albums yet.'); return; }
+    const wanted = t.id;
+    navigate('albums');
+    setTimeout(() => {
+      try{
+        const pane = $('listPane');
+        if(!pane) return;
+        const cards = Array.prototype.slice.call(pane.querySelectorAll('[data-album-name]'));
+        const card = cards.filter(c => c.dataset.albumName === albumName)[0] || null;
+        let row = card ? card.querySelector('.track[data-id="' + wanted + '"]') : null;
+        if(!row) row = pane.querySelector('.track[data-id="' + wanted + '"]');
+        if(!row){ toast('Opened "' + albumName + '"'); return; }
+        try{ row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        catch(_eScroll){ try{ row.scrollIntoView(); }catch(_eScroll2){} }
+        row.classList.add('sc-album-focus');
+        setTimeout(() => { try{ row.classList.remove('sc-album-focus'); }catch(_eC){} }, 3000);
+      }catch(_eFocus){}
+    }, 140);
+  }
+  window.__scOpenAlbumForCurrentSong = openAlbumForCurrentSong;
 
   // ---------------- Turntable settings popup: the only place the mini player's angle is adjustable ----------------
   (function(){
@@ -4762,7 +4936,15 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     ember:       {  name: 'Ember (dynamic)',      bg:'#18070a', bgRaised:'#33101a', coral:'#FF8A5C', gold:'#FFC46B', dynamic:'ember'  },
     galaxy:      {  name: 'Galaxy (dynamic)',     bg:'#050514', bgRaised:'#141238', coral:'#B084F5', gold:'#8FD0FF', dynamic:'galaxy'  },
     cyberpunk:   {  name: 'Cyberpunk (dynamic)',  bg:'#0b0518', bgRaised:'#1a0f33', coral:'#00F0FF', gold:'#FF2ED1', premium:true, dynamic:'cyberpunk'  },
-    glacier:     {  name: 'Glacier (dynamic)',    bg:'#04101c', bgRaised:'#0c2233', coral:'#A6E8FF', gold:'#E8F7FF', premium:true, dynamic:'glacier'  }
+    glacier:     {  name: 'Glacier (dynamic)',    bg:'#04101c', bgRaised:'#0c2233', coral:'#A6E8FF', gold:'#E8F7FF', premium:true, dynamic:'glacier'  },
+    // ── v60: five more dynamic themes, all premium. Each has its own palette
+    // and its own motion timings, and every dynamic theme now also gets the
+    // counter-moving accent layer + sheen added in CSS below.
+    nebula:      {  name: 'Nebula (dynamic)',      bg:'#0a0618', bgRaised:'#171034', coral:'#B78BFF', gold:'#FF7CD8', premium:true, dynamic:'nebula'   },
+    neonpulse:   {  name: 'Neon Pulse (dynamic)',  bg:'#04101a', bgRaised:'#0a2231', coral:'#00E5FF', gold:'#FF2E9A', premium:true, dynamic:'neonpulse'},
+    solstice:    {  name: 'Solstice (dynamic)',    bg:'#1a0d06', bgRaised:'#2a1810', coral:'#FFB347', gold:'#3FD9C0', premium:true, dynamic:'solstice' },
+    abyss:       {  name: 'Abyss (dynamic)',       bg:'#02141a', bgRaised:'#062a30', coral:'#2EE6C8', gold:'#3FA9FF', premium:true, dynamic:'abyss'    },
+    orchid:      {  name: 'Orchid (dynamic)',      bg:'#180a1a', bgRaised:'#2a1230', coral:'#FF6FD8', gold:'#C08BFF', premium:true, dynamic:'orchid'   }
   };
   // ---------------- RGB theme: continuously cycles --coral/--gold hue, with
   // customizable cycle speed. This is what actually drives the "customizable glow" —
@@ -4791,7 +4973,14 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     // ignores — so the accents silently kept the static theme colour for ever.
     return (isFinite(n) && n > 0) ? n : 8;
   }
-  function stopRgbAnimation(){ if(rgbAnimHandle){ clearInterval(rgbAnimHandle); rgbAnimHandle = null; } document.documentElement.style.removeProperty('--glow-a'); document.documentElement.style.removeProperty('--glow-b'); }
+  function stopRgbAnimation(){
+    if(rgbAnimHandle){ clearInterval(rgbAnimHandle); rgbAnimHandle = null; }
+    if(rgbRafHandle){ cancelAnimationFrame(rgbRafHandle); rgbRafHandle = null; }
+    rgbLastAppliedHue = null;
+    rgbLastFrameAt = 0;
+    document.documentElement.style.removeProperty('--glow-a');
+    document.documentElement.style.removeProperty('--glow-b');
+  }
   function rgbApplyHue(){
     const t = (((Date.now() - rgbStartAt) / 1000) / rgbSpeedSeconds()) % 1;
     const hue1 = (rgbBaseHue + t * 360) % 360;
@@ -4815,17 +5004,35 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     root.setProperty('--gold', col2);
     rgbLastTickAt = Date.now();
   }
-  function rgbTick(){
+  function rgbTick(force){
     // Nothing on screen to animate while the app is hidden; the next tick after
     // the app comes back lands on the right hue on its own.
     if(document.hidden) return;
     try{
+      // The sweep is slow (~45deg a second at the default speed), so a step under
+      // a quarter of a degree is invisible. Skipping those is what lets the loop
+      // run on the display's own frames without repainting the app's colour
+      // variables for no visible change — the old 200ms interval was 5 steps a
+      // second, which is the choppy colour people could see while a song played
+      // (and the frame loop competing with the analyser made it worse).
+      var tNow = (((Date.now() - rgbStartAt) / 1000) / rgbSpeedSeconds()) % 1;
+      var hueNow = (rgbBaseHue + tNow * 360) % 360;
+      if(!force && rgbLastAppliedHue !== null && Math.abs(hueNow - rgbLastAppliedHue) < 0.25) return;
+      rgbLastAppliedHue = hueNow;
       rgbApplyHue();
       maybeUpdateFavicon(performance.now());
     }catch(_eFrame){
       // A bad frame must never end the cycle — the frozen hue is far worse than
       // a missed frame.
     }
+  }
+  let rgbLastAppliedHue = null;   // last hue actually written to the page
+  let rgbRafHandle = null;        // the frame loop (smooth path)
+  let rgbLastFrameAt = 0;         // for the watchdog below
+  function rgbFrameLoop(){
+    rgbRafHandle = requestAnimationFrame(rgbFrameLoop);
+    rgbLastFrameAt = Date.now();
+    rgbTick(false);
   }
   // Coming back to the app (or the WebView being recreated after a screen-off, a
   // call, or the phone reclaiming memory) can leave the cycle silent for good.
@@ -4915,8 +5122,15 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     // Apply frame one straight away: even if the timer never gets to fire (a
     // backgrounded or frozen WebView), the accent is the theme, not the previous
     // theme's colour.
-    rgbTick();
-    rgbAnimHandle = setInterval(rgbTick, RGB_TICK_MS);
+    rgbTick(true);
+    // Smooth path: one hue update per display frame (RGB says "let the phone stop
+    // handing over frames" is the failure mode, so the interval below stays as a
+    // watchdog — it only forces a tick when no frame has arrived for half a
+    // second, which is exactly the frozen-WebView case).
+    if(!rgbRafHandle) rgbFrameLoop();
+    rgbAnimHandle = setInterval(function(){
+      if(Date.now() - rgbLastFrameAt > 500) rgbTick(true);
+    }, RGB_TICK_MS);
   }
 
   const REFRESH_RATE_CHOICES = [
@@ -5074,6 +5288,10 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       // moved to its own interval above; this just controls how often we apply it.
       glowFrameSkip++;
       if(glowFrameSkip % 3 !== 0) return;
+      // The seek-wave bars are nudged at half the glow rate: each bar write is a
+      // layout on the now bar, and at ~20/s it was the heaviest thing running
+      // while a song played.
+      const _writeWaveBars = (glowFrameSkip % 6 === 0);
       // Apply animation style based on glowAnimationStyle
       const raw = latestRawLevel;
       let attackRate, releaseRate;
@@ -5134,7 +5352,7 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       // one more bit of steady background main-thread work trimmed, on top of the
       // buffer reuse above, so scrolling/tapping stays responsive in RGB+.
       const waveformEl = $('waveformBar');
-      if(waveformEl.style.display !== 'none'){
+      if(_writeWaveBars && waveformEl.style.display !== 'none'){
         if(!glowWaveBarsCache || glowWaveBarsCache.length !== waveformEl.children.length){
           glowWaveBarsCache = waveformEl.querySelectorAll('.wave-bar');
         }
@@ -6439,7 +6657,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   let sandboxDefaultView = 'playlists';
   let actionPillOrder = ['homeBtn', 'libraryBtn', 'discoverBtn', 'addSongsToggle']; // strip items in default order
   let customQuickActions = []; // {id, label, type, value} — type: 'url' | 'playlist' | 'play'
-  const HOME_BUBBLE_KINDS = ['stats','notifications','newreleases','pinnedartists','library','nowplaying','topsong','artists','favorites','playlists','shortcuts'];
+  // Default Home order — the arrangement the user asked to be the default:
+  // stats, now playing beside top artists, quick actions, then pinned artists /
+  // new releases, library / most played, playlists, and notifications beside
+  // favorites at the bottom.
+  const HOME_BUBBLE_KINDS = ['stats','nowplaying','artists','shortcuts','pinnedartists','newreleases','library','topsong','playlists','notifications','favorites'];
+  // The order that shipped before v60. A saved layout that is exactly this one
+  // was never customised, so it is moved to the new default once — a layout you
+  // actually rearranged is left untouched (see migrateHomeOrderV60).
+  const HOME_BUBBLE_KINDS_V59 = ['stats','notifications','newreleases','pinnedartists','library','nowplaying','topsong','artists','favorites','playlists','shortcuts'];
   let homeOrder = HOME_BUBBLE_KINDS.slice();
   let homeSlots = { A: null, B: null, C: null };
   let homeSlotSel = 'A';
@@ -6447,18 +6673,43 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // Manual per-bubble sizes picked via the expand handle (⤢ chip, bottom-left).
   // Absent key = automatic template size. Values: small|tall|wide|full.
   let homeBubbleSizes = {};
-  const HB_SIZE_CLASSES = ['hb-size-small', 'hb-size-tall', 'hb-size-wide', 'hb-size-full'];
-  const HB_SIZE_CYCLE = ['small', null, 'tall', 'wide', 'full']; // null = back to automatic
+  // Exact size picked in Sandbox (free): { kind: { w: 1|2, h: 1..4 } }. Width is
+  // in grid columns (Home is a two-column grid, 2 = full width) and height is a
+  // multiplier of the bubble's own base height, so a bubble can be built to the
+  // exact size you want instead of only the presets below.
+  let homeBubbleExact = {};
+  const HB_SIZE_CLASSES = ['hb-size-mini', 'hb-size-small', 'hb-size-tall', 'hb-size-wide', 'hb-size-full', 'hb-size-xl'];
+  const HB_SIZE_CYCLE = ['mini', 'small', null, 'tall', 'wide', 'full', 'xl']; // null = back to automatic
+  const HB_EXACT_MIN = 1, HB_EXACT_MAX = 4;
   function applyHomeBubbleSizes(){
     const wrap = $('homeBubbles');
     if(!wrap) return;
     wrap.querySelectorAll('.home-bubble').forEach(b => {
       HB_SIZE_CLASSES.forEach(c => b.classList.remove(c));
-      const sz = homeBubbleSizes[b.dataset.bubble];
+      const kind = b.dataset.bubble;
+      const sz = homeBubbleSizes[kind];
       if(sz && HB_SIZE_CLASSES.indexOf('hb-size-' + sz) > -1) b.classList.add('hb-size-' + sz);
+      // An exact size wins over a preset: it is the deliberate one.
+      const ex = homeBubbleExact[kind];
+      if(ex && (ex.w || ex.h)){
+        b.style.gridColumn = Number(ex.w) >= 2 ? '1 / -1' : 'auto';
+        b.style.minHeight = ex.h ? ('calc(' + Math.round(118 * Number(ex.h)) + 'px * var(--hb-s, 1))') : '';
+      } else {
+        b.style.gridColumn = '';
+        b.style.minHeight = '';
+      }
       const chip = b.querySelector('.hb-expand');
-      if(chip) chip.classList.toggle('sized', !!sz);
+      if(chip) chip.classList.toggle('sized', !!(sz || (ex && (ex.w || ex.h))));
     });
+  }
+  function setHomeBubbleExact(kind, axis, delta){
+    const cur = homeBubbleExact[kind] || { w: 1, h: 1 };
+    const next = { w: Number(cur.w) || 1, h: Number(cur.h) || 1 };
+    next[axis] = Math.max(HB_EXACT_MIN, Math.min(HB_EXACT_MAX, next[axis] + delta));
+    homeBubbleExact[kind] = next;
+    dbPut('meta', { key: 'homeBubbleExact', value: homeBubbleExact });
+    applyHomeBubbleSizes();
+    renderSandboxBubbleSizes();
   }
   function cycleHomeBubbleSize(kind){
     const cur = homeBubbleSizes[kind] || null;
@@ -6468,6 +6719,50 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     applyHomeBubbleSizes();
   }
   let homeBubbleSize = 100; // % scale for Home bubbles (Sandbox editor slider)
+
+  // ---- Sandbox → Home bubble sizes (free) ----
+  // Per-bubble width/height steppers, so a bubble can be exactly the size you
+  // want. This is the free half of the Home layout editor: reordering and (now)
+  // exact sizing without premium.
+  function renderSandboxBubbleSizes(){
+    const wrap = $('sandboxBubbleSizes');
+    if(!wrap) return;
+    const order = normalizeHomeOrder(homeOrder).filter(k => k.indexOf('custom-') !== 0);
+    wrap.innerHTML = order.map(k => {
+      const ex = homeBubbleExact[k] || { w: 1, h: 1 };
+      const name = HOME_BUBBLE_LABELS[k] || k;
+      return '<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);">' +
+        '<span style="flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(name) + '</span>' +
+        '<span style="font-size:10px;color:var(--ink-dim);">W</span>' +
+        '<button class="tab" data-hbex="' + k + '" data-axis="w" data-dir="-1" style="padding:2px 8px;font-size:12px;">−</button>' +
+        '<span style="width:14px;text-align:center;font-size:11.5px;">' + (Number(ex.w) >= 2 ? '2' : '1') + '</span>' +
+        '<button class="tab" data-hbex="' + k + '" data-axis="w" data-dir="1" style="padding:2px 8px;font-size:12px;">+</button>' +
+        '<span style="font-size:10px;color:var(--ink-dim);margin-left:4px;">H</span>' +
+        '<button class="tab" data-hbex="' + k + '" data-axis="h" data-dir="-1" style="padding:2px 8px;font-size:12px;">−</button>' +
+        '<span style="width:14px;text-align:center;font-size:11.5px;">' + (Number(ex.h) || 1) + '</span>' +
+        '<button class="tab" data-hbex="' + k + '" data-axis="h" data-dir="1" style="padding:2px 8px;font-size:12px;">+</button>' +
+        '</div>';
+    }).join('');
+    wrap.querySelectorAll('[data-hbex]').forEach(btn => {
+      btn.addEventListener('click', () => setHomeBubbleExact(btn.dataset.hbex, btn.dataset.axis, parseInt(btn.dataset.dir, 10)));
+    });
+  }
+  // Draw the editor once at startup so it is populated the first time the
+  // Sandbox panel is opened, not only after a toggle is flipped. Deferred by a
+  // tick because HOME_BUBBLE_LABELS is a const declared further down this scope
+  // (touching it here would throw on the temporal dead zone).
+  setTimeout(function(){ try{ renderSandboxBubbleSizes(); }catch(_eSbInit){} }, 0);
+  (function wireSandboxBubbleSizesReset(){
+    const btn = $('sandboxBubbleSizesReset');
+    if(!btn) return;
+    btn.addEventListener('click', () => {
+      homeBubbleExact = {};
+      dbPut('meta', { key: 'homeBubbleExact', value: {} });
+      applyHomeBubbleSizes();
+      renderSandboxBubbleSizes();
+      toast('Bubble sizes reset — every bubble is back to its automatic size');
+    });
+  })();
 
   // Watermark remover: simple plain-text removal from song titles/artists
   let watermarkEnabled = false;
@@ -6590,6 +6885,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   }
 
   function updateSandboxToggles(){
+    try{ renderSandboxBubbleSizes(); }catch(_eSb){}
     $('sandboxCompactRows').textContent = sandboxCompactRows ? 'On' : 'Off';
     $('sandboxCompactRows').classList.toggle('active', sandboxCompactRows);
     $('sandboxHideArt').textContent = sandboxHideArt ? 'On' : 'Off';
@@ -6854,6 +7150,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     custom:    '<svg viewBox="0 0 24 24"><path d="M13 3l1.5 5.5L20 10l-5.5 1.5L13 17l-1.5-5.5L6 10l5.5-1.5z"/></svg>'
   };
 
+  // One-time move to the v60 default: only a layout that still deep-equals the
+  // old stock order (no custom bubbles, nothing moved) is replaced.
+  function migrateHomeOrderV60(order){
+    if(!Array.isArray(order) || order.length !== HOME_BUBBLE_KINDS_V59.length) return order;
+    for(let i = 0; i < order.length; i++){ if(order[i] !== HOME_BUBBLE_KINDS_V59[i]) return order; }
+    return HOME_BUBBLE_KINDS.slice();
+  }
   function normalizeHomeOrder(order){
     const out = [];
     (Array.isArray(order) ? order : []).forEach(k => {
@@ -6945,8 +7248,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   $('resetHomeOrderBtn').addEventListener('click', () => {
     homeOrder = HOME_BUBBLE_KINDS.slice();
     homeBubbleSizes = {};
+    homeBubbleExact = {};
     dbPut('meta', { key: 'homeOrder', value: homeOrder });
     dbPut('meta', { key: 'homeBubbleSizes', value: {} });
+    dbPut('meta', { key: 'homeBubbleExact', value: {} });
+    try{ renderSandboxBubbleSizes(); }catch(_eSb){}
     renderHomeLayoutEditor();
     renderHome();
     toast('Home layout reset to default');
@@ -8143,6 +8449,45 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         }
       }
     }catch(_oe){}
+    // 5./6. Two more free lyric databases, reached only when LRCLIB and
+    // lyrics.ovh both miss. LRCLIB is community-uploaded and skews to well-known
+    // tracks, which is why newer or smaller artists came back "no lyrics" — these
+    // two are Genius-derived and cover far more of that long tail. A result is
+    // only accepted when the returned song is the one we asked for (exact-ish
+    // title match, and the artist when the response carries one).
+    function _textOk(rt, ra){
+      var rk = scLyricsTitleKey(rt || '');
+      if(!rk || !titleKey) return false;
+      if(!(rk === titleKey || rk.indexOf(titleKey) !== -1 || titleKey.indexOf(rk) !== -1)) return false;
+      var raNorm = String(ra || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
+      if(!raNorm) return true;                                  // no artist to check
+      if(!primaryTokens.length) return true;                    // tag was a label/channel
+      for(var pi = 0; pi < primaryTokens.length; pi++){
+        if(primaryTokens[pi].length > 2 && raNorm.indexOf(primaryTokens[pi]) !== -1) return true;
+      }
+      return false;
+    }
+    try{
+      var sra = await fetch('https://some-random-api.com/lyrics?title=' + encodeURIComponent((titleVars[0] + ' ' + (primary || '')).trim()));
+      if(sra.ok){
+        var srd = await sra.json();
+        if(srd && srd.lyrics && String(srd.lyrics).trim() && _textOk(srd.title, srd.author)){
+          return { lyrics: String(srd.lyrics), isSynced: false, title: srd.title || titleVars[0], artist: srd.author || primary, duration: dur, source: 'Genius (some-random-api)', score: 1 };
+        }
+      }
+    }catch(_srE){}
+    try{
+      for(var lv = 0; lv < Math.min(titleVars.length, 2) && !best; lv++){
+        for(var la = 0; la < Math.min(artistVars.length, 3); la++){
+          var lyr = await fetch('https://lyrist.vercel.app/api/' + encodeURIComponent(titleVars[lv]) + '/' + encodeURIComponent(artistVars[la]));
+          if(!lyr.ok) continue;
+          var lyd = await lyr.json();
+          if(lyd && lyd.lyrics && String(lyd.lyrics).trim()){
+            return { lyrics: String(lyd.lyrics), isSynced: false, title: lyd.title || titleVars[lv], artist: lyd.artist || artistVars[la], duration: dur, source: 'Genius (lyrist)', score: 1 };
+          }
+        }
+      }
+    }catch(_lyE){}
     return null;
   }
   // Every title-matching candidate, including ones the automatic score refuses, so
@@ -9600,7 +9945,11 @@ function startLyricsAutoScroll() {
       const customQuickActionsRow = metaRows.find(r => r.key === 'customQuickActions');
       if(customQuickActionsRow && Array.isArray(customQuickActionsRow.value)) customQuickActions = customQuickActionsRow.value;
       const homeOrderRow = metaRows.find(r => r.key === 'homeOrder');
-      if(homeOrderRow && Array.isArray(homeOrderRow.value) && homeOrderRow.value.length) homeOrder = normalizeHomeOrder(homeOrderRow.value);
+      if(homeOrderRow && Array.isArray(homeOrderRow.value) && homeOrderRow.value.length){
+        const _migrated = migrateHomeOrderV60(homeOrderRow.value);
+        homeOrder = normalizeHomeOrder(_migrated);
+        if(_migrated !== homeOrderRow.value) dbPut('meta', { key: 'homeOrder', value: homeOrder });
+      }
       const homeHiddenRow = metaRows.find(r => r.key === 'homeHidden');
       if(homeHiddenRow && Array.isArray(homeHiddenRow.value)) homeHidden = homeHiddenRow.value.filter(k => HOME_BUBBLE_KINDS.indexOf(k) > -1 || (typeof k === 'string' && k.indexOf('custom-') === 0));
       const homeSlotsRow = metaRows.find(r => r.key === 'homeSlots');
@@ -9609,6 +9958,8 @@ function startLyricsAutoScroll() {
       if(hbSizeRow && typeof hbSizeRow.value === 'number') homeBubbleSize = hbSizeRow.value;
       const hbSizesRow = metaRows.find(r => r.key === 'homeBubbleSizes');
       if(hbSizesRow && hbSizesRow.value && typeof hbSizesRow.value === 'object') homeBubbleSizes = hbSizesRow.value;
+      const hbExactRow = metaRows.find(r => r.key === 'homeBubbleExact');
+      if(hbExactRow && hbExactRow.value && typeof hbExactRow.value === 'object') homeBubbleExact = hbExactRow.value;
       const hbPanelHRow = metaRows.find(r => r.key === 'homePanelHeight');
       if(hbPanelHRow && typeof hbPanelHRow.value === 'string') homePanelHeight = hbPanelHRow.value;
       const watermarkEnabledRow = metaRows.find(r => r.key === 'watermarkEnabled');
@@ -9670,7 +10021,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '59.1';
+  const APP_VERSION = '60';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10018,6 +10369,17 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60', date: 'September 20, 2026 \u00b7 7:40 PM EDT', title: 'Albums that are yours, a Home you control, smoother RGB, and five new dynamic themes', items: [
+    'Albums is separated from playlists for good. The \u22ee menu on the Albums tab no longer offers the playlist behind it (Clear playlist, Delete playlist, a DJ Mode toggle), Export albums exports your albums instead of zipping the open playlist, and the Reorder Songs sheet\u2019s \u201cSwitch album\u201d list only shows the albums YOU made \u2014 no more albums you never created',
+    'Tap the record player in the now bar and SideCut opens the album the playing song is in, scrolls to that song and highlights it. If the song isn\u2019t in one of your albums yet, its album tag becomes yours when you tap, so the jump never lands on an empty tab',
+    'Home is the layout you asked for. The bubble order is now stats, now playing beside top artists, quick actions, pinned artists beside new releases, library beside most played, playlists, then notifications beside favorites \u2014 and you can size every bubble exactly: Sandbox (free) has width/height steppers per bubble, plus two new presets (mini and XL) in the \u22ee chip cycle',
+    'The New releases bubble has a \u2713 chip that marks every release as read in one tap, without opening the list first',
+    'RGB and RGB + are smooth now. The cycle ran on a 200ms timer \u2014 five colour steps a second \u2014 which is the choppy colour you could see while a song played. It now updates on the display\u2019s own frames (and skips steps too small to see), with the old timer kept only as a watchdog for a WebView that stops delivering frames. The bounce-reactive bars in RGB+ are drawn at half the rate, which was the heaviest thing running during playback',
+    'Five new premium dynamic themes: Nebula, Neon Pulse, Solstice, Abyss and Orchid. Every dynamic theme also gets a second layer that counter-moves in the theme\u2019s own accent colours plus a slow sheen, so they actually move instead of one gradient drifting. All of the motion is transform/opacity only, which the compositor runs without repainting',
+    'Lyrics find far more songs. LRCLIB is community-uploaded and leans on well-known tracks, so newer or smaller artists came back empty \u2014 two more free, Genius-derived databases are now searched before giving up, and a result is only accepted when it is actually the song you asked for',
+    'Old songs: the play button on each row is gone and tapping a song takes you to it (fills Discover with that track) exactly like Singles and album tracks \u2014 including when the list is reopened from its 24-hour cache, which had no wiring at all. The Singles search bar no longer hovers over the list while you scroll, the export note now says 2\u20133 minutes for a 500-song library, and the top nav pills (Home / Library-Albums / Discover / Add songs) are all exactly the same width',
+    'The Spotify converter is marked experimental, and a track whose first YouTube lookup comes back unusable now retries with a looser search before giving up',
+  ]},
   { version: '59.1', date: 'September 20, 2026 · 6:05 PM EDT', title: 'Albums is separated from your playlists', items: [
     'The Albums tab\u2019s \u22ee menu no longer reaches into a playlist. It was drawing the actions of whichever playlist you had open behind the tab \u2014 \u201cClear playlist\u201d (which emptied every album of its songs, while wearing a playlist label), \u201cDelete playlist\u201d (which deleted that playlist by name) and a DJ Mode toggle that flipped DJ mode for it. Those three are playlist-scoped, so they now only appear when a playlist is actually on screen, and the Albums menu is album actions only',
     '\u201cExport albums\u201d exports your albums. It was calling the playlist export, which zipped whatever playlist was open behind the tab and even named the file after it \u2014 so exporting your albums handed you a .zip of one playlist. It now ships the tracks of the albums you made, with the album grouping included so importing the .zip rebuilds the albums, and the confirmation says how many albums and songs it is about to write. Nothing from a playlist is included',
@@ -18505,6 +18867,7 @@ function _fallbackCopy(text){
             homeHidden: homeHidden,
             homeBubbleSize: homeBubbleSize,
             homeBubbleSizes: homeBubbleSizes,
+            homeBubbleExact: homeBubbleExact,
             homeSlots: homeSlots,
             homePanelHeight: homePanelHeight,
 
@@ -19010,6 +19373,10 @@ function _fallbackCopy(text){
         if(manifest.settings.homeBubbleSize !== undefined){
           homeBubbleSize = manifest.settings.homeBubbleSize;
           dbPut('meta', { key: 'homeBubbleSize', value: homeBubbleSize });
+        }
+        if(manifest.settings.homeBubbleExact !== undefined){
+          homeBubbleExact = manifest.settings.homeBubbleExact || {};
+          dbPut('meta', { key: 'homeBubbleExact', value: homeBubbleExact });
         }
         if(manifest.settings.homeBubbleSizes !== undefined){
           homeBubbleSizes = manifest.settings.homeBubbleSizes;
@@ -23877,8 +24244,11 @@ function _fallbackCopy(text){
             var when = daysAgo + 'd ago';
             var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
             var _lyId = r.trackId || r.collectionId || ('manual_' + Date.now() + '_' + ri);
-            html += '<div class="dp-track" data-search="' + escapeHtml(r.trackName + ' ' + r.artistName) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '"' + (r.previewUrl ? ' data-preview="' + escapeHtml(r.previewUrl) + '"' : '') + ' data-trackname="' + escapeHtml(r.trackName) + '" data-artist="' + escapeHtml(r.artistName) + '">';
-            if(r.previewUrl) html += '<span class="dp-track-play" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.08);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u25b6</span>';
+            // data-lyrow marks these as Old songs rows so the delegated handler
+            // (which also covers a popup reopened from its 24h cache) can take a
+            // tap to that song. No play button any more — the whole row is the
+            // target, exactly like every other song list in the app.
+            html += '<div class="dp-track" data-lyrow="1" data-search="' + escapeHtml('"' + String(r.trackName||'').replace(/"/g,'') + '" ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.trackViewUrl||'') + '"' + (r.previewUrl ? ' data-preview="' + escapeHtml(r.previewUrl) + '"' : '') + ' data-trackname="' + escapeHtml(r.trackName) + '" data-artist="' + escapeHtml(r.artistName) + '">';
             html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (art ? 'background-image:url(' + cssUrl(art) + ');' : 'background:var(--bg);') + '"></div>';
             html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.trackName) + '</div>';
             html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName) + ' · ' + when + (r.releaseDate ? ' (' + r.releaseDate.slice(0,10) + ')' : '') + '</div></div>';
@@ -23889,18 +24259,9 @@ function _fallbackCopy(text){
         this.textContent = '📅 Old songs'; this.disabled = false;
         if(!html){ if(navigator.onLine === false && loadCachedDiscoverPopup('📅 Old songs')){ this.textContent = '📅 Old songs'; this.disabled = false; return; } html = '<div class="dp-empty">No songs between 1 and 3 years old found.</div>'; }
         openDiscoverPopup('📅 Old songs', html, totalFound + ' song' + (totalFound!==1?'s':'') + ' from 1–3 years ago across ' + pinnedArtists.length + ' artist' + (pinnedArtists.length!==1?'s':''));
-        document.querySelectorAll('#discPopupBody .dp-track').forEach(function(row){
-          if(row._lyWired) return; row._lyWired = true;
-          var playBtn = row.querySelector('.dp-track-play');
-          if(playBtn) playBtn.addEventListener('click', function(e){
-            e.stopPropagation(); e.preventDefault();
-            if(row.dataset.preview && typeof window.playDiscoverTrack === 'function') window.playDiscoverTrack(row.dataset.preview, row, { trackName: row.dataset.trackname||'', artistName: row.dataset.artist||'', art: row.dataset.art||'' });
-          });
-          row.addEventListener('click', function(e){
-            if(e.target && e.target.closest && (e.target.closest('.dp-ly-x') || e.target.closest('.dp-track-play'))) return;
-            $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
-          });
-        });
+        // Rows are wired by the global Old songs delegate below, so a popup
+        // reopened from the 24-hour cache behaves the same as a fresh fetch.
+        if(typeof window.__scWireOldSongRows === 'function') window.__scWireOldSongRows();
       };
     // Album History click wiring, defined at page load (not during the first fetch),
     // so the 24-hour popup cache is servable on the very first tap after any reload
@@ -25676,6 +26037,30 @@ if(!isDiscover) stopDiscoverPreview();
         cycleHomeBubbleSize(b.dataset.bubble);
       });
       b.appendChild(chip);
+      // New releases: a ✓ chip right on the bubble marks every release as read,
+      // so clearing the badge doesn't require opening the list first.
+      if(b.dataset.bubble === 'newreleases'){
+        const _unseen = (() => {
+          let n = 0;
+          try{ Object.keys(pinnedReleases || {}).forEach(a => (pinnedReleases[a] || []).forEach(r => { if(r && !r.seen) n++; })); }catch(_e){}
+          return n;
+        })();
+        if(_unseen > 0){
+          const readChip = document.createElement('button');
+          readChip.className = 'hb-read';
+          readChip.dataset.markread = '1';
+          readChip.title = 'Mark all ' + _unseen + ' new releases as read';
+          readChip.setAttribute('aria-label', 'Mark all new releases as read');
+          readChip.textContent = '✓';
+          readChip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if(hbReorderMode) return;
+            markReleasesSeen();
+            toast('Marked ' + _unseen + ' release' + (_unseen === 1 ? '' : 's') + ' as read');
+          });
+          b.appendChild(readChip);
+        }
+      }
     });
     applyHomeBubbleSizes();
 
@@ -26067,7 +26452,7 @@ if(!isDiscover) stopDiscoverPreview();
             const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
             return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
           }).join('') +
-          (unseenCount ? '<button class="hb-cta" id="hbCtaMarkSeen">Mark all as seen</button>' : '');
+          '<button class="hb-cta" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled style="opacity:0.5;cursor:default;"') + '>' + (unseenCount ? 'Mark all as read (' + unseenCount + ')' : '✓ All read') + '</button>';
         body.querySelectorAll('.hb-track-row').forEach(row => {
           row.addEventListener('click', () => {
             const q = (row.dataset.releaseTitle||'') + ' ' + (row.dataset.releaseArtist||'');
@@ -26077,7 +26462,8 @@ if(!isDiscover) stopDiscoverPreview();
             runDiscoverSearch(q);
           });
         });
-        $('hbCtaMarkSeen').addEventListener('click', () => { markReleasesSeen(); closeHomeBubble(); });
+        var _markSeenBtn = $('hbCtaMarkSeen');
+        if(_markSeenBtn && !_markSeenBtn.disabled) _markSeenBtn.addEventListener('click', () => { markReleasesSeen(); closeHomeBubble(); });
       }
     }
     else if(kind === 'nowplaying'){
@@ -26339,6 +26725,10 @@ if(!isDiscover) stopDiscoverPreview();
     renderPinnedArtists();
     renderNewReleases();
     updateNotifBadge();
+    // Home's New releases bubble (its count and its mark-all-as-read chip) is
+    // drawn from pinnedReleases, which only arrive here — without this the bubble
+    // kept whatever it drew before the releases loaded.
+    try{ renderHome(); }catch(_eHome){}
   }
   function savePinnedArtists(){
     return Promise.all([
@@ -26924,6 +27314,9 @@ if(!isDiscover) stopDiscoverPreview();
     savePinnedArtists();
     renderNewReleases();
     updateNotifBadge();
+    // Repaint Home too, so the New releases bubble's count and its mark-all
+    // chip update on the spot instead of waiting for the next full render.
+    try{ renderHome(); }catch(_eHome){}
   }
 
   // Query iTunes for an artist's recent tracks and merge into the snapshot.
@@ -29065,6 +29458,18 @@ if(!isDiscover) stopDiscoverPreview();
     // skipped. If none verify we still fall back to the best-ranked source so a
     // mismatch in the metadata never dead-ends the conversion.
     var audio = null, fallback = null;
+    // A second, looser YouTube search catches songs whose title alone matched
+    // nothing usable (regional spellings, "Song (Official Video)" uploads):
+    // title + artist + the word audio.
+    var cands2 = [];
+    try{ cands2 = await scYtSearch(title + ' ' + artist + ' audio', artist) || []; }catch(_e2){}
+    if(cands2 && cands2.length){
+      var _seenC = {};
+      for(var _c1 = 0; _c1 < cands.length; _c1++) _seenC[cands[_c1].videoId] = true;
+      var _extra = [];
+      for(var _c2 = 0; _c2 < cands2.length; _c2++){ if(!_seenC[cands2[_c2].videoId]){ _seenC[cands2[_c2].videoId] = true; _extra.push(cands2[_c2]); } }
+      if(_extra.length) cands = cands.concat(_extra);
+    }
     // Always run a stricter quoted-title search to pin the exact track —
     // this prevents common titles from drifting to lyric videos, remixes,
     // and covers. Results are merged ahead of the plain search's.
@@ -30793,7 +31198,9 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
     if(title && (title.indexOf('\ud83c\udfb5 Singles') !== -1 || title.indexOf('\ud83d\udcbf Album History') !== -1) && bodyHTML && !/fetching|loading|spinner|\u23f3|dp-empty/i.test(bodyHTML)){
       var _sb = document.createElement('div');
       _sb.id = 'discPopupSearchWrap';
-      _sb.style.cssText = 'padding:0 12px 8px 12px; position:sticky; top:0; z-index:5; background:inherit;';
+      // Deliberately NOT sticky: it used to hover over the list while you
+      // scrolled and hide the artist names underneath it.
+      _sb.style.cssText = 'padding:0 12px 8px 12px; position:relative; z-index:5; background:inherit;';
       _sb.innerHTML = '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border:1px solid var(--line);border-radius:10px;padding:8px 12px;">' +
         '<span style="color:var(--ink-dim);font-size:13px;">\ud83d\udd0d</span>' +
         '<input id="discPopupSearch" type="text" placeholder="Search ' + (title.indexOf('Singles') !== -1 ? 'singles' : 'albums') + ' or artists\u2026" autocomplete="off" style="flex:1;background:none;border:none;outline:none;color:var(--ink);font-size:13px;min-width:0;" />' +
@@ -31098,6 +31505,29 @@ if(!document._scSingleRowDelegated){
     closeDiscoverPopup();
   });
 }
+
+// Global delegated handler: tapping a song in Old songs takes you to that song,
+// exactly like tapping a single or an album track does — Discover is filled with
+// the row's search term and the popup closes. Delegated rather than wired per
+// render, because the 24-hour popup cache reopens the list without running the
+// fetch's own wiring (which is why tapping a song there did nothing after the
+// first open), and the rows have no play button any more.
+if(!document._scOldSongRowDelegated){
+  document._scOldSongRowDelegated = true;
+  document.addEventListener('click', function(e){
+    var row = e.target && e.target.closest ? e.target.closest('#discPopupBody .dp-track[data-lyrow]') : null;
+    if(!row) return;
+    if(e.target.closest && (e.target.closest('.dp-ly-x') || e.target.closest('button,a[href]'))) return;
+    var q = row.dataset.search || '';
+    if(!q) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try{ document.getElementById('discoverSearch').value = q; }catch(_e){}
+    if(typeof window.runDiscoverSearch === 'function') window.runDiscoverSearch(q);
+    if(typeof closeDiscoverPopup === 'function') closeDiscoverPopup();
+  }, true);
+}
+window.__scWireOldSongRows = function(){ /* rows are delegated — kept so callers stay valid */ };
 
 // Global delegated handler: tapping a track row inside an expanded album
 // (Album History) takes you to the song in Discover exactly like tapping a
@@ -31719,8 +32149,22 @@ window.showAlbumReorderPopup = function(albumName){
   }
   if(!album){ toast('Album not found.'); return; }
 
-  // Build list of all album names for switching
+  // Build list of all album names for switching. Only the albums YOU made: an
+  // entry the app created on its own (a tag album materialised for a reorder,
+  // an old card-drag auto-save) must never be offered as somewhere to switch to
+  // — "why does Switch album list albums I didn't make".
   var allAlbumNames = Object.keys(userAlbums || {});
+  try{
+    var _autoAlbums = (typeof window.__scAutoAlbumNames === 'function') ? (window.__scAutoAlbumNames() || []) : [];
+    if(_autoAlbums.length){
+      allAlbumNames = allAlbumNames.filter(function(n){
+        // Keep the album being reordered in the row even if it is flagged — the
+        // sheet is already open on it, so hiding it would look like it vanished.
+        if(n === albumName) return true;
+        return _autoAlbums.indexOf(n) === -1;
+      });
+    }
+  }catch(_eAuto){}
 
   // Create overlay
   var overlay = document.createElement('div');

@@ -78,6 +78,23 @@
     return null;
   }
 
+  // A version the APP itself reported — its own constant, or the dataset it
+  // writes onto the version label. The label's text is deliberately NOT used:
+  // the shipped markup carries a stale placeholder ("SideCut v48") that a boot
+  // which never finished leaves in place.
+  function appReportedVersion(){
+    try{ if(typeof APP_VERSION !== 'undefined' && APP_VERSION) return String(APP_VERSION); }catch(e){}
+    try{ if(window.APP_VERSION) return String(window.APP_VERSION); }catch(e){}
+    try{ if(window.__SC_VERSION) return String(window.__SC_VERSION); }catch(e){}
+    try{
+      var lbl = document.getElementById('currentVersionLabel');
+      if(lbl && lbl.dataset && lbl.dataset.scVersion) return String(lbl.dataset.scVersion);
+    }catch(e){}
+    return null;
+  }
+  // Any real version: 60, 58.9.2, 58.9.10 …
+  function isRealVersion(v){ return !!v && /^\d+(\.\d+)*$/.test(String(v)); }
+
   // ---------------- Crash-proof ledger (native filesystem) ---------------------
   // Everything the updater remembers about a hand-over used to live only in
   // localStorage, and the WebView flushes localStorage to disk asynchronously. A
@@ -201,9 +218,14 @@
           }, function(){ return currentVersion(); })
         : Promise.resolve(currentVersion());
       reading.then(function(cur){
-        // A real version here is always dotted (58.9.2); the stale placeholder in
-        // the shipped markup is not, so an unfinished boot cannot fake one.
-        if(!cur || String(cur).indexOf('.') === -1) return;
+        // "Must contain a dot" was the old stand-in for "the app really booted" —
+        // that assumption died with v60, a whole number, and this guard silently
+        // stopped running at all (a queued old bundle then stayed on the updater
+        // for the phone to apply by itself). Ask the app which version it is now,
+        // and fall back to what it reported only when the source is one the app
+        // itself wrote.
+        if(!isRealVersion(cur)) cur = appReportedVersion();
+        if(!isRealVersion(cur)) return;
         return U.getNextBundle().then(function(nb){
           done = true;
           if(!nb || !nb.version) return;
