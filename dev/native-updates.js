@@ -99,28 +99,31 @@
     if(sheetRefs && document.body.contains(sheetRefs.card)) return sheetRefs;
     var card = document.createElement('div');
     card.id = 'scOtaSheet';
+    // Painted from the app's own theme variables (the old fixed teal/orange values
+    // survive only as fallbacks), so the update prompt matches whatever theme you
+    // are on — including a live RGB palette — instead of looking like another app.
     card.style.cssText = 'position:fixed; left:12px; right:12px; bottom:86px; z-index:9999; display:none;' +
-      'background:#13262b; border:1px solid #2b4450; border-radius:16px; padding:16px;' +
-      'box-shadow:0 12px 34px rgba(0,0,0,0.5); color:#eef; font-family:inherit;';
+      'background:var(--bg-raised, #13262b); border:1px solid var(--line, #2b4450); border-radius:16px; padding:16px;' +
+      'box-shadow:0 12px 34px rgba(0,0,0,0.5); color:var(--ink, #eef); font-family:inherit;';
     card.innerHTML =
       '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">' +
         '<div id="scOtaTitle" style="font-weight:700; font-size:15px;"></div>' +
-        '<div id="scOtaDate" style="font-size:11px; color:#9fb3b9; flex-shrink:0;"></div>' +
+        '<div id="scOtaDate" style="font-size:11px; color:var(--ink-dim, #9fb3b9); flex-shrink:0;"></div>' +
       '</div>' +
-      '<div id="scOtaNotes" style="margin-top:8px; font-size:12.5px; color:#cfe3e3; max-height:132px; overflow-y:auto;"></div>' +
+      '<div id="scOtaNotes" style="margin-top:8px; font-size:12.5px; color:var(--ink, #cfe3e3); opacity:0.92; max-height:132px; overflow-y:auto;"></div>' +
       '<div id="scOtaProgressWrap" style="display:none; margin-top:12px;">' +
-        '<div style="height:8px; border-radius:6px; background:rgba(255,255,255,0.12); overflow:hidden;">' +
-          '<div id="scOtaBar" style="height:100%; width:0%; background:#f47a55; transition:width 0.2s linear;"></div>' +
+        '<div style="height:8px; border-radius:6px; background:var(--line, rgba(255,255,255,0.12)); overflow:hidden;">' +
+          '<div id="scOtaBar" style="height:100%; width:0%; background:var(--coral, #f47a55); transition:width 0.2s linear;"></div>' +
         '</div>' +
-        '<div style="display:flex; justify-content:space-between; margin-top:5px; font-size:11px; color:#9fb3b9;">' +
+        '<div style="display:flex; justify-content:space-between; margin-top:5px; font-size:11px; color:var(--ink-dim, #9fb3b9);">' +
           '<span id="scOtaPct">0%</span><span id="scOtaEta">estimating…</span>' +
         '</div>' +
       '</div>' +
       '<div id="scOtaBtns" style="display:flex; gap:10px; margin-top:14px;">' +
-        '<button id="scOtaLater" style="flex:1; padding:11px; font-size:13.5px; font-weight:600; border-radius:10px; border:1px solid #2b4450; background:#0E1B1F; color:#cfe3e3; cursor:pointer;">Install later</button>' +
-        '<button id="scOtaNow" style="flex:1; padding:11px; font-size:13.5px; font-weight:700; border-radius:10px; border:none; background:#f47a55; color:#0E1B1F; cursor:pointer;">Install now</button>' +
+        '<button id="scOtaLater" style="flex:1; padding:11px; font-size:13.5px; font-weight:600; border-radius:10px; border:1px solid var(--line, #2b4450); background:var(--bg, #0E1B1F); color:var(--ink, #cfe3e3); cursor:pointer;">Install later</button>' +
+        '<button id="scOtaNow" style="flex:1; padding:11px; font-size:13.5px; font-weight:700; border-radius:10px; border:none; background:var(--coral, #f47a55); color:#161616; cursor:pointer;">Install now</button>' +
       '</div>' +
-      '<div id="scOtaMsg" style="display:none; margin-top:10px; font-size:12px; color:#9fb3b9;"></div>';
+      '<div id="scOtaMsg" style="display:none; margin-top:10px; font-size:12px; color:var(--ink-dim, #9fb3b9);"></div>';
     document.body.appendChild(card);
     sheetRefs = { card: card };
     card.addEventListener('click', function(e){ e.stopPropagation(); });
@@ -156,7 +159,7 @@
       var row = document.createElement('div');
       row.style.cssText = 'display:flex; gap:8px; padding:3px 0;';
       var dot = document.createElement('span'); dot.textContent = '•';
-      dot.style.cssText = 'color:#f47a55; flex-shrink:0;';
+      dot.style.cssText = 'color:var(--coral, #f47a55); flex-shrink:0;';
       var txt = document.createElement('span'); txt.textContent = String(items[i]);
       row.appendChild(dot); row.appendChild(txt);
       notes.appendChild(row);
@@ -403,6 +406,38 @@
     waitForRelaunch(Updater);
     log('v' + version + ' stays staged — it installs on the next app launch');
     return 'deferred';
+  }
+
+  // Installing an update on a REAL launch.
+  //
+  // The staged hand-over was pinned to "when the app is killed", and a phone that
+  // keeps the app warm never fires that: the update sat staged forever and had to
+  // be tapped in from the sheet ("so I actually get the update"). This runs from
+  // the load event only — a fresh launch, never a background/foreground resume,
+  // which is the thing that used to make the app look like it was refreshing
+  // itself at random. Every guard still applies, and the attempt is recorded
+  // BEFORE the reload: if the bundle does not take over, the next boot's
+  // noteBootOutcome() marks it failed and it is never auto-installed again.
+  function installStagedOnBoot(Updater, nb){
+    try{
+      if(!Updater || !nb || !nb.id) return false;
+      var version = String(nb.version || '');
+      if(!version) return false;
+      if(version === String(currentVersion())) return false;  // a stale record, not an update
+      if(isBadVersion(version)) return false;                 // failed to start before
+      if(bootLooping()) return false;                         // the app is restarting itself
+      if(autoHandledAlready(version)) return false;           // already handed over to once
+      var key = BOOTAPPLY_KEY + version;
+      try{
+        if(localStorage.getItem(key) === '1') return false;
+        localStorage.setItem(key, '1');
+      }catch(e){}
+      log('installing staged v' + version + ' on launch');
+      // applyStagedNow() returns true when it DEFERRED (a song is playing, so the
+      // install waits for app-close); anything else means the hand-over is running
+      // and the JS context is about to be replaced.
+      return applyStagedNow(Updater, nb) !== true;
+    }catch(e){ return false; }
   }
 
   // Confirms the running bundle is healthy so Capgo keeps it; a bundle that
@@ -818,14 +853,13 @@
                 log('staged ' + nb.version + ' failed to start before — not auto-applying it');
                 return;
               }
-              // v58.8.5: the app NEVER reloads itself into a staged bundle.
-              // "Auto-applying on boot" was exactly the "I open the app and it
-              // refreshes by itself" report, and that refresh lands on top of
-              // restored playback: the song is gone and play has to be pressed
-              // again. The bundle is left staged (the native updater activates it
-              // on the next app kill/relaunch, which is the "it installs when I
-              // close the app" the user was already promised) and the sheet below
-              // offers to install it on the spot.
+              // v58.9.1: install it right here, on this launch. Waiting for a
+              // kill meant phones that keep the app warm never updated at all.
+              // This is the load handler, so it is a real launch — not the
+              // background/foreground resume that used to read as "the app
+              // refreshes itself when I open it" — and it happens at most once
+              // per bundle.
+              if(installStagedOnBoot(U, nb)) return;
               applyInBackground(U, nb);
               if(wantDeferredInstall(String(nb.version))) return; // installs on close — don't nag
               if(sheetRefs && sheetRefs.card.style.display === 'block') return; // sheet already up

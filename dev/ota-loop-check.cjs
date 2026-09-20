@@ -243,18 +243,22 @@ function boot(opts) {
   ok('so no boot reloads the app into the same build', staleReloads === 0, 'reloads=' + staleReloads);
 
   // ------------------------------------------------------------------
-  console.log('\n— a staged bundle is never applied by the app itself —');
-  // The report: "I open the app it refreshes automatically and then I have to
-  // click play". The app used to hand over to a staged bundle by itself (on boot,
-  // or on the way out of the app). Both are reloads the user did not ask for,
-  // and a reload kills playback — restored or live — so the song was gone and
-  // play had to be pressed again. Now the bundle is only ever staged: the sheet
-  // offers it, one tap installs it, and nothing reloads on its own.
+  console.log('\n— a staged bundle installs on launch, exactly once —');
+  // Two reports pull in opposite directions and both have to hold:
+  //   "I open the app it refreshes automatically and I have to click play" — a
+  //   reload the user did not ask for, mid-song, from a background hand-over; and
+  //   "can it auto update on boot so I actually get the update" — a staged bundle
+  //   that never installs because the kill condition never fires on a phone that
+  //   keeps the app warm.
+  // The resolution: install it on a real LAUNCH (the load event — never a
+  // background/foreground resume), and only ever once for a given bundle. A
+  // second boot must find it already attempted and do nothing at all.
   let ls2 = {};
-  let autoSets = 0, autoReloads = 0, offered = 0;
+  let autoSets = 0, autoReloads = 0, offered = 0, firstBootSets = 0;
   for (let i = 0; i < 3; i++) {
     const w = boot({ manifestVersion: NEXT_VERSION, stagedVersion: NEXT_VERSION, localStorage: ls2 });
     await wait(9000);
+    if (i === 0) firstBootSets = w.calls.set.length;
     autoSets += w.calls.set.length;
     autoReloads += w.navs.length;
     const sheet = w.win.document.getElementById('scOtaSheet');
@@ -262,11 +266,10 @@ function boot(opts) {
     ls2 = snapLS(w.win);
     w.dom.window.close();
   }
-  ok('no boot applies a staged bundle (no set() call)', autoSets === 0, 'set() calls=' + autoSets + ' over 3 boots');
-  ok('so the app never refreshes itself on launch', autoReloads === 0, 'reloads=' + autoReloads);
-  ok('the staged update is still offered to the user', offered === 1, 'sheet shown=' + offered);
-  ok('and it is still staged for the native updater (never marked bad)',
-     !ls2['sidecut_ota_bad_' + NEXT_VERSION], String(ls2['sidecut_ota_bad_' + NEXT_VERSION]));
+  ok('the first launch installs the staged bundle', firstBootSets === 1, 'set() calls=' + firstBootSets);
+  ok('and no later boot installs it again (one attempt per bundle ever)',
+     autoSets === firstBootSets, 'set() calls=' + autoSets + ' over 3 boots');
+  ok('so the app never refreshes itself on a later launch', autoReloads <= 1, 'reloads=' + autoReloads);
 
   // One tap still installs it — the update path has to keep working.
   const oneTap = boot({ manifestVersion: NEXT_VERSION, stagedVersion: NEXT_VERSION });
