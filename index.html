@@ -9686,7 +9686,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.9.7';
+  const APP_VERSION = '58.9.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10024,7 +10024,21 @@ function startLyricsAutoScroll() {
     }
     return 0;
   }
+  // 58.9.6/58.9.7 snapshots of Singles hold the releases that are no longer
+  // fetched. One-time invalidation: the saved list is rebuilt on the next open
+  // (a refetch that fails still shows nothing rather than a stale extra list).
+  try{
+    if(localStorage.getItem('sidecut_singles_cache_gen') !== '2'){
+      localStorage.removeItem('discPopupCache_\u{1f3b5} Singles');
+      localStorage.setItem('sidecut_singles_cache_gen', '2');
+    }
+  }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '58.9.8', date: 'September 20, 2026 · 3:05 PM EDT', title: 'Your albums are back, and Singles is the list it always was', items: [
+    'Albums is your library again. 58.9.6 started treating an album as yours only if it carried a stamp written by a hand-made action — and every album made before that stamp existed carries no marker at all, so a library of twelve hand-made albums was drawn as a single card. An album is now held back from Albums only when it is recorded as one the app created by itself (the old card-drag auto-save, or a tag album materialised so a reorder had somewhere to live). Nothing was ever deleted — your albums and their songs were in storage the whole time, and they are listed again now',
+    'Singles is back to the list it has always been. 58.9.6 also merged in each artist’s own release list on top of the song search, which pulled in releases the song search never returned — reported as well over a hundred songs appearing in Singles that are not the user’s artists. The song search alone is what builds the list again, and the one saved snapshot that still held those extra releases is dropped once so they cannot come back from the cache',
+    'Kept from 58.9.6, because it fixes a separate report: a refetch no longer deletes the singles it is about to refetch, the Discover button and the refetch share one saved list, and a per-artist refresh leaves the other artists alone. A failed fetch now says so instead of emptying the popup.',
+  ]},
   { version: '58.9.7', date: 'September 20, 2026 · 1:55 PM EDT', title: 'The RGB + glow stays in the theme’s own colours', items: [
     'RGB + no longer paints colours that have nothing to do with the theme you picked. Its glow overlays were sweeping the whole hue wheel while the app’s own accents stayed the flat pink and blue the theme defines, and because the two glow colours sit 120° apart, that sweep walked through clashing pairs: a green edge beside a red one, a yellow edge beside a magenta one, all on top of a pink and blue app. The glow now swings between the theme’s two accents and through the violet between them, so at every moment the edges are the theme’s own colours or a blend of the two → it opens on the exact pink and blue the theme defines, meets in the middle of the cycle, and comes back',
     'The glow still animates and still pumps with the bass. Only the range of colours it travels through changed, and it now runs at the theme’s full strength instead of a washed-out version of it, so on the pink and blue theme it opens identical to the static accents',
@@ -15273,12 +15287,12 @@ function _fallbackCopy(text){
       ids = getSortedIds(rawIds);
     }
     if(libraryMode === 'albums' && !reorderMode){
-      // Albums mode is manual-only — the same rule buildAlbumsIds documents: the
-      // tab lists the albums YOU created by hand and nothing else. Counting
-      // tag-derived albums here flooded the header and the play-all queue with
-      // every song in the library that happened to carry an album tag, so a
-      // 400-file tagged library read as "400 songs in my albums" while the tab
-      // listed albums nobody ever made.
+      // Albums mode counts only your SAVED albums — the same rule buildAlbumsIds
+      // documents. Counting tag-derived albums here flooded the header and the
+      // play-all queue with every song in the library that happened to carry an
+      // album tag, so a 400-file tagged library read as "400 songs in my
+      // albums". Entries the app created on its own are skipped, but every
+      // album in your library counts.
       ids = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : [];
     }
     const fullIds = ids.slice(); // full playlist order, before search narrows what's shown — this is what playback should queue
@@ -16712,8 +16726,9 @@ function _fallbackCopy(text){
 
 
   function pickUserAlbum(ids, sourceLabel){
-    // Only albums made by hand are offered here; the library's own grouping is
-    // not something to file songs into.
+    // The picker offers the albums in your library; the ones the app created by
+    // itself are not something to file songs into (they are still reachable from
+    // Manage albums).
     const names = (typeof visibleAlbumNames === 'function' ? visibleAlbumNames() : Object.keys(userAlbums)).sort();
     if(!names.length){ createAlbumFromIds(ids, sourceLabel, null); return; }
     const backdrop = document.createElement('div');
@@ -16774,9 +16789,9 @@ function _fallbackCopy(text){
 
 
   function buildAlbumsIds(){
-    // Albums mode is manual-only: it shows ONLY the tracks that belong to
-    // user-made albums (created via Select songs -> Create album, or the
-    // song ⋮ menu -> Add to albums). No library auto-grouping, no singles.
+    // Albums mode shows the tracks that belong to your saved albums (created via
+    // Select songs -> Create album, or the song ⋮ menu -> Add to albums).
+    // Entries the app created on its own are skipped.
     // Albums are listed in album order (year, then name), and each album's
     // tracks keep their order (track-number when known, else added order).
     const albumNames = Object.keys(userAlbums || {});
@@ -16792,7 +16807,7 @@ function _fallbackCopy(text){
     albKeys.forEach(function(ak){
       const e = userAlbums[ak];
       if(!e || !Array.isArray(e.trackIds)) return;
-      if(albumIsAuto(ak)) return; // added as a side effect, not an album you made
+      if(albumIsAuto(ak)) return; // created automatically, not an album you made
       e.trackIds.forEach(function(id){
         if(id == null || seen[id] || !allTracks.some(t => t && t.id === id)) return;
         seen[id] = true;
@@ -16848,17 +16863,17 @@ function _fallbackCopy(text){
     e.manual = true;
     delete e.auto;
   }
-  // Strictly manual. An entry counts as an album of yours only when a hand-made
-  // action created it (Create album, Add to album, rename, reorder, "It is
-  // mine"). Anything else — the old card-drag auto-save, a tag-only album
-  // materialised so a reorder had somewhere to live, or a legacy entry from
-  // before the flag existed — is the library's own grouping, not an album you
-  // made, and stays out of Albums. Those entries are still listed under
-  // "Not created by you" in Manage albums, where you can restore or delete them.
+  // An album is hidden from Albums ONLY when it was recorded as created
+  // automatically — the old card-drag auto-save, or a tag album materialised so
+  // a reorder had somewhere to live. Everything else is an album you have (or
+  // had) in your library, including every album that predates the flag: those
+  // have no marker at all, and treating a missing marker as "not yours" is what
+  // emptied a library of twelve hand-made albums down to one card. They are
+  // listed under "Not created by you" in Manage albums while flagged, with an
+  // "It is mine" button that clears the flag.
   function albumIsAuto(name){
     var e = userAlbums[name];
-    if(!e) return true;
-    return e.manual !== true;
+    return !!(e && e.auto === true && e.manual !== true);
   }
   function visibleAlbumNames(){
     return Object.keys(userAlbums || {}).filter(function(n){ return !albumIsAuto(n); });
@@ -25232,48 +25247,40 @@ function _renderAhFromData(artistAlbums){
         if(typeof window.__wireAH === 'function') window.__wireAH();
 
   // ---- One place that knows what a "single" is ------------------------------
-  // Used by the Discover button, the full refetch and the per-artist ↻/⚡, so the
-  // three can never disagree about what a single is again.
+  // Used by the Discover button, the full refetch and the per-artist refresh, so
+  // the three can never disagree about what a single is again.
   //
-  // Two sources are unioned per artist:
-  //   * the song search, filtered to releases that are a single track; and
-  //   * the artist's own release list, where a one-track release is a single by
-  //     definition. This second half is what was missing: an iTunes *song* search
-  //     is relevance-ranked and only ever returns the artist's most relevant ~200
-  //     tracks, so a prolific artist's older or quieter singles never showed up
-  //     at all ("I am missing songs in Singles for various artists").
+  // It is the iTunes *song* search alone, filtered to one-track releases — the
+  // list this has always produced. 58.9.6 also unioned in each artist's own
+  // release list; that pulled in releases the song search never returned, and it
+  // was reported as well over a hundred songs appearing in Singles that are not
+  // the user's artists. Reverted.
   async function fetchArtistSingles(artistName, opts){
     opts = opts || {};
     var skipHidden = !opts.includeHidden;
-    var want = String(primaryArtistName(artistName) || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-    function norm(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim(); }
-    function nameMatch(a, b){ return !!a && !!b && (a === b || a.indexOf(b) !== -1 || b.indexOf(a) !== -1); }
     var out = [];
     var seen = {};
-    function add(row){
-      var key = norm(row && row.trackName);
-      if(!key || seen[key]) return false;
-      seen[key] = 1;
-      out.push(row);
-      return true;
-    }
-    // --- 1. what a relevance-ranked song search knows about ---
     try{
       var sresp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=song&limit=200');
       if(sresp && sresp.ok){
         var sdata = await sresp.json();
+        var want = String(primaryArtistName(artistName) || '').toLowerCase().trim();
         (sdata.results || []).forEach(function(sr){
           if(!sr || !sr.trackName) return;
           if(skipHidden && isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return;
-          if(!nameMatch(norm(primaryArtistName(sr.artistName || '')), want)) return;
+          var rowArtist = String(primaryArtistName(sr.artistName || '') || '').toLowerCase().trim();
+          if(rowArtist !== want && rowArtist.indexOf(want) === -1 && want.indexOf(rowArtist) === -1) return;
           var cn = String(sr.collectionName || '').toLowerCase();
           var tn = String(sr.trackName || '').toLowerCase();
           var tc = Number(sr.trackCount) || 0;
-          // A one-track release IS a single. "…Single…" in the release name is
-          // Apple saying so outright; a track named like its one-track release is
-          // the same thing. The old name-length cap threw away real singles.
-          if(!(/\bsingle\b/.test(cn) || (cn === tn && tc <= 1) || tc === 1)) return;
-          add({
+          // A single is: a release Apple names as one, a standalone track whose
+          // name is its release, or a one-track release with an ordinary name.
+          var isSingle = /\bsingle\b/.test(cn) || (cn === tn && tc <= 1) || (tc === 1 && cn.length < 80);
+          if(!isSingle) return;
+          var key = tn.replace(/[^a-z0-9]/g, '');
+          if(!key || seen[key]) return;
+          seen[key] = 1;
+          out.push({
             trackName: sr.trackName,
             artistName: sr.artistName || artistName,
             trackId: sr.trackId,
@@ -25285,58 +25292,6 @@ function _renderAhFromData(artistAlbums){
         });
       }
     }catch(_e1){}
-    // --- 2. the artist's own releases (1 track = a single) ---
-    try{
-      var artistId = 0;
-      var aresp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&entity=musicArtist&limit=5');
-      if(aresp && aresp.ok){
-        var adata = await aresp.json();
-        (adata.results || []).forEach(function(ar){
-          if(artistId || !ar || !ar.artistId) return;
-          if(nameMatch(norm(ar.artistName || ''), want)) artistId = ar.artistId;
-        });
-      }
-      if(artistId){
-        var lresp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + artistId + '&entity=album&limit=200');
-        if(lresp && lresp.ok){
-          var ldata = await lresp.json();
-          var pending = [];
-          (ldata.results || []).forEach(function(c){
-            if(!c || c.wrapperType !== 'collection') return;
-            if(Number(c.trackCount) !== 1) return;                       // a single, by Apple's own data
-            if(!nameMatch(norm(primaryArtistName(c.artistName || '')), want)) return;
-            var title = String(c.collectionName || '').replace(/\s*[-\u2013\u2014]\s*single\s*$/i, '').trim();
-            if(!title) return;
-            if(skipHidden && isSingleHidden(c.collectionId, title)) return;
-            if(add({
-              trackName: title,
-              artistName: c.artistName || artistName,
-              trackId: c.collectionId,
-              collectionId: c.collectionId,
-              releaseDate: c.releaseDate || '',
-              artworkUrl100: c.artworkUrl100 || '',
-              previewUrl: ''
-            })) pending.push(out[out.length - 1]);
-          });
-          // The release itself has no preview URL — its one track does. Resolve
-          // the newest few so their ▶ buttons work (bounded: four at a time).
-          for(var b = 0; b < pending.length && b < 24; b += 4){
-            await Promise.all(pending.slice(b, b + 4).map(async function(row){
-              try{
-                var tresp = await fetchWithProxy('https://itunes.apple.com/lookup?id=' + row.collectionId + '&entity=song');
-                if(!tresp || !tresp.ok) return;
-                var tdata = await tresp.json();
-                var track = (tdata.results || []).filter(function(x){ return x && x.wrapperType === 'track'; })[0];
-                if(!track) return;
-                row.previewUrl = track.previewUrl || '';
-                row.trackId = track.trackId || row.trackId;
-                row.releaseDate = row.releaseDate || track.releaseDate || '';
-              }catch(_e3){}
-            }));
-          }
-        }
-      }
-    }catch(_e2){}
     out.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
     return out;
   }

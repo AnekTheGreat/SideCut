@@ -51,12 +51,19 @@ const TRACKS = [
 const ARTISTS = [
   {
     name: 'Test Artist', artistId: 9001,
-    songs: [{ trackName: 'Luna', artistName: 'Test Artist', collectionName: 'MoonChild Era', trackCount: 12, trackId: 11, collectionId: 110, releaseDate: '2026-05-01T07:00:00Z', artworkUrl100: 'https://art/luna.jpg', previewUrl: 'https://p/luna.m4a' }],
+    songs: [
+      { trackName: 'Luna', artistName: 'Test Artist', collectionName: 'MoonChild Era', trackCount: 12, trackId: 11, collectionId: 110, releaseDate: '2026-05-01T07:00:00Z', artworkUrl100: 'https://art/luna.jpg', previewUrl: 'https://p/luna.m4a' },
+      { trackName: 'Naina', artistName: 'Test Artist', collectionName: 'Naina - Single', trackCount: 1, trackId: 77, collectionId: 210, releaseDate: '2026-06-02T07:00:00Z', artworkUrl100: 'https://art/naina.jpg', previewUrl: 'https://p/naina.m4a' },
+    ],
     collections: [
       { collectionId: 210, collectionName: 'Naina - Single', trackCount: 1, artistName: 'Test Artist', releaseDate: '2026-06-02T07:00:00Z', artworkUrl100: 'https://art/naina.jpg' },
       { collectionId: 110, collectionName: 'MoonChild Era', trackCount: 12, artistName: 'Test Artist', releaseDate: '2026-05-01T07:00:00Z', artworkUrl100: 'https://art/mce.jpg' },
+      { collectionId: 999, collectionName: 'Relist Only - Single', trackCount: 1, artistName: 'Test Artist', releaseDate: '2026-07-04T07:00:00Z', artworkUrl100: 'https://art/only.jpg' },
     ],
-    tracks: { 210: { trackName: 'Naina', trackId: 77, previewUrl: 'https://p/naina.m4a', releaseDate: '2026-06-02T07:00:00Z' } },
+    tracks: {
+      210: { trackName: 'Naina', trackId: 77, previewUrl: 'https://p/naina.m4a', releaseDate: '2026-06-02T07:00:00Z' },
+      999: { trackName: 'Relist Only', trackId: 99, previewUrl: 'https://p/only.m4a', releaseDate: '2026-07-04T07:00:00Z' },
+    },
   },
   {
     name: 'Second Artist', artistId: 9002,
@@ -251,16 +258,22 @@ async function refetchSingles(win) {
   }
 
   // ---------------------------------------------------------------------
-  console.log('\n\u2014 singles the song search never returns are still found \u2014');
+  console.log('\n\u2014 singles come from the song search alone \u2014');
   {
-    const { win } = await boot();
+    const { win, api } = await boot();
     const fn = win.__scFetchArtistSingles;
     ok('the one shared singles fetcher is exposed', typeof fn === 'function');
     let rows = [];
     if (typeof fn === 'function') rows = await fn('Test Artist');
     const names = rows.map((r) => r.trackName);
-    ok('the artist\u2019s one-track release is included', names.indexOf('Naina') !== -1, JSON.stringify(names));
+    ok('the artist\u2019s single comes back', names.indexOf('Naina') !== -1, JSON.stringify(names));
     ok('an album track is not mistaken for a single', names.indexOf('Luna') === -1, JSON.stringify(names));
+    // 58.9.6 also unioned in the artist\u2019s release list, which is what put well
+    // over a hundred songs that are not the user\u2019s artists into Singles.
+    ok('a release only the artist release list knows is NOT added', names.indexOf('Relist Only') === -1, JSON.stringify(names));
+    ok('it does not walk the artist\u2019s release list at all',
+       !api.calls.some((u) => /entity=musicArtist/.test(u) || /lookup\?id=\d+&entity=album/.test(u)),
+       api.calls.filter((u) => /musicArtist|entity=album/.test(u)).join(' | '));
     const naina = rows.find((r) => r.trackName === 'Naina');
     ok('and it carries its preview so it can be played', !!naina && !!naina.previewUrl, naina ? naina.previewUrl : 'missing');
     ok('it carries a date and cover for the row', !!naina && !!naina.releaseDate && !!naina.artworkUrl100,
@@ -297,12 +310,15 @@ async function refetchSingles(win) {
   {
     const { win, idb } = await boot();
     const visible = (typeof win.__scVisibleAlbumNames === 'function') ? win.__scVisibleAlbumNames() : null;
-    ok('only the hand-made album is listed', JSON.stringify(visible) === JSON.stringify(['Mine']), JSON.stringify(visible));
-    ok('the flagged auto album is out', !(visible || []).includes('Auto'));
-    ok('the legacy unflagged album is out too', !(visible || []).includes('Legacy'));
+    // An album with no marker at all is an album from before the marker existed —
+    // it must show. Treating it as "not yours" is what emptied a library of twelve
+    // hand-made albums down to one card.
+    ok('your albums are listed', JSON.stringify((visible || []).slice().sort()) === JSON.stringify(['Legacy', 'Mine']), JSON.stringify(visible));
+    ok('an album from before the marker existed still shows', (visible || []).includes('Legacy'));
+    ok('only the album the app created automatically is held back', !(visible || []).includes('Auto'));
     const auto = (typeof win.__scAutoAlbumNames === 'function') ? win.__scAutoAlbumNames() : [];
-    ok('and they are not deleted \u2014 they are in the "not created by you" list',
-       auto.sort().join(',') === 'Auto,Legacy', JSON.stringify(auto));
+    ok('and it is not deleted \u2014 it is in the "not created by you" list',
+       auto.sort().join(',') === 'Auto', JSON.stringify(auto));
     ok('nothing was removed from storage', Object.keys(idb._data.meta.get('userAlbums').value).sort().join(',') === 'Auto,Legacy,Mine',
        Object.keys(idb._data.meta.get('userAlbums').value).join(','));
 
@@ -310,7 +326,7 @@ async function refetchSingles(win) {
     win.navigate('albums');
     await wait(700);
     const cards = Array.from(doc(win).querySelectorAll('#listPane [data-album-name]')).map((c) => c.dataset.albumName);
-    ok('the Albums tab shows only your album', JSON.stringify(cards) === JSON.stringify(['Mine']), JSON.stringify(cards));
+    ok('the Albums tab shows every album in your library', JSON.stringify(cards.slice().sort()) === JSON.stringify(['Legacy', 'Mine']), JSON.stringify(cards));
 
     // Multi-select -> Add to album.
     win.__scEnterSelectMode(['t3']);
@@ -323,8 +339,9 @@ async function refetchSingles(win) {
       const picks = Array.from(doc(win).querySelectorAll('body > div.modal-backdrop .modal button'))
         .map((b) => b.textContent.replace(/\s+/g, ' ').trim());
       ok('the picker offers your album', picks.some((t) => /^Mine \(/.test(t)), JSON.stringify(picks));
-      ok('the picker offers no album you did not make',
-         !picks.some((t) => /^(Legacy|Auto) \(/.test(t)),
+      ok('and the album from before the marker existed', picks.some((t) => /^Legacy \(/.test(t)), JSON.stringify(picks));
+      ok('it still holds back the album the app created by itself',
+         !picks.some((t) => /^Auto \(/.test(t)),
          JSON.stringify(picks));
     }
     ok('no page errors', errors(win).length === 0, errors(win).slice(0, 2).join(' | '));
