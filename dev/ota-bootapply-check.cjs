@@ -119,6 +119,15 @@ async function boot(opts) {
       win.fetch = () => Promise.reject(new Error('offline'));
     },
   });
+  // A track actually playing: `somethingIsPlaying()` looks for a live <audio>,
+  // which is the condition every automatic install defers to.
+  if (o.playing) {
+    const a = dom.window.document.createElement('audio');
+    a.src = 'blob:playing';
+    Object.defineProperty(a, 'paused', { get: () => false });
+    Object.defineProperty(a, 'ended', { get: () => false });
+    dom.window.document.body.appendChild(a);
+  }
   await wait(o.wait || 6500);   // the boot update path arms a few seconds after load
   return { win: dom.window, dom, calls, errors, staged };
 }
@@ -148,6 +157,39 @@ async function boot(opts) {
   const E = await boot({ stagedVersion: APP });
   ok('a staged record that is the RUNNING version is never applied', E.calls.set.length === 0,
      'set=' + JSON.stringify(E.calls.set) + ' (running ' + APP + ')');
+
+  console.log('\n— a launch that has to defer must not burn the update\u2019s one attempt —');
+  // The phone in the report plays music all day, so every automatic hand-over is
+  // deferred to "when you close the app". The one-attempt record used to be written
+  // BEFORE the hand-over ran, so a deferral burnt it and that version was never
+  // auto-installed again: it sat staged while the app kept booting the old bundle,
+  // and every fix that shipped looked like it had done nothing.
+  const P = await boot({ stagedVersion: NEXT, playing: true });
+  ok('the hand-over is deferred while a song plays', P.calls.set.length === 0, 'set=' + JSON.stringify(P.calls.set));
+  ok('it is handed over with the close-the-app condition instead', P.calls.delays.length >= 1, 'delays=' + P.calls.delays.length);
+  ok('the single automatic attempt is NOT burnt', P.win.localStorage.getItem('sidecut_ota_bootapply_' + NEXT) !== '1',
+     String(P.win.localStorage.getItem('sidecut_ota_bootapply_' + NEXT)));
+  ok('and no pending hand-over is recorded, so the next boot cannot call it rolled back',
+     !P.win.localStorage.getItem('sidecut_ota_pending'),
+     String(P.win.localStorage.getItem('sidecut_ota_pending')).slice(0, 60));
+  const Q = await boot({ stagedVersion: NEXT });
+  ok('so the next launch (no music) installs it', Q.calls.set.length >= 1, 'set=' + JSON.stringify(Q.calls.set));
+
+  console.log('\n— Install now installs, even while music is playing —');
+  const R = await boot({ stagedVersion: NEXT, playing: true, localStorage: { ['sidecut_ota_prompt_' + NEXT]: '1' } });
+  try { R.win.__SideCutOTA.staged(); } catch (e) {}
+  await wait(500);
+  const rCard = R.win.document.getElementById('scOtaSheet');
+  ok('the update sheet is on screen for the staged bundle', !!rCard && rCard.style.display === 'block', rCard ? rCard.style.display : 'missing');
+  const rMsg = R.win.document.getElementById('scOtaMsg');
+  ok('it states which build you are actually running',
+     /You are on v/.test(rMsg ? rMsg.textContent : '') && (rMsg ? rMsg.textContent.indexOf(APP) !== -1 : false),
+     rMsg ? rMsg.textContent : 'missing');
+  const rNow = R.win.document.getElementById('scOtaNow');
+  if (rNow) rNow.click();
+  await wait(900);
+  ok('tapping Install now hands the bundle over despite the playing track', R.calls.set.length >= 1,
+     'set=' + JSON.stringify(R.calls.set));
 
   console.log('\n— the update prompt follows your theme —');
   const sheetWin = A.win;

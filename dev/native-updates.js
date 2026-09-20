@@ -341,7 +341,13 @@
       sheetMsg('');
     } else {
       btns.style.display = 'flex';
-      sheetMsg('');
+      // Say which build is actually on screen. The version picker can leave an old
+      // snapshot pinned over a newer installed bundle, and then every "it is still
+      // broken" report is about the old page, not the update being offered.
+      var cur = (typeof currentVersion === 'function') ? String(currentVersion() || '') : '';
+      sheetMsg((o.phase === 'staged' && cur && cur !== String(o.version))
+        ? ('You are on v' + cur + ' — installing v' + o.version + ' replaces it.')
+        : '');
     }
     wrap.style.display = (o.showProgress || o.phase === 'downloading') ? 'block' : 'none';
     card.style.display = 'block';
@@ -415,7 +421,13 @@
   // no song is playing. Returns true when the apply was DEFERRED to app-close
   // (music was playing) — callers use that to drop the staged sheet instead of
   // repainting it over the deferral message.
-  function applyStagedNow(Updater, nb){
+  // force: the user asked for this install BY HAND (the sheet's Install now). A
+  // deliberate install must not be deferred back at them — it used to run the same
+  // music-playing deferral as the automatic paths, so tapping "Install now" on a
+  // phone that was playing something did nothing but hide the sheet, and the update
+  // could sit staged for ever on a phone that always has music on. The sheet says
+  // the app is about to reopen, so stopping playback here is what was asked for.
+  function applyStagedNow(Updater, nb, force){
     if(!nb || !nb.id) return false;
     if(String(nb.version || '') === String(currentVersion())){
       // The staged record points at the bundle we are ALREADY running: the plugin
@@ -438,10 +450,7 @@
       neutralizeStaged(Updater, nb, 'older than the running version');
       return false;
     }
-    // Remember what we are handing over to before the WebView reloads away: the
-    // next boot compares this with what actually came up (noteBootOutcome).
-    try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version || ''), at: Date.now() })); }catch(e){}
-    if(somethingIsPlaying()){
+    if(!force && somethingIsPlaying()){
       // Defer for real instead of just talking about it: install the moment the
       // user leaves the app (music must not be killed mid-play) and remember
       // the choice so silent checks stop re-offering the same version. The
@@ -453,9 +462,19 @@
       var rtk = READY_TOAST_KEY + nb.version;
       try{ if(localStorage.getItem(rtk) === '1') return true; localStorage.setItem(rtk, '1'); }catch(e){}
       toast('Update ' + nb.version + ' is ready — it installs when you close the app.', 4500);
+      // NO pending record is written here, deliberately. A pending record means
+      // "we handed the WebView over to this version and it reloaded", and the next
+      // boot uses it to confirm the bundle or mark it failed (noteBootOutcome).
+      // Nothing reloaded on a deferral — the app kept running the old bundle and
+      // the install only happens when the app is closed — so writing one here made
+      // the very next launch mark a perfectly good staged update as "rolled back"
+      // and refuse it for ever.
       return true;
     }
     log('applying staged bundle ' + nb.version + ' now (user asked)');
+    // Remember what we are handing over to before the WebView reloads away: the
+    // next boot compares this with what actually came up (noteBootOutcome).
+    try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version || ''), at: Date.now() })); }catch(e){}
     markAutoHandled(String(nb.version || ''));
     clearInstallDelay(Updater);
     // Show the Installing state in the sheet (not just a toast) — the set()
@@ -506,7 +525,7 @@
       try{ localStorage.setItem(sk, '1'); }catch(e){}
       showSheet({
         phase: 'staged', version: String(nb.version), date: (st && st.date) || '', notes: (st && st.notes) || [],
-        onNow: function(){ try{ localStorage.removeItem(sk); }catch(e){} if(applyStagedNow(U, nb)) hideSheet(); },
+        onNow: function(){ try{ localStorage.removeItem(sk); }catch(e){} if(applyStagedNow(U, nb, true)) hideSheet(); },
         onLater: function(){ try{ localStorage.setItem(INSTALL_PROMPT_SEEN + nb.version, '1'); }catch(e){} hideSheet(); toast('Saved for later — installs when you leave the app.', 3500); }
       });
     }).catch(function(){});
@@ -623,15 +642,21 @@
         return false;
       }
       var key = BOOTAPPLY_KEY + version;
-      try{
-        if(localStorage.getItem(key) === '1') return false;
-        localStorage.setItem(key, '1');
-      }catch(e){}
+      try{ if(localStorage.getItem(key) === '1') return false; }catch(e){}
       log('installing staged v' + version + ' on launch');
       // applyStagedNow() returns true when it DEFERRED (a song is playing, so the
       // install waits for app-close); anything else means the hand-over is running
       // and the JS context is about to be replaced.
-      return applyStagedNow(Updater, nb) !== true;
+      var _deferred = applyStagedNow(Updater, nb) === true;
+      // The "one automatic hand-over per version" record is written only once the
+      // hand-over is really running. It used to be written BEFORE the call, so a
+      // launch that deferred the install because music was playing — the normal
+      // case on a phone that plays all day — burnt that version's single attempt
+      // and the update was never auto-installed again: it sat staged while the app
+      // kept booting the old bundle, and every later release that landed the same
+      // way looked like "the fix did nothing".
+      if(!_deferred){ try{ localStorage.setItem(key, '1'); }catch(e){} }
+      return !_deferred;
     }catch(e){ return false; }
   }
 
