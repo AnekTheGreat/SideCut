@@ -9626,7 +9626,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8.9';
+  const APP_VERSION = '58.9.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9719,6 +9719,8 @@ function startLyricsAutoScroll() {
     var RESTORE_TRIES = 'sidecut_snap_restore_tries';
     var MAX_ITEM = 262144; // skip oversized values (discovery caches, etc.)
     var dirty = false, timer = null, writing = false;
+    var lastSnapData = null, lastSnapWriteAt = 0;
+    var MAX_SNAP_BYTES = 1000000;   // 1 MB — this file holds settings, not page HTML
     function isNative(){
       try{
         return !!(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem);
@@ -9756,7 +9758,12 @@ function startLyricsAutoScroll() {
           if(typeof key !== 'string') continue;
           if(key.indexOf('versionSnapshot_') === 0) continue;
           var val = rows[i].value;
-          if(typeof val === 'string' && val.length > MAX_ITEM) continue;
+          // Measure by the REAL serialised size: a row holding an object slipped
+          // past the string-only check and could be arbitrarily large.
+          var valSize = 0;
+          try{ valSize = (typeof val === 'string') ? val.length : JSON.stringify(val).length; }
+          catch(_ve){ valSize = MAX_ITEM + 1; }
+          if(valSize > MAX_ITEM) continue;
           out[key] = val;
         }
       }catch(e){}
@@ -9776,29 +9783,16 @@ function startLyricsAutoScroll() {
           // Carry the 3 most recent ones so a snapshot restore can bring them back
           // (each is ~1.5MB of HTML, so keep the file lean; the running version
           // re-saves its own snapshot on every boot anyway).
+          // Rollback points are deliberately NOT mirrored into this file. Each
+          // `versionSnapshot_<v>` row holds the whole page HTML (~1.8 MB), so
+          // carrying even a handful of them made this file tens of megabytes —
+          // and it is rewritten 1.5 s after any storage change, which while a
+          // song is playing means every few seconds. That was a ~70 MB
+          // JSON.stringify on the UI thread plus a multi-megabyte disk write per
+          // few seconds, in the native app only: the crash, the stutter and the
+          // battery drain all came from it. This file exists to recover settings
+          // and library metadata; it has no business carrying page HTML.
           var metaForSnap = await collectMeta();
-          try{
-            var snapRows = await dbGetAll('meta');
-            var snapIdx = [];
-            for(var si = 0; si < snapRows.length; si++){
-              var sk = snapRows[si] && snapRows[si].key;
-              if(typeof sk !== 'string' || sk.indexOf('versionSnapshot_') !== 0) continue;
-              var sv = snapRows[si].value;
-              if(!sv || !sv.html) continue;
-              snapIdx.push({ k: sk, at: sv.savedAt || 0 });
-            }
-            snapIdx.sort(function(a, b){ return b.at - a.at; });
-            // Keep the whole rollback history in the disaster-recovery mirror
-            // too (each snapshot is HTML-heavy but indices are cheap); the live
-            // IndexedDB store never prunes, so this just stops old versions from
-            // vanishing on a store wipe/update reinstall.
-            snapIdx = snapIdx.slice(0, 50);
-            for(var sj = 0; sj < snapIdx.length; sj++){
-              for(var sk2 = 0; sk2 < snapRows.length; sk2++){
-                if(snapRows[sk2] && snapRows[sk2].key === snapIdx[sj].k){ metaForSnap[snapRows[sk2].key] = snapRows[sk2].value; break; }
-              }
-            }
-          }catch(_se){}
           var payload = {
             v: 1,
             at: Date.now(),
@@ -9806,8 +9800,37 @@ function startLyricsAutoScroll() {
             localStorage: collectLocalStorage(),
             meta: metaForSnap
           };
+          var data = JSON.stringify(payload);
+          // Hard ceiling. Anything that would exceed it is dropped, largest row
+          // first, so one oversized row can never turn into a multi-megabyte
+          // write on the UI thread.
+          if(data.length > MAX_SNAP_BYTES){
+            try{
+              var sizes = Object.keys(payload.meta).map(function(k){
+                var n = 0;
+                try{ n = JSON.stringify(payload.meta[k]).length; }catch(_e){ n = 1e9; }
+                return { k: k, n: n };
+              });
+              sizes.sort(function(a, b){ return b.n - a.n; });
+              for(var di = 0; di < sizes.length && data.length > MAX_SNAP_BYTES; di++){
+                console.warn('[SideCut] snapshot: dropping oversized "' + sizes[di].k + '" (' + sizes[di].n + ' bytes)');
+                delete payload.meta[sizes[di].k];
+                data = JSON.stringify(payload);
+              }
+            }catch(_pe){}
+          }
+          if(data.length > MAX_SNAP_BYTES){
+            console.warn('[SideCut] snapshot is still ' + data.length + ' bytes — skipping this write rather than blocking the app');
+            return;
+          }
+          if(data === lastSnapData){ return; }   // nothing actually changed
+          // While the app is in the background, one write every ten seconds is
+          // plenty; the periodic sweep catches anything else.
+          if(document.hidden && lastSnapWriteAt && (Date.now() - lastSnapWriteAt) < 10000){ dirty = true; return; }
           var FS = window.Capacitor.Plugins.Filesystem;
-          await FS.writeFile({ path: SNAP_NAME, data: JSON.stringify(payload), directory: 'DATA', encoding: 'utf8', recursive: true });
+          await FS.writeFile({ path: SNAP_NAME, data: data, directory: 'DATA', encoding: 'utf8', recursive: true });
+          lastSnapData = data;
+          lastSnapWriteAt = Date.now();
           try{ if(localStorage.getItem(SNAP_MARKER) === null) localStorage.setItem(SNAP_MARKER, String(Date.now())); }catch(e){}
         }finally{
           writing = false;
@@ -9942,6 +9965,12 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.9.0', date: 'September 19, 2026 \u00b7 10:34 PM EDT', title: 'The crash after playing a song: the app was writing tens of megabytes to the disk while you listened', items: [
+    'Found the crash, and it was only ever possible in the installed app. Every version SideCut has ever run stores a copy of its own page (about 1.8 MB) so you can roll back to it, and none of those are ever removed. The app also mirrors a small recovery file to the device so your playlists, albums and settings survive a reinstall \u2014 and that mirror was carrying up to FIFTY of those page copies with it. Because the file is rewritten shortly after any change, and playing a song changes the playback position every few seconds, the app was building a 30-90 MB piece of text on the main thread and writing it to the disk every few seconds while you listened. That is a memory spike big enough for Android to kill the app outright (the random crash after playing a song), a stalled main thread (songs stuttering or stopping), and constant writes to flash (why the battery drained so fast). It is behind a native-only check, which is exactly why the browser version never showed any of it',
+    'The mirror now carries what it is for \u2014 playlists, albums, settings \u2014 and no page copies at all. Measured on the same library: the app used to write 8.6 MB per write with only twelve versions of history (yours has far more), and now writes about 0.6 KB',
+    'The recovery file has a hard 1 MB ceiling. If something oversized ever tries to get in, the biggest entry is dropped and reported instead of writing a huge file, and if it still would not fit the write is skipped rather than blocking the app',
+    'It also stops writing when nothing changed, and while the app is in the background it writes at most once every ten seconds instead of whenever anything moves',
+  ]},
   { version: '58.8.9', date: 'September 19, 2026 \u00b7 10:17 PM EDT', title: 'A crash can no longer leave the app unable to load, or looking like your music is gone', items: [
     'The app can no longer fail to load because of a storage hiccup. A crash during playback is Android killing the page (the music lives in a WebView), and a page killed mid-write leaves the phone\u2019s database needing recovery \u2014 so the boot right after it met a first storage read that FAILED, and the app drew \u201cAdd some music to get started\u201d over a library that was still there. A failed read is no longer mistaken for an empty library: the library is read again through a fresh connection, and if that still cannot read it the app says so \u2014 \u201cYour songs are still on this phone, nothing has been deleted\u201d \u2014 with a Try again button, instead of an empty screen',
     'One failed read no longer breaks every later one. The database handle was cached along with its failure, so a single transient error poisoned the whole session: every read after it returned nothing and nothing could be saved again until the app was closed and reopened. A failure is never remembered as final now, and the next read simply reopens',
