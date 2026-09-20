@@ -95,6 +95,10 @@ function tev(win, el, type, opts) {
   el.dispatchEvent(ev);
   return ev;
 }
+// A touchcancel carries the touches that are STILL on the glass, which is how
+// the app tells "Android took the gesture from a planted finger" (still there)
+// apart from "the finger is gone" (empty list).
+const TOUCH_STILL_DOWN = [{ identifier: 1, clientX: 120, clientY: 300 }];
 function cev(win, el, type, opts) {
   el.dispatchEvent(new win.MouseEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: 120, clientY: 300 }, opts || {})));
 }
@@ -127,7 +131,7 @@ async function resetSheet(win) {
   pev(win, row, 'pointerdown');
   await wait(150);
   ok('row shows armed state while held', row.classList.contains('alb-hold-armed'));
-  ok('the armed row shows a three-second fill', /albHoldFill 3000ms linear/.test(html));
+  ok('holding draws no moving progress bar', !/albHoldFill/.test(html));
   await wait(1000);
   ok('a one-second press does NOT open the reorder sheet', !sheet(win));
   await wait(2200);   // ~3.35s of holding in total
@@ -159,15 +163,34 @@ async function resetSheet(win) {
   ok('pointercancel mid-hold still opens the sheet', !!sheet(win));
   await resetSheet(win);
 
-  // 4. same for touchcancel (Chrome fires this one on Android)
+  // 4a. touchcancel with the finger STILL planted (Chrome fires this on Android
+  //     when it takes the gesture): the hold still completes.
   pev(win, row, 'pointerdown');
-  tev(win, row, 'touchstart');
+  tev(win, row, 'touchstart', { touches: TOUCH_STILL_DOWN });
   await wait(140);
-  tev(win, row, 'touchcancel');
+  tev(win, row, 'touchcancel', { touches: TOUCH_STILL_DOWN });
   await wait(500);
-  ok('touchcancel alone does not open the sheet early', !sheet(win));
+  ok('touchcancel with the finger down does not open the sheet early', !sheet(win));
   await wait(2900);
-  ok('touchcancel mid-hold still opens the sheet', !!sheet(win));
+  ok('touchcancel with the finger down still opens the sheet', !!sheet(win));
+  await resetSheet(win);
+
+  // 4b. touchcancel with NO remaining touches: the finger left. This is the
+  //     "it opens when I'm not touching it" case — nothing may open.
+  pev(win, row, 'pointerdown');
+  await wait(140);
+  tev(win, row, 'touchcancel', { touches: [] });
+  await wait(3400);
+  ok('a press whose finger left never opens the sheet', !sheet(win));
+  await resetSheet(win);
+
+  // 4c. a press that ends early must stay ended: no sheet seconds later.
+  pev(win, row, 'pointerdown');
+  await wait(700);
+  tev(win, row, 'touchend', { touches: [] });
+  pev(win, row, 'pointerup');
+  await wait(3400);
+  ok('a press that ended early never opens the sheet', !sheet(win));
   await resetSheet(win);
 
   // 5. press then immediate release (a plain tap) must not open it
@@ -238,6 +261,31 @@ async function resetSheet(win) {
     ok('dragging the grip reorders the songs', order.join(',') !== 't1,t2,t3', order.join(','));
     const saved = win.__scGetUserAlbums()['MoonChild Era'].trackIds.join(',');
     ok('the new order is persisted', saved === order.join(','), 'saved=' + saved + ' dom=' + order.join(','));
+  }
+
+  // 8b. an accidental hold is undone by one tap: Cancel restores the order the
+  //     sheet opened with.
+  await resetSheet(win);
+  const beforeCancel = win.__scGetUserAlbums()['MoonChild Era'].trackIds.join(',');
+  pev(win, row, 'pointerdown', { clientY: 40 });
+  await wait(3300);
+  const s2 = sheet(win);
+  ok('sheet reopened for the cancel test', !!s2);
+  if (s2) {
+    const r2 = Array.from(s2.querySelectorAll('[data-id]'));
+    const grip2 = r2[0].querySelector('.ar-grip') || r2[0];
+    pev(win, grip2, 'pointerdown', { clientY: 100 });
+    pev(win, win.document, 'pointermove', { clientY: 190 });
+    pev(win, win.document, 'pointerup', { clientY: 190 });
+    await wait(80);
+    const afterDrag = Array.from(s2.querySelectorAll('[data-id]')).map((x) => x.dataset.id).join(',');
+    const cancelBtn = Array.from(s2.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Cancel');
+    ok('the sheet offers a Cancel button', !!cancelBtn);
+    if (cancelBtn) cancelBtn.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }));
+    await wait(180);
+    const afterCancel = win.__scGetUserAlbums()['MoonChild Era'].trackIds.join(',');
+    ok('Cancel restored the order the sheet opened with', afterCancel === beforeCancel, 'drag=' + afterDrag + ' after=' + afterCancel + ' before=' + beforeCancel);
+    ok('Cancel closed the sheet', !sheet(win));
   }
 
   // 9. playlists mode is untouched (no album entry in the menu)

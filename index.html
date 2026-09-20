@@ -554,15 +554,10 @@
     box-shadow: inset 0 0 0 1px rgba(227,178,60,0.5);
     transform: scale(0.985);
   }
-  /* The hold is three seconds, so it has to show its progress: the row fills as you
-     hold it, and the sheet opens exactly when the fill completes. */
-  [id^="alb_card_"] .track.alb-hold-armed::after{
-    content:''; position:absolute; left:0; right:0; bottom:0; height:2px;
-    background: var(--coral); border-radius:2px; pointer-events:none;
-    transform: scaleX(0); transform-origin: left center;
-    animation: albHoldFill 3000ms linear forwards;
-  }
-  @keyframes albHoldFill{ from{ transform: scaleX(0); } to{ transform: scaleX(1); } }
+  /* No progress bar. A three-second hold used to draw a bar crawling across the
+     bottom of the row, which read as "something is happening to my song". The
+     armed tint above is the whole of the feedback now: tint means the press is
+     registered, the sheet simply opens when the three seconds are up. */
   .track .idx{ width:20px; color:var(--ink-dim); font-family:'JetBrains Mono',monospace; font-size:12px; text-align:center; flex-shrink:0; }
   .track.playing .idx::before{ content:'♪'; color:var(--coral); }
   .track-art{ width:48px; height:48px; border-radius:8px; background:var(--bg-raised); background-size:cover; background-position:center; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,0.3); }
@@ -9592,7 +9587,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8.5';
+  const APP_VERSION = '58.8.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9896,6 +9891,12 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8.6', date: 'September 19, 2026 \u00b7 8:27 PM EDT', title: 'Album reordering: no more moving bar, a hold that needs your finger, and one-tap Cancel', items: [
+    'Holding a song in an album no longer shows a bar crawling across the bottom of the row. The row tints while the three-second hold is running and the Reorder Songs sheet simply opens when the time is up \u2014 nothing animates through your song',
+    'The hold now only counts while your finger is actually on the screen. Android tells the app that a gesture was taken over (and it also fires that for a finger that is still planted, which is why it used to be tolerated), but a cancelled touch carrying no finger left \u2014 or a press you ended early \u2014 can no longer pop the sheet open on its own a second or two later',
+    'An accidental hold is now one tap to undo: the Reorder Songs sheet has a Cancel button beside Done, the \u2715 is bigger and cancels too, and a tap on the backdrop still dismisses it. Cancel puts the album back in exactly the order it had when the sheet opened, so a mistaken hold costs nothing',
+    'Done still keeps the new order, and reordering in albums still never touches your playlists',
+  ]},
   { version: '58.8.5', date: 'September 19, 2026 \u00b7 7:20 PM EDT', title: 'Playback keeps its own truth in the background, and the app stops refreshing itself', items: [
     'The app no longer claims a song is playing when it is not. When the screen goes off or you leave the app, Android freezes the WebView and the audio dies with it \u2014 while the player still reported \u201cplaying\u201d, with a playhead that never moved. The app now compares the real playhead against the time actually spent away, so it can tell a song that survived the trip from one that was silently killed',
     'When the audio was killed in the background, the song is put back where it left off as soon as you return \u2014 you no longer have to press play. If the system refuses to restart without a tap, the app shows an honest paused state instead of a playing display over silence',
@@ -14807,23 +14808,36 @@ function _fallbackCopy(text){
       var held = Date.now() - started;
       var wasMoved = moved;
       stopAll();
+      markFingerGone();
       if(wasMoved || held < 2800) return;
       openSheet();
     }
-    function onCancel(){
+    function pressedTimer(){ return !!timer; }
+    // This handler tracks its own finger, deliberately: the same row element can
+    // be re-rendered mid-press, and a row that has been swapped out no longer
+    // bubbles its events up to the document — so a document-level "is a finger
+    // down" flag can't be trusted here. Every press either has its own start, or
+    // it never began.
+    var fDown = false;
+    function markFingerGone(){ fDown = false; }
+    function onCancel(ev){
+      if(!pressedTimer()) return;
       if(moved){ stopAll(); return; }
-      // Android handed the gesture to the browser. The finger never moved, so
-      // this is still the hold the user meant — let the hold timer finish.
-      // Every listener has to go, though (including the release ones): leaving
-      // a stale onUp behind made the NEXT tap on a row pop the sheet open,
-      // because that release still carried this press's start time.
-      removeTracking();
+      // Android handed the gesture to the browser. A stationary finger is still
+      // on the row, so the hold may finish — but the tracking STAYS, because the
+      // release that ends the press has to be seen. The timer re-checks that a
+      // finger is still down before it opens anything, so a press that ended
+      // (or a gesture the browser swallowed) can no longer pop the sheet open by
+      // itself seconds later. A stale onUp is harmless now: it bails unless this
+      // press is still the live one.
+      if(ev && ev.touches && !ev.touches.length) markFingerGone();  // no touches left = finger gone
     }
     row.addEventListener('pointerdown', function(e){
       if(e.pointerType && e.pointerType !== 'touch' && e.button && e.button !== 0) return;
       if(e.target && e.target.closest && e.target.closest('button,a,input,select,.kebab-btn,.grip-handle,.reorder-btns')) return;
       if(document.getElementById('albumReorderPopup')) return;
       moved = false;
+      fDown = true;
       started = Date.now();
       sx = e.clientX; sy = e.clientY;
       try{ row.setPointerCapture(e.pointerId); }catch(_pc){}
@@ -14835,8 +14849,12 @@ function _fallbackCopy(text){
       // cannot open the reorder sheet by accident.
       timer = setTimeout(function(){
         timer = null;
-        if(moved) return;
+        if(moved){ stopAll(); return; }
+        // The finger has to still be on the screen: a press that ended, or a
+        // gesture Android later swallowed, must never open the sheet on its own.
+        var stillDown = fDown;
         stopAll();
+        if(!stillDown) return;
         openSheet();
       }, 3000);
       addTracking();
@@ -30903,13 +30921,15 @@ window.showAlbumReorderPopup = function(albumName){
   headerText.appendChild(headerSub);
   headerInfo.appendChild(headerText);
   var closeBtn = document.createElement('button');
-  closeBtn.style.cssText = 'width:30px;height:30px;border-radius:50%;border:none;background:rgba(255,255,255,0.1);color:var(--ink);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+  closeBtn.setAttribute('aria-label', 'Cancel reordering');
+  closeBtn.title = 'Cancel reordering';
+  closeBtn.style.cssText = 'width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,0.1);color:var(--ink);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
   closeBtn.textContent = '\u2715';
   headerInfo.appendChild(closeBtn);
   header.appendChild(headerInfo);
   var headerHint = document.createElement('div');
   headerHint.style.cssText = 'font-size:11px;color:var(--ink-dim);margin-top:4px;';
-  headerHint.textContent = 'Hold a song for a moment, then drag it up or down. Tap Done to finish.';
+  headerHint.textContent = 'Hold a song for a moment, then drag it up or down. Done keeps the new order; Cancel puts it back.';
   header.appendChild(headerHint);
   card.appendChild(header);
 
@@ -30919,11 +30939,39 @@ window.showAlbumReorderPopup = function(albumName){
   card.appendChild(listEl);
 
   var currentPopupAlbum = albumName;
+  // The order each album had when you opened the sheet. Cancel puts it back, so
+  // an accidental hold can always be undone without hunting for the original
+  // arrangement by hand.
+  var __origOrders = {};
+
+  function restoreOriginalOrders(){
+    var live = (typeof window.__scGetUserAlbums === 'function' ? window.__scGetUserAlbums() : userAlbums) || {};
+    var changed = false;
+    Object.keys(__origOrders).forEach(function(nm){
+      var alb = live[nm];
+      if(!alb || !__origOrders[nm]) return;
+      alb.trackIds = __origOrders[nm].slice();
+      changed = true;
+    });
+    if(changed){
+      try{
+        if(typeof window.dbPut === 'function') window.dbPut('meta', { key: 'userAlbums', value: live });
+      }catch(_e){}
+    }
+  }
+  function closeSheet(restore){
+    if(restore) restoreOriginalOrders();
+    try{ overlay.remove(); }catch(_e){}
+    try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
+  }
 
   function renderSongList(targetAlbumName) {
     currentPopupAlbum = targetAlbumName;
     var targetAlbum = userAlbums[targetAlbumName];
     if(!targetAlbum) return;
+    // Remember where this album started, the first time it is shown in this
+    // sheet. Switching albums with the switcher snapshots each one too.
+    if(!__origOrders[targetAlbumName]) __origOrders[targetAlbumName] = (targetAlbum.trackIds || []).slice();
     listEl.innerHTML = '';
     // Renumber the rows after a move (the position numbers must follow the drag).
     function refreshNums(){
@@ -31185,20 +31233,29 @@ window.showAlbumReorderPopup = function(albumName){
     card.appendChild(switcher);
   }
 
-  // Done button
+  // Cancel + Done. An accidental hold used to leave you staring at a sheet with
+  // a single Done button and no way back — Cancel restores the order this album
+  // had when the sheet opened, so the mistake costs one tap.
   var footer = document.createElement('div');
-  footer.style.cssText = 'padding:12px 16px;border-top:1px solid var(--line);flex-shrink:0;';
+  footer.style.cssText = 'padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);flex-shrink:0;display:flex;gap:10px;';
+  var cancelBtn = document.createElement('button');
+  cancelBtn.style.cssText = 'flex:0 0 40%;padding:12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.05);color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', function(){
+    closeSheet(true);
+    toast('Order unchanged', 1500);
+  });
   var doneBtn = document.createElement('button');
-  doneBtn.style.cssText = 'width:100%;padding:12px;border-radius:10px;border:none;background:var(--coral);color:#161616;font-size:14px;font-weight:700;cursor:pointer;';
+  doneBtn.style.cssText = 'flex:1;padding:12px;border-radius:10px;border:none;background:var(--coral);color:#161616;font-size:14px;font-weight:700;cursor:pointer;';
   doneBtn.textContent = 'Done';
   doneBtn.addEventListener('click', function(){
     // The order is written as you drag/tap, so closing only has to refresh the
     // library — otherwise the album card kept showing the old order and the
     // reorder looked like it did nothing.
-    try{ overlay.remove(); }catch(_e){}
-    try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
+    closeSheet(false);
     toast('\u2713 Order saved', 1500);
   });
+  footer.appendChild(cancelBtn);
   footer.appendChild(doneBtn);
   card.appendChild(footer);
 
@@ -31213,21 +31270,23 @@ window.showAlbumReorderPopup = function(albumName){
   // close it, and never within the first few hundred ms of opening.
   var _openedAt = Date.now();
   var _backdropPressed = false;
+  // (the guard is short, so the swallow below also covers the release click of
+  // the long press itself: it never started on the backdrop.)
   overlay.addEventListener('pointerdown', function(e){
     _backdropPressed = (e.target === overlay);
   }, true);
   overlay.addEventListener('click', function(e){
-    var realTap = (e.target === overlay) && _backdropPressed && (Date.now() - _openedAt > 350);
+    // A real tap on the backdrop dismisses the sheet. The guard is short (the
+    // release click of the long press itself is already swallowed below), so
+    // getting out of an accidental hold never feels blocked.
+    var realTap = (e.target === overlay) && _backdropPressed && (Date.now() - _openedAt > 150);
     _backdropPressed = false;
-    if(realTap){
-      try{ overlay.remove(); }catch(_e){}
-      try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
-    }
+    if(realTap) closeSheet(false);
   });
-  // Close button
+  // Close button: the same thing as Cancel, so dismissing an accidental hold is
+  // always one tap.
   closeBtn.addEventListener('click', function(){
-    try{ overlay.remove(); }catch(_e){}
-    try{ if(typeof window.renderList === 'function') window.renderList(); }catch(_e){}
+    closeSheet(true);
   });
 
   document.body.appendChild(overlay);
@@ -31309,12 +31368,39 @@ window.showAlbumReorderPopup = function(albumName){
   window.__albumSongHoldWired = true;
   // Three full seconds, on purpose: a press this long cannot be an accident, so an
   // accidental row press (reaching for the transport, scrolling, picking the phone
-  // up) can no longer open the reorder sheet. The row fills visibly while you hold,
-  // so the wait reads as deliberate instead of feeling dead.
+  // up) can no longer open the reorder sheet. The row tints while it is armed and
+  // nothing crawls across the bottom of it — the sheet just opens when the three
+  // seconds are up.
+  //
+  // The hold only counts while a finger is genuinely on the screen. Android fires
+  // pointercancel for a STATIONARY finger when it takes the gesture for itself, so
+  // a cancel cannot simply end the press — but a touchcancel carrying no remaining
+  // touches means the finger is gone, and so do a release, the list scrolling, the
+  // app going to the background and the window losing focus. That is what stops
+  // the sheet opening out of nowhere a couple of seconds after the finger left.
   var HOLD_MS = 3000;         // press length that opens the Reorder Songs sheet
   var RELEASE_MIN_MS = 2800;  // a press this long still counts if Android cancels it early
   var holdTimer = null, armTimer = null, pressStart = 0, startX = 0, startY = 0;
   var moved = false, pressed = false, currentRow = null, currentAlbum = '';
+  var fingerDown = false;
+  function fingerGone(){ fingerDown = false; }
+  document.addEventListener('pointerdown', function(){ fingerDown = true; }, true);
+  document.addEventListener('touchstart', function(){ fingerDown = true; }, true);
+  document.addEventListener('pointerup', fingerGone, true);
+  document.addEventListener('touchend', fingerGone, true);
+  document.addEventListener('touchcancel', function(ev){
+    // Android also sends this while the finger is still planted (it took the
+    // gesture). Only an empty touch list means the finger really left.
+    if(ev && ev.touches && ev.touches.length) return;
+    fingerGone();
+  }, true);
+  document.addEventListener('blur', fingerGone, true);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'hidden') fingerGone();
+  }, true);
+  window.addEventListener('scroll', fingerGone, true);
+  window.__scAlbumHoldFingerDown = function(){ return fingerDown; };
+  window.__scAlbumHoldFingerGone = fingerGone;
 
   function stopTracking(){
     document.removeEventListener('pointermove', onMove, true);
@@ -31322,7 +31408,7 @@ window.showAlbumReorderPopup = function(albumName){
     document.removeEventListener('pointercancel', onCancel, true);
     document.removeEventListener('touchmove', onTouchMove, true);
     document.removeEventListener('touchend', onRelease, true);
-    document.removeEventListener('touchcancel', onTouchCancel, true);
+    document.removeEventListener('touchcancel', onCancel, true);
   }
   function disarm(){
     if(armTimer){ clearTimeout(armTimer); armTimer = null; }
@@ -31349,45 +31435,25 @@ window.showAlbumReorderPopup = function(albumName){
     if(!t) return;
     if(movedTooFar(t.clientX, t.clientY)){ moved = true; clearHold(); }
   }
-  function onCancel(){
-    // The browser took the gesture. If the finger never moved this is still the
-    // long press the user meant, so let the timer finish instead of dropping it
-    // (a real scroll has already cleared the hold above, by movement). The
-    // release listeners go too — a stale one would fire on a later tap and open
-    // the sheet for a press that is long over.
+  function onCancel(ev){
+    // The browser took the gesture. If the finger never moved this may still be
+    // the long press the user meant, so the timer is allowed to finish — but the
+    // tracking stays in place, because the release that ends the press must be
+    // seen. pointercancel carries no touch list; its companion touchcancel is
+    // what tells us whether a finger is left on the screen.
     if(!pressed) return;
     if(moved){ clearHold(); return; }
-    document.removeEventListener('pointermove', onMove, true);
-    document.removeEventListener('pointerup', onRelease, true);
-    document.removeEventListener('pointercancel', onCancel, true);
-    document.removeEventListener('touchmove', onTouchMove, true);
-    document.removeEventListener('touchend', onRelease, true);
-    document.removeEventListener('touchcancel', onTouchCancel, true);
-  }
-  // Android sends touchcancel -- not only pointercancel -- the moment Chrome
-  // takes the gesture for itself (scroll steering, a native drag, selection).
-  // That used to call clearHold() and kill the hold outright: no sheet, no
-  // toast, no feedback, just "I held the song and nothing happened". A cancel
-  // only really ends the press if the finger moved; otherwise the hold timer is
-  // allowed to finish, and a genuine scroll has already cleared it by movement.
-  function onTouchCancel(){
-    if(!pressed) return;
-    if(moved){ clearHold(); return; }
-    document.removeEventListener('pointermove', onMove, true);
-    document.removeEventListener('pointerup', onRelease, true);
-    document.removeEventListener('pointercancel', onCancel, true);
-    document.removeEventListener('touchmove', onTouchMove, true);
-    document.removeEventListener('touchend', onRelease, true);
-    document.removeEventListener('touchcancel', onTouchCancel, true);
+    if(ev && ev.touches && !ev.touches.length) fingerDown = false;
   }
   function onRelease(){
-    // Belt and braces: if the press was long enough and never moved, open the
-    // sheet here too, so a cancelled timer can't turn a hold into a no-op.
+    // A press this long, never moved, opens the sheet here too — so a cancelled
+    // timer can't turn a hold into a no-op.
     if(!pressed) return;
     var held = Date.now() - pressStart;
     var wasMoved = moved;
     var row = currentRow, album = currentAlbum;
     clearHold();
+    fingerGone();
     if(wasMoved || held < RELEASE_MIN_MS || !row || !album) return;
     if(document.getElementById('albumReorderPopup')) return;
     openFor(row, album);
@@ -31427,6 +31493,7 @@ window.showAlbumReorderPopup = function(albumName){
     }
     pressed = true;
     moved = false;
+    fingerDown = true;
     pressStart = Date.now();
     startX = x; startY = y;
     currentRow = row;
@@ -31439,11 +31506,15 @@ window.showAlbumReorderPopup = function(albumName){
     }, 110);
     holdTimer = setTimeout(function(){
       holdTimer = null;
-      pressed = false;
       var r = currentRow, a = currentAlbum;
+      // The finger must still be on the screen when the three seconds are up.
+      // This is the check that stops an ended press — or a gesture the browser
+      // swallowed — opening the sheet on its own a moment later.
+      var stillDown = pressed && !moved && fingerDown;
+      pressed = false;
       disarm();
       stopTracking();
-      if(!r || !a) return;
+      if(!stillDown || !r || !a) return;
       openFor(r, a);
     }, HOLD_MS);
     document.addEventListener('pointermove', onMove, true);
@@ -31451,7 +31522,7 @@ window.showAlbumReorderPopup = function(albumName){
     document.addEventListener('pointercancel', onCancel, true);
     document.addEventListener('touchmove', onTouchMove, true);
     document.addEventListener('touchend', onRelease, true);
-    document.addEventListener('touchcancel', onTouchCancel, true);
+    document.addEventListener('touchcancel', onCancel, true);
   }
 
   document.addEventListener('pointerdown', function(e){
