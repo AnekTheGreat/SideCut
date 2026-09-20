@@ -9626,7 +9626,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.9.1';
+  const APP_VERSION = '58.9.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9965,6 +9965,14 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.9.2', date: 'September 20, 2026 · 8:05 AM EDT', title: 'The update that undid itself: no more rolling back to an old version, and no restart loop', items: [
+    'The app can no longer roll itself back to an older version. A downloaded update that was still staged was handed to the phone with NO check that it was actually newer than what you were running — every other path refused an older version, this one did not. So an old bundle left over from earlier (one downloaded for “install later” and never confirmed, or one from a rollback) could be installed on top of a newer build, and the app quietly went backwards. It now only ever moves forward, and refuses anything older out loud',
+    'An update the app refuses is taken away from the phone again. Refusing it in the app changed nothing by itself: the native updater applies whatever is queued on its own, every time you leave the app, so it swapped the bundle in anyway and the app came back on the version it had just rejected — over and over. A refused bundle is now handed back to the updater as the version already running, which makes that a no-op',
+    '“It updated and then rolled itself back and now it restarts every few seconds” — that loop is gone. If a version was left pinned in the version picker, the app swapped the page back to that old snapshot on every launch while the installed bundle underneath kept updating: install, swap back, install, forever, always reporting the old version. Installing an update now drops the pin, and when an older pinned page is found sitting over a newer installed bundle the app returns to the newest version once instead of fighting it',
+    'A failed update can no longer be retried for ever. The record of “we already tried this bundle” lived only in the app’s web storage, which the phone writes to disk in its own time — so an update that took the app down could lose the record and be tried again on the very next launch: install, die, install, die. The bookkeeping is now a real file in the app’s own folder, written and finished BEFORE the bundle is handed over, so it survives the crash it is recording',
+    'Three launches inside a minute now means the app is restarting itself, and no automatic bundle change happens at all while that is true — including the ones the phone-side updater would make on its own. Nothing is lost; Check for updates still installs by hand',
+    'Confirming a new bundle no longer depends on one file. The “this bundle is good, keep it” signal came only from the updater script; if that script did not load, a perfectly healthy app went unconfirmed and the phone rolled the update back. The app now reports itself healthy too',
+  ]},
   { version: '58.9.1', date: 'September 19, 2026 \u00b7 11:03 PM EDT', title: 'An update prompt that matches your theme, and updates that install themselves when you open the app', items: [
     'The update prompt now matches your theme. It was painted with fixed teal and orange, so it sat there looking like a different app and never followed the theme at all. Every part of it \u2014 the card, the title, the patch notes, the progress bar and both buttons \u2014 is now drawn from the app\u2019s own colours, so it matches whatever theme you are on and follows a live RGB palette as it cycles',
     'Updates install on their own when you open the app. The update was being handed to the phone with a \u201cwait until the app is closed\u201d condition, and a phone that keeps SideCut warm never fires that \u2014 so the update could sit staged indefinitely and had to be tapped in from the prompt. A downloaded update now installs the moment the app is actually launched, so the next launch is on the new version without you doing anything',
@@ -22892,8 +22900,28 @@ _batchBuf += b64Encode(chunk);
       // Reverting sets this pin + reloads; this always-latest code checks it first thing on
       // every load and swaps to the pinned version's saved snapshot if one's set. Clearing the
       // pin (from the picker, or the built-in "Latest" entry) just lets this code run normally.
+      // An OTA hand-over clears a pinned version. Installing an update means
+      // running the newest code, and a pin left set is what made the app install a
+      // new bundle and then swap itself straight back to an old snapshot on every
+      // launch (install, swap back, install — restart after restart, always
+      // reporting the old version). The updater sets this flag before it hands the
+      // new bundle over; the pin only ever outlived an update by accident.
+      let pinClearRequested = false;
+      try{
+        pinClearRequested = localStorage.getItem('sidecut_ota_pin_clear') === '1';
+        if(pinClearRequested){
+          localStorage.removeItem('sidecut_ota_pin_clear');
+          localStorage.removeItem('sidecut_pinned_snapshot');
+        }
+      }catch(e){}
       const pinRow = await dbGet('meta', 'pinnedVersion');
-      if(pinRow && pinRow.value && pinRow.value !== APP_VERSION){
+      if(pinClearRequested && pinRow){
+        try{
+          await dbDelete('meta', 'pinnedVersion');
+          if(typeof toast === 'function') toast(`Updated to v${APP_VERSION} — the version you had pinned (v${pinRow.value}) is no longer selected.`, 6000);
+        }catch(e){}
+      }
+      if(!pinClearRequested && pinRow && pinRow.value && pinRow.value !== APP_VERSION){
         const snapRow = await dbGet('meta', 'versionSnapshot_' + pinRow.value);
         if(snapRow && snapRow.value && snapRow.value.html){
           // NOTE: the pin is deliberately NOT cleared here. It's sticky — it stays set across
@@ -22915,11 +22943,20 @@ _batchBuf += b64Encode(chunk);
             '<script>',
             '<script>window.__SIDECUT_SNAPSHOT_VIEW__ = true;'
           );
+          // Tell the updater (which keeps running from the installed bundle while
+          // this older page is on screen) that a pin is what is showing this page,
+          // so it can stop a newer installed bundle and the pin fighting each other.
+          try{ localStorage.setItem('sidecut_pinned_snapshot', String(pinRow.value)); }catch(e){}
           document.open(); document.write(flaggedHtml); document.close();
           return;
         }
       }
       $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
+      // Confirm the bundle from the app itself, not only from the OTA client: a
+      // bundle whose updater script did not load used to go unconfirmed, and an
+      // unconfirmed bundle is rolled back by the native updater even though the
+      // app itself is perfectly healthy.
+      try{ if(window.__SideCutOTA && typeof window.__SideCutOTA.markAppReady === 'function') window.__SideCutOTA.markAppReady(); }catch(e){}
       if(typeof renderTabsInner === 'function') renderTabsInner();
     try{ window.__SC_VERSION = String(APP_VERSION); }catch(e){}
       // 5 quick taps on the version label toggles test mode — that is what makes

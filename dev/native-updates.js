@@ -36,6 +36,9 @@
   var BAD_KEY = 'sidecut_ota_bad_';            // + version - a bundle that failed to take over; never auto-installed again
   var AUTOHANDLED_KEY = 'sidecut_ota_autohandled_'; // + version - a version already handed over to AUTOMATICALLY once
   var BOOTAPPLY_KEY = 'sidecut_ota_bootapply_';     // + version - the boot hand-over already ran for this version
+  var PIN_CLEAR_KEY = 'sidecut_ota_pin_clear';     // set before a hand-over: the page clears the version pin so the new bundle really runs
+  var NEUTRAL_KEY = 'sidecut_ota_neutral_';        // + version - a refused staged bundle was already taken away from the plugin
+  var DURABLE_FILE = 'sidecut-ota-ledger.json';    // native-FS copy of the attempt ledger (survives a kill)
 
   function log(msg){ try{ console.log('[SideCut OTA] ' + msg); }catch(e){} }
   function toast(msg, ms){
@@ -65,6 +68,104 @@
       if(lbl){ var mv = String(lbl.textContent || '').match(/v([0-9][0-9.]*)/); if(mv) return mv[1]; }
     }catch(e){}
     return null;
+  }
+
+  // ---------------- Crash-proof ledger (native filesystem) ---------------------
+  // Everything the updater remembers about a hand-over used to live only in
+  // localStorage, and the WebView flushes localStorage to disk asynchronously. A
+  // bundle that takes the app down (or a native process kill) can therefore lose
+  // the "we already tried this one" record — and the next launch tries it again:
+  // install, die, install, die, which is exactly what a phone stuck restarting
+  // itself every few seconds looks like. The ledger is a real file in the app's
+  // data directory, written and AWAITED before a bundle is handed over, so the
+  // record is on disk before anything can die.
+  var _ledger = { tried: {}, bad: {}, boots: [] };
+  var _ledgerReady = false;
+  function ledgerFS(){
+    try{ return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem; }catch(e){ return null; }
+  }
+  function ledgerLoad(){
+    if(_ledgerReady) return Promise.resolve(_ledger);
+    var FS = ledgerFS();
+    if(!IS_NATIVE || !FS || typeof FS.readFile !== 'function'){ _ledgerReady = true; return Promise.resolve(_ledger); }
+    return FS.readFile({ path: DURABLE_FILE, directory: 'DATA', encoding: 'utf8' }).then(function(res){
+      try{
+        var d = JSON.parse((res && res.data) || '{}');
+        if(d && typeof d === 'object'){
+          if(d.tried && typeof d.tried === 'object') _ledger.tried = d.tried;
+          if(d.bad && typeof d.bad === 'object') _ledger.bad = d.bad;
+          if(Object.prototype.toString.call(d.boots) === '[object Array]') _ledger.boots = d.boots.filter(function(t){ return typeof t === 'number'; });
+        }
+      }catch(e){}
+      _ledgerReady = true;
+      return _ledger;
+    }).catch(function(){ _ledgerReady = true; return _ledger; });
+  }
+  function ledgerSave(){
+    var FS = ledgerFS();
+    if(!IS_NATIVE || !FS || typeof FS.writeFile !== 'function') return Promise.resolve(false);
+    try{
+      var payload = JSON.stringify({ tried: _ledger.tried, bad: _ledger.bad, boots: _ledger.boots.slice(-8) });
+      return FS.writeFile({ path: DURABLE_FILE, directory: 'DATA', data: payload, encoding: 'utf8' })
+        .then(function(){ return true; }, function(){ return false; });
+    }catch(e){ return Promise.resolve(false); }
+  }
+  // When the app itself opened. Three launches inside a minute is the app
+  // restarting itself, and it is recorded on disk so a launch that dies before
+  // it can write anything else still counts.
+  function ledgerNoteBoot(){
+    var now = Date.now();
+    _ledger.boots = _ledger.boots.filter(function(t){ return now - t < 60000; });
+    _ledger.boots.push(now);
+    return ledgerSave();
+  }
+  function ledgerHotBoots(){ return _ledger.boots.length >= 3; }
+  function ledgerTriedBefore(version){ return !!_ledger.tried[String(version || '')]; }
+  function ledgerMarkTried(version, why){
+    if(!version) return Promise.resolve(false);
+    _ledger.tried[String(version)] = { at: Date.now(), why: String(why || '') };
+    return ledgerSave();
+  }
+  function ledgerMarkBad(version){
+    if(!version) return Promise.resolve(false);
+    _ledger.bad[String(version)] = String(Date.now());
+    return ledgerSave();
+  }
+
+  // Direction: only ever move forward. An installed bundle is never handed over
+  // to a version that is older than the one running (see applyStagedNow), and the
+  // manifest check has always refused it — this is the same rule, applied to the
+  // bundle the native updater already has staged.
+  function isOlderBundle(version){
+    var cur = currentVersion();
+    if(!cur || !version) return false;
+    return compareVersions(String(version), String(cur)) < 0;
+  }
+  function isNewerBundle(version){
+    var cur = currentVersion();
+    if(!cur || !version) return false;
+    return compareVersions(String(version), String(cur)) > 0;
+  }
+  // A staged bundle we refuse must be taken away from the NATIVE updater as well:
+  // the plugin applies whatever is "next" on every background on its own, without
+  // asking this script, so leaving it staged is a reload nobody chose — the phone
+  // restarting the app by itself. Pointing "next" at the bundle already running
+  // makes that a no-op, and readiness is re-asserted straight after, because
+  // setting a next bundle marks the running one pending and a pending bundle is
+  // what the plugin rolls back.
+  function neutralizeStaged(Updater, nb, why){
+    if(!IS_NATIVE || !Updater || !nb || !nb.version) return;
+    var version = String(nb.version);
+    var onceKey = NEUTRAL_KEY + version;
+    try{ if(localStorage.getItem(onceKey) === '1') return; localStorage.setItem(onceKey, '1'); }catch(e){}
+    if(typeof Updater.current !== 'function' || typeof Updater.next !== 'function') return;
+    try{
+      Updater.current().then(function(cur){
+        if(!cur || !cur.id) return null;
+        log('taking staged v' + version + ' out of the updater\'s hands (' + (why || 'refused') + ')');
+        return Updater.next({ id: cur.id }).then(function(){ markAppReady(); }, function(){ markAppReady(); });
+      }).catch(function(){});
+    }catch(e){}
   }
 
   function somethingIsPlaying(){
@@ -269,9 +370,21 @@
       // The staged record points at the bundle we are ALREADY running: the plugin
       // only clears "next" once a boot confirms it, so a stale record survives a
       // reload. Applying it again reloads into the same version — the endless
-      // refresh. Nothing to do but forget it.
+      // refresh. Nothing to do but forget it (and stop the plugin applying it too).
       log('staged ' + nb.version + ' is already the running version — nothing to apply');
       clearSheet();
+      neutralizeStaged(Updater, nb, 'already the running version');
+      return false;
+    }
+    // NEVER hand the app a bundle that is not newer than the one it is running.
+    // Every other path refused an older version; this one applied whatever was
+    // staged — so an old bundle left staged (from a rollback, or downloaded for
+    // "install later" and never confirmed) could be installed over a newer build,
+    // and the app downgraded itself: "it updated and then rolled itself back".
+    if(isOlderBundle(nb.version)){
+      log('refusing staged v' + nb.version + ' — it is older than the running v' + currentVersion());
+      clearSheet();
+      neutralizeStaged(Updater, nb, 'older than the running version');
       return false;
     }
     // Remember what we are handing over to before the WebView reloads away: the
@@ -305,10 +418,20 @@
     // Remember the applied version so the next boot can confirm it to the user
     // with a real "✓ Updated" toast instead of silence.
     try{ localStorage.setItem('sidecut_ota_applied', String(nb.version)); }catch(e){}
-    // Small delay so the sheet paints before the context is destroyed.
-    setTimeout(function(){
-      try{ Updater.set({ id: nb.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
-    }, 450);
+    // An update we install wins over an old version left pinned in the rollback
+    // picker. Without this the freshly installed bundle boots, the pin sends the
+    // page straight back to the old snapshot, and the launch after that does it
+    // again — install, swap back, install, forever, while the app reports the old
+    // version. The page reads this flag on its next boot and drops the pin.
+    try{ localStorage.setItem(PIN_CLEAR_KEY, '1'); }catch(e){}
+    // Record the attempt ON DISK before handing over (awaited), then let the
+    // "Installing…" sheet paint for a moment: if the bundle takes the app down,
+    // the next launch reads this and knows not to try it a second time.
+    ledgerMarkTried(String(nb.version || ''), 'hand-over').then(function(){
+      setTimeout(function(){
+        try{ Updater.set({ id: nb.id }); }catch(e){ log('set failed: ' + ((e && e.message) || e)); }
+      }, 350);
+    });
     return false;
   }
 
@@ -322,6 +445,7 @@
       if(!nb || !nb.version) return;
       if(isBadVersion(String(nb.version))) return; // a failed bundle is not re-offered either
       if(String(nb.version) === String(currentVersion())) return; // already running it
+      if(isOlderBundle(nb.version)){ neutralizeStaged(U, nb, 'older than the running version'); return; }
       if(!wantDeferredInstall(String(nb.version))) return; // auto-apply path already handled it
       if(sheetRefs && sheetRefs.card && sheetRefs.card.style.display === 'block') return;
       var st = readSheet();
@@ -376,24 +500,36 @@
   function applyInBackground(Updater, nb){
     if(!Updater || !nb || !nb.id) return false;
     var version = String(nb.version || '');
-    // A bundle that already failed to take over is never used again.
+    // A bundle that already failed to take over is never used again — and it has to
+    // be taken away from the native updater too, or the plugin swaps it in by itself
+    // on the next background and the refusal means nothing.
     if(isBadVersion(version)){
       log('staged ' + version + ' failed to start before — leaving it alone');
+      neutralizeStaged(Updater, nb, 'failed to start before');
       return false;
     }
     // A boot loop means the updater must not touch bundles at all this session.
     if(bootLooping()){
       log('boot loop detected — not touching ' + version);
+      neutralizeStaged(Updater, nb, 'boot loop');
       return false;
     }
     // Already handed over to once without it sticking: never again automatically.
     if(autoHandledAlready(version)){
       markBadVersion(version, 'auto-handled once without taking over');
+      neutralizeStaged(Updater, nb, 'already handed over to once');
       return false;
     }
     // A staged record that is the running version is stale, not an update.
     if(version === String(currentVersion())){
       log('staged ' + version + ' is already the running version — nothing to do');
+      neutralizeStaged(Updater, nb, 'already the running version');
+      return false;
+    }
+    // Only ever move forward, here too.
+    if(isOlderBundle(version)){
+      log('refusing staged ' + version + ' — older than the running v' + currentVersion());
+      neutralizeStaged(Updater, nb, 'older than the running version');
       return false;
     }
     // ALWAYS pin the hand-over to a real app kill, never to "the app went to the
@@ -424,9 +560,17 @@
       var version = String(nb.version || '');
       if(!version) return false;
       if(version === String(currentVersion())) return false;  // a stale record, not an update
+      if(!isNewerBundle(version)){                            // never install a downgrade
+        neutralizeStaged(Updater, nb, 'older than the running version');
+        return false;
+      }
       if(isBadVersion(version)) return false;                 // failed to start before
       if(bootLooping()) return false;                         // the app is restarting itself
       if(autoHandledAlready(version)) return false;           // already handed over to once
+      if(ledgerTriedBefore(version)){                         // ...even if the record is only on disk
+        markBadVersion(version, 'already handed over to once (recorded on disk)');
+        return false;
+      }
       var key = BOOTAPPLY_KEY + version;
       try{
         if(localStorage.getItem(key) === '1') return false;
@@ -457,11 +601,13 @@
   function markBadVersion(version, why){
     if(!version) return;
     try{ localStorage.setItem(BAD_KEY + version, String(Date.now())); }catch(e){}
+    ledgerMarkBad(version);
     log('v' + version + ' did not take over (' + (why || 'unknown') + ') — it will never be auto-installed again');
   }
   function isBadVersion(version){
     if(!version) return false;
-    try{ return !!localStorage.getItem(BAD_KEY + version); }catch(e){ return false; }
+    try{ if(localStorage.getItem(BAD_KEY + version)) return true; }catch(e){}
+    return !!_ledger.bad[String(version)];
   }
   // One AUTOMATIC hand-over per version, shared by every automatic path (the boot
   // hand-over and the update check). If we already handed over to this exact bundle
@@ -480,6 +626,10 @@
   function bootLooping(){
     try{ if(window.__scBootLooping) return true; }catch(e){}
     try{ if(typeof window.__scAutoReloadAllowed === 'function' && !window.__scAutoReloadAllowed()) return true; }catch(e){}
+    // ...and the version that is on DISK does not need the page to have survived
+    // long enough to write anything: three launches inside a minute is the app
+    // restarting itself, whatever the cause. No automatic bundle changes at all.
+    if(ledgerHotBoots()) return true;
     return false;
   }
   // Runs the moment the running app is confirmed healthy. Either the version we
@@ -516,8 +666,45 @@
   // Polling from the moment this script runs, with a long deadline, confirms a
   // working bundle promptly at any boot speed, while a bundle whose app genuinely
   // never boots is still rolled back (just seconds later, instead of never).
+  // A version left pinned in the rollback picker swaps the page back to that
+  // version's saved snapshot on every launch, while the BUNDLE underneath keeps
+  // updating. Left alone the two fight for the app: the installed bundle boots,
+  // the pin swaps the page straight back to the old version, the next launch does
+  // it again — restart after restart, always reporting the old version ("it
+  // updated and then rolled itself back and now it restarts every few seconds").
+  // The page records the pin it honoured (sidecut_pinned_snapshot), so when the
+  // installed bundle is NEWER than the page we are looking at, and a pin is what
+  // put us here, the pin is dropped and the newest version runs.
+  function detectPinnedOlderPage(Updater){
+    try{
+      if(!Updater || typeof Updater.current !== 'function') return;
+      var pinned = null;
+      try{ pinned = localStorage.getItem('sidecut_pinned_snapshot'); }catch(e){}
+      var pageV = currentVersion();
+      if(!pinned || !pageV || String(pinned) !== String(pageV)) return; // not a pinned snapshot view
+      Updater.current().then(function(cur){
+        if(!cur || !cur.id || String(cur.id) === 'builtin') return;
+        var bundleV = String(cur.version || '');
+        if(!bundleV || compareVersions(bundleV, String(pageV)) <= 0) return; // nothing newer installed
+        try{ localStorage.setItem(PIN_CLEAR_KEY, '1'); }catch(e){}
+        neutralizeStaged(Updater, { id: cur.id, version: bundleV }, 'page is older than the installed bundle');
+        log('v' + bundleV + ' is installed but v' + pageV + ' is pinned over it — returning to the newest version');
+        try{ if(typeof window.toast === 'function') window.toast('SideCut v' + bundleV + ' is installed — switching back to it.', 5000); }catch(e){}
+        try{
+          if(typeof window.__scAutoReloadAllowed === 'function' && !window.__scAutoReloadAllowed()){ log('reload blocked by the boot-loop breaker'); return; }
+        }catch(e){}
+        // One reload: the next boot is the installed bundle's own page, which
+        // honours the clear flag above and drops the pin.
+        setTimeout(function(){ try{ location.reload(); }catch(e){} }, 1200);
+      }).catch(function(){});
+    }catch(e){}
+  }
   function markAppReadyWhenBooted(){
     if(!IS_NATIVE) return;
+    // Load the on-disk ledger first (a few ms) and stamp this launch into it, so
+    // a restart loop is visible even to a launch that dies immediately after.
+    var _U = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+    ledgerLoad().then(function(){ return ledgerNoteBoot(); }).then(function(){ detectPinnedOlderPage(_U); }).catch(function(){});
     var startedAt = Date.now();
     var deadline = 20000;
     (function poll(){
@@ -739,6 +926,12 @@
       // The bundle already installed (background/deferred apply)? Drop the
       // stale record instead of showing an update sheet for the OLD version.
       if(String(currentVersion()) === String(st.version)){ clearSheet(); return; }
+      if(isOlderBundle(st.version)){
+        // A 'staged' record for a version older than the one running is history,
+        // not an update — offering it would invite a downgrade.
+        clearSheet();
+        return;
+      }
       if(wantDeferredInstall(st.version)) return; // installs on close — wired at launch
       showSheet({
         phase: 'staged', version: st.version, date: st.date || '', notes: st.notes,
@@ -787,7 +980,7 @@
     });
   }
 
-  window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, staged: staged, OTA_BASE: OTA_BASE };
+  window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, staged: staged, neutralizeStaged: neutralizeStaged, isOlderBundle: isOlderBundle, OTA_BASE: OTA_BASE };
     markAppReadyWhenBooted();
   if(IS_NATIVE){
     // Give the main app script time to finish booting; only then confirm the
@@ -818,7 +1011,18 @@
               // A staged bundle that IS the running version is a stale record, not an
               // update: re-applying it reloads into the same build, which is exactly
               // the endless refresh the user sees after an update.
-              if(String(nb.version) === String(currentVersion())){ log('staged ' + nb.version + ' is already the running version — ignoring it'); return; }
+              if(String(nb.version) === String(currentVersion())){
+                log('staged ' + nb.version + ' is already the running version — ignoring it');
+                neutralizeStaged(U, nb, 'already the running version');
+                return;
+              }
+              // An older bundle must never be handed in over a newer build: it is what
+              // made the app roll itself back to a previous version on its own.
+              if(isOlderBundle(nb.version)){
+                log('staged ' + nb.version + ' is older than the running v' + currentVersion() + ' — refusing it');
+                neutralizeStaged(U, nb, 'older than the running version');
+                return;
+              }
               // One automatic hand-over per version. If we already auto-applied this
               // exact bundle on a boot and the version did not change, it never took
               // over: treat it as failed instead of reloading into it forever.
@@ -833,11 +1037,13 @@
               // updater must not touch bundles at all this session.
               if(bootLooping()){
                 log('boot loop detected — not auto-applying anything');
+                neutralizeStaged(U, nb, 'boot loop');
                 return;
               }
               // This version was already handed over to automatically once.
               if(autoHandledAlready(String(nb.version))){
                 markBadVersion(String(nb.version), 'auto-applied once without taking over');
+                neutralizeStaged(U, nb, 'already handed over to once');
                 return;
               }
               // v56.0.16 behavior restored (the sheet rewrite dropped it): a
@@ -851,6 +1057,7 @@
                 // refresh, so it is never auto-applied again — the in-app Check for
                 // updates button can still try it by hand.
                 log('staged ' + nb.version + ' failed to start before — not auto-applying it');
+                neutralizeStaged(U, nb, 'failed to start before');
                 return;
               }
               // v58.9.1: install it right here, on this launch. Waiting for a
@@ -860,7 +1067,11 @@
               // refreshes itself when I open it" — and it happens at most once
               // per bundle.
               if(installStagedOnBoot(U, nb)) return;
-              applyInBackground(U, nb);
+              // Only offer it in the sheet when it is a real update that is still
+              // staged: applyInBackground() refuses anything older, known-bad, or
+              // arriving during a restart loop, and a refused bundle must never be
+              // presented to the user as something they can install.
+              if(applyInBackground(U, nb) !== 'deferred') return;
               if(wantDeferredInstall(String(nb.version))) return; // installs on close — don't nag
               if(sheetRefs && sheetRefs.card.style.display === 'block') return; // sheet already up
               var st = readSheet();
