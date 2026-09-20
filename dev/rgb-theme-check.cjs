@@ -195,12 +195,41 @@ async function sample(win, ms, times) {
   ok('the glow pair stays 120° apart', g.every((x) => Math.abs((((hueOf(x.glowB) - hueOf(x.glowA)) + 360) % 360) - GAP) <= 3),
      g.map((x) => Math.round(((hueOf(x.glowB) - hueOf(x.glowA)) + 360) % 360)).join(','));
 
-  // RGB+ keeps stable accents (v57.4) and still animates the glow overlays.
+  // RGB+ keeps stable accents (v57.4) and still animates the glow overlays - and the
+  // glow now stays inside the theme's own palette. It used to sweep the whole hue
+  // wheel while the accents sat still, so the edges walked through pairs that had
+  // nothing to do with the theme (green beside red, yellow beside magenta) on a pink
+  // and blue app: "RGB plus with the glow sync colors are weird". The glow now swings
+  // between the theme's two accents and through the violet between them, and never
+  // leaves that band. Sampled over a full cycle at this speed.
   applyTheme(win, 'rgbplus');
   await wait(600);
-  const p = await sample(win, 400, 4);
+  const p = await sample(win, 150, 14);
+  const paHues = p.map((x) => hueOf(x.glowA));
+  const pbHues = p.map((x) => hueOf(x.glowB));
+  // The theme's own pair is pink 325 and blue 205; a few degrees of rounding slack.
+  const inPalette = (h) => h !== null && h >= 199 && h <= 331;
+  const pairs = paHues.map((h, i) => Math.round(h) + '/' + Math.round(pbHues[i])).join(' ');
   ok('RGB+ holds the accent steady', new Set(p.map((x) => x.coral)).size === 1 && p[0].coral !== '', p.map((x) => x.coral).join(' → '));
   ok('RGB+ still animates the glow', new Set(p.map((x) => x.glowA)).size >= 3, p.map((x) => x.glowA).join(' → '));
+  ok('every RGB+ glow frame is a real hue', paHues.every((h) => h !== null) && pbHues.every((h) => h !== null),
+     JSON.stringify(p.map((x) => x.glowA)));
+  ok('the glow never leaves the theme’s pink→blue band',
+     paHues.every(inPalette) && pbHues.every(inPalette), pairs);
+  ok('no green, yellow or red edge is painted on the pink/blue theme',
+     paHues.concat(pbHues).every((h) => h >= 199 && h <= 331), pairs);
+  ok('the cycle reaches the theme’s own accents, not a paler copy of them',
+     Math.min.apply(null, paHues.map((h) => hueDistance(h, 325))) <= 10 &&
+     Math.min.apply(null, pbHues.map((h) => hueDistance(h, 205))) <= 10,
+     'closest pink ' + Math.min.apply(null, paHues.map((h) => hueDistance(h, 325))).toFixed(1) +
+     '° ' + 'closest blue ' + Math.min.apply(null, pbHues.map((h) => hueDistance(h, 205))).toFixed(1));
+  ok('the two glow colours stay each other’s reflection across the band',
+     paHues.every((h, i) => Math.abs(((((h + pbHues[i]) % 360) + 360) % 360) - 170) <= 6), pairs);
+  ok('and they still travel the whole band', (Math.max.apply(null, paHues) - Math.min.apply(null, paHues)) >= 60,
+     'spread=' + (Math.max.apply(null, paHues) - Math.min.apply(null, paHues)).toFixed(1) + '°');
+  ok('the glow colours are the theme’s at full strength',
+     /, 100%, 59%\)$/.test(p[0].glowA) && /, 100%, 59%\)$/.test(p[0].glowB),
+     p[0].glowA + ' | ' + p[0].glowB);
 
   // Leaving RGB releases the animated values back to the static theme.
   applyTheme(win, 'coral');

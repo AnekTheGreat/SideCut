@@ -4794,14 +4794,37 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   function stopRgbAnimation(){ if(rgbAnimHandle){ clearInterval(rgbAnimHandle); rgbAnimHandle = null; } document.documentElement.style.removeProperty('--glow-a'); document.documentElement.style.removeProperty('--glow-b'); }
   function rgbApplyHue(){
     const t = (((Date.now() - rgbStartAt) / 1000) / rgbSpeedSeconds()) % 1;
-    const hue1 = (rgbBaseHue + t * 360) % 360;
-    const hue2 = (hue1 + rgbAccentGap + 360) % 360;
-    const col1 = `hsl(${hue1}, 85%, 62%)`;
-    const col2 = `hsl(${hue2}, 85%, 62%)`;
     const root = document.documentElement.style;
+    const live = THEMES[currentTheme];
+    let col1, col2;
+    if(live && live.rgbPlus){
+      // RGB + keeps the theme's own pink and blue on screen - its buttons, borders,
+      // rings and text all stay put - so its GLOW has to stay inside that palette.
+      // It used to sweep the whole hue wheel, which is what painted green and purple
+      // edges onto a pink and blue app ("the RGB plus glow sync colors are weird"):
+      // the two glow colours sit a fixed 120deg apart, so a full sweep walked
+      // through clashing pairs - green beside red, yellow beside magenta - that have
+      // nothing to do with the theme the user picked. Now the two glow colours trade
+      // places with each other and slide through the violet between them: at the
+      // start of every cycle they are the theme's own accents exactly, they meet in
+      // the middle, and they come back. The glow still moves, and it still pumps
+      // with the bass - it just never leaves the palette.
+      const swing = (1 - Math.cos(t * 2 * Math.PI)) / 2;   // 0 -> 1 -> 0 across one cycle
+      const bHue = rgbBaseHue + rgbAccentGap;              // the theme's second accent
+      const hueA = rgbBaseHue + (bHue - rgbBaseHue) * swing;
+      const hueB = bHue + (rgbBaseHue - bHue) * swing;
+      // 100% / 59% is exactly what the two RGB accents are (#ff2ea8, #2ea8ff), so the
+      // glow opens on the theme's own colour instead of a washed-out version of it.
+      col1 = `hsl(${hueA}, 100%, 59%)`;
+      col2 = `hsl(${hueB}, 100%, 59%)`;
+    } else {
+      const hue1 = (rgbBaseHue + t * 360) % 360;
+      const hue2 = (hue1 + rgbAccentGap + 360) % 360;
+      col1 = `hsl(${hue1}, 85%, 62%)`;
+      col2 = `hsl(${hue2}, 85%, 62%)`;
+    }
     root.setProperty('--glow-a', col1);
     root.setProperty('--glow-b', col2);
-    const live = THEMES[currentTheme];
     if(live && live.rgb && !live.rgbPlus){
       root.setProperty('--coral', col1);
       root.setProperty('--gold', col2);
@@ -4888,7 +4911,8 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   // border, ring and highlight, so the whole app moves with the glow. That is
   // what "RGB (animated)" means, and what it has done since v58.3 - leaving only
   // the glow overlays cycling made RGB look like the plain pink theme. RGB+ keeps
-  // stable accents (v57.4) and animates the glow overlays instead.
+  // its accents stable and animates the glow overlays instead - but only inside the
+  // theme's own two colours, so the glow can never clash with them (rgbApplyHue).
   // The reschedule lives in `finally` so nothing a frame throws can freeze it.
   function startRgbAnimation(){
     stopRgbAnimation();
@@ -9662,7 +9686,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.9.6';
+  const APP_VERSION = '58.9.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10001,6 +10025,11 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.9.7', date: 'September 20, 2026 · 1:55 PM EDT', title: 'The RGB + glow stays in the theme’s own colours', items: [
+    'RGB + no longer paints colours that have nothing to do with the theme you picked. Its glow overlays were sweeping the whole hue wheel while the app’s own accents stayed the flat pink and blue the theme defines, and because the two glow colours sit 120° apart, that sweep walked through clashing pairs: a green edge beside a red one, a yellow edge beside a magenta one, all on top of a pink and blue app. The glow now swings between the theme’s two accents and through the violet between them, so at every moment the edges are the theme’s own colours or a blend of the two → it opens on the exact pink and blue the theme defines, meets in the middle of the cycle, and comes back',
+    'The glow still animates and still pumps with the bass. Only the range of colours it travels through changed, and it now runs at the theme’s full strength instead of a washed-out version of it, so on the pink and blue theme it opens identical to the static accents',
+    'Nothing changed for plain RGB (animated), which is meant to cycle every colour, or for any other theme’s glow.',
+  ]},
   { version: '58.9.6', date: 'September 20, 2026 \u00b7 12:40 PM EDT', title: 'Singles that stay put and are complete, and Albums is only the albums you made', items: [
     'Refetching singles no longer wipes the list it was refetching. The refetch deleted the saved snapshot on its first line, then fetched \u2014 and every fetch inside it failed instantly, because it called the app\u2019s private helpers by name from outside them (fetchWithProxy, primaryArtistName, isSingleHidden) so each call threw a ReferenceError straight into the catch-all. The result was always the same: the saved singles were gone and the popup said \u201cNo singles found from pinned artists\u201d. The snapshot is kept until a refetch actually returns something, and a fetch that fails says so instead',
     'The refetch and the Singles button now share one saved list. The refetch saved its result under a different popup title (\u201c\u2728 Singles\u201d instead of \u201c\ud83c\udfb5 Singles\u201d), so the work it did could never be found again \u2014 closing the popup and reopening it went back to the older list, or to nothing. Both paths now use the same key, so what you see is what is saved',
