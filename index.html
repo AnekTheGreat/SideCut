@@ -9670,7 +9670,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '59.0';
+  const APP_VERSION = '59.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10018,6 +10018,11 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '59.1', date: 'September 20, 2026 · 6:05 PM EDT', title: 'Albums is separated from your playlists', items: [
+    'The Albums tab\u2019s \u22ee menu no longer reaches into a playlist. It was drawing the actions of whichever playlist you had open behind the tab \u2014 \u201cClear playlist\u201d (which emptied every album of its songs, while wearing a playlist label), \u201cDelete playlist\u201d (which deleted that playlist by name) and a DJ Mode toggle that flipped DJ mode for it. Those three are playlist-scoped, so they now only appear when a playlist is actually on screen, and the Albums menu is album actions only',
+    '\u201cExport albums\u201d exports your albums. It was calling the playlist export, which zipped whatever playlist was open behind the tab and even named the file after it \u2014 so exporting your albums handed you a .zip of one playlist. It now ships the tracks of the albums you made, with the album grouping included so importing the .zip rebuilds the albums, and the confirmation says how many albums and songs it is about to write. Nothing from a playlist is included',
+    '\u201cDownload to phone\u201d and \u201cDownload crossfaded mix\u201d already worked from the album view (they take the songs you are looking at), and still do \u2014 every song of your hand-made albums, and nothing tied to a playlist. Your playlists are untouched by anything done from Albums: the suite proves them byte-for-byte unchanged',
+  ]},
   { version: '59.0', date: 'September 20, 2026 · 5:10 PM EDT', title: 'RGB + cycles again', items: [
     'RGB + moves again. 58.9.7 stopped its glow from painting colours that clashed with the theme by keeping the app’s accents frozen on the theme’s own pink and blue and sliding only the glow between them — which fixed the odd green and magenta edges but left the whole app looking like a frozen pink theme ("its still pink and hasn’t changed"). RGB + now runs the same cycle as RGB (animated): the accents and the glow are always the SAME two colours, so the app, its buttons, its borders and the edge glow all move together and nothing can clash with anything',
     'What RGB + adds on top is unchanged: the bass-reactive glow suite (edge lines, top and bottom bands, corner fades, the mini turntable’s ambient glow) and its own settings. Cycle speed is still adjustable in Settings, and the cycle still opens on the theme’s own pink and blue rather than snapping to red on every start',
@@ -13919,7 +13924,7 @@ function startLyricsAutoScroll() {
 
     const exportBtn = document.createElement('button');
     exportBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h4.17v6h4V9h4.17L12 2z"/></svg> ${libraryMode === 'albums' ? 'Export albums' : (isAllSongs ? 'Export library' : 'Export playlist')}`;
-    exportBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; isAllSongs ? exportLibrary() : exportPlaylist(); });
+    exportBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; if(libraryMode === 'albums') exportAlbums(); else isAllSongs ? exportLibrary() : exportPlaylist(); });
     list.appendChild(exportBtn);
 
     // Direct "download to phone" — no zip, just the audio files themselves.
@@ -14018,8 +14023,10 @@ function startLyricsAutoScroll() {
       list.appendChild(dupBtn);
     }
 
-    // DJ Mode toggle for this playlist
-    if(!isAllSongs){
+    // DJ Mode toggle for this playlist — playlist-scoped, so never drawn in
+    // Albums (there's no playlist on screen there; it used to toggle the hidden
+    // activePlaylist, which is why Albums looked "connected" to a playlist).
+    if(!isAllSongs && libraryMode !== 'albums'){
       var djBuiltInPl = DJ_MODE_DISABLED_PLAYLISTS.some(function(p){ return p.toLowerCase() === activePlaylist.trim().toLowerCase(); });
       var djOffPl = djBuiltInPl || djDisabledPlaylists.has(activePlaylist);
       var djToggleBtn = document.createElement('button');
@@ -14051,6 +14058,11 @@ function startLyricsAutoScroll() {
       list.appendChild(djToggleBtn);
     }
 
+    // Albums actions are album actions — nothing here may reach through to the
+    // playlist that happens to be open behind the tab. The playlist-scoped
+    // destructive entries (and the DJ toggle above) only render when a playlist
+    // is actually on screen.
+    if(libraryMode !== 'albums'){
     // visual separator before destructive actions, so they don't blend in with everyday ones
     const sep = document.createElement('div');
     sep.style.cssText = 'height:1px; background:var(--line); margin:4px 2px;';
@@ -14068,6 +14080,7 @@ function startLyricsAutoScroll() {
       deletePlBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg> Delete playlist`;
       deletePlBtn.addEventListener('click', () => { $('songActionsBackdrop').style.display='none'; deleteActivePlaylist(); });
       list.appendChild(deletePlBtn);
+    }
     }
 
     $('songActionsBackdrop').style.display = 'flex';
@@ -17370,6 +17383,31 @@ function _fallbackCopy(text){
     showExportConfirm(`Export "${activePlaylist}" (${ids.length} song${ids.length>1?'s':''}) as a .zip file? — every song ships, no cap on playlist size.`, async () => {
       const premiumPayload = buildPremiumPayload();
       await doExportTracks(ids, activePlaylist.replace(/[^a-z0-9]/gi,'_'), { [activePlaylist]: ids }, `"${activePlaylist}"`, premiumPayload);
+    });
+  }
+
+  // "Export albums" — the Albums tab's own export. It ships the tracks of the
+  // albums you made plus the album grouping itself (so importing the zip on
+  // another device rebuilds the albums), and it never touches playlists: the old
+  // path called exportPlaylist(), which exported playlists[activePlaylist] and
+  // carried the open playlist's name into the zip — the "why is Albums connected
+  // to one of my playlists" report.
+  async function exportAlbums(){
+    const ids = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : [];
+    if(!ids.length){ toast('No albums to export yet.'); return; }
+    const albumGroups = {};
+    Object.keys(userAlbums || {}).forEach(function(name){
+      if(albumIsAuto(name)) return; // created automatically, not an album you made
+      const entry = userAlbums[name];
+      if(!entry || !Array.isArray(entry.trackIds)) return;
+      const kept = entry.trackIds.filter(function(id){ return ids.indexOf(id) >= 0; });
+      if(kept.length) albumGroups[name] = kept;
+    });
+    const albumCount = Object.keys(albumGroups).length;
+    if(!albumCount){ toast('No albums to export yet.'); return; }
+    showExportConfirm(`Export your ${albumCount} album${albumCount===1?'':'s'} (${ids.length} song${ids.length===1?'':'s'}) as a .zip file? — the songs and the albums they belong to. No playlists are included.`, async () => {
+      const premiumPayload = buildPremiumPayload();
+      await doExportTracks(ids.slice(), 'sidecut-albums', albumGroups, `${albumCount} album${albumCount===1?'':'s'}`, premiumPayload);
     });
   }
 
