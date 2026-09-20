@@ -30,7 +30,12 @@ const OTA_SRC = fs.readFileSync(process.env.SC_OTA || path.join(ROOT, 'dev/nativ
 
 const APP = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1] || '0.0.0';
 const NEXT = APP.replace(/(\d+)$/, (m) => String(Number(m) + 1));
-const OLD = APP.replace(/(\d+)$/, (m) => String(Math.max(0, Number(m) - 1)));
+// The version that must never be installed over this build. Fixed rather than
+// derived by decrementing APP's last component: app versions now end in 0 (59.0),
+// and "one below the last number" is then the same version — which silently turns
+// every downgrade check into a same-version check that can never fail. This is the
+// version from the original report (an old bundle left queued by a rollback).
+const OLD = '58.8.7';
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {

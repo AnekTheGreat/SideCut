@@ -4794,41 +4794,25 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   function stopRgbAnimation(){ if(rgbAnimHandle){ clearInterval(rgbAnimHandle); rgbAnimHandle = null; } document.documentElement.style.removeProperty('--glow-a'); document.documentElement.style.removeProperty('--glow-b'); }
   function rgbApplyHue(){
     const t = (((Date.now() - rgbStartAt) / 1000) / rgbSpeedSeconds()) % 1;
+    const hue1 = (rgbBaseHue + t * 360) % 360;
+    const hue2 = (hue1 + rgbAccentGap + 360) % 360;
+    const col1 = `hsl(${hue1}, 85%, 62%)`;
+    const col2 = `hsl(${hue2}, 85%, 62%)`;
     const root = document.documentElement.style;
-    const live = THEMES[currentTheme];
-    let col1, col2;
-    if(live && live.rgbPlus){
-      // RGB + keeps the theme's own pink and blue on screen - its buttons, borders,
-      // rings and text all stay put - so its GLOW has to stay inside that palette.
-      // It used to sweep the whole hue wheel, which is what painted green and purple
-      // edges onto a pink and blue app ("the RGB plus glow sync colors are weird"):
-      // the two glow colours sit a fixed 120deg apart, so a full sweep walked
-      // through clashing pairs - green beside red, yellow beside magenta - that have
-      // nothing to do with the theme the user picked. Now the two glow colours trade
-      // places with each other and slide through the violet between them: at the
-      // start of every cycle they are the theme's own accents exactly, they meet in
-      // the middle, and they come back. The glow still moves, and it still pumps
-      // with the bass - it just never leaves the palette.
-      const swing = (1 - Math.cos(t * 2 * Math.PI)) / 2;   // 0 -> 1 -> 0 across one cycle
-      const bHue = rgbBaseHue + rgbAccentGap;              // the theme's second accent
-      const hueA = rgbBaseHue + (bHue - rgbBaseHue) * swing;
-      const hueB = bHue + (rgbBaseHue - bHue) * swing;
-      // 100% / 59% is exactly what the two RGB accents are (#ff2ea8, #2ea8ff), so the
-      // glow opens on the theme's own colour instead of a washed-out version of it.
-      col1 = `hsl(${hueA}, 100%, 59%)`;
-      col2 = `hsl(${hueB}, 100%, 59%)`;
-    } else {
-      const hue1 = (rgbBaseHue + t * 360) % 360;
-      const hue2 = (hue1 + rgbAccentGap + 360) % 360;
-      col1 = `hsl(${hue1}, 85%, 62%)`;
-      col2 = `hsl(${hue2}, 85%, 62%)`;
-    }
+    // RGB and RGB + are the same cycle: the VISIBLE accents move, and the glow
+    // overlays are set to exactly those accents. That is the point of both themes -
+    // "RGB +" only adds the bass-reactive glow suite on top.
+    //
+    // 58.9.7 pinned RGB + accents to the theme's own pink/blue and slid only the glow
+    // between them. It fixed clashing edges (the glow pair sits 120deg apart, so a
+    // full sweep used to paint green beside red on a pink app) but it left the app
+    // looking frozen pink - "its still pink and hasn't changed". Because the glow is
+    // painted in the SAME two colours as the accents now, nothing can clash with
+    // anything: either the whole app moves or none of it does.
     root.setProperty('--glow-a', col1);
     root.setProperty('--glow-b', col2);
-    if(live && live.rgb && !live.rgbPlus){
-      root.setProperty('--coral', col1);
-      root.setProperty('--gold', col2);
-    }
+    root.setProperty('--coral', col1);
+    root.setProperty('--gold', col2);
     rgbLastTickAt = Date.now();
   }
   function rgbTick(){
@@ -4910,9 +4894,9 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   // Plain RGB cycles the VISIBLE accents too: --coral/--gold drive every button,
   // border, ring and highlight, so the whole app moves with the glow. That is
   // what "RGB (animated)" means, and what it has done since v58.3 - leaving only
-  // the glow overlays cycling made RGB look like the plain pink theme. RGB+ keeps
-  // its accents stable and animates the glow overlays instead - but only inside the
-  // theme's own two colours, so the glow can never clash with them (rgbApplyHue).
+  // the glow overlays cycling made RGB look like the plain pink theme. RGB + is the
+  // same cycle with the bass-reactive glow suite on top, and its accents and glow are
+  // always the same two colours (rgbApplyHue).
   // The reschedule lives in `finally` so nothing a frame throws can freeze it.
   function startRgbAnimation(){
     stopRgbAnimation();
@@ -9686,7 +9670,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.9.9';
+  const APP_VERSION = '59.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10034,6 +10018,10 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '59.0', date: 'September 20, 2026 · 5:10 PM EDT', title: 'RGB + cycles again', items: [
+    'RGB + moves again. 58.9.7 stopped its glow from painting colours that clashed with the theme by keeping the app’s accents frozen on the theme’s own pink and blue and sliding only the glow between them — which fixed the odd green and magenta edges but left the whole app looking like a frozen pink theme ("its still pink and hasn’t changed"). RGB + now runs the same cycle as RGB (animated): the accents and the glow are always the SAME two colours, so the app, its buttons, its borders and the edge glow all move together and nothing can clash with anything',
+    'What RGB + adds on top is unchanged: the bass-reactive glow suite (edge lines, top and bottom bands, corner fades, the mini turntable’s ambient glow) and its own settings. Cycle speed is still adjustable in Settings, and the cycle still opens on the theme’s own pink and blue rather than snapping to red on every start',
+  ]},
   { version: '58.9.9', date: 'September 20, 2026 · 4:20 PM EDT', title: 'An update can no longer be lost while music is playing', items: [
     'Updates that arrived while a song was playing are no longer thrown away. A launch defers the install to "when you close the app" so the music is never cut off — but that deferral was recorded as if the hand-over had happened, so the version’s single automatic attempt was burnt and it was never auto-installed again. The update stayed downloaded while the app kept opening the old build, which is why a fix could ship, install, and still change nothing on screen. A deferral now leaves the attempt unspent so the next launch installs it',
     'A deferred install is no longer mistaken for a failed one. The record that tells the next boot "we handed the app over to this version, check it came up" was written even when nothing had been handed over, so the very next launch marked a perfectly good update as rolled back and refused it for good',
