@@ -4764,17 +4764,80 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     cyberpunk:   {  name: 'Cyberpunk (dynamic)',  bg:'#0b0518', bgRaised:'#1a0f33', coral:'#00F0FF', gold:'#FF2ED1', premium:true, dynamic:'cyberpunk'  },
     glacier:     {  name: 'Glacier (dynamic)',    bg:'#04101c', bgRaised:'#0c2233', coral:'#A6E8FF', gold:'#E8F7FF', premium:true, dynamic:'glacier'  }
   };
-  // ---------------- RGB theme: continuously cycles --coral/--gold hue via requestAnimationFrame,
-  // with customizable cycle speed. This is what actually drives the "customizable glow" —
+  // ---------------- RGB theme: continuously cycles --coral/--gold hue, with
+  // customizable cycle speed. This is what actually drives the "customizable glow" —
   // --coral/--gold feed every glow/shadow color already in the app's CSS.
-  let rgbAnimHandle = null;
+  //
+  // The cycle runs on a TIMER, not requestAnimationFrame. A phone can stop
+  // delivering rAF callbacks entirely — a WebView that is visible but not
+  // compositing (after a screen-off, a call, a lifecycle transition, under memory
+  // pressure) gets no frames at all while its timers keep running — and the
+  // accents then sit frozen on the hue the last frame happened to draw. That is
+  // "RGB is on a weird colour and doesn't pulse". Every tick recomputes the hue
+  // from the wall clock, so a timer the system suspended comes back on the right
+  // colour instead of carrying on from a stale one, and the work stays the same
+  // (two custom properties, ~5 times a second — the same rate the old rAF loop
+  // throttled itself to anyway).
+  let rgbAnimHandle = null;   // the cycle's interval
+  let rgbLastTickAt = 0;      // when the hue was last applied
+  let rgbStartAt = 0;         // the wall-clock phase reference
+  let rgbBaseHue = 325;       // the theme's own first accent
+  let rgbAccentGap = -120;    // and its second, relative to it
   let rgbSpeedSec = 8; // full hue cycle duration
-  function stopRgbAnimation(){ if(rgbAnimHandle){ cancelAnimationFrame(rgbAnimHandle); rgbAnimHandle = null; } document.documentElement.style.removeProperty('--glow-a'); document.documentElement.style.removeProperty('--glow-b'); }
-  let refreshRate = 'max'; // 'max' = no cap (runs at the display's native rate), or a number (60..240 Hz)
-  function frameRateIntervalMs(){
-    const n = parseInt(refreshRate, 10);
-    return (n > 0) ? 1000 / n : 0;
+  const RGB_TICK_MS = 200;
+  function rgbSpeedSeconds(){
+    const n = Number(rgbSpeedSec);
+    // A stored 0 / negative / NaN here used to make every hue NaN, which CSS
+    // ignores — so the accents silently kept the static theme colour for ever.
+    return (isFinite(n) && n > 0) ? n : 8;
   }
+  function stopRgbAnimation(){ if(rgbAnimHandle){ clearInterval(rgbAnimHandle); rgbAnimHandle = null; } document.documentElement.style.removeProperty('--glow-a'); document.documentElement.style.removeProperty('--glow-b'); }
+  function rgbApplyHue(){
+    const t = (((Date.now() - rgbStartAt) / 1000) / rgbSpeedSeconds()) % 1;
+    const hue1 = (rgbBaseHue + t * 360) % 360;
+    const hue2 = (hue1 + rgbAccentGap + 360) % 360;
+    const col1 = `hsl(${hue1}, 85%, 62%)`;
+    const col2 = `hsl(${hue2}, 85%, 62%)`;
+    const root = document.documentElement.style;
+    root.setProperty('--glow-a', col1);
+    root.setProperty('--glow-b', col2);
+    const live = THEMES[currentTheme];
+    if(live && live.rgb && !live.rgbPlus){
+      root.setProperty('--coral', col1);
+      root.setProperty('--gold', col2);
+    }
+    rgbLastTickAt = Date.now();
+  }
+  function rgbTick(){
+    // Nothing on screen to animate while the app is hidden; the next tick after
+    // the app comes back lands on the right hue on its own.
+    if(document.hidden) return;
+    try{
+      rgbApplyHue();
+      maybeUpdateFavicon(performance.now());
+    }catch(_eFrame){
+      // A bad frame must never end the cycle — the frozen hue is far worse than
+      // a missed frame.
+    }
+  }
+  // Coming back to the app (or the WebView being recreated after a screen-off, a
+  // call, or the phone reclaiming memory) can leave the cycle silent for good.
+  // Re-assert it on return: one tick to land on the right hue, and a fresh timer
+  // if the old one is gone entirely.
+  function rgbReassert(){
+    try{
+      if(document.hidden) return;
+      if(!(THEMES[currentTheme] && THEMES[currentTheme].rgb)) return;
+      // Rebuild the cycle outright. A timer the platform took away leaves the
+      // handle set but silent, and the phase is preserved below, so this costs
+      // one interval and nothing on screen jumps.
+      startRgbAnimation();
+    }catch(_e){}
+  }
+  document.addEventListener('visibilitychange', rgbReassert);
+  window.addEventListener('pageshow', rgbReassert);
+  window.addEventListener('focus', rgbReassert);
+  let refreshRate = 'max'; // 'max' = no cap (runs at the display's native rate), or a number (60..240 Hz)
   function applyDeviceRefreshRate(){
     try{
       var requestRate = window.screen && window.screen.requestFrameRate;
@@ -4829,50 +4892,23 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   // The reschedule lives in `finally` so nothing a frame throws can freeze it.
   function startRgbAnimation(){
     stopRgbAnimation();
-    const start = performance.now();
-    const intervalMs = frameRateIntervalMs();
     const th0 = THEMES[currentTheme] || THEMES.rgb || {};
+    // The theme's OWN pair is the starting phase (pink 325, blue 205) rather than
+    // pure red/green, so frame one is the theme the user picked.
     const baseHue = hueOfHex(th0.coral, 325);
-    let accentGap = hueOfHex(th0.gold, 205) - baseHue;
-    if(!accentGap) accentGap = -120;
-    function tick(now){
-      const t = ((now - start) / 1000 / rgbSpeedSec) % 1;
-      const hue1 = (baseHue + t * 360) % 360;
-      const hue2 = (hue1 + accentGap + 360) % 360;
-      const col1 = `hsl(${hue1}, 85%, 62%)`;
-      const col2 = `hsl(${hue2}, 85%, 62%)`;
-      document.documentElement.style.setProperty('--glow-a', col1);
-      document.documentElement.style.setProperty('--glow-b', col2);
-      const live = THEMES[currentTheme];
-      if(live && live.rgb && !live.rgbPlus){
-        document.documentElement.style.setProperty('--coral', col1);
-        document.documentElement.style.setProperty('--gold', col2);
-      }
-      maybeUpdateFavicon(now);
-    }
-    let last = 0;
-    var _rgbLastCss = 0;
-    function frame(now){
-      // One bad frame must never end the cycle. Anything thrown in here used to
-      // escape before the next requestAnimationFrame was scheduled: the loop died
-      // and the accents stayed frozen on the hue of that first frame, which is the
-      // "RGB is stuck on the wrong colour and doesn't cycle" report. The reschedule
-      // now lives in `finally`, so the cycle always continues.
-      try{
-        if(intervalMs > 0 && now - last < intervalMs) return;
-        last = now;
-        // Throttle CSS property writes to max 4/sec — the hue cycle takes 8s
-        // so 4fps is imperceptible but saves ~97% of compositor work at 120Hz
-        if(now - _rgbLastCss < 250) return;
-        _rgbLastCss = now;
-        tick(now);
-      }catch(_eFrame){
-        // Swallow it and keep cycling — a frozen hue is far worse than a missed frame.
-      }finally{
-        rgbAnimHandle = requestAnimationFrame(frame);
-      }
-    }
-    rgbAnimHandle = requestAnimationFrame(frame);
+    let gap = hueOfHex(th0.gold, 205) - baseHue;
+    if(!gap) gap = -120;
+    // Only a genuinely different accent pair restarts the phase. Rebuilding the
+    // timer (a resume, a speed change, re-picking the same theme) leaves the hue
+    // where it is, so the accent never snaps back to the theme's pink mid-cycle.
+    if(baseHue !== rgbBaseHue || gap !== rgbAccentGap || !rgbStartAt) rgbStartAt = Date.now();
+    rgbBaseHue = baseHue;
+    rgbAccentGap = gap;
+    // Apply frame one straight away: even if the timer never gets to fire (a
+    // backgrounded or frozen WebView), the accent is the theme, not the previous
+    // theme's colour.
+    rgbTick();
+    rgbAnimHandle = setInterval(rgbTick, RGB_TICK_MS);
   }
 
   const REFRESH_RATE_CHOICES = [
@@ -9626,7 +9662,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.9.4';
+  const APP_VERSION = '58.9.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9965,6 +10001,12 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.9.5', date: 'September 20, 2026 · 11:23 AM EDT', title: 'The RGB cycle no longer depends on the phone handing it frames', items: [
+    'The RGB themes pulse again — and this time they cannot stop. The hue cycle was driven by requestAnimationFrame, which a phone is free to stop handing over: a WebView that is on screen but not composing frames (after the screen went off, a call, a lifecycle transition, or under memory pressure) gets no frames at all while its timers keep running. The accents then stayed frozen on the hue of the last frame that did run — the RGB theme’s own pink, stuck, exactly like the plain pink theme with nothing pulsing. The cycle runs on a timer now, so it keeps moving whenever the app is on screen, and every tick works the hue out from the clock rather than from an increment — so a timer the system suspended comes back on the right colour instead of carrying on from a stale one',
+    'Coming back to the app re-arms the cycle. The phone can shut timers down while the app is away (and Android hands a backgrounded page almost no frames at all), so returning now rebuilds the cycle on the spot instead of trusting whatever was left running. The hue is kept where it was, so nothing snaps back to pink when you reopen the app',
+    'A saved cycle speed that cannot work no longer freezes the colour. A stored 0, negative or non-number in the glow-speed setting made every hue a NaN, and CSS ignores an invalid colour — so the accents silently kept the theme’s static colour with no error anywhere. The speed is checked and falls back to eight seconds',
+    'Frame one is applied immediately, so even a WebView that never renders a frame shows the theme you picked rather than the previous theme’s accent. The cycle also stops doing anything at all while the app is in the background, which is a little less work for the battery than an animation frame loop that keeps waking the display pipeline',
+  ]},
   { version: '58.9.4', date: 'September 20, 2026 · 10:47 AM EDT', title: 'Add selected songs to a playlist, and stop exports saving a blank file', items: [
     'Select several songs in the library and you can now drop them straight into a playlist. The multi-select bar had Create album, Add to album, Export and Delete but no playlist action at all, so the only way in was to open each song, tap ⋮ and add it one at a time. There is an add-to-playlist button in the bar now, and it uses the same picker as a single song — it shows which playlists already hold your selection, counts the ones that do (2/5), and still asks where in the playlist they should land. Adding several songs is one insertion, not one per song, and a song already in that playlist is never duplicated',
     'Tapping a playlist your whole selection is already in takes them all back out again, the same toggle the single-song picker has always had, and selection mode closes when you are done',
