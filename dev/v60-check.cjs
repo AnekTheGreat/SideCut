@@ -181,24 +181,37 @@ const realErrors = (errors) => errors.filter((e) => e.indexOf('dbPromise') === -
     ok('the mini/xl CSS exists', /hb-size-mini\{/.test(html) && /hb-size-xl\{/.test(html));
   }
 
-  // ── D. New releases bubble: mark all as read ──
+  // ── D. New releases: mark all as read lives in the popup, not on the bubble ──
   {
-    console.log('\n— New releases: mark all as read from the bubble —');
+    console.log('\n— New releases: mark all as read from inside the panel —');
     const releases = { 'Diljit Dosanjh': [{ title: 'A', date: '2026-08-01', seen: false }, { title: 'B', date: '2026-08-02', seen: false }], 'BK': [{ title: 'C', date: '2026-08-03', seen: true }] };
     const { win, idb } = boot({ pinnedReleases: JSON.parse(JSON.stringify(releases)), pinnedArtists: [{ name: 'Diljit Dosanjh' }, { name: 'BK' }] }, { premium: true });
     await wait(3600);
     const bubble = win.document.querySelector('#homeBubbles .home-bubble[data-bubble="newreleases"]');
     ok('a New releases bubble is on Home', !!bubble);
-    const chip = bubble ? bubble.querySelector('[data-markread]') : null;
-    ok('it carries a mark-all-as-read chip', !!chip, bubble ? bubble.innerHTML.slice(0, 90) : 'no bubble');
-    if (chip) {
-      chip.click();
-      await wait(120);
+    ok('the bubble itself carries no mark-all-read chip any more',
+       !!bubble && !bubble.querySelector('[data-markread], .hb-read'), bubble ? bubble.innerHTML.slice(0, 90) : 'no bubble');
+    if (bubble) bubble.click();
+    await wait(250);
+    ok('the bubble opens its panel', win.document.getElementById('homeBubbleOverlay').classList.contains('open'));
+    const panel = win.document.getElementById('hbPanelBody');
+    const btn = panel ? panel.querySelector('#hbCtaMarkSeen') : null;
+    ok('the panel shows a mark-all-as-read button', !!btn && !btn.disabled, btn ? btn.textContent.trim() : 'no button');
+    ok('it names the count and carries a check icon',
+       !!btn && /Mark all 2 as read/.test(btn.textContent) && !!btn.querySelector('svg'), btn ? btn.textContent.trim() : '');
+    if (btn) {
+      btn.click();
+      await wait(150);
       const after = storedMeta(idb, 'pinnedReleases') || {};
       const unseen = Object.keys(after).reduce((n, a) => n + (after[a] || []).filter((r) => r && !r.seen).length, 0);
       ok('tapping it marks every release as read', unseen === 0, JSON.stringify(after));
-      const bubble2 = win.document.querySelector('#homeBubbles .home-bubble[data-bubble="newreleases"]');
-      ok('and the chip goes away once nothing is unread', !bubble2.querySelector('[data-markread]'));
+      win.document.getElementById('hbPanelClose').click();
+      await wait(320);
+      const bubble3 = win.document.querySelector('#homeBubbles .home-bubble[data-bubble="newreleases"]');
+      if (bubble3) bubble3.click();
+      await wait(250);
+      const btn2 = win.document.querySelector('#hbPanelBody #hbCtaMarkSeen');
+      ok('and it reads as caught up with nothing unread', !!btn2 && btn2.disabled, btn2 ? btn2.textContent.trim() : 'gone');
     }
   }
 
@@ -223,20 +236,35 @@ const realErrors = (errors) => errors.filter((e) => e.indexOf('dbPromise') === -
 
   // ── F. turntable tap → the song's album, scrolled and highlighted ──
   {
-    console.log('\n— Tap the mini turntable → the album that song is in —');
+    console.log('\n— Tap the turntable → the album that song is in —');
     const { win } = boot(null);
     await wait(3200);
+    // A playlist that does NOT hold the song is the case that broke: the disc's
+    // own older listener switched the active playlist to All Songs and
+    // re-navigated right after the album jump.
     win.navigate('playlists');
     await wait(300);
-    const row = win.document.querySelector('#listPane .track[data-id]');
-    ok('the library has rows to play', !!row, row ? row.dataset.id : 'none');
-    if (row) row.click();
+    const plTab = Array.from(win.document.querySelectorAll('#tabs .tab')).find((t) => /Punjabi Gaane/.test(t.textContent));
+    if (plTab) { plTab.click(); await wait(300); }
+    const activePl = () => (typeof win.__scGetActivePlaylist === 'function' ? win.__scGetActivePlaylist() : '(no accessor)');
+    ok('a playlist that does not hold the song is open',
+       activePl() === 'Punjabi Gaane', activePl());
+    win.playFromList(['t4'], 't4');
     await wait(400);
     const stage = win.document.getElementById('npPlayerStage');
-    ok('the mini turntable is there to tap', !!stage);
-    stage.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
-    await wait(600);
+    const disc = win.document.getElementById('npDisc');
+    ok('the mini turntable is there to tap', !!stage && !!disc);
+    // scrollIntoView on a row is what scrolled the PAGE on a real phone, taking
+    // the whole app with it. Count every call.
+    let pageScrolls = 0;
+    win.Element.prototype.scrollIntoView = function () { pageScrolls++; };
+    disc.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    await wait(700);
     ok('it switches to Albums', win.__scGetLibraryMode() === 'albums', win.__scGetLibraryMode());
+    ok('the tap leaves the playlist you were on alone',
+       activePl() === 'Punjabi Gaane', activePl());
+    ok('and nothing scrolls the page itself (scrollIntoView stays unused)',
+       pageScrolls === 0, pageScrolls + ' calls');
     const focused = win.document.querySelector('#listPane .track.sc-album-focus');
     ok('the song is highlighted in its album', !!focused, focused ? focused.dataset.id : 'nothing focused');
     // t4/'Goat' is only in 'My Mix' by hand, t1 too; the first row is whichever

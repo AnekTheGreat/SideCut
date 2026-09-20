@@ -475,15 +475,14 @@
     position:relative; z-index:20;
   }
   .pane-header{
-    padding:8px 20px 12px; display:flex; align-items:center; gap:16px;
-    border-bottom:1px solid var(--line); margin-bottom:6px;
+    padding:8px 14px; display:flex; align-items:center; gap:12px;
+    border:1px solid var(--line); border-radius:14px; margin:2px 12px 10px;
     /* Reordering is the one mode that scrolls long lists, and without a pinned
        header the "Reordering — drag the ≡ handle…" banner scrolled away with the
        rows, so a user on a long playlist had no hint and no Done button visible.
        position:sticky inside the #listPane scroll container keeps "Reordering"
        + Done + the count always on screen while the tracks under it scroll. */
-    background:var(--bg);
-    box-shadow:0 -1px 0 var(--line) inset;
+    background:var(--bg-raised);
     scrollbar-width:none;
   }
     /* A long playlist name used to push this whole row wider than the screen,
@@ -1693,17 +1692,12 @@ body.theme-dyn-orchid::before{
 .home-bubble:hover .hb-expand{ opacity:0.65; }
 .home-bubble .hb-expand:active{ transform:scale(0.88); }
 .home-bubble .hb-expand.sized{ color:var(--coral); opacity:0.75; }
-  /* Mark-all-as-read chip on the New releases bubble — mirrors the resize chip
-     on the other side, so the badge can be cleared in one tap. */
-  .home-bubble .hb-read{
-    position:absolute; left:calc(10px * var(--hb-s, 1)); bottom:calc(10px * var(--hb-s, 1));
-    width:calc(26px * var(--hb-s, 1)); height:calc(26px * var(--hb-s, 1)); border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-    background:color-mix(in srgb, var(--coral) 22%, transparent); border:1px solid var(--coral);
-    color:var(--coral); font-size:calc(13px * var(--hb-s, 1)); font-weight:700; cursor:pointer; padding:0;
-    transition: transform 0.12s ease, background 0.2s ease;
-  }
-  .home-bubble .hb-read:active{ transform: scale(0.88); }
+  /* Mark-all-as-read for New releases: a real button inside the bubble's panel,
+     with the check icon and the theme's accent, instead of a floating chip on the
+     bubble card. */
+  .hb-cta.hb-markread{ display:flex; align-items:center; justify-content:center; gap:8px; margin-top:16px; }
+  .hb-cta.hb-markread svg{ width:17px; height:17px; fill:currentColor; flex-shrink:0; }
+  .hb-cta[disabled]{ opacity:0.55; cursor:default; }
 /* Manual per-bubble sizes — applied only when the user picks one via the
    handle; otherwise bubbles keep their automatic template size. Grid row span
    + min-height animate smoothly through the grid layout change. */
@@ -1921,7 +1915,7 @@ body.theme-dyn-orchid::before{
   .disc-popup{ width:96%; max-width:96%; }
   .modal{ max-height:88vh; }
   #settingsTabStrip .tab{ min-width:92px !important; padding:11px 14px !important; }
-  .pane-header{ padding:6px 12px 12px; }
+  .pane-header{ padding:6px 12px; margin:2px 10px 10px; }
   .discover-card{ padding:8px; }
   .discover-art{ width:46px; height:46px; }
 }
@@ -1965,7 +1959,7 @@ body.theme-dyn-orchid::before{
   #library > div:first-child{ padding:10px 24px 14px; }
   .tabs{ padding:6px 24px 14px; }
   #listPane{ padding-left:6px; padding-right:6px; }
-  .pane-header{ padding:10px 24px 14px; }
+  .pane-header{ padding:8px 18px; margin:2px 20px 12px; }
   .track{ padding:12px 24px; }
   #homeBubbles{ grid-template-columns:repeat(3, 1fr); gap:12px; }
   .home-bubble{ min-height:calc(130px * var(--hb-s, 1)); }
@@ -4806,6 +4800,13 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     stage.addEventListener('click', (e) => {
       if(tapMoved || e.defaultPrevented) return;
       e.preventDefault();
+      // Stop here. This handler is on the stage (capture phase, so it runs first),
+      // but the tap target is the disc inside it, which carries the older
+      // "jump to the song in the library" listener — that one set the active
+      // playlist to All Songs and re-navigated, so tapping the record player while
+      // a playlist was on screen yanked the app back to the playlists view instead
+      // of the album it had just opened.
+      e.stopPropagation();
       openAlbumForCurrentSong();
     }, true);
   })();
@@ -4858,8 +4859,15 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         let row = card ? card.querySelector('.track[data-id="' + wanted + '"]') : null;
         if(!row) row = pane.querySelector('.track[data-id="' + wanted + '"]');
         if(!row){ toast('Opened "' + albumName + '"'); return; }
-        try{ row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-        catch(_eScroll){ try{ row.scrollIntoView(); }catch(_eScroll2){} }
+        // Scroll inside the list, never with scrollIntoView: on Android that
+        // bubbles straight out of #listPane and shifts the WHOLE app (header and
+        // nav pills ride up with it — the "app lifting" glitch). The app's own
+        // engine only ever writes scrollTop on the pane it was handed.
+        try{
+          var _pane2 = pane || $('listPane');
+          cancelScrollAnim(_pane2);
+          smoothScrollIn(_pane2, row, 220);
+        }catch(_eScroll){ try{ row.scrollIntoView({ block: 'nearest' }); }catch(_eScroll2){} }
         row.classList.add('sc-album-focus');
         setTimeout(() => { try{ row.classList.remove('sc-album-focus'); }catch(_eC){} }, 3000);
       }catch(_eFocus){}
@@ -10021,7 +10029,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60';
+  const APP_VERSION = '60.0.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10369,6 +10377,13 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.0.1', date: 'September 20, 2026 \u00b7 8:35 PM EDT', title: 'The turntable jump, the panel header, Get song, and mark-all-read', items: [
+    'Tapping the record player no longer lifts the whole app. The jump scrolled its row into view with scrollIntoView, which on Android bubbles straight out of the list container and scrolls the page itself — so the header and the nav pills rode up with it. It now animates the list\u2019s own scroll position, which is the only thing that moves',
+    'And it goes to the album rather than the playlists view. The tap target inside the turntable still carried the older listener, which switched the active playlist to All Songs and re-navigated after the album had already been opened — so tapping the record player while a playlist was on screen landed you back in playlists. The turntable tap now handles the jump on its own',
+    'The track list header (playlist or album name, track count, total time) is a contained card now instead of a full-bleed bar. Its edge-to-edge background and bottom rule cut across the theme, which is what made it look like it was protruding past the rest of the UI on every theme; it uses the raised theme surface, rounded corners and the same side insets as everything else',
+    'Get song opens the actual Spotify app. Spotify\u2019s site is allow-listed for the converter, and that is exactly what kept the link inside SideCut: allow-listed hosts load in the app\u2019s own WebView, so it put a logged-out Spotify web player on screen. The tap now uses the spotify: scheme, which Android hands to the installed Spotify app \u2014 and if there is no Spotify app, the full track link is copied for the converter instead of opening the embedded player',
+    'Mark all as read lives in the New releases panel, not on the Home bubble. The floating check chip on the bubble card is gone; the panel has a proper filled button with a check icon and the live count (\u201cMark all 12 as read\u201d), which reads \u201cAll caught up\u201d once there is nothing left',
+  ]},
   { version: '60', date: 'September 20, 2026 \u00b7 7:40 PM EDT', title: 'Albums that are yours, a Home you control, smoother RGB, and five new dynamic themes', items: [
     'Albums is separated from playlists for good. The \u22ee menu on the Albums tab no longer offers the playlist behind it (Clear playlist, Delete playlist, a DJ Mode toggle), Export albums exports your albums instead of zipping the open playlist, and the Reorder Songs sheet\u2019s \u201cSwitch album\u201d list only shows the albums YOU made \u2014 no more albums you never created',
     'Tap the record player in the now bar and SideCut opens the album the playing song is in, scrolls to that song and highlights it. If the song isn\u2019t in one of your albums yet, its album tag becomes yours when you tap, so the jump never lands on an empty tab',
@@ -26037,30 +26052,9 @@ if(!isDiscover) stopDiscoverPreview();
         cycleHomeBubbleSize(b.dataset.bubble);
       });
       b.appendChild(chip);
-      // New releases: a ✓ chip right on the bubble marks every release as read,
-      // so clearing the badge doesn't require opening the list first.
-      if(b.dataset.bubble === 'newreleases'){
-        const _unseen = (() => {
-          let n = 0;
-          try{ Object.keys(pinnedReleases || {}).forEach(a => (pinnedReleases[a] || []).forEach(r => { if(r && !r.seen) n++; })); }catch(_e){}
-          return n;
-        })();
-        if(_unseen > 0){
-          const readChip = document.createElement('button');
-          readChip.className = 'hb-read';
-          readChip.dataset.markread = '1';
-          readChip.title = 'Mark all ' + _unseen + ' new releases as read';
-          readChip.setAttribute('aria-label', 'Mark all new releases as read');
-          readChip.textContent = '✓';
-          readChip.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if(hbReorderMode) return;
-            markReleasesSeen();
-            toast('Marked ' + _unseen + ' release' + (_unseen === 1 ? '' : 's') + ' as read');
-          });
-          b.appendChild(readChip);
-        }
-      }
+      // The mark-all-as-read control lives inside the New releases panel, not on
+      // the bubble: a second floating chip on the card crowded the bubble's own
+      // icon and was easy to hit while trying to open the bubble.
     });
     applyHomeBubbleSizes();
 
@@ -26452,7 +26446,10 @@ if(!isDiscover) stopDiscoverPreview();
             const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
             return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
           }).join('') +
-          '<button class="hb-cta" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled style="opacity:0.5;cursor:default;"') + '>' + (unseenCount ? 'Mark all as read (' + unseenCount + ')' : '✓ All read') + '</button>';
+          '<button class="hb-cta hb-markread" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled') + '>'
+            + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg>'
+            + (unseenCount ? 'Mark all ' + unseenCount + ' as read' : 'All caught up')
+            + '</button>';
         body.querySelectorAll('.hb-track-row').forEach(row => {
           row.addEventListener('click', () => {
             const q = (row.dataset.releaseTitle||'') + ' ' + (row.dataset.releaseArtist||'');
@@ -27700,11 +27697,39 @@ if(!isDiscover) stopDiscoverPreview();
       if(btn){ btn.disabled = false; btn.textContent = oldLabel; }
     }
   };
+  // "Get song" belongs in the Spotify app, not inside SideCut.
+  //
+  // open.spotify.com is in the app's allowNavigation list (the converter reads
+  // Spotify pages), and Capacitor's Bridge.launchIntent() loads any allow-listed
+  // host INSIDE the WebView — so opening the Spotify web URL put a logged-out
+  // Spotify web player on top of the app. A scheme that is not allow-listed is
+  // handed to Android as an ACTION_VIEW intent instead, and that is what lets the
+  // Spotify app take over the tap. If Spotify isn't installed nothing happens at
+  // all, so the full link is put on the clipboard for the converter below.
+  function scOpenSpotifySearch(q){
+    const web = 'https://open.spotify.com/search/' + encodeURIComponent(q || '');
+    let native = false;
+    try{ native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }catch(_e){}
+    if(!native){
+      try{ window.open(web, '_blank', 'noopener'); }catch(_e){}
+      return;
+    }
+    let handedOff = false;
+    const onHide = () => { handedOff = true; };
+    try{ document.addEventListener('visibilitychange', onHide); }catch(_e){}
+    try{ window.location.href = 'spotify:search:' + encodeURIComponent(q || ''); }catch(_e){}
+    setTimeout(() => {
+      try{ document.removeEventListener('visibilitychange', onHide); }catch(_e){}
+      if(handedOff || document.hidden) return; // the Spotify app took over
+      try{ navigator.clipboard.writeText(web); }catch(_e){}
+      toast('No Spotify app found \u2014 the track link is on your clipboard for the converter below.', 5000);
+    }, 1400);
+  }
+
   function triggerDiscoverDownload(card, r){
-    // "Get song" opens Spotify search so the user can copy the track link.
+    // "Get song" hands the track to Spotify so the user can copy the link.
     const q = (r.trackName || '') + ' ' + (r.artistName || '');
-    var spotifyUrl = 'https://open.spotify.com/search/' + encodeURIComponent(q);
-    try{ window.open(spotifyUrl, '_blank', 'noopener'); }catch(e){}
+    scOpenSpotifySearch(q);
     toast('Spotify opened \u2014 tap the song, then Share \u2192 Copy link.', 5000);
   }
 
@@ -30915,6 +30940,7 @@ window.showSettingsTab = showSettingsTab;
   window.__scGetAllTracks = function(){ return allTracks; };
   window.__scGetPlaylists = function(){ return playlists; };
   window.__scGetLibraryMode = function(){ return libraryMode; };
+  window.__scGetActivePlaylist = function(){ return activePlaylist; };
   // Exposed for the same reason: the album reorder picker lives in this IIFE
   // and the harness (and any future entry point) needs to be able to open it.
   window.__scOpenAlbumReorderPicker = openAlbumPickerForReorder;
