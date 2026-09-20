@@ -78,7 +78,8 @@ function fakeIndexedDB(metaSeed) {
   };
 }
 
-function boot(metaSeed) {
+function boot(metaSeed, opts) {
+  opts = opts || {};
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', (e) => errors.push('' + (e && e.message)));
@@ -95,12 +96,39 @@ function boot(metaSeed) {
       win.indexedDB = idb;
       win.confirm = () => true;
       win.localStorage.clear();
-      win.fetch = () => Promise.reject(new Error('offline'));
+      win.fetch = opts.fetch || (() => Promise.reject(new Error('offline')));
+      if (opts.decodeCount) {
+        // The real decode of a song is what costs the battery; count it.
+        win.OfflineAudioContext = function () {
+          this.decodeAudioData = () => {
+            opts.decodeCount.n++;
+            return Promise.resolve({
+              duration: 200,
+              length: 20000,
+              getChannelData: () => new Float32Array(20000),
+            });
+          };
+        };
+      }
       win.URL.createObjectURL = () => 'blob:fake';
       win.URL.revokeObjectURL = () => {};
     },
   });
   return { dom, idb, errors, win: dom.window };
+}
+
+// A fetch that answers with a tiny body: enough for the waveform/gain decoders.
+function bodyFetch(counter) {
+  return (url) => {
+    if (counter) counter.fetches.push(String(url));
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve(''),
+    });
+  };
 }
 
 const storedMeta = (idb, key) => { const m = idb._data.meta.get(key); return m ? m.value : undefined; };
@@ -289,6 +317,91 @@ function setAudio(win, seconds, duration) {
     ok('the summary has the play rule', /halfway point/.test(sum));
     ok('the summary explains updates', /Update available/.test(sum));
     ok('the summary says albums are yours only', /Albums/.test(sum) && /picker/.test(sum));
+  }
+
+  // ── E. the foreground work per song is what it should be ──
+  {
+    console.log('\n— Foreground cost: one decode per song, no hidden restyling —');
+    const decodes = { n: 0, fetches: [] };
+    const { win, errors } = boot(null, { fetch: bodyFetch(decodes), decodeCount: decodes });
+    await wait(3200);
+    stubAudio(win);
+    win.navigate('playlists');
+    await wait(300);
+    const rows = Array.from(win.document.querySelectorAll('#listPane .track[data-id]'));
+    const firstId = rows[0].dataset.id;
+    win.playFromList([firstId], firstId);
+    await wait(2400);                      // the idle fallback is 1500ms
+    ok('playing a song does not decode it for the waveform (seek style is Line)',
+       !trackById(win, firstId).waveform, JSON.stringify(trackById(win, firstId).waveform || null));
+    const beforeWaveform = decodes.n;
+
+    // Switching to the Waveform style computes the bars — once.
+    win.document.getElementById('nowPlaying').classList.remove('mini');
+    win.document.getElementById('seekStyleWaveform').click();
+    await wait(700);
+    const wf = trackById(win, firstId).waveform;
+    ok('the Waveform style computes the bars', Array.isArray(wf) && wf.length === 48, wf ? String(wf.length) : String(wf));
+    ok('the song was decoded exactly once for them', decodes.n === beforeWaveform + 1,
+       beforeWaveform + ' -> ' + decodes.n);
+    const afterWaveform = decodes.n;
+
+    // Asking again must come out of the cache, not decode the song a second time.
+    win.document.getElementById('seekStyleLine').click();
+    await wait(150);
+    win.document.getElementById('seekStyleWaveform').click();
+    await wait(400);
+    ok('switching the style back and forth does not decode it again',
+       decodes.n === afterWaveform, afterWaveform + ' -> ' + decodes.n);
+    const gainFn = (html.match(/async function estimateGain\(track\)\{[\s\S]*?\n  \}/) || [''])[0];
+    const waveFn = (html.match(/async function computeWaveform\(track\)\{[\s\S]*?\n  \}/) || [''])[0];
+    ok('the two per-play consumers both go through the shared decoder',
+       (html.match(/await scDecodeTrack\(/g) || []).length === 2 && gainFn.length > 0 && waveFn.length > 0);
+    ok('and neither of them decodes the song on its own any more',
+       gainFn.indexOf('scDecodeTrack') !== -1 && gainFn.indexOf('decodeAudioData') === -1 &&
+       waveFn.indexOf('scDecodeTrack') !== -1 && waveFn.indexOf('decodeAudioData') === -1,
+       'gain:' + (gainFn.indexOf('decodeAudioData') === -1 ? 'shared' : 'own decode') +
+       ' waveform:' + (waveFn.indexOf('decodeAudioData') === -1 ? 'shared' : 'own decode'));
+
+    // Hidden bars: with the Line style on screen, a timeupdate must not restyle them.
+    win.document.getElementById('seekStyleLine').click();
+    await wait(150);
+    const bars = Array.from(win.document.querySelectorAll('#waveformBar .wave-bar'));
+    bars.forEach((b) => { b.style.height = '7%'; b.style.background = 'rgb(1, 2, 3)'; });
+    setAudio(win, 100, 200);
+    ['audioEl', 'audioEl2'].forEach((id) => {
+      const el = win.document.getElementById(id);
+      if (el) el.dispatchEvent(new win.Event('timeupdate'));
+    });
+    await wait(150);
+    ok('a hidden seek style is not restyled on every timeupdate',
+       bars.every((b) => b.style.height === '7%' && b.style.backgroundColor === 'rgb(1, 2, 3)'),
+       bars.filter((b) => b.style.height !== '7%').length + ' of ' + bars.length + ' rewritten');
+
+    ok('no page errors', realErrors(errors).length === 0, realErrors(errors).slice(0, 2).join(' | '));
+  }
+
+  // ── F. the RGB cycle no longer repaints the app every frame ──
+  {
+    console.log("\n— Foreground cost: the RGB cycle's repaint rate —");
+    const { win } = boot({ theme: 'rgb', rgbSpeedSec: 2 });
+    await wait(3200);
+    let writes = 0;
+    const proto = win.CSSStyleDeclaration && win.CSSStyleDeclaration.prototype;
+    if (proto && proto.setProperty) {
+      const original = proto.setProperty;
+      proto.setProperty = function (name) {
+        if (name === '--coral') writes++;
+        return original.apply(this, arguments);
+      };
+    }
+    const started = Date.now();
+    await wait(1500);
+    const elapsed = (Date.now() - started) / 1000;
+    const perSecond = writes / elapsed;
+    ok('the accents still move', writes >= 3, writes + ' writes');
+    ok('but the whole-app repaint is capped near 11 a second, not one per frame',
+       perSecond <= 16, perSecond.toFixed(1) + ' repaints/sec (a frame loop would be ~60)');
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

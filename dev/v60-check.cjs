@@ -260,15 +260,35 @@ const realErrors = (errors) => errors.filter((e) => e.indexOf('dbPromise') === -
     win.Element.prototype.scrollIntoView = function () { pageScrolls++; };
     disc.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     await wait(700);
-    ok('it switches to Albums', win.__scGetLibraryMode() === 'albums', win.__scGetLibraryMode());
-    ok('the tap leaves the playlist you were on alone',
-       activePl() === 'Punjabi Gaane', activePl());
+    // v60.2: the jump follows the tab you are in. In Playlists it scrolls to the
+    // song in the list you are looking at; the album jump is for the Albums half.
+    ok('tapping it while in Playlists keeps you in Playlists',
+       win.__scGetLibraryMode() === 'playlists', win.__scGetLibraryMode());
+    ok('and lands on the song rather than the album it belongs to',
+       !!win.document.querySelector('#listPane .track.sc-album-focus'),
+       win.document.querySelector('#listPane .track.sc-album-focus') ? 'focused' : 'nothing focused');
+    ok('a playlist that does not hold the song is swapped for All Songs so the row exists',
+       activePl() === 'All Songs', activePl());
     ok('and nothing scrolls the page itself (scrollIntoView stays unused)',
        pageScrolls === 0, pageScrolls + ' calls');
-    const focused = win.document.querySelector('#listPane .track.sc-album-focus');
+
+    // In the Albums half the same tap opens that song's album.
+    const win2 = boot(null).win;
+    await wait(3200);
+    win2.navigate('albums');
+    await wait(300);
+    win2.playFromList(['t4'], 't4');
+    await wait(400);
+    let lifts2 = 0;
+    win2.Element.prototype.scrollIntoView = function () { lifts2++; };
+    win2.document.getElementById('npDisc').dispatchEvent(new win2.MouseEvent('click', { bubbles: true }));
+    await wait(700);
+    ok('in Albums the same tap opens that song’s album',
+       win2.__scGetLibraryMode() === 'albums', win2.__scGetLibraryMode());
+    ok('and still never scrolls the page itself', lifts2 === 0, lifts2 + ' calls');
+    const focused = win2.document.querySelector('#listPane .track.sc-album-focus');
     ok('the song is highlighted in its album', !!focused, focused ? focused.dataset.id : 'nothing focused');
-    // t4/'Goat' is only in 'My Mix' by hand, t1 too; the first row is whichever
-    // All Songs sorts first — assert only that it is inside a card.
+    // The highlight has to sit inside an album CARD, not loose in the list.
     if (focused) {
       ok('the highlight sits inside an album card', !!focused.closest('[data-album-name]'), focused.outerHTML.slice(0, 80));
     }
@@ -348,15 +368,30 @@ const realErrors = (errors) => errors.filter((e) => e.indexOf('dbPromise') === -
     ok('the picker knows about them', five.every((k) => html.indexOf("'" + k + "'") !== -1 && !!picker));
   }
 
-  // ── I. RGB: frames, not a 5-a-second interval ──
+  // ── I. RGB: one timer, and no frame loop behind it ──
+  //
+  // v60 drove the cycle from requestAnimationFrame with the interval as a
+  // watchdog, which is what the drain report was about: a frame every vsync, and
+  // a repaint of the whole app behind it, for as long as the theme was selected.
+  // v60.4 made the timer the only driver, so the assertions below flipped from
+  // "there is a frame loop" to "there is not one, and the timer cannot freeze".
   {
-    console.log('\n— RGB: the cycle runs on frames —');
+    console.log('\n— RGB: the cycle runs on one timer —');
     const { win } = boot({ theme: 'rgb' });
     await wait(3200);
-    ok('the hue is driven by a frame loop', /function rgbFrameLoop\(\)/.test(html) && /requestAnimationFrame\(rgbFrameLoop\)/.test(html));
-    ok('the watchdog is still there for a frozen WebView', /rgbLastFrameAt > 500/.test(html));
-    ok('the 200ms interval no longer applies the colour itself', !/setInterval\(rgbTick, RGB_TICK_MS\)/.test(html));
-    ok('frames are skipped when the hue has not visibly moved', /rgbLastAppliedHue !== null && Math\.abs\(hueNow - rgbLastAppliedHue\) < 0\.25/.test(html));
+    ok('the hue is driven by the interval itself', /setInterval\(rgbTick, RGB_TICK_MS\)/.test(html));
+    ok('there is no frame loop left to re-request frames',
+       !/rgbFrameLoop/.test(html) && !/rgbRafHandle/.test(html) && !/rgbLastFrameAt/.test(html));
+    ok('so nothing about the cycle can freeze waiting on a frame',
+       /rgbAnimHandle = setInterval\(rgbTick, RGB_TICK_MS\)/.test(html) &&
+       /function rgbReassert\(\)/.test(html) &&
+       /document\.addEventListener\('visibilitychange', rgbReassert\)/.test(html));
+    ok('the tick rate is the ~10-a-second the old step rule allowed',
+       /const RGB_TICK_MS = 100;/.test(html));
+    ok('a tick that lands on a colour nobody can see is still skipped',
+       /rgbLastAppliedHue !== null && Math\.abs\(hueNow - rgbLastAppliedHue\) < 0\.7/.test(html));
+    ok('and the app is not repainted more than ~11 times a second for it',
+       /nowMs - rgbLastApplyAt < 90/.test(html));
     // Live: picking RGB must put a live hsl() on the accents and keep moving it.
     const a = win.document.documentElement.style.getPropertyValue('--coral');
     ok('the accents are a live colour', /^hsl\(/.test(a), a);

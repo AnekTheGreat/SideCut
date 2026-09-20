@@ -137,9 +137,16 @@ function interesting(errors) {
     const win = dom.window;
     await wait(2500);
     const s = await sample(win, 300, 8);
-    ok('it drew a few frames and then went silent',
-       state.rafServed > 0 && state.rafCalls > state.rafServed,
-       'served ' + state.rafServed + ' of ' + state.rafCalls + ' asked');
+    // v60.4 turned this inside out: the cycle is a timer now, so the honest test is
+    // that a running cycle asks the page for NO frames at all (any that are asked
+    // for here come from one-shot UI work during boot). A WebView that stops
+    // delivering frames therefore cannot stall the hue — there was never a frame in
+    // the path to begin with.
+    const rafMark = state.rafCalls;
+    await wait(700);
+    ok('a running cycle asks for no frames of its own',
+       state.rafCalls === rafMark,
+       (state.rafCalls - rafMark) + ' frame requests in 700ms');
     ok('the accent is still a live animated colour', s.every((x) => isHsl(x.coral)), s[0].coral + ' | ' + s[s.length - 1].coral);
     ok('the accent keeps moving with no frames at all', distinct(s.map((x) => x.coral)) >= 5,
        s.map((x) => x.coral).join(' \u2192 ').slice(0, 220));
