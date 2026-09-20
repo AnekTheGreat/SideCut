@@ -198,15 +198,25 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await wait(200);
   for (const a of Object.keys(webHandlers)) delete webHandlers[a];
   for (const a of Object.keys(nativeHandlers)) delete nativeHandlers[a];
-  // Start a second song: the app re-asserts the controls as playback begins.
-  // (Re-registering is throttled so a run of skips cannot storm the bridge; the
-  // throttle is a few seconds, so the audit waits it out.)
-  await wait(4200);
+  // Starting a song must NOT re-register the whole set: that handed the native
+  // bridge a fresh callback per action per track. The controls only need
+  // re-asserting when the session can actually have been rebuilt.
   try { win.playFromList(['t1', 't2'], 't2'); } catch (e) {}
   await wait(200);
   startPlaying();
   await wait(300);
-  ok('playing a song re-registers every control on the phone\'s session',
+  ok('starting a song does not re-register the whole control set',
+     CONTROLS.some((a) => !webHandlers[a]), 'registered=' + Object.keys(webHandlers).join(','));
+
+  // The rebuild that matters: the notification is torn down with the app in the
+  // background, so coming back has to put every control on it again.
+  for (const a of Object.keys(webHandlers)) delete webHandlers[a];
+  for (const a of Object.keys(nativeHandlers)) delete nativeHandlers[a];
+  win.__setVisibility(true);
+  await wait(150);
+  win.__setVisibility(false);
+  await wait(400);
+  ok('coming back to the app re-asserts every control on the phone\'s session',
      CONTROLS.every((a) => !!webHandlers[a]), 'got=' + Object.keys(webHandlers).join(','));
   ok('and on the native player too', CONTROLS.every((a) => !!nativeHandlers[a]),
      'got=' + Object.keys(nativeHandlers).join(','));

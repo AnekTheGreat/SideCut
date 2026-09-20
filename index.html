@@ -4290,6 +4290,10 @@ window.__scDragDelta = function(key, pxPerSec){
     });
     window.addEventListener('unhandledrejection', function(ev){
       var r = ev && ev.reason;
+      // Report it, then mark it handled. A background write that fails while
+      // IndexedDB is busy is expected during a hiccup, and leaving it unhandled
+      // turns one recoverable write failure into a rejected promise nothing owns.
+      try{ if(ev && ev.preventDefault) ev.preventDefault(); }catch(e){}
       __scShowBootError((r && (r.message || String(r))) || 'promise rejection');
     });
 
@@ -9622,7 +9626,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8.8';
+  const APP_VERSION = '58.8.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9855,12 +9859,24 @@ function startLyricsAutoScroll() {
         var snap = null;
         try{ snap = JSON.parse(res.data || ''); }catch(e){ return false; }
         if(!snap || snap.v !== 1) return false;
-        var lsWiped = false, metaWiped = false;
+        var lsWiped = false, metaWiped = false, readOk = false;
         try{ lsWiped = localStorage.getItem(SNAP_MARKER) === null; }catch(e){ lsWiped = true; }
         try{
           var idc = await dbGet('meta', 'idCounter');
-          metaWiped = !idc;
-        }catch(e){ metaWiped = true; }
+          // dbGet returns null for "no such row" AND for "the read failed", which
+          // is why a hiccup used to be read as a wiped store: the restore then
+          // rewrote playlists, albums and settings from an older snapshot and
+          // reloaded the app on top of them.
+          readOk = !!(window.__scStorageOk && window.__scStorageOk());
+          metaWiped = readOk && !idc;
+        }catch(e){ readOk = false; metaWiped = false; }
+        // Cannot prove the stores are empty? Then do not touch anything. A
+        // snapshot that never gets restored costs nothing; one restored over
+        // healthy data silently reverts the user's library settings.
+        if(!readOk){
+          try{ console.warn('[SideCut] snapshot restore skipped — storage could not be read, so nothing is known to be missing'); }catch(e){}
+          return false;
+        }
         if(!lsWiped && !metaWiped){
           // The stores are healthy — forget the attempt count so a future wipe
           // (a reinstall, a phone transfer) is still allowed to restore once.
@@ -9926,6 +9942,14 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8.9', date: 'September 19, 2026 \u00b7 10:17 PM EDT', title: 'A crash can no longer leave the app unable to load, or looking like your music is gone', items: [
+    'The app can no longer fail to load because of a storage hiccup. A crash during playback is Android killing the page (the music lives in a WebView), and a page killed mid-write leaves the phone\u2019s database needing recovery \u2014 so the boot right after it met a first storage read that FAILED, and the app drew \u201cAdd some music to get started\u201d over a library that was still there. A failed read is no longer mistaken for an empty library: the library is read again through a fresh connection, and if that still cannot read it the app says so \u2014 \u201cYour songs are still on this phone, nothing has been deleted\u201d \u2014 with a Try again button, instead of an empty screen',
+    'One failed read no longer breaks every later one. The database handle was cached along with its failure, so a single transient error poisoned the whole session: every read after it returned nothing and nothing could be saved again until the app was closed and reopened. A failure is never remembered as final now, and the next read simply reopens',
+    'A wedged database can no longer freeze the app. Opening storage had no timeout and no handling for another connection holding it, so in the worst case the library never loaded at all and the app sat there \u2014 that is the \u201cit just won\u2019t load after it crashes\u201d half of the report. An open now has a deadline, is retried once through a fresh connection, and a real failure takes over the screen with an explanation rather than a spinner',
+    'The on-device backup restore no longer runs on a guess. It treated a failed meta read as a wiped store, which meant a storage hiccup could rewrite playlists, albums and settings from an older backup and then reload \u2014 all on top of a library that was never missing. It now refuses to restore unless it can prove the stores are really empty',
+    'Fewer native calls while you play: the lock-screen controls are re-asserted when the session can actually have been rebuilt (coming back to the app, the player being released and re-armed, or the player arming) rather than on every single song start, which was handing the phone a fresh callback for all eight buttons per track',
+    'Saves that fail while storage is busy are logged instead of being left as rejected promises nothing owns',
+  ]},
   { version: '58.8.8', date: 'September 19, 2026 \u00b7 9:25 PM EDT', title: 'A properly uncapped refresh rate, a Discover pin that cannot crash, and updates that never apply themselves', items: [
     'The refresh rate setting no longer quietly caps the app at 60 Hz. "Max device refresh rate" used to ask Android for screen.refreshRate \u2014 and a WebView reports its own nominal rate (60), not the panel\u2019s \u2014 so picking \u201cmax\u201d on a 120 Hz phone pinned the whole app to 60 Hz for as long as it was open. Asking for an explicit rate is the only thing that requests one now, so \u201cmax\u201d really is uncapped; a rate restored from an old backup that this screen cannot do falls back to the device rate instead of staying wrong',
     'Pinning an artist in Discover can no longer take the app down. Everything the pin does after saving it is cosmetic, and a failure in any of it is now contained (the pin is kept, and the refresh failure is shown rather than thrown). Pinning also records itself in the flight recorder, so if the process ever does die in that path the next launch names it instead of leaving it to guesswork',
@@ -12696,24 +12720,149 @@ function startLyricsAutoScroll() {
   }
 
   // ---------------- Persistence (IndexedDB) ----------------
-  const DB_NAME = 'sidecut_local_db';
-  const DB_VERSION = 1;
-  let dbPromise = null;
+  // Boot code ABOVE this line already performs a storage read (an async function
+  // called earlier evaluates its first `await dbGet(...)` argument synchronously),
+  // so `const`/`let` here threw "Cannot access 'DB_NAME'/'dbPromise' before
+  // initialization" on the FIRST storage call of every single session — a read
+  // that fails, and a failed read is drawn as an empty library. `var` removes the
+  // throw, and `scStorageBooted` defers any such call until this layer exists
+  // (rather than opening the wrong, undefined database).
+  var DB_NAME = 'sidecut_local_db';
+  var DB_VERSION = 1;
+  var scStorageBooted = false;
+  var dbPromise = null;
+  // Storage health, so a FAILED read is never mistaken for an empty library.
+  // Both look identical to every caller ([]), and that confusion is what made a
+  // hiccup look like the whole library had been deleted.
+  var scStorageTrouble = null;    // { at, why } while storage is misbehaving
+  var scStorageOk = false;        // true once a read or write has actually worked
+  var scLibraryReadOk = false;    // true once the LIBRARY read itself completed
+  var DB_OPEN_TIMEOUT_MS = 5000;
 
   function openDB(){
+    if(!scStorageBooted){
+      // Called from boot code that runs before this layer finishes initialising.
+      // Wait one beat instead of throwing (or silently opening `undefined`).
+      return new Promise((resolve, reject) => { setTimeout(() => { openDB().then(resolve, reject); }, 0); });
+    }
     if(dbPromise) return dbPromise;
+    // A failure we have just seen: fail fast rather than making every caller wait
+    // out its own timeout. Without this, a wedged database turned boot into a
+    // chain of 5-second waits (one per read) and the app looked frozen — which is
+    // the older behaviour of caching the failure, only without the permanent
+    // poisoning. `__scStorageRetry()` clears this for an explicit retry.
+    if(scStorageTrouble && (Date.now() - (scStorageTrouble.at || 0)) < 5000){
+      return Promise.reject(new Error(scStorageTrouble.why || 'storage unavailable'));
+    }
     dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      let settled = false;
+      const finish = (fn, arg) => { if(settled) return; settled = true; clearTimeout(timer); fn(arg); };
+      // A blocked or wedged open must never hang the app. IndexedDB can be left
+      // needing recovery by a renderer that died mid-write — which is exactly
+      // what a crash during playback is — and without this the library simply
+      // never loads and the app sits on the empty screen forever.
+      const timer = setTimeout(() => finish(reject, new Error('storage open timed out')), DB_OPEN_TIMEOUT_MS);
+      let req = null;
+      try{ req = indexedDB.open(DB_NAME, DB_VERSION); }
+      catch(e){ finish(reject, e); return; }
       req.onupgradeneeded = () => {
         const db = req.result;
         if(!db.objectStoreNames.contains('tracks')) db.createObjectStore('tracks', { keyPath: 'id' });
         if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
       };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+      req.onsuccess = () => {
+        const db = req.result;
+        // Our own connection must never block a later upgrade, and if it is
+        // closed under us (storage pressure, a wipe) the next call reopens
+        // rather than reusing a dead handle.
+        try{ db.onclose = function(){ dbPromise = null; }; }catch(e){}
+        try{ db.onversionchange = function(){ try{ db.close(); }catch(e){} dbPromise = null; }; }catch(e){}
+        finish(resolve, db);
+      };
+      req.onerror = () => finish(reject, req.error || new Error('storage open failed'));
+      // Another connection is holding it (an older WebView, a widget process):
+      // do not wait on it forever.
+      req.onblocked = () => finish(reject, new Error('storage is busy (blocked)'));
+    }).then(
+      (db) => { scStorageOk = true; scStorageTrouble = null; return db; },
+      (err) => {
+        // Never cache a failure. One transient error used to poison the whole
+        // session: every later read replayed the same rejection, so the library
+        // stayed empty and nothing would save again.
+        dbPromise = null;
+        scStorageTrouble = { at: Date.now(), why: (err && err.message) || String(err) };
+        throw err;
+      }
+    );
     return dbPromise;
   }
+  function scNoteStorageOk(){ scStorageOk = true; scStorageTrouble = null; }
+  function scNoteStorageError(e){
+    try{
+      var why = (e && e.message) || String(e);
+      var prev = scStorageTrouble && scStorageTrouble.why;
+      // Keep the ROOT cause readable: a fail-fast rejection quotes the reason it
+      // was derived from, so do not stack the same sentence over and over.
+      if(!(prev && why.indexOf(prev) !== -1)) scStorageTrouble = { at: Date.now(), why: why };
+    }catch(_e){}
+    try{ console.error('Storage trouble', e); }catch(_e){}
+  }
+  window.__scStorageTrouble = function(){ return scStorageTrouble; };
+  window.__scStorageOk = function(){ return scStorageOk; };
+  window.__scStorageRetry = function(){ dbPromise = null; scStorageTrouble = null; };
+  // Shown instead of the onboarding screen when the library READ failed, so the
+  // app never tells the user their music is gone when it merely could not look.
+  window.__scStorageTroublePanel = function(){
+    try{
+      if(document.getElementById('scStoragePanel')) return;
+      if(!document.body) return;
+      var d = document.createElement('div');
+      d.id = 'scStoragePanel';
+      d.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px;text-align:center;';
+      d.innerHTML = '<div style="font-size:21px;font-weight:600;font-family:inherit;">Could not read your music library</div>'
+        + '<div style="color:var(--ink-dim);font-size:14px;line-height:1.55;max-width:330px;font-family:inherit;">Your songs are still on this phone. This is a failed storage read, not lost music \u2014 nothing has been deleted. It usually clears itself, so try again.</div>';
+      var btn = document.createElement('button');
+      btn.textContent = 'Try again';
+      btn.style.cssText = 'background:var(--coral);color:#161616;border:none;border-radius:10px;padding:12px 22px;font-size:14.5px;font-weight:600;cursor:pointer;font-family:inherit;';
+      btn.addEventListener('click', function(){
+        try{ if(window.__scStorageRetry) window.__scStorageRetry(); }catch(e){}
+        try{ location.reload(); }catch(e){}
+      });
+      var skip = document.createElement('button');
+      skip.textContent = 'Continue without my library';
+      skip.style.cssText = 'background:transparent;color:var(--ink-dim);border:1px solid var(--line);border-radius:10px;padding:11px 20px;font-size:13.5px;cursor:pointer;font-family:inherit;';
+      skip.addEventListener('click', function(){
+        try{ if(window.__scStorageRetry) window.__scStorageRetry(); }catch(e){}
+        try{ scLibraryReadOk = true; }catch(e){}
+        if(d.parentNode) d.parentNode.removeChild(d);
+        try{ if(typeof navigate === 'function') navigate('home'); }catch(e){}
+      });
+      var again = document.createElement('div');
+      again.style.cssText = 'color:var(--ink-dim);font-size:12px;font-family:inherit;';
+      again.textContent = 'Nothing is deleted by trying again.';
+      d.appendChild(btn); d.appendChild(skip); d.appendChild(again);
+      document.body.appendChild(d);
+      // If storage comes back on its own (the common case — the connection just
+      // needed a fresh start), let the app take over again instead of leaving a
+      // panel sitting in front of a working library.
+      var _waits = 0;
+      var _t = setInterval(function(){
+        _waits++;
+        try{
+          if(window.__scStorageOk && window.__scStorageOk()){
+            clearInterval(_t);
+            scLibraryReadOk = true;
+            if(d.parentNode) d.parentNode.removeChild(d);
+            return;
+          }
+        }catch(e){}
+        if(_waits > 20) clearInterval(_t);
+      }, 1500);
+    }catch(e){}
+  };
+  // From here on the storage layer is fully initialised; the guard above lets
+  // earlier boot code reach it safely.
+  scStorageBooted = true;
 
   async function dbPut(storeName, value){
     try{
@@ -12722,13 +12871,21 @@ function startLyricsAutoScroll() {
         const tx = db.transaction(storeName, 'readwrite');
         tx.objectStore(storeName).put(value);
         tx.oncomplete = () => {
+          scNoteStorageOk();
           resolve();
           try{ if(storeName === 'meta' && window.__scSnapDirty) window.__scSnapDirty(); }catch(e){}
         };
         tx.onerror = () => { console.error('dbPut tx error:', tx.error); reject(tx.error); };
         tx.onabort = () => { console.error('dbPut tx aborted:', tx.error); reject(tx.error || new Error('aborted')); };
       });
-    }catch(e){ console.error('Storage save failed', e); throw e; }
+    }catch(e){
+      // Log and report it — never rethrow. Several callers treat a save as
+      // fire-and-forget, and a rethrow there became an unhandled rejection
+      // whenever IndexedDB was momentarily busy.
+      scNoteStorageError(e);
+      console.error('Storage save failed', e);
+      return false;
+    }
   }
   async function dbDelete(storeName, key){
     try{
@@ -12750,7 +12907,7 @@ function startLyricsAutoScroll() {
         req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => reject(req.error);
       });
-    }catch(e){ console.error('Storage get failed', e); return null; }
+    }catch(e){ scNoteStorageError(e); console.error('Storage get failed', e); return null; }
   }
   async function dbGetAll(storeName){
     try{
@@ -12758,10 +12915,11 @@ function startLyricsAutoScroll() {
       return new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readonly');
         const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result);
+        req.onsuccess = () => { scNoteStorageOk(); resolve(req.result); };
         req.onerror = () => reject(req.error);
+        tx.onabort = () => reject(tx.error || new Error('read aborted'));
       });
-    }catch(e){ console.error('Storage read failed', e); return []; }
+    }catch(e){ scNoteStorageError(e); console.error('Storage read failed', e); return []; }
   }
 
   function saveMeta(){
@@ -12869,6 +13027,9 @@ function startLyricsAutoScroll() {
         dbGetAll('tracks'),
         dbGetAll('meta')
     ]);
+    // The read itself WORKED. An empty library is not a failure, and a failure is
+    // not an empty library — keep the two apart from here on.
+    if(window.__scStorageOk && window.__scStorageOk()) scLibraryReadOk = true;
 
     if(!trackRows.length) return false;
 
@@ -19323,8 +19484,21 @@ _batchBuf += b64Encode(chunk);
   // handlers shows play/pause only. Re-registering is cheap (the plugin replaces
   // the handler for that action) and it is what keeps forward/back present instead
   // of "sometimes there, sometimes not".
+  // Re-registering hands the native bridge a fresh callback per action, so it is
+  // done when the session can genuinely have been rebuilt (armed, rearmed, or the
+  // app coming back to the foreground) and at most once a minute otherwise —
+  // instead of on every song start.
+  let mediaHandlersArmedAt = 0;
+  let mediaHandlersDirty = true;
+  function mediaHandlersNeedArm(){ mediaHandlersDirty = true; }
   function refreshMediaControls(){
-    try{ registerMediaSessionHandlers(); }catch(e){}
+    try{
+      if(mediaHandlersDirty || Date.now() - mediaHandlersArmedAt > 60000){
+        mediaHandlersDirty = false;
+        mediaHandlersArmedAt = Date.now();
+        registerMediaSessionHandlers();
+      }
+    }catch(e){}
     try{
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
       if(t) updateMediaSession(t);
@@ -20275,6 +20449,7 @@ _batchBuf += b64Encode(chunk);
     }, (window.__scMediaBgGraceMs || MEDIA_BG_GRACE_MS));
   }
   function rearmMediaSession(){
+    if(mediaReleasedInBackground) mediaHandlersNeedArm();
     if(!mediaReleasedInBackground) return;
     mediaReleasedInBackground = false;
     try{ refreshMediaControls(); }catch(e){}
@@ -20285,6 +20460,12 @@ _batchBuf += b64Encode(chunk);
       if(mediaPausedInBackground()) armMediaRelease();
     } else {
       cancelMediaRelease();
+      // The session the phone routes presses to can have been rebuilt while we
+      // were away (the notification is torn down with the app in the background),
+      // so coming back re-asserts every control rather than waiting for the next
+      // song to start.
+      mediaHandlersNeedArm();
+      try{ refreshMediaControls(); }catch(e){}
       rearmMediaSession();
     }
   });
@@ -22729,8 +22910,31 @@ _batchBuf += b64Encode(chunk);
       // Data-loss safety net: if the WebView stores come up empty but a snapshot
       // file survived (update origin switch, uninstall + reinstall restored by
       // Android Auto Backup, or a partial wipe), hydrate from it silently.
-      try{ await window.__scSnapRestore(); }catch(e){ console.error('Snapshot restore failed', e); }
-      const loaded = await loadFromDB();
+      // A native filesystem read that never resolves would stall the whole boot
+      // (the app shows its shell and nothing else). Give it a deadline.
+      try{ await Promise.race([ window.__scSnapRestore(), new Promise(function(r){ setTimeout(r, 4000); }) ]); }
+      catch(e){ console.error('Snapshot restore failed', e); }
+      let loaded = await loadFromDB();
+      // A read that FAILED looks exactly like an empty library to loadFromDB.
+      // Give it exactly one more go through a fresh connection (that is what
+      // clears the state a killed renderer leaves behind), and only then believe
+      // that there is nothing to load.
+      if(!loaded && window.__scStorageTrouble && window.__scStorageTrouble()){
+        console.warn('[SideCut] library read failed at boot — reopening storage once');
+        // Clear the fail-fast cooldown so this really is a fresh connection, and
+        // put a deadline on it so a wedged database cannot stall boot.
+        try{ window.__scStorageRetry(); }catch(e){}
+        loaded = await Promise.race([
+          loadFromDB(),
+          new Promise(function(r){ setTimeout(function(){ r(false); }, 3000); })
+        ]);
+      }
+      if(!loaded && !scLibraryReadOk && typeof window.__scStorageTroublePanel === 'function'){
+        // Never show "Add some music to get started" over a library we could not
+        // read — that is what makes a storage hiccup look like deleted music.
+        console.warn('[SideCut] library unreadable — showing the recovery panel instead of the empty-library screen');
+        window.__scStorageTroublePanel();
+      }
       // Manual-only albums: flag entries that were only ever created as a side
       // effect of a reorder/auto-save so the Albums tab is your albums again.
       var _scAutoAlbums = 0;
@@ -23009,7 +23213,9 @@ _batchBuf += b64Encode(chunk);
       if(_plH) _plH.classList.toggle('active-half', libraryMode === 'playlists');
       if(_alH) _alH.classList.toggle('active-half', libraryMode === 'albums');
       if(typeof applyLibraryButtonMode === 'function') applyLibraryButtonMode();
-      $('emptyState').style.display = allTracks.length ? 'none' : 'flex';
+      // The onboarding screen is for "you have not added music yet" — never for
+      // "we could not read your music". A failed read keeps it hidden.
+      $('emptyState').style.display = (allTracks.length || !scLibraryReadOk) ? 'none' : 'flex';
       renderTabs();
       renderList();
     } else {
