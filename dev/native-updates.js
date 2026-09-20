@@ -714,14 +714,23 @@
     // a fresh auto-check will re-offer it; nothing to restore.
   }
 
-  // Auto-check shortly after boot, then every 30 minutes and on app foreground.
+  // Auto-check shortly after boot, then every three hours and on app foreground.
   // Silent checks DO surface the update sheet when a newer version exists (the
   // boot one fires ~2.5s in so a fresh update is visible on every refresh).
   // Silent checks still never auto-download or auto-apply; the sheet asks.
+  //
+  // The periodic one now refuses to run while the app is in the background: a
+  // network wake-up every half hour, all day, on a phone that is not even open is
+  // exactly the sort of thing that shows up as "drains my battery even when the
+  // app isn't open". Coming back to the app checks anyway (below), so nothing is
+  // missed — the timer is just no longer a reason to wake the radio.
   function startAutoCheck(){
     if(!IS_NATIVE) return;
     setTimeout(function(){ if(document.visibilityState !== 'hidden') checkForUpdate({ silent: true }); }, 2500);
-    setInterval(function(){ checkForUpdate({ silent: true }); }, 30 * 60 * 1000);
+    setInterval(function(){
+      if(document.visibilityState === 'hidden') return;
+      checkForUpdate({ silent: true });
+    }, 3 * 60 * 60 * 1000);
     // Debounced foreground check: rapid folds (visibility flicker on
     // folding phones) collapse into a single check 6s after the screen
     // settles, so checking can't spam the network or fight playback.

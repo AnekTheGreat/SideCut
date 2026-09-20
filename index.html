@@ -4206,10 +4206,17 @@ window.__scDragDelta = function(key, pxPerSec){
   // Intercept future setInterval calls to auto-track them
   var _origSI = window.setInterval;
   window.setInterval = function(fn, ms){
-    // Only track intervals > 500ms (skip micro-timers like crossfade)
+    // Only track intervals > 500ms (skip micro-timers like crossfade, which is
+    // deliberately alive while backgrounded so songs keep blending)
     if(ms > 500){
       var id = _origSI.call(window, fn, ms);
-      killTimers.push({id:id, fn:fn, ms:ms, alive:true});
+      var rec = {id:id, fn:fn, ms:ms, alive:true};
+      killTimers.push(rec);
+      // A timer created while the app is ALREADY in the background (a heartbeat or
+      // poll started by a background play/pause) would otherwise run for the whole
+      // background session — nothing pauses it until the next show/hide cycle. Start
+      // it stopped; resumeAll() brings it back when the app is shown again.
+      if(document.hidden){ _origCI.call(window, id); rec.alive = false; }
       return id;
     }
     return _origSI.call(window, fn, ms);
@@ -9587,7 +9594,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '58.8.6';
+  const APP_VERSION = '58.8.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -9891,6 +9898,13 @@ function startLyricsAutoScroll() {
     return 0;
   }
   const CHANGELOG = [
+  { version: '58.8.7', date: 'September 19, 2026 \u00b7 8:49 PM EDT', title: 'Lock-screen controls that work on both sessions, and a player that lets the phone sleep', items: [
+    'Lock-screen and notification forward/back now work, and they stay there. The sound in the installed app comes out of the WebView\u2019s own audio element, and that is the media session the phone\u2019s player follows \u2014 but the controls were only being registered with the native notification plugin, so the session the system actually hands button presses to knew about play/pause and nothing else. Every control is now registered on both sessions',
+    'The controls are re-asserted the moment a song starts. Android (and the plugin) rebuilds the notification whenever the session restarts \u2014 after a pause, after the player was released in the background, after the app reloaded \u2014 and a rebuilt session only knew the controls it was told about. That rebuild is why the buttons were \u201csometimes there, sometimes not\u201d. One registration path now owns all of it (a second, older copy that registered a different set has been removed)',
+    'The player now offers 30-second jumps that actually jump 30 seconds (they used to be dead buttons: the plugin offers them, nothing listened), and \u201cprevious\u201d follows the rule every player uses \u2014 restart the song if you are more than a few seconds in, otherwise go back a song',
+    'Battery: a paused player no longer keeps the phone awake all day. A media foreground service holds the device out of sleep for as long as it lives, so pausing and leaving the app now keeps the lock-screen controls for ten minutes and then releases the session entirely \u2014 the phone can sleep, and the next thing that plays brings the session and every control straight back',
+    'Battery: the update check no longer wakes the radio every half hour around the clock (it now waits until the app is actually open, and checks every three hours instead), a poll or heartbeat started while the app is in the background starts stopped instead of running for the whole session, and the home-screen widget poll and heartbeat were slowed from 2s/3s to 5s/6s',
+  ]},
   { version: '58.8.6', date: 'September 19, 2026 \u00b7 8:27 PM EDT', title: 'Album reordering: no more moving bar, a hold that needs your finger, and one-tap Cancel', items: [
     'Holding a song in an album no longer shows a bar crawling across the bottom of the row. The row tints while the three-second hold is running and the Reorder Songs sheet simply opens when the time is up \u2014 nothing animates through your song',
     'The hold now only counts while your finger is actually on the screen. Android tells the app that a gesture was taken over (and it also fires that for a finger that is still planted, which is why it used to be tolerated), but a cancelled touch carrying no finger left \u2014 or a press you ended early \u2014 can no longer pop the sheet open on its own a second or two later',
@@ -19098,7 +19112,10 @@ _batchBuf += b64Encode(chunk);
         pushWidgetState(widgetTrack, widgetPlaying);
       }catch(e){}
     };
-    setInterval(function(){ if(document.hidden) return; try{ window.__scWidgetHeartbeat(); }catch(e){} }, 3000);
+    // 6s, not 3s: every beat re-pushes the track (and its artwork) across the
+    // WebView bridge and redraws the widget, and that only needs to be as fresh as
+    // the eye can follow.
+    setInterval(function(){ if(document.hidden) return; try{ window.__scWidgetHeartbeat(); }catch(e){} }, 6000);
   })();
   // Switch the playing playlist when the user taps a pill on the home widget.
   // The widget writes the target name to prefs; we poll the plugin and switch.
@@ -19135,7 +19152,7 @@ _batchBuf += b64Encode(chunk);
           if(name && window.scWidgetSwitchPlaylist) window.scWidgetSwitchPlaylist(name);
         }).catch(function(){});
       }catch(e){}
-    }, 2000);
+    }, 5000);  // was 2s: a native bridge call every two seconds for as long as the app was open
   })();
   // One-time arm: right after boot, push the current now-playing state to the
   // widget so a freshly-placed widget (or an app relaunch) shows the real song,
@@ -19203,16 +19220,30 @@ _batchBuf += b64Encode(chunk);
       try{ navigator.mediaSession.setPositionState({ duration, playbackRate, position }); }catch(e){ /* out-of-range mid-seek — safe to ignore */ }
     }
   }
+  // Register a control on BOTH media sessions, never one or the other.
+  //
+  // This is the fix for "the lock-screen forward/back buttons don't work, and
+  // sometimes aren't even there". In the installed app the sound comes out of the
+  // WebView's <audio> element, and the phone's media player follows *that* session
+  // — whose button set is exactly what the page registered through
+  // navigator.mediaSession. Registering only on the native plugin (which is what
+  // this did as soon as its adapter armed) left the session the system actually
+  // routes button presses to with nothing but its own built-in play/pause: previous
+  // and next had no handler, so they came out greyed out, missing, or dead.
   function mediaSetActionHandler(action, handler){
+    let ok = false;
     if(capMediaSessionActive && capPluginUsable){
       capQuiet(capMediaSessionActive.setActionHandler({ action: action }, handler));
-    } else if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
-      try{ navigator.mediaSession.setActionHandler(action, handler); }catch(e){}
+      ok = true;
     }
+    if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
+      try{ navigator.mediaSession.setActionHandler(action, handler); ok = true; }
+      catch(e){ /* this WebView doesn't know that action — the other path still has it */ }
+    }
+    return ok;
   }
-  // Lock-screen / notification controls: play, pause, next, prev, stop, seek.
-  // The WebView cannot surface these on its own — registering them is what makes
-  // the media notification controls appear in the Play app.
+  // Lock-screen / notification controls: play, pause, next, prev, stop, seek and
+  // the 30-second jumps. Registering them is what makes the controls appear at all.
   function registerMediaSessionHandlers(){
     mediaSetActionHandler('play', () => {
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
@@ -19225,11 +19256,24 @@ _batchBuf += b64Encode(chunk);
       if(_wasPlaying) recordPlaybackStop('media-session-pause');
       userPaused = true; _a.pause();
     });
+    // Below a few seconds in, "previous" means the previous song — the rule every
+    // player uses. Past that it restarts the song that is playing.
     mediaSetActionHandler('previoustrack', () => {
-      if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
+      const _a = activeAudio();
+      if(_a && _a.currentTime > 3){ try{ _a.currentTime = 0; }catch(e){} return; }
       hardAdvance(-1, true);
     });
     mediaSetActionHandler('nexttrack', () => hardAdvance(1, true));
+    // The plugin offers these two as 30-second skips (that is what its replay/forward
+    // icons are); with no handler they were the dead buttons.
+    mediaSetActionHandler('seekbackward', () => {
+      const _a = activeAudio();
+      if(_a) { try{ _a.currentTime = Math.max(0, (_a.currentTime || 0) - 30); }catch(e){} }
+    });
+    mediaSetActionHandler('seekforward', () => {
+      const _a = activeAudio();
+      if(_a && _a.duration) { try{ _a.currentTime = Math.min((_a.duration || 0) - 0.4, (_a.currentTime || 0) + 30); }catch(e){} }
+    });
     mediaSetActionHandler('stop', () => {
       userPaused = true;
       activeAudio().pause();
@@ -19239,9 +19283,38 @@ _batchBuf += b64Encode(chunk);
       if(details && details.seekTime != null) activeAudio().currentTime = details.seekTime;
     });
   }
+  // Re-assert every control. The system (and the native plugin) rebuilds its
+  // notification whenever the session restarts — after the service is released in
+  // the background, after a WebView reload — and a session rebuilt without these
+  // handlers shows play/pause only. Re-registering is cheap (the plugin replaces
+  // the handler for that action) and it is what keeps forward/back present instead
+  // of "sometimes there, sometimes not".
+  function refreshMediaControls(){
+    try{ registerMediaSessionHandlers(); }catch(e){}
+    try{
+      const t = allTracks.find(tr => tr.id === queue[queueIndex]);
+      if(t) updateMediaSession(t);
+    }catch(e){}
+  }
+  // A run of skips (or an auto-advance) must not storm the bridge with
+  // re-registrations — once every few seconds is plenty to keep a rebuilt
+  // notification complete.
+  let lastMediaRefreshAt = 0;
+  function refreshMediaControlsThrottled(){
+    const now = Date.now();
+    if(now - lastMediaRefreshAt < 4000) return;
+    lastMediaRefreshAt = now;
+    refreshMediaControls();
+  }
+  window.__scRefreshMediaControls = refreshMediaControlsThrottled;
   if(!__SC_NATIVE_EARLY && (capMediaSession || ('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'))){
     registerMediaSessionHandlers();
   } else if(__SC_NATIVE_EARLY){
+    // The browser's own media session is free and harmless to set up at boot, so
+    // the lock-screen controls exist from the first second. The NATIVE notification
+    // player is deliberately NOT touched here — it arms a few seconds later, where
+    // it cannot interfere with startup.
+    try{ registerMediaSessionHandlers(); }catch(e){}
     // Opt-in notification player for the installed app: armed a few seconds
     // AFTER boot (never at startup), only when the user enabled it, and it
     // auto-disables itself if the process dies while it is active.
@@ -19892,12 +19965,20 @@ _batchBuf += b64Encode(chunk);
     // could keep showing the previous song's names on the lock screen. Re-setting
     // MediaMetadata here, against the track that's genuinely playing now, forces a
     // refresh exactly when the OS is paying attention.
-    const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
-    if(cur) updateMediaSession(cur);
+    // Guarded: this sits in the middle of the play path, and everything after it
+    // (the heartbeat, the wake lock, re-asserting the lock-screen controls) used
+    // to be skipped if pushing metadata ever threw.
+    try{
+      const cur = allTracks.find(tr => tr.id === queue[queueIndex]);
+      if(cur) updateMediaSession(cur);
+    }catch(e){}
     if(THEMES[currentTheme] && THEMES[currentTheme].rgbPlus) startGlowSync();
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();
     startMediaSessionHeartbeat();
     requestWakeLock();
+    cancelMediaRelease();
+    rearmMediaSession();
+    refreshMediaControlsThrottled();
     syncLyricsPlayPauseIcon();
     if($('homeView').classList.contains('active')) renderHome();
   }
@@ -19942,6 +20023,9 @@ _batchBuf += b64Encode(chunk);
     // pause and auto-resume — tearing it down here would silence the very recovery
     // path that brings playback back.
     if(userPaused){ stopMediaSessionHeartbeat(); releaseWakeLock(); }
+    // Paused with the app away: keep the controls for the grace period, then let
+    // the phone sleep (re-armed the next time anything plays).
+    if(document.hidden) armMediaRelease(); else cancelMediaRelease();
     // Only a pause the USER asked for may apply a waiting update. Applying it from
     // an interruption (or a platform pause) turned a one-second hiccup into a full
     // page reload — which is a stop the song cannot come back from.
@@ -20126,6 +20210,50 @@ _batchBuf += b64Encode(chunk);
   }
   window.__scCheckBackgroundPlayback = checkBackgroundPlayback;
   window.__scNoteBackgroundStart = noteBackgroundStart;
+
+  // ---- Background power: let the phone sleep when we are not playing ----------
+  // A media foreground service keeps the device out of doze for as long as it
+  // lives, so a paused player sitting in the background is a real battery cost —
+  // "it drains my phone even when the app isn't open". Pausing keeps the lock-screen
+  // controls for a grace period; after that the session is released ('none' unbinds
+  // the service and takes the notification down), Android is free to freeze the
+  // WebView, and the next play re-arms the session and re-asserts every control.
+  let mediaReleaseTimer = null, mediaReleasedInBackground = false;
+  const MEDIA_BG_GRACE_MS = 10 * 60 * 1000; // 10 minutes paused with the app away
+  // Exposed so the audit can drive this without waiting ten minutes for it.
+  window.__scMediaBgGraceMs = MEDIA_BG_GRACE_MS;
+  function mediaPausedInBackground(){
+    try{ const a = activeAudio(); return document.hidden && (!a || a.paused); }catch(e){ return false; }
+  }
+  function cancelMediaRelease(){
+    if(mediaReleaseTimer){ clearTimeout(mediaReleaseTimer); mediaReleaseTimer = null; }
+  }
+  function armMediaRelease(){
+    if(mediaReleaseTimer) return;
+    mediaReleaseTimer = setTimeout(function(){
+      mediaReleaseTimer = null;
+      if(!mediaPausedInBackground()) return;
+      mediaReleasedInBackground = true;
+      try{ mediaSetPlaybackState('none'); }catch(e){}
+      stopMediaSessionHeartbeat();
+      releaseWakeLock();
+      recordPlaybackStop('background-paused ' + Math.round(MEDIA_BG_GRACE_MS / 60000) + ' min — media session released so the phone can sleep');
+    }, (window.__scMediaBgGraceMs || MEDIA_BG_GRACE_MS));
+  }
+  function rearmMediaSession(){
+    if(!mediaReleasedInBackground) return;
+    mediaReleasedInBackground = false;
+    try{ refreshMediaControls(); }catch(e){}
+    try{ const a = activeAudio(); mediaSetPlaybackState(a && !a.paused ? 'playing' : 'paused'); }catch(e){}
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){
+      if(mediaPausedInBackground()) armMediaRelease();
+    } else {
+      cancelMediaRelease();
+      rearmMediaSession();
+    }
+  });
 
   let wakeLockHandle = null;
   async function requestWakeLock(){
@@ -22405,36 +22533,13 @@ _batchBuf += b64Encode(chunk);
   });
 
   // ---------------- Media Session: lock screen / notification controls ----------------
-  if('mediaSession' in navigator && typeof navigator.mediaSession.setActionHandler === 'function'){
-    navigator.mediaSession.setActionHandler('play', () => {
-      if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-      activeAudio().play().catch(() => recoverAudio(activeAudio(), 'media session play failed'));
-    });
-    navigator.mediaSession.setActionHandler('pause', () => {
-      const _a = activeAudio();
-      const _wasPlaying = !!_a && !_a.paused;
-      if(_wasPlaying && blockSpuriousStop('web-media-session')) return;
-      if(_wasPlaying) recordPlaybackStop('web-media-session-pause');
-      userPaused = true; _a.pause();
-    });
-    navigator.mediaSession.setActionHandler('previoustrack', () => {
-      if(activeAudio().currentTime > 3){ activeAudio().currentTime = 0; return; }
-      hardAdvance(-1, true);
-    });
-    navigator.mediaSession.setActionHandler('nexttrack', () => hardAdvance(1, true));
-    try{
-      navigator.mediaSession.setActionHandler('stop', () => {
-        userPaused = true;
-        activeAudio().pause();
-        activeAudio().currentTime = 0;
-      });
-    }catch(e){ /* not all browsers support the stop action */ }
-    try{
-      navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if(details.seekTime != null) activeAudio().currentTime = details.seekTime;
-      });
-    }catch(e){ /* not all browsers support seekto */ }
-  }
+  // Registered ONCE, in registerMediaSessionHandlers (see the media adapter above),
+  // which puts every control on both sessions — the browser's own and the native
+  // notification player — and can be re-asserted when the OS rebuilds a session.
+  // A second, hand-rolled copy used to live here: it registered a different (older)
+  // handler set, missed the 30-second jumps, was never re-asserted, and logged its
+  // pauses under a different reason, so the same button could behave two ways
+  // depending on which copy the system happened to route the press to.
 
   // ---------------- Mix: tempo analysis + compatibility ordering ----------------
   async function estimateBPM(track){
