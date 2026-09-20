@@ -178,6 +178,15 @@ function ledgerWith(o) {
   ok('the downgrade is not offered in the update sheet either',
      !bSheet || bSheet.style.display !== 'block');
 
+  // The native updater applies whatever is queued the moment the app is left, so an
+  // older bundle has to come off it as soon as this build starts — not four seconds
+  // later when the launch hand-over runs, which is a window in which the phone can
+  // swap the app back to the old version (one more restart, every launch).
+  const B3 = await boot({ stagedVersion: OLD, wait: 1500 });
+  ok('a queued older bundle is taken off the updater immediately on launch',
+     B3.calls.next.length >= 1 && B3.calls.set.length === 0,
+     'next=' + JSON.stringify(B3.calls.next) + ' set=' + JSON.stringify(B3.calls.set));
+
   if (/^5[0-9]\./.test(OLD)) {
     const B2 = await boot({ stagedVersion: '58.8.7' });
     ok('the version from the report (v58.8.7) is refused over a newer build',

@@ -64,8 +64,16 @@
     try{ if(window.APP_VERSION) return String(window.APP_VERSION); }catch(e){}
     try{ if(window.__SC_VERSION) return String(window.__SC_VERSION); }catch(e){}
     try{
+      // The label is the LAST resort, and only in the form the running app writes
+      // it ("SideCut v58.9.2"). The markup ships a stale placeholder — "SideCut v48"
+      // — that any boot which does not finish leaves in place, and trusting it once
+      // made a version comparison run against 48 and pass everything.
       var lbl = document.getElementById('currentVersionLabel');
-      if(lbl){ var mv = String(lbl.textContent || '').match(/v([0-9][0-9.]*)/); if(mv) return mv[1]; }
+      if(lbl){
+        if(lbl.dataset && lbl.dataset.scVersion) return String(lbl.dataset.scVersion);
+        var mv = String(lbl.textContent || '').match(/SideCut v(\d+\.\d+[0-9.]*)/);
+        if(mv) return mv[1];
+      }
     }catch(e){}
     return null;
   }
@@ -166,6 +174,49 @@
         return Updater.next({ id: cur.id }).then(function(){ markAppReady(); }, function(){ markAppReady(); });
       }).catch(function(){});
     }catch(e){}
+  }
+
+  // An older bundle can be sitting in the native updater the moment this build
+  // starts (left over from a rollback, or downloaded for "install later" and never
+  // confirmed), and the plugin applies whatever is queued on its own — every time
+  // you leave the app, without asking this script. The launch hand-over a few
+  // seconds later would refuse it, but that is a window in which the phone can
+  // swap the app back to the old version, and each swap is one more restart. So the
+  // direction check runs as soon as the version of the running build is known.
+  function earlyDirectionGuard(){
+    if(!IS_NATIVE) return;
+    var U = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater;
+    if(!U || typeof U.getNextBundle !== 'function') return;
+    var startedAt = Date.now();
+    (function check(){
+      var done = false;
+      // The version of the BUNDLE the phone is actually running is the authority
+      // here, and the native side knows it from the first moment — the page only
+      // reports its own version later, and the shipped markup carries a stale
+      // placeholder ("SideCut v48") that an unfinished boot leaves in place.
+      var reading = (typeof U.current === 'function')
+        ? U.current().then(function(cur){
+            if(cur && !cur.isBuiltin && String(cur.id) !== 'builtin' && cur.version) return String(cur.version);
+            return currentVersion();
+          }, function(){ return currentVersion(); })
+        : Promise.resolve(currentVersion());
+      reading.then(function(cur){
+        // A real version here is always dotted (58.9.2); the stale placeholder in
+        // the shipped markup is not, so an unfinished boot cannot fake one.
+        if(!cur || String(cur).indexOf('.') === -1) return;
+        return U.getNextBundle().then(function(nb){
+          done = true;
+          if(!nb || !nb.version) return;
+          if(compareVersions(String(nb.version), String(cur)) >= 0) return; // not a downgrade
+          log('queued v' + nb.version + ' is older than the running v' + cur + ' — taking it off the updater');
+          neutralizeStaged(U, nb, 'older than the running version (on launch)');
+        });
+      }).catch(function(){}).then(function(){
+        if(done) return;
+        if(Date.now() - startedAt > 15000) return; // the app never reported its version
+        setTimeout(check, 300);
+      });
+    })();
   }
 
   function somethingIsPlaying(){
@@ -982,6 +1033,7 @@
 
   window.__SideCutOTA = { IS_NATIVE: IS_NATIVE, checkForUpdate: checkForUpdate, markAppReady: markAppReady, startAutoCheck: startAutoCheck, restoreSheetState: restoreSheetState, staged: staged, neutralizeStaged: neutralizeStaged, isOlderBundle: isOlderBundle, OTA_BASE: OTA_BASE };
     markAppReadyWhenBooted();
+  earlyDirectionGuard();
   if(IS_NATIVE){
     // Give the main app script time to finish booting; only then confirm the
     // bundle is healthy and start checking for newer ones.
