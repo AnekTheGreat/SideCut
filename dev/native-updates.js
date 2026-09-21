@@ -77,6 +77,15 @@
     }
     return 0;
   }
+  // Every manifest and bundle URL carries the current time, so neither GitHub
+  // Pages (max-age=600) nor raw.githubusercontent (max-age=300) can answer a
+  // check with the manifest it was already serving before the release landed.
+  function bust(url){
+    try{
+      var u = String(url);
+      return u + (u.indexOf('?') < 0 ? '?' : '&') + 'scv=' + Date.now();
+    }catch(e){ return url; }
+  }
   function currentVersion(){
     try{ if(typeof APP_VERSION !== 'undefined') return String(APP_VERSION); }catch(e){}
     try{ if(window.APP_VERSION) return String(window.APP_VERSION); }catch(e){}
@@ -429,8 +438,8 @@
       }catch(e){ log('progress listener unavailable: ' + ((e && e.message) || e)); }
       // Build download URL — try raw.githubusercontent.com first (no CDN
       // caching, direct binary), then GitHub Pages as fallback.
-      var _dlUrl = String(man.url).indexOf('http') === 0 ? man.url : OTA_BASE + 'ota/' + man.url;
-      var _rawUrl = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/update.zip';
+      var _dlUrl = bust(String(man.url).indexOf('http') === 0 ? man.url : OTA_BASE + 'ota/' + man.url);
+      var _rawUrl = bust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/update.zip');
       var dl = Updater.download({
         url: _rawUrl,
         version: String(man.version)
@@ -874,7 +883,7 @@
       // native Android HTTP. Only fall back to fetch() if CapacitorHttp isn't available.
       var _capHttp = null;
       try{ var _cap = window.Capacitor && window.Capacitor.Plugins; _capHttp = _cap && _cap.CapacitorHttp; }catch(_e){}
-      var _rawManifest = 'https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json';
+      var _rawManifest = bust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json');
       var resp = null;
       // 1) CapacitorHttp — native, no CORS restrictions
       if(_capHttp && typeof _capHttp.request === 'function'){
@@ -885,12 +894,13 @@
       }
       // 2) Fallback to fetch with CORS proxy chain
       if(!resp){
+        var _pagesManifest = bust(MANIFEST_URL);
         var _fetchAttempts = [
           _rawManifest,
-          MANIFEST_URL,
-          'https://corsproxy.io/?' + encodeURIComponent(MANIFEST_URL),
-          'https://api.allorigins.win/raw?url=' + encodeURIComponent(MANIFEST_URL),
-          'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(MANIFEST_URL)
+          _pagesManifest,
+          'https://corsproxy.io/?' + encodeURIComponent(_pagesManifest),
+          'https://api.allorigins.win/raw?url=' + encodeURIComponent(_pagesManifest),
+          'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(_pagesManifest)
         ];
         for(var _fi = 0; _fi < _fetchAttempts.length; _fi++){
           try{

@@ -10355,7 +10355,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.1.5';
+  const APP_VERSION = '60.1.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10739,6 +10739,10 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.1.6', date: 'September 21, 2026 · 7:20 AM EDT', title: 'Get Song copies the exact Spotify link automatically', items: [
+    'Get Song and Find on Spotify now use Spotify search directly through a secure PKCE sign-in. After authorizing once, SideCut copies the real open.spotify.com track or album share URL to your clipboard instead of copying a search-results page or sending you to Spotify’s app.',
+    'No Spotify client secret is stored in SideCut. The access token stays on this device and is reused until it expires, while the existing Spotify handoff remains available if the API is unavailable.',
+  ]},
   { version: '60.1.5', date: 'September 21, 2026 · 1:45 AM EDT', title: 'Album cards stay where you drop them, and update checks stop reading a cached answer', items: [
     'Checking for updates now always asks the server. Both places the update information is read from answer with a cache window — GitHub Pages hands the file a ten-minute cache and the raw copy five minutes — so a phone that had checked shortly before a release landed kept being given the version it already had and told \u201cyou\u2019re on the latest version\u201d about a build that was already published. That is exactly what checking right after a release looked like. Every check now reads the live file, so an update is offered the moment it exists',
     'The download link is stamped the same way, so an update can never be fetched from that cache and installed under the wrong version number',
@@ -28620,6 +28624,74 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(_e){}
     return /Android/i.test((navigator && navigator.userAgent) || '');
   }
+  // Spotify client IDs are public. PKCE keeps the verifier and token on-device; no client secret is bundled.
+  const SC_SPOTIFY_CLIENT_ID = '42d3bd4bafad49d683a37870b822358e';
+  const SC_SPOTIFY_REDIRECT = 'https://anekthegreat.github.io/SideCut/';
+  const SC_SPOTIFY_TOKEN_KEY = 'sidecut_spotify_pkce_token';
+  const SC_SPOTIFY_VERIFIER_KEY = 'sidecut_spotify_pkce_verifier';
+  const SC_SPOTIFY_STATE_KEY = 'sidecut_spotify_pkce_state';
+  function scBase64Url(bytes){
+    var out = ''; for(var i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i]);
+    return btoa(out).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function scRandomString(size){ var bytes = new Uint8Array(size); crypto.getRandomValues(bytes); return scBase64Url(bytes); }
+  async function scSpotifyPkceChallenge(verifier){
+    var digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    return scBase64Url(new Uint8Array(digest));
+  }
+  function scSpotifyAuthListener(){
+    if(window.__scSpotifyAuthListener) return;
+    window.__scSpotifyAuthListener = true;
+    window.addEventListener('message', function(ev){
+      if(ev.origin !== new URL(SC_SPOTIFY_REDIRECT).origin || !ev.data || ev.data.type !== 'SIDECUT_SPOTIFY_AUTH') return;
+      var pending = window.__scSpotifyAuthResolve; window.__scSpotifyAuthResolve = null;
+      if(!pending) return;
+      if(ev.data.error){ pending.reject(new Error('Spotify authorization was cancelled.')); return; }
+      var savedState = localStorage.getItem(SC_SPOTIFY_STATE_KEY);
+      var verifier = localStorage.getItem(SC_SPOTIFY_VERIFIER_KEY);
+      if(!ev.data.state || ev.data.state !== savedState || !verifier){ pending.reject(new Error('Spotify authorization expired.')); return; }
+      fetch('https://accounts.spotify.com/api/token', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:new URLSearchParams({client_id:SC_SPOTIFY_CLIENT_ID, grant_type:'authorization_code', code:ev.data.code, redirect_uri:SC_SPOTIFY_REDIRECT, code_verifier:verifier})
+      }).then(function(r){ if(!r.ok) throw new Error('Spotify token exchange failed.'); return r.json(); }).then(function(token){
+        token.expires_at = Date.now() + ((Number(token.expires_in) || 3600) - 60) * 1000;
+        localStorage.setItem(SC_SPOTIFY_TOKEN_KEY, JSON.stringify(token));
+        localStorage.removeItem(SC_SPOTIFY_VERIFIER_KEY); localStorage.removeItem(SC_SPOTIFY_STATE_KEY); pending.resolve(token);
+      }).catch(pending.reject);
+    });
+  }
+  function scHandleSpotifyCallback(){
+    try{
+      var p = new URLSearchParams(location.search), code = p.get('code'), state = p.get('state'), error = p.get('error');
+      if((code || error) && window.opener && !window.opener.closed){
+        window.opener.postMessage({type:'SIDECUT_SPOTIFY_AUTH', code:code, state:state, error:error}, new URL(SC_SPOTIFY_REDIRECT).origin);
+        setTimeout(function(){ try{ window.close(); }catch(_e){} }, 100);
+        return true;
+      }
+    }catch(_e){}
+    return false;
+  }
+  function scSpotifyAccessToken(){
+    scSpotifyAuthListener();
+    var cached = null; try{ cached = JSON.parse(localStorage.getItem(SC_SPOTIFY_TOKEN_KEY) || 'null'); }catch(_e){}
+    if(cached && cached.access_token && Number(cached.expires_at) > Date.now()) return Promise.resolve(cached.access_token);
+    return scRandomString(64);
+  }
+  async function scSpotifySearch(q, type){
+    var token = await scSpotifyAccessToken();
+    if(token && token.length > 40 && !/^ey/.test(token)){
+      var verifier = token, state = scRandomString(24), challenge = await scSpotifyPkceChallenge(verifier);
+      localStorage.setItem(SC_SPOTIFY_VERIFIER_KEY, verifier); localStorage.setItem(SC_SPOTIFY_STATE_KEY, state);
+      var auth = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({client_id:SC_SPOTIFY_CLIENT_ID, response_type:'code', redirect_uri:SC_SPOTIFY_REDIRECT, code_challenge_method:'S256', code_challenge:challenge, state:state});
+      var pending = new Promise(function(resolve, reject){ window.__scSpotifyAuthResolve = {resolve:resolve, reject:reject}; });
+      try{ if(!window.open(auth, 'sidecut-spotify-auth', 'popup,width=520,height=720')) window.location.href = auth; }catch(_e){ window.location.href = auth; }
+      token = (await pending).access_token;
+    }
+    var response = await fetch('https://api.spotify.com/v1/search?' + new URLSearchParams({q:q, type:type || 'track', limit:'5'}), {headers:{Authorization:'Bearer ' + token}});
+    if(!response.ok) throw new Error('Spotify search failed.');
+    var data = await response.json(), items = type === 'album' ? (data.albums && data.albums.items) : (data.tracks && data.tracks.items);
+    return items && items[0] && items[0].external_urls && items[0].external_urls.spotify;
+  }
+  scHandleSpotifyCallback();
   function scSpotifyWebUrl(q){ return 'https://open.spotify.com/search/' + encodeURIComponent(q || ''); }
   function scOpenSpotifySearch(q){
     const web = scSpotifyWebUrl(q);
@@ -28654,19 +28726,19 @@ if(!isDiscover) stopDiscoverPreview();
 
   // Build a Spotify search URL, copy it to the clipboard, let the user paste
   // it into their downloader.
-  function copySpotifyLink(trackName, artistName, label){
+  async function copySpotifyLink(trackName, artistName, label){
     var q = ((trackName || '') + ' ' + (artistName || '')).trim();
     if(!q){ toast('No song information for this track.', 3000); return; }
-    // Open Spotify so the user can tap the track and copy the real share link.
-    // A search URL on the clipboard is not useful to downloaders — they need
-    // an actual track link like open.spotify.com/track/xxxxx.
-    if(typeof scOpenSpotifySearch === 'function'){
-      scOpenSpotifySearch(q);
-    } else {
-      var url = 'https://open.spotify.com/search/' + encodeURIComponent(q);
-      try{ window.open(url, '_blank', 'noopener'); }catch(_e){}
+    try{
+      toast('Sign in to Spotify once to get the exact link…', 2500);
+      var url = await scSpotifySearch(q, trackName ? 'track' : 'album');
+      if(!url) throw new Error('No matching Spotify result.');
+      await navigator.clipboard.writeText(url);
+      toast((label || 'Spotify link') + ' copied — paste it into your downloader.', 3500);
+    }catch(e){
+      toast('Spotify link lookup unavailable — opening Spotify search instead.', 3500);
+      if(typeof scOpenSpotifySearch === 'function') scOpenSpotifySearch(q);
     }
-    toast('Spotify opened — tap the song, tap …, then Share → Copy link.', 5000);
   }
   window.__copySpotifyLink = copySpotifyLink;
   // "Get song" gets the song.
