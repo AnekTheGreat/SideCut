@@ -65,7 +65,12 @@ module.exports = async function handler(req, res) {
     url.searchParams.set('market', 'US');
     const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) {
-      return json(res, 502, { error: `Spotify search failed (${response.status}).` });
+      let detail = '';
+      try {
+        const failure = await response.json();
+        detail = failure?.error?.message || failure?.error_description || '';
+      } catch (_) {}
+      return json(res, 502, { error: `Spotify search failed (${response.status}).`, detail });
     }
 
     const data = await response.json();
