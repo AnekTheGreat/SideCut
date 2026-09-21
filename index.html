@@ -10355,7 +10355,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.1.8';
+  const APP_VERSION = '60.1.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10739,6 +10739,10 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.1.9', date: 'September 21, 2026 · 9:00 AM EDT', title: 'Get Song opens Spotify for link copying', items: [
+    'Get Song and Find on Spotify now open Spotify directly so you can use Share → Copy link, avoiding Spotify Web API restrictions.',
+    'The app no longer depends on Spotify Premium or a backend resolver for these actions.',
+  ]},
   { version: '60.1.8', date: 'September 21, 2026 · 8:15 AM EDT', title: 'Copy exact Spotify links without opening Spotify', items: [
     'Get Song and Find on Spotify now use the public SideCut resolver to copy exact Spotify track and album links directly to the clipboard.',
     'Spotify credentials stay on the server; public users are not sent to Spotify and do not need to sign in.',
@@ -28751,23 +28755,12 @@ if(!isDiscover) stopDiscoverPreview();
   // it into their downloader.
   // Public mode does not open Spotify or copy a misleading third-party URL.
   // Exact Spotify share URLs require Spotify authorization or a secure backend.
-  const SC_SPOTIFY_RESOLVER = 'https://side-cut.vercel.app/api/spotify-search';
-  async function copySpotifyLink(trackName, artistName, label){
+  function copySpotifyLink(trackName, artistName, label){
     var query = ((trackName || '') + ' ' + (artistName || '')).trim();
-    var type = trackName ? 'track' : 'album';
     if(!query){ toast('Nothing to search for.', 2500); return false; }
-    try{
-      toast('Finding the exact Spotify link…', 2500);
-      var response = await fetch(SC_SPOTIFY_RESOLVER, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: query, type: type }) });
-      var data = await response.json().catch(function(){ return {}; });
-      if(!response.ok || !data.url) throw new Error(data.error || 'No Spotify match found.');
-      await navigator.clipboard.writeText(data.url);
-      toast('Spotify link copied — paste it into the downloader.', 3500);
-      return true;
-    }catch(err){
-      toast((label || 'Spotify search') + ' failed — ' + (err.message || 'try again.'), 4000);
-      return false;
-    }
+    scOpenSpotifySearch(query);
+    toast('Spotify opened — tap the song, then … → Share → Copy link.', 5000);
+    return true;
   }
   // "Get song" gets the song.
   //
