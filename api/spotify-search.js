@@ -62,8 +62,11 @@ module.exports = async function handler(req, res) {
     url.searchParams.set('q', query);
     url.searchParams.set('type', type);
     url.searchParams.set('limit', '1');
+    url.searchParams.set('market', 'US');
     const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) return json(res, 502, { error: 'Spotify search failed.' });
+    if (!response.ok) {
+      return json(res, 502, { error: `Spotify search failed (${response.status}).` });
+    }
 
     const data = await response.json();
     const item = type === 'album' ? data.albums?.items?.[0] : data.tracks?.items?.[0];
