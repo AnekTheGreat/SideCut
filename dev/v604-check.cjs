@@ -156,13 +156,19 @@ const rawVar = (win, name) => win.document.documentElement.style.getPropertyValu
   // ── A. the build carries the fix and says so ──
   {
     console.log('\n— v60.4 is the build, and the notes explain it —');
-    ok('the app version is 60.4', version === '60.4', version);
-    ok('the service worker cache moved with it', /sidecut-shell-v60\.4/.test(sw),
+    // This build is the one the notes call 60.0.5 (was 60.4 before everything
+    // after 60.0.1 was renumbered behind the second decimal); the follow-up fix
+    // on top of it ships as 60.0.6, so either number means this audit's code.
+    // This audit's code shipped as 60.0.5 (was 60.4) and every patch on top of it
+    // keeps the number moving for the OTA, so any 60.0.5+ build means this code.
+    ok('the app version is the 60.4 build (now numbered 60.0.5 or later)',
+       /^60\.0\.[5-9]$/.test(version), version);
+    ok('the service worker cache moved with it', /sidecut-shell-v60\.0\.[5-9]/.test(sw),
        (sw.match(/sidecut-shell-v[^']+/) || [])[0]);
-    const entry = html.slice(html.indexOf("  { version: '60.4', date: '"));
-    ok('there is a 60.4 patch-note entry', html.indexOf("  { version: '60.4', date: '") !== -1);
-    ok('and it is stamped in Eastern time', /60\.4', date: '[^']*EDT'/.test(html),
-       (html.match(/60\.4', date: '[^']*'/) || [])[0]);
+    const entry = html.slice(html.indexOf("  { version: '60.0.5', date: '"));
+    ok('there is a 60.4 (60.0.5) patch-note entry', html.indexOf("  { version: '60.0.5', date: '") !== -1);
+    ok('and it is stamped in Eastern time', /version: '60\.0\.[56]', date: '[^']*EDT'/.test(html),
+       (html.match(/version: '60\.0\.[56]', date: '[^']*'/) || [])[0]);
     ok('the notes name the refresh-rate pin', entry.indexOf('requestFrameRate') !== -1 || entry.indexOf('refresh') !== -1);
     ok('and the frame loops', /frame loop/.test(entry.slice(0, 2600)));
   }

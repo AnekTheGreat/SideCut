@@ -6954,7 +6954,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
     const allPatterns = patterns.split('\n').filter(p => p.trim());
     allPatterns.forEach(p => {
-      const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
+      const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       try {
         // For number patterns (digits followed by period), only match at start of string
         if(/^\d+\.?$/.test(p.trim())) {
@@ -6969,7 +6969,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         }
       } catch(e) {}
     });
-    return text.trim();
+    // Removing a pattern can leave the brackets it sat inside behind ("Song []",
+    // "Song ()") or a double space where the words met. Only EMPTY pairs are
+    // tidied — a bracket that still holds text is left exactly as it is.
+    return text
+      .replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
   function removeNumberPrefix(text){
@@ -10288,7 +10294,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.4';
+  const APP_VERSION = '60.0.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10617,8 +10623,20 @@ function startLyricsAutoScroll() {
   })();
   // compareVersions(a, b) → 1 if a>b, -1 if a<b, 0 if equal. Treats dotted
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
+  //
+  // The releases after 60.0.1 were renumbered behind the second decimal
+  // (60.1 → 60.0.2 … 60.4.1 → 60.0.6). A device can still carry an old label —
+  // its own running version, a stored snapshot, a staged bundle — so every
+  // comparison normalizes first: read as-is, "60.4" would look NEWER than 60.0.6
+  // and the updater (which never installs a downgrade) would refuse the
+  // renumbered build.
+  const LEGACY_VERSIONS = { '60.1':'60.0.2', '60.2':'60.0.3', '60.3':'60.0.4', '60.4':'60.0.5', '60.4.1':'60.0.6' };
+  function normVersion(v){
+    const s = String(v == null ? '' : v);
+    return LEGACY_VERSIONS[s] || s;
+  }
   function compareVersions(a, b){
-    const pa = String(a).split('.'), pb = String(b).split('.');
+    const pa = normVersion(a).split('.'), pb = normVersion(b).split('.');
     const len = Math.max(pa.length, pb.length);
     for(let i=0;i<len;i++){
       const na = parseInt(pa[i] || '0', 10), nb = parseInt(pb[i] || '0', 10);
@@ -10636,14 +10654,29 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '60.4', date: 'September 20, 2026 \u00b7 7:32 PM EDT', title: 'The display is not pinned at max refresh, and the animated themes stop drawing at vsync', items: [
+  { version: '60.0.7', date: 'September 20, 2026 \u00b7 8:34 PM EDT', title: 'The watermark remover matches whole phrases again, not single letters', items: [
+    'The pattern escaping lost its backslash, so every pattern in Watermark Remover was handed to the regex engine RAW. A pattern like [SpotiSaver] then meant "any one of these characters", which is why SpotiSaver stopped being removed as a word and the letters S, p, o, t, i, a, v, e and r started disappearing out of unrelated titles instead',
+    'Patterns are escaped again, so a pattern only ever matches the exact sequence of characters you typed: "(SpotiSaver)" removes that whole watermark phrase, "Radio Edit" removes those two words only where they actually sit together, and a title that merely happens to contain one of those letters is left alone',
+    'Removing a pattern no longer leaves the brackets it sat inside behind. "Song [SpotiSaver]" cleans up to "Song" instead of "Song [] ", and double spaces left where words met collapse',
+    'The same function runs the always-on import cleaner, so titles and artists are cleaned correctly both on import and in the library-wide Apply',
+    'The number-prefix patterns (1. 2. 3. …) still only strip at the very start of a field, so a song called "Track 1." is not touched',
+  ]},
+  { version: '60.0.6', date: 'September 20, 2026 \u00b7 8:13 PM EDT', title: 'Get song opens the Spotify app, not the logged-out web player inside SideCut', items: [
+    'Every "go to Spotify" tap hands off to the Spotify app now. open.spotify.com is allow-listed so the converter can read Spotify pages, and this WebView cannot open new windows \u2014 so any open.spotify.com link (a window.open or an <a target="_blank">) loaded that page IN the app: a logged-out Spotify web player sitting on top of SideCut. Only the Get song button went through the app handoff, so tapping a Discover card, a New releases row or "Find on Spotify" in an album still brought up the embedded player',
+    'The Discover result card, the New releases panel row and the "Find on Spotify" button in Album History track lists all use that one handoff now: on Android the spotify: scheme is given to the Spotify app (its search for that song), so the tap lands in the real app',
+    '"Find on Spotify" is a real button everywhere instead of a link, so there is no target="_blank" left to load the web player inside the app',
+    'If no Spotify app is installed, the search link is copied to the clipboard for the converter below and the toast says so \u2014 it never falls back to the web player inside SideCut',
+    'Desktop and non-Android browsers still get a normal new tab on open.spotify.com, which is where that tap belongs',
+    'Version numbers go behind the second decimal again. Everything after 60.0.1 is numbered 60.0.2 through 60.0.6 in the patch notes, and SideCut reads the old labels (60.1 \u2013 60.4.1) as the release they became \u2014 so a phone, a saved snapshot or a staged bundle still carrying an old number can never look newer than the renumbered build',
+  ]},
+  { version: '60.0.5', date: 'September 20, 2026 \u00b7 7:32 PM EDT', title: 'The display is not pinned at max refresh, and the animated themes stop drawing at vsync', items: [
     'Foreground drain, the two big ones. "Max device refresh rate" now genuinely asks the display for nothing: it used to request screen.refreshRate whenever that reported above 60, and a request pins the panel at that rate for as long as the app is open \u2014 so on a 120 Hz phone the display sat in its top mode the whole session and never got to drop between frames. An explicit rate (60/90/120\u2026/240 Hz) still requests exactly that, so pinning the display is now something you ask for on purpose rather than the default',
     'The RGB and RGB + cycles no longer run on a frame loop. They drove themselves from requestAnimationFrame with the 200ms timer kept only as a watchdog, so the page drew a frame every vsync \u2014 60 to 120 a second \u2014 and re-styled every element in the app for the whole time the theme was selected, playing or not. One 100ms timer now steps the hue (about ten repaints a second, which is what the old loop\u2019s own visible-step rule already allowed), and the sweep looks the same',
     'RGB + \u2019s glow loop is a timer too: the same ~20 updates a second, dropping to four a second once the music goes quiet, and nothing at all while the app is off screen \u2014 instead of re-requesting a frame for ever',
     'The tab icon is redrawn once a second instead of five times a second, and never in the background. Every one of those was a canvas paint plus a PNG encode, for a 16-pixel icon',
     'Nothing about the look changed. The pulse, the glow, the bass reaction, the cycle speed and every theme colour are the same \u2014 only the frames nobody could see between the updates are gone',
   ]},
-  { version: '60.3', date: 'September 20, 2026 \u00b7 6:59 PM EDT', title: 'Patch-note times in true Eastern time, the whole row for the playlist name, and lyrics that cannot hang', items: [
+  { version: '60.0.4', date: 'September 20, 2026 \u00b7 6:59 PM EDT', title: 'Patch-note times in true Eastern time, the whole row for the playlist name, and lyrics that cannot hang', items: [
     'Patch-note timestamps are now the real Eastern time. The entries written today were stamped from the build machine, which runs on UTC, so every one of them sat four hours in the future (11:05 PM on an evening that was really 7:05 PM) \u2014 which is exactly the "random time zone" you were reading. They are corrected, and the tutorial now says Eastern time outright',
     'A name that is genuinely too long is the only one that still gives way. The back-to-top arrow shares its row with the playlist tabs and used to hold its slot even while invisible, which is what cut "Punjabi Gaane" off mid-word. While the arrow is hidden the tabs get the entire row, and the tab you are on is always scrolled fully into view',
     'Lyrics can no longer get stuck on "Searching for lyrics\u2026". Every request had no timeout and up to two dozen ran one after another, so a slow connection simply meant an endless spinner. Each request now times out on its own and the whole lookup has a 12-second ceiling',
@@ -10653,14 +10686,14 @@ function startLyricsAutoScroll() {
     'The record player on the now bar follows the tab you are in: in Playlists it scrolls to the playing song in the list you have open (falling back to All Songs only when that playlist does not hold it), and in Albums it opens the album the song is in. Either way the row is highlighted, the highlight survives the list redrawing, and neither path scrolls the page itself \u2014 no more whole-app lift',
     'Much less foreground work while a song plays: one shared audio decode instead of two per track, no waveform decode unless the Waveform seek style is actually on screen, no restyling of hidden bars on every timeupdate, and the RGB cycle repaints the theme about 11 times a second instead of on every display frame',
   ]},
-  { version: '60.2', date: 'September 20, 2026 \u00b7 6:50 PM EDT', title: 'The record player follows the tab you are in, and much less foreground work', items: [
+  { version: '60.0.3', date: 'September 20, 2026 \u00b7 6:50 PM EDT', title: 'The record player follows the tab you are in, and much less foreground work', items: [
     'Tapping the record player takes you to the song in whichever half of the library you are looking at. In Playlists it scrolls to the playing song in the list and tints the row (switching All Songs only when the open playlist does not hold it); in Albums it opens that song\u2019s album, scrolled and highlighted, exactly as before. It never uses the page-scrolling call that made the whole app ride upward, in either case',
     'Playing a song no longer decodes it twice. The waveform bars and auto-volume BOTH fetched the whole file and decoded it in full, separately, on every first play of a track \u2014 two complete decodes of the same song on the interface thread. They now share one decoder and one buffer, so the second one reuses the first one\u2019s work',
     'And the waveform is only decoded when it is actually being looked at. The bars only exist in the Waveform seek style in the expanded player, so with the default Line style (or the player collapsed) nothing is decoded at all \u2014 opening the player or switching to Waveform computes it then, from the same shared decode',
     'The hidden bar work is gone. The 48 waveform bars were restyled twice each on every timeupdate (about 400 style writes a second) even while display:none on the Line style; they are only touched when they are on screen',
     'The RGB cycle no longer repaints the whole app every frame. Each hue step rewrites the accent variables, which essentially every element uses, so one step is a full repaint \u2014 and on a 120 Hz phone the old rule qualified on every frame (measured on the previous build: 62.7 repaints a second). A step now needs a visible 0.7\u00b0 change AND 90ms since the last one, which lands near 11 a second: smoother than the old 200ms timer, at a fraction of the work',
   ]},
-  { version: '60.1', date: 'September 20, 2026 \u00b7 5:40 PM EDT', title: 'Updates announce themselves, plays are counted honestly, and the tutorial teaches with scenarios', items: [
+  { version: '60.0.2', date: 'September 20, 2026 \u00b7 5:40 PM EDT', title: 'Updates announce themselves, plays are counted honestly, and the tutorial teaches with scenarios', items: [
     'A new version tells you it exists. SideCut already checked for updates quietly on every launch, but unless the install sheet happened to come up you had to go to Settings \u2192 More \u2192 Check for updates to find out. The launch check now announces what it found: a notice on the boot it is discovered, and an \u201c\u2b06 Update available\u201d entry in the \ud83d\udd14 bell with an Install now button that stays there (and keeps the bell badged) until you install it. It is the same check that already ran \u2014 no extra network call, no timer, nothing at all while the app is in the background',
     'Installing from that entry is playback-safe. It goes through the same sheet as the manual check, so if a song is playing the update stages and applies when you leave the app rather than cutting the music; \u201cLater\u201d keeps the entry in the bell instead of hiding the news',
     'Plays are counted honestly now. A play was written the moment playback started, so tapping through a list for two seconds each inflated songs played, most played and top artists. A play now counts only once you pass the HALFWAY POINT of a track, or it plays through to its natural end. Recently played is untouched \u2014 that stays based on when you started the song. Both the stats page and the stats bubble say so',
@@ -25186,8 +25219,7 @@ function _fallbackCopy(text){
             var finishTracks = function(tracks){
               if(!tracks.length){ if(sources.length > 1) return fetchTracks(sources.slice(1)); container.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);padding:8px 0;">No tracks found. <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="var c=this.closest(\'.dp-ah-albums\'); if(c){c.dataset.loaded=\'\';c.dataset.searchFallbackDone=\'\';c.dataset.dzFallbackDone=\'\';c.innerHTML=\'\';c.style.display=\'none\'; var hdr=c.closest(\'.dp-ah-album\').querySelector(\'.dp-ah-album-hdr\'); if(hdr) hdr.click();}">Retry</span></div>'; return; }
               // Build download/search link for the album
-              var dlLink = 'https://open.spotify.com/search/' + encodeURIComponent(artistName + ' ' + albumName);
-              var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-dl-album-btn" data-album="' + escapeHtml(artistName + ' - ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">⬇ Download preview</button><a href="' + dlLink + '" target="_blank" rel="noopener" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;">✨ Find on Spotify</a><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
+                            var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-dl-album-btn" data-album="' + escapeHtml(artistName + ' - ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">⬇ Download preview</button><button class="ah-find-spotify-btn" data-album="' + escapeHtml(artistName + ' ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">✨ Find on Spotify</button><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
               for(var ti=0; ti<tracks.length; ti++){
                 var tr = tracks[ti];
                 var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
@@ -25341,8 +25373,7 @@ function _fallbackCopy(text){
                     // success — render tracks
                     var h = container.closest('.dp-ah-album');
                     if(h){
-                      var dlLink = 'https://open.spotify.com/search/' + encodeURIComponent(artistName + ' ' + albumName);
-                      var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-dl-album-btn" data-album="' + escapeHtml(artistName + ' - ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">⬇ Download preview</button><a href="' + dlLink + '" target="_blank" rel="noopener" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;">✨ Find on Spotify</a><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
+                                            var h2 = '<div style="display:flex;gap:6px;justify-content:center;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;"><button class="ah-dl-album-btn" data-album="' + escapeHtml(artistName + ' - ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">⬇ Download preview</button><button class="ah-find-spotify-btn" data-album="' + escapeHtml(artistName + ' ' + albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">✨ Find on Spotify</button><button class="ah-remove-album-btn" data-cid="' + collectionId + '" data-cname="' + escapeHtml(albumName) + '" style="padding:5px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">Remove</button></div>';
                       for(var ti=0; ti<tracks.length; ti++){
                         var tr = tracks[ti];
                         var dur = tr.trackTimeMillis ? Math.floor(tr.trackTimeMillis/60000) + ':' + String(Math.floor((tr.trackTimeMillis%60000)/1000)).padStart(2,'0') : '';
@@ -27812,9 +27843,10 @@ if(!isDiscover) stopDiscoverPreview();
       if(row._suppressClick){ row._suppressClick = false; e.stopPropagation(); e.preventDefault(); return; }
       if(e.target.closest('.nr-play')) return;
       const q = row.dataset.title + ' ' + row.dataset.artist;
-      // Open Spotify search so user can copy the track link.
-      var spotifyUrl = 'https://open.spotify.com/search/' + encodeURIComponent(q);
-      try{ window.open(spotifyUrl, '_blank', 'noopener'); }catch(e){}
+      // Hand off to the Spotify app (scOpenSpotifySearch). open.spotify.com is
+      // allow-listed, so opening the web URL here loaded the embedded,
+      // logged-out web player instead of the Spotify app.
+      scOpenSpotifySearch(q);
       toast('Spotify opened \u2014 tap the song, then Share \u2192 Copy link.', 4000);
   }));
     updateNotifBadge();
@@ -28170,8 +28202,9 @@ if(!isDiscover) stopDiscoverPreview();
     // Preview only plays via the explicit ▶ button — no auto-play on tap.
     card.addEventListener('click', () => {
       const q = (r.trackName || '') + ' ' + (r.artistName || '');
-      var spotifyUrl = 'https://open.spotify.com/search/' + encodeURIComponent(q);
-      try{ window.open(spotifyUrl, '_blank', 'noopener'); }catch(e){}
+      // Same handoff as the Get song button — tapping the card used to load the
+      // allow-listed web player inside the app.
+      scOpenSpotifySearch(q);
       toast('Spotify opened — tap the song, then Share → Copy link.', 4000);
     });
 
@@ -28227,11 +28260,34 @@ if(!isDiscover) stopDiscoverPreview();
   // handed to Android as an ACTION_VIEW intent instead, and that is what lets the
   // Spotify app take over the tap. If Spotify isn't installed nothing happens at
   // all, so the full link is put on the clipboard for the converter below.
+  // open.spotify.com is in the app's allowNavigation list (the converter reads
+  // Spotify pages) and Capacitor's WebView cannot open new windows, so BOTH
+  // window.open(url, '_blank') and <a target="_blank"> load an allow-listed host
+  // IN this WebView — a logged-out Spotify web player sitting on top of SideCut.
+  // Only the Get song button used this handoff, which is why tapping a Discover
+  // card, a New releases row or "Find on Spotify" in an album still brought up
+  // the embedded player.
+  //
+  // Everything that means "go to Spotify" goes through here now. On Android the
+  // spotify: scheme is handed to the Spotify app: a scheme that is not
+  // allow-listed is never loaded by the WebView — Capacitor turns it into an
+  // ACTION_VIEW intent instead, which is what lets the Spotify app take over. If
+  // nothing answers, the search link is copied for the converter below; it is
+  // never opened inside this app.
+  function scIsAndroid(){
+    try{
+      if(window.Capacitor){
+        if(window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return true;
+        if(window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'android') return true;
+      }
+    }catch(_e){}
+    return /Android/i.test((navigator && navigator.userAgent) || '');
+  }
+  function scSpotifyWebUrl(q){ return 'https://open.spotify.com/search/' + encodeURIComponent(q || ''); }
   function scOpenSpotifySearch(q){
-    const web = 'https://open.spotify.com/search/' + encodeURIComponent(q || '');
-    let native = false;
-    try{ native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }catch(_e){}
-    if(!native){
+    const web = scSpotifyWebUrl(q);
+    // Desktop / iOS / a plain browser tab: a new tab is the real Spotify site.
+    if(!scIsAndroid()){
       try{ window.open(web, '_blank', 'noopener'); }catch(_e){}
       return;
     }
@@ -28243,9 +28299,21 @@ if(!isDiscover) stopDiscoverPreview();
       try{ document.removeEventListener('visibilitychange', onHide); }catch(_e){}
       if(handedOff || document.hidden) return; // the Spotify app took over
       try{ navigator.clipboard.writeText(web); }catch(_e){}
-      toast('No Spotify app found \u2014 the track link is on your clipboard for the converter below.', 5000);
+      toast('No Spotify app found \u2014 the search link is on your clipboard for the converter below.', 5000);
     }, 1400);
   }
+  window.__scOpenSpotifySearch = scOpenSpotifySearch;
+  // One delegated listener covers every "Find on Spotify" button — Album History,
+  // Singles and old cached popups alike — so no render path can fall back to an
+  // <a target="_blank"> that loads the web player inside the app.
+  document.addEventListener('click', function(e){
+    const b = (e.target && e.target.closest) ? e.target.closest('.ah-find-spotify-btn') : null;
+    if(!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    scOpenSpotifySearch((b.dataset && b.dataset.album) || '');
+    toast('Opening Spotify \u2014 tap the song, then Share \u2192 Copy link.', 4000);
+  }, true);
 
   function triggerDiscoverDownload(card, r){
     // "Get song" hands the track to Spotify so the user can copy the link.

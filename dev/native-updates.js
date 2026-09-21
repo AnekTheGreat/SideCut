@@ -50,8 +50,19 @@
   // 1 when a is newer, -1 when older, 0 when the same. The check below used to be
   // `man.version === running`, so an OLDER published manifest counted as an update
   // and the app would happily install a downgrade over itself.
+  //
+  // The releases after 60.0.1 were renumbered behind the second decimal
+  // (60.1 → 60.0.2 … 60.4.1 → 60.0.6). A phone can still be running one of those
+  // old labels — and the comparison runs in the build that is INSTALLED, so the
+  // mapping has to live here too: read as-is, "60.4" is newer than 60.0.6 and this
+  // client would refuse the renumbered build as a downgrade for ever.
+  var LEGACY_VERSIONS = { '60.1':'60.0.2', '60.2':'60.0.3', '60.3':'60.0.4', '60.4':'60.0.5', '60.4.1':'60.0.6' };
+  function normVersion(v){
+    var s = (v === null || v === undefined) ? '' : String(v);
+    return LEGACY_VERSIONS[s] || s;
+  }
   function compareVersions(a, b){
-    var pa = String(a || '').split('.'), pb = String(b || '').split('.');
+    var pa = normVersion(a).split('.'), pb = normVersion(b).split('.');
     var len = Math.max(pa.length, pb.length);
     for(var i = 0; i < len; i++){
       var na = parseInt(pa[i], 10) || 0, nb = parseInt(pb[i], 10) || 0;
