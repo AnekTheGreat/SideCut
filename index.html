@@ -10350,7 +10350,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.1.3';
+  const APP_VERSION = '60.1.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10734,6 +10734,11 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.1.4', date: 'September 21, 2026 · 1:28 AM EDT', title: 'Reordering albums sticks, and Get song fetches the song itself', items: [
+    'Album order now sticks when you drag a card. The cards are ordered by whatever "Sort songs" is set to, so with A\u2013Z or By artist picked the list was re-sorted the instant it redrew and the card you had just moved went straight back to where it started. Dragging a card is a decision about the order, so it now becomes the order: Albums switches to your own order and the card stays where you put it (a short note says so). The order is also read from the screen when you let go rather than from a copy taken when the hold began, so a redraw mid-drag can no longer undo it',
+    'The sort sheet says what it is in Albums. It read "Sort songs" and its first option "Playlist order" while it was actually arranging album cards; it now reads "Sort albums" with "Your own order \u2014 where you drag the cards"',
+    'Get song gets the song. It used to send you to Spotify to find the track, open the 3-dot menu and copy the link, then paste it into a converter \u2014 three apps for one tap. It now finds the recording on-device with the same resolver the converters use and files the finished track straight into your library, lossless, exactly like the old Save button (which is gone, since this is that button). If the resolver cannot find that particular recording, it falls back to the Spotify handoff so the copy-the-link route still works. Note for the record: Spotify\u2019s own track link cannot be read for you automatically \u2014 their search API needs a developer token and the anonymous routes are blocked \u2014 so what is fetched is the song, not the link',
+  ]},
   { version: '60.1.3', date: 'September 21, 2026 · 12:19 AM EDT', title: 'Lossless downloads by default, commas between artists, album artists you can rename', items: [
     'Downloads are lossless now. Every converter opens on FLAC (lossless) \\u2014 the same audio with nothing thrown away, about a fifth of a WAV\u2019s size \\u2014 with WAV (also lossless) next and MP3 last for when space matters more. Pick MP3 at any time from the same format menu, on the album picker, the single-song converter and the YouTube one',
     'The FLAC encoder no longer freezes the app. It used to run the whole track in one pass on the main thread, which is why a lossless conversion locked everything up; it now hands the screen back every couple of seconds of audio and reports progress, and the file it writes is byte-for-byte the one it always wrote',
@@ -16670,9 +16675,26 @@ function _fallbackCopy(text){
                 document.removeEventListener('pointerup', onUp);
                 document.removeEventListener('pointercancel', onCancel);
                 setTimeout(function(){
-                  var keys = siblings.map(function(s){ return s.dataset.albumName; });
-                  var moved = keys.splice(startIndex, 1)[0];
-                  keys.splice(currentIndex, 0, moved);
+                  // Read the order that is actually on screen. The snapshot taken
+                  // when the hold armed goes stale if anything re-rendered the
+                  // list mid-drag, and committing from it wrote the old order
+                  // straight back — the card snapped home as if the drag never
+                  // happened. The dragged card's own name is the anchor.
+                  var liveNames = [];
+                  try{
+                    Array.prototype.forEach.call(pane.querySelectorAll('[data-album-name]'), function(c){
+                      if(c && c.dataset && c.dataset.albumName) liveNames.push(c.dataset.albumName);
+                    });
+                  }catch(_eLive){}
+                  var dragged = (card && card.dataset) ? card.dataset.albumName : '';
+                  var keys = (dragged && liveNames.indexOf(dragged) !== -1)
+                    ? liveNames.slice()
+                    : siblings.map(function(s){ return s.dataset.albumName; });
+                  var from = keys.indexOf(dragged);
+                  if(from === -1) from = Math.min(startIndex, Math.max(0, keys.length - 1));
+                  var to = Math.max(0, Math.min(keys.length - 1, currentIndex));
+                  var moved = keys.splice(from, 1)[0];
+                  keys.splice(to, 0, moved);
                   // Tag-only albums have no saved entry, so the new position had
                   // nowhere to go and the card snapped back on the next render —
                   // the drag looked broken. Materialise them (exactly what opening
@@ -16696,7 +16718,17 @@ function _fallbackCopy(text){
                   } else {
                     saveMeta();
                   }
+                  // Album cards are ordered by whatever "Sort songs" is set to,
+                  // so under A–Z or By artist the order just dragged was re-sorted
+                  // the moment the list redrew — it looked like the drag never
+                  // took. In Albums the drag IS the answer: take it as the album
+                  // order so the card stays where it was put.
+                  var _wasSorted = (typeof currentSort !== 'undefined' && currentSort && currentSort !== 'default');
+                  if(_wasSorted){ try{ currentSort = 'default'; }catch(_eSort){} }
                   renderList();
+                  if(_wasSorted){
+                    try{ toast('Album order saved \u2014 Albums now shows your own order.', 2600); }catch(_eOrdToast){}
+                  }
                 }, 150);
               }
               function onCancel(){
@@ -17274,6 +17306,14 @@ function _fallbackCopy(text){
   function openSortSheet(){
     if(document.getElementById('sortSheet')) return;
     const key = currentSortKey();
+    // In Albums the same sheet orders the album cards, so the wording has to
+    // say albums — "Playlist order" made no sense next to a grid of albums, and
+    // there was nothing on screen saying a drag is what that option means.
+    const _albumMode = (typeof libraryMode !== 'undefined' && libraryMode === 'albums');
+    const _sortTitle = _albumMode ? 'Sort albums' : 'Sort songs';
+    const _sortLabels = _albumMode
+      ? { 'default': ['Your own order', 'Where you drag the cards'] }
+      : {};
     const ov = document.createElement('div');
     ov.id = 'sortSheet';
     ov.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.7);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;';
@@ -17281,7 +17321,7 @@ function _fallbackCopy(text){
     card.style.cssText = 'width:100%;max-width:420px;max-height:80vh;background:var(--bg-raised);border-top-left-radius:16px;border-top-right-radius:16px;border:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;';
     const head = document.createElement('div');
     head.style.cssText = 'padding:14px 16px 8px;font-size:14px;font-weight:700;color:var(--ink);flex-shrink:0;';
-    head.textContent = 'Sort songs';
+    head.textContent = _sortTitle;
     card.appendChild(head);
     const list = document.createElement('div');
     list.style.cssText = 'padding:0 10px 12px;overflow-y:auto;';
@@ -17293,8 +17333,9 @@ function _fallbackCopy(text){
         + 'border:1px solid ' + (active ? 'var(--coral)' : 'var(--line)') + ';'
         + 'background:' + (active ? 'rgba(227,178,60,0.14)' : 'rgba(255,255,255,0.03)') + ';'
         + 'color:var(--ink);font-size:14px;';
-      b.innerHTML = '<span style="flex:1;min-width:0;"><span style="font-weight:600;display:block;">' + opt[1] + '</span>'
-        + '<span style="font-size:11px;color:var(--ink-dim);display:block;margin-top:2px;">' + opt[2] + '</span></span>'
+      const _lab = _sortLabels[opt[0]] || [opt[1], opt[2]];
+      b.innerHTML = '<span style="flex:1;min-width:0;"><span style="font-weight:600;display:block;">' + _lab[0] + '</span>'
+        + '<span style="font-size:11px;color:var(--ink-dim);display:block;margin-top:2px;">' + _lab[1] + '</span></span>'
         + (active ? '<span style="color:var(--coral);font-weight:700;font-size:15px;">\u2713</span>' : '');
       b.addEventListener('click', function(){
         try{ ov.remove(); }catch(_e){}
@@ -28379,27 +28420,21 @@ if(!isDiscover) stopDiscoverPreview();
       actions.appendChild(previewBtn);
     }
 
+    // One button, and it gets the song. SideCut resolves the recording and
+    // converts it on-device straight into the library — no Spotify trip, no
+    // "Share → Copy link", no paste. The old "Save" button did exactly this,
+    // so it is folded in here rather than sitting next to it as a second copy
+    // of the same action. If the resolver comes up empty the Spotify handoff
+    // still runs, so the copy-the-link route is never lost.
     const dlBtn = document.createElement('button');
     dlBtn.className = 'discover-dl-btn';
     dlBtn.textContent = 'Get song';
-    dlBtn.title = 'Copy song name to clipboard';
+    dlBtn.title = 'Find this song and add it to your library';
     dlBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      triggerDiscoverDownload(card, r);
+      triggerDiscoverDownload(card, r, dlBtn);
     });
     actions.appendChild(dlBtn);
-
-    // "Save song" — converts the track on-device and imports it straight
-    // into the library (same pipeline as the Spotify converter).
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'discover-dl-btn';
-    saveBtn.textContent = 'Save';
-    saveBtn.title = 'Convert this song on-device and add it to your library';
-    saveBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.__scSaveDiscoverTrack(r, saveBtn);
-    });
-    actions.appendChild(saveBtn);
 
     // Pin/unpin the artist — SideCut watches pinned artists for new releases.
     const pinBtn = document.createElement('button');
@@ -28439,7 +28474,7 @@ if(!isDiscover) stopDiscoverPreview();
   // imports the finished tagged file straight into the library.
   window.__scSaveDiscoverTrack = async function(r, btn){
     var oldLabel = btn ? btn.textContent : 'Save';
-    if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+    if(btn){ btn.disabled = true; btn.textContent = 'Getting…'; }
     var fmt = 'flac';   // lossless unless the converter's format picker says otherwise
     try{
       try{ var _sel = document.getElementById('spFmtDisc'); if(_sel && _sel.value) fmt = _sel.value; }catch(_e){}
@@ -28453,10 +28488,7 @@ if(!isDiscover) stopDiscoverPreview();
         genre: r.primaryGenreName || '', track: '', position: 0
       };
       var out = await scConvertOneTrack(meta, fmt, function(){});
-      if(!out || !out.ok){
-        toast('Couldn\'t find audio for that one — try "Get song" instead.', 4000);
-        return;
-      }
+      if(!out || !out.ok) return false;   // caller falls back to the Spotify handoff
       var ftype = fmt === 'flac' ? 'audio/flac' : (fmt === 'wav' ? 'audio/wav' : 'audio/mpeg');
       var file = new File([out.blob], out.fName, { type: ftype });
       if(typeof window.__handleFileImport === 'function'){
@@ -28467,8 +28499,10 @@ if(!isDiscover) stopDiscoverPreview();
         if(!savedOk) scDownloadBlob(out.blob, out.fName);
         toast('Saved "' + (r.trackName || 'song') + '" — import it via + Add songs.', 4000);
       }
+      return true;
     }catch(e){
-      toast('Save failed — ' + ((e && e.message) || 'try again.'), 3500);
+      toast('Get song failed — ' + ((e && e.message) || 'try again.'), 3500);
+      return false;
     }finally{
       if(btn){ btn.disabled = false; btn.textContent = oldLabel; }
     }
@@ -28537,11 +28571,27 @@ if(!isDiscover) stopDiscoverPreview();
     toast('Opening Spotify \u2014 tap the song, then Share \u2192 Copy link.', 4000);
   }, true);
 
-  function triggerDiscoverDownload(card, r){
-    // "Get song" hands the track to Spotify so the user can copy the link.
+  // "Get song" gets the song.
+  //
+  // It used to hand the track to Spotify and leave the user to find it there,
+  // open the 3-dot menu, copy the link and paste it back into a converter. That
+  // works, but it is three apps of work for one tap. The on-device resolver (the
+  // same one the YouTube converter uses) finds the recording and converts it
+  // straight into the library, so there is no link to copy at all.
+  //
+  // Spotify's own track link cannot be read for you without a Spotify developer
+  // key — their search API needs a token, and the anonymous page/token routes
+  // are blocked — so the handoff stays as the fallback when the resolver comes
+  // up empty rather than being removed.
+  async function triggerDiscoverDownload(card, r, btn){
     const q = (r.trackName || '') + ' ' + (r.artistName || '');
+    if(typeof window.__scSaveDiscoverTrack === 'function'){
+      let got = false;
+      try{ got = await window.__scSaveDiscoverTrack(r, btn || null); }catch(_eGet){ got = false; }
+      if(got) return;
+    }
     scOpenSpotifySearch(q);
-    toast('Spotify opened \u2014 tap the song, then Share \u2192 Copy link.', 5000);
+    toast('Couldn\u2019t find that one on-device \u2014 Spotify opened, tap the song and Share \u2192 Copy link.', 5000);
   }
 
   window.playDiscoverTrack = function(url, row, meta){

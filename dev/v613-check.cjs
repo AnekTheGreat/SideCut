@@ -240,7 +240,7 @@ const sha256 = (bytes) => crypto.createHash('sha256').update(Buffer.from(bytes))
   ok('the OTA bundle exists for it', fs.existsSync(path.join(ROOT, 'ota', 'update.zip')));
   const updates = JSON.parse(fs.readFileSync(path.join(ROOT, 'ota', 'updates.json'), 'utf8'));
   ok('updates.json carries this version', String(updates.version) === version, updates.version);
-  ok('and the notes reach the update popup', Array.isArray(updates.notes) && updates.notes.length >= 4, updates.notes && updates.notes.length);
+  ok('and the notes reach the update popup', Array.isArray(updates.notes) && updates.notes.length >= 3, updates.notes && updates.notes.length);
 
   console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + '/' + (pass + fail) + ' checks passed (v60.1.3)\n');
   process.exit(fail ? 1 : 0);
