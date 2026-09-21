@@ -16627,23 +16627,41 @@ function _fallbackCopy(text){
         // Hold-to-reorder: long-press on the album card starts drag
         (function(){
           var holdTimer = null;
+          var ALBUM_HOLD_MS = 3000;
           card.addEventListener('pointerdown', function(e){
             if(e.target.closest('button') || e.target.closest('img') || e.target.closest('a') || e.target.closest('.track')) return;
             var sx = e.clientX, sy = e.clientY;
-            // Capture pointer immediately to prevent browser from stealing the gesture
-            try{ card.setPointerCapture(e.pointerId); }catch(_pc){}
-            var _cardPtrId = e.pointerId;
+            var cancelledBeforeHold = false;
+            function stopPendingHold(){
+              if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+              cancelledBeforeHold = true;
+              card.removeEventListener('pointermove', cancelIfMoved, true);
+              card.removeEventListener('pointerup', stopPendingHold, true);
+              card.removeEventListener('pointercancel', stopPendingHold, true);
+            }
+            function cancelIfMoved(ev){
+              if(Math.abs(ev.clientX - sx) > 12 || Math.abs(ev.clientY - sy) > 12) stopPendingHold();
+            }
+            card.addEventListener('pointermove', cancelIfMoved, true);
+            card.addEventListener('pointerup', stopPendingHold, true);
+            card.addEventListener('pointercancel', stopPendingHold, true);
             holdTimer = setTimeout(function(){
               holdTimer = null;
+              card.removeEventListener('pointermove', cancelIfMoved, true);
+              card.removeEventListener('pointerup', stopPendingHold, true);
+              card.removeEventListener('pointercancel', stopPendingHold, true);
+              if(cancelledBeforeHold || !card || !card.parentElement) return;
+              try{ card.setPointerCapture(e.pointerId); }catch(_pc){}
               try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_v){}
-              // Enter reorder mode visually
               card.style.opacity = '0.85';
               card.style.zIndex = '30';
               card.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
               card.style.transition = 'none';
               var pane = card.parentElement;
+              if(!pane) return;
               var siblings = Array.from(pane.querySelectorAll('[data-album-name]'));
               var startIndex = siblings.indexOf(card);
+              if(startIndex < 0) return;
               var startY = e.clientY;
               var currentIndex = startIndex;
               // Cards are not all the same height — an expanded album card is many
@@ -28721,17 +28739,32 @@ if(!isDiscover) stopDiscoverPreview();
     if(!b) return;
     e.preventDefault();
     e.stopPropagation();
-    toast('Use Download preview to get this album without leaving SideCut.', 3000);
+    copySpotifyLink(null, (b.dataset && b.dataset.album) || '', 'Find on Spotify');
 
   }, true);
 
   // Build a Spotify search URL, copy it to the clipboard, let the user paste
   // it into their downloader.
-  // Public mode: album history stays in SideCut and never opens Spotify.
-  function copySpotifyLink(trackName, artistName, label){
-    toast('Use Download preview to get this album without leaving SideCut.', 3000);
+  // Public mode does not open Spotify or copy a misleading third-party URL.
+  // Exact Spotify share URLs require Spotify authorization or a secure backend.
+  const SC_SPOTIFY_RESOLVER = 'https://side-cut.vercel.app/api/spotify-search';
+  async function copySpotifyLink(trackName, artistName, label){
+    var query = ((trackName || '') + ' ' + (artistName || '')).trim();
+    var type = trackName ? 'track' : 'album';
+    if(!query){ toast('Nothing to search for.', 2500); return false; }
+    try{
+      toast('Finding the exact Spotify link…', 2500);
+      var response = await fetch(SC_SPOTIFY_RESOLVER, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: query, type: type }) });
+      var data = await response.json().catch(function(){ return {}; });
+      if(!response.ok || !data.url) throw new Error(data.error || 'No Spotify match found.');
+      await navigator.clipboard.writeText(data.url);
+      toast('Spotify link copied — paste it into the downloader.', 3500);
+      return true;
+    }catch(err){
+      toast((label || 'Spotify search') + ' failed — ' + (err.message || 'try again.'), 4000);
+      return false;
+    }
   }
-  window.__copySpotifyLink = copySpotifyLink;
   // "Get song" gets the song.
   //
   // It used to hand the track to Spotify and leave the user to find it there,
@@ -28745,13 +28778,7 @@ if(!isDiscover) stopDiscoverPreview();
   // are blocked — so the handoff stays as the fallback when the resolver comes
   // up empty rather than being removed.
   async function triggerDiscoverDownload(card, r, btn){
-    const q = (r.trackName || '') + ' ' + (r.artistName || '');
-    if(typeof window.__scSaveDiscoverTrack === 'function'){
-      let got = false;
-      try{ got = await window.__scSaveDiscoverTrack(r, btn || null); }catch(_eGet){ got = false; }
-      if(got) return;
-    }
-    toast('Could not find that song right now. Try Get song again.', 3500);
+    await copySpotifyLink(r.trackName || '', r.artistName || '', 'Get song');
   }
 
   window.playDiscoverTrack = function(url, row, meta){
