@@ -132,16 +132,16 @@ console.log('\n— the format menu opens on lossless —');
   };
   ['spFmtDisc', 'ytFmtDisc', 'spFmtSettings', 'ytFmtSettings'].forEach((id) => {
     const body = opts(id);
-    ok(id + ' leads with FLAC and has it selected',
-      /^<option value="flac" selected>FLAC \(lossless\)<\/option>/.test(body), body.slice(0, 90));
-    ok(id + ' has no selected MP3', !/<option value="mp3" selected/.test(body));
+    ok(id + ' leads with MP3 and has it selected',
+      /^<option value="mp3" selected>MP3 \(smaller\)<\/option>/.test(body), body.slice(0, 90));
+    ok(id + ' has no selected FLAC', !/<option value="flac" selected/.test(body));
   });
-  ok('the batch picker leads with FLAC', /<option value="flac"' \+ \(presetFmt === 'flac' \? ' selected' : ''\) \+ '>FLAC \(lossless\)<\/option>/.test(html));
+  ok('the batch picker leads with MP3', /<option value="mp3"' \+ \(presetFmt === 'mp3' \? ' selected' : ''\) \+ '>MP3 \(smaller\)<\/option>/.test(html));
   ok('the on-device picker offers FLAC first, as the emphasised button',
     /window\.__csSpPick\(\\'flac\\'\)" style="padding:5px 12px; border-radius:6px; background:var\(--coral\)/.test(html));
   ok('the YouTube converter\\u2019s own fallback order is lossless first',
     /: \['flac', 'wav', 'mp3'\];/.test(html));
-  ok('the Discover Save fallback is FLAC', /var fmt = 'flac';   \/\/ lossless unless/.test(html));
+  ok('the Discover Save fallback is MP3', /var fmt = 'mp3';   \/\/ MP3 unless/.test(html));
   ok('the panel says what the default is', /Lossless by default: FLAC keeps every bit of the audio/.test(html));
 }
 

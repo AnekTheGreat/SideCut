@@ -60,7 +60,7 @@ ok('the resolver reports success so the fallback can run',
 ok('the second copy of the same button is gone', !/saveBtn\.textContent = 'Save';/.test(html));
 ok('the old "try Get song instead" advice is gone', !/try "Get song" instead/.test(html));
 ok('the button describes what it now does',
-  /dlBtn\.title = 'Find this song and add it to your library';/.test(html));
+  /dlBtn\.title = 'Copy the Spotify link for this song';/.test(html));
 ok('the Spotify handoff is still there as the fallback',
   /function scOpenSpotifySearch\(q\)\{/.test(html) && /scOpenSpotifySearch\(q\);/.test(html));
 
@@ -172,6 +172,13 @@ function fakeIndexedDB() {
       if (this.id === 'listPane') return { top: 0, bottom: 800, height: 800, left: 0, right: 360, width: 360 };
       return { top: 0, bottom: 0, height: 0, left: 0, right: 0, width: 0 };
     };
+    // The card drag measures real card heights (offsetHeight), which jsdom does
+    // not compute: without this every card is 0 tall and the drop index maths
+    // has nothing to work with. 100px each, matching the rect stub above.
+    Object.defineProperty(win.HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get() { return (this.dataset && this.dataset.albumName) ? 100 : 0; },
+    });
     win.navigate('albums');
     await wait(700);
 
