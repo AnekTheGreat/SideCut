@@ -31,6 +31,19 @@ function ok(name, cond, extra) {
   else { fail++; console.log('  ✗ ' + name + (extra ? '  [' + extra + ']' : '')); }
 }
 const count = (hay, needle) => hay.split(needle).length - 1;
+// Read versions through the app's own legacy map — 60.1–60.4.1 were renumbered
+// behind the second decimal and 60.4.2 is the bridge release carrying this same
+// code under an old-style number — so "this build or newer" survives the number
+// moving for OTA delivery.
+const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.7' };
+function versionAtLeast(v, min) {
+  const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = parseInt(a[i] || '0', 10), y = parseInt(b[i] || '0', 10);
+    if (x !== y) return x > y;
+  }
+  return true;
+}
 const region = (from, to) => {
   const a = html.indexOf(from), b = html.indexOf(to);
   return (a === -1 || b === -1 || b < a) ? '' : html.slice(a, b);
@@ -79,9 +92,8 @@ ok('the legacy labels are read as the release they became',
   html.indexOf(`'60.4':'60.0.5'`) !== -1 && fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8').indexOf(`'60.4':'60.0.5'`) !== -1);
 ok('a legacy 60.4 is NOT newer than 60.0.6',
   /LEGACY_VERSIONS[\s\S]{0,200}'60\.4':'60\.0\.5'/.test(html));
-// This build shipped as 60.0.6; a follow-up fix on top of it is 60.0.7, and the
-// OTA needs the number to move, so either number means this code.
-ok('index.html is v60.0.6 (or the patch on top of it)', version === '60.0.6' || version === '60.0.7', version);
+// This build shipped as 60.0.6; later releases only move the number.
+ok('index.html is v60.0.6 or newer', versionAtLeast(version, '60.0.6'), version);
 ok('sw.js cache matches the version', sw.indexOf(`sidecut-shell-v${version}`) !== -1);
 
 console.log('\n— one handoff, and it goes to the app —');

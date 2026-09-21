@@ -56,7 +56,7 @@
   // old labels — and the comparison runs in the build that is INSTALLED, so the
   // mapping has to live here too: read as-is, "60.4" is newer than 60.0.6 and this
   // client would refuse the renumbered build as a downgrade for ever.
-  var LEGACY_VERSIONS = { '60.1':'60.0.2', '60.2':'60.0.3', '60.3':'60.0.4', '60.4':'60.0.5', '60.4.1':'60.0.6' };
+  var LEGACY_VERSIONS = { '60.1':'60.0.2', '60.2':'60.0.3', '60.3':'60.0.4', '60.4':'60.0.5', '60.4.1':'60.0.6', '60.4.2':'60.0.7' };
   function normVersion(v){
     var s = (v === null || v === undefined) ? '' : String(v);
     return LEGACY_VERSIONS[s] || s;

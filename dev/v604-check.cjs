@@ -28,6 +28,19 @@ function ok(name, cond, extra) {
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const count = (hay, needle) => hay.split(needle).length - 1;
+// Versions are read through the app's own legacy map (60.1–60.4.1 were renumbered
+// behind the second decimal, and 60.4.2 is a bridge release carrying that same
+// code under an old-style number), so "this build or anything newer" holds as the
+// number keeps moving for OTA delivery.
+const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.7' };
+function versionAtLeast(v, min) {
+  const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = parseInt(a[i] || '0', 10), y = parseInt(b[i] || '0', 10);
+    if (x !== y) return x > y;
+  }
+  return true;
+}
 
 const version = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const region = (from, to) => {
@@ -159,11 +172,11 @@ const rawVar = (win, name) => win.document.documentElement.style.getPropertyValu
     // This build is the one the notes call 60.0.5 (was 60.4 before everything
     // after 60.0.1 was renumbered behind the second decimal); the follow-up fix
     // on top of it ships as 60.0.6, so either number means this audit's code.
-    // This audit's code shipped as 60.0.5 (was 60.4) and every patch on top of it
-    // keeps the number moving for the OTA, so any 60.0.5+ build means this code.
+    // This audit's code shipped as 60.0.5 (was 60.4); every release after it just
+    // moves the number for the OTA.
     ok('the app version is the 60.4 build (now numbered 60.0.5 or later)',
-       /^60\.0\.[5-9]$/.test(version), version);
-    ok('the service worker cache moved with it', /sidecut-shell-v60\.0\.[5-9]/.test(sw),
+       versionAtLeast(version, '60.0.5'), version);
+    ok('the service worker cache moved with it', sw.indexOf('sidecut-shell-v' + version) !== -1,
        (sw.match(/sidecut-shell-v[^']+/) || [])[0]);
     const entry = html.slice(html.indexOf("  { version: '60.0.5', date: '"));
     ok('there is a 60.4 (60.0.5) patch-note entry', html.indexOf("  { version: '60.0.5', date: '") !== -1);

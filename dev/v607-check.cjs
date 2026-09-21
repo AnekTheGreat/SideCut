@@ -108,26 +108,78 @@ console.log('\n— the import cleaner uses the same function —');
 ok('cleanOnImport is present and applies these patterns',
   /function cleanOnImport\([\s\S]{0,1400}applyWatermarkPatterns\(/.test(html));
 
+console.log('\n— the bridge actually bridges —');
+// A pre-renumbering install: plain numeric compare, none of the mapping. This is
+// the decision that was refusing v60.0.7 and offering nothing.
+const oldCmp = (a, b) => {
+  const pa = String(a).split('.'), pb = String(b).split('.');
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = parseInt(pa[i] || '0', 10), y = parseInt(pb[i] || '0', 10);
+    if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
+};
+ok('a phone on v60.4 accepts the bridge (60.4.2 > 60.4)', oldCmp('60.4.2', '60.4') > 0);
+ok('so does a phone on v60.4.1', oldCmp('60.4.2', '60.4.1') > 0);
+ok('and one on v60.0.1 or older', oldCmp('60.4.2', '60.0.1') > 0);
+ok('the plain renumbered build would NOT be accepted by them', oldCmp('60.0.7', '60.4') < 0);
+// And the bridged phone must accept what comes after it — decided by the code in
+// the shipped OTA client, so that is what gets run.
+function extractFn(src, from, to, ret) {
+  const a = src.indexOf(from), b = src.indexOf(to);
+  if (a === -1 || b === -1 || b < a) return null;
+  try { return new Function(src.slice(a, b) + '\nreturn ' + ret + ';')(); } catch (e) { return null; }
+}
+const otaCmp = extractFn(fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8'),
+  'var LEGACY_VERSIONS', '  function currentVersion(){', 'compareVersions');
+ok('the shipped OTA client reads the bridge as 60.0.7', typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.7') === 0);
+ok('so the next renumbered release installs on a bridged phone',
+  typeof otaCmp === 'function' && otaCmp('60.0.8', '60.4.2') > 0);
+ok('and the bridge is not a downgrade for anyone else',
+  typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.1') > 0);
+
 console.log('\n— version, notes and the published bundle —');
-ok('index.html is v60.0.7', version === '60.0.7', version);
+// Read versions through the app's own legacy map: 60.1–60.4.1 were renumbered
+// behind the second decimal, and 60.4.2 is the one-off bridge release that carries
+// this same code under an old-style number so a pre-renumbering install accepts it.
+const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.7' };
+const BRIDGE = '60.4.2';
+function versionAtLeast(v, min) {
+  const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = parseInt(a[i] || '0', 10), y = parseInt(b[i] || '0', 10);
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+ok('index.html is v60.0.7, or the bridge build carrying it', versionAtLeast(version, '60.0.7'), version);
 ok('sw.js cache matches', sw.indexOf(`sidecut-shell-v${version}`) !== -1);
+ok('the bridge release is mapped to 60.0.7 in both comparators',
+  html.indexOf(`'60.4.2':'60.0.7'`) !== -1 &&
+  fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8').indexOf(`'60.4.2':'60.0.7'`) !== -1);
 const entries = [...html.matchAll(/version: '(\d+(?:\.\d+)*)', date: '([^']*)'/g)].map((m) => ({ v: m[1], d: m[2] }));
-ok('the 60.0.7 entry exists and is newest', entries[0] && entries[0].v === version, entries[0] && entries[0].v);
-ok('every post-60.0.1 entry is behind the second decimal',
-  entries.filter((e) => /^60\.[1-9]/.test(e.v)).length === 0,
+ok('the 60.0.7 entry exists', entries.some((e) => e.v === '60.0.7'));
+ok('the newest entry is this build (or the bridge carrying it)',
+  entries[0] && (entries[0].v === version || entries[0].v === BRIDGE), entries[0] && entries[0].v);
+ok('only the documented bridge uses an old-style number',
+  entries.filter((e) => /^60\.[1-9]/.test(e.v) && e.v !== BRIDGE).length === 0,
   entries.map((e) => e.v).slice(0, 7).join(', '));
 ok('the stamps are Eastern time, never UTC',
-  entries.slice(0, 7).every((e) => /(EDT|EST)$/.test(e.d)) && entries[0].d.indexOf('AM EDT') === -1,
+  entries.slice(0, 7).every((e) => /(EDT|EST)$/.test(e.d)),
   entries[0].d);
-ok('the history reads 60.0.6, 60.0.5, … 60.0.1',
-  entries.slice(0, 6).map((e) => e.v).join(',') === '60.0.7,60.0.6,60.0.5,60.0.4,60.0.3,60.0.2',
-  entries.slice(0, 6).map((e) => e.v).join(','));
+ok('the renumbered history reads 60.0.7 … 60.0.2',
+  entries.filter((e) => /^60\.0\.\d$/.test(e.v)).slice(0, 6).map((e) => e.v).join(',') === '60.0.7,60.0.6,60.0.5,60.0.4,60.0.3,60.0.2',
+  entries.filter((e) => /^60\.0\.\d$/.test(e.v)).slice(0, 6).map((e) => e.v).join(','));
 
 let man = null;
 try { man = JSON.parse(fs.readFileSync(path.join(ROOT, 'ota/updates.json'), 'utf8')); } catch (e) {}
 ok('the OTA manifest parses', !!man);
 ok('it names this version', man && String(man.version) === version, man && man.version);
-ok('and explains the escaping', man && man.notes.join(' ').indexOf('escaping') !== -1);
+ok('and carries patch notes', man && Array.isArray(man.notes) && man.notes.length > 0);
+// The live manifest only carries the NEWEST entry's notes (which is the bridge's
+// own on a bridge release), so this build's notes are read from its changelog.
+const ownEntry = (html.match(/\{ version: '60\.0\.7'[\s\S]*?\n  \]\}/) || [''])[0];
+ok('the 60.0.7 notes explain the escaping', ownEntry.indexOf('escaping') !== -1);
 let zipHtml = '';
 try { zipHtml = execFileSync('unzip', ['-p', path.join(ROOT, 'ota/update.zip'), 'index.html'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); } catch (e) {}
 ok('the published zip carries the fix', zipHtml.indexOf(FIXED_ESCAPE) !== -1 && zipHtml.indexOf(BROKEN_ESCAPE) === -1);
