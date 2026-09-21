@@ -35,9 +35,10 @@ const count = (hay, needle) => hay.split(needle).length - 1;
 // behind the second decimal and 60.4.2 is the bridge release carrying this same
 // code under an old-style number — so "this build or newer" survives the number
 // moving for OTA delivery.
-// '60.1' is deliberately absent: it was the old label for 60.0.2, but it is a
-// real version again (60.0.9 → 60.1), so the app must never rewrite it.
-const LEGACY = { '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8', '60.0.10': '60.1' };
+// The map as it stands: 60.1 is the current line and 60.2 – 60.4 are the numbers
+// still to come, so none of them may be rewritten. Only the two labels a live
+// install can still be sitting on are mapped.
+const LEGACY = { '60.4.1': '60.0.6', '60.4.2': '60.0.8' };
 function versionAtLeast(v, min) {
   const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
@@ -82,24 +83,31 @@ ok('the page comparator runs', typeof pageCmp === 'function');
 ok('the OTA client comparator runs', typeof otaCmp === 'function');
 [['page', pageCmp], ['OTA client', otaCmp]].forEach(([who, cmp]) => {
   if (typeof cmp !== 'function') { fail++; console.log('  ✗ ' + who + ' comparator missing'); return; }
-  ok(who + ': the renumbered 60.0.6 is NEWER than a phone on the old 60.4', cmp('60.0.6', '60.4') > 0);
-  ok(who + ': 60.0.6 equals the old 60.4.1 label (same build, no loop)', cmp('60.0.6', '60.4.1') === 0);
   ok(who + ': 60.0.6 is newer than 60.0.1', cmp('60.0.6', '60.0.1') > 0);
-  ok(who + ': the old 60.3 label reads as 60.0.4', cmp('60.3', '60.0.4') === 0);
   ok(who + ': a genuinely older build is still older', cmp('60.0.6', '59.1') > 0 && cmp('60.0.6', '60.0.7') < 0);
-  // 60.1 is a live version now, not the old label for 60.0.2. Rewriting it
-  // would make the running build read its own version as 60.0.2 and re-offer
-  // every published release for ever.
-  ok(who + ': 60.1 is newer than 60.0.9', cmp('60.1', '60.0.9') > 0);
-  ok(who + ': this build’s own version is never rewritten (60.1, not 60.0.2)', cmp('60.1', '60.1') === 0 && cmp('60.1', '60.0.2') > 0);
-  ok(who + ': the number it almost shipped under reads as 60.1', cmp('60.0.10', '60.1') === 0);
+  // 60.1 is a live version now, not the old label for 60.0.2. Rewriting it would
+  // make the running build read its own version as 60.0.2 and re-offer every
+  // published release for ever.
+  ok(who + ': 60.1 is its own number, never 60.0.2',
+    cmp('60.1', '60.1') === 0 && cmp('60.1', '60.0.2') > 0 && cmp('60.1', '60.0.9') > 0);
+  // And the numbers still to come must not be rewritten either, or the second
+  // number could never advance: a release published as 60.2 has to READ as 60.2.
+  ok(who + ': 60.2 – 60.4 are releases again, not old labels',
+    cmp('60.2', '60.0.3') !== 0 && cmp('60.3', '60.0.4') !== 0 && cmp('60.4', '60.0.5') !== 0 && cmp('60.2', '60.1') > 0);
+  // The two labels a live install can still be sitting on.
+  ok(who + ': 60.4.1 still reads as the release it became', cmp('60.4.1', '60.0.6') === 0);
+  ok(who + ': and a device on that label takes the newest release', cmp('60.1.1', '60.4.1') > 0);
 });
 
 console.log('\n— the version this fix ships as —');
-ok('the legacy labels are read as the release they became',
-  html.indexOf(`'60.4':'60.0.5'`) !== -1 && fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8').indexOf(`'60.4':'60.0.5'`) !== -1);
-ok('a legacy 60.4 is NOT newer than 60.0.6',
-  /LEGACY_VERSIONS[\s\S]{0,200}'60\.4':'60\.0\.5'/.test(html));
+const otaMap = fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8');
+ok('the labels a live install can be on are read as the release they became',
+  html.indexOf(`'60.4.1':'60.0.6'`) !== -1 && otaMap.indexOf(`'60.4.1':'60.0.6'`) !== -1 &&
+  html.indexOf(`'60.4.2':'60.0.8'`) !== -1 && otaMap.indexOf(`'60.4.2':'60.0.8'`) !== -1);
+ok('and the labels that are release numbers again are gone from both maps',
+  !/'60\.2':'60\.0\.3'/.test(html) && !/'60\.2':'60\.0\.3'/.test(otaMap) &&
+  !/'60\.3':'60\.0\.4'/.test(html) && !/'60\.4':'60\.0\.5'/.test(html) &&
+  !/'60\.1':'60\.0\.2'/.test(html) && !/'60\.1':'60\.0\.2'/.test(otaMap));
 // This build shipped as 60.0.6; later releases only move the number.
 ok('index.html is v60.0.6 or newer', versionAtLeast(version, '60.0.6'), version);
 ok('sw.js cache matches the version', sw.indexOf(`sidecut-shell-v${version}`) !== -1);

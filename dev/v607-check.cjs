@@ -140,15 +140,19 @@ const otaCmp = extractFn(fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'
 ok('the shipped OTA client reads the old 60.4.2 label as this release',
   typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.8') === 0);
 ok('and it is never a downgrade for anyone else',
-  typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.1') > 0 && otaCmp('60.4.2', '60.4') > 0);
+  typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.1') > 0 && otaCmp('60.4.2', '60.0.8') === 0);
+// A device sitting on the bare old label has a build that predates the map, so
+// what decides there is the plain comparison — which is how it took the bridge.
+ok('a phone that never took the bridge reads the labels plain, and 60.4.2 is newer than its 60.4',
+  oldCmp('60.4.2', '60.4') > 0 && oldCmp('60.4.2', '60.4.1') > 0);
 
 console.log('\n— version, notes and the published bundle —');
 // Read versions through the app's own legacy map: 60.1–60.4.1 were renumbered
 // behind the second decimal, and 60.4.2 is the one-off bridge release that carries
 // this same code under an old-style number so a pre-renumbering install accepts it.
-// '60.1' is left out on purpose — it is a live version again (60.0.9 → 60.1),
-// not the old label for 60.0.2.
-const LEGACY = { '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8', '60.0.10': '60.1' };
+// The map as it stands: 60.1 is the current line and 60.2 – 60.4 are the numbers
+// still to come, so none of them may be rewritten.
+const LEGACY = { '60.4.1': '60.0.6', '60.4.2': '60.0.8' };
 const BRIDGE = '60.4.2';
 function versionAtLeast(v, min) {
   const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');

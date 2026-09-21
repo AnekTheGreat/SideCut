@@ -10290,13 +10290,18 @@ function startLyricsAutoScroll() {
   //   - Decimal .5 (29.5, 30.5, ...): small stuff — bug fixes, tweaks, minor
   //     additions, visual polish, copy changes.
   //   - The third number stops at nine: 60.0.9 is followed by 60.1 (never
-  //     60.0.10), then 60.2, 60.3 … A fix on top of 60.1 ships as 60.1.1.
+  //     60.0.10), then 60.2, 60.3 … A fix on top of 60.1 ships as 60.1.2.
+  //   - The 60.1 release itself ships as 60.1.1. Every build before it carries
+  //     the old map that reads the bare label "60.1" as 60.0.2 (the release
+  //     that got renumbered), so a bare 60.1 is refused as a downgrade over the
+  //     air by every install that exists — 60.1.1 is the same release and is
+  //     accepted by all of them. The next release is 60.2.
   // The service worker's cache name should be bumped to match on every change too.
   // Changelog timestamps: this build sandbox runs on UTC with no tzdata, so
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.1';
+  const APP_VERSION = '60.1.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10627,21 +10632,27 @@ function startLyricsAutoScroll() {
   // numbers numerically (so 42.10 > 42.8), used by the rollback picker.
   //
   // The releases after 60.0.1 were renumbered behind the second decimal
-  // (60.1 → 60.0.2 … 60.4.1 → 60.0.6, and 60.0.10 → 60.1). A device can still
-  // carry an old label —
+  // (60.1 → 60.0.2, 60.4.1 → 60.0.6, 60.4.2 → 60.0.8). A device can still carry
+  // an old label —
   // its own running version, a stored snapshot, a staged bundle — so every
   // comparison normalizes first: read as-is, "60.4" would look NEWER than 60.0.6
   // and the updater (which never installs a downgrade) would refuse the
   // renumbered build.
   //
-  // '60.1' is deliberately NOT in this map, and must never be put back: it was
-  // the label of the build that became 60.0.2, but it is a real version again
-  // now (60.0.9 → 60.1). Mapping it would normalize this app's OWN version down
-  // to 60.0.2, so every published release would read as newer than the build
-  // that is running and the update would offer itself again and again. Only a
-  // device still running that ancient 60.1 label cannot be told apart — it
-  // needs the native build once, exactly like one on 60.2 – 60.4.1.
-  const LEGACY_VERSIONS = { '60.2':'60.0.3', '60.3':'60.0.4', '60.4':'60.0.5', '60.4.1':'60.0.6', '60.4.2':'60.0.8', '60.0.10':'60.1' };
+  // 60.1, 60.2, 60.3 and 60.4 are deliberately NOT in this map, and must never be
+  // put back. A mapping rewrites both sides of every comparison, so leaving them
+  // in would mean a release published as 60.2 reads as 60.0.3 on every install
+  // that holds the map and is refused as a downgrade — the second number could
+  // never advance. Nothing was protected by them either: the builds that carried
+  // those labels predate this map, so they cannot read it.
+  //
+  // 60.1 is the sharpest case: it was the label of the build that became 60.0.2
+  // and it is this line's own release number now, so mapping it would make the
+  // app read its own version as 60.0.2 and offer the published bundle for ever.
+  // It stays out — which is also why this first release of the line ships as
+  // 60.1.1: a build holding the old map reads a bare 60.1 as 60.0.2 and refuses
+  // it as a downgrade before it can arrive.
+  const LEGACY_VERSIONS = { '60.4.1':'60.0.6', '60.4.2':'60.0.8' };
   function normVersion(v){
     const s = String(v == null ? '' : v);
     return LEGACY_VERSIONS[s] || s;
@@ -10674,7 +10685,7 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '60.1', date: 'September 20, 2026 \u00b7 10:08 PM EDT', title: 'Conversions download again: YouTube only serves audio in small chunks now, and a multi-artist credit verifies', items: [
+  { version: '60.1.1', date: 'September 20, 2026 \u00b7 10:08 PM EDT', title: 'Conversions download again: YouTube only serves audio in small chunks now, and a multi-artist credit verifies', items: [
     'The converter works again. YouTube stopped serving an unbounded audio request \u2014 a download with no Range header, an open-ended range, or one asking for more than 1 MiB now answers 403. The app asked for the whole file in a single request, so it came back empty and every track reported "no source found" no matter how right the match was. Streams are pulled as a run of bounded 1 MiB pieces and stitched back together, on the device, with no relay in the middle',
     'More than one source is tried. The player used to hand back a single URL from whichever client answered first, so a URL that had gone dead ended the whole conversion. It now collects the streams of the first two clients that respond and takes the first one that downloads and decodes \u2014 a blocked, capped or unplayable stream is walked past instead of reported',
     'Music tracks fall back to the video stream. YouTube caps the audio-only stream of a music upload at its first megabyte (measured: the 140 stream of "Dealer" answers 403 past ~1 MB while the same video\u2019s progressive audio + video stream, itag 18, delivered all 11,317,380 bytes in 11 chunks). The small audio streams are still tried first — they are better quality and they are all an ordinary video needs — and that progressive copy sits behind them, so the album converts instead of coming back empty. It is a bigger download (roughly 10-12 MB per track), which is the price of no longer needing a token YouTube will not hand out',
@@ -10683,7 +10694,9 @@ function startLyricsAutoScroll() {
     'Multi-artist credits verify. A credit like "Sukha, Chani" or "Diljit Dosanjh & Sia" was required to appear word-for-word in the one uploader name, which no single channel can satisfy \u2014 that is why an album by a co-credited artist searched, found its own official upload and then discarded it. Each credited artist is checked on its own, and the source still has to belong to one of them, so a cover by an unrelated channel is rejected exactly as before',
     'A failed row now says what failed instead of the same line every time: "no source found" (nothing matched the search), "no matching source" (sources were found but none belonged to the artist) or "download blocked" (the right source was found but its audio would not come down)',
     'Both converters share the fix: Spotify links and the YouTube to MP3 box use the same download and decode path, so both come back at once',
-    'This release is v60.1 — it was going to be numbered 60.0.10. The third number stops at nine now, so 60.0.9 is followed by 60.1, and the patch notes and the version in Settings read that way from here on',
+    'This release is the 60.1 line — it was going to be numbered 60.0.10. The third number stops at nine now: 60.0.9 is followed by 60.1, not 60.0.10, and the next release is 60.2',
+    'The old renumbering labels 60.1 – 60.4 are finished as labels too. They used to be rewritten to the release they became (60.1 → 60.0.2, 60.2 → 60.0.3 …), which would have made a later release published as 60.2 read as 60.0.3 and refused before it could install — the second number could not advance at all. Only 60.4.1 and 60.4.2 stay mapped, so a phone still sitting on one of those two labels can take this release',
+    'It carries one more digit (60.1.1) on the way in, and that is the delivery talking, not the release. Every install that exists still holds the old note that read the bare label "60.1" as 60.0.2 — the version this one replaced — so a bare 60.1 is refused as a downgrade before it can ever arrive. 60.1.1 is that same release, accepted by every install, and from here the numbers are plain again',
   ]},
   { version: '60.0.9', date: 'September 20, 2026 \u00b7 9:19 PM EDT', title: 'Singles that only exist in the Indian store show up now, and Old songs has no play button even from a saved list', items: [
     'Missing singles are found. The Singles search only ever asked Apple\u2019s default (US) store, and a release that is not in that catalogue cannot come back at any limit \u2014 \u201cRanjha - Single\u201d (Diljit Dosanjh, Sia & David Guetta, March 2026) is exactly that case: the US query returns nothing for it, while the same query in the Indian store returns it near the top. That is why no filter tuning could ever find it',

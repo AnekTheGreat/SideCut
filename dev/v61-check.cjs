@@ -1,6 +1,8 @@
-// v60.1 audit — the converter's "no source found".
-// (Built as "60.0.10"; the third number stops at nine now, so this release is
-// 60.1 and no build is ever numbered 60.0.10 again.)
+// v60.1.1 audit — the converter's "no source found".
+// (The 60.1 line: built as "60.0.10", renumbered to 60.1, and shipped as
+// 60.1.1 because every install already out there holds the old map that reads a
+// bare "60.1" as 60.0.2 and refuses it as a downgrade. See the numbering section
+// at the bottom — it runs the shipped 60.0.9 logic against both labels.)
 //
 // Three independent bugs produced that one message. All were measured against
 // the live service before the fix:
@@ -323,9 +325,9 @@ return { player: scYtPlayer, asked: ASKED };`;
     am('Unknown Artist', 'anyone', '', 'x', '') === true && am('Various Artists', 'anyone', '', 'x', '') === true);
 
   console.log('\n— everything is wired to the new path —');
-  ok('the app is v60.1', version === '60.1', version);
-  ok('the service worker cache moved with it', /sidecut-shell-v60\.1\b/.test(sw));
-  ok('the patchnotes carry the new version', /\{ version: '60\.1', date:/.test(html));
+  ok('the app is v60.1.1', version === '60.1.1', version);
+  ok('the service worker cache moved with it', /sidecut-shell-v60\.1\.1\b/.test(sw));
+  ok('the patchnotes carry the new version', /\{ version: '60\.1\.1', date:/.test(html));
   ok('the batch converter uses the decode result',
     /var dec = await scFetchDecode\(audio, onStatus\);[\s\S]{0,200}streamUrl: dec\.url/.test(html));
   ok('and says when the bigger muxed stream is used',
@@ -342,10 +344,35 @@ return { player: scYtPlayer, asked: ASKED };`;
   ok('a credited artist scores its own channel', /creditNames\[cn\] && ownLow\.indexOf\(creditNames\[cn\]\) !== -1/.test(html));
   ok('and the verifier walks ten candidates', /ci < cands\.length && ci < 10/.test(html));
 
-  console.log('\n— numbering: 60.0.9 → 60.1, and never 60.0.10 —');
-  ok('the notes say why the number is 60.1', html.indexOf('it was going to be numbered 60.0.10') !== -1);
+  console.log('\n— numbering: the 60.1 line, and why it arrives as 60.1.1 —');
+  ok('the notes say the number was going to be 60.0.10', html.indexOf('it was going to be numbered 60.0.10') !== -1);
   ok('and the rule is written down where the version is',
     /The third number stops at nine/.test(html) && html.indexOf('60.0.9 is followed by 60.1') !== -1);
+  ok('and why this one carries an extra digit',
+    html.indexOf('The 60.1 release itself ships as 60.1.1') !== -1 && /60\.1\.1 is that same release/.test(html));
+  ok('and it says the old 60.1 – 60.4 labels are finished as labels',
+    /The old renumbering labels 60\.1 – 60\.4 are finished as labels/.test(html) &&
+    /Only 60\.4\.1 and 60\.4\.2 stay mapped/.test(html));
+  ok('the map itself holds only those two',
+    /const LEGACY_VERSIONS = \{ '60\.4\.1':'60\.0\.6', '60\.4\.2':'60\.0\.8' \};/.test(html) &&
+    /var LEGACY_VERSIONS = \{ '60\.4\.1':'60\.0\.6', '60\.4\.2':'60\.0\.8' \};/.test(fs.readFileSync(path.join(ROOT, 'dev', 'native-updates.js'), 'utf8')));
+  // The build on the phone decides, so the map the PUBLISHED 60.0.9 shipped with
+  // — the one label a bare 60.1 collides with — is what this reproduces.
+  const SHIPPED_MAP = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8' };
+  const shippedCmp = (a, b) => {
+    const norm = (v) => SHIPPED_MAP[String(v)] || String(v);
+    const pa = norm(a).split('.'), pb = norm(b).split('.');
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const x = parseInt(pa[i] || '0', 10), y = parseInt(pb[i] || '0', 10);
+      if (x !== y) return x > y ? 1 : -1;
+    }
+    return 0;
+  };
+  ok('a phone on the published 60.0.9 accepts 60.1.1', shippedCmp('60.1.1', '60.0.9') > 0);
+  ok('and it would have refused a bare 60.1 (the mismatch is why the digit is there)',
+    shippedCmp('60.1', '60.0.9') < 0);
+  ok('the 60.0.10 it was built as would have been accepted too, but that is not the line',
+    shippedCmp('60.0.10', '60.0.9') > 0);
   // The decision to install runs in whichever build the phone has, so both
   // comparators are exercised: the page's and the shipped OTA client's.
   function cmpFn(src, from, to) {
@@ -358,14 +385,21 @@ return { player: scYtPlayer, asked: ASKED };`;
   const otaCmp = cmpFn(otaSrc, 'var LEGACY_VERSIONS', '  function currentVersion(){');
   [['page', pageCmp], ['OTA client', otaCmp]].forEach(([who, cmp]) => {
     if (typeof cmp !== 'function') { fail++; console.log('  ✗ ' + who + ' comparator missing'); return; }
-    ok(who + ': v60.1 is newer than v60.0.9', cmp('60.1', '60.0.9') > 0);
+    ok(who + ': v60.1.1 is newer than v60.0.9 and than v60.1',
+      cmp('60.1.1', '60.0.9') > 0 && cmp('60.1.1', '60.1') > 0);
     ok(who + ': this build’s own version is never rewritten to 60.0.2',
-      cmp('60.1', '60.1') === 0 && cmp('60.1', '60.0.2') > 0);
-    ok(who + ': the 60.0.10 label reads as 60.1', cmp('60.0.10', '60.1') === 0);
-    ok(who + ': the other legacy labels still read correctly',
-      cmp('60.4', '60.0.5') === 0 && cmp('60.4.2', '60.0.8') === 0);
+      cmp('60.1.1', '60.1.1') === 0 && cmp('60.1.1', '60.0.2') > 0 && cmp('60.1', '60.0.2') > 0);
+    // '60.2' used to be rewritten to 60.0.3 by the old renumbering map, which
+    // would have made the very next release impossible to publish. It reads as
+    // itself now — that is what lets the second number advance at all.
+    ok(who + ': the next release (60.2) is newer than this one',
+      cmp('60.2', '60.1.1') > 0 && cmp('60.2', '60.0.3') !== 0);
+    ok(who + ': and so is the one after it (60.3)', cmp('60.3', '60.2') > 0);
+    ok(who + ': the two labels a live install can still be on do resolve',
+      cmp('60.4.1', '60.0.6') === 0 && cmp('60.4.2', '60.0.8') === 0);
+    ok(who + ': so a phone sitting on one of them takes this release', cmp('60.1.1', '60.4.1') > 0);
   });
 
-  console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + '/' + (pass + fail) + ' checks passed (v60.1)\n');
+  console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + '/' + (pass + fail) + ' checks passed (v60.1.1)\n');
   process.exit(fail ? 1 : 0);
 })();
