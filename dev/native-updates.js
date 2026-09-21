@@ -52,11 +52,17 @@
   // and the app would happily install a downgrade over itself.
   //
   // The releases after 60.0.1 were renumbered behind the second decimal
-  // (60.1 → 60.0.2 … 60.4.1 → 60.0.6). A phone can still be running one of those
+  // (60.1 → 60.0.2 … 60.4.1 → 60.0.6, and 60.0.10 → 60.1). A phone can still be
+  // running one of those
   // old labels — and the comparison runs in the build that is INSTALLED, so the
   // mapping has to live here too: read as-is, "60.4" is newer than 60.0.6 and this
   // client would refuse the renumbered build as a downgrade for ever.
-  var LEGACY_VERSIONS = { '60.1':'60.0.2', '60.2':'60.0.3', '60.3':'60.0.4', '60.4':'60.0.5', '60.4.1':'60.0.6', '60.4.2':'60.0.8' };
+  //
+  // '60.1' is NOT a legacy label any more — it is the release this build is
+  // (60.0.9 → 60.1), so it must never be rewritten. See index.html for the long
+  // version: rewriting it would make this client read its own version as 60.0.2
+  // and re-install the published bundle on every check.
+  var LEGACY_VERSIONS = { '60.2':'60.0.3', '60.3':'60.0.4', '60.4':'60.0.5', '60.4.1':'60.0.6', '60.4.2':'60.0.8', '60.0.10':'60.1' };
   function normVersion(v){
     var s = (v === null || v === undefined) ? '' : String(v);
     return LEGACY_VERSIONS[s] || s;

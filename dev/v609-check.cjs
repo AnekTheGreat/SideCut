@@ -160,14 +160,26 @@ return { fn: fetchArtistSingles, calls: CALLS, results: { us: ${JSON.stringify(U
   ok('it drops the Old songs snapshot', /sidecut_oldsongs_cache_gen[\s\S]{0,220}removeItem\('discPopupCache_\\ud83d\\udcc5 Old songs'\)/.test(html));
 
   console.log('\n— version, notes and the published bundle —');
-  ok('index.html is v60.0.9', version === '60.0.9', version);
+  // This audit is for the v60.0.9 fix, which ships on its own or later. "Later"
+  // is numeric: 60.0.9 is followed by 60.1, because the third number stops at
+  // nine (there is no 60.0.10).
+  const atLeast = (v, min) => {
+    const a = String(v).split('.').map(Number), b = String(min).split('.').map(Number);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const x = a[i] || 0, y = b[i] || 0;
+      if (x !== y) return x > y;
+    }
+    return true;
+  };
+  ok('index.html is v60.0.9 or later', atLeast(version, '60.0.9'), version);
   ok('sw.js cache matches', sw.indexOf('sidecut-shell-v' + version) !== -1);
   const entries = [...html.matchAll(/version: '(\d+(?:\.\d+)*)', date: '([^']*)'/g)].map((m) => ({ v: m[1], d: m[2] }));
-  ok('the newest entry is this build', entries[0] && entries[0].v === '60.0.9', entries[0] && entries[0].v);
+  ok('the newest entry is this build', entries[0] && entries[0].v === version, entries[0] && entries[0].v);
   ok('every recent stamp is Eastern time', entries.slice(0, 8).every((e) => /(EDT|EST)$/.test(e.d)), entries[0] && entries[0].d);
-  const renum = entries.filter((e) => /^60\.0\.\d$/.test(e.v)).map((e) => e.v).slice(0, 8);
+  const renum = entries.filter((e) => /^60\.0\.\d+$/.test(e.v)).map((e) => e.v).slice(0, 12);
+  const renumNums = renum.map((v) => Number(v.split('.')[2]));
   ok('the 60.0.x history stays contiguous, newest first',
-    renum.join(',') === '60.0.9,60.0.8,60.0.7,60.0.6,60.0.5,60.0.4,60.0.3,60.0.2', renum.join(','));
+    renumNums.length >= 8 && renumNums.every((n, i) => i === 0 || n === renumNums[i - 1] - 1), renum.join(','));
   const own = (html.match(/\{ version: '60\.0\.9'[\s\S]*?\n  \]\}/) || [''])[0];
   ok('this build’s notes name Ranjha and the store reason', own.indexOf('Ranjha') !== -1 && own.indexOf('store') !== -1);
   ok('and say Old songs has no play button even from a saved list', /saved list/i.test(own) && /play button/i.test(own));

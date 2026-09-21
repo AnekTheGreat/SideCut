@@ -146,7 +146,9 @@ console.log('\n— version, notes and the published bundle —');
 // Read versions through the app's own legacy map: 60.1–60.4.1 were renumbered
 // behind the second decimal, and 60.4.2 is the one-off bridge release that carries
 // this same code under an old-style number so a pre-renumbering install accepts it.
-const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8' };
+// '60.1' is left out on purpose — it is a live version again (60.0.9 → 60.1),
+// not the old label for 60.0.2.
+const LEGACY = { '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8', '60.0.10': '60.1' };
 const BRIDGE = '60.4.2';
 function versionAtLeast(v, min) {
   const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
@@ -167,8 +169,11 @@ const entries = [...html.matchAll(/version: '(\d+(?:\.\d+)*)', date: '([^']*)'/g
 ok('the 60.0.7 entry exists', entries.some((e) => e.v === '60.0.7'));
 ok('the newest entry is this build (or the bridge carrying it)',
   entries[0] && (entries[0].v === version || entries[0].v === BRIDGE), entries[0] && entries[0].v);
-ok('only the documented bridge uses an old-style number',
-  entries.filter((e) => /^60\.[1-9]/.test(e.v) && e.v !== BRIDGE).length === 0,
+// The old-style labels were 60.1 – 60.4.1 (plus the 60.4.2 bridge). 60.1 is not
+// one of them any more: the third number stops at nine, so 60.0.9 is followed by
+// the rollover release 60.1 — every old-style number above it is still gone.
+ok('only the 60.1 rollover and the documented bridge use a 60.x number',
+  entries.filter((e) => /^60\.[2-9]/.test(e.v) && e.v !== BRIDGE).length === 0,
   entries.map((e) => e.v).slice(0, 7).join(', '));
 ok('the stamps are Eastern time, never UTC',
   entries.slice(0, 7).every((e) => /(EDT|EST)$/.test(e.d)),

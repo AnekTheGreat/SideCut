@@ -35,7 +35,9 @@ const count = (hay, needle) => hay.split(needle).length - 1;
 // behind the second decimal and 60.4.2 is the bridge release carrying this same
 // code under an old-style number — so "this build or newer" survives the number
 // moving for OTA delivery.
-const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8' };
+// '60.1' is deliberately absent: it was the old label for 60.0.2, but it is a
+// real version again (60.0.9 → 60.1), so the app must never rewrite it.
+const LEGACY = { '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8', '60.0.10': '60.1' };
 function versionAtLeast(v, min) {
   const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
@@ -85,6 +87,12 @@ ok('the OTA client comparator runs', typeof otaCmp === 'function');
   ok(who + ': 60.0.6 is newer than 60.0.1', cmp('60.0.6', '60.0.1') > 0);
   ok(who + ': the old 60.3 label reads as 60.0.4', cmp('60.3', '60.0.4') === 0);
   ok(who + ': a genuinely older build is still older', cmp('60.0.6', '59.1') > 0 && cmp('60.0.6', '60.0.7') < 0);
+  // 60.1 is a live version now, not the old label for 60.0.2. Rewriting it
+  // would make the running build read its own version as 60.0.2 and re-offer
+  // every published release for ever.
+  ok(who + ': 60.1 is newer than 60.0.9', cmp('60.1', '60.0.9') > 0);
+  ok(who + ': this build’s own version is never rewritten (60.1, not 60.0.2)', cmp('60.1', '60.1') === 0 && cmp('60.1', '60.0.2') > 0);
+  ok(who + ': the number it almost shipped under reads as 60.1', cmp('60.0.10', '60.1') === 0);
 });
 
 console.log('\n— the version this fix ships as —');

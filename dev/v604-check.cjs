@@ -32,7 +32,9 @@ const count = (hay, needle) => hay.split(needle).length - 1;
 // behind the second decimal, and 60.4.2 is a bridge release carrying that same
 // code under an old-style number), so "this build or anything newer" holds as the
 // number keeps moving for OTA delivery.
-const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8' };
+// '60.1' is left out on purpose — it is a live version again (60.0.9 → 60.1),
+// not the old label for 60.0.2.
+const LEGACY = { '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8', '60.0.10': '60.1' };
 function versionAtLeast(v, min) {
   const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
