@@ -173,12 +173,13 @@ ok('only the documented bridge uses an old-style number',
 ok('the stamps are Eastern time, never UTC',
   entries.slice(0, 7).every((e) => /(EDT|EST)$/.test(e.d)),
   entries[0].d);
-// (60.0.1 is the release the renumbering starts from, so the seven above it are
-// the whole renumbered run.)
-const renum = entries.filter((e) => /^60\.0\.\d$/.test(e.v)).map((e) => e.v).slice(0, 7);
-ok('the renumbered history is contiguous, newest first (60.0.8 … 60.0.2)',
-  renum.join(',') === '60.0.8,60.0.7,60.0.6,60.0.5,60.0.4,60.0.3,60.0.2',
-  renum.join(','));
+// 60.0.1 is the release the renumbering starts from; this build's own entry has
+// to sit directly above the one before it in that run (later releases are added
+// above it, so the window moves — the RELATIVE order is what must hold).
+const renumAll = entries.filter((e) => /^60\.0\.\d$/.test(e.v)).map((e) => e.v);
+ok('60.0.7 sits directly above 60.0.6 in the renumbered run',
+  renumAll.indexOf('60.0.7') === renumAll.indexOf('60.0.6') - 1,
+  renumAll.slice(0, 8).join(','));
 
 let man = null;
 try { man = JSON.parse(fs.readFileSync(path.join(ROOT, 'ota/updates.json'), 'utf8')); } catch (e) {}

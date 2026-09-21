@@ -10294,7 +10294,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.0.8';
+  const APP_VERSION = '60.0.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10648,12 +10648,28 @@ function startLyricsAutoScroll() {
   // fetched. One-time invalidation: the saved list is rebuilt on the next open
   // (a refetch that fails still shows nothing rather than a stale extra list).
   try{
-    if(localStorage.getItem('sidecut_singles_cache_gen') !== '2'){
+    if(localStorage.getItem('sidecut_singles_cache_gen') !== '3'){
       localStorage.removeItem('discPopupCache_\u{1f3b5} Singles');
-      localStorage.setItem('sidecut_singles_cache_gen', '2');
+      localStorage.setItem('sidecut_singles_cache_gen', '3');
+    }
+    // The saved "Old songs" snapshot outlives an app update: a copy written by a
+    // build that still drew a play button on every row could be served for up to
+    // 24 hours after the update that removed it. Older snapshots are dropped
+    // once, and loadCachedDiscoverPopup strips any play button a saved copy
+    // still carries.
+    if(localStorage.getItem('sidecut_oldsongs_cache_gen') !== '2'){
+      localStorage.removeItem('discPopupCache_\ud83d\udcc5 Old songs');
+      localStorage.setItem('sidecut_oldsongs_cache_gen', '2');
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.0.9', date: 'September 20, 2026 \u00b7 9:19 PM EDT', title: 'Singles that only exist in the Indian store show up now, and Old songs has no play button even from a saved list', items: [
+    'Missing singles are found. The Singles search only ever asked Apple\u2019s default (US) store, and a release that is not in that catalogue cannot come back at any limit \u2014 \u201cRanjha - Single\u201d (Diljit Dosanjh, Sia & David Guetta, March 2026) is exactly that case: the US query returns nothing for it, while the same query in the Indian store returns it near the top. That is why no filter tuning could ever find it',
+    'The same search is now asked of both stores and merged, with one identical filter and dedupe, so it cannot become the flood the old release-list union caused. Measured live: Diljit Dosanjh 41 \u2192 46 singles (Ranjha, Shivaya, Chauffeur, Jugni, Kali Teri Gutt), BK 19 \u2192 29, Karan Aujla 89 \u2192 90, Arsh Heer and AP Dhillon unchanged',
+    'Your saved Singles list is rebuilt once on this update, so the new ones appear without you having to tap Refetch singles',
+    'The \u21bb button on an artist\u2019s Singles group uses that same two-store search now. It also had a stray direct request in front of it with no fallback, which aborted the whole refresh if that one request failed and never asked the Indian store at all \u2014 both gone',
+    'Old songs has no play button, including from a saved list. The row-level play button was removed in v60, but the popup is served from a snapshot that survives an app update, so a copy saved by an older build kept showing one. Older snapshots are dropped and any play button inside a saved copy is stripped when it opens \u2014 tapping a row goes to the song, exactly like Singles and album tracks',
+  ]},
   { version: '60.0.8', date: 'September 20, 2026 \u00b7 9:03 PM EDT', title: 'Back on the new numbering: this is v60.0.8', items: [
     'The 60.4.2 bridge build is renamed and ships as v60.0.8. The app reports v60.0.8 everywhere, and the 60.4.x numbers are finished — every release from here on is 60.0.x',
     'Everything from 60.0.7 is in it: the watermark remover matches whole phrases again instead of peeling single letters out of unrelated titles, and every "go to Spotify" tap hands the song to the Spotify app instead of loading the logged-out web player inside SideCut',
@@ -26215,48 +26231,64 @@ function _renderAhFromData(artistAlbums){
   // Used by the Discover button, the full refetch and the per-artist refresh, so
   // the three can never disagree about what a single is again.
   //
-  // It is the iTunes *song* search alone, filtered to one-track releases — the
-  // list this has always produced. 58.9.6 also unioned in each artist's own
-  // release list; that pulled in releases the song search never returned, and it
-  // was reported as well over a hundred songs appearing in Singles that are not
-  // the user's artists. Reverted.
+  // It is the iTunes *song* search, filtered to one-track releases — the list
+  // this has always produced — asked of MORE THAN ONE STORE.
+  //
+  // 58.9.6 unioned in each artist's own release list instead; that pulled in
+  // releases the song search never returned, and it was reported as well over a
+  // hundred songs appearing in Singles that are not the user's artists, so it
+  // was reverted. This is the same curated search as before, only store-scoped —
+  // and that is what actually fixes a missing single: the search is
+  // relevance-ranked per store, and a release that only exists in the Indian
+  // store is invisible to the default (US) one. "Ranjha - Single" (Diljit
+  // Dosanjh, Sia & David Guetta, March 2026) is exactly that — the US query
+  // cannot return it at any limit, while the same query for the IN store puts it
+  // near the top. Measured against the live API, the extra store adds 5 singles
+  // for Diljit Dosanjh, 10 for BK and 1 for Karan Aujla — nothing like the
+  // hundred-odd the release-list union produced.
   async function fetchArtistSingles(artistName, opts){
     opts = opts || {};
     var skipHidden = !opts.includeHidden;
     var out = [];
     var seen = {};
-    try{
-      var sresp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=song&limit=200');
-      if(sresp && sresp.ok){
-        var sdata = await sresp.json();
-        var want = String(primaryArtistName(artistName) || '').toLowerCase().trim();
-        (sdata.results || []).forEach(function(sr){
-          if(!sr || !sr.trackName) return;
-          if(skipHidden && isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return;
-          var rowArtist = String(primaryArtistName(sr.artistName || '') || '').toLowerCase().trim();
-          if(rowArtist !== want && rowArtist.indexOf(want) === -1 && want.indexOf(rowArtist) === -1) return;
-          var cn = String(sr.collectionName || '').toLowerCase();
-          var tn = String(sr.trackName || '').toLowerCase();
-          var tc = Number(sr.trackCount) || 0;
-          // A single is: a release Apple names as one, a standalone track whose
-          // name is its release, or a one-track release with an ordinary name.
-          var isSingle = /\bsingle\b/.test(cn) || (cn === tn && tc <= 1) || (tc === 1 && cn.length < 80);
-          if(!isSingle) return;
-          var key = tn.replace(/[^a-z0-9]/g, '');
-          if(!key || seen[key]) return;
-          seen[key] = 1;
-          out.push({
-            trackName: sr.trackName,
-            artistName: sr.artistName || artistName,
-            trackId: sr.trackId,
-            collectionId: sr.collectionId,
-            releaseDate: sr.releaseDate || '',
-            artworkUrl100: sr.artworkUrl100 || '',
-            previewUrl: sr.previewUrl || ''
+    var want = String(primaryArtistName(artistName) || '').toLowerCase().trim();
+    // Default store first, then the Indian store (plenty of Punjabi and Indian
+    // film releases are IN-only). Identical filter and identical dedupe for
+    // both, so the two stores can never disagree about what a single is.
+    var stores = ['', '&country=IN'];
+    for(var sti=0; sti<stores.length; sti++){
+      try{
+        var sresp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(artistName) + '&media=music&entity=song&limit=200' + stores[sti]);
+        if(sresp && sresp.ok){
+          var sdata = await sresp.json();
+          (sdata.results || []).forEach(function(sr){
+            if(!sr || !sr.trackName) return;
+            if(skipHidden && isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)) return;
+            var rowArtist = String(primaryArtistName(sr.artistName || '') || '').toLowerCase().trim();
+            if(rowArtist !== want && rowArtist.indexOf(want) === -1 && want.indexOf(rowArtist) === -1) return;
+            var cn = String(sr.collectionName || '').toLowerCase();
+            var tn = String(sr.trackName || '').toLowerCase();
+            var tc = Number(sr.trackCount) || 0;
+            // A single is: a release Apple names as one, a standalone track whose
+            // name is its release, or a one-track release with an ordinary name.
+            var isSingle = /\bsingle\b/.test(cn) || (cn === tn && tc <= 1) || (tc === 1 && cn.length < 80);
+            if(!isSingle) return;
+            var key = tn.replace(/[^a-z0-9]/g, '');
+            if(!key || seen[key]) return;
+            seen[key] = 1;
+            out.push({
+              trackName: sr.trackName,
+              artistName: sr.artistName || artistName,
+              trackId: sr.trackId,
+              collectionId: sr.collectionId,
+              releaseDate: sr.releaseDate || '',
+              artworkUrl100: sr.artworkUrl100 || '',
+              previewUrl: sr.previewUrl || ''
+            });
           });
-        });
-      }
-    }catch(_e1){}
+        }
+      }catch(_e1){}
+    }
     out.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
     return out;
   }
@@ -32278,11 +32310,11 @@ window.__singlesRefreshArtistGroup = async function(groupEl){
   if(cntEl) cntEl.textContent = '…';
   var ok = false;
   try{
-    var sresp = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=song&limit=200');
-    if(!sresp || !sresp.ok) throw new Error('request failed');
-    var sdata = await sresp.json();
-    // Same fetch as everywhere else, with the hidden list applied so removed
-    // tracks never come back on a per-artist refresh.
+    // The shared fetch does the work — with the hidden list applied so removed
+    // tracks never come back. The raw request (and its unused response) that
+    // used to sit above this is gone: it had no proxy fallback and asked only
+    // the default store, so one direct fetch failure aborted the refresh before
+    // the real call ran.
     var matched = (typeof window.__scFetchArtistSingles === 'function') ? await window.__scFetchArtistSingles(artist) : [];
     var bodyEl = groupEl.querySelector('.dp-ah-albums');
     // Keep the group's own numbering prefix (used on data-si attributes).
@@ -32463,7 +32495,17 @@ function loadCachedDiscoverPopup(key){
     var raw = localStorage.getItem('discPopupCache_' + key);
     if(!raw) return false;
     var d = JSON.parse(raw);
-    if(d && d.title && d.body){ openDiscoverPopup(d.title, d.body, d.subtitle); return true; }
+    if(d && d.title && d.body){
+      // Old songs rows are the tap target — no play button. A snapshot saved
+      // before that change (the cache survives an app update) can still hold
+      // one per row, so it is stripped here rather than shown.
+      var isOldSongs = key === '\ud83d\udcc5 Old songs' || d.title === '\ud83d\udcc5 Old songs';
+      if(isOldSongs && d.body.indexOf('dp-track-play') !== -1){
+        d.body = d.body.replace(/<span[^>]*class="dp-track-play"[\s\S]*?<\/span>/g, '');
+      }
+      openDiscoverPopup(d.title, d.body, d.subtitle);
+      return true;
+    }
   }catch(e){}
   return false;
 }
