@@ -10355,7 +10355,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.1.6';
+  const APP_VERSION = '60.1.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10739,6 +10739,10 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.1.7', date: 'September 21, 2026 · 7:35 AM EDT', title: 'Public Get Song stays inside SideCut', items: [
+    'Get Song no longer opens Spotify, asks for a Spotify login, or sends the public app to a Spotify website. It now uses SideCut’s existing in-app downloader directly and saves the result to the library.',
+    'New Releases and Album History no longer launch Spotify. Album History keeps its Download preview action inside SideCut instead.',
+  ]},
   { version: '60.1.6', date: 'September 21, 2026 · 7:20 AM EDT', title: 'Get Song copies the exact Spotify link automatically', items: [
     'Get Song and Find on Spotify now use Spotify search directly through a secure PKCE sign-in. After authorizing once, SideCut copies the real open.spotify.com track or album share URL to your clipboard instead of copying a search-results page or sending you to Spotify’s app.',
     'No Spotify client secret is stored in SideCut. The access token stays on this device and is reused until it expires, while the existing Spotify handoff remains available if the API is unavailable.',
@@ -28195,11 +28199,8 @@ if(!isDiscover) stopDiscoverPreview();
       if(row._suppressClick){ row._suppressClick = false; e.stopPropagation(); e.preventDefault(); return; }
       if(e.target.closest('.nr-play')) return;
       const q = row.dataset.title + ' ' + row.dataset.artist;
-      // Hand off to the Spotify app (scOpenSpotifySearch). open.spotify.com is
-      // allow-listed, so opening the web URL here loaded the embedded,
-      // logged-out web player instead of the Spotify app.
-      scOpenSpotifySearch(q);
-      toast('Spotify opened \u2014 tap the song, then Share \u2192 Copy link.', 4000);
+      // The public app stays in-app; downloading is handled from Discover.
+      toast('Use Discover → Get song to download this track.', 3000);
   }));
     updateNotifBadge();
   }
@@ -28521,7 +28522,7 @@ if(!isDiscover) stopDiscoverPreview();
     dlBtn.title = 'Copy the Spotify link for this song';
     dlBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      copySpotifyLink(r.trackName, r.artistName, 'Get song');
+      triggerDiscoverDownload(card, r, dlBtn);
     });
     actions.appendChild(dlBtn);
 
@@ -28547,7 +28548,7 @@ if(!isDiscover) stopDiscoverPreview();
     // Tapping the card copies the Spotify link to the clipboard.
     // Preview only plays via the explicit ▶ button — no auto-play on tap.
     card.addEventListener('click', () => {
-      copySpotifyLink(r.trackName, r.artistName, 'Get song');
+      triggerDiscoverDownload(card, r, dlBtn);
     });
 
     card.appendChild(art); card.appendChild(meta); card.appendChild(actions);
@@ -28720,25 +28721,15 @@ if(!isDiscover) stopDiscoverPreview();
     if(!b) return;
     e.preventDefault();
     e.stopPropagation();
-    copySpotifyLink(null, (b.dataset && b.dataset.album) || '', 'Find on Spotify');
+    toast('Use Download preview to get this album without leaving SideCut.', 3000);
 
   }, true);
 
   // Build a Spotify search URL, copy it to the clipboard, let the user paste
   // it into their downloader.
-  async function copySpotifyLink(trackName, artistName, label){
-    var q = ((trackName || '') + ' ' + (artistName || '')).trim();
-    if(!q){ toast('No song information for this track.', 3000); return; }
-    try{
-      toast('Sign in to Spotify once to get the exact link…', 2500);
-      var url = await scSpotifySearch(q, trackName ? 'track' : 'album');
-      if(!url) throw new Error('No matching Spotify result.');
-      await navigator.clipboard.writeText(url);
-      toast((label || 'Spotify link') + ' copied — paste it into your downloader.', 3500);
-    }catch(e){
-      toast('Spotify link lookup unavailable — opening Spotify search instead.', 3500);
-      if(typeof scOpenSpotifySearch === 'function') scOpenSpotifySearch(q);
-    }
+  // Public mode: album history stays in SideCut and never opens Spotify.
+  function copySpotifyLink(trackName, artistName, label){
+    toast('Use Download preview to get this album without leaving SideCut.', 3000);
   }
   window.__copySpotifyLink = copySpotifyLink;
   // "Get song" gets the song.
@@ -28760,8 +28751,7 @@ if(!isDiscover) stopDiscoverPreview();
       try{ got = await window.__scSaveDiscoverTrack(r, btn || null); }catch(_eGet){ got = false; }
       if(got) return;
     }
-    scOpenSpotifySearch(q);
-    toast('Couldn\u2019t find that one on-device \u2014 Spotify opened, tap the song and Share \u2192 Copy link.', 5000);
+    toast('Could not find that song right now. Try Get song again.', 3500);
   }
 
   window.playDiscoverTrack = function(url, row, meta){
