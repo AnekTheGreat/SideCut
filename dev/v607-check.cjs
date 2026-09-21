@@ -119,10 +119,15 @@ const oldCmp = (a, b) => {
   }
   return 0;
 };
-ok('a phone on v60.4 accepts the bridge (60.4.2 > 60.4)', oldCmp('60.4.2', '60.4') > 0);
-ok('so does a phone on v60.4.1', oldCmp('60.4.2', '60.4.1') > 0);
+ok('a phone on v60.4 accepted the bridge (60.4.2 > 60.4)', oldCmp('60.4.2', '60.4') > 0);
+ok('so did a phone on v60.4.1', oldCmp('60.4.2', '60.4.1') > 0);
 ok('and one on v60.0.1 or older', oldCmp('60.4.2', '60.0.1') > 0);
-ok('the plain renumbered build would NOT be accepted by them', oldCmp('60.0.7', '60.4') < 0);
+// Renaming the bridge to 60.0.8 is what a bridged phone installs next: the bridge
+// build's own map reads itself as 60.0.7 and 60.0.8 as unmapped-newer, while a
+// pre-renumbering install still cannot see 60.0.8 at all.
+ok('a bridged phone installs the renamed 60.0.8 over the bridge (60.0.8 > 60.0.7)', oldCmp('60.0.8', '60.0.7') > 0);
+ok('a phone that never took the bridge still cannot (60.0.8 < 60.4)', oldCmp('60.0.8', '60.4') < 0);
+ok('and one on v60.0.1 or older can', oldCmp('60.0.8', '60.0.1') > 0);
 // And the bridged phone must accept what comes after it — decided by the code in
 // the shipped OTA client, so that is what gets run.
 function extractFn(src, from, to, ret) {
@@ -132,17 +137,16 @@ function extractFn(src, from, to, ret) {
 }
 const otaCmp = extractFn(fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8'),
   'var LEGACY_VERSIONS', '  function currentVersion(){', 'compareVersions');
-ok('the shipped OTA client reads the bridge as 60.0.7', typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.7') === 0);
-ok('so the next renumbered release installs on a bridged phone',
-  typeof otaCmp === 'function' && otaCmp('60.0.8', '60.4.2') > 0);
-ok('and the bridge is not a downgrade for anyone else',
-  typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.1') > 0);
+ok('the shipped OTA client reads the old 60.4.2 label as this release',
+  typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.8') === 0);
+ok('and it is never a downgrade for anyone else',
+  typeof otaCmp === 'function' && otaCmp('60.4.2', '60.0.1') > 0 && otaCmp('60.4.2', '60.4') > 0);
 
 console.log('\n— version, notes and the published bundle —');
 // Read versions through the app's own legacy map: 60.1–60.4.1 were renumbered
 // behind the second decimal, and 60.4.2 is the one-off bridge release that carries
 // this same code under an old-style number so a pre-renumbering install accepts it.
-const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.7' };
+const LEGACY = { '60.1': '60.0.2', '60.2': '60.0.3', '60.3': '60.0.4', '60.4': '60.0.5', '60.4.1': '60.0.6', '60.4.2': '60.0.8' };
 const BRIDGE = '60.4.2';
 function versionAtLeast(v, min) {
   const a = String(LEGACY[v] || v).split('.'), b = String(min).split('.');
@@ -154,9 +158,11 @@ function versionAtLeast(v, min) {
 }
 ok('index.html is v60.0.7, or the bridge build carrying it', versionAtLeast(version, '60.0.7'), version);
 ok('sw.js cache matches', sw.indexOf(`sidecut-shell-v${version}`) !== -1);
-ok('the bridge release is mapped to 60.0.7 in both comparators',
-  html.indexOf(`'60.4.2':'60.0.7'`) !== -1 &&
-  fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8').indexOf(`'60.4.2':'60.0.7'`) !== -1);
+// The 60.4.2 bridge build was renamed to 60.0.8, so that label now means this
+// release in both comparators.
+ok('the old 60.4.2 label is read as 60.0.8 in both comparators',
+  html.indexOf(`'60.4.2':'60.0.8'`) !== -1 &&
+  fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8').indexOf(`'60.4.2':'60.0.8'`) !== -1);
 const entries = [...html.matchAll(/version: '(\d+(?:\.\d+)*)', date: '([^']*)'/g)].map((m) => ({ v: m[1], d: m[2] }));
 ok('the 60.0.7 entry exists', entries.some((e) => e.v === '60.0.7'));
 ok('the newest entry is this build (or the bridge carrying it)',
@@ -167,9 +173,12 @@ ok('only the documented bridge uses an old-style number',
 ok('the stamps are Eastern time, never UTC',
   entries.slice(0, 7).every((e) => /(EDT|EST)$/.test(e.d)),
   entries[0].d);
-ok('the renumbered history reads 60.0.7 … 60.0.2',
-  entries.filter((e) => /^60\.0\.\d$/.test(e.v)).slice(0, 6).map((e) => e.v).join(',') === '60.0.7,60.0.6,60.0.5,60.0.4,60.0.3,60.0.2',
-  entries.filter((e) => /^60\.0\.\d$/.test(e.v)).slice(0, 6).map((e) => e.v).join(','));
+// (60.0.1 is the release the renumbering starts from, so the seven above it are
+// the whole renumbered run.)
+const renum = entries.filter((e) => /^60\.0\.\d$/.test(e.v)).map((e) => e.v).slice(0, 7);
+ok('the renumbered history is contiguous, newest first (60.0.8 … 60.0.2)',
+  renum.join(',') === '60.0.8,60.0.7,60.0.6,60.0.5,60.0.4,60.0.3,60.0.2',
+  renum.join(','));
 
 let man = null;
 try { man = JSON.parse(fs.readFileSync(path.join(ROOT, 'ota/updates.json'), 'utf8')); } catch (e) {}
