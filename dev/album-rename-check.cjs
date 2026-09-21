@@ -50,8 +50,11 @@ const TRACKS = [
   { id: 't1', name: 'Luna', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 186 },
   { id: 't2', name: 'Vibe', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 155 },
   { id: 't3', name: 'Champagne', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 182 },
+  // t4/t5 are a mixed-artist album on purpose: renaming its artist must NOT drag
+  // the songs with it (v60.1.3 rule — only an album that shares one artist
+  // carries its songs).
   { id: 't4', name: 'Other One', artist: 'Someone', album: 'Other Album', duration: 100 },
-  { id: 't5', name: 'Other Two', artist: 'Someone', album: 'Other Album', duration: 120 },
+  { id: 't5', name: 'Other Two', artist: 'Someone Else', album: 'Other Album', duration: 120 },
 ];
 const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5'], Favorites: [], 'Faves From One Album': ['t1', 't2', 't3'] };
 const ALBUMS_START = {
@@ -114,6 +117,7 @@ function tags() {
   idb._data.tracks.forEach((t, id) => { out[id] = t.album; });
   return out;
 }
+function trackArtist(id) { const t = idb._data.tracks.get(id); return t ? t.artist : undefined; }
 function cards(win) {
   return Array.from(win.document.querySelectorAll('[data-album-name]'))
     .map((c) => ({ name: c.dataset.albumName, n: c.querySelectorAll('.track').length, ids: (c.dataset.albumIds || '').split(',').filter(Boolean) }));
@@ -134,18 +138,20 @@ function closeManage(win) {
   const cancel = win.document.getElementById('songActionsCancel');
   if (cancel) cancel.click();
 }
-// Drive the real rename prompt (modalPrompt is closure-local, so the DOM is the
-// only honest way in).
-async function rename(win, newName, index) {
-  const btn = win.document.querySelectorAll('.mgr-alb-rename')[index || 0];
+// Drive the real rename dialog (it is closure-local, so the DOM is the only
+// honest way in). v60.1.3: two fields — the album name AND the album artist.
+async function rename(win, newName, newArtist, index) {
+  const btn = Array.from(win.document.querySelectorAll('.mgr-alb-rename, .mgr-alb-rename-auto'))[index || 0];
   if (!btn) return 'no-button';
   btn.click();
   await wait(350);
-  const input = win.document.getElementById('_modalPromptInput');
-  if (!input) return 'no-prompt';
+  const input = win.document.getElementById('_albRenameName');
+  const artistInput = win.document.getElementById('_albRenameArtist');
+  if (!input || !artistInput) return 'no-prompt';
   const prefill = input.value;
   input.value = newName;
-  win.document.getElementById('_modalPromptOk').click();
+  if (newArtist !== undefined) artistInput.value = newArtist;
+  win.document.getElementById('_albRenameOk').click();
   await wait(800);
   return prefill;
 }
@@ -177,14 +183,16 @@ async function rename(win, newName, index) {
   closeManage(win);
   await wait(200);
 
-  console.log('\n— cancel changes nothing —');
+  console.log('\n— the dialog asks for the album name AND its artist —');
   await openManage(win);
   const btn0 = win.document.querySelectorAll('.mgr-alb-rename')[0];
   btn0.click();
   await wait(350);
-  const prefill = win.document.getElementById('_modalPromptInput').value;
+  const prefill = win.document.getElementById('_albRenameName').value;
+  const artistPrefill = win.document.getElementById('_albRenameArtist').value;
   ok('the prompt is prefilled with the current album name', prefill === 'MoonChild Era', JSON.stringify(prefill));
-  win.document.getElementById('_modalPromptCancel').click();
+  ok('and with the album\u2019s current artist', artistPrefill === 'Diljit Dosanjh', JSON.stringify(artistPrefill));
+  win.document.getElementById('_albRenameCancel').click();
   await wait(600);
   ok('cancelling leaves the album untouched', eq(contentOf(albums()), contentOf(ALBUMS_START)), JSON.stringify(albums()));
   ok('cancelling leaves every album tag untouched', eq(tags(), { t1: 'MoonChild Era', t2: 'MoonChild Era', t3: 'MoonChild Era', t4: 'Other Album', t5: 'Other Album' }), JSON.stringify(tags()));
@@ -211,6 +219,24 @@ async function rename(win, newName, index) {
   ok('the other album is untouched', eq(contentOf({ x: after['Other Album'] }).x, contentOf({ x: ALBUMS_START['Other Album'] }).x), JSON.stringify(after['Other Album']));
   ok('the rename is written to storage, not just memory', eq(storedMeta('userAlbums'), after));
 
+  console.log('\n— the album artist can be renamed on its own —');
+  await rename(win, 'MoonChild Era (Deluxe)', 'Diljit Dosanjh & Sia');
+  ok('the album artist is renamed', albums()['MoonChild Era (Deluxe)'].artist === 'Diljit Dosanjh, Sia',
+     JSON.stringify(albums()['MoonChild Era (Deluxe)'].artist));
+  ok('the credit is normalized to comma form', albums()['MoonChild Era (Deluxe)'].artist.indexOf('&') === -1,
+     JSON.stringify(albums()['MoonChild Era (Deluxe)'].artist));
+  ok('the album name is untouched by an artist-only change', !!albums()['MoonChild Era (Deluxe)'] && Object.keys(albums()).length === 2,
+     JSON.stringify(Object.keys(albums())));
+  ok('an album that shared one artist carries its songs with it',
+     ['t1', 't2', 't3'].every((id) => trackArtist(id) === 'Diljit Dosanjh, Sia'),
+     JSON.stringify(['t1', 't2', 't3'].map(trackArtist)));
+  ok('the other album\u2019s songs are untouched',
+     trackArtist('t4') === 'Someone' && trackArtist('t5') === 'Someone Else',
+     JSON.stringify([trackArtist('t4'), trackArtist('t5')]));
+  ok('and its album entry is untouched', albums()['Other Album'].artist === 'Someone',
+     JSON.stringify(albums()['Other Album']));
+  ok('the album artist is written to storage', storedMeta('userAlbums')['MoonChild Era (Deluxe)'].artist === 'Diljit Dosanjh, Sia');
+
   console.log('\n— no ghost album, nothing hidden —');
   closeManage(win);
   await wait(200);
@@ -226,6 +252,21 @@ async function rename(win, newName, index) {
   await wait(500);
   const allRows = Array.from(win.document.querySelectorAll('#listPane .track')).map((r) => r.dataset.id);
   ok('the renamed album hides no song from the library', allRows.length === 5, JSON.stringify(allRows));
+
+  console.log('\n— a mixed-artist album keeps each song\u2019s own artist —');
+  await openManage(win);
+  // Index 1: the second Rename button belongs to 'Other Album' (the first is the
+  // one just renamed), and only its artist changes here — not its name.
+  await rename(win, 'Other Album', 'Various Artists', 1);
+  ok('the album\u2019s own artist is renamed', albums()['Other Album'].artist === 'Various Artists',
+     JSON.stringify(albums()['Other Album'].artist));
+  ok('its songs keep the artists they came in with',
+     trackArtist('t4') === 'Someone' && trackArtist('t5') === 'Someone Else',
+     JSON.stringify([trackArtist('t4'), trackArtist('t5')]));
+  ok('editing an album by hand claims it as yours', !albums()['Other Album'].auto && !!albums()['Other Album'].manual,
+     JSON.stringify(albums()['Other Album']));
+  closeManage(win);
+  await wait(300);
 
   console.log('\n— a rename never touches a playlist —');
   ok('every playlist is byte-for-byte unchanged', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));

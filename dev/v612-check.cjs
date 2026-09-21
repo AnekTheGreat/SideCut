@@ -176,7 +176,11 @@ function buildEncoders(lame, sliceMs) {
   console.log('\n— converted songs land in the library —');
   {
     const src = slice('  function scAddConvertedToLibrary(blob, meta, opts){', '\n  // ─── Progress pill');
-    const harness = new Function('scSafeName', 'URL', 'Blob', 'File', `
+    // The real helpers out of index.html — the file name and the credit
+    // normalisation this function now runs are exactly what is being tested.
+    const helperSrc = slice('  function scSafeName(s){', '  // ─── Native HTTP transport');
+    const realHelpers = new Function(helperSrc + '\nreturn { scSafeName: scSafeName, scArtistCredits: scArtistCredits };')();
+    const harness = new Function('scSafeName', 'scArtistCredits', 'URL', 'Blob', 'File', `
       var idCounter = 41;
       var allTracks = [];
       var playlists = { 'All Songs': [] };
@@ -191,7 +195,7 @@ function buildEncoders(lame, sliceMs) {
       harness.add = scAddConvertedToLibrary;
       harness.state = function(){ return { idCounter: idCounter, allTracks: allTracks, playlists: playlists, persisted: persisted, saves: saves, lazy: lazy }; };
       return harness;
-    `)((s) => String(s || '').replace(/[^\w\s-]/g, '').trim().slice(0, 80) || 'audio', URL, Blob, File);
+    `)(realHelpers.scSafeName, realHelpers.scArtistCredits, URL, Blob, File);
 
     const art = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4]);
     const track = harness.add(new Blob([new Uint8Array(500)], { type: 'audio/mpeg' }), {
@@ -271,7 +275,16 @@ function buildEncoders(lame, sliceMs) {
 
   /* ── 5. this build ─────────────────────────────────────────────────────── */
   console.log('\n— version, notes and the published bundle —');
-  ok('the app is v60.1.2', version === '60.1.2', version);
+  // This audit is for the v60.1.2 feature, which ships on its own or later.
+  const atLeast = (v, min) => {
+    const a = String(v).split('.').map(Number), b = String(min).split('.').map(Number);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const x = a[i] || 0, y = b[i] || 0;
+      if (x !== y) return x > y;
+    }
+    return true;
+  };
+  ok('index.html is v60.1.2 or later', atLeast(version, '60.1.2'), version);
   ok('sw.js cache matches', sw.indexOf('sidecut-shell-v' + version) !== -1);
   const entries = [...html.matchAll(/version: '(\d+(?:\.\d+)*)', date: '([^']*)'/g)].map((m) => ({ v: m[1], d: m[2] }));
   ok('the newest entry is this build', entries[0] && entries[0].v === version, entries[0] && entries[0].v);

@@ -263,6 +263,50 @@ const focused = (pane) => Array.prototype.map.call(pane.querySelectorAll('.sc-al
     win.close();
   }
 
+  // ── B2. Albums: a CLOSED album card — its rows are only built when a card is
+  // expanded, and a re-render rebuilds every card closed. This is the state the
+  // user's tap actually arrives in (v60.1.3: the jump opens the card itself).
+  {
+    console.log('\n— In Albums, tapping the record player opens a closed album —');
+    const { win, errors } = boot();
+    await wait(3200);
+    stubAudio(win);
+    win.navigate('albums');
+    await wait(300);
+    win.playFromList(['t1', 't2'], 't1');
+    await wait(350);
+    win.localStorage.setItem('sidecut_albColl_MoonChild Era', '1');
+    win.navigate('albums');
+    await wait(500);
+    const pane = win.document.getElementById('listPane');
+    const card = pane.querySelector('[data-album-name="MoonChild Era"]');
+    ok('the album is on screen with its songs still unbuilt',
+       !!card && card.querySelectorAll('.track').length === 0,
+       card ? card.querySelectorAll('.track').length + ' rows' : 'no card');
+
+    const spy = watchPageScroll(win);
+    const paneScroll = watchPaneScroll(pane);
+    spy.reset();
+    win.__scOpenAlbumForCurrentSong();
+    await wait(900);
+
+    const row = rowIn(pane, 't1');
+    // Re-query: a redraw can replace the card element while the tap is in flight,
+    // so the reference held before the jump may be a detached node.
+    const cardAfter = pane.querySelector('[data-album-name="MoonChild Era"]');
+    ok('the tap opens that album card', !!cardAfter && cardAfter.querySelectorAll('.track').length === 2,
+       cardAfter ? cardAfter.querySelectorAll('.track').length + ' rows' : 'no card');
+    ok('the playing song is in the opened card', !!row && !!cardAfter && !!cardAfter.querySelector('.track[data-id="t1"]'));
+    ok('and it is highlighted', !!row && row.classList.contains('sc-album-focus'), row ? row.className : 'no row');
+    ok('the list scrolled to it', paneScroll.writes > 0, paneScroll.writes + ' writes');
+    ok('nothing scrolls the page itself', spy.clean() === 0, spy.details.slice(0, 3).join(' | '));
+    const toastEl = win.document.getElementById('toast');
+    const toastText = toastEl ? String(toastEl.textContent || '') : '';
+    ok('no toast is raised on the way', !/Opened/.test(toastText), JSON.stringify(toastText.slice(0, 60)));
+    ok('no page errors', realErrors(errors).length === 0, realErrors(errors).slice(0, 2).join(' | '));
+    win.close();
+  }
+
   // ── C. the song is not in the playlist you have open ──
   {
     console.log('\n— If the open playlist does not hold the song, it opens All Songs —');
@@ -314,7 +358,10 @@ const focused = (pane) => Array.prototype.map.call(pane.querySelectorAll('.sc-al
        count(jump, 'scrollIntoView(') + ' calls');
     ok('the album jump exists', album.length > 0);
     ok('it scrolls through the app engine', count(album, 'smoothScrollIn(') > 0);
-    ok('and only keeps scrollIntoView as a last-resort catch', count(album, 'scrollIntoView(') === 1,
+    // v60.1.3 removed the last one: the album jump now expands the album card
+    // itself and scrolls through the app engine, and its fallback writes
+    // scrollTop on the pane — nothing in either jump can lift the whole app.
+    ok('and never uses scrollIntoView at all', count(album, 'scrollIntoView(') === 0,
        count(album, 'scrollIntoView(') + ' calls');
     ok('the tab you are in is what picks the path',
        album.indexOf('libraryMode') !== -1 && album.indexOf('jumpToPlayingSong(t)') !== -1);
