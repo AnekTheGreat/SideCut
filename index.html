@@ -5169,7 +5169,8 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   // ~10 steps a second. The default sweep is about 45 degrees a second, so ten
   // steps read as one continuous move, while ten full-app repaints a second is a
   // tenth of what a per-frame loop cost for a colour nobody can pick apart.
-  const RGB_TICK_MS = 100;
+  // 20 updates/sec keeps RGB smooth without a full-vsync render loop.
+  const RGB_TICK_MS = 50;
   function rgbSpeedSeconds(){
     const n = Number(rgbSpeedSec);
     // A stored 0 / negative / NaN here used to make every hue NaN, which CSS
@@ -10362,7 +10363,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.2.0';
+  const APP_VERSION = '60.3.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -29319,6 +29320,7 @@ if(!isDiscover) stopDiscoverPreview();
               var mode = (modeSel && modeSel.value) || 'library';
               var idx = pickedIdx();
               if(!idx.length){ toast('Pick at least one song to convert.', 2500); return; }
+              idx.sort(function(a, b){ return a - b; });
               var chosen = idx.map(function(ix){ return plan.tracks[ix]; }).filter(Boolean);
               if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
               scRunBatchConvert(plan, fmt, mode, resultEl, btnEl, url, chosen).catch(function(err){
@@ -29961,7 +29963,8 @@ if(!isDiscover) stopDiscoverPreview();
               album: eName,
               cover: eCover,
               seconds: Math.round((er.duration || 0) / 1000),
-              position: eTracks.length + 1
+              // Preserve the source track number even if an earlier row was skipped.
+              position: Number(er.trackNumber || er.track_number || er.position || (et + 1)) || (et + 1)
             });
           }
           if(eTracks.length){
@@ -30729,7 +30732,7 @@ if(!isDiscover) stopDiscoverPreview();
     for(var i = 0; i < parts.length; i++){ out.set(parts[i], pos); pos += parts[i].length; }
     return out.buffer;
   }
-  async function scYtSearch(query, artistHint){
+  async function scYtSearch(query, artistHint, albumHint){
     try{
       var body = JSON.stringify({
         context: { client: { clientName: 'WEB', clientVersion: '2.20240801.00.00', hl: 'en' } },
@@ -30765,6 +30768,8 @@ if(!isDiscover) stopDiscoverPreview();
           .replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
       }
       var artistNorm = normArtist(artistHint);
+      var albumNorm = normArtist(albumHint);
+      var albumWords = albumNorm.split(' ').filter(function(w){ return w.length > 2 && w !== 'the' && w !== 'and'; });
       var artistWords = artistNorm.split(' ').filter(function(w){ return w.length > 2 && w !== 'the' && w !== 'and'; });
       // "Sukha, Chani" as one string never appears in a single channel name, so
       // each credited artist is scored on its own — the same rule the verifier
@@ -30791,6 +30796,12 @@ if(!isDiscover) stopDiscoverPreview();
         if(dur > 720) score -= 35;
         for(var w = 0; w < qWords.length; w++){ if(qWords[w] && t.indexOf(qWords[w]) !== -1) score += 2; }
         if(t.indexOf(q) !== -1) score += 8;                     // whole phrase present
+        if(albumNorm){
+          var albumHits = 0;
+          for(var abw = 0; abw < albumWords.length; abw++) if(t.indexOf(albumWords[abw]) !== -1) albumHits++;
+          if(albumHits >= Math.min(2, albumWords.length)) score += 18;
+          else if(albumHits > 0) score += 5;
+        }
         if(/lyric|karaoke|cover of|tribute|reaction|podcast|interview|spoken word/.test(t)) score -= 40;
         if(/official audio|official music|official video|audio only/.test(t)) score += 3;
         if(dur > 0 && dur > 900) score -= 20;                   // hour-long compilations
@@ -31070,10 +31081,11 @@ if(!isDiscover) stopDiscoverPreview();
   }
   async function scSpToBuffer(meta, onStatus){
     var title = meta.title || '', artist = meta.artist || '';
-    var query = ((title + ' ' + artist).trim());
+    var album = meta.album || '';
+    var query = ((title + ' ' + artist + ' ' + album).trim());
     if(!query) return null;
     if(onStatus) onStatus('Searching for "' + title + '" by ' + (artist || 'the artist') + '…');
-    var cands = await scYtSearch(query, artist);
+    var cands = await scYtSearch(query, artist, album);
     if(!cands || !cands.length){ window.__scSourceFail = 'no source found'; return null; }
     // When a Gemini key is configured, put the AI's pick first in the verify order.
     if(typeof _aiGeminiKey !== 'undefined' && _aiGeminiKey && cands.length > 1){
@@ -31095,7 +31107,7 @@ if(!isDiscover) stopDiscoverPreview();
     // nothing usable (regional spellings, "Song (Official Video)" uploads):
     // title + artist + the word audio.
     var cands2 = [];
-    try{ cands2 = await scYtSearch(title + ' ' + artist + ' audio', artist) || []; }catch(_e2){}
+    try{ cands2 = await scYtSearch(title + ' ' + artist + ' ' + album + ' audio', artist, album) || []; }catch(_e2){}
     if(cands2 && cands2.length){
       var _seenC = {};
       for(var _c1 = 0; _c1 < cands.length; _c1++) _seenC[cands[_c1].videoId] = true;
