@@ -10301,7 +10301,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.1.1';
+  const APP_VERSION = '60.1.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10685,6 +10685,15 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.1.2', date: 'September 20, 2026 · 11:25 PM EDT', title: 'Conversions run in the background, land in your library, and you pick the songs', items: [
+    'Pick what converts. The Spotify album/playlist converter now lists every song it found with a tick box, all of them ticked to start with \u2014 untick the ones you do not want (or tap None) and the button counts the selection: "Convert 4 songs". No more converting twelve songs to keep three',
+    'Converted songs go straight into your library. Every finished track is filed under All songs (and Unsorted) with the title, artist, album and cover art the conversion already fetched, written to the library exactly like an imported file \u2014 so it is still there after a restart. Nothing to download, nothing to import, no share sheet popping up over your music',
+    'Saving files is now the extra, not the default: the output choice is "Just my library", "Library + save files" or "Library + one ZIP"',
+    'The app stays usable while it converts. The encoder used to run the entire track in one go on the main thread \u2014 a four-minute song is about ten million samples per channel, so the app froze until it finished. Encoding is now sliced and hands control back every ~55ms, so you can scroll, browse, switch tabs and keep listening while the work happens. MP3 (the default) and WAV; FLAC keeps its old encoder',
+    'The run follows you. Converting is no longer tied to the window you started it in: close that window and the progress stays on screen as a small pill above the player, which turns into "12 songs added to your library" when it is done, with an Open my library button right there',
+    'A leading track number is no longer read as the artist. Conversions are named "01 - Diljit Dosanjh - Dealer.mp3" on purpose, and importing one used to file the song under artist "01" with the artist stuck on the front of the title \u2014 the number is dropped before the artist/title split now, for every file you add, converted or not',
+    'The single-song converters do it too: a converted Spotify track or YouTube link is in your library when it finishes, with a "Save the file too" button if you also want the file. No Import to Library step anywhere',
+  ]},
   { version: '60.1.1', date: 'September 20, 2026 \u00b7 10:08 PM EDT', title: 'Conversions download again: YouTube only serves audio in small chunks now, and a multi-artist credit verifies', items: [
     'The converter works again. YouTube stopped serving an unbounded audio request \u2014 a download with no Range header, an open-ended range, or one asking for more than 1 MiB now answers 403. The app asked for the whole file in a single request, so it came back empty and every track reported "no source found" no matter how right the match was. Streams are pulled as a run of bounded 1 MiB pieces and stitched back together, on the device, with no relay in the middle',
     'More than one source is tried. The player used to hand back a single URL from whichever client answered first, so a URL that had gone dead ended the whole conversion. It now collects the streams of the first two clients that respond and takes the first one that downloads and decodes \u2014 a blocked, capped or unplayable stream is walked past instead of reported',
@@ -14182,9 +14191,16 @@ function startLyricsAutoScroll() {
   }
   function guessMeta(filename){
     const base = filename.replace(/\.[^/.]+$/, '');
-    const parts = base.split(' - ');
+    // A leading track number is a track number, never an artist. Conversions
+    // are written as "01 - Artist - Title.mp3" (albums are numbered on
+    // purpose), so this used to file the song under artist "01" with the real
+    // artist stuck on the front of the title. Only a number that stands alone
+    // before a separator is dropped — "3005 - Childish Gambino - ..." keeps
+    // working exactly as before, because the artist then lands in slot two.
+    const stripped = base.replace(/^\s*(\d{1,3})\s*[-\u2013\u2014.]\s+/, '').trim() || base;
+    const parts = stripped.split(' - ');
     if(parts.length >= 2) return { artist: parts[0].trim(), title: parts.slice(1).join(' - ').trim() };
-    return { artist: 'Unknown artist', title: base };
+    return { artist: 'Unknown artist', title: stripped };
   }
 
   // ---------------- Automatic genre detection (reads embedded ID3 tags) ----------------
@@ -28658,22 +28674,30 @@ if(!isDiscover) stopDiscoverPreview();
       if(!dec) return null;
       var blob = scEncodeAudio(dec.buffer, fmt, { title: title || '', artist: (typeof ytAuthor === 'string' ? ytAuthor : ''), artBytes: null, artMime: null });
       if(!blob) return null;
-      return { downloadUrl: URL.createObjectURL(blob), filename: (scSafeName(title || ('youtube_' + videoId)) || ('youtube_' + videoId)) + '.' + fmt };
+      return { downloadUrl: URL.createObjectURL(blob), filename: (scSafeName(title || ('youtube_' + videoId)) || ('youtube_' + videoId)) + '.' + fmt, blob: blob };
     }
 
-    function renderDownload(fmt, downloadUrl, filename){
+    function renderDownload(fmt, res){
       var ext = fmt;
-      var label = 'Download ' + ext.toUpperCase();
+      var downloadUrl = res.downloadUrl, filename = res.filename;
+      // Straight into the library, with the title/artist cleaned the same way an
+      // import is — no download-and-import step for a converted song.
+      var _libClean = cleanOnImport(title || 'YouTube audio', ytAuthor || '');
+      var addedYt = res.blob ? scAddConvertedToLibrary(res.blob, {
+        title: _libClean.name, artist: _libClean.artist, album: '', genre: '',
+        artBytes: null, artMime: null
+      }, { fileName: filename, fmt: fmt, source: 'YouTube conversion' }) : null;
+      scConvertPillDone(addedYt ? ((_libClean.name || 'The song') + ' is in your library') : 'Converted, but it could not be added to the library');
       if(resultEl){
         resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
           '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
           '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
-          '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">\u2705 Ready to download (' + ext.toUpperCase() + ')</div>' +
-          '<a href="' + downloadUrl + '" download="' + filename + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:6px; background:var(--coral); color:#fff; font-size:11px; font-weight:600; text-decoration:none; margin-right:6px;">\u2b07 ' + label + '</a>' +
+          '<div style="font-size:10px; color:var(--gold); margin-bottom:6px;">' + (addedYt ? '\u2705 In your library (' + ext.toUpperCase() + ')' : '\u26a0 Ready to download (' + ext.toUpperCase() + ')') + '</div>' +
+          '<a href="' + downloadUrl + '" download="' + filename + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink); font-size:11px; font-weight:600; text-decoration:none; margin-right:6px;">\u2b07 Save the file too</a>' +
           '<button onclick="window.open(this.dataset.url,\'_blank\')" data-url="' + downloadUrl + '" style="padding:5px 10px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; cursor:pointer;">Open in tab</button>' +
           '</div></div>';
       }
-      toast(label + ' ready! Tap Download.', 5000);
+      toast(addedYt ? ((_libClean.name || 'The song') + ' is in your library (All songs).') : (ext.toUpperCase() + ' ready! Tap Download.'), 5000);
     }
 
     tryMeta().then(function(){
@@ -28686,7 +28710,7 @@ if(!isDiscover) stopDiscoverPreview();
           if(done) return true;
           setStatus('Trying ' + f.toUpperCase() + '...');
           return tryYtAudioFormat(f).then(function(res){
-            if(res){ renderDownload(f, res.downloadUrl, res.filename); return true; }
+            if(res){ renderDownload(f, res); return true; }
             return false;
           });
         });
@@ -28811,20 +28835,68 @@ if(!isDiscover) stopDiscoverPreview();
             '</div>' +
             '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">' +
               '<span style="font-size:10.5px; color:var(--ink-dim);">Save</span>' +
-              '<select class="sp-batch-mode" style="padding:6px 8px; border-radius:6px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:11.5px; cursor:pointer;"><option value="individual">Individual songs (one file each)</option><option value="zip">One ZIP with every song</option></select>' +
+              '<select class="sp-batch-mode" style="padding:6px 8px; border-radius:6px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:11.5px; cursor:pointer;"><option value="library">Just my library</option><option value="files">Library + save files</option><option value="zip">Library + one ZIP</option></select>' +
               '<button class="sp-batch-go" style="padding:6px 14px; border-radius:6px; background:var(--coral); color:#fff; border:none; font-size:11px; font-weight:600; cursor:pointer;">Convert ' + plan.tracks.length + ' songs</button>' +
-            '</div>';
+            '</div>' +
+            // Every song is ticked to begin with, so a whole album is one tap;
+            // untick what you do not want and the count follows.
+            '<div class="sp-pick" style="margin-top:8px; border-top:1px solid var(--line); padding-top:8px;">' +
+              '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">' +
+                '<span style="font-size:10.5px; color:var(--ink-dim); flex:1;">Pick the songs to convert</span>' +
+                '<button class="sp-pick-all" style="padding:3px 10px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink); font-size:10.5px; cursor:pointer;">All</button>' +
+                '<button class="sp-pick-none" style="padding:3px 10px; border-radius:6px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:10.5px; cursor:pointer;">None</button>' +
+              '</div>' +
+              '<div class="sp-pick-list" style="max-height:190px; overflow-y:auto; display:flex; flex-direction:column;"></div>' +
+            '</div>' +
+            '<div style="font-size:9.5px; color:var(--ink-dim); margin-top:6px; line-height:1.5;">Converted songs go straight into your library, in All songs — nothing to import.</div>';
           resultEl.innerHTML = '';
           resultEl.appendChild(pickEl);
+          var pickList = pickEl.querySelector('.sp-pick-list');
+          function pickedIdx(){
+            return Array.prototype.slice.call(pickList.querySelectorAll('.sp-pick-cb'))
+              .filter(function(cb){ return cb.checked; })
+              .map(function(cb){ return Number(cb.getAttribute('data-idx')); });
+          }
+          function refreshPickCount(){
+            var n = pickedIdx().length;
+            var gb = pickEl.querySelector('.sp-batch-go');
+            if(gb){
+              gb.textContent = n ? ('Convert ' + n + ' song' + (n === 1 ? '' : 's')) : 'Pick a song first';
+              gb.style.opacity = n ? '1' : '0.55';
+            }
+          }
+          if(pickList){
+            pickList.innerHTML = plan.tracks.map(function(tr, ti){
+              return '<label style="display:flex; gap:8px; align-items:center; padding:3px 0; font-size:11px; color:var(--ink); cursor:pointer;">' +
+                '<input type="checkbox" class="sp-pick-cb" data-idx="' + ti + '" checked style="flex-shrink:0; accent-color:var(--coral);">' +
+                '<span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(tr.title || 'Untitled') + '</span>' +
+                '<span style="color:var(--ink-dim); font-size:10px; max-width:42%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(tr.artist || '') + '</span>' +
+              '</label>';
+            }).join('');
+            Array.prototype.forEach.call(pickList.querySelectorAll('.sp-pick-cb'), function(cb){ cb.addEventListener('change', refreshPickCount); });
+            var allBtn = pickEl.querySelector('.sp-pick-all');
+            if(allBtn) allBtn.addEventListener('click', function(){ Array.prototype.forEach.call(pickList.querySelectorAll('.sp-pick-cb'), function(cb){ cb.checked = true; }); refreshPickCount(); });
+            var noneBtn = pickEl.querySelector('.sp-pick-none');
+            if(noneBtn) noneBtn.addEventListener('click', function(){ Array.prototype.forEach.call(pickList.querySelectorAll('.sp-pick-cb'), function(cb){ cb.checked = false; }); refreshPickCount(); });
+          }
+          refreshPickCount();
           var goBtn = pickEl.querySelector('.sp-batch-go');
           if(goBtn){
             goBtn.addEventListener('click', function(){
               var fmtSel = pickEl.querySelector('.sp-batch-fmt');
               var modeSel = pickEl.querySelector('.sp-batch-mode');
               var fmt = (fmtSel && fmtSel.value) || 'mp3';
-              var mode = (modeSel && modeSel.value) || 'individual';
+              var mode = (modeSel && modeSel.value) || 'library';
+              var idx = pickedIdx();
+              if(!idx.length){ toast('Pick at least one song to convert.', 2500); return; }
+              var chosen = idx.map(function(ix){ return plan.tracks[ix]; }).filter(Boolean);
               if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
-              scRunBatchConvert(plan, fmt, mode, resultEl, btnEl, url);
+              scRunBatchConvert(plan, fmt, mode, resultEl, btnEl, url, chosen).catch(function(err){
+                // The pill is the only thing still on screen if the run dies, so it
+                // has to end up saying something rather than spinning for ever.
+                scConvertPillDone('Conversion stopped — ' + ((err && err.message) || 'something went wrong'));
+                if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
+              });
             });
           }
         }catch(e){
@@ -28964,7 +29036,9 @@ if(!isDiscover) stopDiscoverPreview();
           year: csMeta.year || '', genre: csMeta.genre || '', track: csMeta.track || '',
           artBytes: artBytes, artMime: artBytes ? artMime : null
         };
-        var blob = scEncodeAudio(buf, fmt, tagMeta);
+        var blob = await scEncodeAudioCooperative(buf, fmt, tagMeta, function(p){
+          if(p > 0 && p < 1) csSetStatus('Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(p * 100) + '%');
+        });
         if(!blob){ csRenderFormats(buf, streamUrl); return; }
         var artistPart = scSafeName(csMeta.artist || '');
         var titlePart = scSafeName(csMeta.title || ('spotify_' + spotId)) || 'spotify_track';
@@ -28972,10 +29046,11 @@ if(!isDiscover) stopDiscoverPreview();
         var baseName = (artistPart && al !== 'unknown' && al !== 'unknown artist' && al !== 'various artists')
           ? (artistPart + ' - ' + titlePart) : titlePart;
         var fName = baseName + '.' + fmt;
-        var savedOk = false;
-        try{ savedOk = await scNativeSaveBlob(blob, fName); }catch(_se){}
+        var addedSingle = scAddConvertedToLibrary(blob, {
+          title: csMeta.title || 'Spotify audio', artist: csMeta.artist || '', album: csMeta.album || '',
+          genre: csMeta.genre || '', artBytes: artBytes, artMime: artBytes ? artMime : null
+        }, { fileName: fName, fmt: fmt, source: 'Spotify ' + fmt + ' conversion' });
         var dlHref = URL.createObjectURL(blob);
-        if(!savedOk) scDownloadBlob(blob, fName);
         var fUrl = dlHref;
         var fMB = (blob.size / (1024*1024)).toFixed(1);
         if(resultEl){
@@ -28986,13 +29061,12 @@ if(!isDiscover) stopDiscoverPreview();
             '<div style="flex:1; min-width:0;">' +
             '<div style="font-weight:600; color:var(--ink); margin-bottom:2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + (csMeta.title || 'Spotify audio') + (csMeta.artist ? ' — ' + csMeta.artist : '') + '</div>' +
             '<div style="font-size:10px;color:var(--ink-dim);">' + fName + ' • ' + fMB + ' MB</div>' +
-            '<div style="font-size:10px; color:var(--gold); margin:4px 0 6px;">✅ ' + fmt.toUpperCase() + ' ready' + (savedOk ? ' — saved via share sheet' : '!') + '</div>' +
-            '<a href="' + dlHref + '" download="' + fName + '" style="display:inline-block;padding:6px 14px;border-radius:8px;background:var(--coral);color:#fff;font-size:12px;font-weight:600;text-decoration:none;">⬇ Download ' + fmt.toUpperCase() + '</a> ' +
-            '<button onclick="window.__importConvertedMp4(this.dataset.url, this.dataset.name)" data-url="' + fUrl + '" data-name="' + fName + '" style="padding:6px 14px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:12px;font-weight:600;cursor:pointer;">Import to Library</button> ' +
+            '<div style="font-size:10px; color:var(--gold); margin:4px 0 6px;">' + (addedSingle ? '✅ In your library (' + fmt.toUpperCase() + ')' : '⚠ ' + fmt.toUpperCase() + ' ready, but it could not be added to your library') + '</div>' +
+            '<a href="' + dlHref + '" download="' + fName + '" style="display:inline-block;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink);font-size:12px;font-weight:600;text-decoration:none;">⬇ Save the file too</a> ' +
             '<button onclick="window.__csSpFormats()" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;">↻ Other format</button>' +
             '</div></div>';
         }
-        toast(fmt.toUpperCase() + ' ready' + (savedOk ? ' — check your share sheet' : '') + '!', 4000);
+        scConvertPillDone(addedSingle ? ((csMeta.title || 'The song') + ' is in your library') : 'Converted, but it could not be added to the library');
       }catch(e){
         csRenderFormats(buf, streamUrl);
       }
@@ -29072,7 +29146,9 @@ if(!isDiscover) stopDiscoverPreview();
         year: meta.year || '', genre: meta.genre || '', track: meta.track || '',
         artBytes: artBytes, artMime: artBytes ? artMime : null
       };
-      var blob = scEncodeAudio(buf, fmt, tagMeta);
+      var blob = await scEncodeAudioCooperative(buf, fmt, tagMeta, function(p){
+        if(stEl && p > 0 && p < 1) stEl.textContent = 'Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(p * 100) + '%';
+      });
       if(!blob){ resultEl.innerHTML = '<span style="color:var(--coral);">⚠ Could not encode to ' + fmt.toUpperCase() + ' in this browser. Try another format.</span>'; return; }
       // Name the file "Artist - Title.ext" so SideCut's library importer parses
       // the real artist + title from the name even before tags are read.
@@ -29085,6 +29161,13 @@ if(!isDiscover) stopDiscoverPreview();
       var fUrl = URL.createObjectURL(blob);
       var fMB = (blob.size / (1024*1024)).toFixed(1);
       var fDur = buf.duration, fMi = Math.floor(fDur/60), fSe = Math.floor(fDur%60);
+      // This is a finished song now — it goes into the library itself, with the
+      // metadata and cover that were just fetched and embedded.
+      var addedSingle = scAddConvertedToLibrary(blob, {
+        title: meta.title || 'Spotify audio', artist: meta.artist || '', album: meta.album || '',
+        genre: meta.genre || '', artBytes: artBytes, artMime: artBytes ? artMime : null
+      }, { fileName: fName, fmt: fmt, source: 'Spotify ' + fmt + ' conversion' });
+      scConvertPillDone(addedSingle ? ((meta.title || 'The song') + ' is in your library') : 'Converted, but it could not be added to the library');
       var tagsLine = '🎵 Metadata embedded in this file';
       if(meta.title || meta.artist || meta.album){
         tagsLine = '🎵 ' + ((meta.artist && meta.title) ? (meta.artist + ' — ' + meta.title) : (meta.title || meta.artist));
@@ -29100,10 +29183,9 @@ if(!isDiscover) stopDiscoverPreview();
         '<div style="flex:1; min-width:0;">' +
         '<div style="font-weight:600; color:var(--ink); margin-bottom:2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + ((meta.title) || 'Spotify audio') + (meta.artist ? ' — ' + meta.artist : '') + '</div>' +
         '<div style="font-size:10px;color:var(--ink-dim);">' + fName + ' • ' + fMB + ' MB • ' + fMi + ':' + (fSe < 10 ? '0' : '') + fSe + '</div>' +
-        '<div style="font-size:10px; color:var(--gold); margin:4px 0 6px;">✅ ' + fmt.toUpperCase() + ' ready!</div>' +
+        '<div style="font-size:10px; color:var(--gold); margin:4px 0 6px;">' + (addedSingle ? '✅ In your library (' + fmt.toUpperCase() + ')' : '⚠ ' + fmt.toUpperCase() + ' ready, but it could not be added to your library') + '</div>' +
         '<div style="display:flex; gap:6px; flex-wrap:wrap;">' +
-          '<a href="' + fUrl + '" download="' + fName + '" style="display:inline-block;padding:6px 14px;border-radius:8px;background:var(--coral);color:#fff;font-size:12px;font-weight:600;text-decoration:none;">⬇ Download ' + fmt.toUpperCase() + '</a>' +
-          '<button onclick="window.__importConvertedMp4(this.dataset.url, this.dataset.name)" data-url="' + fUrl + '" data-name="' + fName + '" style="padding:6px 14px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:12px;font-weight:600;cursor:pointer;">Import to Library</button>' +
+          '<a href="' + fUrl + '" download="' + fName + '" style="display:inline-block;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink);font-size:12px;font-weight:600;text-decoration:none;">⬇ Save the file too</a>' +
           '<button onclick="window.__csSpFormats()" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;">↻ Other format</button>' +
         '</div>' +
         '<div style="font-size:9.5px;color:var(--ink-dim);margin-top:3px;line-height:1.5;">' + tagsLine + '</div>' +
@@ -29619,6 +29701,229 @@ if(!isDiscover) stopDiscoverPreview();
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
 
+  // ─── Conversions must not freeze the app ─────────────────────────────────────
+  // Every encoder in here used to be one synchronous loop over the whole track.
+  // A four-minute song is about ten million samples per channel, so an MP3 (and
+  // especially a FLAC) encode held the main thread for many seconds at a time —
+  // the app could not be touched, scrolled or navigated while a conversion ran.
+  // The conversion path now uses cooperative twins of those encoders: the same
+  // work, cut into slices that give the main thread back every few dozen ms.
+  function scYieldToUI(){
+    return new Promise(function(res){ setTimeout(res, 0); });
+  }
+  var SC_ENCODE_SLICE_MS = 55;   // work per slice before yielding
+  // ID3v2.3 tag in front of the encoded chunks — one copy, used by both paths.
+  function scJoinTaggedChunks(chunks, meta, mime){
+    var id3 = scId3v23Bytes(meta);
+    var total = 0, ci;
+    for(ci = 0; ci < chunks.length; ci++) total += chunks[ci].length;
+    if(id3 && id3.length){
+      var withTag = new Uint8Array(id3.length + total);
+      withTag.set(id3, 0);
+      var wpos = id3.length;
+      for(ci = 0; ci < chunks.length; ci++){ withTag.set(chunks[ci], wpos); wpos += chunks[ci].length; }
+      return new Blob([withTag], { type: mime });
+    }
+    return new Blob(chunks, { type: mime });
+  }
+  // MP3 (lamejs) — the block loop is ours, so the slice boundary sits between
+  // blocks. Same encoder, same blocks, same bytes out as scEncodeAudio.
+  async function scEncodeMp3Cooperative(buf, meta, onSlice){
+    if(typeof lamejs === 'undefined') return null;
+    var chCount = Math.max(1, Math.min(2, buf.numberOfChannels || 1));
+    var sr = Math.max(8000, Math.min(48000, Math.round(buf.sampleRate || 44100)));
+    var enc = new lamejs.Mp3Encoder(chCount, sr, 192);
+    var block = 1152;
+    var ch0 = buf.getChannelData(0);
+    var ch1 = chCount > 1 ? buf.getChannelData(1) : null;
+    var chunks = [];
+    function toI16(f){ var v = Math.max(-1, Math.min(1, f)); return Math.round(v < 0 ? v*0x8000 : v*0x7FFF); }
+    var sliceStart = Date.now();
+    for(var i = 0; i < ch0.length; i += block){
+      var l = new Int16Array(block);
+      var r = chCount > 1 ? new Int16Array(block) : null;
+      var n = Math.min(block, ch0.length - i);
+      for(var b = 0; b < n; b++){ l[b] = toI16(ch0[i+b]); if(chCount > 1) r[b] = toI16(ch1[i+b]); }
+      var out = chCount > 1 ? enc.encodeBuffer(l, r) : enc.encodeBuffer(l, l);
+      if(out && out.length) chunks.push(new Uint8Array(out));
+      if(Date.now() - sliceStart >= SC_ENCODE_SLICE_MS){
+        sliceStart = Date.now();
+        if(onSlice) onSlice(Math.min(1, (i + block) / ch0.length));
+        await scYieldToUI();
+      }
+    }
+    var endBuf = enc.flush();
+    if(endBuf && endBuf.length) chunks.push(new Uint8Array(endBuf));
+    return scJoinTaggedChunks(chunks, meta, 'audio/mpeg');
+  }
+  // WAV (PCM 16-bit + id3 chunk) — the same layout scEncodeAudio writes, filled
+  // in slices so a long track does not lock the screen.
+  async function scEncodeWavCooperative(buf, meta, onSlice){
+    var numChannels = Math.max(1, buf.numberOfChannels || 1);
+    var sampleRate = Math.round(buf.sampleRate || 44100);
+    var length = buf.length;
+    var blockAlign = numChannels * 2;
+    var dataSize = length * blockAlign;
+    var id3w = scId3v23Bytes(meta);
+    var id3Chunk = null;
+    if(id3w && id3w.length){
+      var id3len = id3w.length + (id3w.length % 2);
+      id3Chunk = new Uint8Array(8 + id3len);
+      id3Chunk[0] = 0x69; id3Chunk[1] = 0x64; id3Chunk[2] = 0x33; id3Chunk[3] = 0x20;
+      id3Chunk[4] = (id3w.length >>> 24) & 0xFF; id3Chunk[5] = (id3w.length >>> 16) & 0xFF;
+      id3Chunk[6] = (id3w.length >>> 8) & 0xFF; id3Chunk[7] = id3w.length & 0xFF;
+      id3Chunk.set(id3w, 8);
+    }
+    var headerSize = 44 + (id3Chunk ? id3Chunk.length : 0);
+    var totalSize = headerSize + dataSize;
+    var buffer = new ArrayBuffer(totalSize);
+    var view = new DataView(buffer);
+    function writeString(offset, str){ for(var i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); }
+    writeString(0, 'RIFF');
+    view.setUint32(4, totalSize - 8, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);
+    var woff = 36;
+    if(id3Chunk){
+      for(var ic = 0; ic < id3Chunk.length; ic++) view.setUint8(woff + ic, id3Chunk[ic]);
+      woff += id3Chunk.length;
+    }
+    writeString(woff, 'data');
+    view.setUint32(woff + 4, dataSize, true);
+    var channels = [];
+    for(var c = 0; c < numChannels; c++) channels.push(buf.getChannelData(c));
+    var offset = woff + 8;
+    var sliceStart = Date.now();
+    for(var i2 = 0; i2 < length; i2++){
+      for(var c2 = 0; c2 < numChannels; c2++){
+        var sample = Math.max(-1, Math.min(1, channels[c2][i2]));
+        sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        view.setInt16(offset, sample, true);
+        offset += 2;
+      }
+      if((i2 & 4095) === 4095 && Date.now() - sliceStart >= SC_ENCODE_SLICE_MS){
+        sliceStart = Date.now();
+        if(onSlice) onSlice(i2 / length);
+        await scYieldToUI();
+      }
+    }
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
+  // The one the converters call. FLAC keeps the original encoder: its bit
+  // writer has no natural slice boundary, and rewriting it is not worth the
+  // risk of changing the file it produces.
+  async function scEncodeAudioCooperative(buf, fmt, meta, onSlice){
+    try{
+      if(fmt === 'mp3') return await scEncodeMp3Cooperative(buf, meta, onSlice);
+      if(fmt === 'wav') return await scEncodeWavCooperative(buf, meta, onSlice);
+      return scEncodeAudio(buf, fmt, meta);
+    }catch(e){
+      console.warn('cooperative encode failed, falling back to the plain encoder', e);
+      return scEncodeAudio(buf, fmt, meta);
+    }
+  }
+
+  // ─── A finished conversion IS a library song ─────────────────────────────────
+  // No share sheet, no download, no "+ Add songs \u2192 + Files": the track lands in
+  // All songs (and Unsorted) with the metadata the conversion already fetched,
+  // cover art included, and is written to IndexedDB like any imported file, so
+  // it is still there after a restart.
+  function scAddConvertedToLibrary(blob, meta, opts){
+    try{
+      var o = opts || {};
+      var title = String((meta && meta.title) || o.title || '').trim() || 'Untitled';
+      var artist = String((meta && meta.artist) || o.artist || '').trim() || 'Unknown artist';
+      var album = (meta && meta.album) || o.album || null;
+      var fmt = o.fmt || 'mp3';
+      var fName = o.fileName || (scSafeName(artist && artist !== 'Unknown artist' ? (artist + ' - ' + title) : title) + '.' + fmt);
+      var mime = fmt === 'flac' ? 'audio/flac' : (fmt === 'wav' ? 'audio/wav' : 'audio/mpeg');
+      var file = new File([blob], fName, { type: blob.type || mime });
+      var artBlob = null, artUrl = null;
+      if(meta && meta.artBytes && meta.artBytes.length){
+        try{
+          artBlob = new Blob([meta.artBytes], { type: meta.artMime || 'image/jpeg' });
+          artUrl = URL.createObjectURL(artBlob);
+        }catch(_ab){}
+      }
+      var id = 't' + (idCounter++);
+      var track = {
+        id: id, file: file, name: title, artist: artist, album: album,
+        url: URL.createObjectURL(file), duration: null,
+        genre: (meta && meta.genre) || null, gain: null,
+        artBlob: artBlob, artUrl: artUrl,
+        watermarkCleaned: false, dateAdded: Date.now(),
+        convertedFrom: o.source || 'converter'
+      };
+      allTracks.push(track);
+      if(!playlists['All Songs']) playlists['All Songs'] = [];
+      playlists['All Songs'].push(id);
+      if(!playlists['Unsorted']) playlists['Unsorted'] = [];
+      playlists['Unsorted'].push(id);
+      persistTrackMeta(track);
+      saveMeta();
+      readLazyMeta(track);   // fills in the real duration from the file itself
+      try{ renderTabs(); }catch(_rt){}
+      try{ renderList(); }catch(_rl){}
+      return track;
+    }catch(e){
+      console.warn('could not add the converted song to the library', e);
+      return null;
+    }
+  }
+
+  // ─── Progress pill: the run stays visible while you use the app ──────────────
+  var scConvertPillState = { el: null, timer: null };
+  function scConvertPill(show){
+    if(!show){
+      var gone = scConvertPillState.el;
+      if(gone && gone.parentNode) gone.parentNode.removeChild(gone);
+      scConvertPillState.el = null;
+      return;
+    }
+    if(scConvertPillState.el) return scConvertPillState.el;
+    var pill = document.createElement('div');
+    pill.id = 'scConvertPill';
+    pill.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:180;background:var(--bg-raised);border:1px solid var(--line);border-radius:14px;padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,0.45);display:flex;gap:10px;align-items:center;';
+    pill.innerHTML = '<div style="width:14px;height:14px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div class="sc-pill-title" style="font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Converting…</div>' +
+        '<div class="sc-pill-sub" style="font-size:10.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Starting…</div>' +
+        '<div style="height:4px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;margin-top:5px;"><div class="sc-pill-bar" style="height:100%;width:0%;background:var(--coral);transition:width 0.3s ease;"></div></div>' +
+      '</div>';
+    document.body.appendChild(pill);
+    scConvertPillState.el = pill;
+    return pill;
+  }
+  function scConvertPillUpdate(title, sub, pct){
+    var pill = scConvertPill(true);
+    if(!pill) return;
+    var t = pill.querySelector('.sc-pill-title'), s = pill.querySelector('.sc-pill-sub'), b = pill.querySelector('.sc-pill-bar');
+    if(t) t.textContent = title || 'Converting…';
+    if(s) s.textContent = sub || '';
+    if(b) b.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+  }
+  function scConvertPillDone(text){
+    var pill = scConvertPillState.el;
+    if(!pill){ toast(text || 'Conversions finished.', 5000); return; }
+    var spin = pill.querySelector('div');
+    if(spin) spin.outerHTML = '<div style="font-size:16px;flex-shrink:0;">✅</div>';
+    var t = pill.querySelector('.sc-pill-title');
+    if(t) t.textContent = text || 'Conversions finished';
+    var s = pill.querySelector('.sc-pill-sub');
+    if(s) s.textContent = 'Tap the bell or open your library to see them';
+    var b = pill.querySelector('.sc-pill-bar');
+    if(b) b.style.width = '100%';
+    if(scConvertPillState.timer) clearTimeout(scConvertPillState.timer);
+    scConvertPillState.timer = setTimeout(function(){ scConvertPill(false); }, 9000);
+  }
+
   // Runs one track end-to-end through the single-track pipeline. Returns
   // { ok: true, blob, fName } or { ok: false, reason }.
   async function scConvertOneTrack(meta, fmt, onStatus){
@@ -29642,7 +29947,9 @@ if(!isDiscover) stopDiscoverPreview();
       year: meta.year || '', genre: meta.genre || '', track: meta.track || '',
       artBytes: artBytes, artMime: artBytes ? artMime : null
     };
-    var blob = scTaggedBlob(res.buffer, fmt, tagMeta);
+    var blob = await scEncodeAudioCooperative(res.buffer, fmt, tagMeta, function(p){
+      if(onStatus && p > 0 && p < 1) onStatus('Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(p * 100) + '%');
+    });
     if(!blob) return { ok: false, reason: 'encode failed' };
     var artistPart = scSafeName(meta.artist || '');
     var titlePart = scSafeName(meta.title || 'spotify_track') || 'spotify_track';
@@ -29653,17 +29960,23 @@ if(!isDiscover) stopDiscoverPreview();
     var baseName = (meta.position && artistOk) ? (padN + ' - ' + (artistOk ? artistPart + ' - ' : '') + titlePart)
       : (artistOk ? artistPart + ' - ' + titlePart : titlePart);
     var fName = scSafeName(baseName) + '.' + fmt;
-    return { ok: true, blob: blob, fName: fName, bytes: blob.size, duration: res.buffer.duration };
+    return { ok: true, blob: blob, fName: fName, bytes: blob.size, duration: res.buffer.duration,
+             artBytes: artBytes, artMime: artBytes ? artMime : null };
   }
 
-  // Batch UI: renders progress into resultEl, converts every track, and saves
-  // each finished file automatically. A Convert click while one is running is
+  // Batch UI: renders progress into resultEl, converts the songs the user
+  // picked, and puts every finished track into the library (saving files or a
+  // ZIP is opt-in on top of that). A Convert click while one is running is
   // ignored instead of clobbering the run (the button is re-enabled at the end).
-  async function scRunBatchConvert(plan, fmt, saveMode, resultEl, btnEl, originalUrl){
-    var tracks = (plan && plan.tracks) || [];
+  // The run is not tied to the window it was started from: it keeps going if
+  // that window is closed, reporting into the floating progress pill.
+  async function scRunBatchConvert(plan, fmt, saveMode, resultEl, btnEl, originalUrl, chosenTracks){
+    var tracks = (chosenTracks && chosenTracks.length) ? chosenTracks.slice() : ((plan && plan.tracks) || []);
     if(!tracks.length) return false;
-    if(saveMode === 'zip' && typeof JSZip === 'undefined'){ toast('ZIP builder not loaded — saving songs individually instead.', 3000); saveMode = 'individual'; }
-    var zip = saveMode === 'zip' ? new JSZip() : null;
+    var alsoSaveFiles = (saveMode === 'files');
+    var wantZip = (saveMode === 'zip');
+    if(wantZip && typeof JSZip === 'undefined'){ toast('ZIP builder not loaded — the songs still go to your library.', 3000); wantZip = false; }
+    var zip = wantZip ? new JSZip() : null;
     var box = document.createElement('div');
     box.style.cssText = 'margin-top:8px; padding:10px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03);';
     box.innerHTML =
@@ -29671,13 +29984,16 @@ if(!isDiscover) stopDiscoverPreview();
         '<div style="width:14px;height:14px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>' +
         '<div style="font-size:12px; font-weight:600; color:var(--ink);">' + scEscapeHtml(plan.title || 'Spotify ' + (plan.kind || 'album')) + '</div>' +
       '</div>' +
-      '<div class="sp-batch-sub" style="font-size:10.5px; color:var(--ink-dim); margin-bottom:6px;">Starting ' + tracks.length + ' track' + (tracks.length === 1 ? '' : 's') + ' → ' + fmt.toUpperCase() + (saveMode === 'zip' ? ' · one ZIP' : ' · one file each') + '…</div>' +
+      '<div class="sp-batch-sub" style="font-size:10.5px; color:var(--ink-dim); margin-bottom:6px;">Starting ' + tracks.length + ' track' + (tracks.length === 1 ? '' : 's') + ' → ' + fmt.toUpperCase() + (wantZip ? ' · library + one ZIP' : (alsoSaveFiles ? ' · library + files' : ' · straight into your library')) + '…</div>' +
       '<div class="sp-batch-bar" style="height:6px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden;"><div style="height:100%; width:0%; background:var(--coral); transition:width 0.3s ease;"></div></div>' +
       '<div class="sp-batch-list" style="margin-top:8px; max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;"></div>' +
+      '<div style="font-size:10px; color:var(--ink-dim); margin-top:6px;">Converting in the background — close this window if you like, the run carries on and the progress stays on screen.</div>' +
       '<div class="sp-batch-actions" style="margin-top:8px; display:none; gap:6px; flex-wrap:wrap;"></div>';
     resultEl.style.display = 'block';
     resultEl.innerHTML = '';
     resultEl.appendChild(box);
+    scConvertPillUpdate('Converting ' + tracks.length + ' song' + (tracks.length === 1 ? '' : 's') + ' · ' + (plan.title || 'conversion'),
+      'Starting · everything lands in your library', 1);
     var subEl = box.querySelector('.sp-batch-sub');
     var barEl = box.querySelector('.sp-batch-bar > div');
     var listEl = box.querySelector('.sp-batch-list');
@@ -29703,26 +30019,48 @@ if(!isDiscover) stopDiscoverPreview();
       }
       tracksDone[i] = !!(out && out.ok);
       if(out && out.ok){
-        if(saveMode === 'zip'){
-          try{ zip.file(out.fName, out.blob); okCount++; if(stateEl){ stateEl.textContent = '✓ in ZIP'; stateEl.style.color = 'var(--coral)'; } }
-          catch(_ze){ failCount++; failedNames.push((meta.title || 'Untitled') + ' (zip add failed)'); if(stateEl){ stateEl.textContent = '✗ zip add failed'; stateEl.style.color = '#f87171'; } }
-        } else {
-          var savedOk = false;
-          try{ savedOk = await scNativeSaveBlob(out.blob, out.fName); }catch(_se){}
-          if(!savedOk) scDownloadBlob(out.blob, out.fName);
+        // The library entry is the point of the run: no share sheet, no
+        // download, no import. Everything below is an optional extra.
+        var addedTrack = scAddConvertedToLibrary(out.blob, {
+          title: meta.title || 'Untitled',
+          artist: meta.artist || '',
+          album: meta.album || plan.album || '',
+          genre: meta.genre || '',
+          artBytes: out.artBytes, artMime: out.artMime
+        }, { fileName: out.fName, fmt: fmt, source: plan.title || 'conversion' });
+        var extra = '';
+        if(wantZip){
+          try{ zip.file(out.fName, out.blob); extra = ' · in ZIP'; }
+          catch(_ze){ extra = ' · ZIP skipped'; }
+        } else if(alsoSaveFiles){
+          try{
+            var savedOk = false;
+            try{ savedOk = await scNativeSaveBlob(out.blob, out.fName); }catch(_se){}
+            if(!savedOk) scDownloadBlob(out.blob, out.fName);
+            extra = ' · file saved';
+          }catch(_se2){}
+        }
+        if(addedTrack){
           okCount++;
-          if(stateEl){ stateEl.textContent = '✓ saved'; stateEl.style.color = 'var(--coral)'; }
+          if(stateEl){ stateEl.textContent = '✓ in library' + extra; stateEl.style.color = 'var(--coral)'; }
+        } else {
+          failCount++;
+          failedNames.push((meta.title || 'Untitled') + ' (could not add to the library)');
+          if(stateEl){ stateEl.textContent = '✗ could not add'; stateEl.style.color = '#f87171'; }
         }
       } else {
         failCount++;
         failedNames.push((meta.title || 'Untitled') + ((out && out.reason) ? ' (' + out.reason + ')' : ''));
         if(stateEl){ stateEl.textContent = '✗ ' + ((out && out.reason) ? out.reason : 'failed'); stateEl.style.color = '#f87171'; }
       }
-      if(barEl) barEl.style.width = Math.round(((i + 1) / tracks.length) * 100) + '%';
-      if(subEl) subEl.textContent = okCount + ' saved · ' + failCount + ' failed · ' + (tracks.length - i - 1) + ' left';
+      var _pct = Math.round(((i + 1) / tracks.length) * 100);
+      if(barEl) barEl.style.width = _pct + '%';
+      if(subEl) subEl.textContent = okCount + ' in your library · ' + failCount + ' failed · ' + (tracks.length - i - 1) + ' left';
+      scConvertPillUpdate('Converting ' + (i + 1) + '/' + tracks.length + ' · ' + (plan.title || 'conversion'),
+        okCount + ' added to your library' + (failCount ? ' · ' + failCount + ' failed' : ''), _pct);
       await new Promise(function(r){ setTimeout(r, 800); });  // pacing: never hammer the search APIs
     }
-    if(saveMode === 'zip' && zip && okCount > 0){
+    if(wantZip && zip && okCount > 0){
       if(subEl) subEl.textContent = 'Building ZIP with ' + okCount + ' song' + (okCount === 1 ? '' : 's') + '…';
       try{
         var zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -29735,14 +30073,21 @@ if(!isDiscover) stopDiscoverPreview();
         if(subEl) subEl.textContent = 'Done — ZIP failed (' + ((_zerr && _zerr.message) || 'error') + ')';
       }
     } else {
-      if(subEl) subEl.textContent = 'Done — ' + okCount + ' saved' + (failCount ? ' · ' + failCount + ' failed' : '');
+      if(subEl) subEl.textContent = 'Done — ' + okCount + ' in your library' + (failCount ? ' · ' + failCount + ' failed' : '');
     }
     if(actEl){
       actEl.style.display = 'flex';
       var retryHtml = '';
       if(failCount) retryHtml = '<button class="sp-batch-retry" style="padding:6px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">↻ Retry ' + failCount + ' failed</button>';
-      actEl.innerHTML = retryHtml +
+      actEl.innerHTML = (okCount ? '<button class="sp-batch-open-lib" style="padding:6px 12px;border-radius:8px;border:none;background:var(--coral);color:#fff;font-size:11px;font-weight:600;cursor:pointer;">Open my library</button>' : '') + retryHtml +
         '<button class="sp-batch-close" style="padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;cursor:pointer;">Close</button>';
+      var libBtn = actEl.querySelector('.sp-batch-open-lib');
+      if(libBtn) libBtn.addEventListener('click', function(){
+        resultEl.innerHTML = ''; resultEl.style.display = 'none';
+        try{ closeDiscoverPopup(); }catch(_cp){}
+        try{ if(activePlaylist !== 'All Songs'){ activePlaylist = 'All Songs'; renderTabs(); } }catch(_ap){}
+        navigate('library');
+      });
       var closeBtn = actEl.querySelector('.sp-batch-close');
       if(closeBtn) closeBtn.addEventListener('click', function(){ resultEl.innerHTML = ''; resultEl.style.display = 'none'; });
       var retryBtn = actEl.querySelector('.sp-batch-retry');
@@ -29750,13 +30095,18 @@ if(!isDiscover) stopDiscoverPreview();
         var retryTracks = tracks.filter(function(t, k){ return !tracksDone[k]; })
           .map(function(t, j){ var r = Object.assign({}, t); r.position = j + 1; return r; });
         var retryPlan = Object.assign({}, plan, { tracks: retryTracks });
-        scRunBatchConvert(retryPlan, fmt, saveMode, resultEl, btnEl, originalUrl);
+        scRunBatchConvert(retryPlan, fmt, saveMode, resultEl, btnEl, originalUrl).catch(function(err){
+          scConvertPillDone('Conversion stopped — ' + ((err && err.message) || 'something went wrong'));
+        });
       });
     }
     if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
-    toast(saveMode === 'zip'
-      ? ('ZIP saved with ' + okCount + '/' + tracks.length + ' songs (' + fmt.toUpperCase() + ')' + (failCount ? ' — ' + failCount + ' failed (retry button below)' : ''))
-      : ('Converted ' + okCount + '/' + tracks.length + ' songs to ' + fmt.toUpperCase() + (failCount ? ' — ' + failCount + ' failed (retry button below)' : '')), 5000);
+    scConvertPillDone(okCount + ' song' + (okCount === 1 ? '' : 's') + ' added to your library'
+      + (wantZip ? ' · ZIP saved' : (alsoSaveFiles ? ' · files saved' : ''))
+      + (failCount ? ' · ' + failCount + ' failed' : ''));
+    toast(okCount + '/' + tracks.length + ' songs are in your library (All songs)'
+      + (wantZip ? ' · ZIP saved separately' : '')
+      + (failCount ? ' — ' + failCount + ' failed (retry button below)' : ''), 5000);
     return true;
   }
 
@@ -30180,17 +30530,7 @@ if(!isDiscover) stopDiscoverPreview();
         var endBuf = enc.flush();
         if(endBuf && endBuf.length) chunks.push(new Uint8Array(endBuf));
         // Prepend an ID3v2.3 tag carrying the fetched track metadata + cover art.
-        var id3 = scId3v23Bytes(meta);
-        var total = 0, ci;
-        for(ci = 0; ci < chunks.length; ci++) total += chunks[ci].length;
-        if(id3 && id3.length){
-          var withTag = new Uint8Array(id3.length + total);
-          withTag.set(id3, 0);
-          var wpos = id3.length;
-          for(ci = 0; ci < chunks.length; ci++){ withTag.set(chunks[ci], wpos); wpos += chunks[ci].length; }
-          return new Blob([withTag], { type: 'audio/mpeg' });
-        }
-        return new Blob(chunks, { type: 'audio/mpeg' });
+        return scJoinTaggedChunks(chunks, meta, 'audio/mpeg');
       }
       if(fmt === 'flac'){
         return encodeAudioBufferToFlac(buf, meta);

@@ -325,8 +325,18 @@ return { player: scYtPlayer, asked: ASKED };`;
     am('Unknown Artist', 'anyone', '', 'x', '') === true && am('Various Artists', 'anyone', '', 'x', '') === true);
 
   console.log('\n— everything is wired to the new path —');
-  ok('the app is v60.1.1', version === '60.1.1', version);
-  ok('the service worker cache moved with it', /sidecut-shell-v60\.1\.1\b/.test(sw));
+  // This audit covers the code that shipped as 60.1.1; later releases only move
+  // the number (60.1.2, then 60.2 …), so "this build or later" is what holds.
+  const atLeast = (v, min) => {
+    const a = String(v).split('.').map(Number), b = String(min).split('.').map(Number);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const x = a[i] || 0, y = b[i] || 0;
+      if (x !== y) return x > y;
+    }
+    return true;
+  };
+  ok('the app is v60.1.1 or later', atLeast(version, '60.1.1'), version);
+  ok('the service worker cache matches the version', sw.indexOf('sidecut-shell-v' + version) !== -1);
   ok('the patchnotes carry the new version', /\{ version: '60\.1\.1', date:/.test(html));
   ok('the batch converter uses the decode result',
     /var dec = await scFetchDecode\(audio, onStatus\);[\s\S]{0,200}streamUrl: dec\.url/.test(html));
@@ -400,6 +410,6 @@ return { player: scYtPlayer, asked: ASKED };`;
     ok(who + ': so a phone sitting on one of them takes this release', cmp('60.1.1', '60.4.1') > 0);
   });
 
-  console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + '/' + (pass + fail) + ' checks passed (v60.1.1)\n');
+  console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + '/' + (pass + fail) + ' checks passed (v60.1.1 or later)\n');
   process.exit(fail ? 1 : 0);
 })();

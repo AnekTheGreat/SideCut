@@ -223,8 +223,11 @@ function btn(id) { return dom.window.document.getElementById(id); }
   ok('and downloads nothing', calls.downloads.length === 0, JSON.stringify(calls.downloads.map((d) => d.url)));
 
   console.log('\n— versions are ordered numerically, not as strings —');
-  const cmpSrc = (OTA_SRC.match(/function compareVersions\(a, b\)\{[\s\S]*?\n  \}/) || [])[0];
-  ok('the comparator is present in the shipped client', !!cmpSrc);
+  // normVersion has to come with it: compareVersions reads it, and extracting
+  // only the comparator left the function calling an undefined name (the check
+  // has been crashing on its first call since the legacy map reached the client).
+  const cmpSrc = (OTA_SRC.match(/var LEGACY_VERSIONS = [\s\S]*?function compareVersions\(a, b\)\{[\s\S]*?\n  \}/) || [])[0];
+  ok('the comparator is present in the shipped client', !!cmpSrc && /function normVersion\(v\)/.test(cmpSrc) && /var LEGACY_VERSIONS/.test(cmpSrc));
   if (cmpSrc) {
     const cmp = new Function(cmpSrc + '; return compareVersions;')();
     ok('58.10 is newer than 58.9 (a string compare would install a downgrade here)', cmp('58.10', '58.9') === 1, String(cmp('58.10', '58.9')));
