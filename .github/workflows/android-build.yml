@@ -14,6 +14,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      # Two flavors from one pipeline:
+      #   play - Play flag injected (licensed sources, ota-play channel) -> upload AAB to Play
+      #   full - no flag: the complete build, sideloaded only -> full ota/ updates
+      matrix:
+        flavor: [play, full]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,9 +50,9 @@ jobs:
           mkdir -p www/dev
           cp dev/native-updates.js www/dev/native-updates.js
       - name: Inject the Play build flag (licensed sources, play OTA channel)
-        # Must run before cap sync so the AAB's web bundle carries the flag:
-        # it switches acquisition to openly-licensed catalogs, hides the YouTube
-        # converter card and points update checks at ota-play/ instead of ota/.
+        # Play flavor only: must run before cap sync so the AAB's web bundle
+        # carries the flag (licensed acquisition, YouTube card hidden, ota-play/).
+        if: matrix.flavor == 'play'
         run: python3 .github/workflows/patch-playbuild.py
       - name: Patch native Play Billing web bridge
         run: python3 .github/workflows/patch-billing.py
@@ -100,13 +106,15 @@ jobs:
         id: ver
         run: |
           V="$(node -p "require('./package.json').version")"
+          S="${{ matrix.flavor == 'play' && 'release' || 'full' }}"
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "suffix=$S" >> "$GITHUB_OUTPUT"
           cp android/app/build/outputs/bundle/release/app-release.aab "SideCut-$V.aab"
           cp android/app/build/outputs/apk/release/app-release.apk "SideCut-$V.apk"
       - name: Upload AAB + certificate
         uses: actions/upload-artifact@v4
         with:
-          name: SideCut-${{ steps.ver.outputs.version }}-release
+          name: SideCut-${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.suffix }}
           path: |
             SideCut-${{ steps.ver.outputs.version }}.aab
             SideCut-${{ steps.ver.outputs.version }}.apk

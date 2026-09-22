@@ -10527,7 +10527,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.5.0';
+  const APP_VERSION = '60.5.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10855,6 +10855,25 @@ function startLyricsAutoScroll() {
         return false;
       }
     };
+    // Full-state collect/hydrate for the in-app backup zip (export everything /
+    // import everything). Same sweep the on-device snapshot uses: every
+    // localStorage key and every meta row, minus caches, oversized values and
+    // shell snapshots — i.e. nothing a user can see in the app is left behind
+    // when they move to a fresh install or a different build.
+    window.__scSnapCollect = async function(){
+      try{ return { v: 1, localStorage: collectLocalStorage(), meta: await collectMeta() }; }
+      catch(e){ return null; }
+    };
+    window.__scSnapHydrate = async function(state){
+      if(!state || state.v !== 1) return false;
+      if(state.localStorage){
+        for(var k in state.localStorage){ try{ localStorage.setItem(k, state.localStorage[k]); }catch(e){} }
+      }
+      if(state.meta){
+        for(var mk in state.meta){ try{ await dbPut('meta', { key: mk, value: state.meta[mk] }); }catch(e){} }
+      }
+      return true;
+    };
     // Baseline snapshot shortly after boot - but ONLY when no snapshot file
     // exists yet (true fresh install). Never overwrite a surviving snapshot
     // from a previous install with a just-wiped fresh store.
@@ -10923,6 +10942,11 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.5.1', date: 'September 22, 2026 · 4:28 PM EDT', title: 'Export takes everything — every stored preference, ready for a new build or phone', items: [
+    'The backup zip now carries the COMPLETE app state \u2014 every stored preference, not just the list the export screen names: per-song lyrics sync nudges, album order, widget theme, API bases, sandbox defaults, manual album edits, hidden-album bookkeeping, all of it, swept with the same collector the on-device snapshot uses.',
+    'Import hydrates that full state first (then applies the live settings on top) and moves the id high-water mark past the restored library, so ids can never collide on the next boot \u2014 restore this zip on a fresh install of any build and nothing is left behind.',
+    'Android CI now builds both flavors on every push: the Play AAB/APK (flag-injected, licensed sources) and SideCut-full.apk (the complete build, sideloaded only).',
+  ] },
   { version: '60.5.0', date: 'September 22, 2026 · 4:10 PM EDT', title: 'Play-ready build mode: licensed sources on Play, sideload untouched', items: [
     'Two builds from one codebase: the Google Play build takes audio only from openly-licensed catalogs (Internet Archive netlabel and Creative Commons releases) and files you import yourself, while the sideload build keeps every source exactly as today.',
     'In the Play build the YouTube converter card is hidden and the converter cannot run \u2014 the Spotify converter, playlists, lyrics, themes, RGB, widget, billing and everything else are identical in both builds.',
@@ -19997,7 +20021,7 @@ function _fallbackCopy(text){
   // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} (${allTracks.filter(t=>t.file).length} with audio, ${allTracks.filter(t=>!t.file).length} metadata only) PLUS playlists, listening stats, streak, theme, EQ, all settings, and your premium unlock code (if you have one) — as a full restorable backup .zip?`, async () => {
+    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} (${allTracks.filter(t=>t.file).length} with audio, ${allTracks.filter(t=>!t.file).length} metadata only) PLUS playlists, listening stats, streak, theme, EQ, all settings, EVERY stored preference (lyrics sync nudges, album order, widget theme, API bases, manual album edits), and your premium unlock code (if you have one) — as a full restorable backup .zip?`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
       const premiumPayload = buildPremiumPayload();
       await runZipExport({
@@ -20147,6 +20171,16 @@ function _fallbackCopy(text){
             manifest.pinnedReleases = typeof pinnedReleases !== "undefined" ? pinnedReleases : {};
             manifest.pinnedArtists = typeof pinnedArtists !== "undefined" ? pinnedArtists : [];
           }catch(e){ console.log('Could not export discovery data:', e); }
+          // THE COMPLETE STATE — every localStorage key and every meta row, via
+          // the same sweep the on-device snapshot uses. This closes the gap the
+          // hand-written lists above always had: lyrics sync nudges
+          // (lyricsSyncOff_*), albumOrder, sandboxDefaultView, widget theme,
+          // API bases, manual album edits, hidden-album bookkeeping — imported
+          // on a fresh install or a different build, nothing is left behind.
+          try{
+            if(window.__scSnapCollect) manifest.state = await window.__scSnapCollect();
+            else console.log('Full-state collector unavailable');
+          }catch(e){ console.log('Could not export full state:', e); }
         },
       });
     });
@@ -20220,6 +20254,22 @@ function _fallbackCopy(text){
       if(!manifestEntry){ toast('That doesn\'t look like a SideCut library file.'); return; }
       const manifest = JSON.parse(await manifestEntry.async('string'));
       const isV2 = manifest.version === 2;
+      // Full-state hydration FIRST: write every stored key back (lyrics sync
+      // nudges, album order, widget theme, API bases, hidden playlists, manual
+      // album data ...), then the targeted restores below fix the live JS
+      // variables for the keys that have them. idCounter must jump to the
+      // restored high-water mark before this import mints a single id, or the
+      // fresh ids collide with the restored library on the next boot.
+      if(manifest.state){
+        try{ if(window.__scSnapHydrate) await window.__scSnapHydrate(manifest.state); }catch(e){ console.log('Full-state hydrate failed:', e); }
+        try{
+          if(manifest.state.meta && manifest.state.meta.idCounter !== undefined && typeof idCounter !== 'undefined'){
+            var _expIdc = parseInt(manifest.state.meta.idCounter, 10);
+            var _liveIdc = parseInt(idCounter, 10);
+            if(isFinite(_expIdc) && (!isFinite(_liveIdc) || _expIdc > _liveIdc)) idCounter = _expIdc;
+          }
+        }catch(e){}
+      }
       let count = 0;
       // Manifest ids (e.g. "t3") come from whatever device/session produced this
       // export and are NOT globally unique — this library's own counter also
@@ -20378,6 +20428,10 @@ function _fallbackCopy(text){
       }
       playlists['All Songs'] = allTracks.map(t => t.id);
       saveMeta();
+      // Persist the id high-water mark this import minted from, so the next
+      // boot continues past every id in the restored library instead of
+      // restarting from an older counter.
+      try{ dbPut('meta', { key: 'idCounter', value: idCounter }); }catch(_eIdc){}
       
       // Restore settings comprehensively (v2 format has more settings)
       if(manifest.settings){

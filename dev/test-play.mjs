@@ -144,7 +144,7 @@ try {
 } catch (e) { ok(false, 'sideload zip readable: ' + e.message); }
 
 console.log('[5] release metadata');
-ok(ver === '60.5.0', `APP_VERSION = ${ver}`);
+ok(ver === '60.5.1', `APP_VERSION = ${ver}`);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -174,9 +174,34 @@ try {
 } catch (e) { ok(false, 'injector run: ' + e.message); }
 const abi = fs.readFileSync(path.join(ROOT, '.github/workflows/android-build.yml'), 'utf8');
 ok(abi.includes('patch-playbuild.py'), 'android-build.yml invokes the injector');
+ok(abi.includes('flavor: [play, full]') && abi.includes("if: matrix.flavor == 'play'"), 'CI builds play + full flavors; injector only on play');
+ok(abi.includes('${{ steps.ver.outputs.suffix }}'), 'artifact names distinct per flavor (release/full)');
 const dep = fs.readFileSync(path.join(ROOT, '.github/workflows/deploy.yml'), 'utf8');
 ok(dep.includes('node dev/ota-bundle-play.mjs') && dep.includes('ota-bundle-play.mjs --check'), 'deploy.yml builds + verifies ota-play/');
 ok(dep.includes('git add ota ota-play updates.json'), 'deploy.yml commits ota-play/');
+
+console.log('[7] export/import carries the complete state');
+ok(/window\.__scSnapCollect = async function/.test(src) && /window\.__scSnapHydrate = async function/.test(src), 'collect + hydrate exposed by the snapshot module');
+ok(/manifest\.state = await window\.__scSnapCollect\(\)/.test(src), 'export embeds manifest.state (whole-store sweep)');
+ok(/await window\.__scSnapHydrate\(manifest\.state\)/.test(src), 'import hydrates manifest.state first');
+ok(/_expIdc > _liveIdc\)\) idCounter = _expIdc/.test(src), 'idCounter jumps to restored high-water mark');
+ok(/dbPut\('meta', \{ key: 'idCounter', value: idCounter \}\)/.test(src), 'idCounter persisted after minting');
+ok(/EVERY stored preference \(lyrics sync nudges, album order, widget theme, API bases, manual album edits\)/.test(src), 'export confirm copy names the new coverage');
+// Functional: run the SHIPPED hydrate against stub stores.
+const hydSrc = grab(src, 'window.__scSnapHydrate = async function');
+ok(!!hydSrc, 'hydrate function extracted');
+if (hydSrc) {
+  const lsCalls = [], dbCalls = [];
+  const localStorageStub = { setItem: (k, v) => lsCalls.push([k, v]) };
+  const dbPutStub = async (store, row) => { if (store === 'meta') dbCalls.push(row); };
+  const fn = new Function('localStorage', 'dbPut', 'return (' + hydSrc.replace(/^window\.__scSnapHydrate = /, '') + ')')(localStorageStub, dbPutStub);
+  const r1 = await fn({ v: 1, localStorage: { theme: 'dark' }, meta: { lyricsSyncOff_t3: -0.4, idCounter: 370 } });
+  ok(r1 === true, 'hydrate applies v1 state');
+  ok(lsCalls.length === 1 && lsCalls[0][0] === 'theme', 'localStorage keys written back');
+  ok(dbCalls.length === 2 && dbCalls.some(r => r.key === 'lyricsSyncOff_t3' && r.value === -0.4) && dbCalls.some(r => r.key === 'idCounter' && r.value === 370), 'meta rows written: lyrics nudge + idCounter');
+  const r2 = await fn({ v: 99 });
+  ok(r2 === false, 'wrong state version refused');
+}
 
 console.log(`\nFAILURES: ${fail} — ${pass} passed`);
 process.exit(fail ? 1 : 0);
