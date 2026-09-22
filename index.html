@@ -3803,6 +3803,9 @@ body.theme-dyn-orchid::before{
         <button id="lyricsAutoScrollBtn" class="lyrics-btn" style="background:none; border:1px solid var(--coral); color:var(--coral); border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; white-space:nowrap; flex-shrink:0;">
           Auto-scroll: On
         </button>
+        <button id="lyricsSyncMinus" class="lyrics-btn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; white-space:nowrap; flex-shrink:0;">−0.5s</button>
+        <button id="lyricsSyncReset" class="lyrics-btn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; white-space:nowrap; flex-shrink:0;"><span id="lyricsSyncVal">+0.0s</span></button>
+        <button id="lyricsSyncPlus" class="lyrics-btn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; white-space:nowrap; flex-shrink:0;">+0.5s</button>
         <button id="lyricsHighlightBtn" class="lyrics-btn" style="background:none; border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; white-space:nowrap; flex-shrink:0;">
           Highlight
         </button>
@@ -8473,6 +8476,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // ---------------- Lyrics ----------------
   let lyricsCurrentTrack = null;
   let lyricsAutoScroll = true;
+  // Per-song sync nudge (seconds). LRC timestamps from lyrics databases often
+  // come from a different recording than the audio being played, which put the
+  // highlight a couple of lines out. This corrects it once per song and sticks.
+  let lyricsSyncOffsetSec = 0;
   let lyricsWordByWord = false;
   (async () => { try { const r = await dbGet('meta','lyricsWordByWord'); if(r) lyricsWordByWord = !!r.value; }catch(e){} })();
   let lyricsFontSize = 16;
@@ -9341,6 +9348,13 @@ function startLyricsAutoScroll() {
     lastLyricsIdx = -1;
     lastLyricsScrollTarget = -1;
     
+    // Load this song’s saved sync nudge before the first poll.
+    try{
+      lyricsSyncOffsetSec = 0;
+      var _sid = (queueIndex >= 0 && queueIndex < queue.length) ? String(queue[queueIndex]) : '';
+      if(_sid){ Promise.resolve(dbGet('meta', 'lyricsSyncOff_' + _sid)).then(function(r){ if(r) lyricsSyncOffsetSec = Number(r.value) || 0; updateLyricsSyncLabel(); }).catch(function(){}); }
+      updateLyricsSyncLabel();
+    }catch(_eso){}
     lyricsScrollInterval = setInterval(() => {
       try {
       // Check if modal is still open or app is hidden
@@ -9357,7 +9371,9 @@ function startLyricsAutoScroll() {
       // Small lead so the highlight fires before the timestamp, not after.
       // Compensates for the polling interval + render latency (~60 ms).
       const LYRICS_LEAD_MS = 0.06;
-      const currentTime = audio.currentTime + LYRICS_LEAD_MS;
+      // + the per-song nudge: shifts every comparison so a highlight that is
+      // a couple of lines out lands back on the beat (both line + word modes).
+      const currentTime = audio.currentTime + LYRICS_LEAD_MS + lyricsSyncOffsetSec;
       const lyricsText = $('lyricsText');
       if (!lyricsText) return;
       
@@ -9583,6 +9599,28 @@ function startLyricsAutoScroll() {
     }
   });
   
+  // Sync nudge: ±0.5s steps, clamped to ±15s, saved per song so the
+  // correction is one tap per track and stays for every replay.
+  function updateLyricsSyncLabel(){
+    try{ var el = $('lyricsSyncVal'); if(el) el.textContent = (lyricsSyncOffsetSec >= 0 ? '+' : '') + lyricsSyncOffsetSec.toFixed(1) + 's'; }catch(e){}
+  }
+  function nudgeLyricsSync(delta){
+    lyricsSyncOffsetSec = Math.max(-15, Math.min(15, Math.round((lyricsSyncOffsetSec + delta) * 10) / 10));
+    try{
+      var tid = (queueIndex >= 0 && queueIndex < queue.length) ? String(queue[queueIndex]) : '';
+      if(tid) dbPut('meta', { key: 'lyricsSyncOff_' + tid, value: lyricsSyncOffsetSec });
+    }catch(e){}
+    lastLyricsIdx = -1;          // force the next poll to re-pick the line
+    lastLyricsScrollTarget = -1;
+    updateLyricsSyncLabel();
+    toast('Lyrics sync: ' + (lyricsSyncOffsetSec >= 0 ? '+' : '') + lyricsSyncOffsetSec.toFixed(1) + 's', 1500);
+  }
+  try{
+    $('lyricsSyncMinus').addEventListener('click', function(){ nudgeLyricsSync(-0.5); });
+    $('lyricsSyncPlus').addEventListener('click', function(){ nudgeLyricsSync(0.5); });
+    $('lyricsSyncReset').addEventListener('click', function(){ nudgeLyricsSync(-lyricsSyncOffsetSec); });
+  }catch(_synBtns){}
+
   // Lyrics controls - always keep interval running for highlight
   $('lyricsWordBtn').addEventListener('click', () => {
     if(!isPremiumActive()){ toast('Word-by-word lyrics is a premium feature.'); return; }
@@ -10366,7 +10404,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.4.0';
+  const APP_VERSION = '60.4.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10750,21 +10788,25 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '60.4.0', date: 'September 22, 2026 · 8:00 AM EDT', title: 'Audio verification: right song, not just right artist', items: [
+  { version: '60.4.1', date: 'September 21, 2026 · 9:00 PM EDT', title: 'Lyrics sync nudge — permanent fix for any song', items: [
+    'New ±0.5s sync buttons in the lyrics view shift BOTH the line highlight and word-by-word timing together — tap once or twice and the lyrics land on the beat for that song, saved per track so it sticks on every replay.',
+    'Corrected the patch-note timestamps on 60.3.0 through 60.4.0 — they were written in the wrong hours; the releases actually went out the evening of Sep 21 EDT.',
+  ]},
+  { version: '60.4.0', date: 'September 21, 2026 · 8:45 PM EDT', title: 'Audio verification: right song, not just right artist', items: [
     'The downloader now verifies the video title actually contains the song name \u2014 not just the artist \u2014 before accepting a source.',
     'Decoded audio length is checked against Spotify\u2019s track duration; a mismatch rejects the source instead of tagging the wrong song.',
     'No more \u201cright metadata, wrong audio\u201d files in your library.',
   ]},
-  { version: '60.3.6', date: 'September 22, 2026 · 7:30 AM EDT', title: 'Word-by-word lyrics & highlight sync fix', items: [
+  { version: '60.3.6', date: 'September 21, 2026 · 8:35 PM EDT', title: 'Word-by-word lyrics & highlight sync fix', items: [
     'Lyrics highlight now polls at 80 ms instead of 150 ms \u2014 word-by-word no longer skips short words.',
     'A 60 ms lead compensates for polling delay so the highlight lands on the beat, not a beat behind.',
   ]},
-  { version: '60.3.5', date: 'September 22, 2026 · 7:00 AM EDT', title: 'Studio version preference in downloader', items: [
+  { version: '60.3.5', date: 'September 21, 2026 · 8:25 PM EDT', title: 'Studio version preference in downloader', items: [
     'Live concert, acoustic, and collab renditions are now strongly demoted \u2014 the studio recording always wins when titles match.',
     'Titles with "with friends", "duet", or "together" are flagged as renditions and penalised heavily.',
     'Official audio / single / studio tags get a much bigger score boost so the canonical recording ranks first.',
   ]},
-  { version: '60.3.0', date: 'September 22, 2026 · 6:00 AM EDT', title: 'Album-aware downloader, ordering & smoother RGB', items: [
+  { version: '60.3.0', date: 'September 21, 2026 · 8:00 PM EDT', title: 'Album-aware downloader, ordering & smoother RGB', items: [
     'Duplicate song titles now resolve to the correct album recording — the downloader uses album context in every search.',
     'Spotify track positions are preserved exactly, so an album\u2019s songs keep their real order even if a row is skipped.',
     'Selected songs convert top-to-bottom matching what you see on screen.',
