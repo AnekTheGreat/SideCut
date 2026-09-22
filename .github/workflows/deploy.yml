@@ -30,7 +30,8 @@ jobs:
           # One source of truth (dev/ota-bundle.mjs) for the bundle the installed
           # app downloads: zip + manifest, both derived from index.html.
           node dev/ota-bundle.mjs
-          echo '--- ota/ contents ---' && ls -la ota/
+          node dev/ota-bundle-play.mjs
+          echo '--- ota/ contents ---' && ls -la ota/ ota-play/
           echo '--- ota/updates.json ---' && cat ota/updates.json
 
       - name: Commit the published bundle
@@ -41,19 +42,19 @@ jobs:
         # v57.5 while the app moved on to 58.x and no update would ever install.
         continue-on-error: true   # a protected branch must not break the deploy
         run: |
-          if git diff --quiet -- ota updates.json; then
+          if git diff --quiet -- ota ota-play updates.json; then
             echo 'OTA bundle already current — nothing to commit.'
             exit 0
           fi
           git config user.name 'SideCut OTA'
           git config user.email 'actions@github.com'
-          git add ota updates.json
+          git add ota ota-play updates.json
           git commit -m "Publish OTA bundle $(node -p "require('./ota/updates.json').version")"
           git push
 
       - name: Verify the published bundle is current
         # Fails the build instead of quietly shipping an app that can never update.
-        run: node dev/ota-bundle.mjs --check
+        run: node dev/ota-bundle.mjs --check && node dev/ota-bundle-play.mjs --check
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

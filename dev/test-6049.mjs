@@ -75,7 +75,7 @@ ok(!/z-index:80;\s*\n\s*\/\*/.test(bubCss || ''), 'old z-index:80 removed from b
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '60.4.9', `APP_VERSION = ${ver}`);
+ok(/^\d+\.\d+\.\d+$/.test(ver || ''), `APP_VERSION = ${ver}`);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -83,7 +83,7 @@ ok(!!entries && entries[0].version === ver, `newest changelog (${entries && entr
 if (entries) {
   ok(/EDT$/.test(entries[0].date || ''), 'date ends in EDT (' + entries[0].date + ')');
   ok(entries[0].items.length >= 3, `patch notes: ${entries[0].items.length}`);
-  ok(entries[0].items.some(t => /out of your way/.test(t)), 'out-of-the-way note present');
+  ok(entries.some(e => e.version === '60.4.9' && (e.items || []).some(t => /out of your way/.test(t))), '60.4.9 out-of-the-way note present');
 }
 const maps = [...src.matchAll(/LEGACY_VERSIONS = (\{[^}]*\})/g)].map(x => x[1]);
 ok(!maps.some(x => x.includes(`'${ver}'`)), `no LEGACY map contains ${ver}`);

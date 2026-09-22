@@ -2353,7 +2353,7 @@ body.theme-dyn-orchid::before{
       </div>
 
       <!-- YouTube card -->
-      <div style="margin-bottom:12px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
+      <div id="ytCardDisc" style="margin-bottom:12px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
         <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎬 YouTube to MP3</div>
         <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.6;"><span style="color:var(--gold);">⚠ Experimental</span> — Paste any YouTube URL, pick <b>MP3, WAV or FLAC</b>, and convert. If your format can&apos;t be produced, it falls back to another one automatically.</div>
         <div style="display:flex; gap:6px;">
@@ -2747,7 +2747,7 @@ body.theme-dyn-orchid::before{
         </div>
 
         <!-- YouTube card -->
-        <div style="margin-bottom:12px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
+        <div id="ytCardSettings" style="margin-bottom:12px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
           <div style="font-size:12px; font-weight:600; color:var(--coral); margin-bottom:8px;">🎬 YouTube to MP3</div>
           <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.6;"><span style="color:var(--gold);">⚠ Experimental</span> — Paste any YouTube URL, pick <b>MP3, WAV or FLAC</b>, and convert. If your format can&apos;t be produced, it falls back to another one automatically.</div>
           <div style="display:flex; gap:6px;">
@@ -4376,6 +4376,23 @@ body.theme-dyn-orchid::before{
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="dev/native-updates.js"></script>
 <script>
+// ---- Build switch: Play Store build vs sideload/OTA build --------------------
+// CI (patch-playbuild.py) injects window.__PLAY_BUILD__ = true into the Play
+// AAB's www/index.html before this script runs; the sideload/OTA build never
+// sets it and therefore keeps every behavior exactly as it is today. In the
+// Play build the acquisition layer reads openly-licensed catalogs (Internet
+// Archive netlabel / Creative Commons collections) instead of extracting
+// video-host streams, and the YouTube converter card is hidden entirely.
+var SC_IS_PLAY = !!(typeof window !== 'undefined' && window.__PLAY_BUILD__);
+if(SC_IS_PLAY){
+  try{
+    ['ytCardDisc','ytCardSettings'].forEach(function(_id){ var _el = document.getElementById(_id); if(_el) _el.style.display = 'none'; });
+    var _sums = document.querySelectorAll('summary span');
+    for(var _si = 0; _si < _sums.length; _si++){
+      if(/YouTube/.test(_sums[_si].textContent || '')) _sums[_si].textContent = 'Spotify \u00b7 MP4 \u00b7 Expand URL';
+    }
+  }catch(_ePlayUI){}
+}
 // ---- Frame-rate independent drag auto-scroll ---------------------------------
 // The drag loops (tab strip, list reorder, home bubbles, artist groups) each used
 // to move a fixed 8px per animation frame. That is 480px/s at 60Hz but 960px/s on
@@ -10510,7 +10527,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.4.9';
+  const APP_VERSION = '60.5.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10906,6 +10923,11 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.5.0', date: 'September 22, 2026 · 4:10 PM EDT', title: 'Play-ready build mode: licensed sources on Play, sideload untouched', items: [
+    'Two builds from one codebase: the Google Play build takes audio only from openly-licensed catalogs (Internet Archive netlabel and Creative Commons releases) and files you import yourself, while the sideload build keeps every source exactly as today.',
+    'In the Play build the YouTube converter card is hidden and the converter cannot run \u2014 the Spotify converter, playlists, lyrics, themes, RGB, widget, billing and everything else are identical in both builds.',
+    'Each build checks its own update channel (ota-play/ for Play, ota/ for sideload), so a Play install can never receive a sideload bundle.',
+  ] },
   { version: '60.4.9', date: 'September 22, 2026 · 3:06 PM EDT', title: 'Length popup only when the time is cut off · stray No audio and genre chips removed', items: [
     'The exact-length popup now only appears when the playlist or album time is actually cut off by an ellipsis \u2014 if the full time fits on screen, tapping the line does nothing, and the pointer cursor only shows on lines that are really clamped.',
     'Removed the random markers that appeared next to songs: the orange "No audio" warning (it could show up on songs that play perfectly) and the genre chips.',
@@ -15544,8 +15566,9 @@ function _fallbackCopy(text){
       // CapacitorHttp first — native, bypasses CORS entirely
       var _capHttp = null;
       try{ var _cap = window.Capacitor && window.Capacitor.Plugins; _capHttp = _cap && _cap.CapacitorHttp; }catch(_e){}
-      var _otaBase = 'https://anekthegreat.github.io/SideCut/ota/';
-      var rawManifest = scBust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json');
+      var _scOtaDir = SC_IS_PLAY ? 'ota-play' : 'ota';
+      var _otaBase = 'https://anekthegreat.github.io/SideCut/' + _scOtaDir + '/';
+      var rawManifest = scBust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/' + _scOtaDir + '/updates.json');
       var githubPagesManifest = scBust(_otaBase + 'updates.json');
       var resp = null;
       if(_capHttp && typeof _capHttp.request === 'function'){
@@ -15598,7 +15621,7 @@ function _fallbackCopy(text){
           return { newVersion: man.version };
         }
         // Direct download via Updater
-        var zipUrl = scBust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/update.zip');
+        var zipUrl = scBust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/' + (SC_IS_PLAY ? 'ota-play' : 'ota') + '/update.zip');
         toast('Downloading SideCut ' + man.version + '…', 3000);
         try{
           var bundle = await Updater.download({ url: zipUrl, version: String(man.version) });
@@ -15671,7 +15694,7 @@ function _fallbackCopy(text){
   // truth: latest, or "new version available — reload to get it" (the PWA's
   // service worker will pick up the new shell automatically on that reload).
   try{
-    var resp = await fetch(scBust('https://anekthegreat.github.io/SideCut/ota/updates.json'));
+    var resp = await fetch(scBust('https://anekthegreat.github.io/SideCut/' + (SC_IS_PLAY ? 'ota-play' : 'ota') + '/updates.json'));
     if(!resp || !resp.ok) throw new Error('HTTP ' + (resp ? resp.status : 'no response'));
     var man = await resp.json();
     var cur = (typeof APP_VERSION !== 'undefined') ? String(APP_VERSION) : (window.__SC_VERSION || '');
@@ -29496,6 +29519,12 @@ if(!isDiscover) stopDiscoverPreview();
   }
 
   function convertYtToMp3(youtubeUrl, resultEl, btnEl, presetFmt){
+    // Play build: the card is hidden and the converter must never run — this
+    // gate covers any other path that could still reach it.
+    if(SC_IS_PLAY){
+      if(resultEl){ resultEl.style.display = 'block'; resultEl.innerHTML = '<span style="color:var(--gold);">\u26a0 This converter is not part of this build \u2014 use the Spotify converter, or + Add songs to import your own files.</span>'; }
+      return;
+    }
     var url = (youtubeUrl || '').trim();
     if(!url){ toast('Paste a YouTube link first.', 2000); return; }
     var isYt = /(?:youtube\.com|youtu\.be)/i.test(url);
@@ -31180,7 +31209,105 @@ if(!isDiscover) stopDiscoverPreview();
     for(var i = 0; i < parts.length; i++){ out.set(parts[i], pos); pos += parts[i].length; }
     return out.buffer;
   }
+  // ---- Play build acquisition layer ------------------------------------------
+  // Both implementations below run ONLY when SC_IS_PLAY is set. They keep the
+  // exact contract of the video-host path (candidate list -> player object),
+  // so every verification gate — scTitleMatch, scDurationOk, scArtistMatch —
+  // and the whole tagging pipeline run unchanged on openly-licensed sources.
+  async function scLegalSearch(query, artistHint, albumHint){
+    try{
+      var terms = String(query || '').trim();
+      if(!terms) return null;
+      // License-first: netlabel collections are CC by definition, otherwise the
+      // item must carry a Creative Commons / CC0 license URL. Audio only, most
+      // downloaded first so well-seeded copies of a match rank highest.
+      var words = terms.toLowerCase().split(/\s+/).filter(function(w){ return w.length > 1; });
+      var titleClause = words.map(function(w){ return 'title:(' + w.replace(/[^\w'-]/g, '') + ')'; }).join(' OR ');
+      if(!titleClause) return null;
+      var q = 'mediatype:(audio) AND (collection:(netlabels) OR licenseurl:(creativecommons*) OR licenseurl:(cc0*)) AND (' + titleClause + ')';
+      var url = 'https://archive.org/advancedsearch.php?q=' + encodeURIComponent(q) +
+                '&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=length&fl[]=licenseurl&fl[]=downloads' +
+                '&sort%5B%5D=downloads%20desc&rows=15&page=1&output=json';
+      var d = await scHttpJson(url, null);
+      var rows = d && d.response && d.response.docs;
+      if(!rows || !rows.length) return null;
+      function secsAny(v){
+        if(v == null) return -1;
+        var s = Array.isArray(v) ? v[0] : v;
+        if(typeof s === 'number') return Math.round(s);
+        s = String(s);
+        if(s.indexOf(':') === -1){ var f = parseFloat(s); return isFinite(f) ? Math.round(f) : -1; }
+        var p = s.split(':').map(function(x){ return parseInt(x, 10) || 0; });
+        if(p.length === 2) return p[0] * 60 + p[1];
+        if(p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+        return -1;
+      }
+      var artistNorm = String(artistHint || '').toLowerCase()
+        .replace(/\s+&\s+/g, ' ').replace(/,/g, ' ')
+        .replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      var cands = [];
+      for(var i = 0; i < rows.length; i++){
+        var r = rows[i];
+        if(!r || !r.identifier) continue;
+        var t = String(Array.isArray(r.title) ? r.title[0] : (r.title || '')).trim();
+        if(!t) continue;
+        var creator = Array.isArray(r.creator) ? r.creator.join(', ') : String(r.creator || '');
+        var tl = t.toLowerCase(), cl = creator.toLowerCase();
+        var dur = secsAny(r.length);
+        if(dur > 0 && (dur < 25 || dur > 30 * 60)) continue;
+        var score = 0;
+        for(var w = 0; w < words.length; w++){ if(tl.indexOf(words[w]) !== -1) score += 3; }
+        if(tl.indexOf(terms.toLowerCase()) !== -1) score += 10;
+        if(artistNorm && (cl.indexOf(artistNorm) !== -1 || tl.indexOf(artistNorm) !== -1)) score += 20;
+        if(dur > 0 && dur < 60) score -= 20;
+        if(dur > 720) score -= 20;
+        if(/\blive\b|karaoke|cover|remix|instrumental|acoustic|tribute|reaction|podcast/.test(tl)) score -= 25;
+        score += Math.min(8, Math.log10((Number(r.downloads) || 0) + 1) * 2);
+        cands.push({ videoId: 'ia:' + r.identifier, title: t, owner: creator || 'Internet Archive', duration: dur, score: score });
+      }
+      if(!cands.length) return null;
+      cands.sort(function(x, y){ return y.score - x.score; });
+      return cands;
+    }catch(e){ return null; }
+  }
+  async function scLegalPlayer(videoId){
+    try{
+      var id = String(videoId || '');
+      if(id.indexOf('ia:') !== 0) return null;   // Play build refuses foreign ids
+      id = id.slice(3);
+      if(!id) return null;
+      var md = await scHttpJson('https://archive.org/metadata/' + encodeURIComponent(id), null);
+      if(!md || !md.files || !md.files.length) return null;
+      var pick = [], rest = [];
+      for(var i = 0; i < md.files.length; i++){
+        var f = md.files[i];
+        if(!f || !f.name) continue;
+        var fmt = String(f.format || '');
+        var probe = fmt + ' ' + f.name;
+        var isAudio = /mp3|mpeg|ogg|vorbis|flac|wave|m4a|aac/i.test(probe) &&
+                      !/image|jpeg|png|pdf|torrent|mpeg4|ogv|archive helper|stationlogo|thumbnail/i.test(probe);
+        if(!isAudio) continue;
+        var fileUrl = 'https://archive.org/download/' + encodeURIComponent(md.identifier || id) + '/' +
+          f.name.split('/').map(encodeURIComponent).join('/');
+        var row = { url: fileUrl,
+                    mime: /ogg|vorbis/i.test(fmt) ? 'audio/ogg' : (/flac/i.test(fmt) ? 'audio/flac' : 'audio/mpeg'),
+                    itag: 0, size: Number(f.size) || 0, muxed: false };
+        if(/vbr mp3|mp3/i.test(fmt)) pick.push(row); else rest.push(row);
+      }
+      var pool = pick.length ? pick : rest;
+      if(!pool.length) return null;
+      var alts = (pool === pick) ? pool.slice(1).concat(rest) : pool.slice(1);
+      var title = String(Array.isArray(md.title) ? md.title[0] : (md.title || '')) ||
+                  String((md.metadata && md.metadata.title) || '');
+      var creator = Array.isArray(md.creator) ? md.creator.join(', ') :
+                    String(md.creator || (md.metadata && md.metadata.creator) || '');
+      return { url: pool[0].url, mime: pool[0].mime, itag: 0, size: pool[0].size, muxed: false,
+               alts: alts, videoTitle: title, author: creator,
+               license: String(md.licenseurl || (md.metadata && md.metadata.licenseurl) || '') };
+    }catch(e){ return null; }
+  }
   async function scYtSearch(query, artistHint, albumHint){
+    if(SC_IS_PLAY) return scLegalSearch(query, artistHint, albumHint);
     try{
       var body = JSON.stringify({
         context: { client: { clientName: 'WEB', clientVersion: '2.20240801.00.00', hl: 'en' } },
@@ -31285,6 +31412,7 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(e){ return null; }
   }
   async function scYtPlayer(videoId){
+    if(SC_IS_PLAY) return scLegalPlayer(videoId);
     var clients = [
       { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 } },
       { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' } },
