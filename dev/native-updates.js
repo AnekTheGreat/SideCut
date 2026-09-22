@@ -920,7 +920,11 @@
       if(!man || !man.version || !man.url){ log('manifest missing version/url'); if(!o.silent) toast('Update check failed — the server update info was unreadable. Try again in a moment.', 4500); return { failed: true }; }
       var cur = currentVersion();
       log('manifest version: ' + man.version + ', running version: ' + cur);
-      if(!cur){ log('cannot determine the running version — skipping update check (fail safe)'); return null; }
+      if(!cur){
+        log('cannot determine the running version — skipping update check (fail safe)');
+        if(!o.silent) toast('Update check could not identify the running build — wait for the app to fully load, then try again.', 5000);
+        return null;
+      }
       // Silent (automatic) checks never re-download a version that already failed
       // on this device — that is loop fuel. A deliberate Check for updates still
       // offers it, so the user can retry.
@@ -936,6 +940,10 @@
         // and change nothing, instead of downloading it over the top.
         log(_cmp === 0 ? ('up to date (' + cur + ')')
                        : ('published bundle is older (v' + man.version + ') than this build (v' + cur + ') — nothing to install'));
+        if(!o.silent){
+          toast(_cmp === 0 ? ('You\'re on the latest version ✓ (v' + cur + ')')
+                           : ('Update check: published v' + man.version + ' is not newer than this build (v' + cur + ') — nothing to install.'), 4500);
+        }
         return null;
       }
 
@@ -1132,8 +1140,24 @@
     // Give the main app script time to finish booting; only then confirm the
     // bundle is healthy and start checking for newer ones.
     window.addEventListener('load', function(){
-      setTimeout(function(){
-        if(!appBooted()){ log('app did not finish booting — bundle stays unconfirmed'); return; }
+      var _bootTries = 0;
+      var _autoStarted = false;
+      function _bootTick(){
+        // Start the update checks FIRST, before any boot-glue that can throw.
+        // One failed boot attempt used to return out of here without ever
+        // reaching startAutoCheck() — disabling every update check for the
+        // session, silently, which is why no update notification ever came.
+        if(!_autoStarted){
+          _autoStarted = true;
+          try{ startAutoCheck(); }catch(_ae){ log('auto-check failed to start: ' + ((_ae && _ae.message) || _ae)); }
+        }
+        _bootTries++;
+        if(!appBooted()){
+          log('app did not finish booting yet — bundle stays unconfirmed (attempt ' + _bootTries + ')');
+          if(_bootTries < 30) setTimeout(_bootTick, 2000); // keep retrying — never give up silently
+          return;
+        }
+        try{
         markAppReady();
         // Confirm a bundle that installed since the last session (background
         // apply or the deferred on-close apply) — the user closed the app on
@@ -1229,8 +1253,9 @@
             }).catch(function(){});
           }
         }catch(e){}
-        startAutoCheck();
-      }, 4000);
+        }catch(_ge){ log('boot hand-over skipped: ' + ((_ge && _ge.message) || _ge)); }
+      }
+      setTimeout(_bootTick, 4000);
     });
   }
 })();
