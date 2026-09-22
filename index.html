@@ -10363,7 +10363,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.3.0';
+  const APP_VERSION = '60.3.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10747,6 +10747,11 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.3.5', date: 'September 22, 2026 · 7:00 AM EDT', title: 'Studio version preference in downloader', items: [
+    'Live concert, acoustic, and collab renditions are now strongly demoted \u2014 the studio recording always wins when titles match.',
+    'Titles with "with friends", "duet", or "together" are flagged as renditions and penalised heavily.',
+    'Official audio / single / studio tags get a much bigger score boost so the canonical recording ranks first.',
+  ]},
   { version: '60.3.0', date: 'September 22, 2026 · 6:00 AM EDT', title: 'Album-aware downloader, ordering & smoother RGB', items: [
     'Duplicate song titles now resolve to the correct album recording — the downloader uses album context in every search.',
     'Spotify track positions are preserved exactly, so an album\u2019s songs keep their real order even if a row is skipped.',
@@ -30810,7 +30815,10 @@ if(!isDiscover) stopDiscoverPreview();
           else if(albumHits > 0) score += 5;
         }
         if(/lyric|karaoke|cover of|tribute|reaction|podcast|interview|spoken word/.test(t)) score -= 40;
-        if(/official audio|official music|official video|audio only/.test(t)) score += 3;
+        // "with friends" / "duet" / "together" in the title = a rendition,
+        // not the album's studio recording — heavy penalty, not a mild one.
+        if(/\bwith (?:his|her|their|the) (?:friends|band|crew|homies|mates)\b|\bduet\b|\bsing[- ]along\b|\baltogether\b|\btogether\b/.test(t)) score -= 35; // collab rendition
+        if(/official audio|official music|official video|audio only|\bsingle\b|\bstudio\b/.test(t)) score += 15; // studio/official
         if(dur > 0 && dur > 900) score -= 20;                   // hour-long compilations
         // Strong bias toward uploads tied to the artist (topic auto-channels and
         // the artist's own channel are label-official uploads).
@@ -30830,7 +30838,9 @@ if(!isDiscover) stopDiscoverPreview();
         // re-edit, instrumental or karaoke track is never the song we were asked
         // for — the AI + artist-verification pass can't rescue a candidate that's
         // the wrong recording entirely.
-        if(/live|remix|sped up|speed up|slowed|reverb|instrumental|karaoke|8d audio|nightcore|mashup|acoustic version|cover by/.test(t)) score -= 25;
+        // A live/collab performance must NEVER outrank the studio recording.
+        // The old -25 was swamped by album (+18) + artist (+16 + 12) bonuses.
+        if(/\blive\b|concert|festival|acoustic|unplugged|remix|sped up|speed up|slowed|reverb|instrumental|karaoke|8d audio|nightcore|mashup|cover by|\bmedley\b|\bjam\b|\bon stage\b|\bperformance\b/.test(t)) score -= 60; // live performance
         cands.push({ videoId: items[k].videoId, title: raw, owner: owner, duration: dur, score: score });
       }
       if(!cands.length) return null;
