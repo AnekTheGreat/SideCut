@@ -10527,7 +10527,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.5.2';
+  const APP_VERSION = '60.5.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10942,6 +10942,13 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.5.3', date: 'September 22, 2026 · 5:36 PM EDT', title: 'Albums rebuild themselves on open · failures now name their step · build flavor on display', items: [
+    'Albums rebuilt on open: an album imported by a build older than 60.5.2 still held the old phone’s song ids, so the Albums tab stayed empty even after the update carried the fix — the fix lived in the importer, but that data was already imported. Every dead album is now rebuilt at boot from the songs’ own album tags; hand-made albums that are not file-tag groups come back exactly by importing the backup zip once more.',
+    'The version line now names the build — Full build or Play build — so a converter that seems dead can be checked against which APK is actually installed, and Android artifacts carry their flavor in the filename (…-full.apk / …-release.apk) so the two can no longer be swapped by mistake.',
+    'Converter failures now say WHICH step failed: YouTube returned no streams, the stream would not download or decode, or the encoder produced nothing — with an explicit note when the MP3 encoder never loaded from a blocked CDN, and a mirror retry (jsdelivr, unpkg) before that verdict.',
+    'The Spotify converter shows the last step it reached before failing instead of falling back silently.',
+    'The Play build no longer offers outside converter sites when its licensed catalog misses a track — it says so and points at + Add songs. The full build keeps its hand-off.',
+  ] },
   { version: '60.5.2', date: 'September 22, 2026 · 5:09 PM EDT', title: 'Albums survive the restore — and the outside-site converter hand-off is gone', items: [
     'Restoring a backup now brings your albums over. Each album song list still held the OLD phone track ids while import re-mints every id, so every card resolved to zero songs and the Albums tab came up empty from an otherwise intact backup — album lists now re-point at the ids this library actually has.',
     'Metadata-only songs (no audio file) import too, so albums and playlists that reference them stay whole, and your album card order rides along with the restore.',
@@ -14537,6 +14544,9 @@ function startLyricsAutoScroll() {
     albumOrder = Array.isArray(metaMap.albumOrder)
       ? metaMap.albumOrder.filter(function(n){ return typeof n === 'string'; })
       : [];
+    // Rebuild albums left holding a previous device's track ids (imports from
+    // before 60.5.2) so the Albums tab reappears after the OTA with no zip.
+    try{ scHealBrokenAlbums(); }catch(_eHeal){}
     if(sandboxDefaultView === 'albums' || sandboxDefaultView === 'playlists') libraryMode = sandboxDefaultView;
     playlists = metaMap.playlists || {
         'All Songs': allTracks.map(t => t.id)
@@ -18466,6 +18476,46 @@ function _fallbackCopy(text){
   // emptied a library of twelve hand-made albums down to one card. They are
   // listed under "Not created by you" in Manage albums while flagged, with an
   // "It is mine" button that clears the flag.
+  // ---------------- Album heal: ids from another device ----------------
+  // A backup imported by a build older than 60.5.2 left albums holding the
+  // EXPORTING phone's track ids. Those resolve to nothing here, the card
+  // renderer skips an album whose tracks do not resolve, and the Albums tab
+  // stayed empty even after the OTA carried the importer fix — this data was
+  // already imported. So on every boot: an album whose ids are ALL dead is
+  // rebuilt from the album tag on the files (the same source the automatic
+  // album paths use), and a partially-dead list drops what cannot resolve.
+  // A hand-made album whose name is not a file tag cannot be rebuilt without
+  // its zip — importing the backup again on 60.5.2 or newer restores those
+  // exactly. No-op on a healthy library.
+  function scHealBrokenAlbums(){
+    var healed = 0;
+    var byTag = null;
+    Object.keys(userAlbums || {}).forEach(function(n){
+      var e = userAlbums[n];
+      if(!e || !Array.isArray(e.trackIds) || !e.trackIds.length) return;
+      var live = e.trackIds.filter(function(id){
+        return allTracks.some(function(t){ return t.id === id; });
+      });
+      if(live.length){
+        if(live.length !== e.trackIds.length){ e.trackIds = live; healed++; }
+        return;
+      }
+      if(!byTag){
+        byTag = {};
+        allTracks.forEach(function(t){
+          var tag = String(t.album || '').trim();
+          if(!tag) return;
+          if(!byTag[tag]) byTag[tag] = [];
+          byTag[tag].push(t.id);
+        });
+      }
+      var rebuilt = byTag[n];
+      if(rebuilt && rebuilt.length){ e.trackIds = rebuilt.slice(); healed++; }
+    });
+    if(healed){ dbPut('meta', { key: 'userAlbums', value: userAlbums }); }
+    return healed;
+  }
+  // ---- end scHealBrokenAlbums ----
   function albumIsAuto(name){
     var e = userAlbums[name];
     return !!(e && e.auto === true && e.manual !== true);
@@ -25102,7 +25152,7 @@ function _fallbackCopy(text){
           return;
         }
       }
-      $('currentVersionLabel').textContent = `SideCut v${APP_VERSION}`;
+      $('currentVersionLabel').textContent = `SideCut v${APP_VERSION} · ${SC_IS_PLAY ? 'Play build — licensed sources' : 'Full build — all sources'}`;
       // Confirm the bundle from the app itself, not only from the OTA client: a
       // bundle whose updater script did not load used to go unconfirmed, and an
       // unconfirmed bundle is rolled back by the native updater even though the
@@ -29617,6 +29667,38 @@ if(!isDiscover) stopDiscoverPreview();
     expandInputSet.addEventListener('keydown', function(e){ if(e.key === 'Enter') expandSpotifyUrl(expandInputSet, expandResultSet); });
   }
 
+  // The MP3 encoder (lamejs) rides in from a CDN. If that script never
+  // loaded — blocked CDN, flaky network — MP3, the DEFAULT format of both
+  // converters, fails AFTER a perfectly good download with no clue why.
+  // Retry the usual mirrors once before declaring the encoder gone.
+  window.__scEnsureLamejs = (function(){
+    var pending = null;
+    return function(){
+      try{ if(typeof lamejs !== 'undefined') return Promise.resolve(true); }catch(_e0){}
+      if(pending) return pending;
+      var mirrors = [
+        'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js',
+        'https://unpkg.com/lamejs@1.2.1/lame.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js'
+      ];
+      pending = new Promise(function(resolve){
+        var i = 0;
+        (function next(){
+          try{ if(typeof lamejs !== 'undefined'){ resolve(true); return; } }catch(_e1){}
+          if(i >= mirrors.length){ resolve(false); return; }
+          var s = document.createElement('script');
+          s.src = mirrors[i++];
+          s.onload = function(){
+            try{ if(typeof lamejs !== 'undefined'){ resolve(true); return; } }catch(_e2){}
+            next();
+          };
+          s.onerror = next;
+          document.head.appendChild(s);
+        })();
+      }).then(function(ok){ if(!ok) pending = null; return ok; });
+      return pending;
+    };
+  })();
   // ─── YouTube to MP3 converter ───
   // Opens a converter service with the YouTube URL pre-filled
   function extractYtVideoId(url){
@@ -29666,6 +29748,7 @@ if(!isDiscover) stopDiscoverPreview();
     // (Audio stream is resolved and re-encoded on-device — see tryYtAudioFormat.)
 
     var ytAuthor = '';
+    var _ytFails = [];
     // Try to fetch metadata once (oEmbed has no CORS, always worth attempting).
     async function tryMeta(){
       try{
@@ -29677,16 +29760,17 @@ if(!isDiscover) stopDiscoverPreview();
     // Resolve the audio stream and re-encode it on-device (MP3, WAV fallback).
     async function tryYtAudioFormat(fmt){
       var audio = await scYtPlayer(videoId);
-      if(!audio) return null;
+      if(!audio){ _ytFails.push(fmt.toUpperCase() + ': YouTube returned no streams — the video is unavailable or this network is blocking YouTube'); return null; }
       var dec = await scFetchDecode(audio);
-      if(!dec) return null;
+      if(!dec){ _ytFails.push(fmt.toUpperCase() + ': the audio stream would not download or decode (blocked or capped network)'); return null; }
       // scEncodeAudio returns a Blob for MP3/WAV and a promise for FLAC, so it is
       // awaited here — a promise handed to URL.createObjectURL() is the kind of
       // thing that fails silently.
       var blob = null;
+      if(fmt === 'mp3' && typeof lamejs === 'undefined'){ await window.__scEnsureLamejs(); }
       try{ blob = await scEncodeAudio(dec.buffer, fmt, { title: title || '', artist: (typeof ytAuthor === 'string' ? ytAuthor : ''), artBytes: null, artMime: null }); }
       catch(_encErr){ blob = null; }
-      if(!blob) return null;
+      if(!blob){ _ytFails.push(fmt.toUpperCase() + ': the encoder produced nothing' + ((fmt === 'mp3' && typeof lamejs === 'undefined') ? ' — the MP3 encoder (lamejs) never loaded, which means a blocked CDN' : '')); return null; }
       return { downloadUrl: URL.createObjectURL(blob), filename: (scSafeName(title || ('youtube_' + videoId)) || ('youtube_' + videoId)) + '.' + fmt, blob: blob };
     }
 
@@ -29738,11 +29822,11 @@ if(!isDiscover) stopDiscoverPreview();
             resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
               '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
               '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:12px;">' + title.replace(/</g,'&lt;') + '</div>' +
-              '<div style="font-size:10px; color:var(--gold); margin-bottom:4px;">⚠ Couldn’t convert this video in-app.</div>' +
+              '<div style="font-size:10px; color:var(--gold); margin-bottom:4px;">⚠ ' + (_ytFails.length ? _ytFails[_ytFails.length - 1] : 'Couldn’t convert this video in-app.') + '</div>' +
               '<div style="font-size:10px; color:var(--ink-dim); margin-top:4px;">Try another link, or import audio you already have with <b>+ Add songs → + Files</b>.</div>' +
               '</div></div>';
           }
-          toast('Couldn’t convert that video — try another link.', 4000);
+          toast(_ytFails.length ? ('Conversion failed — ' + _ytFails[_ytFails.length - 1]) : 'Couldn’t convert that video — try another link.', 4000);
           return false;
       });
     }).catch(function(){}).finally(function(){
@@ -30087,7 +30171,18 @@ if(!isDiscover) stopDiscoverPreview();
         csRenderFormats(buf, streamUrl);
       }
     }
-    function csShowExternal(){
+    function csShowExternal(why){
+      // The Play build must never hand a user ripper sites — its licensed
+      // search missing a track is a catalog limit, not a failure to paper
+      // over with outside converters. The full build keeps its hand-off.
+      if(SC_IS_PLAY){
+        if(resultEl){
+          resultEl.style.display = 'block';
+          resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' + csThumb() + '<div style="flex:1; min-width:0;"><div style="font-weight:600; color:var(--ink); margin-bottom:2px; font-size:12px;">' + csTitle() + '</div>' + csMetaLine() + '<div style="font-size:10px; color:var(--gold); margin-bottom:4px;">⚠ Not in the openly-licensed catalogs ' + (why ? '(' + why + ')' : '') + ' — use + Add songs to import a file you have.</div></div></div>';
+        }
+        toast('Not in the licensed catalogs — import a file you have.', 4000);
+        return;
+      }
       var _spURL = encodeURIComponent(url);
       if(resultEl){
         resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' + csThumb() + '<div style="flex:1; min-width:0;">' +
@@ -30098,12 +30193,13 @@ if(!isDiscover) stopDiscoverPreview();
             '<a href="https://spotmate.online/en1?url=' + _spURL + '" target="_blank" rel="noopener" style="display:inline-block; padding:5px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink); font-size:11px; font-weight:600; text-decoration:none;">⬇ SpotMate</a>' +
           '</div>' +
           '<div style="font-size:10px;color:var(--ink-dim);margin-top:4px;">Download there, then use <b>+ Add songs → + Files</b> to import.</div>' +
+          (why ? '<div style="font-size:10px; color:var(--coral); margin-bottom:4px;">Last step: ' + why + '</div>' : '') +
           '<div style="margin-top:6px;"><button class="sp-retry-conv" style="padding:5px 12px;border-radius:8px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">↻ Try again</button></div>' +
         '</div></div>';
       }
       var retryBtn = resultEl && resultEl.querySelector('.sp-retry-conv');
       if(retryBtn) retryBtn.addEventListener('click', function(){ convertSpToAudio(url, resultEl, btnEl); });
-      toast('In-app conversion unavailable — opened external options.', 4000);
+      toast(why ? ('In-app conversion unavailable — ' + why) : 'In-app conversion unavailable.', 4000);
     }
     function csRenderFormats(buf, streamUrl){
       if(!resultEl) return;
@@ -30124,15 +30220,16 @@ if(!isDiscover) stopDiscoverPreview();
         '<div style="font-size:10px;color:var(--ink-dim);margin-top:2px;">Lossless by default: FLAC keeps every bit of the audio in a fraction of a WAV\u2019s size. MP3 is the small one \u2014 pick it if space matters more.</div>' +
       '</div></div>';
     }
+    var _spLastStatus = '';
     csFetchMeta().catch(function(){}).then(function(){
       var useFmt = (presetFmt && presetFmt !== 'auto') ? presetFmt : null;
       csSetStatus('⏳ Finding audio...');
-      return scSpToBuffer(csMeta, function(txt){ csSetStatus(txt); }).then(function(res){
-        if(!res || !res.buffer){ csShowExternal(); return; }
+      return scSpToBuffer(csMeta, function(txt){ if(txt) _spLastStatus = txt; csSetStatus(txt); }).then(function(res){
+        if(!res || !res.buffer){ csShowExternal(_spLastStatus); return; }
         if(useFmt){ csRenderSinglePicked(res.buffer, res.streamUrl, useFmt); return; }
         csRenderFormats(res.buffer, res.streamUrl);
       });
-    }).catch(function(){ csShowExternal(); }).finally(function(){
+    }).catch(function(){ csShowExternal(_spLastStatus); }).finally(function(){
       if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
     });
   }
@@ -30842,6 +30939,7 @@ if(!isDiscover) stopDiscoverPreview();
   // FLAC is the default output, so that is the encoder the app leans on most.
   async function scEncodeAudioCooperative(buf, fmt, meta, onSlice){
     try{
+      if(fmt === 'mp3' && typeof lamejs === 'undefined'){ await window.__scEnsureLamejs(); }
       if(fmt === 'mp3') return await scEncodeMp3Cooperative(buf, meta, onSlice);
       if(fmt === 'wav') return await scEncodeWavCooperative(buf, meta, onSlice);
       if(fmt === 'flac'){

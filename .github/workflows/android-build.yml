@@ -109,14 +109,20 @@ jobs:
           S="${{ matrix.flavor == 'play' && 'release' || 'full' }}"
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "suffix=$S" >> "$GITHUB_OUTPUT"
-          cp android/app/build/outputs/bundle/release/app-release.aab "SideCut-$V.aab"
-          cp android/app/build/outputs/apk/release/app-release.apk "SideCut-$V.apk"
+          # Flavor goes in the FILENAME too: both matrix jobs produce an
+          # identically-named SideCut-$V.apk, so extracting both artifacts into
+          # one folder silently overwrites — and installing the release APK
+          # while believing it is the full one hides the YouTube converter and
+          # sends Spotify to licensed-only search (reported as "converters
+          # broken on the full apk").
+          cp android/app/build/outputs/bundle/release/app-release.aab "SideCut-$V-$S.aab"
+          cp android/app/build/outputs/apk/release/app-release.apk "SideCut-$V-$S.apk"
       - name: Upload AAB + certificate
         uses: actions/upload-artifact@v4
         with:
           name: SideCut-${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.suffix }}
           path: |
-            SideCut-${{ steps.ver.outputs.version }}.aab
-            SideCut-${{ steps.ver.outputs.version }}.apk
+            SideCut-${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.suffix }}.aab
+            SideCut-${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.suffix }}.apk
             upload_certificate.pem
           if-no-files-found: error
