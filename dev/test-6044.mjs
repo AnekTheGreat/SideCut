@@ -134,24 +134,44 @@ console.log('\n[2] pinned artists: load/save cannot wipe, renders isolated');
   const updateNotifBadge = () => { env.renders.badge++; };
   const renderHome = () => { env.renders.home++; };
 
+  // v60.4.6: loadPinnedArtists schedules timed re-reads while untrusted and
+  // touches localStorage for the one-time snapshot-restore flag. Stub both:
+  // timers are recorded but never fired (so pending retries can't race later
+  // checks), and localStorage is an in-memory Map.
+  const _ls = new Map();
+  const localStorageStub = {
+    getItem: (k) => (_ls.has(k) ? _ls.get(k) : null),
+    setItem: (k, v) => { _ls.set(k, String(v)); },
+    removeItem: (k) => { _ls.delete(k); },
+  };
+  env.timers = [];
+  const setTimeoutStub = (fn, ms) => { env.timers.push(ms); return env.timers.length; };
   const api = new Function('dbGetAll', 'dbPut', 'window', 'primaryArtistName',
     'renderPinnedArtists', 'renderNewReleases', 'updateNotifBadge', 'renderHome',
+    'localStorage', 'setTimeout',
     code + '\n;return { loadPinnedArtists, savePinnedArtists,'
          + ' state: () => ({ pinnedArtists, pinnedReleases, trusted: pinnedLoadTrusted }),'
          + ' seed: (pa, pr, ok) => { pinnedArtists = pa; pinnedReleases = pr || {}; pinnedLoadTrusted = !!ok; } };'
   )(dbGetAll, dbPut, windowObj, primaryArtistName,
-    renderPinnedArtists, renderNewReleases, updateNotifBadge, renderHome);
+    renderPinnedArtists, renderNewReleases, updateNotifBadge, renderHome,
+    localStorageStub, setTimeoutStub);
 
   const reset = () => { env.rows = []; env.trouble = null; env.failReads = false; env.retries = 0; env.reads = 0;
                         env.puts = []; env.releasesThrows = false;
                         env.renders = { strip: 0, releases: 0, badge: 0, home: 0 }; };
 
-  // P1 failed read: retried once, stays untrusted, renders not run
+  // P1 failed read: retried once, stays untrusted, and (v60.4.6) repaints ONLY
+  // the strip — the real renderPinnedArtists branches on trust and shows the
+  // "still on this phone — re-reading" notice, never the empty placeholder.
   reset(); env.failReads = true;
   await api.loadPinnedArtists();
   check('failed read retries once', env.retries === 1 && env.reads === 2, `retries=${env.retries} reads=${env.reads}`);
   check('failed read stays untrusted', api.state().trusted === false);
-  check('failed read does not paint an empty list as fact', env.renders.strip === 0 && env.renders.home === 0);
+  check('failed read repaints only the strip (honest re-reading notice), never home/placeholder',
+        env.renders.strip === 1 && env.renders.home === 0,
+        JSON.stringify(env.renders));
+  check('timed re-reads scheduled (capped at 5)', env.timers.length >= 1 && env.timers.length <= 5,
+        JSON.stringify(env.timers));
 
   // P2 save while untrusted re-reads and writes the STORED list (+ pending pins)
   reset();

@@ -10420,7 +10420,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.4.5';
+  const APP_VERSION = '60.4.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10664,6 +10664,18 @@ function startLyricsAutoScroll() {
     }catch(e){}
     window.__scSnapDirty = markDirty;
     window.__scSnapFlush = flushSnapshot;
+    // Read-only view of the mirrored meta (pins, settings, playlists) so
+    // loadPinnedArtists can recover a row the WebView store lost.
+    window.__scSnapMeta = async function(){
+      try{
+        if(!isNative()) return null;
+        var FS = window.Capacitor.Plugins.Filesystem;
+        var res = await FS.readFile({ path: SNAP_NAME, directory: 'DATA', encoding: 'utf8' });
+        var snap = null;
+        try{ snap = JSON.parse(res.data || ''); }catch(e){ return null; }
+        return (snap && snap.v === 1 && snap.meta) ? snap.meta : null;
+      }catch(e){ return null; }
+    };
     // Restore hook, called early in boot(). Hydrates only when a store is empty
     // AND a snapshot file exists (reinstall/wipe with Auto Backup-restored
     // files), then reloads once so the app boots against the restored data.
@@ -10804,6 +10816,12 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.4.6', date: 'September 21, 2026 · 9:51 PM EDT', title: 'Pinned artists recovered · downloads verify the exact song', items: [
+    'If your pinned artists vanished, SideCut now restores them from the on-device backup copy that is written right after every change — once, so a deliberate unpin-all stays unpinned. The restored pins are saved back to the library immediately.',
+    'While storage is being re-read after a crash, the pinned strip now says your artists are still on this phone and keeps retrying — it no longer paints the empty "add some artists" placeholder over data that was never deleted.',
+    'Downloads got stricter about the actual audio: the fallback source must pass the same song-title check as verified sources, and a clip 15–60 seconds off the real length is only used when the video title exactly matches the track — the last two ways a same-artist different song could land with the right tags.',
+  ],
+  },
   { version: '60.4.5', date: 'September 21, 2026 · 9:34 PM EDT', title: 'Update notifications can no longer be silently skipped', items: [
     'The update check now starts before any other launch code and keeps retrying if the app is slow to finish starting — this is why the update notification never appeared: one unfinished boot check used to disable update checks for the whole session, quietly, every session.',
     'The launch hand-over is now wrapped so an error in it can never again stop the update check from starting.',
@@ -27808,6 +27826,9 @@ if(!isDiscover) stopDiscoverPreview();
   // hiccup looked like deleted artists — and the next save wrote the empty list
   // back for real.
   let pinnedLoadTrusted = false;
+  // Timed re-reads while storage is untrusted: a mid-write crash leaves
+  // IndexedDB briefly unreadable, and one immediate retry is not enough.
+  let pinnedReadRetries = 0;
   async function loadPinnedArtists(opts){
     const noRetry = !!(opts && opts.noRetry);
     let rows = null;
@@ -27820,13 +27841,48 @@ if(!isDiscover) stopDiscoverPreview();
       }
       pinnedLoadTrusted = false;
       console.warn('pinned artists unreadable this boot — saving is paused so the stored list cannot be overwritten');
+      // Say so on screen and keep re-reading: the "Pin artists you love"
+      // placeholder over pins that are still on this phone reads as
+      // "my artists were deleted", which is exactly what was reported.
+      try{ renderPinnedArtists(); }catch(_eU){}
+      if(pinnedReadRetries < 5){
+        pinnedReadRetries++;
+        setTimeout(function(){ loadPinnedArtists({ noRetry: true }); }, 2500 * pinnedReadRetries);
+      }
       return;
     }
     pinnedLoadTrusted = true;
+    pinnedReadRetries = 0;
     const pa = rows.find(r => r.key === 'pinnedArtists');
     pinnedArtists = Array.isArray(pa && pa.value) ? pa.value : [];
     const pr = rows.find(r => r.key === 'pinnedReleases');
     pinnedReleases = (pr && pr.value && typeof pr.value === 'object') ? pr.value : {};
+    // Empty or missing row, but the on-device snapshot (written ~1.5s after
+    // every meta change) can still hold the real list — an older build's
+    // failed-read wipe or a crash mid-write drops the row without touching
+    // the file. Restore ONCE and persist; the flag means a later deliberate
+    // "unpin all" stays unpinned instead of being resurrected every boot.
+    if(!pinnedArtists.length){
+      try{
+        var _pinsEverRestored = localStorage.getItem('sidecut_pins_restored') === '1';
+        if(!_pinsEverRestored && window.__scSnapMeta){
+          var _snapMeta = await window.__scSnapMeta();
+          var _snapPins = (_snapMeta && Array.isArray(_snapMeta.pinnedArtists))
+            ? _snapMeta.pinnedArtists.filter(function(a){ return a && typeof a.name === 'string' && a.name.trim(); })
+            : [];
+          if(_snapPins.length){
+            pinnedArtists = _snapPins;
+            if(!Object.keys(pinnedReleases).length && _snapMeta.pinnedReleases && typeof _snapMeta.pinnedReleases === 'object'){
+              pinnedReleases = _snapMeta.pinnedReleases;
+            }
+            try{ localStorage.setItem('sidecut_pins_restored', '1'); }catch(_eFlag){}
+            console.warn('[SideCut] pinned artists restored from the on-device snapshot (' + pinnedArtists.length + ')');
+            dbPut('meta', { key: 'pinnedArtists', value: pinnedArtists });
+            if(Object.keys(pinnedReleases).length) dbPut('meta', { key: 'pinnedReleases', value: pinnedReleases });
+          }
+        }
+      }catch(_eSnapPins){ console.warn('pinned artist snapshot restore skipped', _eSnapPins); }
+    }
     // Deduplicate: keep the first entry per primary artist name. Guarded per
     // entry — one malformed record used to throw HERE, outside the read's
     // try/catch, which skipped every render below and made ALL pinned artists
@@ -28294,6 +28350,12 @@ if(!isDiscover) stopDiscoverPreview();
     const list = $('pinnedArtistsList');
     if(!list) return;
     if(!pinnedArtists.length){
+      if(!pinnedLoadTrusted){
+        // Storage is mid-re-read after a crash — the pins are still on this
+        // phone. Never paint the "add some artists" placeholder over that.
+        list.innerHTML = `<div style="width:100%;font-size:11.5px;color:var(--ink-dim);padding:8px 10px;background:rgba(255,255,255,0.03);border:1px dashed var(--line);border-radius:10px;">Your pinned artists are still on this phone — re-reading them…</div>`;
+        return;
+      }
       list.innerHTML = `<div style="width:100%;font-size:11.5px;color:var(--ink-dim);padding:8px 10px;background:rgba(255,255,255,0.03);border:1px dashed var(--line);border-radius:10px;">Pin artists you love \u2014 search above, tap a card, and hit <b>Pin</b>. They'll show here, scrollable sideways.</div>`;
       return;
     }
@@ -31318,7 +31380,7 @@ if(!isDiscover) stopDiscoverPreview();
          scTitleMatch(title, pa.videoTitle, cands[ci].title)){
         var cSec = Number(cands[ci].duration) || 0;
         if(expectedSec > 0 && cSec > 0 && Math.abs(expectedSec - cSec) > 60) continue; // different recording
-        verified.push({ pa: pa, delta: (expectedSec > 0 && cSec > 0) ? Math.abs(expectedSec - cSec) : -1 });
+        verified.push({ pa: pa, delta: (expectedSec > 0 && cSec > 0) ? Math.abs(expectedSec - cSec) : -1, strong: scTitleStrong(title, pa.videoTitle, cands[ci].title) });
       }
     }
     // Closest to the real length decodes first (unknown lengths go last).
@@ -31334,7 +31396,13 @@ if(!isDiscover) stopDiscoverPreview();
       // scDurationOk is the single source of truth for "exact" (<=15s): it
       // existed since 60.4.0 but was never called anywhere.
       if(bufDelta === -1 || scDurationOk(expectedSec, bufSec)){ audio = entry.pa; dec = decTry; break; }
-      if(bufDelta <= 60){ if(!nearCut){ nearCut = entry; nearDec = decTry; } continue; }
+      // 15–60s off: usable only as the closest cut of the SAME track, and
+      // only when the title matches exactly (<=30s off keeps the old
+      // leniency for real album/single edits). Length alone never chose it.
+      if(bufDelta <= 60){
+        if(!nearCut && (entry.strong || bufDelta <= 30)){ nearCut = entry; nearDec = decTry; }
+        continue;
+      }
       durationRejected = true; // a minute+ off: wrong recording, never saved
     }
     // Right song, different cut: the closest within-a-minute decode is still
@@ -31344,7 +31412,7 @@ if(!isDiscover) stopDiscoverPreview();
     // artist metadata) still has to pass the SAME length gates before its
     // audio may be used — it is not a way around verification.
     var fallbackUsable = false;
-    if(!audio && fallback && (!artist || /^(unknown|various)/i.test(artist) || scArtistMatch(artist, fallback.author, fallback.videoTitle, fallback.owner, ''))){
+    if(!audio && fallback && (!artist || /^(unknown|various)/i.test(artist) || scArtistMatch(artist, fallback.author, fallback.videoTitle, fallback.owner, '')) && scTitleMatch(title, fallback.videoTitle, fallbackCand ? fallbackCand.title : '')){
       var fbSec = fallbackCand ? (Number(fallbackCand.duration) || 0) : 0;
       if(expectedSec > 0 && fbSec > 0 && Math.abs(expectedSec - fbSec) > 60){
         durationRejected = true;
@@ -31455,6 +31523,37 @@ if(!isDiscover) stopDiscoverPreview();
     // Full containment is an instant pass; otherwise require most words.
     if(vt.indexOf(want) !== -1 || ct.indexOf(want) !== -1) return true;
     return best >= Math.max(2, Math.ceil(wantWords.length * 0.6));
+  }
+
+  // Exact-title bar: full containment of the expected title (either
+  // direction) or every one of its words. This is what a "different cut"
+  // (decoded 15–60s off the real length) must clear before its audio may
+  // stand in for the real track — 60% word overlap is not enough when the
+  // price of being wrong is saving the wrong song under the right tags.
+  function scTitleStrong(expectedTitle, videoTitle, candTitle){
+    function norm(s){
+      return String(s || '').toLowerCase()
+        .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+        .replace(/[^a-z0-9 ]+/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+    }
+    var want = norm(expectedTitle);
+    if(!want) return true;
+    var vt = norm(videoTitle);
+    var ct = norm(candTitle);
+    if(vt.indexOf(want) !== -1 || ct.indexOf(want) !== -1) return true;
+    var wantWords = want.split(' ').filter(function(w){ return w.length > 1; });
+    if(!wantWords.length) return true;
+    var blob = (vt + ' ' + ct);
+    var bWords = blob.split(' ');
+    for(var i = 0; i < wantWords.length; i++){
+      var hit = false;
+      for(var j = 0; j < bWords.length; j++){
+        if(bWords[j] === wantWords[i]){ hit = true; break; }
+      }
+      if(!hit) return false;
+    }
+    return true;
   }
 
   // Duration check: the Spotify plan carries the real track length in seconds.
