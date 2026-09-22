@@ -1106,7 +1106,12 @@
   .dur-bubble{
     position:fixed; display:none; min-width:150px; max-width:min(300px, calc(100vw - 24px));
     background:var(--bg-raised); border:1px solid var(--line); border-radius:12px; padding:10px 14px;
-    box-shadow:0 8px 24px rgba(0,0,0,0.45); z-index:80;
+    box-shadow:0 8px 24px rgba(0,0,0,0.45); z-index:50;
+    /* Stays out of the way: taps pass straight through to whatever is
+       underneath (sort dropdown, kebab, chips, rows), and 50 keeps it
+       below every sheet/backdrop/menu (those start at z-index 60), so an
+       open dropdown always covers the popup, never the other way round. */
+    pointer-events:none;
   }
   .dur-bubble::after{
     content:''; position:absolute; bottom:-7px; left:18px; width:12px; height:12px;
@@ -10505,7 +10510,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.4.8';
+  const APP_VERSION = '60.4.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10901,6 +10906,11 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.4.9', date: 'September 22, 2026 · 3:06 PM EDT', title: 'Length popup only when the time is cut off · stray No audio and genre chips removed', items: [
+    'The exact-length popup now only appears when the playlist or album time is actually cut off by an ellipsis \u2014 if the full time fits on screen, tapping the line does nothing, and the pointer cursor only shows on lines that are really clamped.',
+    'Removed the random markers that appeared next to songs: the orange "No audio" warning (it could show up on songs that play perfectly) and the genre chips.',
+    'The length popup now stays out of your way: it never blocks a tap \u2014 presses pass straight through it to the sort dropdown, kebab menu, chips and rows underneath, and it always renders beneath every sheet, menu and dialog instead of on top of them.',
+  ] },
   { version: '60.4.8', date: 'September 22, 2026 · 7:34 AM EDT', title: 'Tap a clamped playlist or album time for the exact length', items: [
     'The playlist header runtime no longer dies behind an ellipsis on narrow screens: tap the "238 tracks \u00b7 12h ..." line and a bubble pops up above it with the exact total length, down to the second.',
     'Album cards work the same way \u2014 tap the runtime under an album name for its exact total time, without expanding or collapsing the album.',
@@ -16691,9 +16701,14 @@ function _fallbackCopy(text){
         var _subEl = header.querySelector('.sub');
         if(_subEl){
           _subEl.setAttribute('data-dur-bubble', '1');
-          _subEl.style.cursor = 'pointer';
+          // Pointer cursor only while the line is really cut off (re-checked as
+          // fonts/layout settle and whenever the viewport changes).
+          requestAnimationFrame(function(){ window.__scDurBubble.syncCursor(_subEl); });
+          setTimeout(function(){ window.__scDurBubble.syncCursor(_subEl); }, 400);
           _subEl.addEventListener('click', function(ev){
             ev.stopPropagation();
+            // Clamped lines only — a fully visible runtime needs no popup.
+            if(!window.__scDurBubble.isClamped(_subEl)){ window.__scDurBubble.hide(); return; }
             var _ctx = (libraryMode === 'albums') ? 'Albums' : activePlaylist;
             window.__scDurBubble.toggle(_subEl, totalSeconds,
               ids.length + ' track' + (ids.length === 1 ? '' : 's') + ' \u00b7 ' + _ctx);
@@ -16875,7 +16890,7 @@ function _fallbackCopy(text){
           + (alb.cover ? '<img src="' + alb.cover.replace(/'/g, '&#39;') + '" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--bg);" onerror="this.style.display=\x27none\x27" />' : '<div style="width:48px;height:48px;border-radius:8px;background:rgba(255,255,255,0.08);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--ink-dim);font-size:18px;">&#127925;</div>')
           + '<div style="flex:1;min-width:0;">'
           + '<div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(alb.name) + '</div>'
-          + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + (albTotalStr ? 'cursor:pointer;' : '') + '" ' + (albTotalStr ? 'data-dur-bubble="1" ' : '') + '>' + escapeHtml(alb.artist || 'Unknown artist') + (albTotalStr ? ' \u00b7 ' + albTotalStr : '') + '</div>'
+          + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + '" ' + (albTotalStr ? 'data-dur-bubble="1" ' : '') + '>' + escapeHtml(alb.artist || 'Unknown artist') + (albTotalStr ? ' \u00b7 ' + albTotalStr : '') + '</div>'
           + '</div>'
           + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'
         card.appendChild(hdr);
@@ -16884,11 +16899,18 @@ function _fallbackCopy(text){
         body.style.cssText = collapsed ? 'display:none;' : 'display:block;padding:0 6px 6px;';
         card.appendChild(body);
         var _albDurEl = hdr.querySelector('[data-dur-bubble]');
-        if(_albDurEl) _albDurEl.addEventListener('click', function(ev){
-          ev.stopPropagation(); // tapping the time must not expand/collapse the album
-          window.__scDurBubble.toggle(_albDurEl, albTotalSec,
-            alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + ' \u00b7 ' + alb.name);
-        });
+        if(_albDurEl){
+          // Pointer cursor only while the line is really cut off.
+          requestAnimationFrame(function(){ window.__scDurBubble.syncCursor(_albDurEl); });
+          setTimeout(function(){ window.__scDurBubble.syncCursor(_albDurEl); }, 400);
+          _albDurEl.addEventListener('click', function(ev){
+            ev.stopPropagation(); // tapping the time must not expand/collapse the album
+            // Clamped lines only — a fully visible runtime needs no popup.
+            if(!window.__scDurBubble.isClamped(_albDurEl)){ window.__scDurBubble.hide(); return; }
+            window.__scDurBubble.toggle(_albDurEl, albTotalSec,
+              alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + ' \u00b7 ' + alb.name);
+          });
+        }
         hdr.addEventListener('click', function(){
           var isHidden = body.style.display === 'none';
           body.style.display = isHidden ? 'block' : 'none';
@@ -17265,8 +17287,7 @@ function _fallbackCopy(text){
           <div class="t">${escapeHtml(t.name)}</div>
           <div class="a">${escapeHtml(t.artist)}${sandboxShowAlbum && t.album ? ' • ' + escapeHtml(t.album) : ''}</div>
         </div>
-        ${!selectMode && !showReorder ? `<div class="dur">${t._noAudio ? '<span style="color:var(--coral);font-size:10px;" title="Audio missing — re-import this song">⚠ No audio</span>' : (t.duration ? fmtTime(t.duration) : '--:--')}</div>` : ''}
-        ${!selectMode && !showReorder && t.genre && t.genre.toLowerCase() !== 'music' ? `<div class="genre-tag">${escapeHtml(t.genre)}</div>` : ''}
+        ${!selectMode && !showReorder ? `<div class="dur">${(t.duration ? fmtTime(t.duration) : '--:--')}</div>` : ''}
         ${!selectMode && !showReorder ? `<button class="kebab-btn" data-kebab="${id}" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>` : ''}
         ${showReorder ? `<button class="grip-handle" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 6h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 16h2v2H9zm4 0h2v2h-2z"/></svg></button><div class="reorder-btns"><button class="reorder-up" title="Move up" disabled><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14l5-5 5 5z"/></svg></button><button class="reorder-down" title="Move down" disabled><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button></div>` : ''}
         
@@ -22857,13 +22878,29 @@ function _fallbackCopy(text){
       clearTimeout(b._hideTimer);
       b._hideTimer = setTimeout(hide, 4000);
     }
+    // The bubble is only for lines whose text is actually cut off. The runtime
+    // sits at the END of both the playlist header line and the album subtitle,
+    // so an ellipsis clamp always means the time is the part that got hidden.
+    // No clamp -> the tap does nothing.
+    function isClamped(el){
+      return !!el && typeof el.scrollWidth === 'number' && el.scrollWidth > el.clientWidth + 1;
+    }
+    function syncCursor(el){
+      if(el) el.style.cursor = isClamped(el) ? 'pointer' : '';
+    }
+    function syncAll(){
+      var list = document.querySelectorAll('[data-dur-bubble]');
+      for(var i = 0; i < list.length; i++) syncCursor(list[i]);
+    }
+    window.addEventListener('resize', syncAll);
     // Tap anywhere that is not an anchor, or scroll, dismisses it.
     document.addEventListener('click', function(e){
       if(e.target && e.target.closest && e.target.closest('[data-dur-bubble]')) return;
       hide();
     }, true);
     window.addEventListener('scroll', hide, true);
-    return { toggle: toggle, hide: hide, fmtPrecise: fmtPrecise };
+    return { toggle: toggle, hide: hide, fmtPrecise: fmtPrecise,
+             isClamped: isClamped, syncCursor: syncCursor, syncAll: syncAll };
   })();
   // ---------------- Mini player: tap the disc to expand the full now-playing view ----------------
   $('npDisc').addEventListener('click', () => {
