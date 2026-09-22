@@ -144,7 +144,7 @@ try {
 } catch (e) { ok(false, 'sideload zip readable: ' + e.message); }
 
 console.log('[5] release metadata');
-ok(ver === '60.5.1', `APP_VERSION = ${ver}`);
+ok(/^\d+\.\d+\.\d+$/.test(ver), `APP_VERSION is a release version (${ver}) — compared against the changelog below, never hard-pinned`);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
