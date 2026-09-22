@@ -9354,7 +9354,10 @@ function startLyricsAutoScroll() {
       const audio = activeAudio();
       if (!audio) return;
       
-      const currentTime = audio.currentTime;
+      // Small lead so the highlight fires before the timestamp, not after.
+      // Compensates for the polling interval + render latency (~60 ms).
+      const LYRICS_LEAD_MS = 0.06;
+      const currentTime = audio.currentTime + LYRICS_LEAD_MS;
       const lyricsText = $('lyricsText');
       if (!lyricsText) return;
       
@@ -9408,7 +9411,7 @@ function startLyricsAutoScroll() {
                 const wordStart = lineTime + (accumulated / totalWeight) * lineDuration;
                 accumulated += wordWeights[wi];
                 const wordEnd = lineTime + (accumulated / totalWeight) * lineDuration;
-                w.classList.toggle('current', currentTime >= wordStart && currentTime < wordEnd);
+                w.classList.toggle('current', currentTime >= wordStart && currentTime < wordEnd); // wordLeadAdj
               });
             }
           }
@@ -9456,7 +9459,7 @@ function startLyricsAutoScroll() {
         }
       }
       } catch(_e) { console.error('Lyrics sync error:', _e); }
-    }, 150); // Slightly slower interval for better performance
+    }, 80); // Fast enough for word-by-word: every word gets 2-3 polls
   }
 
   let lastLyricsScrollTarget = -1;
@@ -10363,7 +10366,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.3.5';
+  const APP_VERSION = '60.3.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10747,6 +10750,10 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.3.6', date: 'September 22, 2026 · 7:30 AM EDT', title: 'Word-by-word lyrics & highlight sync fix', items: [
+    'Lyrics highlight now polls at 80 ms instead of 150 ms \u2014 word-by-word no longer skips short words.',
+    'A 60 ms lead compensates for polling delay so the highlight lands on the beat, not a beat behind.',
+  ]},
   { version: '60.3.5', date: 'September 22, 2026 · 7:00 AM EDT', title: 'Studio version preference in downloader', items: [
     'Live concert, acoustic, and collab renditions are now strongly demoted \u2014 the studio recording always wins when titles match.',
     'Titles with "with friends", "duet", or "together" are flagged as renditions and penalised heavily.',
