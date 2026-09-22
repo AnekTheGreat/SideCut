@@ -66,19 +66,20 @@ ok(html.includes('pinnedReadRetries') && html.includes('re-reading them'), 'untr
 ok(html.includes('if(!pinnedLoadTrusted){'), 'render branches on trust before the placeholder');
 
 console.log('\n[3] changelog + version');
-ok(html.includes("const APP_VERSION = '60.4.6';"), 'APP_VERSION is 60.4.6');
+const APPV = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+ok(!!APPV, `APP_VERSION read (${APPV})`);
 const block = html.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) { }
 ok(!!entries, 'CHANGELOG evaluates' + (entries ? '' : ''));
 if (entries) {
-  ok(entries[0].version === '60.4.6', 'newest entry is 60.4.6');
-  ok(entries[0].items.length === 3, '3 patch notes');
+  ok(entries[0].version === APPV, `newest entry (${entries[0].version}) matches APP_VERSION`);
+  ok(entries[0].items.length >= 3, `at least 3 patch notes (${entries[0].items.length})`);
   ok(/EDT$/.test(entries[0].date || ''), 'date ends in EDT (' + entries[0].date + ')');
 }
 ok(!html.includes("'60.4.6'") || true, 'version not burned in a legacy map (checked below)');
 const maps = [...html.matchAll(/LEGACY_VERSIONS = (\{[^}]*\})/g)].map(m => m[1]);
-ok(!maps.some(m => m.includes("'60.4.6'")), 'no LEGACY map contains 60.4.6');
+ok(!maps.some(m => APPV && m.includes(`'${APPV}'`)), `no LEGACY map contains ${APPV}`);
 
 console.log('\n[4] inline script syntax vs HEAD (only new failures count)');
 function scripts(src) {

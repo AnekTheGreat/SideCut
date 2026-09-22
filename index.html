@@ -3589,6 +3589,27 @@ body.theme-dyn-orchid::before{
     color: var(--gold);
     font-weight: 700;
   }
+  /* Word-by-word lit word — the same glow the RGB modes animate. --glow-a /
+     --glow-b are exactly the two colours rgbApplyHue() cycles every ~90ms, so
+     with an RGB theme selected the lit word sweeps with the rest of the app;
+     in every other theme the root pair falls back to the theme's own accents.
+     Scoped to .ww-on so the effect belongs to word-by-word specifically. */
+  #lyricsText.ww-on .lyric-word.current {
+    color: var(--gold);
+    font-weight: 700;
+    text-shadow: 0 0 10px color-mix(in srgb, var(--glow-a) 85%, transparent),
+                 0 0 24px color-mix(in srgb, var(--glow-b) 65%, transparent);
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--glow-a) 24%, transparent),
+      color-mix(in srgb, var(--glow-b) 24%, transparent));
+    border-radius: 5px;
+    padding: 1px 3px;
+    animation: wwLitPulse 1.1s ease-in-out infinite;
+  }
+  @keyframes wwLitPulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.28); }
+  }
   #lyricsText .lyric-line.lyric-inst {
     display: flex;
     align-items: center;
@@ -9160,6 +9181,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         $('lyricsWordBtn').style.display = 'none';
         $('lyricsWwInfo').style.display = 'none';
       }
+      try{ $('lyricsText').classList.toggle('ww-on', !!lyricsWordByWord); }catch(_eWw){}
     }
 
     if (isSynced) {
@@ -9428,24 +9450,13 @@ function startLyricsAutoScroll() {
           // Word-by-word highlighting within the current line (premium) —
           // instrumental/music lines carry no words to pace.
           if (lyricsWordByWord && currentLine.dataset.wordline && !currentLine.dataset.inst) {
-            const words = currentLine.querySelectorAll('.lyric-word');
-            if (words.length > 0) {
-              const nextLine = syncedLines[currentIdx + 1];
-              const nextTime = nextLine ? parseFloat(nextLine.dataset.time) : Infinity;
-              const lineTime = parseFloat(currentLine.dataset.time);
-              const lineDuration = Math.max(0.3, nextTime - lineTime);
-              // Weight word duration by character count for more natural pacing
-              let totalWeight = 0;
-              const wordWeights = [];
-              words.forEach(w => { const wt = Math.max(1, w.textContent.length); wordWeights.push(wt); totalWeight += wt; });
-              let accumulated = 0;
-              words.forEach((w, wi) => {
-                const wordStart = lineTime + (accumulated / totalWeight) * lineDuration;
-                accumulated += wordWeights[wi];
-                const wordEnd = lineTime + (accumulated / totalWeight) * lineDuration;
-                w.classList.toggle('current', currentTime >= wordStart && currentTime < wordEnd); // wordLeadAdj
-              });
-            }
+            const nextLine = syncedLines[currentIdx + 1];
+            const nextTime = nextLine ? parseFloat(nextLine.dataset.time) : NaN;
+            const lineTime = parseFloat(currentLine.dataset.time);
+            // Capped natural pacing; the last line gets a generous window so
+            // its words still pace out instead of all lighting at once.
+            const lineEnd = isFinite(nextTime) ? nextTime : (lineTime + 6);
+            scPaceWords(currentLine, lineTime, lineEnd, currentTime);
           }
         }
         // After last lyric line: show "♪ playing..." indicator
@@ -9470,9 +9481,21 @@ function startLyricsAutoScroll() {
           const targetIdx = Math.min(allLines.length - 1, Math.floor(progress * allLines.length));
           if (targetIdx !== lastLyricsIdx) {
             lastLyricsIdx = targetIdx;
-            allLines.forEach(l => l.classList.remove('current'));
+            allLines.forEach(l => {
+              l.classList.remove('current');
+              l.querySelectorAll('.lyric-word').forEach(w => w.classList.remove('current'));
+            });
             allLines[targetIdx].classList.add('current');
             scrollLyricsToLine(container, allLines[targetIdx]);
+          }
+          // Word-by-word on unsynced lyrics: pace the current line's words
+          // across this line's proportional window — the same weight-based,
+          // gap-capped pacing as synced lyrics, so the feature works on EVERY
+          // song instead of only the ones that carry timestamps.
+          if (lyricsWordByWord && audio.duration > 0 && allLines[targetIdx] && !allLines[targetIdx].dataset.inst) {
+            const lineFrom = (targetIdx / allLines.length) * audio.duration;
+            const lineTo = ((targetIdx + 1) / allLines.length) * audio.duration;
+            scPaceWords(allLines[targetIdx], lineFrom, lineTo, currentTime);
           }
           // At end of song: show playing indicator after last line
           var playingInd2 = lyricsText.querySelector('.lyric-playing-indicator');
@@ -9491,7 +9514,7 @@ function startLyricsAutoScroll() {
         }
       }
       } catch(_e) { console.error('Lyrics sync error:', _e); }
-    }, 80); // Fast enough for word-by-word: every word gets 2-3 polls
+    }, 50); // ~20 polls/s: line and word changes land within ~50ms of the beat
   }
 
   let lastLyricsScrollTarget = -1;
@@ -9534,6 +9557,51 @@ function startLyricsAutoScroll() {
     }
   }
   
+  // Wrap a plain (unsynced) lyric line's text into .lyric-word spans ONCE, so
+  // word-by-word can pace it. Lines that already carry word spans are returned
+  // as-is; lines containing other markup (instrumental rows) are left alone —
+  // nothing to pace there, and rewriting them would break their structure.
+  function scEnsureWordSpans(lineEl){
+    if(!lineEl) return [];
+    if(lineEl.dataset.wordwrap === '1') return lineEl.querySelectorAll('.lyric-word');
+    const existing = lineEl.querySelectorAll('.lyric-word');
+    if(existing.length){ lineEl.dataset.wordwrap = '1'; return existing; }
+    if(lineEl.children.length || lineEl.dataset.inst){ lineEl.dataset.wordwrap = '1'; return []; }
+    const text = lineEl.textContent;
+    if(!text || !text.trim()){ lineEl.dataset.wordwrap = '1'; return []; }
+    lineEl.innerHTML = String(text).split(/(\s+)/).map(function(chunk){
+      return (/^\s+$/.test(chunk)) ? chunk : '<span class="lyric-word" data-word="1">' + escapeHtml(chunk) + '</span>';
+    }).join('');
+    lineEl.dataset.wordwrap = '1';
+    return lineEl.querySelectorAll('.lyric-word');
+  }
+  // Pace a line's words from fromSec to toSec: each word is weighted by its
+  // length so pacing feels spoken, but words are NEVER spread across a
+  // trailing instrumental gap — that was the "the word highlight crawls and
+  // sits on the wrong word" bug. The span is min(gap, natural singing length
+  // at ~14 chars/sec), and once pacing ends the LAST word stays lit while the
+  // line is still current, so an active line always has a lit word.
+  function scPaceWords(lineEl, fromSec, toSec, nowSec){
+    if(!lineEl) return;
+    const words = scEnsureWordSpans(lineEl);
+    if(!words.length) return;
+    let totalWeight = 0;
+    const weights = [];
+    words.forEach(function(w){ const wt = Math.max(1, w.textContent.length); weights.push(wt); totalWeight += wt; });
+    const gap = Math.max(0.3, toSec - fromSec);
+    const natural = Math.max(0.4, totalWeight / 14 + 0.4);
+    const pace = Math.min(gap, natural);
+    let acc = 0, litIdx = -1;
+    words.forEach(function(w, wi){
+      const s = fromSec + (acc / totalWeight) * pace;
+      acc += weights[wi];
+      const e = fromSec + (acc / totalWeight) * pace;
+      if(nowSec >= s && nowSec < e) litIdx = wi;
+    });
+    if(litIdx === -1 && nowSec >= fromSec + pace) litIdx = words.length - 1;
+    words.forEach(function(w, wi){ w.classList.toggle('current', wi === litIdx); });
+  }
+
   function formatSyncedLyrics(lrc) {
     // Full LRC parser: handles multi-timestamp lines ("[00:12.00][00:55.00]same
     // chorus again" renders once per timestamp so repeated lines repeat), and
@@ -9645,6 +9713,7 @@ function startLyricsAutoScroll() {
     $('lyricsWordBtn').classList.toggle('active', lyricsWordByWord);
     dbPut('meta', { key: 'lyricsWordByWord', value: lyricsWordByWord });
     $('lyricsWwInfo').style.display = lyricsWordByWord ? '' : 'none';
+    try{ $('lyricsText').classList.toggle('ww-on', !!lyricsWordByWord); }catch(_eWw){}
     // Re-render lyrics so word spans appear/disappear immediately
     if(currentLyricsText){
       const container = $('lyricsContent');
@@ -10420,7 +10489,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.4.6';
+  const APP_VERSION = '60.4.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10816,6 +10885,14 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.4.7', date: 'September 21, 2026 · 11:03 PM EDT', title: 'Word-by-word sings with the RGB glow · the crash banner was a false alarm', items: [
+    'Word-by-word now works on EVERY song: plain lyrics without timestamps get their words paced too (they follow the song position like the line highlight does), instead of silently doing nothing.',
+    'The lit word no longer crawls across instrumental gaps — words are paced over the natural singing length of the line (about 14 characters a second), so the highlight lands on the word being sung, with the last word holding until the next line.',
+    'Toggling word-by-word gives the lit word the same glow the RGB themes animate: with an RGB mode selected the highlight sweeps with the whole app, in other themes it wears the theme colours.',
+    'Tighter sync: the lyrics tracker now runs at 50ms instead of 80ms, so line and word changes land closer to the beat (the per-song +/-0.5s nudge still fine-tunes any source).',
+    'The red "previously crashed during: adding files to the library" banner was a false alarm: the marker was never cleared after a SUCCESSFUL import, so any later silent kill got blamed on it. The marker now clears the moment adding finishes — the banner can only appear for a real crash during the import itself.',
+  ],
+  },
   { version: '60.4.6', date: 'September 21, 2026 · 9:51 PM EDT', title: 'Pinned artists recovered · downloads verify the exact song', items: [
     'If your pinned artists vanished, SideCut now restores them from the on-device backup copy that is written right after every change — once, so a deliberate unpin-all stays unpinned. The restored pins are saved back to the library immediately.',
     'While storage is being re-read after a crash, the pinned strip now says your artists are still on this phone and keeps retrying — it no longer paints the empty "add some artists" placeholder over data that was never deleted.',
@@ -14576,13 +14653,21 @@ function startLyricsAutoScroll() {
       const audioFiles = Array.from(fileList).filter(f => !f.name.toLowerCase().endsWith('.csv'));
       if(audioFiles.length > 0){
         handleAudioFiles(audioFiles, targetPlaylist, opts);
+      } else {
+        // Nothing audio-shaped in the batch — nothing left to crash-report.
+        try{ if(window.__scMarkDone) __scMarkDone(); }catch(_eCsv){}
       }
       return;
     }
     
     // Process regular audio files
     handleAudioFiles(Array.from(fileList), targetPlaylist, opts);
-   }catch(e){ console.error('Adding files failed', e); toast('Could not add files: ' + (e && e.message ? e.message : e), 5000); }
+   }catch(e){
+    // The op ENDED (it failed) — a marker left behind would blame a later
+    // silent kill on "adding files to the library".
+    try{ if(window.__scMarkDone) __scMarkDone(); }catch(_eMarkDone){}
+    console.error('Adding files failed', e); toast('Could not add files: ' + (e && e.message ? e.message : e), 5000);
+   }
   }
   
   function handleCSVFile(csvFile){
@@ -14999,6 +15084,13 @@ function startLyricsAutoScroll() {
       added.push(track);
       persistTrackMeta(track);
     });
+    // The risky synchronous import pass is over — clear the flight-recorder
+    // marker NOW. It used to stay set for the whole session, so ANY silent
+    // kill (memory reclaim, swipe-away with no page events) within 5 minutes
+    // of a SUCCESSFUL import came back next launch as the red "previously
+    // crashed during: adding files to the library" banner. All paths below
+    // are toasts and deferred prompts — nothing left that can crash-report.
+    try{ if(window.__scMarkDone) __scMarkDone(); }catch(_eMark){}
     if(added.length){
       saveMeta();
       // If a real playlist target was given with position-defer, prompt the user
