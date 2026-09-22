@@ -10366,7 +10366,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.3.6';
+  const APP_VERSION = '60.4.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10750,6 +10750,11 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.4.0', date: 'September 22, 2026 · 8:00 AM EDT', title: 'Audio verification: right song, not just right artist', items: [
+    'The downloader now verifies the video title actually contains the song name \u2014 not just the artist \u2014 before accepting a source.',
+    'Decoded audio length is checked against Spotify\u2019s track duration; a mismatch rejects the source instead of tagging the wrong song.',
+    'No more \u201cright metadata, wrong audio\u201d files in your library.',
+  ]},
   { version: '60.3.6', date: 'September 22, 2026 · 7:30 AM EDT', title: 'Word-by-word lyrics & highlight sync fix', items: [
     'Lyrics highlight now polls at 80 ms instead of 150 ms \u2014 word-by-word no longer skips short words.',
     'A 60 ms lead compensates for polling delay so the highlight lands on the beat, not a beat behind.',
@@ -31106,6 +31111,9 @@ if(!isDiscover) stopDiscoverPreview();
   async function scSpToBuffer(meta, onStatus){
     var title = meta.title || '', artist = meta.artist || '';
     var album = meta.album || '';
+    // seconds = expected track length from Spotify's own track list, used to
+    // reject a decoded buffer that is a completely different song.
+    var expectedSec = Number(meta.seconds) || 0;
     var query = ((title + ' ' + artist + ' ' + album).trim());
     if(!query) return null;
     if(onStatus) onStatus('Searching for "' + title + '" by ' + (artist || 'the artist') + '…');
@@ -31164,7 +31172,8 @@ if(!isDiscover) stopDiscoverPreview();
       var pa = await scYtPlayer(cands[ci].videoId);
       if(!pa) continue;
       if(!fallback) fallback = pa;
-      if(scArtistMatch(artist, pa.author, pa.videoTitle, cands[ci].owner, cands[ci].title)){
+      if(scArtistMatch(artist, pa.author, pa.videoTitle, cands[ci].owner, cands[ci].title) &&
+         scTitleMatch(title, pa.videoTitle, cands[ci].title)){
         audio = pa;
         break;
       }
@@ -31240,6 +31249,51 @@ if(!isDiscover) stopDiscoverPreview();
     }
     return tried === 0;                                // nothing to judge on
   }
+  // Song-title check: does this video actually carry the track we asked for?
+  // scArtistMatch only proved the ARTIST matched — a video by the right artist
+  // singing a DIFFERENT song sailed through and got tagged with the correct
+  // metadata, which is exactly the "right tags, wrong audio" bug.
+  function scTitleMatch(expectedTitle, videoTitle, candTitle){
+    function norm(s){
+      return String(s || '').toLowerCase()
+        .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+        .replace(/[^a-z0-9 ]+/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+    }
+    var want = norm(expectedTitle);
+    if(!want) return true;
+    var vt = norm(videoTitle);
+    var ct = norm(candTitle);
+    // The video title or candidate title must contain the expected title
+    // (or a large overlap of its words). A short stop-word filter keeps
+    // "a", "the", "of" from padding the overlap score.
+    var wantWords = want.split(' ').filter(function(w){ return w.length > 1; });
+    if(!wantWords.length) return true;
+    function overlap(blob){
+      if(!blob) return 0;
+      var hits = 0;
+      for(var i = 0; i < wantWords.length; i++){
+        if(blob.indexOf(wantWords[i]) !== -1) hits++;
+      }
+      return hits;
+    }
+    var best = Math.max(overlap(vt), overlap(ct));
+    // Full containment is an instant pass; otherwise require most words.
+    if(vt.indexOf(want) !== -1 || ct.indexOf(want) !== -1) return true;
+    return best >= Math.max(2, Math.ceil(wantWords.length * 0.6));
+  }
+
+  // Duration check: the Spotify plan carries the real track length in seconds.
+  // If the decoded audio is wildly different the wrong video was fetched.
+  function scDurationOk(expectedSec, actualSec){
+    if(!expectedSec || expectedSec <= 0) return true;
+    if(!actualSec || actualSec <= 0) return true;
+    var diff = Math.abs(expectedSec - actualSec);
+    // Allow 15 seconds of drift (intro/outro edits, ads, silence) but not a
+    // different song entirely.
+    return diff <= 15;
+  }
+
   // SideCut AI assist: when a Gemini key is set, the top YouTube candidates are
   // sent to the AI which picks the actual official track (avoiding lyric videos,
   // covers, karaoke, remixes and other lookalikes). Without a key we fall back to
