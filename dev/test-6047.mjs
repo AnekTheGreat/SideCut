@@ -111,7 +111,8 @@ try { entries = eval('[' + block[1] + ']'); } catch (e) { }
 ok(!!entries, 'CHANGELOG evaluates' + (entries ? '' : ' — ' ));
 if (entries) {
   ok(entries[0].version === ver, `newest entry (${entries[0].version}) matches APP_VERSION`);
-  ok(entries[0].items.length === 5, `5 patch notes (${entries[0].items.length})`);
+  ok(entries[0].version === '60.4.8', `newest changelog is 60.4.8 (${entries[0].version})`);
+  ok(entries[0].items.length === 3, `3 patch notes (${entries[0].items.length})`);
   ok(/EDT$/.test(entries[0].date || ''), 'date ends in EDT (' + entries[0].date + ')');
 }
 const maps = [...html.matchAll(/LEGACY_VERSIONS = (\{[^}]*\})/g)].map(m => m[1]);
