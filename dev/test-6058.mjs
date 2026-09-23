@@ -36,7 +36,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '60.5.8', 'APP_VERSION = ' + ver);
+ok(ver === '60.5.9', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -65,7 +65,9 @@ console.log('[2] block-1 Play header: no downloader mention survives it');
 console.log('[3] static gates for runtime-created copy');
 ok(src.includes(`SC_IS_PLAY ? 'Tap the URL above to copy it.'`), 'Expand URL result hint gated');
 ok(src.includes(`SC_IS_PLAY ? '' : '<span style="font-size:11px; color:var(--coral); flex-shrink:0;">Get song</span>'`), 'New releases "Get song" label gated');
-ok(src.includes(`toast(SC_IS_PLAY ? 'Open Discover to look this track up.' : 'Use Discover → Get song to download this track.'`), 'new-release tap toast gated');
+ok(!src.includes(`'Use Discover → Get song to download this track.'`), 'new-release tap no longer toasts about downloading');
+ok(!src.includes(`'Open Discover to look this track up.'`), 'the old tap-toast wording is gone entirely');
+ok(src.includes(`openReleasePage(row.dataset.artist || '', row.dataset.title || '')`), 'new-release tap opens the release page instead of a toast');
 ok(src.includes('Import songs that carry an album tag'), 'empty-album note says Import (both builds)');
 ok(!src.includes('Download songs that carry an album tag'), 'the old Download wording is gone');
 ok(src.includes('Album History, 30-second previews'), 'free-tier blurb says 30-second previews');
