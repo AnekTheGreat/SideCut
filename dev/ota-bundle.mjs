@@ -39,7 +39,8 @@ function readNotes(src, version) {
   }
   const e = entries.find((x) => String(x.version) === String(version)) || entries[0];
   if (!e) return { notes: [], date: '' };
-  return { notes: (e.items || []).slice(0, 6), date: e.date ? String(e.date) : '' };
+  // [FULL]-marked items are this channel's own notes: strip the marker.
+  return { notes: (e.items || []).map((it) => (typeof it === 'string' && it.startsWith('[FULL] ')) ? it.slice(7) : it).slice(0, 6), date: e.date ? String(e.date) : '' };
 }
 
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');

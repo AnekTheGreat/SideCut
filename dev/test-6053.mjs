@@ -136,7 +136,7 @@ console.log('[7] release metadata');
 const vKey = "const APP_VERSION = '";
 const vi = src.indexOf(vKey);
 const ver = vi === -1 ? '' : src.slice(vi + vKey.length, src.indexOf("'", vi + vKey.length));
-ok(ver === '60.5.4', 'APP_VERSION = ' + ver);
+ok(ver === '60.5.5', 'APP_VERSION = ' + ver);
 const cStart = src.indexOf('const CHANGELOG = [');
 const cEnd = src.indexOf(NL + '  ];', cStart);
 let entries = null;
@@ -146,7 +146,7 @@ if (cStart !== -1 && cEnd !== -1) {
 ok(!!entries && entries[0].version === ver, 'newest changelog (' + (entries && entries[0].version) + ') matches APP_VERSION');
 if (entries) {
   ok(entries[0].date.endsWith('EDT'), 'date ends in EDT (' + entries[0].date + ')');
-  ok(entries[0].date.includes('September 22, 2026'), 'ship date correct (' + entries[0].date + ')');
+  ok(entries[0].date.includes('September 23, 2026'), 'ship date correct (' + entries[0].date + ')');
   ok(entries[0].items.length >= 5, 'patch notes: ' + entries[0].items.length);
 }
 

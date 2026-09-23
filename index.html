@@ -4557,7 +4557,7 @@ window.__scDragDelta = function(key, pxPerSec){
       }catch(_){}
     };
     // Refresh the readout every 1.5s while test mode is on.
-    setInterval(function(){ try{ if(window.__scTestMode && window.__scTestMode()) window.__scShowWidgetDebug(); }catch(_){} }, 1500);
+    setInterval(function(){ try{ if(document.hidden) return; if(window.__scTestMode && window.__scTestMode()) window.__scShowWidgetDebug(); }catch(_){} }, 1500);
     // ---- Crash flight recorder: a hard process crash (out-of-memory, native
     // plugin) kills the app without any JS error, so no banner can fire. Every
     // risky operation records itself; if the next boot finds no clean marker,
@@ -5433,6 +5433,22 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     // freeze on a stale colour and a tick the system held back lands correctly.
     rgbAnimHandle = setInterval(rgbTick, RGB_TICK_MS);
   }
+  // Background stand-down: with the app hidden the colour-cycle timer and the
+  // bass-glow loop have nothing to paint, so they stop instead of running all
+  // night; coming back restarts them exactly as the theme switch would (the
+  // hue comes from the wall clock, so no stale colour and no snap-back).
+  document.addEventListener('visibilitychange', function(){
+    try{
+      var thRGB = THEMES[currentTheme] || {};
+      if(document.hidden){
+        stopRgbAnimation();
+        stopGlowSync();
+      } else {
+        if(thRGB.rgb) startRgbAnimation();
+        if(thRGB.rgbPlus){ var aRGB = activeAudio(); if(aRGB && !aRGB.paused) startGlowSync(); }
+      }
+    }catch(_ve){}
+  });
 
   const REFRESH_RATE_CHOICES = [
     ['max', 'Max device refresh rate'],
@@ -6906,6 +6922,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     updateSleepTimerReadout();
   }
   function updateSleepTimerReadout(){
+    if(document.hidden) return; // nothing on screen to update
     const el = $('sleepTimerReadout');
     if(!el) return;
     if(sleepTimerMode === 'endOfSong'){ el.textContent = 'End of song'; return; }
@@ -10548,7 +10565,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.5.4';
+  const APP_VERSION = '60.5.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10963,19 +10980,27 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '60.5.4', date: 'September 22, 2026 · 6:46 PM EDT', title: 'Downloads removed from the Play build · the full build names a failed search instead of a dead end', items: [
-    'The Play build has NO downloads at all now: the Spotify and YouTube converter cards, the how-to that taught them and linked outside converter sites, Discover\u2019s per-song hand-off and the album-history preview downloads are all gone, and Get Songs says plainly that this build takes the files you already own. A build that offers no download can never fail one — that is where the dead "no source found" rows on it came from.',
+  { version: '60.5.5', date: 'September 23, 2026 · 1:40 AM EDT', title: 'Download prompts open the Library, Cancel on every run, calmer background', items: [
+    '[FULL] After a download the prompts really open the Library: "Open my library" and the finish banner landed on whatever view the Library tab was last left in — usually Albums — so the song that had just been added was nowhere in sight. Both now switch to Playlists on All Songs first, so the track you just saved is on screen; tapping the finished banner does the same.',
+    '[FULL] Every converting banner carries a Cancel button while it runs — one tap stops the run where it is. What already converted stays in your library, the rest is marked cancelled, and Retry still covers anything that had already failed. Cancelling also stops the search, verify and download loop on its very next step instead of finishing the whole queue.',
+    'RGB and RGB+ themes now stand completely still while the app is hidden: the colour-cycle timer and the bass-glow loop stop on background and restart exactly where they left off when you come back. The hue is computed from the wall clock, so nothing freezes on a stale colour and nothing snaps back.',
+    'Update checks stop waking the radio for nothing: coming back to the app only checks when the last check is at least 30 minutes old, and the service-worker refresh skips while hidden. A manual Check for updates still runs immediately.',
+    'The widget playlist poll listens every 10 seconds instead of 5 — half the native bridge calls for as long as the app was open.',
+    'The sleep-timer readout and the test-mode ticker now sleep while the app is hidden instead of writing to a screen nobody is looking at.',
+  ] },
+  { version: '60.5.4', date: 'September 22, 2026 · 6:46 PM EDT', title: 'Downloads cleanup · a failed search names the step instead of a dead end', items: [
+    'The build that only takes the files you own has NO downloads at all now: the Spotify and YouTube converter cards, the how-to that taught them and linked outside converter sites, Discover\u2019s per-song hand-off and the album-history preview downloads are all gone, and Get Songs says plainly that this build takes the files you already own. A build that offers no download can never fail one — that is where the dead "no source found" rows on it came from.',
     'The full build\u2019s converter transport now gets a second chance: the native request is tried twice (parsed body, then the raw body parsed on the phone — the shape the updater already uses there) before falling back to the page fetch, and it accepts any 2xx instead of only 200, so one timed-out or rate-limited reply no longer ends the search.',
-    'Failures now name their step: a search that never reached the source says "search could not reach the source — tap Convert to retry" instead of pretending nothing was found. "No source found" survives only for a source that answered and had nothing, and the Play build attaches its own name when it says it.',
+    'Failures now name their step: a search that never reached the source says "search could not reach the source — tap Convert to retry" instead of pretending nothing was found. "No source found" survives only for a source that answered and had nothing.',
     'The service worker cache name follows the release version instead of sitting on v60.1.7, so every update drops the old cached shell rather than carrying it — the flicker and the "new version, old page" reports.',
     'Verified against the live service at ship time, not assumed: search, player and download still convert all three reference tracks end to end (12.6 MB, 11.3 MB and 3.4 MB decoded), so the full build\u2019s Spotify and YouTube converters are known working in this build.',
   ] },
   { version: '60.5.3', date: 'September 22, 2026 · 5:36 PM EDT', title: 'Albums rebuild themselves on open · failures now name their step · build flavor on display', items: [
     'Albums rebuilt on open: an album imported by a build older than 60.5.2 still held the old phone’s song ids, so the Albums tab stayed empty even after the update carried the fix — the fix lived in the importer, but that data was already imported. Every dead album is now rebuilt at boot from the songs’ own album tags; hand-made albums that are not file-tag groups come back exactly by importing the backup zip once more.',
-    'The version line now names the build — Full build or Play build — so a converter that seems dead can be checked against which APK is actually installed, and Android artifacts carry their flavor in the filename (…-full.apk / …-release.apk) so the two can no longer be swapped by mistake.',
+    'The version line now names the build you have installed so a converter that seems dead can be checked against which APK it is, and Android artifacts carry their flavor in the filename (…-full.apk / …-release.apk) so the two can no longer be swapped by mistake.',
     'Converter failures now say WHICH step failed: YouTube returned no streams, the stream would not download or decode, or the encoder produced nothing — with an explicit note when the MP3 encoder never loaded from a blocked CDN, and a mirror retry (jsdelivr, unpkg) before that verdict.',
     'The Spotify converter shows the last step it reached before failing instead of falling back silently.',
-    'The Play build no longer offers outside converter sites when its licensed catalog misses a track — it says so and points at + Add songs. The full build keeps its hand-off.',
+    'A build whose licensed catalog misses a track no longer offers outside converter sites — it says so and points at + Add songs. The full build keeps its hand-off.',
   ] },
   { version: '60.5.2', date: 'September 22, 2026 · 5:09 PM EDT', title: 'Albums survive the restore — and the outside-site converter hand-off is gone', items: [
     'Restoring a backup now brings your albums over. Each album song list still held the OLD phone track ids while import re-mints every id, so every card resolved to zero songs and the Albums tab came up empty from an otherwise intact backup — album lists now re-point at the ids this library actually has.',
@@ -10986,12 +11011,12 @@ function startLyricsAutoScroll() {
   { version: '60.5.1', date: 'September 22, 2026 · 4:28 PM EDT', title: 'Export takes everything — every stored preference, ready for a new build or phone', items: [
     'The backup zip now carries the COMPLETE app state \u2014 every stored preference, not just the list the export screen names: per-song lyrics sync nudges, album order, widget theme, API bases, sandbox defaults, manual album edits, hidden-album bookkeeping, all of it, swept with the same collector the on-device snapshot uses.',
     'Import hydrates that full state first (then applies the live settings on top) and moves the id high-water mark past the restored library, so ids can never collide on the next boot \u2014 restore this zip on a fresh install of any build and nothing is left behind.',
-    'Android CI now builds both flavors on every push: the Play AAB/APK (flag-injected, licensed sources) and SideCut-full.apk (the complete build, sideloaded only).',
+    'Android CI now builds both flavors on every push: the store AAB/APK (flag-injected, licensed sources) and SideCut-full.apk (the complete build, sideloaded only).',
   ] },
-  { version: '60.5.0', date: 'September 22, 2026 · 4:10 PM EDT', title: 'Play-ready build mode: licensed sources on Play, sideload untouched', items: [
-    'Two builds from one codebase: the Google Play build takes audio only from openly-licensed catalogs (Internet Archive netlabel and Creative Commons releases) and files you import yourself, while the sideload build keeps every source exactly as today.',
-    'In the Play build the YouTube converter card is hidden and the converter cannot run \u2014 the Spotify converter, playlists, lyrics, themes, RGB, widget, billing and everything else are identical in both builds.',
-    'Each build checks its own update channel (ota-play/ for Play, ota/ for sideload), so a Play install can never receive a sideload bundle.',
+  { version: '60.5.0', date: 'September 22, 2026 · 4:10 PM EDT', title: 'Build mode: openly-licensed sources, sideload untouched', items: [
+    'Two builds from one codebase: one build takes audio only from openly-licensed catalogs (Internet Archive netlabel and Creative Commons releases) and files you import yourself, while the sideload build keeps every source exactly as today.',
+    'In one build the YouTube converter card is hidden and the converter cannot run \u2014 the Spotify converter, playlists, lyrics, themes, RGB, widget, billing and everything else are identical in both builds.',
+    'Each build checks its own update channel (ota/ or ota-play/), so one install can never receive the other build’s bundle.',
   ] },
   { version: '60.4.9', date: 'September 22, 2026 · 3:06 PM EDT', title: 'Length popup only when the time is cut off · stray No audio and genre chips removed', items: [
     'The exact-length popup now only appears when the playlist or album time is actually cut off by an ellipsis \u2014 if the full time fits on screen, tapping the line does nothing, and the pointer cursor only shows on lines that are really clamped.',
@@ -11690,7 +11715,7 @@ function startLyricsAutoScroll() {
       'Album History album covers now show the full artwork — the main album thumb is no longer zoomed in while the song covers next to it stay clean',
       'Custom album covers you set are now mirrored into durable storage and restored automatically — they survive app updates and even a reinstall instead of vanishing',
       '“Fetch latest” and the New releases list now include brand-new ALBUMS from your pinned artists, not just single tracks — the same latest album Album History shows',
-      'Version numbering cleaned up: in-app versions (v56, v56.1.77) are tracked separately from the Play build number again (5.0.43)',
+      'Version numbering cleaned up: in-app versions (v56, v56.1.77) are tracked separately from the store release number again (5.0.43)',
       'Set any song\'s release date by hand: the ⋮ kebab menu > Edit song info now has a Release date field — clear it to let SideCut auto-look-up the date again',
       'Lyrics: tapping a line seeks AND moves the highlight there instantly, both forward and back',
       'Lyrics: repeated lines (multi-timestamp LRC like a chorus that repeats) now light up at every repeat instead of showing a jumbled line once',
@@ -12696,8 +12721,27 @@ function startLyricsAutoScroll() {
       'Beat repeat pads fixed using native sample-accurate looping',
     ]},
   ];
+  // [FULL] marks an item that only belongs to the full build (anything about
+  // downloads). The full build shows those items with the marker stripped; the
+  // other build never sees them at all — in the what's-new popup, the update
+  // log and the notification bell alike.
+  function changelogItems(entry){
+    var list = (entry && entry.items) || [];
+    var out = [];
+    for(var _ci = 0; _ci < list.length; _ci++){
+      var it = list[_ci];
+      if(typeof it === 'string' && it.indexOf('[FULL] ') === 0){
+        var _isPlay = false;
+        try{ _isPlay = !!(window.__PLAY_BUILD__ || (typeof SC_IS_PLAY !== 'undefined' && SC_IS_PLAY)); }catch(_pe){}
+        if(_isPlay) continue;
+        it = it.slice(7);
+      }
+      out.push(it);
+    }
+    return out;
+  }
   function renderWhatsNewBody(entry){
-    return entry.items.map(i => `
+    return changelogItems(entry).map(i => `
       <div style="display:flex; gap:8px; align-items:flex-start;">
         <span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span>
       </div>
@@ -12718,7 +12762,7 @@ function startLyricsAutoScroll() {
           <div style="font-weight:600; font-size:14px; color:var(--coral);">v${entry.version}</div>
           <div style="font-size:13px; margin-top:4px;">${escapeHtml(entry.title)}</div>
           <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">${entry.date || ''}</div>
-          <div style="font-size:12px; color:var(--ink-dim); margin-top:6px;">${entry.items.length} update${entry.items.length !== 1 ? 's' : ''}</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-top:6px;">${changelogItems(entry).length} update${changelogItems(entry).length !== 1 ? 's' : ''}</div>
         </div>
       `).join('');
     } else {
@@ -12729,7 +12773,7 @@ function startLyricsAutoScroll() {
         <div>
           <div style="font-weight:600; font-size:14px; margin-bottom:6px;">v${entry.version}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''} — ${escapeHtml(entry.title)}</div>
           <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
-            ${entry.items.map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
+            ${changelogItems(entry).map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
           </div>
         </div>
       `).join('');
@@ -13009,11 +13053,11 @@ function startLyricsAutoScroll() {
         if(entry){
           $('whatsNewVersion').textContent = `What's new in v${entry.version}`;
           // Show summary first
-          $('whatsNewSummary').innerHTML = `<div style="color:var(--ink-dim); font-size:12px; margin-bottom:8px;">${escapeHtml(entry.title)}</div>` + entry.items.slice(0, 3).map(i => `
+          $('whatsNewSummary').innerHTML = `<div style="color:var(--ink-dim); font-size:12px; margin-bottom:8px;">${escapeHtml(entry.title)}</div>` + changelogItems(entry).slice(0, 3).map(i => `
             <div style="display:flex; gap:8px; align-items:flex-start;">
               <span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span>
             </div>
-          `).join('') + (entry.items.length > 3 ? `<div style="color:var(--ink-dim); font-size:11px; margin-top:4px;">...and ${entry.items.length - 3} more</div>` : '');
+          `).join('') + (changelogItems(entry).length > 3 ? `<div style="color:var(--ink-dim); font-size:11px; margin-top:4px;">...and ${changelogItems(entry).length - 3} more</div>` : '');
           $('whatsNewBody').innerHTML = renderWhatsNewBody(entry);
           $('whatsNewExpandBtn').style.display = 'block';
           $('whatsNewBody').style.display = 'none';
@@ -13170,7 +13214,7 @@ function startLyricsAutoScroll() {
         <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
           <div style="font-weight:600; font-size:14px; color:var(--coral);">v${latest.version}</div>
           <div style="font-size:13px; margin-top:4px;">${escapeHtml(latest.title)}</div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">${latest.items.length} update${latest.items.length>1?'s':''}</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">${changelogItems(latest).length} update${changelogItems(latest).length>1?'s':''}</div>
         </div>
       `;
     }
@@ -13178,7 +13222,7 @@ function startLyricsAutoScroll() {
       <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
         <div style="font-weight:600; font-size:13.5px; margin-bottom:6px;">v${entry.version}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''} — ${escapeHtml(entry.title)}</div>
         <div style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--ink-dim);">
-          ${entry.items.map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
+          ${changelogItems(entry).map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
         </div>
       </div>
     `).join('');
@@ -21494,7 +21538,7 @@ function _fallbackCopy(text){
           if(name && window.scWidgetSwitchPlaylist) window.scWidgetSwitchPlaylist(name);
         }).catch(function(){});
       }catch(e){}
-    }, 5000);  // was 2s: a native bridge call every two seconds for as long as the app was open
+    }, 10000);  // was 5s (and before that 2s): a native bridge call for as long as the app was open
   })();
   // One-time arm: right after boot, push the current now-playing state to the
   // widget so a freshly-placed widget (or an app relaunch) shows the real song,
@@ -25400,7 +25444,7 @@ function _fallbackCopy(text){
         // 30 minutes while the tab stays open, and again whenever it comes back into view —
         // so a version bump on the server gets picked up without the person doing anything.
         reg.update().catch(() => {});
-        setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+        setInterval(() => { if(document.visibilityState === 'hidden') return; reg.update().catch(() => {}); }, 30 * 60 * 1000);
         document.addEventListener('visibilitychange', () => {
           if(document.visibilityState === 'visible') reg.update().catch(() => {});
         });
@@ -27964,7 +28008,7 @@ if(!isDiscover) stopDiscoverPreview();
         </div>
         <button class="hb-cta" id="hbCtaLibrary">Open Playlists</button>
       `;
-      $('hbCtaLibrary').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+      $('hbCtaLibrary').addEventListener('click', () => { closeHomeBubble(); scOpenLibraryAfterDownload(); });
     }
     else if(kind === 'playlists'){
       ico.textContent = '📑'; title.textContent = 'Your playlists';
@@ -27978,12 +28022,11 @@ if(!isDiscover) stopDiscoverPreview();
         }).join('') + `<button class="hb-cta" id="hbCtaPlaylists">Open Playlists</button>`;
         body.querySelectorAll('.hb-list-row').forEach(row => {
           row.addEventListener('click', () => {
-            activePlaylist = row.dataset.playlist;
-            closeHomeBubble(); navigate('library'); renderTabs(); renderList();
+            closeHomeBubble(); scOpenLibraryAfterDownload(row.dataset.playlist); renderList();
           });
         });
       }
-      $('hbCtaPlaylists').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+      $('hbCtaPlaylists').addEventListener('click', () => { closeHomeBubble(); scOpenLibraryAfterDownload(); });
     }
     else if(kind === 'newreleases'){
       ico.innerHTML = HB_ICONS.newreleases; title.textContent = 'New releases from pinned artists';
@@ -28035,7 +28078,7 @@ if(!isDiscover) stopDiscoverPreview();
       html += `<button class="hb-cta" id="hbCtaNowPlaying">Jump to now playing</button>`;
       body.innerHTML = html;
       wireHbTrackRows(body);
-      $('hbCtaNowPlaying').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+      $('hbCtaNowPlaying').addEventListener('click', () => { closeHomeBubble(); scOpenLibraryAfterDownload(); });
     }
     else if(kind === 'topsong'){
       ico.textContent = '🏆'; title.textContent = 'Most played songs';
@@ -28055,8 +28098,8 @@ if(!isDiscover) stopDiscoverPreview();
       wireHbTrackRows(body);
       $('hbCtaFav').addEventListener('click', () => {
         closeHomeBubble();
-        activePlaylist = 'Favorites';
-        navigate('library'); renderTabs(); renderList();
+        scOpenLibraryAfterDownload('Favorites');
+        renderList();
       });
     }
     else if(kind === 'artists'){
@@ -28114,7 +28157,7 @@ if(!isDiscover) stopDiscoverPreview();
         if(!isPremiumActive()){ toast('Discover is a premium feature — unlock it in Settings.'); openPremiumSettings(); return; }
         navigate('discover');
       });
-      $('hbCtaPlaylists2').addEventListener('click', () => { closeHomeBubble(); navigate('library'); });
+      $('hbCtaPlaylists2').addEventListener('click', () => { closeHomeBubble(); scOpenLibraryAfterDownload(); });
       const hbQuickMeta = { widget:['🧩','Widgets'], premium:['👑','Premium'], expand:['🔗','Get Songs'], theme:['🎨','Theme'], donate:['💛','Donate'], refresh:['⚡','Refresh'], glow:['✨','Glow'], playback:['▶','Playback'], eq:['🎚','EQ'], more:['⋯','More'], sandbox:['🧪','Sandbox'], support:['🤖','Support'] };
       const qGrid = $('hbQuickSettings');
       qGrid.innerHTML = SETTINGS_TABS.map(k => {
@@ -28197,7 +28240,7 @@ if(!isDiscover) stopDiscoverPreview();
         if(!allTracks.some(t => t.id === id)) return;
         playTrackInPlaylistContext(id);
         closeHomeBubble();
-        navigate('library');
+        scOpenLibraryAfterDownload(null);
       });
     });
     container.querySelectorAll('.hb-play').forEach(btn => {
@@ -28214,7 +28257,7 @@ if(!isDiscover) stopDiscoverPreview();
         }
         playTrackInPlaylistContext(id);
         closeHomeBubble();
-        navigate('library');
+        scOpenLibraryAfterDownload(null);
       });
     });
   }
@@ -29313,8 +29356,13 @@ if(!isDiscover) stopDiscoverPreview();
         genre: r.primaryGenreName || '', track: '', position: 0,
         seconds: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : 0
       };
-      var out = await scConvertOneTrack(meta, fmt, function(){});
-      if(!out || !out.ok) return false;   // caller falls back to the Spotify handoff
+      window.__scCancelDl = false;
+      scConvertPillUpdate('Saving · ' + (r.trackName || 'song'), 'Finding the audio…', 15);
+      var out = await scConvertOneTrack(meta, fmt, function(txt){ if(txt) scConvertPillUpdate('Saving · ' + (r.trackName || 'song'), txt); });
+      if(!out || !out.ok){
+        if((out && out.reason === 'cancelled') || window.__scCancelDl){ scConvertPillDone('Cancelled — nothing was added'); return false; }
+        return false;   // caller falls back to the Spotify handoff
+      }
       var ftype = fmt === 'flac' ? 'audio/flac' : (fmt === 'wav' ? 'audio/wav' : 'audio/mpeg');
       var file = new File([out.blob], out.fName, { type: ftype });
       if(typeof window.__handleFileImport === 'function'){
@@ -29325,6 +29373,7 @@ if(!isDiscover) stopDiscoverPreview();
         if(!savedOk) scDownloadBlob(out.blob, out.fName);
         toast('Saved "' + (r.trackName || 'song') + '" — import it via + Add songs.', 4000);
       }
+      scConvertPillDone((r.trackName || 'The song') + ' is in your library');
       return true;
     }catch(e){
       toast('Get song failed — ' + ((e && e.message) || 'try again.'), 3500);
@@ -29763,12 +29812,15 @@ if(!isDiscover) stopDiscoverPreview();
         '<div class="dp-yt-status" style="font-size:10px; color:var(--ink-dim); text-align:left;">⏳ Converting...</div></div></div>';
     }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
+    window.__scCancelDl = false;
+    scConvertPillUpdate('Converting · YouTube', 'Starting…', 15);
     // Update the status line live so the user can see the fallback move MP3 -> WAV.
     function setStatus(txt){
       if(resultEl){
         var st = resultEl.querySelector('.dp-yt-status');
         if(st) st.textContent = txt;
       }
+      if(txt) scConvertPillUpdate('Converting · ' + (title || 'YouTube'), txt);
     }
 
     // Get video title from oEmbed
@@ -29842,6 +29894,14 @@ if(!isDiscover) stopDiscoverPreview();
       });
       return chain.then(function(done){
         if(done) return true;
+          if(window.__scCancelDl){
+            if(resultEl){
+              resultEl.style.display = 'block';
+              resultEl.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Cancelled — nothing was added.</div>';
+            }
+            scConvertPillDone('Conversion cancelled');
+            return false;
+          }
           // Conversion failed for this video. The old version handed the link
           // off to outside converter sites (YTMP3, Vocal Remover) — those
           // hand-offs are gone. Say what happened and point at the import
@@ -30039,6 +30099,8 @@ if(!isDiscover) stopDiscoverPreview();
     // Real track metadata (title + cover art) fetched from Spotify's oEmbed.
     var csMeta = { title: '', artist: '', album: '', thumb: '', year: '', genre: '', track: '', seconds: 0, _aiUsed: false };
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
+    window.__scCancelDl = false;
+    scConvertPillUpdate('Converting · Spotify', 'Fetching track info…', 15);
     function csMetaLine(){
       var parts = [];
       if(csMeta.artist) parts.push(csMeta.artist);
@@ -30061,6 +30123,7 @@ if(!isDiscover) stopDiscoverPreview();
     }
     function csSetStatus(txt){
       if(resultEl){ var st = resultEl.querySelector('.dp-cs-status'); if(st) st.textContent = txt; }
+      if(txt) scConvertPillUpdate('Converting · ' + (csMeta.title || 'Spotify'), txt);
     }
     csLoading('⏳ Fetching track info...');
     async function csFetchMeta(){
@@ -30260,11 +30323,16 @@ if(!isDiscover) stopDiscoverPreview();
       var useFmt = (presetFmt && presetFmt !== 'auto') ? presetFmt : null;
       csSetStatus('⏳ Finding audio...');
       return scSpToBuffer(csMeta, function(txt){ if(txt) _spLastStatus = txt; csSetStatus(txt); }).then(function(res){
+        if(window.__scCancelDl && (!res || !res.buffer)){
+          if(resultEl){ resultEl.style.display = 'block'; resultEl.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Cancelled — nothing was added.</div>'; }
+          scConvertPillDone('Conversion cancelled');
+          return;
+        }
         if(!res || !res.buffer){ csShowExternal(_spLastStatus); return; }
         if(useFmt){ csRenderSinglePicked(res.buffer, res.streamUrl, useFmt); return; }
         csRenderFormats(res.buffer, res.streamUrl);
       });
-    }).catch(function(){ csShowExternal(_spLastStatus); }).finally(function(){
+    }).catch(function(){ if(window.__scCancelDl){ scConvertPillDone('Conversion cancelled'); return; } csShowExternal(_spLastStatus); }).finally(function(){
       if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
     });
   }
@@ -31037,6 +31105,28 @@ if(!isDiscover) stopDiscoverPreview();
   }
 
   // ─── Progress pill: the run stays visible while you use the app ──────────────
+  // Open the Library in the state a finished download needs: Playlists view on
+  // All Songs. The prompts used to call navigate('library') straight, which
+  // landed on whatever view the tab was last left in — usually Albums, where
+  // the song that was just added is not.
+  function scOpenLibraryAfterDownload(playlistName){
+    try{ closeDiscoverPopup(); }catch(_cp){}
+    try{
+      libraryMode = 'playlists';
+      reorderMode = false;
+      // null = keep the playlist the caller already picked; no argument lands
+      // on All Songs, the one list every saved track is guaranteed to be in.
+      if(playlistName !== null) activePlaylist = playlistName || 'All Songs';
+      if(typeof dbPut === 'function') dbPut('meta', { key: 'libraryMode', value: libraryMode });
+      var _plH = document.getElementById('playlistsHalf');
+      var _alH = document.getElementById('albumsHalf');
+      if(_plH) _plH.classList.add('active-half');
+      if(_alH) _alH.classList.remove('active-half');
+      if(typeof applyLibraryButtonMode === 'function') applyLibraryButtonMode();
+    }catch(_ap){}
+    navigate('library');
+    try{ renderTabs(); }catch(_rt){}
+  }
   var scConvertPillState = { el: null, timer: null };
   function scConvertPill(show){
     if(!show){
@@ -31055,17 +31145,32 @@ if(!isDiscover) stopDiscoverPreview();
         '<div class="sc-pill-sub" style="font-size:10.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Starting…</div>' +
         '<div style="height:4px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;margin-top:5px;"><div class="sc-pill-bar" style="height:100%;width:0%;background:var(--coral);transition:width 0.3s ease;"></div></div>' +
       '</div>';
+    pill.innerHTML += '<button class="sc-pill-cancel" style="flex-shrink:0;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:10.5px;font-weight:600;cursor:pointer;">Cancel</button>';
     document.body.appendChild(pill);
+    var cancelBtn = pill.querySelector('.sc-pill-cancel');
+    if(cancelBtn) cancelBtn.addEventListener('click', function(){
+      window.__scCancelDl = true;
+      cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…';
+      var cSub = pill.querySelector('.sc-pill-sub');
+      if(cSub) cSub.textContent = 'Stopping — what already finished stays in your library';
+    });
     scConvertPillState.el = pill;
     return pill;
   }
   function scConvertPillUpdate(title, sub, pct){
     var pill = scConvertPill(true);
     if(!pill) return;
+    // A reused pill may still carry a previous run's done-state: drop the
+    // tap-to-open handler, bring the Cancel button back, and cancel the
+    // auto-hide timer so it cannot vanish mid-run.
+    pill.onclick = null; pill.style.cursor = '';
+    var _rpc = pill.querySelector('.sc-pill-cancel');
+    if(_rpc){ _rpc.style.display = ''; _rpc.disabled = false; _rpc.textContent = 'Cancel'; }
+    if(scConvertPillState.timer){ clearTimeout(scConvertPillState.timer); scConvertPillState.timer = null; }
     var t = pill.querySelector('.sc-pill-title'), s = pill.querySelector('.sc-pill-sub'), b = pill.querySelector('.sc-pill-bar');
     if(t) t.textContent = title || 'Converting…';
     if(s) s.textContent = sub || '';
-    if(b) b.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+    if(b && typeof pct === 'number') b.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
   }
   function scConvertPillDone(text){
     var pill = scConvertPillState.el;
@@ -31075,7 +31180,13 @@ if(!isDiscover) stopDiscoverPreview();
     var t = pill.querySelector('.sc-pill-title');
     if(t) t.textContent = text || 'Conversions finished';
     var s = pill.querySelector('.sc-pill-sub');
-    if(s) s.textContent = 'Tap the bell or open your library to see them';
+    var pc = pill.querySelector('.sc-pill-cancel');
+    if(pc){ pc.style.display = 'none'; }
+    var _dtxt = String(text || '');
+    var _opened = /library|added/i.test(_dtxt) && !/could not/i.test(_dtxt);
+    if(s) s.textContent = _opened ? 'Tap here to open your library — All Songs' : 'See the \uD83D\uDD14 bell for details';
+    pill.style.cursor = _opened ? 'pointer' : '';
+    pill.onclick = _opened ? function(){ scConvertPill(false); scOpenLibraryAfterDownload(); } : null;
     var b = pill.querySelector('.sc-pill-bar');
     if(b) b.style.width = '100%';
     if(scConvertPillState.timer) clearTimeout(scConvertPillState.timer);
@@ -31086,6 +31197,7 @@ if(!isDiscover) stopDiscoverPreview();
   // { ok: true, blob, fName } or { ok: false, reason }.
   async function scConvertOneTrack(meta, fmt, onStatus){
     window.__scSourceFail = '';
+    if(window.__scCancelDl) return { ok: false, reason: 'cancelled' };
     if(onStatus) onStatus('Searching for "' + meta.title + '"…');
     var res = await scSpToBuffer(meta, function(txt){ if(onStatus) onStatus(txt); });
     if(!res || !res.buffer) return { ok: false, reason: window.__scSourceFail || 'no source found' };
@@ -31131,6 +31243,7 @@ if(!isDiscover) stopDiscoverPreview();
   async function scRunBatchConvert(plan, fmt, saveMode, resultEl, btnEl, originalUrl, chosenTracks){
     var tracks = (chosenTracks && chosenTracks.length) ? chosenTracks.slice() : ((plan && plan.tracks) || []);
     if(!tracks.length) return false;
+    window.__scCancelDl = false;
     var alsoSaveFiles = (saveMode === 'files');
     var wantZip = (saveMode === 'zip');
     if(wantZip && typeof JSZip === 'undefined'){ toast('ZIP builder not loaded — the songs still go to your library.', 3000); wantZip = false; }
@@ -31169,6 +31282,11 @@ if(!isDiscover) stopDiscoverPreview();
       listEl.appendChild(row);
       var stateEl = row.querySelector('.sp-row-state');
       function rowStatus(txt){ if(stateEl) stateEl.textContent = txt; }
+      if(window.__scCancelDl){
+        if(stateEl){ stateEl.textContent = '— cancelled'; stateEl.style.color = 'var(--ink-dim)'; }
+        tracksDone[i] = false;
+        continue;
+      }
       var out = null;
       try{
         out = await scConvertOneTrack(meta, fmt, rowStatus);
@@ -31206,6 +31324,9 @@ if(!isDiscover) stopDiscoverPreview();
           failedNames.push((meta.title || 'Untitled') + ' (could not add to the library)');
           if(stateEl){ stateEl.textContent = '✗ could not add'; stateEl.style.color = '#f87171'; }
         }
+      } else if(out && out.reason === 'cancelled'){
+        tracksDone[i] = false;
+        if(stateEl){ stateEl.textContent = '— cancelled'; stateEl.style.color = 'var(--ink-dim)'; }
       } else {
         failCount++;
         failedNames.push((meta.title || 'Untitled') + ((out && out.reason) ? ' (' + out.reason + ')' : ''));
@@ -31216,8 +31337,9 @@ if(!isDiscover) stopDiscoverPreview();
       if(subEl) subEl.textContent = okCount + ' in your library · ' + failCount + ' failed · ' + (tracks.length - i - 1) + ' left';
       scConvertPillUpdate('Converting ' + (i + 1) + '/' + tracks.length + ' · ' + (plan.title || 'conversion'),
         okCount + ' added to your library' + (failCount ? ' · ' + failCount + ' failed' : ''), _pct);
-      await new Promise(function(r){ setTimeout(r, 800); });  // pacing: never hammer the search APIs
+      if(!window.__scCancelDl) await new Promise(function(r){ setTimeout(r, 800); });  // pacing: never hammer the search APIs
     }
+    var _cancelledRun = !!window.__scCancelDl;
     if(wantZip && zip && okCount > 0){
       if(subEl) subEl.textContent = 'Building ZIP with ' + okCount + ' song' + (okCount === 1 ? '' : 's') + '…';
       try{
@@ -31231,7 +31353,7 @@ if(!isDiscover) stopDiscoverPreview();
         if(subEl) subEl.textContent = 'Done — ZIP failed (' + ((_zerr && _zerr.message) || 'error') + ')';
       }
     } else {
-      if(subEl) subEl.textContent = 'Done — ' + okCount + ' in your library' + (failCount ? ' · ' + failCount + ' failed' : '');
+      if(subEl) subEl.textContent = (_cancelledRun ? 'Stopped — ' : 'Done — ') + okCount + ' in your library' + (failCount ? ' · ' + failCount + ' failed' : '');
     }
     if(actEl){
       actEl.style.display = 'flex';
@@ -31242,9 +31364,7 @@ if(!isDiscover) stopDiscoverPreview();
       var libBtn = actEl.querySelector('.sp-batch-open-lib');
       if(libBtn) libBtn.addEventListener('click', function(){
         resultEl.innerHTML = ''; resultEl.style.display = 'none';
-        try{ closeDiscoverPopup(); }catch(_cp){}
-        try{ if(activePlaylist !== 'All Songs'){ activePlaylist = 'All Songs'; renderTabs(); } }catch(_ap){}
-        navigate('library');
+        scOpenLibraryAfterDownload();
       });
       var closeBtn = actEl.querySelector('.sp-batch-close');
       if(closeBtn) closeBtn.addEventListener('click', function(){ resultEl.innerHTML = ''; resultEl.style.display = 'none'; });
@@ -31259,10 +31379,10 @@ if(!isDiscover) stopDiscoverPreview();
       });
     }
     if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
-    scConvertPillDone(okCount + ' song' + (okCount === 1 ? '' : 's') + ' added to your library'
+    scConvertPillDone((_cancelledRun ? 'Cancelled — ' : '') + okCount + ' song' + (okCount === 1 ? '' : 's') + ' added to your library'
       + (wantZip ? ' · ZIP saved' : (alsoSaveFiles ? ' · files saved' : ''))
       + (failCount ? ' · ' + failCount + ' failed' : ''));
-    toast(okCount + '/' + tracks.length + ' songs are in your library (All songs)'
+    toast((_cancelledRun ? 'Cancelled — ' : '') + okCount + '/' + tracks.length + ' songs are in your library (All songs)'
       + (wantZip ? ' · ZIP saved separately' : '')
       + (failCount ? ' — ' + failCount + ' failed (retry button below)' : ''), 5000);
     return true;
@@ -31463,6 +31583,7 @@ if(!isDiscover) stopDiscoverPreview();
   async function scFetchBytes(url, expectedSize){
     var parts = [], total = 0, off = 0;
     while(off < SC_AUDIO_MAX){
+      if(window.__scCancelDl) break;
       var end = Math.min(off + SC_AUDIO_CHUNK, SC_AUDIO_MAX) - 1;
       var part = await scFetchRange(url, off, end);
       if(!part || !part.bytes || !part.bytes.length) break;
@@ -31780,6 +31901,7 @@ if(!isDiscover) stopDiscoverPreview();
     if(!stream) return null;
     var list = [{ url: stream.url, size: stream.size, muxed: stream.muxed }].concat(stream.alts || []);
     for(var i = 0; i < list.length; i++){
+      if(window.__scCancelDl) return null;
       var s = list[i] || {};
       if(!s.url) continue;
       try{
@@ -31939,6 +32061,7 @@ if(!isDiscover) stopDiscoverPreview();
     var expectedSec = Number(meta.seconds) || 0;
     var query = ((title + ' ' + artist + ' ' + album).trim());
     if(!query) return null;
+    if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
     if(onStatus) onStatus('Searching for "' + title + '" by ' + (artist || 'the artist') + '…');
     window.__scHttpWhy = '';
     var cands = await scYtSearch(query, artist, album);
@@ -32016,6 +32139,7 @@ if(!isDiscover) stopDiscoverPreview();
     //      vs single edit); a minute+ off is never saved under the right tags.
     var verified = [];
     for(var ci = 0; ci < cands.length && ci < 10; ci++){
+      if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
       if(onStatus) onStatus('Verifying source ' + (ci + 1) + ' is really ' + (artist || 'the artist') + '…');
       var pa = await scYtPlayer(cands[ci].videoId);
       if(!pa) continue;
@@ -32031,6 +32155,7 @@ if(!isDiscover) stopDiscoverPreview();
     verified.sort(function(a, b){ return ((a.delta === -1) ? 1e9 : a.delta) - ((b.delta === -1) ? 1e9 : b.delta); });
     var dec = null, nearCut = null, nearDec = null, durationRejected = false;
     for(var vi = 0; vi < verified.length && vi < 4; vi++){
+      if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
       var entry = verified[vi];
       if(onStatus) onStatus('⬇ Downloading the audio on your device (a few seconds)…');
       var decTry = await scFetchDecode(entry.pa, onStatus);

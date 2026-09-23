@@ -37,7 +37,8 @@ function readNotes(src, version) {
   try { entries = eval('[' + block[1] + ']'); } catch (err) { return { notes: [], date: '' }; }
   const e = entries.find((x) => String(x.version) === String(version)) || entries[0];
   if (!e) return { notes: [], date: '' };
-  return { notes: (e.items || []).slice(0, 6), date: e.date ? String(e.date) : '' };
+  // [FULL]-marked items never belong to this channel.
+  return { notes: (e.items || []).filter((it) => !(typeof it === 'string' && it.startsWith('[FULL] '))).slice(0, 6), date: e.date ? String(e.date) : '' };
 }
 function withFlag(html) {
   if (html.includes(MARK)) return html;

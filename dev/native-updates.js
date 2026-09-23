@@ -858,7 +858,9 @@
   }
   function clearSheet(){ try{ localStorage.removeItem(SHEET_KEY); }catch(e){} }
 
+  var _lastAutoCheck = 0;
   function checkForUpdate(opts){
+    _lastAutoCheck = Date.now();
     var o = opts || {};
     return new Promise(function(resolve){
       (async function(){
@@ -1117,6 +1119,11 @@
       if(_fgTimer) clearTimeout(_fgTimer);
       _fgTimer = setTimeout(function(){
         _fgTimer = null;
+        // Battery: a resume only checks when the last check is 30+ minutes old.
+        // The boot check and a manual Check for updates both stamp the time, and
+        // the 3-hour timer still covers long sessions — a phone being folded and
+        // unfolded all day no longer starts a network check every single time.
+        if(Date.now() - _lastAutoCheck < 30 * 60 * 1000) return;
         checkForUpdate({ silent: true });
       }, 6000);
     });
