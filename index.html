@@ -1760,6 +1760,13 @@ body.theme-dyn-orchid::before{
 .home-bubble .hb-miniplay.playing{ border-color:color-mix(in srgb, var(--gold) 50%, transparent); background:color-mix(in srgb, var(--gold) 22%, transparent); color:var(--gold); }
 .home-bubble.is-playing{ border-color:var(--coral); }
 .home-bubble.is-playing .hb-glow{ animation: sd-glow-pulse 6s ease-in-out infinite; }
+/* renderHome() rebuilds the grid from HTML on every update, which restarts the
+   glow at zero — a visible flash on each re-render (each reorder arrow tap,
+   each stats refresh, the render that exits reorder mode). --hb-phase is a
+   negative delay pinned to the wall clock (all glow rules are a 6s cycle), so
+   a fresh element resumes the pulse exactly where the removed one left off. */
+body[class*="theme-dyn-"] .home-bubble .hb-glow,
+.home-bubble.is-playing .hb-glow{ animation-delay: var(--hb-phase, 0s); }
 .home-bubble.hb-hold-confirm{ border-color:var(--coral); box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent); }
 .home-bubble.hb-dragging{ position:fixed; z-index:999; margin:0; pointer-events:none; opacity:.95;
   box-shadow:0 16px 44px rgba(0,0,0,.45); border-color:var(--coral); }
@@ -10565,7 +10572,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.5.6';
+  const APP_VERSION = '60.5.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10980,6 +10987,14 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.5.7', date: 'September 23, 2026 · 11:40 AM EDT', title: 'Album remove stays local, pinned artists checked on their own, steadier Home reorder', items: [
+    '"Remove from an album" takes the song out of exactly that album — any other album that also holds the song keeps it. It used to strip the song from every album at once (and the toast even said so).',
+    'Pinned artists are now checked automatically when Discover is unlocked: once shortly after the app opens, and again whenever you come back to the app as long as the last check is at least 6 hours old — no more tapping Fetch latest to learn about a release.',
+    'Anything already dated to drop is called out as upcoming: New releases and the Fetch latest popup say "drops Oct 3 · in 10d" instead of calling a future date today, and every automatic scan looks for upcoming albums, EPs and singles for you.',
+    'The bell gains a "Dropping soon" entry — the next release from your pinned artists with its date — and its badge lights when one appears that you have not opened yet; opening the bell clears it until the next drop shows up.',
+    'Reordering Home bubbles no longer flashes the grid: the glow now resumes mid-cycle across re-renders, so each arrow tap and the render that exits reorder mode keep the bubbles visually still instead of restarting every pulse together.',
+    'The drag placeholder keeps a big bubble\'s full width (and a tall or size-set bubble\'s footprint), so neighbours stop jumping columns while you drag — small bubbles hold their slots too.',
+  ] },
   { version: '60.5.6', date: 'September 23, 2026 · 2:25 AM EDT', title: 'Floating conversion bubble, live progress in the shade and the bell', items: [
     '[FULL] The converting banner is now a small floating bubble instead of a full-width bar: hold and slide it anywhere on the screen, it stays where you put it across runs and app restarts, and it keeps the Cancel button and the tap-to-open-library finish.',
     '[FULL] Conversion progress shows in the Android notification shade: the live step and percent ride there while a run goes (tap the notification to jump back into SideCut), and the finished result — added, cancelled or failed — replaces the progress row and stays until you swipe it away.',
@@ -13185,7 +13200,8 @@ function startLyricsAutoScroll() {
     const hasDupAlert = typeof getDuplicateGroups === 'function' && getDuplicateGroups().length > 0;
     const hasEnrichAlert = enrichState.active || (enrichState.finishedAt && !enrichState.seen);
     const hasExportAlert = exportState.active || (exportState.finishedAt && !exportState.seen);
-    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || updateIsNewer() || !!window.__scNotifConv) ? 'block' : 'none';
+    const hasUpcomingAlert = typeof scUpcomingUnseen === 'function' && scUpcomingUnseen().length > 0;
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || hasUpcomingAlert || updateIsNewer() || !!window.__scNotifConv) ? 'block' : 'none';
   }
   function renderNotifPanel(){
     const body = $('notifBody');
@@ -13231,6 +13247,26 @@ function startLyricsAutoScroll() {
         </div>
       `;
     }
+    // Upcoming releases from pinned artists: anything still dated in the future
+    // gets its own entry so a drop never hides inside the plain list.
+    const _upcoming = (typeof scUpcomingReleases === 'function') ? scUpcomingReleases() : [];
+    if(_upcoming.length){
+      const u0 = _upcoming[0];
+      const uMs = new Date(u0.date + 'T00:00:00Z').getTime();
+      const uDays = Math.ceil((uMs - Date.now()) / 86400000);
+      const uDateStr = new Date(uMs).toLocaleDateString();
+      html += `
+        <div id="notifUpcomingEntry" style="border-bottom:1px solid var(--line); padding-bottom:10px; cursor:pointer;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--gold);">🎵 Dropping soon</div>
+          <div style="font-size:12px; color:var(--ink-dim);">${_upcoming.length} upcoming release${_upcoming.length > 1 ? 's' : ''} from your pinned artists — next: ${escapeHtml(u0.artist)} · ${escapeHtml(u0.title)} on ${uDateStr}${uDays > 0 ? ' (in ' + uDays + ' day' + (uDays > 1 ? 's' : '') + ')' : ''}. Tap to see them all.</div>
+        </div>
+      `;
+      summaryHtml += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
+          <div style="font-weight:600; font-size:13.5px; color:var(--gold);">🎵 Dropping soon — ${_upcoming.length} upcoming from pinned artists</div>
+        </div>
+      `;
+    }
     // Show latest version as summary
     const latest = CHANGELOG[0];
     if(latest){
@@ -13264,10 +13300,24 @@ function startLyricsAutoScroll() {
     });
     const dupEntry = document.getElementById('notifDupEntry');
     if(dupEntry) dupEntry.addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; findDuplicates(); });
+    const upEntry = document.getElementById('notifUpcomingEntry');
+    if(upEntry) upEntry.addEventListener('click', () => {
+      $('notifBackdrop').style.display = 'none';
+      navigate('home');
+      openHomeBubble('newreleases');
+    });
   }
   function openNotif(){
     enrichState.seen = true;
     exportState.seen = true;
+    // Opening the bell is the user seeing "Dropping soon" — mark the upcoming
+    // releases seen so the badge clears until the next one appears.
+    try{
+      const _up = (typeof scUpcomingReleases === 'function') ? scUpcomingReleases() : [];
+      let _upDirty = false;
+      _up.forEach(function(x){ if(x.rel && !x.rel.upSeen){ x.rel.upSeen = true; _upDirty = true; } });
+      if(_upDirty) savePinnedArtists();
+    }catch(_eUp){}
     renderNotifPanel();
     $('notifSummary').style.display = 'flex';
     $('notifExpandBtn').style.display = 'block';
@@ -17133,7 +17183,7 @@ function _fallbackCopy(text){
                 _kbk._kebabWired = true;
                 _kbk.addEventListener('click', function(e){
                   e.stopPropagation();
-                  openSongActions(tid);
+                  openSongActions(tid, aName);
                 });
               }
             });
@@ -17423,7 +17473,7 @@ function _fallbackCopy(text){
               _kbk2._kebabWired = true;
               _kbk2.addEventListener('click', function(e){
                 e.stopPropagation();
-                openSongActions(tid);
+                openSongActions(tid, aName);
               });
             }
           });
@@ -18070,11 +18120,31 @@ function _fallbackCopy(text){
       if(!kb.closest('[data-album-name], [id^="alb_card_"]')) return;
       e.stopPropagation();
       var id = kb.getAttribute('data-kebab');
-      if(id) openSongActions(id);
+      if(id){
+        var _kbc = kb.closest('[data-album-name]');
+        openSongActions(id, _kbc && _kbc.dataset ? _kbc.dataset.albumName : '');
+      }
     }, true);
   })();
 
-  function openSongActions(id){
+  // Remove a song from ONE album: the album whose card the ⋮ was opened from
+  // when we know it, otherwise the first album that actually holds the song.
+  // Other albums keep the song — the old handler stripped it from every album
+  // at once (its toast literally said "Removed from all albums").
+  // Returns the album name it removed from ('' = no album held it).
+  function scRemoveFromAlbum(trackId, albumName){
+    if(typeof userAlbums === 'undefined' || !userAlbums) return '';
+    const holders = Object.keys(userAlbums).filter(function(n){
+      const e = userAlbums[n];
+      return e && Array.isArray(e.trackIds) && e.trackIds.indexOf(trackId) !== -1;
+    });
+    const target = (albumName && holders.indexOf(albumName) !== -1) ? albumName : (holders[0] || '');
+    if(!target) return '';
+    userAlbums[target].trackIds = userAlbums[target].trackIds.filter(function(tid){ return tid !== trackId; });
+    return target;
+  }
+
+  function openSongActions(id, _saAlbumCtx){
     const t = allTracks.find(tr => tr.id === id);
     if(!t) return;
     $('songActionsTitle').textContent = t.name;
@@ -18202,15 +18272,13 @@ function _fallbackCopy(text){
       removeAlbumBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg> Remove from album`;
       removeAlbumBtn.addEventListener('click', () => {
         $('songActionsBackdrop').style.display='none';
-        Object.keys(userAlbums).forEach(name => {
-          const ua = userAlbums[name];
-          if(ua && Array.isArray(ua.trackIds)){
-            ua.trackIds = ua.trackIds.filter(tid => tid !== id);
-          }
-        });
+        // ONE album only: the card this row lives in (passed into this sheet),
+        // else the first album that actually holds the song. Any other album
+        // that also contains the song keeps it.
+        const _from = scRemoveFromAlbum(id, _saAlbumCtx || '');
         saveMeta();
         renderList();
-        toast('Removed from all albums');
+        toast(_from ? 'Removed from "' + escapeHtml(_from) + '"' : 'Not in any album');
       });
       list.appendChild(removeAlbumBtn);
 
@@ -23277,7 +23345,7 @@ function _fallbackCopy(text){
                 var _kb = _row.querySelector('[data-kebab]');
                 if(_kb){
                   _kb._kebabWired = true;
-                  _kb.addEventListener('click', function(e){ e.stopPropagation(); openSongActions(_tid); });
+                  _kb.addEventListener('click', function(e){ e.stopPropagation(); openSongActions(_tid, _foundAlb); });
                 }
                 if(_tid === t.id){
                   setTimeout(function(){ smoothScrollIn(_body, _row, 200); }, 100);
@@ -25894,7 +25962,8 @@ function _fallbackCopy(text){
           for(var ri=0; ri<merged.length; ri++){
             var r = merged[ri];
             var daysAgo = Math.floor((now - new Date(r.releaseDate).getTime())/86400000);
-            var when = daysAgo + 'd ago';
+            var daysUntil = Math.ceil((new Date(r.releaseDate).getTime() - now)/86400000);
+            var when = daysAgo < 0 ? 'drops ' + new Date(r.releaseDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (daysUntil > 0 && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo + 'd ago';
             var art = r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') : '';
             var _lyId = r.trackId || r.collectionId || ('manual_' + Date.now() + '_' + ri);
             // data-lyrow marks these as Old songs rows so the delegated handler
@@ -27685,6 +27754,7 @@ if(!isDiscover) stopDiscoverPreview();
     // back empty — openHomeBubble already renders the lock card for that case.
     const homeOrderNow = normalizeHomeOrder(homeOrder).filter(k => homeHidden.indexOf(k) === -1);
     bubbles.style.setProperty('--hb-s', (homeBubbleSize / 100).toFixed(2));
+    bubbles.style.setProperty('--hb-phase', '-' + ((Date.now() % 6000) / 1000).toFixed(2) + 's');
     bubbles.innerHTML = homeOrderNow.map(k => {
       if(k.indexOf('custom-') === 0){
         const act = customQuickActions.find(x => 'custom-' + x.id === k);
@@ -27885,6 +27955,14 @@ if(!isDiscover) stopDiscoverPreview();
     ph.style.height = rect.height + 'px';
     ph.style.minWidth = rect.width + 'px';
     ph.style.minHeight = rect.height + 'px';
+    // Keep the dragged bubble's footprint: a wide/tall/size-classed bubble needs
+    // a placeholder that spans the same grid cells (and honours an exact-width
+    // inline gridColumn), or every neighbour jumps a column each time the
+    // placeholder moves — the flicker seen while reordering big bubbles.
+    HB_SIZE_CLASSES.forEach(function(c){ if(el.classList.contains(c)) ph.classList.add(c); });
+    if(el.classList.contains('wide')) ph.classList.add('wide');
+    if(el.classList.contains('tall')) ph.classList.add('tall');
+    if(el.style.gridColumn) ph.style.gridColumn = el.style.gridColumn;
     wrap.insertBefore(ph, el);
     hbDrag = { el, ph, pointerId, offsetX: x - rect.left, offsetY: y - rect.top, lastX: x, lastY: y, moved: false,
       startIndex: [...wrap.children].filter(c => c.classList.contains('home-bubble')).indexOf(el) };
@@ -28099,7 +28177,8 @@ if(!isDiscover) stopDiscoverPreview();
         body.innerHTML = '<div style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">' + all.length + ' recent release' + (all.length>1?'s':'') + (unseenCount ? ' · ' + unseenCount + ' new' : '') + '</div>' +
           all.map(rel => {
             const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
-            const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+            const daysUntil = rel.date ? Math.ceil((new Date(rel.date+'T00:00:00Z').getTime() - Date.now())/86400000) : null;
+            const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date+'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
             return '<div class="hb-track-row" style="cursor:pointer;" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + when : '') + '</div></div></div>';
           }).join('') +
           '<button class="hb-cta hb-markread" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled') + '>'
@@ -28977,7 +29056,8 @@ if(!isDiscover) stopDiscoverPreview();
     sec.style.display = 'block'; // always visible when there are releases — no toggle/dropdown
     list.innerHTML = recent.map(rel => {
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date + 'T00:00:00Z').getTime())/86400000) : null;
-      const when = daysAgo == null ? '' : daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
+      const daysUntil = rel.date ? Math.ceil((new Date(rel.date + 'T00:00:00Z').getTime() - Date.now())/86400000) : null;
+      const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
       const bg = rel.art ? `background-image:url(${rel.art});` : 'background:var(--bg-raised);';
       const playBtn = rel.previewUrl
         ? `<button class="nr-play discover-preview-btn" data-preview="${escapeHtml(rel.previewUrl)}" data-art="${escapeHtml(rel.art || '')}" data-title="${escapeHtml(rel.title || '')}" data-artist="${escapeHtml(rel.artist || '')}" title="Play 30s preview" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:50%; width:30px; height:30px; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;"><svg viewBox="0 0 24 24" style="width:14px; height:14px;"><path d="M8 5v14l11-7z"/></svg></button>`
@@ -29181,6 +29261,45 @@ if(!isDiscover) stopDiscoverPreview();
   $('pinnedArtistsHelp').addEventListener('click', () => {
     toast('Pin artists from any Discover card — collab partners are filtered to just the main artist. SideCut checks for new releases.', 5000);
   });
+
+  // ---- Automatic pinned-artist checks -------------------------------------
+  // With Discover unlocked the app looks your pinned artists up on its own:
+  // once shortly after boot, and again whenever you return to the app, as long
+  // as the last check is at least 6 hours old. A release — or something already
+  // dated to drop — then finds you in the bell and on Home instead of waiting
+  // for a tap on Fetch latest. A manual Fetch latest still runs instantly.
+  function scUpcomingReleases(){
+    const _out = [];
+    try{
+      const _today = new Date().toISOString().slice(0, 10);
+      const _pr = (typeof pinnedReleases !== 'undefined' && pinnedReleases) ? pinnedReleases : {};
+      Object.keys(_pr).forEach(function(artist){
+        (_pr[artist] || []).forEach(function(r){
+          if(r && r.date && r.date > _today) _out.push({ artist: artist, title: r.title || '', date: r.date, art: r.art || null, rel: r });
+        });
+      });
+    }catch(_eUp){ /* pinnedReleases can be TDZ this early — treat as empty */ }
+    _out.sort(function(a, b){ return String(a.date).localeCompare(String(b.date)); });
+    return _out;
+  }
+  function scUpcomingUnseen(){
+    return scUpcomingReleases().filter(function(x){ return !(x.rel && x.rel.upSeen); });
+  }
+  async function scPinnedAutoCheck(){
+    try{
+      if(typeof isPremiumActive === 'function' && !isPremiumActive()) return;
+      if(!pinnedArtists || !pinnedArtists.length) return;
+      if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
+      let last = 0;
+      try{ last = parseInt(localStorage.getItem('sidecut_pinnedAutoAt') || '0', 10) || 0; }catch(_eL){}
+      if(Date.now() - last < 6 * 60 * 60 * 1000) return;
+      try{ localStorage.setItem('sidecut_pinnedAutoAt', String(Date.now())); }catch(_eS){}
+      await checkPinnedArtistReleases();
+    }catch(_eAuto){ console.warn('auto pinned check skipped', _eAuto); }
+  }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) scPinnedAutoCheck(); });
+  setTimeout(function(){ scPinnedAutoCheck(); }, 75000);
 
 
   function renderDiscoverChips(){

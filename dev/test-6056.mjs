@@ -22,7 +22,7 @@ const count = (hay, needle) => { let n = 0, i = hay.indexOf(needle); while (i !=
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '60.5.6', 'APP_VERSION = ' + ver);
+ok(ver === '60.5.7', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -31,14 +31,14 @@ if (entries) {
   ok(entries[0].date.endsWith('EDT'), 'date ends in EDT (' + entries[0].date + ')');
   ok(entries[0].date.includes('September 23, 2026'), 'ship date correct (' + entries[0].date + ')');
   ok(entries[0].items.length >= 5, 'patch notes: ' + entries[0].items.length);
-  const full = entries[0].items.filter((i) => i.startsWith('[FULL] '));
+  const full = entries.flatMap((e) => e.items).filter((i) => i.startsWith('[FULL] '));
   const shared = entries[0].items.filter((i) => !i.startsWith('[FULL] '));
-  ok(full.length >= 2, 'download-only items marked: ' + full.length);
+  ok(full.length >= 2, 'download-only items still marked across entries: ' + full.length);
   ok(shared.length >= 1, 'shared items for the other channel: ' + shared.length);
   ok(!/play build|play version|play install/i.test(entries[0].items.join('\n')), 'notes never name the play build');
 }
 ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
-ok(pkg.version === '5.0.52', 'package.json version = ' + pkg.version + ' (a new Play build number)');
+ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version + ' (a new Play build number)');
 
 console.log('[2] small floating bubble');
 ok(!src.includes('left:12px;right:12px;bottom:calc(84px'), 'the full-width bar is gone');

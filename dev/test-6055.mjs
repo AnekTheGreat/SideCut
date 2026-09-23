@@ -24,7 +24,7 @@ const count = (hay, needle) => { let n = 0, i = hay.indexOf(needle); while (i !=
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '60.5.6', 'APP_VERSION = ' + ver);
+ok(ver === '60.5.7', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -35,12 +35,12 @@ if (entries) {
   ok(entries[0].items.length >= 5, 'patch notes: ' + entries[0].items.length);
 }
 ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
-ok(pkg.version === '5.0.52', 'package.json version = ' + pkg.version + ' (a new Play build number)');
+ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version + ' (a new Play build number)');
 
 console.log('[2] [FULL] channel discipline');
 if (entries) {
-  const fullOnly = entries[0].items.filter((i) => i.startsWith('[FULL] '));
-  ok(fullOnly.length >= 2, 'full-only items marked: ' + fullOnly.length);
+  const fullOnly = entries.flatMap((e) => e.items).filter((i) => i.startsWith('[FULL] '));
+  ok(fullOnly.length >= 2, 'full-only items still marked across entries: ' + fullOnly.length);
   const malformed = entries.flatMap((e) => e.items).filter((i) => i.includes('[FULL]') && !i.startsWith('[FULL] '));
   ok(malformed.length === 0, 'marker only ever appears as a clean [FULL] prefix (' + malformed.length + ' malformed)');
   const playNotes = entries[0].items.filter((i) => !i.startsWith('[FULL] '));
