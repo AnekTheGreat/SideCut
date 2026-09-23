@@ -22,7 +22,7 @@ const count = (hay, needle) => { let n = 0, i = hay.indexOf(needle); while (i !=
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '60.5.9', 'APP_VERSION = ' + ver);
+ok(ver === '60.5.10', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
