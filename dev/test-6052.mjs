@@ -134,7 +134,7 @@ ok(src.includes('scYtSearch') && src.includes('scYtPlayer'), 'shared search/play
 console.log('[5] release metadata');
 const verMatch = src.match(/const APP_VERSION = '([^']+)'/);
 const ver = verMatch ? verMatch[1] : '';
-ok(/^\d+\.\d+\.\d+$/.test(ver), 'APP_VERSION is a release version (' + ver + ') — newest changelog below must match it');
+ok(/^\d+(\.\d+)*$/.test(ver), 'APP_VERSION is a release version (' + ver + ') — newest changelog below must match it');
 const blockCl = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + blockCl[1] + ']'); } catch (e) {}

@@ -75,7 +75,7 @@ ok(!/z-index:80;\s*\n\s*\/\*/.test(bubCss || ''), 'old z-index:80 removed from b
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(/^\d+\.\d+\.\d+$/.test(ver || ''), `APP_VERSION = ${ver}`);
+ok(/^\d+(\.\d+)*$/.test(ver || ''), `APP_VERSION = ${ver}`);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}

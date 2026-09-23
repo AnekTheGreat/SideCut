@@ -1,4 +1,7 @@
-// v60.5.10 — the "Upcoming releases" tab inside the Fetch latest popup.
+// v61 — the "Upcoming releases" tab inside the Fetch latest popup.
+//
+// (Version note: the release was briefly drafted as "60.5.10" — banned by the
+// first rule in AGENTS.md; after 60.5.9 it is v61.)
 //
 // The tab strip is injected at popup-open time (never cached), reads the rows'
 // data-date to filter, and the rows themselves are the source of truth — so
@@ -28,7 +31,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '60.5.10', 'APP_VERSION = ' + ver);
+ok(ver === '61', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}

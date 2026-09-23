@@ -78,7 +78,7 @@ ok(/window\.__scDurBubble\.toggle\(_subEl, totalSeconds,/.test(src), 'pane heade
 ok(/hdr\.querySelector\('\[data-dur-bubble\]'\)/.test(src), 'album card subtitle is tappable');
 ok(/ev\.stopPropagation\(\); \/\/ tapping the time must not expand\/collapse the album/.test(src), 'album tap does not toggle the card');
 ok(/position:fixed; display:none; min-width:150px/.test(src), 'bubble CSS is viewport-fixed (floats above the line)');
-ok(/const APP_VERSION = '\d+\.\d+\.\d+'/.test(src), 'APP_VERSION is set');
+ok(/const APP_VERSION = '\d+(\.\d+)*'/.test(src), 'APP_VERSION is set');
 
 console.log(`\nFAILURES: ${fail} — ${pass} passed`);
 process.exit(fail ? 1 : 0);

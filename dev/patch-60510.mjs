@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// v60.5.10: the Fetch latest popup gains a second tab — "Upcoming releases" —
+// v60.5.10 → superseded: the shipped version is v61 (AGENTS.md first rule —
+// a rolled-over patch like 60.5.10 never ships). The version strings this
+// script emits are '61' so a re-run can never recreate 60.5.10.
+//
+// The Fetch latest popup gains a second tab — "Upcoming releases" —
 // holding every pinned-artist release dated to drop, soonest first, each row
 // opening the release page (cover, countdown, pre-save, tracklist) that v60.5.9
 // built. The tab strip is injected at open time like the Singles/Album History
@@ -141,13 +145,13 @@ function openDiscoverPopup(title, bodyHTML, subtitle){`,
 // ------------------------------------------------ 4. version + changelog head
 replaceOnce(
   `  const APP_VERSION = '60.5.9';`,
-  `  const APP_VERSION = '60.5.10';`,
-  'APP_VERSION → 60.5.10'
+  `  const APP_VERSION = '61';`,
+  'APP_VERSION → 61'
 );
 
 replaceOnce(
   `  { version: '60.5.9', date: 'September 23, 2026 · 7:58 AM EDT', title: 'Pinned-artist drops open on their own countdown page', items: [`,
-  `  { version: '60.5.10', date: 'September 23, 2026 · 7:25 PM EDT', title: 'Fetch latest grows an "Upcoming releases" tab', items: [
+  `  { version: '61', date: 'September 23, 2026 · 7:25 PM EDT', title: 'Fetch latest grows an "Upcoming releases" tab', items: [
     'The Fetch latest popup gains a second tab \\u2014 "Upcoming releases" \\u2014 beside the full list: every release your pinned artists have dated to drop, soonest first, with a count on the tab and how long is left on each row.',
     'Tap an upcoming row and it opens the release page: the cover, your artist photo, the countdown ticking down days hours minutes and seconds to the drop, Pre-save, Share and the tracklist preview \\u2014 the same page New releases and the bell open.',
     'A release already dated to drop now reads "drops Oct 3 \\u00b7 in 10d" in gold in the main list instead of printing the raw date twice, so something on the way never looks like it landed today.',
@@ -155,7 +159,7 @@ replaceOnce(
     'Both tabs and their rows are rebuilt and rewired every time the popup opens, so a reopen from its offline cache gets the tabs too, and an upcoming row tapped there opens the same release page.',
   ] },
   { version: '60.5.9', date: 'September 23, 2026 · 7:58 AM EDT', title: 'Pinned-artist drops open on their own countdown page', items: [`,
-  'changelog head 60.5.10 (5 shared notes)'
+  'changelog head 61 (5 shared notes)'
 );
 
 fs.writeFileSync(FILE, src);

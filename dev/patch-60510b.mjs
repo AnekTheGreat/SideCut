@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// v60.5.10 follow-up: combine the new "Upcoming releases" tab with the Home
+// v61 follow-up (drafted as 60.5.10 — banned, see AGENTS.md first rule): combine the new "Upcoming releases" tab with the Home
 // bubble's New releases panel — the same two tabs (All releases / Upcoming
 // releases) over the panel's own rows, same switcher, same empty state, same
 // soonest-first order. The switcher generalizes from the popup body to any

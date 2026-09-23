@@ -1,5 +1,13 @@
 # SideCut — repository memory
 
+## MANDATORY VERSION RULE (Sep 23, 2026): NEVER ship 60.5.10-style versions — it should be v61
+- **User rule, verbatim intent**: "No v60.5.10 that doesn't fucking exist and I fucking hate that … never fucking do that, it should be v61."
+  After **60.5.9** the next release is **v61**. Do NOT invent a `.10` step in the 60.5.x line (or any rolled-over patch like `x.y.10`) — when a patch line
+  would exceed 9, bump the way the user says: **v61**, not 60.5.10.
+- Keep these aligned on every version change: `APP_VERSION` (index.html), sw.js `CACHE_NAME` (`sidecut-shell-v…`), the CHANGELOG head entry version, every
+  `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
+  the whole `dev/test-*.mjs` suite before committing/pushing.
+
 ## v56.10.1 (Sep 12, 2026): reorder songs works from All Songs (hold, kebab, header)
 - **User complaint**: "Like holding down the song the reorder function doesn't show" — the
   reorder entry points were gated on `activePlaylist !== 'All Songs'/'__unsorted__'`
