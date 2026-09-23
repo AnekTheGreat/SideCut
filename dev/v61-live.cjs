@@ -21,6 +21,7 @@ function slice(from, to) {
 }
 
 const body = `
+var SC_IS_PLAY = false;   // this check runs the FULL (sideload) build's path
 var window = { AudioContext: function(){ return {
   decodeAudioData: async function(ab){ globalThis.__decoded = ab; return { duration: ab.byteLength / 1000, byteLength: ab.byteLength }; },
   close: function(){}
@@ -28,7 +29,7 @@ var window = { AudioContext: function(){ return {
 ${slice('  function __scCapHttp(){', '  var SC_AUDIO_CHUNK = 1048576;')}
 ${slice('  var SC_AUDIO_CHUNK = 1048576;', '  // Tries every stream the player handed over')}
 ${slice('  // Tries every stream the player handed over', '  // Embed real metadata into encoded audio')}
-${slice('  async function scYtSearch(query, artistHint){', '  async function scYtPlayer(videoId){')}
+${slice('  async function scYtSearch(query, artistHint, albumHint){', '  async function scYtPlayer(videoId){')}
 ${slice('  async function scYtPlayer(videoId){', '  // Tries every stream the player handed over')}
 ${slice('  function scArtistMatch(artist, author, videoTitle, owner, candTitle){', '  // SideCut AI assist')}
 ${slice('  async function scSpToBuffer(meta, onStatus){', '  // Artist-name check')}

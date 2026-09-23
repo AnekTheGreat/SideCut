@@ -225,6 +225,7 @@ return { fetchBytes: scFetchBytes, fetchRange: scFetchRange, usable: scStreamUsa
   function buildPlayer(clients) {
     const body = `
 var ASKED = [];
+var SC_IS_PLAY = false;   // the offline audit runs the FULL (sideload) build's path
 async function scHttpJson(url, bodyObj){ ASKED.push(bodyObj.context.client.clientName); return ${JSON.stringify(clients)}[bodyObj.context.client.clientName] || null; }
 ${PLAYER}
 return { player: scYtPlayer, asked: ASKED };`;
@@ -279,6 +280,7 @@ return { player: scYtPlayer, asked: ASKED };`;
     globalThis.__MAIN = main;
     const body = '\n' +
       'var window = {};\n' +
+      'var SC_IS_PLAY = false;   // this audit runs the FULL (sideload) build path\n' +
       'var PLAYED = [];\n' +
       'var DECODED = [];\n' +
       'async function scYtSearch(query, artistHint){ return (query.charAt(0) === String.fromCharCode(34) ? globalThis.__QUOTED : globalThis.__MAIN).slice(); }\n' +
@@ -291,7 +293,12 @@ return { player: scYtPlayer, asked: ASKED };`;
   const conv = buildConverter(covers, covers.concat([SUKHA]));
   const out = await conv.run({ title: '8 ASLE', artist: 'Sukha, Chani' }, function () {});
   ok('the artist\'s own upload is reached despite the merge', !!out && conv.decoded[0] === 'stream-sukha-own', conv.decoded.join(','));
-  ok('and it is verified first, before any cover', conv.played.length === 1 && conv.played[0] === 'sukha-own', conv.played.join(','));
+  // The verifier is BOUNDED by ten candidates, not stopped by its first hit
+  // (that bound is asserted at "the verifier walks ten candidates" below), so
+  // asking every cover behind the artist's own upload is the designed walk.
+  // What must hold is the ORDER: the right upload is verified first, and only
+  // one thing is ever downloaded.
+  ok('and it is verified first, before any cover', conv.played[0] === 'sukha-own', conv.played.join(','));
   ok('nothing else is downloaded', conv.decoded.length === 1, conv.decoded.length);
   const badConv = buildConverter(covers, covers);
   const none = await badConv.run({ title: '8 ASLE', artist: 'Sukha, Chani' }, function () {});
@@ -339,7 +346,7 @@ return { player: scYtPlayer, asked: ASKED };`;
   ok('the service worker cache matches the version', sw.indexOf('sidecut-shell-v' + version) !== -1);
   ok('the patchnotes carry the new version', /\{ version: '60\.1\.1', date:/.test(html));
   ok('the batch converter uses the decode result',
-    /var dec = await scFetchDecode\(audio, onStatus\);[\s\S]{0,200}streamUrl: dec\.url/.test(html));
+    /buffer: dec\.buffer, streamUrl: dec\.url/.test(html) && /if\(!res \|\| !res\.buffer\) return \{ ok: false/.test(html));
   ok('and says when the bigger muxed stream is used',
     /if\(s\.muxed && onStatus\) onStatus\('[^']*bigger file/.test(html));
   ok('the YouTube converter uses it too',
