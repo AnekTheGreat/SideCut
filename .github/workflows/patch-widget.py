@@ -56,8 +56,11 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
 
-@CapacitorPlugin(name = "SideCutWidget")
+@CapacitorPlugin(name = "SideCutWidget", permissions = {
+    @Permission(alias = "notifications", strings = { android.Manifest.permission.POST_NOTIFICATIONS })
+})
 public class SideCutWidgetPlugin extends Plugin {
 
     @PluginMethod
@@ -126,6 +129,57 @@ public class SideCutWidgetPlugin extends Plugin {
         JSObject out = new JSObject();
         try { out.put("playlist", pending); } catch (Exception ignored) {}
         call.resolve(out);
+    }
+
+    // Live job progress in the Android shade (conversions and exports). One id
+    // for both states, so a finished run REPLACES its progress row with the
+    // result instead of stacking a second notification. Without
+    // POST_NOTIFICATIONS (pre-Android 13, or not yet granted) notify() is a
+    // silent no-op — this method never rejects and never throws.
+    @PluginMethod
+    public void notifyProgress(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            android.app.NotificationManager nm = (android.app.NotificationManager)
+                    ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) { call.resolve(); return; }
+            String title = call.getString("title", "SideCut");
+            String body = call.getString("body", "");
+            Integer pctObj = call.getInt("pct", -1);
+            int pct = (pctObj == null) ? -1 : pctObj.intValue();
+            boolean done = call.getBoolean("done", false);
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                android.app.NotificationChannel ch = new android.app.NotificationChannel(
+                        "sidecut_jobs", "SideCut progress",
+                        android.app.NotificationManager.IMPORTANCE_LOW);
+                ch.setShowBadge(false);
+                nm.createNotificationChannel(ch);
+            }
+            android.app.Notification.Builder b = (android.os.Build.VERSION.SDK_INT >= 26)
+                    ? new android.app.Notification.Builder(ctx, "sidecut_jobs")
+                    : new android.app.Notification.Builder(ctx);
+            b.setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setOnlyAlertOnce(true)
+                    .setOngoing(!done);
+            if (!done && pct >= 0) b.setProgress(100, pct, false);
+            try {
+                android.content.Intent ia = ctx.getPackageManager()
+                        .getLaunchIntentForPackage(ctx.getPackageName());
+                if (ia != null) {
+                    android.app.PendingIntent pi = android.app.PendingIntent.getActivity(
+                            ctx, 7711, ia,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+                    b.setContentIntent(pi);
+                }
+            } catch (Exception ignored) {}
+            if (done) b.setAutoCancel(true);
+            nm.notify(7711, b.build());
+            call.resolve();
+        } catch (Exception e) {
+            call.resolve(); // progress reporting is best-effort by design
+        }
     }
 }
 """ % APP_ID

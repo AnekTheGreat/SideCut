@@ -10565,7 +10565,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '60.5.5';
+  const APP_VERSION = '60.5.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -10980,6 +10980,13 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '60.5.6', date: 'September 23, 2026 · 2:25 AM EDT', title: 'Floating conversion bubble, live progress in the shade and the bell', items: [
+    '[FULL] The converting banner is now a small floating bubble instead of a full-width bar: hold and slide it anywhere on the screen, it stays where you put it across runs and app restarts, and it keeps the Cancel button and the tap-to-open-library finish.',
+    '[FULL] Conversion progress shows in the Android notification shade: the live step and percent ride there while a run goes (tap the notification to jump back into SideCut), and the finished result — added, cancelled or failed — replaces the progress row and stays until you swipe it away.',
+    '[FULL] The bell gets a live entry while anything converts: title, current step, a progress bar and the percent, badged so a peek from anywhere in the app never disturbs the run.',
+    '[FULL] Bubble, bell and shade all read one progress state now, so the three can never disagree about what a run is doing or what it did.',
+    'Exports post to the same notifications: phase and percent while the .zip builds and saves, a tap returns to SideCut, and the finished export leaves a message in the shade instead of vanishing while you were in another app.',
+  ] },
   { version: '60.5.5', date: 'September 23, 2026 · 1:40 AM EDT', title: 'Download prompts open the Library, Cancel on every run, calmer background', items: [
     '[FULL] After a download the prompts really open the Library: "Open my library" and the finish banner landed on whatever view the Library tab was last left in — usually Albums — so the song that had just been added was nowhere in sight. Both now switch to Playlists on All Songs first, so the track you just saved is on screen; tapping the finished banner does the same.',
     '[FULL] Every converting banner carries a Cancel button while it runs — one tap stops the run where it is. What already converted stays in your library, the rest is marked cancelled, and Retry still covers anything that had already failed. Cancelling also stops the search, verify and download loop on its very next step instead of finishing the whole queue.',
@@ -13178,13 +13185,30 @@ function startLyricsAutoScroll() {
     const hasDupAlert = typeof getDuplicateGroups === 'function' && getDuplicateGroups().length > 0;
     const hasEnrichAlert = enrichState.active || (enrichState.finishedAt && !enrichState.seen);
     const hasExportAlert = exportState.active || (exportState.finishedAt && !exportState.seen);
-    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || updateIsNewer()) ? 'block' : 'none';
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || updateIsNewer() || !!window.__scNotifConv) ? 'block' : 'none';
   }
   function renderNotifPanel(){
     const body = $('notifBody');
     const summary = $('notifSummary');
     let html = updateNotifHtml() + exportNotifHtml() + enrichNotifHtml();
+    if(window.__scNotifConv){
+      const cv = window.__scNotifConv;
+      const cvPct = Math.max(0, Math.min(100, Math.round(cv.pct || 0)));
+      html = `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">⏬ Converting — ${escapeHtml(cv.title || 'working…')}</div>
+          <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">${escapeHtml(cv.sub || '')}${cvPct ? ' · ' + cvPct + '%' : ''}</div>
+          <div style="height:6px; background:var(--bg-raised); border-radius:3px; overflow:hidden;"><div style="height:100%; width:${cvPct}%; background:var(--coral); transition:width .3s;"></div></div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:6px;">Running in the background — the floating bubble has the Cancel button.</div>
+        </div>` + html;
+    }
     let summaryHtml = '';
+    if(window.__scNotifConv){
+      summaryHtml += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
+          <div style="font-weight:600; font-size:13.5px; color:var(--coral);">⏬ Converting ${Math.max(0, Math.min(100, Math.round(window.__scNotifConv.pct || 0)))}%…</div>
+        </div>`;
+    }
     if(updateIsNewer()){
       summaryHtml += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
@@ -13667,8 +13691,41 @@ function startLyricsAutoScroll() {
     return h + 'h ' + (mm ? mm + 'm' : '');
   }
 
+  // exportNotifHtml's own view of exportState, restated for the notification
+  // shade: one helper reads the same fields, so the bell and the shade can
+  // never report different phases or percents.
+  function scExportNotifyView(){
+    if(!exportState.active && !exportState.finishedAt) return null;
+    if(exportState.active){
+      var pct = exportState.phase === 'compressing'
+        ? Math.round(exportState.compressPct || 0)
+        : (exportState.total ? Math.round((exportState.done / exportState.total) * 100) : 0);
+      var label = exportState.phase === 'saving'
+        ? ('Saving to disk \u2014 ' + pct + '%')
+        : exportState.phase === 'compressing'
+          ? (pct >= 96 ? ('Saving your export \u2014 ' + pct + '%') : ('Compressing the .zip \u2014 ' + pct + '%'))
+          : ('Bundling songs \u2014 ' + exportState.done + '/' + exportState.total);
+      return { pct: pct, label: 'Exporting ' + (exportState.kind || 'library') + ' \u2014 ' + label, done: false };
+    }
+    var ok = !exportState.lastErr;
+    return { pct: 100, done: true, label: ok
+      ? ('Finished exporting ' + (exportState.kind || 'library') + ' \u2014 ' + exportState.total + ' songs bundled into a .zip.')
+      : ('Export failed: ' + (exportState.lastErr || 'unknown error')) };
+  }
+  function scExportNotify(){
+    try{
+      var v = scExportNotifyView(); if(!v) return;
+      if(v.done){
+        if(window.__scExpNotifiedAt === exportState.finishedAt) return;
+        window.__scExpNotifiedAt = exportState.finishedAt;
+        window.__scNotifyAt = 0;
+      }
+      scNotifyProgress('SideCut export', v.label, v.pct, v.done);
+    }catch(_se){}
+  }
   function refreshExportNotif(){
     updateNotifBadge();
+    scExportNotify();
     if($('notifBackdrop') && $('notifBackdrop').style.display === 'flex') renderNotifPanel();
     renderHomeExportPopup();
   }
@@ -31127,7 +31184,95 @@ if(!isDiscover) stopDiscoverPreview();
     navigate('library');
     try{ renderTabs(); }catch(_rt){}
   }
-  var scConvertPillState = { el: null, timer: null };
+  // Where the bubble was dropped, as viewport fractions — so it comes back in
+  // frame after a restart, a rotation or a different screen size.
+  function scPillSavePos(x, y, w, h){
+    try{
+      localStorage.setItem('sidecut_pillPos', JSON.stringify({
+        fx: x / Math.max(1, window.innerWidth - w),
+        fy: y / Math.max(1, window.innerHeight - h)
+      }));
+    }catch(_sp){}
+  }
+  function scPillApplyPos(pill){
+    try{
+      var raw = localStorage.getItem('sidecut_pillPos');
+      if(!raw) return;
+      var p = JSON.parse(raw);
+      if(!p || typeof p.fx !== 'number' || typeof p.fy !== 'number') return;
+      var w = pill.offsetWidth || 240, h = pill.offsetHeight || 56;
+      var x = Math.min(Math.max(p.fx * Math.max(1, window.innerWidth - w), 4), Math.max(4, window.innerWidth - w - 4));
+      var y = Math.min(Math.max(p.fy * Math.max(1, window.innerHeight - h), 4), Math.max(4, window.innerHeight - h - 4));
+      pill.style.left = x + 'px'; pill.style.top = y + 'px';
+      pill.style.right = 'auto'; pill.style.bottom = 'auto';
+    }catch(_ap){}
+  }
+  // Hold-and-slide anywhere. A movement under 6px is a tap, so the done-state
+  // "open my library" click still fires — and a real drag can never count as
+  // one: this capture-phase guard runs before pill.onclick is reached.
+  function scPillMakeDraggable(pill){
+    pill._scDragged = false;
+    pill.addEventListener('click', function(ev){
+      if(pill._scDragged){ pill._scDragged = false; ev.preventDefault(); ev.stopPropagation(); }
+    }, true);
+    pill.addEventListener('pointerdown', function(e){
+      if(e.button !== undefined && e.button !== 0) return;
+      if(e.target && e.target.closest && e.target.closest('.sc-pill-cancel')) return;
+      var rect = pill.getBoundingClientRect();
+      var ox = e.clientX - rect.left, oy = e.clientY - rect.top;
+      var sx = e.clientX, sy = e.clientY, started = false;
+      pill._scDragged = false;
+      function mv(ev){
+        if(!started){
+          if(Math.abs(ev.clientX - sx) < 6 && Math.abs(ev.clientY - sy) < 6) return;
+          started = true; pill._scDragged = true;
+          try{ pill.style.cursor = 'grabbing'; }catch(_e){}
+        }
+        try{ ev.preventDefault(); }catch(_e){}
+        var x = Math.min(Math.max(ev.clientX - ox, 4), Math.max(4, window.innerWidth - rect.width - 4));
+        var y = Math.min(Math.max(ev.clientY - oy, 4), Math.max(4, window.innerHeight - rect.height - 4));
+        pill.style.left = x + 'px'; pill.style.top = y + 'px';
+        pill.style.right = 'auto'; pill.style.bottom = 'auto';
+        scPillSavePos(x, y, rect.width, rect.height);
+      }
+      function up(){
+        if(pill._scDragged){ try{ pill.style.cursor = ''; }catch(_e){} }
+        pill.removeEventListener('pointermove', mv);
+        pill.removeEventListener('pointerup', up);
+        pill.removeEventListener('pointercancel', up);
+      }
+      try{ pill.setPointerCapture(e.pointerId); }catch(_e){}
+      pill.addEventListener('pointermove', mv);
+      pill.addEventListener('pointerup', up);
+      pill.addEventListener('pointercancel', up);
+    });
+  }
+  // Mirror a running job into the Android notification shade through the same
+  // native plugin the widget uses (patch-widget.py injects notifyProgress).
+  // Absent on the web and on installs older than this build — a no-op there.
+  // Throttled so encode-percent callbacks cannot flood the bridge.
+  function scNotifyProgress(title, body, pct, done){
+    try{
+      var C = window.Capacitor;
+      var W = (C && C.Plugins && C.Plugins.SideCutWidget) || null;
+      if(!W) return;
+      var now = Date.now();
+      if(!done && now - (window.__scNotifyAt || 0) < 500) return;
+      window.__scNotifyAt = now;
+      if(!done && !window.__scNotifPermAsked){
+        window.__scNotifPermAsked = true;
+        if(typeof W.requestPermissions === 'function'){ try{ W.requestPermissions(); }catch(_pe){} }
+      }
+      var p = W.notifyProgress({
+        title: String(title || 'SideCut'),
+        body: String(body || ''),
+        pct: Math.max(0, Math.min(100, Math.round(Number(pct) || 0))),
+        done: !!done
+      });
+      if(p && typeof p.catch === 'function') p.catch(function(){});
+    }catch(_ne){}
+  }
+  var scConvertPillState = { el: null, timer: null, pct: 0 };
   function scConvertPill(show){
     if(!show){
       var gone = scConvertPillState.el;
@@ -31138,7 +31283,7 @@ if(!isDiscover) stopDiscoverPreview();
     if(scConvertPillState.el) return scConvertPillState.el;
     var pill = document.createElement('div');
     pill.id = 'scConvertPill';
-    pill.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:180;background:var(--bg-raised);border:1px solid var(--line);border-radius:14px;padding:10px 12px;box-shadow:0 6px 24px rgba(0,0,0,0.45);display:flex;gap:10px;align-items:center;';
+    pill.style.cssText = 'position:fixed;left:12px;bottom:calc(84px + env(safe-area-inset-bottom));right:auto;max-width:min(74vw,300px);z-index:180;background:var(--bg-raised);border:1px solid var(--line);border-radius:16px;padding:7px 9px;box-shadow:0 10px 30px rgba(0,0,0,0.55);display:flex;gap:8px;align-items:center;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;';
     pill.innerHTML = '<div style="width:14px;height:14px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>' +
       '<div style="flex:1;min-width:0;">' +
         '<div class="sc-pill-title" style="font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Converting…</div>' +
@@ -31147,12 +31292,16 @@ if(!isDiscover) stopDiscoverPreview();
       '</div>';
     pill.innerHTML += '<button class="sc-pill-cancel" style="flex-shrink:0;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:10.5px;font-weight:600;cursor:pointer;">Cancel</button>';
     document.body.appendChild(pill);
+    scPillMakeDraggable(pill);
+    scPillApplyPos(pill);
     var cancelBtn = pill.querySelector('.sc-pill-cancel');
     if(cancelBtn) cancelBtn.addEventListener('click', function(){
       window.__scCancelDl = true;
       cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…';
       var cSub = pill.querySelector('.sc-pill-sub');
       if(cSub) cSub.textContent = 'Stopping — what already finished stays in your library';
+      window.__scNotifyAt = 0;
+      scNotifyProgress('SideCut', 'Cancelling — what already finished stays in your library', scConvertPillState.pct || 0, false);
     });
     scConvertPillState.el = pill;
     return pill;
@@ -31171,10 +31320,29 @@ if(!isDiscover) stopDiscoverPreview();
     if(t) t.textContent = title || 'Converting…';
     if(s) s.textContent = sub || '';
     if(b && typeof pct === 'number') b.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+    // Single source of truth for the bell entry and the shade notification.
+    // Callers that pass no pct (status-line mirrors) still move the bar when
+    // the text itself carries a percent (encode callbacks write "42%").
+    if(typeof pct === 'number') scConvertPillState.pct = Math.max(0, Math.min(100, pct || 0));
+    else { var _pm = /(\d{1,3})%/.exec(String(sub || '')); if(_pm) scConvertPillState.pct = Math.min(100, parseInt(_pm[1], 10)); }
+    window.__scNotifConv = { title: String(title || 'Converting…'), sub: String(sub || ''), pct: scConvertPillState.pct || 0 };
+    scNotifyProgress('SideCut', String(title || 'Converting') + (sub ? ' — ' + sub : ''), scConvertPillState.pct || 0, false);
+    try{
+      updateNotifBadge();
+      if($('notifBackdrop') && $('notifBackdrop').style.display === 'flex'){
+        var _cbAt = Date.now();
+        if(_cbAt - (window.__scConvBellAt || 0) > 1000){ window.__scConvBellAt = _cbAt; renderNotifPanel(); }
+      }
+    }catch(_be){}
   }
   function scConvertPillDone(text){
     var pill = scConvertPillState.el;
-    if(!pill){ toast(text || 'Conversions finished.', 5000); return; }
+    if(!pill){
+      window.__scNotifConv = null;
+      scNotifyProgress('SideCut', String(text || 'Conversions finished'), 100, true);
+      try{ updateNotifBadge(); }catch(_pe){}
+      toast(text || 'Conversions finished.', 5000); return;
+    }
     var spin = pill.querySelector('div');
     if(spin) spin.outerHTML = '<div style="font-size:16px;flex-shrink:0;">✅</div>';
     var t = pill.querySelector('.sc-pill-title');
@@ -31189,6 +31357,11 @@ if(!isDiscover) stopDiscoverPreview();
     pill.onclick = _opened ? function(){ scConvertPill(false); scOpenLibraryAfterDownload(); } : null;
     var b = pill.querySelector('.sc-pill-bar');
     if(b) b.style.width = '100%';
+    window.__scNotifConv = null;
+    scConvertPillState.pct = 0;
+    window.__scNotifyAt = 0; // the finish message must not be throttled away
+    scNotifyProgress('SideCut', String(text || 'Conversions finished'), 100, true);
+    try{ updateNotifBadge(); if($('notifBackdrop') && $('notifBackdrop').style.display === 'flex') renderNotifPanel(); }catch(_be){}
     if(scConvertPillState.timer) clearTimeout(scConvertPillState.timer);
     scConvertPillState.timer = setTimeout(function(){ scConvertPill(false); }, 9000);
   }
