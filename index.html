@@ -4391,6 +4391,23 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="dev/native-updates.js"></script>
 <script>
+// ---- Upcoming-release day gate (shared by BOTH script blocks) --------------
+// Only a real YYYY-MM-DD that is strictly after today counts as upcoming.
+// The old raw string compares let junk beat today's date: a full ISO stamp
+// ('2026-09-23T07:00:00Z' sorts above '2026-09-23' - i.e. an album dated
+// TODAY leaked in), letters ('not dated' sorts above '2'), and unpadded
+// days ('2026-9-5' sorts above '2026-09-23'). That is how an already-dated
+// album kept landing in Upcoming releases. Block 2's tabs/badges can't see
+// Block 1's IIFE scope, so both helpers hang off window.
+window.__scDay10 = function(v){
+  var m = String(v == null ? '' : v).match(/^(\d{4}-\d{2}-\d{2})/);
+  if(!m || isNaN(Date.parse(m[1] + 'T00:00:00Z'))) return '';
+  return m[1];
+};
+window.__scUpcomingDay = function(v){
+  var d = window.__scDay10(v);
+  return !!d && d > new Date().toISOString().slice(0, 10);
+};
 // ---- Build switch: Play Store build vs sideload/OTA build --------------------
 // CI (patch-playbuild.py) injects window.__PLAY_BUILD__ = true into the Play
 // AAB's www/index.html before this script runs; the sideload/OTA build never
@@ -25963,7 +25980,7 @@ function _fallbackCopy(text){
           var when = '';
           var upc = false;
           if(r.date){
-            var _d0 = r.date.slice(0,10);
+            var _d0 = window.__scDay10(r.date);
             var _days = Math.round((Date.parse(_d0 + 'T00:00:00Z') - Date.parse(new Date().toISOString().slice(0,10) + 'T00:00:00Z')) / 86400000);
             upc = _days > 0;
             when = upc
@@ -25971,7 +25988,7 @@ function _fallbackCopy(text){
               : _d0;
           }
           var art = r.art || '';
-          html += '<div class="dp-track" data-search="' + escapeHtml((r.title||'') + ' ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.url||'') + '" data-artist="' + escapeHtml(r.artistName||'') + '" data-title="' + escapeHtml(r.title||'') + '" data-date="' + escapeHtml((r.date||'').slice(0,10)) + '"' + (r.kind === 'album' ? ' data-kind="album" data-cid="' + escapeHtml(String(r.cid||'')) + '" data-art="' + escapeHtml(r.art||'') + '"' : '') + '>';
+          html += '<div class="dp-track" data-search="' + escapeHtml((r.title||'') + ' ' + (r.artistName||'')) + '" data-link="' + escapeHtml(r.url||'') + '" data-artist="' + escapeHtml(r.artistName||'') + '" data-title="' + escapeHtml(r.title||'') + '" data-date="' + escapeHtml(window.__scDay10(r.date)) + '"' + (r.kind === 'album' ? ' data-kind="album" data-cid="' + escapeHtml(String(r.cid||'')) + '" data-art="' + escapeHtml(r.art||'') + '"' : '') + '>';
           html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (art ? 'background-image:url(' + cssUrl(art) + ');' : 'background:var(--bg);') + '"></div>';
           html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.title||'Unknown title') + (isNew ? ' <span style="color:var(--coral);font-size:10px;font-weight:700;">NEW</span>' : '') + '</div>';
           html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(r.artistName||'') + (when ? ' · ' + (upc ? '<span style="color:var(--gold);font-weight:600;">' + escapeHtml(when) + '</span>' : escapeHtml(when)) : '') + '</div></div></div>';
@@ -28253,6 +28270,7 @@ if(!isDiscover) stopDiscoverPreview();
       } else {
         body.innerHTML = '<div id="hbRelCount" style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">' + all.length + ' recent release' + (all.length>1?'s':'') + (unseenCount ? ' · ' + unseenCount + ' new' : '') + '</div>' +
           all.map(rel => {
+            rel = Object.assign({}, rel, { date: window.__scDay10(rel.date) });
             const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
             const daysUntil = rel.date ? Math.ceil((new Date(rel.date+'T00:00:00Z').getTime() - Date.now())/86400000) : null;
             const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date+'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
@@ -28277,7 +28295,7 @@ if(!isDiscover) stopDiscoverPreview();
         try{
           if(!body.querySelector('#dpRelTabs')){
             var _hbToday = new Date().toISOString().slice(0, 10);
-            var _hbUpN = all.filter(function(r){ return String(r.date || '').slice(0,10) > _hbToday; }).length;
+            var _hbUpN = all.filter(function(r){ return window.__scUpcomingDay(r.date); }).length;
             body._dpRelOrder = null;
             body._dpRelSub = null;
             body._dpRelRowSel = '.hb-track-row[data-date]';
@@ -29171,7 +29189,8 @@ if(!isDiscover) stopDiscoverPreview();
         if(typeof updateNotifBadge === 'function') updateNotifBadge();
       }
     }catch(_eSeen){ }
-    var dMs = rel.date ? new Date(rel.date + 'T00:00:00Z').getTime() : NaN;
+    var _rd = window.__scDay10(rel.date);
+    var dMs = _rd ? new Date(_rd + 'T00:00:00Z').getTime() : NaN;
     var upcoming = !isNaN(dMs) && dMs > Date.now();
     var pa = null;
     try{ (typeof pinnedArtists !== 'undefined' ? pinnedArtists : []).forEach(function(a){ if(a && a.name === artist) pa = a; }); }catch(_ePa){ }
@@ -29355,6 +29374,7 @@ if(!isDiscover) stopDiscoverPreview();
     if(!recent.length){ sec.style.display = 'none'; return; }
     sec.style.display = 'block'; // always visible when there are releases — no toggle/dropdown
     list.innerHTML = recent.map(rel => {
+      rel = Object.assign({}, rel, { date: window.__scDay10(rel.date) });
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date + 'T00:00:00Z').getTime())/86400000) : null;
       const daysUntil = rel.date ? Math.ceil((new Date(rel.date + 'T00:00:00Z').getTime() - Date.now())/86400000) : null;
       const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
@@ -29575,7 +29595,7 @@ if(!isDiscover) stopDiscoverPreview();
       const _pr = (typeof pinnedReleases !== 'undefined' && pinnedReleases) ? pinnedReleases : {};
       Object.keys(_pr).forEach(function(artist){
         (_pr[artist] || []).forEach(function(r){
-          if(r && r.date && r.date > _today) _out.push({ artist: artist, title: r.title || '', date: r.date, art: r.art || null, rel: r });
+          if(r && r.date && window.__scUpcomingDay(r.date)) _out.push({ artist: artist, title: r.title || '', date: window.__scDay10(r.date), art: r.art || null, rel: r });
         });
       });
     }catch(_eUp){ /* pinnedReleases can be TDZ this early — treat as empty */ }
@@ -34581,7 +34601,7 @@ window.__scDiscRelTab = function(mode, root){
   var rows = Array.prototype.slice.call(root.querySelectorAll(rowSel));
   if(!rows.length) return;
   if(!root._dpRelOrder) root._dpRelOrder = rows.slice();
-  var up = rows.filter(function(r){ return (r.getAttribute('data-date') || '') > today; });
+  var up = rows.filter(function(r){ return window.__scUpcomingDay(r.getAttribute('data-date')); });
   up.sort(function(a, b){ return (a.getAttribute('data-date') || '').localeCompare(b.getAttribute('data-date') || ''); });
   root.querySelectorAll('#dpRelTabs .dp-rel-tab').forEach(function(t){
     var on = t.dataset.mode === mode;
@@ -34626,7 +34646,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
     if(bEl && title && title.indexOf('New Releases') !== -1 && bEl.querySelector('.dp-track[data-date]') && !bEl.querySelector('#dpRelTabs')){
       var _today = new Date().toISOString().slice(0, 10);
       var _allRows = Array.prototype.slice.call(bEl.querySelectorAll('.dp-track[data-date]'));
-      var _upN = _allRows.filter(function(r){ return (r.getAttribute('data-date') || '') > _today; }).length;
+      var _upN = _allRows.filter(function(r){ return window.__scUpcomingDay(r.getAttribute('data-date')); }).length;
       bEl._dpRelOrder = null;
       bEl._dpRelSub = null;
       var _tabs = document.createElement('div');

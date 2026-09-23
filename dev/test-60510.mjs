@@ -66,7 +66,7 @@ console.log('[2] tab strip injected at popup open');
 console.log('[3] __scDiscRelTab switcher behavior');
 {
   const sw2 = sliceBetween('window.__scDiscRelTab = function(mode, root){', 'function openDiscoverPopup');
-  ok(sw2.includes("(r.getAttribute('data-date') || '') > today"), 'filter: data-date compared against today');
+  ok(sw2.includes("window.__scUpcomingDay(r.getAttribute('data-date'))"), 'filter: data-date gated by __scUpcomingDay (strict future day, junk rejected)');
   ok(sw2.includes(".sort(function(a, b){ return (a.getAttribute('data-date') || '')"), 'upcoming sorted soonest first');
   ok(sw2.includes('root._dpRelOrder'), 'original order snapshotted and restored');
   ok(sw2.includes('(upcoming && !up.length)'), 'empty note only on the upcoming tab with nothing to show');

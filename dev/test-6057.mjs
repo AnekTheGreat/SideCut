@@ -140,7 +140,14 @@ console.log('[4] upcoming releases — Dropping soon (behaviour)');
   ok(start !== -1 && end !== -1, 'upcoming helpers extractable');
   if (start !== -1 && end !== -1) {
     const code = src.slice(start, end);
-    const mk = new Function('pinnedReleases', code + '\nreturn { scUpcomingReleases: scUpcomingReleases, scUpcomingUnseen: scUpcomingUnseen };');
+    // The helpers live at the top of block 1 on window — the extracted slice
+    // runs in a sandbox, so hand it a window carrying them.
+    const hStart = src.indexOf('window.__scDay10 = function');
+    const hEnd = src.indexOf('// ---- Build switch', hStart);
+    ok(hStart !== -1 && hEnd !== -1, 'upcoming day-gate helpers extractable');
+    const win = {};
+    new Function('window', src.slice(hStart, hEnd))(win);
+    const mk = new Function('pinnedReleases', 'window', code + '\nreturn { scUpcomingReleases: scUpcomingReleases, scUpcomingUnseen: scUpcomingUnseen };');
     try {
       const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
       const today = iso(0);
@@ -149,19 +156,23 @@ console.log('[4] upcoming releases — Dropping soon (behaviour)');
           { title: 'Drops next week', date: iso(7), seen: false },
           { title: 'Already out', date: iso(-30), seen: true },
           { title: 'Out today', date: today, seen: false },
+          // The reported bug: an already-dated album stored as junk / an ISO
+          // timestamp must never read as upcoming.
+          { title: 'Junk dated', date: 'not dated', seen: false },
+          { title: 'Timestamp dated', date: today + 'T07:00:00Z', seen: false },
         ],
         'Artist B': [
           { title: 'Drops tomorrow', date: iso(1), seen: false, upSeen: true },
         ],
       };
-      const api = mk(pinnedReleases);
+      const api = mk(pinnedReleases, win);
       const up = api.scUpcomingReleases();
       ok(up.length === 2, 'only future-dated releases are upcoming (' + up.length + ')');
       ok(up[0].title === 'Drops tomorrow' && up[1].title === 'Drops next week', 'sorted soonest first (' + up.map(u => u.title).join(' → ') + ')');
       ok(up[0].artist === 'Artist B', 'artist attribution kept (' + up[0].artist + ')');
       const unseen = api.scUpcomingUnseen();
       ok(unseen.length === 1 && unseen[0].title === 'Drops next week', 'upSeen ones leave the badge set (' + unseen.length + ')');
-      const emptyApi = mk(undefined);
+      const emptyApi = mk(undefined, win);
       ok(emptyApi.scUpcomingReleases().length === 0, 'safe when pinnedReleases is unreadable');
     } catch (e) { ok(false, 'upcoming helpers ran: ' + e.message); }
   }
