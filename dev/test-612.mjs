@@ -65,7 +65,7 @@ ok(src.includes("_manual: true"), 'manual drops stored with the fetched shape');
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.8', 'APP_VERSION = ' + ver);
+ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');

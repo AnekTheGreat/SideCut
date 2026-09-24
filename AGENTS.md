@@ -44,6 +44,51 @@
   `node dev/ota-bundle.mjs --check` + `node dev/ota-bundle-play.mjs --check` both OK — v61.3.8, 5 notes, Play flag baked
   (zips 658270 / 658281 bytes). Live pipeline re-confirmed 19/21 coverage, `dupUpcoming=0`.
 
+## v61.3.9 (Sep 24, 2026): the drop check finishes, and fills in as it goes
+- **The user's report, verbatim**: "Musicbrianz don't have the dated release for upcoming releases but Spotify has it but I
+  don't want my app to take the user to Spotify or verify anything for that except. Make the upcoming release actually work."
+- **The sources were never the problem — v61.3.8 already proved the dates are reachable with no account.** Probing live
+  before this patch: the iTunes catalog read BY ARTIST ID returns the real announced day (The Avalanches `No Bad Memories`
+  2026-10-16, QOTSA `Perfecth` 2026-10-30, Fontaines D.C. `Dopamine Chamber` 2026-10-16, Royal Blood `Dead Company`
+  2026-11-13, La Roux `Old Flames` 2026-11-06), while the popularity-ranked TERM search returns 0 future rows. MusicBrainz
+  1/15 artists. Deezer 0. Apple RSS marketing endpoints 404. **Do not re-litigate sourcing; fix the plumbing.**
+- **Six defects, each reproduced in headless Chromium on v61.3.8 before patching**:
+  1. **Stall.** `checkPinnedArtistReleases` walked pins strictly serially (~5 network hops each). 16 pins on a congested
+     network burned the whole 35 s tap ceiling.
+  2. **Silent no-op.** The 35 s ceiling reset the BUTTON but never cancelled the RUN, so `active` stayed true; every later
+     tap hit `if(pinnedCheckState.active) return;` and resolved in ~3 ms doing nothing. Measured: 2nd tap = 3 ms.
+  3. **Blank on a bad network.** Each hop walked all 4 relays with an 8 s abort each; the artist's own 8 s clock then
+     dropped the artist with ZERO results — `pinnedReleases` empty, 0 future rows. This is what "doesn't work" looked like.
+  4. **Shared cancel.** `fetchWithProxy` bailed on `window.__ahCancelled` (the Album History switch), so cancelling an
+     album fetch silently blanked the release check.
+  5. **Duplicates.** The MusicBrainz pass keys entries `mbt:title|date`, which is ABSENT from `prevKeys`, so the drop the
+     Apple catalog had just added got pushed a second time.
+  6. **No visible progress.** Persist + paint happened only after the last artist, so a working check read as a dead button.
+- **The fix (all in `dev/patch-6139.mjs`, 15 idempotent count==1 edits)**: a **3-way worker pool** over the pins; **save +
+  repaint per artist** (`savePinnedArtists`, `renderNewReleases`, `scRepaintOpenReleasePanel`); a **shared in-flight run**
+  (`let pinnedCheckPromise`) so a second tap AWAITS the run instead of no-oping; **`fetchWithProxy(url, { noCancel,
+  budgetMs })`** with the release path passing `SC_RELEASE_FETCH = { noCancel:true, budgetMs:4000 }` at all 5 catalog
+  reads; **cross-source dedupe** via a `freshTitles` Set (song + album + MB all consult it); and the button paints
+  **"Checking… N/M"** on a 900 ms ticker with a 60 s last-resort race (was 35 s).
+- **Verified in the browser (not just statically)**: 16 pins finished in **17438 ms** with the button restored and showing
+  `1/16 → 12/16`; on a network where EVERY catalog hop was delayed 900 ms it still found **5 future-dated drops** (the five
+  listed above) with **0 duplicate rows**; a second tap during a run waited **22965 ms** instead of 3 ms; with
+  `__ahCancelled = true` the check still stored **543 rows**.
+- **Environment gotcha (cost real time)**: this sandbox has **no `zip` and no `unzip` binary and no root to install them**,
+  so `dev/ota-bundle.mjs --check` and `test-6058`/`test-play` fail with `spawnSync unzip ENOENT` — **pre-existing at HEAD,
+  not a regression** (verified by `git stash` + rerun). Worked around with Python `zipfile` shims on `PATH`
+  (`/tmp/zbin/{zip,unzip}` implementing `-Z1` and `-p`); with those, both bundles build and both `--check`s pass.
+- **Release mechanics**: APP_VERSION 61.3.8 → 61.3.9, sw.js → `sidecut-shell-v61.3.9`, new CHANGELOG head (6 notes,
+  stamp UTC−4 → "September 24, 2026 · 5:44 PM EDT"), root manifest.json re-seeded from the TRUE zip size via
+  `node dev/patch-6139.mjs --manifest` (660399), 11 test files repinned, `dev/test-6139.mjs` added (its own repin is
+  skipped by name since it anchors the PREVIOUS release on purpose), and `test-6137`'s 35 s ceiling + `test-6136`'s MB
+  fetch needle updated.
+- **Suite**: all **21** `dev/test-*.mjs` green (with the zip shims on PATH). Both OTA bundles rebuilt and `--check` clean
+  — v61.3.9, 6 notes, Play flag baked (zips 660399 / 660407 bytes). `dev/_boottest.js` still dies on
+  `pane.style.setProperty is not a function` — the documented PRE-EXISTING harness limitation, unrelated.
+- **Nothing to connect**: `scSpotifySilentToken` count is 0; `await scSpotifyInteractiveToken()` has exactly ONE call site
+  (the converter's own search). The release check never touches Spotify.
+
 ## v61.3.7 (Sep 24, 2026): the release check can't stick, Home stops showing it, drops carry a time
 - **The user's four fixes**: "you don't need an example for release name and the checking doesn't work and fetching
   pinned artists releases doesn't need to show on the home page Also add the time for Manuel and auto fetching upcoming

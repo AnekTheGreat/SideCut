@@ -10625,7 +10625,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.3.8';
+  const APP_VERSION = '61.3.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11040,6 +11040,14 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.3.9', date: 'September 24, 2026 · 5:44 PM EDT', title: 'The drop check finishes, and fills in as it goes', items: [
+    'The drop check reads your pinned artists a few at a time instead of one after another, so a longer list finishes in a fraction of the time it used to.',
+    'Every artist’s finds are saved and shown the moment they land — the list fills in while the rest are still being read, instead of everything appearing only at the very end.',
+    'The button reports the run’s real progress (Checking… 4/12) and always puts itself back; tapping it again while a check is running joins the run already under way instead of quietly doing nothing.',
+    'A slow or unreachable lookup can no longer stall the whole check: every artist is clocked, the fallback relays are time-budgeted, and the run always settles and clears.',
+    'The check no longer shares a switch with Album History cancellation, so cancelling an album fetch can no longer silently blank your upcoming releases.',
+    'Nothing about the sources changed — still the artist’s own open catalog and MusicBrainz, with no account to connect and nothing to verify.',
+  ] },
   { version: '61.3.8', date: 'September 24, 2026 · 3:46 PM EDT', title: 'Upcoming releases reads the dates it was missing', items: [
     'Upcoming releases finally fills in: SideCut reads the announced dates straight from the artist’s own open catalog, where a pre-order carries its real day weeks before it lands — that catalog is read by the artist’s ID, not by the popularity-ranked search that was burying a dated drop.',
     'Nothing to connect and nothing to verify anywhere: the Spotify pass and its silent token are gone from the release check, so no drop date is ever read through an account. The artist’s open catalog and MusicBrainz do all the finding.',
@@ -13614,9 +13622,16 @@ function startLyricsAutoScroll() {
 
   // CORS proxy helper — tries the direct fetch first, then a few public CORS
   // relays, so Discover keeps working even when one relay is down or blocked.
-  async function fetchWithProxy(url){
+  async function fetchWithProxy(url, fopts){
+    fopts = fopts || {};
+    // The release check is not Album History, so it opts out of that cancel
+    // switch, and it gets its own time budget so one dead relay cannot eat the
+    // whole run. Defaults preserve the old behaviour for every other caller.
+    var _noCancel = !!fopts.noCancel;
+    var _budget = (typeof fopts.budgetMs === 'number' && fopts.budgetMs > 0) ? fopts.budgetMs : 8000;
+    var _deadline = Date.now() + _budget;
     // If Album History fetch was cancelled, abort immediately
-    if(window.__ahCancelled) return null;
+    if(!_noCancel && window.__ahCancelled) return null;
     const attempts = [
       (opts) => fetch(url, opts),
       (opts) => fetch('https://corsproxy.io/?' + encodeURIComponent(url), opts),
@@ -13625,10 +13640,12 @@ function startLyricsAutoScroll() {
     ];
     for(const a of attempts){
       // Check cancel between each proxy attempt
-      if(window.__ahCancelled) return null;
+      if(!_noCancel && window.__ahCancelled) return null;
+      const _left = _deadline - Date.now();
+      if(_left <= 0) return null;   // budget spent — stop walking the relays
       try{
         const ctrl = new AbortController();
-        const timer = setTimeout(function(){ ctrl.abort(); }, 8000);
+        const timer = setTimeout(function(){ ctrl.abort(); }, Math.max(800, Math.min(8000, _left)));
         const resp = await a({ signal: ctrl.signal });
         clearTimeout(timer);
         if(resp.ok) return resp;
@@ -29598,12 +29615,23 @@ if(!isDiscover) stopDiscoverPreview();
   // before the button goes back to "Check for drops".
   window.__scUpcomingConnectTap = async function(btn){
     try{ if(btn){ btn.textContent = 'Checking\u2026'; btn.disabled = true; } }catch(_eB0){}
+    // Show the run's real progress on the button that was tapped.
+    let _tick = null;
+    try{
+      _tick = setInterval(function(){
+        try{
+          if(!btn || !pinnedCheckState || !pinnedCheckState.active) return;
+          btn.textContent = 'Checking\u2026 ' + pinnedCheckState.done + '/' + pinnedCheckState.total;
+        }catch(_eTk){}
+      }, 900);
+    }catch(_eT0){}
     try{
       await Promise.race([
         window.__scRebuildReleaseLists(true),
-        new Promise(function(res){ setTimeout(res, 35000); })   // cannot park the button
+        new Promise(function(res){ setTimeout(res, 60000); })   // last resort — the run clears itself
       ]);
     }catch(_eChk){ toast('The release check could not finish \u2014 try again.', 3600); }
+    finally{ try{ if(_tick) clearInterval(_tick); }catch(_eTc){} }
     try{ if(btn){ btn.textContent = 'Check for drops'; btn.disabled = false; } }catch(_eB1){}
   };
   // For a drop no catalog has listed yet: artist, title, date — stored exactly
@@ -29703,6 +29731,9 @@ if(!isDiscover) stopDiscoverPreview();
   // (probed Sep 24: the ID lookup found 19 of 21 dated upcoming releases where
   // the term search found 8 of 13). Open catalog, no account, no token: one
   // artist search to resolve the ID, one lookup for the albums.
+  // The release check reads public catalogs only: it opts out of the Album
+  // History cancel flag and caps each URL so a dead relay cannot stall it.
+  var SC_RELEASE_FETCH = { noCancel: true, budgetMs: 4000 };
   async function scItunesArtistAlbums(artist){
     try{
       var norm = function(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
@@ -29712,7 +29743,7 @@ if(!isDiscover) stopDiscoverPreview();
       // line up, not merely when one string contains the other by accident.
       var credited = function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); };
       var arUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=musicArtist&limit=5';
-      var arResp = await fetchWithProxy(arUrl);
+      var arResp = await fetchWithProxy(arUrl, SC_RELEASE_FETCH);
       if(!arResp || !arResp.ok) return [];
       var arData = await arResp.json();
       var artistId = null;
@@ -29722,7 +29753,7 @@ if(!isDiscover) stopDiscoverPreview();
       });
       if(!artistId) return [];
       var lkUrl = 'https://itunes.apple.com/lookup?id=' + encodeURIComponent(artistId) + '&entity=album&limit=200';
-      var lkResp = await fetchWithProxy(lkUrl);
+      var lkResp = await fetchWithProxy(lkUrl, SC_RELEASE_FETCH);
       if(!lkResp || !lkResp.ok) return [];
       var lkData = await lkResp.json();
       return ((lkData && lkData.results) || []).filter(function(r){
@@ -29740,7 +29771,7 @@ if(!isDiscover) stopDiscoverPreview();
     // A brand-new single may not be in the top-50 by plays, but IS in top-200.
     try{
       const url = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=song&limit=200`;
-      const resp = await fetchWithProxy(url);
+      const resp = await fetchWithProxy(url, SC_RELEASE_FETCH);
       if(!resp || !resp.ok) return [];
       const data = await resp.json();
       const results = (data.results || []).filter(r => r && r.trackName &&
@@ -29749,9 +29780,12 @@ if(!isDiscover) stopDiscoverPreview();
       const prevKeys = new Set();
       prev.forEach(pr => { const pk = (pr.title||'').toLowerCase().trim() + '|' + (pr.date||''); prevKeys.add(pk); prevKeys.add('alb:' + pk); });
       const fresh = [];
+      // Title+day of everything this run has already listed (any source), so
+      // Apple and MusicBrainz naming the same drop yields one row, not two.
+      const freshTitles = new Set();
       results.forEach(r => {
         const key = (r.trackName||'').toLowerCase().trim() + '|' + (r.releaseDate||'').slice(0,10);
-        if(!prevKeys.has(key)){
+        if(!prevKeys.has(key) && !freshTitles.has(key)){
           fresh.push({
             title: r.trackName,
             date: (r.releaseDate||'').slice(0,10),
@@ -29760,6 +29794,7 @@ if(!isDiscover) stopDiscoverPreview();
             previewUrl: r.previewUrl || null,
             seen: false,
           });
+          freshTitles.add(key);
         }
       });
       // ---- Albums, not just singles ----
@@ -29772,7 +29807,7 @@ if(!isDiscover) stopDiscoverPreview();
       // dump an artist's whole back catalog into the list.
       try{
         const aUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=album&limit=200`;
-        const aResp = await fetchWithProxy(aUrl);
+        const aResp = await fetchWithProxy(aUrl, SC_RELEASE_FETCH);
         if(aResp && aResp.ok){
           const aData = await aResp.json();
           const _newestPrev = prev.reduce(function(mx, pr){ return (pr.date || '') > (mx || '') ? pr.date : mx; }, '');
@@ -29839,6 +29874,7 @@ if(!isDiscover) stopDiscoverPreview();
               cid: r.collectionId || null,
               seen: false
             });
+            freshTitles.add((r.collectionName || '').toLowerCase().trim() + '|' + albDate);
           });
         }
       }catch(_ae){}
@@ -29857,6 +29893,7 @@ if(!isDiscover) stopDiscoverPreview();
           var nt = String(x.title).toLowerCase().trim();
           var k = 'mbt:' + nt + '|' + x.date;
           if(prevKeys.has(k)) return;
+          if(freshTitles.has(nt + '|' + x.date)) return;   // Apple already listed this drop
           for(var pi = 0; pi < prev.length; pi++){
             var pe = prev[pi];
             if(!pe || String(pe.title || '').toLowerCase().trim() !== nt) continue;
@@ -29883,37 +29920,61 @@ if(!isDiscover) stopDiscoverPreview();
 
   // Check every pinned artist for new releases. Runs on boot, on focus, and on
   // the "Check now" button. Surfaces a toast for any genuinely new finds.
+  // A running check is shared, never re-entered: a second tap awaits the run
+  // already in progress instead of resolving instantly and doing nothing.
+  let pinnedCheckPromise = null;
   async function checkPinnedArtistReleases(){
-    if(pinnedCheckState.active) return;
+    if(pinnedCheckPromise) return pinnedCheckPromise;
     if(!pinnedArtists.length) return;
     if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    pinnedCheckPromise = (async function(){
     pinnedCheckState = { active:true, total:pinnedArtists.length, done:0, newCount:0, finishedAt:0, seen:false };
+    let totalNew = 0;
     try{
     renderHomeExportPopup();
-    let totalNew = 0;
-    for(const a of pinnedArtists){
-      // Clock every artist: a stalled, offline or rate-limited catalog reply
-      // moves the check on instead of parking it half-finished.
-      const fresh = await Promise.race([
-        fetchArtistReleases(a.name),
-        new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })   // 8s per artist
-      ]).catch(function(){ return null; });                                        // never wedges the run
-      totalNew += (fresh ? fresh.length : 0);
-      pinnedCheckState.done++;
-      renderHomeExportPopup();
-    }
+    // A few artists at a time: the catalogs are independent, so one stalled
+    // host can no longer hold the whole list behind it, and a big pin list
+    // finishes in a fraction of the serial time.
+    const _queue = pinnedArtists.slice();
+    const _worker = async function(){
+      while(_queue.length){
+        const a = _queue.shift();
+        if(!a) continue;
+        // Clock every artist: a stalled, offline or rate-limited catalog reply
+        // moves the check on instead of parking it half-finished.
+        const fresh = await Promise.race([
+          fetchArtistReleases(a.name),
+          new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })   // 8s per artist
+        ]).catch(function(){ return null; });                                        // never wedges the run
+        totalNew += (fresh ? fresh.length : 0);
+        pinnedCheckState.done++;
+        // Persist and repaint as each artist lands, so the list fills in while
+        // the rest are still being read instead of appearing all at once —
+        // and a partly-finished run still keeps what it found.
+        try{ const _sp = savePinnedArtists(); if(_sp && _sp.catch) _sp.catch(function(){}); }catch(_eSv){}
+        try{ renderNewReleases(); }catch(_eRn){}
+        try{ scRepaintOpenReleasePanel(); }catch(_eRp){}
+        renderHomeExportPopup();
+      }
+    };
+    const _pool = [];
+    for(let _wi = 0; _wi < 3; _wi++) _pool.push(_worker());
+    await Promise.all(_pool);
     }finally{
       pinnedCheckState.active = false;
     }
     pinnedCheckState.finishedAt = Date.now();
     pinnedCheckState.newCount = totalNew;
-    savePinnedArtists();
+    try{ await savePinnedArtists(); }catch(_eSv2){}
     renderNewReleases();
     if(totalNew > 0){
       renderHome(); // Updates the new releases bubble count
     }
     renderHomeExportPopup();
     updateNotifBadge();
+    })();
+    try{ return await pinnedCheckPromise; }
+    finally{ pinnedCheckPromise = null; }
   }
 
   // The notification bell surfaces "new releases" alongside the existing
@@ -30336,7 +30397,7 @@ if(!isDiscover) stopDiscoverPreview();
       var q = 'artist:"' + String(artist).replace(/["\\]/g, ' ').trim() + '"';
       q += ' AND firstreleasedate:[' + today + ' TO ' + horizon + ']';
       var url = 'https://musicbrainz.org/ws/2/release-group/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
-      var rs = await fetchWithProxy(url);
+      var rs = await fetchWithProxy(url, SC_RELEASE_FETCH);
       if(!rs || !rs.ok) return [];
       var md = await rs.json();
       var want = primaryArtistName(artist).toLowerCase().trim();
