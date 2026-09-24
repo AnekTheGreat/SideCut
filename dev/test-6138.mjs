@@ -73,11 +73,11 @@ ok(!!cta && cta.includes("cbtn.textContent = 'Check for drops'"), 'it runs the c
 
 console.log('[5] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
-ok(count("version: '61.3.9'") === 1, 'exactly one 61.3.8 changelog entry');
-ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.9'/.test(src), 'the newest entry sits inside CHANGELOG');
-ok(src.indexOf("version: '61.3.9'") < src.indexOf("version: '61.3.7'"), 'it heads the changelog');
+ok(ver === '61.4', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.4';"), 'sw.js cache = sidecut-shell-v61.4');
+ok(count("version: '61.4'") === 1, 'exactly one 61.3.8 changelog entry');
+ok(/const CHANGELOG = \[\n  \{ version: '61\.4'/.test(src), 'the newest entry sits inside CHANGELOG');
+ok(src.indexOf("version: '61.4'") < src.indexOf("version: '61.3.7'"), 'it heads the changelog');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');

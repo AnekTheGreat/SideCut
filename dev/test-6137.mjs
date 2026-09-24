@@ -33,8 +33,8 @@ console.log('[1] the file parses — every inline script block');
     try { new Function(m[1]); } catch (e) { bad++; console.log('       ' + e.message); }
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
-  ok(count("version: '61.3.9'") === 1, 'exactly one 61.3.7 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.9'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(count("version: '61.4'") === 1, 'exactly one 61.3.7 changelog entry');
+  ok(/const CHANGELOG = \[\n  \{ version: '61\.4'/.test(src), 'the newest entry sits inside CHANGELOG');
 }
 
 console.log('[2] add-drop sheet: no example, no +7 days');
@@ -48,7 +48,7 @@ const tap = slice('window.__scUpcomingConnectTap = async function', 'window.__sc
 ok(!!tap, 'tap handler slice extracted');
 ok(tap && tap.includes('Promise.race(['), 'the rebuild runs inside a race');
 ok(tap && tap.includes('setTimeout(res, 60000)'), '60 s last resort — the run clears itself first');
-ok(tap && count('window.__scRebuildReleaseLists(true)') === 1, 'the rebuild is still the thing being raced');
+ok(tap && tap.split('window.__scRebuildReleaseLists(true)').length - 1 === 1, 'the rebuild is still the thing being raced');
 ok(tap && tap.includes("btn.textContent = 'Check for drops'"), 'the label is always put back');
 ok(tap && tap.includes('btn.disabled = false'), 'and the button is re-enabled');
 const check = slice('async function checkPinnedArtistReleases()', 'function scUpcomingReleases');
@@ -95,9 +95,9 @@ ok(src.includes('if(!pe.time && x.time) pe.time = x.time;'), 'and an undated dro
 console.log('[6] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const sw = fs.readFileSync('sw.js', 'utf8');
-ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
-ok(src.indexOf("version: '61.3.9'") < src.indexOf("version: '61.3.6'"), '61.3.7 heads the changelog');
+ok(ver === '61.4', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.4';"), 'sw.js cache = sidecut-shell-v61.4');
+ok(src.indexOf("version: '61.4'") < src.indexOf("version: '61.3.6'"), '61.3.7 heads the changelog');
 
 console.log('');
 console.log(failures + ' failure(s)');

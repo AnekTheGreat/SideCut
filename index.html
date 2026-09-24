@@ -8830,7 +8830,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       aHit: aHit,
       dScore: dScore,
       duration: rd,
-      acceptable: !!(aHit || dScore >= 2),
+      // A duration within 2 s used to be enough on its own, so a same-titled
+      // song by a different artist could be served as "your" lyrics. Without a
+      // confirmed artist the title must now match EXACTLY as well.
+      acceptable: !!(aHit || (tScore === 2 && dScore >= 2)),
       rank: tScore * 2 + (aHit ? 2 : 0) + dScore * 1.5 + durProx * 1.5 + (res.syncedLyrics ? 0.5 : 0)
     };
   }
@@ -8904,34 +8907,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(Array.isArray(tRes)) for(var ti2 = 0; ti2 < Math.min(tRes.length, 25); ti2++) consider(tRes[ti2]);
     }
     if(best) return best;
-    // 4. textyl — Apple Music's own lyric lines. This is where a lot of recent
-    //    releases and non-English catalogue live first, which is exactly the gap
-    //    that left newer and smaller artists with "no lyrics". Requests come back
-    //    with a timestamp per line, so the result is real synced lyrics.
-    if(!scLyricsOutOfTime()){
-      try{
-        var tyRes = await scFetchWithTimeout('https://api.textyl.co/api/lyrics?q=' +
-                    encodeURIComponent((primary ? primary + ' ' : '') + titleVars[0]), 4500);
-        if(tyRes && tyRes.ok){
-          var ty = await tyRes.json();
-          if(Array.isArray(ty) && ty.length){
-            var _tyLines = ty.filter(function(l){ return l && l.lyrics; });
-            if(_tyLines.length){
-              var _tyText = _tyLines.map(function(l){
-                var _s = Math.max(0, Math.round(Number(l.seconds) || 0));
-                var _mm = String(Math.floor(_s / 60)).padStart(2, '0');
-                var _ss = String(_s % 60).padStart(2, '0');
-                return '[' + _mm + ':' + _ss + '.00]' + String(l.lyrics).trim();
-              }).join('\n');
-              if(_tyText.trim().length > 20){
-                return { lyrics: _tyText, isSynced: true, title: titleVars[0], artist: primary,
-                         duration: dur, source: 'textyl (Apple Music)', score: 1 };
-              }
-            }
-          }
-        }
-      }catch(_tyE){}
-    }
+    // 4. (removed) textyl used to be surfaced here as Apple Music's own lyric
+    //    lines. Its reply carries no title and no artist, so there was no way to
+    //    tell whether the lines belonged to the song asked for — and for a
+    //    smaller artist with nothing on file it happily handed back a different
+    //    song's words. Unverifiable lyrics are worse than none, so the automatic
+    //    lookup no longer uses it.
     // 5. lyrics.ovh — an old database with almost nothing recent, but free.
     try{
       if(scLyricsOutOfTime()) return null;
@@ -8980,7 +8961,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           var lyr = await scFetchWithTimeout('https://lyrist.vercel.app/api/' + encodeURIComponent(titleVars[lv]) + '/' + encodeURIComponent(artistVars[la]), 4500);
           if(!lyr.ok) continue;
           var lyd = await lyr.json();
-          if(lyd && lyd.lyrics && String(lyd.lyrics).trim()){
+          // It returns title+artist — check them. This accept used to be naked,
+          // so whatever the endpoint felt like returning became the lyrics.
+          if(lyd && lyd.lyrics && String(lyd.lyrics).trim() && _textOk(lyd.title, lyd.artist)){
             return { lyrics: String(lyd.lyrics), isSynced: false, title: lyd.title || titleVars[lv], artist: lyd.artist || artistVars[la], duration: dur, source: 'Genius (lyrist)', score: 1 };
           }
         }
@@ -9505,7 +9488,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if (aiBtn) { aiBtn.addEventListener("click", function() { aiSyncLyrics(); }); }
   }, 200);
 
-function startLyricsAutoScroll() {
+function startLyricsAutoScroll(keepPos, noReset) {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
     const container = $('lyricsContent');
@@ -9515,12 +9498,16 @@ function startLyricsAutoScroll() {
     // Cancel any glide still running first (its onDone clears the flag, so it has
     // to happen BEFORE we raise it), otherwise the jump trips the user-scroll grace
     // window and auto-scroll sits still for 1.5s after every lyrics open.
-    if(typeof window.__scCancelScroll === 'function') window.__scCancelScroll(container);
-    isProgrammaticScroll = true;
-    container.scrollTop = 0;
-    setTimeout(() => { isProgrammaticScroll = false; }, 100);
-    lastLyricsIdx = -1;
-    lastLyricsScrollTarget = -1;
+    if(!keepPos){
+      // A fresh open starts at the top; re-arming after the app comes back must
+      // not yank the reader back up to line one.
+      if(typeof window.__scCancelScroll === 'function') window.__scCancelScroll(container);
+      isProgrammaticScroll = true;
+      container.scrollTop = 0;
+      setTimeout(() => { isProgrammaticScroll = false; }, 100);
+      lastLyricsIdx = -1;
+      lastLyricsScrollTarget = -1;
+    }
     
     // Load this song’s saved sync nudge before the first poll.
     try{
@@ -9531,16 +9518,25 @@ function startLyricsAutoScroll() {
     }catch(_eso){}
     lyricsScrollInterval = setInterval(() => {
       try {
-      // Check if modal is still open or app is hidden
+      // The sheet closing is the only reason to stop polling.
       const backdrop = $('lyricsBackdrop');
-      if (!backdrop || backdrop.style.display !== 'flex' || document.hidden) {
+      if (!backdrop || backdrop.style.display !== 'flex') {
         clearInterval(lyricsScrollInterval);
         lyricsScrollInterval = null;
         return;
       }
+      // Hidden with the sheet still open: skip the work but KEEP the
+      // interval. It used to clear itself here and nothing restarted it, so
+      // the highlight stayed dead until the lyrics were closed and reopened.
+      if (document.hidden) return;
       
       const audio = activeAudio();
       if (!audio) return;
+      // Paused means the clock has stopped, so the highlight and the
+      // auto-scroll stop with it and pick up exactly where they left off,
+      // instead of running on ahead of what you are actually hearing. A tap
+      // on a line while paused still moves it: that path sets the line itself.
+      if (audio.paused) return;
       
       // Small lead so the highlight fires before the timestamp, not after.
       // Compensates for the polling interval + render latency (~60 ms).
@@ -9819,6 +9815,16 @@ function startLyricsAutoScroll() {
     }
   });
   
+  // Returning to the app with the lyrics open just works now: the poller is
+  // re-armed in place (keeping the reader's position) instead of waiting for a
+  // close-and-reopen. It used to clear itself on hide and never come back.
+  document.addEventListener('visibilitychange', function(){
+    try{
+      if(document.hidden) return;
+      var _bd = $('lyricsBackdrop');
+      if(_bd && _bd.style.display === 'flex' && !lyricsScrollInterval) startLyricsAutoScroll(true);
+    }catch(_eLyVis){}
+  });
   // Sync nudge: ±0.5s steps, clamped to ±15s, saved per song so the
   // correction is one tap per track and stays for every replay.
   function updateLyricsSyncLabel(){
@@ -10625,7 +10631,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.3.9';
+  const APP_VERSION = '61.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11040,6 +11046,15 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.4', date: 'September 24, 2026 · 6:53 PM EDT', title: 'The Upcoming tab stays put, and the lyrics stop guessing', items: [
+    'Upcoming releases finally stays where you put it: switching a release list — or letting a check finish — no longer snaps the tabs back to All releases, so the upcoming drops you were reading stay on screen.',
+    'Opening Upcoming releases with nothing dated yet now looks the dates up on the spot, in the background, instead of leaving you on an empty tab — and if it finds drops it tells you and marks the bell.',
+    'Lyrics stopped guessing: two sources that never checked the reply was the song you asked for can no longer serve someone else\u2019s words, and a match with the right length but the wrong title is refused. A smaller artist with no lyrics on file now honestly says so instead of showing the wrong song.',
+    'Lyrics hold still while the song is paused — the highlight and the auto-scroll stop with the music and pick up where you left off.',
+    'Reopening the app with lyrics on screen keeps the highlight running: it used to stay frozen until you closed the lyrics and opened them again.',
+    'Upcoming dates now come from two open catalogs, not one: MusicBrainz and Wikidata are both read, so a drop either one has dated with a real day turns up — still with no account and nothing to connect.',
+    'The same lyric lookup still needs no account and nothing to connect — every source is an open, public catalog.',
+  ] },
   { version: '61.3.9', date: 'September 24, 2026 · 5:44 PM EDT', title: 'The drop check finishes, and fills in as it goes', items: [
     'The drop check reads your pinned artists a few at a time instead of one after another, so a longer list finishes in a fraction of the time it used to.',
     'Every artist’s finds are saved and shown the moment they land — the list fills in while the rest are still being read, instead of everything appearing only at the very end.',
@@ -28394,7 +28409,7 @@ if(!isDiscover) stopDiscoverPreview();
             _hbTabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){
               btn.addEventListener('click', function(){ window.__scDiscRelTab(btn.dataset.mode, body); });
             });
-            window.__scDiscRelTab('all', body);
+            window.__scDiscRelTab(window.__scRelTabMode || 'all', body);
           }
         }catch(_eHbRelTabs){ }
       }
@@ -29591,6 +29606,33 @@ if(!isDiscover) stopDiscoverPreview();
       finally{ if(panel) panel.style.animation = ''; }
     }catch(_eRp){}
   }
+  // Opened the Upcoming tab and nothing is dated yet? Read the open catalogs
+  // now rather than showing an empty list. One run at a time, at most once a
+  // minute, and it repaints whichever release surface is open (the Fetch latest
+  // popup rebuilds itself through its own button; the Home bubble is repainted
+  // in place). If genuinely new drops turn up it says so and lights the bell.
+  window.__scUpcomingAutofetch = async function(){
+    if(window.__scUpAutoBusy) return;
+    if(typeof isPremiumActive === 'function' && !isPremiumActive()) return;
+    if(!pinnedArtists || !pinnedArtists.length) return;
+    if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    let last = 0;
+    try{ last = parseInt(localStorage.getItem('sidecut_upAutoAt') || '0', 10) || 0; }catch(_eL){}
+    if(Date.now() - last < 60000) return;
+    window.__scUpAutoBusy = true;
+    try{ localStorage.setItem('sidecut_upAutoAt', String(Date.now())); }catch(_eS){}
+    try{
+      const before = (typeof scUpcomingUnseen === 'function') ? scUpcomingUnseen().length : 0;
+      try{ await window.__scRebuildReleaseLists(true); }catch(_eR){}
+      try{ renderNewReleases(); }catch(_eRn){}
+      try{ updateNotifBadge(); }catch(_eNb){}
+      try{ scRepaintOpenReleasePanel(); }catch(_eRp){}
+      const after = (typeof scUpcomingUnseen === 'function') ? scUpcomingUnseen().length : 0;
+      if(after > before){
+        try{ toast(after + ' upcoming release' + (after === 1 ? '' : 's') + ' found \u2014 see the bell', 4200); }catch(_eT){}
+      }
+    }finally{ window.__scUpAutoBusy = false; }
+  };
   window.__scRebuildReleaseLists = async function(doFetch){
     var popupOpen = false;
     try{
@@ -29910,6 +29952,39 @@ if(!isDiscover) stopDiscoverPreview();
           prevKeys.add(k);
         });
       }catch(_eSp){}
+      // A second open source fills the same gap. Its entries carry their own
+      // source key, defer to a drop another source already listed this run, and
+      // date an undated stored row in place instead of adding a duplicate.
+      try{
+        var wdFresh = (typeof window.__scWdUpcoming === 'function') ? await window.__scWdUpcoming(artist) : [];
+        (wdFresh || []).forEach(function(x){
+          if(!x || !x.title || !x.date) return;
+          if(!x.time) x.time = '';
+          var nt = String(x.title).toLowerCase().trim();
+          var k = 'wdt:' + nt + '|' + x.date;
+          if(prevKeys.has(k)) return;
+          if(freshTitles.has(nt + '|' + x.date)) return;   // Apple already listed this drop
+          // Another open source in THIS run may hold the same drop already.
+          for(var fi = 0; fi < fresh.length; fi++){
+            var fe = fresh[fi];
+            if(fe && String(fe.title || '').toLowerCase().trim() === nt && (window.__scDay10(fe.date) || fe.date || '') === x.date) return;
+          }
+          for(var pj = 0; pj < prev.length; pj++){
+            var pe2 = prev[pj];
+            if(!pe2 || String(pe2.title || '').toLowerCase().trim() !== nt) continue;
+            if((window.__scDay10(pe2.date) || pe2.date || '') === x.date) return;    // same drop, already stored
+            if(!pe2.date){                                                           // dated in place, not "new"
+              pe2.date = x.date; pe2.kind = 'album';
+              if(!pe2.time && x.time) pe2.time = x.time;
+              if(!pe2.art) pe2.art = x.art;
+              if(!pe2.url) pe2.url = x.url;
+              return;
+            }
+          }
+          fresh.push(x);
+          prevKeys.add(k);
+        });
+      }catch(_eWd){}
       // Keep all fetched releases (up to 50 per iTunes query) so nothing is lost.
       const merged = prev.concat(fresh)
         .sort((a,b) => (b.date||'').localeCompare(a.date||''));
@@ -30425,6 +30500,59 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(_e){ return []; }
   }
   window.__scMbUpcoming = scFetchMbUpcoming;
+  // Wikidata: the same idea as the MusicBrainz pass, one open query per pinned
+  // artist. Announced albums carry their publication day (P577) and the search
+  // is keyless, so nothing here asks the user to connect anything. Best effort
+  // like the rest — no network, no match, a rate-limited reply: the other
+  // sources still decide alone. An unlabeled item is refused rather than
+  // listed under its Q-id, and the pinned artist must be credited.
+  async function scFetchWdUpcoming(artist){
+    try{
+      if(!artist) return [];
+      if(typeof fetchWithProxy !== 'function') return [];
+      var want = primaryArtistName(artist).toLowerCase().trim();
+      if(!want) return [];
+      // Quotes/backslashes/newlines would break out of the SPARQL string.
+      var safe = String(artist).replace(/["\\\n\r\t]/g, ' ').trim();
+      if(!safe) return [];
+      var q = 'SELECT ?album ?albumLabel ?date ?performerLabel WHERE {'
+        + ' SERVICE wikibase:mwapi { bd:serviceParam wikibase:api "EntitySearch" .'
+        + ' bd:serviceParam wikibase:endpoint "www.wikidata.org" .'
+        + ' bd:serviceParam mwapi:search "' + safe + '" .'
+        + ' bd:serviceParam mwapi:language "en" .'
+        + ' ?performer wikibase:apiOutputItem mwapi:item . }'
+        + ' ?album wdt:P175 ?performer .'
+        + ' ?album wdt:P31/wdt:P279* wd:Q482994 .'
+        + ' ?album wdt:P577 ?date .'
+        + ' FILTER(?date > NOW())'
+        + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }'
+        + ' } ORDER BY ASC(?date) LIMIT 25';
+      var url = 'https://query.wikidata.org/sparql?query=' + encodeURIComponent(q) + '&format=json';
+      var rs = await fetchWithProxy(url, SC_RELEASE_FETCH);
+      if(!rs || !rs.ok) return [];
+      var md = await rs.json();
+      var out = [];
+      ((md && md.results && md.results.bindings) || []).forEach(function(b){
+        if(!b || !b.albumLabel || !b.date) return;
+        var d = window.__scDay10(b.date.value);
+        if(!d || !window.__scUpcomingDay(d)) return;
+        var title = String(b.albumLabel.value || '').trim();
+        // No English label means the item is a stub; its Q-id is not a title.
+        if(!title || /^Q\d+$/.test(title)) return;
+        var pl = String((b.performerLabel && b.performerLabel.value) || '').toLowerCase().trim();
+        if(!pl) return;
+        if(!(pl === want || pl.indexOf(want) !== -1 || want.indexOf(pl) !== -1)) return;
+        var id = (b.album && b.album.value) ? String(b.album.value).split('/').pop() : '';
+        out.push({
+          title: title, date: d, art: null,
+          url: id ? 'https://www.wikidata.org/wiki/' + id : null,
+          previewUrl: null, kind: 'album', cid: null, seen: false, _wd: id
+        });
+      });
+      return out;
+    }catch(_e){ return []; }
+  }
+  window.__scWdUpcoming = scFetchWdUpcoming;
   async function scSpotifySearch(q, type){
     var token = await scSpotifyInteractiveToken();
     var response = await fetch('https://api.spotify.com/v1/search?' + new URLSearchParams({q:q, type:type || 'track', limit:'5'}), {headers:{Authorization:'Bearer ' + token}});
@@ -35050,6 +35178,10 @@ function concatBytes(arrays) {
 window.__scDiscRelTab = function(mode, root){
   root = root || document.getElementById('discPopupBody');
   if(!root) return;
+  // Remember the choice. Both render paths used to end with a hard-coded
+  // 'all', so any rebuild — a finished check, a Home repaint, a reopen —
+  // snapped the strip back to All releases the moment you picked Upcoming.
+  window.__scRelTabMode = mode;
   var upcoming = mode === 'upcoming';
   var today = new Date().toISOString().slice(0, 10);
   var rowSel = root._dpRelRowSel || '.dp-track[data-date]';
@@ -35081,6 +35213,14 @@ window.__scDiscRelTab = function(mode, root){
     sEl.textContent = upcoming
       ? (up.length + ' upcoming release' + (up.length !== 1 ? 's' : '') + ' \u00b7 soonest first')
       : root._dpRelSub;
+  }
+  // Nothing dated to show? Go and look, in the background, instead of leaving
+  // you staring at an empty tab — the open catalogs are read and the panel
+  // repaints itself when the dates land. Once at a time, at most once a minute,
+  // and only while the tab is genuinely empty, so a repaint can never set it off
+  // in a loop.
+  if(upcoming && !up.length){
+    try{ if(typeof window.__scUpcomingAutofetch === 'function') window.__scUpcomingAutofetch(); }catch(_eUpAuto){}
   }
 };
 
@@ -35123,7 +35263,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       _tabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){
         btn.addEventListener('click', function(){ window.__scDiscRelTab(btn.dataset.mode); });
       });
-      window.__scDiscRelTab('all');
+      window.__scDiscRelTab(window.__scRelTabMode || 'all');
       // Cached reopens never re-ran row wiring before — calling it here fixes
       // taps there, and a row ignores a second attach.
       if(typeof window.__wireReleaseRows === 'function') window.__wireReleaseRows();

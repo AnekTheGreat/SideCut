@@ -44,7 +44,7 @@ ok(proxy && proxy.includes('Math.max(800, Math.min(8000, _left))'), 'the per-hop
 
 console.log('[2] the release path opts in, at all five catalog reads');
 ok(src.includes('var SC_RELEASE_FETCH = { noCancel: true, budgetMs: 4000 };'), 'the release options are defined once');
-ok(count('SC_RELEASE_FETCH') === 6, 'defined + used by 5 catalog reads (' + count('SC_RELEASE_FETCH') + ')');
+ok(count('SC_RELEASE_FETCH') === 7, 'defined + used by 6 catalog reads (' + count('SC_RELEASE_FETCH') + ')');
 const idFn = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");
 ok(idFn && idFn.split('SC_RELEASE_FETCH').length - 1 === 2, 'the artist search and the catalog lookup both use it');
 const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpcoming = scFetchMbUpcoming;');
@@ -90,11 +90,11 @@ ok(fn && !fn.includes('spotify'), 'the check never reaches for Spotify');
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
-ok(count("version: '61.3.9'") === 1, 'exactly one 61.3.9 changelog entry');
-ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.9'/.test(src), 'the newest entry sits inside CHANGELOG');
-ok(src.indexOf("version: '61.3.9'") < src.indexOf("version: '61.3.8'"), 'it heads the changelog');
+ok(ver === '61.4', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.4';"), 'sw.js cache = sidecut-shell-v61.4');
+ok(count("version: '61.4'") === 1, 'exactly one 61.3.9 changelog entry');
+ok(/const CHANGELOG = \[\n  \{ version: '61\.4'/.test(src), 'the newest entry sits inside CHANGELOG');
+ok(src.indexOf("version: '61.4'") < src.indexOf("version: '61.3.8'"), 'it heads the changelog');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');

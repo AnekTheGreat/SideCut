@@ -1,5 +1,49 @@
 # SideCut — repository memory
 
+## v61.4 (Sep 24, 2026): Upcoming dates come from TWO open catalogs (MusicBrainz + Wikidata)
+- **User directive, verbatim**: "Musicbrainz don't have the dated release for upcoming releases but Spotify
+  has it but I don't want my app to take the user to Spotify or verify anything for that … just make the app
+  look it up." So: **no Spotify login/connect/verify/token/backend anywhere in the release path** — every
+  drop date is read from a keyless open catalog.
+- **The gap that prompted it**: v61.3.6 shipped ONE open source, MusicBrainz (`__scMbUpcoming`), and it is
+  thin. A live sweep found **0 future release-groups for Diljit Dosanjh, Karan Aujla, AP Dhillon, Drake,
+  The Weeknd, Ariana Grande** — whole catalogues come back empty. iTunes (`entity=album`) and Deezer
+  (`/artist/{id}/albums`) carry **nothing** dated in the future at all (pre-orders don't surface in search):
+  re-probe before re-litigating, 5 major artists → 0 future rows on both.
+- **The fix — `scFetchWdUpcoming` / `window.__scWdUpcoming`**, defined right after `__scMbUpcoming`: ONE
+  open **Wikidata SPARQL** query per pinned artist, no key, no window.
+  - Query: `SERVICE wikibase:mwapi` EntitySearch on the artist name → `?album wdt:P175 ?performer` →
+    `?album wdt:P31/wdt:P279* wd:Q482994` (album) → `?album wdt:P577 ?date` → `FILTER(?date > NOW())`,
+    English label service, LIMIT 25.
+  - Endpoint `https://query.wikidata.org/sparql?query=…&format=json` sends
+    `access-control-allow-origin: *` and answers the browser's `fetch` (verified from a localhost page in
+    the sandbox), so it goes through `fetchWithProxy(url, SC_RELEASE_FETCH)` like every other catalog read —
+    direct first, proxies as fallback, 4 s budget, `catch(_e){ return []; }` so it can never wedge the run.
+  - Filters: `__scDay10` + `__scUpcomingDay` (day precision only, future, ≤400 d), title must be a real
+    label (a bare `Q\d+` stub is refused — don't list an item by its Q-id), and the pinned artist must be
+    credited (`primaryArtistName` both sides, bidirectional substring like the MB/iTunes passes).
+  - **Verified value-add**: Paulo Londra and Cesare Cremonini have **0** MusicBrainz future releases but
+    Wikidata carries "Entre cielos" (2026-10-21) and "Amateur" (2026-10-23). End-to-end in Chromium: pin
+    Paulo Londra → check → Upcoming tab shows exactly his dated drop, and the Spotify probe shows
+    `spotify network touched: false | popups opened: 0`.
+- **Merge (in `fetchArtistReleases`)**: a second block mirrors the MusicBrainz one — source key
+  `'wdt:' + nt + '|' + x.date` in `prevKeys`, defers to `freshTitles` (Apple listed it) and to any entry
+  already in `fresh` from MB this run, and **dates an undated stored row in place** rather than adding a
+  duplicate. `SC_RELEASE_FETCH` count is now **7** (defined + 6 catalog reads); `dev/test-6139.mjs` was
+  updated to that number.
+- **Version**: APP_VERSION/sw.js/CHANGELOG head/root manifest → **61.4** (7 notes; the rollout line is
+  61.3.x, so 61.3.9 → **61.4**, never a rolled-over `x.y.10`). `dev/patch-614.mjs` is the single idempotent
+  pass (3 index.html edits on this turn: the Wikidata fn, the merge block, the changelog note); it also
+  repins tests and re-seeds root `manifest.json`. `dev/test-614.mjs` grew a `[6b]` section (14 checks).
+- **Verified**: 5 inline `<script>` blocks parse (`new Function`); the FULL `dev/test-*.mjs` suite
+  (22 files, test-614 = 59 checks) green; both OTA bundles rebuilt + `--check` clean —
+  v61.4, 6 notes, Play flag baked (zips 663047 / 663058 bytes).
+- **Lyrics (same release, separate user report)**: smaller artists showed wrong/missing words. `lyrist`
+  now validates the title+artist it returns, `textyl` (no title/artist in its reply — unverifiable) is no
+  longer auto-surfaced, and an LRCLIB match on a coincidental duration now also needs an exact title. The
+  highlight holds while paused and survives being backgrounded (the poller used to clear itself on hide and
+  nothing re-armed it).
+
 ## MANDATORY VERSION RULE (Sep 23, 2026): NEVER ship 60.5.10-style versions — it should be v61
 - **User rule, verbatim intent**: "No v60.5.10 that doesn't fucking exist and I fucking hate that … never fucking do that, it should be v61."
   After **60.5.9** the next release is **v61**. Do NOT invent a `.10` step in the 60.5.x line (or any rolled-over patch like `x.y.10`) — when a patch line
