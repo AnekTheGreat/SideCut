@@ -8,6 +8,29 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.2 (Sep 23, 2026): Upcoming releases reads drop dates from Spotify — pushed
+- **What shipped**: a real dated drop never reached Upcoming releases because Apple/Deezer/
+  MusicBrainz carry nothing before release day. `scFetchSpotifyUpcoming` (`window.__scSpotifyUpcoming`)
+  takes the pinned artist → Spotify artist search → `/albums?include_groups=album,single`, keeps only
+  `release_date_precision === 'day'` dates strictly in the future AND credited to the pinned artist,
+  and the merge into `pinnedReleases` (in `fetchArtistReleases`) either ADDS the entry or writes the
+  date onto an already-listed undated release (never a duplicate).
+- **Token split (the important bit)**: `scSpotifySearch` used to open the authorization window on
+  every call. It now goes through `scSpotifyInteractiveToken()` (window allowed — called ONLY from an
+  explicit tap), while the background release check uses `scSpotifySilentToken()` (stored token, else
+  quiet refresh_token exchange, else `null` → other sources carry on, no window, no toast).
+- **Empty-state CTAs**: `window.__scWireUpcomingCta(el)` appends "Connect Spotify" + "Add a drop
+  manually" (+ hint) to BOTH empty states (Fetch latest popup `#dpRelUpEmpty` and the Home bubble
+  `#dpRelUpEmpty`). Connect = `__scUpcomingConnectTap` → interactive token → `__scRebuildReleaseLists(true)`;
+  relabels to "Re-check for drops" when a good token is stored. Manual = `__scAddUpcomingDrop` sheet
+  (artist datalist from `pinnedArtists`, title, date defaulting to +7d) writing a normal release entry
+  with `_manual:true`, sorted + `savePinnedArtists()`.
+- **Release mechanics**: APP_VERSION 61.1 → 61.2, sw.js `sidecut-shell-v61.2`, new CHANGELOG head
+  entry (6 notes), all version pins in `dev/test-*.mjs` repinned, done via `dev/patch-612.mjs`;
+  new `dev/test-612.mjs` covers it.
+- **Verified**: inline blocks parse via the `new Function` check; the FULL `dev/test-*.mjs` suite
+  (17 files) green; both OTA bundles rebuilt and `--check` clean.
+
 ## v61.1 (Sep 23, 2026): widget animates + can't freeze, Upcoming releases gates the day — pushed (0dd13c4)
 - **What shipped**: (1) the home widget's EQ now self-drives from inside the app process
   (`.github/workflows/patch-widget.py` → `SideCutWidgetProvider.setAnimating(ctx, playing)`,
