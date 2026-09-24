@@ -4414,6 +4414,21 @@ window.__scUpcomingDay = function(v){
   var ms = Date.parse(d + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z');
   return isFinite(ms) && ms <= 400 * 86400000;
 };
+// A drop's time of day, when one is known. A manual drop carries the hour you
+// picked; a catalog that ever reports one passes it straight through; a
+// day-only source leaves the field empty, which the lists read as "time TBA"
+// on an upcoming row instead of inventing an hour. On window like the day
+// helpers above, so both script blocks can reach it.
+window.__scTime12 = function(v){
+  var m = String(v == null ? '' : v).match(/^(\d{1,2}):(\d{2})/);
+  if(!m) return '';
+  var h = parseInt(m[1], 10);
+  var mi = parseInt(m[2], 10);
+  if(!(h >= 0 && h <= 23) || !(mi >= 0 && mi <= 59)) return '';
+  var ap = h >= 12 ? 'PM' : 'AM';
+  var h12 = h % 12; if(!h12) h12 = 12;
+  return h12 + ':' + (mi < 10 ? '0' + mi : String(mi)) + ' ' + ap;
+};
 // ---- Build switch: Play Store build vs sideload/OTA build --------------------
 // CI (patch-playbuild.py) injects window.__PLAY_BUILD__ = true into the Play
 // AAB's www/index.html before this script runs; the sideload/OTA build never
@@ -10610,7 +10625,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.3.6';
+  const APP_VERSION = '61.3.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11025,6 +11040,15 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.3.7', date: 'September 24, 2026 · 7:23 AM EDT', title: 'Release check never sticks and Home stays clear', items: [
+    'Every upcoming drop now carries a time of day: the manual sheet opens on today with a Drop time field you set, an upcoming row reads "drops Oct 3 at 7:23 AM" beside its countdown, and a drop whose catalog knows only the day reads "at time TBA" rather than leaving the hour a mystery.',
+    'Upcoming releases now looks the date up itself: every pinned artist is checked against MusicBrainz’s open catalog of announced releases, where a drop someone has already dated sits with its day set weeks before it lands — no account, no sign-in, no window.',
+    'The empty tab and the Home bubble no longer offer a Connect Spotify button: they now say "Check for drops" and run the same check on the spot, beside the "Add a drop manually" sheet — nothing in Upcoming releases asks you to connect anything anymore.',
+    'The release check now has a clock on every artist and always repaints the panel you are looking at, so the count, the rows and the empty state update the moment results land instead of sitting on old numbers.',
+    'Home no longer shows the pinned-artist check card: the check runs in the background while you browse, and any new drops still reach you through the bell badge and the New releases tab.',
+    'The manual drop sheet asks for the release title with no example in the way and opens on today’s date, so a drop is added with its time set and counted as soon as it is real.',
+    'A stalled, offline, or rate-limited catalog reply can no longer wedge the check half-finished: it moves on artist by artist and keeps repainting, and a failure changes nothing else.',
+  ] },
   { version: '61.3.6', date: 'September 24, 2026 · 6:02 AM EDT', title: 'Upcoming releases stops asking you to connect anything', items: [
     'Upcoming releases now looks the date up itself: every pinned artist is checked against MusicBrainz’s open catalog of announced releases, where a drop someone has already dated sits with its day set weeks before it lands — no account, no sign-in, no window.',
     'The empty tab no longer offers a Connect Spotify button: it now says "Check for drops" and runs the same check on the spot, beside the "Add a drop manually" sheet — nothing in Upcoming releases asks you to connect anything anymore.',
@@ -14000,30 +14024,6 @@ function startLyricsAutoScroll() {
         </div>
         <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
     }
-    // Pinned-artist new-release check (covers "importing anything" — we treat the
-    // periodic catalog check as a background task so it shows on Home too).
-    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active){
-      const pct = pinnedCheckState.total ? Math.round((pinnedCheckState.done / pinnedCheckState.total) * 100) : 0;
-      tasks.push(`
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-          <span style="font-size:18px;">📌</span>
-          <div style="flex:1; min-width:0;">
-            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Checking pinned artists for new releases</div>
-            <div style="font-size:11.5px; color:var(--ink-dim);">${pinnedCheckState.done}/${pinnedCheckState.total} artists</div>
-          </div>
-        </div>
-        <div style="height:8px; background:var(--bg-raised); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--coral); transition:width .3s;"></div></div>`);
-    }
-    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.finishedAt && !pinnedCheckState.seen && pinnedCheckState.newCount > 0){
-      tasks.push(`
-        <div data-dismiss="pinned" style="display:flex; align-items:center; gap:10px; cursor:pointer;" title="Tap to dismiss">
-          <span style="font-size:18px; color:var(--coral);">🆕</span>
-          <div style="flex:1; min-width:0;">
-            <div style="font-weight:600; font-size:13.5px; color:var(--coral);">New releases found</div>
-            <div style="font-size:11.5px; color:var(--ink-dim);">${pinnedCheckState.newCount} new song${pinnedCheckState.newCount>1?'s':''} from your pinned artists — see Discover.</div>
-          </div>
-        </div>`);
-    }
 
     if(!tasks.length){
       el.style.display = 'none';
@@ -14055,8 +14055,7 @@ function startLyricsAutoScroll() {
       || (window.coverFetchState && window.coverFetchState.active)
       || (window.lyricsFetchState && window.lyricsFetchState.active)
       || enrichState.active
-      || (bgImportState && bgImportState.running && bgImportState.completed < bgImportState.total)
-      || (typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active);
+      || (bgImportState && bgImportState.running && bgImportState.completed < bgImportState.total);
     if(!anyActive){
       if(homeExportHideTimer){ clearTimeout(homeExportHideTimer); }
       homeExportHideTimer = setTimeout(() => {
@@ -26029,12 +26028,13 @@ function _fallbackCopy(text){
           var isNew = r.id && !seen[r.id];
           var when = '';
           var upc = false;
+          var _rAt = (typeof window.__scTime12 === 'function' && window.__scTime12(r.time)) ? ' at ' + window.__scTime12(r.time) : ' at time TBA';
           if(r.date){
             var _d0 = window.__scDay10(r.date);
             var _days = Math.round((Date.parse(_d0 + 'T00:00:00Z') - Date.parse(new Date().toISOString().slice(0,10) + 'T00:00:00Z')) / 86400000);
             upc = _days > 0;
             when = upc
-              ? 'drops ' + new Date(_d0 + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' \u00b7 in ' + _days + 'd'
+              ? 'drops ' + new Date(_d0 + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + _rAt + ' \u00b7 in ' + _days + 'd'
               : _d0;
           }
           var art = r.art || '';
@@ -28322,8 +28322,10 @@ if(!isDiscover) stopDiscoverPreview();
           all.map(rel => {
             rel = Object.assign({}, rel, { date: window.__scDay10(rel.date) });
             const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
+            const relAt = (typeof window.__scTime12 === 'function' && window.__scTime12(rel.time)) ? ' at ' + window.__scTime12(rel.time) : '';
+            const relAtUp = relAt || ' at time TBA';   // upcoming + no catalog time
             const daysUntil = rel.date ? Math.ceil((new Date(rel.date+'T00:00:00Z').getTime() - Date.now())/86400000) : null;
-            const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date+'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+            const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date+'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + relAtUp + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
             return '<div class="hb-track-row" style="cursor:pointer;" data-date="' + escapeHtml(String(rel.date || '').slice(0,10)) + '" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + (when.indexOf('drops ') === 0 ? '<span style="color:var(--gold); font-weight:600;">' + when + '</span>' : when) : '') + '</div></div></div>';
           }).join('') +
           '<button class="hb-cta hb-markread" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled') + '>'
@@ -29249,6 +29251,7 @@ if(!isDiscover) stopDiscoverPreview();
     var bgArt = rel.art ? 'background-image:url(' + rel.art + ');' : '';
     var dateStr = !isNaN(dMs) ? new Date(dMs).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '';
     var typeLabel = rel.kind === 'album' ? 'Album' : 'Single';
+    var relAt = (typeof window.__scTime12 === 'function' && window.__scTime12(rel.time)) ? ' at ' + window.__scTime12(rel.time) : (upcoming ? ' at time TBA' : '');
     var ov = document.createElement('div');
     ov.id = 'scReleasePage';
     ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:12000;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);';
@@ -29274,7 +29277,7 @@ if(!isDiscover) stopDiscoverPreview();
           '<div style="width:34px;height:34px;border-radius:50%;background-size:cover;background-position:center;background-color:var(--bg-raised);flex-shrink:0;' + (photo ? 'background-image:url(' + photo + ');' : '') + '"></div>',
           '<div style="font-size:16px;font-weight:700;">' + escapeHtml(artist || '') + '</div>',
         '</div>',
-        '<div id="scRelMeta" style="font-size:13.5px;color:var(--ink-dim);margin-bottom:22px;">' + escapeHtml(typeLabel) + (dateStr ? ' \u00b7 ' + (upcoming ? 'Releases on ' : 'Released ') + dateStr : '') + '</div>',
+        '<div id="scRelMeta" style="font-size:13.5px;color:var(--ink-dim);margin-bottom:22px;">' + escapeHtml(typeLabel) + (dateStr ? ' \u00b7 ' + (upcoming ? 'Releases on ' : 'Released ') + dateStr + relAt : '') + '</div>',
         '<div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">',
           rel.previewUrl ? '<button id="scRelPlay" title="Play 30s preview" style="background:none;border:1px solid var(--line);color:var(--ink);border-radius:50%;width:44px;height:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;"><svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor;"><path d="M8 5v14l11-7z"/></svg></button>' : '',
           '<div style="flex:1;"></div>',
@@ -29371,7 +29374,7 @@ if(!isDiscover) stopDiscoverPreview();
           });
           if(coll && coll.collectionType){
             var metaEl = ov.querySelector('#scRelMeta');
-            if(metaEl) metaEl.innerHTML = escapeHtml(coll.collectionType) + (dateStr ? ' \u00b7 ' + (upcoming ? 'Releases on ' : 'Released ') + dateStr : '');
+            if(metaEl) metaEl.innerHTML = escapeHtml(coll.collectionType) + (dateStr ? ' \u00b7 ' + (upcoming ? 'Releases on ' : 'Released ') + dateStr + relAt : '');
           }
           if(!tracks.length){ tlBox.innerHTML = tlFallback; return; }
           tlBox.innerHTML = tracks.map(function(t, i){
@@ -29427,8 +29430,10 @@ if(!isDiscover) stopDiscoverPreview();
     list.innerHTML = recent.map(rel => {
       rel = Object.assign({}, rel, { date: window.__scDay10(rel.date) });
       const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date + 'T00:00:00Z').getTime())/86400000) : null;
+      const relAt = (typeof window.__scTime12 === 'function' && window.__scTime12(rel.time)) ? ' at ' + window.__scTime12(rel.time) : '';
+      const relAtUp = relAt || ' at time TBA';   // upcoming + no catalog time
       const daysUntil = rel.date ? Math.ceil((new Date(rel.date + 'T00:00:00Z').getTime() - Date.now())/86400000) : null;
-      const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
+      const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + relAtUp + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo < 30 ? daysAgo + 'd ago' : new Date(rel.date + 'T00:00:00Z').toLocaleDateString();
       const bg = rel.art ? `background-image:url(${rel.art});` : 'background:var(--bg-raised);';
       const playBtn = rel.previewUrl
         ? `<button class="nr-play discover-preview-btn" data-preview="${escapeHtml(rel.previewUrl)}" data-art="${escapeHtml(rel.art || '')}" data-title="${escapeHtml(rel.title || '')}" data-artist="${escapeHtml(rel.artist || '')}" title="Play 30s preview" style="background:none; border:1px solid var(--line); color:var(--ink); border-radius:50%; width:30px; height:30px; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;"><svg viewBox="0 0 24 24" style="width:14px; height:14px;"><path d="M8 5v14l11-7z"/></svg></button>`
@@ -29544,6 +29549,24 @@ if(!isDiscover) stopDiscoverPreview();
   // Refetch + repaint everything the release lists draw from. When the New
   // Releases popup is open we reuse its own button handler, because the popup's
   // HTML (and therefore the tabs' counts) is only ever built there.
+  // Repaint the release surface that is open right now, in place. The Home
+  // bubble is only ever built at open time, so without this a finished check
+  // leaves it showing the count, the rows and the empty state it had when you
+  // tapped. Its slide-up is an animation on .open, so the panel is pinned to
+  // animation:none for the rebuild — the repaint never plays the entrance a
+  // second time.
+  function scRepaintOpenReleasePanel(){
+    try{
+      var overlay = document.getElementById('homeBubbleOverlay');
+      if(!overlay || !overlay.classList.contains('open')) return;   // popup path repaints itself
+      var tEl = document.getElementById('hbPanelTitle');
+      if(!tEl || String(tEl.textContent || '').indexOf('New releases') !== 0) return;
+      var panel = document.getElementById('homeBubblePanel');
+      if(panel) panel.style.animation = 'none';
+      try{ if(typeof openHomeBubble === 'function') openHomeBubble('newreleases'); }
+      finally{ if(panel) panel.style.animation = ''; }
+    }catch(_eRp){}
+  }
   window.__scRebuildReleaseLists = async function(doFetch){
     var popupOpen = false;
     try{
@@ -29558,14 +29581,22 @@ if(!isDiscover) stopDiscoverPreview();
     try{ renderNewReleases(); }catch(_e1){}
     try{ renderHome(); }catch(_e2){}
     try{ updateNotifBadge(); }catch(_e3){}
+    try{ scRepaintOpenReleasePanel(); }catch(_eR){}  // keeps the view you are on up to date
   };
   // The button runs the check on the spot. It needs no account, so there is no
   // authorization window anywhere in this flow — the only one left belongs to
   // the converter's Spotify search, on its own explicit tap.
+  // A hard ceiling keeps the button from sitting on "Checking…" forever, and a
+  // successful completion repaints the open Home bubble / Fetch-latest popup
+  // before the button goes back to "Check for drops".
   window.__scUpcomingConnectTap = async function(btn){
     try{ if(btn){ btn.textContent = 'Checking\u2026'; btn.disabled = true; } }catch(_eB0){}
-    try{ await window.__scRebuildReleaseLists(true); }
-    catch(_eChk){ toast('The release check could not finish \u2014 try again.', 3600); }
+    try{
+      await Promise.race([
+        window.__scRebuildReleaseLists(true),
+        new Promise(function(res){ setTimeout(res, 35000); })   // cannot park the button
+      ]);
+    }catch(_eChk){ toast('The release check could not finish \u2014 try again.', 3600); }
     try{ if(btn){ btn.textContent = 'Check for drops'; btn.disabled = false; } }catch(_eB1){}
   };
   // For a drop no catalog has listed yet: artist, title, date — stored exactly
@@ -29583,11 +29614,12 @@ if(!isDiscover) stopDiscoverPreview();
       var names = (typeof pinnedArtists !== 'undefined' ? pinnedArtists : []).map(function(a){ return a && a.name ? a.name : ''; }).filter(Boolean);
       card.innerHTML = [
         '<div style="font-size:16px;font-weight:800;margin-bottom:4px;">Add an upcoming drop</div>',
-        '<div style="font-size:12px;color:var(--ink-dim);margin-bottom:14px;line-height:1.45;">For a release no store has listed yet. SideCut counts it down like any other drop.</div>',
+        '<div style="font-size:12px;color:var(--ink-dim);margin-bottom:14px;line-height:1.45;">For a release no store has listed yet \u2014 set its day and time, and SideCut counts it down like any other drop.</div>',
         '<input id="scAddDropArtist" list="scAddDropArtistList" placeholder="Artist name" autocomplete="off" style="' + field + '">',
         '<datalist id="scAddDropArtistList">' + names.map(function(nm){ return '<option value="' + String(nm).replace(/"/g, '&quot;') + '"></option>'; }).join('') + '</datalist>',
-        '<input id="scAddDropTitle" placeholder="Release title (e.g. AUJLA SZN 1)" autocomplete="off" style="' + field + '">',
+        '<input id="scAddDropTitle" placeholder="Release title" autocomplete="off" style="' + field + '">',
         '<input id="scAddDropDate" type="date" style="' + field + '">',
+        '<input id="scAddDropTime" type="time" placeholder="Drop time" style="' + field + '">',
         '<div style="display:flex;gap:10px;margin-top:6px;">',
           '<button id="scAddDropCancel" style="flex:0 0 38%;padding:12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.05);color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;">Cancel</button>',
           '<button id="scAddDropSave" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--gold,#e7b23c);color:#161616;font-size:14px;font-weight:700;cursor:pointer;">Save drop</button>',
@@ -29600,13 +29632,20 @@ if(!isDiscover) stopDiscoverPreview();
       card.querySelector('#scAddDropCancel').addEventListener('click', close);
       try{
         var dEl = card.querySelector('#scAddDropDate');
-        var tEl = new Date(); tEl.setDate(tEl.getDate() + 7);
-        dEl.value = tEl.toISOString().slice(0, 10);
+        var tEl = new Date();
+        var mm = String(tEl.getMonth() + 1).padStart(2, '0');
+        var dd = String(tEl.getDate()).padStart(2, '0');
+        dEl.value = tEl.getFullYear() + '-' + mm + '-' + dd;
+        // A drop at 00:00 is not what anyone means: default to the hour they
+        // are adding it at, so the countdown starts from a real moment.
+        var tmEl = card.querySelector('#scAddDropTime');
+        if(tmEl) tmEl.value = String(tEl.getHours()).padStart(2, '0') + ':' + String(tEl.getMinutes()).padStart(2, '0');
       }catch(_eDv){}
       card.querySelector('#scAddDropSave').addEventListener('click', function(){
         var artist = String(card.querySelector('#scAddDropArtist').value || '').trim();
         var title = String(card.querySelector('#scAddDropTitle').value || '').trim();
         var date = window.__scDay10(card.querySelector('#scAddDropDate').value || '');
+        var time = String(card.querySelector('#scAddDropTime').value || '').slice(0, 5);
         if(!artist || !title || !date){ toast('Artist, title and a real date are all needed.', 3000); return; }
         // Prefer the pinned spelling so later checks merge into the same entry.
         var aKey = artist;
@@ -29620,17 +29659,30 @@ if(!isDiscover) stopDiscoverPreview();
         var nt = title.toLowerCase().trim();
         for(var i = 0; i < arr.length; i++){
           if(String(arr[i].title || '').toLowerCase().trim() === nt && (window.__scDay10(arr[i].date) || arr[i].date) === date){
+            // Same drop, same day: the only thing a second save can change is
+            // the time, so take it rather than refusing the edit.
+            if(time && arr[i].time !== time){
+              arr[i].time = time;
+              try{ savePinnedArtists(); }catch(_eSv2){}
+              close();
+              try{ renderNewReleases(); }catch(_eRn2){}
+              toast('Time updated \u2014 ' + title + ' drops at '
+                + (typeof window.__scTime12 === 'function' ? window.__scTime12(time) : time) + '.', 3200);
+              try{ window.__scRebuildReleaseLists(false); }catch(_eRb3){}
+              return;
+            }
             toast('That drop is already listed.', 2600); close(); return;
           }
         }
-        arr.push({ title: title, date: date, art: null, url: null, previewUrl: null, kind: 'album', cid: null, seen: false, _manual: true });
+        arr.push({ title: title, date: date, time: time, art: null, url: null, previewUrl: null, kind: 'album', cid: null, seen: false, _manual: true });
         arr.sort(function(x, y){ return String(y.date || '').localeCompare(String(x.date || '')); });
         try{ savePinnedArtists(); }catch(_eSv){}
         close();
         var today = new Date().toISOString().slice(0, 10);
         try{
           toast(date > today
-            ? 'Added \u2014 ' + title + ' drops on ' + date + '.'
+            ? 'Added \u2014 ' + title + ' drops on ' + date
+              + (time ? ' at ' + (typeof window.__scTime12 === 'function' ? window.__scTime12(time) : time) : '') + '.'
             : 'Saved \u2014 that date has passed, so it will not appear under Upcoming.', 3600);
         }catch(_eTt){}
         try{ window.__scRebuildReleaseLists(false); }catch(_eRb2){}
@@ -29727,6 +29779,7 @@ if(!isDiscover) stopDiscoverPreview();
         var spFresh = (typeof window.__scSpotifyUpcoming === 'function') ? await window.__scSpotifyUpcoming(artist) : [];
         (mbFresh || []).concat(spFresh || []).forEach(function(x){
           if(!x || !x.title || !x.date) return;
+          if(!x.time) x.time = '';                    // day-only catalogs leave it blank
           var nt = String(x.title).toLowerCase().trim();
           var k = (x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date;
           if(prevKeys.has(k)) return;
@@ -29736,6 +29789,7 @@ if(!isDiscover) stopDiscoverPreview();
             if((window.__scDay10(pe.date) || pe.date || '') === x.date) return;      // same drop, already stored
             if(!pe.date){                                                            // dated in place, not "new"
               pe.date = x.date; pe.kind = 'album';
+              if(!pe.time && x.time) pe.time = x.time;
               if(!pe.art) pe.art = x.art;
               if(!pe.url) pe.url = x.url;
               return;
@@ -29764,8 +29818,13 @@ if(!isDiscover) stopDiscoverPreview();
     renderHomeExportPopup();
     let totalNew = 0;
     for(const a of pinnedArtists){
-      const fresh = await fetchArtistReleases(a.name);
-      totalNew += fresh.length;
+      // Clock every artist: a stalled, offline or rate-limited catalog reply
+      // moves the check on instead of parking it half-finished.
+      const fresh = await Promise.race([
+        fetchArtistReleases(a.name),
+        new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })   // 8s per artist
+      ]).catch(function(){ return null; });                                        // never wedges the run
+      totalNew += (fresh ? fresh.length : 0);
       pinnedCheckState.done++;
       renderHomeExportPopup();
     }

@@ -8,6 +8,45 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.3.7 (Sep 24, 2026): the release check can't stick, Home stops showing it, drops carry a time
+- **The user's four fixes**: "you don't need an example for release name and the checking doesn't work and fetching
+  pinned artists releases doesn't need to show on the home page Also add the time for Manuel and auto fetching upcoming
+  releases" — plus "there's a syntax error right now fix that".
+- **THREE SYNTAX ERRORS the abandoned 61.3.7 pass had already written into index.html** (the inline-block `new Function`
+  check is what catches these — run it after ANY index.html edit):
+  1. The new CHANGELOG entry was spliced in at TOP LEVEL, immediately above `const APP_VERSION` — `{...},` followed by
+     `const` = "Unexpected token ','". It is now lifted verbatim into the head of `CHANGELOG`. **Anchor a changelog head
+     splice on `const CHANGELOG = [\n  { version: '<previous>', date: ` (patch-6136's anchor), never on APP_VERSION.**
+  2. `window.__scUpcomingConnectTap`'s 35 s `Promise.race` had no closing `})` before `]);`.
+  3. `checkPinnedArtistReleases` kept the OLD `const fresh = await fetchArtistReleases(a.name)` line beside the new
+     clocked one (two declarations + an unterminated race), and the `anyActive` cleanup left a stray `)` behind.
+- **Root cause of the corruption (the lesson)**: `dev/patch-6137.mjs` was being edited by splicing its own text in a
+  terminal (`s[:j] + seg + s[tail:]`) and got truncated to 60 lines mid-edit; running that half-written copy wrote junk
+  into index.html. Patch scripts must be written whole (`write_file`) only, and every edit in them count==1 asserted AND
+  idempotent, so a re-run can never double-apply (see `sub`/`subRe` in patch-6137: skip when the result is already there).
+- **The check can no longer stick on "Checking…"**: `checkPinnedArtistReleases` clocks EACH artist —
+  `Promise.race([fetchArtistReleases(a.name), new Promise(res => setTimeout(() => res(null), 8000))])` — so a stalled,
+  offline or rate-limited reply counts as 0 and the loop moves on; the tap races the whole rebuild against 35 s and always
+  puts `Check for drops` back. New `scRepaintOpenReleasePanel()` rebuilds the OPEN Home bubble in place with
+  `panel.style.animation='none'` for the duration, so the repaint never replays the slide-up (that animation is on
+  `#homeBubbleOverlay.open #homeBubblePanel`).
+- **Home draws nothing for the pinned check**: both cards are gone from `renderHomeExportPopup` (the progress card
+  "Checking pinned artists for new releases 7/7 artists" and the finished "New releases found" card, which the broken
+  pass had left as a dead `if(false)`), and `anyActive` no longer includes `pinnedCheckState.active`. New drops still
+  reach the bell badge and the New releases tab.
+- **Time of day**: `window.__scTime12('HH:MM')` (next to `__scDay10`/`__scUpcomingDay`) is the one formatter; the manual
+  sheet gained `<input id="scAddDropTime" type="time">` defaulted to now, entries store `time`, rows read
+  "drops Oct 3 at 7:23 AM", and a repeat save for the same title+day updates the time instead of refusing.
+  **No catalog (MusicBrainz / silent-Spotify / iTunes) carries a time, so a day-only upcoming row says "at time TBA"** —
+  deliberate, not a missing value. A catalog that ever reports one keeps it (`x.time` flows through both merge paths).
+- **Mechanics**: `dev/patch-6137.mjs` (idempotent; `--manifest` re-seeds root `manifest.json` with the true zip size AFTER
+  `dev/ota-bundle.mjs`, since the normal run seeds it from the previous bundle's size), new `dev/test-6137.mjs`,
+  APP_VERSION + sw.js + CHANGELOG head + root manifest → 61.3.7, 10 test files repinned, `test-6052`'s ship date →
+  "September 24, 2026 · 7:23 AM EDT".
+- **Verified**: both inline `<script>` blocks parse (`new Function`); the FULL `dev/test-*.mjs` suite (20 files) green;
+  `node dev/ota-bundle.mjs --check` + `node dev/ota-bundle-play.mjs --check` both OK — v61.3.7, 6 notes, Play flag baked
+  (zips 658074 / 658087 bytes).
+
 ## v61.3.6 (Sep 24, 2026): Upcoming releases looks the date up itself — no Spotify connection anywhere
 - **The user's directive, verbatim**: "I told you no connect Spotify just like make the app look it up or something that shows
   when an upcoming album is going to be released." v61.3 shipped a **Connect Spotify** CTA (PKCE window) on both empty
