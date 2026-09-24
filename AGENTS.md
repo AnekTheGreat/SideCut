@@ -8,6 +8,34 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.1 (Sep 23, 2026): widget animates + can't freeze, Upcoming releases gates the day — pushed (0dd13c4)
+- **What shipped**: (1) the home widget's EQ now self-drives from inside the app process
+  (`.github/workflows/patch-widget.py` → `SideCutWidgetProvider.setAnimating(ctx, playing)`,
+  a 480 ms `Handler` loop started/stopped by `update()` and by the watchdog on a dead app;
+  cover art cached in `sArtKey`/`sArtBmp` so the ~2 repaints/s loop never re-decodes the same
+  base64 frame). Driving it from the web heartbeat was too slow AND died when the WebView went
+  to background — exactly when you look at the widget. (2) `index.html` heartbeat dim guard:
+  the 25 s battery dim can no longer fire while `widgetPlaying` (it pushed a fake paused
+  "Tap to show" state then went silent = the "frozen widget"), and the first touch undims by
+  re-pushing immediately instead of waiting for the next beat. (3) `window.__scUpcomingDay`
+  rejects past days AND placeholder dates >400 days out, so junk/past-dated albums no longer
+  show under Upcoming releases (landed in 7cb6e02, first shipped here).
+- **Release mechanics followed**: APP_VERSION `61` → `61.1`, sw.js `sidecut-shell-v61.1`, new
+  CHANGELOG head entry (6 shared notes, no downloader terms / no play-build naming), all 7
+  `dev/test-*.mjs` `ver === '…'` pins repinned — everything done in one idempotent
+  `dev/patch-611.mjs` pass with count==1 assertions (the reliable way to edit the 2.2 MB
+  index.html; `str_replace` still no-ops on it).
+- **Verified**: inline blocks parse via the mandatory `new Function` check; the FULL
+  `dev/test-*.mjs` suite (16 files, incl. new `test-widget-anim.mjs` + `test-widget-dim.mjs`)
+  is green; both OTA bundles rebuilt and `--check` clean (`node dev/ota-bundle.mjs &&
+  node dev/ota-bundle-play.mjs`, then each with `--check`). `dev/_boottest.js` still dies on
+  `pane.style.setProperty is not a function` — PRE-EXISTING at HEAD (the harness's element mock
+  `style: {}` has no `setProperty`), not a regression; check against `git show HEAD:index.html`
+  via `BOOT_HTML=` before chasing it.
+- **Push result**: commit 0dd13c4 → Pages deploy ✅ (live `updates.json` now v61.1, 6 notes),
+  AAB build ✅ both jobs (full + play) — the widget animation is native, so it only reaches
+  phones through that AAB artifact, while the heartbeat/upcoming fixes ride the OTA.
+
 ## v56.10.1 (Sep 12, 2026): reorder songs works from All Songs (hold, kebab, header)
 - **User complaint**: "Like holding down the song the reorder function doesn't show" — the
   reorder entry points were gated on `activePlaylist !== 'All Songs'/'__unsorted__'`
