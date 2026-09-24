@@ -8,6 +8,37 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.3.5 (Sep 23, 2026): one release number everywhere + the mislabeled v61.3 ship date — pushed
+- **What it is**: an alignment patch cut ~35 min after 61.3 (f097cbd + 4c3a946). No feature
+  changes: APP_VERSION → 61.3.5, sw.js → `sidecut-shell-v61.3.5`, new CHANGELOG head entry
+  (6 notes), every `dev/test-*.mjs` `ver === '…'` pin repinned, and root `manifest.json` — the
+  legacy update-manifest copy that `android-build.yml` drops into `www/` — dragged off the stale
+  v58.0 onto this release. All of it via the idempotent `dev/patch-6135.mjs` pass (str_replace
+  still no-ops on the 2.2 MB index.html).
+- **The date bug the bump flushed out (the reason `test-6052` failed)**: 61.3's changelog entry
+  read "September 24, 2026 · 1:42 AM EDT" — that is the UTC clock time wearing an EDT label
+  (f097cbd landed 2026-09-24T01:50Z = Sep 23, 9:50 PM EDT), i.e. a timestamp in the future from
+  the moment it was written. With the correctly stamped 61.3.5 head (Sep 23, 10:27 PM EDT) above
+  it, the changelog read backwards, and `dev/test-6052.mjs` — the ONLY test that pins
+  `entries[0].date` by exact string equality — failed while every other check passed. Fixed by
+  `dev/fix-613-date.mjs` (atomic count==1 replace): 61.3 now reads "September 23, 2026 · 9:42 PM
+  EDT", and the test pin was repinned to the 61.3.5 head date.
+  - **Gotcha**: a patch script stamping a release date MUST derive Eastern as UTC−4 (see
+    `easternStamp()` in patch-6135 — no tzdata in the sandbox). Symptoms of getting this wrong:
+    a CHANGELOG entry dated LATER than the entry below it, and a red `dev/test-6052.mjs` on the
+    single line `entries[0].date === '…'`. Repin that line on every release, like the `ver ===`
+    pins.
+- **Bundle/size mechanics learned here**: root `manifest.json`'s `size` is a SEED only — the
+  manifest is itself one of `OTA_FILES`, so the field inside the zip can never equal that zip's
+  own size; the exact figure is written by `dev/ota-bundle.mjs` into `ota/updates.json`,
+  `ota/manifest.json` and root `updates.json`, and re-zipping shifts the byte count by ±1 per
+  pass. Left in the consistent state the checks care about: repo manifest.json = updates.json =
+  zip = 654999 bytes; the embedded copy lags one build by design and nothing verifies it.
+- **Verified**: all 5 inline `<script>` blocks parse via `new Function`; the FULL
+  `dev/test-*.mjs` suite (17 files) green including the repinned date; `node dev/ota-bundle.mjs
+  --check` and `node dev/ota-bundle-play.mjs --check` both OK — v61.3.5, 6 notes, Play flag
+  baked.
+
 ## v61.2 (Sep 23, 2026): Upcoming releases reads drop dates from Spotify — pushed
 - **What shipped**: a real dated drop never reached Upcoming releases because Apple/Deezer/
   MusicBrainz carry nothing before release day. `scFetchSpotifyUpcoming` (`window.__scSpotifyUpcoming`)
