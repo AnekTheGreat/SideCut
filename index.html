@@ -4406,7 +4406,13 @@ window.__scDay10 = function(v){
 };
 window.__scUpcomingDay = function(v){
   var d = window.__scDay10(v);
-  return !!d && d > new Date().toISOString().slice(0, 10);
+  if(!d) return false;
+  var today = new Date().toISOString().slice(0, 10);
+  if(d <= today) return false;
+  // Placeholder dates (9999-12-31 and friends) are not a real drop - anything
+  // more than 400 days out is catalog junk, not a release someone dated.
+  var ms = Date.parse(d + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z');
+  return isFinite(ms) && ms <= 400 * 86400000;
 };
 // ---- Build switch: Play Store build vs sideload/OTA build --------------------
 // CI (patch-playbuild.py) injects window.__PLAY_BUILD__ = true into the Play
@@ -10604,7 +10610,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61';
+  const APP_VERSION = '61.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11019,6 +11025,14 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.1', date: 'September 23, 2026 · 8:13 PM EDT', title: 'The home widget moves again, and Upcoming releases stops counting the past', items: [
+    'The home-screen widget animates again while a song plays: the equalizer bars cycle on their own from inside the app, so the motion keeps going whether or not SideCut is on screen. Before, the bars only stepped when the app was awake — which is exactly when you are not looking at the widget.',
+    'That loop repaints about twice a second and caches the cover art across those repaints, so the picture is decoded once instead of on every frame, and it hands the widget back to the paused renderer the moment playback stops.',
+    'The widget can no longer freeze mid-song: the battery-saving idle dim is blocked while music is playing — it used to push a fake paused state ("Tap to show", bars gone, a play icon that lied) and then stop pushing entirely. A stationary player still dims, and the first tap anywhere in the app wakes a dimmed widget on the spot instead of waiting out the rest of the beat.',
+    'If the app dies while a song is playing, the watchdog now stops the shimmer and paints the real paused state instead of leaving bars marching for music that is no longer running.',
+    'Upcoming releases only counts genuinely dated drops: an album whose date has already passed no longer shows up there, and placeholder dates far out in the future are treated as catalog junk instead of a release someone actually dated.',
+    'The same day gate runs everywhere the tab is built — Fetch latest and the Home New releases panel — so both lists agree about what is really on the way.',
+  ] },
   { version: '61', date: 'September 23, 2026 · 7:25 PM EDT', title: 'Fetch latest grows an "Upcoming releases" tab', items: [
     'The Fetch latest popup gains a second tab \u2014 "Upcoming releases" \u2014 beside the full list: every release your pinned artists have dated to drop, soonest first, with a count on the tab and how long is left on each row.',
     'Tap an upcoming row and it opens the release page: the cover, your artist photo, the countdown ticking down days hours minutes and seconds to the drop, Pre-save, Share and the tracklist preview \u2014 the same page New releases and the bell open.',
@@ -21676,14 +21690,26 @@ function _fallbackCopy(text){
     var _widgetLastInteraction = Date.now();
     var _widgetTimeoutMs = 25000;
     var _widgetDimmed = false;
-    function _widgetUserInteracted(){ _widgetLastInteraction = Date.now(); if(_widgetDimmed){ _widgetDimmed = false; } }
+    function _widgetUserInteracted(){
+      _widgetLastInteraction = Date.now();
+      if(_widgetDimmed){
+        _widgetDimmed = false;
+        // Undim on the spot - waiting for the next heartbeat left the widget
+        // reading 'Tap to show' for up to another 6s after the first touch.
+        try{ if(widgetTrack) pushWidgetState(widgetTrack, widgetPlaying); }catch(e){}
+      }
+    }
     document.addEventListener('touchstart', _widgetUserInteracted, {passive:true});
     document.addEventListener('click', _widgetUserInteracted, {passive:true});
     window.__scWidgetHeartbeat = function(){
       try{
         if(!widgetTrack) return;
-        // After 25s of no interaction, stop pushing to save battery
-        if(Date.now() - _widgetLastInteraction > _widgetTimeoutMs){
+        // After 25s of no interaction, stop pushing to save battery - BUT ONLY
+        // when nothing is playing. Dimming mid-song pushed a fake paused state
+        // ('Tap to show', no EQ bars, a play icon that lied) and then stopped
+        // pushing entirely, which is what made the widget look frozen while
+        // music was playing. A stationary player still dims to save battery.
+        if(!widgetPlaying && Date.now() - _widgetLastInteraction > _widgetTimeoutMs){
           if(!_widgetDimmed){
             _widgetDimmed = true;
             // Push a dimmed/idle state once, then stop

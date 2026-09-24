@@ -113,6 +113,7 @@ public class SideCutWidgetPlugin extends Plugin {
             ed2.apply();
             SideCutWidgetProvider.cancelWatchdog(ctx);
         }
+        SideCutWidgetProvider.setAnimating(ctx, playing);
         SideCutWidgetProvider.pushAll(ctx);
         call.resolve();
     }
@@ -230,6 +231,51 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         { android.view.View.VISIBLE, android.view.View.INVISIBLE, android.view.View.VISIBLE }
     };
 
+    // ---- Self-driving EQ animation ------------------------------------------
+    // RemoteViews have no animator, so the shimmer is painted by repainting the
+    // widget on a short timer WHILE a track is playing. Driving it from the web
+    // heartbeat was far too slow (one frame per heartbeat) and stopped dead the
+    // moment the WebView went to the background - which is exactly when you are
+    // looking at the widget. This loop lives in the app process instead and runs
+    // until playback stops or the process dies; the watchdog still repaints a
+    // paused widget if the process is killed mid-song.
+    private static android.os.Handler sAnimH = null;
+    private static Runnable sAnimT = null;
+    private static Context sAnimCtx = null;
+    private static volatile int animPhase = -1;
+    // Art cache: while animating, pushAll repaints roughly twice a second and
+    // would otherwise re-decode the same base64 cover every frame.
+    private static String sArtKey = null;
+    private static Bitmap sArtBmp = null;
+
+    static void setAnimating(final Context ctx, final boolean on) {
+        try {
+            if (on) {
+                if (sAnimT != null) return;
+                sAnimCtx = ctx.getApplicationContext();
+                if (sAnimH == null) sAnimH = new android.os.Handler(android.os.Looper.getMainLooper());
+                sAnimT = new Runnable() {
+                    private int ph = 0;
+                    @Override
+                    public void run() {
+                        if (sAnimT == null) return;
+                        ph = ph + 1;
+                        if (ph >= EQ_WAVE.length) ph = 0;
+                        animPhase = ph;
+                        if (sAnimCtx != null) pushAll(sAnimCtx);
+                        sAnimH.postDelayed(this, 480L);
+                    }
+                };
+                sAnimH.post(sAnimT);
+            } else {
+                animPhase = -1;
+                if (sAnimH != null && sAnimT != null) sAnimH.removeCallbacks(sAnimT);
+                sAnimT = null;
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
 
     // Renders the themeable gradient (bg1 -> bg2, rounded corners) as a small
     // bitmap. Downsampled on purpose: it is stretched to the widget bounds and
@@ -291,7 +337,14 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             rv.setTextColor(R.id.wTitle, (int) parseColor(th.optString("title", "#FFFFFF")));
             rv.setTextViewText(R.id.wArtist, artist);
             rv.setTextColor(R.id.wArtist, (int) parseColor(th.optString("artist", "#B9BDC7")));
-            Bitmap bmp = decodeArt(art);
+            Bitmap bmp;
+            if (art != null && art.equals(sArtKey)) {
+                bmp = sArtBmp;
+            } else {
+                bmp = decodeArt(art);
+                sArtKey = art;
+                sArtBmp = bmp;
+            }
             if (bmp != null) rv.setImageViewBitmap(R.id.wArt, bmp);
             else rv.setImageViewResource(R.id.wArt, R.mipmap.ic_launcher);
 
@@ -302,6 +355,9 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             // (setViewVisibility / setInt -> setColorFilter) so it always compiles.
             int pulse = 0;
             if (o != null) { try { pulse = o.optInt("pulse", 0); } catch (Exception ignored) {} }
+            // While playing, the self-driving loop owns the frame - its phase
+            // advances every 480ms even when the web heartbeat is asleep.
+            if (playing && animPhase >= 0) pulse = animPhase;
             int accent = (int) parseColor(th.optString("accent", "#E3B23C"));
             if (playing) {
                 rv.setViewVisibility(R.id.wEqWrap, android.view.View.VISIBLE);
@@ -383,6 +439,7 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             o.put("pulse", 0);
             sp.edit().putString("state", o.toString()).putBoolean("wdArmed", false).apply();
             cancelWatchdog(ctx);
+            setAnimating(ctx, false); // dead app: stop the shimmer, paint paused
             pushAll(ctx);
         } catch (Exception ignored) {
         }
