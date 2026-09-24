@@ -41,7 +41,7 @@ ok(!!check, 'fetchArtistReleases slice extracted');
 ok(check && check.includes('window.__scMbUpcoming(artist)'), 'the no-account pass runs in the release check');
 ok(check && check.indexOf('window.__scMbUpcoming(artist)') < check.indexOf('// Keep all fetched releases'),
   'merges before the prev.concat(fresh) merge');
-ok(check && check.includes("(x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date"), 'dedupe key names its source');
+ok(check && check.includes("'mbt:' + nt + '|' + x.date"), 'dedupe key names its source');
 ok(check && check.includes('pe.date = x.date'), 'an undated entry gets the date in place instead of duplicating');
 ok(check && check.includes('catch(_eSp)'), 'best-effort: a source failure cannot break the check');
 
@@ -59,9 +59,9 @@ ok(count('await scSpotifyInteractiveToken()') === 1, 'the only window left belon
 
 console.log('[4] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.7', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.7';"), 'sw.js cache = sidecut-shell-v61.3.7');
-ok(src.indexOf("version: '61.3.7'") < src.indexOf("version: '61.3.5'"), 'CHANGELOG head entry is 61.3.7');
+ok(ver === '61.3.8', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.8';"), 'sw.js cache = sidecut-shell-v61.3.8');
+ok(src.indexOf("version: '61.3.8'") < src.indexOf("version: '61.3.5'"), 'CHANGELOG head entry is 61.3.8');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');

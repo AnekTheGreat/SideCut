@@ -10625,7 +10625,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.3.7';
+  const APP_VERSION = '61.3.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11040,6 +11040,13 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.3.8', date: 'September 24, 2026 · 3:46 PM EDT', title: 'Upcoming releases reads the dates it was missing', items: [
+    'Upcoming releases finally fills in: SideCut reads the announced dates straight from the artist’s own open catalog, where a pre-order carries its real day weeks before it lands — that catalog is read by the artist’s ID, not by the popularity-ranked search that was burying a dated drop.',
+    'Nothing to connect and nothing to verify anywhere: the Spotify pass and its silent token are gone from the release check, so no drop date is ever read through an account. The artist’s open catalog and MusicBrainz do all the finding.',
+    'A pinned artist’s upcoming release is looked up directly: one artist search for the ID, one album pass for the catalog, and every dated future release it lists flows through the same artwork, track-count and duplicate rules as everything else.',
+    'The release check reads a wider net of the same open sources, so a drop listed weeks out shows under Upcoming releases instead of only appearing on the day it lands.',
+    'This release changes nothing about how a drop you add by hand is stored — manual drops still carry their day and time.',
+  ] },
   { version: '61.3.7', date: 'September 24, 2026 · 7:23 AM EDT', title: 'Release check never sticks and Home stays clear', items: [
     'Every upcoming drop now carries a time of day: the manual sheet opens on today with a Drop time field you set, an upcoming row reads "drops Oct 3 at 7:23 AM" beside its countdown, and a drop whose catalog knows only the day reads "at time TBA" rather than leaving the hour a mystery.',
     'Upcoming releases now looks the date up itself: every pinned artist is checked against MusicBrainz’s open catalog of announced releases, where a drop someone has already dated sits with its day set weeks before it lands — no account, no sign-in, no window.',
@@ -29690,6 +29697,41 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(_eSheet){ }
   };
 
+  // iTunes publishes an announced release as a pre-order with the real day
+  // already set — but only on the artist's own catalog. The term search ranks
+  // by popularity and buries it, so a dated drop weeks out showed nothing
+  // (probed Sep 24: the ID lookup found 19 of 21 dated upcoming releases where
+  // the term search found 8 of 13). Open catalog, no account, no token: one
+  // artist search to resolve the ID, one lookup for the albums.
+  async function scItunesArtistAlbums(artist){
+    try{
+      var norm = function(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+      var want = norm(primaryArtistName(artist));
+      if(!want) return [];
+      // Bidirectional match: the artist's catalog is credible when the names
+      // line up, not merely when one string contains the other by accident.
+      var credited = function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); };
+      var arUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=musicArtist&limit=5';
+      var arResp = await fetchWithProxy(arUrl);
+      if(!arResp || !arResp.ok) return [];
+      var arData = await arResp.json();
+      var artistId = null;
+      ((arData && arData.results) || []).forEach(function(r){
+        if(artistId || !r || !r.artistName) return;
+        if(credited(norm(primaryArtistName(r.artistName)))) artistId = r.artistId;
+      });
+      if(!artistId) return [];
+      var lkUrl = 'https://itunes.apple.com/lookup?id=' + encodeURIComponent(artistId) + '&entity=album&limit=200';
+      var lkResp = await fetchWithProxy(lkUrl);
+      if(!lkResp || !lkResp.ok) return [];
+      var lkData = await lkResp.json();
+      return ((lkData && lkData.results) || []).filter(function(r){
+        if(!r || !r.collectionName) return false;
+        return credited(norm(primaryArtistName(r.artistName || '')));
+      });
+    }catch(_eId){ return []; }
+  }
+
   // Query iTunes for an artist's recent tracks and merge into the snapshot.
   // Returns the list of newly-discovered releases (empty array if none/failed).
   async function fetchArtistReleases(artist){
@@ -29749,8 +29791,41 @@ if(!isDiscover) stopDiscoverPreview();
             if(!isNewish && !noNewer) return;
             albCand.push(r);
           });
+          // The artist's own catalog, read by ID: this is where a dated
+          // pre-order actually lives, and it goes through the exact same
+          // credited-artist / track-count / dedupe rules below.
+          try{
+            var _idAlbums = await scItunesArtistAlbums(artist);
+            (_idAlbums || []).forEach(function(r){
+              if(!r || !r.collectionName) return;
+              if((r.trackCount || 0) === 1) return;   // one-track releases come through the song query
+              albCand.push(r);
+            });
+          }catch(_idE){}
           albCand.sort(function(x, y){ return ((y.releaseDate||'').slice(0,10)).localeCompare((x.releaseDate||'').slice(0,10)); });
-          albCand.slice(0, 5).forEach(function(r){
+          // Two sources can name the same album: the artist-catalog lookup and
+          // the term search both carry a pre-order, and a cross-storefront
+          // edition repeats it. Collapse by title+day before listing, keeping
+          // the copy that has artwork and a collectionId.
+          const albSeen = new Set();
+          const albPick = [];
+          albCand.forEach(function(r){
+            const albDate = (r.releaseDate || '').slice(0, 10);
+            const keyA = 'alb:' + (r.collectionName || '').toLowerCase().trim() + '|' + albDate;
+            if(prevKeys.has(keyA)) return;
+            if(albSeen.has(keyA)){
+              for(let ai = 0; ai < albPick.length; ai++){
+                const pk = 'alb:' + (albPick[ai].collectionName || '').toLowerCase().trim() + '|' + (albPick[ai].releaseDate || '').slice(0, 10);
+                if(pk !== keyA) continue;
+                if(!albPick[ai].artworkUrl100 && r.artworkUrl100) albPick[ai] = r;
+                else if(!albPick[ai].collectionId && r.collectionId) albPick[ai] = r;
+                break;
+              }
+              return;
+            }
+            albSeen.add(keyA); albPick.push(r);
+          });
+          albPick.slice(0, 5).forEach(function(r){
             const albDate = (r.releaseDate || '').slice(0, 10);
             const keyA = 'alb:' + (r.collectionName || '').toLowerCase().trim() + '|' + albDate;
             if(prevKeys.has(keyA)) return;
@@ -29770,18 +29845,17 @@ if(!isDiscover) stopDiscoverPreview();
       // ---- Dated drops with nothing to connect -----------------------------
       // MusicBrainz carries announced releases with the day already set, and
       // reading it needs no account at all — which is what a public app has to
-      // work like. The silent Spotify pass still runs on top in case a token
-      // from an old connection is lying on the device, but it is never asked
-      // for and never opens a window. Best effort: no network, no matches —
-      // the sources above still decide alone about this one.
+      // work like. Nothing here opens a window or reads a token: the artist's
+      // Apple catalog above and this open search are the whole source of truth.
+      // Best effort: no network, no matches — the sources above still decide
+      // alone about this one.
       try{
         var mbFresh = (typeof window.__scMbUpcoming === 'function') ? await window.__scMbUpcoming(artist) : [];
-        var spFresh = (typeof window.__scSpotifyUpcoming === 'function') ? await window.__scSpotifyUpcoming(artist) : [];
-        (mbFresh || []).concat(spFresh || []).forEach(function(x){
+        (mbFresh || []).forEach(function(x){
           if(!x || !x.title || !x.date) return;
           if(!x.time) x.time = '';                    // day-only catalogs leave it blank
           var nt = String(x.title).toLowerCase().trim();
-          var k = (x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date;
+          var k = 'mbt:' + nt + '|' + x.date;
           if(prevKeys.has(k)) return;
           for(var pi = 0; pi < prev.length; pi++){
             var pe = prev[pi];
@@ -30244,68 +30318,6 @@ if(!isDiscover) stopDiscoverPreview();
     return token;
   }
   window.__scSpotifyConnect = scSpotifyInteractiveToken;
-  // Silent token for the release check: the stored token while it is good, else
-  // a quiet refresh_token exchange. Returns null when nothing is connected —
-  // no window, no toast, the other sources simply carry on.
-  async function scSpotifySilentToken(){
-    var t = null; try{ t = JSON.parse(localStorage.getItem(SC_SPOTIFY_TOKEN_KEY) || 'null'); }catch(_e){}
-    if(t && t.access_token && Number(t.expires_at) > Date.now() + 30000) return t.access_token;
-    if(!t || !t.refresh_token) return null;
-    try{
-      var r = await fetch('https://accounts.spotify.com/api/token', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({ client_id: SC_SPOTIFY_CLIENT_ID, grant_type:'refresh_token', refresh_token: t.refresh_token }) });
-      if(!r.ok) return null;
-      var nt = await r.json();
-      if(!nt || !nt.access_token) return null;
-      nt.refresh_token = nt.refresh_token || t.refresh_token;
-      nt.expires_at = Date.now() + ((Number(nt.expires_in) || 3600) - 60) * 1000;
-      try{ localStorage.setItem(SC_SPOTIFY_TOKEN_KEY, JSON.stringify(nt)); }catch(_e2){}
-      return nt.access_token;
-    }catch(_e3){ return null; }
-  }
-  window.__scSpotifySilentToken = scSpotifySilentToken;
-  // Upcoming albums/singles for one artist, straight from Spotify. Only dates
-  // that are genuinely in the FUTURE and carry a known DAY are kept — a
-  // month-precision placeholder or an already-released record is not a drop on
-  // the way, and the tab must never fill with guesses.
-  async function scFetchSpotifyUpcoming(artist){
-    try{
-      if(!artist) return [];
-      var token = await scSpotifySilentToken();
-      if(!token) return [];
-      var H = { Authorization: 'Bearer ' + token };
-      var rs = await fetch('https://api.spotify.com/v1/search?' + new URLSearchParams({ q: artist, type: 'artist', limit: '5' }), { headers: H });
-      if(!rs || !rs.ok) return [];
-      var sd = await rs.json();
-      var cands = (sd.artists && sd.artists.items) || [];
-      var want = String(artist).toLowerCase().trim();
-      var pick = null;
-      for(var i = 0; i < cands.length; i++){ if(String((cands[i] && cands[i].name) || '').toLowerCase().trim() === want){ pick = cands[i]; break; } }
-      if(!pick && cands.length === 1) pick = cands[0];
-      if(!pick || !pick.id) return [];
-      // No market filter: a pre-save is often only registered in some storefronts.
-      var ra = await fetch('https://api.spotify.com/v1/artists/' + encodeURIComponent(pick.id) + '/albums?include_groups=album,single&limit=50', { headers: H });
-      if(!ra || !ra.ok) return [];
-      var ad = await ra.json();
-      var today = new Date().toISOString().slice(0, 10);
-      var out = [];
-      ((ad && ad.items) || []).forEach(function(a){
-        if(!a || !a.name || !a.release_date || a.release_date_precision !== 'day') return;
-        var d = String(a.release_date).slice(0, 10);
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(d) || !(d > today)) return;
-        var credits = (a.artists || []).map(function(x){ return String((x && x.name) || '').toLowerCase().trim(); });
-        if(credits.indexOf(want) === -1) return; // collabs: the pinned artist must be credited
-        out.push({
-          title: a.name, date: d,
-          art: (a.images && a.images[0] && a.images[0].url) || null,
-          url: (a.external_urls && a.external_urls.spotify) || null,
-          previewUrl: null, kind: 'album', cid: null, seen: false, _spt: a.id
-        });
-      });
-      return out;
-    }catch(_e){ return []; }
-  }
-  window.__scSpotifyUpcoming = scFetchSpotifyUpcoming;
   // ---- No account, no window: the announced drop, dated on MusicBrainz -----
   // Spotify only lists a release date before release day — but reading it used
   // to need a connection, which a public app cannot ask for. MusicBrainz

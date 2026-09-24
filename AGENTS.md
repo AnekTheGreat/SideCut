@@ -8,6 +8,42 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.3.8 (Sep 24, 2026): upcoming releases reads the dates it was missing — no Spotify, no token, no backend
+- **The user's directive, verbatim**: "Musicbrianz don't have the dated release for upcoming releases but Spotify has it but I don't want my app to take
+  the user to Spotify or verify anything for that except. Make the upcoming release actually work." So: find the date from an OPEN source, and delete the
+  account path entirely.
+- **The real miss was the search, not the source.** Apple publishes an announced release as a **pre-order with the real day already set** — but only on the
+  artist's OWN catalog. The term search (`search?term=…&entity=album`) is popularity-ranked and buries a pre-order, so a drop dated weeks out never surfaced.
+  Probed Sep 24: the **ID lookup** (`lookup?id=<artistId>&entity=album&limit=200`) found **19 of 21** dated upcoming releases where the term search found 8 of
+  13. MusicBrainz (the v61.3.6 source) carries the same day-precision data for artists someone has already dated, so both stay.
+- **`scItunesArtistAlbums(artist)`** (defined just above `fetchArtistReleases`): ONE `entity=musicArtist&limit=5` search resolves the artistId (first result
+  whose `artistName`, reduced to its primary artist, matches bidirectionally — the same `credited()` rule as the rest of the pass), then ONE
+  `lookup?id=…&entity=album&limit=200` reads the catalog. Returns the raw album rows; the caller applies the credited-artist / `trackCount === 1` / dedupe
+  rules. `catch(_eId){ return []; }` — best effort, never throws, never opens a window, never touches a token.
+- **Folded into the album loop** in `fetchArtistReleases` and collapsed across sources: the ID catalog and the term search (and a cross-storefront edition)
+  can name the same drop, so `albSeen` (key `alb:<title>|<day>`) keeps one — preferring the copy with `artworkUrl100`, then `collectionId` — before
+  `albPick.slice(0,5)`. `prevKeys.has()` still drops a drop already stored.
+- **The Spotify release-check path is DELETED**, not just unused: `scSpotifySilentToken` + `scFetchSpotifyUpcoming` (and their `window.__sc*` aliases) are
+  gone, the `spFresh` concat is gone, and the MusicBrainz merge dedupe key is now a plain `'mbt:' + nt + '|' + x.date` (no `spt:` source prefix survives).
+  `await scSpotifyInteractiveToken()` now has exactly ONE call site — the converter's `scSpotifySearch`, where the user explicitly starts a connection — and
+  `__scUpcomingConnectTap` no longer references it.
+- **Home unaffected**: the empty-state CTA already said "Check for drops" (v61.3.6 removed the Connect Spotify button), so nothing there changed.
+- **Release mechanics**: `dev/patch-6138.mjs` (idempotent; `--manifest` re-seeds root `manifest.json` after the OTA build) did all of it in one pass —
+  APP_VERSION + sw.js `CACHE_NAME` + CHANGELOG head + the 9 index.html edits, then repinned every `dev/test-*.mjs` `ver ===` pin. Gotchas hit and fixed:
+  (1) the changelog head carries the run timestamp, so the generic exact-string idempotence check can never match on a re-run — guard on the version
+  marker (`src.includes("const CHANGELOG = [\n  { version: '<VER>'")`), not the new text; (2) `test-6137`'s `const CHANGELOG = [` anchor is a REGEX
+  literal (escaped dots), so the blanket repin skips it — it needs its own targeted rewrite; (3) the blanket repin must EXCLUDE the new
+  `test-6138.mjs`, whose own "heads the changelog" anchor names the previous release on purpose.
+- **New `dev/test-6138.mjs`** pins the pass, the cross-source collapse, the removal (`scSpotifySilentToken`/`scFetchSpotifyUpcoming`/`_spt:`/`spFresh` all
+  count 0, no `__scSpotifyUpcoming` in the check), the surviving interactive flow (1 definition, 1 call site), the empty state, and the metadata.
+  `dev/test-612.mjs` was rewritten WHOLE (its old subject was the silent Spotify pass — regex surgery on a test whose premise changed broke it twice).
+- **Env gotchas this session**: `zip`/`unzip` and the `acorn` dev dep were missing from the image — `test-6044/6046/6047/6053/6054` all failed with
+  `ERR_MODULE_NOT_FOUND: acorn` and `test-6058`/`test-play` fail without `zip`. `apt-get update && apt-get install -y zip unzip` and
+  `npm install acorn --no-save` made the FULL suite (20 files) green — none of those were regressions.
+- **Verified**: all 5 inline `<script>` blocks parse via the `new Function` check; FULL `dev/test-*.mjs` suite (20 files) green;
+  `node dev/ota-bundle.mjs --check` + `node dev/ota-bundle-play.mjs --check` both OK — v61.3.8, 5 notes, Play flag baked
+  (zips 658270 / 658281 bytes). Live pipeline re-confirmed 19/21 coverage, `dupUpcoming=0`.
+
 ## v61.3.7 (Sep 24, 2026): the release check can't stick, Home stops showing it, drops carry a time
 - **The user's four fixes**: "you don't need an example for release name and the checking doesn't work and fetching
   pinned artists releases doesn't need to show on the home page Also add the time for Manuel and auto fetching upcoming
