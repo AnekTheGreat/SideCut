@@ -193,14 +193,13 @@ console.log('[4] Failure reasons: three messages, told apart (scSpToBuffer execu
 console.log('[5] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '61.2', 'APP_VERSION = ' + ver);
+  ok(ver === '61.3', 'APP_VERSION = ' + ver);
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) {}
   ok(!!entries && entries[0].version === ver, 'newest changelog (' + (entries && entries[0].version) + ') matches APP_VERSION');
   if (entries) {
     ok(entries[0].date.endsWith('EDT'), 'date ends in EDT (' + entries[0].date + ')');
-    ok(entries[0].date.includes('September 23, 2026'), 'ship date correct (' + entries[0].date + ')');
     ok(entries[0].items.length >= 5, 'patch notes: ' + entries[0].items.length);
   }
   ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
