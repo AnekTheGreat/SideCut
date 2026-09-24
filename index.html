@@ -10610,7 +10610,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.3.5';
+  const APP_VERSION = '61.3.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11025,6 +11025,14 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.3.6', date: 'September 24, 2026 · 6:02 AM EDT', title: 'Upcoming releases stops asking you to connect anything', items: [
+    'Upcoming releases now looks the date up itself: every pinned artist is checked against MusicBrainz’s open catalog of announced releases, where a drop someone has already dated sits with its day set weeks before it lands — no account, no sign-in, no window.',
+    'The empty tab no longer offers a Connect Spotify button: it now says "Check for drops" and runs the same check on the spot, beside the "Add a drop manually" sheet — nothing in Upcoming releases asks you to connect anything anymore.',
+    'What counts as a drop has not moved: only a real day (YYYY-MM-DD) that is genuinely in the future is listed — placeholder dates and catalog junk stay out — and the pinned artist has to be credited on the release, so collaborations count only when your artist is on it.',
+    'A token left on the device by a connection from an older version is still read quietly in the background to add its dates; nobody is ever prompted for one, and nobody needs one.',
+    'The check runs exactly where it did before — Fetch latest, the Upcoming tab, the Home bubble, the bell and the automatic pass all read the same stored dates — and one query per artist keeps the whole thing quick.',
+    'A failed, offline or rate-limited lookup changes nothing: the other sources simply carry on, so the release check can never be taken down by a catalog being down.',
+  ] },
   { version: '61.3.5', date: 'September 23, 2026 · 10:27 PM EDT', title: 'One version number everywhere', items: [
     'The app, the service worker and both update channels now carry one release number — 61.3.5 — so Fetch latest, Check for updates and the update history can never disagree about what is running.',
     'A patch cut straight on top of 61.3: no feature changes — this release exists so every surface reports the same number and the update bundles are rebuilt from this exact tree.',
@@ -29518,7 +29526,7 @@ if(!isDiscover) stopDiscoverPreview();
       var cbtn = document.createElement('button');
       cbtn.className = 'sc-up-cta sc-up-cta-connect';
       cbtn.style.cssText = 'padding:10px 16px;border-radius:999px;border:1px solid var(--gold);background:rgba(227,178,60,0.12);color:var(--gold);font-size:12.5px;font-weight:700;cursor:pointer;';
-      cbtn.textContent = 'Connect Spotify';
+      cbtn.textContent = 'Check for drops';
       var abtn = document.createElement('button');
       abtn.className = 'sc-up-cta sc-up-cta-add';
       abtn.style.cssText = 'padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,0.05);color:var(--ink);font-size:12.5px;font-weight:700;cursor:pointer;';
@@ -29527,14 +29535,10 @@ if(!isDiscover) stopDiscoverPreview();
       el.appendChild(wrap);
       var hint = document.createElement('div');
       hint.style.cssText = 'font-size:11.5px;color:var(--ink-dim);margin-top:10px;line-height:1.45;max-width:46ch;margin-left:auto;margin-right:auto;';
-      hint.textContent = 'A drop is often only listed on Spotify before release day — connect once and SideCut reads the date from there too.';
+      hint.textContent = 'SideCut checks open release catalogs for every pinned artist — no account, nothing to connect. If no store has listed the date yet, add the drop by hand.';
       el.appendChild(hint);
       cbtn.addEventListener('click', function(){ window.__scUpcomingConnectTap(cbtn); });
       abtn.addEventListener('click', function(){ window.__scAddUpcomingDrop(); });
-      try{
-        var st = JSON.parse(localStorage.getItem(SC_SPOTIFY_TOKEN_KEY) || 'null');
-        if(st && st.access_token && Number(st.expires_at) > Date.now()) cbtn.textContent = 'Re-check for drops';
-      }catch(_eLbl){}
     }catch(_eWire){}
   };
   // Refetch + repaint everything the release lists draw from. When the New
@@ -29555,15 +29559,14 @@ if(!isDiscover) stopDiscoverPreview();
     try{ renderHome(); }catch(_e2){}
     try{ updateNotifBadge(); }catch(_e3){}
   };
-  // Explicit tap only: this is the ONE place the authorization window may open.
+  // The button runs the check on the spot. It needs no account, so there is no
+  // authorization window anywhere in this flow — the only one left belongs to
+  // the converter's Spotify search, on its own explicit tap.
   window.__scUpcomingConnectTap = async function(btn){
-    try{ if(btn){ btn.textContent = 'Connecting\u2026'; btn.disabled = true; } }catch(_eB0){}
-    var ok = false;
-    try{ await scSpotifyInteractiveToken(); ok = true; }
-    catch(_eConn){ toast('Spotify connection was cancelled \u2014 you can still add the drop by hand.', 3600); }
-    try{ if(btn){ btn.textContent = ok ? 'Checking\u2026' : 'Add a drop manually'; btn.disabled = false; } }catch(_eB1){}
-    if(ok){ try{ await window.__scRebuildReleaseLists(true); }catch(_eRb){} }
-    try{ if(btn) btn.textContent = 'Re-check for drops'; }catch(_eB2){}
+    try{ if(btn){ btn.textContent = 'Checking\u2026'; btn.disabled = true; } }catch(_eB0){}
+    try{ await window.__scRebuildReleaseLists(true); }
+    catch(_eChk){ toast('The release check could not finish \u2014 try again.', 3600); }
+    try{ if(btn){ btn.textContent = 'Check for drops'; btn.disabled = false; } }catch(_eB1){}
   };
   // For a drop no catalog has listed yet: artist, title, date — stored exactly
   // like a fetched release, so it flows into the tabs, bell, Home and the
@@ -29712,17 +29715,20 @@ if(!isDiscover) stopDiscoverPreview();
           });
         }
       }catch(_ae){}
-      // ---- Spotify: drop dates the other catalogs do not have yet ----------
-      // Apple's search API, Deezer and MusicBrainz carry nothing for a release
-      // that has not landed, so without this pass a real dated drop never
-      // reached Upcoming releases. Best effort: no token, no network, no
-      // matches — the other sources above still decide nothing about this one.
+      // ---- Dated drops with nothing to connect -----------------------------
+      // MusicBrainz carries announced releases with the day already set, and
+      // reading it needs no account at all — which is what a public app has to
+      // work like. The silent Spotify pass still runs on top in case a token
+      // from an old connection is lying on the device, but it is never asked
+      // for and never opens a window. Best effort: no network, no matches —
+      // the sources above still decide alone about this one.
       try{
+        var mbFresh = (typeof window.__scMbUpcoming === 'function') ? await window.__scMbUpcoming(artist) : [];
         var spFresh = (typeof window.__scSpotifyUpcoming === 'function') ? await window.__scSpotifyUpcoming(artist) : [];
-        (spFresh || []).forEach(function(x){
+        (mbFresh || []).concat(spFresh || []).forEach(function(x){
           if(!x || !x.title || !x.date) return;
           var nt = String(x.title).toLowerCase().trim();
-          var k = 'spt:' + nt + '|' + x.date;
+          var k = (x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date;
           if(prevKeys.has(k)) return;
           for(var pi = 0; pi < prev.length; pi++){
             var pe = prev[pi];
@@ -30163,9 +30169,9 @@ if(!isDiscover) stopDiscoverPreview();
     if(cached && cached.access_token && Number(cached.expires_at) > Date.now()) return Promise.resolve(cached.access_token);
     return scRandomString(64);
   }
-  // ---- Spotify: the only catalog that knows a drop date before release day --
-  // Interactive connection (the authorization window) — called ONLY from an
-  // explicit tap, never from a background release check.
+  // ---- Spotify: interactive connection (the authorization window) -----------
+  // Still called ONLY from an explicit tap (the converter's Spotify search),
+  // never from a background release check.
   async function scSpotifyInteractiveToken(){
     var token = await scSpotifyAccessToken();
     if(token && token.length > 40 && !/^ey/.test(token)){
@@ -30241,6 +30247,52 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(_e){ return []; }
   }
   window.__scSpotifyUpcoming = scFetchSpotifyUpcoming;
+  // ---- No account, no window: the announced drop, dated on MusicBrainz -----
+  // Spotify only lists a release date before release day — but reading it used
+  // to need a connection, which a public app cannot ask for. MusicBrainz
+  // carries announced releases with the DAY already set, and its search is
+  // open: one query per pinned artist, kept only when the date is a real
+  // YYYY-MM-DD in the future and the pinned artist is credited. Best effort:
+  // no network / no matches / a rate-limited reply and the other sources
+  // simply carry on — nothing here may break the release check.
+  async function scFetchMbUpcoming(artist){
+    try{
+      if(!artist) return [];
+      if(typeof fetchWithProxy !== 'function') return [];
+      var today = new Date().toISOString().slice(0, 10);
+      var horizon = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
+      // Lucene specials (quotes/backslashes) would 400 the whole query.
+      var q = 'artist:"' + String(artist).replace(/["\\]/g, ' ').trim() + '"';
+      q += ' AND firstreleasedate:[' + today + ' TO ' + horizon + ']';
+      var url = 'https://musicbrainz.org/ws/2/release-group/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
+      var rs = await fetchWithProxy(url);
+      if(!rs || !rs.ok) return [];
+      var md = await rs.json();
+      var want = primaryArtistName(artist).toLowerCase().trim();
+      var out = [];
+      ((md && md['release-groups']) || []).forEach(function(rg){
+        if(!rg || !rg.title) return;
+        // The range above can still hand back year/month-precision entries
+        // that merely overlap it — only a real day counts as a drop.
+        var d = window.__scDay10(rg['first-release-date']);
+        if(!d || !window.__scUpcomingDay(d)) return;
+        var pt = String(rg['primary-type'] || '');
+        if(pt && pt !== 'Album' && pt !== 'Single' && pt !== 'EP') return;
+        var credits = (rg['artist-credit'] || []).map(function(c){
+          return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
+        });
+        var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
+        if(!hit) return; // collabs count only when the pinned artist is credited
+        out.push({
+          title: rg.title, date: d, art: null,
+          url: 'https://musicbrainz.org/release-group/' + rg.id,
+          previewUrl: null, kind: 'album', cid: null, seen: false, _mb: rg.id
+        });
+      });
+      return out;
+    }catch(_e){ return []; }
+  }
+  window.__scMbUpcoming = scFetchMbUpcoming;
   async function scSpotifySearch(q, type){
     var token = await scSpotifyInteractiveToken();
     var response = await fetch('https://api.spotify.com/v1/search?' + new URLSearchParams({q:q, type:type || 'track', limit:'5'}), {headers:{Authorization:'Bearer ' + token}});

@@ -8,6 +8,39 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.3.6 (Sep 24, 2026): Upcoming releases looks the date up itself — no Spotify connection anywhere
+- **The user's directive, verbatim**: "I told you no connect Spotify just like make the app look it up or something that shows
+  when an upcoming album is going to be released." v61.3 shipped a **Connect Spotify** CTA (PKCE window) on both empty
+  states — that whole angle is gone.
+- **The new source — `scFetchMbUpcoming` (`window.__scMbUpcoming`)**, defined right after `scFetchSpotifyUpcoming`: ONE open
+  MusicBrainz search per pinned artist —
+  `release-group/?query=artist:"NAME" AND firstreleasedate:[today TO today+400d]&fmt=json&limit=100` through `fetchWithProxy`
+  (musicbrainz.org sends `access-control-allow-origin: *`, so the direct attempt works; proxies catch rate-limits). Verified
+  live from the sandbox BEFORE shipping: the combined query returns day-precision FUTURE release-groups ("Arrasando | 2026-10-19
+  | Album"), and MB range queries are granularity-aware — year-only "2026" matches a range it overlaps, which is exactly why
+  `__scDay10` + `__scUpcomingDay` still gate the results client-side. Filters: primary-type Album/Single/EP, pinned artist
+  present in `artist-credit` (bidirectional substring, same rule as the iTunes pass). Entries carry `_mb: rg.id`.
+- **Merge**: `fetchArtistReleases` runs `mbFresh.concat(spFresh)` through ONE loop; the dedupe key gained a source prefix
+  (`(x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date`). The silent Spotify pass STAYS (a token from an old install still
+  contributes, returns `null` fast, never a window); the `catch(_eSp)` best-effort contract is unchanged.
+- **CTA/tap**: `__scWireUpcomingCta` labels the primary button **Check for drops** (the token-state sniff was deleted), the
+  hint reads "… no account, nothing to connect …", and `__scUpcomingConnectTap` just awaits `__scRebuildReleaseLists(true)`
+  with a failure toast. `await scSpotifyInteractiveToken()` now has exactly ONE call site: the converter's `scSpotifySearch`.
+- **Why not iTunes/Deezer too (probed live Sep 24 — re-probe before re-litigating)**: iTunes `entity=album` search returned
+  ZERO future-dated albums across 4 major artists (pre-orders do not surface in search), and Deezer artist-album lists only
+  carried past `release_date`s at 2 hops. MusicBrainz alone was the verified dated source, so the check stays ~3 hops/artist.
+- **Release mechanics**: APP_VERSION 61.3.5 → 61.3.6, sw.js → `sidecut-shell-v61.3.6`, new CHANGELOG head (6 notes,
+  `easternStamp()` UTC−4 → "September 24, 2026 · 6:02 AM EDT"), root manifest.json regenerated (size seeded from
+  ota/updates.json), the 7 non-612 `ver ===` pins repinned, test-612 got 5 assertion swaps (interactive count 2→1, merge-key
+  needle, CTA slice must NOT contain 'Connect Spotify', version block), test-6052's `entries[0].date` repinned, and
+  `dev/test-6136.mjs` added. One idempotent `dev/patch-6136.mjs` pass did every index.html/test edit with count==1 assertions.
+- **str_replace on index.html CONFIRMED still dead in this environment**: even a unique 36-char ASCII line
+  (`cbtn.textContent = 'Connect Spotify';`) reports "not found" while sw.js edits fine — the same 2.2 MB no-op documented since
+  v56.0.12. Deep index.html edits MUST go through a patch script; grep the markers immediately after running it.
+- **Verified**: all 5 inline `<script>` blocks parse via the `new Function` check; the FULL `dev/test-*.mjs` suite (18 files)
+  green; `node dev/ota-bundle.mjs --check` and `node dev/ota-bundle-play.mjs --check` both OK — v61.3.6, 6 notes, Play flag
+  baked (zips 656417 / 656430 bytes). Push pending an explicit ask (Freebuff's Changes panel owns delivery).
+
 ## v61.3.5 (Sep 23, 2026): one release number everywhere + the mislabeled v61.3 ship date — pushed
 - **What it is**: an alignment patch cut ~35 min after 61.3 (f097cbd + 4c3a946). No feature
   changes: APP_VERSION → 61.3.5, sw.js → `sidecut-shell-v61.3.5`, new CHANGELOG head entry

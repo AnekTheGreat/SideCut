@@ -2,9 +2,10 @@
 // Apple's search API, Deezer and MusicBrainz list nothing for a release that
 // has not landed, so a real dated drop (verified: Karan Aujla's "AUJLA SZN 1",
 // 0 hits everywhere but Spotify) never reached Upcoming releases. This pins
-// the three ways SideCut now gets a date: the silent Spotify pass, the Connect
-// CTA on both empty states, and the manual drop sheet — plus the rule that a
-// background check must NEVER open an authorization window.
+// the ways SideCut gets a date (repinned at 61.3.6: the open MusicBrainz pass
+// first, the silent Spotify pass only when a token is already on the device,
+// and the manual drop sheet) — plus the rule that a check must NEVER open an
+// authorization window, and that the empty state asks you to connect nothing.
 import fs from 'node:fs';
 
 const src = fs.readFileSync('index.html', 'utf8');
@@ -35,8 +36,8 @@ const inter = slice('async function scSpotifyInteractiveToken(){', 'window.__scS
 ok(!!inter, 'scSpotifyInteractiveToken defined');
 ok(inter && inter.includes("window.open(auth, 'sidecut-spotify-auth'"), 'PKCE authorization popup lives here');
 ok(inter && inter.includes('return token;'), 'returns the token for callers');
-ok(count('await scSpotifyInteractiveToken()') === 2,
-  'exactly two interactive call sites (Spotify search + the Connect CTA tap)');
+ok(count('await scSpotifyInteractiveToken()') === 1,
+  'exactly one interactive call site left (the Spotify search flow — the upcoming check never opens a window)');
 ok(src.includes('async function scSpotifySearch(q, type){'), 'scSpotifySearch still exists and now routes through it');
 
 console.log('[3] upcoming pass: future, day-precision, pinned artist only');
@@ -55,7 +56,8 @@ ok(!!check, 'fetchArtistReleases slice extracted');
 ok(check && check.includes('window.__scSpotifyUpcoming(artist)'), 'Spotify pass runs in the release check');
 ok(check && check.indexOf('window.__scSpotifyUpcoming(artist)') < check.indexOf('// Keep all fetched releases'),
   'merges before the prev.concat(fresh) merge');
-ok(check && check.includes("'spt:' + nt + '|' + x.date"), 'dedupe key names its source');
+ok(check && check.includes('window.__scMbUpcoming(artist)'), 'the no-account MusicBrainz pass runs first');
+ok(check && check.includes("(x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date"), 'dedupe key names its source');
 ok(check && check.includes('pe.date = x.date'), 'an undated entry gets the date in place instead of duplicating');
 ok(check && check.includes('catch(_eSp)'), 'best-effort: a Spotify failure cannot break the check');
 
@@ -63,8 +65,10 @@ console.log('[5] Connect CTA wired into both empty states');
 ok(count('window.__scWireUpcomingCta = function') === 1, 'wiring helper defined once');
 ok(count('window.__scWireUpcomingCta(') === 2, 'called from both empty states (Home bubble + Fetch latest popup)');
 ok(count('_scUpWired') === 2, 'idempotence guard set and checked');
-ok(src.includes("cbtn.textContent = 'Connect Spotify'") && src.includes("cbtn.textContent = 'Re-check for drops'"),
-  'button relabels to a plain re-check once connected');
+const ctaSlice = slice('window.__scWireUpcomingCta = function', 'window.__scRebuildReleaseLists = async function');
+ok(!!ctaSlice && ctaSlice.includes("cbtn.textContent = 'Check for drops'"), 'the button runs the check — nothing to connect');
+ok(!!ctaSlice && !ctaSlice.includes('Connect Spotify'), 'the Connect Spotify button is gone from the empty state');
+ok(!!ctaSlice && ctaSlice.includes('Add a drop manually'), 'the manual sheet is still offered beside it');
 
 console.log('[6] manual drop sheet');
 ok(count('window.__scAddUpcomingDrop = function') === 1, 'sheet builder defined once');
@@ -78,11 +82,11 @@ ok(src.includes('window.__scRebuildReleaseLists(false)') && src.includes('window
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.5', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.5';"), 'sw.js cache = sidecut-shell-v61.3.5');
-const head = src.indexOf("version: '61.3.5'");
-ok(src.indexOf("version: '61.3.5'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.3.5');
-ok(src.indexOf("version: '61.3.5'") < src.indexOf("version: '61.2'"), '61.3.5 is ahead of 61.2');
+ok(ver === '61.3.6', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.6';"), 'sw.js cache = sidecut-shell-v61.3.6');
+const head = src.indexOf("version: '61.3.6'");
+ok(src.indexOf("version: '61.3.6'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.3.6');
+ok(src.indexOf("version: '61.3.6'") < src.indexOf("version: '61.3.5'"), '61.3.6 is ahead of 61.3.5');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');
