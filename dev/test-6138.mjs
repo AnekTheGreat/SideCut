@@ -37,12 +37,12 @@ console.log('[1] the file parses — every inline script block');
     try { new Function(m[1]); } catch (e) { bad++; console.log('       ' + e.message); }
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
-  ok(count("version: '61.3.8'") === 1, 'exactly one 61.3.8 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.8'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(count("version: '61.3.9'") === 1, 'exactly one 61.3.9 changelog entry');
+  ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.9'/.test(src), 'the newest entry sits inside CHANGELOG');
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '61.3.8', 'APP_VERSION = ' + ver);
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.8';"), 'sw.js cache = sidecut-shell-v61.3.8');
-  ok(src.indexOf(`version: '61.3.8'`) < src.indexOf(`version: '${PREV}'`), '61.3.8 heads the changelog');
+  ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
+  ok(src.indexOf(`version: '61.3.9'`) < src.indexOf(`version: '${PREV}'`), '61.3.9 heads the changelog');
 }
 
 console.log('[2] a length is not an identity — the resolver refuses a stranger');
@@ -124,14 +124,21 @@ console.log('[7] the changelog says what actually happened');
 {
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   const entries = block ? eval('[' + block[1] + ']') : [];
-  const head = entries.find((e) => String(e.version) === '61.3.8');
-  ok(!!head, 'the head entry is 61.3.8');
+  const head = entries.find((e) => String(e.version) === '61.3.9');
+  ok(!!head, 'the head entry is 61.3.9');
   if (head) {
-    const text = (head.items || []).join(' ');
-    ok(/Bikramjit Dhaliwal/.test(text) && /length/.test(text), 'it names the small-artist cause');
-    ok(/Manual button/.test(text), 'it names the manual way out');
-    ok(/imprint/.test(text), 'it names the imprint exception');
-    ok(head.date === 'September 24, 2026 · 7:00 PM EDT', 'ship date (' + head.date + ')');
+    ok(head.date === 'September 25, 2026 · 2:39 AM EDT', 'ship date (' + head.date + ')');
+  }
+  // This test's own release is no longer the head — pin ITS entry by version so
+  // a later release's notes can never wash these three assertions out.
+  const own = entries.find((e) => String(e.version) === '61.3.8');
+  ok(!!own, 'the 61.3.8 entry still exists');
+  if (own) {
+    const ownText = (own.items || []).join(' ');
+    ok(/Bikramjit Dhaliwal/.test(ownText) && /length/.test(ownText), 'it names the small-artist cause');
+    ok(/Manual button/.test(ownText), 'it names the manual way out');
+    ok(/imprint/.test(ownText), 'it names the imprint exception');
+    ok(own.date === 'September 24, 2026 · 7:00 PM EDT', 'its own ship date (' + own.date + ')');
   }
 }
 

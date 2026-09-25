@@ -8,6 +8,59 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.3.9 (Sep 25, 2026): the lookup chain was riding dead CORS relays — Spotify/YouTube imports, the drop check
+- **User report**: "the Spotify converter used work then it just stopped working … Dawg it worked before … Fix it."
+  Note the trap at the start of this release: commit d2dee07's MESSAGE already claimed "v61.3.9: Spotify import,
+  YouTube convert, and upcoming album drops" but its diff never contained the code — the written-but-unrun
+  `dev/patch-6139.mjs` was the only trace. **A commit message is not the fix; grep the marker** (`__scNativeFetch`)
+  before believing a fix shipped. `61.3.9` is also the LAST of the 61.3.x line — per the mandatory version rule the
+  next release must not be 61.3.10.
+- **Measured root causes (re-probe before re-litigating)**: corsproxy.io → 401 ("A valid API key is required"),
+  api.allorigins.win + api.codetabs.com → curl 000 (still down) — every public-relay leg of `fetchWithProxy` was dead;
+  Spotify's embed pages and youtube.com/oembed send NO `access-control-allow-origin` (only open.spotify.com/oembed
+  and itunes.apple.com answer `*`), so a WebView page fetch of them can never work even with the relays alive;
+  `window.__ahCancelled` stayed latched after ONE cancelled Album History fetch, so every one of the 50+ shared
+  `fetchWithProxy` callers answered null for the rest of the session; `fetchArtistReleases` returned `[]` the moment
+  the iTunes pass failed (`if(!resp || !resp.ok) return []`) — killing MusicBrainz + silent-Spotify, the only DATED
+  sources; MusicBrainz 403s a request with no identifying User-Agent and a page fetch cannot set one; and
+  `fetchWithProxy` ignored the caller's `init`, so the Gemini lyrics POST went out as a plain GET.
+- **The fix (one idempotent `dev/patch-6139.mjs` pass)**: `__scNativeFetch(url, opts)` — CapacitorHttp first
+  (`responseType:'arraybuffer'`, 8 s read/connect clocks, Response-shaped `{ok,status,json,text,blob,arrayBuffer}`),
+  null when not native. `fetchWithProxy(url, init)` now (a) self-heals the cancel flag (`if(!window.__ahFetching)
+  window.__ahCancelled = false`), (b) tries native first forwarding `init`, (c) direct fetch with `init`, then
+  `[allorigins, codetabs, cors.lol]` replaying plain GETs — corsproxy.io deleted everywhere (`scSpOembed`,
+  `expandSpotifyUrl`, OTA manifest check too). `scSpEmbedEntity`/`scSpEmbedTrack` queue `'native:'+url` per try.
+  `fetchArtistReleases` hoists `prev/prevKeys/fresh` and guards Apple with `if(resp && resp.ok){ … }` (closed before
+  the dated-drops pass). `scFetchMbUpcoming` sends `User-Agent: SideCut/<ver> (…)`. YouTube's oEmbed title leg now
+  rides the shared fetch (it could never have worked in a WebView before).
+- **Changelog rules re-learned here**: a head entry needs `items.length >= 5` (test-6053/54/55/56/57/58 all assert
+  it) and may NEVER contain a STRONG term — `converter|convert*|download*` are banned in EVERY note by
+  test-60510's `!/\bdownload|converter|convert\b/i` and test-6058's `STRONG.test(mp.notes)` — nor `play build/
+  version/install`. Six compliant notes; the entry's title was reworded off "converters" too (nothing scans titles,
+  but don't start). **When a release test asserts on "the head", re-pin its CONTENT block to its own entry by
+  version** (`const own = entries.find(e => String(e.version) === '61.3.8')` — test-6138 [7]) while leaving the
+  `head`/`head.date` lines byte-identical to the strings the patch's repin pairs write, or a re-run throws count!=1.
+- **Patch-script escaping gotcha (cost this session)**: needles written inside template literals get EVALUATED — a
+  raw run of 4 backslashes yields 2, but the test files hold ONE (`\[`, `\n`, `\{`, `\.`, verified by
+  `(line.match(/\\+/g)||[]).map(r=>r.length)` → the file is [1,1,1,1,1], the needle must be [2,2,2,2,2]), and a
+  bare `\.` in a template eats the dot. The count==1 assertion caught it BEFORE index.html was written (the write
+  sits at the end of the pass) — first `scSpEmbedTrack expectOld found 0`, then `test-6137 newest-entry regex
+  found 0`. Fix scripts must be written whole (`write_file`) and prove the evaluated needle against the real file
+  (`indexOf`) — see `dev/fix-6139-needles.mjs`; hand-typed backslash runs in tool payloads DO get mangled.
+- **Live probes**: YouTube innertube ANDROID player POST → 200 with 6 `audio/*` formats carrying `url`;
+  `open.spotify.com/embed/track/…` direct fetch → `__NEXT_DATA__` present; cors.lol alive but 429 from this sandbox
+  IP (per-IP quota — acceptable as the last-resort leg; each phone has its own IP).
+- **Mechanics**: `dev/patch-6139.mjs` (whole-file, idempotent, `--manifest` mode), `dev/patch-6139b.mjs` (the
+  compliant notes, the oEmbed leg, test-6136's needle → `fetchWithProxy(url, { headers: { 'User-Agent'`,
+  test-6138 [7] → own entry), `dev/fix-6139-needles.mjs`, new `dev/test-6139.mjs` (34 assertions: the transport,
+  the relay swap, the cancel-flag self-heal, the iTunes guard, the MB User-Agent, the notes discipline, syntax);
+  APP_VERSION + sw.js `sidecut-shell-v61.3.9` + CHANGELOG head + root manifest → 61.3.9, 11 test files repinned,
+  `test-6052` ship date → "September 25, 2026 · 2:39 AM EDT".
+- **Verified**: all 5 inline `<script>` blocks parse (`new Function`); the FULL `dev/test-*.mjs` suite green —
+  21 files, 0 failures; `node dev/ota-bundle.mjs --check` + `node dev/ota-bundle-play.mjs --check` both OK —
+  v61.3.9, 6 notes, Play flag baked (zips 663861 / 663873 bytes); root manifest re-seeded via `--manifest`.
+  Push pending an explicit ask (Freebuff's Changes panel owns delivery).
+
 ## v61.3.8 (Sep 24, 2026): a small artist keeps their own lyrics
 - **User report, verbatim**: "For not that well known artists such as Bikramjit Dhaliwal the lyrics aren't correct for
   their songs."

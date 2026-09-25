@@ -33,8 +33,8 @@ console.log('[1] the file parses — every inline script block');
     try { new Function(m[1]); } catch (e) { bad++; console.log('       ' + e.message); }
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
-  ok(count("version: '61.3.8'") === 1, 'exactly one 61.3.8 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.8'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(count("version: '61.3.9'") === 1, 'exactly one 61.3.9 changelog entry');
+  ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.9'/.test(src), 'the newest entry sits inside CHANGELOG');
 }
 
 console.log('[2] add-drop sheet: no example, no +7 days');
@@ -95,9 +95,9 @@ ok(src.includes('if(!pe.time && x.time) pe.time = x.time;'), 'and an undated dro
 console.log('[6] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const sw = fs.readFileSync('sw.js', 'utf8');
-ok(ver === '61.3.8', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.8';"), 'sw.js cache = sidecut-shell-v61.3.8');
-ok(src.indexOf("version: '61.3.8'") < src.indexOf("version: '61.3.6'"), '61.3.8 heads the changelog');
+ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
+ok(src.indexOf("version: '61.3.9'") < src.indexOf("version: '61.3.6'"), '61.3.9 heads the changelog');
 
 console.log('');
 console.log(failures + ' failure(s)');

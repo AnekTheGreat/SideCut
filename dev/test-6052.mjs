@@ -141,7 +141,7 @@ try { entries = eval('[' + blockCl[1] + ']'); } catch (e) {}
 ok(!!entries && entries[0].version === ver, 'newest changelog (' + (entries && entries[0].version) + ') matches APP_VERSION');
 if (entries) {
   ok(/EDT$/.test(entries[0].date || ''), 'date ends in EDT (' + entries[0].date + ')');
-  ok(entries[0].date === 'September 24, 2026 · 7:00 PM EDT', 'ship date correct (' + entries[0].date + ')');
+  ok(entries[0].date === 'September 25, 2026 · 2:39 AM EDT', 'ship date correct (' + entries[0].date + ')');
   ok(entries[0].items.length >= 3, 'patch notes: ' + entries[0].items.length);
 }
 
