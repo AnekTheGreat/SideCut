@@ -1,22 +1,32 @@
-// v61.3.8 — "For not that well known artists such as Bikramjit Dhaliwal the
-// lyrics aren't correct for their songs."
+// v61.5 — the two releases that both called themselves 61.3.8, side by side.
 //
-// What it pins: a same-titled song by a DIFFERENT artist can no longer be
-// accepted on its running time alone (that is what served a stranger's lyrics
-// for an artist the databases do not carry, and then saved them on the track),
-// while an imprint credit ("T-Series", "Saregama Music") still is not treated as
-// evidence either way, so an odd tag can't hide a song that really is yours. It
-// also pins the two blind providers (textyl's clock, lyrist's title/artist), the
-// empty state that names what it skipped, the Manual button being reachable when
-// nothing was found, and the picker marking a stranger.
+// The local line's 61.3.8 ("For not that well known artists such as Bikramjit
+// Dhaliwal the lyrics aren't correct for their songs."): a same-titled song by
+// a DIFFERENT artist could be accepted on its running time alone — that is what
+// served a stranger's lyrics for an artist the databases do not carry, and then
+// saved them on the track. An imprint credit ("T-Series", "Saregama Music") is
+// still not evidence either way, so an odd tag can't hide a song that really is
+// yours. It also pins the blind lyrist provider, the empty state that names
+// what it skipped, the Manual button being reachable when nothing was found,
+// and the picker marking a stranger.
+// (Apple's textyl is NOT pinned here any more: origin's 61.4 removed the
+// source outright — its reply carries no title or artist, so it can never be
+// verified. What remains is documented at its removal site in index.html.)
+//
+// origin/main's 61.3.8 ("Make the upcoming release actually work", no
+// Spotify): the release check reads an announced drop date from the pinned
+// artist's OWN open Apple catalog, resolved by artist ID — the term search is
+// popularity-ranked and buries a pre-order, so a dated release weeks out showed
+// nothing (probed Sep 24: the ID lookup found 19 of 21 dated upcoming releases
+// where the term search found 8 of 13). The silent Spotify token and the
+// Spotify upcoming pass are deleted, so no drop date is ever read through an
+// account. That pass, the cross-source collapse and the surviving interactive
+// PKCE flow (the converter's own search) are pinned in sections [8]–[11].
 //
 // The whole file has to parse for any of it to run.
 import fs from 'node:fs';
 
 const src = fs.readFileSync('index.html', 'utf8');
-// Kept in a constant on purpose: the release repin pass rewrites the literal
-// double-quoted version pins in this directory, and this one is about ordering.
-const PREV = '61.3.7';
 const sw = fs.readFileSync('sw.js', 'utf8');
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? '  ok   ' : '  FAIL ') + label); if (!cond) failures++; };
@@ -27,6 +37,11 @@ const slice = (from, to) => {
   const b = src.indexOf(to, a + from.length);
   return b === -1 ? null : src.slice(a, b);
 };
+const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
+const entries = block ? eval('[' + block[1] + ']') : [];
+// Kept in a constant on purpose: the release repin pass rewrites the literal
+// double-quoted version pins in this directory, and this one is about ordering.
+const PREV = '61.3.7';
 
 console.log('[1] the file parses — every inline script block');
 {
@@ -37,12 +52,12 @@ console.log('[1] the file parses — every inline script block');
     try { new Function(m[1]); } catch (e) { bad++; console.log('       ' + e.message); }
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
-  ok(count("version: '61.3.9'") === 1, 'exactly one 61.3.9 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '61\.3\.9'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
+  ok(/const CHANGELOG = \[\n  \{ version: '61\.5'/.test(src), 'the newest entry sits inside CHANGELOG');
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
-  ok(src.indexOf(`version: '61.3.9'`) < src.indexOf(`version: '${PREV}'`), '61.3.9 heads the changelog');
+  ok(ver === '61.5', 'APP_VERSION = ' + ver);
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.5';"), 'sw.js cache = sidecut-shell-v61.5');
+  ok(src.indexOf(`version: '61.5'`) < src.indexOf(`version: '${PREV}'`), '61.5 heads the changelog');
 }
 
 console.log('[2] a length is not an identity — the resolver refuses a stranger');
@@ -63,11 +78,11 @@ console.log('[2] a length is not an identity — the resolver refuses a stranger
 console.log('[3] the identity rules themselves (run for real, not grepped)');
 {
   const stop = slice("var SC_LYRICS_STOPWORDS = {", "function scLyricsArtistVariants(");
-  const block = slice("  function scLyricsArtistTokens(artist){", "  function scLyricsTitleKey(title){");
-  ok(!!stop && !!block, 'the rules can be lifted out of the file');
+  const ruleSlice = slice("  function scLyricsArtistTokens(artist){", "  function scLyricsTitleKey(title){");
+  ok(!!stop && !!ruleSlice, 'the rules can be lifted out of the file');
   let api = null;
   try {
-    api = new Function(stop + '\n' + block +
+    api = new Function(stop + '\n' + ruleSlice +
       '\nreturn { verdict: scLyricsArtistVerdict, imprint: scLyricsLooksLikeImprint, tokens: scLyricsArtistTokens };')();
   } catch (e) { console.log('       ' + e.message); }
   ok(!!api, 'the rules evaluate');
@@ -101,46 +116,83 @@ console.log('[4] the empty state explains itself and offers the manual way out')
   ok(src.includes('Or tap <b>Manual</b> and paste the words in yourself'), 'and points at the manual way');
 }
 
-console.log('[5] the two providers that were taken on trust');
+console.log('[5] the provider that was taken on trust');
 {
-  ok(src.includes('var _tyLast = 0;') && src.includes('var _tyFits = !(dur > 0 && _tyLast > dur + 8);'),
-     'textyl: a sheet that runs past the end of the file is refused');
-  ok(src.includes('if(_tyText.trim().length > 20 && _tyFits){'), 'the clock is part of the acceptance');
   ok(src.includes("var _lyrTitle = String((lyd && lyd.title) || titleVars[lv] || '');"), 'lyrist: its title is read');
-  ok(src.includes("var _lyrArtistOk = !_lyrArtist"), 'lyrist: its artist is checked');
+  ok(src.includes('var _lyrArtistOk = !_lyrArtist'), 'lyrist: its artist is checked');
   ok(src.includes("scLyricsArtistVerdict(_lyrArtist, scLyricsArtistTokens(artistVars[la])) !== 'foreign'"),
      'lyrist: a reply that contradicts the asked credit is refused');
   ok(src.includes("if(lyd && lyd.lyrics && String(lyd.lyrics).trim() && _textOk(_lyrTitle, '') && _lyrArtistOk){"),
      'and the lyrics only count with the title checked');
+  ok(!src.includes('api.textyl.co'), 'textyl is gone — a reply with no title can never be verified');
 }
 
 console.log('[6] the picker marks a stranger');
 {
-  ok(src.includes('differentArtist: rk.verdict === \'foreign\','), 'each candidate carries the fact');
+  ok(src.includes("differentArtist: rk.verdict === 'foreign',"), 'each candidate carries the fact');
   ok(src.includes("(c.differentArtist ? ' \\u00b7 different artist' : '')"), 'and the row says so');
 }
 
 console.log('[7] the changelog says what actually happened');
 {
-  const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
-  const entries = block ? eval('[' + block[1] + ']') : [];
-  const head = entries.find((e) => String(e.version) === '61.3.9');
-  ok(!!head, 'the head entry is 61.3.9');
+  const head = entries.find((e) => String(e.version) === '61.5');
+  ok(!!head, 'the head entry is 61.5');
   if (head) {
-    ok(head.date === 'September 25, 2026 · 2:39 AM EDT', 'ship date (' + head.date + ')');
-  }
-  // This test's own release is no longer the head — pin ITS entry by version so
-  // a later release's notes can never wash these three assertions out.
-  const own = entries.find((e) => String(e.version) === '61.3.8');
-  ok(!!own, 'the 61.3.8 entry still exists');
-  if (own) {
-    const ownText = (own.items || []).join(' ');
-    ok(/Bikramjit Dhaliwal/.test(ownText) && /length/.test(ownText), 'it names the small-artist cause');
-    ok(/Manual button/.test(ownText), 'it names the manual way out');
-    ok(/imprint/.test(ownText), 'it names the imprint exception');
-    ok(own.date === 'September 24, 2026 · 7:00 PM EDT', 'its own ship date (' + own.date + ')');
+    ok(head.date === 'September 25, 2026 · 5:00 AM EDT', 'ship date (' + head.date + ')');
+    const headText = (head.items || []).join(' ');
+    // Both 61.3.8 releases are folded into this one entry, so the notes this
+    // test was written against live HERE now.
+    ok(/Bikramjit Dhaliwal/.test(headText) && /length/.test(headText), 'it names the small-artist cause');
+    ok(/Manual button/.test(headText), 'it names the manual way out');
+    ok(/imprint/.test(headText), 'it names the imprint exception');
+    ok(/same-titled/.test(headText), 'and it says a same-titled stranger is never served');
   }
 }
+
+console.log('[8] the artist catalog is read by ID, with no account');
+const idFn = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");
+ok(!!idFn, 'scItunesArtistAlbums defined');
+ok(idFn && idFn.includes('entity=musicArtist&limit=5'), 'one artist search resolves the id');
+ok(idFn && idFn.includes("'https://itunes.apple.com/lookup?id=' + encodeURIComponent(artistId) + '&entity=album&limit=200'"),
+  'the artist catalog is read by id (200 albums)');
+ok(idFn && idFn.includes('await fetchWithProxy('), 'goes through the shared proxy fetch');
+ok(idFn && idFn.includes('credited('), 'the pinned artist must be credited (bidirectional match)');
+ok(idFn && idFn.includes('primaryArtistName(artist)'), 'collab partners are stripped before matching');
+ok(idFn && !/spotify|token|accounts\./i.test(idFn), 'no Spotify, no token, no account in the pass');
+ok(idFn && idFn.includes('catch(_eId){ return []; }'), 'best-effort: a failure returns nothing, never throws');
+
+console.log('[9] the album pass folds it in and collapses the same drop');
+const check = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
+ok(!!check, 'fetchArtistReleases slice extracted');
+ok(check && check.includes('scItunesArtistAlbums(artist)'), 'the artist-catalog pass runs in the album loop');
+ok(check && check.indexOf('scItunesArtistAlbums(artist)') < check.indexOf('const albPick = []'),
+  'its albums join the candidate pool before the collapse');
+ok(check && check.includes('if((r.trackCount || 0) === 1) return;'), 'one-track releases still defer to the song query');
+ok(check && check.includes('const albSeen = new Set();'), 'cross-source albums collapse by title+day');
+ok(check && check.includes('albPick.slice(0, 5)'), 'the deduped pool is what gets listed');
+ok(check && check.includes('alb:') && check.includes('prevKeys.has(keyA)'), 'the same drop already stored is skipped');
+ok(check && check.includes('catch(_idE)'), 'a catalog failure cannot break the check');
+
+console.log('[10] no Spotify anywhere in the release check');
+ok(count('scSpotifySilentToken') === 0, 'the silent token is gone');
+ok(count('scFetchSpotifyUpcoming') === 0, 'the Spotify upcoming pass is gone');
+ok(count('_spt:') === 0, 'no Spotify-sourced entry key survives');
+ok(count('spFresh') === 0, 'the check merges no Spotify result set');
+ok(check && !check.includes('__scSpotifyUpcoming'), 'the check never calls a Spotify source');
+ok(check && !check.includes('accounts.spotify.com'), 'no token exchange in the check');
+const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpcoming = scFetchMbUpcoming;');
+ok(!!mb, 'the open MusicBrainz pass still runs beside it');
+ok(check && check.includes("'mbt:' + nt + '|' + x.date"), 'the dedupe key names the open source');
+
+console.log('[11] the interactive flow survives, only where it belongs');
+ok(count('async function scSpotifyInteractiveToken(){') === 1, 'the PKCE flow is still defined');
+ok(count('await scSpotifyInteractiveToken()') === 1, 'exactly one call site left (the converter search)');
+const tap = slice('window.__scUpcomingConnectTap = async function', 'window.__scAddUpcomingDrop = function');
+ok(!!tap, 'the release-check tap handler slice extracted');
+ok(tap && !tap.includes('scSpotifyInteractiveToken'), 'the release check never opens an authorization window');
+const cta = slice('window.__scWireUpcomingCta = function', 'window.__scRebuildReleaseLists = async function');
+ok(!!cta && !cta.includes('Connect Spotify'), 'the empty state still asks you to connect nothing');
+ok(!!cta && cta.includes("cbtn.textContent = 'Check for drops'"), 'it runs the check on the spot');
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : 'FAILURES: ' + failures));
 process.exit(failures === 0 ? 0 : 1);

@@ -96,8 +96,7 @@
   #discoverBtn.active, #homeBtn.active{ background: var(--coral); color:#161616; border-color:var(--coral); }
 
   /* ---------- Empty state ---------- */
-  #emptyState{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center; }
-  .disc{
+  #emptyState{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center; }   .disc{
     width:120px; height:120px; border-radius:50%;
     touch-action: none;
     /* #npDisc's parent (#npPlayerBody) now sets pointer-events:none to keep the 3D
@@ -396,8 +395,7 @@
     flex:1; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700;
     padding:10px 0; border-radius:8px; border:1px solid rgba(255,255,255,0.1);
     background:#232220; color:var(--ink-dim); cursor:pointer;
-  }
-  .beat-pad.active{ background: color-mix(in srgb, var(--coral) 35%, #232220); color:var(--coral); border-color:var(--coral); }
+  }   .beat-pad.active{ background: color-mix(in srgb, var(--coral) 35%, #232220); color:var(--coral); border-color:var(--coral); }
   .record-row{ display:flex; align-items:center; justify-content:center; gap:14px; }
   .record-btn{
     display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700;
@@ -8897,6 +8895,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       duration: rd,
       verdict: verdict,
       exactTitle: exactTitle,
+      // A duration within 2 s used to be enough on its own, so a same-titled
+      // song by a different artist could be served as "your" lyrics. Without a
+      // confirmed artist the title must now match EXACTLY as well — and a credit
+      // that contradicts ours is refused outright.
       acceptable: !!(aHit || (dScore >= 2 && exactTitle && verdict !== 'foreign')),
       rank: tScore * 2 + (aHit ? 2 : 0) + dScore * 1.5 + durProx * 1.5 + (res.syncedLyrics ? 0.5 : 0)
     };
@@ -8932,12 +8934,17 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     var primaryTokens = scLyricsArtistTokens(primary);
     if(!primaryTokens.length) primaryTokens = scLyricsArtistTokens(artistVars[0]);
     var dur = Math.round(duration || 0);
-    var best = null;
+    var best = null, bestSynced = null;
     scLyricsStrangers = 0;
     function consider(res){
       var sc = scScoreLyricsResult(res, titleKey, primaryTokens, dur);
-      if(sc && (!best || sc.score > best.score)) best = sc;
-      if(!sc){
+      if(sc){
+        if(!best || sc.score > best.score) best = sc;
+        // A timed copy of the same song is what the highlight needs. Keep the
+        // best of those separately so the search passes have something to aim
+        // at while the plain-text fallback is already safe in `best`.
+        if(sc.isSynced && (!bestSynced || sc.score > bestSynced.score)) bestSynced = sc;
+      }else{
         // Refused. When it was refused for being someone else's song, say so
         // later rather than pretending nothing was there.
         var rk = scLyricsRank(res, titleKey, primaryTokens, dur);
@@ -8949,7 +8956,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     //    Sending duration=0 for a track whose length isn't known can never match,
     //    so omit it then; and retry without it when the duration-carrying call
     //    misses, which is exactly how an alternate-length release looks.
-    for(var ai = 0; ai < Math.min(artistVars.length, 3) && !best && !scLyricsOutOfTime(); ai++){
+    for(var ai = 0; ai < Math.min(artistVars.length, 3) && !bestSynced && !scLyricsOutOfTime(); ai++){
       var getUrl = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artistVars[ai]) +
                    '&track_name=' + encodeURIComponent(titleVars[0]) + (dur > 0 ? '&duration=' + dur : '');
       var got = await scLyricsJson(getUrl);
@@ -8962,61 +8969,31 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
     // 2. Search with each artist candidate. This is where the semicolon-credited
     //    entries surface ("DILJIT DOSANJH;Intense;HIZZY HUNDAL").
-    for(var ai2 = 0; ai2 < Math.min(artistVars.length, 3) && !best && !scLyricsOutOfTime(); ai2++){
+    for(var ai2 = 0; ai2 < Math.min(artistVars.length, 3) && !bestSynced && !scLyricsOutOfTime(); ai2++){
       for(var ti = 0; ti < Math.min(titleVars.length, 2) && !scLyricsOutOfTime(); ti++){
         var res = await scLyricsJson('https://lrclib.net/api/search?q=' + encodeURIComponent(artistVars[ai2] + ' ' + titleVars[ti]));
         if(Array.isArray(res)) for(var ri = 0; ri < Math.min(res.length, 25); ri++) consider(res[ri]);
-        if(best && best.score >= 5.5) break;        // good enough; stop spending requests
+        if(bestSynced && bestSynced.score >= 5.5) break;  // good timed copy; stop spending requests
         await new Promise(function(r){ setTimeout(r, 200); });
       }
     }
     // 3. Title only — for when the artist tag is a label, a channel or just wrong.
     //    Accepted only on an exact title plus a confirmed length (or a real artist
     //    hit), so a same-titled song by someone else can never be served here.
-    if(!best && titleVars.length && !scLyricsOutOfTime()){
+    if(!bestSynced && titleVars.length && !scLyricsOutOfTime()){
       var tRes = await scLyricsJson('https://lrclib.net/api/search?track_name=' + encodeURIComponent(titleVars[0]));
       if(Array.isArray(tRes)) for(var ti2 = 0; ti2 < Math.min(tRes.length, 25); ti2++) consider(tRes[ti2]);
     }
+    // Timed whenever we found one; the plain-text match is the fallback, not
+    // the first thing we happen to trip over.
+    if(bestSynced) return bestSynced;
     if(best) return best;
-    // 4. textyl — Apple Music's own lyric lines. This is where a lot of recent
-    //    releases and non-English catalogue live first, which is exactly the gap
-    //    that left newer and smaller artists with "no lyrics". Requests come back
-    //    with a timestamp per line, so the result is real synced lyrics.
-    if(!scLyricsOutOfTime()){
-      try{
-        var tyRes = await scFetchWithTimeout('https://api.textyl.co/api/lyrics?q=' +
-                    encodeURIComponent((primary ? primary + ' ' : '') + titleVars[0]), 4500);
-        if(tyRes && tyRes.ok){
-          var ty = await tyRes.json();
-          if(Array.isArray(ty) && ty.length){
-            var _tyLines = ty.filter(function(l){ return l && l.lyrics; });
-            if(_tyLines.length){
-              var _tyText = _tyLines.map(function(l){
-                var _s = Math.max(0, Math.round(Number(l.seconds) || 0));
-                var _mm = String(Math.floor(_s / 60)).padStart(2, '0');
-                var _ss = String(_s % 60).padStart(2, '0');
-                return '[' + _mm + ':' + _ss + '.00]' + String(l.lyrics).trim();
-              }).join('\n');
-              // textyl answers with a timestamp per line and nothing else, so
-              // the one honest check available is its own clock: a lyric sheet
-              // whose last line lands after the file has already ended was
-              // written for a longer song — a different track. Refuse it rather
-              // than dress someone else's words up as this song's.
-              var _tyLast = 0;
-              for(var _tli = 0; _tli < _tyLines.length; _tli++){
-                var _tls = Number(_tyLines[_tli].seconds) || 0;
-                if(_tls > _tyLast) _tyLast = _tls;
-              }
-              var _tyFits = !(dur > 0 && _tyLast > dur + 8);
-              if(_tyText.trim().length > 20 && _tyFits){
-                return { lyrics: _tyText, isSynced: true, title: titleVars[0], artist: primary,
-                         duration: dur, source: 'textyl (Apple Music)', score: 1 };
-              }
-            }
-          }
-        }
-      }catch(_tyE){}
-    }
+    // 4. (removed) textyl used to be surfaced here as Apple Music's own lyric
+    //    lines. Its reply carries no title and no artist, so there was no way to
+    //    tell whether the lines belonged to the song asked for — and for a
+    //    smaller artist with nothing on file it happily handed back a different
+    //    song's words. Unverifiable lyrics are worse than none, so the automatic
+    //    lookup no longer uses it.
     // 5. lyrics.ovh — an old database with almost nothing recent, but free.
     try{
       if(scLyricsOutOfTime()) return null;
@@ -9628,7 +9605,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if (aiBtn) { aiBtn.addEventListener("click", function() { aiSyncLyrics(); }); }
   }, 200);
 
-function startLyricsAutoScroll() {
+function startLyricsAutoScroll(keepPos, noReset) {
     if (lyricsScrollInterval) clearInterval(lyricsScrollInterval);
     
     const container = $('lyricsContent');
@@ -9638,12 +9615,16 @@ function startLyricsAutoScroll() {
     // Cancel any glide still running first (its onDone clears the flag, so it has
     // to happen BEFORE we raise it), otherwise the jump trips the user-scroll grace
     // window and auto-scroll sits still for 1.5s after every lyrics open.
-    if(typeof window.__scCancelScroll === 'function') window.__scCancelScroll(container);
-    isProgrammaticScroll = true;
-    container.scrollTop = 0;
-    setTimeout(() => { isProgrammaticScroll = false; }, 100);
-    lastLyricsIdx = -1;
-    lastLyricsScrollTarget = -1;
+    if(!keepPos){
+      // A fresh open starts at the top; re-arming after the app comes back must
+      // not yank the reader back up to line one.
+      if(typeof window.__scCancelScroll === 'function') window.__scCancelScroll(container);
+      isProgrammaticScroll = true;
+      container.scrollTop = 0;
+      setTimeout(() => { isProgrammaticScroll = false; }, 100);
+      lastLyricsIdx = -1;
+      lastLyricsScrollTarget = -1;
+    }
     
     // Load this song’s saved sync nudge before the first poll.
     try{
@@ -9654,16 +9635,25 @@ function startLyricsAutoScroll() {
     }catch(_eso){}
     lyricsScrollInterval = setInterval(() => {
       try {
-      // Check if modal is still open or app is hidden
+      // The sheet closing is the only reason to stop polling.
       const backdrop = $('lyricsBackdrop');
-      if (!backdrop || backdrop.style.display !== 'flex' || document.hidden) {
+      if (!backdrop || backdrop.style.display !== 'flex') {
         clearInterval(lyricsScrollInterval);
         lyricsScrollInterval = null;
         return;
       }
+      // Hidden with the sheet still open: skip the work but KEEP the
+      // interval. It used to clear itself here and nothing restarted it, so
+      // the highlight stayed dead until the lyrics were closed and reopened.
+      if (document.hidden) return;
       
       const audio = activeAudio();
       if (!audio) return;
+      // Paused means the clock has stopped, so the highlight and the
+      // auto-scroll stop with it and pick up exactly where they left off,
+      // instead of running on ahead of what you are actually hearing. A tap
+      // on a line while paused still moves it: that path sets the line itself.
+      if (audio.paused) return;
       
       // Small lead so the highlight fires before the timestamp, not after.
       // Compensates for the polling interval + render latency (~60 ms).
@@ -9820,6 +9810,25 @@ function startLyricsAutoScroll() {
   // word-by-word can pace it. Lines that already carry word spans are returned
   // as-is; lines containing other markup (instrumental rows) are left alone —
   // nothing to pace there, and rewriting them would break their structure.
+  // Split a lyric line into pacing units. Whitespace is the word boundary for
+  // scripts that use it; a run of Han/Kana/Hangul is broken into pieces instead
+  // of standing as one giant token, so word-by-word has something to pace. Thai
+  // and Lao run without spaces too and are handled the same way.
+  function scPaceSegments(text){
+    var out = [], re = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]+|[^\s]+|\s+/g;
+    var m;
+    while((m = re.exec(String(text || ''))) !== null){
+      var chunk = m[0];
+      if(!chunk) continue;
+      if(/^\s+$/.test(chunk)){ out.push(chunk); continue; }
+      if(chunk.length >= 3 && /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(chunk)){
+        for(var i = 0; i < chunk.length; i += 2) out.push(chunk.slice(i, i + 2));
+      } else {
+        out.push(chunk);
+      }
+    }
+    return out;
+  }
   function scEnsureWordSpans(lineEl){
     if(!lineEl) return [];
     if(lineEl.dataset.wordwrap === '1') return lineEl.querySelectorAll('.lyric-word');
@@ -9828,7 +9837,7 @@ function startLyricsAutoScroll() {
     if(lineEl.children.length || lineEl.dataset.inst){ lineEl.dataset.wordwrap = '1'; return []; }
     const text = lineEl.textContent;
     if(!text || !text.trim()){ lineEl.dataset.wordwrap = '1'; return []; }
-    lineEl.innerHTML = String(text).split(/(\s+)/).map(function(chunk){
+    lineEl.innerHTML = scPaceSegments(text).map(function(chunk){
       return (/^\s+$/.test(chunk)) ? chunk : '<span class="lyric-word" data-word="1">' + escapeHtml(chunk) + '</span>';
     }).join('');
     lineEl.dataset.wordwrap = '1';
@@ -9838,8 +9847,16 @@ function startLyricsAutoScroll() {
   // length so pacing feels spoken, but words are NEVER spread across a
   // trailing instrumental gap — that was the "the word highlight crawls and
   // sits on the wrong word" bug. The span is min(gap, natural singing length
-  // at ~14 chars/sec), and once pacing ends the LAST word stays lit while the
-  // line is still current, so an active line always has a lit word.
+  // at the line's OWN rate), and once pacing ends the LAST word stays lit
+  // while the line is still current, so an active line always has a lit word.
+  //
+  // The rate is derived per line instead of being a fixed constant. 14 chars/s
+  // is roughly triple a slow ballad's real delivery (Kesariya measures 4.1,
+  // Someone Like You 4.9, Tum Hi Ho 4.6 against LRCLIB's own line timings), so
+  // on exactly those songs every word lit in the first third of the line and
+  // the last one stayed lit for the rest of it. Clamped to [6,14] so a fast
+  // line keeps its snap and a long instrumental gap still cannot make the
+  // words crawl.
   function scPaceWords(lineEl, fromSec, toSec, nowSec){
     if(!lineEl) return;
     const words = scEnsureWordSpans(lineEl);
@@ -9848,7 +9865,13 @@ function startLyricsAutoScroll() {
     const weights = [];
     words.forEach(function(w){ const wt = Math.max(1, w.textContent.length); weights.push(wt); totalWeight += wt; });
     const gap = Math.max(0.3, toSec - fromSec);
-    const natural = Math.max(0.4, totalWeight / 14 + 0.4);
+    // chars/sec this line would need to fill its whole window — dense in a
+    // short window reads fast, sparse in a long one reads slow. Bumped 15% so
+    // the words finish just inside the window rather than exactly on the next
+    // line's first word.
+    const lineRate = totalWeight / gap;
+    const rate = Math.max(6, Math.min(14, lineRate * 1.15));
+    const natural = Math.max(0.4, totalWeight / rate + 0.2);
     const pace = Math.min(gap, natural);
     let acc = 0, litIdx = -1;
     words.forEach(function(w, wi){
@@ -9898,7 +9921,7 @@ function startLyricsAutoScroll() {
         } else if(text){
           // Synthetic word timestamps evenly distributed across each occurrence
           // of the line (a repeated chorus gets its own pacing at every repeat).
-          const words = text.split(/(\s+)/);
+          const words = scPaceSegments(text);
           let wTotal = 0;
           words.forEach(function(w){ if(!/^\s+$/.test(w)) wTotal++; });
           let wIdx = 0;
@@ -9942,6 +9965,16 @@ function startLyricsAutoScroll() {
     }
   });
   
+  // Returning to the app with the lyrics open just works now: the poller is
+  // re-armed in place (keeping the reader's position) instead of waiting for a
+  // close-and-reopen. It used to clear itself on hide and never come back.
+  document.addEventListener('visibilitychange', function(){
+    try{
+      if(document.hidden) return;
+      var _bd = $('lyricsBackdrop');
+      if(_bd && _bd.style.display === 'flex' && !lyricsScrollInterval) startLyricsAutoScroll(true);
+    }catch(_eLyVis){}
+  });
   // Sync nudge: ±0.5s steps, clamped to ±15s, saved per song so the
   // correction is one tap per track and stays for every replay.
   function updateLyricsSyncLabel(){
@@ -10749,7 +10782,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.3.9';
+  const APP_VERSION = '61.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11164,21 +11197,43 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '61.3.9', date: 'September 25, 2026 · 2:39 AM EDT', title: 'Spotify and YouTube links resolve again, and the drop check runs every source', items: [
+  { version: '61.5', date: 'September 25, 2026 · 5:00 AM EDT', title: 'Links resolve, every song comes out as its own song, and your lyrics stay yours', items: [
     'Two songs of the same album that run to almost the same length could come back as the SAME file, or as each other: the clock cannot tell them apart, so the upload that ranked first was accepted for whichever song was being saved at that moment. During one run an upload now belongs to one song only, an upload whose own title answers to another track of that run belongs to that track, and a source whose title matches exactly is tried before anything the clock merely approves — each song comes out as its own song',
     'Spotify link lookups stopped resolving: they leaned on free public CORS relay services, corsproxy.io started demanding an API key and the others went quiet for days — so track details, artists, covers and album/playlist track lists came back empty. On the phone those pages are now read straight through the device’s own network path, which needs no relay at all; a browser keeps live relays as its fallback and the dead one has been replaced.',
     'The video title lookup inside the app always failed: youtube.com/oembed sends no cross-origin permission, so a WebView could never ask for it. It now runs through the same device network path, so the saved file gets its real title and channel instead of the fallback name.',
     'One cancelled album fetch could silence everything that looks things up: the Album History cancel flag stayed latched and every shared lookup answered with nothing for the rest of the session — upcoming drops, cover art and the link lookups’ fallbacks included. The flag now only counts while an album fetch is actually running.',
     'MusicBrainz refuses requests that do not say who is asking, and the drop check was sending nothing to identify itself — it now carries an identifying User-Agent through the native network path.',
-    'An Apple outage no longer ends the drop check: the iTunes pass still finds new singles and albums first, but when it fails, MusicBrainz and the silent Spotify pass run anyway instead of the whole check returning empty.',
+    'An Apple outage no longer ends the drop check: the iTunes pass still finds new singles and albums first, but when it fails, MusicBrainz and the Wikidata pass run anyway instead of the whole check returning empty.',
     'Requests that need a body were being sent without one: the shared lookup dropped the method, headers and body a caller passed in, so the AI lyrics and metadata requests went out as plain GETs and could never answer. What a caller asks for now rides all the way through.',
-  ] },
-  { version: '61.3.8', date: 'September 24, 2026 · 7:00 PM EDT', title: 'Your lyrics stay yours on a small artist', items: [
     'For a small or regional artist the lyrics came back as somebody else’s song: a title search turns up same-titled tracks by entirely different artists, and any of them that happened to run within a couple of seconds of your file was accepted on its length alone and saved onto the track. A length is not an identity any more — the title has to be the exact one and the credit must not contradict yours, so Bikramjit Dhaliwal’s songs keep his words instead of borrowing Karan Aujla’s.',
     '"No lyrics found" now explains itself: it names how many same-titled songs under a different artist were skipped, and the Manual button is reachable from there, so you can paste the words in yourself and they save with the song.',
     'The Refetch picker marks a same-titled entry credited to a different artist, so choosing one by hand is a decision instead of a guess.',
-    'A lyric sheet that runs past the end of your file is refused as another song’s — Apple Music’s textyl answers with timestamps and no title at all, so its own clock is what catches a wrong match — and the lyrist reply is now checked against the title and artist that were asked for instead of being taken on trust.',
+    'A reply that was never checked against the song you asked for is no longer believed: the lyrist response is matched against the title and the artist that were asked for instead of being taken on trust.',
     'A credit that is really an imprint (T-Series, Saregama Music, Speed Records) neither confirms nor contradicts an artist, so an odd tag still can’t hide a song that is genuinely yours.',
+  ] },
+  { version: '61.4', date: 'September 24, 2026 · 8:48 PM EDT', title: 'Two open catalogs for drops, and the lyric highlight keeps time', items: [
+    'Upcoming releases cannot be knocked out of place any more — picking that tab keeps it, and opening it with nothing dated yet goes and looks the dates up on the spot instead of leaving you on an empty list.',
+    'Upcoming dates now come from two open catalogs, not one: MusicBrainz is asked two ways and Wikidata is read as well, so a drop any of them has dated with a real day turns up — with no account and nothing to connect.',
+    'Lyrics used to settle for the first matching copy, which was sometimes the untimed one even when a properly timed version of the same song was on file — so the highlight drifted instead of following the song. The timed copy now wins, and a source that never checked the reply was the song you asked for can no longer serve someone else\u2019s words: a smaller artist with nothing on file says so honestly.',
+    'The word-by-word highlight was walking every line at one fixed speed, roughly three times a slow ballad\u2019s real delivery — so on slower songs the words ran out in the first third of the line and the last one sat lit for the rest of it. Each line is now paced at its own rate, in every script.',
+    'The song no longer cuts in and out while you use the phone. Coming back to the app, the pause watchdog and the thirty-second heartbeat could each restart the song within the same second after the system ducked or interrupted it, and every restart is audible — only the first is let through now.',
+    '[FULL] The song fetching on the sideloaded build works again: every source request was sent claiming to be a different client than the one it asked as, which the source answers by handing back nothing, so a fetch either stalled or ended on "no source found". The request now declares what it really is — and Cancel on the progress bubble now really puts it away, even when the job it stopped never reports back.',
+    'The highlight holds still while the song is paused and picks up where you left off, and reopening the app with lyrics on screen keeps it running instead of freezing until you close and reopen them.',
+  ] },
+  { version: '61.3.9', date: 'September 24, 2026 · 5:44 PM EDT', title: 'The drop check finishes, and fills in as it goes', items: [
+    'The drop check reads your pinned artists a few at a time instead of one after another, so a longer list finishes in a fraction of the time it used to.',
+    'Every artist’s finds are saved and shown the moment they land — the list fills in while the rest are still being read, instead of everything appearing only at the very end.',
+    'The button reports the run’s real progress (Checking… 4/12) and always puts itself back; tapping it again while a check is running joins the run already under way instead of quietly doing nothing.',
+    'A slow or unreachable lookup can no longer stall the whole check: every artist is clocked, the fallback relays are time-budgeted, and the run always settles and clears.',
+    'The check no longer shares a switch with Album History cancellation, so cancelling an album fetch can no longer silently blank your upcoming releases.',
+    'Nothing about the sources changed — still the artist’s own open catalog and MusicBrainz, with no account to connect and nothing to verify.',
+  ] },
+  { version: '61.3.8', date: 'September 24, 2026 · 3:46 PM EDT', title: 'Upcoming releases reads the dates it was missing', items: [
+    'Upcoming releases finally fills in: SideCut reads the announced dates straight from the artist’s own open catalog, where a pre-order carries its real day weeks before it lands — that catalog is read by the artist’s ID, not by the popularity-ranked search that was burying a dated drop.',
+    'Nothing to connect and nothing to verify anywhere: the Spotify pass and its silent token are gone from the release check, so no drop date is ever read through an account. The artist’s open catalog and MusicBrainz do all the finding.',
+    'A pinned artist’s upcoming release is looked up directly: one artist search for the ID, one album pass for the catalog, and every dated future release it lists flows through the same artwork, track-count and duplicate rules as everything else.',
+    'The release check reads a wider net of the same open sources, so a drop listed weeks out shows under Upcoming releases instead of only appearing on the day it lands.',
+    'This release changes nothing about how a drop you add by hand is stored — manual drops still carry their day and time.',
   ] },
   { version: '61.3.7', date: 'September 24, 2026 · 7:23 AM EDT', title: 'Release check never sticks and Home stays clear', items: [
     'Every upcoming drop now carries a time of day: the manual sheet opens on today with a Drop time field you set, an upcoming row reads "drops Oct 3 at 7:23 AM" beside its countdown, and a drop whose catalog knows only the day reads "at time TBA" rather than leaving the hour a mystery.',
@@ -13804,17 +13859,24 @@ function startLyricsAutoScroll() {
   // CORS helper — native first on the device, then the direct fetch, then a
   // few public CORS relays, so every lookup keeps working even when one relay
   // is down or blocked. `init` (method/headers/body) rides on the native and
-  // direct attempts; the relays only ever replay plain GETs.
+  // direct attempts; the relays only ever replay plain GETs. The same object
+  // may also carry { noCancel, budgetMs }: the release check opts out of the
+  // Album History cancel switch and gives itself a time budget so one dead
+  // relay cannot eat the whole run.
   async function fetchWithProxy(url, init){
-    // Album History's cancel flag used to be final: once set, EVERY caller of
+    init = init || {};
+    var _noCancel = !!init.noCancel;
+    var _budget = (typeof init.budgetMs === 'number' && init.budgetMs > 0) ? init.budgetMs : 8000;
+    var _deadline = Date.now() + _budget;
+    // Album History’s cancel flag used to be final: once set, EVERY caller of
     // this shared helper got null for the rest of the session — the drop
-    // check, cover fetches and the converter's fallbacks all silently found
+    // check, cover fetches and the converter’s fallbacks all silently found
     // nothing after one cancelled album fetch. It only means anything while
     // an album fetch is actually running (the cancel handlers clear
-    // __ahFetching themselves).
-    if(!window.__ahFetching) window.__ahCancelled = false;
+    // __ahFetching themselves), and a caller that opted out never touches it.
+    if(!window.__ahFetching && !_noCancel) window.__ahCancelled = false;
     // If Album History fetch was cancelled, abort immediately
-    if(window.__ahCancelled) return null;
+    if(!_noCancel && window.__ahCancelled) return null;
     try{
       var nf = await __scNativeFetch(url, init);
       if(nf) return nf;
@@ -13827,10 +13889,12 @@ function startLyricsAutoScroll() {
     ];
     for(const a of attempts){
       // Check cancel between each proxy attempt
-      if(window.__ahCancelled) return null;
+      if(!_noCancel && window.__ahCancelled) return null;
+      const _left = _deadline - Date.now();
+      if(_left <= 0) return null;   // budget spent — stop walking the relays
       try{
         const ctrl = new AbortController();
-        const timer = setTimeout(function(){ ctrl.abort(); }, 8000);
+        const timer = setTimeout(function(){ ctrl.abort(); }, Math.max(800, Math.min(8000, _left)));
         const resp = await a({ signal: ctrl.signal });
         clearTimeout(timer);
         if(resp.ok) return resp;
@@ -22642,6 +22706,13 @@ function _fallbackCopy(text){
   let autoRevives = 0;          // automatic resumes already spent on this attempt
   let lastAutoReviveAt = 0;     // when the last one happened (rate limit)
   let revivingAudio = false;    // true while WE are restarting a paused element
+  // Overlapping revives. A pause event, the 30s media heartbeat and the
+  // return-to-app check can fire within the same second after the system ducks
+  // or interrupts us, and each one restarts the element from zero — heard as
+  // the song cutting in and out. A short lock lets only the first through.
+  let scReviveLockUntil = 0;
+  function scReviveAllowed(){ return Date.now() >= scReviveLockUntil; }
+  function scNoteRevive(){ scReviveLockUntil = Date.now() + 2500; }
   // Set while WE were paused by a focus loss (a call, another app taking over) —
   // not by the user. Only then do we put the song back when focus returns.
   let audioFocusInterrupted = false;
@@ -22855,11 +22926,13 @@ function _fallbackCopy(text){
     // Mode, or a song that genuinely ended is left alone.
     if(!userPaused && !audioFocusInterrupted && !_pa.ended && autoRevives < 3
        && (Date.now() - lastAutoReviveAt) > 700
+       && scReviveAllowed()
        && !document.hidden && msSincePlayStarted() < 8000
        && queueIndex >= 0 && queueIndex < queue.length
        && $('djModeBackdrop').style.display !== 'flex'){
       autoRevives++;
       lastAutoReviveAt = Date.now();
+      scNoteRevive();
       recordPlaybackStop('platform-pause after ' + Math.round(msSincePlayStarted()) + 'ms — replayed');
       revivingAudio = true;
       try{ _pa.play().catch(function(){}); }catch(_e){}
@@ -22922,8 +22995,10 @@ function _fallbackCopy(text){
       // case where Android reclaimed memory and the old URL went dead while suspended.
       // Skip while DJ Mode is open: it owns sound via the deck engine and the main
       // <audio> element is intentionally idle there, so reviving it would double up.
-      if(a.paused && !userPaused && !document.hidden && $('djModeBackdrop').style.display !== 'flex'
+      if(a.paused && !userPaused && !document.hidden && scReviveAllowed()
+         && $('djModeBackdrop').style.display !== 'flex'
          && queueIndex >= 0 && queueIndex < queue.length){
+        scNoteRevive();
         const t = allTracks.find(tr => tr.id === queue[queueIndex]);
         if(t && t.file && (!t.url || a.error)){
           try{ URL.revokeObjectURL(t.url); }catch(e){}
@@ -23043,6 +23118,11 @@ function _fallbackCopy(text){
     // Say the truth before the revive: in the moment between now and audio actually
     // coming back, the session must not claim to be playing.
     try{ mediaSetPlaybackState('paused'); }catch(e){ }
+    // A revive is already in flight from the pause handler or the heartbeat:
+    // that IS this recovery, so report "nothing more to do" rather than
+    // starting a second restart on top of it.
+    if(!scReviveAllowed()) return true;
+    scNoteRevive();
     revivingAudio = true;
     let revived;
     try{ revived = recoverAudio(activeAudio(), 'background stall'); }catch(e){ }
@@ -28578,7 +28658,7 @@ if(!isDiscover) stopDiscoverPreview();
             _hbTabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){
               btn.addEventListener('click', function(){ window.__scDiscRelTab(btn.dataset.mode, body); });
             });
-            window.__scDiscRelTab('all', body);
+            window.__scDiscRelTab(window.__scRelTabMode || 'all', body);
           }
         }catch(_eHbRelTabs){ }
       }
@@ -29775,6 +29855,33 @@ if(!isDiscover) stopDiscoverPreview();
       finally{ if(panel) panel.style.animation = ''; }
     }catch(_eRp){}
   }
+  // Opened the Upcoming tab and nothing is dated yet? Read the open catalogs
+  // now rather than showing an empty list. One run at a time, at most once a
+  // minute, and it repaints whichever release surface is open (the Fetch latest
+  // popup rebuilds itself through its own button; the Home bubble is repainted
+  // in place). If genuinely new drops turn up it says so and lights the bell.
+  window.__scUpcomingAutofetch = async function(){
+    if(window.__scUpAutoBusy) return;
+    if(typeof isPremiumActive === 'function' && !isPremiumActive()) return;
+    if(!pinnedArtists || !pinnedArtists.length) return;
+    if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    let last = 0;
+    try{ last = parseInt(localStorage.getItem('sidecut_upAutoAt') || '0', 10) || 0; }catch(_eL){}
+    if(Date.now() - last < 60000) return;
+    window.__scUpAutoBusy = true;
+    try{ localStorage.setItem('sidecut_upAutoAt', String(Date.now())); }catch(_eS){}
+    try{
+      const before = (typeof scUpcomingUnseen === 'function') ? scUpcomingUnseen().length : 0;
+      try{ await window.__scRebuildReleaseLists(true); }catch(_eR){}
+      try{ renderNewReleases(); }catch(_eRn){}
+      try{ updateNotifBadge(); }catch(_eNb){}
+      try{ scRepaintOpenReleasePanel(); }catch(_eRp){}
+      const after = (typeof scUpcomingUnseen === 'function') ? scUpcomingUnseen().length : 0;
+      if(after > before){
+        try{ toast(after + ' upcoming release' + (after === 1 ? '' : 's') + ' found \u2014 see the bell', 4200); }catch(_eT){}
+      }
+    }finally{ window.__scUpAutoBusy = false; }
+  };
   window.__scRebuildReleaseLists = async function(doFetch){
     var popupOpen = false;
     try{
@@ -29799,12 +29906,23 @@ if(!isDiscover) stopDiscoverPreview();
   // before the button goes back to "Check for drops".
   window.__scUpcomingConnectTap = async function(btn){
     try{ if(btn){ btn.textContent = 'Checking\u2026'; btn.disabled = true; } }catch(_eB0){}
+    // Show the run's real progress on the button that was tapped.
+    let _tick = null;
+    try{
+      _tick = setInterval(function(){
+        try{
+          if(!btn || !pinnedCheckState || !pinnedCheckState.active) return;
+          btn.textContent = 'Checking\u2026 ' + pinnedCheckState.done + '/' + pinnedCheckState.total;
+        }catch(_eTk){}
+      }, 900);
+    }catch(_eT0){}
     try{
       await Promise.race([
         window.__scRebuildReleaseLists(true),
-        new Promise(function(res){ setTimeout(res, 35000); })   // cannot park the button
+        new Promise(function(res){ setTimeout(res, 60000); })   // last resort — the run clears itself
       ]);
     }catch(_eChk){ toast('The release check could not finish \u2014 try again.', 3600); }
+    finally{ try{ if(_tick) clearInterval(_tick); }catch(_eTc){} }
     try{ if(btn){ btn.textContent = 'Check for drops'; btn.disabled = false; } }catch(_eB1){}
   };
   // For a drop no catalog has listed yet: artist, title, date — stored exactly
@@ -29898,6 +30016,48 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(_eSheet){ }
   };
 
+  // iTunes publishes an announced release as a pre-order with the real day
+  // already set — but only on the artist's own catalog. The term search ranks
+  // by popularity and buries it, so a dated drop weeks out showed nothing
+  // (probed Sep 24: the ID lookup found 19 of 21 dated upcoming releases where
+  // the term search found 8 of 13). Open catalog, no account, no token: one
+  // artist search to resolve the ID, one lookup for the albums.
+  // The release check reads public catalogs only: it opts out of the Album
+  // History cancel flag and caps each URL so a dead relay cannot stall it.
+  var SC_RELEASE_FETCH = { noCancel: true, budgetMs: 4000 };
+  // MusicBrainz 403s requests that do not say who is asking, and a page fetch
+  // cannot set a User-Agent — only the native attempt in fetchWithProxy can, so
+  // hand it one. A browser keeps its own UA, which MusicBrainz also accepts.
+  var SC_MB_FETCH = Object.assign({}, SC_RELEASE_FETCH, { headers: { 'User-Agent': 'SideCut/' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') + ' (https://anekthegreat.github.io/SideCut/)' } });
+  async function scItunesArtistAlbums(artist){
+    try{
+      var norm = function(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+      var want = norm(primaryArtistName(artist));
+      if(!want) return [];
+      // Bidirectional match: the artist's catalog is credible when the names
+      // line up, not merely when one string contains the other by accident.
+      var credited = function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); };
+      var arUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=musicArtist&limit=5';
+      var arResp = await fetchWithProxy(arUrl, SC_RELEASE_FETCH);
+      if(!arResp || !arResp.ok) return [];
+      var arData = await arResp.json();
+      var artistId = null;
+      ((arData && arData.results) || []).forEach(function(r){
+        if(artistId || !r || !r.artistName) return;
+        if(credited(norm(primaryArtistName(r.artistName)))) artistId = r.artistId;
+      });
+      if(!artistId) return [];
+      var lkUrl = 'https://itunes.apple.com/lookup?id=' + encodeURIComponent(artistId) + '&entity=album&limit=200';
+      var lkResp = await fetchWithProxy(lkUrl, SC_RELEASE_FETCH);
+      if(!lkResp || !lkResp.ok) return [];
+      var lkData = await lkResp.json();
+      return ((lkData && lkData.results) || []).filter(function(r){
+        if(!r || !r.collectionName) return false;
+        return credited(norm(primaryArtistName(r.artistName || '')));
+      });
+    }catch(_eId){ return []; }
+  }
+
   // Query iTunes for an artist's recent tracks and merge into the snapshot.
   // Returns the list of newly-discovered releases (empty array if none/failed).
   async function fetchArtistReleases(artist){
@@ -29905,24 +30065,28 @@ if(!isDiscover) stopDiscoverPreview();
     // limit=200 (not 50) — iTunes returns by POPULARITY, not date.
     // A brand-new single may not be in the top-50 by plays, but IS in top-200.
     try{
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=song&limit=200`;
+      const resp = await fetchWithProxy(url, SC_RELEASE_FETCH);
+      // The iTunes pass is one source of three: when it fails (a rate limit, a
+      // blocked network, a dead relay) the MusicBrainz and Wikidata passes
+      // below still run — one Apple hiccup used to end the whole drop check here,
+      // and those two are the only sources carrying DATED future drops anyway.
+      let results = [];
+      if(resp && resp.ok){
+        const data = await resp.json();
+        results = (data.results || []).filter(r => r && r.trackName &&
+          primaryArtistName(r.artistName || '').toLowerCase().trim() === primaryArtistName(artist).toLowerCase().trim());
+      }
       const prev = pinnedReleases[artist] || [];
       const prevKeys = new Set();
       prev.forEach(pr => { const pk = (pr.title||'').toLowerCase().trim() + '|' + (pr.date||''); prevKeys.add(pk); prevKeys.add('alb:' + pk); });
       const fresh = [];
-      // The iTunes pass is one source of three: when it fails (a rate limit, a
-      // blocked network, a dead relay) the MusicBrainz and silent-Spotify
-      // passes below still run — one Apple hiccup used to end the whole drop
-      // check here, and those two are the only sources carrying DATED future
-      // drops in the first place.
-      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=song&limit=200`;
-      const resp = await fetchWithProxy(url);
-      if(resp && resp.ok){
-      const data = await resp.json();
-      const results = (data.results || []).filter(r => r && r.trackName &&
-        primaryArtistName(r.artistName || '').toLowerCase().trim() === primaryArtistName(artist).toLowerCase().trim());
+      // Title+day of everything this run has already listed (any source), so
+      // Apple and MusicBrainz naming the same drop yields one row, not two.
+      const freshTitles = new Set();
       results.forEach(r => {
         const key = (r.trackName||'').toLowerCase().trim() + '|' + (r.releaseDate||'').slice(0,10);
-        if(!prevKeys.has(key)){
+        if(!prevKeys.has(key) && !freshTitles.has(key)){
           fresh.push({
             title: r.trackName,
             date: (r.releaseDate||'').slice(0,10),
@@ -29931,6 +30095,7 @@ if(!isDiscover) stopDiscoverPreview();
             previewUrl: r.previewUrl || null,
             seen: false,
           });
+          freshTitles.add(key);
         }
       });
       // ---- Albums, not just singles ----
@@ -29943,7 +30108,7 @@ if(!isDiscover) stopDiscoverPreview();
       // dump an artist's whole back catalog into the list.
       try{
         const aUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=album&limit=200`;
-        const aResp = await fetchWithProxy(aUrl);
+        const aResp = await fetchWithProxy(aUrl, SC_RELEASE_FETCH);
         if(aResp && aResp.ok){
           const aData = await aResp.json();
           const _newestPrev = prev.reduce(function(mx, pr){ return (pr.date || '') > (mx || '') ? pr.date : mx; }, '');
@@ -29962,8 +30127,41 @@ if(!isDiscover) stopDiscoverPreview();
             if(!isNewish && !noNewer) return;
             albCand.push(r);
           });
+          // The artist's own catalog, read by ID: this is where a dated
+          // pre-order actually lives, and it goes through the exact same
+          // credited-artist / track-count / dedupe rules below.
+          try{
+            var _idAlbums = await scItunesArtistAlbums(artist);
+            (_idAlbums || []).forEach(function(r){
+              if(!r || !r.collectionName) return;
+              if((r.trackCount || 0) === 1) return;   // one-track releases come through the song query
+              albCand.push(r);
+            });
+          }catch(_idE){}
           albCand.sort(function(x, y){ return ((y.releaseDate||'').slice(0,10)).localeCompare((x.releaseDate||'').slice(0,10)); });
-          albCand.slice(0, 5).forEach(function(r){
+          // Two sources can name the same album: the artist-catalog lookup and
+          // the term search both carry a pre-order, and a cross-storefront
+          // edition repeats it. Collapse by title+day before listing, keeping
+          // the copy that has artwork and a collectionId.
+          const albSeen = new Set();
+          const albPick = [];
+          albCand.forEach(function(r){
+            const albDate = (r.releaseDate || '').slice(0, 10);
+            const keyA = 'alb:' + (r.collectionName || '').toLowerCase().trim() + '|' + albDate;
+            if(prevKeys.has(keyA)) return;
+            if(albSeen.has(keyA)){
+              for(let ai = 0; ai < albPick.length; ai++){
+                const pk = 'alb:' + (albPick[ai].collectionName || '').toLowerCase().trim() + '|' + (albPick[ai].releaseDate || '').slice(0, 10);
+                if(pk !== keyA) continue;
+                if(!albPick[ai].artworkUrl100 && r.artworkUrl100) albPick[ai] = r;
+                else if(!albPick[ai].collectionId && r.collectionId) albPick[ai] = r;
+                break;
+              }
+              return;
+            }
+            albSeen.add(keyA); albPick.push(r);
+          });
+          albPick.slice(0, 5).forEach(function(r){
             const albDate = (r.releaseDate || '').slice(0, 10);
             const keyA = 'alb:' + (r.collectionName || '').toLowerCase().trim() + '|' + albDate;
             if(prevKeys.has(keyA)) return;
@@ -29977,26 +30175,26 @@ if(!isDiscover) stopDiscoverPreview();
               cid: r.collectionId || null,
               seen: false
             });
+            freshTitles.add((r.collectionName || '').toLowerCase().trim() + '|' + albDate);
           });
         }
       }catch(_ae){}
-      }
       // ---- Dated drops with nothing to connect -----------------------------
       // MusicBrainz carries announced releases with the day already set, and
       // reading it needs no account at all — which is what a public app has to
-      // work like. The silent Spotify pass still runs on top in case a token
-      // from an old connection is lying on the device, but it is never asked
-      // for and never opens a window. Best effort: no network, no matches —
-      // the sources above still decide alone about this one.
+      // work like. Nothing here opens a window or reads a token: the artist's
+      // Apple catalog above and this open search are the whole source of truth.
+      // Best effort: no network, no matches — the sources above still decide
+      // alone about this one.
       try{
         var mbFresh = (typeof window.__scMbUpcoming === 'function') ? await window.__scMbUpcoming(artist) : [];
-        var spFresh = (typeof window.__scSpotifyUpcoming === 'function') ? await window.__scSpotifyUpcoming(artist) : [];
-        (mbFresh || []).concat(spFresh || []).forEach(function(x){
+        (mbFresh || []).forEach(function(x){
           if(!x || !x.title || !x.date) return;
           if(!x.time) x.time = '';                    // day-only catalogs leave it blank
           var nt = String(x.title).toLowerCase().trim();
-          var k = (x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date;
+          var k = 'mbt:' + nt + '|' + x.date;
           if(prevKeys.has(k)) return;
+          if(freshTitles.has(nt + '|' + x.date)) return;   // Apple already listed this drop
           for(var pi = 0; pi < prev.length; pi++){
             var pe = prev[pi];
             if(!pe || String(pe.title || '').toLowerCase().trim() !== nt) continue;
@@ -30013,6 +30211,39 @@ if(!isDiscover) stopDiscoverPreview();
           prevKeys.add(k);
         });
       }catch(_eSp){}
+      // A second open source fills the same gap. Its entries carry their own
+      // source key, defer to a drop another source already listed this run, and
+      // date an undated stored row in place instead of adding a duplicate.
+      try{
+        var wdFresh = (typeof window.__scWdUpcoming === 'function') ? await window.__scWdUpcoming(artist) : [];
+        (wdFresh || []).forEach(function(x){
+          if(!x || !x.title || !x.date) return;
+          if(!x.time) x.time = '';
+          var nt = String(x.title).toLowerCase().trim();
+          var k = 'wdt:' + nt + '|' + x.date;
+          if(prevKeys.has(k)) return;
+          if(freshTitles.has(nt + '|' + x.date)) return;   // Apple already listed this drop
+          // Another open source in THIS run may hold the same drop already.
+          for(var fi = 0; fi < fresh.length; fi++){
+            var fe = fresh[fi];
+            if(fe && String(fe.title || '').toLowerCase().trim() === nt && (window.__scDay10(fe.date) || fe.date || '') === x.date) return;
+          }
+          for(var pj = 0; pj < prev.length; pj++){
+            var pe2 = prev[pj];
+            if(!pe2 || String(pe2.title || '').toLowerCase().trim() !== nt) continue;
+            if((window.__scDay10(pe2.date) || pe2.date || '') === x.date) return;    // same drop, already stored
+            if(!pe2.date){                                                           // dated in place, not "new"
+              pe2.date = x.date; pe2.kind = 'album';
+              if(!pe2.time && x.time) pe2.time = x.time;
+              if(!pe2.art) pe2.art = x.art;
+              if(!pe2.url) pe2.url = x.url;
+              return;
+            }
+          }
+          fresh.push(x);
+          prevKeys.add(k);
+        });
+      }catch(_eWd){}
       // Keep all fetched releases (up to 50 per iTunes query) so nothing is lost.
       const merged = prev.concat(fresh)
         .sort((a,b) => (b.date||'').localeCompare(a.date||''));
@@ -30023,37 +30254,61 @@ if(!isDiscover) stopDiscoverPreview();
 
   // Check every pinned artist for new releases. Runs on boot, on focus, and on
   // the "Check now" button. Surfaces a toast for any genuinely new finds.
+  // A running check is shared, never re-entered: a second tap awaits the run
+  // already in progress instead of resolving instantly and doing nothing.
+  let pinnedCheckPromise = null;
   async function checkPinnedArtistReleases(){
-    if(pinnedCheckState.active) return;
+    if(pinnedCheckPromise) return pinnedCheckPromise;
     if(!pinnedArtists.length) return;
     if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    pinnedCheckPromise = (async function(){
     pinnedCheckState = { active:true, total:pinnedArtists.length, done:0, newCount:0, finishedAt:0, seen:false };
+    let totalNew = 0;
     try{
     renderHomeExportPopup();
-    let totalNew = 0;
-    for(const a of pinnedArtists){
-      // Clock every artist: a stalled, offline or rate-limited catalog reply
-      // moves the check on instead of parking it half-finished.
-      const fresh = await Promise.race([
-        fetchArtistReleases(a.name),
-        new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })   // 8s per artist
-      ]).catch(function(){ return null; });                                        // never wedges the run
-      totalNew += (fresh ? fresh.length : 0);
-      pinnedCheckState.done++;
-      renderHomeExportPopup();
-    }
+    // A few artists at a time: the catalogs are independent, so one stalled
+    // host can no longer hold the whole list behind it, and a big pin list
+    // finishes in a fraction of the serial time.
+    const _queue = pinnedArtists.slice();
+    const _worker = async function(){
+      while(_queue.length){
+        const a = _queue.shift();
+        if(!a) continue;
+        // Clock every artist: a stalled, offline or rate-limited catalog reply
+        // moves the check on instead of parking it half-finished.
+        const fresh = await Promise.race([
+          fetchArtistReleases(a.name),
+          new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })   // 8s per artist
+        ]).catch(function(){ return null; });                                        // never wedges the run
+        totalNew += (fresh ? fresh.length : 0);
+        pinnedCheckState.done++;
+        // Persist and repaint as each artist lands, so the list fills in while
+        // the rest are still being read instead of appearing all at once —
+        // and a partly-finished run still keeps what it found.
+        try{ const _sp = savePinnedArtists(); if(_sp && _sp.catch) _sp.catch(function(){}); }catch(_eSv){}
+        try{ renderNewReleases(); }catch(_eRn){}
+        try{ scRepaintOpenReleasePanel(); }catch(_eRp){}
+        renderHomeExportPopup();
+      }
+    };
+    const _pool = [];
+    for(let _wi = 0; _wi < 3; _wi++) _pool.push(_worker());
+    await Promise.all(_pool);
     }finally{
       pinnedCheckState.active = false;
     }
     pinnedCheckState.finishedAt = Date.now();
     pinnedCheckState.newCount = totalNew;
-    savePinnedArtists();
+    try{ await savePinnedArtists(); }catch(_eSv2){}
     renderNewReleases();
     if(totalNew > 0){
       renderHome(); // Updates the new releases bubble count
     }
     renderHomeExportPopup();
     updateNotifBadge();
+    })();
+    try{ return await pinnedCheckPromise; }
+    finally{ pinnedCheckPromise = null; }
   }
 
   // The notification bell surfaces "new releases" alongside the existing
@@ -30332,7 +30587,7 @@ if(!isDiscover) stopDiscoverPreview();
         genre: r.primaryGenreName || '', track: '', position: 0,
         seconds: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : 0
       };
-      window.__scCancelDl = false;
+      window.__scCancelDl = false; scConvertPillResetCancel();
       scConvertPillUpdate('Saving · ' + (r.trackName || 'song'), 'Finding the audio…', 15);
       var out = await scConvertOneTrack(meta, fmt, function(txt){ if(txt) scConvertPillUpdate('Saving · ' + (r.trackName || 'song'), txt); });
       if(!out || !out.ok){
@@ -30458,68 +30713,6 @@ if(!isDiscover) stopDiscoverPreview();
     return token;
   }
   window.__scSpotifyConnect = scSpotifyInteractiveToken;
-  // Silent token for the release check: the stored token while it is good, else
-  // a quiet refresh_token exchange. Returns null when nothing is connected —
-  // no window, no toast, the other sources simply carry on.
-  async function scSpotifySilentToken(){
-    var t = null; try{ t = JSON.parse(localStorage.getItem(SC_SPOTIFY_TOKEN_KEY) || 'null'); }catch(_e){}
-    if(t && t.access_token && Number(t.expires_at) > Date.now() + 30000) return t.access_token;
-    if(!t || !t.refresh_token) return null;
-    try{
-      var r = await fetch('https://accounts.spotify.com/api/token', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({ client_id: SC_SPOTIFY_CLIENT_ID, grant_type:'refresh_token', refresh_token: t.refresh_token }) });
-      if(!r.ok) return null;
-      var nt = await r.json();
-      if(!nt || !nt.access_token) return null;
-      nt.refresh_token = nt.refresh_token || t.refresh_token;
-      nt.expires_at = Date.now() + ((Number(nt.expires_in) || 3600) - 60) * 1000;
-      try{ localStorage.setItem(SC_SPOTIFY_TOKEN_KEY, JSON.stringify(nt)); }catch(_e2){}
-      return nt.access_token;
-    }catch(_e3){ return null; }
-  }
-  window.__scSpotifySilentToken = scSpotifySilentToken;
-  // Upcoming albums/singles for one artist, straight from Spotify. Only dates
-  // that are genuinely in the FUTURE and carry a known DAY are kept — a
-  // month-precision placeholder or an already-released record is not a drop on
-  // the way, and the tab must never fill with guesses.
-  async function scFetchSpotifyUpcoming(artist){
-    try{
-      if(!artist) return [];
-      var token = await scSpotifySilentToken();
-      if(!token) return [];
-      var H = { Authorization: 'Bearer ' + token };
-      var rs = await fetch('https://api.spotify.com/v1/search?' + new URLSearchParams({ q: artist, type: 'artist', limit: '5' }), { headers: H });
-      if(!rs || !rs.ok) return [];
-      var sd = await rs.json();
-      var cands = (sd.artists && sd.artists.items) || [];
-      var want = String(artist).toLowerCase().trim();
-      var pick = null;
-      for(var i = 0; i < cands.length; i++){ if(String((cands[i] && cands[i].name) || '').toLowerCase().trim() === want){ pick = cands[i]; break; } }
-      if(!pick && cands.length === 1) pick = cands[0];
-      if(!pick || !pick.id) return [];
-      // No market filter: a pre-save is often only registered in some storefronts.
-      var ra = await fetch('https://api.spotify.com/v1/artists/' + encodeURIComponent(pick.id) + '/albums?include_groups=album,single&limit=50', { headers: H });
-      if(!ra || !ra.ok) return [];
-      var ad = await ra.json();
-      var today = new Date().toISOString().slice(0, 10);
-      var out = [];
-      ((ad && ad.items) || []).forEach(function(a){
-        if(!a || !a.name || !a.release_date || a.release_date_precision !== 'day') return;
-        var d = String(a.release_date).slice(0, 10);
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(d) || !(d > today)) return;
-        var credits = (a.artists || []).map(function(x){ return String((x && x.name) || '').toLowerCase().trim(); });
-        if(credits.indexOf(want) === -1) return; // collabs: the pinned artist must be credited
-        out.push({
-          title: a.name, date: d,
-          art: (a.images && a.images[0] && a.images[0].url) || null,
-          url: (a.external_urls && a.external_urls.spotify) || null,
-          previewUrl: null, kind: 'album', cid: null, seen: false, _spt: a.id
-        });
-      });
-      return out;
-    }catch(_e){ return []; }
-  }
-  window.__scSpotifyUpcoming = scFetchSpotifyUpcoming;
   // ---- No account, no window: the announced drop, dated on MusicBrainz -----
   // Spotify only lists a release date before release day — but reading it used
   // to need a connection, which a public app cannot ask for. MusicBrainz
@@ -30535,41 +30728,120 @@ if(!isDiscover) stopDiscoverPreview();
       var today = new Date().toISOString().slice(0, 10);
       var horizon = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
       // Lucene specials (quotes/backslashes) would 400 the whole query.
-      var q = 'artist:"' + String(artist).replace(/["\\]/g, ' ').trim() + '"';
-      q += ' AND firstreleasedate:[' + today + ' TO ' + horizon + ']';
-      var url = 'https://musicbrainz.org/ws/2/release-group/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
-      // MusicBrainz 403s requests that do not identify the application, and a
-      // page fetch cannot set a User-Agent — only the native attempt in
-      // fetchWithProxy can, so hand it one. A browser keeps its own UA, which
-      // MusicBrainz also accepts.
-      var rs = await fetchWithProxy(url, { headers: { 'User-Agent': 'SideCut/' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') + ' (https://anekthegreat.github.io/SideCut/)' } });
+      var who = String(artist).replace(/["\\]/g, ' ').trim();
+      var want = primaryArtistName(artist).toLowerCase().trim();
+      var out = [], seenMb = {};
+      // TWO endpoints, because they do not agree. release-group is the
+      // canonical album/EP/single; release is the concrete pressing, and an
+      // announced-but-not-yet-pressed drop often lives on exactly one of them.
+      // Each has its own date field and its own range field name.
+      var passes = [
+        { path: 'release-group', list: 'release-groups', typeKey: 'primary-type', dateKey: 'first-release-date', range: 'firstreleasedate' },
+        { path: 'release', list: 'releases', typeKey: null, dateKey: 'date', range: 'date' }
+      ];
+      // Both endpoints are asked AT THE SAME TIME. Each read is budgeted at
+      // 4s, so two sequential ones could spend the whole per-artist window
+      // (8s) on one artist; run together they cost one budget.
+      var _reads = passes.map(function(ps){
+        var q = 'artist:"' + who + '" AND ' + ps.range + ':[' + today + ' TO ' + horizon + ']';
+        var url = 'https://musicbrainz.org/ws/2/' + ps.path + '/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
+        return fetchWithProxy(url, SC_MB_FETCH).then(function(rs){
+          return (rs && rs.ok) ? rs.json() : null;
+        }).catch(function(){ return null; });
+      });
+      var _rp = await Promise.all(_reads);
+      // Process in pass order, so a release-group hit wins over the concrete
+      // release that merely mirrors it.
+      for(var pi = 0; pi < passes.length; pi++){
+        var ps = passes[pi];
+        var md = _rp[pi];
+        try{
+          ((md && md[ps.list]) || []).forEach(function(rg){
+            if(!rg || !rg.title) return;
+            // The range can still hand back year/month-precision entries that
+            // merely overlap it — only a real day counts as a drop.
+            var d = window.__scDay10(rg[ps.dateKey]);
+            if(!d || !window.__scUpcomingDay(d)) return;
+            // A release row carries no primary-type; classify only when there
+            // is one, so the concrete endpoint cannot smuggle in a compilation.
+            var pt = ps.typeKey ? String(rg[ps.typeKey] || '') : '';
+            if(pt && pt !== 'Album' && pt !== 'Single' && pt !== 'EP') return;
+            var credits = (rg['artist-credit'] || []).map(function(c){
+              return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
+            });
+            var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
+            if(!hit) return; // collabs count only when the pinned artist is credited
+            // One drop shows on both endpoints under different ids; the
+            // normalized title + day is what actually identifies it.
+            var key = String(rg.title).toLowerCase().replace(/\s+/g, ' ').trim() + '|' + d;
+            if(seenMb[key]) return;
+            seenMb[key] = true;
+            out.push({
+              title: rg.title, date: d, art: null,
+              url: 'https://musicbrainz.org/' + ps.path + '/' + rg.id,
+              previewUrl: null, kind: 'album', cid: null, seen: false, _mb: rg.id
+            });
+          });
+        }catch(_ePass){}
+      }
+      if(out.length > 1) out.sort(function(a, b){ return String(a.date).localeCompare(String(b.date)); });
+      return out;
+    }catch(_e){ return []; }
+  }
+  window.__scMbUpcoming = scFetchMbUpcoming;
+  // Wikidata: the same idea as the MusicBrainz pass, one open query per pinned
+  // artist. Announced albums carry their publication day (P577) and the search
+  // is keyless, so nothing here asks the user to connect anything. Best effort
+  // like the rest — no network, no match, a rate-limited reply: the other
+  // sources still decide alone. An unlabeled item is refused rather than
+  // listed under its Q-id, and the pinned artist must be credited.
+  async function scFetchWdUpcoming(artist){
+    try{
+      if(!artist) return [];
+      if(typeof fetchWithProxy !== 'function') return [];
+      var want = primaryArtistName(artist).toLowerCase().trim();
+      if(!want) return [];
+      // Quotes/backslashes/newlines would break out of the SPARQL string.
+      var safe = String(artist).replace(/["\\\n\r\t]/g, ' ').trim();
+      if(!safe) return [];
+      var q = 'SELECT ?album ?albumLabel ?date ?performerLabel WHERE {'
+        + ' SERVICE wikibase:mwapi { bd:serviceParam wikibase:api "EntitySearch" .'
+        + ' bd:serviceParam wikibase:endpoint "www.wikidata.org" .'
+        + ' bd:serviceParam mwapi:search "' + safe + '" .'
+        + ' bd:serviceParam mwapi:language "en" .'
+        + ' ?performer wikibase:apiOutputItem mwapi:item . }'
+        + ' ?album wdt:P175 ?performer .'
+        + ' ?album wdt:P31/wdt:P279* wd:Q482994 .'
+        + ' ?album wdt:P577 ?date .'
+        + ' FILTER(?date > NOW())'
+        + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }'
+        + ' } ORDER BY ASC(?date) LIMIT 25';
+      var url = 'https://query.wikidata.org/sparql?query=' + encodeURIComponent(q) + '&format=json';
+      var rs = await fetchWithProxy(url, SC_RELEASE_FETCH);
       if(!rs || !rs.ok) return [];
       var md = await rs.json();
-      var want = primaryArtistName(artist).toLowerCase().trim();
       var out = [];
-      ((md && md['release-groups']) || []).forEach(function(rg){
-        if(!rg || !rg.title) return;
-        // The range above can still hand back year/month-precision entries
-        // that merely overlap it — only a real day counts as a drop.
-        var d = window.__scDay10(rg['first-release-date']);
+      ((md && md.results && md.results.bindings) || []).forEach(function(b){
+        if(!b || !b.albumLabel || !b.date) return;
+        var d = window.__scDay10(b.date.value);
         if(!d || !window.__scUpcomingDay(d)) return;
-        var pt = String(rg['primary-type'] || '');
-        if(pt && pt !== 'Album' && pt !== 'Single' && pt !== 'EP') return;
-        var credits = (rg['artist-credit'] || []).map(function(c){
-          return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
-        });
-        var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
-        if(!hit) return; // collabs count only when the pinned artist is credited
+        var title = String(b.albumLabel.value || '').trim();
+        // No English label means the item is a stub; its Q-id is not a title.
+        if(!title || /^Q\d+$/.test(title)) return;
+        var pl = String((b.performerLabel && b.performerLabel.value) || '').toLowerCase().trim();
+        if(!pl) return;
+        if(!(pl === want || pl.indexOf(want) !== -1 || want.indexOf(pl) !== -1)) return;
+        var id = (b.album && b.album.value) ? String(b.album.value).split('/').pop() : '';
         out.push({
-          title: rg.title, date: d, art: null,
-          url: 'https://musicbrainz.org/release-group/' + rg.id,
-          previewUrl: null, kind: 'album', cid: null, seen: false, _mb: rg.id
+          title: title, date: d, art: null,
+          url: id ? 'https://www.wikidata.org/wiki/' + id : null,
+          previewUrl: null, kind: 'album', cid: null, seen: false, _wd: id
         });
       });
       return out;
     }catch(_e){ return []; }
   }
-  window.__scMbUpcoming = scFetchMbUpcoming;
+  window.__scWdUpcoming = scFetchWdUpcoming;
   async function scSpotifySearch(q, type){
     var token = await scSpotifyInteractiveToken();
     var response = await fetch('https://api.spotify.com/v1/search?' + new URLSearchParams({q:q, type:type || 'track', limit:'5'}), {headers:{Authorization:'Bearer ' + token}});
@@ -30908,7 +31180,7 @@ if(!isDiscover) stopDiscoverPreview();
         '<div class="dp-yt-status" style="font-size:10px; color:var(--ink-dim); text-align:left;">⏳ Converting...</div></div></div>';
     }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
-    window.__scCancelDl = false;
+    window.__scCancelDl = false; scConvertPillResetCancel();
     scConvertPillUpdate('Converting · YouTube', 'Starting…', 15);
     // Update the status line live so the user can see the fallback move MP3 -> WAV.
     function setStatus(txt){
@@ -31198,7 +31470,7 @@ if(!isDiscover) stopDiscoverPreview();
     // Real track metadata (title + cover art) fetched from Spotify's oEmbed.
     var csMeta = { title: '', artist: '', album: '', thumb: '', year: '', genre: '', track: '', seconds: 0, _aiUsed: false };
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
-    window.__scCancelDl = false;
+    window.__scCancelDl = false; scConvertPillResetCancel();
     scConvertPillUpdate('Converting · Spotify', 'Fetching track info…', 15);
     function csMetaLine(){
       var parts = [];
@@ -32338,7 +32610,9 @@ if(!isDiscover) stopDiscoverPreview();
       if(p && typeof p.catch === 'function') p.catch(function(){});
     }catch(_ne){}
   }
-  var scConvertPillState = { el: null, timer: null, pct: 0 };
+  var scConvertPillState = { el: null, timer: null, pct: 0, cancelRequested: false };
+  // A new run clears the flag; the Cancel handler sets it and dismisses the pill.
+  function scConvertPillResetCancel(){ scConvertPillState.cancelRequested = false; }
   function scConvertPill(show){
     if(!show){
       var gone = scConvertPillState.el;
@@ -32368,11 +32642,25 @@ if(!isDiscover) stopDiscoverPreview();
       if(cSub) cSub.textContent = 'Stopping — what already finished stays in your library';
       window.__scNotifyAt = 0;
       scNotifyProgress('SideCut', 'Cancelling — what already finished stays in your library', scConvertPillState.pct || 0, false);
+      // The run cannot always report back — a download or an encode in flight
+      // may be wedged, and that is exactly when the bubble used to stay on
+      // screen forever. Dismiss it ourselves on a short grace window so the
+      // Cancel button always means "gone", whatever the job is doing.
+      scConvertPillState.cancelRequested = true;
+      if(scConvertPillState.timer){ clearTimeout(scConvertPillState.timer); }
+      scConvertPillState.timer = setTimeout(function(){
+        if(!scConvertPillState.cancelRequested) return;
+        scConvertPillState.cancelRequested = false;
+        scConvertPill(false);
+      }, 1500);
     });
     scConvertPillState.el = pill;
     return pill;
   }
   function scConvertPillUpdate(title, sub, pct){
+    // The user cancelled: the pill is on its way out and no status line from
+    // the cancelled run may bring it back.
+    if(scConvertPillState.cancelRequested) return;
     var pill = scConvertPill(true);
     if(!pill) return;
     // A reused pill may still carry a previous run's done-state: drop the
@@ -32485,7 +32773,7 @@ if(!isDiscover) stopDiscoverPreview();
   async function scRunBatchConvert(plan, fmt, saveMode, resultEl, btnEl, originalUrl, chosenTracks){
     var tracks = (chosenTracks && chosenTracks.length) ? chosenTracks.slice() : ((plan && plan.tracks) || []);
     if(!tracks.length) return false;
-    window.__scCancelDl = false;
+    window.__scCancelDl = false; scConvertPillResetCancel();
     var alsoSaveFiles = (saveMode === 'files');
     var wantZip = (saveMode === 'zip');
     if(wantZip && typeof JSZip === 'undefined'){ toast('ZIP builder not loaded — the songs still go to your library.', 3000); wantZip = false; }
@@ -32702,7 +32990,10 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(e){}
     return null;
   }
-  async function scHttpJson(url, bodyObj){
+  // ytClient (optional) is the Innertube client the request BODY declares, so
+  // the headers can name the same one. Passed in rather than kept in a closure
+  // so the transport stays a plain function of its arguments.
+  async function scHttpJson(url, bodyObj, ytClient){
     // Every search, player call and licensed-catalog read in this app rides on
     // this one transport, and it used to give up after a single native attempt
     // that accepted only status 200. One transient 429, one read timeout on a
@@ -32724,8 +33015,16 @@ if(!isDiscover) stopDiscoverPreview();
       nativeHeaders['User-Agent'] = 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Mobile Safari/537.36';
       nativeHeaders['Origin'] = 'https://www.youtube.com';
       nativeHeaders['Referer'] = 'https://www.youtube.com/';
-      nativeHeaders['X-Youtube-Client-Name'] = '1';
-      nativeHeaders['X-Youtube-Client-Version'] = '2.20240801.00.00';
+      // These two MUST name the client the request body declares. They were
+      // pinned to the web client (1 / the WEB version) whatever the body said,
+      // so an ANDROID or IOS player call arrived wearing web headers —
+      // a mismatch YouTube reads as "not the app you claim to be" and answers
+      // by handing back no usable stream. The player passes its client in; the
+      // search passes none and keeps the web defaults it actually is.
+      var _yc = ytClient || null;
+      nativeHeaders['X-Youtube-Client-Name'] = String((_yc && _yc.name) || 1);
+      nativeHeaders['X-Youtube-Client-Version'] = (_yc && _yc.version) || '2.20240801.00.00';
+      if(_yc && _yc.ua) nativeHeaders['User-Agent'] = _yc.ua;
     }
     var Http = __scCapHttp();
     if(Http && typeof Http.request === 'function'){
@@ -33058,13 +33357,22 @@ if(!isDiscover) stopDiscoverPreview();
   }
   async function scYtPlayer(videoId){
     if(SC_IS_PLAY) return scLegalPlayer(videoId);
+    // `num` and `ua` are the matching X-Youtube-Client-Name value and the
+    // User-Agent that client really sends; the header block reads them so the
+    // request never claims a different client than the body. `num` is the
+    // long-standing public id for each client (WEB 1, ANDROID 3, IOS 5,
+    // ANDROID_VR 28, WEB_EMBEDDED_PLAYER 56, TVHTML5 7, Android's `VR`/
+    // embedded variants 28/85).
+    var UA_ANDROID = 'com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip';
+    var UA_IOS = 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 18_0 like Mac OS X)';
+    var UA_WEB = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
     var clients = [
-      { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 } },
-      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' } },
-      { client: { clientName: 'ANDROID_VR', clientVersion: '1.60.19', androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3', osName: 'Android', osVersion: '12' } },
-      { client: { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }, third: 'https://www.youtube.com/' },
-      { client: { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' }, third: 'https://www.youtube.com/' },
-      { client: { clientName: 'MWEB', clientVersion: '2.20250220.00.00' }, third: 'https://www.youtube.com/' }
+      { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 }, num: 3, ua: UA_ANDROID },
+      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' }, num: 5, ua: UA_IOS },
+      { client: { clientName: 'ANDROID_VR', clientVersion: '1.60.19', androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3', osName: 'Android', osVersion: '12' }, num: 28, ua: UA_ANDROID },
+      { client: { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }, num: 85, ua: UA_WEB, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' }, num: 56, ua: UA_WEB, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'MWEB', clientVersion: '2.20250220.00.00' }, num: 2, ua: UA_ANDROID, third: 'https://www.youtube.com/' }
     ];
 
     // Decrypt signatureCipher URLs when a client only hands one over.
@@ -33130,7 +33438,9 @@ if(!isDiscover) stopDiscoverPreview();
       try{
         var ctx = { client: clients[c].client };
         if(clients[c].third) ctx.thirdParty = { embedUrl: clients[c].third };
-        var d = await scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true });
+        // Hand the transport the client this body declares, so the headers agree
+        // with it instead of always claiming to be the web player.
+        var d = await scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true }, { name: clients[c].num, version: clients[c].client.clientVersion, ua: clients[c].ua });
         if(!d || !d.streamingData) continue;
         answered++;
         var vd = d.videoDetails || {};
@@ -35304,6 +35614,10 @@ function concatBytes(arrays) {
 window.__scDiscRelTab = function(mode, root){
   root = root || document.getElementById('discPopupBody');
   if(!root) return;
+  // Remember the choice. Both render paths used to end with a hard-coded
+  // 'all', so any rebuild — a finished check, a Home repaint, a reopen —
+  // snapped the strip back to All releases the moment you picked Upcoming.
+  window.__scRelTabMode = mode;
   var upcoming = mode === 'upcoming';
   var today = new Date().toISOString().slice(0, 10);
   var rowSel = root._dpRelRowSel || '.dp-track[data-date]';
@@ -35335,6 +35649,14 @@ window.__scDiscRelTab = function(mode, root){
     sEl.textContent = upcoming
       ? (up.length + ' upcoming release' + (up.length !== 1 ? 's' : '') + ' \u00b7 soonest first')
       : root._dpRelSub;
+  }
+  // Nothing dated to show? Go and look, in the background, instead of leaving
+  // you staring at an empty tab — the open catalogs are read and the panel
+  // repaints itself when the dates land. Once at a time, at most once a minute,
+  // and only while the tab is genuinely empty, so a repaint can never set it off
+  // in a loop.
+  if(upcoming && !up.length){
+    try{ if(typeof window.__scUpcomingAutofetch === 'function') window.__scUpcomingAutofetch(); }catch(_eUpAuto){}
   }
 };
 
@@ -35377,7 +35699,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       _tabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){
         btn.addEventListener('click', function(){ window.__scDiscRelTab(btn.dataset.mode); });
       });
-      window.__scDiscRelTab('all');
+      window.__scDiscRelTab(window.__scRelTabMode || 'all');
       // Cached reopens never re-ran row wiring before — calling it here fixes
       // taps there, and a row ignores a second attach.
       if(typeof window.__wireReleaseRows === 'function') window.__wireReleaseRows();

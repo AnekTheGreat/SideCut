@@ -31,7 +31,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
+ok(ver === '61.5', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -88,7 +88,7 @@ console.log('[4] Home bubble combines the same tabs');
   ok(hb.includes('id="hbRelCount"'), 'count line gets an id to swap');
   ok(hb.includes("_dpRelRowSel = '.hb-track-row[data-date]'"), 'switcher pointed at hb rows');
   ok(hb.includes("body.querySelector('#dpRelTabs')"), 'strip injected once per render');
-  ok(hb.includes("window.__scDiscRelTab('all', body)"), 'tabs applied with the panel body as root');
+  ok(hb.includes("window.__scDiscRelTab(window.__scRelTabMode || 'all', body)"), 'tabs applied with the panel body as root, mode preserved');
   ok(hb.includes('color:var(--gold)'), 'hb drops label painted gold');
   ok(hb.includes("'upcoming:Upcoming releases'"), 'both tab labels present in the panel');
 }

@@ -1,5 +1,115 @@
 # SideCut — repository memory
 
+## v61.5 (Sep 25, 2026): two release lines that both called themselves 61.3.8/61.3.9 became one
+- **What happened**: `origin/main` and the local line had each been shipping under the SAME version numbers
+  for DIFFERENT work — local `61.3.8` was the lyrics-identity fix while origin `61.3.8` was the dated-drops
+  fix, and both had a `61.3.9`. Merging origin/main (v61.4) in needed one number nobody had used: **61.5**.
+  Local's two releases are folded into a single 61.5 changelog entry (their notes, in order); origin's
+  history (61.4, 61.3.9, 61.3.8 …) is kept exactly as published, and all four original AGENTS sections stay
+  below verbatim — read them as "local line" and "origin line", not as one timeline.
+- **The merge broke index.html in three ways, and `dev/merge-audit.mjs` is what caught them**: run it after
+  ANY merge — it reads `git show :1/:2/:3:<file>` for both parents, diffs each against the merge base, and
+  prints every line that side added which the merged file then lost. It found (1) the whole
+  `__scNativeFetch` definition dropped, so `fetchWithProxy` still called it and the ReferenceError was
+  swallowed by its own try/catch — every phone silently fell back to page fetch + CORS relays, i.e. the
+  exact "converters stopped working" symptom; (2) a stray `}` left by the Apple-guard splice, which closed
+  the outer try of `fetchArtistReleases` early and stopped the ENTIRE main script from parsing (a blank app,
+  not a subtle bug — check `new Function` on every inline block BEFORE trusting a merge); (3) no 61.5
+  changelog head entry, so `APP_VERSION` and `entries[0].version` disagreed.
+- **Rule for the next merge**: resolving a conflict is not finishing it. The audit script + the full
+  `dev/test-*.mjs` suite are the finish line, and the file tools silently cannot reach into `index.html`
+  (2.3 MB) — they only match near the head of a file, so every index.html edit still goes through a
+  `dev/patch-*.mjs` script like this one.
+## v61.4 follow-up (Sep 24, 2026): MusicBrainz must be asked BOTH ways — that was the real "no dated drops"
+- **The user's follow-up, verbatim**: "Musicbrainz don't have the dated release for upcoming releases but
+  Spotify has it but I don't want my app to take the user to Spotify or verify anything for that except.
+  Make the upcoming release actually work". v61.4 shipped MB + Wikidata but **the live probe still returned
+  0 dated future releases for every mainstream artist** — so "actually work" was not yet true.
+- **Root cause (measured live this session, `dev/_probe_*` then deleted)**: MusicBrainz has TWO relevant
+  endpoints and they DO NOT AGREE. `release-group` is the canonical album/EP/single; `release` is the
+  concrete pressing. An announced-but-not-yet-pressed drop often exists on exactly ONE of them:
+  - The Weeknd → release-group **0**, release **1** ("House of Balloons", 2026-10-13).
+  - Taylor Swift → release-group **3** (Patient Zero + acoustic + piano), release **1** (Patient Zero) —
+    the two lists overlap but are not equal, which is why merging on **normalized title + day** (not id) is
+    required or the same drop shows twice.
+  - Query shape was NOT the bug: `artist:"X" AND firstreleasedate:[today TO today+400d]` returns 0 for
+    The Weeknd while each clause alone returns 200/2776 — MB genuinely has no release-group row for him.
+    `arid:` + range behaves the same as `artist:` + range, so the artist-name form is fine.
+- **The fix — `scFetchMbUpcoming` now loops a `passes` table over BOTH endpoints**, each with its own list
+  key, type key, date field and range field:
+  `[{path:'release-group', list:'release-groups', typeKey:'primary-type', dateKey:'first-release-date', range:'firstreleasedate'},
+    {path:'release', list:'releases', typeKey:null, dateKey:'date', range:'date'}]`
+  - **Both reads run CONCURRENTLY** (`Promise.all` over `passes.map(...)`) — each is budgeted at 4s, so two
+    sequential reads could burn the whole 8s per-artist race in `checkPinnedArtistReleases` on one artist.
+    Do not "simplify" this back to a sequential `for` + `await`.
+  - A `release` row has no `primary-type`, so the Album/Single/EP filter applies only when a type exists
+    (classify-if-present) — that endpoint cannot smuggle in a compilation.
+  - Dedupe `seenMb[normalizedTitle + '|' + day]`, results sorted by date, each row's `url` points at its own
+    endpoint (`/release/…` vs `/release-group/…`).
+- **Verified live against the real API through the SHIPPED function** (extracted from index.html, run in
+  Node): Taylor Swift 4, The Weeknd 1, Baron Noir 1, Tracy Bonham 2 dated drops. The Weeknd's came only
+  from `release` — direct proof the second endpoint is load-bearing.
+- **"No Spotify" stays true**: nothing in the release path logs in, connects, verifies, opens a window or
+  touches a token. Confirmed by the suite's `!accounts.spotify && !window.open` assertions.
+- **Mechanics**: `dev/patch-614.mjs` (now 26 index.html edits; still fully idempotent — rerun = 0 edits),
+  `dev/test-614.mjs` gained `[6b2] MusicBrainz is asked both ways` (10 assertions), and two historical pins
+  were repinned because they matched the old single-endpoint source text:
+  `dev/test-6136.mjs` (release-group URL, `firstreleasedate:` literal, `rg['first-release-date']`, the
+  `await fetchWithProxy` line) and `dev/test-6139.mjs` (the MB fetch line + the `SC_RELEASE_FETCH` count,
+  which stays **7** = 1 definition + 6 call sites — one call site now serves both endpoints, so it does NOT
+  climb to 8). Both repins are tolerant/idempotent so a rerun can't double-apply.
+- **Verified**: all 22 `dev/test-*.mjs` green; `ota-bundle --check` + `ota-bundle-play --check` OK — v61.4,
+  6 notes, Play flag baked.
+- **Lesson for next time**: when a "find upcoming releases" source comes back empty, test EACH endpoint of
+  the service separately before concluding the artist has nothing. MB's `release` and `release-group` are
+  different data with different date fields, and the concrete one is often the only one that has an
+  announced drop. Also: a search endpoint returning 0 for `A AND B` while `A` alone returns 200 is a signal
+  that the *data* is missing, not that the query is malformed.
+
+## v61.4 (Sep 24, 2026): Upcoming dates come from TWO open catalogs (MusicBrainz + Wikidata)
+- **User directive, verbatim**: "Musicbrainz don't have the dated release for upcoming releases but Spotify
+  has it but I don't want my app to take the user to Spotify or verify anything for that … just make the app
+  look it up." So: **no Spotify login/connect/verify/token/backend anywhere in the release path** — every
+  drop date is read from a keyless open catalog.
+- **The gap that prompted it**: v61.3.6 shipped ONE open source, MusicBrainz (`__scMbUpcoming`), and it is
+  thin. A live sweep found **0 future release-groups for Diljit Dosanjh, Karan Aujla, AP Dhillon, Drake,
+  The Weeknd, Ariana Grande** — whole catalogues come back empty. iTunes (`entity=album`) and Deezer
+  (`/artist/{id}/albums`) carry **nothing** dated in the future at all (pre-orders don't surface in search):
+  re-probe before re-litigating, 5 major artists → 0 future rows on both.
+- **The fix — `scFetchWdUpcoming` / `window.__scWdUpcoming`**, defined right after `__scMbUpcoming`: ONE
+  open **Wikidata SPARQL** query per pinned artist, no key, no window.
+  - Query: `SERVICE wikibase:mwapi` EntitySearch on the artist name → `?album wdt:P175 ?performer` →
+    `?album wdt:P31/wdt:P279* wd:Q482994` (album) → `?album wdt:P577 ?date` → `FILTER(?date > NOW())`,
+    English label service, LIMIT 25.
+  - Endpoint `https://query.wikidata.org/sparql?query=…&format=json` sends
+    `access-control-allow-origin: *` and answers the browser's `fetch` (verified from a localhost page in
+    the sandbox), so it goes through `fetchWithProxy(url, SC_RELEASE_FETCH)` like every other catalog read —
+    direct first, proxies as fallback, 4 s budget, `catch(_e){ return []; }` so it can never wedge the run.
+  - Filters: `__scDay10` + `__scUpcomingDay` (day precision only, future, ≤400 d), title must be a real
+    label (a bare `Q\d+` stub is refused — don't list an item by its Q-id), and the pinned artist must be
+    credited (`primaryArtistName` both sides, bidirectional substring like the MB/iTunes passes).
+  - **Verified value-add**: Paulo Londra and Cesare Cremonini have **0** MusicBrainz future releases but
+    Wikidata carries "Entre cielos" (2026-10-21) and "Amateur" (2026-10-23). End-to-end in Chromium: pin
+    Paulo Londra → check → Upcoming tab shows exactly his dated drop, and the Spotify probe shows
+    `spotify network touched: false | popups opened: 0`.
+- **Merge (in `fetchArtistReleases`)**: a second block mirrors the MusicBrainz one — source key
+  `'wdt:' + nt + '|' + x.date` in `prevKeys`, defers to `freshTitles` (Apple listed it) and to any entry
+  already in `fresh` from MB this run, and **dates an undated stored row in place** rather than adding a
+  duplicate. `SC_RELEASE_FETCH` count is now **7** (defined + 6 catalog reads); `dev/test-6139.mjs` was
+  updated to that number.
+- **Version**: APP_VERSION/sw.js/CHANGELOG head/root manifest → **61.4** (7 notes; the rollout line is
+  61.3.x, so 61.3.9 → **61.4**, never a rolled-over `x.y.10`). `dev/patch-614.mjs` is the single idempotent
+  pass (3 index.html edits on this turn: the Wikidata fn, the merge block, the changelog note); it also
+  repins tests and re-seeds root `manifest.json`. `dev/test-614.mjs` grew a `[6b]` section (14 checks).
+- **Verified**: 5 inline `<script>` blocks parse (`new Function`); the FULL `dev/test-*.mjs` suite
+  (22 files, test-614 = 59 checks) green; both OTA bundles rebuilt + `--check` clean —
+  v61.4, 6 notes, Play flag baked (zips 663047 / 663058 bytes).
+- **Lyrics (same release, separate user report)**: smaller artists showed wrong/missing words. `lyrist`
+  now validates the title+artist it returns, `textyl` (no title/artist in its reply — unverifiable) is no
+  longer auto-surfaced, and an LRCLIB match on a coincidental duration now also needs an exact title. The
+  highlight holds while paused and survives being backgrounded (the poller used to clear itself on hide and
+  nothing re-armed it).
+
 ## MANDATORY VERSION RULE (Sep 23, 2026): NEVER ship 60.5.10-style versions — it should be v61
 - **User rule, verbatim intent**: "No v60.5.10 that doesn't fucking exist and I fucking hate that … never fucking do that, it should be v61."
   After **60.5.9** the next release is **v61**. Do NOT invent a `.10` step in the 60.5.x line (or any rolled-over patch like `x.y.10`) — when a patch line
@@ -101,6 +211,87 @@
   another artist is refused, even at the exact same length" and "the picker marks it as a different artist"; the full
   `dev/test-*.mjs` suite is green (20 files); both OTA checks OK — v61.3.8, 5 notes, Play flag baked (zips 661061 /
   661069 bytes).
+
+## v61.3.9 (Sep 24, 2026): the drop check finishes, and fills in as it goes
+- **The user's report, verbatim**: "Musicbrianz don't have the dated release for upcoming releases but Spotify has it but I
+  don't want my app to take the user to Spotify or verify anything for that except. Make the upcoming release actually work."
+- **The sources were never the problem — v61.3.8 already proved the dates are reachable with no account.** Probing live
+  before this patch: the iTunes catalog read BY ARTIST ID returns the real announced day (The Avalanches `No Bad Memories`
+  2026-10-16, QOTSA `Perfecth` 2026-10-30, Fontaines D.C. `Dopamine Chamber` 2026-10-16, Royal Blood `Dead Company`
+  2026-11-13, La Roux `Old Flames` 2026-11-06), while the popularity-ranked TERM search returns 0 future rows. MusicBrainz
+  1/15 artists. Deezer 0. Apple RSS marketing endpoints 404. **Do not re-litigate sourcing; fix the plumbing.**
+- **Six defects, each reproduced in headless Chromium on v61.3.8 before patching**:
+  1. **Stall.** `checkPinnedArtistReleases` walked pins strictly serially (~5 network hops each). 16 pins on a congested
+     network burned the whole 35 s tap ceiling.
+  2. **Silent no-op.** The 35 s ceiling reset the BUTTON but never cancelled the RUN, so `active` stayed true; every later
+     tap hit `if(pinnedCheckState.active) return;` and resolved in ~3 ms doing nothing. Measured: 2nd tap = 3 ms.
+  3. **Blank on a bad network.** Each hop walked all 4 relays with an 8 s abort each; the artist's own 8 s clock then
+     dropped the artist with ZERO results — `pinnedReleases` empty, 0 future rows. This is what "doesn't work" looked like.
+  4. **Shared cancel.** `fetchWithProxy` bailed on `window.__ahCancelled` (the Album History switch), so cancelling an
+     album fetch silently blanked the release check.
+  5. **Duplicates.** The MusicBrainz pass keys entries `mbt:title|date`, which is ABSENT from `prevKeys`, so the drop the
+     Apple catalog had just added got pushed a second time.
+  6. **No visible progress.** Persist + paint happened only after the last artist, so a working check read as a dead button.
+- **The fix (all in `dev/patch-6139.mjs`, 15 idempotent count==1 edits)**: a **3-way worker pool** over the pins; **save +
+  repaint per artist** (`savePinnedArtists`, `renderNewReleases`, `scRepaintOpenReleasePanel`); a **shared in-flight run**
+  (`let pinnedCheckPromise`) so a second tap AWAITS the run instead of no-oping; **`fetchWithProxy(url, { noCancel,
+  budgetMs })`** with the release path passing `SC_RELEASE_FETCH = { noCancel:true, budgetMs:4000 }` at all 5 catalog
+  reads; **cross-source dedupe** via a `freshTitles` Set (song + album + MB all consult it); and the button paints
+  **"Checking… N/M"** on a 900 ms ticker with a 60 s last-resort race (was 35 s).
+- **Verified in the browser (not just statically)**: 16 pins finished in **17438 ms** with the button restored and showing
+  `1/16 → 12/16`; on a network where EVERY catalog hop was delayed 900 ms it still found **5 future-dated drops** (the five
+  listed above) with **0 duplicate rows**; a second tap during a run waited **22965 ms** instead of 3 ms; with
+  `__ahCancelled = true` the check still stored **543 rows**.
+- **Environment gotcha (cost real time)**: this sandbox has **no `zip` and no `unzip` binary and no root to install them**,
+  so `dev/ota-bundle.mjs --check` and `test-6058`/`test-play` fail with `spawnSync unzip ENOENT` — **pre-existing at HEAD,
+  not a regression** (verified by `git stash` + rerun). Worked around with Python `zipfile` shims on `PATH`
+  (`/tmp/zbin/{zip,unzip}` implementing `-Z1` and `-p`); with those, both bundles build and both `--check`s pass.
+- **Release mechanics**: APP_VERSION 61.3.8 → 61.3.9, sw.js → `sidecut-shell-v61.3.9`, new CHANGELOG head (6 notes,
+  stamp UTC−4 → "September 24, 2026 · 5:44 PM EDT"), root manifest.json re-seeded from the TRUE zip size via
+  `node dev/patch-6139.mjs --manifest` (660399), 11 test files repinned, `dev/test-6139.mjs` added (its own repin is
+  skipped by name since it anchors the PREVIOUS release on purpose), and `test-6137`'s 35 s ceiling + `test-6136`'s MB
+  fetch needle updated.
+- **Suite**: all **21** `dev/test-*.mjs` green (with the zip shims on PATH). Both OTA bundles rebuilt and `--check` clean
+  — v61.3.9, 6 notes, Play flag baked (zips 660399 / 660407 bytes). `dev/_boottest.js` still dies on
+  `pane.style.setProperty is not a function` — the documented PRE-EXISTING harness limitation, unrelated.
+- **Nothing to connect**: `scSpotifySilentToken` count is 0; `await scSpotifyInteractiveToken()` has exactly ONE call site
+  (the converter's own search). The release check never touches Spotify.
+## v61.3.8 (Sep 24, 2026): upcoming releases reads the dates it was missing — no Spotify, no token, no backend
+- **The user's directive, verbatim**: "Musicbrianz don't have the dated release for upcoming releases but Spotify has it but I don't want my app to take
+  the user to Spotify or verify anything for that except. Make the upcoming release actually work." So: find the date from an OPEN source, and delete the
+  account path entirely.
+- **The real miss was the search, not the source.** Apple publishes an announced release as a **pre-order with the real day already set** — but only on the
+  artist's OWN catalog. The term search (`search?term=…&entity=album`) is popularity-ranked and buries a pre-order, so a drop dated weeks out never surfaced.
+  Probed Sep 24: the **ID lookup** (`lookup?id=<artistId>&entity=album&limit=200`) found **19 of 21** dated upcoming releases where the term search found 8 of
+  13. MusicBrainz (the v61.3.6 source) carries the same day-precision data for artists someone has already dated, so both stay.
+- **`scItunesArtistAlbums(artist)`** (defined just above `fetchArtistReleases`): ONE `entity=musicArtist&limit=5` search resolves the artistId (first result
+  whose `artistName`, reduced to its primary artist, matches bidirectionally — the same `credited()` rule as the rest of the pass), then ONE
+  `lookup?id=…&entity=album&limit=200` reads the catalog. Returns the raw album rows; the caller applies the credited-artist / `trackCount === 1` / dedupe
+  rules. `catch(_eId){ return []; }` — best effort, never throws, never opens a window, never touches a token.
+- **Folded into the album loop** in `fetchArtistReleases` and collapsed across sources: the ID catalog and the term search (and a cross-storefront edition)
+  can name the same drop, so `albSeen` (key `alb:<title>|<day>`) keeps one — preferring the copy with `artworkUrl100`, then `collectionId` — before
+  `albPick.slice(0,5)`. `prevKeys.has()` still drops a drop already stored.
+- **The Spotify release-check path is DELETED**, not just unused: `scSpotifySilentToken` + `scFetchSpotifyUpcoming` (and their `window.__sc*` aliases) are
+  gone, the `spFresh` concat is gone, and the MusicBrainz merge dedupe key is now a plain `'mbt:' + nt + '|' + x.date` (no `spt:` source prefix survives).
+  `await scSpotifyInteractiveToken()` now has exactly ONE call site — the converter's `scSpotifySearch`, where the user explicitly starts a connection — and
+  `__scUpcomingConnectTap` no longer references it.
+- **Home unaffected**: the empty-state CTA already said "Check for drops" (v61.3.6 removed the Connect Spotify button), so nothing there changed.
+- **Release mechanics**: `dev/patch-6138.mjs` (idempotent; `--manifest` re-seeds root `manifest.json` after the OTA build) did all of it in one pass —
+  APP_VERSION + sw.js `CACHE_NAME` + CHANGELOG head + the 9 index.html edits, then repinned every `dev/test-*.mjs` `ver ===` pin. Gotchas hit and fixed:
+  (1) the changelog head carries the run timestamp, so the generic exact-string idempotence check can never match on a re-run — guard on the version
+  marker (`src.includes("const CHANGELOG = [\n  { version: '<VER>'")`), not the new text; (2) `test-6137`'s `const CHANGELOG = [` anchor is a REGEX
+  literal (escaped dots), so the blanket repin skips it — it needs its own targeted rewrite; (3) the blanket repin must EXCLUDE the new
+  `test-6138.mjs`, whose own "heads the changelog" anchor names the previous release on purpose.
+- **New `dev/test-6138.mjs`** pins the pass, the cross-source collapse, the removal (`scSpotifySilentToken`/`scFetchSpotifyUpcoming`/`_spt:`/`spFresh` all
+  count 0, no `__scSpotifyUpcoming` in the check), the surviving interactive flow (1 definition, 1 call site), the empty state, and the metadata.
+  `dev/test-612.mjs` was rewritten WHOLE (its old subject was the silent Spotify pass — regex surgery on a test whose premise changed broke it twice).
+- **Env gotchas this session**: `zip`/`unzip` and the `acorn` dev dep were missing from the image — `test-6044/6046/6047/6053/6054` all failed with
+  `ERR_MODULE_NOT_FOUND: acorn` and `test-6058`/`test-play` fail without `zip`. `apt-get update && apt-get install -y zip unzip` and
+  `npm install acorn --no-save` made the FULL suite (20 files) green — none of those were regressions.
+- **Verified**: all 5 inline `<script>` blocks parse via the `new Function` check; FULL `dev/test-*.mjs` suite (20 files) green;
+  `node dev/ota-bundle.mjs --check` + `node dev/ota-bundle-play.mjs --check` both OK — v61.3.8, 5 notes, Play flag baked
+  (zips 658270 / 658281 bytes). Live pipeline re-confirmed 19/21 coverage, `dupUpcoming=0`.
+
 
 ## v61.3.7 (Sep 24, 2026): the release check can't stick, Home stops showing it, drops carry a time
 - **The user's four fixes**: "you don't need an example for release name and the checking doesn't work and fetching

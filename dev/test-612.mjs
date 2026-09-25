@@ -1,11 +1,9 @@
-// v61.2 — "there needs to be a way that SideCut gets it".
-// Apple's search API, Deezer and MusicBrainz list nothing for a release that
-// has not landed, so a real dated drop (verified: Karan Aujla's "AUJLA SZN 1",
-// 0 hits everywhere but Spotify) never reached Upcoming releases. This pins
-// the ways SideCut gets a date (repinned at 61.3.6: the open MusicBrainz pass
-// first, the silent Spotify pass only when a token is already on the device,
-// and the manual drop sheet) — plus the rule that a check must NEVER open an
-// authorization window, and that the empty state asks you to connect nothing.
+// v61.3.8 — repinned from v61.2. Its old subject, a silent Spotify pass that
+// read a drop date through an account token, is gone: no drop date is read
+// through a connection any more. What replaced it is the pinned artist's OWN
+// open Apple catalog, read by artist ID. The interactive PKCE flow still
+// exists for the one place it has always belonged (the converter's Spotify
+// search), which is what section [2] pins.
 import fs from 'node:fs';
 
 const src = fs.readFileSync('index.html', 'utf8');
@@ -13,8 +11,6 @@ const sw = fs.readFileSync('sw.js', 'utf8');
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? '  ok   ' : '  FAIL ') + label); if (!cond) failures++; };
 const count = (needle) => src.split(needle).length - 1;
-// Slice from a start marker to an end marker (inclusive of neither check —
-// returns null when either is missing so a moved function fails loudly).
 function slice(from, to) {
   const a = src.indexOf(from);
   if (a === -1) return null;
@@ -23,70 +19,58 @@ function slice(from, to) {
   return src.slice(a, b);
 }
 
-console.log('[1] silent token: refresh only, never a window');
-const silent = slice('async function scSpotifySilentToken(){', 'window.__scSpotifySilentToken = scSpotifySilentToken;');
-ok(!!silent, 'scSpotifySilentToken defined and exported');
-ok(silent && silent.includes("grant_type:'refresh_token'"), 'quiet refresh_token exchange');
-ok(silent && silent.includes('if(!t || !t.refresh_token) return null;'), 'no connection → null, other sources carry on');
-ok(silent && !silent.includes('window.open') && !silent.includes('accounts.spotify.com/authorize'), 'no authorization window anywhere on the silent path');
-ok(silent && silent.includes('localStorage.setItem(SC_SPOTIFY_TOKEN_KEY'), 'refreshed token persisted');
+console.log('[1] no silent token — nothing in the check reads a connection');
+ok(count('scSpotifySilentToken') === 0, 'the silent token is gone');
+ok(count('scFetchSpotifyUpcoming') === 0, 'the Spotify upcoming pass is gone');
+ok(count('_spt:') === 0, 'no Spotify-sourced entry key survives');
+ok(count('spFresh') === 0, 'the check merges no Spotify result set');
 
-console.log('[2] interactive token: the ONE place a window may open');
+console.log('[2] the interactive flow survives, only where it belongs');
 const inter = slice('async function scSpotifyInteractiveToken(){', 'window.__scSpotifyConnect = scSpotifyInteractiveToken;');
 ok(!!inter, 'scSpotifyInteractiveToken defined');
-ok(inter && inter.includes("window.open(auth, 'sidecut-spotify-auth'"), 'PKCE authorization popup lives here');
-ok(inter && inter.includes('return token;'), 'returns the token for callers');
-ok(count('await scSpotifyInteractiveToken()') === 1,
-  'exactly one interactive call site left (the Spotify search flow — the upcoming check never opens a window)');
-ok(src.includes('async function scSpotifySearch(q, type){'), 'scSpotifySearch still exists and now routes through it');
+ok(inter && inter.includes("window.open(auth, 'sidecut-spotify-auth'"), 'the PKCE popup lives here');
+ok(count('await scSpotifyInteractiveToken()') === 1, 'exactly one call site (the converter search)');
+ok(src.includes('async function scSpotifySearch(q, type){'), 'scSpotifySearch still exists');
 
-console.log('[3] upcoming pass: future, day-precision, pinned artist only');
-const up = slice('async function scFetchSpotifyUpcoming(artist){', 'window.__scSpotifyUpcoming = scFetchSpotifyUpcoming;');
-ok(!!up, 'scFetchSpotifyUpcoming defined and exported');
-ok(up && up.includes('await scSpotifySilentToken()'), 'reads its token silently');
-ok(up && up.includes('a.release_date_precision !== \'day\''), 'month-precision placeholders dropped');
-ok(up && up.includes('!(d > today)'), 'already-released dates dropped');
-ok(up && up.includes('credits.indexOf(want) === -1'), 'the pinned artist must be credited (no collab noise)');
-ok(up && up.includes('include_groups=album,single&limit=50'), 'albums + singles, no market filter (pre-saves vary by storefront)');
-ok(up && !up.includes('market='), 'no market= narrowing');
+console.log('[3] upcoming pass: the open artist catalog, read by ID');
+const idFn = slice('async function scItunesArtistAlbums(artist){', '  // Query iTunes for an artist');
+ok(!!idFn, 'scItunesArtistAlbums defined');
+ok(idFn && idFn.includes('entity=musicArtist&limit=5'), 'one artist search resolves the ID');
+ok(idFn && idFn.includes('entity=album&limit=200'), 'the catalog is read by artist id');
+ok(idFn && !/spotify|token/i.test(idFn), 'no Spotify, no token in the pass');
+ok(idFn && idFn.includes('credited('), 'the pinned artist must be credited');
+ok(idFn && idFn.includes('await fetchWithProxy('), 'goes through the shared proxy fetch');
 
 console.log('[4] merge inside fetchArtistReleases');
 const check = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
 ok(!!check, 'fetchArtistReleases slice extracted');
-ok(check && check.includes('window.__scSpotifyUpcoming(artist)'), 'Spotify pass runs in the release check');
-ok(check && check.indexOf('window.__scSpotifyUpcoming(artist)') < check.indexOf('// Keep all fetched releases'),
-  'merges before the prev.concat(fresh) merge');
-ok(check && check.includes('window.__scMbUpcoming(artist)'), 'the no-account MusicBrainz pass runs first');
-ok(check && check.includes("(x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date"), 'dedupe key names its source');
+ok(check && check.includes('scItunesArtistAlbums(artist)'), 'the artist-catalog pass runs in the album loop');
+ok(check && !check.includes('__scSpotifyUpcoming'), 'no Spotify pass in the release check');
+ok(check && check.includes('window.__scMbUpcoming(artist)'), 'the open MusicBrainz pass still runs');
+ok(check && check.includes("'mbt:' + nt + '|' + x.date"), 'dedupe key names its open source');
 ok(check && check.includes('pe.date = x.date'), 'an undated entry gets the date in place instead of duplicating');
-ok(check && check.includes('catch(_eSp)'), 'best-effort: a Spotify failure cannot break the check');
+ok(check && check.includes('_idE'), 'best-effort: a catalog failure cannot break the check');
 
-console.log('[5] Connect CTA wired into both empty states');
+console.log('[5] the empty state asks you to connect nothing');
 ok(count('window.__scWireUpcomingCta = function') === 1, 'wiring helper defined once');
-ok(count('window.__scWireUpcomingCta(') === 2, 'called from both empty states (Home bubble + Fetch latest popup)');
-ok(count('_scUpWired') === 2, 'idempotence guard set and checked');
 const ctaSlice = slice('window.__scWireUpcomingCta = function', 'window.__scRebuildReleaseLists = async function');
-ok(!!ctaSlice && ctaSlice.includes("cbtn.textContent = 'Check for drops'"), 'the button runs the check — nothing to connect');
-ok(!!ctaSlice && !ctaSlice.includes('Connect Spotify'), 'the Connect Spotify button is gone from the empty state');
-ok(!!ctaSlice && ctaSlice.includes('Add a drop manually'), 'the manual sheet is still offered beside it');
+ok(!!ctaSlice && ctaSlice.includes("cbtn.textContent = 'Check for drops'"), 'the button runs the check');
+ok(!!ctaSlice && !ctaSlice.includes('Connect Spotify'), 'the Connect Spotify button is gone');
+ok(!!ctaSlice && ctaSlice.includes('Add a drop manually'), 'the manual sheet is still offered');
 
 console.log('[6] manual drop sheet');
 ok(count('window.__scAddUpcomingDrop = function') === 1, 'sheet builder defined once');
-ok(count('window.__scAddUpcomingDrop()') >= 1, 'reachable from the empty-state CTA');
 ok(src.includes('id="scAddDropArtist"') && src.includes('id="scAddDropTitle"') && src.includes('id="scAddDropDate"'),
   'artist + title + date fields present');
-ok(src.includes("_manual: true"), 'manual drops stored with the fetched shape (kind/seen/date)');
-ok(src.includes("toast('That drop is already listed.'"), 'duplicate guard');
-ok(src.includes('window.__scRebuildReleaseLists(false)') && src.includes('window.__scRebuildReleaseLists = async function'),
-  'rebuild helper defined and called after saving');
+ok(src.includes("_manual: true"), 'manual drops stored with the fetched shape');
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
-const head = src.indexOf("version: '61.3.9'");
-ok(src.indexOf("version: '61.3.9'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.3.9');
-ok(src.indexOf("version: '61.3.9'") < src.indexOf("version: '61.3.5'"), '61.3.6 is ahead of 61.3.5');
+ok(ver === '61.5', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.5';"), 'sw.js cache = sidecut-shell-v61.5');
+const head = src.indexOf("version: '61.5'");
+ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.5');
+ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.5'"), '61.5 is ahead of 61.3.5');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');

@@ -115,7 +115,7 @@ console.log('[2] Play build: the removal actually runs (block-1 executed)');
 
 console.log('[3] Full build: the transport gets a second chance (scHttpJson executed)');
 {
-  const body = slice('  async function scHttpJson(url, bodyObj){', '  // googlevideo no longer serves an unbounded request');
+  const body = slice('  async function scHttpJson(url, bodyObj, ytClient){', '  // googlevideo no longer serves an unbounded request');
   ok(!!body, 'scHttpJson extracted');
   const make = () => {
     const calls = [];
@@ -192,8 +192,7 @@ console.log('[4] Failure reasons: three messages, told apart (scSpToBuffer execu
 
 console.log('[5] release metadata');
 {
-  const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
+  const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];  ok(ver === '61.5', 'APP_VERSION = ' + ver);
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) {}

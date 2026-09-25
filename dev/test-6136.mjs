@@ -25,11 +25,11 @@ function slice(from, to) {
 console.log('[1] MusicBrainz pass: open search, real future day, credited artist');
 const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpcoming = scFetchMbUpcoming;');
 ok(!!mb, 'scFetchMbUpcoming defined and exported');
-ok(mb && mb.includes("musicbrainz.org/ws/2/release-group/?query="), 'queries the open MusicBrainz search');
-ok(mb && mb.includes("firstreleasedate:[' + today + ' TO ' + horizon + ']'"), 'date range covers today → today+400d');
-ok(mb && mb.includes("await fetchWithProxy(url, { headers: { 'User-Agent'"), 'sends an identifying User-Agent through the shared fetch');
+ok(mb && mb.includes("'https://musicbrainz.org/ws/2/' + ps.path + '/?query='"), 'queries the open MusicBrainz search, both endpoints');
+ok(mb && mb.includes("ps.range + ':[' + today + ' TO ' + horizon + ']'"), 'date range covers today → today+400d');
+ok(mb && mb.includes('fetchWithProxy(url, SC_MB_FETCH)'), 'goes through the shared proxy fetch, carrying an identifying User-Agent');
 ok(mb && !mb.includes('accounts.spotify.com') && !mb.includes('window.open'), 'no Spotify, no token, no window in the pass');
-ok(mb && mb.includes("window.__scDay10(rg['first-release-date'])"), 'day-precision parse reused');
+ok(mb && mb.includes('window.__scDay10(rg[ps.dateKey])'), 'day-precision parse reused');
 ok(mb && mb.includes('window.__scUpcomingDay(d)'), 'the future/placeholder gate reused');
 ok(mb && mb.includes("pt !== 'Album' && pt !== 'Single' && pt !== 'EP'"), 'albums, singles and EPs only');
 ok(mb && mb.includes('credits.some('), 'the pinned artist must be credited (collabs only with your artist)');
@@ -41,7 +41,7 @@ ok(!!check, 'fetchArtistReleases slice extracted');
 ok(check && check.includes('window.__scMbUpcoming(artist)'), 'the no-account pass runs in the release check');
 ok(check && check.indexOf('window.__scMbUpcoming(artist)') < check.indexOf('// Keep all fetched releases'),
   'merges before the prev.concat(fresh) merge');
-ok(check && check.includes("(x._mb ? 'mbt:' : 'spt:') + nt + '|' + x.date"), 'dedupe key names its source');
+ok(check && check.includes("'mbt:' + nt + '|' + x.date"), 'dedupe key names its source');
 ok(check && check.includes('pe.date = x.date'), 'an undated entry gets the date in place instead of duplicating');
 ok(check && check.includes('catch(_eSp)'), 'best-effort: a source failure cannot break the check');
 
@@ -59,9 +59,9 @@ ok(count('await scSpotifyInteractiveToken()') === 1, 'the only window left belon
 
 console.log('[4] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.9', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.9';"), 'sw.js cache = sidecut-shell-v61.3.9');
-ok(src.indexOf("version: '61.3.9'") < src.indexOf("version: '61.3.5'"), 'CHANGELOG head entry is 61.3.9');
+ok(ver === '61.5', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.5';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.5'"), '61.5 heads the changelog');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');
