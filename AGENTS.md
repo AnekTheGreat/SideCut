@@ -1,5 +1,51 @@
 # SideCut — repository memory
 
+## v61.4 follow-up (Sep 24, 2026): MusicBrainz must be asked BOTH ways — that was the real "no dated drops"
+- **The user's follow-up, verbatim**: "Musicbrainz don't have the dated release for upcoming releases but
+  Spotify has it but I don't want my app to take the user to Spotify or verify anything for that except.
+  Make the upcoming release actually work". v61.4 shipped MB + Wikidata but **the live probe still returned
+  0 dated future releases for every mainstream artist** — so "actually work" was not yet true.
+- **Root cause (measured live this session, `dev/_probe_*` then deleted)**: MusicBrainz has TWO relevant
+  endpoints and they DO NOT AGREE. `release-group` is the canonical album/EP/single; `release` is the
+  concrete pressing. An announced-but-not-yet-pressed drop often exists on exactly ONE of them:
+  - The Weeknd → release-group **0**, release **1** ("House of Balloons", 2026-10-13).
+  - Taylor Swift → release-group **3** (Patient Zero + acoustic + piano), release **1** (Patient Zero) —
+    the two lists overlap but are not equal, which is why merging on **normalized title + day** (not id) is
+    required or the same drop shows twice.
+  - Query shape was NOT the bug: `artist:"X" AND firstreleasedate:[today TO today+400d]` returns 0 for
+    The Weeknd while each clause alone returns 200/2776 — MB genuinely has no release-group row for him.
+    `arid:` + range behaves the same as `artist:` + range, so the artist-name form is fine.
+- **The fix — `scFetchMbUpcoming` now loops a `passes` table over BOTH endpoints**, each with its own list
+  key, type key, date field and range field:
+  `[{path:'release-group', list:'release-groups', typeKey:'primary-type', dateKey:'first-release-date', range:'firstreleasedate'},
+    {path:'release', list:'releases', typeKey:null, dateKey:'date', range:'date'}]`
+  - **Both reads run CONCURRENTLY** (`Promise.all` over `passes.map(...)`) — each is budgeted at 4s, so two
+    sequential reads could burn the whole 8s per-artist race in `checkPinnedArtistReleases` on one artist.
+    Do not "simplify" this back to a sequential `for` + `await`.
+  - A `release` row has no `primary-type`, so the Album/Single/EP filter applies only when a type exists
+    (classify-if-present) — that endpoint cannot smuggle in a compilation.
+  - Dedupe `seenMb[normalizedTitle + '|' + day]`, results sorted by date, each row's `url` points at its own
+    endpoint (`/release/…` vs `/release-group/…`).
+- **Verified live against the real API through the SHIPPED function** (extracted from index.html, run in
+  Node): Taylor Swift 4, The Weeknd 1, Baron Noir 1, Tracy Bonham 2 dated drops. The Weeknd's came only
+  from `release` — direct proof the second endpoint is load-bearing.
+- **"No Spotify" stays true**: nothing in the release path logs in, connects, verifies, opens a window or
+  touches a token. Confirmed by the suite's `!accounts.spotify && !window.open` assertions.
+- **Mechanics**: `dev/patch-614.mjs` (now 26 index.html edits; still fully idempotent — rerun = 0 edits),
+  `dev/test-614.mjs` gained `[6b2] MusicBrainz is asked both ways` (10 assertions), and two historical pins
+  were repinned because they matched the old single-endpoint source text:
+  `dev/test-6136.mjs` (release-group URL, `firstreleasedate:` literal, `rg['first-release-date']`, the
+  `await fetchWithProxy` line) and `dev/test-6139.mjs` (the MB fetch line + the `SC_RELEASE_FETCH` count,
+  which stays **7** = 1 definition + 6 call sites — one call site now serves both endpoints, so it does NOT
+  climb to 8). Both repins are tolerant/idempotent so a rerun can't double-apply.
+- **Verified**: all 22 `dev/test-*.mjs` green; `ota-bundle --check` + `ota-bundle-play --check` OK — v61.4,
+  6 notes, Play flag baked.
+- **Lesson for next time**: when a "find upcoming releases" source comes back empty, test EACH endpoint of
+  the service separately before concluding the artist has nothing. MB's `release` and `release-group` are
+  different data with different date fields, and the concrete one is often the only one that has an
+  announced drop. Also: a search endpoint returning 0 for `A AND B` while `A` alone returns 200 is a signal
+  that the *data* is missing, not that the query is malformed.
+
 ## v61.4 (Sep 24, 2026): Upcoming dates come from TWO open catalogs (MusicBrainz + Wikidata)
 - **User directive, verbatim**: "Musicbrainz don't have the dated release for upcoming releases but Spotify
   has it but I don't want my app to take the user to Spotify or verify anything for that … just make the app

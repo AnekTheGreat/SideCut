@@ -25,11 +25,11 @@ function slice(from, to) {
 console.log('[1] MusicBrainz pass: open search, real future day, credited artist');
 const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpcoming = scFetchMbUpcoming;');
 ok(!!mb, 'scFetchMbUpcoming defined and exported');
-ok(mb && mb.includes("musicbrainz.org/ws/2/release-group/?query="), 'queries the open MusicBrainz search');
-ok(mb && mb.includes("firstreleasedate:[' + today + ' TO ' + horizon + ']'"), 'date range covers today → today+400d');
-ok(mb && mb.includes('await fetchWithProxy(url, SC_RELEASE_FETCH)'), 'goes through the shared proxy fetch, budgeted');
+ok(mb && mb.includes("'https://musicbrainz.org/ws/2/' + ps.path + '/?query='"), 'queries the open MusicBrainz search');
+ok(mb && mb.includes("ps.range + ':[' + today + ' TO ' + horizon + ']'"), 'date range covers today → today+400d');
+ok(mb && mb.includes('fetchWithProxy(url, SC_RELEASE_FETCH)'), 'goes through the shared proxy fetch, budgeted');
 ok(mb && !mb.includes('accounts.spotify.com') && !mb.includes('window.open'), 'no Spotify, no token, no window in the pass');
-ok(mb && mb.includes("window.__scDay10(rg['first-release-date'])"), 'day-precision parse reused');
+ok(mb && mb.includes('window.__scDay10(rg[ps.dateKey])'), 'day-precision parse reused');
 ok(mb && mb.includes('window.__scUpcomingDay(d)'), 'the future/placeholder gate reused');
 ok(mb && mb.includes("pt !== 'Album' && pt !== 'Single' && pt !== 'EP'"), 'albums, singles and EPs only');
 ok(mb && mb.includes('credits.some('), 'the pinned artist must be credited (collabs only with your artist)');

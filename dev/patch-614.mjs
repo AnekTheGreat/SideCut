@@ -73,17 +73,39 @@ function sub(label, oldStr, newStr, want = 1) {
 }
 
 const CHANGELOG_HEAD =
-`  { version: '${VER}', date: '${STAMP}', title: 'The Upcoming tab stays put, and the lyrics stop guessing', items: [
-    'Upcoming releases finally stays where you put it: switching a release list — or letting a check finish — no longer snaps the tabs back to All releases, so the upcoming drops you were reading stay on screen.',
-    'Opening Upcoming releases with nothing dated yet now looks the dates up on the spot, in the background, instead of leaving you on an empty tab — and if it finds drops it tells you and marks the bell.',
-    'Lyrics stopped guessing: two sources that never checked the reply was the song you asked for can no longer serve someone else\\u2019s words, and a match with the right length but the wrong title is refused. A smaller artist with no lyrics on file now honestly says so instead of showing the wrong song.',
-    'Lyrics hold still while the song is paused — the highlight and the auto-scroll stop with the music and pick up where you left off.',
-    'Reopening the app with lyrics on screen keeps the highlight running: it used to stay frozen until you closed the lyrics and opened them again.',
-    'The same lyric lookup still needs no account and nothing to connect — every source is an open, public catalog.',
+`  { version: '${VER}', date: '${STAMP}', title: 'Two open catalogs for drops, and the lyric highlight keeps time', items: [
+    'Upcoming releases cannot be knocked out of place any more — picking that tab keeps it, and opening it with nothing dated yet goes and looks the dates up on the spot instead of leaving you on an empty list.',
+    'Upcoming dates now come from two open catalogs, not one: MusicBrainz is asked two ways and Wikidata is read as well, so a drop any of them has dated with a real day turns up — with no account and nothing to connect.',
+    'Lyrics used to settle for the first matching copy, which was sometimes the untimed one even when a properly timed version of the same song was on file — so the highlight drifted instead of following the song. The timed copy now wins, and a source that never checked the reply was the song you asked for can no longer serve someone else\\u2019s words: a smaller artist with nothing on file says so honestly.',
+    'The word-by-word highlight was walking every line at one fixed speed, roughly three times a slow ballad\\u2019s real delivery — so on slower songs the words ran out in the first third of the line and the last one sat lit for the rest of it. Each line is now paced at its own rate, in every script.',
+    'The song no longer cuts in and out while you use the phone. Coming back to the app, the pause watchdog and the thirty-second heartbeat could each restart the song within the same second after the system ducked or interrupted it, and every restart is audible — only the first is let through now.',
+    '[FULL] The song fetching on the sideloaded build works again: every source request was sent claiming to be a different client than the one it asked as, which the source answers by handing back nothing, so a fetch either stalled or ended on "no source found". The request now declares what it really is — and Cancel on the progress bubble now really puts it away, even when the job it stopped never reports back.',
+    'The highlight holds still while the song is paused and picks up where you left off, and reopening the app with lyrics on screen keeps it running instead of freezing until you close and reopen them.',
   ] },
 `;
 
 if (!MANIFEST_ONLY) {
+
+// A 61.4 entry written by an earlier run of THIS patch names only the first two
+// fixes. Rewrite it in place (same version, same stamp shape) so the shipped
+// notes list everything this release actually changes.
+{
+  const start = src.indexOf(`  { version: '${VER}',`);
+  if (start === -1) {
+    // handled below by the CHANGELOG head insertion
+  } else {
+    const end = src.indexOf('\n  ] },', start);
+    if (end === -1) throw new Error('CHANGELOG: could not find the end of the ' + VER + ' entry');
+    const current = src.slice(start, end + '\n  ] },'.length);
+    const wanted = CHANGELOG_HEAD.replace(/\n$/, '');
+    if (current.replace(/\s+/g, ' ') === wanted.replace(/\s+/g, ' ')) {
+      skip('CHANGELOG ' + VER + ' entry');
+    } else {
+      src = src.slice(0, start) + wanted + src.slice(end + '\n  ] },'.length);
+      done('CHANGELOG ' + VER + ' entry rewritten');
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // [4] the lyric poller: hold while paused, survive being backgrounded.
@@ -414,22 +436,279 @@ sub('merge — the Wikidata pass, one row per drop across every source',
       }catch(_eWd){}
       // Keep all fetched releases (up to 50 per iTunes query) so nothing is lost.`);
 
-// The Wikidata pass is a sixth catalog read through the release options.
+// ---------------------------------------------------------------------------
+// [5] the lyric pick: prefer a TIMED copy over an untimed one of the same song.
+//
+// The lookup used to settle for the first copy that matched at all. LRCLIB
+// keeps several uploads of one song, and for some of them the untimed upload is
+// served first — `/api/get` returns it, `consider()` accepts it, and the search
+// passes are skipped because a match was found. The lyrics then render with no
+// timestamps, so the highlight falls back to scrolling by proportion, which is
+// nowhere near the words once a song has an intro, a hook or an instrumental
+// break. That is the "terrible highlight" — the fix is to keep looking until a
+// timed copy is found, and only fall back to plain text when there is none.
+// ---------------------------------------------------------------------------
+sub('lyrics — hold on to a match, but keep looking for a timed copy',
+  `    var best = null;
+    function consider(res){
+      var sc = scScoreLyricsResult(res, titleKey, primaryTokens, dur);
+      if(sc && (!best || sc.score > best.score)) best = sc;
+      return sc;
+    }`,
+  `    var best = null, bestSynced = null;
+    function consider(res){
+      var sc = scScoreLyricsResult(res, titleKey, primaryTokens, dur);
+      if(sc){
+        if(!best || sc.score > best.score) best = sc;
+        // A timed copy of the same song is what the highlight needs. Keep the
+        // best of those separately so the search passes have something to aim
+        // at while the plain-text fallback is already safe in \`best\`.
+        if(sc.isSynced && (!bestSynced || sc.score > bestSynced.score)) bestSynced = sc;
+      }
+      return sc;
+    }`);
+
+sub('lyrics — the /api/get pass keeps looking for a timed copy',
+  `    for(var ai = 0; ai < Math.min(artistVars.length, 3) && !best && !scLyricsOutOfTime(); ai++){`,
+  `    for(var ai = 0; ai < Math.min(artistVars.length, 3) && !bestSynced && !scLyricsOutOfTime(); ai++){`);
+
+sub('lyrics — the search pass keeps looking for a timed copy',
+  `    for(var ai2 = 0; ai2 < Math.min(artistVars.length, 3) && !best && !scLyricsOutOfTime(); ai2++){`,
+  `    for(var ai2 = 0; ai2 < Math.min(artistVars.length, 3) && !bestSynced && !scLyricsOutOfTime(); ai2++){`);
+
+sub('lyrics — the search pass stops on a good TIMED match',
+  `        if(best && best.score >= 5.5) break;        // good enough; stop spending requests`,
+  `        if(bestSynced && bestSynced.score >= 5.5) break;  // good timed copy; stop spending requests`);
+
+sub('lyrics — the title-only pass still runs while only a plain copy is held',
+  `    if(!best && titleVars.length && !scLyricsOutOfTime()){`,
+  `    if(!bestSynced && titleVars.length && !scLyricsOutOfTime()){`);
+
+sub('lyrics — a timed copy wins over a plain one of the same song',
+  `    if(best) return best;`,
+  `    // Timed whenever we found one; the plain-text match is the fallback, not
+    // the first thing we happen to trip over.
+    if(bestSynced) return bestSynced;
+    if(best) return best;`);
+
+// ---------------------------------------------------------------------------
+// [6] word-by-word pacing for scripts that do not space their words.
+//
+// A line is split on whitespace to pace it word by word. Korean, Japanese and
+// Chinese put no spaces between words, so such a line came out as ONE token:
+// the whole line lit at once and then jumped to the next, which is what made
+// the highlight look wrong on multi-language songs while English looked fine.
+// Where a token is a run of those scripts, break it into syllable-sized
+// pieces so the pacing has something to move through.
+// ---------------------------------------------------------------------------
+const SC_PACE_SEGMENT =
+`  // Split a lyric line into pacing units. Whitespace is the word boundary for
+  // scripts that use it; a run of Han/Kana/Hangul is broken into pieces instead
+  // of standing as one giant token, so word-by-word has something to pace. Thai
+  // and Lao run without spaces too and are handled the same way.
+  function scPaceSegments(text){
+    var out = [], re = /[\\u3040-\\u30FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uAC00-\\uD7A3\\u0E00-\\u0E7F\\u0E80-\\u0EFF\\u1100-\\u11FF\\u3130-\\u318F]+|[^\\s]+|\\s+/g;
+    var m;
+    while((m = re.exec(String(text || ''))) !== null){
+      var chunk = m[0];
+      if(!chunk) continue;
+      if(/^\\s+$/.test(chunk)){ out.push(chunk); continue; }
+      if(chunk.length >= 3 && /[\\u3040-\\u30FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uAC00-\\uD7A3\\u0E00-\\u0E7F\\u0E80-\\u0EFF\\u1100-\\u11FF\\u3130-\\u318F]/.test(chunk)){
+        for(var i = 0; i < chunk.length; i += 2) out.push(chunk.slice(i, i + 2));
+      } else {
+        out.push(chunk);
+      }
+    }
+    return out;
+  }
+`;
+sub('scPaceSegments — the shared word/segment splitter',
+  `  function scEnsureWordSpans(lineEl){`,
+  SC_PACE_SEGMENT + `  function scEnsureWordSpans(lineEl){`);
+
+sub('formatSyncedLyrics — pace every script, not just spaced ones',
+  `          const words = text.split(/(\\s+)/);
+          let wTotal = 0;
+          words.forEach(function(w){ if(!/^\\s+$/.test(w)) wTotal++; });
+          let wIdx = 0;
+          const wordSpans = words.map(function(w){
+            if(/^\\s+$/.test(w)) return escapeHtml(w);
+            const cur = wIdx; wIdx++;
+            return '<span class="lyric-word" data-word="1" data-word-start="' + t + '" data-word-offset="' + cur + '/' + wTotal + '">' + escapeHtml(w) + '</span>';
+          }).join('');`,
+  `          const words = scPaceSegments(text);
+          let wTotal = 0;
+          words.forEach(function(w){ if(!/^\\s+$/.test(w)) wTotal++; });
+          let wIdx = 0;
+          const wordSpans = words.map(function(w){
+            if(/^\\s+$/.test(w)) return escapeHtml(w);
+            const cur = wIdx; wIdx++;
+            return '<span class="lyric-word" data-word="1" data-word-start="' + t + '" data-word-offset="' + cur + '/' + wTotal + '">' + escapeHtml(w) + '</span>';
+          }).join('');`);
+
+sub('scEnsureWordSpans — wrap every script the same way',
+  `    const text = lineEl.textContent;
+    if(!text || !text.trim()){ lineEl.dataset.wordwrap = '1'; return []; }
+    lineEl.innerHTML = String(text).split(/(\\s+)/).map(function(chunk){
+      return (/^\\s+$/.test(chunk)) ? chunk : '<span class="lyric-word" data-word="1">' + escapeHtml(chunk) + '</span>';
+    }).join('');`,
+  `    const text = lineEl.textContent;
+    if(!text || !text.trim()){ lineEl.dataset.wordwrap = '1'; return []; }
+    lineEl.innerHTML = scPaceSegments(text).map(function(chunk){
+      return (/^\\s+$/.test(chunk)) ? chunk : '<span class="lyric-word" data-word="1">' + escapeHtml(chunk) + '</span>';
+    }).join('');`);
+
+// The release-options budget is shared by the Wikidata pass and by BOTH
+// MusicBrainz endpoints, so the historical count in test-6139 climbs. One
+// tolerant, idempotent update covers every starting state.
 {
   const p = path.join(devDir, 'test-6139.mjs');
   const t0 = fs.readFileSync(p, 'utf8');
-  const from = `ok(count('SC_RELEASE_FETCH') === 6, 'defined + used by 5 catalog reads (' + count('SC_RELEASE_FETCH') + ')');`;
-  const to = `ok(count('SC_RELEASE_FETCH') === 7, 'defined + used by 6 catalog reads (' + count('SC_RELEASE_FETCH') + ')');`;
-  if (t0.indexOf(to) !== -1) skip('dev/test-6139.mjs release-options count');
-  else if (t0.indexOf(from) === -1) throw new Error('dev/test-6139.mjs: release-options count assertion not found');
-  else { fs.writeFileSync(p, t0.split(from).join(to)); console.log('• dev/test-6139.mjs release-options count -> 6 reads'); }
+  const re = /ok\(count\('SC_RELEASE_FETCH'\) === \d+, 'defined \+ used by \d+ catalog reads \(' \+ count\('SC_RELEASE_FETCH'\) \+ '\)'\);/;
+  const want = `ok(count('SC_RELEASE_FETCH') === 7, 'defined + used by 6 catalog reads (' + count('SC_RELEASE_FETCH') + ')');`;
+  if (t0.indexOf(want) !== -1) skip('dev/test-6139.mjs release-options count');
+  else if (!re.test(t0)) throw new Error('dev/test-6139.mjs: release-options count assertion not found');
+  else { fs.writeFileSync(p, t0.replace(re, want)); console.log('• dev/test-6139.mjs release-options count -> 7 reads'); }
 }
 
-// The changelog must name the second source.
-sub('CHANGELOG — name the second open catalog',
-  `    'The same lyric lookup still needs no account and nothing to connect — every source is an open, public catalog.',`,
-  `    'Upcoming dates now come from two open catalogs, not one: MusicBrainz and Wikidata are both read, so a drop either one has dated with a real day turns up — still with no account and nothing to connect.',
-    'The same lyric lookup still needs no account and nothing to connect — every source is an open, public catalog.',`);
+// test-6136 pins the original single-endpoint MusicBrainz pass by its exact
+// strings; the pass now builds both endpoints from a table.
+{
+  const p = path.join(devDir, 'test-6136.mjs');
+  const t0 = fs.readFileSync(p, 'utf8');
+  const swaps = [
+    [`ok(mb && mb.includes("musicbrainz.org/ws/2/release-group/?query="), 'queries the open MusicBrainz search');`,
+     `ok(mb && mb.includes("'https://musicbrainz.org/ws/2/' + ps.path + '/?query='"), 'queries the open MusicBrainz search');`],
+    [`ok(mb && mb.includes("firstreleasedate:[' + today + ' TO ' + horizon + ']'"), 'date range covers today → today+400d');`,
+     `ok(mb && mb.includes("ps.range + ':[' + today + ' TO ' + horizon + ']'"), 'date range covers today → today+400d');`],
+    [`ok(mb && mb.includes("window.__scDay10(rg['first-release-date'])"), 'day-precision parse reused');`,
+     `ok(mb && mb.includes('window.__scDay10(rg[ps.dateKey])'), 'day-precision parse reused');`],
+    [`ok(mb && mb.includes('await fetchWithProxy(url, SC_RELEASE_FETCH)'), 'goes through the shared proxy fetch, budgeted');`,
+     `ok(mb && mb.includes('fetchWithProxy(url, SC_RELEASE_FETCH)'), 'goes through the shared proxy fetch, budgeted');`],
+  ];
+  let t = t0, n = 0;
+  for (const [from, to] of swaps) {
+    if (t.indexOf(to) !== -1) continue;
+    if (t.indexOf(from) === -1) throw new Error('dev/test-6136.mjs: MusicBrainz pin not found: ' + from.slice(0, 50));
+    t = t.split(from).join(to); n++;
+  }
+  if (n) { fs.writeFileSync(p, t); console.log('• dev/test-6136.mjs MusicBrainz pins -> two-endpoint pass (' + n + ')'); }
+  else skip('dev/test-6136.mjs MusicBrainz pins');
+}
+
+// test-6139 makes the same single-line pin on the MusicBrainz fetch.
+{
+  const p = path.join(devDir, 'test-6139.mjs');
+  const t0 = fs.readFileSync(p, 'utf8');
+  const from = `ok(mb && mb.includes('await fetchWithProxy(url, SC_RELEASE_FETCH)'), 'the MusicBrainz search uses it');`;
+  const to = `ok(mb && mb.includes('fetchWithProxy(url, SC_RELEASE_FETCH)'), 'the MusicBrainz search uses it');`;
+  if (t0.indexOf(to) !== -1) skip('dev/test-6139.mjs MusicBrainz fetch pin');
+  else if (t0.indexOf(from) === -1) throw new Error('dev/test-6139.mjs: MusicBrainz fetch pin not found');
+  else { fs.writeFileSync(p, t0.split(from).join(to)); console.log('• dev/test-6139.mjs MusicBrainz fetch pin'); }
+}
+
+// ---------------------------------------------------------------------------
+// [9] MusicBrainz, asked the right way. release-group is the canonical
+//     album/EP/single, but a drop that has only been ANNOUNCED often exists on
+//     the concrete `release` endpoint and not on release-group yet. Measured
+//     live this session: one pinned artist's announced album answered 0 on
+//     release-group and 1 on release — so asking only release-group is why the
+//     check kept coming back with nothing dated for artists that plainly had
+//     something. Both are now asked and merged on normalized title + day.
+// ---------------------------------------------------------------------------
+sub('the MusicBrainz drop pass asks both endpoints',
+  `      var today = new Date().toISOString().slice(0, 10);
+      var horizon = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
+      // Lucene specials (quotes/backslashes) would 400 the whole query.
+      var q = 'artist:"' + String(artist).replace(/["\\\\]/g, ' ').trim() + '"';
+      q += ' AND firstreleasedate:[' + today + ' TO ' + horizon + ']';
+      var url = 'https://musicbrainz.org/ws/2/release-group/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
+      var rs = await fetchWithProxy(url, SC_RELEASE_FETCH);
+      if(!rs || !rs.ok) return [];
+      var md = await rs.json();
+      var want = primaryArtistName(artist).toLowerCase().trim();
+      var out = [];
+      ((md && md['release-groups']) || []).forEach(function(rg){
+        if(!rg || !rg.title) return;
+        // The range above can still hand back year/month-precision entries
+        // that merely overlap it — only a real day counts as a drop.
+        var d = window.__scDay10(rg['first-release-date']);
+        if(!d || !window.__scUpcomingDay(d)) return;
+        var pt = String(rg['primary-type'] || '');
+        if(pt && pt !== 'Album' && pt !== 'Single' && pt !== 'EP') return;
+        var credits = (rg['artist-credit'] || []).map(function(c){
+          return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
+        });
+        var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
+        if(!hit) return; // collabs count only when the pinned artist is credited
+        out.push({
+          title: rg.title, date: d, art: null,
+          url: 'https://musicbrainz.org/release-group/' + rg.id,
+          previewUrl: null, kind: 'album', cid: null, seen: false, _mb: rg.id
+        });
+      });
+      return out;`,
+`      var today = new Date().toISOString().slice(0, 10);
+      var horizon = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
+      // Lucene specials (quotes/backslashes) would 400 the whole query.
+      var who = String(artist).replace(/["\\\\]/g, ' ').trim();
+      var want = primaryArtistName(artist).toLowerCase().trim();
+      var out = [], seenMb = {};
+      // TWO endpoints, because they do not agree. release-group is the
+      // canonical album/EP/single; release is the concrete pressing, and an
+      // announced-but-not-yet-pressed drop often lives on exactly one of them.
+      // Each has its own date field and its own range field name.
+      var passes = [
+        { path: 'release-group', list: 'release-groups', typeKey: 'primary-type', dateKey: 'first-release-date', range: 'firstreleasedate' },
+        { path: 'release', list: 'releases', typeKey: null, dateKey: 'date', range: 'date' }
+      ];
+      // Both endpoints are asked AT THE SAME TIME. Each read is budgeted at
+      // 4s, so two sequential ones could spend the whole per-artist window
+      // (8s) on one artist; run together they cost one budget.
+      var _reads = passes.map(function(ps){
+        var q = 'artist:"' + who + '" AND ' + ps.range + ':[' + today + ' TO ' + horizon + ']';
+        var url = 'https://musicbrainz.org/ws/2/' + ps.path + '/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
+        return fetchWithProxy(url, SC_RELEASE_FETCH).then(function(rs){
+          return (rs && rs.ok) ? rs.json() : null;
+        }).catch(function(){ return null; });
+      });
+      var _rp = await Promise.all(_reads);
+      // Process in pass order, so a release-group hit wins over the concrete
+      // release that merely mirrors it.
+      for(var pi = 0; pi < passes.length; pi++){
+        var ps = passes[pi];
+        var md = _rp[pi];
+        try{
+          ((md && md[ps.list]) || []).forEach(function(rg){
+            if(!rg || !rg.title) return;
+            // The range can still hand back year/month-precision entries that
+            // merely overlap it — only a real day counts as a drop.
+            var d = window.__scDay10(rg[ps.dateKey]);
+            if(!d || !window.__scUpcomingDay(d)) return;
+            // A release row carries no primary-type; classify only when there
+            // is one, so the concrete endpoint cannot smuggle in a compilation.
+            var pt = ps.typeKey ? String(rg[ps.typeKey] || '') : '';
+            if(pt && pt !== 'Album' && pt !== 'Single' && pt !== 'EP') return;
+            var credits = (rg['artist-credit'] || []).map(function(c){
+              return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
+            });
+            var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
+            if(!hit) return; // collabs count only when the pinned artist is credited
+            // One drop shows on both endpoints under different ids; the
+            // normalized title + day is what actually identifies it.
+            var key = String(rg.title).toLowerCase().replace(/\\s+/g, ' ').trim() + '|' + d;
+            if(seenMb[key]) return;
+            seenMb[key] = true;
+            out.push({
+              title: rg.title, date: d, art: null,
+              url: 'https://musicbrainz.org/' + ps.path + '/' + rg.id,
+              previewUrl: null, kind: 'album', cid: null, seen: false, _mb: rg.id
+            });
+          });
+        }catch(_ePass){}
+      }
+      if(out.length > 1) out.sort(function(a, b){ return String(a.date).localeCompare(String(b.date)); });
+      return out;`);
 
 // ---------------------------------------------------------------------------
 // release metadata
@@ -438,10 +717,13 @@ sub('APP_VERSION -> ' + VER,
   `  const APP_VERSION = '${PREV}';`,
   `  const APP_VERSION = '${VER}';`);
 
-if (src.indexOf(`  { version: '${VER}',`) !== -1) { skip('CHANGELOG head -> ' + VER); }
-else sub('CHANGELOG head -> ' + VER,
-  `const CHANGELOG = [\n  { version: '${PREV}', date: `,
-  `const CHANGELOG = [\n${CHANGELOG_HEAD}  { version: '${PREV}', date: `);
+if (!src.includes(`  { version: '${VER}',`)) {
+  sub('CHANGELOG head -> ' + VER,
+    `const CHANGELOG = [\n  { version: '${PREV}', date: `,
+    `const CHANGELOG = [\n${CHANGELOG_HEAD}  { version: '${PREV}', date: `);
+} else {
+  skip('CHANGELOG head -> ' + VER);
+}
 
 {
   const t0 = fs.readFileSync(SW, 'utf8');
@@ -514,6 +796,20 @@ for (const [f, from, to] of newestFixes) {
   else { fs.writeFileSync(p, t0.split(from).join(to)); console.log('• dev/test-6137.mjs raced-call assertion scoped to the tap'); }
 }
 
+// test-6054 slices scHttpJson by its old two-argument signature to run it in a
+// sandbox; the transport gained the optional ytClient argument this release.
+{
+  const p = path.join(devDir, 'test-6054.mjs');
+  const t0 = fs.readFileSync(p, 'utf8');
+  const to = `slice('  async function scHttpJson(url, bodyObj, ytClient){', '  // googlevideo no longer serves an unbounded request')`;
+  if (t0.indexOf(to) !== -1) skip('dev/test-6054.mjs scHttpJson anchor');
+  else if (t0.indexOf(`slice('  async function scHttpJson(url, bodyObj){'`) === -1) throw new Error('dev/test-6054.mjs: scHttpJson anchor not found');
+  else {
+    fs.writeFileSync(p, t0.split(`slice('  async function scHttpJson(url, bodyObj){'`).join(`slice('  async function scHttpJson(url, bodyObj, ytClient){'`));
+    console.log('• dev/test-6054.mjs scHttpJson anchor -> three-argument signature');
+  }
+}
+
 // test-614 is authored AT the new version and must not be repinned.
 for (const f of fs.readdirSync(devDir)) {
   if (!/^test-.*\.mjs$/.test(f) || f === 'test-614.mjs') continue;
@@ -531,6 +827,234 @@ const stale = fs.readdirSync(devDir)
   .filter((f) => /^test-.*\.mjs$/.test(f) && f !== 'test-614.mjs')
   .filter((f) => fs.readFileSync(path.join(devDir, f), 'utf8').includes(`ver === '${PREV}'`));
 if (stale.length) throw new Error('test files still pinned to ' + PREV + ': ' + stale.join(', '));
+
+// ---------------------------------------------------------------------------
+// [5] the word highlight ran at a fixed 14 chars/sec — about triple the real
+//     rate of a slow song. Measured against LRCLIB's own timing for Kesariya
+//     (4.1 chars/sec), Someone Like You (4.9) and Tum Hi Ho, that constant lit
+//     every word inside the first third of the line and then left the last one
+//     sitting lit for the rest of it: the "on slower songs the word-by-word is
+//     nowhere near the song" report. A line is now paced at its own density,
+//     clamped so a fast line stays snappy and an instrumental gap still cannot
+//     make the words crawl.
+// ---------------------------------------------------------------------------
+sub('word pacing follows the line, not a fixed rate',
+  `  // Pace a line's words from fromSec to toSec: each word is weighted by its
+  // length so pacing feels spoken, but words are NEVER spread across a
+  // trailing instrumental gap — that was the "the word highlight crawls and
+  // sits on the wrong word" bug. The span is min(gap, natural singing length
+  // at ~14 chars/sec), and once pacing ends the LAST word stays lit while the
+  // line is still current, so an active line always has a lit word.`,
+`  // Pace a line's words from fromSec to toSec: each word is weighted by its
+  // length so pacing feels spoken, but words are NEVER spread across a
+  // trailing instrumental gap — that was the "the word highlight crawls and
+  // sits on the wrong word" bug. The span is min(gap, natural singing length
+  // at the line's OWN rate), and once pacing ends the LAST word stays lit
+  // while the line is still current, so an active line always has a lit word.
+  //
+  // The rate is derived per line instead of being a fixed constant. 14 chars/s
+  // is roughly triple a slow ballad's real delivery (Kesariya measures 4.1,
+  // Someone Like You 4.9, Tum Hi Ho 4.6 against LRCLIB's own line timings), so
+  // on exactly those songs every word lit in the first third of the line and
+  // the last one stayed lit for the rest of it. Clamped to [6,14] so a fast
+  // line keeps its snap and a long instrumental gap still cannot make the
+  // words crawl.`);
+
+sub('word pacing rate — adaptive, clamped',
+  `    const gap = Math.max(0.3, toSec - fromSec);
+    const natural = Math.max(0.4, totalWeight / 14 + 0.4);
+    const pace = Math.min(gap, natural);`,
+`    const gap = Math.max(0.3, toSec - fromSec);
+    // chars/sec this line would need to fill its whole window — dense in a
+    // short window reads fast, sparse in a long one reads slow. Bumped 15% so
+    // the words finish just inside the window rather than exactly on the next
+    // line's first word.
+    const lineRate = totalWeight / gap;
+    const rate = Math.max(6, Math.min(14, lineRate * 1.15));
+    const natural = Math.max(0.4, totalWeight / rate + 0.2);
+    const pace = Math.min(gap, natural);`);
+
+// ---------------------------------------------------------------------------
+// [6] Cancel on the conversion pill stopped the run but never took the pill
+//     away, so the bubble sat there for good whenever the run it was waiting on
+//     could not report back (a hung download, a wedged encode). Cancel now
+//     dismisses the pill itself on a short grace timer, and a late status line
+//     from the cancelled run can no longer bring it back.
+// ---------------------------------------------------------------------------
+sub('converter pill state carries a cancel flag',
+  `  var scConvertPillState = { el: null, timer: null, pct: 0 };`,
+  `  var scConvertPillState = { el: null, timer: null, pct: 0, cancelRequested: false };
+  // A new run clears the flag; the Cancel handler sets it and dismisses the pill.
+  function scConvertPillResetCancel(){ scConvertPillState.cancelRequested = false; }`);
+
+sub('converter run start clears the cancel flag',
+  `window.__scCancelDl = false;`,
+  `window.__scCancelDl = false; scConvertPillResetCancel();`, 4);
+
+sub('converter pill Cancel dismisses the bubble',
+  `      window.__scNotifyAt = 0;
+      scNotifyProgress('SideCut', 'Cancelling — what already finished stays in your library', scConvertPillState.pct || 0, false);
+    });`,
+`      window.__scNotifyAt = 0;
+      scNotifyProgress('SideCut', 'Cancelling — what already finished stays in your library', scConvertPillState.pct || 0, false);
+      // The run cannot always report back — a download or an encode in flight
+      // may be wedged, and that is exactly when the bubble used to stay on
+      // screen forever. Dismiss it ourselves on a short grace window so the
+      // Cancel button always means "gone", whatever the job is doing.
+      scConvertPillState.cancelRequested = true;
+      if(scConvertPillState.timer){ clearTimeout(scConvertPillState.timer); }
+      scConvertPillState.timer = setTimeout(function(){
+        if(!scConvertPillState.cancelRequested) return;
+        scConvertPillState.cancelRequested = false;
+        scConvertPill(false);
+      }, 1500);
+    });`);
+
+sub('a late status line cannot resurrect a cancelled pill',
+  `  function scConvertPillUpdate(title, sub, pct){
+    var pill = scConvertPill(true);
+    if(!pill) return;`,
+`  function scConvertPillUpdate(title, sub, pct){
+    // The user cancelled: the pill is on its way out and no status line from
+    // the cancelled run may bring it back.
+    if(scConvertPillState.cancelRequested) return;
+    var pill = scConvertPill(true);
+    if(!pill) return;`);
+
+// ---------------------------------------------------------------------------
+// [7] The song cutting in and out while you use the phone. Three separate
+//     paths revive a paused element — the pause event, the 30-second heartbeat
+//     and the return-to-app check — and they can all land inside the same
+//     second. Each one restarts the element from scratch, so the listener hears
+//     the song stop and start repeatedly instead of once. One revive at a time.
+// ---------------------------------------------------------------------------
+sub('one revive at a time — the guard',
+  `  let revivingAudio = false;    // true while WE are restarting a paused element`,
+`  let revivingAudio = false;    // true while WE are restarting a paused element
+  // Overlapping revives. A pause event, the 30s media heartbeat and the
+  // return-to-app check can fire within the same second after the system ducks
+  // or interrupts us, and each one restarts the element from zero — heard as
+  // the song cutting in and out. A short lock lets only the first through.
+  let scReviveLockUntil = 0;
+  function scReviveAllowed(){ return Date.now() >= scReviveLockUntil; }
+  function scNoteRevive(){ scReviveLockUntil = Date.now() + 2500; }`);
+
+sub('pause-event revive obeys the lock',
+  `    if(!userPaused && !audioFocusInterrupted && !_pa.ended && autoRevives < 3
+       && (Date.now() - lastAutoReviveAt) > 700
+       && !document.hidden && msSincePlayStarted() < 8000`,
+`    if(!userPaused && !audioFocusInterrupted && !_pa.ended && autoRevives < 3
+       && (Date.now() - lastAutoReviveAt) > 700
+       && scReviveAllowed()
+       && !document.hidden && msSincePlayStarted() < 8000`);
+
+sub('pause-event revive claims the lock',
+  `      autoRevives++;
+      lastAutoReviveAt = Date.now();`,
+`      autoRevives++;
+      lastAutoReviveAt = Date.now();
+      scNoteRevive();`);
+
+sub('heartbeat revive obeys the lock',
+  `      if(a.paused && !userPaused && !document.hidden && $('djModeBackdrop').style.display !== 'flex'
+         && queueIndex >= 0 && queueIndex < queue.length){`,
+`      if(a.paused && !userPaused && !document.hidden && scReviveAllowed()
+         && $('djModeBackdrop').style.display !== 'flex'
+         && queueIndex >= 0 && queueIndex < queue.length){
+        scNoteRevive();`);
+
+sub('return-to-app revive obeys the lock',
+  `    revivingAudio = true;
+    let revived;`,
+`    // A revive is already in flight from the pause handler or the heartbeat:
+    // that IS this recovery, so report "nothing more to do" rather than
+    // starting a second restart on top of it.
+    if(!scReviveAllowed()) return true;
+    scNoteRevive();
+    revivingAudio = true;
+    let revived;`);
+
+// ---------------------------------------------------------------------------
+// [8] The converter on the full (sideloaded) build. The Innertube player asks
+//     for the stream as ANDROID / IOS / ANDROID_VR / TVHTML5…, but the request
+//     HEADERS were pinned to the web client for every one of them
+//     (X-Youtube-Client-Name: 1, the WEB version). A client id that disagrees
+//     with the body is how YouTube decides the caller is not the app it claims
+//     to be, so the player answered unusable and every conversion died on "no
+//     source found". The headers now name the same client as the body — and
+//     the search, which really is a WEB request, keeps the web values.
+// ---------------------------------------------------------------------------
+sub('the transport takes the youtube client for this call',
+  `  async function scHttpJson(url, bodyObj){`,
+`  // ytClient (optional) is the Innertube client the request BODY declares, so
+  // the headers can name the same one. Passed in rather than kept in a closure
+  // so the transport stays a plain function of its arguments.
+  async function scHttpJson(url, bodyObj, ytClient){`);
+
+sub('the youtube request headers follow the client in the body',
+  `    if(/youtube\\.com/.test(url)){
+      // The video host expects a browser-shaped request; the native stack would
+      // otherwise send its own and can be turned away for it.
+      nativeHeaders['User-Agent'] = 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Mobile Safari/537.36';
+      nativeHeaders['Origin'] = 'https://www.youtube.com';
+      nativeHeaders['Referer'] = 'https://www.youtube.com/';
+      nativeHeaders['X-Youtube-Client-Name'] = '1';
+      nativeHeaders['X-Youtube-Client-Version'] = '2.20240801.00.00';
+    }`,
+`    if(/youtube\\.com/.test(url)){
+      // The video host expects a browser-shaped request; the native stack would
+      // otherwise send its own and can be turned away for it.
+      nativeHeaders['User-Agent'] = 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Mobile Safari/537.36';
+      nativeHeaders['Origin'] = 'https://www.youtube.com';
+      nativeHeaders['Referer'] = 'https://www.youtube.com/';
+      // These two MUST name the client the request body declares. They were
+      // pinned to the web client (1 / the WEB version) whatever the body said,
+      // so an ANDROID or IOS player call arrived wearing web headers —
+      // a mismatch YouTube reads as "not the app you claim to be" and answers
+      // by handing back no usable stream. The player passes its client in; the
+      // search passes none and keeps the web defaults it actually is.
+      var _yc = ytClient || null;
+      nativeHeaders['X-Youtube-Client-Name'] = String((_yc && _yc.name) || 1);
+      nativeHeaders['X-Youtube-Client-Version'] = (_yc && _yc.version) || '2.20240801.00.00';
+      if(_yc && _yc.ua) nativeHeaders['User-Agent'] = _yc.ua;
+    }`);
+
+sub('the player declares which client it is asking as',
+  `    var clients = [
+      { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 } },
+      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' } },
+      { client: { clientName: 'ANDROID_VR', clientVersion: '1.60.19', androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3', osName: 'Android', osVersion: '12' } },
+      { client: { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' }, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'MWEB', clientVersion: '2.20250220.00.00' }, third: 'https://www.youtube.com/' }
+    ];`,
+`    // \`num\` and \`ua\` are the matching X-Youtube-Client-Name value and the
+    // User-Agent that client really sends; the header block reads them so the
+    // request never claims a different client than the body. \`num\` is the
+    // long-standing public id for each client (WEB 1, ANDROID 3, IOS 5,
+    // ANDROID_VR 28, WEB_EMBEDDED_PLAYER 56, TVHTML5 7, Android's \`VR\`/
+    // embedded variants 28/85).
+    var UA_ANDROID = 'com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip';
+    var UA_IOS = 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 18_0 like Mac OS X)';
+    var UA_WEB = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    var clients = [
+      { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 }, num: 3, ua: UA_ANDROID },
+      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' }, num: 5, ua: UA_IOS },
+      { client: { clientName: 'ANDROID_VR', clientVersion: '1.60.19', androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3', osName: 'Android', osVersion: '12' }, num: 28, ua: UA_ANDROID },
+      { client: { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }, num: 85, ua: UA_WEB, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' }, num: 56, ua: UA_WEB, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'MWEB', clientVersion: '2.20250220.00.00' }, num: 2, ua: UA_ANDROID, third: 'https://www.youtube.com/' }
+    ];`);
+
+sub('each player call announces its client, then clears it',
+  `        var ctx = { client: clients[c].client };
+        if(clients[c].third) ctx.thirdParty = { embedUrl: clients[c].third };
+        var d = await scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true });`,
+`        var ctx = { client: clients[c].client };
+        if(clients[c].third) ctx.thirdParty = { embedUrl: clients[c].third };
+        // Hand the transport the client this body declares, so the headers agree
+        // with it instead of always claiming to be the web player.
+        var d = await scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true }, { name: clients[c].num, version: clients[c].client.clientVersion, ua: clients[c].ua });`);
 
 fs.writeFileSync(FILE, src);
 

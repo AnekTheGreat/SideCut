@@ -48,7 +48,7 @@ ok(count('SC_RELEASE_FETCH') === 7, 'defined + used by 6 catalog reads (' + coun
 const idFn = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");
 ok(idFn && idFn.split('SC_RELEASE_FETCH').length - 1 === 2, 'the artist search and the catalog lookup both use it');
 const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpcoming = scFetchMbUpcoming;');
-ok(mb && mb.includes('await fetchWithProxy(url, SC_RELEASE_FETCH)'), 'the MusicBrainz search uses it');
+ok(mb && mb.includes('fetchWithProxy(url, SC_RELEASE_FETCH)'), 'the MusicBrainz search uses it');
 
 console.log('[3] cross-source dedupe — one row per drop');
 const check = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');

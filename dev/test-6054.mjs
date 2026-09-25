@@ -115,7 +115,7 @@ console.log('[2] Play build: the removal actually runs (block-1 executed)');
 
 console.log('[3] Full build: the transport gets a second chance (scHttpJson executed)');
 {
-  const body = slice('  async function scHttpJson(url, bodyObj){', '  // googlevideo no longer serves an unbounded request');
+  const body = slice('  async function scHttpJson(url, bodyObj, ytClient){', '  // googlevideo no longer serves an unbounded request');
   ok(!!body, 'scHttpJson extracted');
   const make = () => {
     const calls = [];

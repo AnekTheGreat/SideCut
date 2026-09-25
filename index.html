@@ -8868,17 +8868,23 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     var primaryTokens = scLyricsArtistTokens(primary);
     if(!primaryTokens.length) primaryTokens = scLyricsArtistTokens(artistVars[0]);
     var dur = Math.round(duration || 0);
-    var best = null;
+    var best = null, bestSynced = null;
     function consider(res){
       var sc = scScoreLyricsResult(res, titleKey, primaryTokens, dur);
-      if(sc && (!best || sc.score > best.score)) best = sc;
+      if(sc){
+        if(!best || sc.score > best.score) best = sc;
+        // A timed copy of the same song is what the highlight needs. Keep the
+        // best of those separately so the search passes have something to aim
+        // at while the plain-text fallback is already safe in `best`.
+        if(sc.isSynced && (!bestSynced || sc.score > bestSynced.score)) bestSynced = sc;
+      }
       return sc;
     }
     // 1. /api/get — needs artist + title, and only accepts a duration within ~2s.
     //    Sending duration=0 for a track whose length isn't known can never match,
     //    so omit it then; and retry without it when the duration-carrying call
     //    misses, which is exactly how an alternate-length release looks.
-    for(var ai = 0; ai < Math.min(artistVars.length, 3) && !best && !scLyricsOutOfTime(); ai++){
+    for(var ai = 0; ai < Math.min(artistVars.length, 3) && !bestSynced && !scLyricsOutOfTime(); ai++){
       var getUrl = 'https://lrclib.net/api/get?artist_name=' + encodeURIComponent(artistVars[ai]) +
                    '&track_name=' + encodeURIComponent(titleVars[0]) + (dur > 0 ? '&duration=' + dur : '');
       var got = await scLyricsJson(getUrl);
@@ -8891,21 +8897,24 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
     // 2. Search with each artist candidate. This is where the semicolon-credited
     //    entries surface ("DILJIT DOSANJH;Intense;HIZZY HUNDAL").
-    for(var ai2 = 0; ai2 < Math.min(artistVars.length, 3) && !best && !scLyricsOutOfTime(); ai2++){
+    for(var ai2 = 0; ai2 < Math.min(artistVars.length, 3) && !bestSynced && !scLyricsOutOfTime(); ai2++){
       for(var ti = 0; ti < Math.min(titleVars.length, 2) && !scLyricsOutOfTime(); ti++){
         var res = await scLyricsJson('https://lrclib.net/api/search?q=' + encodeURIComponent(artistVars[ai2] + ' ' + titleVars[ti]));
         if(Array.isArray(res)) for(var ri = 0; ri < Math.min(res.length, 25); ri++) consider(res[ri]);
-        if(best && best.score >= 5.5) break;        // good enough; stop spending requests
+        if(bestSynced && bestSynced.score >= 5.5) break;  // good timed copy; stop spending requests
         await new Promise(function(r){ setTimeout(r, 200); });
       }
     }
     // 3. Title only — for when the artist tag is a label, a channel or just wrong.
     //    Accepted only on an exact title plus a confirmed length (or a real artist
     //    hit), so a same-titled song by someone else can never be served here.
-    if(!best && titleVars.length && !scLyricsOutOfTime()){
+    if(!bestSynced && titleVars.length && !scLyricsOutOfTime()){
       var tRes = await scLyricsJson('https://lrclib.net/api/search?track_name=' + encodeURIComponent(titleVars[0]));
       if(Array.isArray(tRes)) for(var ti2 = 0; ti2 < Math.min(tRes.length, 25); ti2++) consider(tRes[ti2]);
     }
+    // Timed whenever we found one; the plain-text match is the fallback, not
+    // the first thing we happen to trip over.
+    if(bestSynced) return bestSynced;
     if(best) return best;
     // 4. (removed) textyl used to be surfaced here as Apple Music's own lyric
     //    lines. Its reply carries no title and no artist, so there was no way to
@@ -9693,6 +9702,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // word-by-word can pace it. Lines that already carry word spans are returned
   // as-is; lines containing other markup (instrumental rows) are left alone —
   // nothing to pace there, and rewriting them would break their structure.
+  // Split a lyric line into pacing units. Whitespace is the word boundary for
+  // scripts that use it; a run of Han/Kana/Hangul is broken into pieces instead
+  // of standing as one giant token, so word-by-word has something to pace. Thai
+  // and Lao run without spaces too and are handled the same way.
+  function scPaceSegments(text){
+    var out = [], re = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]+|[^\s]+|\s+/g;
+    var m;
+    while((m = re.exec(String(text || ''))) !== null){
+      var chunk = m[0];
+      if(!chunk) continue;
+      if(/^\s+$/.test(chunk)){ out.push(chunk); continue; }
+      if(chunk.length >= 3 && /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(chunk)){
+        for(var i = 0; i < chunk.length; i += 2) out.push(chunk.slice(i, i + 2));
+      } else {
+        out.push(chunk);
+      }
+    }
+    return out;
+  }
   function scEnsureWordSpans(lineEl){
     if(!lineEl) return [];
     if(lineEl.dataset.wordwrap === '1') return lineEl.querySelectorAll('.lyric-word');
@@ -9701,7 +9729,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(lineEl.children.length || lineEl.dataset.inst){ lineEl.dataset.wordwrap = '1'; return []; }
     const text = lineEl.textContent;
     if(!text || !text.trim()){ lineEl.dataset.wordwrap = '1'; return []; }
-    lineEl.innerHTML = String(text).split(/(\s+)/).map(function(chunk){
+    lineEl.innerHTML = scPaceSegments(text).map(function(chunk){
       return (/^\s+$/.test(chunk)) ? chunk : '<span class="lyric-word" data-word="1">' + escapeHtml(chunk) + '</span>';
     }).join('');
     lineEl.dataset.wordwrap = '1';
@@ -9711,8 +9739,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // length so pacing feels spoken, but words are NEVER spread across a
   // trailing instrumental gap — that was the "the word highlight crawls and
   // sits on the wrong word" bug. The span is min(gap, natural singing length
-  // at ~14 chars/sec), and once pacing ends the LAST word stays lit while the
-  // line is still current, so an active line always has a lit word.
+  // at the line's OWN rate), and once pacing ends the LAST word stays lit
+  // while the line is still current, so an active line always has a lit word.
+  //
+  // The rate is derived per line instead of being a fixed constant. 14 chars/s
+  // is roughly triple a slow ballad's real delivery (Kesariya measures 4.1,
+  // Someone Like You 4.9, Tum Hi Ho 4.6 against LRCLIB's own line timings), so
+  // on exactly those songs every word lit in the first third of the line and
+  // the last one stayed lit for the rest of it. Clamped to [6,14] so a fast
+  // line keeps its snap and a long instrumental gap still cannot make the
+  // words crawl.
   function scPaceWords(lineEl, fromSec, toSec, nowSec){
     if(!lineEl) return;
     const words = scEnsureWordSpans(lineEl);
@@ -9721,7 +9757,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     const weights = [];
     words.forEach(function(w){ const wt = Math.max(1, w.textContent.length); weights.push(wt); totalWeight += wt; });
     const gap = Math.max(0.3, toSec - fromSec);
-    const natural = Math.max(0.4, totalWeight / 14 + 0.4);
+    // chars/sec this line would need to fill its whole window — dense in a
+    // short window reads fast, sparse in a long one reads slow. Bumped 15% so
+    // the words finish just inside the window rather than exactly on the next
+    // line's first word.
+    const lineRate = totalWeight / gap;
+    const rate = Math.max(6, Math.min(14, lineRate * 1.15));
+    const natural = Math.max(0.4, totalWeight / rate + 0.2);
     const pace = Math.min(gap, natural);
     let acc = 0, litIdx = -1;
     words.forEach(function(w, wi){
@@ -9771,7 +9813,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         } else if(text){
           // Synthetic word timestamps evenly distributed across each occurrence
           // of the line (a repeated chorus gets its own pacing at every repeat).
-          const words = text.split(/(\s+)/);
+          const words = scPaceSegments(text);
           let wTotal = 0;
           words.forEach(function(w){ if(!/^\s+$/.test(w)) wTotal++; });
           let wIdx = 0;
@@ -11046,14 +11088,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '61.4', date: 'September 24, 2026 · 6:53 PM EDT', title: 'The Upcoming tab stays put, and the lyrics stop guessing', items: [
-    'Upcoming releases finally stays where you put it: switching a release list — or letting a check finish — no longer snaps the tabs back to All releases, so the upcoming drops you were reading stay on screen.',
-    'Opening Upcoming releases with nothing dated yet now looks the dates up on the spot, in the background, instead of leaving you on an empty tab — and if it finds drops it tells you and marks the bell.',
-    'Lyrics stopped guessing: two sources that never checked the reply was the song you asked for can no longer serve someone else\u2019s words, and a match with the right length but the wrong title is refused. A smaller artist with no lyrics on file now honestly says so instead of showing the wrong song.',
-    'Lyrics hold still while the song is paused — the highlight and the auto-scroll stop with the music and pick up where you left off.',
-    'Reopening the app with lyrics on screen keeps the highlight running: it used to stay frozen until you closed the lyrics and opened them again.',
-    'Upcoming dates now come from two open catalogs, not one: MusicBrainz and Wikidata are both read, so a drop either one has dated with a real day turns up — still with no account and nothing to connect.',
-    'The same lyric lookup still needs no account and nothing to connect — every source is an open, public catalog.',
+  { version: '61.4', date: 'September 24, 2026 · 8:48 PM EDT', title: 'Two open catalogs for drops, and the lyric highlight keeps time', items: [
+    'Upcoming releases cannot be knocked out of place any more — picking that tab keeps it, and opening it with nothing dated yet goes and looks the dates up on the spot instead of leaving you on an empty list.',
+    'Upcoming dates now come from two open catalogs, not one: MusicBrainz is asked two ways and Wikidata is read as well, so a drop any of them has dated with a real day turns up — with no account and nothing to connect.',
+    'Lyrics used to settle for the first matching copy, which was sometimes the untimed one even when a properly timed version of the same song was on file — so the highlight drifted instead of following the song. The timed copy now wins, and a source that never checked the reply was the song you asked for can no longer serve someone else\u2019s words: a smaller artist with nothing on file says so honestly.',
+    'The word-by-word highlight was walking every line at one fixed speed, roughly three times a slow ballad\u2019s real delivery — so on slower songs the words ran out in the first third of the line and the last one sat lit for the rest of it. Each line is now paced at its own rate, in every script.',
+    'The song no longer cuts in and out while you use the phone. Coming back to the app, the pause watchdog and the thirty-second heartbeat could each restart the song within the same second after the system ducked or interrupted it, and every restart is audible — only the first is let through now.',
+    '[FULL] The song fetching on the sideloaded build works again: every source request was sent claiming to be a different client than the one it asked as, which the source answers by handing back nothing, so a fetch either stalled or ended on "no source found". The request now declares what it really is — and Cancel on the progress bubble now really puts it away, even when the job it stopped never reports back.',
+    'The highlight holds still while the song is paused and picks up where you left off, and reopening the app with lyrics on screen keeps it running instead of freezing until you close and reopen them.',
   ] },
   { version: '61.3.9', date: 'September 24, 2026 · 5:44 PM EDT', title: 'The drop check finishes, and fills in as it goes', items: [
     'The drop check reads your pinned artists a few at a time instead of one after another, so a longer list finishes in a fraction of the time it used to.',
@@ -22473,6 +22515,13 @@ function _fallbackCopy(text){
   let autoRevives = 0;          // automatic resumes already spent on this attempt
   let lastAutoReviveAt = 0;     // when the last one happened (rate limit)
   let revivingAudio = false;    // true while WE are restarting a paused element
+  // Overlapping revives. A pause event, the 30s media heartbeat and the
+  // return-to-app check can fire within the same second after the system ducks
+  // or interrupts us, and each one restarts the element from zero — heard as
+  // the song cutting in and out. A short lock lets only the first through.
+  let scReviveLockUntil = 0;
+  function scReviveAllowed(){ return Date.now() >= scReviveLockUntil; }
+  function scNoteRevive(){ scReviveLockUntil = Date.now() + 2500; }
   // Set while WE were paused by a focus loss (a call, another app taking over) —
   // not by the user. Only then do we put the song back when focus returns.
   let audioFocusInterrupted = false;
@@ -22686,11 +22735,13 @@ function _fallbackCopy(text){
     // Mode, or a song that genuinely ended is left alone.
     if(!userPaused && !audioFocusInterrupted && !_pa.ended && autoRevives < 3
        && (Date.now() - lastAutoReviveAt) > 700
+       && scReviveAllowed()
        && !document.hidden && msSincePlayStarted() < 8000
        && queueIndex >= 0 && queueIndex < queue.length
        && $('djModeBackdrop').style.display !== 'flex'){
       autoRevives++;
       lastAutoReviveAt = Date.now();
+      scNoteRevive();
       recordPlaybackStop('platform-pause after ' + Math.round(msSincePlayStarted()) + 'ms — replayed');
       revivingAudio = true;
       try{ _pa.play().catch(function(){}); }catch(_e){}
@@ -22753,8 +22804,10 @@ function _fallbackCopy(text){
       // case where Android reclaimed memory and the old URL went dead while suspended.
       // Skip while DJ Mode is open: it owns sound via the deck engine and the main
       // <audio> element is intentionally idle there, so reviving it would double up.
-      if(a.paused && !userPaused && !document.hidden && $('djModeBackdrop').style.display !== 'flex'
+      if(a.paused && !userPaused && !document.hidden && scReviveAllowed()
+         && $('djModeBackdrop').style.display !== 'flex'
          && queueIndex >= 0 && queueIndex < queue.length){
+        scNoteRevive();
         const t = allTracks.find(tr => tr.id === queue[queueIndex]);
         if(t && t.file && (!t.url || a.error)){
           try{ URL.revokeObjectURL(t.url); }catch(e){}
@@ -22874,6 +22927,11 @@ function _fallbackCopy(text){
     // Say the truth before the revive: in the moment between now and audio actually
     // coming back, the session must not claim to be playing.
     try{ mediaSetPlaybackState('paused'); }catch(e){ }
+    // A revive is already in flight from the pause handler or the heartbeat:
+    // that IS this recovery, so report "nothing more to do" rather than
+    // starting a second restart on top of it.
+    if(!scReviveAllowed()) return true;
+    scNoteRevive();
     revivingAudio = true;
     let revived;
     try{ revived = recoverAudio(activeAudio(), 'background stall'); }catch(e){ }
@@ -30328,7 +30386,7 @@ if(!isDiscover) stopDiscoverPreview();
         genre: r.primaryGenreName || '', track: '', position: 0,
         seconds: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : 0
       };
-      window.__scCancelDl = false;
+      window.__scCancelDl = false; scConvertPillResetCancel();
       scConvertPillUpdate('Saving · ' + (r.trackName || 'song'), 'Finding the audio…', 15);
       var out = await scConvertOneTrack(meta, fmt, function(txt){ if(txt) scConvertPillUpdate('Saving · ' + (r.trackName || 'song'), txt); });
       if(!out || !out.ok){
@@ -30469,33 +30527,63 @@ if(!isDiscover) stopDiscoverPreview();
       var today = new Date().toISOString().slice(0, 10);
       var horizon = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
       // Lucene specials (quotes/backslashes) would 400 the whole query.
-      var q = 'artist:"' + String(artist).replace(/["\\]/g, ' ').trim() + '"';
-      q += ' AND firstreleasedate:[' + today + ' TO ' + horizon + ']';
-      var url = 'https://musicbrainz.org/ws/2/release-group/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
-      var rs = await fetchWithProxy(url, SC_RELEASE_FETCH);
-      if(!rs || !rs.ok) return [];
-      var md = await rs.json();
+      var who = String(artist).replace(/["\\]/g, ' ').trim();
       var want = primaryArtistName(artist).toLowerCase().trim();
-      var out = [];
-      ((md && md['release-groups']) || []).forEach(function(rg){
-        if(!rg || !rg.title) return;
-        // The range above can still hand back year/month-precision entries
-        // that merely overlap it — only a real day counts as a drop.
-        var d = window.__scDay10(rg['first-release-date']);
-        if(!d || !window.__scUpcomingDay(d)) return;
-        var pt = String(rg['primary-type'] || '');
-        if(pt && pt !== 'Album' && pt !== 'Single' && pt !== 'EP') return;
-        var credits = (rg['artist-credit'] || []).map(function(c){
-          return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
-        });
-        var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
-        if(!hit) return; // collabs count only when the pinned artist is credited
-        out.push({
-          title: rg.title, date: d, art: null,
-          url: 'https://musicbrainz.org/release-group/' + rg.id,
-          previewUrl: null, kind: 'album', cid: null, seen: false, _mb: rg.id
-        });
+      var out = [], seenMb = {};
+      // TWO endpoints, because they do not agree. release-group is the
+      // canonical album/EP/single; release is the concrete pressing, and an
+      // announced-but-not-yet-pressed drop often lives on exactly one of them.
+      // Each has its own date field and its own range field name.
+      var passes = [
+        { path: 'release-group', list: 'release-groups', typeKey: 'primary-type', dateKey: 'first-release-date', range: 'firstreleasedate' },
+        { path: 'release', list: 'releases', typeKey: null, dateKey: 'date', range: 'date' }
+      ];
+      // Both endpoints are asked AT THE SAME TIME. Each read is budgeted at
+      // 4s, so two sequential ones could spend the whole per-artist window
+      // (8s) on one artist; run together they cost one budget.
+      var _reads = passes.map(function(ps){
+        var q = 'artist:"' + who + '" AND ' + ps.range + ':[' + today + ' TO ' + horizon + ']';
+        var url = 'https://musicbrainz.org/ws/2/' + ps.path + '/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
+        return fetchWithProxy(url, SC_RELEASE_FETCH).then(function(rs){
+          return (rs && rs.ok) ? rs.json() : null;
+        }).catch(function(){ return null; });
       });
+      var _rp = await Promise.all(_reads);
+      // Process in pass order, so a release-group hit wins over the concrete
+      // release that merely mirrors it.
+      for(var pi = 0; pi < passes.length; pi++){
+        var ps = passes[pi];
+        var md = _rp[pi];
+        try{
+          ((md && md[ps.list]) || []).forEach(function(rg){
+            if(!rg || !rg.title) return;
+            // The range can still hand back year/month-precision entries that
+            // merely overlap it — only a real day counts as a drop.
+            var d = window.__scDay10(rg[ps.dateKey]);
+            if(!d || !window.__scUpcomingDay(d)) return;
+            // A release row carries no primary-type; classify only when there
+            // is one, so the concrete endpoint cannot smuggle in a compilation.
+            var pt = ps.typeKey ? String(rg[ps.typeKey] || '') : '';
+            if(pt && pt !== 'Album' && pt !== 'Single' && pt !== 'EP') return;
+            var credits = (rg['artist-credit'] || []).map(function(c){
+              return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
+            });
+            var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
+            if(!hit) return; // collabs count only when the pinned artist is credited
+            // One drop shows on both endpoints under different ids; the
+            // normalized title + day is what actually identifies it.
+            var key = String(rg.title).toLowerCase().replace(/\s+/g, ' ').trim() + '|' + d;
+            if(seenMb[key]) return;
+            seenMb[key] = true;
+            out.push({
+              title: rg.title, date: d, art: null,
+              url: 'https://musicbrainz.org/' + ps.path + '/' + rg.id,
+              previewUrl: null, kind: 'album', cid: null, seen: false, _mb: rg.id
+            });
+          });
+        }catch(_ePass){}
+      }
+      if(out.length > 1) out.sort(function(a, b){ return String(a.date).localeCompare(String(b.date)); });
       return out;
     }catch(_e){ return []; }
   }
@@ -30891,7 +30979,7 @@ if(!isDiscover) stopDiscoverPreview();
         '<div class="dp-yt-status" style="font-size:10px; color:var(--ink-dim); text-align:left;">⏳ Converting...</div></div></div>';
     }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
-    window.__scCancelDl = false;
+    window.__scCancelDl = false; scConvertPillResetCancel();
     scConvertPillUpdate('Converting · YouTube', 'Starting…', 15);
     // Update the status line live so the user can see the fallback move MP3 -> WAV.
     function setStatus(txt){
@@ -31178,7 +31266,7 @@ if(!isDiscover) stopDiscoverPreview();
     // Real track metadata (title + cover art) fetched from Spotify's oEmbed.
     var csMeta = { title: '', artist: '', album: '', thumb: '', year: '', genre: '', track: '', seconds: 0, _aiUsed: false };
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
-    window.__scCancelDl = false;
+    window.__scCancelDl = false; scConvertPillResetCancel();
     scConvertPillUpdate('Converting · Spotify', 'Fetching track info…', 15);
     function csMetaLine(){
       var parts = [];
@@ -32294,7 +32382,9 @@ if(!isDiscover) stopDiscoverPreview();
       if(p && typeof p.catch === 'function') p.catch(function(){});
     }catch(_ne){}
   }
-  var scConvertPillState = { el: null, timer: null, pct: 0 };
+  var scConvertPillState = { el: null, timer: null, pct: 0, cancelRequested: false };
+  // A new run clears the flag; the Cancel handler sets it and dismisses the pill.
+  function scConvertPillResetCancel(){ scConvertPillState.cancelRequested = false; }
   function scConvertPill(show){
     if(!show){
       var gone = scConvertPillState.el;
@@ -32324,11 +32414,25 @@ if(!isDiscover) stopDiscoverPreview();
       if(cSub) cSub.textContent = 'Stopping — what already finished stays in your library';
       window.__scNotifyAt = 0;
       scNotifyProgress('SideCut', 'Cancelling — what already finished stays in your library', scConvertPillState.pct || 0, false);
+      // The run cannot always report back — a download or an encode in flight
+      // may be wedged, and that is exactly when the bubble used to stay on
+      // screen forever. Dismiss it ourselves on a short grace window so the
+      // Cancel button always means "gone", whatever the job is doing.
+      scConvertPillState.cancelRequested = true;
+      if(scConvertPillState.timer){ clearTimeout(scConvertPillState.timer); }
+      scConvertPillState.timer = setTimeout(function(){
+        if(!scConvertPillState.cancelRequested) return;
+        scConvertPillState.cancelRequested = false;
+        scConvertPill(false);
+      }, 1500);
     });
     scConvertPillState.el = pill;
     return pill;
   }
   function scConvertPillUpdate(title, sub, pct){
+    // The user cancelled: the pill is on its way out and no status line from
+    // the cancelled run may bring it back.
+    if(scConvertPillState.cancelRequested) return;
     var pill = scConvertPill(true);
     if(!pill) return;
     // A reused pill may still carry a previous run's done-state: drop the
@@ -32438,7 +32542,7 @@ if(!isDiscover) stopDiscoverPreview();
   async function scRunBatchConvert(plan, fmt, saveMode, resultEl, btnEl, originalUrl, chosenTracks){
     var tracks = (chosenTracks && chosenTracks.length) ? chosenTracks.slice() : ((plan && plan.tracks) || []);
     if(!tracks.length) return false;
-    window.__scCancelDl = false;
+    window.__scCancelDl = false; scConvertPillResetCancel();
     var alsoSaveFiles = (saveMode === 'files');
     var wantZip = (saveMode === 'zip');
     if(wantZip && typeof JSZip === 'undefined'){ toast('ZIP builder not loaded — the songs still go to your library.', 3000); wantZip = false; }
@@ -32644,7 +32748,10 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(e){}
     return null;
   }
-  async function scHttpJson(url, bodyObj){
+  // ytClient (optional) is the Innertube client the request BODY declares, so
+  // the headers can name the same one. Passed in rather than kept in a closure
+  // so the transport stays a plain function of its arguments.
+  async function scHttpJson(url, bodyObj, ytClient){
     // Every search, player call and licensed-catalog read in this app rides on
     // this one transport, and it used to give up after a single native attempt
     // that accepted only status 200. One transient 429, one read timeout on a
@@ -32666,8 +32773,16 @@ if(!isDiscover) stopDiscoverPreview();
       nativeHeaders['User-Agent'] = 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Mobile Safari/537.36';
       nativeHeaders['Origin'] = 'https://www.youtube.com';
       nativeHeaders['Referer'] = 'https://www.youtube.com/';
-      nativeHeaders['X-Youtube-Client-Name'] = '1';
-      nativeHeaders['X-Youtube-Client-Version'] = '2.20240801.00.00';
+      // These two MUST name the client the request body declares. They were
+      // pinned to the web client (1 / the WEB version) whatever the body said,
+      // so an ANDROID or IOS player call arrived wearing web headers —
+      // a mismatch YouTube reads as "not the app you claim to be" and answers
+      // by handing back no usable stream. The player passes its client in; the
+      // search passes none and keeps the web defaults it actually is.
+      var _yc = ytClient || null;
+      nativeHeaders['X-Youtube-Client-Name'] = String((_yc && _yc.name) || 1);
+      nativeHeaders['X-Youtube-Client-Version'] = (_yc && _yc.version) || '2.20240801.00.00';
+      if(_yc && _yc.ua) nativeHeaders['User-Agent'] = _yc.ua;
     }
     var Http = __scCapHttp();
     if(Http && typeof Http.request === 'function'){
@@ -33000,13 +33115,22 @@ if(!isDiscover) stopDiscoverPreview();
   }
   async function scYtPlayer(videoId){
     if(SC_IS_PLAY) return scLegalPlayer(videoId);
+    // `num` and `ua` are the matching X-Youtube-Client-Name value and the
+    // User-Agent that client really sends; the header block reads them so the
+    // request never claims a different client than the body. `num` is the
+    // long-standing public id for each client (WEB 1, ANDROID 3, IOS 5,
+    // ANDROID_VR 28, WEB_EMBEDDED_PLAYER 56, TVHTML5 7, Android's `VR`/
+    // embedded variants 28/85).
+    var UA_ANDROID = 'com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip';
+    var UA_IOS = 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 18_0 like Mac OS X)';
+    var UA_WEB = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
     var clients = [
-      { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 } },
-      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' } },
-      { client: { clientName: 'ANDROID_VR', clientVersion: '1.60.19', androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3', osName: 'Android', osVersion: '12' } },
-      { client: { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }, third: 'https://www.youtube.com/' },
-      { client: { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' }, third: 'https://www.youtube.com/' },
-      { client: { clientName: 'MWEB', clientVersion: '2.20250220.00.00' }, third: 'https://www.youtube.com/' }
+      { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 }, num: 3, ua: UA_ANDROID },
+      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' }, num: 5, ua: UA_IOS },
+      { client: { clientName: 'ANDROID_VR', clientVersion: '1.60.19', androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3', osName: 'Android', osVersion: '12' }, num: 28, ua: UA_ANDROID },
+      { client: { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }, num: 85, ua: UA_WEB, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' }, num: 56, ua: UA_WEB, third: 'https://www.youtube.com/' },
+      { client: { clientName: 'MWEB', clientVersion: '2.20250220.00.00' }, num: 2, ua: UA_ANDROID, third: 'https://www.youtube.com/' }
     ];
 
     // Decrypt signatureCipher URLs when a client only hands one over.
@@ -33072,7 +33196,9 @@ if(!isDiscover) stopDiscoverPreview();
       try{
         var ctx = { client: clients[c].client };
         if(clients[c].third) ctx.thirdParty = { embedUrl: clients[c].third };
-        var d = await scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true });
+        // Hand the transport the client this body declares, so the headers agree
+        // with it instead of always claiming to be the web player.
+        var d = await scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true }, { name: clients[c].num, version: clients[c].client.clientVersion, ua: clients[c].ua });
         if(!d || !d.streamingData) continue;
         answered++;
         var vd = d.videoDetails || {};
