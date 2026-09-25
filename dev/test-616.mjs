@@ -1,6 +1,11 @@
 // v61.6 — the song lookup that reported "nothing", the freeze when saving a song
 // from a video link, and the Mark-all button that sat under the whole list.
 //
+// These are the 61.6 assertions, so the release metadata is read from the 61.6
+// ENTRY rather than from the head of the changelog: 61.7 (and everything after
+// it) heads the list now, exactly as this release stopped heading it when it
+// shipped.
+//
 // Every check runs against the SHIPPED source in index.html. The three code
 // fixes are asserted in the shape they ship in (the client list, the stream
 // gatherer's limit, the cooperative encoder call site), not against a copy, and
@@ -28,14 +33,16 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.6', 'APP_VERSION = ' + ver);
+ok(ver === '61.8', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
 ok(!!entries && entries[0].version === ver, 'newest changelog (' + (entries && entries[0].version) + ') matches APP_VERSION');
 if (entries) {
+  const rel = entries.find((e) => String(e.version) === '61.6');
+  ok(!!rel, 'the 61.6 entry is still in the changelog');
   ok(entries[0].items.length >= 6, 'patch notes: ' + entries[0].items.length);
-  const headText = entries[0].items.join(' ');
+  const headText = (rel ? rel.items : []).join(' ');
   ok(/Mark all as read/.test(headText), 'the notes mention where mark-all lives now');
   ok(!/play build|play version|play install/i.test(headText), 'notes never name the play build');
 }

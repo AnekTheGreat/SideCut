@@ -33,12 +33,12 @@ console.log('[1] the file parses — every inline script block');
     try { new Function(m[1]); } catch (e) { bad++; console.log('       ' + e.message); }
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');  ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '61\.6'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(/const CHANGELOG = \[\n  \{ version: '61\.8'/.test(src), 'the newest entry sits inside CHANGELOG');
 }
 
 console.log('[2] add-drop sheet: no example, no +7 days');
 ok(src.includes('placeholder="Release title"'), 'the title placeholder is just "Release title"');
-ok(!src.includes('AUJLA SZN 1'), 'no example release name anywhere');
+ok((function(){ var _s = slice('window.__scAddUpcomingDrop = function', '// iTunes publishes an announced release as a pre-order'); return !!_s && !/AUJLA|SZN|e\.g\.|Example/i.test(_s); })(), 'no example release name in the add-drop sheet (the notes may name a real one)');
 ok(src.includes('id="scAddDropTitle" placeholder="Release title"'), 'the field itself carries it');
 ok(!src.includes('tEl.setDate(tEl.getDate() + 7)'), 'the sheet opens on today, not next week');
 
@@ -94,8 +94,8 @@ ok(src.includes('if(!pe.time && x.time) pe.time = x.time;'), 'and an undated dro
 console.log('[6] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const sw = fs.readFileSync('sw.js', 'utf8');
-ok(ver === '61.6', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.6';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(ver === '61.8', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.8';"), 'sw.js cache = sidecut-shell-v61.5');
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.6'"), '61.5 heads the changelog');
 
 console.log('');

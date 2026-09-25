@@ -53,10 +53,10 @@ console.log('[1] the file parses — every inline script block');
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
   ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '61\.6'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(/const CHANGELOG = \[\n  \{ version: '61\.8'/.test(src), 'the newest entry sits inside CHANGELOG');
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '61.6', 'APP_VERSION = ' + ver);
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.6';"), 'sw.js cache = sidecut-shell-v61.5');
+  ok(ver === '61.8', 'APP_VERSION = ' + ver);
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.8';"), 'sw.js cache = sidecut-shell-v61.5');
   ok(src.indexOf(`version: '61.5'`) < src.indexOf(`version: '${PREV}'`), '61.5 heads the changelog');
 }
 
@@ -106,7 +106,7 @@ console.log('[4] the empty state explains itself and offers the manual way out')
 {
   ok(count('id="lyricsNotFoundWhy"') === 1, 'the explanation line exists');
   ok(count("document.getElementById('lyricsNotFoundWhy')") === 2, 'it is cleared per song and filled on a miss');
-  ok(src.includes("why.style.display = scLyricsStrangers ? 'block' : 'none';"), 'it shows only when something was skipped');
+  ok(src.includes("why.style.display = _whyLines.length ? 'block' : 'none';"), 'it shows whenever there is something to say');
   ok(src.includes("' same-titled song' + (scLyricsStrangers === 1 ? '' : 's') +"), 'it counts what it skipped');
   ok(src.includes("' under a different artist \\u2014 skipped, not served as this track\\'s.'"), 'and says they were not served');
   ok(src.includes("var mBtnNF = $('lyricsManualBtn');") && src.includes("mBtnNF.style.display = '';"),

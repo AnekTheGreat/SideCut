@@ -1,5 +1,81 @@
 # SideCut — repository memory
 
+## v61.8 (Sep 25, 2026): a co-credited song is found on the artist's own channel again
+- **The user's report, in their words**: "Tried on 2 different albums and came back no matching source fix this" /
+  "I tried 2 different albums and both of them have no source found". Both lines are the SONG LOOKUP (the converter rows), not
+  lyrics: `'no matching source'` and the search-empty `'no source found'` live only in the downloader (`window.__scSourceFail`).
+- **Measured first, and the harness also named the albums**: `dev/_probe_convert.mjs` was the previous session's temporary
+  diagnostic — it lifts the shipped search + verify pipeline out of index.html and drives it against the LIVE network. Run on
+  the two albums it names (BK's **Gangstas Paradise** and **MIXED FEELINGS**), it reproduced the report exactly:
+  Mob Ties (Intro)/BK → FOUND · In God We Trust/BK → FOUND · LIFESTYLE/BK → FOUND ·
+  **Scarface / "BK, Arsh Heer" → null "no matching source"** · **IN THE STREETS / "BK, Jay 1" → null "no matching source"**.
+  The split is the signal: the two that failed are exactly the tracks with a MULTI-ARTIST credit.
+- **Root cause, in `scArtistMatch`**: each credited artist is judged on its own (that was v60.1's fix), but a credit's word list
+  is built with `filter(w => w.length > 2 && ...)` as the stop-word rule — so a **two-letter artist name is dropped entirely**,
+  the credit hits `continue`, and only the LONG half of "BK, Arsh Heer" could ever match. A second temporary probe
+  (`dev/_probe_bk.mjs`, dumped every candidate with its real channel + the verdicts) proved the rest of the pipeline was fine:
+  for Scarface the CORRECT upload (title "Scarface", channel "BK", author "BK - Topic", 144 s = the track's own length) is
+  returned by the search, passes `scTitleMatch`, passes the length gate, and is refused **by the artist check alone**.
+  The solo-"BK" tracks passed for the opposite reason: with no word left to judge on, `tried === 0` returns true and the whole
+  artist check is skipped.
+- **The fix**: a credit whose every word is short may **CONFIRM** a source but never **REJECT** one. A short-only credit is
+  matched word-for-word (never as a substring — two letters would also hit inside unrelated words), and when it does not match it
+  counts for nothing: `tried` is untouched, so a solo short name keeps the old "nothing to judge on" answer. **The change can
+  only ever turn a refusal into an acceptance, never the other way round** — that is the entire safety argument, and it is why no
+  path that already worked can start failing. It confirms on the real uploader name only (see the dead gate below).
+- **Verified with the shipped code, not a copy**: `dev/test-618.mjs` (30 assertions) extracts `scArtistMatch` from index.html by
+  brace matching and drives the live-reported shapes. Re-running the live probe against the patched file: all five tracks
+  resolve, the two failures to their CORRECT uploads, and the three that already worked to the same uploads as before.
+- **Found on the way, deliberately NOT fixed**: the `topic` gate in `scArtistMatch` is **DEAD CODE**. `topic` is computed from
+  the NORMALIZED owner/author and `norm()` strips every non-alphanumeric, so the literal `"- topic"` suffix `/- topic$/` looks
+  for can never survive (`"BK - Topic"` normalizes to `"bk topic"`). Both `topic && hasArtist(...)` lines — and the `topic &&`
+  clause the first draft of this fix leaned on — have therefore never run on any build. Switching it on would widen what counts
+  as the artist, which is a change of its own with its own measurement, so it is pinned as unreachable in test-618 [2d] and
+  noted in the source rather than turned on in the middle of this fix.
+- **Mechanics**: `dev/patch-618.mjs` (idempotent, count==1 needles, one atomic write at the end; it also carries a `subOpt`
+  migration so the intermediate wording its own first draft wrote is brought to the final one), `dev/test-618.mjs` (30
+  assertions), then `dev/ota-bundle.mjs` + `dev/ota-bundle-play.mjs` and `node dev/patch-618.mjs --manifest` in that order (the
+  manifest re-seed reads `ota/updates.json`). Repins: `ver === '61.7'` in 15 test files, the `sidecut-shell-v61.7` pins, the
+  `61\.7` changelog-head regex pins, test-6052's ship-date pin, and **test-617's head-entry wording pin** — which had to start
+  reading its OWN 61.7 entry instead of the head, the exact repin 61.7 gave to 61.6.
+- **The honest ceiling**: this fixes a co-credited song whose source sits on the shorter-named artist. It cannot make a source
+  carry a song it does not have. "No source found" (the search itself answering with nothing) is a different failure line and
+  was not what these two albums hit; if it is ever reported, probe the search response before touching the verify stage.
+
+## v61.7 (Sep 25, 2026): lyrics for a song that has only just come out
+- **The user's report**: "The lyrics for new songs aren't fetching well they are but not showing like Aujla szn 1
+  EP just came out but I can't get lyrics for them." The EP is Karan Aujla's AUJLA SZN 1, released that day.
+- **Measured first, and it mattered**: lrclib.net had NO entry for any of its five tracks on release day
+  (`search?q=Karan Aujla Ashke` → [], `search?track_name=Rap Killa` → [], `search?q=aujla szn 1` → [],
+  `api/get?artist_name=Karan Aujla&track_name=Ashke` → 404) — while `search?track_name=Ashke` returned 20 OTHER
+  artists' Ashke songs. So no matcher could have found them, and "the lookup is broken" was the wrong diagnosis.
+  Also measured: **lrclib.net answered 503 `ServerOverloaded` twice in a row** (release-day load), and BOTH
+  Genius-derived fallbacks are dead as shipped — `some-random-api.com/lyrics` → 403 `{"error":"key required"}`,
+  `lyrist.vercel.app/api/...` → 429 for every anonymous call. The live list is lrclib + lyrics.ovh (old catalog).
+  Musixmatch needs a token, Deezer removed its lyrics endpoint, Genius blocks non-browser clients (403 here).
+- **Two real defects came out of that**: (1) one 1.3 s retry turned a BUSY source into "no lyrics found"; (2) nothing
+  ever looked again at a song that came back empty — the sheet only re-looks-up when the user opens it.
+- **The fix**: a busy answer is retried off a growing wait table (700 / 1600 / 3000 ms, still inside the 12 s
+  lookup deadline) and the failure reason is remembered, so the empty state says "the database was busy" or
+  "could not reach it" instead of pretending nothing exists; a real answer clears a stale busy note. A song added
+  in the last fortnight also gets told that a brand-new release reaches the databases a day or two later.
+  Then `scLyricsRecheckRun()` re-checks lyric-less songs in the background — at most 5 per pass, at most once per
+  song every 6 h, never-checked first, ~1.2 s apart, run 20 s after boot and 45 s after an import — so the words
+  appear on their own. It never touches a song with lyrics already saved, and **never one whose words were typed
+  by hand (those live in the song's notes)**; it stamps `lyricsCheckedAt` (persisted with the track record) on hits
+  and misses alike, which is what holds the whole library to one question per 6 h.
+- **Mechanics**: `dev/patch-617.mjs` (15 index.html edits, idempotent, count-asserted, one atomic write),
+  `dev/test-617.mjs` (66 assertions — and it RUNS the shipped code: `scLyricsJson` and `scLyricsRecheckRun` are
+  lifted out of index.html by brace matching and driven with a fake network / fake library). Two old assertions
+  were repinned rather than deleted: test-6137's "no example release name anywhere" is now scoped to the add-drop
+  sheet's own builder (the notes may name a real release), and test-6138's `why.style.display = scLyricsStrangers ?`
+  became "show whenever there is something to say". Bundles rebuilt via `dev/ota-bundle.mjs` +
+  `dev/ota-bundle-play.mjs` then `node dev/patch-617.mjs --manifest`.
+- **For the next person**: the honest ceiling is the source. A release-day song is not in LRCLIB and the app cannot
+  conjure it; what it can do is keep asking and say why. If a NEW provider is ever added here, it has to be probed
+  live from a phone-shaped request first — all three "Genius-derived" fallbacks this file already carries are dead,
+  and two of them fail fast enough that nobody noticed.
+
 ## v61.6 (Sep 25, 2026): the lookup stops asking dead sources, saving a video stops freezing, mark-all moves up
 - **The user's report, in their words**: "no source found" on older EPs/albums, and "whenever I try to convert
   YouTube to mp3 the app freezes and nothing works". Two different failures, same file (`dev/patch-616.mjs`).

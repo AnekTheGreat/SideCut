@@ -8833,6 +8833,16 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
   }
   window.__scFetchWithTimeout = scFetchWithTimeout;
+  // The one live source can be BUSY, and busy is not the same answer as
+  // "nothing is filed under this song". Measured on release day (Sep 25, 2026,
+  // while the new AUJLA SZN 1 EP was being checked): lrclib.net answered 503
+  // "ServerOverloaded" twice in a row. One 1.3 s retry then turned that into
+  // "no lyrics found", which reads as a broken lookup. A busy answer is retried
+  // with growing waits (still inside the same 12 s lookup deadline), and the
+  // reason this lookup came back empty is remembered so the sheet can say which
+  // of the two happened.
+  var SC_LYRICS_RETRY_WAITS = [700, 1600, 3000];
+  var scLyricsFailReason = '';   // '' | 'busy' | 'offline' | 'unreachable'
   function scLyricsJson(url){
     if(scLyricsOutOfTime()) return Promise.resolve({ __status: -1 });
     function once(){
@@ -8841,13 +8851,27 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         return { __status: r.status };
       }).catch(function(){ return { __status: 0 }; });
     }
-    return once().then(function(j){
-      var st = j && j.__status;
-      if(st === 429 || st === 502 || st === 503){
-        return new Promise(function(res){ setTimeout(res, 1300); }).then(once);
-      }
-      return j;
-    });
+    function attempt(tryIdx){
+      return once().then(function(j){
+        var st = j && j.__status;
+        if(st === undefined){
+          // A real answer arrived. Whatever went wrong before, the source is
+          // answering now, so an earlier busy/unreachable note is stale and
+          // must not colour the empty state.
+          if(scLyricsFailReason === 'busy' || scLyricsFailReason === 'unreachable') scLyricsFailReason = '';
+          return j;
+        }
+        var retryable = (st === 429 || st === 502 || st === 503 || st === 0);
+        if(st === 429 || st === 502 || st === 503) scLyricsFailReason = 'busy';
+        else if(st === 0 && !scLyricsFailReason){
+          scLyricsFailReason = (typeof navigator !== 'undefined' && navigator.onLine === false) ? 'offline' : 'unreachable';
+        }
+        var wait = retryable ? SC_LYRICS_RETRY_WAITS[tryIdx] : undefined;
+        if(wait === undefined || scLyricsOutOfTime()) return j;
+        return new Promise(function(res){ setTimeout(res, wait); }).then(function(){ return attempt(tryIdx + 1); });
+      });
+    }
+    return attempt(0);
   }
   // Title has to line up; then a recognisable artist OR a tight length match has to
   // confirm it. A loose title match with an unconfirmed length is refused — that is
@@ -8922,6 +8946,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   }
   async function scLookupLyrics(artistRaw, titleRaw, duration){
     scLyricsDeadline = Date.now() + 12000;
+    scLyricsFailReason = '';                          // ask again from a clean slate
     try{
       return await scLookupLyricsInner(artistRaw, titleRaw, duration);
     }finally{
@@ -9068,6 +9093,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // a wrong credit guess or an unusual title can be overridden by hand.
   async function scListLyricsCandidates(artistRaw, titleRaw, duration){
     scLyricsDeadline = Date.now() + 12000;
+    scLyricsFailReason = '';                          // ask again from a clean slate
     scLyricsStrangers = 0;                            // a manual search explains itself
     var artist = applyWatermarkPatterns(artistRaw || '', true);
     var title = applyWatermarkPatterns(titleRaw || '', false);
@@ -9108,6 +9134,77 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return out;
   }
   window.__scLookupLyrics = scLookupLyrics;
+
+  // ---- Lyrics for a song that has only just come out -------------------------
+  // The databases SideCut can read are community-run and they trail a release:
+  // on the day Karan Aujla's AUJLA SZN 1 dropped, lrclib.net had no entry for any
+  // of its five tracks (measured), so no matcher could have found them. That part
+  // is not something the app can fix. What it CAN fix is that nothing ever looked
+  // again — a song that came back empty stayed empty until the sheet happened to
+  // be opened after the community finally filed the words.
+  //
+  // This pass quietly re-checks the songs that are still waiting: a few per app
+  // open, and at most once every SC_LYRICS_RECHECK_MS for any one song. A song
+  // with lyrics already saved is never re-asked, and neither is one whose words
+  // were typed in by hand — those live in the song's notes, and a background pass
+  // must never overwrite what the user wrote.
+  var SC_LYRICS_RECHECK_MS = 6 * 60 * 60 * 1000;   // re-ask about one song at most every 6 h
+  var SC_LYRICS_RECHECK_MAX = 5;                   // per pass: a big library must not storm the API
+  var scLyricsRecheckRunning = false;
+  async function scLyricsRecheckRun(){
+    if(scLyricsRecheckRunning) return 0;
+    if(typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
+    if(typeof document !== 'undefined' && document.visibilityState === 'hidden') return 0;
+    if(window.lyricsFetchState && window.lyricsFetchState.active) return 0;   // the manual batch owns it
+    var now = Date.now();
+    var due = allTracks.filter(function(t){
+      if(!t || t.lyrics) return false;
+      if(!t.name || t.name === 'Untitled') return false;
+      if(t.notes && String(t.notes).trim()) return false;                 // hand-typed lyrics
+      if(!t.artist || t.artist === 'Unknown artist') return false;
+      return !t.lyricsCheckedAt || (now - Number(t.lyricsCheckedAt)) >= SC_LYRICS_RECHECK_MS;
+    });
+    if(!due.length) return 0;
+    // Never-checked first (that is a song that has just arrived), then whichever
+    // has been waiting longest — so the whole library cycles instead of the same
+    // five songs being asked about at every launch.
+    due.sort(function(a, b){ return (Number(a.lyricsCheckedAt) || 0) - (Number(b.lyricsCheckedAt) || 0); });
+    due = due.slice(0, SC_LYRICS_RECHECK_MAX);
+    scLyricsRecheckRunning = true;
+    var added = 0;
+    try{
+      for(var i = 0; i < due.length; i++){
+        if(typeof navigator !== 'undefined' && navigator.onLine === false) break;
+        var t = due[i];
+        var found = null;
+        try{
+          var _artist = (t.artist.indexOf(',') !== -1) ? (scPrimaryArtist(t.artist) || t.artist) : t.artist;
+          found = await scLookupLyrics(applyWatermarkPatterns(_artist, true), applyWatermarkPatterns(t.name || '', false), t.duration);
+        }catch(_eRecheck){ found = null; }
+        if(found && found.lyrics){
+          t.lyrics = found.lyrics;
+          t.lyricsSynced = found.isSynced;
+          t.lyricsCheckedAt = Date.now();
+          try{ await persistTrackMeta(t); }catch(_eRecheckSave){}
+          added++;
+        }else{
+          // Stamped on a miss as well — that is what stops the next launch from
+          // asking about the same song again straight away.
+          t.lyricsCheckedAt = Date.now();
+          try{ await persistTrackMeta(t); }catch(_eRecheckMiss){}
+        }
+        await new Promise(function(r){ setTimeout(r, 1200); });
+      }
+    }finally{
+      scLyricsRecheckRunning = false;
+    }
+    if(added){
+      try{ toast('Lyrics found for ' + added + ' newer song' + (added === 1 ? '' : 's')); }catch(_eToast){}
+      try{ refreshEnrichNotif(); }catch(_eNotif){}
+    }
+    return added;
+  }
+  window.__scLyricsRecheckRun = scLyricsRecheckRun;
 
   function getSearchVariants(artist, title) {
     var variants = [];
@@ -9189,20 +9286,34 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(_found){
         track.lyrics = _found.lyrics;
         track.lyricsSynced = _found.isSynced;
+        track.lyricsCheckedAt = Date.now();   // asked and answered
         persistTrackMeta(track);
         showLyrics(_found.lyrics, _found.isSynced);
         return;
       }
-      scLyricsSayNotFound(cleanArtist, cleanTitle);
+      // Remember that this song was asked about and had nothing: the background
+      // re-check reads this stamp so it never re-asks on every launch. The song
+      // the user just looked at is not the one to spend a request on.
+      track.lyricsCheckedAt = Date.now();
+      try{ persistTrackMeta(track); }catch(_eMissStamp){}
+      scLyricsSayNotFound(cleanArtist, cleanTitle, track);
     } catch(e) {
       console.error('Lyrics fetch error:', e);
-      scLyricsSayNotFound(cleanArtist, cleanTitle);
+      scLyricsSayNotFound(cleanArtist, cleanTitle, track);
     }
   }
   
   // Say what was actually looked for, so a wrong artist tag is obvious rather than
   // a mystery, and never leave the sheet sitting on a spinner.
-  function scLyricsSayNotFound(artist, title){
+  //
+  // `track` is passed in so a song added this week can be told apart from one that
+  // has been in the library for months. A brand-new release is missing from every
+  // readable lyrics database for a day or two — measured for the AUJLA SZN 1 EP on
+  // its release day: lrclib.net had no entry for any of its five tracks — and that
+  // is the most common reason a new song comes back empty. Saying so, and that the
+  // background pass keeps looking, is the difference between "no lyrics" and "not
+  // yet".
+  function scLyricsSayNotFound(artist, title, track){
     try{
       var loading = $('lyricsLoading');
       if(loading) loading.style.display = 'none';
@@ -9214,11 +9325,26 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       try{
         var why = document.getElementById('lyricsNotFoundWhy');
         if(why){
-          why.style.display = scLyricsStrangers ? 'block' : 'none';
-          why.textContent = scLyricsStrangers
-            ? ('Found ' + scLyricsStrangers + ' same-titled song' + (scLyricsStrangers === 1 ? '' : 's') +
-               ' under a different artist \u2014 skipped, not served as this track\'s.')
-            : '';
+          var _whyLines = [];
+          if(scLyricsFailReason === 'busy'){
+            _whyLines.push('The lyrics database was busy when SideCut asked \u2014 that happens on a big release day. Tap \u21bb Refetch to try again in a moment.');
+          }else if(scLyricsFailReason === 'offline' || scLyricsFailReason === 'unreachable'){
+            _whyLines.push('SideCut could not reach the lyrics database \u2014 check the connection, then tap \u21bb Refetch to try again.');
+          }
+          if(scLyricsStrangers){
+            _whyLines.push('Found ' + scLyricsStrangers + ' same-titled song' + (scLyricsStrangers === 1 ? '' : 's') +
+               ' under a different artist \u2014 skipped, not served as this track\'s.');
+          }
+          // Added in the last fortnight is a reasonable stand-in for "this song
+          // came out in the last fortnight": that is when a release is still
+          // missing from the community databases.
+          var _addedDays = (track && Number(track.dateAdded)) ? Math.floor((Date.now() - Number(track.dateAdded)) / 86400000) : -1;
+          if(_addedDays >= 0 && _addedDays <= 14 && !scLyricsFailReason){
+            _whyLines.push('Added ' + (_addedDays === 0 ? 'today' : _addedDays + ' day' + (_addedDays === 1 ? '' : 's') + ' ago') +
+              ' — a brand-new release usually reaches the lyrics databases a day or two later, and SideCut keeps checking by itself.');
+          }
+          why.style.display = _whyLines.length ? 'block' : 'none';
+          why.textContent = _whyLines.join(' ');
         }
       }catch(_eWhy){}
       // Manual lyrics are the way out for a song no database has, so the button
@@ -10786,7 +10912,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.6';
+  const APP_VERSION = '61.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11201,6 +11327,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.8', date: 'September 25, 2026 · 4:15 PM EDT', title: 'A song credited to two artists is saved again, even when the right upload sits on the artist with the shorter name', items: [
+    'A track credited to two artists could come back with nothing even when the right source had been found: the check that decides whether a source really belongs to the artist skipped every name of two letters or fewer, so the "BK" half of a credit like "BK, Arsh Heer" was never looked at at all. On Gangstas Paradise, where the correct upload sits on BK\'s own channel, every co-credited track ended in "no matching source" while the solo tracks went through.',
+    'The rule is unchanged bar one correction: a name that short cannot be allowed to REFUSE a source — an upload on a label channel that never prints the artist\'s name would be thrown away — but it must be able to ACCEPT one. A short-only credit is matched word for word now, so it can only ever let a source through, never turn one down.',
+    'Nothing else was loosened. A longer credit is judged exactly as before, a source that belongs to none of the credited artists is still refused, and a solo short name like "BK" with nothing to compare it against still passes — so no track that already worked can start failing.',
+    'A short name is only ever matched as a whole word, never inside a longer one, so a channel that merely has those two letters buried in its name cannot pass itself off as the artist.',
+    'The checks that decide which audio may be used are untouched: the title still has to line up, the source still has to run to the same length as the track, and nothing is saved under a track\'s own tags unless both of them agree.',
+    'Nothing else moved — playback, playlists, lyrics, covers, the drop check, the exports and the search behave exactly as they did.',
+  ] },
+  { version: '61.7', date: 'September 25, 2026 · 2:50 PM EDT', title: 'Lyrics for a just-released song keep looking, and a busy lyrics database is no longer reported as no lyrics', items: [
+    'A brand-new release is missing from the lyrics databases for a day or two — they are community-run and file a song after it comes out, not with it. On the day the AUJLA SZN 1 EP dropped, none of its five tracks had a single entry anywhere SideCut can read, so no matcher could have found them. What was actually wrong is that nothing ever asked again: a song that came back empty stayed empty until the lyrics sheet was opened by hand and caught up. SideCut now quietly re-checks the songs that are still waiting, a few at a time and hours apart, so the words turn up on their own.',
+    'A song whose words you typed in yourself is never touched by that pass, and a song that already has lyrics saved is never asked about again.',
+    'The lyrics database can be busy on a release day: it answered overloaded repeatedly while the new EP was being checked, and one quick retry was not enough to tell that apart from nothing being filed under the song. A busy answer is retried with growing waits now, and when it still will not answer the sheet says the database was busy instead of reporting no lyrics.',
+    'The empty state says which of those happened, and for a song added in the last two weeks it adds that a brand-new release usually reaches the lyrics databases a day or two later and that SideCut keeps checking by itself.',
+    'The rules for what counts as a match are untouched: the title still has to line up, a same-titled track by a different artist is still refused and still named in the empty state, and no lyrics are ever guessed at.',
+    'Nothing else moved — playback, playlists, covers, the drop check, the exports and the search behave exactly as they did.',
+  ] },
   { version: '61.6', date: 'September 25, 2026 · 2:27 PM EDT', title: 'The song lookup stops waiting on dead sources, and saving a video no longer freezes the app', items: [
     'The song lookup used to hang for a long while and then report that it came back with nothing: most of the sources it was willing to ask had already been retired, and each one cost a full connection wait before it was given up on. It asks only the two that still answer now, so a lookup settles in a couple of seconds.',
     'A lookup that came back empty had nothing behind it: only one audio variant was being kept per source, and that variant is the one the service cuts off partway through a music upload, so there was no second option to try. Several variants are kept from each source now, so a cut-off or refused one is walked past instead of ending the whole attempt.',
@@ -14962,6 +15104,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       releaseDate: t.releaseDate || null,
       notes: t.notes || '',
       lyrics: t.lyrics || null, lyricsSynced: t.lyricsSynced || false,
+      // When the lyrics databases were last asked about this song and had
+      // nothing (see scLyricsRecheckRun). Persisted so a restart does not
+      // re-ask about every lyric-less song at once.
+      lyricsCheckedAt: t.lyricsCheckedAt || null,
       manualOverride: t.manualOverride || false,
       cropped: t.cropped || false,
       originalDuration: t.originalDuration || null,
@@ -15113,6 +15259,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
             
             lyrics: r.lyrics || null,
             lyricsSynced: r.lyricsSynced || false,
+            lyricsCheckedAt: r.lyricsCheckedAt || null,
             
             // Track if user manually edited the name/artist - watermark won't override
             manualOverride: r.manualOverride || false,
@@ -15799,6 +15946,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // Kick off lazy duration/tag reads for the new tracks regardless.
         added.forEach(t => readLazyMeta(t));
         setTimeout(() => { runAutoEnrich(); }, 4000);
+      // Fresh files are exactly the ones with no lyrics yet: ask about them once
+      // the local tag reads have settled, and again on later launches.
+      setTimeout(() => { try{ scLyricsRecheckRun(); }catch(e){} }, 45000);
         return;
       }
       let msg = `Added ${added.length} track${added.length>1?'s':''} to your library`;
@@ -15814,6 +15964,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // Once local tag extraction has had a moment to fill in what it can,
       // look up covers/metadata for anything still missing them.
       setTimeout(() => { runAutoEnrich(); }, 4000);
+      // Fresh files are exactly the ones with no lyrics yet: ask about them once
+      // the local tag reads have settled, and again on later launches.
+      setTimeout(() => { try{ scLyricsRecheckRun(); }catch(e){} }, 45000);
     } else if(skippedDup && !skippedType){
       toast(`All ${skippedDup} file${skippedDup>1?'s were':' was'} already in your library`);
     } else if(skippedType && !skippedDup){
@@ -25878,6 +26031,10 @@ function _fallbackCopy(text){
       try{ await loadEnrichState(); }catch(e){ console.error('loadEnrichState failed', e); }
       try{ await loadPinnedArtists(); }catch(e){ console.error('loadPinnedArtists failed', e); }
       if(loaded) setTimeout(() => { runAutoEnrich(); }, 2500);
+      // A song added the day it came out is the one the databases are still
+      // catching up on, so the lyrics re-check runs on every launch, well clear
+      // of the first paint and never while the manual batch is running.
+      if(loaded) setTimeout(() => { try{ scLyricsRecheckRun(); }catch(e){ console.error('lyrics re-check failed', e); } }, 20000);
       if(window.__scMarkDone) __scMarkDone();
     }catch(e){
       console.error('Auto-load failed', e);
@@ -33872,8 +34029,53 @@ if(!isDiscover) stopDiscoverPreview();
     for(var ci = 0; ci < credits.length; ci++){
       var credit = credits[ci];
       if(!credit) continue;
+      // A credit whose every word is short — the "BK" in "BK, Arsh Heer" — was
+      // dropped right here by the >2-char stop-word rule, so only the LONG half
+      // of the credit could ever match. An artist's own channel and their
+      // "- Topic" auto-channel are exactly where an album's uploads live, so a
+      // co-credited track whose source sits on the short-named artist could
+      // never verify. Measured live (Sep 25, 2026) on BK's "Gangstas Paradise"
+      // and "MIXED FEELINGS": the correct upload (channel "BK", author
+      // "BK - Topic", the track's own title, the track's own length) was
+      // refused by this check alone, which is the whole of "no matching source".
+      //
+      // A token that short is too weak to REJECT a source on — an upload on a
+      // label channel that never prints the name would be thrown away — but it
+      // must be able to CONFIRM one. So a short-only credit is matched
+      // word-for-word (never as a substring, which two letters would also hit
+      // inside unrelated words) and, when it does not match, it simply counts
+      // for nothing: `tried` is untouched, so a single short name like "BK"
+      // keeps the old "nothing to judge on" answer and no track that already
+      // worked can start failing. The change can only ever turn a refusal into
+      // an acceptance, never the other way round.
+      //
+      // NOTE, pre-existing and deliberately left alone: the `topic` gate this
+      // function also carries is DEAD. `topic` is computed from the NORMALIZED
+      // owner/author, and norm() strips every non-alphanumeric, so the literal
+      // "- topic" suffix the test looks for can never survive ("BK - Topic"
+      // normalizes to "bk topic"). That path has therefore never run on any
+      // build. Switching it on would widen what counts as the artist — a change
+      // of its own, with its own measurement — so it is recorded in AGENTS.md
+      // instead of being turned on in the middle of this fix.
       var aWords = credit.split(' ').filter(function(w){ return w.length > 2 && w !== 'the' && w !== 'and' && w !== 'feat'; });
-      if(!aWords.length) continue;
+      if(!aWords.length){
+        var sWords = credit.split(' ').filter(function(w){ return w.length > 0; });
+        if(!sWords.length) continue;
+        var shortHit = function(blob){
+          if(!blob) return false;
+          var bWords = blob.split(' ');
+          for(var si = 0; si < sWords.length; si++){
+            var hitOne = false;
+            for(var sj = 0; sj < bWords.length; sj++){
+              if(bWords[sj] === sWords[si]){ hitOne = true; break; }
+            }
+            if(!hitOne) return false;
+          }
+          return true;
+        };
+        if(shortHit(ath)) return true;                 // the artist's own channel
+        continue;                                      // confirm-only: never reject
+      }
       tried++;
       var hasArtist = (function(pWords, pStr){
         return function(blob){
