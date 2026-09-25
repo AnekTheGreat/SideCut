@@ -82,11 +82,11 @@ ok(src.includes('window.__scRebuildReleaseLists(false)') && src.includes('window
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.3.7', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.7';"), 'sw.js cache = sidecut-shell-v61.3.7');
-const head = src.indexOf("version: '61.3.7'");
-ok(src.indexOf("version: '61.3.7'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.3.7');
-ok(src.indexOf("version: '61.3.7'") < src.indexOf("version: '61.3.5'"), '61.3.6 is ahead of 61.3.5');
+ok(ver === '61.3.8', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v61.3.8';"), 'sw.js cache = sidecut-shell-v61.3.8');
+const head = src.indexOf("version: '61.3.8'");
+ok(src.indexOf("version: '61.3.8'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.3.8');
+ok(src.indexOf("version: '61.3.8'") < src.indexOf("version: '61.3.5'"), '61.3.6 is ahead of 61.3.5');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
 console.log('\nall passed');

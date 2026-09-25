@@ -3898,8 +3898,9 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
       <div id="lyricsNotFound" style="display:none; text-align:center; color:var(--ink-dim); padding:20px 0;">
         <div style="margin-bottom:8px;">No lyrics found</div>
         <div id="lyricsNotFoundWhat" style="font-size:12px; color:var(--ink); margin-bottom:6px; word-break:break-word;"></div>
-        <div style="font-size:11.5px;">Tap <b>↻ Refetch</b> to search by hand — the artist and title there are editable.</div>
-        <div style="font-size:12px;">Lyrics could not be found. Lyrics APIs primarily support English/Western music.</div>
+        <div id="lyricsNotFoundWhy" style="display:none; font-size:11.5px; color:var(--ink); margin-bottom:6px; line-height:1.5;"></div>
+        <div style="font-size:11.5px;">Tap <b>↻ Refetch</b> to search by hand — the artist and title there are editable. Or tap <b>Manual</b> and paste the words in yourself: they save with the song.</div>
+        <div style="font-size:12px;">A song is filed under its artist, and a same-titled track by someone else is never served as yours — so a small, new or regional artist can simply have no lyrics online yet.</div>
       </div>
       <div id="lyricsManualEditor" style="display:none;">
         <div style="font-size:11px; color:var(--ink-dim); margin-bottom:6px;">Manual lyrics (from Song info → Notes). Edit here and they save to the song's notes automatically.</div>
@@ -8722,6 +8723,58 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   function scLyricsArtistTokens(artist){
     return String(artist || '').toLowerCase().match(/[a-z0-9]+/g) || [];
   }
+  // Imprints and channels, not people. A credit like "T-Series", "Saregama
+  // Music" or "Speed Records" is where a file was uploaded, not who sang it, so
+  // it can neither confirm nor contradict an artist: it is ignored as evidence.
+  // Without this, an imprint credit would read as "a different artist" and an
+  // odd tag would start hiding songs that really are yours.
+  var SC_LYRICS_IMPRINT_TOKENS = { records:1, record:1, music:1, musics:1, series:1, label:1, labels:1,
+    entertainment:1, studio:1, studios:1, official:1, topic:1, company:1, media:1, digital:1, audio:1,
+    video:1, videos:1, films:1, film:1, productions:1, production:1, tseries:1, saregama:1, shemaroo:1,
+    tips:1, speed:1, zee:1, sony:1, universal:1, warner:1, columbia:1, atlantic:1, interscope:1,
+    capitol:1, virgin:1, island:1, decca:1, polydor:1, rhymes:1, cinematic:1 };
+  function scLyricsLooksLikeImprint(artist){
+    var toks = scLyricsArtistTokens(artist);
+    if(!toks.length) return true;                     // nothing to learn either way
+    var words = 0;
+    for(var i = 0; i < toks.length; i++){
+      if(toks[i].length < 2) continue;                // the "t" of "T-Series"
+      words++;
+      if(!SC_LYRICS_IMPRINT_TOKENS[toks[i]]) return false;
+    }
+    return words > 0;                                 // every word of it is an imprint word
+  }
+  // Do a candidate's credit and ours belong to the same artist? 'match' when a
+  // name word lines up, 'foreign' when both sides are real artist credits and
+  // nothing lines up, 'unknown' when there is nothing to learn (a missing or
+  // imprint-only credit on either side). Only 'foreign' blocks a length-only
+  // match — two different people with a shared title and a coincidentally equal
+  // running time are not the same song, and an obscure artist's only "hits" are
+  // exactly that.
+  function scLyricsArtistVerdict(candArtist, artistTokens){
+    var cand = String(candArtist || '');
+    if(!cand.trim()) return 'unknown';
+    if(scLyricsLooksLikeImprint(cand)) return 'unknown';
+    var ours = (artistTokens || []).filter(function(w){
+      return w.length >= 3 && !SC_LYRICS_STOPWORDS[w] && !SC_LYRICS_IMPRINT_TOKENS[w];
+    });
+    if(!ours.length) return 'unknown';                // our tag is a label, a channel or blank
+    var theirs = scLyricsArtistTokens(cand);
+    for(var i = 0; i < theirs.length; i++){
+      var t = theirs[i];
+      if(t.length < 3 || SC_LYRICS_STOPWORDS[t]) continue;
+      for(var j = 0; j < ours.length; j++){
+        var o = ours[j];
+        if(t === o) return 'match';
+        // Transliteration drift ("Gurdas"/"Gurdaas") is the same person, so a
+        // long shared prefix has to count as agreement rather than a stranger.
+        var pre = 0, n = Math.min(t.length, o.length);
+        while(pre < n && t.charAt(pre) === o.charAt(pre)) pre++;
+        if(pre >= 5 && n >= 5) return 'match';
+      }
+    }
+    return 'foreign';
+  }
   function scLyricsTitleKey(title){
     return String(title || '').toLowerCase()
       .replace(/\(.*?\)|\[.*?\]/g, ' ')
@@ -8746,6 +8799,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // dozen requests queued one after another. Each request now has its own timeout,
   // and the whole lookup has a deadline it cannot run past.
   var scLyricsDeadline = 0;
+  // How many same-titled songs by a different artist this lookup refused. The
+  // empty state reads it back, so "no lyrics found" can say what was skipped
+  // instead of leaving a mystery.
+  var scLyricsStrangers = 0;
   function scLyricsOutOfTime(){ return scLyricsDeadline > 0 && Date.now() > scLyricsDeadline; }
   function scFetchWithTimeout(url, ms, opts){
     var timeout = ms || 3500;
@@ -8793,6 +8850,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // Title has to line up; then a recognisable artist OR a tight length match has to
   // confirm it. A loose title match with an unconfirmed length is refused — that is
   // how a same-titled song by someone else ends up as "your" lyrics.
+  // 61.3.8 — and a length is not an identity either. "Bikramjit Dhaliwal" is in
+  // none of these databases, so every entry under one of his titles belongs to
+  // somebody else; a stranger's track that merely ran within ±2s of the local
+  // file used to be handed over (and saved) as his lyrics. A length-only match
+  // now also has to be the exact title AND a credit that does not contradict
+  // ours — an imprint says nothing either way, so it is not a contradiction.
   // How well one LRCLIB entry matches, as components. `acceptable` is a hard
   // yes/no (used for automatic lookup); `rank` is a continuous ordering used to
   // put the most likely entry first in the candidate picker, including entries the
@@ -8825,12 +8888,16 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       dScore = diff <= 2 ? 2 : (diff <= 8 ? 1 : 0);
       durProx = Math.max(0, 1 - diff / 30);
     }
+    var verdict = scLyricsArtistVerdict(res.artistName, artistTokens);
+    var exactTitle = !!(rKey && titleKey && rKey === titleKey);
     return {
       tScore: tScore,
       aHit: aHit,
       dScore: dScore,
       duration: rd,
-      acceptable: !!(aHit || dScore >= 2),
+      verdict: verdict,
+      exactTitle: exactTitle,
+      acceptable: !!(aHit || (dScore >= 2 && exactTitle && verdict !== 'foreign')),
       rank: tScore * 2 + (aHit ? 2 : 0) + dScore * 1.5 + durProx * 1.5 + (res.syncedLyrics ? 0.5 : 0)
     };
   }
@@ -8866,9 +8933,16 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if(!primaryTokens.length) primaryTokens = scLyricsArtistTokens(artistVars[0]);
     var dur = Math.round(duration || 0);
     var best = null;
+    scLyricsStrangers = 0;
     function consider(res){
       var sc = scScoreLyricsResult(res, titleKey, primaryTokens, dur);
       if(sc && (!best || sc.score > best.score)) best = sc;
+      if(!sc){
+        // Refused. When it was refused for being someone else's song, say so
+        // later rather than pretending nothing was there.
+        var rk = scLyricsRank(res, titleKey, primaryTokens, dur);
+        if(rk && rk.verdict === 'foreign' && rk.dScore >= 2) scLyricsStrangers++;
+      }
       return sc;
     }
     // 1. /api/get — needs artist + title, and only accepts a duration within ~2s.
@@ -8923,7 +8997,18 @@ $('crossfadeSlider').addEventListener('input', (e) => {
                 var _ss = String(_s % 60).padStart(2, '0');
                 return '[' + _mm + ':' + _ss + '.00]' + String(l.lyrics).trim();
               }).join('\n');
-              if(_tyText.trim().length > 20){
+              // textyl answers with a timestamp per line and nothing else, so
+              // the one honest check available is its own clock: a lyric sheet
+              // whose last line lands after the file has already ended was
+              // written for a longer song — a different track. Refuse it rather
+              // than dress someone else's words up as this song's.
+              var _tyLast = 0;
+              for(var _tli = 0; _tli < _tyLines.length; _tli++){
+                var _tls = Number(_tyLines[_tli].seconds) || 0;
+                if(_tls > _tyLast) _tyLast = _tls;
+              }
+              var _tyFits = !(dur > 0 && _tyLast > dur + 8);
+              if(_tyText.trim().length > 20 && _tyFits){
                 return { lyrics: _tyText, isSynced: true, title: titleVars[0], artist: primary,
                          duration: dur, source: 'textyl (Apple Music)', score: 1 };
               }
@@ -8980,7 +9065,17 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           var lyr = await scFetchWithTimeout('https://lyrist.vercel.app/api/' + encodeURIComponent(titleVars[lv]) + '/' + encodeURIComponent(artistVars[la]), 4500);
           if(!lyr.ok) continue;
           var lyd = await lyr.json();
-          if(lyd && lyd.lyrics && String(lyd.lyrics).trim()){
+          // It has to be THIS song. lyrist hands back the title and artist it
+          // matched and neither was ever looked at, so any body of lyrics that
+          // came back for the query was served as the track's. The title has to
+          // line up, and an artist in the reply must not contradict the credit
+          // we asked with.
+          var _lyrTitle = String((lyd && lyd.title) || titleVars[lv] || '');
+          var _lyrArtist = String((lyd && lyd.artist) || '');
+          var _lyrArtistOk = !_lyrArtist
+            || _textOk(_lyrTitle, _lyrArtist)
+            || scLyricsArtistVerdict(_lyrArtist, scLyricsArtistTokens(artistVars[la])) !== 'foreign';
+          if(lyd && lyd.lyrics && String(lyd.lyrics).trim() && _textOk(_lyrTitle, '') && _lyrArtistOk){
             return { lyrics: String(lyd.lyrics), isSynced: false, title: lyd.title || titleVars[lv], artist: lyd.artist || artistVars[la], duration: dur, source: 'Genius (lyrist)', score: 1 };
           }
         }
@@ -8992,6 +9087,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // a wrong credit guess or an unusual title can be overridden by hand.
   async function scListLyricsCandidates(artistRaw, titleRaw, duration){
     scLyricsDeadline = Date.now() + 12000;
+    scLyricsStrangers = 0;                            // a manual search explains itself
     var artist = applyWatermarkPatterns(artistRaw || '', true);
     var title = applyWatermarkPatterns(titleRaw || '', false);
     var titleKey = scLyricsTitleKey(title);
@@ -9011,6 +9107,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       var rk = scLyricsRank(res, titleKey, primaryTokens, dur);
       out.push({ title: res.trackName || '', artist: res.artistName || '', duration: Number(res.duration) || 0,
                  synced: !!res.syncedLyrics, lyrics: res.syncedLyrics || res.plainLyrics,
+                 // So picking one by hand can never be mistaken for a credit
+                 // that agrees with this track's artist.
+                 differentArtist: rk.verdict === 'foreign',
                  // A confirmed match always sorts above an unconfirmed one, then the
                  // closest length wins — so the obvious pick is at the top.
                  score: (rk.acceptable ? 100 : 0) + rk.rank });
@@ -9076,6 +9175,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     // of the new song's lyrics.
     var _staleLyricsPicker = document.getElementById('lyricsCandidatePicker');
     if(_staleLyricsPicker) _staleLyricsPicker.remove();
+    var _staleWhy = document.getElementById('lyricsNotFoundWhy');
+    if(_staleWhy){ _staleWhy.style.display = 'none'; _staleWhy.textContent = ''; }
     $('lyricsBackdrop').style.display = 'flex';
     syncLyricsPlayPauseIcon();
     
@@ -9127,6 +9228,28 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       var panel = $('lyricsNotFound');
       if(panel) panel.style.display = 'block';
       var what = $('lyricsNotFoundWhat');
+      // A refused match is a real answer, not a failure: name what was skipped
+      // so "no lyrics" never reads as "the app is broken".
+      try{
+        var why = document.getElementById('lyricsNotFoundWhy');
+        if(why){
+          why.style.display = scLyricsStrangers ? 'block' : 'none';
+          why.textContent = scLyricsStrangers
+            ? ('Found ' + scLyricsStrangers + ' same-titled song' + (scLyricsStrangers === 1 ? '' : 's') +
+               ' under a different artist \u2014 skipped, not served as this track\'s.')
+            : '';
+        }
+      }catch(_eWhy){}
+      // Manual lyrics are the way out for a song no database has, so the button
+      // has to be reachable from this state too — it used to appear only once
+      // lyrics had already been found.
+      try{
+        var mBtnNF = $('lyricsManualBtn');
+        if(mBtnNF && mBtnNF.style.display === 'none'){
+          mBtnNF.style.display = '';
+          mBtnNF.textContent = 'Manual: ' + (lyricsManualActive ? 'On' : 'Off');
+        }
+      }catch(_eMbnf){}
       if(what){
         var t = String(title || '').trim(), a = String(artist || '').trim();
         what.textContent = t ? ('Searched: “' + t + '”' + (a ? ' — ' + a : '')) : '';
@@ -9946,6 +10069,7 @@ function startLyricsAutoScroll() {
           var sub = document.createElement('div');
           sub.style.cssText = 'font-size:11px;color:var(--ink-dim);margin-top:2px;';
           sub.textContent = (c.artist || 'unknown artist') +
+            (c.differentArtist ? ' \u00b7 different artist' : '') +
             (c.duration ? ' \u00b7 ' + fmtTime(c.duration) : '') +
             (c.synced ? ' \u00b7 synced' : '');
           row.appendChild(nm);
@@ -10625,7 +10749,7 @@ function startLyricsAutoScroll() {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.3.7';
+  const APP_VERSION = '61.3.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11040,6 +11164,13 @@ function startLyricsAutoScroll() {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.3.8', date: 'September 24, 2026 · 7:00 PM EDT', title: 'Your lyrics stay yours on a small artist', items: [
+    'For a small or regional artist the lyrics came back as somebody else’s song: a title search turns up same-titled tracks by entirely different artists, and any of them that happened to run within a couple of seconds of your file was accepted on its length alone and saved onto the track. A length is not an identity any more — the title has to be the exact one and the credit must not contradict yours, so Bikramjit Dhaliwal’s songs keep his words instead of borrowing Karan Aujla’s.',
+    '"No lyrics found" now explains itself: it names how many same-titled songs under a different artist were skipped, and the Manual button is reachable from there, so you can paste the words in yourself and they save with the song.',
+    'The Refetch picker marks a same-titled entry credited to a different artist, so choosing one by hand is a decision instead of a guess.',
+    'A lyric sheet that runs past the end of your file is refused as another song’s — Apple Music’s textyl answers with timestamps and no title at all, so its own clock is what catches a wrong match — and the lyrist reply is now checked against the title and artist that were asked for instead of being taken on trust.',
+    'A credit that is really an imprint (T-Series, Saregama Music, Speed Records) neither confirms nor contradicts an artist, so an odd tag still can’t hide a song that is genuinely yours.',
+  ] },
   { version: '61.3.7', date: 'September 24, 2026 · 7:23 AM EDT', title: 'Release check never sticks and Home stays clear', items: [
     'Every upcoming drop now carries a time of day: the manual sheet opens on today with a Drop time field you set, an upcoming row reads "drops Oct 3 at 7:23 AM" beside its countdown, and a drop whose catalog knows only the day reads "at time TBA" rather than leaving the hour a mystery.',
     'Upcoming releases now looks the date up itself: every pinned artist is checked against MusicBrainz’s open catalog of announced releases, where a drop someone has already dated sits with its day set weeks before it lands — no account, no sign-in, no window.',

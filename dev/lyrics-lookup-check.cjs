@@ -31,6 +31,7 @@ function makeCtx() {
 }
 const TRACKS = [
   { id: 't1', name: 'Devil', artist: 'Diljit Dosanjh & thiarajxtt', album: 'Ghost', duration: 152, blob: null, file: null },
+  { id: 't2', name: 'Gabhru', artist: 'Bikramjit Dhaliwal', album: 'Singles', duration: 201, blob: null, file: null },
 ];
 
 function fakeIndexedDB() {
@@ -62,6 +63,15 @@ const DEVIL = { id: 11, trackName: 'DEVIL', artistName: 'DILJIT DOSANJH;Intense;
 const WALIYAN_WRONG = { id: 12, trackName: 'Waliyan', artistName: 'Shivjot', duration: 219, plainLyrics: 'wrong artist words' };
 const WALIYAN_DUR = { id: 13, trackName: 'Waliyan', artistName: 'T-Series', duration: 179, plainLyrics: 'right song words' };
 const LABEL_ONLY = { id: 14, trackName: 'Brand New', artistName: 'Saregama Music', duration: 200, plainLyrics: 'brand new words' };
+// The user's report: "For not that well known artists such as Bikramjit Dhaliwal
+// the lyrics aren't correct for their songs." LRCLIB, Apple Music and Deezer all
+// have NOTHING for him (checked against the live APIs: search?q=Bikramjit%20Dhaliwal
+// returns []), so the only entry under one of his titles that any of them can
+// offer is somebody else's same-titled song. The stranger below runs 201s and so
+// does the local file, which is exactly how the wrong words used to be accepted
+// on length alone — and then saved onto the track.
+const GABHRU_STRANGER = { id: 20, trackName: 'Gabhru', artistName: 'Karan Aujla', duration: 201, plainLyrics: 'stranger words' };
+const JATT_LIFE_OWN = { id: 21, trackName: 'Jatt Life', artistName: 'Bikramjit Dhaliwal', duration: 190, plainLyrics: 'own words' };
 
 const reqLog = [];
 let flaky = 0;                                    // makes the DEVIL search 429 once
@@ -82,6 +92,8 @@ function route(url) {
     }
     if (/track_name=Waliyan/.test(url)) return { status: 200, body: [WALIYAN_WRONG, WALIYAN_DUR] };
     if (/track_name=Brand%20New/.test(url)) return { status: 200, body: [LABEL_ONLY] };
+    if (/track_name=Gabhru/.test(url)) return { status: 200, body: [GABHRU_STRANGER] };
+    if (/track_name=Jatt%20Life/.test(url)) return { status: 200, body: [JATT_LIFE_OWN] };
     return { status: 200, body: [] };
   }
   if (/api\.lyrics\.ovh/.test(url)) return { status: 404, body: {} };
@@ -217,6 +229,48 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   win.document.getElementById('lyricsBtn').click();
   await wait(3500);
   ok('reopening the sheet leaves no stale picker behind', !win.document.getElementById('lyricsCandidatePicker'));
+
+  console.log('\n— a small artist is not handed a stranger\'s song —');
+  reqLog.length = 0;
+  const small = await lookup('Bikramjit Dhaliwal', 'Gabhru', 201);
+  ok('a same-titled song by another artist is refused, even at the exact same length',
+     small === null, small ? small.artist + '/' + small.duration : 'null');
+  const nearMiss = await lookup('Bikramjit Dhaliwal', 'Gabhru', 199);
+  ok('and no neighbouring length drags the stranger in either', nearMiss === null, nearMiss ? nearMiss.artist : 'null');
+  const own = await lookup('Bikramjit Dhaliwal', 'Jatt Life', 190);
+  ok('but the entry actually credited to him still resolves', !!own && /own words/.test(own.lyrics), own ? own.artist : 'null');
+
+  console.log('\n— the empty state for a song no database has —');
+  try { win.playFromList(['t2'], 't2'); } catch (e) {}
+  await wait(400);
+  // Stand in for the old build, where the Manual button only appeared once
+  // lyrics had already been found — which left this exact user with nowhere to
+  // paste the words of a song the databases do not carry.
+  win.document.getElementById('lyricsManualBtn').style.display = 'none';
+  win.document.getElementById('lyricsBtn').click();
+  await wait(4500);
+  ok('no stranger\'s lyrics are on screen', win.document.getElementById('lyricsText').style.display === 'none',
+     win.document.getElementById('lyricsText').style.display);
+  ok('the empty state is shown instead', win.document.getElementById('lyricsNotFound').style.display === 'block',
+     win.document.getElementById('lyricsNotFound').style.display);
+  const why = win.document.getElementById('lyricsNotFoundWhy');
+  ok('it names the same-titled song under another artist that was skipped',
+     !!why && why.style.display === 'block'
+       && /same-titled song/.test(why.textContent || '') && /different artist/.test(why.textContent || ''),
+     why ? why.textContent : 'missing');
+  ok('the Manual button is reachable from the empty state',
+     win.document.getElementById('lyricsManualBtn').style.display !== 'none',
+     win.document.getElementById('lyricsManualBtn').style.display);
+  win.document.getElementById('lyricsRefetchBtn').click();
+  await wait(400);
+  win.document.getElementById('lrArtist').value = 'Bikramjit Dhaliwal';
+  win.document.getElementById('lrTitle').value = 'Gabhru';
+  win.document.getElementById('lrSearch').click();
+  await wait(4500);
+  const pickerOne = win.document.getElementById('lyricsCandidatePicker');
+  ok('the picker still offers that entry to pick by hand', !!pickerOne);
+  ok('and marks it as a different artist', !!pickerOne && /different artist/.test(pickerOne.textContent || ''),
+     pickerOne ? (pickerOne.textContent || '').replace(/\s+/g, ' ').slice(0, 90) : 'missing');
 
   console.log('\n— no runtime errors —');
   ok('no uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '));

@@ -8,6 +8,47 @@
   `dev/test-*.mjs` `ver === '…'` pin — then rebuild both OTA bundles (`node dev/ota-bundle.mjs && node dev/ota-bundle-play.mjs`, both with `--check`) and run
   the whole `dev/test-*.mjs` suite before committing/pushing.
 
+## v61.3.8 (Sep 24, 2026): a small artist keeps their own lyrics
+- **User report, verbatim**: "For not that well known artists such as Bikramjit Dhaliwal the lyrics aren't correct for
+  their songs."
+- **The diagnosis, measured against the live APIs (do this before touching the matcher)**: LRCLIB has NOTHING for him
+  (`lrclib.net/api/search?q=Bikramjit%20Dhaliwal` → `[]`), and neither Apple Music (`itunes.apple.com/search` → only
+  "Ranjit Dhaliwal") nor Deezer (`api.deezer.com/search/artist` → total 0) has him. So every artist-based lyrics step
+  misses, and the ONLY entries under one of his titles belong to someone else. **The bug was that they were still
+  accepted: the title-only LRCLIB search (`search?track_name=…`) returned 20 same-titled songs by other artists, and any
+  entry whose duration was within ±2s of the local file passed `acceptable: !!(aHit || dScore >= 2)` — a length is not an
+  identity — and was then SAVED onto the track (`persistTrackMeta`), so it stuck. Replaying the real API data through the
+  real scoring code for common Punjabi titles gave a stranger-inside-the-window chance of 13-31% (Gabhru 20%, Pind 31%,
+  Yaar 20%). Note `textyl` (Apple) is unreachable from this sandbox (curl `http=000`), so that path can only be reasoned
+  about, not replayed.
+- **The rule now**: a length-only match additionally needs the EXACT title key
+  (`acceptable: !!(aHit || (dScore >= 2 && exactTitle && verdict !== 'foreign'))`) and a credit that does not contradict
+  ours. New `scLyricsArtistVerdict(candArtist, artistTokens)` → `'match' | 'foreign' | 'unknown'`, plus
+  `SC_LYRICS_IMPRINT_TOKENS` + `scLyricsLooksLikeImprint`: an imprint credit ("T-Series", "Saregama Music", "Speed
+  Records") is NOT a contradiction — it says nothing about who sings — so an odd tag still can't hide a real hit (this is
+  what keeps `dev/lyrics-lookup-check.cjs`'s `WALIYAN_DUR`/`LABEL_ONLY` cases passing). Transliteration drift ("Gurdas"
+  vs "Gurdaas": ≥5-char shared prefix, both ≥5 chars) counts as agreement, never as a stranger. `aHit` is unchanged on
+  purpose — the multi-artist-credit case from 6137 depends on it.
+- **Two loose ends of the same bug closed**: `textyl` (Apple Music) hands back a timestamp per line and no title, and was
+  accepted blind — its own clock is now the check (`_tyFits = !(dur > 0 && _tyLast > dur + 8)`, i.e. a sheet that runs
+  past the end of the file belongs to a longer song). `lyrist` returns a `title`/`artist` that were never looked at; they
+  are now validated against the request (`_textOk(_lyrTitle, '') && _lyrArtistOk`).
+- **The empty state is honest now**: `scLyricsStrangers` counts refused strangers (reset in `scLookupLyricsInner`); the new
+  `#lyricsNotFoundWhy` line says "Found 1 same-titled song under a different artist — skipped, not served as this
+  track's", the Refetch picker marks such a candidate `· different artist`, and **`lyricsManualBtn` is revealed from the
+  not-found state** (it used to appear only in `showLyrics`, i.e. only once lyrics existed — so a user whose song no
+  database carries had no way to paste the words).
+- **Mechanics**: `dev/patch-6138.mjs` (whole-file only, idempotent `sub`/`subFile`, `--manifest` mode), new
+  `dev/test-6138.mjs` (its identity rules are lifted out of index.html and RUN, not grepped), APP_VERSION + sw.js +
+  CHANGELOG head + root manifest → 61.3.8, 10 test files repinned, `test-6052`'s ship date →
+  "September 24, 2026 · 7:00 PM EDT". Note: the repin pass rewrites the literal `"version: '…'"` pins in every
+  `dev/test-*.mjs`, so a new test that needs to name an OLD version must hold it in a `const` (see `PREV` in test-6138).
+- **Verified**: both inline blocks parse; the jsdom audit `dev/lyrics-lookup-check.cjs` (needs
+  `/tmp/h/node_modules/jsdom`) extended with the user's exact case — **40/40 pass**, including "a same-titled song by
+  another artist is refused, even at the exact same length" and "the picker marks it as a different artist"; the full
+  `dev/test-*.mjs` suite is green (20 files); both OTA checks OK — v61.3.8, 5 notes, Play flag baked (zips 661061 /
+  661069 bytes).
+
 ## v61.3.7 (Sep 24, 2026): the release check can't stick, Home stops showing it, drops carry a time
 - **The user's four fixes**: "you don't need an example for release name and the checking doesn't work and fetching
   pinned artists releases doesn't need to show on the home page Also add the time for Manuel and auto fetching upcoming
