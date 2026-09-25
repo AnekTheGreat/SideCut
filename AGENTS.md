@@ -1,5 +1,106 @@
 # SideCut — repository memory
 
+## v62 (Sep 25, 2026): lyrics for an artist whose name is only a letter or two
+- **The user's report, in their words**: "I'm not getting any lyrics for lesser known artists such as Bikramjit Dhaliwal".
+  Same user, same library, right after v61.8/v61.9 — and v61.8 was about **BK**'s *Gangstas Paradise* / *MIXED FEELINGS*.
+- **Measured first, and it reframed the report completely** (all Sep 25, 2026, live): `lrclib search?q=Bikramjit` → **0 results**,
+  `search?artist_name=Bikramjit Dhaliwal` → **0 results**, `get?artist_name=Bikramjit Dhaliwal&track_name=<any title>` → **404**.
+  The name is not filed anywhere. A web check explains why: **"Bikramjit Dhaliwal" is the WRITER credit, not the performer —
+  the artist is "BK"** (MusicBrainz: `lyricist: BK (Bikramjit Dhaliwal)`; Musixmatch/Shazam/Gaana credit him as writer on
+  *College*, *Ferrari*, *Bodyguard*, *MESMERIZED*, *IN THE STREETS*, *Missed Calls*, *Icy*). lrclib DOES file his songs under
+  "BK": `get?artist_name=BK&track_name=Mob Ties (Intro)` → 200, `.../MOTION` → 200, `.../Aaja Billo` → 200, `.../College` →
+  200, `.../Bodyguard` → 200, `.../47` → 200; `search?track_name=Icy` → "Icy" by "BK & Jay Trak". **So the entries were there
+  and the app refused them** — a lookup bug, not a coverage gap.
+- **The measurement that pinned it**: `dev/_probe_rank.mjs` (temporary, since deleted) lifted the SHIPPED matcher out of
+  index.html by brace matching and drove it against LIVE lrclib answers — entry title, entry artist and entry length real:
+  `"Mob Ties (Intro)" by "BK" 168 s, tag "BK", drift +0 s` → ACCEPT · `drift +3 s` → **refuse** ·
+  `tag "Bikramjit Dhaliwal"` → **refuse** even at drift 0. After the fix: all three ACCEPT (and the writer-credit case at
+  drift +0 only — see the ceiling below).
+- **Root cause — v61.8's bug, in the lyric matcher: a name of two letters or fewer is dropped, so it can neither confirm nor
+  be compared.** Two functions, both blind: `scLyricsRank` builds `aHit` from tokens of `w.length >= 3` only, so "BK"
+  contributed nothing and acceptance rested on a length within 2 s — any re-encode drifting 3 s read as "no lyrics" even with
+  the artist's own name on the entry. `scLyricsArtistVerdict` filters **our** tokens to `>= 3` *and* skips the **entry's**
+  tokens `t.length < 3`, so an entry filed under "BK" could never say `match` and the comparison fell straight through to
+  `foreign` — a hard refusal.
+- **The fix**: v61.8's rule, applied to lyrics — **a name of two letters or fewer can CONFIRM but never REJECT.** In the scorer
+  a short token counts as an artist hit, word for word (never a substring); in the verdict the short-name question is asked
+  before `foreign` can be returned, and `foreign` now additionally requires the entry's credit to have a word of three or more.
+  Crucially the short confirm runs **only when the credit has no longer word to go on** (`longWords` / `!ours.length`), so
+  "DJ Snake" still cannot be confirmed by "DJ Khaled" — pinned in test-620 `[2e]`.
+- **Strictly additive, and that is the whole safety argument**: any path that already found lyrics scores exactly as before, so
+  the change can only turn a refusal into an acceptance. The v61.3.8 guard rails all hold: exact title still required for a
+  length-only match, `verdict !== 'foreign'` still required, a real long credit that contradicts ours is still refused,
+  transliteration drift still matches, imprints still say nothing.
+- **The honest ceiling, recorded rather than papered over**: (1) **lrclib simply has no "BK" entry** under *Scarface*,
+  *Mesmerized*, *IN THE STREETS*, *LIFESTYLE*, *In God We Trust*, *Missed Calls*, *Gangstas Paradise* — `search?track_name=`
+  returns 20 other artists' songs and no fix can conjure the entry; (2) for the writer-credit tag the length bar is unchanged,
+  so **drift > 2 s is still refused** for that spelling (nothing in the strings links "Bikramjit Dhaliwal" to "BK");
+  (3) "Icy" by "BK & Jay Trak" still cannot be claimed by the writer credit, because that credit has real long words that
+  match nothing — that is `foreign`, correctly.
+- **Two providers in the chain are DEAD and were deliberately NOT touched this release**: `some-random-api.com/lyrics` → 403
+  `{"error":"key required"}`, `lyrist.vercel.app` → 429 for every anonymous call (both re-measured from here; also measured
+  dead in the v61.7 session). They cost up to ~9 s of the 12 s lookup deadline *after* lrclib and lyrics.ovh have already
+  missed — i.e. exactly on the lesser-known-artist path. Removing them is a behaviour change of its own and belongs in its own
+  release; also probed live and rejected as replacements: JioSaavn `lyrics.getLyrics` (always
+  `{"status":"failure"}`), QQ Music (500), Genius search API (403 with a browser UA), chartlyrics (404), textyl (dead),
+  LyricsPlus (429). Only **lrclib.net and api.lyrics.ovh** actually send `Access-Control-Allow-Origin: *`, which is why they
+  are the two that work in a browser context (on device `CapacitorHttp` patches fetch, so CORS is not the limiter there —
+  coverage is).
+- **One pre-existing blind spot worth knowing, left as it was**: when OUR tag is short (`ours.length === 0`), the verdict is
+  `unknown`, so a same-titled stranger within 2 s can still be served on length alone. That predates this release and is
+  `unknown` on purpose — tightening it to `foreign` would LOSE the real "BK" vs "Bikramjit Dhaliwal" pairing, which is the
+  user's own case. It is pinned as behaviour, not fixed.
+- **Mechanics**: `dev/patch-620.mjs` (2 index.html edits + APP_VERSION + the `62` changelog head + sw.js), `dev/test-620.mjs`
+  (50 assertions — it lifts `scLyricsRank` and `scLyricsArtistVerdict` out by brace matching and drives them against the exact
+  measured lrclib shapes, plus the "DJ Khaled" safety case). Then `node dev/ota-bundle.mjs` && `node dev/ota-bundle-play.mjs`
+  && `node dev/patch-620.mjs --manifest`, `--check` both. Full suite green (**28 files**), `check-dom` → 0 integrity failures.
+  Repins: `ver === '61.9'` in 16 test files, the `sidecut-shell-v61.9` pins, the `61\.9` head-regex pins (the new version has
+  no dot to escape), test-6052's ship-date pin, test-6139's head-entry pin, and test-619's head-entry message. Version went
+  `61.9 → 62`, in the shape of the earlier rolls (`58.9.9 → 59.0`, `60.5.9 → 61`); `compareVersions` and `cmpVer` both read a
+  dotless `62` correctly (`62` vs `61.9` → 62 wins), so no legacy-version map entry was needed.
+- **Delivery scope, at the user's request**: the v61.9 Get Songs change is **Play-channel only** (it lives inside
+  `if(SC_IS_PLAY){`; the full build's markup, cards and format explainer are untouched — pinned by test-619 `[2d]`). The v62
+  lyrics change is deliberately on **both** channels, as the earlier lyrics work was.
+
+## v61.9 (Sep 25, 2026): the store build's Get Songs tab is steps only
+- **The user's ask, in their words**: "Get songs tab should have no converters on play version and should simply have
+  steps of how to get mp3's in your library". A follow-on to the v61.8-conversation ask that the Play build carry no
+  downloader/converter references anywhere.
+- **What the Play build was still showing in that tab**, found by reading the markup rather than assuming the v61.x hiding
+  was complete: only the two Spotify/YouTube cards were hidden (`ytCard*`, `spCard*`). Still visible were the
+  **`🎛️ Conversion Tools` header** (`Spotify · YouTube · MP4 · Expand URL`), the **Expand URL card**, the
+  **MP4 to WAV/FLAC/MP3 card**, and the **`💡 Audio formats explained`** guide — and the tab's own copy taught the converter
+  as well ("Paste the link into the built-in 🎵 Spotify to MP3 / WAV / FLAC converter below").
+- **The fix, both halves, in the `if(SC_IS_PLAY){` header block** (v61.9 `dev/patch-619.mjs`): (1) the Get Songs how-to box in
+  each tab (`getSongsHowToDisc` on Discover, `getSongsHowToSettings` in Settings) is rewritten into a 5-step walkthrough —
+  put the MP3s on the phone → `+ Add songs ▾ → + Files` → `+ Add folder` for a whole album → tags land in
+  `Playlists → All songs` → `Import library` restores the backup `.zip`; and (2) the **whole tool section is put away**.
+- **The tool section is hidden BY POSITION**: it is the element immediately AFTER each how-to box in the markup, so the code
+  does `_el.nextElementSibling.style.display = 'none'`. No markup was reshaped and no id was invented. **Hiding rather than
+  removing is the point**: the converter wiring further down (e.g. `mp4FileDisc`/`mp4FileSet`, the expand-URL buttons) still
+  finds every element it looks up, so a screen that no longer shows a tool can never become a null for the screen that does.
+  The full build never enters the branch at all and is byte-for-byte unchanged.
+- **Verified by walking the markup, not by trusting the comment**: `dev/test-619.mjs` (55 assertions) carries a real
+  tag-depth walk (`elementEnd`, quote-aware so a `>` inside an attribute cannot end a tag early) and PROVES for both tabs that
+  (a) the Conversion Tools section is **not nested inside** the how-to box and (b) it **is** the very next element — which is
+  the single assumption `nextElementSibling` rests on. It also runs the shipped `_getSongsSteps` concatenation and checks the
+  five steps, and pins that all 20 ids the tool wiring looks up are still present in the file.
+- **Where the outside-site links actually live** (worth remembering): `spotisaver.net` / `spotmate.online` are in the two
+  HOW-TO BOXES, which the Play header rewrites — not in the tool section it hides. So "the links are wiped, not merely
+  hidden" is a claim about the box. The only other two (the full build's in-app fallback) sit after the Play branch's
+  licensed-catalog return. test-619's first draft pinned this to the wrong element and was corrected by the failure.
+- **Play copy audit widened to the newly-closed surface**: `dev/test-play-copy.mjs` [1] now also asserts the walkthrough is
+  what a Play reader gets, that it names no converter/site/tool, and that the section below it is put away. Its [3] gained
+  the **same narrow "Get Songs"-surface exemption [2] already had** — the 61.9 head note's TITLE names that screen, which is
+  navigation, not a downloader reference; the singular "Get Song" still trips the wider list (pinned in [2]).
+- **Two stale pins updated, not worked around**: `dev/test-6058.mjs` pinned the OLD one-liner's wording
+  (`getSongsHowToDisc … to import them.`) and now pins the walkthrough + the put-away section; test-6052's ship-date pin and
+  the usual `ver ===` / `sidecut-shell-v` / `61\.N` head-regex repins went through `patch-619.mjs`'s REPINS list.
+- **Mechanics**: `node dev/patch-619.mjs` (2 index.html edits — the block comment and the code it describes — then
+  APP_VERSION, the changelog head, sw.js and the repins); then `node dev/ota-bundle.mjs` && `node dev/ota-bundle-play.mjs`
+  && `node dev/patch-619.mjs --manifest`, then `--check` on both.
+  Full suite green (27 files). `node dev/check-dom.mjs` → 0 integrity failures. Play channel: 681053 bytes.
+
 ## v61.8 (Sep 25, 2026): a co-credited song is found on the artist's own channel again
 - **The user's report, in their words**: "Tried on 2 different albums and came back no matching source fix this" /
   "I tried 2 different albums and both of them have no source found". Both lines are the SONG LOOKUP (the converter rows), not

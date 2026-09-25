@@ -4445,15 +4445,40 @@ if(SC_IS_PLAY){
     ['ytCardDisc','ytCardSettings'].forEach(function(_id){ var _el = document.getElementById(_id); if(_el) _el.style.display = 'none'; });
     // Downloads are removed from this build end to end: the Spotify converter
     // cards go with the YouTube cards, the how-to boxes that teach the converter
-    // (and link outside converter sites) become an + Add songs note, and the
+    // (and link outside converter sites) become a plain import walkthrough, the
+    // tool section beneath them is put away, and the
     // class cuts the buttons only a render path creates — Discover's hand-off
     // and the album-history preview downloads. Nothing here can reach a
     // converter, so this build can never fail a download it never offered.
     document.documentElement.classList.add('sc-play-build');
     ['spCardDisc','spCardSettings'].forEach(function(_id){ var _el = document.getElementById(_id); if(_el) _el.style.display = 'none'; });
+    // ---- The Get Songs tab is a HOW-TO on this build ------------------------
+    // A build that takes only the files you already own has nothing to hand off
+    // to a converter, so that tab is a plain walkthrough instead, and the audio
+    // tools that used to sit under it — the link expander, the three cards and
+    // the format explainer — are put away with the section that holds them.
+    //
+    // That section is the element immediately AFTER each how-to box, so it is
+    // hidden by POSITION: no markup was reshaped and no new id invented. Hiding
+    // it (rather than removing it) also leaves every element the converter
+    // wiring further down still looks up in place, so nothing downstream has to
+    // become null-safe. The other build never enters this branch at all.
+    var _getSongsSteps =
+      '<b style="color:var(--coral);">💿 How to get MP3s into your library</b>'
+      + '<div style="margin-top:4px;">SideCut plays the audio files saved on your device — it does not stream or fetch anything itself.</div>'
+      + '<div style="display:flex; flex-direction:column; gap:5px; margin-top:8px;">'
+      + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">1.</span><span>Put the songs on your phone — copy them from a computer over USB, from a cloud drive, or from an SD card. Any folder will do.</span></div>'
+      + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">2.</span><span>Tap <b style="color:var(--ink);">+ Add songs ▾ → + Files</b>, pick the songs and confirm to import them.</span></div>'
+      + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">3.</span><span>A whole album in one go: <b style="color:var(--ink);">+ Add songs ▾ → + Add folder</b>.</span></div>'
+      + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">4.</span><span>Each file keeps its own title, artist, album and cover art, and lands in <b style="color:var(--ink);">Playlists → All songs</b>.</span></div>'
+      + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">5.</span><span>Moving phones or restoring a backup: <b style="color:var(--ink);">Import library</b> brings back the whole .zip — playlists, albums and tags included.</span></div>'
+      + '</div>';
     ['getSongsHowToDisc','getSongsHowToSettings'].forEach(function(_id){
       var _el = document.getElementById(_id);
-      if(_el) _el.innerHTML = '<b style="color:var(--coral);">💽 Get songs into your library</b><br>This build takes the files you already own: tap <b>+ Add songs → + Files</b> to import them.';
+      if(!_el) return;
+      _el.innerHTML = _getSongsSteps;
+      // The tool section is this box’s next element, in both tabs.
+      if(_el.nextElementSibling) _el.nextElementSibling.style.display = 'none';
     });
     var _sums = document.querySelectorAll('summary span');
     for(var _si = 0; _si < _sums.length; _si++){
@@ -8760,8 +8785,29 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     var ours = (artistTokens || []).filter(function(w){
       return w.length >= 3 && !SC_LYRICS_STOPWORDS[w] && !SC_LYRICS_IMPRINT_TOKENS[w];
     });
-    if(!ours.length) return 'unknown';                // our tag is a label, a channel or blank
     var theirs = scLyricsArtistTokens(cand);
+    // 62 — a name of two letters or fewer can CONFIRM but never REJECT: the
+    // rule the downloader's artist check got in 61.8, and for the same
+    // reason. BOTH sides of this function dropped such a name — `ours` above
+    // keeps only words of three or more, and the entry's tokens are skipped
+    // below for the same reason — so a tag like "BK" had no say in whether an
+    // entry was ours, and an entry filed under "BK" could not agree with any
+    // credit at all: the comparison fell straight through to 'foreign'.
+    // Measured on lrclib's own entries (Sep 25, 2026): the entry's own
+    // title, the artist's own name on the entry, and still a hard refusal.
+    var mineShort = [];
+    for(var s0 = 0; s0 < (artistTokens || []).length; s0++){
+      var sw = artistTokens[s0];
+      if(sw.length > 0 && sw.length < 3 && !SC_LYRICS_STOPWORDS[sw] && !SC_LYRICS_IMPRINT_TOKENS[sw]) mineShort.push(sw);
+    }
+    if(!ours.length){
+      // Nothing long enough here to judge on, so a short name may only ever
+      // AGREE — word for word, never as a substring.
+      for(var s1 = 0; s1 < mineShort.length; s1++){
+        for(var s2 = 0; s2 < theirs.length; s2++) if(theirs[s2] === mineShort[s1]) return 'match';
+      }
+      return 'unknown';                              // a label, a channel, a short name or blank
+    }
     for(var i = 0; i < theirs.length; i++){
       var t = theirs[i];
       if(t.length < 3 || SC_LYRICS_STOPWORDS[t]) continue;
@@ -8775,7 +8821,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         if(pre >= 5 && n >= 5) return 'match';
       }
     }
-    return 'foreign';
+    // The entry's own credit carries no word long enough to be read as a
+    // DIFFERENT artist, so it cannot contradict ours either — it says nothing.
+    // Returning 'foreign' here (which is what used to happen, because the
+    // loop above skips short tokens and then falls through) was a refusal
+    // built on a name too short to be evidence of anything.
+    for(var k = 0; k < theirs.length; k++){
+      if(theirs[k].length >= 3 && !SC_LYRICS_STOPWORDS[theirs[k]]) return 'foreign';
+    }
+    return 'unknown';
   }
   function scLyricsTitleKey(title){
     return String(title || '').toLowerCase()
@@ -8898,12 +8952,29 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if(!tScore) return null;                        // a different song entirely
     var rTokens = scLyricsArtistTokens(res.artistName);
     var strong = 0, weak = 0;
+    var longWords = 0;
     artistTokens.forEach(function(w){
       if(w.length < 3 || SC_LYRICS_STOPWORDS[w]) return;
+      longWords++;
       if(rTokens.indexOf(w) === -1) return;
       if(w.length >= 4) strong++; else weak++;
     });
-    var aHit = strong >= 1 || weak >= 2;
+    // 62 — a credit whose every word is SHORT ("BK") was dropped right here, so
+    // it could never confirm an entry and the whole match rested on a length
+    // within 2 s: the entry's own title, the artist's own name, 3 s of drift,
+    // and the song was reported as having no lyrics. Such a credit can confirm
+    // now — word for word, never as a substring — and ONLY when the credit has
+    // no longer word to go on, so "DJ Snake" still cannot be confirmed by
+    // "DJ Khaled". A long credit is scored exactly as it was.
+    var shortHit = false;
+    if(!longWords){
+      for(var sw1 = 0; sw1 < artistTokens.length; sw1++){
+        var sh = artistTokens[sw1];
+        if(sh.length === 0 || sh.length >= 3 || SC_LYRICS_STOPWORDS[sh]) continue;
+        if(rTokens.indexOf(sh) !== -1){ shortHit = true; break; }
+      }
+    }
+    var aHit = strong >= 1 || weak >= 2 || shortHit;
     var rd = Number(res.duration) || 0;
     var dScore = 1;                                 // length unknown on one side: neutral
     var durProx = 0;
@@ -10912,7 +10983,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.8';
+  const APP_VERSION = '62';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11327,6 +11398,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '62', date: 'September 25, 2026 · 7:45 PM EDT', title: 'Lyrics are found again for an artist whose name is only a letter or two', items: [
+    'Lyrics could go missing for an artist whose name is only a letter or two — a stage name like "BK". The check that decides whether a lyric entry really belongs to the artist skipped every name of two letters or fewer, so such a name could never confirm anything, and the song had to match on running time alone: any release whose length drifted by more than two seconds came back as having no lyrics even though the words were on file.',
+    'Such a name counts now. It is matched word for word, never as part of a longer word, and only ever to CONFIRM an entry — it can never be the reason one is turned down, so no song that already found its lyrics can lose them.',
+    'The same rule now covers the credit on the other side of the lookup: an entry filed under a one- or two-letter name can no longer be read as "a different artist" and thrown away.',
+    'Nothing was loosened for ordinary names. The title still has to line up, a full artist credit that contradicts ours is still refused, and a plain running-time match still has to be within two seconds. Only a name too short to carry a name can confirm without being able to contradict.',
+    'Measured before and after on the artist this was reported for, against the live database: songs the database files under that artist and that still came back empty are found now.',
+    'Nothing else moved — playback, playlists, covers, the drop check, the exports and the search behave exactly as they did.',
+  ] },
+  { version: '61.9', date: 'September 25, 2026 · 6:05 PM EDT', title: 'The store build\'s Get Songs tab is steps only', items: [
+    'The Get Songs tab on the build that takes only your own files is a walkthrough now: five numbered steps covering putting your MP3s on the phone, pulling them in with + Add songs, adding a whole folder at once, and restoring a backup .zip.',
+    'The audio tool section that used to sit under that guide is put away on that build — the link expander, the three tool cards and the format explainer are all gone from the tab, so what is left is the steps.',
+    'Nothing was taken from the other build: it keeps the whole tool section, every card and the format explainer exactly as they were.',
+    'It is put away rather than deleted, which matters: the tool wiring further down the app still finds every element it looks up, so a screen that no longer shows a tool can never break the screen that does.',
+    'The guide still says plainly that the app plays the audio files already saved on your device, on both builds.',
+    'Nothing else moved — playback, playlists, lyrics, covers, the drop check, the exports and the search behave exactly as they did.',
+  ] },
   { version: '61.8', date: 'September 25, 2026 · 4:15 PM EDT', title: 'A song credited to two artists is saved again, even when the right upload sits on the artist with the shorter name', items: [
     'A track credited to two artists could come back with nothing even when the right source had been found: the check that decides whether a source really belongs to the artist skipped every name of two letters or fewer, so the "BK" half of a credit like "BK, Arsh Heer" was never looked at at all. On Gangstas Paradise, where the correct upload sits on BK\'s own channel, every co-credited track ended in "no matching source" while the solo tracks went through.',
     'The rule is unchanged bar one correction: a name that short cannot be allowed to REFUSE a source — an upload on a label channel that never prints the artist\'s name would be thrown away — but it must be able to ACCEPT one. A short-only credit is matched word for word now, so it can only ever let a source through, never turn one down.',

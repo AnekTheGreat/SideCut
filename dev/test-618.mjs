@@ -53,7 +53,7 @@ function extractFn(name) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.8', 'APP_VERSION = ' + ver);
+ok(ver === '62', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -65,7 +65,11 @@ if (entries) {
   // Both channels share the head entry's first six items, and the Play channel
   // may not carry a downloader term at all.
   ok(!/\bdownload|converter|convert\b/i.test(headText), 'notes carry no downloader term (shared channel)');
-  ok(/no matching source/.test(headText), 'the notes name the failure the user saw');
+  // 61.9 heads the changelog now, so the wording this release introduced is
+  // read from its own entry rather than from the head.
+  const rel618 = entries.find((e) => String(e.version) === '61.8');
+  ok(!!rel618, 'the 61.8 entry is still in the changelog');
+  ok(/no matching source/.test((rel618 ? rel618.items : []).join(' ')), 'the 61.8 notes name the failure the user saw');
   // The old releases must still be below it, and in order.
   const rel617 = entries.find((e) => String(e.version) === '61.7');
   ok(!!rel617, 'the 61.7 entry is still in the changelog');

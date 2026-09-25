@@ -36,7 +36,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '61.8', 'APP_VERSION = ' + ver);
+ok(ver === '62', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -59,7 +59,12 @@ console.log('[2] block-1 Play header: no downloader mention survives it');
   ok(b1.includes("getElementById('howToGetMusicHead')"), 'tutorial modal gets its "Getting music" section rewritten');
   ok(b1.includes("getElementById('howToScenario1Head')"), 'the converter scenario is hidden');
   ok(b1.includes("getElementById('tutSumGetMusic')"), 'the Settings tutorial summary bullet is rewritten');
-  ok(/getSongsHowToDisc[\s\S]*?to import them\./.test(b1nc), 'Discover/Get Songs how-to replacement has no download sentence');
+  // v61.9: that replacement is a walkthrough now, and the audio tool section under
+  // it is put away on this build. The two terms above already prove the header
+  // carries no downloader word; these pin that what replaced the old one-liner
+  // really is the steps, and that the tools go with the section that held them.
+  ok(/var _getSongsSteps =[\s\S]*?\+ Add songs/.test(b1nc), 'Discover/Get Songs how-to replacement is the import walkthrough');
+  ok(b1.includes("nextElementSibling.style.display = 'none'"), 'and the audio tool section below it is put away on Play');
 }
 
 console.log('[3] static gates for runtime-created copy');

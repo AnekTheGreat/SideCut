@@ -136,7 +136,7 @@ console.log('[7] release metadata');
 const vKey = "const APP_VERSION = '";
 const vi = src.indexOf(vKey);
 const ver = vi === -1 ? '' : src.slice(vi + vKey.length, src.indexOf("'", vi + vKey.length));
-ok(ver === '61.8', 'APP_VERSION = ' + ver);
+ok(ver === '62', 'APP_VERSION = ' + ver);
 const cStart = src.indexOf('const CHANGELOG = [');
 const cEnd = src.indexOf(NL + '  ];', cStart);
 let entries = null;
