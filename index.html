@@ -1732,7 +1732,11 @@ body.theme-dyn-orchid::before{
   /* Mark-all-as-read for New releases: a real button inside the bubble's panel,
      with the check icon and the theme's accent, instead of a floating chip on the
      bubble card. */
-  .hb-cta.hb-markread{ display:flex; align-items:center; justify-content:center; gap:8px; margin-top:16px; }
+  /* Mark-all-as-read for New releases. It sits at the TOP of the panel, under
+     the release count — at the bottom it was under every row, so on a phone it
+     was off-screen until the whole list had been scrolled past. Its gap is
+     therefore below it, not above. */
+  .hb-cta.hb-markread{ display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 12px; }
   .hb-cta.hb-markread svg{ width:17px; height:17px; fill:currentColor; flex-shrink:0; }
   .hb-cta[disabled]{ opacity:0.55; cursor:default; }
 /* Manual per-bubble sizes — applied only when the user picks one via the
@@ -10782,7 +10786,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '61.5';
+  const APP_VERSION = '61.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11197,6 +11201,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '61.6', date: 'September 25, 2026 · 2:27 PM EDT', title: 'The song lookup stops waiting on dead sources, and saving a video no longer freezes the app', items: [
+    'The song lookup used to hang for a long while and then report that it came back with nothing: most of the sources it was willing to ask had already been retired, and each one cost a full connection wait before it was given up on. It asks only the two that still answer now, so a lookup settles in a couple of seconds.',
+    'A lookup that came back empty had nothing behind it: only one audio variant was being kept per source, and that variant is the one the service cuts off partway through a music upload, so there was no second option to try. Several variants are kept from each source now, so a cut-off or refused one is walked past instead of ending the whole attempt.',
+    'Saving a song off a video link froze the whole app: the audio was encoded the old way, a single unbroken pass over every sample on the thread that draws the screen, so a three-minute song locked the app solid until it finished and nothing could be tapped. Encoding now runs in slices with the thread handed back between them, so the app stays responsive and the status line shows how far along it is.',
+    'What counts as a match is unchanged: the credit and the title still have to agree before any audio is used, so keeping more variants widens what can be tried without loosening what is accepted.',
+    'When nothing works the app now says which part failed — a lookup that never got an answer reads differently from one that answered with nothing usable — so a retry is an informed choice instead of a guess.',
+    'The Mark all as read button in the New releases panel moved to the top of the panel, directly under the release count and its two tabs: it used to sit below every release row, so on a phone the whole list had to be scrolled past to reach it.',
+    'Nothing else moved — playback, playlists, lyrics, covers, the drop check and the exports behave exactly as they did.',
+  ] },
   { version: '61.5', date: 'September 25, 2026 · 5:00 AM EDT', title: 'Links resolve, every song comes out as its own song, and your lyrics stay yours', items: [
     'Two songs of the same album that run to almost the same length could come back as the SAME file, or as each other: the clock cannot tell them apart, so the upload that ranked first was accepted for whichever song was being saved at that moment. During one run an upload now belongs to one song only, an upload whose own title answers to another track of that run belongs to that track, and a source whose title matches exactly is tried before anything the clock merely approves — each song comes out as its own song',
     'Spotify link lookups stopped resolving: they leaned on free public CORS relay services, corsproxy.io started demanding an API key and the others went quiet for days — so track details, artists, covers and album/playlist track lists came back empty. On the phone those pages are now read straight through the device’s own network path, which needs no relay at all; a browser keeps live relays as its fallback and the dead one has been replaced.',
@@ -28606,7 +28619,14 @@ if(!isDiscover) stopDiscoverPreview();
       if(!all.length){
         body.innerHTML = '<div class="hb-empty">No releases yet. Pin artists in Discover and SideCut will check for new music.</div>';
       } else {
+        // Mark-all is rendered with the count, ABOVE the rows: it acts on the
+        // whole list, and at the bottom of the panel it was unreachable without
+        // scrolling past every release first.
         body.innerHTML = '<div id="hbRelCount" style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">' + all.length + ' recent release' + (all.length>1?'s':'') + (unseenCount ? ' · ' + unseenCount + ' new' : '') + '</div>' +
+          '<button class="hb-cta hb-markread" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled') + '>'
+            + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg>'
+            + (unseenCount ? 'Mark all ' + unseenCount + ' as read' : 'All caught up')
+            + '</button>' +
           all.map(rel => {
             rel = Object.assign({}, rel, { date: window.__scDay10(rel.date) });
             const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
@@ -28615,11 +28635,7 @@ if(!isDiscover) stopDiscoverPreview();
             const daysUntil = rel.date ? Math.ceil((new Date(rel.date+'T00:00:00Z').getTime() - Date.now())/86400000) : null;
             const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date+'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + relAtUp + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
             return '<div class="hb-track-row" style="cursor:pointer;" data-date="' + escapeHtml(String(rel.date || '').slice(0,10)) + '" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + (when.indexOf('drops ') === 0 ? '<span style="color:var(--gold); font-weight:600;">' + when + '</span>' : when) : '') + '</div></div></div>';
-          }).join('') +
-          '<button class="hb-cta hb-markread" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled') + '>'
-            + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg>'
-            + (unseenCount ? 'Mark all ' + unseenCount + ' as read' : 'All caught up')
-            + '</button>';
+          }).join('');
         body.querySelectorAll('.hb-track-row').forEach(row => {
           row.addEventListener('click', () => {
                     // Same destination as the New releases list: the release page.
@@ -31214,12 +31230,16 @@ if(!isDiscover) stopDiscoverPreview();
       if(!audio){ _ytFails.push(fmt.toUpperCase() + ': YouTube returned no streams — the video is unavailable or this network is blocking YouTube'); return null; }
       var dec = await scFetchDecode(audio);
       if(!dec){ _ytFails.push(fmt.toUpperCase() + ': the audio stream would not download or decode (blocked or capped network)'); return null; }
-      // scEncodeAudio returns a Blob for MP3/WAV and a promise for FLAC, so it is
-      // awaited here — a promise handed to URL.createObjectURL() is the kind of
-      // thing that fails silently.
+      // The COOPERATIVE encoder, the same one every other conversion path uses.
+      // The plain scEncodeAudio runs the whole lamejs pass in one unbroken loop
+      // on the main thread, so a three-minute track (~8M samples) locked the
+      // app solid with nothing tappable until it finished — that was the freeze.
+      // This one yields every SC_ENCODE_SLICE_MS and reports its progress, and
+      // it returns a Promise for every format, so it is awaited here: a promise
+      // handed to URL.createObjectURL() fails silently.
       var blob = null;
       if(fmt === 'mp3' && typeof lamejs === 'undefined'){ await window.__scEnsureLamejs(); }
-      try{ blob = await scEncodeAudio(dec.buffer, fmt, { title: title || '', artist: (typeof ytAuthor === 'string' ? ytAuthor : ''), artBytes: null, artMime: null }); }
+      try{ blob = await scEncodeAudioCooperative(dec.buffer, fmt, { title: title || '', artist: (typeof ytAuthor === 'string' ? ytAuthor : ''), artBytes: null, artMime: null }, function(p){ if(p > 0 && p < 1) setStatus('Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(p * 100) + '%'); }); }
       catch(_encErr){ blob = null; }
       if(!blob){ _ytFails.push(fmt.toUpperCase() + ': the encoder produced nothing' + ((fmt === 'mp3' && typeof lamejs === 'undefined') ? ' — the MP3 encoder (lamejs) never loaded, which means a blocked CDN' : '')); return null; }
       return { downloadUrl: URL.createObjectURL(blob), filename: (scSafeName(title || ('youtube_' + videoId)) || ('youtube_' + videoId)) + '.' + fmt, blob: blob };
@@ -33366,13 +33386,24 @@ if(!isDiscover) stopDiscoverPreview();
     var UA_ANDROID = 'com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip';
     var UA_IOS = 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 18_0 like Mac OS X)';
     var UA_WEB = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    // Measured live against this exact request shape (Sep 25, 2026) — only
+    // these two clients still hand back playable audio:
+    //   ANDROID 3 -> OK, 29 adaptive formats + 1 muxed
+    //   IOS 5     -> OK, 16 adaptive formats
+    // and every other client this list used to carry is shut:
+    //   ANDROID_VR 28                   -> LOGIN_REQUIRED (not a bot check)
+    //   TVHTML5_SIMPLY_EMBEDDED_PLAYER 85 -> HTTP 404
+    //   WEB_EMBEDDED_PLAYER 56          -> ERROR (video unavailable)
+    //   MWEB 2                          -> UNPLAYABLE (needs a reload)
+    // as are IOS_MUSIC 26, ANDROID_MUSIC 21, ANDROID_CREATOR 14,
+    // IOS_CREATOR 15, WEB_CREATOR 62, TVHTML5 7, the ANDROID/IOS embedded
+    // players (404) and a plain WEB 1. A dead client is not a fallback: it is
+    // a full connect + read timeout per track on the way to the same nothing,
+    // which is what makes a working converter look broken. Re-probe before
+    // adding one back.
     var clients = [
       { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 }, num: 3, ua: UA_ANDROID },
-      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' }, num: 5, ua: UA_IOS },
-      { client: { clientName: 'ANDROID_VR', clientVersion: '1.60.19', androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3', osName: 'Android', osVersion: '12' }, num: 28, ua: UA_ANDROID },
-      { client: { clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.20240812.00.00' }, num: 85, ua: UA_WEB, third: 'https://www.youtube.com/' },
-      { client: { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250220.01.00' }, num: 56, ua: UA_WEB, third: 'https://www.youtube.com/' },
-      { client: { clientName: 'MWEB', clientVersion: '2.20250220.00.00' }, num: 2, ua: UA_ANDROID, third: 'https://www.youtube.com/' }
+      { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' }, num: 5, ua: UA_IOS }
     ];
 
     // Decrypt signatureCipher URLs when a client only hands one over.
@@ -33412,11 +33443,18 @@ if(!isDiscover) stopDiscoverPreview();
     // a music upload they are the whole answer — with a muxed stream behind
     // them for the music case.
     var audioStreams = [], muxedStreams = [], seenUrls = {}, answered = 0, metaTitle = '', metaAuthor = '';
-    var take = function(list, wantMuxed, into){
+    var take = function(list, wantMuxed, into, want){
       var rows = (list || []).slice();
       // Best first: opus 251 > m4a 141 > m4a 140, else first audio.
       rows.sort(function(x, y){ return rankOf(x.itag) - rankOf(y.itag); });
-      for(var k = 0; k < rows.length; k++){
+      // Collect more than the single best row. One stream per client left the
+      // downloader almost nothing to walk: the top-ranked member of a pool is
+      // the audio-only stream YouTube caps at its first megabyte for a music
+      // upload, so the only candidate was the one that cannot be downloaded
+      // and there was no second choice behind it. Returns how many it took.
+      var got = 0;
+      var limit = (typeof want === 'number' && want > 0) ? want : 1;
+      for(var k = 0; k < rows.length && got < limit; k++){
         var f = rows[k];
         if(!f || !f.mimeType) continue;
         var mt = String(f.mimeType);
@@ -33429,9 +33467,9 @@ if(!isDiscover) stopDiscoverPreview();
         if(!u || seenUrls[u]) continue;
         seenUrls[u] = true;
         into.push({ url: u, mime: mt, itag: f.itag, size: Number(f.contentLength || f.clen) || 0, muxed: !!wantMuxed });
-        return true;
+        got++;
       }
-      return false;
+      return got;
     };
     for(var c = 0; c < clients.length; c++){
       if(answered >= 2) break;
@@ -33446,8 +33484,12 @@ if(!isDiscover) stopDiscoverPreview();
         var vd = d.videoDetails || {};
         if(!metaTitle && vd.title) metaTitle = vd.title;
         if(!metaAuthor && vd.author) metaAuthor = vd.author;
-        take(d.streamingData.adaptiveFormats, false, audioStreams);
-        take(d.streamingData.formats, true, muxedStreams);
+        // Audio-only first (small, decodes cleanly), the progressive muxed
+        // copy behind it for the music-upload cap — several of each, so the
+        // downloader can walk past a capped or blocked stream instead of
+        // running out of candidates.
+        take(d.streamingData.adaptiveFormats, false, audioStreams, 3);
+        take(d.streamingData.formats, true, muxedStreams, 2);
       }catch(e){}
     }
     var streams = audioStreams.concat(muxedStreams);
@@ -35636,10 +35678,18 @@ window.__scDiscRelTab = function(mode, root){
   snap.forEach(function(r){ r.style.display = (!upcoming || up.indexOf(r) !== -1) ? '' : 'none'; });
   var finalOrder = upcoming ? up.concat(snap.filter(function(r){ return up.indexOf(r) === -1; })) : snap;
   finalOrder.forEach(function(r){ root.appendChild(r); });
-  // The Home bubble's Mark-all chip acts on the whole list, so it rides after
-  // the rows and only shows while the whole list is showing.
+  // The Home bubble's Mark-all button acts on the whole list, so it only shows
+  // while the whole list is showing — but it belongs at the TOP of the panel,
+  // right under the release count. It used to be appended after the rows, which
+  // left it under the entire list and off-screen on a phone until you scrolled
+  // past everything to reach it.
   var mr = root.querySelector('#hbCtaMarkSeen');
-  if(mr){ root.appendChild(mr); mr.style.display = upcoming ? 'none' : ''; }
+  if(mr){
+    var _markAfter = root.querySelector('#hbRelCount');
+    if(_markAfter && _markAfter.parentNode === root) root.insertBefore(mr, _markAfter.nextSibling);
+    else root.insertBefore(mr, root.firstChild);
+    mr.style.display = upcoming ? 'none' : '';
+  }
   var emptyEl = root.querySelector('#dpRelUpEmpty');
   if(emptyEl){ root.appendChild(emptyEl); emptyEl.style.display = (upcoming && !up.length) ? 'block' : 'none'; }
   var sEl = root._dpRelSubEl;

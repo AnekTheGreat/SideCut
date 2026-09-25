@@ -1,5 +1,29 @@
 # SideCut — repository memory
 
+## v61.6 (Sep 25, 2026): the lookup stops asking dead sources, saving a video stops freezing, mark-all moves up
+- **The user's report, in their words**: "no source found" on older EPs/albums, and "whenever I try to convert
+  YouTube to mp3 the app freezes and nothing works". Two different failures, same file (`dev/patch-616.mjs`).
+- **Measured, not guessed**: the Innertube client list carried six clients; re-probing the SHIPPING request shape
+  showed only ANDROID (3) and IOS (5) still return playable audio — ANDROID_VR → LOGIN_REQUIRED,
+  TVHTML5_SIMPLY_EMBEDDED_PLAYER → 404, WEB_EMBEDDED_PLAYER → ERROR, MWEB → UNPLAYABLE. A dead client is not a
+  fallback: it costs a full connect + read timeout per track on the way to the same "nothing", which is exactly
+  why a working lookup read as a broken one. The list is two entries now, with the probe results in the comment.
+- **An empty result had no second candidate behind it**: `take()` kept exactly ONE stream per pool, and the
+  top-ranked audio-only row is the one YouTube caps at its first megabyte for a music upload — so the only
+  candidate was the one that cannot be fetched. It now gathers up to `want` rows per pool (3 audio-only, 2
+  muxed) and returns how many it kept, so `scFetchDecode` walks past a capped or refused stream.
+- **The freeze was the encoder, not the network**: the video-link path called plain `scEncodeAudio`, whose whole
+  lamejs pass is one unbroken loop on the main thread (~8M samples for a three-minute track). It now calls
+  `scEncodeAudioCooperative` with a progress callback — every other conversion path already did.
+- **Mark-all-as-read moved to the TOP of the New releases panel**, and TWO places had to move: the panel's own
+  markup, and `__scDiscRelTab` — which re-`appendChild`s that button after the rows on EVERY render, so fixing
+  only the markup puts it straight back at the bottom.
+- **Mechanics**: `dev/patch-616.mjs` (idempotent, count==1 needles, one atomic write at the end),
+  `dev/test-616.mjs` (44 assertions), then `dev/ota-bundle.mjs` + `dev/ota-bundle-play.mjs` and
+  `node dev/patch-616.mjs --manifest` in that order (the manifest re-seed reads `ota/updates.json`).
+- **Do not assume a patch script's replacement text is what shipped**: index.html's wording can be NEWER than the
+  script's (a reworded needle still skips via its marker), so match new needles against the CURRENT file.
+
 ## v61.5 (Sep 25, 2026): two release lines that both called themselves 61.3.8/61.3.9 became one
 - **What happened**: `origin/main` and the local line had each been shipping under the SAME version numbers
   for DIFFERENT work — local `61.3.8` was the lyrics-identity fix while origin `61.3.8` was the dated-drops
