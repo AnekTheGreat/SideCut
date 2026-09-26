@@ -262,8 +262,11 @@ sub('rollback copies are capped at the newest few',
   [
     '  function saveMeta(){',
   ].join('\n'),
+  // Marker is deliberately loose: patch-645 replaced this pruner with a key-only
+  // one (`scPruneVersionSnapshots(keepCount)`), so this patch must recognise BOTH
+  // forms as "already applied" instead of putting the reading version back.
   PRUNE,
-  undefined, 'async function scPruneVersionSnapshots(){');
+  undefined, 'function scPruneVersionSnapshots(');
 
 sub('the cap runs at boot, right after this version saves its own copy',
   [
@@ -279,7 +282,8 @@ sub('the cap runs at boot, right after this version saves its own copy',
     '      // accumulate for ever (they are ~2.4 MB each, one per version ever run).',
     '      try{ await scPruneVersionSnapshots(); }catch(_ePrune){ }',
   ].join('\n'),
-  undefined, 'try{ await scPruneVersionSnapshots(); }catch(_ePrune){ }');
+  // 645 moved this call off the boot turn entirely; either text means done.
+  undefined, 'scRunWhenIdle(function(){ scPruneVersionSnapshots(); });');
 
 // ---------------------------------------------------------------------------
 // 5. The Storage panel.

@@ -1,5 +1,41 @@
 # SideCut — repository memory
 
+## 63.0.9 (Sep 26, 2026): "Boot takes 4 seconds and storage bro" — the same defect
+- **The user's screenshots settled it**: in-app panel `454 songs · 2.99 GB`, covers 59.6 MB, rollback copies 13.1 MB,
+  settings 55 KB, `storage.estimate()` 3.09 GB of 13.09 GB — while Android's app page said `Data 4.12 GB`, cache 4.6 MB.
+- **THE DIAGNOSIS (the thing to remember): `loadFromDB()` does `dbGetAll('tracks')`, and every track record carried its
+  own song as a raw ArrayBuffer (`blobData`) — so a launch deserialised the ENTIRE LIBRARY'S AUDIO before the first paint.**
+  That is the 4 seconds. It is also why a play count or a lyric stamp cost megabytes, and part of why the app data
+  directory (4.12 GB) exceeded the music (2.99 GB). Measured in `dev/compact-647-check.cjs` at 1/15 scale: **312 MB read at
+  boot for 40 songs → 0.0 MB** after compaction.
+- **The fix**: store the audio as a **Blob handle** instead of inline bytes. IndexedDB keeps blob bytes out of the record and
+  dedups them by UUID, so the record is a few hundred bytes, the bytes are written once, and a metadata write never touches
+  audio again. `restoreTrackFile()` already accepted both forms — that is what made this a small change.
+  - **The ArrayBuffer form is the fallback, not dead code.** Some Android WebView builds refuse a generated Blob cloned
+    into IndexedDB (`InvalidBlob`) — the original reason for the bytes-in-record layout. `persistTrackMeta()` tries the
+    Blob first and falls back; `scAudioInlineOnly` then stops it from paying for the failed attempt on every later write.
+  - **CRITICAL, cost a debugging round: `dbPut()` reports a refused write by resolving `false`, never by rejecting** (its
+    outer try/catch swallows a synchronous DataCloneError from `put()`). Both audio writes must check `if(_ok === false)`,
+    or a song that was never written looks saved. The probe's fake reproduces the refusal (`refuseBlob`).
+- **`scCompactLibraryStep(maxRecords, onProgress)`** converts libraries written before this release: one transaction per
+  record (a crash leaves that song intact), idempotent (it only looks at records that still hold `blobData`, so there is no
+  progress state to lose), and it stops for good on a device that refuses the form. 25 records per launch from
+  `scRunWhenIdle` next to the snapshot guard; **Storage → Compact library** does the whole library with progress. The panel
+  row `Songs read at every launch` is the number behind a slow start, and it only claims "none — all compacted" when a pass
+  has actually seen every key (`seen >= keys.length`), never from a budgeted run that stopped early.
+- **`dev/compact-647-check.cjs`** (new, 23 checks; fails 11 against the build the user was running). Harness notes: the fake
+  reports an inline-audio record as `NOMINAL_BYTES` (40 songs × 6 MB) instead of allocating GBs — the metric is "what the
+  storage engine pays for an ArrayBuffer inside a record" — and a record with a Blob handle reports **0**. Its `getAllKeys`
+  MUST return `v.key !== undefined ? v.key : v.id` (tracks are keyed by `id`, meta rows by `key`); returning only `key` made
+  the compaction find nothing and silently report "all compacted".
+- **Order-safety lesson**: patch-643's prune sub used `async function scPruneVersionSnapshots(){` as its marker, so after
+  patch-645 rewrote that function as `(keepCount)` a re-run of 643 **put the reading version back**. Markers must match both
+  the old and the new form (now `'function scPruneVersionSnapshots('` and 645's `scRunWhenIdle` line). Verified by running
+  641..648 both from the 63.0.7 base and from a tree that already had 641..646: both produce the tree byte-for-byte.
+- **Honest limits to tell the user**: the first launch after installing still reads the old form once (that is the conversion),
+  so judge speed on the following launch; and the gap between Android's number and the panel's is the WebView's own caches
+  (GPU/HTTP/service-worker), which JavaScript cannot see or clear.
+
 ## 63.0.8 (Sep 26, 2026, second half): "why does it take up 4.53 gb"
 - **No new version.** This folded into the unreleased **63.0.8** (`APP_VERSION`, the `sw.js` cache `63.0.9`, the changelog
   DATE `September 26, 2026 · 2:12 PM EDT` and every test repin stay exactly where patch-642 put them — `dev/test-6052.mjs`
