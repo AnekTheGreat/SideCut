@@ -1,5 +1,28 @@
 # SideCut — repository memory
 
+## 63.0.9 follow-up (Sep 26, 2026): patch notes carry no personal data
+- **The user's ask, verbatim**: "You don't have to put my personal data In patch notes remove all personal data from
+  patch notes." The `CHANGELOG` array in `index.html` is the app's patch notes AND the source of the published OTA
+  notes (`dev/ota-bundle*.mjs` slice the head entry's `items` into `ota/updates.json`, `ota/manifest.json`,
+  `updates.json`, `manifest.json`), so scrubbing the array scrubs the public surface too.
+- **What counted as personal data and was generalised**: the reporter's library size (songs count + GB) in 63.0.9;
+  named artists (in 63.0.6, 63.0.5, 62, 61.8, 61.7, 61.5, 60.1.3, 60.1.2, 60.1.1, 60.0.9, 50.1.1, 50.0.2, 49.5.x,
+  56.1); named albums/songs (Ishq Da Uda Ada, Ishq Ho Gaya, Smile, Dil, Ranjha, LIFESTYLE, Gangstas Paradise, Dealer,
+  CRUISE CONTROL, AUJLA SZN, Punjabi Gaane, Over Exposure, Dil); and the third-party names used to describe the
+  lyrics incident (Jason Derulo, LISA). Each note keeps its meaning — only the identifying specifics are gone.
+- **Mechanics**: `dev/patch-649.mjs` — 27 full-line replacements into the `CHANGELOG` array, marker-matched
+  (unique substring of the old line) with `count==1` and self-healing (`lines.includes(replacement)` → skipped), so a
+  rerun reports 0 edits. Then the usual release mechanics: rebuild both bundles and re-seed the root manifest.
+- **Sandbox has no `zip`/`unzip`** — `.shim/zip` + `.shim/unzip` are Python `zipfile` stand-ins (already gitignored via
+  `.shim/`), used as `PATH="$PWD/.shim:$PATH" node dev/ota-bundle.mjs`. `acorn` also needs `npm install acorn --no-save`.
+- **A test pinned the personal data**: `dev/test-6138.mjs` asserted `/Bikramjit Dhaliwal/.test(headText)`. It now asserts
+  `/small artist/` — the genericised wording. **When genericising notes, grep `dev/test-*.mjs` for the names first.**
+- **`dev/test-617.mjs` fails 1 check ("hits and misses are both persisted") — PRE-EXISTING**, verified identical against
+  the pre-patch `index.html`, unrelated to the notes.
+- **Verified**: all 6 inline `<script>` blocks parse (`new Function`); 1258 `ok` / 1 pre-existing failure across the
+  `dev/test-*.mjs` suite; both `ota-bundle --check` and `ota-bundle-play --check` OK; zero personal tokens in
+  `index.html`'s visible changelog and in every published manifest.
+
 ## 63.0.9 (Sep 26, 2026): "Boot takes 4 seconds and storage bro" — the same defect
 - **The user's screenshots settled it**: in-app panel `454 songs · 2.99 GB`, covers 59.6 MB, rollback copies 13.1 MB,
   settings 55 KB, `storage.estimate()` 3.09 GB of 13.09 GB — while Android's app page said `Data 4.12 GB`, cache 4.6 MB.

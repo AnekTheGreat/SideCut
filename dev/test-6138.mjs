@@ -142,7 +142,7 @@ console.log('[7] the changelog says what actually happened');
     const headText = (head.items || []).join(' ');
     // Both 61.3.8 releases are folded into this one entry, so the notes this
     // test was written against live HERE now.
-    ok(/Bikramjit Dhaliwal/.test(headText) && /length/.test(headText), 'it names the small-artist cause');
+    ok(/small artist/.test(headText) && /length/.test(headText), 'it names the small-artist cause');
     ok(/Manual button/.test(headText), 'it names the manual way out');
     ok(/imprint/.test(headText), 'it names the imprint exception');
     ok(/same-titled/.test(headText), 'and it says a same-titled stranger is never served');
