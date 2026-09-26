@@ -1,5 +1,36 @@
 # SideCut — repository memory
 
+## 63.1 (Sep 26, 2026): the scrub needed a version bump to reach an updated phone
+- **The user's ask, verbatim**: "You don't have to put my personal data In patch notes remove all personal data from
+  patch notes" — and, once the scrub was pushed at the same version, "Did you bump ver?" / "Yes".
+- **THE LESSON (this batch exists only because of it): editing the notes and rebuilding the bundle at the SAME
+  version does not deliver.** `dev/native-updates.js` installs only a bundle whose version is STRICTLY newer:
+  `compareVersions(man.version, cur) <= 0` → logs "up to date" and returns without downloading (~line 954). A phone
+  already on 63.0.9 therefore kept the old notes; only devices on 63.0.8 or older, or a fresh install, received the
+  scrub. The same rule is at `updateIsNewer()` (index.html ~14124) for the offer side and `isOlderBundle()` on the
+  apply side. **A note-only change still needs a number nobody has run — the bump IS the delivery.**
+- **Number choice**: the `.x` line caps at 9 and `63.0.10` is forbidden (MANDATORY VERSION RULE), so **63.1**.
+  `sw.js` moves on its own line to `sidecut-shell-v63.0.11` (decoupled; nothing compares the two).
+  Verified with the SHIPPED `compareVersions` (lifted out of index.html): `63.1` vs `63.0.9` → `+1`,
+  `63.1` vs `63.0.10` → `+1` (so the cache-buster's higher number can never be mistaken for a release).
+- **The head entry is six notes and talks about itself**, so it has to obey the channel rules it describes: no
+  `download`/`converter`/bare `convert`, never name the play build (test-6058's `STRONG`, test-60510, test-616..620).
+  It also names no artist, album, song or library size — the whole point.
+- **`dev/patch-650.mjs`** is the bump: `APP_VERSION` 63.0.9 → 63.1, the self-healing head entry, `sw.js` →
+  `63.0.11`, and 29 test repins. Then the usual mechanics — **rebuild BOTH bundles and re-seed the root manifest**.
+  **Order matters and cost a round here**: `dev/test-6058.mjs` and `dev/test-play.mjs` assert the OTA manifests match
+  `APP_VERSION`, so they fail until the bundles are rebuilt (they read `ota/updates.json`, not index.html).
+- **Sandbox has no `zip`/`unzip`**: `.shim/zip` + `.shim/unzip` are Python `zipfile` stand-ins, used as
+  `PATH="$PWD/.shim:$PATH" node dev/ota-bundle.mjs`. **Run the whole suite with that PATH** or test-6058/test-play
+  fail on `spawnSync unzip ENOENT` for a reason that has nothing to do with the change. `npm install acorn --no-save`
+  is also needed.
+- **`dev/test-617.mjs` fails 1 check ("hits and misses are both persisted") — PRE-EXISTING**, identical against the
+  pre-change `index.html`. Verified in both directions this batch.
+- **Verified**: 6 inline blocks parse; **1258 ok / 1 pre-existing failure** across `dev/test-*.mjs`; both
+  `ota-bundle --check` and `ota-bundle-play --check` OK at v63.1; zero personal tokens in `index.html`'s CHANGELOG and
+  in every published manifest (`ota/updates.json`, `ota/manifest.json`, `ota-play/updates.json`, root
+  `updates.json`/`manifest.json`).
+
 ## 63.0.9 follow-up (Sep 26, 2026): patch notes carry no personal data
 - **The user's ask, verbatim**: "You don't have to put my personal data In patch notes remove all personal data from
   patch notes." The `CHANGELOG` array in `index.html` is the app's patch notes AND the source of the published OTA
