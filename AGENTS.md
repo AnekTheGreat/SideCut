@@ -1,19 +1,58 @@
 # SideCut — repository memory
 
-## sw.js cache name (Sep 26, 2026): decoupled from APP_VERSION — it is 63.0.1
-- **The user's words**: "The sw.js can be 63.0.1". The app stays at **62.0.5** (their earlier correction); only `sw.js`'s
-  `CACHE_NAME` moved to **`sidecut-shell-v63.0.1`**. That name is a pure cache-buster: nothing in `index.html` compares it to
-  `APP_VERSION` (there is no `SW_UPDATED` consumer at all), it only decides which stale caches `activate` deletes. So it is
-  free to carry its own number, and the two are **no longer required to match**.
+## 62.1 (Sep 26, 2026): the Album History album drag, re-shipped above the 63 bundle
+- **The user's words**: "I didnt get the update I need these able to reorder by me holding and dragging them it should be
+  smooth bump ver to v62.1 patch notes". Asked which version the phone showed and which number to ship, they answered
+  **phone = 63** and **release = 62.1**.
+- **Why 62.0.5 never arrived — the 63 trap, in full**: the OTA automation published a bundle numbered **63** *before* the
+  62.0.5 release (`989d176 "Publish OTA bundle 63"`), and `dev/native-updates.js` applies one rule everywhere:
+  `isOlderBundle(v)` → `compareVersions(v, currentVersion()) < 0` → refuse (lines ~194, ~499, ~570, ~652, ~1073, ~1201).
+  A phone that ran 63 therefore silently refuses 62.0.5. 62.1 is the same feature carrying a number above it. **62.1 is
+  still below 63**, so a 63 device will refuse this one too — only a number above 63 (e.g. 64) or a fresh install actually
+  reaches it. That caveat was stated to the user before shipping and they chose 62.1 anyway.
+- **What 62.1 actually changes in the code — one thing, and it is the "smooth" half of the report**: `updateIndex()` read
+  `el.offsetHeight` and every `others[j].offsetHeight` **on every finger move**. `drive()` writes the lifted row's
+  `transform` first and the reads come after it, so each move forced a synchronous re-layout of the whole list — classic
+  layout thrash, and why a drag can stutter on a phone even when the maths is right. The list is now measured **once** at
+  pickup (`slotTops` + a `slotMids` midpoint per slot + `pickH`, the lifted row's own height) and a move is arithmetic
+  only. The rest of the gesture (420 ms hold, finger-following row, 0.18 s neighbour slides, 56 px edge auto-scroll,
+  per-artist `sidecut_ahAlbumOrder`) is untouched from 62.0.5.
+- **Mechanics**: `dev/patch-624.mjs` — 3 count==1-markered index.html edits for the drag, `APP_VERSION` → `62.1`, the new
+  CHANGELOG head entry inserted **in front of** the 62.0.5 one, 24 test repins, and `--manifest` to re-seed the root
+  `manifest.json`. `sw.js` is not touched by patch-624 — it carries its own cache number, advanced separately by
+  `dev/patch-625.mjs` (see the section below). Bundles were rebuilt after both scripts: `ota-bundle` v62.1,
+  `ota-bundle-play` v62.1, both `--check OK`.
+- **Verified**: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `dev/ah-album-reorder-check.cjs` **34/34** (it grew two
+  shape checks: the list is measured once at pickup, and no `offsetHeight` read survives in the move path),
+  `dev/album-hold-check.cjs` 34/34. The shipped notes in `ota/updates.json` are clean of every term
+  `dev/test-6058` / `dev/test-60510` forbid.
+
+## sw.js cache name (Sep 26, 2026): decoupled from APP_VERSION — it is 63.0.2
+- **The user's words**: "The sw.js can be 63.0.1", then "Just make the sw.js v63.0.2 you are not allowed to make full jumps
+  from v63 to v64 without my consent". Only `sw.js`'s `CACHE_NAME` moves — it is now **`sidecut-shell-v63.0.2`** while the app
+  is **62.1**. That name is a pure cache-buster: nothing in `index.html` compares it to `APP_VERSION` (there is no
+  `SW_UPDATED` consumer at all), it only decides which stale caches `activate` deletes. So it is free to carry its own
+  number, and the two are **no longer required to match**. The **63.x line belongs to the cache name alone**: it must never
+  be copied into `APP_VERSION` or the CHANGELOG, and **stepping past 63 (to v64) needs the user's explicit consent** —
+  they have ruled out whole-number jumps on their own.
+- **User rule to honour**: the app's release number and the cache-buster's number are independent decisions, and the user
+  chooses each one. Never infer one from the other, and never advance a whole version (63 → 64) or rename a release on your
+  own initiative. Ask first.
 - **Test contract changed**: `dev/test-*.mjs` used to assert `sw.includes('sidecut-shell-v' + ver)`. Those 12 files now assert
   the naming convention (`sw.includes("const CACHE_NAME = 'sidecut-shell-v")`, label "service worker has a versioned cache
-  name"), and the five files that pinned a literal now pin `sidecut-shell-v63.0.1` (test-612, test-6136, test-6137,
+  name"), and the five files that pinned a literal now pin `sidecut-shell-v63.0.2` (test-612, test-6136, test-6137,
   test-6138, test-6139). **A future release that bumps `APP_VERSION` must NOT repin the SW cache name to it** — bump `sw.js`
   on its own so the cache-buster stays independent.
-- **Mechanics**: `dev/patch-623.mjs` (idempotent; the sw.js edit + 17 test repins; `--manifest` re-seeds root
-  `manifest.json`). `sw.js` is inside **both** OTA zips, so `node dev/ota-bundle.mjs` and `node dev/ota-bundle-play.mjs`
-  must be rebuilt after any `sw.js` edit (the sizes here are unchanged only because `62.0.5` and `63.0.1` are the same
-  length). Verified: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `ah-album-reorder-check` 32/32, `album-hold-check` 34/34.
+- **Mechanics**: `dev/patch-623.mjs` (the 62.0.5 → 63.0.1 decoupling; the sw.js edit + 17 test repins) and
+  `dev/patch-625.mjs` (63.0.1 → 63.0.2; the sw.js edit + the 5 pinned literals). Both take `--manifest` to re-seed root
+  `manifest.json`. `sw.js` is inside **both** OTA zips, so `node dev/ota-bundle.mjs` and `node dev/ota-bundle-play.mjs`
+  must be rebuilt after any `sw.js` edit (patch-623 alone left the sizes unchanged, because `62.0.5` and `63.0.1` are the
+  same length; the 62.1 release changed `index.html`, so the zips grew to 687074 / 687086).
+- **The zip size is NOT reproducible**: a rebuild of identical content can differ by a byte or two (an embedded timestamp),
+  so the order is always `ota-bundle` + `ota-bundle-play`, **then** `patch-*.mjs --manifest`. `ota/updates.json`,
+  `manifest.json` and `ota-play/updates.json` must record the size of the LAST build — rebuild after re-seeding and the
+  recorded size is a build behind, which `--check` will flag. Verified after both patches: 28/28 `dev/test-*.mjs`,
+  `check-dom` 0 failures, `ah-album-reorder-check` 34/34, `album-hold-check` 34/34.
 
 ## 62.0.5 (Sep 25, 2026): the albums in Album History drag like the albums in the Albums tab
 - **The user's report, in their words**: "It should be v62.0.5 not v63 and you didn't fix the problem I should be able to

@@ -10988,7 +10988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '62.0.5';
+  const APP_VERSION = '62.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11403,6 +11403,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '62.1', date: 'September 26, 2026 · 12:34 AM EDT', title: 'Holding an album in Album History now drags it into the order you want', items: [
+    'In \ud83d\udcc0 Album History, press and hold an album for a moment, then drag it up or down. The row picks up under your finger and stays where you let it go.',
+    'The drag keeps up with your finger: the list is measured once when you pick an album up instead of on every little move, so nothing stutters while you drag.',
+    'The albums you are not holding slide over to open the gap the lifted one is heading for, and the list scrolls itself when you hold an album near the top or bottom edge, so one further down is reachable in a single drag.',
+    'The order is remembered for each artist. Close the popup, reopen it, refetch the list, or restart the app, and that artist\'s albums come back in the order you gave them.',
+    'A short tap is unchanged — it still opens the album\'s songs. Only a press-and-hold starts a reorder, and moving your finger before the hold finishes still just scrolls the list.',
+    'Holding an album\'s artwork still sets a custom cover, and reordering the artists at the top of Album History works exactly as it did.',
+  ] },
   { version: '62.0.5', date: 'September 25, 2026 · 9:56 PM EDT', title: 'The albums in Album History can be dragged into the order you want', items: [
     'In \ud83d\udcc0 Album History, press and hold an album for a moment, then drag it up or down. The row lifts under your finger, the other albums ease out of the way, and the album stays where you let go.',
     'It now moves the way the album cards in the Albums tab do: the row keeps up with your finger instead of jumping, the list slides over to open the gap it is heading for, and the list scrolls itself if you hold it near the top or bottom edge, so albums further down are reachable in one drag.',
@@ -36959,7 +36967,7 @@ window.__wireAHAlbumReorder = function(){
     var HOLD_MS = 420;
     var GAP_PX = 0;          // the rows sit flush; each one's own border is the seam
     var holdTimer = null, dragging = false, moved = false;
-    var rows = [], others = [], slotTops = [], startIndex = 0, currentIndex = 0;
+    var rows = [], others = [], slotTops = [], slotMids = [], pickH = 0, startIndex = 0, currentIndex = 0;
     var startY = 0, lastPt = null, autoRaf = null, lastPtrDown = 0;
 
     function rowList(){
@@ -36998,11 +37006,12 @@ window.__wireAHAlbumReorder = function(){
     // neighbour's real midpoint — so an album with its track list open, which is
     // many times taller than a collapsed one, still lands where it is dropped.
     function updateIndex(dy){
-      var centre = slotTops[startIndex] + (el.offsetHeight || 0) / 2 + dy;
+      // Both sides come from the single measurement taken at pickup, so moving
+      // the finger costs nothing but arithmetic.
+      var centre = slotTops[startIndex] + pickH / 2 + dy;
       var p = 0;
       for(var j = 0; j < others.length; j++){
-        var mid = slotTops[origSlot(j)] + (others[j].offsetHeight || 0) / 2;
-        if(mid < centre) p++;
+        if(slotMids[origSlot(j)] < centre) p++;
       }
       p = Math.max(0, Math.min(others.length, p));
       if(p !== currentIndex){ currentIndex = p; applyShifts(); }
@@ -37078,8 +37087,16 @@ window.__wireAHAlbumReorder = function(){
       currentIndex = startIndex;
       // Slots are measured rather than assumed: heights differ once an album's
       // track list is open.
-      slotTops = [0];
-      for(var m = 0; m < rows.length; m++) slotTops.push(slotTops[m] + (rows[m].offsetHeight || 0) + GAP_PX);
+      // Measured ONCE, here. Reading offsetHeight again on every finger move
+      // re-laid-out the whole list mid-drag (the transform is written before the
+      // read), which is what made the row lag behind the finger.
+      slotTops = [0]; slotMids = [];
+      for(var m = 0; m < rows.length; m++){
+        var _h = rows[m].offsetHeight || 0;
+        slotTops.push(slotTops[m] + _h + GAP_PX);
+        slotMids.push(slotTops[m] + _h / 2);
+      }
+      pickH = el.offsetHeight || 0;
       try{ document.body.classList.add('reordering'); }catch(err0){}
       try{ window.__scAHAlbumDragging = true; }catch(err1){}
       el.classList.add('dragging');

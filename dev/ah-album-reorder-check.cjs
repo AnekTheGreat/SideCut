@@ -1,4 +1,4 @@
-// 62.0.5 — albums under an artist in the 📀 Album History popup can be reordered.
+// 62.1 — albums under an artist in the 📀 Album History popup can be reordered.
 //
 // Opens a real Album History popup (the same markup the renderer emits), runs the
 // app's own __wireAH over it, then holds an album row and drags it. Checks that the
@@ -12,6 +12,11 @@
 // captured the pointer on the album WRAPPER (a parent), so a captured move was
 // dispatched past the header and never ran. Document-level listeners, a pinned
 // touch-action and a swallowed touchmove are what make it work on a phone.
+//
+// 62.1 adds one shape check of its own: the drag must NOT read offsetHeight while the
+// finger is moving. The row's transform is written first, so reading layout after it
+// forces a synchronous re-layout of the whole list on every move — layout thrash,
+// and the reason a drag stutters on a phone. The list is measured once at pickup.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
@@ -152,6 +157,10 @@ function savedOrder(win) {
     ok('the album drag pins touch-action on the row it lifts', blk.includes("el.style.touchAction = 'none';"));
     ok('the album drag swallows touchmove so Android cannot take the gesture',
       blk.includes('if(ev.cancelable) ev.preventDefault();'));
+    ok('the album drag measures the list once, at pickup',
+      blk.includes('pickH = el.offsetHeight || 0;') && blk.includes('slotMids.push(slotTops[m] + _h / 2);'));
+    ok('the album drag reads no layout while the finger is moving',
+      !blk.includes('(el.offsetHeight || 0) / 2 + dy') && !blk.includes('(others[j].offsetHeight || 0) / 2'));
     ok('the album drag has a touchmove fallback for pointer-less WebViews',
       blk.includes("document.addEventListener('touchmove', onTouchMove, { passive: false })"));
     ok('the artist drag cannot clear the album drag\'s state', html.includes('if(window.__scAHAlbumDragging) return;'));
