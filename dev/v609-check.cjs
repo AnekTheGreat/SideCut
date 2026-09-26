@@ -138,9 +138,16 @@ return { fn: fetchArtistSingles, calls: CALLS, results: { us: ${JSON.stringify(U
   const loadSrc = slice(html, 'function loadCachedDiscoverPopup(key){', 'window.orderArtistKeys');
   ok('loadCachedDiscoverPopup was extracted', loadSrc.length > 200, String(loadSrc.length));
   const store = { 'discPopupCache_\ud83d\udcc5 Old songs': JSON.stringify({ title: '\ud83d\udcc5 Old songs', body: staleRow, subtitle: '111 songs', ts: Date.now(), pins: '' }) };
-  const load = new Function('localStorage', 'openDiscoverPopup', loadSrc + '\nreturn loadCachedDiscoverPopup;')(
+  // The loader strips through the helper the first script block exports on
+  // window, so the harness extracts that helper too and gives it a window to
+  // hang on. Both pieces are the real shipped source, run for real.
+  const stripSrc = slice(html, 'function scStripPopupPlayButtons(html){', '  // Groups from the saved snapshot, keyed by artist name.');
+  ok('the shared stripper was extracted with the loader', stripSrc.length > 100, String(stripSrc.length));
+  const winStub = {};
+  const load = new Function('localStorage', 'openDiscoverPopup', 'window', stripSrc + '\n' + loadSrc + '\nreturn loadCachedDiscoverPopup;')(
     { getItem: (k) => (k in store ? store[k] : null) },
-    (title, body, sub) => { opened = { title, body, sub }; }
+    (title, body, sub) => { opened = { title, body, sub }; },
+    winStub
   );
   const shown = load('\ud83d\udcc5 Old songs');
   ok('a saved Old songs snapshot still opens', shown === true && !!opened);

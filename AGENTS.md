@@ -1,5 +1,77 @@
 # SideCut — repository memory
 
+## 63.0.6 (Sep 26, 2026): the ▶ that lived in the popup cache, and the one cover with no source left
+- **Shipped number**: **63.0.6** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.7`** (its own
+  number, decoupled; a cache-buster). Head CHANGELOG entry written as **exactly six** notes; `ota/` and `ota-play/` both
+  rebuilt and both carry **v63.0.6 / 6 notes**, both `--check`s OK, root `manifest.json` re-seeded (`--manifest`).
+- **The user's words**: "I'm still missing one album cover and there shouldn't be a play button in singles when you click
+  on a song" — with two screenshots: Album History with **`Ishq Da Uda Ada` (2003-02-09, Diljit) still a blank square**
+  while `Smile` / `Ishq Ho Gaya` / `Over Exposure` / `Dil` / `Chocolate` / `The Next Level` all had art, and the **Singles**
+  popup for `BK` ("298 singles from 7 artists", search bar + ↻ Refetch singles / 🗑 Recently Deleted row) with a **green ▶
+  on every row** (GALL MUKKDI, CRUISE CONTROL, Unforgettable …).
+- **Reports are not code, and the code is not the app — the ▶ had moved into the popup cache.** 63.0.5 really did remove
+  the last renderer that drew a button, and `loadCachedDiscoverPopup` really did strip a saved body. But three things read
+  a saved `discPopupCache_*` body and only that one stripped it:
+  - **`cachedArtistGroups()`** — lifts whole `.dp-ah-artist` groups out of a saved body as `outerHTML`; they are re-used as
+    `kept.html` at the top of a *fresh* Singles list.
+  - **the Singles button's cached-open branch in `siBtn.onclick`** — hands `_sCached.body` straight to `openDiscoverPopup`
+    and returns, never touching the loader at all. **This is what the screenshot was.**
+  - **`openDiscoverPopup` itself *writes* the cache** (`localStorage.setItem('discPopupCache_' + title, …)`) from the body
+    it was just handed — so that branch **re-saved the ▶ it had served**, and the button became self-perpetuating: cache
+    expiry was the only thing that could ever have cleared it. **Lesson: when a snapshot is cleaned on read, clean it at
+    the writer too, and prefer the one choke point every path already goes through** (here, the top of
+    `openDiscoverPopup`, which also heals the write).
+- **index.html has TWO top-level script blocks, and the popup code is in the second one.** Block 1 runs the app IIFE and
+  closes at `</script>` (formerly line 36429); `openDiscoverPopup`, `loadCachedDiscoverPopup` and the album-history popup
+  live in block 2 from `<script>` (36430) on. **A helper defined in one block is invisible to the other except through
+  `window`** — which is why `scStripPopupPlayButtons` is declared in block 1 next to `cachedArtistGroups` and published as
+  `window.__scStripPopupPlayButtons`, exactly like `__scKeptArtistGroups` and `__ahResolveArtworks`, and why block-2 call
+  sites read it as `window.__scStripPopupPlayButtons(...)`. One regex in the file, called from every reader, the popup's
+  entry, and the cache write.
+- **Two probes had to be repaired for that, and this will happen again.** `dev/report-634-check.cjs` and
+  `dev/v609-check.cjs` drive the cached-popup loader by slicing its source into `new Function('localStorage',
+  'openDiscoverPopup', …)`. That harness has no `window`, so the loader's new call throws straight into its own
+  `catch(e){}` and both probes read it as "the saved list does not open" (3 and 6 failures). They now pass a real window
+  (report-634) and extract + run the **real** stripper next to the loader (v609). **When a sliced function starts using a
+  new global, fix the harness, never the guard.** report-634 still fails 10 checks against its own pre-fix build, and v609
+  is 50/50.
+- **The cover: `Ishq Da Uda Ada` had no source left, and the one it had was being asked wrong** (all of it measured live,
+  Sep 26 2026, not reasoned about):
+  - `itunes.apple.com/search?term=Diljit Dosanjh Ishq Da Uda Ada&media=music&entity=album` → **`resultCount: 0`**.
+  - `api.deezer.com/search/album?q=Diljit Dosanjh Ishq Da Uda Ada` → **`{"data":[],"total":0}`**. (Deezer is where
+    *Smile*, *Ishq Ho Gaya* and *Over Exposure* came from in 63.0.5 — it has no record of this one.)
+  - MusicBrainz has it: `releasegroup:"Ishq Da Uda Ada"` → count 1, id `d1999b8d-fb08-387f-b3ec-64fa14b81a97`,
+    2003-02-09, `artist-credit: [{name: "Diljit"}]` — **the credit is "Diljit", not "Diljit Dosanjh"**.
+  - So the code's own query, `releasegroup:"Ishq Da Uda Ada" AND artist:"Diljit Dosanjh"`, returned **count 0**. The
+    `AND artist:` clause was the entire defect: the title-only query finds it, the artist check that already exists in the
+    loop (`__ahArtSameArtist(_credit, artist)`) keeps strangers out, and that is what the code does now (`limit` 5 → 10).
+  - `coverartarchive.org/release-group/d1999b8d-…/front-500` → **200, image/jpeg, 68 KB** (redirects to ia…archive.org).
+  - `musicbrainz.org/ws/2/…` sends **`access-control-allow-origin: *`**, so the direct browser fetch is legitimate — no
+    relay needed. (The sandbox's own curl does throw intermittent `000`/522 at MusicBrainz; use `curl -4 --tlsv1.2` with a
+    User-Agent before believing a failure.)
+- **jsdom quirk recorded so it stops costing time**: `el.style.backgroundImage = 'url(<the ♪ PLACEHOLDER data URI>)'` is
+  **silently rejected** by jsdom's `cssstyle` — the value carries single quotes (`xmlns='…'`), the whole declaration is
+  dropped and `getAttribute('style')` comes back `null`. A probe therefore cannot assert "the placeholder is painted".
+  `dev/report-637-check.cjs` asserts what is **not** painted (no `https?:`, no stranger URL) plus what was **not**
+  remembered (`sidecut_ahArtCache` gains nothing for the miss, and does gain the found cover), which is the real behaviour
+  and jsdom-independent. `dev/report-634-check.cjs`'s older `!/http/.test(bg)` check passes for the right reason by luck.
+- **The probe for this batch**: `dev/report-637-check.cjs`, 29 checks, run against the live entry points (seeded premium +
+  `pinnedArtists`, the real `siBtn.onclick`, the real `openDiscoverPopup`) with an **honest** MusicBrainz router — it
+  answers `AND artist:` with count 0 and title-only with the real release group, i.e. the way the service actually
+  behaves. It fails **10** checks against the pre-fix build, including both reported symptoms verbatim.
+- **Full verification on 63.0.6** (all re-run after the bump): 28/28 `dev/test-*.mjs`; `check-dom` `DOM INTEGRITY
+  FAILURES: 0`; report-637 29/29 · report-634 31/31 · v609 50/50 · batch-635 42/42 · discover-singles 37/37 ·
+  ah-edit-persist 17/17 · ah-album-edit 42/42 · ah-album-reorder 34/34 · album-hold 34/34 · dur-bubble 17/17 ·
+  lyrics-lookup 42/42 · ota-guard 20/20 · ota-bootapply 24/24 · ota-loop 26/26 · native-snapshot 13/13 ·
+  storage-recovery 17/17 · refresh-pin 14/14 · export-playlist 16/16; both OTA `--check`s OK.
+- **Known, pre-existing, and NOT from this batch**: the historical `dev/v*-check.cjs` audits carry stale pins — v60 2,
+  v603 2, v604 2, v606 6, v607 2, v61 4, v612 3, v613 7, v614 6 — and every one of those counts is **identical against
+  the build without this batch** (v614 actually improves 33 → 34). The maintained gate is the 28 `dev/test-*.mjs`, plus
+  `dev/check-dom.mjs` and the popup probes; the v6xx files are per-release audits, not a suite to keep green.
+- **Patches**: `dev/patch-637.mjs` (5 code edits + 1 transition edit; converges from HEAD byte-for-byte — 5 edits on a
+  clean tree, rerun 0) and `dev/patch-638.mjs` (the release bump: `APP_VERSION`, the six-note head entry, `sw.js` cache,
+  29 test repins, `--manifest`).
+
 ## 63.0.5 (Sep 26, 2026): ten reports in one release — and the reason the phone still looked unfixed
 - **Shipped number**: **63.0.5** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.6`** (its own
   number, decoupled; see the sw.js note below).

@@ -11158,7 +11158,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.0.5';
+  const APP_VERSION = '63.0.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11573,6 +11573,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.0.6', date: 'September 26, 2026 · 12:36 PM EDT', title: 'The play button a saved list kept handing back, and the one cover that had no source left to ask', items: [
+    'Singles no longer shows a ▶, including on the list that is already saved on your phone. The button was gone from everything the app draws, but three separate places read a list back out of that saved copy and only one of them cleaned it — and the copy is written again from whatever list was just opened, so an old ▶ was handed on to itself, update after update. All three read it through the same cleaner now, and the popup cleans what it is given both before it draws it and before it saves it, so the list on your phone is corrected the moment it opens and cannot come back.',
+    'The cover that was still blank is there: “Ishq Da Uda Ada”, 2003-02-09, by Diljit. It was the one row left, because Apple’s store has no entry for that album at all and Deezer has none either — both were asked live and both answered with nothing — which left MusicBrainz as the only place a picture could come from. It has the album: a release group dated 2003-02-09, credited to Diljit, whose front cover the Cover Art Archive serves. That is what the row shows now.',
+    'The reason it had never been found is how MusicBrainz was being asked. The request demanded the release group by title and by artist together, and MusicBrainz files that album under “Diljit” rather than “Diljit Dosanjh” — so the artist half matched nothing, and the whole search came back empty. Not the wrong cover: no cover, every single time, however often it was tried. It is asked by title alone now.',
+    'Asking by title alone is safe only because the artist is checked afterwards, and that check is kept: the release group’s own credit has to be the same artist as the album, so a same-titled album by somebody else is still refused and the blank square stays rather than being filled with a stranger’s art. That rule is what makes the search above worth doing at all.',
+    'A cover that is found is remembered, so the app stops asking about it on every visit. A cover that is not found is deliberately not remembered: these catalogues gain records over time, and an album with no cover today is looked for again on the next launch instead of being written off for good — which is exactly how this one finally turned up.',
+    'And it reaches the list you already have. The lookup runs every time Album History is drawn — a fresh one and one reopened from its own saved copy — so the row is fixed on your phone now rather than whenever that list happens to be rebuilt. A cover you set yourself by long-pressing an album still wins over anything these sources return.',
+  ] },
   { version: '63.0.5', date: 'September 26, 2026 · 11:31 AM EDT', title: 'Every covered report: the play button that should not be there, the covers nothing had, the bubble for a cut-off time, lyrics that were never yours, and the key that was blamed for the wrong thing', items: [
     'Singles has no play button on a row. The ▶ that was reported was still being drawn by a second renderer — the ↻ / ⚡ per-artist refetch redraws a group through its own function, and that one still put a button on every row, which is what a saved list then kept. Both renderers are the same now, and a list saved by an older build is cleaned of it the moment it opens. Tapping the row opens the song, exactly like a track inside an album.',
     'The covers nothing had a picture for show up now. “Smile”, “Ishq Ho Gaya” and “Ishq Da Uda Ada” by Diljit Dosanjh have no album entry in Apple\u2019s store at all — in the US storefront or the Indian one — so the one place that looked for artwork had nothing it could ever find. The lookup now asks Deezer, which carries that catalogue, and then MusicBrainz\u2019s release group, whose front cover the Cover Art Archive serves; all three were checked live against those exact albums. Only a cover matching both the artist and the album is used — a same-titled album by someone else is refused, because a stranger\u2019s cover is worse than a blank. And it runs at last: that lookup had exactly one caller, and it fired once while the app was still starting up, when the album list did not exist yet — so it had never run over a real row, and an album stored without artwork could only stay blank for good. It now runs every time the list is drawn, a fresh one or one reopened from its saved copy, and a cover it finds is remembered.',
@@ -28532,6 +28540,20 @@ function _renderAhFromData(artistAlbums){
   }
   window.__scFetchArtistSingles = fetchArtistSingles;
 
+  // No popup row carries a ▶ any more -- album tracks, Singles and Old songs are all
+  // tap targets. A snapshot saved by an older build still holds one per row, and the
+  // popup cache is re-saved from whatever body it was opened with, so an unstripped
+  // reader kept that button alive across opens and app updates alike. This is the one
+  // stripper: every reader, the popup itself, and the cache write all go through it.
+  function scStripPopupPlayButtons(html){
+    try{
+      if(html && String(html).indexOf('dp-track-play') !== -1){
+        return String(html).replace(/<(?:span|div)[^>]*class="dp-track-play"[\s\S]*?<\/(?:span|div)>/g, '');
+      }
+    }catch(_eSPB){}
+    return html;
+  }
+  window.__scStripPopupPlayButtons = scStripPopupPlayButtons;
   // Groups from the saved snapshot, keyed by artist name. A pinned artist that
   // comes back empty keeps the group it already had, so a partial or blocked
   // fetch can never delete singles the user already had.
@@ -28542,6 +28564,11 @@ function _renderAhFromData(artistAlbums){
       if(!raw) return map;
       var d = JSON.parse(raw);
       if(!d || !d.body) return map;
+      // The group HTML below is re-used inside a freshly built Singles list,
+      // so the saved rows are cleaned here as well as where they are rendered.
+      if(typeof window.__scStripPopupPlayButtons === 'function'){
+        try{ d.body = window.__scStripPopupPlayButtons(d.body) || d.body; }catch(_eSPBg){}
+      }
       var tmp = document.createElement('div');
       tmp.innerHTML = d.body;
       Array.prototype.forEach.call(tmp.querySelectorAll('.dp-ah-artist'), function(g){
@@ -35855,8 +35882,15 @@ function __ahFetchArtFromSearch(artist, album, artDiv, PLACEHOLDER){
     // 3. MusicBrainz's release group, then its front cover in the archive.
     if(!found){
       try{
+        // Title only. "Ishq Da Uda Ada" by Diljit Dosanjh is the album this was
+        // reported for: Apple and Deezer carry no record of it at all (both
+        // checked live, both empty), and MusicBrainz's release group is filed
+        // under the credit "Diljit", which `AND artist:"Diljit Dosanjh"` does not
+        // match -- the clause made the whole query return nothing, so that one
+        // row could never be found. The artist check that follows in the loop is
+        // what refuses a same-titled release group by somebody else.
         var _mr = await fetchWithProxy('https://musicbrainz.org/ws/2/release-group?query=' +
-          encodeURIComponent('releasegroup:"' + album + '" AND artist:"' + artist + '"') + '&fmt=json&limit=5',
+          encodeURIComponent('releasegroup:"' + album + '"') + '&fmt=json&limit=10',
           { headers: { 'User-Agent': 'SideCut/' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') + ' (https://anekthegreat.github.io/SideCut/)' } });
         var _mj = _mr && _mr.ok ? await _mr.json() : {};
         var _groups = _mj['release-groups'] || [];
@@ -36705,6 +36739,12 @@ window.__scDiscRelTab = function(mode, root){
 };
 
 function openDiscoverPopup(title, bodyHTML, subtitle){
+  // The single choke point every popup body travels through. The cache below is
+  // written from this same body, so a list saved by an older build is cleaned as
+  // it opens instead of being re-saved with its play buttons and served again.
+  if(typeof window.__scStripPopupPlayButtons === 'function'){
+    try{ bodyHTML = window.__scStripPopupPlayButtons(bodyHTML) || ''; }catch(_eSPBo){}
+  }
   var ov = document.getElementById('discPopupOverlay');
   var tEl = document.getElementById('discPopupTitle');
   var sEl = document.getElementById('discPopupSub');
@@ -37417,9 +37457,9 @@ function loadCachedDiscoverPopup(key){
       // Singles list that was reported was exactly that, so every cached body is
       // cleaned on the way in. The old guard only matched Old songs, and only a
       // <span> — the play button is a <div>, so it never actually matched.
-      if(d.body.indexOf('dp-track-play') !== -1){
-        d.body = d.body.replace(/<(?:span|div)[^>]*class="dp-track-play"[\s\S]*?<\/(?:span|div)>/g, '');
-      }
+      // Through the shared helper, not a second copy of the regex, so the two readings
+      // can never drift apart again.
+      d.body = window.__scStripPopupPlayButtons(d.body) || d.body;
       openDiscoverPopup(d.title, d.body, d.subtitle);
       return true;
     }

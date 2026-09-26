@@ -124,9 +124,13 @@ const PLACEHOLDER = "data:image/svg+xml,%3Csvg%3E";
         + '<div style="flex:1;">Ghostface Killah</div>'
         + '<span class="dp-ah-x" data-si="0-0">\u00d7</span></div></div>' }),
     };
-    const load = new Function('localStorage', 'openDiscoverPopup', loadSrc + '\nreturn loadCachedDiscoverPopup;')(
+    // The loader strips through the helper the first script block exports on
+    // window (the popup code is in the second block and can only reach it that
+    // way), so the harness hands it the real window rather than nothing.
+    const load = new Function('localStorage', 'openDiscoverPopup', 'window', loadSrc + '\nreturn loadCachedDiscoverPopup;')(
       { getItem: (k) => (k in store ? store[k] : null) },
-      (title, body, sub) => { opened = { title, body, sub }; }
+      (title, body, sub) => { opened = { title, body, sub }; },
+      win
     );
     ok('a saved Singles list still opens', load('\ud83c\udfb5 Singles') === true && !!opened);
     ok('its play button is gone from the body', opened && opened.body.indexOf('dp-track-play') === -1,
