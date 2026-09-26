@@ -632,6 +632,11 @@
   .track.reordering .grip-handle:active{ cursor:grabbing; }
   .track.reordering .idx{ color:color-mix(in srgb, var(--gold) 70%, var(--ink-dim)); }
   body.reordering .track{ touch-action:none !important; pointer-events:auto !important; }
+  /* Album History album rows while one of them is lifted. Without this the
+     popup's scroller is free to claim the vertical gesture mid-drag, which fires
+     pointercancel and ends the reorder the instant it starts — the same reason
+     the song drag pins touch-action on the row it is moving. */
+  body.reordering .dp-ah-album, body.reordering .dp-ah-album-hdr{ touch-action:none !important; }
 
   .track.dragging{ background:var(--bg-raised); box-shadow:0 8px 24px rgba(0,0,0,0.5); border-radius:10px; position:relative; z-index:20; }
   .play-next-btn{ color:var(--ink-dim); background:none; border:none; padding:6px; flex-shrink:0; cursor:pointer; }
@@ -10983,7 +10988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63';
+  const APP_VERSION = '62.0.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11398,13 +11403,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '63', date: 'September 26, 2026 · 11:30 AM EDT', title: 'Albums in Album History can be put in the order you want', items: [
-    'In \ud83d\udcc0 Album History, the albums under an artist can now be rearranged. Press and hold an album for a moment, then drag it up or down \u2014 the row lifts and follows your finger, and where you drop it is where it stays.',
-    'The order is remembered per artist: close the popup, reopen it, refetch the list, or restart the app, and the albums come back in the order you gave them.',
-    'Nothing about a normal tap changed \u2014 a short press still opens the album\'s songs exactly as before, because only a press-and-hold starts a reorder.',
-    'Holding an album\'s artwork still sets a custom cover; the reorder now lives on the rest of the row, so the two gestures no longer compete for the same press.',
-    'This is the album order inside Album History only. It does not touch the Albums tab, your playlists, or which songs belong to a collection.',
-    'Reordering the artists themselves at the top of Album History works exactly as it did, and the other popups are untouched.',
+  { version: '62.0.5', date: 'September 25, 2026 · 9:56 PM EDT', title: 'The albums in Album History can be dragged into the order you want', items: [
+    'In \ud83d\udcc0 Album History, press and hold an album for a moment, then drag it up or down. The row lifts under your finger, the other albums ease out of the way, and the album stays where you let go.',
+    'It now moves the way the album cards in the Albums tab do: the row keeps up with your finger instead of jumping, the list slides over to open the gap it is heading for, and the list scrolls itself if you hold it near the top or bottom edge, so albums further down are reachable in one drag.',
+    'The order is remembered for each artist. Close the popup, reopen it, refetch the list, or restart the app, and that artist\'s albums come back in the order you gave them.',
+    'A short tap is unchanged — it still opens the album\'s songs. Only a press-and-hold starts a reorder, and moving the finger before the hold finishes still just scrolls the list.',
+    'Holding an album\'s artwork still sets a custom cover; the reorder lives on the rest of the row, so the two gestures no longer compete for the same press.',
+    'Reordering the artists at the top of Album History works exactly as it did, and the other popups are untouched.',
   ] },
   { version: '62', date: 'September 25, 2026 · 7:45 PM EDT', title: 'Lyrics are found again for an artist whose name is only a letter or two', items: [
     'Lyrics could go missing for an artist whose name is only a letter or two — a stage name like "BK". The check that decides whether a lyric entry really belongs to the artist skipped every name of two letters or fewer, so such a name could never confirm anything, and the song had to match on running time alone: any release whose length drifted by more than two seconds came back as having no lyrics even though the words were on file.',
@@ -36837,6 +36842,10 @@ window.setupGroupReorder = function(persistKey){
     function finish(){
       clearTimeout(holdTimer);
       if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
+      // An album row inside this group may be the one being dragged right now.
+      // Its drag ends on this same event, so the class it needs to hold Android
+      // off the gesture must not be cleared out from under it here.
+      if(window.__scAHAlbumDragging) return;
       try{ document.body.classList.remove('reordering'); }catch(e2){}
       if(drag){
         drag.style.opacity = ''; drag.style.zIndex = ''; drag.style.boxShadow = ''; drag.style.background = ''; drag.style.transition = '';
@@ -36875,7 +36884,7 @@ window.setupGroupReorderByContext = function(){
   setupGroupReorder(isAlbum ? 'sidecut_ahArtistOrder' : 'sidecut_singlesArtistOrder');
 };
 
-// ---- 63: reorder the ALBUMS under one artist in Album History ------------
+// ---- 62.0.5: reorder the ALBUMS under one artist in Album History --------
 // The popup reorders ARTISTS at the top level (setupGroupReorder above). The
 // albums under each artist were never wired to any gesture at all — holding
 // one did nothing. This is that list, with its own persisted order per artist.
@@ -36929,7 +36938,7 @@ window.__wireAHAlbumReorder = function(){
   var bodyEl = document.getElementById('discPopupBody');
   if(!bodyEl) return;
   var albums = Array.prototype.slice.call(bodyEl.querySelectorAll('.dp-ah-album'));
-  // Apply the saved order to each artist list once (fresh render or cached).
+  // Apply the saved order to each artist list once (fresh render or cached body).
   albums.forEach(function(el){
     var cont = el.parentElement;
     if(cont && !cont._ahAlbOrderApplied){
@@ -36943,95 +36952,265 @@ window.__wireAHAlbumReorder = function(){
     var hdr = el.querySelector('.dp-ah-album-hdr');
     if(!hdr) return;
     el._ahAlbReorderWired = true;
-    var holdTimer = null, drag = null;
+
+    // 420 ms is the same hold the artists at the top of this popup use: long
+    // enough that a tap and a scroll are never mistaken for a drag, short enough
+    // that it does not feel like a secret.
+    var HOLD_MS = 420;
+    var GAP_PX = 0;          // the rows sit flush; each one's own border is the seam
+    var holdTimer = null, dragging = false, moved = false;
+    var rows = [], others = [], slotTops = [], startIndex = 0, currentIndex = 0;
+    var startY = 0, lastPt = null, autoRaf = null, lastPtrDown = 0;
+
+    function rowList(){
+      var cont = el.parentElement;
+      if(!cont || !cont.children) return [];
+      return Array.prototype.filter.call(cont.children, function(k){
+        return k.classList && k.classList.contains('dp-ah-album');
+      });
+    }
     function keyOf(a){
-      var h = a.querySelector('.dp-ah-album-hdr');
+      var h = a.querySelector ? a.querySelector('.dp-ah-album-hdr') : null;
       if(!h) return '';
       var cid = h.getAttribute('data-collection-id') || '';
       return cid ? cid : String(h.getAttribute('data-album') || '');
     }
     function persistOrder(){
-      var cont = el.parentElement;
-      if(!cont) return;
-      var order = [];
-      Array.prototype.forEach.call(cont.children, function(k){
-        if(k.classList && k.classList.contains('dp-ah-album')){ var kk = keyOf(k); if(kk) order.push(kk); }
-      });
+      var list = rowList(), order = [];
+      list.forEach(function(k){ var kk = keyOf(k); if(kk) order.push(kk); });
       if(typeof window.__scSaveAHAlbumOrder === 'function') window.__scSaveAHAlbumOrder(hdr.getAttribute('data-artist') || '', order);
     }
     function haptic(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
-    function begin(e){
-      if(drag || !e.pointerId) return;
-      drag = el;
+    // Which slot a row occupies before the lift, and after it (the lifted row is
+    // taken out of the sequence, so every slot after it shifts by one).
+    function origSlot(j){ return j < startIndex ? j : j + 1; }
+    function movedSlot(j){ return j < currentIndex ? j : j + 1; }
+    // Everything except the lifted row eases into its new slot. This transition
+    // is the difference between a reorder that reads as a drag and one that reads
+    // as the list snapping a row at a time.
+    function applyShifts(){
+      for(var j = 0; j < others.length; j++){
+        var shift = slotTops[movedSlot(j)] - slotTops[origSlot(j)];
+        others[j].style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+      }
+    }
+    // How many albums the lifted row's centre has passed, measured against each
+    // neighbour's real midpoint — so an album with its track list open, which is
+    // many times taller than a collapsed one, still lands where it is dropped.
+    function updateIndex(dy){
+      var centre = slotTops[startIndex] + (el.offsetHeight || 0) / 2 + dy;
+      var p = 0;
+      for(var j = 0; j < others.length; j++){
+        var mid = slotTops[origSlot(j)] + (others[j].offsetHeight || 0) / 2;
+        if(mid < centre) p++;
+      }
+      p = Math.max(0, Math.min(others.length, p));
+      if(p !== currentIndex){ currentIndex = p; applyShifts(); }
+    }
+    // A touch drag has to be swallowed for its whole length, or the popup's
+    // scroller takes the gesture and the browser fires pointercancel.
+    function stopPageScroll(ev){ if(ev.cancelable) ev.preventDefault(); }
+    function drive(y){
+      lastPt = { clientY: y };
+      var dy = y - startY;
+      el.style.transform = 'translateY(' + dy + 'px)';
+      if(dy > 3 || dy < -3) moved = true;
+      updateIndex(dy);
+      // Auto-scroll while the finger is held near an edge, so albums further down
+      // the list are reachable without dropping the one being moved.
+      var rect = bodyEl.getBoundingClientRect();
+      var edge = 56, dir = 0;
+      if(y - rect.top < edge) dir = -1;
+      else if(rect.bottom - y < edge) dir = 1;
+      if(dir !== 0){
+        if(!autoRaf){
+          var step = function(){
+            if(!dragging){ autoRaf = null; return; }
+            var r = bodyEl.getBoundingClientRect();
+            var p = lastPt, still = false;
+            if(dir < 0 && p && p.clientY - r.top < edge) still = true;
+            if(dir > 0 && p && r.bottom - p.clientY < edge) still = true;
+            if(!still){ autoRaf = null; return; }
+            // A list that does not overflow has nothing to scroll.
+            if(!bodyEl.scrollHeight || bodyEl.scrollHeight <= bodyEl.clientHeight){ autoRaf = null; return; }
+            var stepPx = window.__scDragDelta('ahAlbumDrag', 480);
+            var before = bodyEl.scrollTop;
+            bodyEl.scrollTop += dir * stepPx;
+            if(bodyEl.scrollTop === before){ autoRaf = null; return; }
+            // Keep the row glued to the finger while the content scrolls under it.
+            startY -= dir * stepPx;
+            var ty = p.clientY - startY;
+            el.style.transform = 'translateY(' + ty + 'px)';
+            updateIndex(ty);
+            autoRaf = requestAnimationFrame(step);
+          };
+          autoRaf = requestAnimationFrame(step);
+        }
+      } else if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
+    }
+    function resetStyles(){
+      el.classList.remove('dragging');
+      var list = rows.concat(rowList());
+      for(var i = 0; i < list.length; i++){
+        var r = list[i];
+        r.style.transform = '';
+        r.style.transition = '';
+        r.style.opacity = '';
+        r.style.zIndex = '';
+        r.style.boxShadow = '';
+        r.style.background = '';
+        r.style.touchAction = '';
+        r.style.willChange = '';
+        if(r === el){ r.style.position = ''; }
+      }
+    }
+    function begin(pickY){
+      if(dragging) return;
+      rows = rowList();
+      startIndex = rows.indexOf(el);
+      if(startIndex === -1 || rows.length < 2) return;   // nothing to reorder
+      others = rows.filter(function(r){ return r !== el; });
+      dragging = true;
+      moved = false;
+      // Where the finger was when the hold armed, so the row travels with the finger.
+      startY = pickY;
+      lastPt = { clientY: pickY };
+      currentIndex = startIndex;
+      // Slots are measured rather than assumed: heights differ once an album's
+      // track list is open.
+      slotTops = [0];
+      for(var m = 0; m < rows.length; m++) slotTops.push(slotTops[m] + (rows[m].offsetHeight || 0) + GAP_PX);
       try{ document.body.classList.add('reordering'); }catch(err0){}
-      el._dragging = false;
-      el._startX = e.clientX; el._startY = e.clientY;
-      el.style.opacity = '0.85';
-      el.style.zIndex = '99';
-      el.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
+      try{ window.__scAHAlbumDragging = true; }catch(err1){}
+      el.classList.add('dragging');
+      el.style.position = 'relative';
+      el.style.opacity = '0.92';
+      el.style.zIndex = '30';
+      el.style.boxShadow = '0 10px 24px rgba(0,0,0,0.5)';
       el.style.background = 'rgba(255,255,255,0.06)';
       el.style.transition = 'none';
-      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+      el.style.touchAction = 'none';
+      el.style.willChange = 'transform';
+      for(var s = 0; s < others.length; s++) others[s].style.transition = 'transform 0.18s ease';
+      // Document-level, on purpose: a row that is re-ordered is removed and
+      // re-inserted, which drops pointer capture and would strand row-bound
+      // listeners with the row still lifted.
+      document.addEventListener('pointermove', onMove, { passive: false });
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+      document.addEventListener('touchmove', onTouchMove, { passive: false });
+      document.addEventListener('touchend', onUp);
+      document.addEventListener('touchcancel', onUp);
+      haptic(12);
     }
-    function move(e){
-      if(drag !== el){
-        if(!drag && holdTimer && el._startX != null){
-          var pdx = e.clientX - el._startX, pdy = e.clientY - el._startY;
-          if((pdx*pdx + pdy*pdy) > 144){ clearTimeout(holdTimer); holdTimer = null; }
-        }
+    function onMove(ev){
+      if(!dragging) return;
+      if(ev.cancelable) ev.preventDefault();
+      drive(ev.clientY);
+    }
+    // Some Android WebViews stop delivering pointermove once the browser takes the
+    // gesture and only send touchmove. Both paths use the same maths.
+    function onTouchMove(ev){
+      if(!dragging) return;
+      if(ev.cancelable) ev.preventDefault();
+      var t = ev.touches && ev.touches[0];
+      if(!t) return;
+      drive(t.clientY);
+    }
+    function onUp(){
+      if(!dragging) return;
+      dragging = false;
+      if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+      if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; }
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onUp);
+      document.removeEventListener('touchcancel', onUp);
+      try{ document.body.classList.remove('reordering'); }catch(e2){}
+      try{ window.__scAHAlbumDragging = false; }catch(e3){}
+      var changed = currentIndex !== startIndex;
+      // The release also lands as a click on the header, which would toggle the
+      // track list open as the album was dropped. A real drag must not do that.
+      if(moved){
+        hdr._ahSuppressClick = true;
+        setTimeout(function(){ hdr._ahSuppressClick = false; }, 700);
+      }
+      // Snap onto the slot it was dropped in, so what is on screen is what gets saved.
+      var finalShift = slotTops[currentIndex] - slotTops[startIndex];
+      el.style.transition = 'transform 0.15s ease';
+      el.style.transform = finalShift ? 'translateY(' + finalShift + 'px)' : '';
+      for(var i = 0; i < others.length; i++) others[i].style.transition = 'transform 0.15s ease';
+      if(!changed){
+        // Dropped back where it started: put the neighbours back, write nothing.
+        setTimeout(resetStyles, 170);
         return;
       }
-      // Ours is the live drag: the artist-group finish() would otherwise run on
-      // the same event and clear the body class that blocks the WebView from
-      // claiming the gesture (a pointercancel mid-drag).
-      e.stopPropagation();
-      if(!el._dragging){
-        var ddx = e.clientX - el._startX, ddy = e.clientY - el._startY;
-        if((ddx*ddx + ddy*ddy) < 100) return;
-        el._dragging = true;
-        haptic(12);
-        el.classList.add('dragging');
-      }
-      e.preventDefault();
-      var cont = el.parentElement;
-      if(!cont) return;
-      var y = e.clientY, before = null;
-      var sibs = Array.prototype.filter.call(cont.children, function(k){ return k !== el && k.classList && k.classList.contains('dp-ah-album'); });
-      for(var i = 0; i < sibs.length; i++){
-        var r = sibs[i].getBoundingClientRect();
-        if(y < r.top + r.height/2){ before = sibs[i]; break; }
-      }
-      if(before){ if(before.previousElementSibling !== el) cont.insertBefore(el, before); }
-      else if(el !== cont.lastElementChild) cont.appendChild(el);
-    }
-    function finish(e){
-      clearTimeout(holdTimer);
-      if(drag === el && e && e.stopPropagation) e.stopPropagation();
-      try{ document.body.classList.remove('reordering'); }catch(e2){}
-      if(drag){
-        el.style.opacity = ''; el.style.zIndex = ''; el.style.boxShadow = ''; el.style.background = ''; el.style.transition = '';
-        el.classList.remove('dragging');
-        if(el._dragging){
-          haptic(8);
-          // A drag that reordered the albums must not also toggle the tracks.
-          hdr._ahSuppressClick = true;
-          setTimeout(function(){ hdr._ahSuppressClick = false; }, 700);
-          setTimeout(persistOrder, 60);
+      haptic(8);
+      setTimeout(function(){
+        // Commit the order that is actually on screen. Re-appending each row in
+        // turn moves them, so a nested track list travels with its album.
+        var cont = el.parentElement;
+        if(cont){
+          var next = rows.slice();
+          var from = next.indexOf(el);
+          if(from !== -1) next.splice(from, 1);
+          next.splice(Math.max(0, Math.min(next.length, currentIndex)), 0, el);
+          for(var n = 0; n < next.length; n++) cont.appendChild(next[n]);
         }
-        drag = null;
-      }
+        resetStyles();
+        persistOrder();
+      }, 160);
     }
+    // The hold only arms while the finger stays still. Moving more than 12 px
+    // before it completes is a scroll, exactly as before — and an interrupted
+    // gesture still saves what the finger showed instead of throwing it away.
+    function armHold(x, y){
+      if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+      var sx = x, sy = y;
+      function detachCancel(){
+        document.removeEventListener('pointermove', cancelHold, true);
+        document.removeEventListener('pointerup', cancelHold, true);
+        document.removeEventListener('pointercancel', cancelHold, true);
+      }
+      function cancelHold(ev){
+        if(ev && ev.type === 'pointermove'){
+          var dx = ev.clientX - sx, dy = ev.clientY - sy;
+          if(dx * dx + dy * dy < 144) return;   // still a hold, not yet a scroll
+        }
+        if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+        detachCancel();
+      }
+      holdTimer = setTimeout(function(){
+        holdTimer = null;
+        detachCancel();
+        // Select mode turns these rows into checkboxes — a hold there is a
+        // selection, not a reorder.
+        if(dragging || window.__ahSelectMode || !el.parentElement || !bodyEl.contains(el)) return;
+        begin(sy);
+      }, HOLD_MS);
+      document.addEventListener('pointermove', cancelHold, true);
+      document.addEventListener('pointerup', cancelHold, true);
+      document.addEventListener('pointercancel', cancelHold, true);
+    }
+    var NO_GRAB = '.dp-ah-edit,.dp-ah-rm,.dp-ah-cb,.dp-ah-artist-refetch,.dp-si-refetch,[data-art-url],img,button,a,input,select';
     hdr.addEventListener('pointerdown', function(e){
-      if(window.__ahSelectMode) return;
-      if(e.target.closest('.dp-ah-edit,.dp-ah-rm,.dp-ah-cb,.dp-ah-artist-refetch,.dp-si-refetch,[data-art-url],img,button,a,input,select')) return;
-      clearTimeout(holdTimer);
-      el._dragging = false;
-      el._startX = e.clientX; el._startY = e.clientY;
-      holdTimer = setTimeout(function(){ begin(e); }, 420);
+      if(dragging) return;
+      if(e.target && e.target.closest && e.target.closest(NO_GRAB)) return;
+      lastPtrDown = Date.now();
+      armHold(e.clientX, e.clientY);
     });
-    hdr.addEventListener('pointermove', move);
-    hdr.addEventListener('pointerup', finish);
-    hdr.addEventListener('pointercancel', finish);
+    // WebViews that never deliver pointer events only offer touch — pointerdown
+    // has already armed this whenever it did fire, so this is a no-op there.
+    hdr.addEventListener('touchstart', function(e){
+      if(dragging) return;
+      if(Date.now() - lastPtrDown < 500) return;
+      if(e.target && e.target.closest && e.target.closest(NO_GRAB)) return;
+      var t = e.touches && e.touches[0];
+      if(!t) return;
+      armHold(t.clientX, t.clientY);
+    }, { passive: true });
   });
 };
 

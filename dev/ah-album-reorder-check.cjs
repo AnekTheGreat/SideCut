@@ -1,10 +1,17 @@
-// v63 — albums under an artist in the 📀 Album History popup can be reordered.
+// 62.0.5 — albums under an artist in the 📀 Album History popup can be reordered.
 //
 // Opens a real Album History popup (the same markup the renderer emits), runs the
-// app's own __wireAH over it, then holds an album row and drags it. Checks that
-// the new order persists, that orderAlbumList re-applies it, that a cached body
-// is reordered, that a plain tap still opens the tracks and a reorder drag does
-// NOT toggle them, and that the cover long-press now only fires from the artwork.
+// app's own __wireAH over it, then holds an album row and drags it. Checks that the
+// lifted row follows the finger, that the other rows are given a slide transition,
+// that the new order persists, that orderAlbumList re-applies it, that a cached body
+// is reordered, that a plain tap still opens the tracks and a reorder drag does NOT
+// toggle them, and that the cover long-press only fires from the artwork.
+//
+// The drag shape is pinned too, because the 63 build's gesture was dead for a shape
+// reason rather than a logic one: it bound every listener to the album HEADER but
+// captured the pointer on the album WRAPPER (a parent), so a captured move was
+// dispatched past the header and never ran. Document-level listeners, a pinned
+// touch-action and a swallowed touchmove are what make it work on a phone.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
@@ -133,6 +140,26 @@ function savedOrder(win) {
   ok('__wireAH calls the album-reorder wiring', html.includes('if(typeof window.__wireAHAlbumReorder === \'function\') window.__wireAHAlbumReorder();'));
   ok('the renderer orders albums by the saved list', html.includes('ahAlbums = window.orderAlbumList(ahAlbums, ahArtist, \'sidecut_ahAlbumOrder\')'));
 
+  // ---- the drag's shape (what the broken build got wrong) ------------------
+  {
+    const i = html.indexOf('window.__wireAHAlbumReorder = function(){');
+    const j = html.indexOf('// While a reorder drag is active', i);
+    const blk = html.slice(i, j);
+    ok('the album drag listens on document, not on the row',
+      blk.includes("document.addEventListener('pointermove', onMove, { passive: false })"));
+    ok('the album drag never captures the pointer on a different node than its listeners',
+      blk.indexOf('setPointerCapture') === -1);
+    ok('the album drag pins touch-action on the row it lifts', blk.includes("el.style.touchAction = 'none';"));
+    ok('the album drag swallows touchmove so Android cannot take the gesture',
+      blk.includes('if(ev.cancelable) ev.preventDefault();'));
+    ok('the album drag has a touchmove fallback for pointer-less WebViews',
+      blk.includes("document.addEventListener('touchmove', onTouchMove, { passive: false })"));
+    ok('the artist drag cannot clear the album drag\'s state', html.includes('if(window.__scAHAlbumDragging) return;'));
+    ok('the reorder hold stands down in select mode', blk.includes('window.__ahSelectMode'));
+    ok('the album rows pin touch-action while a reorder is live',
+      html.includes('body.reordering .dp-ah-album, body.reordering .dp-ah-album-hdr{ touch-action:none !important; }'));
+  }
+
   // ---- open the popup and wire it -----------------------------------------
   win.openDiscoverPopup('📀 Album History', bodyHtml(), '3 albums');
   win.__wireAH();
@@ -161,13 +188,22 @@ function savedOrder(win) {
   await wait(180);
   ok('a short press does not start a drag yet', !first.classList.contains('dragging'));
   await wait(400); // past the 420 ms hold
+  ok('the hold lifts the album', first.classList.contains('dragging'));
+  ok('the lifted album pins touch-action', first.style.touchAction === 'none', first.style.touchAction);
+  ok('the other albums are given a slide transition',
+    albumRows(win).filter((el) => el !== first).every((el) => /transform 0\.18s/.test(el.style.transition)));
   pev(win, firstHdr, 'pointermove', { clientY: 500 });
   await wait(60);
+  ok('the lifted album follows the finger', first.style.transform === 'translateY(400px)', first.style.transform);
   pev(win, firstHdr, 'pointerup', { clientY: 500 });
-  await wait(160);
+  await wait(400);
   const afterDrag = rowKeys(win).join(',');
   ok('dragging an album changes the DOM order', afterDrag !== 'a1,a2,a3', afterDrag);
   ok('the new album order is persisted', savedOrder(win).join(',') === afterDrag, 'saved=' + savedOrder(win).join(',') + ' dom=' + afterDrag);
+  ok('the drop leaves no album lifted or left with a transform',
+    albumRows(win).every((el) => !el.classList.contains('dragging') && !el.style.transform && !el.style.zIndex),
+    albumRows(win).map((el) => el.style.transform || '-').join('|'));
+  ok('the drop releases the reordering state', win.document.body.classList.contains('reordering') === false);
 
   // ---- the reorder drag must not also toggle the tracks -------------------
   click(win, firstHdr);

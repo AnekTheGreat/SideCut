@@ -1,6 +1,47 @@
 # SideCut — repository memory
 
-## v63 (Sep 26, 2026): albums in the 📀 Album History popup can be reordered
+## 62.0.5 (Sep 25, 2026): the albums in Album History drag like the albums in the Albums tab
+- **The user's report, in their words**: "It should be v62.0.5 not v63 and you didn't fix the problem I should be able to
+  hold and drag to reorder these albums in album history and it should be the smooth reorder like the albums in albums".
+  Two complaints, and both were real: the release was versioned wrongly, and the v63 gesture was **dead on a phone**.
+- **Version correction — 62.0.5, not 63**: the bundle published on the OTA channel is **62**, so a release named **63** was
+  never a version anyone was offered. This build is **62.0.5**: `APP_VERSION`, the CHANGELOG head, `sw.js`'s
+  `CACHE_NAME`, `manifest.json`, `updates.json`, `ota/updates.json`, `ota/manifest.json` and `ota-play/updates.json` all read
+  62.0.5, and the 29 release assertions in `dev/test-*.mjs` were repinned. `compareVersions('62.0.5','62')` is **+1**, so it
+  is an ordinary update for anyone on 62. **Caveat worth remembering**: a device that already ran the 63 build treats 62.0.5
+  as OLDER (`isOlderBundle`) and will refuse the bundle — that device needs a fresh install, not an update.
+- **Why the v63 build looked like nothing happened — three shape bugs, each fatal on its own**: (1) `begin()` lifted the row
+  and called `el.setPointerCapture(...)` on the **`.dp-ah-album` wrapper** while every `pointermove` / `pointerup` listener
+  was bound to **`.dp-ah-album-hdr`**, a *child* of it. A captured pointer is dispatched at the capture element and bubbles
+  **up**, so `move()` and `finish()` never ran again: the row lifted and nothing followed the finger, and no drop ever
+  committed. It also meant the artist group's `finish()` ran on the same `pointerup` and cleared the `reordering` body class
+  mid-drag. (2) Nothing pinned `touch-action` and nothing swallowed `touchmove`, so Android was free to claim the vertical
+  drag for the popup's scroller and fire `pointercancel` — the drag died the instant it started. The song drag says exactly
+  this in a comment; the album drag ignored it. (3) The row never moved with the finger and the neighbours never slid, so
+  even a working swap would have read as a jump rather than a drag.
+- **The fix — the same shape as the two reorders that already feel right**: the album cards in the Albums tab
+  (`window.__scDragDelta('cardDrag', 480)`) and the library grip drag (`'gripDrag'`). The lifted row now follows the finger
+  with `translateY`, every other album is given `transition: transform 0.18s ease` and slides into the gap it is heading
+  for, and the list auto-scrolls while the finger is held within 56 px of an edge (`'ahAlbumDrag'`), shifting the drag
+  baseline as it scrolls. The auto-scroll step bails when `scrollHeight <= clientHeight`, so a list that cannot scroll is
+  never spun (and a harness that reports zero heights cannot spin it forever).
+- **Everything is bound to `document`, on purpose**: re-ordering a row removes and re-inserts it, which drops pointer capture
+  and would strand row-bound listeners — bug (1) above. `touchmove` / `touchend` / `touchcancel` fallbacks cover WebViews
+  that deliver no pointer events at all, `el.style.touchAction = 'none'` pins the gesture at pickup, `touchmove` is
+  `preventDefault`ed for the length of the drag, and CSS now carries
+  `body.reordering .dp-ah-album, body.reordering .dp-ah-album-hdr{ touch-action:none !important; }`.
+- **The lift baseline is the pickup point** (`begin(pickY)` → `startY = pickY`). `dev/ah-album-reorder-check.cjs` caught this
+  one: without it every move was measured from zero and the row leapt to the pointer instead of travelling with it.
+- **Order is still per artist** in `localStorage "sidecut_ahAlbumOrder"` (`artist -> [collectionId|name]`), applied by
+  `window.orderAlbumList(...)` from `_renderAhFromData` on a fresh render and by `window.__scApplyAHAlbumOrder(cont, artist)`
+  to a body restored from `discPopupCache_📀 Album History`. The drop re-appends each row in the new order, so a nested track
+  list travels with its album, and then writes the order once.
+- **Gesture conflicts, unchanged from v63 and still deliberate**: the hold is **420 ms** and movement before it completes
+  cancels it (a tap still opens the album's songs, and a drag on the list still scrolls); the album row's 500 ms cover hold
+  stays scoped to the **artwork** (`[data-art-url]` / `img`); the artist-group hold bails on `.dp-ah-album`; a real drag sets
+  `hdr._ahSuppressClick` so the release click cannot also toggle the track list; and the artist `finish()` now returns early
+  while `window.__scAHAlbumDragging` is set, so it can no longer drop the album drag's `reordering` state.
+- **History — what the 63 build actually shipped** (kept because both failure modes are easy to reintroduce):
 - **The user's report, in their words**: first "In album history you click in an artist you click on an album you hold down
   the songs and try to reorder them but nothing happens", then the correction: **"Album history it should be the albums
   getting reordered not the songs inside, my mistake."** So the earlier "reorder songs inside an album" idea was the user's
@@ -10,10 +51,11 @@
   second `<script>` block drives them, keyed `sidecut_ahArtistOrder`. The **album rows under an artist were never wired to
   any gesture**; holding one did nothing, which reads exactly as "nothing at all opens". The user had been holding the
   tracks because that was where they expected a handle.
-- **The fix — hold an album under an artist and drag it**: new `window.__wireAHAlbumReorder()` (in the same block as
-  `setupGroupReorderByContext`), called from `window.__wireAH` so it runs on every render (fresh and cached opens). Hold
-  **420 ms**, then drag; a tap still opens the album's tracks and a pre-hold scroll still cancels (same 12 px pickup rule as
-  the artist list). Order persists **per artist** in `localStorage "sidecut_ahAlbumOrder"` (`artist -> [collectionId|name]`).
+- **What the 63 build did**: new `window.__wireAHAlbumReorder()` (in the same block as `setupGroupReorderByContext`),
+  called from `window.__wireAH` so it ran on every render (fresh and cached opens). Hold **420 ms**, then drag; a tap still
+  opened the album's tracks and a pre-hold scroll still cancelled (same 12 px pickup rule as the artist list). Order persisted
+  **per artist** in `localStorage "sidecut_ahAlbumOrder"` (`artist -> [collectionId|name]`). Everything above about the
+  order store, the two apply paths and the gesture conflicts survives into 62.0.5; only the drag itself was replaced.
 - **Order is applied in two places, because the popup body is cached**: `_renderAhFromData` now runs each artist's album
   array through `window.orderAlbumList(...)` before rendering, and `__wireAHAlbumReorder` also reorders an already-rendered
   (cached) body via `window.__scApplyAHAlbumOrder(cont, artist)`. Without the second path a reopen from the 24 h cache would
@@ -25,10 +67,14 @@
   so the release click does not additionally toggle the album's track list.
 - **Regression coverage**: `dev/ah-album-reorder-check.cjs` (jsdom, needs `/tmp/h/node_modules/jsdom`) opens a real Album
   History popup, runs `__wireAH` over it, holds and drags an album, and asserts persist / `orderAlbumList` / cached-body
-  apply / tap-still-opens / drag-does-not-toggle / cover-hold-scoped-to-art — **18/18**. `dev/album-hold-check.cjs` (library
-  Albums view song reorder) still passes **34/34**. `dev/patch-621.mjs` carries the idempotent edits + the v63 metadata.
-- **Notes for the next release**: the CHANGELOG head at v63 is the first to describe Album History ordering; keep its notes
-  free of `download*` / `convert*` / "play build" terms (dev/test-60510, dev/test-6058). The popup cache key is
+  apply / tap-still-opens / drag-does-not-toggle / cover-hold-scoped-to-art — **31/31**. It also pins the drag's **shape**,
+  which is what the 63 build got wrong: document-level listeners, no `setPointerCapture`, pinned `touch-action`, swallowed
+  `touchmove`, the touchmove fallback and the artist guard, plus that the row follows the finger and that a drop leaves no
+  row lifted or transformed. `dev/album-hold-check.cjs` (library Albums view song reorder) still passes **34/34**. All **28**
+  `dev/test-*.mjs` pass and `dev/check-dom.mjs` reports **0** integrity failures. `dev/patch-622.mjs` carries the idempotent
+  edits and the 62.0.5 metadata.
+- **Notes for the next release**: the CHANGELOG head at 62.0.5 is the first to describe Album History ordering; keep its
+  notes free of `download*` / `convert*` / "play build" terms (dev/test-60510, dev/test-6058). The popup cache key is
   `discPopupCache_📀 Album History`; a reorder does **not** clear it (the order helper re-applies on the cached body instead).
 
 ## v62 (Sep 25, 2026): lyrics for an artist whose name is only a letter or two
