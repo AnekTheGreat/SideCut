@@ -86,7 +86,7 @@ const openAt = (id) => {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.0.1', 'APP_VERSION = ' + ver);
+ok(ver === '63.0.2', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -98,7 +98,7 @@ if (entries) {
   // Both channels share the head entry's first six items, and the store channel
   // may not carry a downloader term at all.
   ok(!/\bdownload|converter|convert\b/i.test(headText), 'notes carry no downloader term (shared channel)');
-  ok(entries.findIndex((e) => String(e.version) === ver) === 0, 'the 63.0.1 entry heads the changelog');
+  ok(entries.findIndex((e) => String(e.version) === ver) === 0, 'the 63.0.2 entry heads the changelog');
   const rel618 = entries.find((e) => String(e.version) === '61.8');
   ok(!!rel618, 'the 61.8 entry is still in the changelog');
   ok(/(no matching source)/.test((rel618 ? rel618.items : []).join(' ')), 'its wording survived the new head entry');

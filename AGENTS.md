@@ -1,5 +1,65 @@
 # SideCut — repository memory
 
+## 63.0.2 (Sep 26, 2026): no remixes, nothing off the pinned artists, and Upcoming reads the days that are announced
+- **Shipped number**: **63.0.2** — an incremental step inside the 63 line the phone is on, so it is offered and accepted
+  everywhere 63.0.1 was. **v64 still needs the user's explicit consent** (their rule, recorded below).
+- **The user's words**: "In new releases or upcoming releases, and make upcoming releses actually work there should be no
+  remixes or anything not made by my pinned artists there shouldn't be remixes in general" (with a screenshot of Album
+  History: `AUJLA SZN 1 - EP`, both `Making Memories` rows, `Four You - EP`).
+- **Where the junk came from (read from the file, not guessed)**: the iTunes **song** pass never looked at the title, so
+  `Daytona (Remix) - Single`, `Aaye Haaye (Afro Mix)` and slowed/karaoke uploads came straight through; the iTunes
+  **album** pass and both open-catalog passes matched the credit with `indexOf` **in both directions** — a substring
+  anywhere in the string — so `Karan Aujla Tribute Band` counted as Karan Aujla; and no release path filtered a title at
+  all (the Album History noise regex only ever ran on Album History rows).
+- **Three shared helpers, on `window` beside `__scDay10`** (both script blocks can reach them):
+  `__scJunkTitle` (whole-word remix/cover/karaoke/tribute/slowed/non-stop test — **`mix` is only refused when qualified**:
+  `dj mix`, `club mix`, `afro mix`, `extended mix`… so `Mix Tape` survives and `Mixed Signals` never matched),
+  `__scSameArtistName` (exact name, or a whole-word prefix — `Karan` ~ `Karan Aujla` — but never a substring inside a word,
+  and a longer credit containing an act word (`tribute|karaoke|band|remix|live|orchestra|presents|soundtrack|cast|choir`)
+  is **refused**: `Karan Aujla Tribute Band` is somebody else), and `__scPruneJunkReleases` (runs on **load**, so remixes an
+  older build already stored leave every surface at once — Home panel, Fetch latest popup, bell count, Home section).
+- **Upcoming releases — why it looked dead, measured Sep 26 2026**: (1) MusicBrainz answers **one request a second** and
+  throttles a burst with 429/503; the check runs three artists at once and asked MusicBrainz **twice per artist**, so six
+  requests left together, most came back throttled, and a 503 was read as "nothing found" — the one source that carries an
+  announced day was silently the least reliable. (2) MusicBrainz was asked **by name** (`artist:"..."`), a rank-limited
+  search that can bury an announced release; browsing the artist's own catalog **by MusicBrainz id** returns everything on
+  it. (3) Wikidata was asked for **albums only** (`P31/P279* wd:Q482994`), and singles/EPs (`Q134556`/`Q169930`) are *not*
+  album subclasses, so a future-dated single was invisible. (4) Apple and Deezer carry **no future-dated release at all**
+  (probed: the user's artists and a dozen global ones → 0 rows each), so MusicBrainz + Wikidata are the only two sources
+  that can ever date a drop ahead.
+- **What changed**: one app-wide MusicBrainz queue (`_mbChain`, one request in flight, 1100 ms apart, **two retries** on
+  429/503), the artist's MusicBrainz id resolved once per artist per session (`__scMbIds`) then its catalog browsed, the
+  name search kept as the fallback when no id resolves; Wikidata read for **albums + singles + EPs**; the per-artist
+  ceiling raised **8 s → 25 s** — an artist's turn in that queue counts against its own ceiling, and at 8 s a queued retry
+  was cut off before it could be made; a MusicBrainz browse reply carries **no `artist-credit`**, so the credit check now
+  only applies when credits are present (the id in the query is the credit) and is strict when they are.
+- **The empty tab now explains itself**: `window.__scUpcomingEmptyText()` says how many pinned artists were read and when
+  ("SideCut last read the catalogs for all 7 pinned artists 3m ago and none of them is dated ahead"), read by the Home
+  panel, the Fetch latest popup and the tab refresh. **Honest limit, told to the user**: no open catalog currently has a
+  dated next drop for *any* of their artists (Karan Aujla, Diljit Dosanjh, Shubh, AP Dhillon, Sidhu Moose Wala, Divine,
+  Badshah — MusicBrainz browse: 0 future rows each), so an empty Upcoming tab is the truth, not a bug.
+- **Proven after the patch** (not assumed): the patched pass run against the live API found `Tracy Bonham → 2`
+  (`LIFT @2026-11-13`, `Un-F*k This F*kt Up Christmas @2026-12-05`) and `Trippin Jaguar → 1` where the previous name
+  search returned nothing for them, resolved `Karan Aujla`'s id and found him genuinely 0, and refused
+  `Karan Aujla Tribute Band` (no id). The new Wikidata query returned future **singles** for `Hinatazaka46`, `STU48`,
+  `Sakurazaka46`, `Sophie and the Giants` — invisible before. Helper probe: 10 junk titles → `Daytona (Remix)`,
+  `Aaye Haaye (Afro Mix)`, `Karaoke Hits`, `Tribute to Karan Aujla`, `Slowed + Reverb`, `Extended Mix`, `Club Mix` refused;
+  `Mix Tape`, `Mixtape`, `Mixed Signals`, `Four You - EP`, `AUJLA SZN 1 - EP`, `Best Of Karan Aujla`, `P-POP CULTURE` kept;
+  prune 10 rows → 6.
+- **Mechanics**: `dev/patch-628.mjs` (22 count==1-markered index.html edits: helpers + 5 source sites + 4 list sites + the
+  empty-tab line), then `dev/patch-629.mjs` (`APP_VERSION` → **63.0.2**, the new CHANGELOG head entry inserted **in front of**
+  the 63.0.1 one, `sw.js` `CACHE_NAME` → **`sidecut-shell-v63.0.3`**, 29 test repins incl. the ship-stamp literal in
+  `dev/test-6052.mjs`), then `dev/ota-bundle.mjs` + `dev/ota-bundle-play.mjs`, then `--manifest`. Final state: `ota-bundle`
+  v63.0.2 · 691428 bytes, `ota-bundle-play` v63.0.2 · 691437 bytes, both `--check OK`; all three zips carry
+  `APP_VERSION = '63.0.2'` **and** `CACHE_NAME = 'sidecut-shell-v63.0.3'`.
+- **Test contract changed on purpose**: the MusicBrainz assertion `mb.includes('fetchWithProxy(url, SC_MB_FETCH)')` became
+  "the pass uses the app-wide queue (`scMbFetch(`) and the queue reads through the shared fetch"; the 8 s clock became 25 s
+  in `test-6137`/`test-6139`; `dev/test-6139` grew blocks `[13]`/`[14]` pinning the junk test (11 hits), the strict credit
+  match, the prune-on-load, the queue + retry, the id browse, Wikidata's three classes and the empty-tab line.
+- **Verified**: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `ah-album-reorder-check.cjs` 34/34,
+  `album-hold-check.cjs` 34/34, and a jsdom load of the app with the new helpers (only the usual jsdom noise: no
+  indexedDB, no canvas — 44 messages, none from this change).
+
 ## 63.0.1 (Sep 26, 2026): the Album History album drag — the release that finally reaches a 63 phone
 - **Shipped number**: **63.0.1**. It went out as `62.1` first and was renumbered at the user's direction
   ("Release no.: 63.0.1") after they reported "I don't see the update" — see the next bullet for why 62.1 could never
@@ -35,7 +95,7 @@
   `dev/album-hold-check.cjs` 34/34. The shipped notes in `ota/updates.json` are clean of every term
   `dev/test-6058` / `dev/test-60510` forbid.
 
-## sw.js cache name (Sep 26, 2026): decoupled from APP_VERSION — it is 63.0.2
+## sw.js cache name (Sep 26, 2026): decoupled from APP_VERSION — 63.0.1 → 63.0.2 → 63.0.3
 - **The user's words**: "The sw.js can be 63.0.1", then "Just make the sw.js v63.0.2 you are not allowed to make full jumps
   from v63 to v64 without my consent". Only `sw.js`'s `CACHE_NAME` moves — it is now **`sidecut-shell-v63.0.2`** while the app
   is **62.1**. That name is a pure cache-buster: nothing in `index.html` compares it to `APP_VERSION` (there is no

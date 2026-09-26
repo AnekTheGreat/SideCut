@@ -96,7 +96,9 @@ ok(count('SC_RELEASE_FETCH') === 7, 'defined + used by 6 catalog reads (' + coun
 const idFn = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");
 ok(idFn && idFn.split('SC_RELEASE_FETCH').length - 1 === 2, 'the artist search and the catalog lookup both use it');
 const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpcoming = scFetchMbUpcoming;');
-ok(mb && mb.includes('fetchWithProxy(url, SC_MB_FETCH)'), 'the MusicBrainz search uses it, identifying the app');
+ok(mb && mb.includes('scMbFetch('), 'the MusicBrainz search uses the app-wide queue');
+ok(src.includes('return fetchWithProxy(url, opts).catch(function(){ return null; })'), 'the queue reads through the shared fetch');
+ok(count('SC_MB_FETCH') >= 3, 'carrying an identifying User-Agent (' + count('SC_MB_FETCH') + ')');
 
 console.log('[5] the drop check: iTunes is one source of three');
 {
@@ -127,7 +129,11 @@ ok(fn && fn.includes('for(let _wi = 0; _wi < 3; _wi++) _pool.push(_worker());'),
 ok(fn && fn.includes('await Promise.all(_pool);'), 'the run awaits the whole pool');
 ok(fn && fn.includes('savePinnedArtists()'), 'each artist persists as it lands');
 ok(fn && fn.includes('scRepaintOpenReleasePanel()'), 'and the open panel is repainted in place');
-ok(fn && fn.includes('new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })'), 'every artist is still clocked at 8 s');
+// 25 s, not 8: MusicBrainz is read through ONE spaced queue for the whole app
+// (a request a second, two retries on 429/503), so an artist's turn in that
+// queue counts against its own ceiling — at 8 s a queued retry was cut off
+// before it could be made, and a dated drop was lost.
+ok(fn && fn.includes('new Promise(function(res){ setTimeout(function(){ res(null); }, 25000); })'), 'every artist is clocked at 25 s');
 ok(fn && fn.includes('pinnedCheckState.active = false'), 'active is still cleared in the finally');
 ok(fn && fn.includes('finally{ pinnedCheckPromise = null; }'), 'the in-flight slot is released');
 ok(fn && fn.split('Promise.race([').length - 1 === 1, 'exactly one race per artist');
@@ -154,8 +160,8 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 }
 
 console.log('[11] release metadata');
-ok(ver === '63.0.1', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.2';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(ver === '63.0.2', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.3';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');
@@ -165,7 +171,7 @@ ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.2';"), 'sw.js cache = si
     ok(!/play build|play version|play install/i.test(head.items.join('\n')), 'notes never name the play build');
     ok(head.date.endsWith('EDT'), 'ship date (' + head.date + ')');
   }
-  ok(entries[0].version === '63.0.1', '63 heads the changelog');
+  ok(entries[0].version === '63.0.2', '63 heads the changelog');
 }
 
 console.log('[12] inline script syntax');
@@ -181,6 +187,41 @@ console.log('[12] inline script syntax');
     }
   });
   ok(syntaxErrors === 0, 'inline script syntax failures: ' + syntaxErrors);
+}
+
+console.log('[13] no remixes, nothing off the pinned artists');
+{
+  const check2 = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
+  // One shared test, applied by EVERY source and by BOTH lists. 11 hits = the
+  // definition, the pruning pass, and nine call sites.
+  ok(count('__scJunkTitle') === 11, 'one junk test, applied everywhere (' + count('__scJunkTitle') + ')');
+  ok(check2 && check2.includes('!window.__scJunkTitle(r.trackName)'), 'the iTunes song pass refuses a remix title');
+  ok(check2 && check2.includes('if(window.__scJunkTitle(r.collectionName)) return;'), 'so does the album pass');
+  const idFn2 = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");
+  ok(idFn2 && idFn2.includes('if(window.__scJunkTitle(r.collectionName)) return false;'), 'and the artist-catalog lookup');
+  ok(mb && mb.includes('if(window.__scJunkTitle(rg.title)) return;'), 'MusicBrainz too');
+  ok(src.includes('if(window.__scJunkTitle(title)) return;'), 'and Wikidata');
+  ok(src.includes('if(!r || window.__scJunkTitle(r.title)) return;'), 'the Upcoming list');
+  // The loose substring credit match is gone from all three release sources.
+  ok(!check2.includes('rArtist.indexOf(pArtist)'), 'the album pass no longer matches an artist by substring');
+  ok(!mb.includes('credits.some(function(nm){ return !!nm && (nm === want'), 'nor does MusicBrainz');
+  ok(src.includes('if(!window.__scSameArtistName(pl, want)) return;'), 'nor does Wikidata');
+  ok(src.includes('window.__scActWords = '), 'a tribute band is somebody else ("Karan Aujla Tribute Band")');
+  ok(src.includes('window.__scPruneJunkReleases(pinnedReleases)'), 'and the stored list is cleaned on load');
+
+  console.log('[14] Upcoming releases actually finds what is dated ahead');
+  // MusicBrainz: one spaced queue + the artist's own catalog by id.
+  ok(src.includes('var _mbChain = Promise.resolve()'), 'one MusicBrainz queue for the whole app');
+  ok(src.includes('rs.status === 429 || rs.status === 503'), 'a throttled reply is retried, not read as "nothing found"');
+  ok(src.includes('?artist=\' + _mbid + \'&fmt=json&limit=100'), 'the catalog is browsed by artist id');
+  ok(src.includes('window.__scMbIds || (window.__scMbIds = {})'), 'resolved once per artist per session');
+  ok(mb && mb.includes('if(credits.length){'), 'a browse reply with no credits is not refused for having none');
+  // Wikidata: singles and EPs are NOT album subclasses, so an album-only query
+  // could never see a future-dated single.
+  ok(src.includes('VALUES ?cls { wd:Q482994 wd:Q134556 wd:Q169930 }'), 'Wikidata reads albums, singles and EPs');
+  // The empty tab explains the check instead of implying nobody is pinned.
+  ok(src.includes('window.__scUpcomingEmptyText = function(){'), 'the empty Upcoming tab reports the check');
+  ok(count('window.__scUpcomingEmptyText()') === 3, 'the Home panel, the Fetch latest popup and the tab refresh all read it (' + count('window.__scUpcomingEmptyText()') + ')');
 }
 
 console.log('\n' + (failures === 0 ? 'ALL PASS' : 'FAILURES: ' + failures));

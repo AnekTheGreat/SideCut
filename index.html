@@ -4422,6 +4422,51 @@ window.__scUpcomingDay = function(v){
   var ms = Date.parse(d + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z');
   return isFinite(ms) && ms <= 400 * 86400000;
 };
+// ---- Release-list noise: no remixes, nothing off the pinned artists --------
+// The stores file a remix, a cover, a karaoke record, a tribute band's album and
+// a "focus"/non-stop playlist next to the artist's own new music, and New
+// releases and Upcoming releases listed them all. One test, used by every
+// source and by both lists, so a row is refused wherever it arrives from.
+// Whole words only: "Mixed Signals" is a song and "Mix Tape" is a release —
+// "(Remix)" and "(Afro Mix)" are not new music, so only a QUALIFIED mix arm
+// is refused (dj/club/afro/radio/extended/continuous/official), never "mix".
+window.__scJunkTitle = function(v){
+  var t = ' ' + String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+  if(!t.trim()) return true;
+  return /\b(karaoke|tribute|bootleg|unreleased|video album|remix|remixes|remixed|remixing|rmx|re mix|re mixes|re mixed|rework|reworked|mashup|megamix|dj set|dj mix|club mix|afro mix|radio mix|extended mix|continuous mix|official mix|mixed by|mixes by|focus collection|non stop|nonstop|radio edit|sped up|speed up|slowed|reverb|nightcore|8d audio|lofi|lo fi)\b/.test(t);
+};
+// Words that turn a credit into somebody else's record when they are what the
+// pinned name is extended by: "Karan Aujla Tribute Band" is not Karan Aujla.
+window.__scActWords = /\b(tribute|karaoke|cover|remix|remixed|mix|live|band|orchestra|ensemble|collective|presents|productions?|soundtrack|cast|choir|version)\b/;
+// Is this credit one of ours? An exact name, or a whole-word prefix of it, so
+// "Karan Aujla" is the same artist as "Karan" — but never a substring inside a
+// word, which is how "Karan Aujla Tribute Band" used to pass for Karan Aujla.
+window.__scSameArtistName = function(a, b){
+  var n = function(s){ return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+  var x = n(a), y = n(b);
+  if(!x || !y) return false;
+  if(x === y) return true;
+  var longer = (x + ' ').indexOf(y + ' ') === 0 ? x : ((y + ' ').indexOf(x + ' ') === 0 ? y : '');
+  if(!longer) return false;
+  // The longer credit has to be the same name, not the same name plus an act.
+  return !window.__scActWords.test(longer);
+};
+// Drop the remixes and covers already stored on the device, so they leave every
+// list at once instead of lingering until each artist is refetched. Returns how
+// many rows went.
+window.__scPruneJunkReleases = function(map){
+  try{
+    if(!map || typeof map !== 'object') return 0;
+    var dropped = 0;
+    Object.keys(map).forEach(function(k){
+      var list = map[k];
+      if(!Array.isArray(list)) return;
+      var keep = list.filter(function(r){ return !(r && window.__scJunkTitle(r.title)); });
+      if(keep.length !== list.length){ dropped += list.length - keep.length; map[k] = keep; }
+    });
+    return dropped;
+  }catch(_e){ return 0; }
+};
 // A drop's time of day, when one is known. A manual drop carries the hour you
 // picked; a catalog that ever reports one passes it straight through; a
 // day-only source leaves the field empty, which the lists read as "time TBA"
@@ -10988,7 +11033,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.0.1';
+  const APP_VERSION = '63.0.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11403,6 +11448,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.0.2', date: 'September 26, 2026 · 1:32 AM EDT', title: 'No remixes in New releases or Upcoming releases \u2014 and Upcoming reads the days that are actually announced', items: [
+    'New releases and Upcoming releases are the artist\'s own new music only: a remix, a mix, a cover, a karaoke or tribute record is left out of both lists, whichever catalog it came from.',
+    'A record now has to be credited to a pinned artist by name \u2014 the exact name, or a whole word of it \u2014 so a tribute band, a karaoke act or a remix outfit whose name merely begins with your artist\'s can no longer put a row in your list.',
+    'Remixes already stored from an earlier build leave on the next start instead of waiting for a refetch, and the counts on the tab, the Home panel and the bell agree with the rows you can see.',
+    'Upcoming releases reads the dates that are really announced: MusicBrainz is asked one request at a time and retried when it is busy \u2014 a burst of requests was being throttled, and every throttled reply was read as "nothing found" \u2014 and each artist\'s own MusicBrainz catalog is read by its id, where an announced release sits even when a name search buries it.',
+    'The open catalog that carries a drop\'s day is read for singles and EPs as well as albums, where a dated single used to be invisible.',
+    'When no drop is dated ahead, the Upcoming tab says so plainly \u2014 how many pinned artists were read and when \u2014 so an empty tab reads as "nothing announced yet" rather than a list that broke. The two buttons are unchanged: check again now, or add a drop by hand.',
+  ] },
   { version: '63.0.1', date: 'September 26, 2026 · 12:46 AM EDT', title: 'Holding an album in Album History now drags it into the order you want', items: [
     'In \ud83d\udcc0 Album History, press and hold an album for a moment, then drag it up or down. The row picks up under your finger and stays where you let it go.',
     'The drag keeps up with your finger: the list is measured once when you pick an album up instead of on every little move, so nothing stutters while you drag.',
@@ -26586,7 +26639,7 @@ function _fallbackCopy(text){
         this.textContent = '🔄 Fetch latest from pinned artists'; this.disabled = false;
         renderPinnedArtists(); renderNewReleases();
         // Build popup content from pinnedReleases
-        var releases = []; Object.keys(pinnedReleases).forEach(function(aname){ (pinnedReleases[aname]||[]).forEach(function(r){ releases.push(Object.assign({}, r, {artistName:aname})); }); }); releases.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+        var releases = []; Object.keys(pinnedReleases).forEach(function(aname){ (pinnedReleases[aname]||[]).forEach(function(r){ if(window.__scJunkTitle(r.title)) return; releases.push(Object.assign({}, r, {artistName:aname})); }); }); releases.sort((a,b) => (b.date||'').localeCompare(a.date||''));
         var seen = (typeof seenReleaseIds === 'object') ? seenReleaseIds : {};
         var html = '';
         if(!releases.length){ if(navigator.onLine === false && loadCachedDiscoverPopup('\ud83c\udf81 New Releases')){ this.textContent = '\ud83d\udd04 Fetch latest from pinned artists'; this.disabled = false; return; } html = '<div class="dp-empty">No releases found yet. Check again in a minute.</div>'; }
@@ -27867,6 +27920,7 @@ window.__refetchAlbums = async function(wasRefetch){
             for(var _aiI=0; _aiI<_aiAlbums.length; _aiI++){
               var _aiA = _aiAlbums[_aiI];
               if(!_aiA || !_aiA.title) continue;
+              if(noise.test(_aiA.title)) continue;   // the same junk filter the API sources get
               var _aiTN = normTitle(_aiA.title);
               var _aiY = String(_aiA.date||'').slice(0,4);
               if(_aiSeenT[_aiTN] && (!_aiY || _aiSeenT[_aiTN].indexOf(_aiY) !== -1)) continue; // already have this album from API
@@ -27937,6 +27991,9 @@ window.__refetchAlbums = async function(wasRefetch){
   var workers = [];
   for(var w=0; w<workerCount; w++) workers.push(runWorkers());
   await Promise.all(workers);
+  // Recount from the lists as they now stand: a duplicate the merge collapsed
+  // no longer inflates the total, so the count matches the rows on screen.
+  try{ totalAlbums = Object.keys(artistAlbums).reduce(function(n,k){ return n + ((artistAlbums[k]||[]).length); }, 0); }catch(_eCnt){}
   window.__ahFetching = false;
   // Hide home screen progress bar
   var _hpWrap2 = document.getElementById('ahFetchProgress');
@@ -27965,27 +28022,39 @@ window.__refetchAlbums = async function(wasRefetch){
 // Dedup an artist's album list by normalized title (keeps the first row, so the
 // same album arriving via iTunes/Deezer/MusicBrainz/AI collapses into one entry).
 function _albumKey(a){
-  var t = a && a.collectionName ? a.collectionName.toLowerCase().replace(/\([^)]*\)/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim() : '';
+  // The one identity shared by every dedupe in this file. Editions of the same
+  // album have to collapse into one row: the sources file them under slightly
+  // different titles ("Four You" vs "Four You - EP", "… (Deluxe)", "… -
+  // Remastered"), and the AI lookup is asked for special editions as separate
+  // items.
+  var t = a && a.collectionName ? a.collectionName.toLowerCase()
+    .replace(/\([^)]*\)/g,'')
+    .replace(/\s*[-\u2013\u2014]\s*(ep|single|deluxe|expanded|special|bonus|explicit|clean|remaster(ed)?|re-?recorded|version|edition|anniversary|reissue|re-?release)\b.*$/,'')
+    .replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim() : '';
   return t || (a && a.collectionId ? 'id:' + String(a.collectionId) : '_anon');
 }
 function _dedupAlbums(arr){
   if(!Array.isArray(arr)) return arr;
-  // Year-aware dedup: same title + same (or unknown) year = the same album;
-  // same title but a DIFFERENT year = a genuinely different release — keep both
-  // (fixes old albums disappearing when an artist reuses an album name).
+  // ONE row per album identity, and the release YEAR is deliberately ignored:
+  // a second row for the same album is always wrong, whatever year a source put
+  // on it, and that is what "there should be no duplicates" means. Sources file
+  // the same album under different titles and different years, and the AI lookup
+  // is explicitly asked for deluxe/special editions as separate items. The first
+  // row wins — the sources run best-first (iTunes, Deezer, MusicBrainz, then AI) —
+  // and a later duplicate only fills in what the kept row was missing.
   var seen = {}, out = [];
   for(var i=0;i<arr.length;i++){
     var a = arr[i];
     if(!a || !a.collectionName) continue;
     var k = _albumKey(a);
-    var y = String(a.releaseDate||'').slice(0,4);
-    var ys = seen[k];
-    if(ys){
-      if(!y || ys.indexOf(y) !== -1) continue;
-      ys.push(y);
-    } else {
-      seen[k] = [y];
+    var kept = seen[k];
+    if(kept){
+      if(!kept.artworkUrl100 && a.artworkUrl100) kept.artworkUrl100 = a.artworkUrl100;
+      if(!kept.trackCount && a.trackCount) kept.trackCount = a.trackCount;
+      if(!kept.releaseDate && a.releaseDate) kept.releaseDate = a.releaseDate;
+      continue;
     }
+    seen[k] = a;
     out.push(a);
   }
   return out;
@@ -28889,7 +28958,7 @@ if(!isDiscover) stopDiscoverPreview();
       ico.innerHTML = HB_ICONS.newreleases; title.textContent = 'New releases from pinned artists';
       const all = [];
       Object.keys(pinnedReleases).forEach(artist => {
-        (pinnedReleases[artist] || []).forEach(rel => all.push({ ...rel, artist }));
+        (pinnedReleases[artist] || []).forEach(rel => { if(!window.__scJunkTitle(rel.title)) all.push({ ...rel, artist }); });
       });
       all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
       const unseenCount = all.filter(r => !r.seen).length;
@@ -28945,7 +29014,7 @@ if(!isDiscover) stopDiscoverPreview();
             var _hbEmpty = document.createElement('div');
             _hbEmpty.id = 'dpRelUpEmpty';
             _hbEmpty.style.cssText = 'display:none; color:var(--ink-dim); font-size:13px; padding:14px 4px; text-align:center;';
-            _hbEmpty.textContent = 'No upcoming releases yet \u2014 pin an artist whose next drop is dated.';
+            _hbEmpty.textContent = (typeof window.__scUpcomingEmptyText === 'function') ? window.__scUpcomingEmptyText() : 'No upcoming releases yet.';
             try{ if(typeof window.__scWireUpcomingCta === 'function') window.__scWireUpcomingCta(_hbEmpty); }catch(_eUpCta){}
             body.appendChild(_hbEmpty);
             _hbTabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){
@@ -29232,6 +29301,9 @@ if(!isDiscover) stopDiscoverPreview();
     pinnedArtists = Array.isArray(pa && pa.value) ? pa.value : [];
     const pr = rows.find(r => r.key === 'pinnedReleases');
     pinnedReleases = (pr && pr.value && typeof pr.value === 'object') ? pr.value : {};
+    // A remix or a cover that an older build stored leaves now, not whenever
+    // that artist is next refetched.
+    try{ window.__scPruneJunkReleases(pinnedReleases); }catch(_ePrJ){}
     // Empty or missing row, but the on-device snapshot (written ~1.5s after
     // every meta change) can still hold the real list — an older build's
     // failed-read wipe or a crash mid-write drops the row without touching
@@ -29249,6 +29321,7 @@ if(!isDiscover) stopDiscoverPreview();
             pinnedArtists = _snapPins;
             if(!Object.keys(pinnedReleases).length && _snapMeta.pinnedReleases && typeof _snapMeta.pinnedReleases === 'object'){
               pinnedReleases = _snapMeta.pinnedReleases;
+              try{ window.__scPruneJunkReleases(pinnedReleases); }catch(_ePrS){}
             }
             try{ localStorage.setItem('sidecut_pins_restored', '1'); }catch(_eFlag){}
             console.warn('[SideCut] pinned artists restored from the on-device snapshot (' + pinnedArtists.length + ')');
@@ -29997,7 +30070,7 @@ if(!isDiscover) stopDiscoverPreview();
     // Flatten recent releases across all pinned artists, newest first.
     const all = [];
     Object.keys(pinnedReleases).forEach(artist => {
-      (pinnedReleases[artist] || []).forEach(rel => all.push({ ...rel, artist }));
+      (pinnedReleases[artist] || []).forEach(rel => { if(!window.__scJunkTitle(rel.title)) all.push({ ...rel, artist }); });
     });
     all.sort((a,b) => (b.date || '').localeCompare(a.date || ''));
     const recent = all.slice(0, 12);
@@ -30153,6 +30226,28 @@ if(!isDiscover) stopDiscoverPreview();
   // minute, and it repaints whichever release surface is open (the Fetch latest
   // popup rebuilds itself through its own button; the Home bubble is repainted
   // in place). If genuinely new drops turn up it says so and lights the bell.
+  // The empty Upcoming tab's line. It used to be flat boilerplate — "pin an
+  // artist whose next drop is dated" — which read as a broken tab when every
+  // pinned artist had already been checked and no catalog simply has a day for
+  // their next release yet. An empty tab now reports the check that produced it.
+  window.__scUpcomingEmptyText = function(){
+    try{
+      var n = (typeof pinnedArtists !== 'undefined' && pinnedArtists) ? pinnedArtists.length : 0;
+      if(!n) return 'Pin artists in Discover \u2014 SideCut then reads the open catalogs for their next drop.';
+      var at = 0;
+      try{ at = parseInt(localStorage.getItem('sidecut_pinnedAutoAt') || '0', 10) || 0; }catch(_eAt){}
+      try{ if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.finishedAt) at = pinnedCheckState.finishedAt; }catch(_eCs){}
+      var when = '';
+      if(at){
+        var ago = '';
+        try{ ago = (typeof timeAgo === 'function') ? ' ' + timeAgo(at) : ''; }catch(_eAg){}
+        when = ' SideCut last read the catalogs for all ' + n + ' pinned artist' + (n === 1 ? '' : 's') + ago + ' and none of them is dated ahead.';
+      }
+      return 'No upcoming releases yet \u2014 no drop from your pinned artists has a date in the open catalogs.'
+        + when
+        + ' A store usually lists the day a week or two before the release, and the check runs again on its own.';
+    }catch(_e){ return 'No upcoming releases yet \u2014 pin an artist whose next drop is dated.'; }
+  };
   window.__scUpcomingAutofetch = async function(){
     if(window.__scUpAutoBusy) return;
     if(typeof isPremiumActive === 'function' && !isPremiumActive()) return;
@@ -30329,7 +30424,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(!want) return [];
       // Bidirectional match: the artist's catalog is credible when the names
       // line up, not merely when one string contains the other by accident.
-      var credited = function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); };
+      var credited = function(nm){ return !!nm && window.__scSameArtistName(nm, want); };
       var arUrl = 'https://itunes.apple.com/search?term=' + encodeURIComponent(artist) + '&media=music&entity=musicArtist&limit=5';
       var arResp = await fetchWithProxy(arUrl, SC_RELEASE_FETCH);
       if(!arResp || !arResp.ok) return [];
@@ -30346,6 +30441,7 @@ if(!isDiscover) stopDiscoverPreview();
       var lkData = await lkResp.json();
       return ((lkData && lkData.results) || []).filter(function(r){
         if(!r || !r.collectionName) return false;
+        if(window.__scJunkTitle(r.collectionName)) return false;
         return credited(norm(primaryArtistName(r.artistName || '')));
       });
     }catch(_eId){ return []; }
@@ -30368,6 +30464,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(resp && resp.ok){
         const data = await resp.json();
         results = (data.results || []).filter(r => r && r.trackName &&
+          !window.__scJunkTitle(r.trackName) &&
           primaryArtistName(r.artistName || '').toLowerCase().trim() === primaryArtistName(artist).toLowerCase().trim());
       }
       const prev = pinnedReleases[artist] || [];
@@ -30411,7 +30508,10 @@ if(!isDiscover) stopDiscoverPreview();
             if(!r || !r.collectionName) return;
             const rArtist = primaryArtistName(r.artistName || '').toLowerCase().trim();
             const pArtist = primaryArtistName(artist).toLowerCase().trim();
-            if(rArtist !== pArtist && rArtist.indexOf(pArtist) === -1 && pArtist.indexOf(rArtist) === -1) return;
+            // Same artist by name, never by substring: "Karan Aujla Tribute
+            // Band" is not Karan Aujla, and a remix album is not his drop.
+            if(!window.__scSameArtistName(rArtist, pArtist)) return;
+            if(window.__scJunkTitle(r.collectionName)) return;
             if((r.trackCount || 0) === 1) return; // one-track releases come through the song query
             const albDate = (r.releaseDate || '').slice(0, 10);
             const dMs = new Date(albDate + 'T00:00:00Z').getTime();
@@ -30571,7 +30671,12 @@ if(!isDiscover) stopDiscoverPreview();
         // moves the check on instead of parking it half-finished.
         const fresh = await Promise.race([
           fetchArtistReleases(a.name),
-          new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })   // 8s per artist
+          // MusicBrainz is read through one spaced queue for the whole app, so
+          // an artist's turn in that queue counts against this wall: the ceiling
+          // is the wall the run may spend on ONE artist, not a timeout for one
+          // request. Raised from 8s, where a queued retry was cut off before it
+          // could be made — which is exactly how a dated drop got lost.
+          new Promise(function(res){ setTimeout(function(){ res(null); }, 25000); })  // 25s per artist
         ]).catch(function(){ return null; });                                        // never wedges the run
         totalNew += (fresh ? fresh.length : 0);
         pinnedCheckState.done++;
@@ -30623,7 +30728,8 @@ if(!isDiscover) stopDiscoverPreview();
       const _pr = (typeof pinnedReleases !== 'undefined' && pinnedReleases) ? pinnedReleases : {};
       Object.keys(_pr).forEach(function(artist){
         (_pr[artist] || []).forEach(function(r){
-          if(r && r.date && window.__scUpcomingDay(r.date)) _out.push({ artist: artist, title: r.title || '', date: window.__scDay10(r.date), art: r.art || null, rel: r });
+          if(!r || window.__scJunkTitle(r.title)) return;   // remixes never count as a drop
+          if(r.date && window.__scUpcomingDay(r.date)) _out.push({ artist: artist, title: r.title || '', date: window.__scDay10(r.date), art: r.art || null, rel: r });
         });
       });
     }catch(_eUp){ /* pinnedReleases can be TDZ this early — treat as empty */ }
@@ -31014,6 +31120,56 @@ if(!isDiscover) stopDiscoverPreview();
   // YYYY-MM-DD in the future and the pinned artist is credited. Best effort:
   // no network / no matches / a rate-limited reply and the other sources
   // simply carry on — nothing here may break the release check.
+  // MusicBrainz answers ONE request a second and throttles a burst with a 429/
+  // 503 rather than queueing it. This check runs three artists at once and asks
+  // MusicBrainz twice per artist, so its requests used to leave together, come
+  // back throttled, and be read as "nothing found" — for the one source that
+  // carries an announced day. One queue for the whole app: a request leaves
+  // alone, spaced, and a throttled reply is retried twice before giving up.
+  var _mbChain = Promise.resolve(), _mbLast = 0, _mbMin = 1100;
+  var _mbWait = function(ms){ return new Promise(function(res){ setTimeout(res, ms); }); };
+  function scMbFetch(url, opts){
+    var task = function(){
+      var attempt = function(left){
+        return _mbWait(Math.max(0, _mbLast + _mbMin - Date.now())).then(function(){
+          _mbLast = Date.now();
+          return fetchWithProxy(url, opts).catch(function(){ return null; }).then(function(rs){
+            if(rs && (rs.status === 429 || rs.status === 503) && left > 0){
+              return _mbWait(2600).then(function(){ return attempt(left - 1); });
+            }
+            return rs;
+          });
+        });
+      };
+      return attempt(2);
+    };
+    var out = _mbChain.then(task, task);
+    _mbChain = out.then(function(){ return null; }, function(){ return null; });
+    return out;
+  }
+  // Which MusicBrainz artist is this? The id is what the browse endpoint takes,
+  // and the name search alone can rank an announced release out of reach. A name
+  // can be a band, a DJ and a producer at once, so only an exact/whole-word
+  // match is accepted, best score first. Resolved once per artist per session.
+  function scMbArtistId(name){
+    var key = String(name == null ? '' : name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if(!key) return Promise.resolve(null);
+    var cache = window.__scMbIds || (window.__scMbIds = {});
+    if(cache[key] !== undefined) return cache[key];
+    var who = String(name).replace(/["\\]/g, ' ').trim();
+    var p = scMbFetch('https://musicbrainz.org/ws/2/artist/?query=' + encodeURIComponent('artist:"' + who + '"') + '&fmt=json&limit=5', SC_MB_FETCH).then(function(rs){
+      if(!rs || !rs.ok) return null;
+      return rs.json().catch(function(){ return null; });
+    }).then(function(md){
+      var hit = ((md && md.artists) || []).filter(function(a){
+        return a && a.id && window.__scSameArtistName(primaryArtistName(a.name || ''), key);
+      });
+      hit.sort(function(a, b){ return Number(b.score || 0) - Number(a.score || 0); });
+      return hit.length ? hit[0].id : null;
+    }).catch(function(){ return null; });
+    cache[key] = p;
+    return p;
+  }
   async function scFetchMbUpcoming(artist){
     try{
       if(!artist) return [];
@@ -31035,13 +31191,27 @@ if(!isDiscover) stopDiscoverPreview();
       // Both endpoints are asked AT THE SAME TIME. Each read is budgeted at
       // 4s, so two sequential ones could spend the whole per-artist window
       // (8s) on one artist; run together they cost one budget.
-      var _reads = passes.map(function(ps){
-        var q = 'artist:"' + who + '" AND ' + ps.range + ':[' + today + ' TO ' + horizon + ']';
-        var url = 'https://musicbrainz.org/ws/2/' + ps.path + '/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100';
-        return fetchWithProxy(url, SC_MB_FETCH).then(function(rs){
+      var _json = function(url){
+        return scMbFetch(url, SC_MB_FETCH).then(function(rs){
           return (rs && rs.ok) ? rs.json() : null;
         }).catch(function(){ return null; });
-      });
+      };
+      var _reads;
+      // The artist's own catalog, read by id: every release on it, dated or
+      // not — where the id lookup found the drops the ranked name search had
+      // buried (the same reason the Apple pass reads the artist's catalog by
+      // id). No id resolved, and the name search still runs, unchanged.
+      var _mbid = await scMbArtistId(artist);
+      if(_mbid){
+        _reads = passes.map(function(ps){
+          return _json('https://musicbrainz.org/ws/2/' + ps.path + '?artist=' + _mbid + '&fmt=json&limit=100');
+        });
+      } else {
+        _reads = passes.map(function(ps){
+          var q = 'artist:"' + who + '" AND ' + ps.range + ':[' + today + ' TO ' + horizon + ']';
+          return _json('https://musicbrainz.org/ws/2/' + ps.path + '/?query=' + encodeURIComponent(q) + '&fmt=json&limit=100');
+        });
+      }
       var _rp = await Promise.all(_reads);
       // Process in pass order, so a release-group hit wins over the concrete
       // release that merely mirrors it.
@@ -31062,8 +31232,14 @@ if(!isDiscover) stopDiscoverPreview();
             var credits = (rg['artist-credit'] || []).map(function(c){
               return primaryArtistName((c && (c.name || (c.artist && c.artist.name))) || '').toLowerCase().trim();
             });
-            var hit = credits.some(function(nm){ return !!nm && (nm === want || nm.indexOf(want) !== -1 || want.indexOf(nm) !== -1); });
-            if(!hit) return; // collabs count only when the pinned artist is credited
+            if(window.__scJunkTitle(rg.title)) return;      // no remixes, no covers
+            // A browse-by-id reply carries no artist-credit at all — the id in
+            // the query IS the credit. Only a reply that names credits has to
+            // match the pinned artist, and then strictly.
+            if(credits.length){
+              var hit = credits.some(function(nm){ return !!nm && window.__scSameArtistName(nm, want); });
+              if(!hit) return; // collabs count only when the pinned artist is credited
+            }
             // One drop shows on both endpoints under different ids; the
             // normalized title + day is what actually identifies it.
             var key = String(rg.title).toLowerCase().replace(/\s+/g, ' ').trim() + '|' + d;
@@ -31104,7 +31280,8 @@ if(!isDiscover) stopDiscoverPreview();
         + ' bd:serviceParam mwapi:language "en" .'
         + ' ?performer wikibase:apiOutputItem mwapi:item . }'
         + ' ?album wdt:P175 ?performer .'
-        + ' ?album wdt:P31/wdt:P279* wd:Q482994 .'
+        + ' VALUES ?cls { wd:Q482994 wd:Q134556 wd:Q169930 }'
+        + ' ?album wdt:P31/wdt:P279* ?cls .'
         + ' ?album wdt:P577 ?date .'
         + ' FILTER(?date > NOW())'
         + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }'
@@ -31121,9 +31298,10 @@ if(!isDiscover) stopDiscoverPreview();
         var title = String(b.albumLabel.value || '').trim();
         // No English label means the item is a stub; its Q-id is not a title.
         if(!title || /^Q\d+$/.test(title)) return;
+        if(window.__scJunkTitle(title)) return;         // no remixes, no covers
         var pl = String((b.performerLabel && b.performerLabel.value) || '').toLowerCase().trim();
         if(!pl) return;
-        if(!(pl === want || pl.indexOf(want) !== -1 || want.indexOf(pl) !== -1)) return;
+        if(!window.__scSameArtistName(pl, want)) return;
         var id = (b.album && b.album.value) ? String(b.album.value).split('/').pop() : '';
         out.push({
           title: title, date: d, art: null,
@@ -36013,7 +36191,16 @@ window.__scDiscRelTab = function(mode, root){
     mr.style.display = upcoming ? 'none' : '';
   }
   var emptyEl = root.querySelector('#dpRelUpEmpty');
-  if(emptyEl){ root.appendChild(emptyEl); emptyEl.style.display = (upcoming && !up.length) ? 'block' : 'none'; }
+  if(emptyEl){
+    root.appendChild(emptyEl);
+    emptyEl.style.display = (upcoming && !up.length) ? 'block' : 'none';
+    // Keep the line current — but only while the buttons have not been wired
+    // into it yet: writing textContent after __scWireUpcomingCta ran would take
+    // the CTA buttons with it.
+    if(upcoming && !up.length && !emptyEl._scUpWired){
+      try{ emptyEl.textContent = window.__scUpcomingEmptyText(); }catch(_eEmpty){}
+    }
+  }
   var sEl = root._dpRelSubEl;
   if(sEl === undefined) sEl = document.getElementById('discPopupSub');
   if(sEl){
@@ -36065,7 +36252,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       _upEmpty.id = 'dpRelUpEmpty';
       _upEmpty.className = 'dp-empty';
       _upEmpty.style.cssText = 'display:none;';
-      _upEmpty.textContent = 'No upcoming releases yet \u2014 pin an artist whose next drop is dated.';
+      _upEmpty.textContent = (typeof window.__scUpcomingEmptyText === 'function') ? window.__scUpcomingEmptyText() : 'No upcoming releases yet.';
       try{ if(typeof window.__scWireUpcomingCta === 'function') window.__scWireUpcomingCta(_upEmpty); }catch(_eUpCta2){}
       bEl.appendChild(_upEmpty);
       _tabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){

@@ -33,7 +33,7 @@ console.log('[1] the file parses — every inline script block');
     try { new Function(m[1]); } catch (e) { bad++; console.log('       ' + e.message); }
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');  ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '63.0.1'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(/const CHANGELOG = \[\n  \{ version: '63.0.2'/.test(src), 'the newest entry sits inside CHANGELOG');
 }
 
 console.log('[2] add-drop sheet: no example, no +7 days');
@@ -52,8 +52,8 @@ ok(tap && tap.includes("btn.textContent = 'Check for drops'"), 'the label is alw
 ok(tap && tap.includes('btn.disabled = false'), 'and the button is re-enabled');
 const check = slice('async function checkPinnedArtistReleases()', 'function scUpcomingReleases');
 ok(!!check, 'checkPinnedArtistReleases slice extracted');
-ok(check && check.includes('new Promise(function(res){ setTimeout(function(){ res(null); }, 8000); })'),
-  'every artist is clocked at 8 s');
+ok(check && check.includes('new Promise(function(res){ setTimeout(function(){ res(null); }, 25000); })'),
+  'every artist is clocked at 25 s');
 ok(check && count('const fresh = await') === 1, 'one `fresh` per artist — no duplicate declaration');
 ok(check && check.includes('totalNew += (fresh ? fresh.length : 0)'), 'a timed-out artist counts as zero, not a crash');
 ok(check && check.split('Promise.race([').length - 1 === 1, 'one race per artist');
@@ -94,8 +94,8 @@ ok(src.includes('if(!pe.time && x.time) pe.time = x.time;'), 'and an undated dro
 console.log('[6] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const sw = fs.readFileSync('sw.js', 'utf8');
-ok(ver === '63.0.1', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.2';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(ver === '63.0.2', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.3';"), 'sw.js cache = sidecut-shell-v61.5');
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.6'"), '61.5 heads the changelog');
 
 console.log('');

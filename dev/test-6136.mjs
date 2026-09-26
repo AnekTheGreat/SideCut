@@ -27,7 +27,9 @@ const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpco
 ok(!!mb, 'scFetchMbUpcoming defined and exported');
 ok(mb && mb.includes("'https://musicbrainz.org/ws/2/' + ps.path + '/?query='"), 'queries the open MusicBrainz search, both endpoints');
 ok(mb && mb.includes("ps.range + ':[' + today + ' TO ' + horizon + ']'"), 'date range covers today → today+400d');
-ok(mb && mb.includes('fetchWithProxy(url, SC_MB_FETCH)'), 'goes through the shared proxy fetch, carrying an identifying User-Agent');
+ok(mb && mb.includes('scMbFetch('), 'goes through the shared proxy fetch (one spaced queue app-wide)');
+ok(src.includes('return fetchWithProxy(url, opts).catch(function(){ return null; })'), 'the queue reads through it, carrying an identifying User-Agent');
+ok(mb && mb.includes("'https://musicbrainz.org/ws/2/' + ps.path + '?artist='"), 'and the artist catalog is browsed by MusicBrainz id');
 ok(mb && !mb.includes('accounts.spotify.com') && !mb.includes('window.open'), 'no Spotify, no token, no window in the pass');
 ok(mb && mb.includes('window.__scDay10(rg[ps.dateKey])'), 'day-precision parse reused');
 ok(mb && mb.includes('window.__scUpcomingDay(d)'), 'the future/placeholder gate reused');
@@ -59,8 +61,8 @@ ok(count('await scSpotifyInteractiveToken()') === 1, 'the only window left belon
 
 console.log('[4] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.0.1', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.2';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(ver === '63.0.2', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.3';"), 'sw.js cache = sidecut-shell-v61.5');
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.5'"), '61.5 heads the changelog');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }
