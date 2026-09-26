@@ -79,7 +79,7 @@ function extractVar(name) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.0.4', 'APP_VERSION = ' + ver);
+ok(ver === '63.0.5', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -91,7 +91,7 @@ if (entries) {
   // Both channels share the head entry's first six items, and the store channel
   // may not carry a downloader term at all.
   ok(!/\bdownload|converter|convert\b/i.test(headText), 'notes carry no downloader term (shared channel)');
-  ok(entries.findIndex((e) => String(e.version) === ver) === 0, 'the 63.0.4 entry heads the changelog');
+  ok(entries.findIndex((e) => String(e.version) === ver) === 0, 'the 63.0.5 entry heads the changelog');
   const rel619 = entries.find((e) => String(e.version) === '61.9');
   ok(!!rel619, 'the 61.9 entry is still in the changelog');
   ok(/steps only|walkthrough/.test((rel619 ? rel619.items : []).join(' ')), 'its wording survived the new head entry');
@@ -108,11 +108,15 @@ const ruleSrc = [
   extractFn('scLyricsArtistTokens'),
   extractFn('scLyricsLooksLikeImprint'),
   extractFn('scLyricsArtistVerdict'),
+  // The accept rule asks this one as well now, so it has to be lifted out with
+  // the rest — a ranker that calls a function the harness did not carry over
+  // would throw instead of scoring.
+  extractFn('scLyricsStrangerCredit'),
   extractFn('scLyricsTitleKey'),
   extractFn('scLyricsRank')
 ].join('\n');
 let api = null;
-try { api = new Function(ruleSrc + '\nreturn { verdict: scLyricsArtistVerdict, tokens: scLyricsArtistTokens, rank: scLyricsRank, key: scLyricsTitleKey };')(); }
+try { api = new Function(ruleSrc + '\nreturn { verdict: scLyricsArtistVerdict, stranger: scLyricsStrangerCredit, tokens: scLyricsArtistTokens, rank: scLyricsRank, key: scLyricsTitleKey };')(); }
 catch (e) { console.log('       ' + e.message); }
 ok(!!api, 'the rules evaluate');
 
@@ -190,10 +194,41 @@ console.log('[2e] the change can only ever turn a refusal into an acceptance');
   ok(V('DJ', 'DJ') === 'match', 'but an exact short word does');
 }
 
-console.log('[2f] the pre-existing guards are all still in place');
+console.log('[2f] a stranger cannot ride in on a coincidental length');
+{
+  // Reported (Sep 26, 2026): the lyrics panel offered 20 "Lifestyle" matches for
+  // a song by BK — Jason Derulo's, LISA's, four others' — and the first tap
+  // could land on the wrong words, because a title that matches exactly plus a
+  // length within two seconds was enough on its own when the verdict was
+  // 'unknown'. A short name cannot REJECT (that rule is above and stays), so the
+  // entry's own credit has to say who it is: a real name that is not ours is a
+  // stranger, and a stranger is refused.
+  const S = (cand, tag) => api.stranger(cand, api.tokens(tag));
+  ok(S('Jason Derulo, Adam Levine', 'BK') === true, 'a real credit that does not name us is a stranger');
+  ok(S('LISA', 'BK') === true, 'so is another solo artist');
+  ok(S('BK & Jay Trak', 'BK') === false, 'our own short name inside a multi-artist credit still agrees');
+  ok(S('BK', 'BK') === false, 'an entry filed under our name is not a stranger');
+  ok(S('T-Series', 'BK') === false, 'an imprint says nothing either way');
+  ok(S('', 'BK') === false, 'and neither does a blank credit');
+  ok(S('Karan Aujla', 'Saregama Music') === false, 'with no name of ours to compare, nothing is a stranger');
+  // The exact report: same title, same length, unrelated artist.
+  ok(accepts(E('Lifestyle', 'Jason Derulo, Adam Levine', 178), 'Lifestyle', 'BK', 178) === false,
+    'a same-titled, same-length song by someone else is no longer accepted');
+  const _strangerRank = api.rank(E('Lifestyle', 'Jason Derulo, Adam Levine', 178), api.key('Lifestyle'), api.tokens('BK'), 178);
+  ok(!!_strangerRank && _strangerRank.stranger === true && _strangerRank.dScore === 2,
+    'it is refused on the stranger rule, not on the length (which is a perfect match)');
+  ok(accepts(E('Lifestyle', 'BK', 178), 'Lifestyle', 'BK', 178) === true, 'our own entry is untouched');
+  // The old ceiling still holds, and nothing above relaxed it.
+  ok(accepts(E('Icy', 'BK & Jay Trak', 147, true), 'Icy', 'Bikramjit Dhaliwal', 147) === false,
+    'the writer credit still cannot claim that one');
+}
+
+console.log('[2g] the pre-existing guards are all still in place');
 {
   ok(src.includes("dScore >= 2 && exactTitle && verdict !== 'foreign'"),
     'a length-only match still needs the exact title and a credit that does not contradict ours');
+  ok(src.includes("&& !scLyricsStrangerCredit(res.artistName, artistTokens)"),
+    'and it is refused outright when the credit names a real artist who is not this one');
   ok(!!api.rank(E('Different Song', 'BK', 168), api.key('Mob Ties (Intro)'), api.tokens('BK'), 168) === false,
     'a different song is still not this song');
   ok(api.rank(E('Mob Ties (Intro)', 'BK', 168), 'not a key', api.tokens('BK'), 168) === null, 'a title that lines up nowhere is refused');

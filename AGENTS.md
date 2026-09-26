@@ -1,5 +1,84 @@
 # SideCut — repository memory
 
+## 63.0.5 (Sep 26, 2026): ten reports in one release — and the reason the phone still looked unfixed
+- **Shipped number**: **63.0.5** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.6`** (its own
+  number, decoupled; see the sw.js note below).
+- **FIRST, the thing that made this batch look like it had failed**: the previous five reports were implemented and fully
+  verified, but **never released** — `APP_VERSION` was still `63.0.4` and `sw.js` still `sidecut-shell-v63.0.5`, i.e. the
+  exact published state. Nothing was committed and no OTA bundle was rebuilt, so an installed app had no way to receive
+  any of it. "It's still broken" was correct and had nothing to do with the fixes. **A batch is not done at `--check OK`;
+  it is done when `ota/` and `ota-play/` carry the new `APP_VERSION` and the commits are pushed.**
+- **The user's words (batch A)**: "I should be able to get the cover art for these albums and there shouldn't be a play
+  button here… the popup is not showing for the playlists that full track time is not visible… with the lyrics if
+  absolutely no lyrics by the exact artist and exact song is found then just say no lyrics found not the wrong lyrics.
+  And this API key thing isn't working."
+- **The user's words (batch B)**: "Default view on boot when click library should be playlists not albums and thats the
+  default… make sure free users can't access premium or pro things. Is their anything that you can do to make the boot
+  time shorter… First time ever getting into the app make sure it says seizure warning at the top with the details of
+  that, then make sure the user must scroll down all the way and click the continue button in order to get past the
+  tutorial and the tutorial only."
+- **Batch A, the findings that mattered** (full detail in each patch's header):
+  - The Singles ▶ had **two** renderers, not one. The list was fixed long ago; `window.__singlesRowsHTML` (the ↻ / ⚡
+    per-artist refetch) still drew one, and its rows are what a saved popup kept. A cached body is now cleaned on open
+    for **every** popup — the old guard matched Old songs only, and only a `<span>`, while the button is a `<div>`.
+  - The blank covers: Apple has **no album entry** for “Smile”, “Ishq Ho Gaya” or “Ishq Da Uda Ada” by Diljit Dosanjh in
+    either the US or the IN storefront. Deezer has all three; MusicBrainz release groups for them resolve through the
+    Cover Art Archive (all verified live). But the deeper defect was that `__ahResolveArtworks` — the **only** caller of
+    the artwork lookup — was invoked exactly once, at boot, when `#discPopupBody` is still empty, so it had never run
+    over a real row. It now runs from `openDiscoverPopup`, which every list goes through, cached or fresh.
+  - The duration bubble was wired only when `isClamped(_subEl)` said the line was cut off; any line that fit answered
+    nothing. The bubble also no longer dismisses itself on the scroll it causes within 350 ms of opening.
+  - Lyrics: a title-exact + length-within-2 s match was accepted even when `scLyricsArtistVerdict` said `unknown`, which
+    is how BK's “LIFESTYLE” got twenty strangers (Jason Derulo, LISA, Gminxr). `scLyricsStrangerCredit` now refuses an
+    entry filed under a real other artist, `scListLyricsCandidates` drops and **counts** them, and an empty list is what
+    the panel reports. The manual picker stays — gating it on `agreeCount` killed the label-credit case (a “T-Series”
+    entry never *agrees*, yet is exactly what the box is for), so the gate is `!_picks.length` with the heading saying
+    when nothing is credited to you.
+  - Gemini: the app pinned `gemini-2.0-flash` in six places and read a **404** as “your key may be expired”. It now asks
+    `GET /v1beta/models` what the key can use, retries with one of those, remembers it, and quotes the API's own
+    `error.message`. `_aiPasteKey` falls back Capacitor → `navigator.clipboard` → `execCommand('paste')` → focus + say so.
+- **Batch B, the findings that mattered**:
+  - The Library boot view was a **race**. The single decision line lived in the *library loader*, reading the
+    `sandboxDefaultView` variable that a *different* async pass fills in — and it was placed after the loader's own
+    `if(!trackRows.length) return false`, so on an empty library it never ran at all. It moves to the settings pass (one
+    run, at boot, always) and is gated on the premium unlock, so a free user lands on Playlists whatever a restored
+    backup or a lapsed unlock left stored. `dev/patch-635.mjs` normalises from the committed line **or** either interim
+    this patch wrote, because a rerun from a mid-state must converge (verified in a clean `/tmp` tree: 13 edits, rerun 0).
+  - PRO effects were ungated. Every PRO control refused the *click*, but the values were read back out of storage and
+    applied on every boot — so a lapsed subscription, a restored backup or a stale row left a free user wearing them.
+    `applySandboxStyles()` is the single place they are painted, and `_scScrollSpeed()` the single place scroll speed is
+    read; both now check `isPremiumActive()`. The “Default view on boot” `<select>` is also disabled for a free user
+    instead of visibly moving and then discarding the choice.
+  - Boot: `loadEnrichState()` and `loadPinnedArtists()` were awaited **one after the other**, two round trips to the same
+    store. They run in one `Promise.all`, each keeping its own guard.
+  - The first-run guide (`#howToUseBackdrop`) had no seizure warning in it and one unguarded Close button. The warning
+    (same wording as Settings → More) is now the first child of `#howToUseScroll`, and that panel must be scrolled to the
+    bottom before the button — relabelled **Continue** — unlocks. **Only the first-ever showing is gated**: Replay
+    tutorial opens the same panel live, and no other popup changes.
+- **The OTA note cap (recorded so it is not repeated)**: `dev/ota-bundle.mjs` and its two siblings take `.slice(0, 6)` of
+  the head entry's items. A twelve-item entry would have shipped an update that silently said nothing about its last six
+  fixes. The head entry is therefore written as **exactly six** notes, folding the ten reports into the six a user
+  actually receives.
+- **Mechanics**: `dev/patch-634.mjs` (batch A, **23** index.html edits), `dev/patch-635.mjs` (batch B, **13** edits), then
+  `dev/patch-636.mjs` (`APP_VERSION` → **63.0.5**, new head CHANGELOG entry in front of the 63.0.4 one, `sw.js` →
+  `63.0.6`, **29 repins**), then `dev/ota-bundle.mjs` + `dev/ota-bundle-play.mjs`, then `--manifest`. Final state:
+  `ota-bundle` v63.0.5 · 706078 bytes, `ota-bundle-play` v63.0.5 · 706087 bytes, both `--check OK`; all three zips carry
+  `APP_VERSION = '63.0.5'` and `CACHE_NAME = 'sidecut-shell-v63.0.6'`. `dev/patch-636.mjs` is self-healing like 633: a
+  rerun REPLACES an existing 63.0.5 entry rather than skipping it.
+- **New probes**: `dev/report-634-check.cjs` (31 checks) and `dev/batch-635-check.cjs` (42 checks, boots the app twice —
+  free and premium — with the seeded meta store). Both reproduce their report against the released build:
+  `SC_HTML=/tmp/index.before.634.html node dev/report-634-check.cjs` fails 10, `dur-bubble-check.cjs` fails 2 of 17.
+  `report-634-check.cjs` reaches the network through the **global `fetch`** only, because `fetchWithProxy` is IIFE-local
+  and is not on `window` — the harness lesson from this batch.
+- **Also updated**: `dev/v609-check.cjs` (the Old-songs-only cache guard is gone — every popup body is cleaned now — and
+  its `sidecut-shell-v' + version` equality was stale since the sw.js decoupling; it asserts the naming convention like
+  the other 12 files), `dev/lyrics-lookup-check.cjs` (the picker is no longer a menu of strangers; its `scLookupLyrics(`
+  count of 3 predated a third call site).
+- **Verified**: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `ah-edit-persist-check.cjs` 17/17,
+  `ah-album-edit-check.cjs` 42/42, `ah-album-reorder-check.cjs` 34/34, `album-hold-check.cjs` 34/34,
+  `discover-singles-check.cjs` 37/37, `dur-bubble-check.cjs` 17/17, `report-634-check.cjs` 31/31,
+  `lyrics-lookup-check.cjs` 42/42, `v609-check.cjs` 49/49, `batch-635-check.cjs` 42/42, both channel `--check`s OK.
+
 ## 63.0.4 (Sep 26, 2026): a saved album date sticks, and the invented days stop being served from the list's snapshot
 - **Shipped number**: **63.0.4** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.5`** (its own
   number, decoupled; see the sw.js note below).

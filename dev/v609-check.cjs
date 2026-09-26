@@ -147,12 +147,21 @@ return { fn: fetchArtistSingles, calls: CALLS, results: { us: ${JSON.stringify(U
   ok('its play button is stripped on the way in', opened && opened.body.indexOf('dp-track-play') === -1, opened && opened.body.slice(0, 120));
   ok('the row itself is untouched', opened && opened.body.indexOf('data-lyrow="1"') !== -1 && opened.body.indexOf('Sunn i') !== -1);
   ok('the remove ✕ is untouched', opened && opened.body.indexOf('dp-ly-x') !== -1);
-  // …and other popups are not rewritten: their play buttons are real.
+  // Singles is cleaned too, as of the Sep 26, 2026 report: the ▶ was removed
+  // from both Singles renderers (the list and the ↻ / ⚡ redraw), so a cached
+  // Singles body — which is what was reported — must open without one, the same
+  // way an Old songs snapshot does. No popup row carries a play button now, so
+  // nothing legitimate is being stripped here.
   opened = null;
-  const singlesRow = '<div class="dp-track" data-si="0-0"><div class="dp-track-play" data-play="0-0">\u25b6</div></div>';
+  const singlesRow = '<div class="dp-ah-artist"><div class="dp-track" data-si="0-0"><div class="dp-track-play" data-play="0-0" style="width:28px;">\u25b6</div>'
+    + '<div style="flex:1;">Ghostface Killah</div><span class="dp-ah-x" data-si="0-0">\u00d7</span></div></div>';
   store['discPopupCache_\ud83c\udfb5 Singles'] = JSON.stringify({ title: '\ud83c\udfb5 Singles', body: singlesRow, subtitle: '', ts: Date.now(), pins: '' });
   load('\ud83c\udfb5 Singles');
-  ok('Singles keeps its play buttons', opened && opened.body.indexOf('dp-track-play') !== -1);
+  ok('a saved Singles list is cleaned too (no renderer draws a ▶ any more)',
+    opened && opened.body.indexOf('dp-track-play') === -1, opened && opened.body.slice(0, 110));
+  ok('and its rows and ✕ are left alone', !!opened
+    && opened.body.indexOf('Ghostface Killah') !== -1
+    && opened.body.indexOf('dp-ah-x') !== -1);
 
   console.log('\n— the saved lists are refreshed once on this update —');
   ok('the Singles snapshot generation is bumped to 3', /sidecut_singles_cache_gen'\) !== '3'/.test(html) && /sidecut_singles_cache_gen', '3'\)/.test(html));
@@ -172,7 +181,13 @@ return { fn: fetchArtistSingles, calls: CALLS, results: { us: ${JSON.stringify(U
     return true;
   };
   ok('index.html is v60.0.9 or later', atLeast(version, '60.0.9'), version);
-  ok('sw.js cache matches', sw.indexOf('sidecut-shell-v' + version) !== -1);
+  // The sw.js cache name was decoupled from APP_VERSION on Sep 26, 2026 (see
+  // AGENTS.md, "sw.js cache name"): it carries its own number and must NOT be
+  // repinned to a future APP_VERSION. This audit predates that decision, so it
+  // checks the naming convention instead of equality — the same change the
+  // test-*.mjs files were given at the time.
+  ok('sw.js has a versioned cache name of its own', /const CACHE_NAME = 'sidecut-shell-v\d+(?:\.\d+)*'/.test(sw));
+  ok('and it still starts on this build’s line', sw.indexOf('sidecut-shell-v' + version.split('.')[0] + '.') !== -1, version);
   const entries = [...html.matchAll(/version: '(\d+(?:\.\d+)*)', date: '([^']*)'/g)].map((m) => ({ v: m[1], d: m[2] }));
   ok('the newest entry is this build', entries[0] && entries[0].v === version, entries[0] && entries[0].v);
   ok('every recent stamp is Eastern time', entries.slice(0, 8).every((e) => /(EDT|EST)$/.test(e.d)), entries[0] && entries[0].d);

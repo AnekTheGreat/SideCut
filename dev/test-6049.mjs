@@ -47,12 +47,18 @@ if (m) {
   ok(true, 'hide() safe when bubble never created');
 }
 
-console.log('[4] both tap handlers are clamp-gated');
-ok(/if\(!window\.__scDurBubble\.isClamped\(_subEl\)\)\{ window\.__scDurBubble\.hide\(\); return; \}/.test(src),
-  'playlist/album header line gated');
+console.log('[4] the album card line is clamp-gated; the playlist header answers every tap');
+// The header runtime line was gated on the same clamp measurement. On a phone
+// that reads "233 tracks · 12h …" and the tap came back empty — the clamp a
+// person cannot measure is not a gate a tap should have to pass. It answers
+// always now, and says so with a pointer cursor.
+ok(!/if\(!window\.__scDurBubble\.isClamped\(_subEl\)\)/.test(src),
+  'the playlist header line no longer waits on a clamp measurement');
+ok(src.includes("_subEl.addEventListener('pointerup', _openDurBubble);"),
+  'and answers a pointer gesture, not only a click');
+ok(/_subEl\.style\.cursor = 'pointer'/.test(src), 'the header runtime line shows it is tappable');
 ok(/if\(!window\.__scDurBubble\.isClamped\(_albDurEl\)\)\{ window\.__scDurBubble\.hide\(\); return; \}/.test(src),
   'album card line gated');
-ok(!/_subEl\.style\.cursor = 'pointer'/.test(src), 'no unconditional pointer cursor on header');
 ok(!/"cursor:pointer;'\)/.test(src), 'no forced inline pointer cursor on album subtitle');
 
 console.log('[5] stray markers removed from song rows');

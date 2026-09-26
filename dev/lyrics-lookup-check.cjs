@@ -137,8 +137,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('batch path uses the same resolver', typeof batch === 'function');
 
   console.log('\n— one resolver, three callers —');
+  // One definition plus one call site per path that needs lyrics: the batch
+  // sweep, the single-track fetch, and the just-released wait. The count is a
+  // floor, not an equality — a new path calling the SAME resolver is the point.
   const calls = (html.match(/scLookupLyrics\(/g) || []).length;
-  ok('sheet and batch both call the resolver (definition + 2 call sites)', calls === 3, 'found ' + calls);
+  ok('every path calls the one resolver (definition + 3 call sites)', calls >= 4, 'found ' + calls);
 
   console.log('\n— a new release with a multi-artist credit —');
   reqLog.length = 0;
@@ -211,7 +214,13 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const picker = win.document.getElementById('lyricsCandidatePicker');
   ok('a candidate picker is shown instead of silently guessing', !!picker);
   const rows = picker ? picker.querySelectorAll('button') : [];
-  ok('only title-matching candidates are listed (cancel button included)', rows.length === 3, 'rows=' + rows.length);
+  // The fixture holds two "Waliyan" entries: one credited to Shivjot (a real
+  // other artist, so it is counted and dropped) and the 179s one filed under
+  // T-Series (a label, which is the case this box exists for). One candidate
+  // plus Cancel, not two plus Cancel.
+  ok('the stranger is dropped and the label credit is still offered (plus Cancel)', rows.length === 2, 'rows=' + rows.length);
+  ok('and the dropped stranger is not on screen at all',
+     !!picker && picker.textContent.indexOf('Shivjot') === -1, picker && picker.textContent.replace(/\s+/g, ' ').slice(0, 100));
   ok('the picker is inside the lyrics sheet', !!picker && picker.parentElement === win.document.getElementById('lyricsContent'));
   if (rows.length > 1) {
     rows[0].click();
@@ -267,10 +276,18 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   win.document.getElementById('lrTitle').value = 'Gabhru';
   win.document.getElementById('lrSearch').click();
   await wait(4500);
+  // "Gabhru" exists on LRCLIB only under another artist, so a hand search for
+  // it must not become a menu of that stranger's song — the report was exactly
+  // "just say no lyrics found not the wrong lyrics".
   const pickerOne = win.document.getElementById('lyricsCandidatePicker');
-  ok('the picker still offers that entry to pick by hand', !!pickerOne);
-  ok('and marks it as a different artist', !!pickerOne && /different artist/.test(pickerOne.textContent || ''),
-     pickerOne ? (pickerOne.textContent || '').replace(/\s+/g, ' ').slice(0, 90) : 'missing');
+  ok('a hand search whose only match is a stranger shows no picker', !pickerOne);
+  ok('it says no lyrics found instead',
+     win.document.getElementById('lyricsNotFound').style.display === 'block',
+     win.document.getElementById('lyricsNotFound').style.display);
+  const whyOne = win.document.getElementById('lyricsNotFoundWhy');
+  ok('and the note counts the same-titled song it refused',
+     !!whyOne && whyOne.style.display === 'block' && /same-titled song/.test(whyOne.textContent || ''),
+     whyOne ? whyOne.textContent : 'missing');
 
   console.log('\n— no runtime errors —');
   ok('no uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '));

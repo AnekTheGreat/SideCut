@@ -4254,7 +4254,23 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
 <div class="modal-backdrop" id="howToUseBackdrop">
   <div class="modal">
     <h3>How to use SideCut</h3>
-    <div style="display:flex; flex-direction:column; gap:16px; max-height:65vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">
+    <div id="howToUseScroll" style="display:flex; flex-direction:column; gap:16px; max-height:65vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">
+
+      <!-- First thing on screen, on the very first launch, before anything else
+           is read. The details below match Settings → More → ⚠ Seizure warning. -->
+      <div id="howToUseSeizure" style="border:1px solid rgba(255,199,90,0.45); background:rgba(255,199,90,0.08); border-radius:10px; padding:12px;">
+        <div style="font-weight:700; font-size:14px; color:var(--ink); margin-bottom:8px;">⚠ Seizure warning — read this first</div>
+        <div style="font-size:12.5px; color:var(--ink-dim); line-height:1.6;">
+          <div style="margin-bottom:6px;">SideCut has themes, glow effects, and an RGB color mode that produce <b>flashing, pulsing, and rapidly changing colors</b> — including along the edges of your screen while music plays.</div>
+          <div style="margin-bottom:6px;">A very small number of people may experience <b>seizures or loss of consciousness</b> when exposed to certain flashing lights or patterns, even with no history of seizures or epilepsy.</div>
+          <div style="margin-bottom:6px;"><b>If you have photosensitive epilepsy, or have ever had a seizure triggered by flashing lights,</b> turn these effects off:</div>
+          <div style="display:flex; gap:8px; margin-bottom:4px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Avoid the <b>RGB</b>, <b>RGB+</b>, and animated <b>dynamic themes</b> (Aurora, Synthwave, Ocean, Ember, Galaxy, Cyberpunk, Glacier).</span></div>
+          <div style="display:flex; gap:8px; margin-bottom:4px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>In <b>Glow</b> settings, leave the edge lines, blur bands, and corner glow <b>off</b>.</span></div>
+          <div style="display:flex; gap:8px; margin-bottom:4px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Use a <b>static theme</b> (Rose Gold, Violet, Onyx, etc.) and the DJ Mode visuals with caution.</span></div>
+          <div style="display:flex; gap:8px; margin-bottom:6px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Sandbox → <b>Reduce motion</b> disables all animations and transitions across the app.</span></div>
+          <div><b>Stop using the app and consult a doctor</b> if you experience dizziness, altered vision, eye or muscle twitching, loss of awareness, or disorientation while using it. Keep a safe distance from the screen and play in a well-lit room.</div>
+        </div>
+      </div>
 
       <div>
         <div id="howToGetMusicHead" style="font-weight:600; font-size:14px; margin-bottom:6px;">Getting music into your library</div>
@@ -4340,8 +4356,9 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
       </div>
 
     </div>
+    <div id="howToUseGateHint" style="display:none; font-size:11.5px; color:var(--gold); text-align:center; margin-top:10px;">Scroll all the way down — the button unlocks at the end.</div>
     <div class="modal-btns">
-      <button class="cancel" id="howToUseClose" style="flex:1;">Close</button>
+      <button class="cancel" id="howToUseClose" style="flex:1;">Continue</button>
     </div>
   </div>
 </div>
@@ -6642,6 +6659,9 @@ function getApiHeaders() {
         }
       }
     }
+    // Losing premium must strip the PRO effects and re-lock the PRO controls the
+    // moment it happens, not on the next boot.
+    try{ if(typeof updateSandboxToggles === 'function') updateSandboxToggles(); }catch(_eSbFx){}
   }
 
   function initPremiumTab(){
@@ -7412,31 +7432,49 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     $('sandboxBigArt').classList.toggle('active', sandboxBigArt);
     $('sandboxShowAlbum').textContent = sandboxShowAlbum ? 'On' : 'Off';
     $('sandboxShowAlbum').classList.toggle('active', sandboxShowAlbum);
-    var _sdv = $('sandboxDefaultViewSel'); if(_sdv) _sdv.value = sandboxDefaultView;
-    $('nowbarSizeValue').textContent = sandboxNowbarSize + '%';
+    // A PRO control a free user cannot use should look that way. Without this the
+    // "Default view on boot" dropdown moved under the finger and then did nothing,
+    // which reads as the setting being broken rather than as it being locked.
+    var _sdv = $('sandboxDefaultViewSel');
+    if(_sdv){
+      var _sdvOk = (typeof isPremiumActive === 'function' && isPremiumActive());
+      _sdv.value = _sdvOk ? sandboxDefaultView : 'playlists';
+      _sdv.disabled = !_sdvOk;
+      _sdv.style.opacity = _sdvOk ? '' : '0.5';
+      _sdv.style.cursor = _sdvOk ? '' : 'not-allowed';
+      _sdv.title = _sdvOk ? '' : 'PRO — unlock in Settings';
+    }
+    $('nowbarSizeValue').textContent = (typeof isPremiumActive === 'function' && isPremiumActive()) ? (sandboxNowbarSize + '%') : '100%';
     applySandboxStyles();
   }
 
   function applySandboxStyles(){
+    // One premium check for every PRO control in this panel. The click gates stop
+    // a free user from SETTING these, but the values are read back out of storage
+    // on every boot — so without this the effects of a PRO setting could survive
+    // a lapsed unlock, or arrive with a restored backup. The five below are the
+    // panel's free settings and are applied unchanged.
+    var _proFx = (typeof isPremiumActive === 'function' && isPremiumActive());
     document.body.classList.toggle('sandbox-compact', sandboxCompactRows);
     document.body.classList.toggle('sandbox-hide-art', sandboxHideArt);
     document.body.classList.toggle('sandbox-dur-tabs', sandboxDurOnTabs);
     document.body.classList.toggle('sandbox-large-touch', sandboxLargeTouch);
     document.body.classList.toggle('sandbox-show-playcount', sandboxShowPlayCount);
-    document.body.classList.toggle('sandbox-compact-nowbar', sandboxCompactNowbar);
     document.body.classList.toggle('sandbox-always-search', sandboxAlwaysSearch);
-    document.body.classList.toggle('sandbox-reduce-motion', sandboxReduceMotion);
-    document.body.classList.toggle('sandbox-high-contrast', sandboxHighContrast);
-    document.body.classList.toggle('sandbox-big-seek', sandboxBigSeek);
-    document.body.classList.toggle('sandbox-invert-colors', sandboxInvertColors);
-    document.body.classList.toggle('sandbox-compact-header', sandboxCompactHeader);
-    document.body.classList.toggle('sandbox-big-art', sandboxBigArt);
+    // ---- PRO, from here down ----
+    document.body.classList.toggle('sandbox-compact-nowbar', _proFx && sandboxCompactNowbar);
+    document.body.classList.toggle('sandbox-reduce-motion', _proFx && sandboxReduceMotion);
+    document.body.classList.toggle('sandbox-high-contrast', _proFx && sandboxHighContrast);
+    document.body.classList.toggle('sandbox-big-seek', _proFx && sandboxBigSeek);
+    document.body.classList.toggle('sandbox-invert-colors', _proFx && sandboxInvertColors);
+    document.body.classList.toggle('sandbox-compact-header', _proFx && sandboxCompactHeader);
+    document.body.classList.toggle('sandbox-big-art', _proFx && sandboxBigArt);
     // Remove all nowbar size classes
     document.body.classList.remove('sandbox-nowbar-size-50', 'sandbox-nowbar-size-75', 'sandbox-nowbar-size-125', 'sandbox-nowbar-size-150');
-    if(sandboxNowbarSize === 50) document.body.classList.add('sandbox-nowbar-size-50');
-    else if(sandboxNowbarSize === 75) document.body.classList.add('sandbox-nowbar-size-75');
-    else if(sandboxNowbarSize === 125) document.body.classList.add('sandbox-nowbar-size-125');
-    else if(sandboxNowbarSize === 150) document.body.classList.add('sandbox-nowbar-size-150');
+    if(_proFx && sandboxNowbarSize === 50) document.body.classList.add('sandbox-nowbar-size-50');
+    else if(_proFx && sandboxNowbarSize === 75) document.body.classList.add('sandbox-nowbar-size-75');
+    else if(_proFx && sandboxNowbarSize === 125) document.body.classList.add('sandbox-nowbar-size-125');
+    else if(_proFx && sandboxNowbarSize === 150) document.body.classList.add('sandbox-nowbar-size-150');
   }
 
   // ---- Action strip order (applies saved order; drag & drop reordering removed in v46.6) ----
@@ -8881,6 +8919,36 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
     return 'unknown';
   }
+  // Is this entry's credit a real artist who is not us? 'ours' is every word of
+  // our name, SHORT ONES INCLUDED ("BK" must still claim "BK & Jay Trak"), and
+  // 'theirs' is every word of the entry's credit that is long enough to be a
+  // name. Yes when the entry names someone real and none of our words is in
+  // there — which is the case that made a list of twenty "Lifestyle"s, only one
+  // of them Punjabi, look like SideCut had found the lyrics.
+  function scLyricsStrangerCredit(candArtist, artistTokens){
+    var cand = String(candArtist || '').trim();
+    if(!cand) return false;
+    if(scLyricsLooksLikeImprint(cand)) return false;         // a label/channel says nothing
+    // EVERY word of the credit is compared — the short ones included, or "BK &
+    // Jay Trak" could not be recognised as ours — but a real (3+ letter) name has
+    // to be present before the credit can contradict anybody.
+    var theirs = scLyricsArtistTokens(cand);
+    var realTheirs = theirs.filter(function(w){
+      return w.length >= 3 && !SC_LYRICS_STOPWORDS[w] && !SC_LYRICS_IMPRINT_TOKENS[w];
+    });
+    if(!realTheirs.length) return false;                     // nothing real to judge on
+    var ours = (artistTokens || []).filter(function(w){
+      return w.length > 0 && !SC_LYRICS_STOPWORDS[w] && !SC_LYRICS_IMPRINT_TOKENS[w];
+    });
+    if(!ours.length) return false;                           // we have no name to compare
+    for(var i = 0; i < ours.length; i++){
+      for(var j = 0; j < theirs.length; j++){
+        if(ours[i] === theirs[j]) return false;
+        if(ours[i].length >= 4 && theirs[j].indexOf(ours[i]) === 0) return false;
+      }
+    }
+    return true;
+  }
   function scLyricsTitleKey(title){
     return String(title || '').toLowerCase()
       .replace(/\(.*?\)|\[.*?\]/g, ' ')
@@ -9048,7 +9116,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // song by a different artist could be served as "your" lyrics. Without a
       // confirmed artist the title must now match EXACTLY as well — and a credit
       // that contradicts ours is refused outright.
-      acceptable: !!(aHit || (dScore >= 2 && exactTitle && verdict !== 'foreign')),
+      // …and a credit that names someone else outright is refused even then: the
+      // exact title plus a length inside two seconds is how a stranger's song got
+      // served as yours for an artist whose name is too short for the verdict
+      // table to call foreign.
+      stranger: scLyricsStrangerCredit(res.artistName, artistTokens),
+      acceptable: !!(aHit || (dScore >= 2 && exactTitle && verdict !== 'foreign' && !scLyricsStrangerCredit(res.artistName, artistTokens))),
       rank: tScore * 2 + (aHit ? 2 : 0) + dScore * 1.5 + durProx * 1.5 + (res.syncedLyrics ? 0.5 : 0)
     };
   }
@@ -9224,7 +9297,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     var primary = artistVars.length > 1 ? artistVars[1] : artistVars[0];
     var primaryTokens = scLyricsArtistTokens(primary);
     var dur = Math.round(duration || 0);
-    var seen = {}, out = [];
+    var seen = {}, out = [], strangers = 0, agree = 0;
     function add(res){
       if(!res || !(res.syncedLyrics || res.plainLyrics)) return;
       var rKey = scLyricsTitleKey(res.trackName);
@@ -9233,6 +9306,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(seen[k]) return;
       seen[k] = 1;
       var rk = scLyricsRank(res, titleKey, primaryTokens, dur);
+      // Someone else's song is not a candidate for yours. It is counted instead,
+      // so the panel can say "no lyrics found, N same-titled songs by other
+      // artists" rather than offering a list headed by four strangers.
+      if(scLyricsStrangerCredit(res.artistName, primaryTokens)){ strangers++; return; }
+      if(rk.verdict === 'match') agree++;
       out.push({ title: res.trackName || '', artist: res.artistName || '', duration: Number(res.duration) || 0,
                  synced: !!res.syncedLyrics, lyrics: res.syncedLyrics || res.plainLyrics,
                  // So picking one by hand can never be mistaken for a credit
@@ -9252,6 +9330,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
     out.sort(function(a, b){ return b.score - a.score; });
     scLyricsDeadline = 0;
+    // Carried on the array: how many entries were dropped as someone else's, and
+    // how many agree with this track's artist. A list with no agreement in it is
+    // "no lyrics found", not a menu.
+    out.strangers = strangers;
+    out.agreeCount = agree;
     return out;
   }
   window.__scLookupLyrics = scLookupLyrics;
@@ -9817,7 +9900,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       prompt += "Artist: " + (t.artist || "Unknown") + "\n";
       prompt += "Duration: " + Math.round(duration) + " seconds\n\n";
       prompt += "Rules:\n- Output ONLY the LRC text, no explanation\n- Format: [MM:SS.xx] lyric line\n- Distribute lines evenly across the song duration\n- Start first line at [00:01.00]\n- Keep original line breaks\n\nLyrics:\n" + rawLyrics;
-      var resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + _aiGeminiKey, {
+      var resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + window.__scGeminiModel() + ":generateContent?key=" + _aiGeminiKey, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 8192 } })
@@ -10332,8 +10415,30 @@ function startLyricsAutoScroll(keepPos, noReset) {
         var _oldPick = document.getElementById('lyricsCandidatePicker');
         if(_oldPick) _oldPick.remove();
         if(!_picks.length){
+          // Say no lyrics found. Offering the other people's songs as a list to
+          // tap is what "the wrong lyrics" means to the person reading it, so a
+          // stranger is removed from the list rather than labelled — which leaves
+          // an empty list meaning exactly this: nothing for this artist and this
+          // song. A row that is no stranger (the credit is a label, or there is no
+          // credit to read) stays, because that is the case the box is here for.
           $('lyricsNotFound').style.display = 'block';
-          toast('Nothing on LRCLIB for "' + searchTitle + '". Try a shorter title — just the song name, no brackets.', 4200);
+          var _whatEl = $('lyricsNotFoundWhat');
+          var _whyEl = document.getElementById('lyricsNotFoundWhy');
+          var _others = _picks.strangers || 0;
+          if(_whatEl) _whatEl.textContent = 'No lyrics found for "' + searchTitle + '" by ' + searchArtist + '.';
+          if(_whyEl){
+            if(_others){
+              _whyEl.style.display = 'block';
+              _whyEl.textContent = 'LRCLIB has ' + _others + ' same-titled song' + (_others === 1 ? '' : 's') +
+                ' by other artists, and a song is never served under someone else\\u2019s name. ' +
+                'If one of them is the right one, put its artist in the Artist box below and search again.';
+            }else{
+              _whyEl.style.display = 'none';
+            }
+          }
+          toast(_others
+            ? ('No lyrics found for ' + searchArtist + ' — ' + _others + ' same-titled song' + (_others === 1 ? '' : 's') + ' by other artists were skipped.')
+            : ('Nothing on LRCLIB for "' + searchTitle + '". Try a shorter title — just the song name, no brackets.'), 4600);
           return;
         }
         var _pickWrap = document.createElement('div');
@@ -10341,7 +10446,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
         _pickWrap.style.cssText = 'padding:12px;background:var(--bg-raised);border-radius:12px;margin:12px;border:1px solid var(--line);';
         var _pickHead = document.createElement('div');
         _pickHead.style.cssText = 'font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;';
-        _pickHead.textContent = _picks.length + ' match' + (_picks.length === 1 ? '' : 'es') + ' on LRCLIB — tap the right song:';
+        _pickHead.textContent = _picks.length + ' match' + (_picks.length === 1 ? '' : 'es') + ' on LRCLIB' +
+          (_picks.agreeCount ? ' — tap the right song:' : ' — none credited to ' + searchArtist + '. Tap the right one:');
         _pickWrap.appendChild(_pickHead);
         _picks.slice(0, 12).forEach(function(c){
           var row = document.createElement('button');
@@ -10943,6 +11049,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(sandboxShowAlbumRow) sandboxShowAlbum = !!sandboxShowAlbumRow.value;
       const sandboxDefaultViewRow = metaRows.find(r => r.key === 'sandboxDefaultView');
       if(sandboxDefaultViewRow && sandboxDefaultViewRow.value) sandboxDefaultView = sandboxDefaultViewRow.value;
+      // ---- Which view the Library opens on ----------------------------------
+      // Playlists, always, unless the PRO "Default view on boot" setting asked
+      // for Albums AND the device is actually unlocked — a free user is kept on
+      // Playlists whatever a restored backup or a lapsed unlock left stored.
+      // Decided here, in the one settings pass, because this pass always runs
+      // and runs once: the library loader that used to decide it skips out
+      // immediately when the library is empty (so a fresh install never got the
+      // setting) and runs again on every reload (so it would undo a deliberate
+      // switch to Albums). Reading the variable here is safe — it was set on the
+      // line above.
+      // Reading the variable here is safe: it was set on the line above, in this
+      // same pass — the loader used to read it from a different async pass, so
+      // the value it saw depended on which read resolved first.
+      libraryMode = ((typeof isPremiumActive === 'function' && isPremiumActive()) && sandboxDefaultView === 'albums')
+        ? 'albums'
+        : 'playlists';
       const actionPillOrderRow = metaRows.find(r => r.key === 'actionPillOrder');
       if(actionPillOrderRow && Array.isArray(actionPillOrderRow.value) && actionPillOrderRow.value.length > 0) {
         actionPillOrder = actionPillOrderRow.value;
@@ -10995,6 +11117,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       renderHomeLayoutEditor();
       renderCustomActionList();
       applySandboxStyles();
+      // The same moment also declares which PRO controls are locked, so the panel
+      // reads correctly the first time it is opened rather than only after a tap.
+      try{ if(typeof updateSandboxToggles === 'function') updateSandboxToggles(); }catch(_eSbBoot){}
       if(THEMES[currentTheme] && THEMES[currentTheme].rgb) startRgbAnimation();
       reorderActionPills();
       renderHome();
@@ -11033,7 +11158,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.0.4';
+  const APP_VERSION = '63.0.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11448,6 +11573,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.0.5', date: 'September 26, 2026 · 11:31 AM EDT', title: 'Every covered report: the play button that should not be there, the covers nothing had, the bubble for a cut-off time, lyrics that were never yours, and the key that was blamed for the wrong thing', items: [
+    'Singles has no play button on a row. The ▶ that was reported was still being drawn by a second renderer — the ↻ / ⚡ per-artist refetch redraws a group through its own function, and that one still put a button on every row, which is what a saved list then kept. Both renderers are the same now, and a list saved by an older build is cleaned of it the moment it opens. Tapping the row opens the song, exactly like a track inside an album.',
+    'The covers nothing had a picture for show up now. “Smile”, “Ishq Ho Gaya” and “Ishq Da Uda Ada” by Diljit Dosanjh have no album entry in Apple\u2019s store at all — in the US storefront or the Indian one — so the one place that looked for artwork had nothing it could ever find. The lookup now asks Deezer, which carries that catalogue, and then MusicBrainz\u2019s release group, whose front cover the Cover Art Archive serves; all three were checked live against those exact albums. Only a cover matching both the artist and the album is used — a same-titled album by someone else is refused, because a stranger\u2019s cover is worse than a blank. And it runs at last: that lookup had exactly one caller, and it fired once while the app was still starting up, when the album list did not exist yet — so it had never run over a real row, and an album stored without artwork could only stay blank for good. It now runs every time the list is drawn, a fresh one or one reopened from its saved copy, and a cover it finds is remembered.',
+    'The total time answers a tap even when the line is not cut off. The bubble was wired only on a line measured as too narrow, so a slightly wider line — or one that only just fits — silently ignored the tap. Every row answers now, and tapping it is no longer swallowed by the panel\u2019s own scroll a moment after it opens.',
+    'Lyrics can no longer be somebody else\u2019s. A song was accepted when its title matched exactly and its length was within two seconds even when the artist was a stranger — which is how BK\u2019s “LIFESTYLE” was answered with twenty matches headed by Jason Derulo and LISA. An entry filed under a real other artist is refused and counted instead, and when nothing is left the panel says no lyrics were found for that artist and that song, naming how many same-titled songs by other artists were skipped. The hand-search box still lists what it finds — that is what you asked it for — but a stranger is removed from that list too, so it can never be a menu of other people\u2019s songs.',
+    'The Gemini key is no longer blamed for the wrong thing, and pasting it works. “API model not found — your Gemini key may be expired” was a guess: a 404 means this key cannot see this model, not that the key is dead, and the app sent you off to make a new one. It now asks the API which models the key can actually use and retries with one of those, remembers the model that worked, and every error quotes what the API said instead of inventing a cause. “Clipboard access denied” was the WebView refusing the browser clipboard API: the paste button tries the app\u2019s own clipboard first, then the browser one, then the older path, and if none can be read it puts the cursor in the field and says so — long-press and Paste always works.',
+    'Playlists is the Library\u2019s default view, PRO stays PRO, the first launch has to be read, and starting up is quicker. The Library opens on Playlists, and only the PRO “Default view on boot” setting can move it to Albums — so a free user lands on Playlists whatever a restored backup or an older unlock left in storage, and that dropdown now reads as locked instead of moving under the tap and then discarding the choice. Free users get no PRO effects at all: the PRO settings were still read out of storage and applied on every start with no unlock check anywhere, so a lapsed subscription, a restored backup or a row left by an older build could leave you wearing them — the whole PRO set is now gated where it is painted, including the now-bar size and the scroll speed. A brand new install opens the guide with the full seizure warning at the very top — the flashing themes, the RGB modes, what to turn off, and when to stop and see a doctor — and it can no longer be dismissed by tapping outside it: the button only unlocks once the panel is scrolled to the bottom, on that first showing only, with Replay tutorial and every other popup unchanged. And boot is shorter: the two independent metadata reads the app awaits on every launch ran one after the other, so it waited for two round trips to the same store for no reason — they run together now, each keeping its own guard.',
+  ] },
   { version: '63.0.4', date: 'September 26, 2026 · 10:21 AM EDT', title: 'A date you set with the pencil stays — and the days nothing ever published are off the old albums', items: [
     'A release date or track count you set with the pencil on an album in 📀 Album History now stays. The list keeps a snapshot of itself so it opens instantly, and that snapshot was being shown instead of your change — both right after saving and on every reopen, which is why editing looked like it did nothing.',
     'That snapshot is now stamped with your edits and the app version it was drawn from, so a list drawn before a change (or by an older build) is redrawn from the albums themselves instead of being shown as it was.',
@@ -13471,9 +13604,86 @@ function startLyricsAutoScroll(keepPos, noReset) {
   });
   $('updateLogSummaryBtn').addEventListener('click', () => { updateLogSummaryMode = false; renderUpdateLog(); });
   $('updateLogFullBtn').addEventListener('click', () => { updateLogSummaryMode = true; renderUpdateLog(); });
-  $('howToUseBtn').addEventListener('click', () => { $('howToUseBackdrop').style.display = 'flex'; });
-  $('howToUseClose').addEventListener('click', () => { $('howToUseBackdrop').style.display = 'none'; dbPut('meta', { key: 'hasSeenOnboarding', value: true }); });
-  $('howToUseBackdrop').addEventListener('click', (e) => { if(e.target === $('howToUseBackdrop')){ $('howToUseBackdrop').style.display = 'none'; dbPut('meta', { key: 'hasSeenOnboarding', value: true }); } });
+  // ---- The first-run guide has to be read to the end ------------------------
+  // The seizure warning is at the top of it, so this is the one panel a brand new
+  // person must not be able to dismiss without passing it: no backdrop tap, no
+  // untried button, and the button only unlocks when the panel is scrolled the
+  // whole way down. ONLY the first-ever showing is gated — Replay tutorial opens
+  // the same panel with the button live, because the user has already read it,
+  // and no other modal in the app behaves any differently.
+  window.__scTutorialGate = false;
+  function _scTutorialScroll(){
+    return document.getElementById('howToUseScroll');
+  }
+  function _scTutorialAtEnd(){
+    var el = _scTutorialScroll();
+    // No panel (or one that fits without scrolling, which jsdom and a tall
+    // desktop both do) has nothing left to read.
+    if(!el) return true;
+    if(el.scrollHeight - el.clientHeight <= 24) return true;
+    return (el.scrollTop + el.clientHeight) >= (el.scrollHeight - 24);
+  }
+  function _scTutorialSync(){
+    var btn = document.getElementById('howToUseClose');
+    if(!btn) return;
+    var _gated = !!window.__scTutorialGate;
+    var _atEnd = !_gated || _scTutorialAtEnd();
+    btn.disabled = !_atEnd;
+    btn.style.opacity = _atEnd ? '' : '0.45';
+    btn.style.cursor = _atEnd ? 'pointer' : 'not-allowed';
+    // The label IS the instruction: it never reads "Continue" while there is
+    // still something below the fold.
+    btn.textContent = _gated ? (_atEnd ? 'Continue' : 'Scroll to the end to continue') : 'Close';
+    var hint = document.getElementById('howToUseGateHint');
+    if(hint) hint.style.display = _gated ? (_atEnd ? 'none' : 'block') : 'none';
+  }
+  window.__scTutorialSync = _scTutorialSync;
+  window.__scOpenTutorial = function(gated){
+    var bd = document.getElementById('howToUseBackdrop');
+    if(!bd) return;
+    window.__scTutorialGate = !!gated;
+    bd.style.display = 'flex';
+    var el = _scTutorialScroll();
+    if(el){
+      if(window.__scTutorialGate) el.scrollTop = 0;
+      if(!el._scGateWired){
+        el._scGateWired = true;
+        // A phone can move this panel with momentum, with the wheel, or with a
+        // finger — so the gate is re-checked on all three rather than only on a
+        // scroll event that some WebViews never deliver.
+        el.addEventListener('scroll', function(){ _scTutorialSync(); }, { passive: true });
+        el.addEventListener('touchmove', function(){ _scTutorialSync(); }, { passive: true });
+        el.addEventListener('wheel', function(){ _scTutorialSync(); }, { passive: true });
+        window.addEventListener('resize', function(){ if(window.__scTutorialGate) _scTutorialSync(); });
+      }
+    }
+    _scTutorialSync();
+    if(window.__scTutorialGate){
+      try{ toast('Read to the bottom — the Continue button unlocks there.', 3200); }catch(_eTutT){}
+    }
+  };
+  function _scTutorialDone(){
+    $('howToUseBackdrop').style.display = 'none';
+    window.__scTutorialGate = false;
+    dbPut('meta', { key: 'hasSeenOnboarding', value: true });
+  }
+  $('howToUseBtn').addEventListener('click', () => { window.__scOpenTutorial(false); });
+  $('howToUseClose').addEventListener('click', (e) => {
+    if(window.__scTutorialGate && !_scTutorialAtEnd()){
+      e.preventDefault();
+      e.stopPropagation();
+      _scTutorialSync();
+      return;
+    }
+    _scTutorialDone();
+  });
+  $('howToUseBackdrop').addEventListener('click', (e) => {
+    if(e.target !== $('howToUseBackdrop')) return;
+    // The first-run guide is not dismissable from the backdrop — it has to be
+    // read and then continued past.
+    if(window.__scTutorialGate) return;
+    _scTutorialDone();
+  });
   async function renderVersionSnapshots(){
     const rows = (await dbGetAll('meta')).filter(r => r.key.indexOf('versionSnapshot_') === 0)
       .sort((a,b) => b.value.savedAt - a.value.savedAt);
@@ -13758,7 +13968,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // same reason — a silent background service-worker reload shouldn't be able to
       // eat the one chance a brand new person gets to see this unprompted.
       if(!onboardingRow){
-        $('howToUseBackdrop').style.display = 'flex';
+        // Brand new install: the gated one, with the seizure warning at the top.
+        if(typeof window.__scOpenTutorial === 'function') window.__scOpenTutorial(true);
+        else $('howToUseBackdrop').style.display = 'flex';
       }
       updateNotifBadge();
     }catch(e){ /* not critical if this fails */ }
@@ -15450,7 +15662,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // Rebuild albums left holding a previous device's track ids (imports from
     // before 60.5.2) so the Albums tab reappears after the OTA with no zip.
     try{ scHealBrokenAlbums(); }catch(_eHeal){}
-    if(sandboxDefaultView === 'albums' || sandboxDefaultView === 'playlists') libraryMode = sandboxDefaultView;
+    // The Library's boot view is decided in the settings pass — one run, at boot,
+    // and always — with the sandboxDefaultView load it depends on, not here: this
+    // loader bails out on its first check when the library is empty, so a fresh
+    // install never read the setting at all, and it runs again on every reload,
+    // which would snap the view back after you had chosen Albums yourself.
     playlists = metaMap.playlists || {
         'All Songs': allTracks.map(t => t.id)
     };
@@ -17673,18 +17889,25 @@ function _fallbackCopy(text){
         var _subEl = header.querySelector('.sub');
         if(_subEl){
           _subEl.setAttribute('data-dur-bubble', '1');
-          // Pointer cursor only while the line is really cut off (re-checked as
-          // fonts/layout settle and whenever the viewport changes).
-          requestAnimationFrame(function(){ window.__scDurBubble.syncCursor(_subEl); });
-          setTimeout(function(){ window.__scDurBubble.syncCursor(_subEl); }, 400);
-          _subEl.addEventListener('click', function(ev){
-            ev.stopPropagation();
-            // Clamped lines only — a fully visible runtime needs no popup.
-            if(!window.__scDurBubble.isClamped(_subEl)){ window.__scDurBubble.hide(); return; }
+          _subEl.style.cursor = 'pointer';
+          var _openDurBubble = function(ev){
+            if(ev){ try{ ev.stopPropagation(); }catch(_eS){} }
+            // One tap, one answer: pointerup arrives just before the click it
+            // causes, so whichever lands first wins and the other is ignored.
+            var _now = Date.now();
+            if(_subEl._durTapAt && _now - _subEl._durTapAt < 400) return;
+            _subEl._durTapAt = _now;
             var _ctx = (libraryMode === 'albums') ? 'Albums' : activePlaylist;
             window.__scDurBubble.toggle(_subEl, totalSeconds,
               ids.length + ' track' + (ids.length === 1 ? '' : 's') + ' \u00b7 ' + _ctx);
-          });
+          };
+          // The runtime line is ~11px and usually cut off ("233 tracks · 12h …"),
+          // so a tap has to be easy to land and must never come back empty: the
+          // line answers whether or not it measures as clamped, and it is wired
+          // on pointerup too, because a tap that drifts a pixel or two can lose
+          // its click in the WebView.
+          _subEl.addEventListener('click', _openDurBubble);
+          _subEl.addEventListener('pointerup', _openDurBubble);
         }
       }
       var _sb = $('sortBtn');
@@ -22712,7 +22935,12 @@ function _fallbackCopy(text){
   function _scEaseOutQuart(p){ return 1 - Math.pow(1 - p, 4); }
   function _scEaseInOutCubic(p){ return p < 0.5 ? 4*p*p*p : 1 - Math.pow(-2*p+2, 3)/2; }
   function _scScrollSpeed(){
-    try{ return (typeof sandboxScrollSpeed !== 'undefined' && sandboxScrollSpeed) || 400; }
+    // Scroll speed is a PRO setting, so a free user gets the default pace even if
+    // a stored value says otherwise (the same reason as the visuals above).
+    try{
+      if(!(typeof isPremiumActive === 'function' && isPremiumActive())) return 400;
+      return (typeof sandboxScrollSpeed !== 'undefined' && sandboxScrollSpeed) || 400;
+    }
     catch(_e){ return 400; }
   }
   function _scInstantScroll(){
@@ -23975,7 +24203,11 @@ function _fallbackCopy(text){
       if(m) return m + 'm ' + s + 's';
       return s + 's';
     }
+    // When it was opened. A touch that opens it can also nudge the list it sits
+    // on, and the scroll that follows used to dismiss it the instant it appeared.
+    var openedAt = 0;
     function hide(){
+      openedAt = 0;
       var b = document.getElementById('durBubble');
       if(b) b.style.display = 'none';
     }
@@ -24009,6 +24241,7 @@ function _fallbackCopy(text){
       b.style.left = left + 'px';
       b.style.top = top + 'px';
       b.style.visibility = 'visible';
+      openedAt = Date.now();
       b._anchor = anchor;
       clearTimeout(b._hideTimer);
       b._hideTimer = setTimeout(hide, 4000);
@@ -24033,7 +24266,12 @@ function _fallbackCopy(text){
       if(e.target && e.target.closest && e.target.closest('[data-dur-bubble]')) return;
       hide();
     }, true);
-    window.addEventListener('scroll', hide, true);
+    // Anything inside the first third of a second of opening is treated as part
+    // of the tap that opened it, not as a scroll that closes it.
+    window.addEventListener('scroll', function(){
+      if(openedAt && Date.now() - openedAt < 350) return;
+      hide();
+    }, true);
     return { toggle: toggle, hide: hide, fmtPrecise: fmtPrecise,
              isClamped: isClamped, syncCursor: syncCursor, syncAll: syncAll };
   })();
@@ -26205,8 +26443,14 @@ function _fallbackCopy(text){
       // has settled (each song is only ever attempted once). Each load gets its
       // own guard: if one throws the other still runs — pinned artists must
       // never be skipped because an unrelated boot step failed.
-      try{ await loadEnrichState(); }catch(e){ console.error('loadEnrichState failed', e); }
-      try{ await loadPinnedArtists(); }catch(e){ console.error('loadPinnedArtists failed', e); }
+      // Both are independent metadata reads. Awaiting them in turn made the boot
+      // wait for the sum of two round trips to the same store; started together
+      // it waits for the slower one. Each keeps its own guard, because a failure
+      // in one must never skip the other (pinned artists especially).
+      await Promise.all([
+        loadEnrichState().catch(function(e){ console.error('loadEnrichState failed', e); }),
+        loadPinnedArtists().catch(function(e){ console.error('loadPinnedArtists failed', e); })
+      ]);
       if(loaded) setTimeout(() => { runAutoEnrich(); }, 2500);
       // A song added the day it came out is the one the databases are still
       // catching up on, so the lyrics re-check runs on every launch, well clear
@@ -27949,7 +28193,7 @@ window.__refetchAlbums = async function(wasRefetch){
         // A year is the precision MusicBrainz itself gives an old album, and it
         // means a release date only ever comes from a store or a catalog.
         var _aiPrompt = 'List every album, EP, soundtrack appearance, and compilation feature by ' + a.name + '. Return ONLY a JSON array (no markdown) where each item has: {"title":"Album Name","year":2004,"tracks":12,"type":"album|ep|soundtrack|compilation|live"}. "year" must be a four-digit release YEAR only — never a day or a month. Include deluxe/special editions as separate items. Be as complete as possible including old albums from the early 2000s, movie soundtracks, and guest features on compilations. Do not list an album that is already in the list. No text explanation, just the JSON array.';
-        var _aiResp = await fetchWithProxy('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + _aiGeminiKey, {
+        var _aiResp = await fetchWithProxy('https://generativelanguage.googleapis.com/v1beta/models/' + window.__scGeminiModel() + ':generateContent?key=' + _aiGeminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -32105,7 +32349,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(typeof _aiGeminiKey !== 'undefined' && _aiGeminiKey && (!csMeta.album || !csMeta.year) && (csMeta.title || csMeta.artist)){
         try{
           var _aiMetaText = (csMeta.title||'') + ' ' + (csMeta.artist||'');
-          var _aiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + _aiGeminiKey, {
+          var _aiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + window.__scGeminiModel() + ':generateContent?key=' + _aiGeminiKey, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -32785,7 +33029,7 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(e){}
     if(typeof _aiGeminiKey !== 'undefined' && _aiGeminiKey && (!meta.album || !meta.year) && (meta.title || meta.artist)){
       try{
-        var _aiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + _aiGeminiKey, {
+        var _aiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + window.__scGeminiModel() + ':generateContent?key=' + _aiGeminiKey, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: 'Identify this song from a Spotify track. Return ONLY a JSON object (no markdown) with keys: {"track":"Song Title","artist":"Artist Name","album":"Album Name","year":2024,"genre":"Genre"}, using the exact official title/artist/album/year/genre. year is a number if known, otherwise omit it; genre optional. No text, just JSON. Song context: "' + String((meta.title || '') + ' ' + (meta.artist || '')).replace(/"/g, '') + '"', }] }],
@@ -34589,7 +34833,7 @@ if(!isDiscover) stopDiscoverPreview();
     if(typeof _aiGeminiKey !== 'undefined' && _aiGeminiKey && top.length > 1){
       try{
         var list = top.map(function(c, idx){ return { i: idx, t: c.title }; });
-        var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + _aiGeminiKey, {
+        var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + window.__scGeminiModel() + ':generateContent?key=' + _aiGeminiKey, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -35540,23 +35784,98 @@ function __ahResolveArtworks(){
     __ahFetchArtFallback(hdr, artDiv, PLACEHOLDER);
   });
 }
+window.__ahResolveArtworks = __ahResolveArtworks;
 function __ahFetchArtFallback(hdr, artDiv, PLACEHOLDER){
   var artistName = hdr.dataset.artist || '';
   var albumName = hdr.dataset.album || '';
   // Always search iTunes by artist+album name (Deezer lookup by MB ID doesn't work)
   __ahFetchArtFromSearch(artistName, albumName, artDiv, PLACEHOLDER);
 }
+function __ahArtNorm(s){ return String(s || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/[^a-z0-9]+/g, ''); }
+// "Diljit" and "Diljit Dosanjh" are the same artist; "Diljit Dosanjh" and
+// "Diljit Dosanjh & Tru-Skool" are too. A name that is not in there at all
+// ("Sukhpal Sukh") is a stranger, and a stranger's cover is worse than a blank.
+function __ahArtSameArtist(a, b){
+  var x = __ahArtNorm(a), y = __ahArtNorm(b);
+  if(!x || !y) return false;
+  return x === y || x.indexOf(y) !== -1 || y.indexOf(x) !== -1;
+}
+var __ahArtCache = {};
+try{ __ahArtCache = JSON.parse(localStorage.getItem('sidecut_ahArtCache') || '{}') || {}; }catch(_eArt){}
+// Found covers are kept, so the resolver (which runs on every render) stops
+// re-asking Apple, Deezer and MusicBrainz for the same album. A MISS is only
+// remembered for this session: the catalogs gain those records over time, and a
+// permanent "no cover" would mean never finding one.
+var __ahArtMiss = {};
+function __ahArtRemember(key, url){
+  if(!url){ __ahArtMiss[key] = 1; return; }
+  __ahArtCache[key] = url;
+  try{ localStorage.setItem('sidecut_ahArtCache', JSON.stringify(__ahArtCache)); }catch(_eA){}
+  try{ dbPut('meta', { key: 'sidecut_ahArtCacheMirror', value: __ahArtCache }); }catch(_eA2){}
+}
+// Artwork for an album the stores may not list. Apple's store comes first, then
+// Deezer — which carries the older Punjabi and Indian catalogues Apple does not
+// have at all ("Smile", "Ishq Ho Gaya" and "Over Exposure" by Diljit Dosanjh are
+// all there and all missing from Apple) — and then MusicBrainz's own release
+// group, whose front cover the Cover Art Archive serves. Only if all three come
+// up empty does the placeholder stay, and a long-press on the cover still lets
+// you set one by hand.
 function __ahFetchArtFromSearch(artist, album, artDiv, PLACEHOLDER){
   if(!artist || !album){ artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')'; return; }
-  var term = encodeURIComponent(artist + ' ' + album);
-  fetchWithProxy('https://itunes.apple.com/search?term=' + term + '&media=music&entity=album&limit=1').then(function(r){ return r && r.ok ? r.json() : {}; }).then(function(d){
-    var al = (d.results||[])[0];
-    if(al && al.artworkUrl100){
-      artDiv.style.backgroundImage = 'url(' + al.artworkUrl100.replace('/100x100bb.jpg','/200x200bb.jpg') + ')';
-    } else {
-      artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')';
+  var _key = __ahArtNorm(artist) + '|' + __ahArtNorm(album);
+  if(__ahArtCache[_key]){ artDiv.style.backgroundImage = 'url(' + __ahArtCache[_key] + ')'; return; }
+  if(__ahArtMiss[_key]){ artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')'; return; }
+  (async function(){
+    var found = '';
+    // 1. Apple's storefronts (the original source).
+    try{
+      var _term = encodeURIComponent(artist + ' ' + album);
+      var _ir = await fetchWithProxy('https://itunes.apple.com/search?term=' + _term + '&media=music&entity=album&limit=5');
+      var _ij = _ir && _ir.ok ? await _ir.json() : {};
+      var _list = (_ij.results || []).filter(function(a){ return __ahArtSameArtist(a.artistName, artist); });
+      var _exact = _list.filter(function(a){ return __ahArtNorm(a.collectionName) === __ahArtNorm(album); })[0];
+      var _near = _list.filter(function(a){
+        var t = __ahArtNorm(a.collectionName), q = __ahArtNorm(album);
+        return t && q && (t.indexOf(q) !== -1 || q.indexOf(t) !== -1);
+      })[0];
+      var _hit = _exact || _near;
+      if(_hit && _hit.artworkUrl100) found = _hit.artworkUrl100.replace('/100x100bb.jpg', '/600x600bb.jpg');
+    }catch(_e1){}
+    // 2. Deezer.
+    if(!found){
+      try{
+        var _dr = await fetchWithProxy('https://api.deezer.com/search/album?q=' + encodeURIComponent(artist + ' ' + album));
+        var _dj = _dr && _dr.ok ? await _dr.json() : {};
+        var _dhit = (_dj.data || []).filter(function(a){
+          return a && a.artist && __ahArtSameArtist(a.artist.name, artist) && __ahArtNorm(a.title) === __ahArtNorm(album);
+        })[0];
+        if(_dhit) found = _dhit.cover_xl || _dhit.cover_big || _dhit.cover_medium || '';
+      }catch(_e2){}
     }
-  }).catch(function(){ artDiv.style.backgroundImage = 'url(' + PLACEHOLDER + ')'; });
+    // 3. MusicBrainz's release group, then its front cover in the archive.
+    if(!found){
+      try{
+        var _mr = await fetchWithProxy('https://musicbrainz.org/ws/2/release-group?query=' +
+          encodeURIComponent('releasegroup:"' + album + '" AND artist:"' + artist + '"') + '&fmt=json&limit=5',
+          { headers: { 'User-Agent': 'SideCut/' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') + ' (https://anekthegreat.github.io/SideCut/)' } });
+        var _mj = _mr && _mr.ok ? await _mr.json() : {};
+        var _groups = _mj['release-groups'] || [];
+        for(var _gi = 0; _gi < _groups.length; _gi++){
+          var _g = _groups[_gi];
+          var _credit = (_g['artist-credit'] || []).map(function(x){ return x.name || ''; }).join(' ');
+          if(!__ahArtSameArtist(_credit, artist)) continue;
+          if(__ahArtNorm(_g.title) !== __ahArtNorm(album)) continue;
+          // The archive answers with the image itself (it redirects), so this can
+          // be used straight as a background — no extra request from here.
+          found = 'https://coverartarchive.org/release-group/' + _g.id + '/front-500';
+          break;
+        }
+      }catch(_e3){}
+    }
+    __ahArtRemember(_key, found);
+    if(!artDiv || !artDiv.style) return;
+    artDiv.style.backgroundImage = 'url(' + (found || PLACEHOLDER) + ')';
+  })();
 }
 
 
@@ -35568,6 +35887,48 @@ var _aiInitialized = false;
 var _aiGeminiKey = '';
 try { _aiGeminiKey = localStorage.getItem('sidecut_aiGeminiKey') || ''; } catch(_e){}
 try { _aiGeminiKey = localStorage.getItem('sidecut_aiGeminiKey') || ''; } catch(_e){}
+
+// ---- Which Gemini model this key can actually use ---------------------------
+// Every call used to be pinned to 'gemini-2.0-flash'. A 404 from that request is
+// NOT "your key expired" — it is "this key cannot see this model", and the app
+// was guessing at the cause and telling the user to go and make a new key. The
+// API can be asked directly: GET /v1beta/models lists what the key may use, so
+// the real answer is one request away, and the model that works is remembered.
+window.__scGeminiDefaultModel = 'gemini-2.0-flash';
+window.__scGeminiModel = function(){
+  var m = '';
+  try{ m = localStorage.getItem('sidecut_aiGeminiModel') || ''; }catch(_e){}
+  return m || window.__scGeminiDefaultModel;
+};
+window.__scGeminiListModels = async function(key){
+  var k = key || _aiGeminiKey || '';
+  if(!k) throw new Error('No Gemini API key is set.');
+  var r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(k));
+  var j = await r.json().catch(function(){ return {}; });
+  if(!r.ok) throw new Error((j && j.error && j.error.message) || ('HTTP ' + r.status));
+  var names = (j.models || []).filter(function(m){
+    return m && m.name && (m.supportedGenerationMethods || []).indexOf('generateContent') !== -1;
+  }).map(function(m){ return String(m.name).replace(/^models\//, ''); });
+  if(!names.length) throw new Error('This key has no model that can answer questions.');
+  // Newest flash first — it is the cheap, fast family this app is written for —
+  // then any other flash, then anything left.
+  function rank(n){
+    var m = /gemini-(\d+)(?:\.(\d+))?/.exec(n);
+    var v = m ? (Number(m[1]) * 100 + Number(m[2] || 0)) : 0;
+    return v + (/flash/.test(n) ? 1000 : 0) - (/preview|exp|thinking/.test(n) ? 5 : 0);
+  }
+  names.sort(function(a, b){ return rank(b) - rank(a); });
+  return names;
+};
+// One model that answers, cached for every other caller in the app.
+window.__scGeminiEnsureModel = async function(key){
+  try{
+    var list = await window.__scGeminiListModels(key);
+    var pick = list[0];
+    try{ localStorage.setItem('sidecut_aiGeminiModel', pick); }catch(_e){}
+    return pick;
+  }catch(_e){ return ''; }
+};
 var _aiTyping = false;
 
 // Knowledge base: question → answer pairs
@@ -35785,22 +36146,33 @@ async function _aiGeminiQuery(userMessage) {
     }
     // Current user turn is already in _aiChatHistory; do not send it twice.
 
-    var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + _aiGeminiKey, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: _aiSystemPrompt }] },
-        contents: contents,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 600 }
-      })
+    var _body = JSON.stringify({
+      system_instruction: { parts: [{ text: _aiSystemPrompt }] },
+      contents: contents,
+      generationConfig: { temperature: 0.7, maxOutputTokens: 600 }
     });
+    var _ask = function(model){
+      return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(_aiGeminiKey), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: _body
+      });
+    };
+    var resp = await _ask(window.__scGeminiModel());
+    // A 404 here means THIS KEY cannot see THIS MODEL, not that the key is dead.
+    // Ask the API which models it can see, then ask again with one of those.
+    if(resp.status === 404){
+      var _better = await window.__scGeminiEnsureModel(_aiGeminiKey);
+      if(_better && _better !== window.__scGeminiModel()) resp = await _ask(_better);
+    }
     if (!resp.ok) {
       var err = await resp.json().catch(function(){ return {}; });
       console.error('Gemini API error:', resp.status, err);
-      if (resp.status === 400) return 'Invalid API key. Go to aistudio.google.com → Get API key → create a new key, then paste it in Settings → Support.';
-      if (resp.status === 403) return 'API key quota exceeded or invalid. Go to aistudio.google.com → Get API key → create a new key.';
-      if (resp.status === 404) return 'API model not found — your Gemini key may be expired. Go to aistudio.google.com → Get API key → create a fresh key, then paste it in Settings → Support.';
-      return 'API error (' + resp.status + '). Go to aistudio.google.com to check your key, then paste it in Settings → Support.';
+      var _apiSays = (err && err.error && err.error.message) ? String(err.error.message) : '';
+      if (resp.status === 400) return 'The API key was rejected' + (_apiSays ? ' — ' + _apiSays : '') + '. Check it in Settings → Support (aistudio.google.com → Get API key).';
+      if (resp.status === 403) return 'The API refused this request' + (_apiSays ? ' — ' + _apiSays : '') + '. That is usually the key being restricted, or its quota being used up.';
+      if (resp.status === 404) return 'This key has no usable Gemini model' + (_apiSays ? ' — ' + _apiSays : '') + '. Open aistudio.google.com → Get API key, create a key in a project with the Gemini API enabled, and paste it in Settings → Support.';
+      return 'API error (' + resp.status + ')' + (_apiSays ? ': ' + _apiSays : '') + '. Check the key in Settings → Support.';
     }
     var data = await resp.json();
     if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
@@ -35901,17 +36273,36 @@ function initAIAssistant() {
 
 // Gemini API key management
 window._aiPasteKey = async function() {
+  var input = document.getElementById('aiGeminiKeyInput');
+  var text = '';
+  // 1. The Capacitor clipboard plugin, when the build ships it.
   try {
-    var text = await navigator.clipboard.readText();
-    var input = document.getElementById('aiGeminiKeyInput');
-    if (input && text) {
-      input.value = text.trim();
-      input.focus();
-      toast('Pasted from clipboard!', 1500);
+    var _cap = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Clipboard;
+    if (_cap && _cap.read) {
+      var _r = await _cap.read();
+      text = (_r && (_r.value || _r.text)) || '';
     }
-  } catch(e) {
-    toast('Clipboard access denied — long-press the field and choose Paste.', 3000);
+  } catch(e) {}
+  // 2. The browser clipboard API (needs the WebView to allow it).
+  if (!text) {
+    try { text = await navigator.clipboard.readText(); } catch(e) {}
   }
+  // 3. The old path, which still works in some WebView builds.
+  if (!text) {
+    try {
+      if (input) { input.focus(); input.select(); var _ok = document.execCommand('paste'); if (_ok && input.value) text = input.value; }
+    } catch(e) {}
+  }
+  if (text && input) {
+    input.value = text.trim();
+    input.focus();
+    window._aiSetGeminiKey();
+    return;
+  }
+  // Nothing readable: put the cursor in the field and let the system keyboard
+  // offer its own Paste, which always works.
+  if (input) { input.focus(); try { input.select(); } catch(e) {} }
+  toast('Could not read the clipboard — the field is focused, long-press it and choose Paste.', 3600);
 };
 window._aiSetGeminiKey = function() {
   var input = document.getElementById('aiGeminiKeyInput');
@@ -36473,6 +36864,11 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       if(bEl){ bEl.style.overflowY = ''; bEl.style.scrollbarWidth = ''; bEl.style.webkitOverflowScrolling = ''; }
     }
   }catch(_e){}
+  // Covers for the album rows the stores handed us no picture for. This runs on
+  // every open — a fresh Album History render AND a reopen from the 24-hour
+  // cache, which is what the reported blank rows were — and it only reads the
+  // rows already in the body, so on any other list it finds nothing to do.
+  try{ if(typeof window.__ahResolveArtworks === 'function') window.__ahResolveArtworks(); }catch(_eArt){}
 }
   // Delegated artist-group collapse: survives popup re-renders AND cached
   // reopens (fresh renders wired per-render, but a cached reopen did not, so
@@ -36596,7 +36992,10 @@ window.__refetchSingles = async function(){
       var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
       var sart = sr.artworkUrl100 ? (sr.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : sr.artworkUrl100.indexOf('dzcdn.net') !== -1 ? sr.artworkUrl100.replace(/\\d+x\\d+/, '600x600') : sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg')) : '';
       html += '<div class="dp-track" data-search="' + window.escapeHtml('"' + String(sr.trackName).replace(/"/g,'') + '" ' + (sr.artistName || artist)) + '" data-si="' + ki + '-' + sri + '" data-preview="' + window.escapeHtml(sr.previewUrl || '') + '" data-trackname="' + window.escapeHtml(sr.trackName) + '" data-artist="' + window.escapeHtml(sr.artistName || artist) + '" data-art="' + window.escapeHtml(sart || '') + '">';
-      html += '<div class="dp-track-play" data-play="' + ki + '-' + sri + '" style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(227,178,60,0.16);color:var(--coral);font-size:11px;cursor:pointer;">\u25b6</div>';
+      // No ▶ on a single: the row is the tap target now — it opens the song in
+      // Discover, exactly like a track inside an album and like an Old songs row.
+      // The button played a 30-second preview of something you asked to look at,
+      // and on a single with no preview it did nothing at all.
       html += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + window.cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
       html += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(sr.trackName) + '</div>';
       html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(sr.artistName || artist) + (srelDate ? ' \u00b7 ' + srelDate : '') + '</div></div>';
@@ -36798,7 +37197,8 @@ window.__singlesRowsHTML = function(artist, singles, ki){
     var srelDate = sr.releaseDate ? String(sr.releaseDate).slice(0,10) : '';
     var sart = sr.artworkUrl100 ? (sr.artworkUrl100.indexOf('/100x100bb.jpg') !== -1 ? sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : sr.artworkUrl100.indexOf('dzcdn.net') !== -1 ? sr.artworkUrl100.replace(/\d+x\d+/, '600x600') : sr.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg')) : '';
     r += '<div class="dp-track" data-search="' + window.escapeHtml('"' + String(sr.trackName).replace(/"/g,'') + '" ' + (sr.artistName || artist)) + '" data-si="' + ki + '-' + sri + '" data-preview="' + window.escapeHtml(sr.previewUrl || '') + '" data-trackname="' + window.escapeHtml(sr.trackName) + '" data-artist="' + window.escapeHtml(sr.artistName || artist) + '" data-art="' + window.escapeHtml(sart || '') + '">';
-    r += '<div class="dp-track-play" data-play="' + ki + '-' + sri + '" style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(227,178,60,0.16);color:var(--coral);font-size:11px;cursor:pointer;">\u25b6</div>';
+    // No ▶ here either: a group redrawn by ↻ / ⚡ gets exactly the rows the list
+    // draws, and the row itself is the tap target (it opens the song).
     r += '<div style="width:36px;height:36px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0;overflow:hidden;' + (sart ? 'background-image:url(' + window.cssUrl(sart) + ');' : 'background:var(--bg);') + '"></div>';
     r += '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(sr.trackName) + '</div>';
     r += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(sr.artistName || artist) + (srelDate ? ' \u00b7 ' + srelDate : '') + '</div></div>';
@@ -37011,12 +37411,14 @@ function loadCachedDiscoverPopup(key){
     if(!raw) return false;
     var d = JSON.parse(raw);
     if(d && d.title && d.body){
-      // Old songs rows are the tap target — no play button. A snapshot saved
-      // before that change (the cache survives an app update) can still hold
-      // one per row, so it is stripped here rather than shown.
-      var isOldSongs = key === '\ud83d\udcc5 Old songs' || d.title === '\ud83d\udcc5 Old songs';
-      if(isOldSongs && d.body.indexOf('dp-track-play') !== -1){
-        d.body = d.body.replace(/<span[^>]*class="dp-track-play"[\s\S]*?<\/span>/g, '');
+      // No popup row carries a ▶ any more — Old songs, Singles and album tracks
+      // are all tap targets. A snapshot saved by an older build (the cache
+      // survives an app update) can still hold one per row, and the saved
+      // Singles list that was reported was exactly that, so every cached body is
+      // cleaned on the way in. The old guard only matched Old songs, and only a
+      // <span> — the play button is a <div>, so it never actually matched.
+      if(d.body.indexOf('dp-track-play') !== -1){
+        d.body = d.body.replace(/<(?:span|div)[^>]*class="dp-track-play"[\s\S]*?<\/(?:span|div)>/g, '');
       }
       openDiscoverPopup(d.title, d.body, d.subtitle);
       return true;

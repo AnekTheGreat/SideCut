@@ -53,10 +53,10 @@ console.log('[1] the file parses — every inline script block');
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
   ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '63.0.4'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(/const CHANGELOG = \[\n  \{ version: '63.0.5'/.test(src), 'the newest entry sits inside CHANGELOG');
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '63.0.4', 'APP_VERSION = ' + ver);
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.5';"), 'sw.js cache = sidecut-shell-v61.5');
+  ok(ver === '63.0.5', 'APP_VERSION = ' + ver);
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.6';"), 'sw.js cache = sidecut-shell-v61.5');
   ok(src.indexOf(`version: '61.5'`) < src.indexOf(`version: '${PREV}'`), '61.5 heads the changelog');
 }
 
@@ -67,7 +67,7 @@ console.log('[2] a length is not an identity — the resolver refuses a stranger
   ok(count("function scLyricsLooksLikeImprint(artist){") === 1, 'an imprint-only credit is recognised');
   ok(src.includes("  var verdict = scLyricsArtistVerdict(res.artistName, artistTokens);"), 'the ranker asks whose song it is');
   ok(src.includes("  var exactTitle = !!(rKey && titleKey && rKey === titleKey);"), 'an exact title is required of a length match');
-  ok(src.includes("      acceptable: !!(aHit || (dScore >= 2 && exactTitle && verdict !== 'foreign')),"),
+  ok(src.includes("      acceptable: !!(aHit || (dScore >= 2 && exactTitle && verdict !== 'foreign' && !scLyricsStrangerCredit(res.artistName, artistTokens))),"),
      'only the exact title with a non-contradicting credit may ride in on length');
   ok(count("verdict: verdict,") === 1 && count("exactTitle: exactTitle,") === 1, 'both are carried on the rank result');
   ok(!src.includes("acceptable: !!(aHit || dScore >= 2),"), 'the old length-only acceptance is gone');
@@ -105,7 +105,7 @@ console.log('[3] the identity rules themselves (run for real, not grepped)');
 console.log('[4] the empty state explains itself and offers the manual way out');
 {
   ok(count('id="lyricsNotFoundWhy"') === 1, 'the explanation line exists');
-  ok(count("document.getElementById('lyricsNotFoundWhy')") === 2, 'it is cleared per song and filled on a miss');
+  ok(count("document.getElementById('lyricsNotFoundWhy')") === 3, 'it is cleared per song, filled on a miss, and filled again when only strangers matched');
   ok(src.includes("why.style.display = _whyLines.length ? 'block' : 'none';"), 'it shows whenever there is something to say');
   ok(src.includes("' same-titled song' + (scLyricsStrangers === 1 ? '' : 's') +"), 'it counts what it skipped');
   ok(src.includes("' under a different artist \\u2014 skipped, not served as this track\\'s.'"), 'and says they were not served');
