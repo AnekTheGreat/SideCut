@@ -43,7 +43,7 @@ if (entries) {
   ok(!/play build|play version|play install/i.test(entries[0].items.join('\n')), 'notes never name the play build');
   ok(!/\bdownload|converter|convert\b/i.test(entries[0].items.join('\n')), 'new notes carry no downloader term (shared channel)');
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version);
 
 console.log('[2] tab strip injected at popup open');

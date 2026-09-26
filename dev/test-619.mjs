@@ -103,7 +103,7 @@ if (entries) {
   ok(!!rel618, 'the 61.8 entry is still in the changelog');
   ok(/(no matching source)/.test((rel618 ? rel618.items : []).join(' ')), 'its wording survived the new head entry');
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version);
 
 console.log('[2] the Get Songs how-to box on the store build');

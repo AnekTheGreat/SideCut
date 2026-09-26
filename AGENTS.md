@@ -1,5 +1,20 @@
 # SideCut — repository memory
 
+## sw.js cache name (Sep 26, 2026): decoupled from APP_VERSION — it is 63.0.1
+- **The user's words**: "The sw.js can be 63.0.1". The app stays at **62.0.5** (their earlier correction); only `sw.js`'s
+  `CACHE_NAME` moved to **`sidecut-shell-v63.0.1`**. That name is a pure cache-buster: nothing in `index.html` compares it to
+  `APP_VERSION` (there is no `SW_UPDATED` consumer at all), it only decides which stale caches `activate` deletes. So it is
+  free to carry its own number, and the two are **no longer required to match**.
+- **Test contract changed**: `dev/test-*.mjs` used to assert `sw.includes('sidecut-shell-v' + ver)`. Those 12 files now assert
+  the naming convention (`sw.includes("const CACHE_NAME = 'sidecut-shell-v")`, label "service worker has a versioned cache
+  name"), and the five files that pinned a literal now pin `sidecut-shell-v63.0.1` (test-612, test-6136, test-6137,
+  test-6138, test-6139). **A future release that bumps `APP_VERSION` must NOT repin the SW cache name to it** — bump `sw.js`
+  on its own so the cache-buster stays independent.
+- **Mechanics**: `dev/patch-623.mjs` (idempotent; the sw.js edit + 17 test repins; `--manifest` re-seeds root
+  `manifest.json`). `sw.js` is inside **both** OTA zips, so `node dev/ota-bundle.mjs` and `node dev/ota-bundle-play.mjs`
+  must be rebuilt after any `sw.js` edit (the sizes here are unchanged only because `62.0.5` and `63.0.1` are the same
+  length). Verified: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `ah-album-reorder-check` 32/32, `album-hold-check` 34/34.
+
 ## 62.0.5 (Sep 25, 2026): the albums in Album History drag like the albums in the Albums tab
 - **The user's report, in their words**: "It should be v62.0.5 not v63 and you didn't fix the problem I should be able to
   hold and drag to reorder these albums in album history and it should be the smooth reorder like the albums in albums".

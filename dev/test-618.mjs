@@ -75,7 +75,7 @@ if (entries) {
   ok(!!rel617, 'the 61.7 entry is still in the changelog');
   ok(/brand-new release/.test((rel617 ? rel617.items : []).join(' ')), 'its wording survived the new head entry');
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version);
 
 // ---------------------------------------------------------------------------

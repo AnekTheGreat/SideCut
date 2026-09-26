@@ -38,7 +38,7 @@ if (entries) {
   ok(anyFull.length >= 2, 'full-only items still marked across entries: ' + anyFull.length);
   ok(!/play build|play version|play install/i.test(entries[0].items.join('\n')), 'notes never name the play build');
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version + ' (a new Play build number)');
 
 console.log('[2] remove from album — ONE album only (behaviour)');

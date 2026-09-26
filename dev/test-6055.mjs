@@ -33,7 +33,7 @@ if (entries) {
   ok(entries[0].date.endsWith('EDT'), 'date ends in EDT (' + entries[0].date + ')');
   ok(entries[0].items.length >= 5, 'patch notes: ' + entries[0].items.length);
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version + ' (a new Play build number)');
 
 console.log('[2] [FULL] channel discipline');

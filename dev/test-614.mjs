@@ -44,7 +44,7 @@ if (entries) {
   ok(!/play build|play version|play install/i.test(entries[0].items.join('\n')), 'notes never name the play build');
   ok(!/\bdownloader|convert\b/i.test(entries[0].items.join('\n')), 'new notes carry no downloader term');
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 
 console.log('[2] the Upcoming tab keeps its place');
 {

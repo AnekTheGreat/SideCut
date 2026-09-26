@@ -56,7 +56,7 @@ console.log('[1] the file parses — every inline script block');
   ok(/const CHANGELOG = \[\n  \{ version: '62.0.5'/.test(src), 'the newest entry sits inside CHANGELOG');
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
   ok(ver === '62.0.5', 'APP_VERSION = ' + ver);
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v62.0.5';"), 'sw.js cache = sidecut-shell-v61.5');
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.1';"), 'sw.js cache = sidecut-shell-v61.5');
   ok(src.indexOf(`version: '61.5'`) < src.indexOf(`version: '${PREV}'`), '61.5 heads the changelog');
 }
 

@@ -155,7 +155,7 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 
 console.log('[11] release metadata');
 ok(ver === '62.0.5', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v62.0.5';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.1';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');

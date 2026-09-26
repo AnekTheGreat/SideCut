@@ -70,7 +70,7 @@ if (entries) {
   const rel616 = entries.find((e) => String(e.version) === '61.6');
   ok(!!rel616, 'the 61.6 entry is untouched below it');
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version);
 
 console.log('[2] a busy lyrics database is retried, not reported as empty');

@@ -98,7 +98,7 @@ if (entries) {
   const rel618 = entries.find((e) => String(e.version) === '61.8');
   ok(!!rel618 && /no matching source/.test(rel618.items.join(' ')), 'so did the 61.8 entry');
 }
-ok(sw.includes('sidecut-shell-v' + ver), 'service worker cache follows the version');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');
 ok(pkg.version === '5.0.53', 'package.json version = ' + pkg.version);
 
 console.log('[2] the shipped rules are lifted out and run');
