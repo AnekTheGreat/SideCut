@@ -1,5 +1,36 @@
 # SideCut — repository memory
 
+## v63 (Sep 26, 2026): albums in the 📀 Album History popup can be reordered
+- **The user's report, in their words**: first "In album history you click in an artist you click on an album you hold down
+  the songs and try to reorder them but nothing happens", then the correction: **"Album history it should be the albums
+  getting reordered not the songs inside, my mistake."** So the earlier "reorder songs inside an album" idea was the user's
+  own misread of what they wanted — the list to make reorderable is the **albums under an artist**.
+- **Measured first**: Album History renders `.dp-ah-artist` groups, each expandable to its albums (`.dp-ah-album`), each
+  album expandable to its tracks (`.dp-ah-track`). The popup **already** reorders the *artists* — `setupGroupReorder` in the
+  second `<script>` block drives them, keyed `sidecut_ahArtistOrder`. The **album rows under an artist were never wired to
+  any gesture**; holding one did nothing, which reads exactly as "nothing at all opens". The user had been holding the
+  tracks because that was where they expected a handle.
+- **The fix — hold an album under an artist and drag it**: new `window.__wireAHAlbumReorder()` (in the same block as
+  `setupGroupReorderByContext`), called from `window.__wireAH` so it runs on every render (fresh and cached opens). Hold
+  **420 ms**, then drag; a tap still opens the album's tracks and a pre-hold scroll still cancels (same 12 px pickup rule as
+  the artist list). Order persists **per artist** in `localStorage "sidecut_ahAlbumOrder"` (`artist -> [collectionId|name]`).
+- **Order is applied in two places, because the popup body is cached**: `_renderAhFromData` now runs each artist's album
+  array through `window.orderAlbumList(...)` before rendering, and `__wireAHAlbumReorder` also reorders an already-rendered
+  (cached) body via `window.__scApplyAHAlbumOrder(cont, artist)`. Without the second path a reopen from the 24 h cache would
+  have shown the pre-reorder order.
+- **Two gesture conflicts were closed deliberately**: (1) the album row already had a **500 ms long-press that set a custom
+  cover** — two holds on one row raced, so that hold is now scoped to the **artwork** (`[data-art-url]` / `img`), which its own
+  comment always claimed it was, leaving the rest of the row for reorder; (2) the **artist-group** hold bails when the press
+  landed inside `.dp-ah-album`, so the two reorders can never both start. A drag that reordered also sets `hdr._ahSuppressClick`
+  so the release click does not additionally toggle the album's track list.
+- **Regression coverage**: `dev/ah-album-reorder-check.cjs` (jsdom, needs `/tmp/h/node_modules/jsdom`) opens a real Album
+  History popup, runs `__wireAH` over it, holds and drags an album, and asserts persist / `orderAlbumList` / cached-body
+  apply / tap-still-opens / drag-does-not-toggle / cover-hold-scoped-to-art — **18/18**. `dev/album-hold-check.cjs` (library
+  Albums view song reorder) still passes **34/34**. `dev/patch-621.mjs` carries the idempotent edits + the v63 metadata.
+- **Notes for the next release**: the CHANGELOG head at v63 is the first to describe Album History ordering; keep its notes
+  free of `download*` / `convert*` / "play build" terms (dev/test-60510, dev/test-6058). The popup cache key is
+  `discPopupCache_📀 Album History`; a reorder does **not** clear it (the order helper re-applies on the cached body instead).
+
 ## v62 (Sep 25, 2026): lyrics for an artist whose name is only a letter or two
 - **The user's report, in their words**: "I'm not getting any lyrics for lesser known artists such as Bikramjit Dhaliwal".
   Same user, same library, right after v61.8/v61.9 — and v61.8 was about **BK**'s *Gangstas Paradise* / *MIXED FEELINGS*.

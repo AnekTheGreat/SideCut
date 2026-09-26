@@ -10983,7 +10983,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '62';
+  const APP_VERSION = '63';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11398,6 +11398,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63', date: 'September 26, 2026 · 11:30 AM EDT', title: 'Albums in Album History can be put in the order you want', items: [
+    'In \ud83d\udcc0 Album History, the albums under an artist can now be rearranged. Press and hold an album for a moment, then drag it up or down \u2014 the row lifts and follows your finger, and where you drop it is where it stays.',
+    'The order is remembered per artist: close the popup, reopen it, refetch the list, or restart the app, and the albums come back in the order you gave them.',
+    'Nothing about a normal tap changed \u2014 a short press still opens the album\'s songs exactly as before, because only a press-and-hold starts a reorder.',
+    'Holding an album\'s artwork still sets a custom cover; the reorder now lives on the rest of the row, so the two gestures no longer compete for the same press.',
+    'This is the album order inside Album History only. It does not touch the Albums tab, your playlists, or which songs belong to a collection.',
+    'Reordering the artists themselves at the top of Album History works exactly as it did, and the other popups are untouched.',
+  ] },
   { version: '62', date: 'September 25, 2026 · 7:45 PM EDT', title: 'Lyrics are found again for an artist whose name is only a letter or two', items: [
     'Lyrics could go missing for an artist whose name is only a letter or two — a stage name like "BK". The check that decides whether a lyric entry really belongs to the artist skipped every name of two letters or fewer, so such a name could never confirm anything, and the song had to match on running time alone: any release whose length drifted by more than two seconds came back as having no lyrics even though the words were on file.',
     'Such a name counts now. It is matched word for word, never as part of a longer word, and only ever to CONFIRM an entry — it can never be the reason one is turned down, so no song that already found its lyrics can lose them.',
@@ -26692,6 +26700,7 @@ function _fallbackCopy(text){
         _promptManualCount(a, al, f, mc.textContent.match(/\d+/) ? mc.textContent.match(/\d+/)[0] : '', function(){ window.__refetchAlbums(false); });
       });
     }
+    if(typeof window.__wireAHAlbumReorder === 'function') window.__wireAHAlbumReorder();
     // Use onclick for reliability with dynamically inserted elements
     var refetchBtn = document.getElementById('ahRefetchBtn');
     if(refetchBtn){ refetchBtn.onclick = function(){
@@ -26872,12 +26881,20 @@ function _fallbackCopy(text){
       }
       function onCancel(){ clearTimeout(lpTimer); didLongPress = false; }
       // Pointer events (desktop + some mobile)
-      hdr.addEventListener('pointerdown', function(e){ onDown(e.clientX||0, e.clientY||0); });
+      hdr.addEventListener('pointerdown', function(e){
+        // Only a press on the artwork changes the cover — the rest of the row
+        // belongs to the album-reorder hold, and the two used to race.
+        if(!(e.target && e.target.closest && e.target.closest('[data-art-url],img'))) return;
+        onDown(e.clientX||0, e.clientY||0);
+      });
       hdr.addEventListener('pointerup', onUp);
       hdr.addEventListener('pointercancel', onCancel);
       hdr.addEventListener('pointermove', function(e){ onMove(e.clientX||0, e.clientY||0); });
       // Touch events (mobile — primary path for long-press)
-      hdr.addEventListener('touchstart', function(e){ var t=e.touches[0]; if(t) onDown(t.clientX, t.clientY); }, {passive:true});
+      hdr.addEventListener('touchstart', function(e){
+        if(!(e.target && e.target.closest && e.target.closest('[data-art-url],img'))) return;
+        var t=e.touches[0]; if(t) onDown(t.clientX, t.clientY);
+      }, {passive:true});
       hdr.addEventListener('touchend', function(e){ onUp(e); }, {passive:false});
       hdr.addEventListener('touchmove', function(e){ var t=e.touches[0]; if(t) onMove(t.clientX, t.clientY); }, {passive:true});
       hdr.addEventListener('touchcancel', onCancel);
@@ -26977,6 +26994,8 @@ function _fallbackCopy(text){
       if(h._ahLazyWired) return;
       h._ahLazyWired = true;
       h.addEventListener('click', function(){
+        // A hold-and-drag that reordered the albums must not also toggle tracks.
+        if(this._ahSuppressClick){ this._ahSuppressClick = false; return; }
         var tgt = document.getElementById(this.dataset.target);
         var chv = this.querySelector('.dp-ah-chevron');
         if(!tgt) return;
@@ -27974,6 +27993,7 @@ function _renderAhFromData(artistAlbums){
   for(var ahI=0; ahI<ahArtistKeys.length; ahI++){
     var ahArtist = ahArtistKeys[ahI];
     var ahAlbums = artistAlbums[ahArtist];
+    if(typeof window.orderAlbumList === 'function') ahAlbums = window.orderAlbumList(ahAlbums, ahArtist, 'sidecut_ahAlbumOrder');
     if(!ahAlbums||!ahAlbums.length) continue;
     var ahAid = 'ahc_r_'+ahI;
     ahHtml += '<div class="dp-ah-artist">';
@@ -28007,7 +28027,7 @@ function _renderAhFromData(artistAlbums){
     ahHtml += '</div></div>';
   }
   ahHtml = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch albums</button><button id="ahRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + ahHtml;
-  openDiscoverPopup('📀 Album History', ahHtml, ahTotal+' album'+(ahTotal!==1?'s':'')+' from '+ahArtistKeys.length+' artist'+(ahArtistKeys.length!==1?'s':''));
+  openDiscoverPopup('📀 Album History', ahHtml, ahTotal+' album'+(ahTotal!==1?'s':'')+' from '+ahArtistKeys.length+' artist'+(ahArtistKeys.length!==1?'s':'')+' · hold an album to reorder');
   if(typeof window.__wireAH==='function') window.__wireAH();
 }
 
@@ -36833,7 +36853,7 @@ window.setupGroupReorder = function(persistKey){
       }
     }
     g.addEventListener('pointerdown', function(e){
-      if(e.target.closest('.dp-ah-x,.dp-ah-rm,.dp-ah-edit,.dp-ah-artist-refetch,.dp-si-refetch,button,a,input,select')) return;
+      if(e.target.closest('.dp-ah-album,.dp-ah-x,.dp-ah-rm,.dp-ah-edit,.dp-ah-artist-refetch,.dp-si-refetch,button,a,input,select')) return;
       clearTimeout(holdTimer);
       g._dragging = false;
       g._startX = e.clientX; g._startY = e.clientY;
@@ -36853,6 +36873,166 @@ window.setupGroupReorderByContext = function(){
   if(!g) return;
   var isAlbum = !!(g.querySelector('.dp-ah-artist-refetch') || g.querySelector('.dp-ah-album'));
   setupGroupReorder(isAlbum ? 'sidecut_ahArtistOrder' : 'sidecut_singlesArtistOrder');
+};
+
+// ---- 63: reorder the ALBUMS under one artist in Album History ------------
+// The popup reorders ARTISTS at the top level (setupGroupReorder above). The
+// albums under each artist were never wired to any gesture at all — holding
+// one did nothing. This is that list, with its own persisted order per artist.
+window.orderAlbumList = function(albums, artist, persistKey){
+  if(!Array.isArray(albums) || !albums.length) return Array.isArray(albums) ? albums : [];
+  var store = {};
+  try{ store = JSON.parse(localStorage.getItem(persistKey || 'sidecut_ahAlbumOrder') || '{}') || {}; }catch(e){ store = {}; }
+  var arr = store[artist];
+  if(!Array.isArray(arr) || !arr.length) return albums;
+  var keyOf = function(a){
+    var cid = (a && a.collectionId) ? String(a.collectionId) : '';
+    return cid ? cid : String((a && a.collectionName) || '');
+  };
+  var pool = albums.slice(), out = [];
+  for(var i = 0; i < arr.length; i++){
+    for(var j = 0; j < pool.length; j++){
+      if(keyOf(pool[j]) === arr[i]){ out.push(pool[j]); pool.splice(j, 1); break; }
+    }
+  }
+  return out.concat(pool);
+};
+window.__scSaveAHAlbumOrder = function(artist, order){
+  if(!artist) return;
+  var store = {};
+  try{ store = JSON.parse(localStorage.getItem('sidecut_ahAlbumOrder') || '{}') || {}; }catch(e){ store = {}; }
+  store[artist] = Array.isArray(order) ? order : [];
+  try{ localStorage.setItem('sidecut_ahAlbumOrder', JSON.stringify(store)); }catch(e){}
+};
+// Reorder an already-rendered album list to the saved order — used for a body
+// restored from the popup cache, which was snapshotted in the old order.
+window.__scApplyAHAlbumOrder = function(cont, artist){
+  if(!cont || !artist) return;
+  var store = {};
+  try{ store = JSON.parse(localStorage.getItem('sidecut_ahAlbumOrder') || '{}') || {}; }catch(e){ store = {}; }
+  var order = store[artist];
+  if(!Array.isArray(order) || !order.length) return;
+  var keyOf = function(a){
+    var h = a.querySelector ? a.querySelector('.dp-ah-album-hdr') : null;
+    if(!h) return '';
+    var cid = h.getAttribute('data-collection-id') || '';
+    return cid ? cid : String(h.getAttribute('data-album') || '');
+  };
+  var rows = Array.prototype.filter.call(cont.children, function(k){ return k.classList && k.classList.contains('dp-ah-album'); });
+  for(var i = 0; i < order.length; i++){
+    for(var j = 0; j < rows.length; j++){
+      if(keyOf(rows[j]) === order[i]){ cont.appendChild(rows[j]); break; }
+    }
+  }
+};
+window.__wireAHAlbumReorder = function(){
+  var bodyEl = document.getElementById('discPopupBody');
+  if(!bodyEl) return;
+  var albums = Array.prototype.slice.call(bodyEl.querySelectorAll('.dp-ah-album'));
+  // Apply the saved order to each artist list once (fresh render or cached).
+  albums.forEach(function(el){
+    var cont = el.parentElement;
+    if(cont && !cont._ahAlbOrderApplied){
+      cont._ahAlbOrderApplied = true;
+      var h0 = el.querySelector('.dp-ah-album-hdr');
+      if(h0) window.__scApplyAHAlbumOrder(cont, h0.getAttribute('data-artist') || '');
+    }
+  });
+  albums.forEach(function(el){
+    if(el._ahAlbReorderWired) return;
+    var hdr = el.querySelector('.dp-ah-album-hdr');
+    if(!hdr) return;
+    el._ahAlbReorderWired = true;
+    var holdTimer = null, drag = null;
+    function keyOf(a){
+      var h = a.querySelector('.dp-ah-album-hdr');
+      if(!h) return '';
+      var cid = h.getAttribute('data-collection-id') || '';
+      return cid ? cid : String(h.getAttribute('data-album') || '');
+    }
+    function persistOrder(){
+      var cont = el.parentElement;
+      if(!cont) return;
+      var order = [];
+      Array.prototype.forEach.call(cont.children, function(k){
+        if(k.classList && k.classList.contains('dp-ah-album')){ var kk = keyOf(k); if(kk) order.push(kk); }
+      });
+      if(typeof window.__scSaveAHAlbumOrder === 'function') window.__scSaveAHAlbumOrder(hdr.getAttribute('data-artist') || '', order);
+    }
+    function haptic(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+    function begin(e){
+      if(drag || !e.pointerId) return;
+      drag = el;
+      try{ document.body.classList.add('reordering'); }catch(err0){}
+      el._dragging = false;
+      el._startX = e.clientX; el._startY = e.clientY;
+      el.style.opacity = '0.85';
+      el.style.zIndex = '99';
+      el.style.boxShadow = '0 8px 20px rgba(0,0,0,0.45)';
+      el.style.background = 'rgba(255,255,255,0.06)';
+      el.style.transition = 'none';
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    function move(e){
+      if(drag !== el){
+        if(!drag && holdTimer && el._startX != null){
+          var pdx = e.clientX - el._startX, pdy = e.clientY - el._startY;
+          if((pdx*pdx + pdy*pdy) > 144){ clearTimeout(holdTimer); holdTimer = null; }
+        }
+        return;
+      }
+      // Ours is the live drag: the artist-group finish() would otherwise run on
+      // the same event and clear the body class that blocks the WebView from
+      // claiming the gesture (a pointercancel mid-drag).
+      e.stopPropagation();
+      if(!el._dragging){
+        var ddx = e.clientX - el._startX, ddy = e.clientY - el._startY;
+        if((ddx*ddx + ddy*ddy) < 100) return;
+        el._dragging = true;
+        haptic(12);
+        el.classList.add('dragging');
+      }
+      e.preventDefault();
+      var cont = el.parentElement;
+      if(!cont) return;
+      var y = e.clientY, before = null;
+      var sibs = Array.prototype.filter.call(cont.children, function(k){ return k !== el && k.classList && k.classList.contains('dp-ah-album'); });
+      for(var i = 0; i < sibs.length; i++){
+        var r = sibs[i].getBoundingClientRect();
+        if(y < r.top + r.height/2){ before = sibs[i]; break; }
+      }
+      if(before){ if(before.previousElementSibling !== el) cont.insertBefore(el, before); }
+      else if(el !== cont.lastElementChild) cont.appendChild(el);
+    }
+    function finish(e){
+      clearTimeout(holdTimer);
+      if(drag === el && e && e.stopPropagation) e.stopPropagation();
+      try{ document.body.classList.remove('reordering'); }catch(e2){}
+      if(drag){
+        el.style.opacity = ''; el.style.zIndex = ''; el.style.boxShadow = ''; el.style.background = ''; el.style.transition = '';
+        el.classList.remove('dragging');
+        if(el._dragging){
+          haptic(8);
+          // A drag that reordered the albums must not also toggle the tracks.
+          hdr._ahSuppressClick = true;
+          setTimeout(function(){ hdr._ahSuppressClick = false; }, 700);
+          setTimeout(persistOrder, 60);
+        }
+        drag = null;
+      }
+    }
+    hdr.addEventListener('pointerdown', function(e){
+      if(window.__ahSelectMode) return;
+      if(e.target.closest('.dp-ah-edit,.dp-ah-rm,.dp-ah-cb,.dp-ah-artist-refetch,.dp-si-refetch,[data-art-url],img,button,a,input,select')) return;
+      clearTimeout(holdTimer);
+      el._dragging = false;
+      el._startX = e.clientX; el._startY = e.clientY;
+      holdTimer = setTimeout(function(){ begin(e); }, 420);
+    });
+    hdr.addEventListener('pointermove', move);
+    hdr.addEventListener('pointerup', finish);
+    hdr.addEventListener('pointercancel', finish);
+  });
 };
 
 // While a reorder drag is active, swallow touchmove in capture phase so the
