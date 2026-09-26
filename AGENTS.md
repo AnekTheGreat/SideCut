@@ -1,5 +1,49 @@
 # SideCut — repository memory
 
+## 63.0.3 (Sep 26, 2026): the album edit sheet opens on screen, and old albums stop wearing an invented date
+- **Shipped number**: **63.0.3** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.4`** (its own
+  number, decoupled; see the sw.js note below).
+- **The user's words**: "The edit button doesn't work and I'm getting wrong dates for some albums" — with a screenshot of
+  📀 Album History, Diljit Dosanjh, showing `Dil 2008-04-24` and `Ishq Ho Gaya 2008-04-24` (the same day for two different
+  albums, no cover and no track count on `Dil`), `Smile 2005-09-04`, `Ishq Da Uda Ada 2003-02-09`.
+- **Why the pencil looked dead — it opened off-screen**: the handler inserted its form with
+  `body.insertAdjacentHTML('afterbegin', formHtml)` where `body` is `#discPopupBody`, and
+  `#discPopupBody{flex:1;overflow-y:auto}` (index.html ~1906) is the **scroll container**. On a 60-album list scrolled to
+  the middle — exactly the screenshot — the form landed at the top of the scrollable content, far above the viewport.
+  The **×** beside it always worked because its confirmation is a `position:fixed` popup. The fix is the same shape: a
+  fixed bottom sheet + backdrop, appended to `document.body`. The pencil's `data-date`/`data-tracks` now carry what the
+  row **displays** (`_showDate`/`_showTracks`, saved edits included), so reopening it shows the date you set rather than
+  the catalog one it replaced, and Save is honest — no id, no save (it says so); nothing typed, nothing saved.
+- **Why the dates were wrong — the AI discography pass invented them**: the Gemini lookup asks for
+  `{"title":…,"date":"YYYY-MM-DD",…}` and stored that date verbatim on a row with **no cover and no track count** — the
+  three tells of the bad rows in the screenshot. Ground truth measured for those albums: MusicBrainz has `Dil` = **2004**
+  and `Chocolate` = **2008** (year precision), and Apple's own storefronts disagree with each other by a week
+  (US/CA `Chocolate 2008-02-01` vs IN `2008-02-08`), so a model's invented *day* is unverifiable by construction — yet it
+  was displayed to the day. The pass is now asked for a **year** (`"year":2004`), only a four-digit year is kept, an AI
+  row is only added when the album is unknown **by title, any year** (the old year carve-out let it add a second row for an
+  album we already had), and its id is `ai_<artist>_<title>` instead of `ai_<artist>_<index>` — the index form was
+  renumbered by every refetch, which is why an edit set on such a row no longer belonged to that album.
+- **And a real row now beats a guessed one**: `_dedupAlbums` keeps the first row per album identity, and an AI row already
+  in the cache sits **ahead** of a row a later refetch adds — so the guess kept the place and the real date/cover/count
+  were discarded. A non-AI row now replaces an AI row for the same album **in place** (`out[_realAt] = a`). And a day
+  already STORED on a guessed row is cut to its year (`a.releaseDate.slice(0, 4)`, guarded on `a._ai`) inside
+  `_dedupAlbums`, which runs on every render path — so an album only the lookup knows stops wearing the invented day as
+  the list is redrawn, without waiting for a refetch.
+- **Mechanics**: `dev/patch-630.mjs` (8 count==1-markered index.html edits: the sheet, the date-field prefill, the
+  placement, the save/cancel rewiring, the pencil attributes, the AI prompt, the AI row build, the dedupe swap), then
+  `dev/patch-631.mjs` (`APP_VERSION` → **63.0.3**, new head CHANGELOG entry in front of the 63.0.2 one, `sw.js` → `63.0.4`,
+  29 repins incl. the ship-stamp literal in `dev/test-6052.mjs`), then `dev/ota-bundle.mjs` + `dev/ota-bundle-play.mjs`,
+  then `--manifest`. Final state: `ota-bundle` v63.0.3 · 693842 bytes, `ota-bundle-play` v63.0.3 · 693851 bytes, both
+  `--check OK`; all three zips carry `APP_VERSION = '63.0.3'` and `CACHE_NAME = 'sidecut-shell-v63.0.4'`.
+- **New probe**: `dev/ah-album-edit-check.cjs` (42 checks). It opens a real popup body, runs the app's own `__wireAH`, taps
+  ✏️, types a date and a count, hits Save and reads `sidecut_albumEdits` — and it pins the shapes: the sheet is `fixed`
+  and a child of `<body>` (never the scroller), the backdrop dismisses it, a year-only album gets an empty day field with
+  the year explained beneath it, the AI reply is asked for a year and never stores a day, the dedupe swaps a guessed row
+  for a real one. **Against the pre-patch build it fails 22 of them** (`SC_HTML=/tmp/index.before.630.html`), which is how
+  the report was reproduced.
+- **Verified**: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `ah-album-reorder-check.cjs` 34/34,
+  `album-hold-check.cjs` 34/34, `ah-album-edit-check.cjs` **42/42**, both channel `--check`s OK.
+
 ## 63.0.2 (Sep 26, 2026): no remixes, nothing off the pinned artists, and Upcoming reads the days that are announced
 - **Shipped number**: **63.0.2** — an incremental step inside the 63 line the phone is on, so it is offered and accepted
   everywhere 63.0.1 was. **v64 still needs the user's explicit consent** (their rule, recorded below).

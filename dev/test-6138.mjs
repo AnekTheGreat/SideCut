@@ -53,10 +53,10 @@ console.log('[1] the file parses — every inline script block');
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
   ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '63.0.2'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(/const CHANGELOG = \[\n  \{ version: '63.0.3'/.test(src), 'the newest entry sits inside CHANGELOG');
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '63.0.2', 'APP_VERSION = ' + ver);
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.3';"), 'sw.js cache = sidecut-shell-v61.5');
+  ok(ver === '63.0.3', 'APP_VERSION = ' + ver);
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.4';"), 'sw.js cache = sidecut-shell-v61.5');
   ok(src.indexOf(`version: '61.5'`) < src.indexOf(`version: '${PREV}'`), '61.5 heads the changelog');
 }
 
