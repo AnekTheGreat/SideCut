@@ -224,7 +224,10 @@ return { fn: fetchArtistSingles, calls: CALLS, results: { us: ${JSON.stringify(U
     catch (e) { if (!(i === 3 && String(e.message).includes('await'))) bad = `block ${i + 1}: ${e.message}`; }
   });
   ok('every inline script block parses', !bad, bad);
-  ok('there are still 5 blocks', blocks.length === 5, String(blocks.length));
+  // 6 since 63.0.8: the boot stopwatch's clock is stamped by its own one-line
+  // block placed BEFORE the app's script, so the parse cost of that script is
+  // measurable on the device. Nothing else about the block layout changed.
+  ok('there are still the expected number of blocks', blocks.length === 6, String(blocks.length));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

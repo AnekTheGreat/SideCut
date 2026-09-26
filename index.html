@@ -3274,6 +3274,20 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
         </div>
       </div>
 
+      <!-- Collapsible: Storage -->
+      <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
+        <button id="collapsibleStorage" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+          <span>Storage</span><span id="collapseStorageIcon" style="transition:transform 0.2s;">▾</span>
+        </button>
+        <div id="collapsibleStorageContent" style="padding:12px; border-top:1px solid var(--line); display:none;">
+          <div style="font-size:11px; color:var(--ink-dim); margin-bottom:10px; line-height:1.55;">SideCut keeps its own copy of every song on this device — that is what makes it work with no network and no ads. Here is what that copy is made of.</div>
+          <div id="storagePanelBody" style="display:flex; flex-direction:column; gap:8px; font-size:12px;">Reading storage…</div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <button class="tab" id="storageRefreshBtn" style="flex:1; padding:10px; font-size:13px;">Recalculate</button>
+            <button class="tab" id="storageFreeUpBtn" style="flex:1; padding:10px; font-size:13px;">Free up space</button>
+          </div>
+        </div>
+      </div>
       <!-- Collapsible: Versions -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
         <button id="collapsibleVersions" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
@@ -4423,6 +4437,10 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="dev/native-updates.js"></script>
+<!-- Stamped before the app's own script block is even parsed, so the boot
+     stopwatch can report how long THIS page takes to parse and set up on
+     the device it is actually running on. -->
+<script>window.__scBootClock = (window.performance && performance.now) ? performance.now() : Date.now();</script>
 <script>
 // ---- Upcoming-release day gate (shared by BOTH script blocks) --------------
 // Only a real YYYY-MM-DD that is strictly after today counts as upcoming.
@@ -4816,7 +4834,7 @@ window.__scDragDelta = function(key, pxPerSec){
     // so on the next boot a marker the app visibly outlived is not a crash.
     var _lastBeat = 0;
     function __scBeat(){ if(!document.hidden && (Date.now() - _lastBeat > 10000)){ _lastBeat = Date.now(); try{ localStorage.setItem('scAliveAt', String(Date.now())); }catch(e){ } } }
-    document.addEventListener('visibilitychange', function(){ if(document.hidden) __scNoteHidden(); else __scBeat(); });
+    document.addEventListener('visibilitychange', function(){ if(document.hidden){ __scNoteHidden(); try{ if(window.__scSidecarFlush) window.__scSidecarFlush(); }catch(_e){ } } else { __scBeat(); } });
     window.addEventListener('pagehide', __scNoteHidden);
     // A reload is not a crash. An OTA apply, a snapshot repair or a WebView
     // restart can tear the page down without 'pagehide' ever firing (the reload
@@ -6964,7 +6982,7 @@ function getApiHeaders() {
     $('settingsTabMore').classList.toggle('active', tab === 'more');
     $('settingsTabWidget').classList.toggle('active', tab === 'widget');
     $('settingsTabSandbox').classList.toggle('active', tab === 'sandbox');
-    if(tab === 'more'){ renderVersionSnapshots(); renderDjPerPlaylistList(); }
+    if(tab === 'more'){ renderVersionSnapshots(); renderDjPerPlaylistList(); try{ renderStoragePanel(); }catch(_eSp){ } }
     if(tab === 'support') initAIAssistant();
     if(tab === 'sandbox') updateSandboxToggles();
     if(tab === 'donate') initDonateTab();
@@ -6979,6 +6997,22 @@ $('settingsTabWidget').addEventListener('click', () => showSettingsTab('widget')
 $('settingsTabSupport').addEventListener('click', () => { showSettingsTab('support'); initAIAssistant(); });
 
 $('settingsTabMore').addEventListener('click', () => showSettingsTab('more'));
+// ---- Storage panel: collapsible + the two buttons ----
+(function(){
+  var head = $('collapsibleStorage'), pane = $('collapsibleStorageContent'), icon = $('collapseStorageIcon');
+  if(head && pane){
+    head.addEventListener('click', function(){
+      var open = pane.style.display === 'none';
+      pane.style.display = open ? 'block' : 'none';
+      if(icon) icon.style.transform = open ? 'rotate(180deg)' : 'none';
+      if(open) renderStoragePanel();
+    });
+  }
+  var refresh = $('storageRefreshBtn');
+  if(refresh) refresh.addEventListener('click', function(){ renderStoragePanel(); toast('Storage re-read', 2000); });
+  var free = $('storageFreeUpBtn');
+  if(free) free.addEventListener('click', function(){ scFreeUpSpace(); });
+})();
 $('settingsTabSandbox').addEventListener('click', () => {
   showSettingsTab('sandbox');
 });
@@ -9403,7 +9437,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           // Stamped on a miss as well — that is what stops the next launch from
           // asking about the same song again straight away.
           t.lyricsCheckedAt = Date.now();
-          try{ await persistTrackMeta(t); }catch(_eRecheckMiss){}
+          // A miss only learned "already asked" — that belongs in the sidecar,
+          // not in another write of the whole song.
+          try{ scSidecarSet(t.id, { lyricsCheckedAt: t.lyricsCheckedAt }); }catch(_eRecheckMiss){}
         }
         await new Promise(function(r){ setTimeout(r, 1200); });
       }
@@ -10942,6 +10978,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(!(await dbHas('meta', versionKey))){
         dbPut('meta', { key: versionKey, value: { version: APP_VERSION, html: SHELL_SNAPSHOT_HTML, savedAt: Date.now() } });
       }
+      // A guard against a runaway, and nothing more: past SC_SNAPSHOT_HARD_CAP
+      // copies (~58 MB) the oldest are dropped, BY KEY, off the boot turn. No
+      // row is read to decide it (a page-sized read here is exactly what this
+      // release removes) and the ordinary history stays listed in the version
+      // picker — trimming that is the user's call, in Storage → Free up space.
+      scRunWhenIdle(function(){ scPruneVersionSnapshots(); });
       // Load any saved custom theme BEFORE applying the saved theme, so
       // applyTheme('custom') resolves to the user's own colors, not the fallback.
       const customThemeRow = metaRows.find(r => r.key === 'customTheme');
@@ -11169,7 +11211,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.0.7';
+  const APP_VERSION = '63.0.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11591,6 +11633,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.0.8', date: 'September 26, 2026 · 2:12 PM EDT', title: 'SideCut can now tell you what your storage is being used for — and give most of it back', items: [
+    'Settings → More now opens a Storage panel that says what SideCut is using your device for: how much its own copy of your music takes, how much the covers take, how many old versions of the app it has saved, and — when the phone reports it — how much the whole app counts for. Beside it, Free up space removes only the things SideCut can build again: the saved pages from old versions, the cached song lists, and any backup files it left behind in its own folder. Your music, playlists, covers and settings are never touched.',
+    'A backup was leaving a complete second copy of your library inside the app, in its own private folder, and never clearing it up — only a failed one was deleted. On a big library that alone was gigabytes, counted against SideCut by the phone and invisible inside the app. It is now removed just after the share sheet has it, and the Storage panel sweeps anything left from before.',
+    'SideCut also stopped re-saving whole songs to change one number. Play counts, the last-played stamp, the loudness measured for auto volume and the lyric-check marks are what SideCut learns as you listen, and each one was writing the entire song back to storage — megabytes, every play. They now live in one small row that is written once and quietly, so listening cannot make the app grow.',
+    'SideCut now measures its own startup and shows you where the time goes. Open the bell (\ud83d\udd14) and the first thing in it is “Startup — 1.9s”, your own number from your own phone; tap it and every step is listed: how long the app’s own code takes to load, then the notification state, your settings, the library read, and the moment Home is on screen. It is timed on every launch and the last one is kept.',
+    'The song list is no longer built while the app is starting up, and the song you last had open is no longer analysed at launch. Both were work being done for a screen you were not looking at: Library builds its list the moment you open it, exactly as fast as before, and auto volume still measures every song you actually play. 63.0.7 had already cut the settings read from about 174 MB on a phone with a dozen updates behind it to a few kilobytes.',
+    'If a step is still slow, that breakdown in the bell names it — which step, and how many milliseconds. Send that list over and the next round of work starts from your phone’s real numbers rather than from mine. Nothing about your music, playlists, covers or saved versions changes in this release.',
+  ] },
   { version: '63.0.7', date: 'September 26, 2026 · 1:37 PM EDT', title: 'The startup that was reading every copy of itself it had ever kept — and the list it no longer waits for', items: [
     'SideCut starts much faster. The reason it did not is storage the app keeps for itself: every version the app has ever run saves a whole copy of its own page so you can switch back to that version later, and none of those copies are ever deleted — deliberately. Reading your settings did not skip them. It read every one of them, and startup made that kind of read four separate times before your library was even opened, so on a phone that has been through a dozen updates startup was reading about 174 MB of page text at every single launch. It now reads only the settings it is actually asking for, which is a few kilobytes.',
     'That is also why it kept getting worse rather than staying put. Every update adds one more copy of the page, and every launch read all of them — so the same phone started slower after an update than it did the week before, and slower again after the next one. Nothing about your rollback history has changed: every version is still kept, and switching back to one still works exactly as it did. Those copies are simply no longer dragged through every read.',
@@ -14115,6 +14165,27 @@ function startLyricsAutoScroll(keepPos, noReset) {
     const hasUpcomingAlert = typeof scUpcomingUnseen === 'function' && scUpcomingUnseen().length > 0;
     badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || hasUpcomingAlert || updateIsNewer() || !!window.__scNotifConv) ? 'block' : 'none';
   }
+  function bootProfileNotifHtml(){
+    const p = scBootRead();
+    if(!p || !p.marks || !p.marks.length) return '';
+    const total = p.marks[p.marks.length - 1][1] || 0;
+    const when = p.at ? new Date(p.at).toLocaleString() : '';
+    const rows = p.marks.map(function(m, i){
+      const d = i ? (m[1] - p.marks[i - 1][1]) : m[1];
+      return '<div style="display:flex; gap:8px; font-size:11px; color:var(--ink-dim); line-height:1.55;">'
+        + '<span style="min-width:64px; text-align:right; flex-shrink:0; font-variant-numeric:tabular-nums;">+' + m[1] + 'ms</span>'
+        + '<span style="color:var(--ink); min-width:44px; flex-shrink:0; font-variant-numeric:tabular-nums;">+' + d + 'ms</span>'
+        + '<span>' + escapeHtml(m[0]) + (m[2] ? ' <span style="opacity:.75;">· ' + escapeHtml(m[2]) + '</span>' : '') + '</span>'
+        + '</div>';
+    }).join('');
+    return '<div id="notifBootEntry" style="border-bottom:1px solid var(--line); padding-bottom:10px; cursor:pointer;">'
+      + '<div style="font-weight:600; font-size:13.5px; margin-bottom:6px;">\u23f1 Startup \u2014 ' + (total / 1000).toFixed(1) + 's</div>'
+      + '<div style="font-size:12px; color:var(--ink-dim);">Last launch' + (when ? ' · ' + escapeHtml(when) : '')
+      + (p.list ? ' · library list ' + escapeHtml(String(p.list)) : '')
+      + (p.mobile ? ' · on this phone' : '') + '. Tap for the step-by-step breakdown.</div>'
+      + '<div id="notifBootDetail" style="display:none; margin-top:8px; border-top:1px dashed var(--line); padding-top:8px;">' + rows + '</div>'
+      + '</div>';
+  }
   function renderNotifPanel(){
     const body = $('notifBody');
     const summary = $('notifSummary');
@@ -14198,6 +14269,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         </div>
       </div>
     `).join('');
+    html += bootProfileNotifHtml();
     summary.innerHTML = summaryHtml;
     body.innerHTML = html;
     const updInstallBtn = document.getElementById('notifUpdateInstall');
@@ -14209,6 +14281,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(updLaterBtn) updLaterBtn.addEventListener('click', () => {
       $('notifBackdrop').style.display = 'none';
       toast('No problem — the update stays in the bell.', 3000);
+    });
+    const bootEntry = document.getElementById('notifBootEntry');
+    if(bootEntry) bootEntry.addEventListener('click', () => {
+      const det = document.getElementById('notifBootDetail');
+      if(det) det.style.display = det.style.display === 'none' ? 'block' : 'none';
     });
     const dupEntry = document.getElementById('notifDupEntry');
     if(dupEntry) dupEntry.addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; findDuplicates(); });
@@ -15218,7 +15295,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     const preset = (t.vibe && VIBES[t.vibe]) || globalEQ;
     EQ_BANDS.forEach((b, i) => { nodes[i].gain.value = preset[b.key] || 0; });
   }
-  function applyNormalizedGain(t, audioIdx){
+  function applyNormalizedGain(t, audioIdx, opts){
     ensureAudioGraph();
     const gainNode = gainNodes[audioIdx];
     if(!gainNode) return;
@@ -15228,11 +15305,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     gainNode.gain.value = t.gain != null ? t.gain : 1;
     if(t.gain == null){
+      // A restore is not a play. Measuring loudness here decodes the whole song
+      // (scDecodeTrack) -- seconds of CPU and tens of MB of samples on a phone --
+      // at startup, for a track that is restored PAUSED and may never be played.
+      // The gain already stored is still applied; an unmeasured track is measured
+      // on its next real play, exactly as before.
+      if(opts && opts.skipMeasure) return;
       if(document.hidden) return; // measured on the next play instead
       scWhenIdle(function(){ estimateGain(t).then(g => {
         if(g == null) return;
         t.gain = g;
-        persistTrackMeta(t);
+        scSidecarSet(t.id, { gain: g });
         // Only apply live if this exact track is still the one loaded on this audio element, and the feature's still on
         if(autoVolumeEnabled && queue[queueIndex] === t.id && audioIdx === activeIdx) gainNode.gain.value = g;
       }); });
@@ -15567,6 +15650,227 @@ function startLyricsAutoScroll(keepPos, noReset) {
     setTimeout(function(){ try{ fn(); }catch(e){} }, 0);
   }
 
+  // ---- Rollback copies -------------------------------------------------------
+  // Every version the app has run saved a full copy of its own page (~2.4 MB) so
+  // it can be switched back to, and nothing ever removed one. Two rules decide
+  // what happens to them now:
+  //
+  //   * They are NEVER read to count them. Deciding which copies are newest from
+  //     `savedAt` means deserialising every page — the 29.9 MB-at-boot cost this
+  //     release is supposed to be removing. A key is `versionSnapshot_<version>`
+  //     and versions are dotted numbers, so the order is readable off the keys.
+  //   * They are NOT dropped behind the user's back. The version picker lists
+  //     these copies; that is a feature, so trimming them is a choice —
+  //     Settings → More → Storage → Free up space keeps the newest few.
+  //
+  // The one automatic case is a runaway guard, off the boot turn, by key only.
+  var SC_SNAPSHOT_KEEP = 6;
+  var SC_SNAPSHOT_HARD_CAP = 24;
+  function scCompareVersions(a, b){
+    var pa = String(a || '').split('.'), pb = String(b || '').split('.');
+    var n = Math.max(pa.length, pb.length);
+    for(var i = 0; i < n; i++){
+      var na = parseInt(pa[i], 10) || 0, nb = parseInt(pb[i], 10) || 0;
+      if(na !== nb) return na - nb;
+    }
+    return 0;
+  }
+  // Snapshot KEYS, newest first. No value is fetched, so nothing page-sized is
+  // ever deserialised here.
+  async function scSnapshotKeys(){
+    if(!scHasKeyRanges()) return [];
+    try{
+      const db = await openDB();
+      const keys = await new Promise((resolve, reject) => {
+        const tx = db.transaction('meta', 'readonly');
+        const os = tx.objectStore('meta');
+        if(typeof os.getAllKeys !== 'function'){ resolve(null); return; }
+        const req = os.getAllKeys(IDBKeyRange.bound(SC_SNAP_KEY_PREFIX, SC_SNAP_KEY_MAX));
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+      if(!keys) return [];
+      return keys.filter(scLooksLikeSnapshotKey).sort(function(a, b){
+        return scCompareVersions(String(b).slice(SC_SNAP_KEY_PREFIX.length), String(a).slice(SC_SNAP_KEY_PREFIX.length));
+      });
+    }catch(e){ scNoteStorageError(e); return []; }
+  }
+  // keepCount: how many of the newest to keep. With no argument this is only the
+  // runaway guard — below SC_SNAPSHOT_HARD_CAP it does nothing at all.
+  async function scPruneVersionSnapshots(keepCount){
+    try{
+      var keys = await scSnapshotKeys();
+      if(!keys.length) return 0;
+      var forced = (typeof keepCount === 'number' && keepCount > 0);
+      var keep = forced ? keepCount : SC_SNAPSHOT_HARD_CAP;
+      if(keys.length <= keep) return 0;
+      var safe = keys.slice(0, keep);
+      safe.push('versionSnapshot_' + APP_VERSION);
+      try{
+        var _p = await dbGet('meta', 'pinnedVersion');
+        if(_p && _p.value) safe.push('versionSnapshot_' + _p.value);
+      }catch(_e){ }
+      var removed = 0;
+      for(var i = 0; i < keys.length; i++){
+        if(safe.indexOf(keys[i]) !== -1) continue;
+        try{ await dbDelete('meta', keys[i]); removed++; }catch(_e){ }
+      }
+      return removed;
+    }catch(_e){ return 0; }
+  }
+  window.__scPruneVersionSnapshots = scPruneVersionSnapshots;
+  window.__scSnapshotKeys = scSnapshotKeys;
+
+  // ---- Storage panel --------------------------------------------------------
+  function scFmtBytes(n){
+    n = Number(n) || 0;
+    if(n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+    if(n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if(n >= 1024) return Math.round(n / 1024) + ' KB';
+    return n + ' B';
+  }
+  function scLocalStorageBytes(){
+    try{
+      var total = 0;
+      for(var i = 0; i < localStorage.length; i++){
+        var k = localStorage.key(i);
+        if(k === null) continue;
+        total += k.length + String(localStorage.getItem(k) || '').length;
+      }
+      return total;
+    }catch(_e){ return 0; }
+  }
+  async function renderStoragePanel(freedNote){
+    var body = $('storagePanelBody');
+    if(!body) return;
+    var audioBytes = 0, artBytes = 0, silent = 0;
+    allTracks.forEach(function(t){
+      if(t.file && t.file.size) audioBytes += t.file.size; else silent++;
+      if(t.artBlob && t.artBlob.size) artBytes += t.artBlob.size;
+    });
+    var snaps = [], snapBytes = 0;
+    try{
+      snaps = await scMetaSnapshotRows();
+      snapBytes = snaps.reduce(function(n, r){ return n + (((r.value || {}).html || '').length); }, 0);
+    }catch(_e){ }
+    // Leftovers in the app's own cache directory do not show up in any of the
+    // numbers above — that is exactly why a phone could report gigabytes while
+    // the app could not explain them.
+    var ownCache = { files: 0, bytes: 0 };
+    try{ ownCache = await scOwnCacheUsage(); }catch(_e){ }
+    var dupGroups = (typeof getDuplicateGroups === 'function') ? getDuplicateGroups() : [];
+    var estimate = null;
+    try{ if(navigator.storage && navigator.storage.estimate) estimate = await navigator.storage.estimate(); }catch(_e){ }
+    var rows = [];
+    rows.push(['Your music', allTracks.length + (allTracks.length === 1 ? ' song' : ' songs') + ' · ' + scFmtBytes(audioBytes)]);
+    rows.push(['Covers', scFmtBytes(artBytes)]);
+    rows.push(['Saved rollback copies', snaps.length + ' · ' + scFmtBytes(snapBytes) + (snaps.length > SC_SNAPSHOT_KEEP ? ' (Free up space keeps the newest ' + SC_SNAPSHOT_KEEP + ')' : '')]);
+    rows.push(['Saved settings & caches', scFmtBytes(scLocalStorageBytes())]);
+    if(ownCache.files) rows.push(['Backup files left in the app\u2019s cache', ownCache.files + ' \u00b7 ' + scFmtBytes(ownCache.bytes)]);
+    if(estimate && estimate.usage) rows.push(['This device counts for SideCut', scFmtBytes(estimate.usage) + (estimate.quota ? ' of ' + scFmtBytes(estimate.quota) + ' allowed' : '')]);
+    var html = rows.map(function(r){
+      return '<div style="display:flex; justify-content:space-between; gap:10px;"><span style="color:var(--ink-dim);">' + escapeHtml(r[0]) + '</span><span style="font-weight:600; text-align:right;">' + escapeHtml(r[1]) + '</span></div>';
+    }).join('');
+    if(silent) html += '<div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">' + silent + ' song' + (silent === 1 ? '' : 's') + ' reported no audio size — usually Spotify-only entries added by name.</div>';
+    if(dupGroups.length){
+      var extra = dupGroups.reduce(function(n, g){ return n + g.length - 1; }, 0);
+      html += '<div id="storageDupRow" style="cursor:pointer; color:var(--coral); font-weight:600;">' + dupGroups.length + ' duplicate group' + (dupGroups.length === 1 ? '' : 's') + ' — ' + extra + ' extra cop' + (extra === 1 ? 'y' : 'ies') + ' · tap to review</div>';
+    }
+    html += '<div style="font-size:11px; color:var(--ink-dim); line-height:1.55; margin-top:2px;">' + (freedNote ? escapeHtml(freedNote) + ' ' : '') + 'Songs removed from the library give their space back; a song you keep is kept, so SideCut can play it with no network.</div>';
+    body.innerHTML = html;
+    var dupRow = document.getElementById('storageDupRow');
+    if(dupRow) dupRow.addEventListener('click', function(){ findDuplicates(); });
+  }
+  window.__scRenderStoragePanel = renderStoragePanel;
+  window.__scStorageBytes = function(){ return scLocalStorageBytes(); };
+
+  // ─── What SideCut itself left in its own cache directory ───────────────────
+  // The backup export streams the whole library as a zip in here (that is how it
+  // reaches the share sheet). Only files this app wrote are ever touched, and
+  // they are matched by name, so nothing the user saved can be caught by it.
+  var SC_OWN_CACHE_RE = /^sidecut-(songs|library)\.zip$/i;
+  function scCapFs(){
+    try{ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) || null; }catch(_e){ return null; }
+  }
+  function scCacheEntryName(entry){
+    var raw = (entry && typeof entry === 'object' && entry.name) ? String(entry.name) : String(entry || '');
+    var name = raw.split('?')[0].split('/').pop();
+    try{ name = decodeURIComponent(name); }catch(_e){ }
+    return name;
+  }
+  async function scOwnCacheFiles(){
+    var FS = scCapFs();
+    if(!FS || typeof FS.readdir !== 'function') return [];
+    var list = null;
+    try{ list = await FS.readdir({ path: '', directory: 'CACHE' }); }catch(_e){ return []; }
+    var files = (list && list.files) || [];
+    var out = [];
+    for(var i = 0; i < files.length; i++){
+      var name = scCacheEntryName(files[i]);
+      if(name && SC_OWN_CACHE_RE.test(name)) out.push(name);
+    }
+    return out;
+  }
+  async function scOwnCacheUsage(){
+    var out = { files: 0, bytes: 0 };
+    try{
+      var FS = scCapFs();
+      var names = await scOwnCacheFiles();
+      for(var i = 0; i < names.length; i++){
+        var size = 0;
+        try{ var st = (FS && typeof FS.stat === 'function') ? await FS.stat({ path: names[i], directory: 'CACHE' }) : null; size = (st && st.size) || 0; }catch(_e){ }
+        out.files++; out.bytes += size;
+      }
+    }catch(_e){ }
+    return out;
+  }
+  async function scCleanOwnCache(){
+    var out = { files: 0, bytes: 0 };
+    try{
+      var FS = scCapFs();
+      if(!FS || typeof FS.deleteFile !== 'function') return out;
+      var names = await scOwnCacheFiles();
+      for(var i = 0; i < names.length; i++){
+        var size = 0, age = null;
+        try{ var st = await FS.stat({ path: names[i], directory: 'CACHE' }); size = (st && st.size) || 0; age = (st && st.mtime) || null; }catch(_e){ }
+        // Never pull a file out from under a share sheet that is still up.
+        if(age && (Date.now() - age) < 180000) continue;
+        try{ await FS.deleteFile({ path: names[i], directory: 'CACHE' }); out.files++; out.bytes += size; }catch(_e){ }
+      }
+    }catch(_e){ }
+    return out;
+  }
+  window.__scOwnCacheUsage = scOwnCacheUsage;
+  window.__scCleanOwnCache = scCleanOwnCache;
+
+  async function scFreeUpSpace(){
+    try{
+      var before = 0;
+      try{ before = (await scMetaSnapshotRows()).reduce(function(n, r){ return n + (((r.value || {}).html || '').length); }, 0); }catch(_e){ }
+      var removed = await scPruneVersionSnapshots(SC_SNAPSHOT_KEEP);
+      var after = 0;
+      try{ after = (await scMetaSnapshotRows()).reduce(function(n, r){ return n + (((r.value || {}).html || '').length); }, 0); }catch(_e){ }
+      // Popup snapshots are rebuilt the moment a list is reopened; they are HTML
+      // caches, nothing the user made.
+      var cleared = 0;
+      try{
+        var dead = [];
+        for(var i = 0; i < localStorage.length; i++){
+          var k = localStorage.key(i);
+          if(k && k.indexOf('discPopupCache_') === 0) dead.push(k);
+        }
+        dead.forEach(function(k){ try{ localStorage.removeItem(k); cleared++; }catch(_e){ } });
+      }catch(_e){ }
+      var own = { files: 0, bytes: 0 };
+      try{ own = await scCleanOwnCache(); }catch(_e){ }
+      var freed = Math.max(0, before - after) + (own.bytes || 0);
+      var msg = 'Freed ' + scFmtBytes(freed) + ' from ' + removed + ' old rollback cop' + (removed === 1 ? 'y' : 'ies') + (cleared ? ' and cleared ' + cleared + ' saved list' + (cleared === 1 ? '' : 's') : '') + (own.files ? ' and removed ' + own.files + ' leftover backup file' + (own.files === 1 ? '' : 's') : '') + '.';
+      toast(msg, 4000);
+      renderStoragePanel(msg);
+    }catch(e){ toast('Could not free that up — nothing was removed.', 3500); }
+  }
+  window.__scFreeUpSpace = scFreeUpSpace;
+
   function saveMeta(){
     // Nuclear safety net: never persist playlist changes while in album mode.
     // Album-mode operations should only modify userAlbums, never playlists.
@@ -15608,6 +15912,68 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // Android WebView can reject generated File/Blob objects with InvalidBlob when
   // they are cloned directly into IndexedDB. Persist the bytes as ArrayBuffer,
   // which is stable across WebView versions, then restore a File on load.
+  // ---- The sidecar: learned metadata that must not cost a song's bytes -----
+  // persistTrackMeta() stores a track's audio and cover as raw bytes INSIDE the
+  // track record (Android WebView rejects generated Blobs cloned into IndexedDB
+  // — see the note above), so every write of a track re-serialises megabytes.
+  // That is correct for the paths that change the audio (import, crop, convert,
+  // watermark cleaning) and ruinous for the ones that only learned something:
+  // recordPlay/commitPlay fire on every single play, the lyrics re-check stamps
+  // five songs per launch, the loudness gain and the waveform once per song. Each
+  // of those used to re-serialise the whole song to change one number, which is
+  // why storage grew with listening rather than with the library.
+  // They now live in one small `trackSidecar` meta row, merged back into every
+  // track as the library loads. It rides along in backups (it is a meta row) so
+  // play counts and covers survive a move to a new phone.
+  var SC_SIDECAR_FIELDS = ['playCount', 'lastPlayedAt', 'lyricsCheckedAt', 'gain', 'waveform'];
+  var scSidecar = {};
+  var scSidecarDirty = false;
+  var scSidecarTimer = null;
+  function scSidecarLoad(metaMap){
+    try{
+      var row = metaMap && metaMap.trackSidecar;
+      scSidecar = (row && typeof row === 'object') ? row : {};
+    }catch(_e){ scSidecar = {}; }
+  }
+  function scSidecarApply(){
+    try{
+      allTracks.forEach(function(t){
+        var s = scSidecar[t.id];
+        if(!s) return;
+        for(var i = 0; i < SC_SIDECAR_FIELDS.length; i++){
+          var k = SC_SIDECAR_FIELDS[i];
+          if(s[k] !== undefined && s[k] !== null) t[k] = s[k];
+        }
+      });
+    }catch(_e){ }
+  }
+  function scSidecarSave(){
+    try{
+      scSidecarTimer = null;
+      if(!scSidecarDirty) return;
+      scSidecarDirty = false;
+      dbPut('meta', { key: 'trackSidecar', value: scSidecar });
+    }catch(_e){ }
+  }
+  function scSidecarSet(id, patch){
+    try{
+      if(!id || !patch) return;
+      var s = scSidecar[id] || (scSidecar[id] = {});
+      Object.keys(patch).forEach(function(k){ s[k] = patch[k]; });
+      scSidecarDirty = true;
+      // One write per burst, not one per event: playing a song sets a play count
+      // and a last-played stamp in quick succession and both belong in one row.
+      if(scSidecarTimer) return;
+      scSidecarTimer = setTimeout(scSidecarSave, 700);
+    }catch(_e){ }
+  }
+  function scSidecarFlush(){
+    try{ if(scSidecarTimer){ clearTimeout(scSidecarTimer); scSidecarSave(); } }catch(_e){ }
+  }
+  window.__scSidecar = function(){ return scSidecar; };
+  window.__scSidecarSet = scSidecarSet;
+  window.__scSidecarFlush = scSidecarFlush;
+
   async function persistTrackMeta(t){
     const record = buildTrackRecord(t);
     async function normalize(field, dataField, typeField){
@@ -15708,10 +16074,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
 
  async function loadFromDB(){
+    var _scReadT = scNow();
     const [trackRows, metaRows] = await Promise.all([
         dbGetAll('tracks'),
         scMetaSettingsRows()
     ]);
+    scBootT('boot: library read from storage', trackRows.length + ' songs, ' + Math.round(scNow() - _scReadT) + ' ms');
     // The read itself WORKED. An empty library is not a failure, and a failure is
     // not an empty library — keep the two apart from here on.
     if(window.__scStorageOk && window.__scStorageOk()) scLibraryReadOk = true;
@@ -15764,6 +16132,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
             manualOverride: r.manualOverride || false,
             };
         });
+    // Learned metadata (play counts, waveform, loudness, lyrics stamps) lives in
+    // one meta row instead of inside every track record — see the sidecar note.
+    scSidecarLoad(metaMap);
+    scSidecarApply();
 
 
     userAlbums = metaMap.userAlbums || {};
@@ -17855,7 +18227,17 @@ function _fallbackCopy(text){
       _renderListRAF = null;
       if(!_renderListPending) return;
       _renderListPending = false;
-      try{ renderListInner(); }
+      try{
+        var _scListT = scNow();
+        renderListInner();
+        if(!window.__scListTimed){
+          window.__scListTimed = true;
+          var _scPane = document.getElementById('listPane');
+          scBootLastList = Math.round(scNow() - _scListT) + ' ms, ' + (_scPane ? _scPane.children.length : 0) + ' rows';
+          scBootT('list: first render (opening Library, not boot)', scBootLastList);
+          scBootPersist();
+        }
+      }
       catch(e){
         console.error('renderList failed', e);
       }
@@ -21083,6 +21465,18 @@ function _fallbackCopy(text){
                   if(saved) await withTimeout(FS.writeFile({ path: filename, data:saved.data, directory:'DOCUMENTS', recursive:true }), 10000, null);
                 }
               }catch(_bgErr){ console.log('Background share failed (file is still in cache):', _bgErr); }
+              // The zip is a COMPLETE second copy of the library, sitting in the
+              // app's own cache directory. It used to be left there for good:
+              // sharing a 4 GB library left 4 GB behind, counted against the app
+              // by the phone and invisible from inside it. The share sheet is
+              // handed a URI, so a short grace period is all it needs — then the
+              // cache copy goes. Anything older builds left behind is swept by
+              // Settings → More → Storage → Free up space.
+              try{
+                setTimeout(function(){
+                  try{ FS.deleteFile({ path: filename, directory: 'CACHE' }).catch(function(){}); }catch(_e){ }
+                }, 90 * 1000);
+              }catch(_e){ }
             }).catch(function(){ resolve(true); });
           }
           zipStream.on('data', function(data){
@@ -22438,7 +22832,9 @@ function _fallbackCopy(text){
     lastRecordedTrackId = t.id;
     pendingPlayId = t.id;           // counted below, if it gets heard
     t.lastPlayedAt = Date.now();
-    persistTrackMeta(t);
+    // Was persistTrackMeta(t): a full re-serialisation of the song's audio to
+    // change one number, on every play. The sidecar row is a few bytes.
+    scSidecarSet(t.id, { lastPlayedAt: t.lastPlayedAt });
     recordListeningDay();
     // Keep Home recent/forgotten lists fresh if Home is visible.
     if($('homeView').classList.contains('active')) renderHome();
@@ -22448,7 +22844,7 @@ function _fallbackCopy(text){
     pendingPlayId = null;
     t.playCount = (t.playCount || 0) + 1;
     totalPlays++;
-    persistTrackMeta(t);
+    scSidecarSet(t.id, { playCount: t.playCount });
     dbPut('meta', { key: 'stats', value: { totalListenSeconds, totalPlays } });
     if($('homeView').classList.contains('active')) renderHome();
   }
@@ -24178,7 +24574,7 @@ function _fallbackCopy(text){
       _waveformBusyId = null;
       if(!wf) return;
       track.waveform = wf;
-      persistTrackMeta(track);
+      scSidecarSet(track.id, { waveform: wf });
       if(queue[queueIndex] === track.id){
         currentWaveform = wf;
         updateWaveformDisplay(lastSeekPct());
@@ -26397,9 +26793,47 @@ function _fallbackCopy(text){
     }
   }
 
+  // ---- Boot stopwatch -------------------------------------------------------
+  // Startup is the one number that cannot be judged from a fast machine: on a
+  // phone it is dominated by the WebView parsing this page, blob-backed storage
+  // reads and image decoding. So the app times its own startup, every launch,
+  // and keeps the last one where the notifications panel can show it -- one tap,
+  // no test mode and no console needed. `window.__scBootProfile()` returns it.
+  var scBootT0 = (window.__scBootClock && typeof window.__scBootClock === 'number') ? window.__scBootClock : null;
+  var scBootMarks = [];
+  var scBootLastList = null;
+  function scNow(){
+    try{ return (window.performance && performance.now) ? performance.now() : Date.now(); }catch(_e){ return Date.now(); }
+  }
+  function scBootT(label, note){
+    try{
+      if(scBootT0 === null) scBootT0 = scNow();
+      var at = Math.round(scNow() - scBootT0);
+      if(scBootMarks.length < 40) scBootMarks.push([String(label), at, note == null ? '' : String(note)]);
+      if(window.__scBootVerbose){ try{ console.log('[SideCut boot] ' + at + 'ms \u00b7 ' + label + (note ? ' (' + note + ')' : '')); }catch(_c){} }
+    }catch(_e){ }
+  }
+  function scBootPersist(){
+    try{
+      localStorage.setItem('scBootProfile', JSON.stringify({
+        version: String(window.APP_VERSION || ''),
+        at: Date.now(),
+        mobile: (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform) ? !!window.Capacitor.isNativePlatform() : false,
+        marks: scBootMarks,
+        list: scBootLastList
+      }));
+    }catch(_e){ }
+  }
+  function scBootRead(){
+    try{ return JSON.parse(localStorage.getItem('scBootProfile') || 'null'); }catch(_e){ return null; }
+  }
+  window.__scBootProfile = scBootRead;
+  window.__scBootT = scBootT;
+
   // ---------------- Boot: auto-load anything saved from before ----------------
   (async function boot(){
     try{
+      scBootT('page ready: script parsed, compiled and set up');
       if(window.__scMark) __scMark('starting up');
       // Version pin: lets you jump between ANY saved version freely, not just backward once.
       // Reverting sets this pin + reloads; this always-latest code checks it first thing on
@@ -26486,8 +26920,10 @@ function _fallbackCopy(text){
       })();
       requestPersistentStorage();
       await loadNotifReadState();
-      updateNotifBadge();
+      scBootT('boot: notification state read');
+      scRunWhenIdle(updateNotifBadge);
       await loadSavedTheme();
+      scBootT('boot: settings + theme applied');
       // Data-loss safety net: if the WebView stores come up empty but a snapshot
       // file survived (update origin switch, uninstall + reinstall restored by
       // Android Auto Backup, or a partial wipe), hydrate from it silently.
@@ -26495,7 +26931,9 @@ function _fallbackCopy(text){
       // (the app shows its shell and nothing else). Give it a deadline.
       try{ await Promise.race([ window.__scSnapRestore(), new Promise(function(r){ setTimeout(r, 4000); }) ]); }
       catch(e){ console.error('Snapshot restore failed', e); }
+      scBootT('boot: recovery check done');
       let loaded = await loadFromDB();
+      scBootT('boot: library built', loaded ? allTracks.length + ' tracks' : 'empty');
       // A read that FAILED looks exactly like an empty library to loadFromDB.
       // Give it exactly one more go through a fresh connection (that is what
       // clears the state a killed renderer leaves behind), and only then believe
@@ -26535,12 +26973,16 @@ function _fallbackCopy(text){
           activePlaylist = lastPlaybackState.sourcePlaylist;
         }
         renderTabs();
-        // The list is the heaviest thing boot builds -- a row and a cover per
-        // song -- and it is not the screen the app lands on (Home is). Building
-        // it on the first idle slice lets the shell and Home paint first;
-        // opening Library renders it for real anyway, because
-        // navigate('library') calls renderList() itself.
-        scRunWhenIdle(function(){ renderList(); });
+        scBootT('boot: tabs rendered');
+        // NOTE: the list is deliberately NOT built here any more. It is the
+        // heaviest thing the app assembles -- a row and a cover per song -- and
+        // it was being built for a screen the app is not showing: boot always
+        // lands on Home, and opening Library renders it for real anyway,
+        // because navigate('library') has always called renderList() itself.
+        // Moving it to the first idle slice (63.0.7) stopped it blocking the
+        // paint; not building it at all stops it competing with the app the
+        // user is actually using (63.0.8). The list render is timed separately
+        // (see the mark in renderList below), so its cost still shows up.
         // Watermark cleaning runs only when a new song is imported (cleanOnImport
         // on the import paths) — NOT on every boot/refresh. Re-running the whole
         // library clean on every load was churning the DB + toasts every reload.
@@ -26554,6 +26996,7 @@ function _fallbackCopy(text){
 
       // Land on Home by default — the library/emptyState visibility is handled by navigate().
       navigate(loaded ? 'home' : 'home');
+      scBootT('boot: Home on screen');
 
       // Auto-fill missing covers/metadata in the background once the library
       // has settled (each song is only ever attempted once). Each load gets its
@@ -26567,11 +27010,15 @@ function _fallbackCopy(text){
         loadEnrichState().catch(function(e){ console.error('loadEnrichState failed', e); }),
         loadPinnedArtists().catch(function(e){ console.error('loadPinnedArtists failed', e); })
       ]);
+      scBootT('boot: enrich state + pinned artists read');
       if(loaded) setTimeout(() => { runAutoEnrich(); }, 2500);
       // A song added the day it came out is the one the databases are still
       // catching up on, so the lyrics re-check runs on every launch, well clear
       // of the first paint and never while the manual batch is running.
       if(loaded) setTimeout(() => { try{ scLyricsRecheckRun(); }catch(e){ console.error('lyrics re-check failed', e); } }, 20000);
+      scBootT('boot: DONE (everything startup does)', allTracks.length + ' tracks');
+      scBootPersist();
+      try{ console.log('[SideCut] startup: ' + (scBootMarks.length ? scBootMarks[scBootMarks.length - 1][1] : 0) + ' ms' + (scBootLastList ? ' (list ' + scBootLastList + ')' : '') + ' — open the bell for the breakdown.'); }catch(_bc){}
       if(window.__scMarkDone) __scMarkDone();
     }catch(e){
       console.error('Auto-load failed', e);
@@ -26647,7 +27094,7 @@ function _fallbackCopy(text){
     const a = activeAudio();
     a.src = track.url;
     a.playbackRate = playbackSpeed;
-    applyNormalizedGain(track, activeIdx); applyEQ(track, activeIdx);
+    applyNormalizedGain(track, activeIdx, { skipMeasure: true }); applyEQ(track, activeIdx);
     const resumeAt = state.currentTime || 0;
     a.addEventListener('loadedmetadata', function onMeta(){
       a.currentTime = resumeAt;
@@ -33231,9 +33678,10 @@ if(!isDiscover) stopDiscoverPreview();
     return scEncodeAudio(buf, fmt, tagMeta);
   }
 
-  function scFmtBytes(n){
-    return (n / (1024 * 1024)).toFixed(1);
-  }
+  // (The bytes formatter lives with the Storage panel near scFmtBytes above.
+  // A second definition used to sit here returning a bare number, and because
+  // function declarations hoist the LATER one wins: the panel printed "13.8"
+  // instead of "13.8 MB". Deleted — nothing else ever called it.)
 
   function scFmtDur(sec){
     var m = Math.floor(sec / 60), s = Math.round(sec % 60);

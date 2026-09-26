@@ -112,7 +112,8 @@ function makeIDB(counters, opts) {
   setMeta('edgeGlowBaseLen', 44);            // an observable setting, checked below
   if (opts && opts.wiped) { meta.delete('idCounter'); meta.delete('playlists'); }
   // The rollback history.
-  for (let i = 0; i < HISTORY; i++) {
+  const hist = (opts && opts.history) || HISTORY;
+  for (let i = 0; i < hist; i++) {
     setMeta('versionSnapshot_58.8.' + i, { version: '58.8.' + i, html: 'x'.repeat(SNAP_HTML_BYTES), savedAt: Date.now() - i * 60000 });
   }
   const data = { tracks, meta };
@@ -162,6 +163,19 @@ function makeIDB(counters, opts) {
               }, 0);
               return q;
             },
+            // Keys only. This is how the app reads the snapshot order, so no
+            // page-sized value is ever deserialised to decide what to drop.
+            getAllKeys(range) {
+              counters.keyOnlyReads++;
+              const q = {};
+              setTimeout(() => {
+                let keys = Array.from(data[store].values()).filter((v) => v && v.key !== undefined).map((v) => v.key);
+                if (range) keys = keys.filter((k) => range._r.contains(k));
+                q.result = keys;
+                q.onsuccess && q.onsuccess();
+              }, 0);
+              return q;
+            },
             delete(k) { data[store].delete(k); fire(); return {}; },
           });
           t.objectStore = asObjectStore;
@@ -181,7 +195,7 @@ function makeIDB(counters, opts) {
 async function boot(opts) {
   opts = opts || {};
   const counters = {
-    metaBytes: 0, snapshotRowsReturned: 0, bigRowsReturned: 0, getAllCalls: 0,
+    metaBytes: 0, snapshotRowsReturned: 0, bigRowsReturned: 0, getAllCalls: 0, keyOnlyReads: 0,
     getKeyCalls: 0, getKeys: [], settingsKeys: new Set(),
     blobGets: 0, artGets: 0, fileReads: 0, snapFileReads: 0, readPaths: [], idle: [],
   };
@@ -277,27 +291,86 @@ async function boot(opts) {
     snapText.replace(/\s+/g, ' ').slice(0, 90));
   ok('and it lists the version that is running', snapText.indexOf('v' + version) !== -1, version);
 
+  // ---- launching the app does not throw history away, and the runaway guard
+  // ---- reads keys, never pages ----
+  const keptKeys = Array.from(A.idb._data.meta.keys()).filter((k) => k.indexOf('versionSnapshot_') === 0);
+  ok('launching the app keeps the whole history the picker lists',
+    keptKeys.indexOf('versionSnapshot_58.8.0') !== -1 && keptKeys.length === HISTORY + 1, keptKeys.length + ' copies');
+
+  const G = await boot({ history: 30 });
+  G.fireIdle();
+  await wait(300);
+  const gk = Array.from(G.idb._data.meta.keys()).filter((k) => k.indexOf('versionSnapshot_') === 0);
+  console.log('    runaway history: 30 seeded -> ' + gk.length + ' kept  (page-sized rows read: ' +
+    G.counters.snapshotRowsReturned + ', key-only reads: ' + G.counters.keyOnlyReads + ')');
+  ok('a runaway history is trimmed without reading one page of it',
+    G.counters.snapshotRowsReturned === 0 && G.counters.bigRowsReturned === 0,
+    'rows=' + G.counters.snapshotRowsReturned + ' big=' + G.counters.bigRowsReturned);
+  ok('the key-only read is what decided it', G.counters.keyOnlyReads >= 1, G.counters.keyOnlyReads);
+  ok('the newest copies are the ones kept',
+    gk.indexOf('versionSnapshot_58.8.29') !== -1 && gk.indexOf('versionSnapshot_58.8.7') !== -1, gk.slice(0, 3).join(','));
+  ok('and the oldest are the ones dropped',
+    gk.indexOf('versionSnapshot_58.8.0') === -1 && gk.indexOf('versionSnapshot_58.8.5') === -1, gk.length + ' kept');
+  ok('plus the version that is running', gk.indexOf('versionSnapshot_' + version) !== -1);
+
   // ---- per-track restore work ----
   console.log('    per-song restores: audio blob read ' + c.blobGets + '×, cover read ' + c.artGets + '×  (3 songs)');
   ok('each song restores its audio blob twice at most (once + the no-audio check)', c.blobGets <= 6, c.blobGets);
   ok('each song restores its cover exactly once', c.artGets === 3, c.artGets);
 
-  // ---- the list render is off the boot turn ----
+  // ---- the list render is off the boot turn AND off the boot path ----
   const paneBefore = win.document.getElementById('listPane').children.length;
   ok('the boot turn does not build the song list', paneBefore === 0, 'rows=' + paneBefore + ' queued=' + c.idle.length);
-  ok('it is queued on the first idle slice instead', c.idle.length >= 1, 'queued=' + c.idle.length);
   A.fireIdle();
   await wait(400);
-  const paneAfter = win.document.getElementById('listPane').children.length;
-  const paneText = win.document.getElementById('listPane').textContent || '';
-  ok('and it renders for real once the device is idle', paneAfter > 0, 'rows=' + paneAfter);
-  ok('the app booted with its library', paneText.indexOf('Song 0') !== -1 && paneText.indexOf('Song 2') !== -1,
-    paneText.replace(/\s+/g, ' ').slice(0, 90));
+  const paneAfterIdle = win.document.getElementById('listPane').children.length;
+  ok('and the idle slice does not build it either — it belongs to Library, not to boot',
+    paneAfterIdle === 0, 'rows=' + paneAfterIdle + ' queued=' + c.idle.length);
 
   // ---- the list still builds the moment Library is opened ----
   win.navigate('library');
   await wait(400);
-  ok('opening Library renders the list itself', win.document.getElementById('listPane').children.length > 0);
+  const paneAfter = win.document.getElementById('listPane').children.length;
+  const paneText = win.document.getElementById('listPane').textContent || '';
+  ok('opening Library renders the list itself', paneAfter > 0, 'rows=' + paneAfter);
+  ok('the app booted with its library', paneText.indexOf('Song 0') !== -1 && paneText.indexOf('Song 2') !== -1,
+    paneText.replace(/\s+/g, ' ').slice(0, 90));
+
+  // ---- the first list render is timed for the startup profile ----
+  const bootProfile = typeof win.__scBootProfile === 'function' ? win.__scBootProfile() : null;
+  ok('the first list render is recorded with its cost', !!(bootProfile || {}).list,
+    ((bootProfile || {}).list || 'none') + '');
+
+  // ---- the startup stopwatch itself ----
+  const prof = bootProfile;
+  ok('a startup profile was recorded', !!(prof && prof.marks && prof.marks.length));
+  const labels = prof ? prof.marks.map((m) => m[0]).join(' | ') : '';
+  ok('it starts before the app script was parsed/compiled',
+    /page ready: script parsed/.test(labels), labels.slice(0, 80));
+  ok('it times the library read', /library read from storage/.test(labels));
+  ok('and it ends with the whole of boot',
+    /boot: DONE/.test(labels) && prof.marks[prof.marks.length - 1][1] >= 0, labels.slice(-60));
+  if (prof) {
+    console.log('    profile table:');
+    prof.marks.forEach((m, i) => console.log('      +' + m[1] + 'ms' + (i ? ' (+' + (m[1] - prof.marks[i - 1][1]) + 'ms)' : '') + '  ' + m[0] + (m[2] ? '  · ' + m[2] : '')));
+  }
+
+  // ---- and it is readable from the notification bell, in one tap ----
+  // One tap on the bell, exactly as the user does it.
+  win.document.getElementById('notifBtn').dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  await wait(200);
+  const bootEntry = win.document.getElementById('notifBootEntry');
+  const bootDetail = win.document.getElementById('notifBootDetail');
+  ok('the bell shows a startup row', !!bootEntry, bootEntry ? bootEntry.textContent.slice(0, 40) : 'missing');
+  ok('the row is collapsed by default', !!bootDetail && bootDetail.style.display === 'none',
+    bootDetail ? bootDetail.style.display : 'missing');
+  ok('and it carries every phase of the profile',
+    !!bootDetail && /script parsed/.test(bootDetail.textContent) && /boot: DONE/.test(bootDetail.textContent),
+    bootDetail ? bootDetail.textContent.replace(/\s+/g, ' ').slice(0, 80) : 'missing');
+  if (bootEntry) {
+    bootEntry.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    ok('tapping it opens the breakdown', bootDetail.style.display === 'block', bootDetail.style.display);
+  }
 
   // ---- nothing broke ----
   ok('no boot errors', A.errors.length === 0, A.errors.join(' | ').slice(0, 200));
@@ -319,7 +392,7 @@ async function boot(opts) {
   const H = await boot({ native: true, snapshotFile: { v: 1, localStorage: {}, meta: {} } });
   console.log('    healthy native boot: recovery file opened ' + H.counters.snapFileReads + '× (all plugin reads: ' + H.counters.fileReads + ')');
   ok('a healthy boot never opens the recovery file', H.counters.snapFileReads === 0, H.counters.snapFileReads + ' path=' + H.counters.readPaths.join(','));
-  H.fireIdle();
+  H.win.navigate('library');
   await wait(300);
   ok('and it still boots its library',
     (H.win.document.getElementById('listPane').textContent || '').indexOf('Song 1') !== -1);

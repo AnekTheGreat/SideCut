@@ -803,13 +803,28 @@
   // The page records the pin it honoured (sidecut_pinned_snapshot), so when the
   // installed bundle is NEWER than the page we are looking at, and a pin is what
   // put us here, the pin is dropped and the newest version runs.
-  function detectPinnedOlderPage(Updater){
+  function detectPinnedOlderPage(Updater, waited){
     try{
       if(!Updater || typeof Updater.current !== 'function') return;
       var pinned = null;
       try{ pinned = localStorage.getItem('sidecut_pinned_snapshot'); }catch(e){}
-      var pageV = currentVersion();
-      if(!pinned || !pageV || String(pinned) !== String(pageV)) return; // not a pinned snapshot view
+      if(!pinned) return; // nothing was ever pinned, so nothing can be masked
+      // The page's own version, from a source the APP wrote -- never the label.
+      // The markup ships a stale placeholder ("SideCut v48") for any boot that has
+      // not finished, and this runs from the updater's own module, which the
+      // parser reaches BEFORE the app's much larger script has run.
+      //
+      // This check used to run once, right here, against the label: it compared
+      // the pin with 48, gave up for good, and left a pinned old page and a newer
+      // installed bundle fighting across every launch (install, swap back,
+      // install -- the restart loop it exists to stop). "Not yet" is not "no".
+      var pageV = appReportedVersion();
+      if(!pageV){
+        waited = waited || 0;
+        if(waited < 10000) setTimeout(function(){ detectPinnedOlderPage(Updater, waited + 250); }, 250);
+        return;
+      }
+      if(String(pinned) !== String(pageV)) return; // not a pinned snapshot view
       Updater.current().then(function(cur){
         if(!cur || !cur.id || String(cur.id) === 'builtin') return;
         var bundleV = String(cur.version || '');

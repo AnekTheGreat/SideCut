@@ -1,5 +1,123 @@
 # SideCut — repository memory
 
+## 63.0.8 (Sep 26, 2026, second half): "why does it take up 4.53 gb"
+- **No new version.** This folded into the unreleased **63.0.8** (`APP_VERSION`, the `sw.js` cache `63.0.9`, the changelog
+  DATE `September 26, 2026 · 2:12 PM EDT` and every test repin stay exactly where patch-642 put them — `dev/test-6052.mjs`
+  pins that date literally). Only the head entry's TEXT changed, still **exactly six** items, so both OTA bundles were
+  rebuilt at v63.0.8 / 6 notes and root `manifest.json` re-seeded.
+- **Cause 1 — the export leak (the real gigabytes).** `streamZipToCapacitor()` streams the WHOLE library into the app's own
+  `CACHE` directory so the share sheet can have a URI, and **only the failure path ever called `deleteFile`** (there was
+  exactly one `deleteFile` in the file, inside the `catch`). Exporting a 4 GB library left 4 GB in app storage for good,
+  counted by Android and invisible from inside the app (it is not in `navigator.storage.estimate()`). Now: a 90 s grace
+  `setTimeout` deletes the cache copy right after the share/copy-out block, and `scCleanOwnCache()` sweeps leftovers.
+  **Guard against sweeping too much:** only `CACHE`, only names matching `/^sidecut-(songs|library)\.zip$/i`, and skip
+  anything whose `stat.mtime` is under 3 minutes old (never pull a file out from under an open share sheet).
+- **Cause 2 — a duplicate function name shadowing a real one.** There were TWO `scFmtBytes` in the same script scope: the
+  Storage panel's labelled one and an older bare-number one lower in the file. Function declarations hoist and the **LAST
+  wins**, so the panel printed `13.8` where it meant `13.8 MB`. Deleted. Lesson for a 39k-line single scope: `grep -c` a
+  helper name before adding it, and when a panel shows a number with its unit missing, suspect a second definition.
+- **Cause 3 — nothing told the user what storage was FOR.** Settings → More now has a collapsible **Storage** block:
+  `renderStoragePanel()` (music/covers/rollback copies/settings/localStorage/leftover export zips/`estimate()`), the
+  `collapsibleStorage` + `#storagePanelBody` + `#storageRefreshBtn` + `#storageFreeUpBtn` wiring, and `scFreeUpSpace()`
+  (prune + clear `discPopupCache_*` + `scCleanOwnCache`, then report what was freed in the panel and a toast).
+- **The regression this batch caught in itself (read this one twice).** patch-643 put `scPruneVersionSnapshots()` in the
+  settings pass. It decided "newest" from `savedAt`, i.e. it **deserialised every ~2.4 MB rollback row at boot** — the exact
+  cost 63.0.7 removed (measured by `dev/boot-639-check.cjs`: 29.9 MB read, 13 page-sized rows handed to callers, where the
+  target is 0 and 0) — **and it silently deleted the user's rollback history**, which the version picker exists to list
+  (the probe went 39/39 → 5 failures). Fix (patch-645): order comes from the **KEYS** (`versionSnapshot_<ver>` + a dotted
+  `scCompareVersions`), the only automatic prune is a runaway guard at `SC_SNAPSHOT_HARD_CAP = 24` runs (~58 MB) scheduled
+  with `scRunWhenIdle` (key-only, off the boot turn), and trimming to `SC_SNAPSHOT_KEEP = 6` happens ONLY from Free up
+  space. **Lesson: after a later patch in the same batch touches a path an earlier probe already covers, re-run that
+  probe — 643 shipped a boot regression that only boot-639 could see.**
+- **`dev/storage-usage-check.cjs`** (new, 34 checks; fails 24 against HEAD and 6 against 63.0.8-before-644, so it reproduces
+  the report in both directions). Harness traps, all of which cost a debugging round:
+  - `window.allTracks` is **not** exposed — use `window.__scGetAllTracks()`.
+  - jsdom's `HTMLMediaElement.prototype.play()` returns `undefined`, so the app's `a.play().catch(…)` throws
+    `Cannot read properties of undefined (reading 'catch')`. Stub it to dispatch a `play` event and return a resolved
+    promise; stub `pause` too.
+  - A play is only COUNTED via `commitPlay`, which needs the `ended` event on **`#audioEl`** (not `#audio`), and the sidecar
+    row lands after its 700 ms debounce — call `__scSidecarFlush()` before reading it.
+  - The fake IndexedDB must implement **`getAllKeys`** or the key-only prune silently no-ops (and boot-639's fake must too,
+    or the guard path is never exercised).
+- **Numbers for the answer** (jsdom, 3 songs + 12 versions of history): meta read during boot **29.9 MB → 0.0 MB**, rollback
+  rows handed to callers **13 → 0**, one play: **0** track-record writes (was 1 whole song, ~6 MB re-serialised), leftover
+  export zip **4 MB removed**, panel sizes now carry units (`3 KB`, `13.8 MB`, `775 B`).
+- **Cause 4 — a timing bug the SAME batch introduced, in the OTA client.** `dev/ota-guard-check.cjs` went 20/20 → 17/20
+  once patch-641 landed (bisected: HEAD+641 already fails; `SC_HTML=/tmp/pre643/index.html` proves it is not 643).
+  `detectPinnedOlderPage()` in `dev/native-updates.js` is what stops a pinned old page and a newer installed bundle
+  fighting across launches; it runs ONCE from its own `<script>` tag, and it asked `currentVersion()` — whose last resort
+  is the version LABEL, which ships as the stale placeholder "SideCut v48". `native-updates.js` is a separate tag, so its
+  ledger-read → ledger-write promise chain can finish **before the app's 2 MB inline script has run**: the guard compared the
+  pin with `48`, mismatched and gave up for good. Fix (patch-646): ask `appReportedVersion()` (the app's own constant /
+  dataset, never the label) and treat "the app has not run yet" as **not yet** — retry every 250 ms up to 10 s.
+  Debugging route worth remembering: jsdom's `VirtualConsole` does NOT forward the page's `console.log` to stdout, so
+  instrument a probe by writing markers to `localStorage` and reading them after boot; and `SC_OTA=/tmp/ota-debug.js` lets a
+  probe run against an instrumented COPY of the client without touching the repo.
+- **Probe files touched**: `dev/boot-639-check.cjs` (45 checks now — added `opts.history`, `getAllKeys` in the fake, and the
+  runaway-guard block), `dev/storage-usage-check.cjs`, `dev/ota-guard-check.cjs` (20 checks, the pinned-page block), plus
+  `dev/patch-644.mjs` / `dev/patch-645.mjs` / `dev/patch-646.mjs`.
+- **Tooling note**: `str_replace`/`write_file` will not touch `dev/native-updates.js` in this environment (the file tools
+  only resolve the four indexed root files plus files they created), so part of the batch — and 646 — edits it from Node
+  inside a `dev/patch-*.mjs`. Same is true of any other long-standing file the editor cannot see.
+
+## 63.0.8 (Sep 26, 2026): startup gets measured on the phone, and two more launch-time costs go
+- **Shipped number**: **63.0.8** — a step inside the 63 line. `sw.js` cache name → **`63.0.9`** (own number, decoupled).
+  Head CHANGELOG entry written as **exactly six** notes; `ota/` + `ota-play/` rebuilt at **v63.0.8 / 6 notes** (both
+  `--check` OK), root `manifest.json` re-seeded (`--manifest`).
+- **The user's words**: "Its better but still takes forever to load" — i.e. 63.0.7's 174.2 MB → 0.0 MB of launch reads
+  was real but not sufficient. **The lesson: once the measurable defect is gone, what is left of startup is device-only**
+  — the WebView parsing a 2.37 MB page (2.06 MB of it inline JS), blob-backed IndexedDB reads, image decoding — and a
+  desktop/jsdom profile CANNOT attribute it. So this release mostly ships the measurement.
+- **The boot stopwatch** (the part worth remembering):
+  - `window.__scBootClock` is stamped by its own **one-line `<script>` placed BEFORE the app's script block**, so the first
+    mark inside block 1 is exactly `parse + compile + all top-level set-up` — the one cost no desktop profiler can
+    attribute honestly. **This made the file have 6 inline script blocks instead of 5**, and `dev/v609-check.cjs` asserted
+    `blocks.length === 5` (re-pinned to 6 with the reason in the probe).
+  - `scBootT(label, note)` / `scBootPersist()` / `scBootRead()` live immediately above the boot IIFE (`scBootMarks`),
+    with `window.__scBootProfile()` and `window.__scBootT`. The last launch is kept in `localStorage['scBootProfile']`,
+    logged as ONE console line, and rendered in the notifications panel as `#notifBootEntry` → `#notifBootDetail`
+    (`bootProfileNotifHtml()`, tap to expand). One tap on the bell, no test mode, no console needed.
+  - Marks: `page ready: script parsed, compiled and set up` · `boot: notification state read` · `boot: settings + theme
+    applied` · `boot: recovery check done` · `boot: library read from storage` (with `N songs, M ms`) · `boot: library
+    built` · `boot: tabs rendered` · `boot: Home on screen` · `boot: enrich state + pinned artists read` · `boot: DONE`,
+    plus `list: first render (opening Library, not boot)` with its ms and row count.
+- **The two launch-time costs removed** (certain whatever the numbers say):
+  - **The list render no longer runs at startup at all.** 63.0.7 moved it to the first idle slice; it is still the
+    heaviest thing the app builds (a row and a cover per song) and it was built for a screen the app never shows — boot
+    always lands on Home, and `navigate('library')` has always called `renderList()` itself. The idle slice now does
+    `updateNotifBadge()` instead (that walks the whole library for duplicates and nothing on screen needs it in the same
+    frame).
+  - **The restored song is no longer analysed at launch.** `restorePlaybackState()` called
+    `applyNormalizedGain(track, activeIdx)`, and with `autoVolumeEnabled` (default ON) and `t.gain == null` that schedules
+    `estimateGain()` → `scDecodeTrack()` → **a full `decodeAudioData` of the whole song inside the boot turn**, for a track
+    restored paused that may never be played. Now `applyNormalizedGain(t, idx, { skipMeasure: true })` applies the stored
+    gain but never starts a decode; a real play measures it exactly as before (`playCurrent` calls it without the flag —
+    note it applies gain/EQ BEFORE `a.play()`, so "skip while paused" would have broken the feature outright).
+- **`dev/boot-profile.cjs`** (new): injects the phase hooks into a COPY of index.html in /tmp and prints a phase table for
+  a seeded library (`TRACKS` / `HISTORY` env, default 600/12). Shape on 300 tracks in jsdom: page ready 103 ms,
+  notification 74, theme 123, library read 1 ms, Home on screen 317, DONE 359, first list render (Library opened) 16 ms
+  for 4 rows. Its counters had the same trap as the other probe: a rollback row's value is an OBJECT (`{version, html,
+  savedAt}`), so a naive `value.length` reports "0.0 MB" — size it via the `html` string. Missing anchors are skipped, not
+  thrown, so it can be pointed at an older build.
+- **A trap that cost real time, recorded so it doesn't again**: in `boot()` the recovery step is
+  `try{ await Promise.race([...]); }` on one line and `catch(e){...}` on the next — **the try's closing brace is at the END
+  of the try line**, so an anchor of `      }catch(e){ ... }` finds 0 occurrences. I "fixed" the anchor but left the `}` in
+  the *replacement*, which left a stray brace and broke block 1 (`Missing catch or finally clause`). **The only thing that
+  caught it was `dev/test-6044.mjs`'s acorn pass over every inline script** — jsdom just failed silently through the boot
+  catch and the probe reported a half-booted app. Fix idiom now in the patch: a tolerant repair step
+  (`if (src.indexOf(broken) !== -1) { swap }`) so it converges from the broken intermediate state AND from clean HEAD.
+- **Shared-channel note rule hit again**: notes must not contain `download` / `converter` / `convert` (test-617..620,
+  test-60510). Wrote "the two pieces that load from the network" instead of "the app downloads".
+- **Verification for this batch**: all **28 `dev/test-*.mjs`** green, `check-dom` **0 failures**, `boot-639` **39/39**
+  (and **29/9 against the shipped 63.0.7 build**, which is the batch's own reproduction) — including checks that the bell
+  row exists, is collapsed, carries every phase and expands on tap. `batch-635` 42/42, `report-637` 29/29, `report-634`
+  31/31, `v609` 50/50, `native-snapshot` 13/13, `storage-recovery` 17/17, both OTA `--check`s OK. Clean-tree convergence:
+  patch-641 = 17 edits then 0, patch-642 = 2 edits, and the result is byte-identical to the working tree. Pre-existing and
+  unchanged (verified against HEAD): `v612` 62/65, `v613` 63/70, `v60` 60/2, `v603` 25/2, `v604` 44/2, `v606` 41/6,
+  `v607` 46/2, `media-controls` 18/1, `ota-update` 48/2.
+- **Still unmeasured, honestly**: the phone's own numbers. That is what the stopwatch is for — the next round of startup
+  work should read `window.__scBootProfile()` from the user's device and target whichever phase dominates there.
+
 ## 63.0.7 (Sep 26, 2026): boot stopped reading every copy of the app it had ever kept
 - **Shipped number**: **63.0.7** — a step inside the 63 line. `sw.js` cache name → **`63.0.8`** (its own number, decoupled).
   Head CHANGELOG entry written as **exactly six** notes; `ota/` and `ota-play/` both rebuilt and both carry **v63.0.7 / 6

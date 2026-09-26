@@ -215,6 +215,8 @@ function ledgerWith(o) {
     runningVersion: NEXT,                       // the BUNDLE is newer than the page…
     localStorage: { sidecut_pinned_snapshot: APP }, // …because a pin put this older page on screen
   });
+  console.log('    pinned page: page=' + P.win.APP_VERSION + ' pin=' + P.win.localStorage.getItem('sidecut_pinned_snapshot') +
+    ' installed=' + NEXT + ' -> clear flag ' + P.win.localStorage.getItem('sidecut_ota_pin_clear'));
   ok('the masking pin is detected', P.win.localStorage.getItem('sidecut_ota_pin_clear') === '1');
   ok('the staged bundle is taken off the updater so it stops swapping in', P.calls.next.length >= 1, JSON.stringify(P.calls.next));
   // jsdom cannot run a real page reload, so the reload is observed the only way it
