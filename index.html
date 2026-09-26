@@ -11033,7 +11033,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.0.3';
+  const APP_VERSION = '63.0.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11448,6 +11448,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.0.4', date: 'September 26, 2026 · 10:21 AM EDT', title: 'A date you set with the pencil stays — and the days nothing ever published are off the old albums', items: [
+    'A release date or track count you set with the pencil on an album in 📀 Album History now stays. The list keeps a snapshot of itself so it opens instantly, and that snapshot was being shown instead of your change — both right after saving and on every reopen, which is why editing looked like it did nothing.',
+    'That snapshot is now stamped with your edits and the app version it was drawn from, so a list drawn before a change (or by an older build) is redrawn from the albums themselves instead of being shown as it was.',
+    'Saving also throws the snapshot away outright, so the row you just edited is redrawn from the data immediately rather than from the picture.',
+    'The old albums no longer wear a day nothing published. An album only the discography guide knew about was given a date that guide made up, and two different albums could wear the same 2008-04-24. Those albums now show the year the stores and catalogs agree on, and the pencil is there when you know the exact day.',
+    'The invented days already stored on your phone are cut to their year as the list is drawn, so this is right on the next open instead of waiting for every artist to be read again.',
+    'Everything else about the list is untouched: the order you dragged the albums into, the covers you added and the albums you removed are all still where you left them.',
+  ] },
   { version: '63.0.3', date: 'September 26, 2026 · 1:59 AM EDT', title: 'The album edit sheet opens where you can see it \u2014 and old albums stop wearing a date nothing ever published', items: [
     'The pencil on an album in \ud83d\udcc0 Album History now opens a sheet at the bottom of the screen. It used to open inside the list, at the top of the scrolling list, so on a long list scrolled down it appeared far above the screen and tapping it looked like it had done nothing. Release date and track count, Save and Cancel, and a tap outside closes it.',
     'Saving says what actually happened: an album with no catalog id now tells you so instead of closing and reporting the date as saved, and a form you have not changed says there was nothing to save.',
@@ -27679,7 +27687,12 @@ window.__refetchAlbums = async function(wasRefetch){
           // Invalidate old caches without per-artist refetch buttons
           if(ahCached.body.indexOf('dp-ah-artist-refetch') === -1){ localStorage.removeItem('discPopupCache_\ud83d\udcbf Album History'); ahCached = null; }
           // Skip cached empty states — always re-fetch fresh data
-          if(ahCached && !/dp-empty|No albums found/i.test(ahCached.body) && ahCached.pins === _ahPinsSig && ahCached.body.indexOf('background-size:contain') !== -1){
+          if(ahCached && !/dp-empty|No albums found/i.test(ahCached.body) && ahCached.pins === _ahPinsSig && ahCached.body.indexOf('background-size:contain') !== -1 && typeof window._ahPopupCacheSig === 'function' && ahCached.ahSig === window._ahPopupCacheSig()){
+            // The stamp says which edits and which build this list was drawn from
+            // (see _ahPopupCacheSig). One that no longer agrees is dropped by the
+            // else below and the list is drawn from the data instead — so a date
+            // you set, and a day that no catalog ever published, both show the
+            // moment the list is opened, without a refetch.
             var _ahBody2 = ahCached.body;
             if(_ahBody2.indexOf('ahRefetchBtn') === -1) _ahBody2 = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;"><button id="ahRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch albums</button><button id="ahRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + _ahBody2;
             openDiscoverPopup('📀 Album History', _ahBody2, ahCached.subtitle || '');
@@ -35170,7 +35183,30 @@ function restoreSingle(trackId){
 }
 function getHiddenSingles(){ try{ return JSON.parse(localStorage.getItem('sidecut_hiddenSingles') || '[]'); }catch(e){ return []; } }
 function getAlbumEdits(){ try{ return JSON.parse(localStorage.getItem('sidecut_albumEdits') || '{}'); }catch(e){ return {}; } }
-function saveAlbumEdit(collectionId, field, value){ var edits = getAlbumEdits(); if(!edits[collectionId]) edits[collectionId] = {}; edits[collectionId][field] = value; localStorage.setItem('sidecut_albumEdits', JSON.stringify(edits)); }
+function saveAlbumEdit(collectionId, field, value){ var edits = getAlbumEdits(); if(!edits[collectionId]) edits[collectionId] = {}; edits[collectionId][field] = value; localStorage.setItem('sidecut_albumEdits', JSON.stringify(edits)); window._ahDropPopupCache(); }
+// 📀 Album History keeps a snapshot of the list it last drew, and its open path
+// renders that snapshot instead of drawing from the data. An edit made after the
+// snapshot was taken is therefore invisible — the row you changed comes back as
+// it was, on the repaint AND on every reopen, which reads as "album editing
+// doesn't save after I close album history". Two ends fix it: saving drops the
+// snapshot outright, and every snapshot carries this stamp, so one drawn before
+// a change (or by a build that drew it differently) is never served either.
+//
+// ON WINDOW rather than a local declaration, deliberately: this file is built
+// from block-scoped sections, so a plain function declaration here is invisible
+// where the snapshot is written and read (the popup open path and
+// openDiscoverPopup), and those calls throw straight into their own try/catch.
+// Measured while writing this: declared locally, the Album History snapshot
+// stopped being written AT ALL, so the popup rebuilt from the data every open.
+window._ahPopupCacheSig = function(){
+  var _e = '{}';
+  try{ _e = localStorage.getItem('sidecut_albumEdits') || '{}'; }catch(_){}
+  return _e + '|' + ((typeof window !== 'undefined' && window.APP_VERSION) || '');
+};
+window._ahDropPopupCache = function(){
+  try{ localStorage.removeItem('discPopupCache_📀 Album History'); }catch(_){}
+  try{ localStorage.removeItem('discPopupCache_' + '📀 Album History'); }catch(_){}
+};
 function isSingleHidden(trackId, trackName){ var h = getHiddenSingles(); var tid = String(trackId); if(tid){ for(var i=0;i<h.length;i++){ if(String(h[i]) === tid) return true; } } if(trackName){ var t = (trackName||'').toLowerCase().replace(/[^a-z0-9]/g,'').trim(); if(t){ for(var j=0;j<h.length;j++){ if(h[j] === 't:' + t) return true; } } } return false; }
 function hideSingle(trackId, trackName){
   // Record in recently deleted singles (30-day retention)
@@ -36420,7 +36456,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
   try{ if(typeof window.setupGroupReorderByContext==='function') window.setupGroupReorderByContext(); }catch(_sc){}
   var _pinSig = '';
   try{ if(typeof window.getPinnedArtists === 'function'){ var _pa = window.getPinnedArtists() || []; _pinSig = _pa.map(function(p){ return (p&&p.name||'').toLowerCase().trim(); }).sort().join('|'); } }catch(_pe){}
-  try{ if(title && bodyHTML && !/fetching|loading|spinner|dp-empty|No albums found|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now(),pins:_pinSig})); } }catch(e){}
+  try{ if(title && bodyHTML && !/fetching|loading|spinner|dp-empty|No albums found|⏳/i.test(bodyHTML)){ localStorage.setItem('discPopupCache_' + title, JSON.stringify({title:title,body:bodyHTML,subtitle:subtitle||'',ts:Date.now(),pins:_pinSig,ahSig:(title==='📀 Album History' && typeof window._ahPopupCacheSig==='function' ? window._ahPopupCacheSig() : '')})); } }catch(e){}
   // Singles & Album History: when more than 6 pinned artists are listed, cap the
   // popup to a comfortable height and force an explicit scrollbar so the list
   // scrolls inside the card instead of filling the whole screen. Under 6 the

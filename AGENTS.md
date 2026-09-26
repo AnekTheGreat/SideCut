@@ -1,5 +1,54 @@
 # SideCut — repository memory
 
+## 63.0.4 (Sep 26, 2026): a saved album date sticks, and the invented days stop being served from the list's snapshot
+- **Shipped number**: **63.0.4** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.5`** (its own
+  number, decoupled; see the sw.js note below).
+- **The user's words**: "Album editing doesn't save after I close album history, and why do my older albums have the wrong
+  date".
+- **Both are ONE defect, and it is not in the save.** The edit really was written (`sidecut_albumEdits`) and the renderer
+  really does read it back (`var _ae = getAlbumEdits()[ahAlb.collectionId]`, index.html ~28156). What swallowed it is the
+  popup's **own HTML snapshot**: `openDiscoverPopup` stores the body it drew under `discPopupCache_📀 Album History`
+  (index.html ~36444), and the Album History open path in `window.__refetchAlbums` (the `!wasRefetch` branch, ~27680)
+  renders that stored HTML **verbatim and returns** — no renderer runs at all. So (a) the pencil's Save repainted the
+  picture of the list as it looked *before* the edit, and every close-and-reopen served that same picture — exactly
+  "editing doesn't save after I close album history"; and (b) the invented day that 63.0.3 cut to its year inside
+  `_dedupAlbums` was **just as invisible**, because a snapshot never goes near `_dedupAlbums`. Same cause behind both
+  complaints, which is why they arrived together.
+- **The fix — stamp the snapshot, and never serve one that disagrees**: `window._ahPopupCacheSig()` (the album-edits JSON
+  plus `window.APP_VERSION`) is stamped onto every Album History snapshot as `ahSig` as it is written, and the open path
+  now requires `ahCached.ahSig === window._ahPopupCacheSig()`. A mismatch (an edit made since, or a snapshot an older
+  build left on the phone) falls through to the artist-data branch, which draws from the data — your edits, and the
+  invented days cut to their year — with no refetch. `saveAlbumEdit` also drops the snapshot outright
+  (`window._ahDropPopupCache()`), so the repaint that Save itself triggers is drawn from the data too.
+- **The gotcha that cost a rewrite (recorded so it is not repeated)**: those two helpers MUST be **window properties**.
+  index.html is assembled from block-scoped sections, so a plain `function` declaration next to `saveAlbumEdit` is
+  invisible where the snapshot is written and read; the call then throws straight into that region's own `try/catch` and
+  the snapshot **stops being written at all** (measured: zero `discPopupCache_*` keys after a render). The reader is also
+  written to fail **safe** (`typeof window._ahPopupCacheSig === 'function' && …`), so if the helper ever goes missing the
+  snapshot is dropped rather than trusted.
+- **A second silent trap, in the release script itself**: the head CHANGELOG `ENTRY` in `dev/patch-633.mjs` carries REAL
+  characters (the em dash and the 📀) instead of `\uXXXX`. Inside a template literal those escapes need a double
+  backslash to survive into index.html, and getting it wrong is invisible in the file — the note is stored and **shown**
+  as the literal text `\ud83d\udcc0`. Check it by evaluating the changelog out of index.html (the same `eval` the tests
+  use) and reading the rendered notes in `ota/updates.json`, never by eyeballing the source.
+- **Mechanics**: `dev/patch-632.mjs` (3 count==1-markered index.html edits: the stamp+drop helpers beside `saveAlbumEdit`,
+  the `ahSig` stamp in the snapshot writer, the stamp check in the reader), then `dev/patch-633.mjs` (`APP_VERSION` →
+  **63.0.4**, new head CHANGELOG entry in front of the 63.0.3 one, `sw.js` → `63.0.5`, **29 repins**), then
+  `dev/ota-bundle.mjs` + `dev/ota-bundle-play.mjs`, then `--manifest`. Final state: `ota-bundle` v63.0.4 · 694920 bytes,
+  `ota-bundle-play` v63.0.4 · 694927 bytes, both `--check OK`; all three zips carry `APP_VERSION = '63.0.4'` and
+  `CACHE_NAME = 'sidecut-shell-v63.0.5'`. **`dev/patch-633.mjs` is self-healing**: its changelog step REPLACES an
+  existing 63.0.4 entry instead of skipping it, so a rerun after a text fix corrects it (the rerun reported `0` repins
+  and only `CHANGELOG head entry (replaced)`).
+- **New probe**: `dev/ah-edit-persist-check.cjs` (17 checks). It lets the app draw and store a snapshot of its own first
+  (so the pin signature it stamps in is the real one, read back rather than guessed), then swaps that snapshot's body for
+  the pre-edit picture an older build would have left behind — no `ahSig` at all — asks for the list again, saves a date
+  with the pencil, closes the popup and reopens it. **Against the pre-patch build 7 of them fail**
+  (`SC_HTML=/tmp/index.630.before.html`), and the screen shows `Dil 2008-04-24` plus `Chocolate 2008-02-01` no matter what
+  was saved: the report, reproduced.
+- **Verified**: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `ah-album-edit-check.cjs` 42/42,
+  `ah-album-reorder-check.cjs` 34/34, `album-hold-check.cjs` 34/34, `ah-edit-persist-check.cjs` **17/17** with no jsdom
+  errors, both channel `--check`s OK.
+
 ## 63.0.3 (Sep 26, 2026): the album edit sheet opens on screen, and old albums stop wearing an invented date
 - **Shipped number**: **63.0.3** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.4`** (its own
   number, decoupled; see the sw.js note below).
