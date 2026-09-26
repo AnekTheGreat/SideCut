@@ -1,15 +1,21 @@
 # SideCut — repository memory
 
-## 62.1 (Sep 26, 2026): the Album History album drag, re-shipped above the 63 bundle
+## 63.0.1 (Sep 26, 2026): the Album History album drag — the release that finally reaches a 63 phone
+- **Shipped number**: **63.0.1**. It went out as `62.1` first and was renumbered at the user's direction
+  ("Release no.: 63.0.1") after they reported "I don't see the update" — see the next bullet for why 62.1 could never
+  appear. The changelog entry, title and notes are **unchanged**; only the number and the ship stamp moved.
 - **The user's words**: "I didnt get the update I need these able to reorder by me holding and dragging them it should be
-  smooth bump ver to v62.1 patch notes". Asked which version the phone showed and which number to ship, they answered
-  **phone = 63** and **release = 62.1**.
+  smooth bump ver to v62.1 patch notes", then "I don't see the update", then "Release no.: 63.0.1". Asked which version the
+  phone showed they answered **phone = 63**.
 - **Why 62.0.5 never arrived — the 63 trap, in full**: the OTA automation published a bundle numbered **63** *before* the
   62.0.5 release (`989d176 "Publish OTA bundle 63"`), and `dev/native-updates.js` applies one rule everywhere:
   `isOlderBundle(v)` → `compareVersions(v, currentVersion()) < 0` → refuse (lines ~194, ~499, ~570, ~652, ~1073, ~1201).
-  A phone that ran 63 therefore silently refuses 62.0.5. 62.1 is the same feature carrying a number above it. **62.1 is
-  still below 63**, so a 63 device will refuse this one too — only a number above 63 (e.g. 64) or a fresh install actually
-  reaches it. That caveat was stated to the user before shipping and they chose 62.1 anyway.
+  A phone that ran 63 therefore silently refuses 62.0.5 — and it refused **62.1** too, which is exactly what "I don't see
+  the update" was. The UI gate is `updateIsNewer()` → `compareVersions(published, APP_VERSION) > 0` (index.html ~13715), so a
+  phone on 63 is shown *nothing at all* for any 62.x build; it does not even offer it. `compareVersions('63.0.1','63')` is
+  **+1**, so the same release renumbered 63.0.1 is both offered and accepted. **Rule: to reach a device, the published
+  number must be strictly greater than the number it is running — check the device's version before choosing a release
+  number.** The 62.x line cannot reach that phone; a step above 63 (63.0.1 here, or 64 with the user's consent) is required.
 - **What 62.1 actually changes in the code — one thing, and it is the "smooth" half of the report**: `updateIndex()` read
   `el.offsetHeight` and every `others[j].offsetHeight` **on every finger move**. `drive()` writes the lifted row's
   `transform` first and the reads come after it, so each move forced a synchronous re-layout of the whole list — classic
@@ -17,11 +23,13 @@
   pickup (`slotTops` + a `slotMids` midpoint per slot + `pickH`, the lifted row's own height) and a move is arithmetic
   only. The rest of the gesture (420 ms hold, finger-following row, 0.18 s neighbour slides, 56 px edge auto-scroll,
   per-artist `sidecut_ahAlbumOrder`) is untouched from 62.0.5.
-- **Mechanics**: `dev/patch-624.mjs` — 3 count==1-markered index.html edits for the drag, `APP_VERSION` → `62.1`, the new
-  CHANGELOG head entry inserted **in front of** the 62.0.5 one, 24 test repins, and `--manifest` to re-seed the root
-  `manifest.json`. `sw.js` is not touched by patch-624 — it carries its own cache number, advanced separately by
-  `dev/patch-625.mjs` (see the section below). Bundles were rebuilt after both scripts: `ota-bundle` v62.1,
-  `ota-bundle-play` v62.1, both `--check OK`.
+- **Mechanics** — three scripts, run in this order:
+  `dev/patch-624.mjs` (3 count==1-markered index.html edits for the drag, `APP_VERSION` → `62.1`, the new CHANGELOG head
+  entry inserted **in front of** the 62.0.5 one, 24 test repins), then `dev/ota-bundle.mjs` + `dev/ota-bundle-play.mjs`,
+  then `--manifest`. `dev/patch-625.mjs` advances only the sw.js cache name (62.0.5-era → `63.0.1` → **`63.0.2`**), and
+  `dev/patch-626.mjs` renumbers the release `62.1` → **`63.0.1`** by rewriting the head entry's version and date in place.
+  Final state: `APP_VERSION` 63.0.1, `sw.js` cache name `sidecut-shell-v63.0.2`, `ota-bundle` v63.0.1 · 687075 bytes,
+  `ota-bundle-play` v63.0.1 · 687087 bytes, both `--check OK`.
 - **Verified**: 28/28 `dev/test-*.mjs`, `check-dom` 0 failures, `dev/ah-album-reorder-check.cjs` **34/34** (it grew two
   shape checks: the list is measured once at pickup, and no `offsetHeight` read survives in the move path),
   `dev/album-hold-check.cjs` 34/34. The shipped notes in `ota/updates.json` are clean of every term

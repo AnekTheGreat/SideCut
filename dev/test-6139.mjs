@@ -154,7 +154,7 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 }
 
 console.log('[11] release metadata');
-ok(ver === '62.1', 'APP_VERSION = ' + ver);
+ok(ver === '63.0.1', 'APP_VERSION = ' + ver);
 ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.2';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
@@ -165,7 +165,7 @@ ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.2';"), 'sw.js cache = si
     ok(!/play build|play version|play install/i.test(head.items.join('\n')), 'notes never name the play build');
     ok(head.date.endsWith('EDT'), 'ship date (' + head.date + ')');
   }
-  ok(entries[0].version === '62.1', '63 heads the changelog');
+  ok(entries[0].version === '63.0.1', '63 heads the changelog');
 }
 
 console.log('[12] inline script syntax');

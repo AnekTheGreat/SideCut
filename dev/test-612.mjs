@@ -66,7 +66,7 @@ ok(src.includes("_manual: true"), 'manual drops stored with the fetched shape');
 
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '62.1', 'APP_VERSION = ' + ver);
+ok(ver === '63.0.1', 'APP_VERSION = ' + ver);
 ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.2';"), 'sw.js cache = sidecut-shell-v61.5');
 const head = src.indexOf("version: '61.5'");
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.5');
