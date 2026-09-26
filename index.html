@@ -4412,8 +4412,16 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
 
 
 <div id="discPopupOverlay"><div id="discPopupCard"><div id="discPopupHeader"><button id="discPopupClose" onclick="closeDiscoverPopup()">&times;</button><div id="discPopupTitle"></div><div id="discPopupSub"></div></div><div id="discPopupBody"></div></div></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<!-- Both of these are only ever used by a user action -- JSZip to import or
+     export a .zip, lamejs to encode MP3 -- but loaded plainly they sat in
+     FRONT of this file's own script, so on a cold start nothing in the app
+     ran until two third-party requests had come back. On a slow connection
+     that wait is the whole of the slow boot. `defer` takes them off that
+     path: the app boots straight away and they arrive long before anything
+     can ask for them. Every use is already guarded (JSZip has a dynamic
+     loader fallback, lamejs is probed with typeof). -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="dev/native-updates.js"></script>
 <script>
 // ---- Upcoming-release day gate (shared by BOTH script blocks) --------------
@@ -10924,11 +10932,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
   async function loadSavedTheme(){
     try{
-      const metaRows = await dbGetAll('meta');
+      // Settings only. The rollback rows are page-sized and this sweep never
+      // looked at one -- its own check is the keyed existence test below.
+      const metaRows = await scMetaSettingsRows();
       // Save a rollback point for this version, first time it's ever run — every version stays, none get pruned.
       const versionKey = 'versionSnapshot_' + APP_VERSION;
-      const snaps = metaRows.filter(r => r.key.indexOf('versionSnapshot_') === 0);
-      if(!snaps.find(r => r.key === versionKey)){
+      // A keyed test, not a sweep of every version's page HTML: getKey()
+      // answers without deserialising the ~2.4 MB value it is asking about.
+      if(!(await dbHas('meta', versionKey))){
         dbPut('meta', { key: versionKey, value: { version: APP_VERSION, html: SHELL_SNAPSHOT_HTML, savedAt: Date.now() } });
       }
       // Load any saved custom theme BEFORE applying the saved theme, so
@@ -11158,7 +11169,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.0.6';
+  const APP_VERSION = '63.0.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11284,7 +11295,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     async function collectMeta(){
       var out = {};
       try{
-        var rows = await dbGetAll('meta');
+        var rows = await scMetaSettingsRows();
         for(var i = 0; i < rows.length; i++){
           var key = rows[i] && rows[i].key;
           if(typeof key !== 'string') continue;
@@ -11421,11 +11432,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
       try{
         if(!isNative()) return false;
         var FS = window.Capacitor.Plugins.Filesystem;
-        var res = null;
-        try{ res = await FS.readFile({ path: SNAP_NAME, directory: 'DATA', encoding: 'utf8' }); }catch(e){ return false; }
-        var snap = null;
-        try{ snap = JSON.parse(res.data || ''); }catch(e){ return false; }
-        if(!snap || snap.v !== 1) return false;
+        // NOTE: the file is NOT read here any more. This used to open and
+        // JSON.parse the whole snapshot -- every stored setting, megabytes of
+        // it -- at the top of a restore hook that boot races against a 4 s
+        // deadline, and only afterwards discover that nothing was missing.
+        // The wipe check below runs first and the file is opened only when a
+        // store really does look empty (see the read further down).
         var lsWiped = false, metaWiped = false, readOk = false;
         try{ lsWiped = localStorage.getItem(SNAP_MARKER) === null; }catch(e){ lsWiped = true; }
         try{
@@ -11450,6 +11462,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
           try{ localStorage.removeItem(RESTORE_TRIES); }catch(e){}
           return false;
         }
+        // Something really is missing, so now the snapshot is worth opening.
+        var res = null;
+        try{ res = await FS.readFile({ path: SNAP_NAME, directory: 'DATA', encoding: 'utf8' }); }catch(e){ return false; }
+        var snap = null;
+        try{ snap = JSON.parse(res.data || ''); }catch(e){ return false; }
+        if(!snap || snap.v !== 1) return false;
         var _tries = 0;
         try{ _tries = parseInt(localStorage.getItem(RESTORE_TRIES) || '0', 10) || 0; }catch(e){}
         // A restore already ran and the stores are STILL empty. Hydrate in place
@@ -11573,6 +11591,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.0.7', date: 'September 26, 2026 · 1:37 PM EDT', title: 'The startup that was reading every copy of itself it had ever kept — and the list it no longer waits for', items: [
+    'SideCut starts much faster. The reason it did not is storage the app keeps for itself: every version the app has ever run saves a whole copy of its own page so you can switch back to that version later, and none of those copies are ever deleted — deliberately. Reading your settings did not skip them. It read every one of them, and startup made that kind of read four separate times before your library was even opened, so on a phone that has been through a dozen updates startup was reading about 174 MB of page text at every single launch. It now reads only the settings it is actually asking for, which is a few kilobytes.',
+    'That is also why it kept getting worse rather than staying put. Every update adds one more copy of the page, and every launch read all of them — so the same phone started slower after an update than it did the week before, and slower again after the next one. Nothing about your rollback history has changed: every version is still kept, and switching back to one still works exactly as it did. Those copies are simply no longer dragged through every read.',
+    'The recovery file the app keeps on the device was opened and read at every launch — megabytes of it, parsed — before anything had checked whether a recovery was needed at all, and startup waits on that step. On a healthy phone that was pure waiting for a file that had nothing to say. It is now opened only when something really is missing, which is the one situation it exists for.',
+    'Two pieces the app loads from the network — the one that opens .zip files and the one that writes MP3s — used to sit in front of the app’s own code, so nothing in SideCut ran until both had come back. On a slow connection that wait is the whole of a slow start, and it happened before any part of the app was on screen. They now load alongside the app instead of in front of it, and are ready well before you tap anything that needs them.',
+    'The song list is no longer built while the app is still starting up. It is the heaviest thing SideCut assembles — a row and a cover for every song — and it was being built for a screen you were not looking at while Home was still waiting to appear. Home now draws first and the list is built straight after, so the app is on screen and usable instead of held back by it; opening Library still builds it the moment you open it.',
+    'And each song\u2019s audio and cover are opened once as your library loads, instead of three times each. Nothing you look at is different — same songs, same playlists, same settings, same covers, same rollback history — the app has just stopped doing work nobody asked it to do. Measured against the same library on the same device model, the page text read during startup went from around 174 MB to under a kilobyte, and the list is off the critical path entirely.',
+  ] },
   { version: '63.0.6', date: 'September 26, 2026 · 12:36 PM EDT', title: 'The play button a saved list kept handing back, and the one cover that had no source left to ask', items: [
     'Singles no longer shows a ▶, including on the list that is already saved on your phone. The button was gone from everything the app draws, but three separate places read a list back out of that saved copy and only one of them cleaned it — and the copy is written again from whatever list was just opened, so an old ▶ was handed on to itself, update after update. All three read it through the same cleaner now, and the popup cleans what it is given both before it draws it and before it saves it, so the list on your phone is corrected the moment it opens and cannot come back.',
     'The cover that was still blank is there: “Ishq Da Uda Ada”, 2003-02-09, by Diljit. It was the one row left, because Apple’s store has no entry for that album at all and Deezer has none either — both were asked live and both answered with nothing — which left MusicBrainz as the only place a picture could come from. It has the album: a release group dated 2003-02-09, credited to Diljit, whose front cover the Cover Art Archive serves. That is what the row shows now.',
@@ -13693,7 +13719,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     _scTutorialDone();
   });
   async function renderVersionSnapshots(){
-    const rows = (await dbGetAll('meta')).filter(r => r.key.indexOf('versionSnapshot_') === 0)
+    // Only the rollback rows, and only when the picker is actually opened:
+    // this is the one caller that wants them.
+    const rows = (await scMetaSnapshotRows())
+      .filter(r => r && r.value)
       .sort((a,b) => b.value.savedAt - a.value.savedAt);
     const list = $('versionSnapshotList');
     if(!rows.length){ list.innerHTML = '<div style="font-size:12px;color:var(--ink-dim);">No versions saved yet.</div>'; return; }
@@ -13931,7 +13960,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
   async function checkForUpdatePopup(){
     try{
-      const metaRows = await dbGetAll('meta');
+      const metaRows = await scMetaSettingsRows();
       const lastPopupRow = metaRows.find(r => r.key === 'lastSeenVersion');
       const lastPopupSeen = lastPopupRow ? lastPopupRow.value : null;
       const onboardingRow = metaRows.find(r => r.key === 'hasSeenOnboarding');
@@ -14066,7 +14095,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // until you actually open the bell, even if you already dismissed the popup.
   let notifLastReadVersion = null;
   async function loadNotifReadState(){
-    const metaRows = await dbGetAll('meta');
+    const metaRows = await scMetaSettingsRows();
     const row = metaRows.find(r => r.key === 'notifLastReadVersion');
     notifLastReadVersion = row ? row.value : null;
     // A remembered update survives restarts, so the bell stays badged until the
@@ -14276,8 +14305,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
 
   async function loadEnrichState(){
     try{
-      const rows = await dbGetAll('meta');
-      const row = rows.find(r => r.key === 'enrichAttemptedIds');
+      const row = await dbGet('meta', 'enrichAttemptedIds');
       enrichAttemptedIds = new Set(Array.isArray(row && row.value) ? row.value : []);
     }catch(e){ enrichAttemptedIds = new Set(); }
   }
@@ -15459,17 +15487,84 @@ function startLyricsAutoScroll(keepPos, noReset) {
       });
     }catch(e){ scNoteStorageError(e); console.error('Storage get failed', e); return null; }
   }
-  async function dbGetAll(storeName){
+  async function dbGetAll(storeName, range){
     try{
       const db = await openDB();
       return new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readonly');
-        const req = tx.objectStore(storeName).getAll();
+        // An optional key range is filtered by the storage layer itself, so a
+        // row outside it is never read or deserialised -- which is how the
+        // page-sized rollback rows stay out of a settings sweep entirely
+        // (see scMetaSettingsRows below).
+        const os = tx.objectStore(storeName);
+        const req = range ? os.getAll(range) : os.getAll();
         req.onsuccess = () => { scNoteStorageOk(); resolve(req.result); };
         req.onerror = () => reject(req.error);
         tx.onabort = () => reject(tx.error || new Error('read aborted'));
       });
     }catch(e){ scNoteStorageError(e); console.error('Storage read failed', e); return []; }
+  }
+
+  // ---- Meta sweeps that leave the page-sized rollback rows alone -----------
+  // Every version that has ever run saves a `versionSnapshot_<version>` row: a
+  // full copy of the app's own HTML (~2.4 MB), deliberately never pruned. A
+  // plain dbGetAll('meta') therefore deserialised every one of them, and boot
+  // made four such sweeps before the library was parsed -- so boot got slower
+  // with every update installed, for rows no caller ever looked at.
+  // A range read is filtered at the storage layer. Keys are strings and every
+  // key that starts with the prefix sorts inside that one contiguous block, so
+  // two ranges (before it, after it) cover everything a settings read wants.
+  var SC_SNAP_KEY_PREFIX = 'versionSnapshot_';
+  var SC_SNAP_KEY_MAX = SC_SNAP_KEY_PREFIX + '\uffff';
+  function scHasKeyRanges(){ return typeof IDBKeyRange !== 'undefined'; }
+  function scLooksLikeSnapshotKey(k){ return typeof k === 'string' && k.indexOf(SC_SNAP_KEY_PREFIX) === 0; }
+  // Settings and library meta: everything EXCEPT the rollback rows.
+  async function scMetaSettingsRows(){
+    if(!scHasKeyRanges()){
+      var all = await dbGetAll('meta');
+      return (all || []).filter(function(r){ return !(r && scLooksLikeSnapshotKey(r.key)); });
+    }
+    var parts = await Promise.all([
+      dbGetAll('meta', IDBKeyRange.upperBound(SC_SNAP_KEY_PREFIX, true)),
+      dbGetAll('meta', IDBKeyRange.lowerBound(SC_SNAP_KEY_MAX, true))
+    ]);
+    return (parts[0] || []).concat(parts[1] || []);
+  }
+  // The rollback rows themselves -- for the version picker, and nothing else.
+  async function scMetaSnapshotRows(){
+    if(!scHasKeyRanges()){
+      var all = await dbGetAll('meta');
+      return (all || []).filter(function(r){ return r && scLooksLikeSnapshotKey(r.key); });
+    }
+    return await dbGetAll('meta', IDBKeyRange.bound(SC_SNAP_KEY_PREFIX, SC_SNAP_KEY_MAX));
+  }
+  // Does a row exist? getKey() returns the key WITHOUT deserialising the value,
+  // which is the entire point when the value is a page of HTML.
+  async function dbHas(storeName, key){
+    try{
+      const db = await openDB();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const os = tx.objectStore(storeName);
+        if(typeof os.getKey === 'function'){
+          const req = os.getKey(key);
+          req.onsuccess = () => resolve(req.result !== undefined && req.result !== null);
+          req.onerror = () => reject(req.error);
+          return;
+        }
+        const req = os.get(key);
+        req.onsuccess = () => resolve(!!req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }catch(e){ scNoteStorageError(e); console.error('Storage key check failed', e); return false; }
+  }
+  // Run work after the first paint when the browser can tell us, so a heavy
+  // build never sits in the same turn as the screen the user is waiting for.
+  function scRunWhenIdle(fn){
+    try{
+      if(typeof requestIdleCallback === 'function'){ requestIdleCallback(function(){ try{ fn(); }catch(e){} }, { timeout: 1200 }); return; }
+    }catch(e){}
+    setTimeout(function(){ try{ fn(); }catch(e){} }, 0);
   }
 
   function saveMeta(){
@@ -15615,7 +15710,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
  async function loadFromDB(){
     const [trackRows, metaRows] = await Promise.all([
         dbGetAll('tracks'),
-        dbGetAll('meta')
+        scMetaSettingsRows()
     ]);
     // The read itself WORKED. An empty library is not a failure, and a failure is
     // not an empty library — keep the two apart from here on.
@@ -15629,13 +15724,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // Load only real audio files
     // Ignore broken Spotify-only entries that have no blob
     allTracks = trackRows
-        .map(r => ({
+        .map(r => {
+            // Restored once and re-used. This used to call restoreTrackFile()
+            // three times and restoreTrackArt() three times per song -- six
+            // File/blob wrappers for every track in the library, built before
+            // the first paint, along with two throwaway object URLs.
+            const _file = restoreTrackFile(r);
+            const _art = restoreTrackArt(r);
+            return {
             id: r.id,
-            file: restoreTrackFile(r),
+            file: _file,
             name: r.name || 'Untitled',
             artist: r.artist || 'Unknown artist',
             album: r.album || null,
-            url: restoreTrackFile(r) ? URL.createObjectURL(restoreTrackFile(r)) : null,
+            url: _file ? URL.createObjectURL(_file) : null,
             _noAudio: !r.blob,
 
             duration: r.duration || null,
@@ -15651,8 +15753,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
             releaseDate: r.releaseDate || null,
             notes: r.notes || '',
 
-            artBlob: restoreTrackArt(r),
-            artUrl: restoreTrackArt(r) ? URL.createObjectURL(restoreTrackArt(r)) : null,
+            artBlob: _art,
+            artUrl: _art ? URL.createObjectURL(_art) : null,
             
             lyrics: r.lyrics || null,
             lyricsSynced: r.lyricsSynced || false,
@@ -15660,7 +15762,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
             
             // Track if user manually edited the name/artist - watermark won't override
             manualOverride: r.manualOverride || false,
-        }));
+            };
+        });
 
 
     userAlbums = metaMap.userAlbums || {};
@@ -26432,7 +26535,12 @@ function _fallbackCopy(text){
           activePlaylist = lastPlaybackState.sourcePlaylist;
         }
         renderTabs();
-        renderList();
+        // The list is the heaviest thing boot builds -- a row and a cover per
+        // song -- and it is not the screen the app lands on (Home is). Building
+        // it on the first idle slice lets the shell and Home paint first;
+        // opening Library renders it for real anyway, because
+        // navigate('library') calls renderList() itself.
+        scRunWhenIdle(function(){ renderList(); });
         // Watermark cleaning runs only when a new song is imported (cleanOnImport
         // on the import paths) — NOT on every boot/refresh. Re-running the whole
         // library clean on every load was churning the DB + toasts every reload.
@@ -29618,7 +29726,7 @@ if(!isDiscover) stopDiscoverPreview();
   async function loadPinnedArtists(opts){
     const noRetry = !!(opts && opts.noRetry);
     let rows = null;
-    try{ rows = await dbGetAll('meta'); }catch(e){ console.error('pinned artists read failed', e); }
+    try{ rows = await scMetaSettingsRows(); }catch(e){ console.error('pinned artists read failed', e); }
     const trouble = (typeof window !== 'undefined' && window.__scStorageTrouble) ? window.__scStorageTrouble() : null;
     if(!rows || (trouble && !rows.length)){
       if(!noRetry && window.__scStorageRetry){

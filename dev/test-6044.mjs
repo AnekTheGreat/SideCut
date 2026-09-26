@@ -126,6 +126,10 @@ console.log('\n[2] pinned artists: load/save cannot wipe, renders isolated');
     return env.rows;
   };
   const dbPut = async (store, value) => { env.puts.push({ store, value }); };
+  // 63.0.7: loadPinnedArtists reads meta through the shared settings sweep, so
+  // the harness has to inject it too. It is the same stub (and the same counter),
+  // which is exactly what the sweep does on a store with no rollback rows.
+  const scMetaSettingsRows = async () => dbGetAll();
   const windowObj = { __scStorageTrouble: () => env.trouble,
                       __scStorageRetry: () => { env.retries++; env.trouble = null; } }; // next failed read re-sets it
   const primaryArtistName = (name) => name;
@@ -146,13 +150,13 @@ console.log('\n[2] pinned artists: load/save cannot wipe, renders isolated');
   };
   env.timers = [];
   const setTimeoutStub = (fn, ms) => { env.timers.push(ms); return env.timers.length; };
-  const api = new Function('dbGetAll', 'dbPut', 'window', 'primaryArtistName',
+  const api = new Function('dbGetAll', 'scMetaSettingsRows', 'dbPut', 'window', 'primaryArtistName',
     'renderPinnedArtists', 'renderNewReleases', 'updateNotifBadge', 'renderHome',
     'localStorage', 'setTimeout',
     code + '\n;return { loadPinnedArtists, savePinnedArtists,'
          + ' state: () => ({ pinnedArtists, pinnedReleases, trusted: pinnedLoadTrusted }),'
          + ' seed: (pa, pr, ok) => { pinnedArtists = pa; pinnedReleases = pr || {}; pinnedLoadTrusted = !!ok; } };'
-  )(dbGetAll, dbPut, windowObj, primaryArtistName,
+  )(dbGetAll, scMetaSettingsRows, dbPut, windowObj, primaryArtistName,
     renderPinnedArtists, renderNewReleases, updateNotifBadge, renderHome,
     localStorageStub, setTimeoutStub);
 

@@ -1,5 +1,83 @@
 # SideCut — repository memory
 
+## 63.0.7 (Sep 26, 2026): boot stopped reading every copy of the app it had ever kept
+- **Shipped number**: **63.0.7** — a step inside the 63 line. `sw.js` cache name → **`63.0.8`** (its own number, decoupled).
+  Head CHANGELOG entry written as **exactly six** notes; `ota/` and `ota-play/` both rebuilt and both carry **v63.0.7 / 6
+  notes** (`--check` OK on both), root `manifest.json` re-seeded with `--manifest`.
+- **The user's words**: "It takes way to long for the app to boot". The screenshots on this account show a ~2.9 KB/s
+  connection and a library of 60 albums / 298 singles from 7 artists — a real phone, many updates installed.
+- **What was actually slow: the rollback history, read on every meta sweep.** Every version that has ever run writes
+  `versionSnapshot_<APP_VERSION>` into the `meta` store holding `SHELL_SNAPSHOT_HTML` = `'<!DOCTYPE html>\n' +
+  document.documentElement.outerHTML` (~2.4 MB), and they are deliberately never pruned (`loadSavedTheme`, "every version
+  stays, none get pruned"). Nothing filtered them out of a read, so **boot made four full `dbGetAll('meta')` sweeps before
+  the library was parsed** — `loadNotifReadState`, `loadSavedTheme`, `loadFromDB`, `loadPinnedArtists` — plus
+  `loadEnrichState`, plus `checkForUpdatePopup` 900 ms later, plus `collectMeta` after *every* storage change while the app
+  runs. Measured with `dev/boot-639-check.cjs` on a store with 12 versions of history: **174.2 MB deserialised per boot
+  before, 0.0 MB after** (76 page-sized rows handed to callers before, 0 after). It also explains "it keeps getting
+  worse": one more row per update, in every sweep.
+- **The fix is key RANGES, not a schema change.** `dbGetAll(storeName, range)` now passes its range to `getAll(range)` —
+  the storage layer filters, so a row outside the range is **never read or deserialised at all** — and two helpers live next
+  to `dbGetAll` (line ~15462):
+  - `scMetaSettingsRows()` — everything except the rollback block, as two ranged reads: `upperBound('versionSnapshot_',
+    true)` (keys before the block) + `lowerBound('versionSnapshot_\uffff', true)` (keys after it). The prefix block is
+    exactly the keys inside `['versionSnapshot_', 'versionSnapshot_\uffff']`, which is what makes two ranges enough.
+  - `scMetaSnapshotRows()` — `bound('versionSnapshot_', 'versionSnapshot_\uffff')`, i.e. the rollback rows, and only for
+    the version picker.
+  - `dbHas(store, key)` — a keyed existence test through `getKey()`, which answers **without deserialising the value**
+    (this is how `loadSavedTheme` checks whether its own version already has a row). Falls back to `get()` when `getKey`
+    is missing.
+  - All 8 `dbGetAll('meta')` call sites now use one of these (10927, 11287, 13696, 13934, 14069, 14279, 15618, 29621 on
+    the 63.0.6 file). `loadEnrichState` became a plain `dbGet('meta','enrichAttemptedIds')`.
+  - The helper constants are `var`, not `const`: a boot-time caller must never hit a TDZ if something calls a sweep before
+    the very end of block 1 has executed.
+- **`__scSnapRestore()` opened the recovery file before checking whether anything was missing.** It read + `JSON.parse`d
+  the whole snapshot (megabytes) and only then discovered the stores were healthy — and boot races this hook against a 4 s
+  deadline. The wipe check (marker in localStorage + a keyed `dbGet('meta','idCounter')`) now runs first and the file is
+  opened only when a store really looks empty.
+- **Two CDN scripts sat in front of the app's own script** (`<script src=…jszip.min.js>`, `…lamejs.min.js`), so on a cold
+  start no app code ran until both third-party requests had come back — on a 3 KB/s connection that is the whole wait.
+  Both are now `defer`. Safe because every use is guarded: JSZip has a dynamic-loader fallback (`typeof JSZip ===
+  'undefined'` → load it, line ~20255) and lamejs is probed with `typeof` (line ~20407, falls back to WAV).
+  **`dev/native-updates.js` was checked for a parse-time JSZip use and has none** — it is left as a plain script, in order.
+- **Two more costs off the boot path**: `loadFromDB` called `restoreTrackFile(r)` 3× and `restoreTrackArt(r)` 3× per song
+  (six File/blob wrappers per track before the first paint) — now one of each, re-used; and the list render (a row + a
+  cover per song, the heaviest thing boot builds, for a screen the app does not land on) goes through a new
+  `scRunWhenIdle()` — `requestIdleCallback` with a `setTimeout(0)` fallback — instead of running inside the boot turn.
+  `navigate('library')` already calls `renderList()` itself, so nothing depends on the boot render.
+- **The probe for this batch**: `dev/boot-639-check.cjs`, 31 checks, and it **fails 13 of them against the pre-fix build**
+  (`SC_HTML=/tmp/index.before.639.html`). It has to be built to be able to tell the two apart:
+  - a **range-aware** fake IDB plus an `IDBKeyRange` polyfill (`only/lowerBound/upperBound/bound`, each exposing
+    `_r.contains(key)`); a fake that ignores ranges cannot see the difference between the builds.
+  - byte counters per sweep (`metaBytes`, `bigRowsReturned`, `snapshotRowsReturned`) and a `settingsKeys` set, so the
+    claim is "only settings were read", not "the app still works".
+  - **counting getters** on the seeded track records for `blob` / `art` (`Object.defineProperty(…, {get})`), which is how
+    the 3-per-song restore is measured rather than asserted from the source.
+  - `requestIdleCallback` captured into a queue and fired by hand: the list must be **absent** before the fire and present
+    after, which is the honest test for "off the boot turn".
+  - the native `Filesystem.readFile` stub counts **only paths matching `sidecut-snapshot.json`**: the OTA client reads its
+    own `sidecut-ota-ledger.json` during boot, so a raw read count says 1 on a healthy phone for the wrong reason.
+  - jsdom has no `URL.createObjectURL` — without a stub the whole `loadFromDB` rejects ("Auto-load failed TypeError") and
+    every later check quietly measures a half-booted app. `dev/batch-635-check.cjs` never hit this because it seeds no
+    tracks.
+- **Harness repair, same lesson as last batch**: `dev/test-6044.mjs` slices `loadPinnedArtists` into `new Function(...)`
+  with its own `dbGetAll` stub. Now that the real code calls `scMetaSettingsRows()`, that stub was bypassed and 7 checks
+  failed ("reads=0"). The harness now injects `scMetaSettingsRows` **bound to the same stub and the same counter** — the
+  sweep is exactly `dbGetAll` on a store with no rollback rows, so the assertions keep their meaning.
+- **Shared-channel changelog rule, hit again**: `test-617/618/619/620/60510` assert the head notes carry **no**
+  `\bdownload|converter|convert\b` (the Play build has none). Note 4 originally said "the app downloads" and had to be
+  rewritten to "the one that opens .zip files". Check that regex before writing the notes, not after.
+- **Pre-existing failures, verified unchanged against a pristine HEAD checkout** (`git archive HEAD | tar -x -C
+  /tmp/head639base`): `v612` 62/65, `v613` 63/70, `v60` 60/2, `v603` 25/2, `v604` 44/2, `v606` 41/6, `v607` 46/2,
+  `media-controls` 18/1 ("no longer fires every half hour"), `ota-update` 48/2 (its "service worker cache name tracks the
+  app version" assertion contradicts the deliberate decoupling, plus zip byte-determinism). Green: all **28
+  `dev/test-*.mjs`**, `check-dom` **0 failures**, `report-637` 29/29, `report-634` 31/31, `batch-635` 42/42, `v609` 50/50,
+  `storage-recovery` 17/17, `discover-singles` 37/37, `native-snapshot` 13/13, `ota-guard` 26/26, `ota-bootapply` 24/24,
+  `ota-loop` 26/26, `export-playlist` 16/16, `refresh-pin` 14/14, `ah-*` 42/34/17, `album-hold` 34/34, `dur-bubble`,
+  `lyrics-lookup` 42/42, `boot-639` 31/31. **`native-snapshot` is timing-flaky under contention** (12/13 once when four
+  jsdom suites ran back to back, 13/13 alone twice) — rerun it alone before believing a failure.
+- **The patch converged from clean HEAD**: 18 edits in `/tmp/head639`, rerun = 0 edits, result byte-identical to the working
+  tree.
+
 ## 63.0.6 (Sep 26, 2026): the ▶ that lived in the popup cache, and the one cover with no source left
 - **Shipped number**: **63.0.6** — a step inside the 63 line the phone is on. `sw.js` cache name → **`63.0.7`** (its own
   number, decoupled; a cache-buster). Head CHANGELOG entry written as **exactly six** notes; `ota/` and `ota-play/` both
