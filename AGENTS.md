@@ -1,6 +1,89 @@
 # SideCut — repository memory
 
 
+## 64.1 (Sep 27, 2026): "crop by ear, a hello the assistant knows, premium animated themes, a rail that stays put, Settings grouped, and a scroll that behaves"
+- **The user's words**, one message, eight things: "Inside the cropping I should be able to move the slider where the
+  track is playing around in order to make it easier to listen to what I'm cropping"; "All dynamic themes except for
+  glacier, rgb, RGB plus and ember and galaxy should be premium only"; "The ai is being weird and doesn't know what to
+  say to me saying hi"; "there is a weird UI glitch where the pinned artist plateau just disappears after you scroll
+  down in discover. Sometimes the pinned artists plateau just disappears"; "Make settings and more more organized"; "The
+  settings scroll wheel is being weird"; "album covers that you can select for your pinned artist should be in order
+  newest to oldest"; "Bump ver to v64.1".
+- **THE CROP SHEET CAN BE LISTENED THROUGH** (the one that needed new UI): the sheet could only play the slice
+  **already chosen** (`Preview selection`, and only if the selection was ≥ 0.5 s), and the two grab bars only move the
+  selection — so judging a crop meant cutting it, listening, undoing and cutting again. `#cropSongScrub` (a range over
+  the whole song) plus `#cropSongScrubPlay` sit between the waveform and the start/length/end labels: `input` calls
+  `cropScrubSeek(sec, false)` so **a drag only moves the line and makes no sound** (nothing is committed, and the
+  matched `#cropSongScrubTime` clock and the white `#cropSongPlayhead` line follow the thumb), `change` calls
+  `cropScrubSeek(sec, true)` so **letting go plays the song from where it was dropped**, and the button stops whatever
+  is sounding. It plays through the **same live AudioContext path** as the selection preview (`src.start(0, at)`,
+  `cropPreviewLive`, `cropPreviewT0`), so there is still one playback path to stop and one playhead to keep in step;
+  `cropPlayMode` (`'sel'` | `'song'`) is what makes the status line read `Listening x / y` instead of `Previewing`.
+  The markup glyphs are built with `String.fromCodePoint` in the patch script.
+- **THE PREMIUM LINE MOVED**: `THEMES` had only `rgb`/`rgbplus`/`synthwave`/`ocean`/`ember`/`galaxy` free among the
+  animated entries, with `glacier` (and aurora, cyberpunk, nebula, neonpulse, solstice, abyss, orchid) premium. The
+  request draws it at **free = RGB, RGB +, Ember, Galaxy, Glacier** and **premium = every other animated theme**, so
+  `synthwave` and `ocean` gained `premium:true` and `glacier` lost it. Three places describe the split and must move
+  together: the premium buy view ("every static theme, plus five of the animated ones: RGB, RGB +, Ember, Galaxy and
+  Glacier" / "nine animated themes (Aurora, Synthwave, Deep Ocean, Cyberpunk, Nebula, Neon Pulse, Solstice, Abyss,
+  Orchid)") and the **seizure warning**, which appears twice (Settings → More and the first-run guide) and now lists
+  **every** animated theme, because that warning is about flashing, not about the price. The lock itself is unchanged:
+  the Theme tab reads `th.premium && !isPremiumActive()`.
+- **THE GREETING**: `_aiFuzzyMatch` scored `pattern.indexOf(q) !== -1 || q.indexOf(pattern) !== -1` at **80** with no
+  minimum length, and `"hi"` is a substring of `"history"` — so a bare **Hi** came back as the **Album History**
+  paragraph (the screenshot). Two fixes, both needed: `_aiGreetingReply(msg)` answers greetings / good mornings /
+  "how are you" / thanks / goodbyes **directly from the app, before any matching or any model call** (it is called in
+  `_aiSendMessage` immediately after the user's bubble is added), and the substring rule now requires
+  **`q.length >= 4`** so no two-letter word can be found inside a longer one again. `dev/test-6641.mjs` extracts and
+  **runs** the shipped `_aiGreetingReply` + `_aiFuzzyMatch` + `_aiKB` and asserts `match('hi', 80) === null` while
+  `match('album history')` still finds its answer.
+- **THE PINNED RAIL THAT CAME BACK EMPTY** (reported once before, at v52.3 "your artists panel disappearing"):
+  nothing in the app removes `#pinnedArtistsStrip` or clears `#pinnedArtistsList`, so the damage is on the rendering
+  side. The chip drag in `wirePinnedReorder` sets `transform:scale(1.1)` / `zIndex:99` / `boxShadow` on the chip, which
+  makes it **its own composited layer** — and a layer like that is what a WebView discards on a long scroll. That lift
+  was cleared **only inside `if(drag)`**, so a drag that ended without its record (WebView claims the gesture, or the
+  pointerup lands elsewhere) left the chip holding it for the session. Four changes: the styles are dropped on **every**
+  `finish()`; `renderPinnedArtists()` sets `list.scrollLeft = 0` so a stray horizontal scroll can never leave the rail
+  showing the blank space past the last chip; `#pinnedArtistsList` carries `min-height:64px` so the card cannot
+  collapse to a bare heading; and `watchPinnedRail()` (wired once, on `#discoverView`'s scroll, 140 ms after the scroll
+  settles) re-renders the rail **only** when pins exist and the rail has no `.pinned-artist-chip` or no height. That
+  last one is the self-heal: a redraw is what fixes an evicted layer, and nothing else was going to happen on a scroll.
+- **SETTINGS AND MORE ARE GROUPED**: the tab strip runs **Premium, Get Songs, Theme, Glow, Sandbox, Widget, More,
+  Support, Donate** (what you buy → what you bring in → how it looks → the panes → everything else → help → donate),
+  and the More pane's seventeen-card column is grouped under four uppercase headings — **This build and help**, **
+  Playback**, **Library, storage and rollback**, **History and extras**. The one card that was in the wrong group (the
+  Playlists/Albums button + Auto-scroll, a playback preference sitting among the informational notes) moved into
+  Playback. The first heading goes **inside** the pane: building it with `before(<div id="settingsPaneMore">)` put it
+  *before* the pane, where it would have been visible on every other tab.
+- **THE SETTINGS SCROLL**: `.settings-scroll` was `height:62vh` + `scroll-behavior:smooth` sitting inside a sheet that
+  also scrolls. A wheel over a **short** tab did nothing (its own box still had a scrollbar area), the pane kept
+  **gliding** after the wheel stopped (smooth + momentum), and its scroll **chained into the page behind** the sheet.
+  It is `max-height:62vh` (70vh ≥1024) + `overscroll-behavior:contain` + `scroll-behavior:auto` + `scrollbar-gutter:
+  stable` now, and `#settingsTabStrip` lost its smooth scroll and gained `overscroll-behavior-x:contain`.
+- **PINNED-ARTIST COVERS, NEWEST FIRST**: each candidate now carries a `date` — `Number(t.dateAdded)` for a cover out
+  of the library, `Date.parse(r.releaseDate)` / `Date.parse(sr.releaseDate)` for the store's albums and singles — and
+  `buildPicker()` sorts on it (`(Number(b.date) || 0) - (Number(a.date) || 0)`) right before the grid is drawn, so
+  anything undated sorts last instead of being dropped. `dev/test-6641.mjs` lifts the shipped comparator and **runs** it.
+- **THE RELEASE**: `APP_VERSION` **64 → 64.1** (the next release after 64, per the version rule), a **six-note head
+  entry with no `[FULL]` notes at all** (this release has no tooling-only work, and `slice(6)` over six items is empty,
+  which both bundlers and the channel gates accept), `sw.js` -> **`sidecut-shell-v63.0.17`** (decoupled: it must not
+  contain the app version), 34 repins, `--manifest` twice for the bundle fixed point. `dev/patch-6641.mjs` is the
+  release; new `dev/test-6641.mjs` is 124 checks. **`dev/test-663.mjs` was repinned**: it pinned the HEAD entry (v64,
+  exactly 8 notes, the wording that release introduced), so it now reads the **v64 entry by version**
+  (`entries.find((x) => /^64$/.test(String(x.version)))`) and the head entry is left to `-662` and this release's gate.
+  Neither replacement text may re-introduce a literal the version bump rewrites (`String(head.version) === '64'`),
+  or a second run of the patch would repin the very entry it points at.
+- **GATE RESULT**: `dev/test-6641.mjs` **124/124**, `dev/audit-calls.mjs` clean (**4678 declared names**, 6098 comments,
+  no swallowed line break — it caught a duplicate comment the crop-sheet insert had glued onto one line, which is
+  exactly the fault class it exists for), `dev/test-662.mjs` **75/75**, `dev/test-663.mjs` **49/49**,
+  `dev/test-play-copy.mjs` **28/28**, `dev/check-dom.mjs` **DOM INTEGRITY FAILURES: 0**, and both OTA checks OK.
+  The one failing probe (`test-617` -> "hits and misses are both persisted") fails **identically on pristine
+  `origin/main`** — no new failures.
+- **BUNDLE FIXED POINT**: `ota/` **741065 bytes**, `ota-play/` **741076**, root `manifest.json` equal to the zip.
+  Each cycle flips the size by a byte (the embedded `manifest.json` carries the size it is about to have), so the
+  recipe stays `bundle -> patch-6641 --manifest` and then `bundle -> --check`.
+
+
 ## 64 (Sep 27, 2026): the QOL pass — covers, the assistant, the pinned bar, draggable sliders, faster runs, per-build guides, rollbacks kept, and the two apps side by side
 - **The user's words**, one message, nine things: covers "just repeats" and "I'm missing a lot of them made by the artist";
   "the AI is very not assuring when it's going to work I need a permanent solution"; "the pinned artist bar should be

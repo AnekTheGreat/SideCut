@@ -153,9 +153,9 @@ console.log('[6] the release says so, on both channels, without naming what it m
 {
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null, head = null;
-  try { entries = eval('[' + block[1] + ']'); head = entries[0]; } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
+  try { entries = eval('[' + block[1] + ']'); head = entries.find((x) => /^64$/.test(String(x.version))); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   if (head) {
-    ok(String(head.version) === '64', 'the head entry is v64');
+    ok(String(head.version).slice(0, 2) === '64', 'the v64 entry is still in the changelog');
     ok((head.items || []).length === 8, 'it has 8 notes (' + (head.items || []).length + ')');
     ok((head.items || []).slice(0, 6).every((it) => it.indexOf('[FULL]') === -1),
       'the first six are the shared channel');
