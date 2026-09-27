@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '64.1';
+const VER = '64.2';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -50,7 +50,9 @@ console.log('[1] release metadata');
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
   if (entries) {
-    const head = entries[0];
+    // The head entry belongs to whatever shipped last, so read the 64.1 entry
+    // by version: this gate describes 64.1.
+    const head = entries.find((x) => /^64\.1$/.test(String(x.version))) || entries[0];
     const items = head.items || [];
     ok(items.length >= 6, 'patch notes: ' + items.length);
     const notes = items.join('\n');
@@ -199,39 +201,31 @@ console.log('[5] the pinned-artist rail cannot come back empty');
   ok(count("body.classList.add('reordering')") >= 1, 'the drag still marks the body while it is really dragging');
 }
 
-console.log('[6] Settings and More are grouped, and the pane scrolls straight');
+console.log('[6] Settings is back in the order and the shape it had');
 {
-  const order = ['settingsTabPremium', 'settingsTabExpand', 'settingsTabTheme', 'settingsTabGlow', 'settingsTabSandbox',
-    'settingsTabWidget', 'settingsTabMore', 'settingsTabSupport', 'settingsTabDonate']
+  const order = ['settingsTabPremium', 'settingsTabExpand', 'settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
+    'settingsTabSandbox', 'settingsTabSupport', 'settingsTabWidget', 'settingsTabMore']
     .map((id) => src.indexOf('id="' + id + '"'));
   ok(order.every((i) => i !== -1), 'all nine tabs are present');
-  ok(order.every((v, i) => i === 0 || order[i - 1] < v), 'and the strip runs Premium, Get Songs, Theme, Glow, Sandbox, Widget, More, Support, Donate');
-  const heads = ['This build and help', 'Playback', 'Library, storage and rollback', 'History and extras']
-    .map((t) => src.indexOf('>' + t + '</div>'));
-  ok(heads.every((i) => i !== -1), 'the More pane has its four group headings');
-  ok(heads.every((v, i) => i === 0 || heads[i - 1] < v), 'in the order they are read');
-  const moreStart = src.indexOf('<div id="settingsPaneMore"');
-  const sandboxStart = src.indexOf('<div id="settingsPaneSandbox"');
-  ok(heads[0] > moreStart && heads[0] < sandboxStart, 'and they are inside the More pane');
-  for (const h of heads) ok(h < sandboxStart, 'yes');
-  // The one card that was in the wrong group.
+  ok(order.every((v, i) => i === 0 || order[i - 1] < v), 'and the strip runs Premium, Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, More (More last)');
+  const heads = ['This build and help', 'Playback', 'History and extras'].map((t) => src.indexOf('>' + t + '</div>'));
+  ok(heads.every((i) => i === -1), 'the group headings 64.1 added inside More are gone');
   const card = src.indexOf('<!-- Diagonal / Single button toggle -->');
   ok(card !== -1, 'the Playlists/Albums button card is still there');
-  ok(card > src.indexOf('<!-- Collapsible: Playback -->'), 'and now sits in the Playback group');
-  ok(card < src.indexOf('<!-- Collapsible: Library Tools & Fetching -->'), 'after the playback switches');
-  ok(card < src.indexOf('>Library, storage and rollback</div>'), 'and before the library heading');
-  // The scroll pane.
-  ok(has('  max-height: 62vh;\n  overflow-y: auto;\n  -webkit-overflow-scrolling: touch;\n  overscroll-behavior: contain;\n  scroll-behavior: auto;\n  scrollbar-gutter: stable;'),
-    'the pane is a max-height panel');
-  ok(!has('.settings-scroll {\n  height: 62vh;'), 'its fixed height is gone');
-  ok(has('  .settings-scroll{ max-height:70vh; }'), 'and the desktop size follows it');
-  ok(has("  overflow-x: auto !important;\n  scroll-behavior: auto;\n  overscroll-behavior-x: contain;"),
-    'the tab strip neither glides nor chains its scroll');
+  ok(card > src.indexOf('id="howToUseBtn"'), 'back where it sat before, after Replay tutorial');
+  ok(card < src.indexOf('<!-- Collapsible: Tutorial summary (text) -->'), 'and above the tutorial summary');
+  ok(card < src.indexOf('<!-- Collapsible: Library Tools & Fetching -->'), 'not in the library group it was moved to');
+  // The sheet is a column flex box: the pane absorbs the leftover height, so
+  // the sheet itself can never scroll and the strip can never be squeezed.
+  ok(has('  flex: 1 1 auto;\n  min-height: 0;\n  max-height: 62vh;'), 'the pane takes the leftover height and scrolls inside itself');
+  ok(has('#themeBackdrop .modal > h3,\n#themeBackdrop .modal > #settingsTabStrip,\n#themeBackdrop .modal > .modal-btns{ flex: 0 0 auto; }'),
+    'and the title, the tab strip and Close keep their own height');
+  ok(has("      var _panes = $('settingsPanesWrap'); if(_panes) _panes.scrollTop = 0;"), 'every tab opens at its own top');
+  ok(has("      if(_sheet) _sheet.scrollTop = 0;"), 'and the sheet is never left scrolled either');
   const scrollBlock = src.slice(src.indexOf('.settings-scroll {'), src.indexOf('.settings-scroll::-webkit-scrollbar'));
   ok(/scroll-behavior: auto;/.test(scrollBlock) && !/scroll-behavior: smooth;/.test(scrollBlock),
-    'and smooth scrolling is gone from it, which is what made the wheel feel broken');
+    'the pane still follows the wheel one to one');
 }
-
 console.log('[7] pinned-artist covers are newest first');
 {
   ok(count('date: Number(t.dateAdded) || 0') === 1, 'a library cover carries the day it was added');

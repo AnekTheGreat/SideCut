@@ -1,6 +1,94 @@
 # SideCut — repository memory
 
 
+## 64.2 (Sep 27, 2026): "what the hell are these names ... just state the changes" + the rail that is STILL there + the settings tabs back + the More tab's upness
+- **The user's words**, one message about the build 64.1 had just shipped, five things: "What the hell are these names
+  the polish pass QOL pass no change those just state the changes"; "the glitch where the pinned artist island
+  disappears when you scroll down in discover is still there"; "why did you reorder the settings tabs more should be
+  at the end and the other two tabs support and donate should be where they were before"; "the more tab when you open
+  it has a weird glitch where it goes up and you can barely see the other tabs it's not supposed to that ... and once
+  you go into the more tab it's upness affects every other tab"; "why are the options in settings and more so square
+  they should be how they were before and how every other tab is". Eleven screenshots: the two branded entry names,
+  the Support chat, three shots of Discover with the rail blank, two of Settings → More with the strip cut off, and
+  two of the healthy rail.
+- **THE ENTRY NAMES**: `CHANGELOG`'s two newest-but-one entries opened with an invented name above the changes —
+  `'The polish pass: crop by ear, ...'` (v64.1) and `'The QOL pass: covers stop repeating, ...'` (v64) — which told a
+  reader nothing about what moved. They are statements now (`'Crop by ear, a hello the assistant answers, five
+  animated themes free, Settings grouped, and cover picks newest first'` / `'Cover picks stop repeating, the assistant
+  answers instead of erroring, the pinned bar is rounded, and rollback history is kept'`), and the one **33.4** entry
+  that carried the same kind of name (`'Small UI polish pass'` -> `'Track rows and the play button get clearer press
+  feedback'`, which is what its own two notes say) is fixed with them. The head entry's first note says so. **The
+  release notes as a published artifact are not the place for a name**: dev/test-6642.mjs asserts the three newest
+  titles, that no entry anywhere still carries either invented name, and that no entry from v60 up calls itself a
+  pass.
+- **THE PINNED RAIL, THIRD REPORT — WHAT 64.1 GOT WRONG**: 64.1's answer was "re-render the rail when it has lost its
+  chips", and the screenshots show the card **standing in the layout with nothing drawn inside it** — so that
+  condition was never met, and the self-heal never fired. The 11:58/2:07 shots are the pre-64.1 build and the 3:05
+  pair is 64.1: same four chips, one shot with the card and one without, minutes apart. Three changes now:
+  * **`#discoverView` has its own stacking context** (`position:relative; z-index:20;`). It was plain static flow
+    content — no `position`, no `z-index` — and every fixed glow/edge layer in the theme suite is `position:fixed;
+    z-index:1; pointer-events:none`, so they paint **over** it. That is the identical fault the v63 batch found and
+    fixed on `#listPane`, which carries the note explaining it; Discover never got the same treatment. A translucent
+    wash of `--glow-a` over the card is exactly "the card's navy background and its hairline border are gone" while
+    the photographic covers on it still read through — and it is why the blank looks like bare page background.
+  * **A settled scroll repaints the card, not just an empty one.** `repaintPinnedRail(list)` runs first (before the
+    has-chips-and-height bail) on the same 140 ms debounce: it drops the inline lift from any chip still holding one
+    — `transform`/`zIndex`/`boxShadow` in place, **not** by re-rendering, so no cover is decoded again — then hides
+    the card, forces a layout read and shows it again on the next frame, which throws the painted pixels away and
+    paints them fresh. That is the part aimed at the screenshot with the card still taking up its space.
+  * **The rail's own horizontal scroller lost `-webkit-overflow-scrolling:touch`** and pins `flex-wrap:nowrap`. The
+    legacy property is a no-op on this WebView and a nested scroller is the shape that keeps producing this fault.
+    `min-height:64px`, `list.scrollLeft = 0` after a redraw and the drag-lift clearing in `finish()` all stay.
+- **THE SETTINGS TABS ARE BACK**: the strip runs **Premium, Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget,
+  More** again — More last, Donate fourth, Support seventh, exactly the order 64.1 had rearranged. That is markup
+  order only; no handler moved.
+- **THE MORE TAB'S "UPNESS" (and why it followed you into every other tab)**: all nine panes live inside **one**
+  scrolling box (`#settingsPanesWrap.settings-scroll`), and the sheet around it (`.modal`, `max-height:82vh;
+  overflow-y:auto`) can scroll as well. So the offset the previous tab left behind was still in place when the next
+  one opened — the strip came up clipped under the title and the first card read as cut off — and because the box is
+  shared, that offset then followed the user into **every** tab. Two fixes, both needed: the sheet is laid out so
+  only the pane scrolls (`#themeBackdrop .modal > h3`, `> #settingsTabStrip` and `> .modal-btns` are `flex:0 0 auto`,
+  so the strip can never be squeezed to part of its height; the pane is `flex:1 1 auto; min-height:0`, so it absorbs
+  the leftover and the sheet never overflows), and `showSettingsTab()` resets **both** `$('settingsPanesWrap').scrollTop`
+  and the sheet's `scrollTop` before any pane is shown.
+- **THE MORE PANE IS THE CARD LIST IT WAS**: the four uppercase group headings 64.1 added (`This build and help`,
+  `Playback`, `Library, storage and rollback`, `History and extras`) and the regrouping are gone, and the
+  Playlists/Albums + Auto-scroll card is back above the tutorial summary where it always sat. The "so square" reading
+  is the same fault as the upness: a pane that opens part-way down shows its first card with its rounded top corners
+  cut off by the scroll box's edge. The rail card's lift went into the **stylesheet**
+  (`#pinnedArtistsStrip{ position:relative; z-index:1; }`) rather than its markup, because dev/test-662.mjs pins the
+  inline style down to the trailing `border-radius:16px;"`.
+- **THE RELEASE**: `APP_VERSION` **64.1 -> 64.2**. A rebuild carrying the same version is never taken over
+  (`compareVersions(man.version, cur) <= 0` is "up to date"), so a follow-up has to be the next release — and
+  64.1 -> 64.2 is what the version rule gives. A **six-note head entry** with no `[FULL]` notes (both bundlers accept
+  `slice(6)` over six; the notes carry no downloader term and none names the store build — note 5 keeps the word
+  *rollback*, which dev/test-662.mjs requires), `sw.js` -> **`sidecut-shell-v63.0.18`** (decoupled, must not contain
+  the app version), 33 repins across `dev/test-*.mjs`, `--manifest` for the bundle fixed point. `dev/patch-6642.mjs`
+  is the release; new `dev/test-6642.mjs` is **74 checks**, one per reported item plus the release metadata.
+- **REPINS, AND THE ONES THAT WOULD HAVE POINTED AT THE WRONG ENTRY**: `dev/test-6641.mjs` is 64.1's gate and its
+  release-metadata block read the HEAD entry — this release's now. It reads the **v64.1 entry by version**
+  (`entries.find((x) => /^64\.1$/.test(String(x.version)))`) and its whole `[6] Settings and More` block was replaced
+  with the state that is true now (old tab order, no headings, the card back, the flex sheet). Both replacements use a
+  **regex**, never a quoted literal, for exactly the reason 64.1 recorded: the version bump rewrites quoted literals
+  in every `dev/test-*.mjs`, and `64.1` inside `new RegExp`-free `/^64\.1$/` is invisible to it. The same trap was hit
+  once during this release: `dev/test-6642.mjs` itself was rewritten by its own REPINS pass on the second run (a
+  `version: '64.1'` inside one of its own assertions), which is why that file now builds its 64.1 stamp from
+  `'64' + '.1'`.
+- **GATE RESULT**: `dev/test-6642.mjs` **74/74**, `dev/test-6641.mjs` **119/119** (it was 125; the Settings block is
+  five checks shorter than the one it replaced), `dev/audit-calls.mjs` clean (**4686 declared names** across 3 script
+  blocks, no comment has swallowed code), `dev/test-662.mjs` **75/75**, `dev/test-663.mjs` **49/49**,
+  `dev/test-play-copy.mjs` **28/28**, `dev/check-dom.mjs` **DOM INTEGRITY FAILURES: 0**, `dev/boot-639-check.cjs`
+  **45/45 (v64.2)**, and 6053/6054/6055/6056/6057/6058/60510/612/6136/6137/6138/6139/614/616/618/619/620/651/653/
+  655/656/658 all green. The one failing probe (`test-617` -> "hits and misses are both persisted") fails
+  **identically on pristine `origin/main`** (re-checked: 66/1 both ways).
+- **BUNDLE FIXED POINT**: `ota/` **742620 bytes**, `ota-play/` **742631**, root `manifest.json` equal to the zip,
+  both `--check`s OK (two `bundle -> patch-6642 --manifest` rounds).
+- **STILL OPEN**: the rail fix is a rendering-side fix — the stacking context is the one class of cause this codebase
+  has documented evidence for, and the repaint is what the user's own screenshots show fixing it — but it cannot be
+  reproduced in this sandbox, so if the card blanks again the next thing to do is ask for a screenshot with the
+  debug badge on and read `getComputedStyle(#pinnedArtistsStrip)` and its `getBoundingClientRect()` from the device.
+
+
 ## 64.1 (Sep 27, 2026): "crop by ear, a hello the assistant knows, premium animated themes, a rail that stays put, Settings grouped, and a scroll that behaves"
 - **The user's words**, one message, eight things: "Inside the cropping I should be able to move the slider where the
   track is playing around in order to make it easier to listen to what I'm cropping"; "All dynamic themes except for
