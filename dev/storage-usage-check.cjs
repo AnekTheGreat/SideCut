@@ -299,7 +299,7 @@ async function boot(opts) {
   ok('it reports the music and its size', /Your music/.test(bodyText) && /songs/.test(bodyText));
   ok('it reports the covers', /Covers/.test(bodyText));
   ok('it reports the rollback copies with their size', /Saved rollback copies/.test(bodyText) && /MB|KB/.test(bodyText));
-  ok('it says how many copies Free up space would keep', /keeps the newest \d+/.test(bodyText), bodyText.slice(0, 100));
+  ok('it says the copies are never removed', /none are ever removed/.test(bodyText), bodyText.slice(0, 100));
   // Every number carries its unit: a second scFmtBytes() lower in the script used
   // to shadow the real one and the panel printed "13.8" on its own.
   ok('every size it prints has a unit', /\d(\.\d+)? (B|KB|MB|GB)/.test(bodyText), bodyText.slice(0, 90));
@@ -310,9 +310,9 @@ async function boot(opts) {
   const ALBUM_KEY = 'discPopupCache_\ud83d\udcbf Album History';
   const F = await boot({ localStorage: { [SINGLES_KEY]: 'x'.repeat(5000), [ALBUM_KEY]: 'y'.repeat(5000) } });
   const fw = F.win;
-  // The copies boot kept are the ones the user may still want (they are the
-  // newest few). What the button is for is the copies that arrive AFTER that —
-  // a phone that keeps taking updates between taps. Seed them directly.
+  // These are the copies that used to be trimmed to the newest six — a phone
+  // that keeps taking updates between taps. They must all survive the button
+  // now, because the version picker is the only way back to an earlier build.
   for (let i = 0; i < 4; i++) {
     const k = 'versionSnapshot_57.0.' + i;
     F.idb._data.meta.set(k, { key: k, value: { version: '57.0.' + i, html: 'z'.repeat(1000000), savedAt: 1600000000000 + i } });
@@ -325,8 +325,9 @@ async function boot(opts) {
   console.log('    rollback copies: ' + beforeSnaps + ' -> ' + afterSnaps + '  (localStorage cache keys left: ' +
     [SINGLES_KEY, ALBUM_KEY].filter((k) => fw.localStorage.getItem(k)).length + ')');
   ok('freeing up does not throw', !threw, threw && threw.message);
-  ok('it drops the old rollback copies', afterSnaps < beforeSnaps, beforeSnaps + ' -> ' + afterSnaps);
-  ok('and brings them back down to the cap', afterSnaps <= 6, afterSnaps);
+  ok('it leaves every rollback copy exactly where it was', afterSnaps === beforeSnaps, beforeSnaps + ' -> ' + afterSnaps);
+  ok('including ones far older than any cap it used to apply',
+    F.snapKeys().includes('versionSnapshot_57.0.0'), F.snapKeys().join(','));
   ok('it clears the saved popup caches', !fw.localStorage.getItem(SINGLES_KEY) && !fw.localStorage.getItem(ALBUM_KEY));
   ok('and it did not touch the user\'s own data', !!fw.localStorage.getItem('sidecut_snapshot_marker'));
   ok('the panel is told what was freed', /Freed|free/i.test((fw.document.getElementById('storagePanelBody') || {}).textContent || ''));

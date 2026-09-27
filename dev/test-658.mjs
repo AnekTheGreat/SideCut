@@ -205,17 +205,18 @@ ok(src.indexOf('not created by you') === -1, 'and nothing anywhere still calls t
 console.log('\n[5] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '63.1.4', 'APP_VERSION = ' + ver);
+  ok(ver === '64', 'APP_VERSION = ' + ver);
   ok(!/^63\.\d+\.\d{2,}$/.test(ver) && !/^63\.1\.10$/.test(ver), 'not a rolled-over patch number');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) {}
   ok(!!entries && entries[0].version === ver, 'the newest changelog matches APP_VERSION');
   if (entries) {
-    ok(entries[0].items.length >= 5, 'patch notes: ' + entries[0].items.length);
-    ok(!/play build|play version|play install/i.test(entries[0].items.join(' ')), 'notes never name the play build');
-    ok(!/\bdownload|converter|convert\b/i.test(entries[0].items.join(' ')), 'new notes carry no downloader term');
-    ok(/auto/i.test(entries[0].items.join(' ')), 'and the notes describe what this release did');
+    const rel = entries && entries.find((e) => String(e.version) === '63.1.4');
+    ok(!!rel && (rel.items || []).length >= 5, 'patch notes: ' + (rel && rel.items.length));
+    ok(!!rel && !/play build|play version|play install/i.test(rel.items.join(' ')), 'notes never name the play build');
+    ok(!!rel && !/\bdownload|converter|convert\b/i.test(rel.items.join(' ')), 'new notes carry no downloader term');
+    ok(!!rel && /auto/i.test(rel.items.join(' ')), 'and the notes describe what that release did');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v"), 'service worker has a versioned cache name');

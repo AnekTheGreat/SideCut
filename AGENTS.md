@@ -1,6 +1,102 @@
 # SideCut — repository memory
 
 
+## 64 (Sep 27, 2026): the QOL pass — covers, the assistant, the pinned bar, draggable sliders, faster runs, per-build guides, rollbacks kept, and the two apps side by side
+- **The user's words**, one message, nine things: covers "just repeats" and "I'm missing a lot of them made by the artist";
+  "the AI is very not assuring when it's going to work I need a permanent solution"; "the pinned artist bar should be
+  rounded and contrast color"; Spotify/YouTube runs "take very long ... and have an accurate progress bar"; settings
+  sliders should be "nice to scroll with your finger and not wired tap thing", same for "the media player time left
+  playing thingy"; "the tutorials for the full ver and play version should be according to what features they have";
+  "is there a way I can have the apk and the play version installed at the same time but 2 different applications?";
+  "Free up storage should not delete any older rollback things"; "Bump ver to v64 mark this huge QOL update and polish."
+  Two screenshots showed red banners: **`updateNpDisplay is not defined`** and **`Failed to write blob (InvalidBlob)`**.
+- **THE MISSING FUNCTION (a real, reproducible crash)**: `updateNpDisplay(cur)` was called twice — at the end of the
+  watermark clean and at the end of **Refetch Missing Covers** — and **defined nowhere in the file**. The real function
+  is `updateNowPlayingUI()`, which is the wrong tool there (it records a play, loads a waveform, re-arms the widget:
+  all of that belongs to a track CHANGE, not to a batch job finishing). `updateNpDisplay()` now exists next to it and
+  does only what those two callers wanted — `npTitle`, `npArtist` and the art of the song already playing — and is
+  exposed with the other hooks. **Nothing counts as a play for updating the now bar.**
+- **COVERS ("just repeats" / "missing the ones the artist made")**: the artist-picture grid was keyed on
+  `(album name + that track's own art URL)` — and every imported song carries its own Blob and therefore its own URL,
+  so ten songs off one album drew **ten identical squares**. By the time the grid is built every candidate has been
+  converted to a **data URL**, so identical pictures are identical strings: `buildPicker()` now collapses them on that.
+  The missing pictures were a second fault — the artist lookup asked `entity=album` only, so an artist's **singles**
+  (where a lot of that artwork lives) were never offered. A second request with `entity=song&limit=50` runs through the
+  same artist filter and the same `seen` map, so nothing can be added twice.
+- **THE ASSISTANT ("I need a permanent solution")** — three separate faults:
+  * **503/429/5xx were printed as a red API-error bubble.** They are the same request working a moment later, so
+    `_askRetrying()` retries at **0 / 700 / 1600 / 3000 ms**, and the model fallback
+    (`__scGeminiEnsureModel`) retries the same way.
+  * **A still-failing call left the user with the error and nothing else.** `_aiGeminiQuery` now returns `null` for a
+    transient code, `_aiSendMessage` falls through to the knowledge built into the app, `_aiBusyFallback` is set, and
+    the status line says **"Answered from the built-in knowledge base (the assistant service was busy)"** — a question
+    always gets an answer and you always know where it came from.
+  * **It denied its own features** (asked how the downloader works it answered "SideCut does not have a built-in tool
+    to download music"). The system prompt now carries a **CRITICAL** line naming the built-in tools and where they
+    live, **per build** (`SC_IS_PLAY ? ... : ...`), and says never to claim a feature does not exist when it does.
+- **PINNED ARTISTS BAR**: `#pinnedArtistsStrip` was `background:var(--bg)` with no radius and no border — on a themed
+  build a flat block of the page colour pinned edge to edge, butted against the search row. It is
+  `var(--bg-raised)` + `1px solid var(--line)` + `border-radius:16px` + padding now.
+- **LONG RUNS FINISH SOONER**: `SC_ENCODE_SLICE_MS` **55 → 90** (≈18 wake-ups a second → ≈11, each wake-up costing a
+  timer round trip on top of the encode), and the fixed per-song pacing in the multi-song loop **800 ms → 200 ms**
+  (two thirds of a twelve-song run's 9.6 s dead time). The accurate progress bar for a YouTube run came in 63.1.3.
+- **DRAGGABLE SLIDERS**: the seek bar carried `touch-action:pan-x`, which **told the browser a horizontal gesture on it
+  is a pan** — the drag could be taken by the scroller and never reach the thumb. It is `none` now. Every other
+  settings slider was a bare native input (small thumb, tap-to-jump); they share one styled control —
+  `input[type=range]:not(#seekBar):not(#actionSpeedSlider):not(.eq-band-slider)`, a 22px thumb on a filled track,
+  `touch-action:pan-y` so the pane still scrolls. `#seekBar` and `#actionSpeedSlider` are excluded because both paint
+  their **own** filled track on the input and a generic runnable-track would sit over it; the EQ bands are excluded
+  because they are vertical faders that need the native rendering.
+- **THE SEEK BAR'S REAL COMPLAINT** was not the CSS: `timeupdate` fires several times a second and
+  `updateSeekDisplay()` wrote the playhead straight back into the slider, so the thumb was **pulled out from under the
+  finger mid-drag**. `scSeekDragging` (set on `pointerdown`/`touchstart`/`mousedown`, cleared on
+  `pointerup`/`pointercancel`/`touchend`/`touchcancel`/`mouseup`/`change`/`blur`) holds the value and the fill out of
+  the clock's hands while it is held; the waveform and the disc ring still follow the song.
+- **PER-BUILD GUIDES**: the build that **has** the built-in tools was still teaching the outside-site route in its
+  first-run guide (Share → Expand URL → "paste it into any converter" → import), its scenario 1 and its text summary.
+  All three now describe what that build does (`Settings -> Get Songs`, paste, Convert, MP3 or WAV/FLAC, YouTube the
+  same way). The heading keeps `id="howToGetMusicHead"`, because the build WITHOUT the tools replaces that whole block
+  at boot by that id — so the `SC_IS_PLAY` branch is untouched and still supplies the import-only walkthrough, and
+  `getElementById('howToScenario1Head')` still hides the tool scenario there.
+- **FREE UP SPACE NO LONGER DELETES ROLLBACKS**: it called `scPruneVersionSnapshots(SC_SNAPSHOT_KEEP)` — trimming the
+  version history to the newest six, which is **the exact list the version picker exists to show** and the only way
+  back to a build that worked — and read every page-sized row **twice** just to report what it had thrown away. It now
+  clears the rebuildable things and nothing else (the `discPopupCache_*` saved lists, the leftover export zip in the
+  app's own cache directory), the Storage row says **"(none are ever removed)"** instead of promising a cap, and
+  nothing is read to measure the copies. `SC_SNAPSHOT_HARD_CAP`/the keyed runaway guard is deliberately kept.
+- **A REFUSED BLOB CANNOT ESCAPE**: the `InvalidBlob` banner is Android's WebView refusing a generated File/Blob
+  cloned into IndexedDB — `put()` throws it **synchronously**. `dbPut()`'s promise executor already turned that into a
+  rejection its `try/catch` caught, but the guarantee is now explicit at the call site: the `put()` is wrapped, the
+  transaction is aborted, and the call resolves **`false`** — the documented failure `persistTrackMeta` uses to fall
+  back to the ArrayBuffer form this device accepts.
+- **THE TWO APPS SIDE BY SIDE (item 7)**: both flavors shipped `applicationId com.SideCut.myapp`, so Android saw ONE
+  app and installing either **replaced** the other (same upload key, so no signature error — it just took the library
+  with it). New `.github/workflows/patch-dualinstall.py`, run for **`matrix.flavor == 'full'`** only, moves the
+  **sideloaded** build to `com.SideCut.myapp.full` with the label **"SideCut Full"**. The Play build keeps its id
+  because the Play listing is bound to it — moving that would publish a new app and existing Play users would stop
+  getting updates. Only `applicationId` is touched, never the Java `namespace`, so every generated package path, the
+  widget/audio-focus plugins' `package com.SideCut.myapp;` and the `com.SideCut.myapp.WIDGET_*` intent actions stay
+  exactly where they are. One reinstall of the sideloaded build is the cost (restore from a backup .zip).
+- **PATCHES**: `dev/patch-660.mjs` = the nine fixes (**28** index.html edits, incl. the `dev/storage-usage-check.cjs`
+  repin); `dev/patch-661.mjs` = the release (`APP_VERSION` **64** — the next release after 63.1.4 per the version
+  rule — a **six-note head entry plus two `[FULL]` notes at index 6 and 7**, `sw.js` -> **`63.0.16`** (must not
+  contain `64`, and does not), 32 repins, `--manifest`). New `dev/test-662.mjs` (~85 checks across the nine items and
+  the CI wiring). Bundle fixed point: **ota/ 733724 bytes**, **ota-play/ 733736**, both `--check` OK.
+- **ALSO REPINNED**: `dev/test-658.mjs` (its release-metadata block read the HEAD entry, which was its own release
+  then and is this one now — it reads the **63.1.4 entry by version** instead, so its `/auto/` claim keeps meaning what
+  it meant; the same repin `dev/patch-659.mjs` applied to the 63.1.3 gates) and `dev/test-6139.mjs` (the "63 heads the
+  changelog" label). `dev/test-655.mjs`/`-656.mjs` are untouched: they already read the 63.1.3 entry explicitly.
+- **NOTE-CHANNEL DISCIPLINE, unchanged and still biting**: `dev/test-617..620`, `-60510` and `-662` assert
+  `!/\bdownload|converter|convert\b/i` over the **whole** head entry (`\bdownload` matches "downloads"/"downloading"
+  too), and `dev/test-play-copy.mjs` reads the six Play-visible notes against a **wider** list that adds
+  `\bmp3\b|converting|conversion|get song|hand-?off`. So the six public notes name no tool at all, the two tooling
+  notes are `[FULL]`-marked and last, and neither names the build that lacks the tools.
+- **GATE RESULT**: `dev/test-662.mjs` passes, `dev/check-dom.mjs` reports **DOM INTEGRITY FAILURES: 0**, and every
+  failing probe/test (`test-617` → "hits and misses are both persisted", `media-controls-check`, `rgb-theme-check`,
+  `audio-focus-check`, `discover-singles-check`, `lyrics-lookup-check`, `rgb-stall-check`, `ota-*`, `batch-635`,
+  `boot-profile`, the `v*-check.cjs` stale pins) fails **identically on pristine `origin/main`** — no new failures.
+
+
 ## 63.1.4 (Sep 27, 2026): "Fix the damn auto albums ... just remove the auto albums and make sure that doesn't affect my regular albums" + "add a search bar to manage albums"
 - **The user's words**: "Fix the damn auto albums I hate those because I make an album and it says it already exists just
   remove the auto albums and make sure that doesn't affect my regular albums. Then add a search bar to manage albums."
