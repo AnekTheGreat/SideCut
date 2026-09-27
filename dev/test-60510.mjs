@@ -31,7 +31,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.1.1', 'APP_VERSION = ' + ver);
+ok(ver === '63.1.2', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -83,13 +83,19 @@ console.log('[3] __scDiscRelTab switcher behavior');
 console.log('[4] Home bubble combines the same tabs');
 {
   const hb = sliceBetween("else if(kind === 'newreleases'){", "else if(kind === 'nowplaying'){");
-  ok(hb.includes('data-date="'), 'hb rows carry data-date');
-  ok(hb.includes('String(rel.date || \'\').slice(0,10)'), 'hb data-date is the date part');
+  // The rows themselves are painted by the shared in-place painter (v63.1.3),
+  // so the row-markup assertions moved to the painter and this block checks
+  // that the panel delegates to it.
+  // The row markup lives in __scHbRelRowInner, called by the painter.
+  const painter = sliceBetween('window.__scHbRelRowInner = function(rel){', 'function openHomeBubble(kind){');
+  ok(painter.includes("row.setAttribute('data-date', String(r.date || '').slice(0, 10))"), 'hb rows carry data-date');
+  ok(painter.includes("String(r.date || '').slice(0, 10)"), 'hb data-date is the date part');
+  ok(hb.includes('window.__scHbPaintRelRows(body)'), 'the panel builds its rows through the painter');
+  ok(painter.includes('color:var(--gold)'), 'hb drops label painted gold');
   ok(hb.includes('id="hbRelCount"'), 'count line gets an id to swap');
   ok(hb.includes("_dpRelRowSel = '.hb-track-row[data-date]'"), 'switcher pointed at hb rows');
   ok(hb.includes("body.querySelector('#dpRelTabs')"), 'strip injected once per render');
   ok(hb.includes("window.__scDiscRelTab(window.__scRelTabMode || 'all', body)"), 'tabs applied with the panel body as root, mode preserved');
-  ok(hb.includes('color:var(--gold)'), 'hb drops label painted gold');
   ok(hb.includes("'upcoming:Upcoming releases'"), 'both tab labels present in the panel');
 }
 

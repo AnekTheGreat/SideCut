@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// v63.1.1 verification — "Upcoming releases / Check for drops keeps reopening the
+// v63.1.2 verification — "Upcoming releases / Check for drops keeps reopening the
 // popup, and it does not look like it is checking anything".
 //
 // Two defects, both pinned here against the shipped source:
@@ -42,7 +42,7 @@ const slice = (from, to) => {
 };
 const sliceBetween = slice;
 
-const VER = '63.1.1';
+const VER = '63.1.2';
 
 console.log('[1] a check that finishes after you close the popup leaves it closed');
 {

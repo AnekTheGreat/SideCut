@@ -160,8 +160,8 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 }
 
 console.log('[11] release metadata');
-ok(ver === '63.1.1', 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.12';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(ver === '63.1.2', 'APP_VERSION = ' + ver);
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.13';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');
@@ -171,7 +171,7 @@ ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.12';"), 'sw.js cache = s
     ok(!/play build|play version|play install/i.test(head.items.join('\n')), 'notes never name the play build');
     ok(head.date.endsWith('EDT'), 'ship date (' + head.date + ')');
   }
-  ok(entries[0].version === '63.1.1', '63 heads the changelog');
+  ok(entries[0].version === '63.1.2', '63 heads the changelog');
 }
 
 console.log('[12] inline script syntax');
@@ -192,9 +192,9 @@ console.log('[12] inline script syntax');
 console.log('[13] no remixes, nothing off the pinned artists');
 {
   const check2 = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
-  // One shared test, applied by EVERY source and by BOTH lists. 11 hits = the
-  // definition, the pruning pass, and nine call sites.
-  ok(count('__scJunkTitle') === 11, 'one junk test, applied everywhere (' + count('__scJunkTitle') + ')');
+  // One shared test, applied by EVERY source and by BOTH lists. 12 hits = the
+  // definition, the pruning pass, the row painter, and nine call sites.
+  ok(count('__scJunkTitle') === 12, 'one junk test, applied everywhere (' + count('__scJunkTitle') + ')');
   ok(check2 && check2.includes('!window.__scJunkTitle(r.trackName)'), 'the iTunes song pass refuses a remix title');
   ok(check2 && check2.includes('if(window.__scJunkTitle(r.collectionName)) return;'), 'so does the album pass');
   const idFn2 = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");

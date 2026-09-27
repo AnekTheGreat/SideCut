@@ -11237,7 +11237,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.1.1';
+  const APP_VERSION = '63.1.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11659,6 +11659,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.1.2', date: 'September 27, 2026 · 3:54 AM EDT', title: 'The release check updates the panel in place and shows its progress', items: [
+    'Asking for upcoming releases no longer rebuilds the panel for every artist it reads. The check refreshed its list as each artist came back, and that refresh re-created the whole panel - header, buttons, rows and tabs - so the list visibly rebuilt itself several times while you watched it.',
+    'The panel now shows a progress bar while the check is running, with the count moving 0/4, 1/4 and so on, so you can see it working instead of guessing.',
+    'The bar goes away when the check finishes and the panel settles back into a plain list of what it found.',
+    'Whatever you did in the panel while the check ran is kept: the tab you picked stays put and the list no longer jumps back to the top as results land.',
+    'A release you removed by holding it stays removed, even if a check that was already running finishes afterwards.',
+    'Nothing about which sources are read changed - SideCut still asks the open release catalogs directly, with no account and nothing to connect.',
+  ] },
   { version: '63.1.1', date: 'September 27, 2026 · 12:18 AM EDT', title: 'The upcoming-releases check stops reopening its own popup', items: [
     'Asking for upcoming releases no longer brings the panel back after you close it. A check that was still running redrew the panel when it finished, and drawing the panel shows it — so a check you started and then dismissed reappeared on its own, sometimes after the popup had been gone for half a minute.',
     'The panel also looks like it is working now. While the open catalogs are being read it says how many of your artists it has reached so far, and when the run ends it says how many were read and whether anything dated ahead turned up, instead of leaving the same sentence from before on screen.',
@@ -29969,6 +29977,100 @@ if(!isDiscover) stopDiscoverPreview();
   // ---- Expanded bubble overlay ----
   let hbCloseTimer = null;
   let homePanelHeight = null; // manual panel height from the drag grip (persisted)
+  // Repaint ONLY the release rows of an open New-releases panel.
+  //
+  // A check saves and repaints as each artist lands, on purpose: a partly
+  // finished run keeps whatever it already found. That repaint used to be a full
+  // openHomeBubble("newreleases"), which writes the body from scratch - so the
+  // header, the count, the mark-all button, every row and the All/Upcoming strip
+  // were all re-created once per artist, and the panel visibly rebuilt itself
+  // over and over while the check ran. This rewrites the rows and the count and
+  // leaves everything else exactly where the user left it (including the tab).
+  window.__scHbRelRowInner = function(rel){
+    var r = Object.assign({}, rel, { date: window.__scDay10(rel.date) });
+    var daysAgo = r.date ? Math.floor((Date.now() - new Date(r.date + 'T00:00:00Z').getTime())/86400000) : null;
+    var relAt = (typeof window.__scTime12 === 'function' && window.__scTime12(r.time)) ? ' at ' + window.__scTime12(r.time) : '';
+    var relAtUp = relAt || ' at time TBA';
+    var daysUntil = r.date ? Math.ceil((new Date(r.date + 'T00:00:00Z').getTime() - Date.now())/86400000) : null;
+    var when = daysAgo == null ? '' : daysAgo < 0
+      ? 'drops ' + new Date(r.date + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + relAtUp + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '')
+      : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
+    var sub = escapeHtml(r.artist) + (when ? ' · ' + (when.indexOf('drops ') === 0 ? '<span style="color:var(--gold); font-weight:600;">' + when + '</span>' : when) : '');
+    return '<div class="hb-track-meta"><div class="hb-track-title">'
+      + (r.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>')
+      + escapeHtml(r.title) + '</div><div class="hb-track-sub">' + sub + '</div></div>';
+  };
+  window.__scHbPaintRelRows = function(host){
+    if(!host) return;
+    var all = [];
+    try{
+      Object.keys(pinnedReleases).forEach(function(artist){
+        (pinnedReleases[artist] || []).forEach(function(rel){
+          if(!window.__scJunkTitle(rel.title)) all.push(Object.assign({}, rel, { artist: artist }));
+        });
+      });
+    }catch(_eAll){}
+    all.sort(function(a, b){ return String(b.date || '').localeCompare(String(a.date || '')); });
+    var keyOf = function(r){ return String(r.artist) + '\u0001' + String(r.title); };
+    var want = {};
+    all.forEach(function(r){ want[keyOf(r)] = r; });
+    // Drop rows whose release is gone (a long-press removal, a refetch).
+    Array.prototype.slice.call(host.querySelectorAll('.hb-track-row[data-hb-rel]')).forEach(function(row){
+      if(!want[row.getAttribute('data-hb-rel')]) row.remove();
+    });
+    var have = {};
+    Array.prototype.slice.call(host.querySelectorAll('.hb-track-row[data-hb-rel]')).forEach(function(row){
+      have[row.getAttribute('data-hb-rel')] = row;
+    });
+    var wire = function(row){
+      if(row._hbRelWired) return;
+      row._hbRelWired = true;
+      row.addEventListener('click', function(){
+        openReleasePage(row.dataset.releaseArtist || '', row.dataset.releaseTitle || '');
+      });
+    };
+    all.forEach(function(r){
+      var k = keyOf(r);
+      var inner = window.__scHbRelRowInner(r);
+      var row = have[k];
+      if(row){
+        // Keep the node (and its listener); refresh only what it shows.
+        if(row._hbRelSig !== inner){ row.innerHTML = inner; row._hbRelSig = inner; }
+      } else {
+        row = document.createElement('div');
+        row.className = 'hb-track-row';
+        row.style.cursor = 'pointer';
+        row.setAttribute('data-hb-rel', k);
+        row.setAttribute('data-release-title', r.title || '');
+        row.setAttribute('data-release-artist', r.artist || '');
+        row.setAttribute('data-date', String(r.date || '').slice(0, 10));
+        row.innerHTML = window.__scHbRelRowInner(r);
+        row._hbRelSig = row.innerHTML;
+        host.appendChild(row);
+      }
+      wire(row);
+    });
+    // Keep the count line (and the tab strip's remembered label) current.
+    var unseenCount = all.filter(function(r){ return !r.seen; }).length;
+    var countTxt = all.length + ' recent release' + (all.length > 1 ? 's' : '') + (unseenCount ? ' · ' + unseenCount + ' new' : '');
+    var countEl = host.querySelector('#hbRelCount');
+    if(countEl && countEl.textContent !== countTxt) countEl.textContent = countTxt;
+    host._dpRelSub = countTxt;
+    var mark = host.querySelector('#hbCtaMarkSeen');
+    if(mark){
+      mark.disabled = !unseenCount;
+      mark.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg>'
+        + (unseenCount ? 'Mark all ' + unseenCount + ' as read' : 'All caught up');
+    }
+    // New rows land at the end, so re-run the tab filter over the whole set.
+    try{
+      if(host.querySelector('#dpRelTabs')){
+        host._dpRelOrder = null;
+        if(typeof window.__scDiscRelTab === 'function') window.__scDiscRelTab(window.__scRelTabMode || 'all', host);
+      }
+    }catch(_eTab){}
+    try{ if(typeof window.__scUpRefreshState === 'function') window.__scUpRefreshState(host); }catch(_eSt){}
+  };
   function openHomeBubble(kind){
     const overlay = $('homeBubbleOverlay');
     const ico = $('hbPanelIco');
@@ -30046,23 +30148,11 @@ if(!isDiscover) stopDiscoverPreview();
           '<button class="hb-cta hb-markread" id="hbCtaMarkSeen"' + (unseenCount ? '' : ' disabled') + '>'
             + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z"/></svg>'
             + (unseenCount ? 'Mark all ' + unseenCount + ' as read' : 'All caught up')
-            + '</button>' +
-          all.map(rel => {
-            rel = Object.assign({}, rel, { date: window.__scDay10(rel.date) });
-            const daysAgo = rel.date ? Math.floor((Date.now() - new Date(rel.date+'T00:00:00Z').getTime())/86400000) : null;
-            const relAt = (typeof window.__scTime12 === 'function' && window.__scTime12(rel.time)) ? ' at ' + window.__scTime12(rel.time) : '';
-            const relAtUp = relAt || ' at time TBA';   // upcoming + no catalog time
-            const daysUntil = rel.date ? Math.ceil((new Date(rel.date+'T00:00:00Z').getTime() - Date.now())/86400000) : null;
-            const when = daysAgo == null ? '' : daysAgo < 0 ? 'drops ' + new Date(rel.date+'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + relAtUp + (daysUntil && daysUntil <= 120 ? ' · in ' + daysUntil + 'd' : '') : daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + 'd ago';
-            return '<div class="hb-track-row" style="cursor:pointer;" data-date="' + escapeHtml(String(rel.date || '').slice(0,10)) + '" data-release-title="' + escapeHtml(rel.title) + '" data-release-artist="' + escapeHtml(rel.artist) + '"><div class="hb-track-meta"><div class="hb-track-title">' + (rel.seen ? '' : '<span style="color:var(--coral); font-size:10px; font-weight:700; margin-right:6px;">NEW</span>') + escapeHtml(rel.title) + '</div><div class="hb-track-sub">' + escapeHtml(rel.artist) + (when ? ' · ' + (when.indexOf('drops ') === 0 ? '<span style="color:var(--gold); font-weight:600;">' + when + '</span>' : when) : '') + '</div></div></div>';
-          }).join('');
-        body.querySelectorAll('.hb-track-row').forEach(row => {
-          row.addEventListener('click', () => {
-                    // Same destination as the New releases list: the release page.
-        openReleasePage(row.dataset.releaseArtist || '', row.dataset.releaseTitle || '');
-        
-          });
-        });
+            + '</button>';
+        // The rows are painted by the shared in-place painter, so the panel a
+        // running check refreshes and the panel opened from scratch are built
+        // by exactly the same code (and neither re-creates the header).
+        window.__scHbPaintRelRows(body);
         var _markSeenBtn = $('hbCtaMarkSeen');
         if(_markSeenBtn && !_markSeenBtn.disabled) _markSeenBtn.addEventListener('click', () => { markReleasesSeen(); closeHomeBubble(); });
         // The same two tabs as the Fetch latest popup — All releases and
@@ -31261,6 +31351,20 @@ if(!isDiscover) stopDiscoverPreview();
   // document). The live progress line is created on demand.
   window.__scUpRefreshState = function(root){
     try{
+      // Called with a root while a redraw is already in flight, and without one
+      // from the progress ticker. With no root, update EVERY open release surface
+      // (the Fetch latest popup and the Home panel), so the bar shows on whichever
+      // one the user is actually looking at instead of on a hidden one.
+      if(!root){
+        var _surfaces = [];
+        ['discPopupBody', 'hbPanelBody'].forEach(function(id){
+          var n = document.getElementById(id);
+          if(n && n.querySelector && n.querySelector('#dpRelUpEmpty')) _surfaces.push(n);
+        });
+        if(!_surfaces.length) return;
+        _surfaces.forEach(function(n){ window.__scUpRefreshState(n); });
+        return;
+      }
       var scope = (root && root.querySelector) ? root : document;
       var el = scope.querySelector('#dpRelUpEmpty');
       if(!el) return;
@@ -31284,6 +31388,27 @@ if(!isDiscover) stopDiscoverPreview();
         if(bar.textContent !== txt) bar.textContent = txt;
         bar.style.display = '';
       } else if(bar){ bar.style.display = 'none'; }
+      // A progress BAR at the top of the panel, independent of which tab is
+      // showing - on "All releases" the empty state is hidden, so the line above
+      // was invisible exactly while the check was running. It is removed when the
+      // run ends, so the panel goes back to being a plain list.
+      var scopeEl = (scope === document) ? null : scope;
+      var progHost = scopeEl || el.parentNode || el;
+      var prog = progHost.querySelector ? progHost.querySelector('#scRelProgress') : null;
+      var total = (st && st.total) || 0;
+      var doneN = (st && st.done) || 0;
+      if(st && st.active && total > 0){
+        var pct = Math.max(4, Math.round((doneN / total) * 100));
+        if(!prog){
+          prog = document.createElement('div');
+          prog.id = 'scRelProgress';
+          prog.style.cssText = 'padding:2px 0 10px 0;';
+          if(progHost.insertBefore) progHost.insertBefore(prog, progHost.firstChild);
+        }
+        prog.innerHTML = '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--gold);margin-bottom:5px;font-weight:600;"><span>Looking for upcoming releases…</span><span>'
+          + doneN + '/' + total + '</span></div>'
+          + '<div style="height:4px;background:rgba(255,255,255,0.12);border-radius:999px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:var(--gold);border-radius:999px;transition:width 0.3s ease;"></div></div>';
+      } else if(prog){ prog.remove(); }
     }catch(_eUpState){}
   };
   window.__scWireUpcomingCta = function(el){
@@ -31326,12 +31451,20 @@ if(!isDiscover) stopDiscoverPreview();
   // tapped. Its slide-up is an animation on .open, so the panel is pinned to
   // animation:none for the rebuild — the repaint never plays the entrance a
   // second time.
+  // Called once per artist as a check lands, so it must NOT rebuild the panel:
+  // openHomeBubble re-creates the header, the buttons, every row and the
+  // All/Upcoming strip, which made a 4-artist check rebuild the whole panel four
+  // times and threw away the scroll position and the tab the user had picked.
+  // This updates the rows in place and moves on.
   function scRepaintOpenReleasePanel(){
     try{
       var overlay = document.getElementById('homeBubbleOverlay');
       if(!overlay || !overlay.classList.contains('open')) return;   // popup path repaints itself
       var tEl = document.getElementById('hbPanelTitle');
       if(!tEl || String(tEl.textContent || '').indexOf('New releases') !== 0) return;
+      var host = document.getElementById('hbPanelBody');
+      if(typeof window.__scHbPaintRelRows === 'function'){ window.__scHbPaintRelRows(host); return; }
+      // Fallback for an older shell: the full rebuild, animation suppressed.
       var panel = document.getElementById('homeBubblePanel');
       if(panel) panel.style.animation = 'none';
       try{ if(typeof openHomeBubble === 'function') openHomeBubble('newreleases'); }

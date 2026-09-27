@@ -33,7 +33,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.1.1', 'APP_VERSION = ' + ver);
+ok(ver === '63.1.2', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -95,7 +95,10 @@ console.log('[5] mark-all as read sits at the TOP of the New releases panel');
   const hb = sliceBetween("else if(kind === 'newreleases'){", "else if(kind === 'nowplaying'){");
   const iCount = hb.indexOf('id="hbRelCount"');
   const iMark = hb.indexOf('id="hbCtaMarkSeen"');
-  const iRows = hb.indexOf('all.map(rel => {');
+  // Rows are painted by the shared in-place painter in v63.1.3, so the ordering
+  // that matters is: count first, then the button, then the painter call that
+  // appends every row.
+  const iRows = hb.indexOf('window.__scHbPaintRelRows(body)');
   ok(iCount !== -1 && iMark !== -1 && iRows !== -1, 'panel markup found (count, button, rows)');
   ok(iCount < iMark, 'the button is rendered under the release count');
   ok(iMark < iRows, 'and ABOVE every release row');

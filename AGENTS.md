@@ -1,6 +1,55 @@
 # SideCut — repository memory
 
 
+## 63.1.2 (Sep 27, 2026): "keeps reopening the popup for every artist instead of showing a progress bar"
+- **The user's words**: "it keeps reopening the same new releases popup for every artist instaid of just showing a
+  progress bar inside of the what's new popup" — a follow-up to 63.1.1, which fixed the *reopen-after-close* but not
+  this. So 63.1.1's diagnosis was right as far as it went and the batch was **not done**.
+- **THE CAUSE (and why 63.1.1 missed it)**: `checkPinnedArtistReleases` saves and repaints **as each artist lands**
+  (`try{ renderNewReleases(); }catch{}` / `try{ scRepaintOpenReleasePanel(); }catch{}` inside the worker loop) — done
+  on purpose so a partly-finished run keeps what it found. But `scRepaintOpenReleasePanel()` called
+  `openHomeBubble('newreleases')`, and **`openHomeBubble` writes `body.innerHTML` from scratch**: the icon+title, the
+  `#hbRelCount` line, the mark-all button, every `.hb-track-row` and the injected All/Upcoming tab strip are all
+  re-created. Measured on the shipped build with 4 pinned artists by polling the identity of `#hbPanelBody`'s first
+  element: **THREE full panel rebuilds during one check**, and no progress indicator anywhere. 63.1.1 re-read the
+  popup's open/closed state and stopped *reopening* it, but the panel was still rebuilt once per artist while it was
+  open — which is exactly what the user was describing.
+- **The fix is an in-place row painter, `window.__scHbPaintRelRows(host)`** (with `window.__scHbRelRowInner(rel)` for
+  the markup): it builds the wanted set, **removes** rows whose release is gone (a long-press removal that raced a
+  finish), **reuses** the nodes that are still wanted (so listeners survive; `_hbRelWired` stops re-wiring and
+  `_hbRelSig` stops needless innerHTML writes), **creates** only the missing ones, updates `#hbRelCount` and the
+  mark-all button, then re-runs `__scDiscRelTab` so new rows land in the right tab. `scRepaintOpenReleasePanel` now
+  targets `#hbPanelBody` and calls it, with the old `openHomeBubble` rebuild kept only as a fallback behind a
+  `typeof` guard. The panel's **initial** render also goes through the painter, so the two paths can't drift.
+- **The progress bar**: `__scUpRefreshState` grew `#scRelProgress` — a labelled gold bar with `N/total` and a %
+  fill — created while `pinnedCheckState.active` and **removed** when the run ends. It lives at the top of the
+  *surface*, not inside the empty state (which is `display:none` on the All-releases tab — so a line there was
+  invisible exactly while the check ran). `__scUpRefreshState()` called with **no root** now updates *every* open
+  release surface (`['discPopupBody','hbPanelBody']`), which is what the 900 ms ticker in `__scUpcomingConnectTap`
+  needs. Verified: bar advances `0/4 → 1/4 → 2/4 → 3/4`, is gone after the run, and shows on BOTH the Home panel and
+  the Fetch latest popup.
+- **Verified with real node identity, not counts**: tab strip node preserved, every original row node still in the
+  DOM, panel never closed/reopened, bar removed at the end — on both surfaces.
+- **Patches**: `dev/patch-653.mjs` = the in-place painter + bar (5 index.html edits, anchor-located where a needle
+  would have to carry a non-ASCII `·`/`…`); `dev/patch-654.mjs` = the release bump (`APP_VERSION` **63.1.2**,
+  six-note head entry, `sw.js` → **`63.0.13`**, 29 repins, `--manifest`). New `dev/test-653.mjs` (30 checks);
+  `dev/test-60510.mjs` [4], `dev/test-616.mjs` [5] and `dev/test-651.mjs`'s `VER` were repinned because they pinned
+  the *inline* panel markup that moved into the painter — **grep every `test-*.mjs` for a moved code shape before
+  rebuilding**.
+- **Non-ASCII needle trap (cost two rounds)**: index.html stores the row markup with **literal** `·` and `…`
+  (bytes e2 80 a6 / e2 80 a2), while a JS `'\u2026'` in a patch needle evaluates to the *same* char but a
+  **template-literal** `\u2026` inside a written file can end up as a 6-char escape. Have index.html carry the
+  escapes (`textContent`, string concat) and the patch needle carry the real char, and prefer locating such a block
+  by anchor (`indexOf` start + end) rather than embedding it. (The shipped files ended up with LITERAL chars, which
+  is what the surrounding code already had — byte-different from an escape but identical on screen.)
+- **Sandbox note again**: the in-repo OTA zips carry a per-entry fixed mtime, but the CI publish step rebuilds them
+  and the byte sizes land a few bytes apart from a local build (725654 local). Always re-run `--manifest` **after**
+  the bundles, in that order.
+- **Verified**: 6 inline blocks parse; full `dev/test-*.mjs` suite green apart from the **pre-existing** `test-617`
+  ("hits and misses are both persisted", identical against `git show HEAD:index.html`); `check-dom` 0 failures; both
+  `ota-bundle --check` and `ota-bundle-play --check` OK at v63.1.2 / 6 notes; zero personal tokens in the notes or
+  any published manifest.
+
 ## 63.1.1 (Sep 27, 2026): "Check for drops keeps reopening the popup and I don't think it's looking"
 - **The user's words**: "Whenver I click upcoming releses and check for drops it keeps like reopening the popup
   for it and I don't think it's actually looking for upcoming releases from pinned artists" (Karan Aujla,
