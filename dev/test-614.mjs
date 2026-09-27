@@ -33,7 +33,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.1', 'APP_VERSION = ' + ver);
+ok(ver === '63.1.1', 'APP_VERSION = ' + ver);
 ok(!/^61\.3\.\d{2,}$/.test(ver), 'not a rolled-over patch number');
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
@@ -60,8 +60,10 @@ console.log('[2] the Upcoming tab keeps its place');
 console.log('[3] an empty Upcoming tab looks the dates up itself');
 {
   const relTab = sliceBetween('window.__scDiscRelTab = function(mode, root){', 'function openDiscoverPopup');
-  ok(relTab.includes("if(upcoming && !up.length)"), 'autofetch fires only on an empty Upcoming tab');
-  ok(relTab.includes('window.__scUpcomingAutofetch()'), 'and calls the background lookup');
+  ok(relTab.includes("if(upcoming && !up.length && window.__scUserTabTap"), 'autofetch fires only on an empty Upcoming tab that YOU tapped');
+  ok(relTab.includes('window.__scUpcomingAutofetch(root)'), 'and calls the background lookup');
+  ok(relTab.includes('!window.__scReleaseRepaintOnly'), 'a repaint mid-check never re-arms it');
+  ok(relTab.includes("pinnedCheckState && pinnedCheckState.active"), 'and neither does a running check');
   const auto = sliceBetween('window.__scUpcomingAutofetch = async function(){', 'window.__scRebuildReleaseLists = async function');
   ok(auto.includes('window.__scUpAutoBusy'), 'one run at a time');
   ok(auto.includes('sidecut_upAutoAt'), 'throttled in storage');

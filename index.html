@@ -11237,7 +11237,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.1';
+  const APP_VERSION = '63.1.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11659,6 +11659,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.1.1', date: 'September 27, 2026 · 12:18 AM EDT', title: 'The upcoming-releases check stops reopening its own popup', items: [
+    'Asking for upcoming releases no longer brings the panel back after you close it. A check that was still running redrew the panel when it finished, and drawing the panel shows it — so a check you started and then dismissed reappeared on its own, sometimes after the popup had been gone for half a minute.',
+    'The panel also looks like it is working now. While the open catalogs are being read it says how many of your artists it has reached so far, and when the run ends it says how many were read and whether anything dated ahead turned up, instead of leaving the same sentence from before on screen.',
+    'One tap does one check. The same run used to be started more than once over the same artists, which is part of what made the panel feel like it kept coming back and re-checking by itself.',
+    'Nothing about which sources are read changed. SideCut still asks the open release catalogs directly, with no account and nothing to connect, and it does not touch anything on this device.',
+    'SideCut can only show a drop a catalog has listed. A release that has not been dated anywhere yet still cannot appear, and the panel now says so plainly instead of looking like the check did nothing.',
+    'If you know when a record is coming out and no catalog has it, add it by hand from the same panel and SideCut will count it down like any other drop.',
+  ] },
   { version: '63.1', date: 'September 26, 2026 · 5:53 PM EDT', title: 'Release notes now describe each fix without quoting your library', items: [
     'Patch notes describe each fix in general terms now, instead of quoting the specific library size, artists, albums or songs that reported it. Every fix described in the previous release is unchanged — only the way it is written.',
     'This release exists so that change actually reaches your phone. An app only installs a build newer than the one it is running, so on an already-updated device the notes would otherwise have stayed exactly as they were.',
@@ -27622,10 +27630,14 @@ function _fallbackCopy(text){
       if(flBtn) flBtn.onclick = async function(){try{
         if(!isPremiumActive()){ toast('Premium feature — unlock in Settings!'); openSettingsTo('premium'); return; }
         if(!pinnedArtists.length){ toast('Pin some artists first!'); return; }
-        this.textContent = '⏳ Checking...'; this.disabled = true;
-        try{ await checkPinnedArtistReleases(); }catch(e){}
-        this.textContent = '🔄 Fetch latest from pinned artists'; this.disabled = false;
-        renderPinnedArtists(); renderNewReleases();
+        var _repaintOnly = !!window.__scReleaseRepaintOnly;
+        window.__scReleaseRepaintOnly = false;
+        if(!_repaintOnly){
+          this.textContent = '⏳ Checking...'; this.disabled = true;
+          try{ await checkPinnedArtistReleases(); }catch(e){}
+          this.textContent = '🔄 Fetch latest from pinned artists'; this.disabled = false;
+          renderPinnedArtists(); renderNewReleases();
+        }
         // Build popup content from pinnedReleases
         var releases = []; Object.keys(pinnedReleases).forEach(function(aname){ (pinnedReleases[aname]||[]).forEach(function(r){ if(window.__scJunkTitle(r.title)) return; releases.push(Object.assign({}, r, {artistName:aname})); }); }); releases.sort((a,b) => (b.date||'').localeCompare(a.date||''));
         var seen = (typeof seenReleaseIds === 'object') ? seenReleaseIds : {};
@@ -30080,7 +30092,7 @@ if(!isDiscover) stopDiscoverPreview();
             try{ if(typeof window.__scWireUpcomingCta === 'function') window.__scWireUpcomingCta(_hbEmpty); }catch(_eUpCta){}
             body.appendChild(_hbEmpty);
             _hbTabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){
-              btn.addEventListener('click', function(){ window.__scDiscRelTab(btn.dataset.mode, body); });
+              btn.addEventListener('click', function(){ window.__scUserTabTap = true; try{ window.__scDiscRelTab(btn.dataset.mode, body); } finally { window.__scUserTabTap = false; } });
             });
             window.__scDiscRelTab(window.__scRelTabMode || 'all', body);
           }
@@ -31238,10 +31250,53 @@ if(!isDiscover) stopDiscoverPreview();
   // whose next drop is dated.") in BOTH surfaces: the Fetch latest popup (block
   // 2) and the Home bubble. Both call this; it is on window because block 2
   // cannot see this IIFE's scope.
+  // Keep the empty Upcoming tab honest while it is open. The verdict line lives
+  // in its own child so it can be rewritten in place — writing textContent onto
+  // the container itself would take the two buttons with it, which is why the old
+  // line could only ever be set once, when the panel was built: a check that ran
+  // afterwards left you reading the same sentence, with nothing to show the check
+  // had happened at all.
+  //
+  // `root` may be the Discover popup body, the Home panel body, or omitted (the
+  // document). The live progress line is created on demand.
+  window.__scUpRefreshState = function(root){
+    try{
+      var scope = (root && root.querySelector) ? root : document;
+      var el = scope.querySelector('#dpRelUpEmpty');
+      if(!el) return;
+      var msg = el.querySelector('.sc-up-msg');
+      if(!msg){
+        msg = document.createElement('div');
+        msg.className = 'sc-up-msg';
+        Array.prototype.slice.call(el.childNodes).forEach(function(n){
+          if(n.nodeType === 1 && (n.className || '').indexOf('sc-up-') === 0) return;
+          if(n.nodeType === 3) el.removeChild(n);
+        });
+        el.insertBefore(msg, el.firstChild);
+      }
+      var want = (typeof window.__scUpcomingEmptyText === 'function') ? window.__scUpcomingEmptyText() : '';
+      if(want && msg.textContent !== want) msg.textContent = want;
+      var st = (typeof pinnedCheckState !== 'undefined' && pinnedCheckState) ? pinnedCheckState : null;
+      var bar = el.querySelector('.sc-up-run');
+      var txt = (st && st.active) ? ('Reading the open catalogs… ' + (st.done || 0) + '/' + (st.total || 0)) : '';
+      if(txt){
+        if(!bar){ bar = document.createElement('div'); bar.className = 'sc-up-run'; bar.style.cssText = 'font-size:11.5px;color:var(--gold);margin-top:8px;'; el.appendChild(bar); }
+        if(bar.textContent !== txt) bar.textContent = txt;
+        bar.style.display = '';
+      } else if(bar){ bar.style.display = 'none'; }
+    }catch(_eUpState){}
+  };
   window.__scWireUpcomingCta = function(el){
     try{
       if(!el || el._scUpWired) return;
       el._scUpWired = true;
+      // The sentence has to be its own node, so a later check can rewrite it
+      // without taking the buttons below it with it.
+      var _msg = document.createElement('div');
+      _msg.className = 'sc-up-msg';
+      _msg.textContent = el.textContent || '';
+      el.textContent = '';
+      el.appendChild(_msg);
       var wrap = document.createElement('div');
       wrap.style.cssText = 'display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px;';
       var cbtn = document.createElement('button');
@@ -31312,6 +31367,7 @@ if(!isDiscover) stopDiscoverPreview();
   };
   window.__scUpcomingAutofetch = async function(){
     if(window.__scUpAutoBusy) return;
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof isPremiumActive === 'function' && !isPremiumActive()) return;
     if(!pinnedArtists || !pinnedArtists.length) return;
     if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
@@ -31333,16 +31389,30 @@ if(!isDiscover) stopDiscoverPreview();
     }finally{ window.__scUpAutoBusy = false; }
   };
   window.__scRebuildReleaseLists = async function(doFetch){
+    if(doFetch){ try{ await checkPinnedArtistReleases(); }catch(_eChk){} }
+    // The popup's state is read AFTER the check, never before it. Deciding first
+    // meant a run that finished while you were somewhere else went on to redraw
+    // the release popup — and drawing it shows it — so a check you started and
+    // then closed came back on screen by itself. Closed stays closed now.
+    var tEl = document.getElementById('discPopupTitle');
+    var fb = document.getElementById('discoverFetchLatest');
     var popupOpen = false;
     try{
       var ov = document.getElementById('discPopupOverlay');
       popupOpen = !!(ov && getComputedStyle(ov).display !== 'none');
     }catch(_eOv){}
-    var tEl = document.getElementById('discPopupTitle');
-    var fb = document.getElementById('discoverFetchLatest');
     var onReleasePopup = popupOpen && tEl && String(tEl.textContent || '').indexOf('New Releases') !== -1 && fb && fb.onclick;
-    if(onReleasePopup){ try{ await fb.onclick(); }catch(_eFb){} return; }
-    if(doFetch){ try{ await checkPinnedArtistReleases(); }catch(_eChk){} }
+    if(onReleasePopup){
+      // Still open: redraw its rows from what the check just stored. The flag
+      // tells the handler this is a repaint — without it the handler asks for a
+      // second full check of every pinned artist, so one tap ran the whole thing
+      // twice and each pass reopened the popup.
+      try{ window.__scReleaseRepaintOnly = true; await fb.onclick(); }
+      catch(_eFb){}
+      finally{ window.__scReleaseRepaintOnly = false; }
+      try{ if(typeof window.__scUpRefreshState === 'function') window.__scUpRefreshState(); }catch(_eUpS){}
+      return;
+    }
     try{ renderNewReleases(); }catch(_e1){}
     try{ renderHome(); }catch(_e2){}
     try{ updateNotifBadge(); }catch(_e3){}
@@ -31363,6 +31433,7 @@ if(!isDiscover) stopDiscoverPreview();
         try{
           if(!btn || !pinnedCheckState || !pinnedCheckState.active) return;
           btn.textContent = 'Checking\u2026 ' + pinnedCheckState.done + '/' + pinnedCheckState.total;
+          try{ if(typeof window.__scUpRefreshState === 'function') window.__scUpRefreshState(); }catch(_eUpS){}
         }catch(_eTk){}
       }, 900);
     }catch(_eT0){}
@@ -31374,6 +31445,7 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(_eChk){ toast('The release check could not finish \u2014 try again.', 3600); }
     finally{ try{ if(_tick) clearInterval(_tick); }catch(_eTc){} }
     try{ if(btn){ btn.textContent = 'Check for drops'; btn.disabled = false; } }catch(_eB1){}
+    try{ if(typeof window.__scUpRefreshState === 'function') window.__scUpRefreshState(); }catch(_eUpR){}
   };
   // For a drop no catalog has listed yet: artist, title, date — stored exactly
   // like a fetched release, so it flows into the tabs, bell, Home and the
@@ -37434,12 +37506,9 @@ window.__scDiscRelTab = function(mode, root){
   if(emptyEl){
     root.appendChild(emptyEl);
     emptyEl.style.display = (upcoming && !up.length) ? 'block' : 'none';
-    // Keep the line current — but only while the buttons have not been wired
-    // into it yet: writing textContent after __scWireUpcomingCta ran would take
-    // the CTA buttons with it.
-    if(upcoming && !up.length && !emptyEl._scUpWired){
-      try{ emptyEl.textContent = window.__scUpcomingEmptyText(); }catch(_eEmpty){}
-    }
+    // Refresh the verdict line in place — it lives in its own child now, so this
+    // can run after the buttons are wired without taking them with it.
+    try{ if(typeof window.__scUpRefreshState === 'function') window.__scUpRefreshState(root); }catch(_eUpSt){}
   }
   var sEl = root._dpRelSubEl;
   if(sEl === undefined) sEl = document.getElementById('discPopupSub');
@@ -37454,8 +37523,13 @@ window.__scDiscRelTab = function(mode, root){
   // repaints itself when the dates land. Once at a time, at most once a minute,
   // and only while the tab is genuinely empty, so a repaint can never set it off
   // in a loop.
-  if(upcoming && !up.length){
-    try{ if(typeof window.__scUpcomingAutofetch === 'function') window.__scUpcomingAutofetch(); }catch(_eUpAuto){}
+  // The dates are looked up only when YOU tap the Upcoming tab. This block used to
+  // fire from inside the switcher itself, so every redraw re-armed it — and the
+  // redraw that follows a finished check re-armed it again, which is part of why a
+  // single tap felt like the popup kept reopening itself and re-checking.
+  if(upcoming && !up.length && window.__scUserTabTap && !window.__scReleaseRepaintOnly
+     && !(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active)){
+    try{ if(typeof window.__scUpcomingAutofetch === 'function') window.__scUpcomingAutofetch(root); }catch(_eUpAuto){}
   }
 };
 
@@ -37502,7 +37576,7 @@ function openDiscoverPopup(title, bodyHTML, subtitle){
       try{ if(typeof window.__scWireUpcomingCta === 'function') window.__scWireUpcomingCta(_upEmpty); }catch(_eUpCta2){}
       bEl.appendChild(_upEmpty);
       _tabs.querySelectorAll('.dp-rel-tab').forEach(function(btn){
-        btn.addEventListener('click', function(){ window.__scDiscRelTab(btn.dataset.mode); });
+        btn.addEventListener('click', function(){ window.__scUserTabTap = true; try{ window.__scDiscRelTab(btn.dataset.mode); } finally { window.__scUserTabTap = false; } });
       });
       window.__scDiscRelTab(window.__scRelTabMode || 'all');
       // Cached reopens never re-ran row wiring before — calling it here fixes

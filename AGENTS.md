@@ -1,5 +1,50 @@
 # SideCut — repository memory
 
+
+## 63.1.1 (Sep 27, 2026): "Check for drops keeps reopening the popup and I don't think it's looking"
+- **The user's words**: "Whenver I click upcoming releses and check for drops it keeps like reopening the popup
+  for it and I don't think it's actually looking for upcoming releases from pinned artists" (Karan Aujla,
+  Diljit Dosanjh, AP Dhillon, Shubh).
+- **THE REOPEN, both halves**: `__scRebuildReleaseLists` read the popup's open/closed state **before** the check
+  ran and, whenever the release popup was open, called the popup's own handler `fb.onclick()`. That handler ends
+  in `openDiscoverPopup(...)`, which sets `display:flex` **unconditionally** — so a check you started and then
+  closed put the popup back on screen when it finished. Measured: reopened 32 s into a run the user had already
+  dismissed, popup closed at 2.5 s and back mid-run. `__scDiscRelTab` also re-armed `window.__scUpcomingAutofetch`
+  from inside the switcher itself, so **every redraw** re-armed it — including the redraw that follows a finished
+  check — and each autofetch ran the same rebuild. That is why a single tap could run the whole sweep more than
+  once and why it felt like it kept re-checking. Also: the same `fb.onclick()` re-ran `checkPinnedArtistReleases()`,
+  so one "Check for drops" was two full passes over the artists.
+  **Fix**: sample the popup state **after** the check (closed stays closed); gate the handler with
+  `window.__scReleaseRepaintOnly` so a repaint never re-runs the sweep; mark a genuine tap with
+  `window.__scUserTabTap` (both tab strips) and let the empty tab autofetch only on that; add a
+  `pinnedCheckState.active` bail to the autofetch. Verified: 1 rebuild per tap, 0 autofetches.
+- **"It isn't looking"**: it *is* looking — live probes show MusicBrainz browse-by-id and the Wikidata pass
+  leaving for every pinned artist (3 MB requests each; MusicBrainz 200 with a UA, 403 without) and returning 0
+  rows because none of the four genuinely has a dated future release in any open catalog (Wikidata spells the
+  artist "Diljit", not "Diljit Dosanjh", so its pass can't credit him either). What made it *read* as dead was
+  the empty-state line: it was written once at panel build time, and updating it later was deliberately skipped
+  (`!emptyEl._scUpWired`) because `emptyEl.textContent = …` onto the container would take the two CTA buttons
+  with it. So a finished check left the **same frozen sentence**. Fix: the sentence moves into its own
+  `.sc-up-msg` child; new `window.__scUpRefreshState(root)` rewrites it in place and adds a live
+  "Reading the open catalogs… N/M" line while the run goes. Called from the rebuild, the empty tab's refresh, the
+  900 ms progress ticker, and the tap's `finally`. The catalog code was **not touched**.
+- **Patches**: `dev/patch-651.mjs` (11 index.html edits, converges from the pre-fix tree — rerun 0) and
+  `dev/patch-652.mjs` (`APP_VERSION` 63.1 → **63.1.1**, the six-note head entry, `sw.js` → **`63.0.12`**, 29 repins,
+  `--manifest`). New `dev/test-651.mjs` (35 checks); `dev/test-614.mjs` [3] repinned to the new gating (2 assertions).
+- **Two `sub()` traps hit again**: (1) a marker that is a **substring of another edit's replacement** makes the
+  edit skip on the first run — the ticker's `window.__scUpRefreshState()` marker was contained in edit 1's
+  replacement, so it silently "already applied" and never landed; use a longer, unique marker. (2) a line that
+  stores a **literal `\uXXXX` escape** in index.html (the ticker's `'Checking\u2026 '`) needs `\\u2026` in the
+  needle — a JS `"\u2026"` in the needle literal is 6 chars wide (bytes 5c 75 32 30 32 36) and matches nothing.
+- **Verified**: 6 inline blocks parse; full `dev/test-*.mjs` suite green apart from the **pre-existing**
+  `test-617` "hits and misses are both persisted" failure (identical against the pre-change `index.html`);
+  `check-dom` 0 failures; both `ota-bundle --check` and `ota-bundle-play --check` OK at v63.1.1 / 6 notes; zero
+  personal tokens in the notes or any published manifest. Probes: closed popup stays closed for 50 s of a run,
+  the two CTA buttons survive the in-place text update, and the empty line reports how many artists were read.
+- **Sandbox note (re-confirmed)**: `npm install acorn --no-save` PRUNES `jsdom` (probe died with MODULE_NOT_FOUND);
+  `npm install jsdom --no-save` after it. The zip shim must treat **non-flag args** as `out` + files — flag-first
+  parsing fed `.shim/zip` the `-X` and it never found `ota/update.zip`.
+
 ## 63.1 (Sep 26, 2026): the scrub needed a version bump to reach an updated phone
 - **The user's ask, verbatim**: "You don't have to put my personal data In patch notes remove all personal data from
   patch notes" — and, once the scrub was pushed at the same version, "Did you bump ver?" / "Yes".
