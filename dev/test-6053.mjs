@@ -93,7 +93,8 @@ console.log('[4] converter failure diagnostics');
 const ytPos = src.indexOf('async function tryYtAudioFormat');
 ok(ytPos !== -1, 'YouTube format helper located');
 if (ytPos !== -1) {
-  const ytBody = src.slice(ytPos, ytPos + 2200);
+  const ytEnd = src.indexOf('\n  function ', ytPos);
+  const ytBody = src.slice(ytPos, ytEnd === -1 ? ytPos + 3400 : ytEnd);
   ok(ytBody.includes('YouTube returned no streams'), 'reason 1: player returned nothing');
   ok(ytBody.includes('would not download or decode'), 'reason 2: stream blocked/undecodable');
   ok(ytBody.includes('the encoder produced nothing'), 'reason 3: encoder failed');
@@ -136,7 +137,7 @@ console.log('[7] release metadata');
 const vKey = "const APP_VERSION = '";
 const vi = src.indexOf(vKey);
 const ver = vi === -1 ? '' : src.slice(vi + vKey.length, src.indexOf("'", vi + vKey.length));
-ok(ver === '63.1.2', 'APP_VERSION = ' + ver);
+ok(ver === '63.1.3', 'APP_VERSION = ' + ver);
 const cStart = src.indexOf('const CHANGELOG = [');
 const cEnd = src.indexOf(NL + '  ];', cStart);
 let entries = null;

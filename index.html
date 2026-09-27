@@ -11237,7 +11237,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.1.2';
+  const APP_VERSION = '63.1.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11659,6 +11659,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.1.3', date: 'September 27, 2026 · 8:20 AM EDT', title: 'The release check updates the panel in place and shows its progress', items: [
+    'Asking for upcoming releases no longer rebuilds the panel for every artist it reads. The check refreshed its list as each artist came back, and that refresh re-created the whole panel - header, buttons, rows and tabs - so the list visibly rebuilt itself several times while you watched it.',
+    'The panel now shows a progress bar while the check is running, with the count moving 0/4, 1/4 and so on, so you can see it working instead of guessing.',
+    'The bar goes away when the check finishes and the panel settles back into a plain list of what it found.',
+    'Whatever you did in the panel while the check ran is kept: the tab you picked stays put and the list no longer jumps back to the top as results land.',
+    'A release you removed by holding it stays removed, even if a check that was already running finishes afterwards.',
+    'Nothing about which sources are read changed - SideCut still asks the open release catalogs directly, with no account and nothing to connect.',
+    '[FULL] The progress bar on a YouTube conversion was guessing, and it does not any more. It opened at a fixed 15% before any work had started, sat there through it — the longest wait of the run — and jumped around while the encoder counted its own way, sliding backwards whenever a stream had to be retried. The bar now follows the run itself: the audio lookup, the bytes actually received, the decode and the encode each take their own share of it, and it only ever moves forwards. The arrow character that used to sit in front of the word Converting is gone with it.',
+    '[FULL] A run starts sooner and gives up less often. The two audio lookups go out together now instead of one after the other, and the title lookup rides alongside them rather than in front of them, so nothing waits on a request it does not need before fetching anything. If the chosen output format cannot be produced at all, another one is tried automatically — a run that meets a blocked encoder still leaves you with your song. And the small x beside the button that starts a run now stops it, exactly like Cancel on the bubble.',
+  ] },
   { version: '63.1.2', date: 'September 27, 2026 · 3:54 AM EDT', title: 'The release check updates the panel in place and shows its progress', items: [
     'Asking for upcoming releases no longer rebuilds the panel for every artist it reads. The check refreshed its list as each artist came back, and that refresh re-created the whole panel - header, buttons, rows and tabs - so the list visibly rebuilt itself several times while you watched it.',
     'The panel now shows a progress bar while the check is running, with the count moving 0/4, 1/4 and so on, so you can see it working instead of guessing.',
@@ -14253,7 +14263,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       const cvPct = Math.max(0, Math.min(100, Math.round(cv.pct || 0)));
       html = `
         <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
-          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">⏬ Converting — ${escapeHtml(cv.title || 'working…')}</div>
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">Converting — ${escapeHtml(cv.title || 'working…')}</div>
           <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">${escapeHtml(cv.sub || '')}${cvPct ? ' · ' + cvPct + '%' : ''}</div>
           <div style="height:6px; background:var(--bg-raised); border-radius:3px; overflow:hidden;"><div style="height:100%; width:${cvPct}%; background:var(--coral); transition:width .3s;"></div></div>
           <div style="font-size:11px; color:var(--ink-dim); margin-top:6px;">Running in the background — the floating bubble has the Cancel button.</div>
@@ -14263,7 +14273,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(window.__scNotifConv){
       summaryHtml += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
-          <div style="font-weight:600; font-size:13.5px; color:var(--coral);">⏬ Converting ${Math.max(0, Math.min(100, Math.round(window.__scNotifConv.pct || 0)))}%…</div>
+          <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Converting ${Math.max(0, Math.min(100, Math.round(window.__scNotifConv.pct || 0)))}%…</div>
         </div>`;
     }
     if(updateIsNewer()){
@@ -32914,20 +32924,44 @@ if(!isDiscover) stopDiscoverPreview();
       resultEl.style.display = 'block';
       resultEl.innerHTML = '<div style="display:flex; gap:10px; align-items:flex-start;">' +
         '<img src="https://img.youtube.com/vi/' + videoId + '/mqdefault.jpg" style="width:80px; height:60px; border-radius:6px; object-fit:cover; flex-shrink:0;" onerror="this.style.display=none">' +
-        '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px;">\u23f3 Converting...</div>' +
-        '<div class="dp-yt-status" style="font-size:10px; color:var(--ink-dim); text-align:left;">⏳ Converting...</div></div></div>';
+        '<div style="flex:1;"><div style="font-weight:600; color:var(--ink); margin-bottom:4px;">Converting…</div>' +
+        '<div class="dp-yt-status" style="font-size:10px; color:var(--ink-dim); text-align:left;">Starting…</div></div></div>';
     }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
     window.__scCancelDl = false; scConvertPillResetCancel();
-    scConvertPillUpdate('Converting · YouTube', 'Starting…', 15);
+    // One honest number for the whole run. The audio lookup, the download, the
+    // decode and the encode are the four things that take time here, and each of
+    // them used to report its own 0-100 into the same bar: it opened at a made-up
+    // 15%, sat there through the download — the longest wait of the four — and
+    // then jumped around as the encoder counted its own way, sliding backwards
+    // whenever a stream had to be retried. Each phase now reports what it actually
+    // knows, inside its own band, and the number can only ever move forwards.
+    var YT_BANDS = { resolve: [0, 8], download: [8, 62], decode: [62, 70], encode: [70, 100] };
+    var _ytPct = 0;
+    function ytBandPct(band, frac){
+      var b = YT_BANDS[band] || [0, 100];
+      var f = Math.max(0, Math.min(1, Number(frac) || 0));
+      return b[0] + (b[1] - b[0]) * f;
+    }
+    // The one place that owns the number: clamped so a retried stream cannot undo
+    // the bar, and returned so the words can show the figure the bar is drawn at.
+    function ytPct(p){
+      p = Math.max(0, Math.min(100, Math.round(Number(p) || 0)));
+      if(p < _ytPct) p = _ytPct;
+      _ytPct = p;
+      return p;
+    }
     // Update the status line live so the user can see the fallback move MP3 -> WAV.
-    function setStatus(txt){
+    // Called with no pct it leaves the bar where it is.
+    function setStatus(txt, pct){
+      if(typeof pct === 'number') ytPct(pct);
       if(resultEl){
         var st = resultEl.querySelector('.dp-yt-status');
         if(st) st.textContent = txt;
       }
-      if(txt) scConvertPillUpdate('Converting · ' + (title || 'YouTube'), txt);
+      if(txt) scConvertPillUpdate('Converting · ' + (title || 'YouTube'), txt, _ytPct);
     }
+    setStatus('Starting…', 0);
 
     // Get video title from oEmbed
     var title = 'YouTube video';
@@ -32935,6 +32969,11 @@ if(!isDiscover) stopDiscoverPreview();
 
     var ytAuthor = '';
     var _ytFails = [];
+    // A format that could not be PRODUCED here (the MP3 encoder is fetched from a
+    // CDN, and a blocked one produces nothing) is not the same answer as a stream
+    // that would not fetch: only the first one is worth answering with another
+    // format. This sentinel is how the chain tells them apart.
+    var ENC_FAIL = { encoder: true };
     // Try to fetch metadata once (oEmbed has no CORS, always worth attempting).
     async function tryMeta(){
       try{
@@ -32948,9 +32987,18 @@ if(!isDiscover) stopDiscoverPreview();
 
     // Resolve the audio stream and re-encode it on-device (MP3, WAV fallback).
     async function tryYtAudioFormat(fmt){
+      setStatus('Looking for the ' + fmt.toUpperCase() + ' audio…', ytBandPct('resolve', 1));
       var audio = await scYtPlayer(videoId);
       if(!audio){ _ytFails.push(fmt.toUpperCase() + ': YouTube returned no streams — the video is unavailable or this network is blocking YouTube'); return null; }
-      var dec = await scFetchDecode(audio);
+      setStatus('Downloading the audio…', ytBandPct('download', 0));
+      // scFetchDecode reports real bytes while it downloads the stream, and the
+      // read is finished exactly when the fraction reaches 1: the decode that
+      // follows has no progress of its own, so that is where the phase changes.
+      var dec = await scFetchDecode(audio, function(txt){ setStatus(txt); }, function(frac){
+        if(frac >= 1){ setStatus('Decoding the audio…', ytBandPct('decode', 1)); return; }
+        var _p = ytPct(ytBandPct('download', frac));
+        setStatus('Downloading the audio — ' + _p + '%', _p);
+      });
       if(!dec){ _ytFails.push(fmt.toUpperCase() + ': the audio stream would not download or decode (blocked or capped network)'); return null; }
       // The COOPERATIVE encoder, the same one every other conversion path uses.
       // The plain scEncodeAudio runs the whole lamejs pass in one unbroken loop
@@ -32961,9 +33009,12 @@ if(!isDiscover) stopDiscoverPreview();
       // handed to URL.createObjectURL() fails silently.
       var blob = null;
       if(fmt === 'mp3' && typeof lamejs === 'undefined'){ await window.__scEnsureLamejs(); }
-      try{ blob = await scEncodeAudioCooperative(dec.buffer, fmt, { title: title || '', artist: (typeof ytAuthor === 'string' ? ytAuthor : ''), artBytes: null, artMime: null }, function(p){ if(p > 0 && p < 1) setStatus('Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(p * 100) + '%'); }); }
+      // Whatever the title lookup has by now (it started with the run). The tag
+      // and the file name need it, so this is the one place that waits for it.
+      if(metaP){ try{ await metaP; }catch(_mp){} metaP = null; }
+      try{ blob = await scEncodeAudioCooperative(dec.buffer, fmt, { title: title || '', artist: (typeof ytAuthor === 'string' ? ytAuthor : ''), artBytes: null, artMime: null }, function(p){ var _ep = ytBandPct('encode', p); if(p > 0) setStatus('Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(_ep) + '%'); }); }
       catch(_encErr){ blob = null; }
-      if(!blob){ _ytFails.push(fmt.toUpperCase() + ': the encoder produced nothing' + ((fmt === 'mp3' && typeof lamejs === 'undefined') ? ' — the MP3 encoder (lamejs) never loaded, which means a blocked CDN' : '')); return null; }
+      if(!blob){ _ytFails.push(fmt.toUpperCase() + ': the encoder produced nothing' + ((fmt === 'mp3' && typeof lamejs === 'undefined') ? ' — the MP3 encoder (lamejs) never loaded, which means a blocked CDN' : '')); return ENC_FAIL; }
       return { downloadUrl: URL.createObjectURL(blob), filename: (scSafeName(title || ('youtube_' + videoId)) || ('youtube_' + videoId)) + '.' + fmt, blob: blob };
     }
 
@@ -32990,21 +33041,32 @@ if(!isDiscover) stopDiscoverPreview();
       toast(addedYt ? ((_libClean.name || 'The song') + ' is in your library (All songs).') : (ext.toUpperCase() + ' ready! Tap Download.'), 5000);
     }
 
-    tryMeta().then(function(){
-      // Pass 1: try MP3. Pass 2: if that fails, try WAV — so if the MP3
-      // converter doesn't produce audio we can still grab a lossless WAV.
-      var wantFmts = (presetFmt && presetFmt !== 'auto') ? [presetFmt] : ['flac', 'wav', 'mp3'];
-      var chain = Promise.resolve(false);
-      wantFmts.forEach(function(f){
-        chain = chain.then(function(done){
-          if(done) return true;
-          setStatus('Trying ' + f.toUpperCase() + '...');
-          return tryYtAudioFormat(f).then(function(res){
-            if(res){ renderDownload(f, res); return true; }
-            return false;
-          });
+    // The title lookup rides ALONGSIDE the run instead of in front of it: it is one
+    // more request for a string only the tag and the file name need, and on a bad
+    // connection its relay walk could spend its whole budget before the run had
+    // even asked for a stream. tryYtAudioFormat awaits it before encoding.
+    var metaP = tryMeta();
+    Promise.resolve().then(function(){
+      // The format menu chooses the OUTPUT format, not the source stream. The
+      // chosen one is tried first, and the others follow ONLY when that format
+      // could not be produced at all — which is the card's own promise ("if your
+      // format can't be produced, it falls back to another one automatically").
+      // A stream that would not fetch is not a format problem: the other formats
+      // would re-fetch the same streams and fail the same way, only slower.
+      var chosen = (presetFmt && presetFmt !== 'auto') ? presetFmt : null;
+      var wantFmts = chosen
+        ? [chosen].concat(['flac', 'wav', 'mp3'].filter(function(x){ return x !== chosen; }))
+        : ['flac', 'wav', 'mp3'];
+      var chain = (function walk(i){
+        if(i >= wantFmts.length) return Promise.resolve(false);
+        var f = wantFmts[i];
+        setStatus('Trying ' + f.toUpperCase() + '...');
+        return tryYtAudioFormat(f).then(function(res){
+          if(res === ENC_FAIL) return walk(i + 1);   // this format cannot be produced here
+          if(res){ renderDownload(f, res); return true; }
+          return false;                              // the stream itself: another format changes nothing
         });
-      });
+      })(0);
       return chain.then(function(done){
         if(done) return true;
           if(window.__scCancelDl){
@@ -33066,8 +33128,15 @@ if(!isDiscover) stopDiscoverPreview();
   if(ytMp3ClearDisc){ ytMp3ClearDisc.addEventListener('click', function(){
     var inp = document.getElementById('ytMp3Input');
     var res = document.getElementById('ytMp3Result');
+    var cbtn = document.getElementById('ytMp3Btn');
+    // x does both things now: it clears the card AND it stops the run, which is
+    // the same gesture as Cancel on the bubble, one tap from the button that
+    // started it. A disabled button is exactly the "a run is in flight" state, so
+    // a stray tap on an idle card only empties the fields.
+    var running = !!(cbtn && cbtn.disabled);
     if(inp) inp.value = '';
     if(res){ res.innerHTML = ''; res.style.display = 'none'; }
+    if(running) scCancelConversion(cbtn);
   }); }
 
   // Settings YT to MP3
@@ -33238,7 +33307,7 @@ if(!isDiscover) stopDiscoverPreview();
       if(resultEl){ var st = resultEl.querySelector('.dp-cs-status'); if(st) st.textContent = txt; }
       if(txt) scConvertPillUpdate('Converting · ' + (csMeta.title || 'Spotify'), txt);
     }
-    csLoading('⏳ Fetching track info...');
+    csLoading('Fetching track info…');
     async function csFetchMeta(){
       try{
         var r = await fetch('https://open.spotify.com/oembed?url=' + encodeURIComponent(url) + '&format=json');
@@ -33434,7 +33503,7 @@ if(!isDiscover) stopDiscoverPreview();
     var _spLastStatus = '';
     csFetchMeta().catch(function(){}).then(function(){
       var useFmt = (presetFmt && presetFmt !== 'auto') ? presetFmt : null;
-      csSetStatus('⏳ Finding audio...');
+      csSetStatus('Finding audio…');
       return scSpToBuffer(csMeta, function(txt){ if(txt) _spLastStatus = txt; csSetStatus(txt); }).then(function(res){
         if(window.__scCancelDl && (!res || !res.buffer)){
           if(resultEl){ resultEl.style.display = 'block'; resultEl.innerHTML = '<div style="font-size:11px;color:var(--ink-dim);">Cancelled — nothing was added.</div>'; }
@@ -34356,6 +34425,33 @@ if(!isDiscover) stopDiscoverPreview();
   var scConvertPillState = { el: null, timer: null, pct: 0, cancelRequested: false };
   // A new run clears the flag; the Cancel handler sets it and dismisses the pill.
   function scConvertPillResetCancel(){ scConvertPillState.cancelRequested = false; }
+  // ONE cancel path, for every way out of a run: the bubble's Cancel button and
+  // the small x beside the button that starts a run do the same thing, so the two
+  // can never drift apart. The run stops at its next step - every fetch, decode
+  // and encode step checks __scCancelDl - and the bubble is dismissed on a grace
+  // window, so Cancel always means "gone", whatever the job in flight is doing.
+  function scCancelConversion(btnEl){
+    window.__scCancelDl = true;
+    window.__scNotifyAt = 0;
+    scConvertPillState.cancelRequested = true;
+    if(scConvertPillState.timer) clearTimeout(scConvertPillState.timer);
+    scConvertPillState.timer = setTimeout(function(){
+      if(!scConvertPillState.cancelRequested) return;
+      scConvertPillState.cancelRequested = false;
+      scConvertPill(false);
+    }, 1500);
+    var pill = scConvertPillState.el;
+    if(pill){
+      var cb = pill.querySelector('.sc-pill-cancel');
+      if(cb){ cb.disabled = true; cb.textContent = 'Cancelling…'; }
+      var cs = pill.querySelector('.sc-pill-sub');
+      if(cs) cs.textContent = 'Stopping — what already finished stays in your library';
+      scNotifyProgress('SideCut', 'Cancelling — what already finished stays in your library', scConvertPillState.pct || 0, false);
+    }
+    // The button that started it is usable again at once: the run may take a
+    // moment to unwind, and until it does the card would otherwise sit disabled.
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
+  }
   function scConvertPill(show){
     if(!show){
       var gone = scConvertPillState.el;
@@ -34378,25 +34474,7 @@ if(!isDiscover) stopDiscoverPreview();
     scPillMakeDraggable(pill);
     scPillApplyPos(pill);
     var cancelBtn = pill.querySelector('.sc-pill-cancel');
-    if(cancelBtn) cancelBtn.addEventListener('click', function(){
-      window.__scCancelDl = true;
-      cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…';
-      var cSub = pill.querySelector('.sc-pill-sub');
-      if(cSub) cSub.textContent = 'Stopping — what already finished stays in your library';
-      window.__scNotifyAt = 0;
-      scNotifyProgress('SideCut', 'Cancelling — what already finished stays in your library', scConvertPillState.pct || 0, false);
-      // The run cannot always report back — a download or an encode in flight
-      // may be wedged, and that is exactly when the bubble used to stay on
-      // screen forever. Dismiss it ourselves on a short grace window so the
-      // Cancel button always means "gone", whatever the job is doing.
-      scConvertPillState.cancelRequested = true;
-      if(scConvertPillState.timer){ clearTimeout(scConvertPillState.timer); }
-      scConvertPillState.timer = setTimeout(function(){
-        if(!scConvertPillState.cancelRequested) return;
-        scConvertPillState.cancelRequested = false;
-        scConvertPill(false);
-      }, 1500);
-    });
+    if(cancelBtn) cancelBtn.addEventListener('click', function(){ scCancelConversion(); });
     scConvertPillState.el = pill;
     return pill;
   }
@@ -34873,9 +34951,15 @@ if(!isDiscover) stopDiscoverPreview();
     var at = SC_AUDIO_CHUNK * 2;
     var probe = await scFetchRange(url, at, at + 1);
     if(probe && probe.bytes && probe.bytes.length) return true;
-    return !!(probe && probe.status === 416);
+    if(probe && probe.status === 416) return true;   // shorter than the probe point: fine
+    // A probe that came back with NOTHING (a timeout, a dropped connection) says
+    // nothing about the stream, and treating it as a verdict threw away the one
+    // candidate that might have fetched. Only an answer that explicitly refuses
+    // the range — 403 past the music-upload cap, 404/410 gone — disqualifies a
+    // stream; anything else is left to the fetch, which fails fast and moves on.
+    return !(probe && probe.status);
   }
-  async function scFetchBytes(url, expectedSize){
+  async function scFetchBytes(url, expectedSize, onProgress){
     var parts = [], total = 0, off = 0;
     while(off < SC_AUDIO_MAX){
       if(window.__scCancelDl) break;
@@ -34886,6 +34970,12 @@ if(!isDiscover) stopDiscoverPreview();
       total += part.bytes.length;
       // The first reply tells us the real size even when the player didn't.
       if(!expectedSize && part.total) expectedSize = part.total;
+      if(onProgress){
+        // 40 MiB is this reader's ceiling, so a long stream is measured against
+        // the ceiling rather than against a length it can never reach.
+        var _want = expectedSize ? Math.min(expectedSize, SC_AUDIO_MAX) : 0;
+        if(_want > 0){ try{ onProgress(Math.min(total, _want), _want); }catch(_op){} }
+      }
       // A short read ends the file; a full one means ask for the next chunk.
       if(!part.partial || part.bytes.length < (end - off + 1)) break;
       off += part.bytes.length;
@@ -35165,7 +35255,7 @@ if(!isDiscover) stopDiscoverPreview();
     // first — they are small, they decode cleanly, and for anything that is not
     // a music upload they are the whole answer — with a muxed stream behind
     // them for the music case.
-    var audioStreams = [], muxedStreams = [], seenUrls = {}, answered = 0, metaTitle = '', metaAuthor = '';
+    var audioStreams = [], muxedStreams = [], seenUrls = {}, metaTitle = '', metaAuthor = '';
     var take = function(list, wantMuxed, into, want){
       var rows = (list || []).slice();
       // Best first: opus 251 > m4a 141 > m4a 140, else first audio.
@@ -35194,26 +35284,33 @@ if(!isDiscover) stopDiscoverPreview();
       }
       return got;
     };
-    for(var c = 0; c < clients.length; c++){
-      if(answered >= 2) break;
+    // Both clients are asked AT ONCE, and the answers are read in the same order
+    // they were before. Asking them one after the other cost a whole extra YouTube
+    // round trip on every run - with its own connect and read timeouts in front of
+    // the download - for candidates the first client had usually already supplied.
+    // That wait is what made a run look stalled before it had fetched a byte.
+    var asks = clients.map(function(cl){
+      var ctx = { client: cl.client };
+      if(cl.third) ctx.thirdParty = { embedUrl: cl.third };
+      // Hand the transport the client this body declares, so the headers agree
+      // with it instead of always claiming to be the web player.
       try{
-        var ctx = { client: clients[c].client };
-        if(clients[c].third) ctx.thirdParty = { embedUrl: clients[c].third };
-        // Hand the transport the client this body declares, so the headers agree
-        // with it instead of always claiming to be the web player.
-        var d = await scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true }, { name: clients[c].num, version: clients[c].client.clientVersion, ua: clients[c].ua });
-        if(!d || !d.streamingData) continue;
-        answered++;
-        var vd = d.videoDetails || {};
-        if(!metaTitle && vd.title) metaTitle = vd.title;
-        if(!metaAuthor && vd.author) metaAuthor = vd.author;
-        // Audio-only first (small, decodes cleanly), the progressive muxed
-        // copy behind it for the music-upload cap — several of each, so the
-        // downloader can walk past a capped or blocked stream instead of
-        // running out of candidates.
-        take(d.streamingData.adaptiveFormats, false, audioStreams, 3);
-        take(d.streamingData.formats, true, muxedStreams, 2);
-      }catch(e){}
+        return scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', { context: ctx, videoId: videoId, contentCheckOk: true, racyCheckOk: true }, { name: cl.num, version: cl.client.clientVersion, ua: cl.ua }).catch(function(){ return null; });
+      }catch(_askErr){ return Promise.resolve(null); }
+    });
+    var answers = await Promise.all(asks);
+    for(var c = 0; c < clients.length; c++){
+      var d = answers[c];
+      if(!d || !d.streamingData) continue;
+      var vd = d.videoDetails || {};
+      if(!metaTitle && vd.title) metaTitle = vd.title;
+      if(!metaAuthor && vd.author) metaAuthor = vd.author;
+      // Audio-only first (small, decodes cleanly), the progressive muxed
+      // copy behind it for the music-upload cap — several of each, so the
+      // downloader can walk past a capped or blocked stream instead of
+      // running out of candidates.
+      take(d.streamingData.adaptiveFormats, false, audioStreams, 3);
+      take(d.streamingData.formats, true, muxedStreams, 2);
     }
     var streams = audioStreams.concat(muxedStreams);
     if(!streams.length) return null;
@@ -35225,7 +35322,7 @@ if(!isDiscover) stopDiscoverPreview();
   // Tries every stream the player handed over (lead client first, then the
   // alternates) and returns the decoded audio plus the URL that actually
   // worked, so a blocked, capped or undecodable stream no longer ends the run.
-  async function scFetchDecode(stream, onStatus){
+  async function scFetchDecode(stream, onStatus, onProgress){
     if(!stream) return null;
     var list = [{ url: stream.url, size: stream.size, muxed: stream.muxed }].concat(stream.alts || []);
     for(var i = 0; i < list.length; i++){
@@ -35234,8 +35331,12 @@ if(!isDiscover) stopDiscoverPreview();
       if(!s.url) continue;
       try{
         if(!(await scStreamUsable(s.url, s.size))) continue;
-        if(s.muxed && onStatus) onStatus('⬇ Music audio comes bundled with the video — downloading that instead (a bigger file)…');
-        var ab = await scFetchBytes(s.url, s.size);
+        if(s.muxed && onStatus) onStatus('Music audio comes bundled with the video — downloading that instead (a bigger file)…');
+        var ab = await scFetchBytes(s.url, s.size, function(loaded, total){
+          // Real bytes, not a guess: the player usually hands over the stream's
+          // length, which is what lets the bar follow the download itself.
+          if(onProgress) onProgress(total > 0 ? loaded / total : 0);
+        });
         if(!ab || !ab.byteLength) continue;
         var ctx = new (window.AudioContext || window.webkitAudioContext)();
         var buf = null;
@@ -35513,7 +35614,7 @@ if(!isDiscover) stopDiscoverPreview();
     for(var vi = 0; vi < verified.length && vi < 4; vi++){
       if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
       var entry = verified[vi];
-      if(onStatus) onStatus('⬇ Downloading the audio on your device (a few seconds)…');
+      if(onStatus) onStatus('Downloading the audio on your device (a few seconds)…');
       var decTry = await scFetchDecode(entry.pa, onStatus);
       if(!decTry) continue;
       var bufSec = (decTry.buffer && decTry.buffer.duration) ? Number(decTry.buffer.duration) : 0;
@@ -35543,7 +35644,7 @@ if(!isDiscover) stopDiscoverPreview();
         durationRejected = true;
       } else {
         fallbackUsable = true;
-        if(onStatus) onStatus('⬇ Downloading the audio on your device (a few seconds)…');
+        if(onStatus) onStatus('Downloading the audio on your device (a few seconds)…');
         var fbDec = await scFetchDecode(fallback, onStatus);
         var fbBuf = (fbDec && fbDec.buffer && fbDec.buffer.duration) ? Number(fbDec.buffer.duration) : 0;
         var fbDelta = (expectedSec > 0 && fbBuf > 0) ? Math.abs(expectedSec - fbBuf) : -1;
@@ -36355,8 +36456,12 @@ async function encodeAudioBufferToFlac(audioBuffer, meta, onSlice){
   if(ytMp3ClearSet){ ytMp3ClearSet.addEventListener('click', function(){
     var inp = document.getElementById('ytMp3InputSettings');
     var res = document.getElementById('ytMp3ResultSettings');
+    var cbtn = document.getElementById('ytMp3BtnSettings');
+    // Same as the Discover card: clear the fields, and stop the run too.
+    var running = !!(cbtn && cbtn.disabled);
     if(inp) inp.value = '';
     if(res){ res.innerHTML = ''; res.style.display = 'none'; }
+    if(running) scCancelConversion(cbtn);
   }); }
 
 

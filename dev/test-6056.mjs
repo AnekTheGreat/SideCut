@@ -22,7 +22,7 @@ const count = (hay, needle) => { let n = 0, i = hay.indexOf(needle); while (i !=
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.1.2', 'APP_VERSION = ' + ver);
+ok(ver === '63.1.3', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -45,7 +45,7 @@ ok(src.includes('max-width:min(74vw,300px)'), 'bubble is compact');
 ok(src.includes('touch-action:none') && src.includes('cursor:grab'), 'drag does not fight taps or scrolling');
 ok(src.includes('function scPillMakeDraggable(pill){') && src.includes('scPillMakeDraggable(pill);'), 'draggable defined and wired');
 ok(src.includes('class="sc-pill-cancel"'), 'Cancel button survives the redesign');
-ok(src.includes("cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…'"), 'cancel arms the flag');
+ok(src.includes("cb.disabled = true; cb.textContent = 'Cancelling…'"), 'cancel arms the flag');
 ok(src.includes('pill._scDragged'), 'tap-vs-drag guard present');
 
 console.log('[3] position round-trip (behaviour)');
@@ -139,7 +139,7 @@ ok(count(src, 'window.__scNotifConv') >= 6, 'progress state referenced everywher
 ok(src.includes('window.__scNotifConv = { title:'), 'state set from the pill');
 ok(src.includes('window.__scNotifConv = null;'), 'state cleared when done');
 ok(src.includes('!!window.__scNotifConv'), 'bell badges during a run');
-ok(src.includes('⏬ Converting — '), 'bell entry rendered');
+ok(src.includes('Converting — '), 'bell entry rendered');
 ok(src.includes('    scExportNotify();'), 'exports post from refreshExportNotif');
 {
   const start = src.indexOf('function scExportNotifyView(){');

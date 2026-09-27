@@ -1,6 +1,53 @@
 # SideCut — repository memory
 
 
+## 63.1.3 (Sep 27, 2026): "the progress bar is not accurate at all" + "YouTube conversion takes forever" + "clicking the x should cancel"
+- **The user's words**: a YouTube run's converting banner carried a down-arrow glyph and "the progress bar was not
+  accurate at all"; a YouTube conversion was "taking forever and doesn't work half the time"; and "if you click the
+  little x right next to convert it should cancel the download". Three reports, two bodies of work.
+- **THE BAR WAS GUESSING**: one bar, four phases (audio lookup, download, decode, encode), no single owner. It opened
+  at a hard-coded **15%** before any work had started, sat there through the download — the longest wait of the run —
+  because nothing measured it, and then slid **backwards** when a stream had to be retried (the encoder reported its
+  own 0–100 into the same bar). Now each phase reports into its own band (`var YT_BANDS = { resolve:[0,8],
+  download:[8,62], decode:[62,70], encode:[70,100] }`) and one clamped figure (`function ytPct(p)`) owns the number,
+  so the status words and the bar can never disagree and the bar can only move forwards. `scFetchBytes` and
+  `scFetchDecode` now report **real bytes** while the stream is read (measured against the reader's 40 MiB ceiling).
+  The glyph was a literal character in the strings the pill, the bell and both converter cards can show mid-run, so
+  all of them lost it.
+- **THE RUN STALLED AND GAVE UP — four waiting causes**: (1) the two Innertube clients were awaited **one after the
+  other** (`answered` / `if(answered >= 2) break`), so a second full round trip with its own connect+read timeouts sat
+  in front of the first byte; both are now asked at once (`var asks = clients.map(...)`, `await Promise.all(asks)`).
+  (2) the oEmbed title lookup sat **in front of** the whole run, so a slow relay walk delayed the fetch by up to its
+  budget; it now rides alongside (`var metaP = tryMeta()`) and only the encoder awaits it. (3) a **chosen** output
+  format had no fallback at all — the card promises one, but the chain was one entry long — so a blocked MP3 encoder
+  (lamejs is fetched from a CDN) ended the run with nothing; the chain is now `[chosen].concat(others)` with an
+  `ENC_FAIL` sentinel that tells "cannot be produced here" (try the next format) apart from "the stream would not
+  fetch" (stop, another format changes nothing). (4) a usability probe that got **no answer** (timeout, dropped
+  connection) was treated as a refusal and threw the one good candidate away; now `return !(probe && probe.status)` —
+  only an explicit 403/404/410 refuses.
+- **CANCEL FROM THE CARD**: the x beside Convert cleared the fields and nothing else, so a run kept going with no way
+  to stop it from its own card. Both cards now call one shared `scCancelConversion(btnEl)` — the same path the
+  bubble's Cancel uses — which latches `window.__scCancelDl`, hands the Convert button back at once, and dismisses the
+  pill on a **1500 ms** grace window so Cancel always means "gone", whatever the job in flight is doing.
+- **THE NOTES ARE [FULL] AND LAST**: the new head entry's six **public** notes are the 63.1.2 set, because the head
+  entry is the release both channels describe and the shared six may not read as a downloader (dev/test-617..620,
+  -60510, -651). The two fixes are documented as `[FULL]` items **after** them: marker-stripped for the full build,
+  filtered out on the Play channel on the marker alone (`changelogItems`), so neither test-651's six-note set nor
+  test-play-copy's wider net ever sees them.
+- **PATCHES**: `dev/patch-655.mjs` = the progress fix (no glyph, bands, byte-measured download); `dev/patch-656.mjs` =
+  the run/cancel fix (concurrent clients, `metaP`, format fallback, probe tolerance, shared cancel);
+  `dev/patch-657.mjs` = the release bump (`APP_VERSION` **63.1.3**, six-note-plus-two head entry, `sw.js` →
+  **`63.0.14`**, version repins, `--manifest`). New `dev/test-655.mjs` (41 checks) and `dev/test-656.mjs` (43 checks)
+  pin the fixes and **fail against the pre-fix build** (`SC_HTML=<pre-fix index.html> node dev/test-655.mjs`).
+  `dev/test-6055.mjs` / `dev/test-6056.mjs` were repinned for the moved `cb.` cancel button and `dev/test-614.mjs`
+  for the helper slice + `cl.num`; the version pins across the suite (`test-6052..60510`, `612`, `6136..6139`, `614`,
+  `616..620`, `651`, `653`) moved 63.1.2 → 63.1.3. **Numbering note**: 652/653 already belong to the 63.1.1/63.1.2
+  scripts on this line, so this release's files start at 655.
+- **Verified**: full `dev/test-*.mjs` suite green apart from the **pre-existing** `test-617` ("hits and misses are
+  both persisted", identical against `git show origin/main:index.html`); `check-dom` 0 failures; both `ota-bundle
+  --check` and `ota-bundle-play --check` OK at **v63.1.3 / 6 notes** (zip fixed-point after 2 rounds; re-run
+  `--manifest` **after** the bundles, as always).
+
 ## 63.1.2 (Sep 27, 2026): "keeps reopening the popup for every artist instead of showing a progress bar"
 - **The user's words**: "it keeps reopening the same new releases popup for every artist instaid of just showing a
   progress bar inside of the what's new popup" — a follow-up to 63.1.1, which fixed the *reopen-after-close* but not
