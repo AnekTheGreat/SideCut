@@ -97,6 +97,84 @@
   `boot-profile`, the `v*-check.cjs` stale pins) fails **identically on pristine `origin/main`** — no new failures.
 
 
+### 64, part two: "the inbuilt AI ... keeps hallucinating. And check every single function of the app and make sure it works with 0 errors"
+- **THE AUDIT IS THE DELIVERABLE** for the second half of that ask: `dev/audit-calls.mjs` (acorn, already a dependency)
+  parses every inline `<script>` block and walks the AST, then reports every identifier that is **READ but never
+  DECLARED** and is not a platform global. That is exactly a `ReferenceError` waiting for the line to run — the same
+  fault as the `updateNpDisplay is not defined` banner in part one, which no text-matching gate could see (the syntax
+  was valid). It also checks the mirror-image fault: a **line comment that swallowed code**, i.e. an inner `//`
+  preceded by whitespace with code punctuation after it, which is the fingerprint of two lines glued together with a
+  space. `node dev/audit-calls.mjs` exits 1 on either. `dev/test-663.mjs` runs it as check [1].
+- **IT FOUND NINE. TWO WERE ITS OWN BLIND SPOT, ONE WAS A DELETION, AND SEVEN WERE REAL CALLS TO NOTHING:**
+  * **THE LOST LINE BREAK (the worst of them)**: **one physical line 17311** held the tail of `sharePlaylistCode`,
+    the comment `// Build a full share link ...`, the rest of `sharePlaylistCode`, **`openShareCodeModal()`** and the
+    opening line of **`copyTextToClipboard()`** — all joined by spaces. A `//` runs to the end of the line, so all of
+    it became comment text: the share link was never stored, `openShareCodeModal()` did not exist (tapping
+    "Open a share code" threw), `copyTextToClipboard()` did not exist (**every Copy button in the app threw**), and
+    its body was left as dangling statements inside `sharePlaylistCode`, where it threw `text is not defined` the
+    moment the share sheet opened. This is why the auditor reported those two as undeclared — they were declared, in
+    a comment. **The newlines are restored**; the two were never bugs to "fix".
+  * `confirmDeleteTrack(t.id)` (now-playing menu "Delete from library") → the function is **`deleteTrack(id,
+    skipConfirm)`**, which is what the song actions sheet already calls.
+  * `parseMP3Tags(buf)` in **Reset covers** → the app has exactly one tag reader, **`extractTags(track)`** (async,
+    returns `{genre, artBlob}`, used by the import path to lift the embedded APIC cover). The reset built its own
+    buffer and called a reader that was never written, so it threw on the first song that still had a file.
+  * `persistLibrary()` in the playlist-import preview path → **declared nowhere**. A preview is a remote 30-second
+    clip with no bytes on the device; `buildTrackRecord()` stores the audio as a blob, so a record written without one
+    restores as a silent entry (`_noAudio`). It is honestly **session-only** now, with the reason in a comment.
+  * `dbGetSync('meta','appIcon')` → the meta store is **asynchronous** and has no sync getter. It threw inside a
+    `try/catch`, which is why the app-icon picker silently never restored a saved choice that was not in
+    localStorage. It awaits `dbGet('meta','appIcon')` (the `wireAppIconPicker` IIFE is `async` now).
+  * `_cardPtrId` (album-card hold-to-reorder release) → nothing ever captured that name. The id **was** captured, as
+    `origPointerId`, **inside the hold timer**, where `cancelHold()` (declared outside it) cannot see it — and both
+    release sites were inside `try/catch`, so neither throw was visible. Both now use one `var _cardPtrId = null;`
+    declared in the scope the two share.
+  * `updateCSSGlow()` on the import path restoring glow settings → the real function is **`applyGlowCssVars()`**.
+  * `seenReleaseIds` in the New Releases popup → declared nowhere, so `seen` was always empty and **every release
+    carried a NEW badge forever**. The flag the app actually keeps is **`r.seen`** (`markReleasesSeen`).
+- **WHY THE ASSISTANT HALLUCINATED — four separate causes, all "the app was described by someone who has not seen it":**
+  1. **THE KNOWLEDGE BASE HAD NO CROP ENTRY.** "How to crop a song" fell through to Gemini, which answered *"SideCut
+     does not currently support cropping or trimming audio files"* — while the app has a **Crop song** button, a
+     waveform scrubber, a preview of the cut and an **Undo crop** in the song info sheet. Five entries added: crop /
+     trim (+ undo), the Watermark Remover, the rollback copies, the Home layout editor, and "my song is not loading".
+  2. **ELEVEN ANSWERS NAMED TABS THAT DO NOT EXIST**: `Settings -> Playback` (5), `Settings -> EQ` (2),
+     `Settings -> Equalizer` (1), plus two tips in the guide. `showSettingsTab()` opens with
+     `if(tab === 'refresh' || tab === 'playback' || tab === 'eq') tab = 'more';` and a tag-stack parse of the settings
+     markup confirms it: **Refresh, Playback, the equalizer, the library tools, the Watermark Remover and the storage
+     panel all live inside `settingsPaneMore`**. The tab strip's buttons are Premium, Get Songs, Theme, Donate, Glow,
+     Sandbox, Support, Widget and More. All eleven now say `Settings -> More` (and `More -> Playback` where that is
+     the collapsible).
+  3. **THE KNOWLEDGE BASE'S OWN TEXT HAD LOST ITS SPACES** — same lost-space fault as the lost line break, caught
+     before it deleted code: "give it a name,andthe songs group under it", "Pinned-artist coversare manual-only",
+     "it no longer clutter", "covering allthe v56 stuff,then falls back". **46 restored** by a pass over `_aiKB`
+     only, with the guard "a letter on both sides of the comma" (which is why `,a:` in the object literals and `','`
+     in the query lists are untouched), plus an explicit glue-word table.
+  4. **THE PROMPT ONLY LISTED A FEW FEATURES** and asked the model not to contradict them — not enough to stop a
+     model answering from its idea of a music player. It now carries the **real tab list**, the real features **with
+     the page each one lives on**, and the rule *never invent a screen or a menu path; if you are not certain, say so
+     and point at Settings -> Support*. On top of that: **the model is handed the app's entry for the question as
+     GROUND TRUTH** (`_aiGroundNote` + `_aiGeminiQuery(msg, kbGround)`), and a question the app really answers
+     (**`_aiFuzzyMatch(msg, 80)`**, i.e. an exact or substring match — `_aiFuzzyMatch` now takes a threshold) is
+     answered **from the app itself without asking a model at all**, with the status line saying so. A model cannot
+     deny a feature that is in front of it.
+- **THE RELEASE NOTE STRATEGY, unchanged**: the head entry stays at **8 items** (6 shared + 2 `[FULL]`), and the two
+  notes that already described this class of fault were **extended rather than renumbered** — the assistant note and
+  the `updateNpDisplay` note. `dev/test-662.mjs` pins that shape (first six carry no `[FULL]`, everything from index 6
+  does) and `dev/test-play-copy.mjs` reads the six Play-visible ones against the wider term list, so the added text
+  names no tool.
+- **BUNDLE FIXED POINT MOVED TO 736759** (was 733724): the root `manifest.json` is the OTA update manifest **and it is
+  inside the zip**, so editing the notes changes the bundle, which changes the manifest, which changes the bundle.
+  Reach it the same way: `node dev/ota-bundle.mjs` → `node dev/patch-661.mjs --manifest` → repeat until the size stops
+  changing (this time it needed two rounds, because the notes themselves changed), then `node dev/ota-bundle-play.mjs`.
+  Both `--check`s pass.
+- **GATE RESULT**: `dev/audit-calls.mjs` → **OK, 4663 declared names across 3 script blocks, no comment has swallowed
+  code**; `dev/test-663.mjs` → **49/49**; `dev/test-662.mjs` → passes; `dev/check-dom.mjs` → **DOM INTEGRITY
+  FAILURES: 0**. The whole suite was re-run: the only remaining failures are the known pre-existing ones
+  (`test-617`, `media-controls-check`, and the `v*-check.cjs` stale pins), and every one of them was re-run against
+  the **pre-patch v64 file** and fails **identically** — no new failures. `ota-*` and `batch-635` and
+  `discover-singles-check` now PASS (they had been run against the stale bundle in part one).
+
+
 ## 63.1.4 (Sep 27, 2026): "Fix the damn auto albums ... just remove the auto albums and make sure that doesn't affect my regular albums" + "add a search bar to manage albums"
 - **The user's words**: "Fix the damn auto albums I hate those because I make an album and it says it already exists just
   remove the auto albums and make sure that doesn't affect my regular albums. Then add a search bar to manage albums."

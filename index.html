@@ -4347,8 +4347,8 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
         <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Open <b>Settings</b> (gear icon) → <b>Theme</b> to pick a look</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Under <b>Settings → Glow</b>, mix and match edge lines, blur bands, and corner glow — all independent toggles, all customizable</span></div>
-          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Settings → Playback has crossfade, gapless mode, and normalization</span></div>
-          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Settings → Equalizer has 8 adjustable bands plus presets</span></div>
+          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Settings → More → Playback has crossfade, gapless mode, and normalization</span></div>
+          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Settings → More has 8 adjustable bands plus presets</span></div>
         </div>
       </div>
 
@@ -7131,14 +7131,18 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if(sel) sel.value = val || 'auto';
     if(typeof updateFavicon === 'function') updateFavicon(true);
   }
-  (function wireAppIconPicker(){
+  (async function wireAppIconPicker(){
     const sel = $('appIconChoice');
     if(sel){
       sel.addEventListener('change', () => setAppIconChoice(sel.value));
       let saved = null;
       try{ saved = localStorage.getItem('sidecut_appIcon'); }catch(_e){}
       if(!saved){
-        try{ saved = (dbGetSync && dbGetSync('meta', 'appIcon')) || null; }catch(_e){}
+        // The meta store is asynchronous and has no synchronous getter, so
+        // this used to read a dbGetSync() that does not exist. It threw
+        // inside the try/catch, which is why the picker silently never
+        // restored a choice that is not in localStorage.
+        try{ const _iconRow = await dbGet('meta', 'appIcon'); saved = (_iconRow && _iconRow.value) || null; }catch(_e){}
       }
       if(saved) sel.value = saved;
     }
@@ -10656,7 +10660,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 6l-1-2H5v17h2v-7h5l1 2h7V6h-6zm4 8h-4l-1-2H7V6h5l1 2h5v6z"/></svg>', label: 'Add to playlist', action: () => { $('npMenuBackdrop').style.display = 'none'; promptAddToPlaylist(t.id); } },
       { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>', label: playlists['Favorites'].includes(t.id) ? 'Remove from Favorites' : 'Add to Favorites', action: () => { $('npMenuBackdrop').style.display = 'none'; toggleFavorite(t.id); } },
       { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h9v6h-9zm6 4h2v2h-2zm3-4h5v2h-5zm0 4h5v2h-5zM4 18h16v2H4z"/></svg>', label: 'Play next', action: () => { $('npMenuBackdrop').style.display = 'none'; playNext(t.id); } },
-      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>', label: 'Delete from library', action: () => { $('npMenuBackdrop').style.display = 'none'; confirmDeleteTrack(t.id); } },
+      { icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>', label: 'Delete from library', action: () => { $('npMenuBackdrop').style.display = 'none'; deleteTrack(t.id); } },
     ];
     
     menuList.innerHTML = menuItems.map(item => `
@@ -11687,11 +11691,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   const CHANGELOG = [
   { version: '64', date: 'September 27, 2026 · 11:56 AM EDT', title: 'The QOL pass: covers stop repeating, the assistant stops leaving you with an error, and your rollback history is yours again', items: [
     'Picking a picture for an artist no longer shows you the same sleeve over and over. The grid was built one square per song, and every song carries its own copy of that art, so ten songs off one album put ten identical squares in it. It is one square per image now, and the artist singles are asked for as well as the albums \u2014 which is where a lot of the pictures that were missing were hiding.',
-    'The assistant stops leaving you with an error when the service behind it is briefly busy. That is the same question working a moment later, so it is retried before anything is said, and if it still cannot answer, the question is answered from the knowledge built into the app with the line underneath saying which one answered. It also stops denying its own features: the tools this app really has are named in what it is told about the app, so it no longer tells you a feature is not there when it is.',
+    'The assistant stops leaving you with an error when the service behind it is briefly busy. That is the same question working a moment later, so it is retried before anything is said, and if it still cannot answer, the question is answered from the knowledge built into the app with the line underneath saying which one answered. It also stops denying its own features: the tools this app really has are named in what it is told about the app, so it no longer tells you a feature is not there when it is. It is also given the answer the app documents for itself, so a question about a feature is answered from SideCut instead of from a general idea of what a music player usually has, and it is told which pages really exist \u2014 playback, the equalizer, the library tools and the storage panel are all inside Settings \u2192 More, which is a page that exists, and it no longer sends anyone to a Settings tab that does not.',
     'The pinned artists row on Discover is a rounded card on a raised surface with a hairline border now, instead of a flat block of the theme colour running edge to edge and butted against the search box.',
     'Every slider in Settings follows your finger \u2014 a bigger thumb on a filled track, instead of the small native one that you could only move by tapping where you wanted it to land. The seek bar above the player is draggable too: the file clock used to write the playhead position back into it several times a second, which pulled the thumb out from under your finger mid-drag, and it does not any more.',
     'Free up space no longer deletes any of your saved rollback copies. They are the list the version picker shows and the way back to a build that worked, and the button was trimming them to the newest six; it leaves every one of them alone now, and the Storage panel says so instead of promising a cap. It also stops reading every page-sized copy twice just to report how much it had freed.',
-    'A red error banner that read updateNpDisplay is not defined, after a refetch of missing covers or a watermark clean, is gone. The refresh those two jobs were reaching for was never defined anywhere in the app; it exists now, so the now bar updates itself instead of failing, and that refresh no longer counts as a play.',
+    'A red error banner that read updateNpDisplay is not defined, after a refetch of missing covers or a watermark clean, is gone. The refresh those two jobs were reaching for was never defined anywhere in the app; it exists now, so the now bar updates itself instead of failing, and that refresh no longer counts as a play. The same sweep \u2014 every name the app reads, checked against everything it declares \u2014 found seven more call sites reaching for something that was never there: the delete action in the now-playing menu, the reset-covers button, the album-card hold-to-reorder release, the glow restore on an import, the app icon picker, a 30-second preview added while importing, and the New badge in the New Releases popup. It also found a lost line break, where a comment had swallowed the rest of its own line and silently deleted the share-code sheet and the clipboard copy the whole app uses. All of them are fixed, and the check that found them now runs as part of the release.',
     '[FULL] Long runs finish sooner. The encoder was handing the thread back eighteen times a second and paying for a wake-up each time; it works in longer slices now, which is about a third more work for every time it stops, and the screen cannot tell the difference. The pause between songs in an album or playlist run was a flat three quarters of a second and is a fifth of that, which is ten seconds back on a twelve-song album.',
     '[FULL] The first-run guide, the step-by-step scenarios and the plain-text summary now describe what this build actually does: paste a Spotify or YouTube link and SideCut makes the file itself, tagged and with its cover art, instead of walking you out to another site to do it by hand. The build that accepts only your own files keeps the walkthrough it already had, which is what it should have been doing all along.',
   ] },
@@ -13976,9 +13980,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // Try to re-read embedded cover from file
         if(t.file){
           try{
-            const buf = await t.file.arrayBuffer();
-            const tags = parseMP3Tags(buf);
-            if(tags.artBlob){
+            // The app has one tag reader - extractTags() - and the import
+            // path uses it to lift the embedded APIC cover. This button had
+            // its own call to a parseMP3Tags() that was never written, so the
+            // reset threw on the first song that still had a file and left
+            // every cover in place.
+            const tags = await extractTags(t);
+            if(tags && tags.artBlob){
               t.artBlob = tags.artBlob;
               t.artUrl = URL.createObjectURL(tags.artBlob);
             }
@@ -16874,7 +16882,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
                   };
                   allTracks.push(newTrack);
                   queue.push(newTrack.id);
-                  persistLibrary();
+                  // A preview is a remote 30-second clip: there are no bytes
+                  // on this device to store, and buildTrackRecord() saves the
+                  // audio as a blob, so a record written here would come back
+                  // as a silent entry in the library. This is intentionally
+                  // session-only. The call that used to be made here --
+                  // persistLibrary() -- is not defined anywhere in the app,
+                  // so adding a preview always threw a ReferenceError.
                   resolve(true);
                 });
                 audio.addEventListener('error', () => resolve(false));
@@ -17308,7 +17322,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // No zip, no file download — just text. This is the transfer path the user asked
   // for in the playlist kebab menu.
 
-function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str) ) ) ; }catch(e){ return ''; }  }  function _scB64Decode(str){    try{      const s = String(str.trim() ).replace(/^SC\./, '').replace(/\s+/g, '') ;      return decodeURIComponent(escape(atob(s) ) ) ;    }catch(e){ return null; }  }  function sharePlaylistCode(){    const ids = playlists[activePlaylist] || [];    if(!ids.length){ toast('Nothing to share yet.') ; return; }    const tracks = ids.map(id => allTracks.find(t => t.id === id) ).filter(Boolean) ;    if(!tracks.length){ toast('Nothing to share yet.') ; return; }    if(tracks.length > 8000){ toast('That playlist is too big to share by code — export the .zip instead.', 4500) ; return; }    const payload = { v: 2, kind: 'playlist', n: activePlaylist, ts: tracks.map(t => ({ t: t.name, a: t.artist || '', al: t.album || '' })) };    const code = _scB64Encode(JSON.stringify(payload) ) ;    $('shareCodeTitle').textContent = `Share "${activePlaylist}"`;    $('shareCodeOut').value = code;    $('shareCodePaste').value = '';    $('shareCodeModal').style.display = 'flex';    window._lastShareCode = code;    window._lastSharePlaylist = activePlaylist;    // Build a full share link (?sc=<code>) so the recipient can open it in the    // web/browser app too.    const link = 'https://anekthegreat.github.io/SideCut/?sc=' + encodeURIComponent(code) ;    const shareLinkBtn = $('shareCodeCopyLink') ;    if(shareLinkBtn){ shareLinkBtn.dataset.link = link; shareLinkBtn.dataset.code = code; }  }  function openShareCodeModal(){    $('shareCodeTitle').textContent = 'Open a shared playlist code';    $('shareCodeOut').value = '';    $('shareCodePaste').value = '';    $('shareCodeModal').style.display = 'flex';  }  function copyTextToClipboard(text){
+function _scB64Encode(str){    try{ return btoa(unescape(encodeURIComponent(str) ) ) ; }catch(e){ return ''; }  }  function _scB64Decode(str){    try{      const s = String(str.trim() ).replace(/^SC\./, '').replace(/\s+/g, '') ;      return decodeURIComponent(escape(atob(s) ) ) ;    }catch(e){ return null; }  }  function sharePlaylistCode(){    const ids = playlists[activePlaylist] || [];    if(!ids.length){ toast('Nothing to share yet.') ; return; }    const tracks = ids.map(id => allTracks.find(t => t.id === id) ).filter(Boolean) ;    if(!tracks.length){ toast('Nothing to share yet.') ; return; }    if(tracks.length > 8000){ toast('That playlist is too big to share by code — export the .zip instead.', 4500) ; return; }    const payload = { v: 2, kind: 'playlist', n: activePlaylist, ts: tracks.map(t => ({ t: t.name, a: t.artist || '', al: t.album || '' })) };    const code = _scB64Encode(JSON.stringify(payload) ) ;    $('shareCodeTitle').textContent = `Share "${activePlaylist}"`;    $('shareCodeOut').value = code;    $('shareCodePaste').value = '';    $('shareCodeModal').style.display = 'flex';    window._lastShareCode = code;    window._lastSharePlaylist = activePlaylist;
+    // Build a full share link (?sc=<code>) so the recipient can open it in the
+    // web/browser app too.
+    const link = 'https://anekthegreat.github.io/SideCut/?sc=' + encodeURIComponent(code) ;
+    const shareLinkBtn = $('shareCodeCopyLink') ;
+    if(shareLinkBtn){ shareLinkBtn.dataset.link = link; shareLinkBtn.dataset.code = code; }
+  }
+  function openShareCodeModal(){
+    $('shareCodeTitle').textContent = 'Open a shared playlist code';
+    $('shareCodeOut').value = '';
+    $('shareCodePaste').value = '';
+    $('shareCodeModal').style.display = 'flex';
+  }
+  function copyTextToClipboard(text){
   // Try modern clipboard API first
   if(navigator.clipboard && navigator.clipboard.writeText){
     return navigator.clipboard.writeText(text).then(function(){
@@ -18914,6 +18941,12 @@ function _fallbackCopy(text){
         (function(){
           var holdTimer = null;
           var ALBUM_HOLD_MS = 3000;
+          // The pointer the drag captured. card.setPointerCapture() is called
+          // from inside the hold timer and cancelHold() lives outside it, so
+          // the id has to be held in the scope the two of them share -- which
+          // is why releasing a pointer id that only existed inside the timer
+          // (as the unused origPointerId did) could never work.
+          var _cardPtrId = null;
           card.addEventListener('pointerdown', function(e){
             if(e.target.closest('button') || e.target.closest('img') || e.target.closest('a') || e.target.closest('.track')) return;
             var sx = e.clientX, sy = e.clientY;
@@ -19000,7 +19033,7 @@ function _fallbackCopy(text){
               siblings.forEach(function(s){ if(s !== card) s.style.transition = 'transform 0.18s ease'; });
               try{ document.body.classList.add('reordering'); }catch(_rb){}
               try{ card.setPointerCapture(e.pointerId); }catch(_pc){}
-              var origPointerId = e.pointerId;
+              _cardPtrId = e.pointerId;
               var lastPointer = e;
               var autoScrollRAF = null;
               function onMove(ev){
@@ -19035,7 +19068,7 @@ function _fallbackCopy(text){
               function onUp(){
                 if(autoScrollRAF){ cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; }
                 try{ document.body.classList.remove('reordering'); }catch(_rb){}
-                try{ card.releasePointerCapture(origPointerId); }catch(_pc){}
+                try{ card.releasePointerCapture(_cardPtrId); }catch(_pc){}
                 document.removeEventListener('touchmove', stopPageScroll, { passive: false });
                 card.style.opacity = '';
                 card.style.zIndex = '';
@@ -21136,7 +21169,7 @@ function _fallbackCopy(text){
   }
 
   // "Download crossfaded mix" — blend every song in the current view into ONE
-  // continuous file using the user's crossfade setting (Settings → Playback).
+  // continuous file using the user's crossfade setting (Settings → More → Playback).
   // Tracks are decoded, laid end-to-end with equal-power ramps over each overlap,
   // and encoded to a single file. Output is MP3 when the encoder is loaded (the
   // usual case) so a long playlist stays small; otherwise WAV with a shorter cap
@@ -22435,7 +22468,7 @@ function _fallbackCopy(text){
         if(manifest.settings.glowColor && $('glowColorHex')){
           $('glowColorHex').value = manifest.settings.glowColor;
           document.querySelectorAll('.glow-sample').forEach(el => el.style.background = manifest.settings.glowColor);
-          updateCSSGlow();
+          applyGlowCssVars();
           dbPut('meta', { key: 'glowColor', value: manifest.settings.glowColor });
         }
         if(manifest.settings.glowStyle && $('glowStyleSelect')){
@@ -27772,7 +27805,12 @@ function _fallbackCopy(text){
         }
         // Build popup content from pinnedReleases
         var releases = []; Object.keys(pinnedReleases).forEach(function(aname){ (pinnedReleases[aname]||[]).forEach(function(r){ if(window.__scJunkTitle(r.title)) return; releases.push(Object.assign({}, r, {artistName:aname})); }); }); releases.sort((a,b) => (b.date||'').localeCompare(a.date||''));
-        var seen = (typeof seenReleaseIds === 'object') ? seenReleaseIds : {};
+        // Which of these the user has already been shown as new. It tested a
+        // seenReleaseIds that is declared nowhere, so the test was always
+        // false and every release in the list carried a NEW badge forever.
+        // The flag the app keeps per release is r.seen (markReleasesSeen).
+        var seen = {};
+        releases.forEach(function(r){ if(r.seen && r.id) seen[r.id] = true; });
         var html = '';
         if(!releases.length){ if(navigator.onLine === false && loadCachedDiscoverPopup('\ud83c\udf81 New Releases')){ this.textContent = '\ud83d\udd04 Fetch latest from pinned artists'; this.disabled = false; return; } html = '<div class="dp-empty">No releases found yet. Check again in a minute.</div>'; }
         else { releases.forEach(function(r){
@@ -37176,38 +37214,38 @@ var _aiKB = [
   // ═══ PLAYBACK ═══
   {q:['how to shuffle','shuffle mode','random play','shuffle songs'],a:'Tap the **shuffle button** in the mini player at the bottom to toggle shuffle on/off. It shuffles your current queue. You can also enable shuffle from the **Now Playing** screen.'},
   {q:['how to repeat','repeat mode','loop song','repeat one','repeat all'],a:'Tap the **repeat button** in the mini player to cycle through: Repeat All → Repeat One → Off. In the Now Playing screen, you can also access repeat controls.'},
-  {q:['crossfade','smooth transition','no gap between songs','fade between songs'],a:'Go to **Settings → Playback** to enable **crossfade** (fades between songs). You can set the crossfade duration with the slider. Crossfade and gapless can be toggled independently.'},
-  {q:['gapless','no gap','no silence between songs','continuous play'],a:'Go to **Settings → Playback** to enable **gapless mode** (plays songs back-to-back with no silence). Great for live albums or concept albums where tracks flow into each other.'},
-  {q:['equalizer','eq','bass boost','audio settings','sound settings','how to boost bass'],a:'Go to **Settings → Equalizer** for the 8-band EQ with presets. You can use built-in presets (Bass Boost, Vocal, Rock, etc.) or create your own custom curve by dragging the sliders.'},
+  {q:['crossfade','smooth transition','no gap between songs','fade between songs'],a:'Go to **Settings → More → Playback** to enable **crossfade** (fades between songs). You can set the crossfade duration with the slider. Crossfade and gapless can be toggled independently.'},
+  {q:['gapless','no gap','no silence between songs','continuous play'],a:'Go to **Settings → More → Playback** to enable **gapless mode** (plays songs back-to-back with no silence). Great for live albums or concept albums where tracks flow into each other.'},
+  {q:['equalizer','eq','bass boost','audio settings','sound settings','how to boost bass'],a:'Go to **Settings → More** for the 8-band EQ with presets. You can use built-in presets (Bass Boost, Vocal, Rock, etc.) or create your own custom curve by dragging the sliders.'},
   {q:['sleep timer','auto stop','stop playing after','play then stop','sleep'],a:'Tap the **⋮** (three dots) on the Now Playing screen and look for **Sleep timer**. Set it to stop playback after a set time — perfect for bedtime listening.'},
   {q:['lyrics','synced lyrics','time synced','words on screen','show lyrics','lyric'],a:'Lyrics are fetched automatically when you open the Now Playing screen and tap the **lyrics button**. They sync with the music if time-stamped lyrics are available. You can tap any line to jump to that part of the song.'},
   {q:['no lyrics','lyrics wrong','wrong lyrics','missing lyrics','lyrics not showing','bad lyrics'],a:'If lyrics are wrong or missing: open the Now Playing screen → tap the **lyrics button** → tap **↻ Refetch**. A search form will appear where you can edit the artist and title, then tap **Search**. SideCut searches LRCLIB and lyrics.ovh.'},
   {q:['translate lyrics','lyrics translation','foreign lyrics','lyrics in english'],a:'In the lyrics panel, tap the **Translate** button to translate lyrics to English. This works for songs in any language.'},
   {q:['lyrics font size','bigger lyrics','smaller lyrics','lyrics size'],a:'In the lyrics panel, use the **font size slider** to make lyrics bigger or smaller. The setting is saved per session.'},
-  {q:['dj mode','auto play','continuous play','keep playing'],a:'**DJ Mode** automatically plays related songs after your queue ends. Enable it in the Now Playing screen or **Settings → Playback**.'},
-  {q:['normalize','volume normalization','loud quiet songs','volume levels','even volume'],a:'Go to **Settings → Playback** and enable **Normalization**. This evens out volume differences between loud and quiet songs so every track plays at a consistent level.'},
+  {q:['dj mode','auto play','continuous play','keep playing'],a:'**DJ Mode** automatically plays related songs after your queue ends. Enable it in the Now Playing screen or **Settings → More → Playback**.'},
+  {q:['normalize','volume normalization','loud quiet songs','volume levels','even volume'],a:'Go to **Settings → More → Playback** and enable **Normalization**. This evens out volume differences between loud and quiet songs so every track plays at a consistent level.'},
   {q:['preview','song preview','30 second','preview clip'],a:'In the **Discover** tab, songs have preview clips you can listen to before adding them to your library. Tap any song in Discover to play its preview.'},
   {q:['seek','scrub','jump to time','fast forward','rewind'],a:'In the Now Playing screen, drag the **seek bar** to jump to any point in the song. You can also tap anywhere on the progress bar to jump there.'},
   {q:['skip next','previous song','go back','skip forward'],a:'Use the **skip buttons** (⏮ ⏭) in the mini player or Now Playing screen. You can also swipe left/right on the Now Playing screen to skip tracks.'},
   {q:['pause','play','stop music','resume'],a:'Tap the **play/pause button** in the mini player at the bottom, or in the Now Playing screen. Music also pauses when you disconnect headphones.'},
   {q:['autoplay','play automatically','start playing'],a:'SideCut doesn\'t autoplay — you choose what to play. Tap any song in your library, or use the play button on a playlist to start playing.'},
   {q:['audio output','bluetooth','headphones','speakers','cast'],a:'SideCut outputs audio to whatever your phone is connected to — Bluetooth speakers, wired headphones, car audio, etc. Just connect your device and play. No special casting feature needed.'},
-  {q:['speed','playback speed','slow','fast','tempo'],a:'SideCut has playback speed control — open the **DJ Mode** panel for the speed control, and check **Settings → Playback** for more playback options.'},
-  {q:['pitch','change pitch','vocal pitch'],a:'SideCut plays audio at its original pitch. For pitch effects, try the **Equalizer** (Settings → EQ) — some presets can alter the tonal character, though not the actual pitch.'},
+  {q:['speed','playback speed','slow','fast','tempo'],a:'SideCut has playback speed control — open the **DJ Mode** panel for the speed control, and check **Settings → More → Playback** for more playback options.'},
+  {q:['pitch','change pitch','vocal pitch'],a:'SideCut plays audio at its original pitch. For pitch effects, try the **Equalizer** (Settings → More) — some presets can alter the tonal character, though not the actual pitch.'},
 
   // ═══ ORGANIZING ═══
   {q:['playlist','create playlist','make playlist','add to playlist','new playlist'],a:'Go to the **Playlists** tab at the bottom → tap **+ New Playlist** to create one. To add songs: tap the **⋮** next to any song and choose **Add to playlist**, or long-press to select multiple songs and batch-add them.'},
-  {q:['user album','create album','make album','my albums','group my songs'],a:'You can create your own albums: long-press songs to select multiple, then tap **Create album** (or ⋮ → Create album from this playlist) — give it a name,andthe songs group under it. Sorting **By artist + album** shows your albums first, then singles from that artist below (e.g. Diljit albums, then Diljit singles). Your albums also survive library backups too (the tracks carry the album name once you create one)..'},
+  {q:['user album','create album','make album','my albums','group my songs'],a:'You can create your own albums: long-press songs to select multiple, then tap **Create album** (or ⋮ → Create album from this playlist) — give it a name, and the songs group under it. Sorting **By artist + album** shows your albums first, then singles from that artist below (e.g. Diljit albums, then Diljit singles). Your albums also survive library backups too (the tracks carry the album name once you create one)..'},
   {q:['share code','playlist code','share playlist','open a share code','paste code'],a:'To share a playlist: open the playlist → **⋮** → **Share by code** — a tiny code (and a share link) appears. Paste it into SideCut on another device → **⋮** → **Open a share code** to rebuild the playlist there (no file download; both devices need the matching songs).'},
-  {q:['export big library','large export','library too big','export error','export fails'],a:'Exports stream chunk-by-chunk — libraries of any size finish and save,with no more cap at ~300 songs. If a single track\'s file can\'t be read,it skips itand tells you how many were skipped,rather than failingthe whole export.'},
-  {q:['check update','update check fails','check for updates not working','ota update'],a:'The **Check for updates** button stays on the button while checking,chats with the server,and when a new OTA build is available the update sheet appears with **Install now / Install later** so you always know to install it. If the check was done in the browser/PWA versionand an update is found,reload to apply it.'},
+  {q:['export big library','large export','library too big','export error','export fails'],a:'Exports stream chunk-by-chunk — libraries of any size finish and save, with no more cap at ~300 songs. If a single track\'s file can\'t be read, it skips it and tells you how many were skipped, rather than failing the whole export.'},
+  {q:['check update','update check fails','check for updates not working','ota update'],a:'The **Check for updates** button stays on the button while checking, chats with the server, and when a new OTA build is available the update sheet appears with **Install now / Install later** so you always know to install it. If the check was done in the browser/PWA version and an update is found, reload to apply it.'},
   {q:['new releases delete','remove release','hold release','new releases wrong'],a:'In Discover → **New Releases**,long-press (hold) any release row that isn\'t really new to remove it permanently — undo is built in. Quick taps still open the song.'},
-  {q:['manual cover','set photo','artist photo','custom cover','pinned artist cover'],a:'Pinned-artist coversare **manual-only** — Set photo is the only way to change themand nothing (auto-fetch,import,refetch) will overwrite what you set. The no-art fallback shows your photo wheneverthe artist record has one.'},
-  {q:['back to top','manage playlists button','top right button'],a:'The top-right button next to the tabs is now one ⋮ chooser: tap itand choose **Back to top** or **Manage playlists** — themerged single button.'},
-  {q:['reorder button','shuffle button playlist','playlist header buttons'],a:'Reorderand shuffle no longer clutter the playlist header — they live in the playlist **⋮** menu (next to Share code,Add files,Remove,Export). Everything playlist-related is one sheet now.'},
-  {q:['quick actions order','home quick settings','quick actions bubble buttons'],a:'The Quick actions bubble\'s buttons are in the declared orderand every settings tab is included — Widgets,Premium,Get Songs,Theme,Donate,Refresh,Glow,Playback,EQ,More,Sandbox,Support.'},
-  {q:['app icon','theme icon','change icon','switch icon'],a:'The app/favicon icon follows your theme automatically,and you can also pick it manually: **Settings → Theme → App icon** — choices: Coral,Gold,Ocean,Night,Mint,Sunset,Auto (theme-driven.'},
-  {q:['ai assistant','gemini','smart assistant','ask ai'],a:'The inbuilt AI assistant answers from a built-in knowledge base first (albums,share codes,exports,updates,covering allthe v56 stuff,then falls back to your Gemini key when set. Settings → Support has the chat.'},
+  {q:['manual cover','set photo','artist photo','custom cover','pinned artist cover'],a:'Pinned-artist covers are **manual-only** — Set photo is the only way to change them and nothing (auto-fetch, import, refetch) will overwrite what you set. The no-art fallback shows your photo whenever the artist record has one.'},
+  {q:['back to top','manage playlists button','top right button'],a:'The top-right button next to the tabs is now one ⋮ chooser: tap it and choose **Back to top** or **Manage playlists** — themerged single button.'},
+  {q:['reorder button','shuffle button playlist','playlist header buttons'],a:'Reorder and shuffle no longer clutter the playlist header — they live in the playlist **⋮** menu (next to Share code, Add files, Remove, Export). Everything playlist-related is one sheet now.'},
+  {q:['quick actions order','home quick settings','quick actions bubble buttons'],a:'The Quick actions bubble\'s buttons are in the declared order and every settings tab is included — Widgets, Premium, Get Songs, Theme, Donate, Refresh, Glow, Playback, EQ, More, Sandbox, Support.'},
+  {q:['app icon','theme icon','change icon','switch icon'],a:'The app/favicon icon follows your theme automatically, and you can also pick it manually: **Settings → Theme → App icon** — choices: Coral, Gold, Ocean, Night, Mint, Sunset, Auto (theme-driven.'},
+  {q:['ai assistant','gemini','smart assistant','ask ai'],a:'The inbuilt AI assistant answers from a built-in knowledge base first (albums, share codes, exports, updates, covering all the v56 stuff, then falls back to your Gemini key when set), and Settings → Support has the chat.'},
 
   {q:['favorites','favorite song','like song','heart song','fav'],a:'Tap the **♡** (heart) icon next to any song to add it to your **Favorites** playlist. Find all your favorited songs in the **Playlists** tab → **Favorites**.'},
   {q:['delete song','remove song','delete from library','remove from playlist'],a:'Tap the **⋮** (three dots) next to any song → choose **Remove** or **Delete**. You can also long-press to select multiple songs and remove them in batch.'},
@@ -37261,7 +37299,7 @@ var _aiKB = [
   {q:['now playing','full player','playing screen','big player'],a:'Tap the **album art** on the mini player to open the full Now Playing screen with lyrics, seek bar, queue, and more controls. Tap outside or swipe down to close.'},
   {q:['queue','play queue','up next','song queue'],a:'In the Now Playing screen, tap the **queue icon** to see what songs are coming up next. You can reorder or remove songs from the queue. Swipe a song left to remove it.'},
   {q:['media session','lock screen controls','lockscreen','car controls'],a:'SideCut integrates with your phone\'s media session in the browser version: play/pause controls on the lock screen, notification shade, Bluetooth devices, and car displays. In the installed Android app this is currently disabled on some phones for stability.'},
-  {q:['audio quality','bitrate','sound quality','high quality','flac quality'],a:'SideCut plays audio files at their native quality — it doesn\'t compress or re-encode your music. Higher bitrate files (320kbps MP3, FLAC, etc.) will sound better. Use the **Equalizer** (Settings → EQ) to fine-tune the sound.'},
+  {q:['audio quality','bitrate','sound quality','high quality','flac quality'],a:'SideCut plays audio files at their native quality — it doesn\'t compress or re-encode your music. Higher bitrate files (320kbps MP3, FLAC, etc.) will sound better. Use the **Equalizer** (Settings → More) to fine-tune the sound.'},
   {q:['battery','battery drain','power usage','saves battery'],a:'SideCut is designed to be battery-efficient. For best battery life: use normal themes (not heavy glow), and keep the screen off when listening. The app doesn\'t run background processes when paused.'},
   {q:['crash','app crashing','force close','stops working','bug'],a:'If SideCut crashes: try force-closing and reopening the app. If it keeps crashing, go to **Settings → Support** and email us at sidecutsupport@gmail.com with details about what you were doing.'},
   {q:['slow','laggy','performance','stuttering','audio glitch'],a:'If SideCut is slow: close other apps to free up memory. Large libraries (1000+ songs) may take a moment to load. Try **Settings → More → Clear cache** if available. Restarting your phone can help too.'},
@@ -37278,10 +37316,17 @@ var _aiKB = [
   {q:['transfer old','old sidecut','old version','migrate','move my library','old install'],a:'If your library was saved by an older SideCut version (5.0.x), tap **Transfer from old SideCut** on the welcome screen. It finds that library (it still lives inside the app), starts the export, and the share sheet saves the zip — then tap **Import backup (everything)** to bring it in.'},
   {q:['red banner','error banner','crash message','crashed during'],a:'If SideCut shows a red error banner, it names exactly what went wrong — tap to dismiss, and screenshot it when reporting a bug. If the app ever closes by itself, the next launch shows what it was doing when it crashed.'},
   {q:['add to home screen','install','pwa','home screen shortcut'],a:'SideCut is a PWA — add it to your home screen for an app-like experience. On iOS: tap the share button → "Add to Home Screen". On Android: Chrome will prompt you, or tap the menu → "Add to Home Screen".'},
+
+  // ---- the questions the assistant used to get wrong (v64) ----
+  {q:['how to crop a song','crop a song','crop song','trim a song','trim song','trim a track','cut a song','crop a track','trim audio','how do i trim a song'],a:'Yes — open the song ⋮ menu and tap **Crop song**. It draws the waveform, you drag the two handles around the part you want to keep, it previews the cut, and saving writes the trimmed file into your library. To put the original back, open the song info sheet (⋮ → **Song info**) and tap **Undo crop**.'},
+  {q:['watermark remover','remove watermark','watermark','strip radio edit','remove feat from title','clean up song titles'],a:'It has a **Watermark Remover**, in **Settings → More** (its own section there). Switch **Enabled** on and list the patterns to strip, one per line, for example `Radio Edit`, `(feat. X)` or `- Remix`. It cleans titles as songs arrive as well as songs you already have.'},
+  {q:['rollback','go back to an earlier version','previous version','undo an update','version history','downgrade the app'],a:'**Settings → More** holds the storage panel and the version picker. Every version the app has run is kept there as a saved copy and **Restore** takes you back to one, and **Free up space** deliberately never deletes those copies — they are the way back to a build that worked.'},
+  {q:['home layout','reorder home','customize home','reorder sections','hide home sections','customize the home screen'],a:'The Home screen has its own layout editor: **Settings → Sandbox → Home layout**. There you can reorder or hide Now Playing, Shortcuts, Pinned Artists, New Releases, Playlists, Stats and Library. There is no **Customization** tab in SideCut — Home layout is the real name.'},
+  {q:['my song is not loading','song will not play','no audio','audio missing','file moved','song is silent','track not playing'],a:'A song plays from the copy SideCut took when it was imported, so this is one file the app can no longer read. Try **Settings → More** → **Re-fetch all metadata** to re-read the tags and the cover, and hand the file to the app again with **+ Add songs → + Files**. There is no **Rescan library** button and no **Library** tab in Settings.'},
 ];
 
 // Fuzzy match: find the best matching KB entry for a query
-function _aiFuzzyMatch(query) {
+function _aiFuzzyMatch(query, minScore) {
   var q = query.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
   var words = q.split(' ').filter(function(w){ return w.length > 2; });
   var bestScore = 0;
@@ -37319,7 +37364,7 @@ function _aiFuzzyMatch(query) {
     }
     if (score > bestScore) { bestScore = score; bestEntry = entry; }
   }
-  if (bestScore >= 35) return bestEntry;
+  if (bestScore >= (minScore || 35)) return bestEntry;
   return null;
 }
 
@@ -37329,7 +37374,14 @@ function _aiFormatText(text) {
 }
 
 // Gemini system prompt
-var _aiSystemPrompt = 'Maintain a natural multi-turn conversation: use earlier turns to understand follow-ups, acknowledge the latest message, and do not repeat canned answers when context changes the meaning. You are the SideCut assistant, a concise, accurate helper for the SideCut music player app. Be direct and specific; answer in 1-3 short sentences unless numbered steps are genuinely needed. When the user asks "how do I...", give the exact menu path (for example Settings \u2192 Playback \u2192 Crossfade). When they report a problem, state the likely cause and the fix in order. CRITICAL: never claim a SideCut feature does not exist when it does, and never deny the built-in tools for getting music in — they live in Settings \u2192 Get Songs and in the Discover tab' + (SC_IS_PLAY ? ' and on this build they are absent: the way in is + Add songs \u2192 + Files for single files, or a whole folder, and Import library for a backup .zip' : ' and a Spotify link pasted there becomes a tagged MP3, WAV or FLAC with its cover art, while a YouTube video link is handled the same way') + '. SideCut also has playlists and hand-made albums, favourites, an 8-band equaliser, crossfade and gapless playback, DJ mode, a sleep timer, synced and translated lyrics, themes with glow and RGB, a home-screen widget, storage and rollback tools, and offline playback of everything already imported. If a question is off-topic or unclear, ask one short clarifying question. Keep it clean, no filler, no emoji unless asked.';
+// The app describes itself to the model, per build. Every path in here was
+// checked against the tab strip and the panes: Playback, the equalizer and the
+// library tools are all inside More, and there is no Library tab at all.
+// When the knowledge base has an entry for the question it rides along as
+// GROUND TRUTH, because the app describing itself outranks any idea a model
+// has about what a music player usually offers.
+var _aiGroundNote = '\n\nThe app has its own entry for this question. This is that entry, and it is authoritative: answer from it, keep it to 1-3 short sentences, and never contradict it or claim the feature is missing.\n';
+var _aiSystemPrompt = 'Maintain a natural multi-turn conversation: use earlier turns to understand follow-ups, acknowledge the latest message, and do not repeat canned answers when context changes the meaning. You are the SideCut assistant, a concise, accurate helper for the SideCut music player app. Be direct and specific; answer in 1-3 short sentences unless numbered steps are genuinely needed. When the user asks how to do something, give the exact menu path inside this app, and only a path that exists: the Settings tabs are Premium, Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget and More, and the playback options (crossfade, gapless, auto volume), the 8-band equalizer, the refresh-rate cap, the library tools and the storage panel all live INSIDE Settings \u2192 More \u2014 never send anyone to a Settings \u2192 Playback tab, a Settings \u2192 Eq tab, a Settings \u2192 Library tab or a Rescan library button, because none of those exist. Features this app really has: cropping or trimming a song (the song \u22ee menu \u2192 Crop song, with Undo crop in the song info sheet); the Watermark Remover that strips Radio Edit and (feat. X) from titles (Settings \u2192 More); the Home layout editor that reorders or hides the Home sections (Settings \u2192 Sandbox \u2192 Home layout); the storage panel and the rollback copies that take you back to an earlier build (Settings \u2192 More); share codes for playlists (the playlist \u22ee menu); exporting and importing the whole library as a .zip; playlists and hand-made albums; favourites; crossfade and gapless playback; DJ mode; a sleep timer; synced and translated lyrics; themes with glow and RGB; a home-screen widget; and offline playback of everything already imported. CRITICAL: never claim a SideCut feature does not exist when it does, and never invent a screen or a menu path - if you are not certain something exists, say so plainly and point the user at Settings \u2192 Support. Never deny the built-in tools for getting music in \u2014 they live in Settings \u2192 Get Songs' + (SC_IS_PLAY ? ' and on this build they are absent: the way in is + Add songs \u2192 + Files for single files, or a whole folder, and Import library for a backup .zip' : ' and a Spotify link pasted there becomes a tagged MP3, WAV or FLAC with its cover art, while a YouTube video link is handled the same way') + '. If a question is off-topic or unclear, ask one short clarifying question. Keep it clean, no filler, no emoji unless asked.';
 
 // Add a chat message to the UI
 function _aiAddMessage(role, text) {
@@ -37362,7 +37414,7 @@ function _aiHideTyping() {
 }
 
 // Send message to Gemini API
-async function _aiGeminiQuery(userMessage) {
+async function _aiGeminiQuery(userMessage, kbGround) {
   if (!_aiGeminiKey) {
     return null;
   }
@@ -37376,7 +37428,7 @@ async function _aiGeminiQuery(userMessage) {
     // Current user turn is already in _aiChatHistory; do not send it twice.
 
     var _body = JSON.stringify({
-      system_instruction: { parts: [{ text: _aiSystemPrompt }] },
+      system_instruction: { parts: [{ text: _aiSystemPrompt + (kbGround ? _aiGroundNote + kbGround : '') }] },
       contents: contents,
       generationConfig: { temperature: 0.7, maxOutputTokens: 600 }
     });
@@ -37448,10 +37500,25 @@ async function _aiSendMessage() {
   var statusEl = $('aiChatStatus');
   if (statusEl) statusEl.textContent = 'Thinking...';
 
+  // A question the app has a real answer for is answered from the app itself,
+  // without asking a model at all. A model cannot deny a feature that is in
+  // front of it, and this is the only answer guaranteed to describe THIS build.
+  var _kbStrong = _aiFuzzyMatch(msg, 80);
+  if (_kbStrong) {
+    _aiTyping = false;
+    _aiAddMessage('assistant', _kbStrong.a);
+    _aiChatHistory.push({ role: 'assistant', text: _kbStrong.a });
+    if (statusEl) statusEl.textContent = 'Answered from the built-in knowledge base';
+    return;
+  }
+  // Everything else goes to the model, with the app entry for the question (if
+  // there is one) attached as ground truth it is told not to contradict.
+  var _aiGroundForModel = (_aiFuzzyMatch(msg) || {}).a || '';
+
   // Use Gemini first when configured so the assistant can maintain a real conversation.
   if (_aiGeminiKey) {
     _aiShowTyping();
-    var response = await _aiGeminiQuery(msg);
+    var response = await _aiGeminiQuery(msg, _aiGroundForModel);
     _aiHideTyping();
     _aiTyping = false;
     if (response) {
