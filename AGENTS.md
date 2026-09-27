@@ -1,6 +1,72 @@
 # SideCut — repository memory
 
 
+## 64.2.1 (Sep 27, 2026): "the favorites bubble just disappears when I scroll" — the same paint fault, third surface
+- **The user's words**, one message: "New bug found UI bugs why do these keep happening, whenever I scroll down in home
+  the favorites bubble/ last bubble to right is there but I scroll up and down 2 more times and that bubble just
+  disappears for some wierd reason. V bump to v64.2.1". Two screenshots taken a minute apart (4:53): **the same grid,
+  the same row, the same scroll position** — one with the Notifications card alone on its row and an empty cell beside
+  it, one with `11 / Favorites` drawn there.
+- **NOTHING IN THE APP REMOVES A BUBBLE, and this is now the third surface with this exact symptom**: `renderHome()`
+  rebuilds the grid from `homeOrder`/`homeHidden` (and `normalizeHomeOrder` re-adds every kind that is missing), **no
+  scroll handler anywhere touched Home**, and the two screenshots have identical layout — the cell is there, the
+  painting is not. Same report, same class as the library list (`#listPane`, the v63 batch) and the pinned-artists row
+  (64.1 and 64.2). The rail has not been reported again since 64.2, which is the evidence that the rail's answer —
+  stacking context + repaint on a settled scroll — is the right one to reuse.
+- **THE FIX (the rail's own answer, applied to the grid)**:
+  * **`#homeView` gets its own stacking context** (`position:relative; z-index:20;`). It was **the last scrolling page
+    without one** — `#listPane` and `#discoverView` both carry the note explaining why they have theirs, and this
+    makes all three consistent.
+  * **`repaintHomeGrid()` runs on a settled scroll** (passive listener on `#homeView`, wired **once** on
+    `_hbPaintWatch`, same **140 ms** debounce as `watchPinnedRail`, and it returns immediately when `hbDrag` is live
+    so a real drag owns the grid). It drops a leftover carry **in place** — the `hb-dragging` class plus the inline
+    `position`/`left`/`top`/`width`/`height`/`transform`/`transition` a drag gives a bubble, which lifts it out of
+    the grid and onto a layer of its own — removes a `.hb-drag-placeholder` an abandoned drag left behind, then
+    **throws the grid's painted pixels away and paints them again** (`visibility:hidden` -> `void wrap.offsetHeight`
+    -> `requestAnimationFrame` restore), which is the exact hide/restore that fixed the rail.
+  * **`homeGridIsWhole()` draws the grid again if a bubble is really gone**: it builds the wanted list through the
+    same rules `renderHome()` uses (a custom action that no longer exists is not counted, and a deliberate
+    `reorder-mode` is never judged a fault), checks every `[data-bubble]` is on the page and the child count matches,
+    and `renderHome()` runs when it is not.
+  * **Deliberately NOT done: no layer promotion.** `transform:translateZ(0)`/`will-change` on `.home-bubble` was the
+    obvious "keep its own layer" idea and it is the wrong one — the rail's own lesson is that **a promoted layer is
+    exactly what this WebView discards on a long scroll** (that is why the chip lift is dropped rather than set).
+- **THE RELEASE**: `APP_VERSION` **64.2 -> 64.2.1**. Three-part versions are safe here: the in-app
+  `compareVersions()` and the OTA client's own `cmpVer()` both pad a missing part with `0`, so `64.2.1 > 64.2` and a
+  phone already on 64.2 takes the update (the rule that makes a same-version rebuild useless still holds). A
+  **six-note head entry with no `[FULL]` notes**, no downloader term anywhere (note 5 keeps *rollback*, which
+  `dev/test-662.mjs` requires; nothing names the store build, and nothing trips `test-play-copy`'s wider list),
+  `sw.js` -> **`sidecut-shell-v63.0.19`** (decoupled, carries no part of the app version), 34 repins across
+  `dev/test-*.mjs`, `--manifest` for the bundle fixed point. `dev/patch-66421.mjs` is the release; new
+  **`dev/test-66421.mjs` is 47 checks** (release metadata, the whole paint guard, a regression block proving the
+  library list + Discover + the rail kept their own, the entry names, and the file integrity pass).
+- **REPIN**: `dev/test-6642.mjs`'s release-metadata block read the **HEAD** entry — this release's now. It reads the
+  **v64.2 entry by version** (`entries.find((x) => /^64\.2$/.test(String(x.version)))`) instead, so its six-note and
+  wording claims stay about the release they describe — the repin 64.1 applied to `test-663.mjs` and 64.2 applied to
+  `test-6641.mjs`. The replacement uses a **regex**, never a quoted literal, for the same reason: the bump rewrites
+  quoted version literals in every `dev/test-*.mjs`. `test-658.mjs` is **not** in the skip list (it pins
+  `ver === '64.2'` and had to move to 64.2.1); `test-655`/`test-656` still are (they read their own entry and pin
+  nothing this bump touches).
+- **GATE RESULT**: `dev/test-66421.mjs` **47/47**, `dev/test-6642.mjs` **74/74** (after the repin), `dev/test-6641.mjs`
+  **119/119**, `dev/test-662.mjs` **75/75**, `dev/test-663.mjs` **49/49**, `dev/test-play-copy.mjs` **28/28**,
+  `dev/test-play.mjs` **59/59**, `dev/test-658.mjs` **63/63**, `dev/test-6058.mjs` **48/48**,
+  `dev/audit-calls.mjs` clean (**4694 declared names**, 6140 line comments, no comment has swallowed code),
+  `dev/check-dom.mjs` **DOM INTEGRITY FAILURES: 0**, `dev/boot-639-check.cjs` **45/45 (v64.2.1)**,
+  `dev/ota-guard-check.cjs` **20/20**, and the rest of `dev/test-*.mjs` green. New
+  **`dev/homepaint-6421-check.cjs` is 17/17** — it boots the app in jsdom, deletes the Favorites bubble out of the
+  grid, dispatches one scroll on `#homeView` and asserts the bubble is drawn again with its count, then gives
+  another bubble the full drag carry (class + inline box + a leftover placeholder) and asserts it is put back — and
+  it is **10/17 against the pre-fix file** (`SC_HTML=$(git show origin/main:index.html)`), so the guard is what the
+  checks are measuring. The only failing probe is the known baseline `test-617` -> "hits and misses are both
+  persisted" (a lyrics-cache check untouched by this release; 66/1 on pristine `origin/main` and here).
+- **BUNDLE FIXED POINT**: `ota/` **744749 bytes**, `ota-play/` **744759**, root `manifest.json` equal to the zip
+  (744749), both `--check`s OK at v64.2.1 / 6 notes (five `bundle -> patch-66421 --manifest` rounds to settle).
+- **STILL OPEN**: like the rail, this is a rendering-side fix and cannot be reproduced in this sandbox. If a Home
+  bubble blanks again, the next step is a device read — the debug badge, then `getComputedStyle` and
+  `getBoundingClientRect()` on `#homeBubbles` and on the bubble itself — because the app-side state is provably
+  correct in both screenshots.
+
+
 ## 64.2 (Sep 27, 2026): "what the hell are these names ... just state the changes" + the rail that is STILL there + the settings tabs back + the More tab's upness
 - **The user's words**, one message about the build 64.1 had just shipped, five things: "What the hell are these names
   the polish pass QOL pass no change those just state the changes"; "the glitch where the pinned artist island
