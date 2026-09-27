@@ -60,6 +60,15 @@ jobs:
         run: npx cap add android
       - name: Sync web assets into the Android project
         run: npx cap sync android
+      - name: Give the sideloaded build its own app identity (full flavor only)
+        # Both flavors used to ship applicationId com.SideCut.myapp, so Android saw
+        # them as one app and installing either replaced the other. The full build
+        # is sideloaded only, so it takes the ".full" id and the "SideCut Full"
+        # label: the two can now be installed side by side. The Play build keeps
+        # the id its listing is bound to, because moving THAT would publish a new
+        # app and existing Play users would stop getting updates.
+        if: matrix.flavor == 'full'
+        run: python3 .github/workflows/patch-dualinstall.py
       - name: Patch Android manifest permissions for the media notification
         run: python3 .github/workflows/patch-manifest.py
       - name: Enable Android Auto Backup
