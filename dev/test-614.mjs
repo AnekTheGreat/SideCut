@@ -33,7 +33,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.1.2', 'APP_VERSION = ' + ver);
+ok(ver === '63.1.3', 'APP_VERSION = ' + ver);
 ok(!/^61\.3\.\d{2,}$/.test(ver), 'not a rolled-over patch number');
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
@@ -233,8 +233,12 @@ console.log('[6d] Cancel really dismisses the conversion bubble');
 {
   const pill = sliceBetween('function scConvertPill(show){', 'function scConvertPillUpdate(');
   ok(/scConvertPillState = \{[^}]*cancelRequested: false/.test(src), 'the pill state carries a cancel flag');
-  ok(pill.includes('scConvertPillState.cancelRequested = true;'), 'Cancel flips the flag');
-  ok(pill.includes('scConvertPill(false);'), 'Cancel dismisses the pill itself, not only the run');
+  // The Cancel handler now delegates to one shared path (the cards' x uses it
+  // too), so the flag and the dismissal are asserted on that helper.
+  const cancel = sliceBetween('function scCancelConversion(btnEl){', 'function scConvertPill(show){');
+  ok(pill.includes('scCancelConversion()'), 'Cancel goes through the one shared path');
+  ok(cancel.includes('scConvertPillState.cancelRequested = true;'), 'Cancel flips the flag');
+  ok(cancel.includes('scConvertPill(false);'), 'Cancel dismisses the pill itself, not only the run');
   const upd = sliceBetween('function scConvertPillUpdate(title, sub, pct){', 'function scConvertPillDone(');
   ok(upd.includes('if(scConvertPillState.cancelRequested) return;'), 'a late status line cannot bring a cancelled pill back');
   ok(count('scConvertPillResetCancel()') >= 4, 'every run start clears the flag (' + count('scConvertPillResetCancel()') + ')');
@@ -257,7 +261,7 @@ console.log('[6f] the song fetch declares the client it asks as');
   ok(src.includes("var _yc = ytClient || null;"), 'and reads the client it was handed');
   const player = sliceBetween('async function scYtPlayer(', 'async function scFetchDecode(');
   ok(/num: 3[^}]*ANDROID/.test(player) || /ANDROID[^}]*num: 3/.test(player), 'the ANDROID client carries its own id');
-  ok(player.includes('{ name: clients[c].num, version: clients[c].client.clientVersion, ua: clients[c].ua }'), 'each player call hands its client to the transport');
+  ok(player.includes('{ name: cl.num, version: cl.client.clientVersion, ua: cl.ua }'), 'each player call hands its client to the transport');
   ok(!/window\.__scYtReqClient/.test(src), 'nothing routes this through window (the transport stays testable)');
 }
 

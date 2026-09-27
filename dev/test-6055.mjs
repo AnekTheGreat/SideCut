@@ -24,7 +24,7 @@ const count = (hay, needle) => { let n = 0, i = hay.indexOf(needle); while (i !=
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '63.1.2', 'APP_VERSION = ' + ver);
+ok(ver === '63.1.3', 'APP_VERSION = ' + ver);
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;
 try { entries = eval('[' + block[1] + ']'); } catch (e) {}
@@ -112,7 +112,7 @@ console.log('[3] download prompts open the Library (behaviour)');
 
 console.log('[4] cancel a conversion');
 ok(src.includes('class="sc-pill-cancel"'), 'pill carries a Cancel button');
-ok(src.includes("cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…'"), 'cancel click arms the flag and says so');
+ok(src.includes("cb.disabled = true; cb.textContent = 'Cancelling…'"), 'cancel click arms the flag and says so');
 ok(src.includes("if(pc){ pc.style.display = 'none'; }"), 'done state hides Cancel');
 ok(count(src, 'window.__scCancelDl') >= 15, 'flag referenced across the pipeline (' + count(src, 'window.__scCancelDl') + ')');
 ok(/if\(!tracks\.length\) return false;\n    window\.__scCancelDl = false;/.test(src), 'batch resets the flag on every run');
