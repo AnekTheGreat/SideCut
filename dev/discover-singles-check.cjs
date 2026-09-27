@@ -315,11 +315,13 @@ async function refetchSingles(win) {
     // hand-made albums down to one card.
     ok('your albums are listed', JSON.stringify((visible || []).slice().sort()) === JSON.stringify(['Legacy', 'Mine']), JSON.stringify(visible));
     ok('an album from before the marker existed still shows', (visible || []).includes('Legacy'));
-    ok('only the album the app created automatically is held back', !(visible || []).includes('Auto'));
+    // 63.1.4: an entry the app wrote for itself is DELETED at boot, not flagged and
+    // hidden, so the name it had taken is free again (that was the "I make an album
+    // and it says it already exists" report).
+    ok('the album the app created for itself is gone', !(visible || []).includes('Auto'));
     const auto = (typeof win.__scAutoAlbumNames === 'function') ? win.__scAutoAlbumNames() : [];
-    ok('and it is not deleted \u2014 it is in the "not created by you" list',
-       auto.sort().join(',') === 'Auto', JSON.stringify(auto));
-    ok('nothing was removed from storage', Object.keys(idb._data.meta.get('userAlbums').value).sort().join(',') === 'Auto,Legacy,Mine',
+    ok('and nothing is left flagged as one the app added', auto.length === 0, JSON.stringify(auto));
+    ok('it was deleted from storage, not hidden', Object.keys(idb._data.meta.get('userAlbums').value).sort().join(',') === 'Legacy,Mine',
        Object.keys(idb._data.meta.get('userAlbums').value).join(','));
 
     // Albums tab cards.

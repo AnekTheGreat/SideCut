@@ -1,6 +1,65 @@
 # SideCut — repository memory
 
 
+## 63.1.4 (Sep 27, 2026): "Fix the damn auto albums ... just remove the auto albums and make sure that doesn't affect my regular albums" + "add a search bar to manage albums"
+- **The user's words**: "Fix the damn auto albums I hate those because I make an album and it says it already exists just
+  remove the auto albums and make sure that doesn't affect my regular albums. Then add a search bar to manage albums."
+  The screenshot behind it was Manage albums reading **25 albums - 227 not created by you**.
+- **WHERE "ALREADY EXISTS" CAME FROM**: v58.8.1 made albums manual-only, but the entries the automatic paths had already
+  written stayed in the store wearing an `auto` flag: hidden from the Albums tab, listed under "Not created by you" in
+  Manage albums with an **It is mine** button. They kept their NAME, and every album-creating path guards on
+  `if(userAlbums[albumName])` - so creating an album called something one of those entries was already using answered
+  "an album named X already exists - merge these songs into it?", merged the songs into it, and left the result flagged
+  `auto`, so the album the user had just made was invisible. A name that could not be used and an album that could not
+  be seen, from the same one collision.
+- **THE FIX IS A DELETION, NOT ANOTHER HIDE**: `removeAutoAlbums()` (in place of `migrateAutoFlaggedAlbums()`, which is
+  gone) deletes every entry `albumIsAuto()` matches - `auto === true && manual !== true` - on each launch, and writes
+  `userAlbums` + `albumOrder` back only when something actually went. It touches nothing else: an album you created,
+  renamed, reordered or filed songs into by hand never carried the flag (every deliberate path calls
+  `markAlbumManual`, and `ensureAlbumSaved` plus both create paths now write `manual: true` outright), and an entry
+  that predates the flag and carries **no marker at all** is kept too - a "missing marker means not yours" rule is what
+  once emptied a library of twelve hand-made albums down to one card. The boot says what it did: "N albums the app had
+  added on its own were removed - your songs and their album tags are untouched."
+- **WHY THE OLD PASS HAD TO GO WITH IT**: `migrateAutoFlaggedAlbums()` was the pass that ADDED the flag to any saved
+  album whose songs matched a file-tag group in the same order. With the entries now deleted rather than hidden, that
+  pass would delete a hand-made album of exactly that shape, so it is removed entirely, and the
+  `sidecut_albums_manual_v1` marker with it (including the stamp the backup-import path used to leave). **Nothing
+  writes `auto: true` any more** - `grep -c 'auto: true' index.html` is 0 - so the flag can only survive from an
+  older build, and `albumIsAuto()` stays as the guard that keeps such a leftover out of the Albums tab until boot
+  settles it.
+- **MANAGE ALBUMS SEARCHES**: the panel loses the whole "Not created by you" section and its three controls
+  (`It is mine` / hidden Rename / hidden Delete) and gains a real search box above the list: album name **or artist**,
+  narrowed as you type, a `N of M albums` count, a "No album matches that search." state, a clear x, and it lives in
+  `manageAlbumsHTML()` rather than being injected at open time because `refreshManageAlbums()` re-renders the panel in
+  place. Rows are filtered by **show/hide** (`data-name` / `data-artist`), because the Rename/Delete buttons are wired
+  by position - every row has to stay in the DOM. `applyAlbumFilter` normalises the query itself, and
+  `refreshManageAlbums(keepQuery)` drops it on a **fresh open** while the two in-place editors (rename, delete) pass
+  `true`. The reorder sheet's Switch album strip and the Add-to-album picker lose their auto filters: one list, yours.
+- **PATCHES**: `dev/patch-658.mjs` = the album work (15 index.html edits, including the help-screen sentence that still
+  taught the old second list); `dev/patch-659.mjs` = the release (`APP_VERSION` **63.1.4**, a **six-note head entry**
+  built from its own notes - unlike 63.1.3 none of it is channel-restricted, so there is no `[FULL]` item and no copy
+  of the previous set - `sw.js` -> **`63.0.15`**, 31 repins, `--manifest`). New `dev/test-658.mjs` (63 checks, and
+  **46 of them fail on the pre-fix build**). `dev/albums-manual-check.cjs` was rewritten for the new behaviour (40
+  checks: the deletion, the untouched hand-made entries, the entry with no marker at all, playlist + tag invariance,
+  and the search box driven through the real popup), and `dev/album-rename-check.cjs` was repinned: its Rename helper
+  finds its row by `data-name`, both albums are visible, and the tab holds 5 songs.
+- **ALSO REPINNED**: `dev/test-6052.mjs` (an import no longer stamps the dead flag marker), `dev/test-655.mjs` and
+  `dev/test-656.mjs` (their `[FULL]` notes are now read out of **their own 63.1.3 entry**, because this release heads
+  the changelog - the same repin 63.1.3 applied to the release under it), `dev/albums-menu-isolation-check.cjs` and
+  `dev/discover-singles-check.cjs` (an auto entry is deleted at boot, not flagged and hidden), and
+  `dev/ota-update-check.cjs` - which had been **red on every release since the sw cache was decoupled from
+  `APP_VERSION`**, because it still asserted that the cache name *contains* the app version; it now asserts what is
+  actually true (versioned, and not the app version).
+- **Verified**: the full `dev/test-*.mjs` suite green apart from the **pre-existing** `test-617` ("hits and misses are
+  both persisted", identical against `git show origin/main:index.html`); `check-dom` 0 failures; the album jsdom probes
+  (`album-rename` 40, `albums-manual` 40, `album-isolation` 44, `albums-menu-isolation` 25, `discover-singles` 37,
+  `album-hold` 34) green; `ota-update` 50, `ota-guard` 20, `ota-loop` 26, `ota-bootapply` 24, `batch-635` 42,
+  `compact-647` 23, `storage-usage` 34 (v63.1.4), `refresh-pin` 14, `native-snapshot` 13 green;
+  `media-controls-check.cjs` fails on its periodic-update-poll line **on origin/main too** (that file is untouched by
+  this release). Both channels rebundled to the **fixed point** (`ota-bundle` + `ota-bundle-play`, then
+  `patch-659 --manifest`, 3 rounds until the bytes stopped moving): `ota/update.zip` **729280 B**,
+  `ota-play/update.zip` **729291 B**, 6 notes each, both `--check`s OK.
+
 ## 63.1.3 (Sep 27, 2026): "the progress bar is not accurate at all" + "YouTube conversion takes forever" + "clicking the x should cancel"
 - **The user's words**: a YouTube run's converting banner carried a down-arrow glyph and "the progress bar was not
   accurate at all"; a YouTube conversion was "taking forever and doesn't work half the time"; and "if you click the

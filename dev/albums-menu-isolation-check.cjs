@@ -55,6 +55,13 @@ const ALBUMS_START = {
   'Late Night': { artist: 'Diljit Dosanjh', trackIds: ['t5', 't6'], createdAt: 2, manual: true },
   'Tag Album': { artist: 'Diljit Dosanjh', trackIds: ['t2'], createdAt: 3, auto: true },
 };
+// 63.1.4: 'Tag Album' is one of the entries the app wrote for itself, so it is
+// DELETED at boot rather than flagged and hidden. The two hand-made albums are what
+// the store is expected to hold from then on, and what everything below compares to.
+const ALBUMS_AFTER_BOOT = {
+  'My Mix': ALBUMS_START['My Mix'],
+  'Late Night': ALBUMS_START['Late Night'],
+};
 // 'Punjabi Gaane' is the playlist that used to leak into Albums: it is left as
 // the open playlist while the albums tab is shown.
 const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5', 't6'], Favorites: [], 'Punjabi Gaane': ['t1', 't2', 't3'] };
@@ -161,8 +168,8 @@ let toasts = [];
   ok('the albums tab says Albums, not the playlist', headerText().indexOf('Albums') !== -1, headerText());
   console.log('\n— the Albums tab menu cannot reach a playlist —');
   ok('we are on the Albums tab', win.__scGetLibraryMode && win.__scGetLibraryMode() === 'albums');
-  ok('the albums tab shows your hand-made albums only',
-     win.__scAutoAlbumNames && win.__scAutoAlbumNames().length === 1, JSON.stringify(win.__scAutoAlbumNames ? win.__scAutoAlbumNames() : null));
+  ok('nothing is left flagged as an album the app added for itself',
+     win.__scAutoAlbumNames && win.__scAutoAlbumNames().length === 0, JSON.stringify(win.__scAutoAlbumNames ? win.__scAutoAlbumNames() : null));
   const opened = await openKebab(win);
   ok('the ⋮ menu opens on the Albums tab', opened && win.document.getElementById('songActionsBackdrop').style.display === 'flex');
   const albumMenu = menuTexts(win);
@@ -189,7 +196,7 @@ let toasts = [];
     console.log('    confirm: ' + body.slice(0, 160));
     ok('the export confirm is about albums', /album/i.test(body));
     ok('it never names the open playlist', body.indexOf(OPEN_PLAYLIST) === -1, body);
-    ok('it counts the songs of your hand-made albums (4, not the auto one)',
+    ok('it counts the songs of your hand-made albums (4, not the removed one)',
        /\b4 songs?\b/.test(body), body.slice(0, 120));
     ok('it names the two albums you made', /\b2 albums?\b/.test(body), body.slice(0, 120));
   }
@@ -198,8 +205,8 @@ let toasts = [];
 
   console.log('\n— nothing above touched a playlist —');
   ok('playlists are byte-for-byte unchanged', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
-  ok('the album entries are unchanged too',
-     eq(idb._data.meta.get('userAlbums').value, ALBUMS_START), JSON.stringify(idb._data.meta.get('userAlbums').value));
+  ok('the hand-made album entries are unchanged too',
+     eq(idb._data.meta.get('userAlbums').value, ALBUMS_AFTER_BOOT), JSON.stringify(idb._data.meta.get('userAlbums').value));
 
   console.log('\n— a playlist keeps its own playlist actions —');
   win.navigate('playlists');
