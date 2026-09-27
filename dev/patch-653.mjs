@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SideCut - 63.1.3: the check updates the panel it is in and shows a progress
+// SideCut - 63.1.2: the check updates the panel it is in and shows a progress
 // bar, instead of rebuilding the whole popup once per artist.
 //
 // The follow-up report, in the user's words: "it keeps reopening the same new
@@ -24,7 +24,7 @@
 //   * `__scUpRefreshState` grows a real progress BAR (`#scRelProgress`) that
 //     shows while a check is running, on whichever release surface is open.
 //
-//   node dev/patch-655.mjs
+//   node dev/patch-653.mjs
 //
 // Idempotent: a rerun reports 0 edits.
 import fs from 'node:fs';
@@ -288,4 +288,4 @@ sub('the refresh helper can target every open release surface', OLD_SCOPE, NEW_S
   'var _surfaces = [];');
 
 fs.writeFileSync(FILE, src);
-console.log('\npatch-655: ' + edits + ' index.html edit(s)');
+console.log('\npatch-653: ' + edits + ' index.html edit(s)');
