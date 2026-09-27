@@ -255,8 +255,12 @@ function btn(id) { return dom.window.document.getElementById(id); }
   // shell from cache after an OTA swap.
   const swSrc = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (swSrc.match(/CACHE_NAME = '([^']+)'/) || [])[1];
-  ok('the service worker cache name tracks the app version',
-     !!swCache && swCache.indexOf(String(APP_VERSION)) !== -1, JSON.stringify(swCache) + ' vs v' + APP_VERSION);
+  // The cache name carries its OWN number on purpose (AGENTS.md, "sw.js cache name"):
+  // it is bumped when the shell changes, not on every app version, so it must be
+  // versioned and it must not be the app version.
+  ok('the service worker cache name is versioned, and is not the app version',
+     !!swCache && /^sidecut-shell-v\d+(\.\d+)*$/.test(swCache) && swCache.indexOf(String(APP_VERSION)) === -1,
+     JSON.stringify(swCache) + ' vs v' + APP_VERSION);
 
   const zippedClient = require('child_process').execFileSync('unzip', ['-p', path.join(ROOT, 'ota/update.zip'), 'dev/native-updates.js'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   ok('the zip carries the fixed OTA client (sheet shown + ordered versions)',

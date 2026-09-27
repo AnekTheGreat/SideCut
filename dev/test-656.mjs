@@ -154,11 +154,12 @@ async function main() {
   try { entries = eval('[' + block[1] + ']'); } catch (e) {}
   const head = entries && entries[0];
   ok(!!head && head.version === (src.match(/const APP_VERSION = '([^']+)'/) || [])[1], 'the head entry matches APP_VERSION');
-  const note = head ? (head.items || []).find((i) => /A run starts sooner and gives up less often/.test(i)) : null;
+  const rel = entries && entries.find((e) => String(e.version) === '63.1.3');
+const note = rel ? (rel.items || []).find((i) => /A run starts sooner and gives up less often/.test(i)) : null;
   ok(!!note, 'the release notes say what changed');
   ok(!!note && note.startsWith('[FULL] '), 'and are marked download-only, so the Play notes never name a converter');
   ok(!/\bdownload|converter|convert\b/i.test((head ? head.items : []).join('\n')), 'the head entry carries no downloader wording');
-  ok(!!note && head.items.indexOf(note) >= 6, 'and the note sits outside the six items both channels publish');
+  ok(!!note && rel.items.indexOf(note) >= 6, 'and the note sits outside the six items both channels publish');
 
   console.log('');
   console.log(pass + ' passed, ' + fail + ' failed  (' + path.basename(HTML) + ')');

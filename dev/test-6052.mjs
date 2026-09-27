@@ -66,8 +66,8 @@ ok(A.albums['Punjabi Hits'].trackIds.join(',') === 'L1,L2,L3',
 ok(Array.isArray(A.order) && A.order[0] === 'Punjabi Hits', 'exported album card order applied when the live list is empty');
 ok(A.store.userAlbums && A.store.userAlbums['Punjabi Hits'].trackIds.join(',') === 'L1,L2,L3',
   'remapped list persisted back to the store row');
-ok(A.lsData['sidecut_albums_manual_v1'] === '1',
-  'one-time auto-album migration stamped — a fresh install cannot re-judge and hide imported albums');
+ok(!('sidecut_albums_manual_v1' in A.lsData),
+  'the one-time album-flag pass is gone entirely — so an import can no longer be re-judged and hidden as an auto album');
 ok(A.puts.some(p => p && p.key === 'userAlbums'), 'userAlbums row written back exactly once target reached');
 
 const B = await runBlock({
@@ -140,7 +140,7 @@ let entries = null;
 try { entries = eval('[' + blockCl[1] + ']'); } catch (e) {}
 ok(!!entries && entries[0].version === ver, 'newest changelog (' + (entries && entries[0].version) + ') matches APP_VERSION');
 if (entries) {
-  ok(/EDT$/.test(entries[0].date || ''), 'date ends in EDT (' + entries[0].date + ')');  ok(entries[0].date === 'September 27, 2026 · 8:20 AM EDT', 'ship date correct (' + entries[0].date + ')');
+  ok(/EDT$/.test(entries[0].date || ''), 'date ends in EDT (' + entries[0].date + ')');  ok(entries[0].date === 'September 27, 2026 · 10:36 AM EDT', 'ship date correct (' + entries[0].date + ')');
   ok(entries[0].items.length >= 3, 'patch notes: ' + entries[0].items.length);
 }
 

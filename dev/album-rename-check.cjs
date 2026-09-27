@@ -15,10 +15,12 @@ function ok(name, cond, extra) {
   else { fail++; console.log('  ✗ ' + name + (extra ? '  [' + extra + ']' : '')); }
 }
 function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
-// v58.8.1: the manual-only migration adds an `auto` flag to an entry that is nothing
-// but a copy of a file-tag group (it is kept out of the Albums tab, not deleted). So
-// "untouched" comparisons have to compare what an album IS — its songs and artist —
-// not the bookkeeping fields the app maintains about it.
+// v58.8.1 used to add an `auto` flag to an entry that was nothing but a copy of a
+// file-tag group. 63.1.4 deleted that pass: an entry with no marker at all is an
+// album of yours, so 'Other Album' below is an ordinary album and appears in the
+// tab — treating a missing marker as "not yours" is what once emptied a library of
+// twelve hand-made albums down to one card. So "untouched" comparisons still compare
+// what an album IS — its songs and artist — not the bookkeeping fields the app keeps.
 function contentOf(a) {
   const out = {};
   Object.keys(a || {}).sort().forEach((k) => {
@@ -140,8 +142,12 @@ function closeManage(win) {
 }
 // Drive the real rename dialog (it is closure-local, so the DOM is the only
 // honest way in). v60.1.3: two fields — the album name AND the album artist.
-async function rename(win, newName, newArtist, index) {
-  const btn = Array.from(win.document.querySelectorAll('.mgr-alb-rename, .mgr-alb-rename-auto'))[index || 0];
+// The row is found by the album it shows (63.1.4 gave every row its own data-name,
+// and there is no second list of hidden albums to index into any more).
+async function rename(win, currentName, newName, newArtist) {
+  const row = Array.from(win.document.querySelectorAll('#discPopupBody .mgr-alb-row'))
+    .find((r) => (r.getAttribute('data-name') || '') === String(currentName).toLowerCase());
+  const btn = row && row.querySelector('.mgr-alb-rename');
   if (!btn) return 'no-button';
   btn.click();
   await wait(350);
@@ -175,10 +181,14 @@ async function rename(win, newName, newArtist, index) {
   // of being mixed in with the albums you made.
   const visRename = win.document.querySelectorAll('.mgr-alb-rename').length;
   const hidRename = win.document.querySelectorAll('.mgr-alb-rename-auto').length;
-  ok('the album you made is listed with a Rename button', visRename === 1, 'visible rename buttons=' + visRename);
-  ok('the auto-added album is listed separately, with Rename and It-is-mine',
-     hidRename === 1 && win.document.querySelectorAll('.mgr-alb-restore').length === 1,
+  ok('every album you have is listed with a Rename button', visRename === 2, 'visible rename buttons=' + visRename);
+  // 63.1.4: there is no second list of albums the app added for itself, and no
+  // "It is mine" button — those entries are deleted at boot instead of hidden.
+  ok('and the separate "not created by you" list is gone',
+     hidRename === 0 && win.document.querySelectorAll('.mgr-alb-restore').length === 0 &&
+     win.document.querySelectorAll('.mgr-alb-del-auto').length === 0,
      'hidden rename=' + hidRename + ' restore=' + win.document.querySelectorAll('.mgr-alb-restore').length);
+  ok('with a search box above them', !!win.document.getElementById('mgrAlbumSearch'));
   ok('each row names the album', rows.some((r) => r.startsWith('MoonChild Era')), JSON.stringify(rows));
   closeManage(win);
   await wait(200);
@@ -198,15 +208,15 @@ async function rename(win, newName, newArtist, index) {
   ok('cancelling leaves every album tag untouched', eq(tags(), { t1: 'MoonChild Era', t2: 'MoonChild Era', t3: 'MoonChild Era', t4: 'Other Album', t5: 'Other Album' }), JSON.stringify(tags()));
 
   console.log('\n— an empty name is refused —');
-  await rename(win, '   ');
+  await rename(win, 'MoonChild Era', '   ');
   ok('a blank name is ignored', eq(contentOf(albums()), contentOf(ALBUMS_START)), JSON.stringify(albums()));
 
   console.log('\n— a duplicate name is refused —');
-  await rename(win, 'Other Album');
+  await rename(win, 'MoonChild Era', 'Other Album');
   ok('two albums can never share a name', eq(contentOf(albums()), contentOf(ALBUMS_START)), JSON.stringify(albums()));
 
   console.log('\n— rename moves every song carrying the old tag —');
-  await rename(win, 'MoonChild Era (Deluxe)');
+  await rename(win, 'MoonChild Era', 'MoonChild Era (Deluxe)');
   const after = albums();
   ok('the album is renamed', !!after['MoonChild Era (Deluxe)'] && !after['MoonChild Era'], JSON.stringify(Object.keys(after)));
   ok('it keeps its position in album order', eq(Object.keys(after), ['MoonChild Era (Deluxe)', 'Other Album']), JSON.stringify(Object.keys(after)));
@@ -220,7 +230,7 @@ async function rename(win, newName, newArtist, index) {
   ok('the rename is written to storage, not just memory', eq(storedMeta('userAlbums'), after));
 
   console.log('\n— the album artist can be renamed on its own —');
-  await rename(win, 'MoonChild Era (Deluxe)', 'Diljit Dosanjh & Sia');
+  await rename(win, 'MoonChild Era (Deluxe)', 'MoonChild Era (Deluxe)', 'Diljit Dosanjh & Sia');
   ok('the album artist is renamed', albums()['MoonChild Era (Deluxe)'].artist === 'Diljit Dosanjh, Sia',
      JSON.stringify(albums()['MoonChild Era (Deluxe)'].artist));
   ok('the credit is normalized to comma form', albums()['MoonChild Era (Deluxe)'].artist.indexOf('&') === -1,
@@ -246,8 +256,9 @@ async function rename(win, newName, newArtist, index) {
   ok('the old name comes back as no album at all', c.every((x) => x.name !== 'MoonChild Era'), JSON.stringify(c.map((x) => x.name)));
   ok('the renamed album carries all three of its songs',
      c.some((x) => x.name === 'MoonChild Era (Deluxe)' && x.ids.length === 3), JSON.stringify(c));
-  ok('the auto-added album stays out of the tab', c.every((x) => x.name !== 'Other Album'), JSON.stringify(c.map((x) => x.name)));
-  ok('every song of the albums you made is on screen', c.reduce((n, x) => n + x.ids.length, 0) === 3, JSON.stringify(c));
+  ok('the album that never carried a marker is in the tab like any other',
+     c.some((x) => x.name === 'Other Album'), JSON.stringify(c.map((x) => x.name)));
+  ok('every song of both albums is on screen', c.reduce((n, x) => n + x.ids.length, 0) === 5, JSON.stringify(c));
   win.navigate('playlists');
   await wait(500);
   const allRows = Array.from(win.document.querySelectorAll('#listPane .track')).map((r) => r.dataset.id);
@@ -255,9 +266,8 @@ async function rename(win, newName, newArtist, index) {
 
   console.log('\n— a mixed-artist album keeps each song\u2019s own artist —');
   await openManage(win);
-  // Index 1: the second Rename button belongs to 'Other Album' (the first is the
-  // one just renamed), and only its artist changes here — not its name.
-  await rename(win, 'Other Album', 'Various Artists', 1);
+  // Found by name: only 'Other Album's artist changes here — not its name.
+  await rename(win, 'Other Album', 'Other Album', 'Various Artists');
   ok('the album\u2019s own artist is renamed', albums()['Other Album'].artist === 'Various Artists',
      JSON.stringify(albums()['Other Album'].artist));
   ok('its songs keep the artists they came in with',

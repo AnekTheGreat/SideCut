@@ -4368,7 +4368,7 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
         <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Create playlists from the Playlists tab, then add songs via the kebab menu on any track</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>Long-press a song row to select multiple tracks at once</span></div>
-          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Albums</b> hold the albums <i>you</i> made — the Albums tab shows only those, and the “Add to album” picker offers only those. Ones the app created for itself (an old auto-save, or a tag album from a reorder) stay out of the way under Manage albums</span></div>
+          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Albums</b> hold the albums <i>you</i> made — the Albums tab shows only those, and the “Add to album” picker offers only those. Anything the app used to add on its own — an old auto-save, or a tag album made so a reorder had somewhere to live — is gone: those entries were removed, and the album tags on your songs are untouched</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Export library</b> anytime to back everything up as a .zip you can restore later</span></div>
         </div>
       </div>
@@ -11237,7 +11237,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '63.1.3';
+  const APP_VERSION = '63.1.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11659,6 +11659,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '63.1.4', date: 'September 27, 2026 · 10:36 AM EDT', title: 'The albums SideCut made for you are gone, and Manage albums searches', items: [
+    'SideCut used to write album entries for itself, each one a copy of the album tag it found on your files, and keep them out of the Albums tab while listing them in Manage albums under "Not created by you". That second list is gone: every album in the app is now an album you made.',
+    'Those entries are deleted on the first launch after this update, not hidden. That is what frees the names they had taken — creating an album called something an automatic entry was already using no longer answers "an album named that already exists" and quietly files your songs into an album you could not see.',
+    'Nothing you made is touched. An album you created, renamed, reordered or filed songs into by hand never carried the mark the app put on its own entries, so every one of them keeps its songs, its order and its artist exactly as they were. An older album that was never marked at all is kept too.',
+    'Nothing is lost with the entries that go: an automatic album was only ever a copy of an album tag that is still on your songs. The songs, the tags and the by-album grouping are all still there, and the startup notice says so rather than reading like a deletion.',
+    'Manage albums has a search box at the top now. Type part of an album name or an artist and the list narrows as you type, with a count of how many still match, a word when nothing does, and a clear button that puts the whole list back. What you typed survives renaming or deleting an album from the list, and opening the panel fresh starts unfiltered.',
+    'The album picker, the Switch album strip in the reorder sheet and the Albums tab all read the same list now — yours. Nothing in the app offers you an album it made for itself, because it no longer makes any.',
+  ] },
   { version: '63.1.3', date: 'September 27, 2026 · 8:20 AM EDT', title: 'The release check updates the panel in place and shows its progress', items: [
     'Asking for upcoming releases no longer rebuilds the panel for every artist it reads. The check refreshed its list as each artist came back, and that refresh re-created the whole panel - header, buttons, rows and tabs - so the list visibly rebuilt itself several times while you watched it.',
     'The panel now shows a progress bar while the check is running, with the count moving 0/4, 1/4 and so on, so you can see it working instead of guessing.',
@@ -19323,19 +19331,28 @@ function _fallbackCopy(text){
 
   // ---------------- Song action sheet (kebab menu) ----------------
   function manageAlbumsHTML(){
-    // Only albums the user actually made are listed as albums; anything that was
-    // added automatically is listed separately below, with an "It is mine" button.
+    // Every entry in the store is an album you made: the app no longer creates
+    // any on its own (removeAutoAlbums deletes the ones older builds wrote), so
+    // there is no second list to keep apart. The search box is part of this
+    // markup rather than injected at open time, because the panel is re-rendered
+    // in place after every rename and every delete.
     var names = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums || {});
-    var autos = (typeof autoAlbumNames === 'function') ? autoAlbumNames() : [];
-    if(!names.length && !autos.length) return '<div class="dp-empty">No albums yet.</div>';
+    if(!names.length) return '<div class="dp-empty">No albums yet.</div>';
     var html = '<div style="padding:12px;">';
-    if(!names.length) html += '<div style="font-size:12px;color:var(--ink-dim);padding:2px 0 8px;">No albums you created yet.</div>';
+    html += '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border:1px solid var(--line);border-radius:10px;padding:8px 12px;">';
+    html += '<span style="color:var(--ink-dim);font-size:13px;">\ud83d\udd0d</span>';
+    html += '<input id="mgrAlbumSearch" type="text" placeholder="Search albums or artists\u2026" autocomplete="off" style="flex:1;background:none;border:none;outline:none;color:var(--ink);font-size:13px;min-width:0;" />';
+    html += '<span id="mgrAlbumSearchClear" style="display:none;color:var(--ink-dim);font-size:15px;cursor:pointer;padding:0 2px;">\u00d7</span>';
+    html += '</div>';
+    html += '<div id="mgrAlbumCount" style="display:none;font-size:11px;color:var(--ink-dim);padding:6px 2px 2px;"></div>';
     names.forEach(function(name, i){
       var alb = userAlbums[name] || {};
       // userAlbums entries store trackIds, not tracks - the old "N tracks"
       // count read the wrong field and always said 0.
       var n = (alb.trackIds || []).length;
-      html += '<div class="mgr-alb-row" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);">';
+      // data-name / data-artist are what the search box filters on, so it never
+      // has to read the rendered row (which also carries the track count).
+      html += '<div class="mgr-alb-row" data-name="' + escapeHtml(String(name).toLowerCase()) + '" data-artist="' + escapeHtml(String(alb.artist || '').toLowerCase()) + '" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);">';
       html += '<div style="flex:1;min-width:0;">';
       html += '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(name) + '</div>';
       html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + n + ' track' + (n !== 1 ? 's' : '') + (alb.artist ? ' \u00b7 ' + escapeHtml(alb.artist) : '') + '</div>';
@@ -19344,72 +19361,65 @@ function _fallbackCopy(text){
       html += '<button class="mgr-alb-del" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid #FF6F59;background:none;color:#FF6F59;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Delete</button>';
       html += '</div>';
     });
-    if(autos.length){
-      html += '<div style="margin-top:14px;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--ink-dim);">Not created by you (' + autos.length + ')</div>';
-      html += '<div style="font-size:11px;color:var(--ink-dim);padding:4px 0 8px;">Albums that were added automatically from your files. They stay out of the Albums tab unless you restore them.</div>';
-      autos.forEach(function(name, i){
-        var albA = userAlbums[name] || {};
-        var nA = (albA.trackIds || []).length;
-        html += '<div class="mgr-alb-row" style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line);">';
-        html += '<div style="flex:1;min-width:0;">';
-        html += '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(name) + '</div>';
-        html += '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + nA + ' track' + (nA !== 1 ? 's' : '') + (albA.artist ? ' \u00b7 ' + escapeHtml(albA.artist) : '') + '</div>';
-        html += '</div>';
-        html += '<button class="mgr-alb-restore" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink);font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">It is mine</button>';
-        html += '<button class="mgr-alb-rename-auto" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:none;color:var(--ink);font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Rename</button>';
-        html += '<button class="mgr-alb-del-auto" data-i="' + i + '" style="padding:5px 10px;border-radius:6px;border:1px solid #FF6F59;background:none;color:#FF6F59;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Delete</button>';
-        html += '</div>';
-      });
-    }
+    html += '<div id="mgrAlbumNoMatch" class="dp-empty" style="display:none;">No album matches that search.</div>';
     html += '</div>';
     return html;
   }
-
+  // The search box narrows the list on the rows that are already built — the
+  // buttons below are wired BY POSITION, so every row has to stay in the DOM and
+  // filtering only shows and hides them. The query is kept across a re-render,
+  // because renaming or deleting an album rebuilds this panel: losing what you
+  // typed half-way through a search would be worse than not searching at all.
+  var _mgrAlbumQuery = '';
+  // The search box narrows the list on the rows that are already built — the
+  // buttons below are wired BY POSITION, so every row has to stay in the DOM and
+  // filtering only shows and hides them. The query is kept across a re-render,
+  // because renaming or deleting an album rebuilds this panel: losing what you
+  // typed half-way through a search would be worse than not searching at all.
+  var _mgrAlbumQuery = '';
   function wireManageAlbums(){
     var bEl = document.getElementById('discPopupBody');
     if(!bEl) return;
     var names = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums || {});
-    var autos = (typeof autoAlbumNames === 'function') ? autoAlbumNames() : [];
-    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-restore'), function(btn){
-      btn.addEventListener('click', function(e){
-        e.stopPropagation();
-        var name = autos[parseInt(this.getAttribute('data-i'), 10)];
-        if(!name) return;
-        markAlbumManual(name);
-        try{ dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(_e){}
-        renderList();
-        refreshManageAlbums();
-        toast('"' + name + '" is yours again — it shows in Albums now.');
+    var sIn = bEl.querySelector('#mgrAlbumSearch');
+    var sClr = bEl.querySelector('#mgrAlbumSearchClear');
+    var sCount = bEl.querySelector('#mgrAlbumCount');
+    var sEmpty = bEl.querySelector('#mgrAlbumNoMatch');
+    function applyAlbumFilter(raw){
+      // The filter normalises the query itself, so a caller cannot forget to.
+      var q = String(raw || '').toLowerCase().trim();
+      var rows = bEl.querySelectorAll('.mgr-alb-row');
+      var shown = 0;
+      Array.prototype.forEach.call(rows, function(r){
+        var hay = (r.getAttribute('data-name') || '') + ' ' + (r.getAttribute('data-artist') || '');
+        var hit = !q || hay.indexOf(q) !== -1;
+        r.style.display = hit ? 'flex' : 'none';
+        if(hit) shown++;
       });
-    });
-    // A hidden album can still be renamed (which makes it yours for good) or deleted.
-    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-rename-auto'), function(btn){
-      btn.addEventListener('click', function(e){
-        e.stopPropagation();
-        var name = autos[parseInt(this.getAttribute('data-i'), 10)];
-        if(name) renameUserAlbum(name);
+      if(sCount){
+        sCount.textContent = q ? shown + ' of ' + rows.length + ' album' + (rows.length === 1 ? '' : 's') : '';
+        sCount.style.display = q ? 'block' : 'none';
+      }
+      if(sEmpty) sEmpty.style.display = (q && !shown) ? 'block' : 'none';
+      if(sClr) sClr.style.display = q ? 'block' : 'none';
+    }
+    if(sIn){
+      sIn.addEventListener('input', function(){
+        _mgrAlbumQuery = String(this.value || '');
+        applyAlbumFilter(_mgrAlbumQuery);
       });
-    });
-    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-del-auto'), function(btn){
-      btn.addEventListener('click', function(e){
+      if(_mgrAlbumQuery) sIn.value = _mgrAlbumQuery;
+      applyAlbumFilter(_mgrAlbumQuery);
+    }
+    if(sClr){
+      sClr.addEventListener('click', function(e){
         e.stopPropagation();
-        var name = autos[parseInt(this.getAttribute('data-i'), 10)];
-        if(!name) return;
-        if(this.dataset.armed === '1'){ deleteUserAlbum(name); return; }
-        this.dataset.armed = '1';
-        this.textContent = 'Tap to confirm';
-        this.style.background = '#FF6F59';
-        this.style.color = '#161616';
-        var self = this;
-        setTimeout(function(){
-          if(self.dataset.armed !== '1') return;
-          self.dataset.armed = '';
-          self.textContent = 'Delete';
-          self.style.background = 'none';
-          self.style.color = '#FF6F59';
-        }, 4000);
+        if(sIn) sIn.value = '';
+        _mgrAlbumQuery = '';
+        applyAlbumFilter('');
+        try{ if(sIn) sIn.focus(); }catch(_eF){}
       });
-    });
+    }
     Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-rename'), function(btn){
       btn.addEventListener('click', function(e){
         e.stopPropagation();
@@ -19441,15 +19451,13 @@ function _fallbackCopy(text){
       });
     });
   }
-
-  function refreshManageAlbums(){
+  function refreshManageAlbums(keepQuery){
+    if(!keepQuery) _mgrAlbumQuery = '';   // a fresh open starts unfiltered
     var names = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums || {});
-    var _autos = (typeof autoAlbumNames === 'function') ? autoAlbumNames() : [];
-    var _sub = names.length + ' album' + (names.length !== 1 ? 's' : '') + (_autos.length ? ' \u00b7 ' + _autos.length + ' not created by you' : '');
+    var _sub = names.length + ' album' + (names.length !== 1 ? 's' : '');
     openDiscoverPopup('Manage albums', manageAlbumsHTML(), _sub);
     wireManageAlbums();
   }
-
   // The artist an album is filed under: the one saved on the album entry, or the
   // artist of its first song when it has never been set.
   function albumArtistFor(name){
@@ -19567,7 +19575,7 @@ function _fallbackCopy(text){
       });
       dbPut('meta', { key: 'userAlbums', value: userAlbums });
       renderList();
-      refreshManageAlbums();
+      refreshManageAlbums(true);
       var what = [];
       if(nn !== oldName) what.push('renamed to "' + nn + '"');
       if(na !== wasArtist) what.push(na ? ('artist is now ' + na) : 'artist reset');
@@ -19585,7 +19593,7 @@ function _fallbackCopy(text){
     }catch(_e){}
     dbPut('meta', { key: 'userAlbums', value: userAlbums });
     renderList();
-    refreshManageAlbums();
+    refreshManageAlbums(true);
     toast('Deleted "' + name + '" \u2014 the songs stay in your library.');
   }
 
@@ -20165,9 +20173,8 @@ function _fallbackCopy(text){
 
 
   function pickUserAlbum(ids, sourceLabel){
-    // The picker offers the albums in your library; the ones the app created by
-    // itself are not something to file songs into (they are still reachable from
-    // Manage albums).
+    // The picker offers the albums in your library — every one of them is an
+    // album you made, because the app no longer creates any on its own.
     const names = (typeof visibleAlbumNames === 'function' ? visibleAlbumNames() : Object.keys(userAlbums)).sort();
     if(!names.length){ createAlbumFromIds(ids, sourceLabel, null); return; }
     const backdrop = document.createElement('div');
@@ -20259,7 +20266,8 @@ function _fallbackCopy(text){
   // Give a tag-only album a saved entry so it has somewhere to store a position.
   // Mirrors the reorder sheet's materialisation: it claims the tracks carrying
   // that album tag, minus any another saved album already owns, so nothing is
-  // ever taken away from an album you built by hand.
+  // ever taken away from an album you built by hand. It is saved as an album of
+  // yours: you reached it from the app, so it belongs in the Albums tab.
   function ensureAlbumSaved(albumName){
     var name = String(albumName || '').trim();
     if(!name || userAlbums[name]) return false;
@@ -20283,7 +20291,7 @@ function _fallbackCopy(text){
       artist: (first && String(first.artist || '').trim()) || 'Unknown artist',
       trackIds: ids,
       createdAt: Date.now(),
-      auto: true // created for a reorder, not by hand — see migrateAutoFlaggedAlbums
+      manual: true // reached from the app, so it is an album of yours
     };
     if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums });
     return true;
@@ -20291,11 +20299,12 @@ function _fallbackCopy(text){
   window.__scEnsureAlbumSaved = ensureAlbumSaved;
 
   // ---- Manual-only albums ----------------------------------------------------
-  // "Albums" means the albums YOU made. An entry created as a side effect (the
-  // old card-drag auto-save, or a tag-only album materialised so a reorder had
-  // somewhere to live) is flagged `auto` and stays out of the Albums tab: it is
-  // still reachable from the kebab's album picker, and any deliberate edit
-  // (rename, reorder, add songs, "It is mine") clears the flag for good.
+  // "Albums" means the albums YOU made. The app no longer creates any for itself
+  // — removeAutoAlbums() deletes the entries older builds wrote the moment the
+  // app starts — but the old `auto` marker is still honoured while it is there:
+  // an entry wearing it stays out of the Albums tab until a deliberate edit
+  // (rename, reorder, add songs) clears it. That is what markAlbumManual() is,
+  // and it is the one thing standing between a stale flag and a hidden album.
   function markAlbumManual(name){
     var e = userAlbums[name];
     if(!e) return;
@@ -20307,9 +20316,9 @@ function _fallbackCopy(text){
   // a reorder had somewhere to live. Everything else is an album you have (or
   // had) in your library, including every album that predates the flag: those
   // have no marker at all, and treating a missing marker as "not yours" is what
-  // emptied a library of twelve hand-made albums down to one card. They are
-  // listed under "Not created by you" in Manage albums while flagged, with an
-  // "It is mine" button that clears the flag.
+  // emptied a library of twelve hand-made albums down to one card. Any such
+  // entry is deleted at boot by removeAutoAlbums(), so this stays a guard for a
+  // stale flag rather than a state the app ever produces.
   // ---------------- Album heal: ids from another device ----------------
   // A backup imported by a build older than 60.5.2 left albums holding the
   // EXPORTING phone's track ids. Those resolve to nothing here, the card
@@ -20360,36 +20369,44 @@ function _fallbackCopy(text){
   function autoAlbumNames(){
     return Object.keys(userAlbums || {}).filter(function(n){ return albumIsAuto(n); });
   }
-  // One-time tidy-up: an entry that is NOTHING but a copy of one of your file-tag
-  // groups (same songs, same order, nothing added) can only have come from the
-  // automatic paths, so it is flagged as such. A hand-made album — songs gathered
-  // from several places, or reordered — never matches and is left alone.
-  function migrateAutoFlaggedAlbums(){
+  // ---- The albums the app added for you are deleted, not hidden ------------
+  // Older builds wrote album entries by themselves (a card-drag auto-save, or a
+  // tag album materialised so a reorder had somewhere to live) and kept them out
+  // of the Albums tab. Every one of them was only ever a copy of an album tag
+  // already on the songs, so nothing in them is not still on your files: the tag
+  // stays, By-album sorting still groups them, Album History still finds them.
+  // What they did carry was a NAME — and a name an invisible album had taken is
+  // what made "Create album" answer "an album named X already exists" and then
+  // file the songs into an album that never appeared. They were also the only
+  // thing "It is mine" could ever restore, which made a hidden album look like a
+  // feature instead of the mess.
+  //
+  // So they go, once per launch. ONLY an entry an automatic path wrote is ever
+  // touched: an album you created, renamed, reordered or filed songs into by hand
+  // never carried the flag, and is left exactly as it is. Returns how many went.
+  function removeAutoAlbums(){
+    var gone = 0;
     try{
-      if(localStorage.getItem('sidecut_albums_manual_v1') === '1') return 0;
-      localStorage.setItem('sidecut_albums_manual_v1', '1');
-      var marked = 0;
       Object.keys(userAlbums || {}).forEach(function(name){
-        var e = userAlbums[name];
-        if(!e || !Array.isArray(e.trackIds) || !e.trackIds.length) return;
-        if(e.manual === true || e.auto === true) return;
-        var tagged = [];
-        allTracks.forEach(function(tr){ if(tr && String(tr.album || '').trim() === String(name).trim()) tagged.push(tr.id); });
-        if(!tagged.length || tagged.length !== e.trackIds.length) return;
-        for(var i = 0; i < tagged.length; i++){ if(tagged[i] !== e.trackIds[i]) return; }
-        e.auto = true;
-        marked++;
+        if(!albumIsAuto(name)) return;
+        delete userAlbums[name];
+        try{
+          var i = albumOrder.indexOf(name);
+          if(i !== -1) albumOrder.splice(i, 1);
+        }catch(_eOr){}
+        gone++;
       });
-      if(marked){
-        try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(e){}
+      if(gone){
+        try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(_eUa){}
+        try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'albumOrder', value: albumOrder }); }catch(_eOa){}
       }
-      return marked;
-    }catch(e){ return 0; }
+    }catch(_e){ return 0; }
+    return gone;
   }
   window.__scMarkAlbumManual = markAlbumManual;
   window.__scVisibleAlbumNames = visibleAlbumNames;
   window.__scAutoAlbumNames = autoAlbumNames;
-  window.__scMigrateAutoAlbums = migrateAutoFlaggedAlbums;
+  window.__scRemoveAutoAlbums = removeAutoAlbums;
 
   async function createAlbumFromIds(ids, sourceLabel, existingName){
     ids = Array.from(ids || []);
@@ -22715,7 +22732,8 @@ function _fallbackCopy(text){
         });
         userAlbums = _albMerged;
         dbPut('meta', { key: 'userAlbums', value: userAlbums });
-        try{ localStorage.setItem('sidecut_albums_manual_v1', '1'); }catch(_eAlbFlag){}
+        // (No album-flag pass to fend off any more: an imported album keeps
+        // whatever marker it came with, and the next boot settles it.)
         try{
           var _aoRow = await dbGet('meta', 'albumOrder');
           if(_aoRow && Array.isArray(_aoRow.value) && _aoRow.value.length && (!Array.isArray(albumOrder) || !albumOrder.length)) albumOrder = _aoRow.value;
@@ -27145,13 +27163,15 @@ function _fallbackCopy(text){
         console.warn('[SideCut] library unreadable — showing the recovery panel instead of the empty-library screen');
         window.__scStorageTroublePanel();
       }
-      // Manual-only albums: flag entries that were only ever created as a side
-      // effect of a reorder/auto-save so the Albums tab is your albums again.
+      // Albums the app added on its own used to be hidden from the Albums tab;
+      // now they are deleted (see removeAutoAlbums). That is what frees the name
+      // they had taken, so creating an album can no longer be told the name is
+      // already in use and quietly file the songs into something you cannot see.
       var _scAutoAlbums = 0;
-      try{ _scAutoAlbums = migrateAutoFlaggedAlbums(); }catch(e){}
+      try{ _scAutoAlbums = removeAutoAlbums(); }catch(e){}
       if(loaded && _scAutoAlbums){
         setTimeout(function(){
-          try{ toast(_scAutoAlbums + ' album' + (_scAutoAlbums === 1 ? '' : 's') + ' that were added automatically are hidden from Albums — Manage albums to bring any back.', 7000); }catch(_e){}
+          try{ toast(_scAutoAlbums + ' album' + (_scAutoAlbums === 1 ? '' : 's') + ' the app had added on its own were removed \u2014 your songs and their album tags are untouched.', 7000); }catch(_e){}
         }, 3000);
       }
       if(loaded){
@@ -39145,23 +39165,10 @@ window.showAlbumReorderPopup = function(albumName){
   }
   if(!album){ toast('Album not found.'); return; }
 
-  // Build list of all album names for switching. Only the albums YOU made: an
-  // entry the app created on its own (a tag album materialised for a reorder,
-  // an old card-drag auto-save) must never be offered as somewhere to switch to
-  // — "why does Switch album list albums I didn't make".
+  // Every album in the store is one you made — the app no longer creates any on
+  // its own (removeAutoAlbums deletes the entries older builds wrote) — so the
+  // switch strip and every picker can offer all of them without a filter.
   var allAlbumNames = Object.keys(userAlbums || {});
-  try{
-    var _autoAlbums = (typeof window.__scAutoAlbumNames === 'function') ? (window.__scAutoAlbumNames() || []) : [];
-    if(_autoAlbums.length){
-      allAlbumNames = allAlbumNames.filter(function(n){
-        // Keep the album being reordered in the row even if it is flagged — the
-        // sheet is already open on it, so hiding it would look like it vanished.
-        if(n === albumName) return true;
-        return _autoAlbums.indexOf(n) === -1;
-      });
-    }
-  }catch(_eAuto){}
-
   // Create overlay
   var overlay = document.createElement('div');
   overlay.id = 'albumReorderPopup';
