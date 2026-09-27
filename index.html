@@ -1267,12 +1267,19 @@
 
 /* ─── Settings pane scrollbar ─── */
 .settings-scroll {
-  /* A maximum height, not a fixed one: a short tab then has no scrollbar at
-     all, and the wheel over it reaches the sheet instead of doing nothing.
+  /* The sheet around this pane is a column flex box, so the pane takes the
+     height left over once the title, the tab strip and Close have theirs, and
+     scrolls inside itself. That is what stops the SHEET from scrolling at all:
+     a scrolled sheet carried the tab strip off the top of the More tab and left
+     every tab opened after it starting half-way down. min-height:0 is what lets
+     a flex item this tall actually shrink to the room it is given.
+     A maximum height, not a fixed one, so a short tab has no scrollbar at all.
      scroll-behavior MUST stay auto: with smooth, a wheel kept working on the
      animating the pane after the wheel had stopped, which is exactly what
-     "the scroll wheel is being weird" looks like. overscroll-behavior keeps
-     the pane from dragging the page behind the sheet along with it. */
+     "the scroll wheel is being weird" looks like. overscroll-behavior keeps the
+     pane from dragging the page behind the sheet along with it. */
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 62vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -1301,6 +1308,13 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(255,107,107,0.45) rgba(255,255,255,0.07);
 }
+
+/* The title, the tab strip and the Close row keep their own height. Flex
+   items shrink by default, and a tab strip squeezed to part of its height is
+   exactly what "you can barely see the other tabs" was. */
+#themeBackdrop .modal > h3,
+#themeBackdrop .modal > #settingsTabStrip,
+#themeBackdrop .modal > .modal-btns{ flex: 0 0 auto; }
 
 /* Settings tab buttons polish */
 .modal .tab {
@@ -1613,9 +1627,19 @@ body.theme-dyn-orchid::before{
 
 
 /* ─────────────── Discover (online Spotify catalog browse) ─────────────── */
-#discoverView{ display:none; flex:1; flex-direction:column; padding:14px 20px 170px; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
+/* Needs its own stacking context, for the same reason #listPane has one: this
+   container is plain static flow content with no z-index, so the fixed glow
+   and edge layers (position:fixed, z-index:1, pointer-events:none) paint OVER
+   it. They are translucent washes of colour, which is how the pinned-artists
+   card came back looking like bare page background with its border gone while
+   the photographic covers on it still showed through. */
+#discoverView{ display:none; flex:1; flex-direction:column; padding:14px 20px 170px; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; position:relative; z-index:20; }
 #discoverView.active{ display:flex; }
 #discoverView.active{ display:flex; }
+/* The rail card is the one thing in Discover that is transparent to the theme
+   behind it (every other card here uses rgba white), so it is what a glow wash
+   over the view shows up as. It gets the same lift as its view. */
+#pinnedArtistsStrip{ position:relative; z-index:1; }
 #discoverSearchRow{ display:flex; gap:8px; padding:6px 0 12px; }
 #discoverSearch{
   flex:1; min-width:0; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);
@@ -2323,7 +2347,7 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
       <span style="flex:1;font-size:12.5px;font-weight:600;">Pinned artists</span>
       <button id="pinnedArtistsHelp" style="background:none;border:none;color:var(--ink-dim);font-size:12px;cursor:pointer;padding:0;">?</button>
     </div>
-    <div id="pinnedArtistsList" style="display:flex;align-items:flex-start;gap:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;min-height:64px;padding:0 2px 4px;"></div>
+    <div id="pinnedArtistsList" style="display:flex;align-items:flex-start;gap:12px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;min-height:64px;padding:0 2px 4px;"></div>
   </div>
   <div id="discoverSearchRow">
     <input type="text" id="discoverSearch" placeholder="Search songs, artists, albums…">
@@ -2655,12 +2679,12 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
       <button class="tab" id="settingsTabPremium" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Premium</button>
       <button class="tab" id="settingsTabExpand" style="min-width:110px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Get Songs</button>
       <button class="tab" id="settingsTabTheme" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Theme</button>
+      <button class="tab" id="settingsTabDonate" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Donate</button>
       <button class="tab" id="settingsTabGlow" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Glow</button>
       <button class="tab" id="settingsTabSandbox" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Sandbox</button>
+      <button class="tab" id="settingsTabSupport" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Support</button>
       <button class="tab" id="settingsTabWidget" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Widget</button>
       <button class="tab" id="settingsTabMore" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">More</button>
-      <button class="tab" id="settingsTabSupport" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Support</button>
-      <button class="tab" id="settingsTabDonate" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">Donate</button>
     </div>
 
     <div id="settingsPanesWrap" class="settings-scroll">
@@ -3059,7 +3083,6 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
 
 
 <div id="settingsPaneMore" style="display:none;">
-      <div style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; text-transform:uppercase; color:var(--ink-dim); margin:18px 2px 8px;">This build and help</div>
       <div style="margin-bottom:16px; border:1px solid var(--line); border-radius:10px; overflow:hidden;">
         <!-- Collapsible: Check for updates (native only, unhidden below) -->
       <div id="otaSettingsBlock" style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden; display:none;">
@@ -3075,6 +3098,24 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
       <div style="margin-bottom:16px;">
         <button class="playlist-pick-btn" id="howToUseBtn" style="text-align:center;">🎓 Replay tutorial</button>
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Shown automatically the first time you open the app — replay it anytime from here.</div>
+      </div>
+
+      <!-- Diagonal / Single button toggle -->
+      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <div style="font-size:13px; font-weight:600;">Playlists / Albums button</div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Diagonal split or single toggle button</div>
+          </div>
+          <button id="diagonalSplitToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Loading…</button>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0 4px;">
+          <div>
+            <div style="font-size:13px; font-weight:600;">Auto-scroll to song</div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Jump to the playing song when switching tabs</div>
+          </div>
+          <button id="autoScrollToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Off</button>
+        </div>
       </div>
 
       <!-- Collapsible: Tutorial summary (text) -->
@@ -3133,7 +3174,6 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
         </div>
       </div>
 
-      <div style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; text-transform:uppercase; color:var(--ink-dim); margin:18px 2px 8px;">Playback</div>
 <button id="collapsiblePlaybackSound" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
           <span>Playback &amp; sound</span><span id="collapsePlaybackSoundIcon" style="transition:transform 0.2s;">▸</span>
         </button>
@@ -3237,25 +3277,6 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
         <div style="font-size:11px; color:var(--ink-dim); line-height:1.5;">When you add files, SideCut asks who the artist is — once for the whole batch — so covers and lyrics fetch for the right artist. You can always skip the question.</div>
       </div>
 
-      <!-- Diagonal / Single button toggle -->
-      <div style="margin-bottom:16px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--line);">
-        <div style="display:flex; align-items:center; justify-content:space-between;">
-          <div>
-            <div style="font-size:13px; font-weight:600;">Playlists / Albums button</div>
-            <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Diagonal split or single toggle button</div>
-          </div>
-          <button id="diagonalSplitToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Loading…</button>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0 4px;">
-          <div>
-            <div style="font-size:13px; font-weight:600;">Auto-scroll to song</div>
-            <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Jump to the playing song when switching tabs</div>
-          </div>
-          <button id="autoScrollToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Off</button>
-        </div>
-      </div>
-
-      <div style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; text-transform:uppercase; color:var(--ink-dim); margin:18px 2px 8px;">Library, storage and rollback</div>
       <!-- Collapsible: Library Tools & Fetching -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-bottom:8px; overflow:hidden;">
         <button id="collapsibleLibrary" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
@@ -3361,7 +3382,6 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
         <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; text-align:center;">Understanding the version numbers</div>
       </div>
 
-      <div style="font-size:10.5px; font-weight:700; letter-spacing:1.1px; text-transform:uppercase; color:var(--ink-dim); margin:18px 2px 8px;">History and extras</div>
       <!-- Collapsible: DJ Mode per playlist -->
       <div style="border:1px solid var(--line); border-radius:8px; margin-top:12px; overflow:hidden;">
         <button id="collapsibleDjPerPlaylist" style="width:100%; padding:12px; background:var(--bg-raised); border:none; color:var(--ink); font-size:13px; font-weight:600; cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
@@ -7008,6 +7028,19 @@ function getApiHeaders() {
   function showSettingsTab(tab){
     // Refresh / Playback / Equalizer were folded into the More tab.
     if(tab === 'refresh' || tab === 'playback' || tab === 'eq') tab = 'more';
+    // Every tab opens at its own top. All nine panes share one scrolling box,
+    // so the scroll the previous tab left behind was still in place when the
+    // next one opened - the strip came up half off the top and the first card
+    // looked cut off, and the same offset then followed the user into every
+    // other tab. The sheet itself is reset too: nothing should be able to
+    // scroll it, but a WebView that decides otherwise must not carry that
+    // offset over either.
+    try{
+      var _panes = $('settingsPanesWrap'); if(_panes) _panes.scrollTop = 0;
+      var _tbd = $('themeBackdrop');
+      var _sheet = _tbd ? _tbd.querySelector('.modal') : null;
+      if(_sheet) _sheet.scrollTop = 0;
+    }catch(_eSsc){}
     // Sandbox is free to browse; premium-only settings show a lock and require unlock to toggle.
     // Home layout reordering is free for all users.
     $('settingsPanePremium').style.display = tab === 'premium' ? '' : 'none';
@@ -11404,7 +11437,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '64.1';
+  const APP_VERSION = '64.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11826,7 +11859,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '64.1', date: 'September 27, 2026 · 2:15 PM EDT', title: 'The polish pass: crop by ear, a hello the assistant knows, and Settings that groups itself', items: [
+  { version: '64.2', date: 'September 27, 2026 · 4:05 PM EDT', title: 'The More tab stops jumping, the pinned-artists row stops going blank, and the Settings tabs are back where they were', items: [
+    'These notes say what changed now. Entries used to carry an invented name above the changes - "the polish pass", "the QOL pass", "small UI polish pass" - which described nothing about the update; the three that did state the changes instead.',
+    'The pinned artists row on Discover stops coming back blank. Scrolling Discover could leave the card standing there with nothing drawn inside it - its artists missing, the space still taken - until something else happened to redraw it. A scroll that settles now repaints the card itself, so it and its artists stay on screen.',
+    'A chip cannot leave the row hollow either. The lift a chip is given while it is being dragged is dropped as soon as a scroll settles, whether or not that drag ever finished, and the row keeps a minimum height and always starts at its left edge - the three ways it was reported empty before.',
+    'Opening More no longer drags the sheet up with it. All of Settings shares one scrolling pane, so the scroll position the previous tab left behind was still in place: the tab strip came up half off the top, the first card looked cut off, and that same offset followed you into every other tab. Each tab opens at its own top now, and the sheet is laid out so the title, the tab strip and Close keep their height while only the pane scrolls.',
+    'The Settings tabs are back in the order they had: Premium, Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, and More at the end. The headings added inside More are gone with them, so its cards are the ones that were there before - the same shape as every other tab, with the storage panel and the rollback copies under it where they were.',
+    'This is a fix release, so it is 64.2 rather than a second 64.1: a phone already running 64.1 is offered it and installs it, which a rebuild carrying the same version number would never be.',
+  ] },
+  { version: '64.1', date: 'September 27, 2026 · 2:15 PM EDT', title: 'Crop by ear, a hello the assistant answers, five animated themes free, Settings grouped, and cover picks newest first', items: [
     'Cropping a song is done by ear now. The crop sheet has a listen-through slider over the whole song beside the two trim handles: drag it and the sound follows your thumb, so the run-up to your start point and the tail after your end point can be heard before anything is saved. Dragging never commits anything, the play button beside it keeps it going, and the white playhead line rides the waveform with it.',
     'The animated themes are premium now, with five left free for everyone: RGB, RGB +, Ember, Galaxy and Glacier. Everything else that animates shows a lock unless premium is on \u2014 Aurora, Synthwave, Deep Ocean, Cyberpunk, Nebula, Neon Pulse, Solstice, Abyss and Orchid \u2014 and the Theme tab, the premium page and the seizure warning all list the same split, so there is no guessing which is which.',
     'The assistant knows what to say when you just say hello. A greeting was being matched against the built-in answers as a piece of a word, so "hi" landed inside the word history and a plain hello came back as the Album History paragraph. Greetings, good mornings, thanks and goodbyes are answered on their own now, and no answer can be reached by a fragment of a word again.',
@@ -11834,7 +11875,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     'Settings is grouped instead of one long column. The tabs run Premium, Get Songs, Theme, Glow, Sandbox, Widget, More, Support, Donate, and inside More every card sits under a heading \u2014 This build and help, Playback, Library, storage and rollback, and History and extras \u2014 so the playback switches, the library tools, the storage panel and the rollback copies listed under it are each in one place instead of scattered down the page.',
     'The Settings pane scrolls the way you expect it to. It was a fixed-height box with its own animated scrollbar inside a sheet that scrolls as well: a wheel over a short tab did nothing, the pane kept gliding after the wheel stopped, and its scroll dragged the page behind the sheet along with it. It is a maximum height now (a short tab has no scrollbar at all), it follows the wheel one to one, and it stops at its own ends.',
   ] },
-  { version: '64', date: 'September 27, 2026 · 11:56 AM EDT', title: 'The QOL pass: covers stop repeating, the assistant stops leaving you with an error, and your rollback history is yours again', items: [
+  { version: '64', date: 'September 27, 2026 · 11:56 AM EDT', title: 'Cover picks stop repeating, the assistant answers instead of erroring, the pinned bar is rounded, and rollback history is kept', items: [
     'Picking a picture for an artist no longer shows you the same sleeve over and over. The grid was built one square per song, and every song carries its own copy of that art, so ten songs off one album put ten identical squares in it. It is one square per image now, and the artist singles are asked for as well as the albums \u2014 which is where a lot of the pictures that were missing were hiding.',
     'The assistant stops leaving you with an error when the service behind it is briefly busy. That is the same question working a moment later, so it is retried before anything is said, and if it still cannot answer, the question is answered from the knowledge built into the app with the line underneath saying which one answered. It also stops denying its own features: the tools this app really has are named in what it is told about the app, so it no longer tells you a feature is not there when it is. It is also given the answer the app documents for itself, so a question about a feature is answered from SideCut instead of from a general idea of what a music player usually has, and it is told which pages really exist \u2014 playback, the equalizer, the library tools and the storage panel are all inside Settings \u2192 More, which is a page that exists, and it no longer sends anyone to a Settings tab that does not.',
     'The pinned artists row on Discover is a rounded card on a raised surface with a hairline border now, instead of a flat block of the theme colour running edge to edge and butted against the search box.',
@@ -13693,7 +13734,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       'Fixed the RGB-theme edge glow rendering as an ugly solid bar on some mobile browsers (the CSS mask trick was unreliable there) — it\'s now a plain, safe vignette',
       'Liquid Glass now also covers icon buttons throughout the app, with the same drifting sheen as the primary button',
     ]},
-    { version: '33.4', title: 'Small UI polish pass', items: [
+    { version: '33.4', title: 'Track rows and the play button get clearer press feedback', items: [
       'Track row press feedback is a touch more visible',
       'Play/pause button now has a springy press-scale instead of a flat one',
     ]},
@@ -31392,14 +31433,35 @@ if(!isDiscover) stopDiscoverPreview();
     try{ list.scrollLeft = 0; }catch(_eSc){}
   }
 
-  // The pinned-artist rail has been reported as vanishing twice now, both times
-  // after scrolling Discover, and nothing in the app removes it. The damage is on
-  // the rendering side: a chip that kept the inline transform/z-index/box-shadow
-  // it was given when a drag started is its own composited layer, and a layer
-  // like that is what a WebView discards on a long scroll. Re-rendering the rail
-  // rebuilds plain, unstyled chips, so this heals it as soon as it is noticed:
-  // once a scroll of Discover settles, a rail with artists in it that has no
-  // chips (or no height) is drawn again.
+  // The pinned-artist rail has been reported as vanishing three times now, and
+  // nothing in the app removes it. The damage is on the rendering side. The
+  // 64.1 answer only redrew a rail that had lost its chips, and the screenshots
+  // show the card still standing in the layout with nothing drawn inside it, so
+  // that condition was never met. This one repaints the card outright:
+  //
+  //   - any chip still holding the inline transform/z-index/box-shadow a drag
+  //     gave it is put back to a plain chip. That lift is what makes a chip its
+  //     own composited layer, and a layer like that is what a WebView discards
+  //     on a long scroll. The styles are dropped in place rather than by
+  //     re-rendering, so no cover is decoded again;
+  //   - the card itself is hidden and shown again, which throws its painted
+  //     pixels away and paints them fresh, whether or not its artists are there.
+  //
+  // A rail that really has lost its chips is still drawn again from scratch.
+  function repaintPinnedRail(list){
+    try{
+      var chips = list.querySelectorAll('.pinned-artist-chip');
+      for(var i = 0; i < chips.length; i++){
+        var c = chips[i];
+        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }
+      }
+    }catch(_eLift){}
+    var strip = $('pinnedArtistsStrip');
+    if(!strip) return;
+    strip.style.visibility = 'hidden';
+    void strip.offsetHeight;
+    requestAnimationFrame(function(){ try{ strip.style.visibility = ''; }catch(_eRpr){} });
+  }
   (function watchPinnedRail(){
     var dv = $('discoverView');
     if(!dv || dv._paRailWatch) return;
@@ -31413,6 +31475,7 @@ if(!isDiscover) stopDiscoverPreview();
           if(!pinnedArtists.length) return;
           var l = $('pinnedArtistsList');
           if(!l) return;
+          repaintPinnedRail(l);
           if(l.querySelector('.pinned-artist-chip') && l.getBoundingClientRect().height) return;
           renderPinnedArtists();
         }catch(_eRailWatch){}
