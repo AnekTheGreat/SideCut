@@ -1735,7 +1735,13 @@ body.theme-dyn-orchid::before{
 .add-songs-backdrop.open{ display:block; }
 
 /* ─────────────── Home page — immersive bubbles ─────────────── */
-#homeView{ display:none; flex:1; flex-direction:column; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding:14px 16px 170px; }
+/* Needs its own stacking context, for the same reason #listPane and
+   #discoverView have one: this container is plain static flow content with no
+   z-index of its own, so the theme background and every positioned layer the
+   app draws resolve without reference to it. Home was the last scrolling page
+   left out, and the last one to be reported with a bubble coming back blank
+   mid-scroll - the space it occupied still taken, its card and text gone. */
+#homeView{ display:none; flex:1; flex-direction:column; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; position:relative; z-index:20; padding:14px 16px 170px; }
 #homeView.active{ display:flex; }
 #homeView.active{ display:flex; }
 .home-greeting{ font-size:15px; font-weight:600; color:var(--ink); margin:6px 4px 2px; }
@@ -11437,7 +11443,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '64.2';
+  const APP_VERSION = '64.2.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11859,6 +11865,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '64.2.1', date: 'September 27, 2026 · 6:20 PM EDT', title: 'The Favorites bubble stops coming back blank on Home when you scroll', items: [
+    'The Favorites bubble stops coming back blank on Home. Scrolling Home up and down could leave the last bubble - the bottom-right one - sitting as an empty cell with its card, its heart and its count simply not drawn, until something else happened to redraw it. The bubble grid repaints itself once a scroll settles now, so it cannot stay blank on screen.',
+    'A bubble can no longer stay in the state a drag leaves it in. While a bubble is being carried it is lifted out of the grid and drawn on its own, and a layer like that is exactly what a phone drops on a long scroll. A scroll that settles now puts a leftover carry back into the grid as a plain bubble, clears out any dashed placeholder a drag abandoned, and throws the grid painted pixels away so they are drawn fresh. Nothing is rebuilt, so no cover, count or order is touched.',
+    'Home is given its own drawing layer, the way the library list and Discover already have one. Each of those pages was reported once with a card coming back blank and each was given the same guard; Home was the last scrolling page without it, so the animated theme behind the app can no longer come between Home and what is drawn on it.',
+    'The grid also checks itself. If a settled scroll finds a bubble that the Home layout asks for missing from the page, the grid draws itself again from that layout instead of waiting for the next update to notice.',
+    'This is 64.2.1 rather than a second 64.2: a phone already running 64.2 is offered it and installs it, which a rebuild carrying the same version number would never be. The songs, playlists, settings, pinned artists and the rollback copies in Storage are all exactly as they were - nothing about this update touches them.',
+    'Why this keeps happening, said plainly: the app was never removing anything. The library list, the pinned-artists row and now a Home bubble all came back blank because the page asks the phone to paint scrolling content in a way the Android WebView mishandles, and the space stays while the pixels go. Each of those three surfaces carries the same guard now, so it is one pattern to watch instead of three separate mysteries.',
+  ] },
   { version: '64.2', date: 'September 27, 2026 · 4:05 PM EDT', title: 'The More tab stops jumping, the pinned-artists row stops going blank, and the Settings tabs are back where they were', items: [
     'These notes say what changed now. Entries used to carry an invented name above the changes - "the polish pass", "the QOL pass", "small UI polish pass" - which described nothing about the update; the three that did state the changes instead.',
     'The pinned artists row on Discover stops coming back blank. Scrolling Discover could leave the card standing there with nothing drawn inside it - its artists missing, the space still taken - until something else happened to redraw it. A scroll that settles now repaints the card itself, so it and its artists stay on screen.',
@@ -30042,6 +30056,84 @@ if(!isDiscover) stopDiscoverPreview();
     });
   }
 
+  // ---- Home grid: drawn again after a scroll settles -------------------------
+  // The Favorites bubble has been reported coming back blank: scroll Home up and
+  // down and the last bubble - the bottom-right one - is left as an empty cell,
+  // its card, its heart and its count not painted. Nothing in the app removes a
+  // bubble, and no scroll handler touches this grid, so this is the same
+  // rendering-side fault that was reported on the library list and on the
+  // pinned-artists row: the WebView drops the painting of content inside a
+  // scroller and keeps the space it occupied. Home gets the same three parts the
+  // rail got, because those are the ones that worked there:
+  //
+  //   - a bubble still holding what a drag gives it (the hb-dragging class and
+  //     the inline box that lifts it out of the grid) is put back as a plain
+  //     bubble. A carried bubble is drawn on a layer of its own, and that is the
+  //     shape a phone discards on a long scroll;
+  //   - the grid painted pixels are thrown away and painted again, which costs
+  //     one frame and cannot be seen;
+  //   - and a grid that really is missing a bubble the layout asks for is drawn
+  //     from the layout again instead of waiting for the next update to notice.
+  function repaintHomeGrid(){
+    var wrap = $('homeBubbles');
+    if(!wrap) return;
+    try{
+      var phs = wrap.querySelectorAll('.hb-drag-placeholder');
+      for(var i = 0; i < phs.length; i++){ if(phs[i].parentNode) phs[i].parentNode.removeChild(phs[i]); }
+      var bs = wrap.querySelectorAll('.home-bubble');
+      for(var j = 0; j < bs.length; j++){
+        var b = bs[j];
+        if(!b.classList.contains('hb-dragging') && !b.style.position) continue;
+        b.classList.remove('hb-dragging');
+        b.style.position = ''; b.style.left = ''; b.style.top = '';
+        b.style.width = ''; b.style.height = ''; b.style.transform = ''; b.style.transition = '';
+      }
+    }catch(_eCarry){}
+    wrap.style.visibility = 'hidden';
+    void wrap.offsetHeight;
+    requestAnimationFrame(function(){ try{ wrap.style.visibility = ''; }catch(_eRpH){ } });
+  }
+  // Is every bubble the Home layout asks for actually on the page? Built through
+  // the same rules renderHome() uses, so a custom action that no longer exists is
+  // not counted as a missing bubble.
+  function homeGridIsWhole(){
+    var wrap = $('homeBubbles');
+    if(!wrap || wrap.classList.contains('reorder-mode')) return true;
+    try{
+      var want = normalizeHomeOrder(homeOrder).filter(function(k){ return homeHidden.indexOf(k) === -1; });
+      var count = 0;
+      for(var i = 0; i < want.length; i++){
+        var k = want[i];
+        if(k.indexOf('custom-') === 0){
+          var found = false;
+          for(var c = 0; c < customQuickActions.length; c++){ if('custom-' + customQuickActions[c].id === k) found = true; }
+          if(!found) continue;
+        } else if(HOME_BUBBLE_KINDS.indexOf(k) === -1){
+          continue;
+        }
+        count++;
+        if(!wrap.querySelector('[data-bubble="' + k + '"]')) return false;
+      }
+      return wrap.querySelectorAll('.home-bubble').length === count;
+    }catch(_eGridChk){ return true; }
+  }
+  (function watchHomePaint(){
+    var v = $('homeView');
+    if(!v || v._hbPaintWatch) return;
+    v._hbPaintWatch = true;
+    var t = null;
+    v.addEventListener('scroll', function(){
+      if(t) clearTimeout(t);
+      t = setTimeout(function(){
+        t = null;
+        try{
+          if(hbDrag) return; // a drag in progress owns the grid
+          repaintHomeGrid();
+          if(!homeGridIsWhole()) renderHome();
+        }catch(_eHomeWatch){}
+      }, 140);
+    }, { passive: true });
+  })();
   // ---- Reorder Home bubbles ----
   // Hold a bubble ~300ms → a confirm popup asks "Would you like to reorder your
   // bubbles?" → Continue enters reorder mode: a static dashed outline marks

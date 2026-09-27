@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '64.2';
+const VER = '64.2.1';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -47,9 +47,12 @@ console.log('[1] release metadata');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
-  ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
-  if (entries) {
-    const head = entries[0];
+  // The head entry belongs to whatever shipped last, so read the 64.2 entry by
+  // version: this gate describes 64.2.
+  const entry642 = entries ? entries.find((x) => /^64\.2$/.test(String(x.version))) : null;
+  ok(!!entry642 && String(entry642.version) === '64.2', 'the 64.2 entry this gate describes is still here');
+  if (entry642) {
+    const head = entry642;
     const items = head.items || [];
     ok(items.length === 6, 'six notes (' + items.length + ')');
     const notes = items.join('\n');
