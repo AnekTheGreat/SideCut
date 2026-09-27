@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.1';
+const VER = '64.2.2';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -39,8 +39,12 @@ console.log('[1] release metadata');
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
-  if (entries) {
-    const head = entries[0];
+  // The head entry belongs to whatever shipped last, so read the 64.2.1 entry by
+  // version: this gate describes 64.2.1.
+  const entry6421 = entries ? entries.find((x) => /^64\.2\.1$/.test(String(x.version))) : null;
+  ok(!!entry6421 && String(entry6421.version) === '64.2.1', 'the 64.2.1 entry this gate describes is still here');
+  if (entry6421) {
+    const head = entry6421;
     const items = head.items || [];
     ok(items.length === 6, 'six notes (' + items.length + ')');
     const notes = items.join('\n');
@@ -70,10 +74,13 @@ console.log('[2] Home repaints its grid once a scroll settles');
     'and says why, the way #listPane and Discover do');
   ok(count('position:relative; z-index:20') >= 3, 'so all three scrolling pages carry one');
   ok(has('  function repaintHomeGrid(){'), 'a settled scroll repaints the grid');
-  ok(has("    wrap.style.visibility = 'hidden';\n    void wrap.offsetHeight;"),
-    'by throwing its painted pixels away');
-  ok(has("    requestAnimationFrame(function(){ try{ wrap.style.visibility = ''; }catch(_eRpH){ } });"),
-    'and painting them again on the next frame');
+  // 64.2.2 replaced the hide-and-restore with a layer promotion: hiding the whole
+  // grid for a frame IS the blink that release reported, so these two now pin the
+  // repaint that cannot be seen instead of the one that could.
+  ok(has("    wrap.style.transform = 'translateZ(0)';\n    void wrap.offsetHeight;"),
+    'by forcing the grid to be rastered again');
+  ok(has("    requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });"),
+    'and taking that back on the next frame, without ever hiding the grid');
   ok(has("      var phs = wrap.querySelectorAll('.hb-drag-placeholder');"),
     'a dashed placeholder an abandoned drag left behind is removed');
   ok(has("        if(!b.classList.contains('hb-dragging') && !b.style.position) continue;"),

@@ -1,6 +1,81 @@
 # SideCut — repository memory
 
 
+## 64.2.2 (Sep 27, 2026): the 64.2.1 blink, roll-forward made visible, a per-build assistant, the storage allowance, watermark on by default
+- **The user's words**, one message with six screenshots: "If you roll back the app make sure you can roll forward again
+  back to current version. Now the favorites bubble sometimes disappears for a split second and reappear put the patch
+  notes in simple terms not so long for minimal changes. Make sure the knowledge base for the full ver and play version
+  is different because play version shouldnt know anything about downloading just that it stores your mp3's or whatever
+  you got. Why is there only a certain amount of storage allowed? And when talking to the ai in certain themes in
+  general its just hard to see certain text. And watermark remover that should be default and it should be on by
+  default." No version was named; the line after 64.2.1 is 64.2.2.
+- **1. THE BLINK WAS 64.2.1'S OWN DOING — and this supersedes the 64.2.1 note below.** `repaintHomeGrid()` hides the
+  whole grid for a frame (`visibility:hidden` -> `void wrap.offsetHeight` -> `requestAnimationFrame` restore) to force
+  the pixels to be drawn again. That trick is *supposed* to be invisible because the rAF callback runs before the
+  frame is painted, but a phone can present that frame — a forced layout can flush a paint, and dropping/re-adding a
+  compositor layer on Android WebView is a known one-frame blank. **"The favorites bubble disappears for a split
+  second and reappear" is that hide.** The repaint now does the same job without ever leaving the screen: promote the
+  grid onto its own layer (`wrap.style.transform = 'translateZ(0)'`), `void wrap.offsetHeight`, then drop the
+  promotion on the next frame. The drag-carry clean-up and `homeGridIsWhole() -> renderHome()` are untouched. Note the
+  64.2.1 "no layer promotion" rule still holds where it was written: that was about leaving a **bubble** promoted
+  (the shape the WebView discards); this is a transient promotion on the **container**, cleared in the next frame.
+- **2. ROLL FORWARD IS NOW THE FIRST THING THE PICKER OFFERS.** Rolling back was always two-way in the plumbing
+  (`pinnedVersion` is sticky, boot swaps to the pinned snapshot, a pin whose snapshot is missing just falls through
+  to the newest code, and an OTA hand-over clears it via `sidecut_ota_pin_clear`) — but the way back was a footer
+  button under the whole history. `renderVersionSnapshots()` now renders the forward entry **before** the rows: a
+  button `↩ Go forward to the latest version (vX)` when pinned (clears the pin, reloads, lands on the installed
+  build), otherwise a line saying you are on the latest version and this is where you come back from. The section is
+  titled "Roll back app (or go forward again)" and its note explains both directions.
+- **3. THE STORE BUILD'S ASSISTANT ANSWERS THE DOWNLOAD QUESTION ITSELF.** The answers that could describe fetching
+  music already had `SC_IS_PLAY` variants (4 of them), and `dev/test-6058.mjs` proves the store build never leaks
+  one — the leak in the report is an older installed build. What was still wrong: the question people actually type
+  did not match. The entry's `q` list now carries `'can i download music'`, `'download music from the app'`,
+  `'can i download songs'`, `'does sidecut download music'`, and the store answer opens with "No - this build does
+  not download music from anywhere. SideCut stores and plays the music files you already have...". The store half of
+  `_aiSystemPrompt` says the same ("This build does not fetch music at all"), and the full build's converter answer is
+  untouched. **Wording trap:** the store-visible gates forbid `\bdownload` in the NOTES (`test-617`, `test-6058`)
+  while the knowledge base and the prompt may say it — the notes say "fetch music" and "the store build", never
+  "download" and never "Play build".
+- **4. THE STORAGE ALLOWANCE IS THE PHONE'S, AND THE PANEL NOW SAYS SO.** "3.19 GB of 13.19 GB allowed" read like a
+  SideCut cap. It is `navigator.storage.estimate().quota` — the origin allowance of the WebView. The row is now
+  `... of the 13.19 GB this phone allows the app`, and the footnote answers the question outright: the storage system
+  every Android app shares sets it, SideCut sets no size of its own, and the room grows with free space.
+- **5. WATERMARK REMOVER DEFAULTS ON.** `let watermarkEnabled = true;` and, one line later in the loader,
+  `if(watermarkEnabledRow) watermarkEnabled = !!watermarkEnabledRow.value;` — so a **stored choice still wins** and
+  anyone who switched it off stays off. The toggle markup ships reading `On` so the first paint matches.
+- **6. TEXT ON AN ACCENT FILL IS READABLE IN EVERY THEME.** The assistant's user bubble and the Send button were
+  `background:var(--coral); color:#fff`, and several themes ship a **light** accent (Monochrome `#E5E5E5`, Liquid
+  Glass `#E9EDF5`, Glacier `#A6E8FF`) — white on those is invisible, which is "its just hard to see certain text".
+  New `--on-coral` in `:root`, decided by **`scOnAccent(color)`** from the accent's WCAG relative luminance: it
+  compares the contrast ratio of `#141414` against white and returns the better one. **Do not replace this with a
+  brightness threshold** (Rec. 601 > 150 was the first attempt and a probe caught it choosing the *worse* side for
+  saturated mid-tones like Crimson `#FF5470`, where dark text wins 6.5:1 vs 2.8:1). `applyTheme()` sets it, and
+  `rgbApplyHue()` re-decides it on every step of the hue sweep because that accent moves. All **15** accent-filled
+  controls go through `var(--on-coral,#fff)` — the fallback keeps the old look if the variable is ever missing.
+- **THE RELEASE / REPINS**: `APP_VERSION` **64.2.1 -> 64.2.2**, a **six-note head entry, every note <= 260 chars**
+  (the brevity is the request, so the gate pins the length), plain title, no `\bpass\b`, note 6 keeps *rollback*
+  (test-662) and note 1 names *favorites*; `sw.js` -> **`sidecut-shell-v63.0.20`**; 35 repins across `dev/test-*.mjs`
+  (`ver === '64.2.1'`, `const VER = '64.2.1';`, `version: '64.2.1'`, `entries[0].version === '64.2.1'`,
+  `64.2.1 heads the changelog`, the 6:20 PM ship stamp in `test-6052`, and `sidecut-shell-v63.0.19` in test-612/6136/
+  6137/6138/6139). **`dev/test-66421.mjs` is repinned by hand**, exactly as `test-6642` was at 64.2.1: its
+  head-entry block now reads the **v64.2.1 entry by version**, and its two repaint assertions were rewritten because
+  this release replaced the hide/restore they pinned.
+- **GATE RESULT**: `dev/test-66422.mjs` **86/86** (new), `dev/chatvis-6422-check.cjs` **24/24** (new — and it is a
+  real regression test: against `SC_HTML=$(git show HEAD:index.html)` the repaint check fails with `{v:'hidden'}`
+  recorded at frame time, which is the flash, while the accent, storage and watermark blocks fail for their own
+  reasons), `dev/test-66421.mjs` **48/48**, `dev/test-6642.mjs` **74/74**, `dev/test-6641.mjs` **119/119**,
+  `dev/test-663.mjs` **49/49**, `dev/test-662.mjs` **75/75**, `dev/test-6058.mjs` **48/48**,
+  `dev/test-play-copy.mjs` **28/28**, `dev/test-play.mjs` **59/59**, `dev/test-658.mjs` **63/63**,
+  `dev/homepaint-6421-check.cjs` **17/17**, `dev/boot-639-check.cjs` **45/45 (v64.2.2)**,
+  `dev/storage-usage-check.cjs` **34/34 (v64.2.2)**, `dev/native-snapshot-check.cjs` **13/13**,
+  `dev/ota-guard-check.cjs` **20/20**, `dev/audit-calls.mjs` clean (**4704 declared names**),
+  `dev/check-dom.mjs` **0 failures**; both `--check`s OK at v64.2.2 / 6 notes. Only the known baseline
+  `test-617` -> "hits and misses are both persisted" still fails (66/1 on pristine `origin/main` too).
+- **BUNDLE FIXED POINT**: `ota/` **747031 bytes**, `ota-play/` **747040**, root `manifest.json` equal to the zip
+  (747031). **The first rounds overshoot before they settle** (747471 -> 747029 -> 747031): keep cycling
+  `ota-bundle -> ota-bundle-play -> patch-66422 --manifest` until the size repeats, do not stop on round three.
+
+
 ## 64.2.1 (Sep 27, 2026): "the favorites bubble just disappears when I scroll" — the same paint fault, third surface
 - **The user's words**, one message: "New bug found UI bugs why do these keep happening, whenever I scroll down in home
   the favorites bubble/ last bubble to right is there but I scroll up and down 2 more times and that bubble just
