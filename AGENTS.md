@@ -1,6 +1,77 @@
 # SideCut — repository memory
 
 
+## 64.2.4 (Sep 28, 2026): the blink on every scroll and every launch, the album that lost a few songs, the glow that kept the phone busy
+- **The user's words**, three screenshots (Settings → More with the cover refetch still in the Watermark Remover card, the
+  bell's flat bulleted notes, the battery screen 24.3 % / 703 mAh foreground / 1 h 29 m): "Every time it boots or you
+  scroll around the app it blinks now slightly, and why is refetch missing covers in watermark remover it should be in
+  library tools and fetching. These patch notes should have like headers and then drop-down menus for the headers to go
+  more into depth or just take a glance. Fix the foreground battery drain issue without reducing performance or
+  smoothness of the app. And for some songs Spotify to mp3 it still says no source found but this happens when it's an
+  album more often and it's like a few songs in it." No version was named; the line after 64.2.3 is 64.2.4.
+- **1. THE SCROLL BLINK WAS 64.2.1/64.2.2/64.2.3'S REPAINT RUNNING ON A HEALTHY SURFACE.** Both settle handlers promoted
+  the grid/card onto its own layer and dropped the promotion two frames later on **every** settled scroll, whether or
+  not anything was wrong — a full re-raster of the surface a moment after you stop, plus a wasted GPU pass per scroll.
+  `repaintHomeGrid()` and `repaintPinnedRail()` now count the damage they actually find (a placeholder an abandoned
+  drag left, a bubble/chip still carrying a drag lift) and `if(!carried) return;` before touching `transform`. **Rule
+  for the future: a scroll-settle repaint is repair-only.** The promote/demote, the two-frame drop and the DOM-only
+  "is it whole?" checks all stay exactly as 64.2.2/64.2.3 left them.
+- **2. THE LAUNCH BLINK WAS THE THEME ARRIVING LATE.** The saved theme lives in IndexedDB, so the app painted in the
+  default colours and then restyled every colour in it (including `--on-coral`, which is picked from the accent) once
+  the row came back. `applyTheme()` now mirrors what it applied into `localStorage['sidecut_theme_prepaint']`
+  (`{v:1,key,bg,bgRaised,coral,gold,onCoral,dyn}`), and a small IIFE at the **top of the app script block**
+  (`scPrepaintTheme`, inserted right after the `<script>` that opens block 2, before the day-gate helpers) sets those
+  root variables and the `theme-dyn-*` body class during parse — so the **first paint** already carries the theme. The
+  cache is never a second source of truth: the database row still decides, and every `applyTheme()` rewrites it.
+- **3. THE PLAYING ROW ANIMATED A BOX-SHADOW.** `@keyframes glowPulse` moved `box-shadow` between two inset glows,
+  which no compositor can animate, so the row was re-painted on every frame for as long as a song played with the list
+  open (foreground, on the scroll path). The glow is now `.track.playing::after` with `position:absolute; inset:0;
+  z-index:-1; pointer-events:none` (above the row's own background, below its content — where the row-level inset
+  shadow used to be drawn) and the keyframes move `opacity: 0.4 -> 1`, which the compositor animates with nothing
+  painted. The row keeps only `box-shadow: inset 3px 0 0 var(--coral);`. **Do not put an animated box-shadow back on a
+  list row.**
+- **4. `Refetch missing covers` MOVED TO Library Tools & Fetching** (the user's exact ask), right after "Fetch missing
+  covers" and before the lyrics fetch, with its own caption. Its label is now `<span id="refetchCoversLabel">` and the
+  run reports through `scSetRefetchLabel()`: the old `btn.textContent = …` writes wiped the ONLINE badge on the first
+  tap. **`dev/librarytools-6424-check.cjs` (15 checks)** asserts the DOM position (inside `#collapsibleLibraryContent`,
+  **not** inside `#collapsibleWatermarkContent`), the button order, and that the badge survives a run.
+- **5. THE BELL'S PATCH NOTES ARE GROUPS NOW.** `renderNotifPanel()` renders one collapsible block per changelog entry:
+  a `<button data-cl-group="vX">` header (version + date + title, a **glance** line cut from the first note, and
+  "N updates · tap for the detail") with `data-cl-body` behind it and `data-cl-glance` shown while it is shut. The
+  newest entry is open, everything else starts shut, and `openChangelogGroups` + `changelogGroupsTouched` keep what the
+  reader opened **open across re-renders** — the panel redraws itself every few seconds while a job reports progress.
+  The first tap adopts whatever is open on screen before changing anything, so the newest entry never shuts itself. It is
+  wired through **one delegated listener** (`body._scClWired`) and `scApplyChangelogGroup()` changes the DOM in place —
+  re-rendering to open a group would lose the reader's scroll position. `changelogItems(entry)` is still the only
+  renderer path (`dev/test-6055.mjs`: `>= 3` `.map`, `>= 4` `.length`, `entry.items` count `=== 1`). **
+  `dev/notifgroup-6424-check.cjs` (27 checks)** boots the app, opens the bell, taps a group, and re-renders via
+  `#notifMarkRead` to prove the opened group stays open.
+- **6. THE ALBUM THAT LOST A FEW SONGS: `scSourceClaimsSibling()` matched a sibling's key as a SUBSTRING.** A weak key
+  (no word of 4+ characters — "Ok", "Ya", "Pt 1", "One") sits inside unrelated titles ("smoking", "yacht",
+  "alone"), so one short track title in a run threw the RIGHT candidate away for its neighbours — an album where the
+  rest is fine and a few songs come back with nothing. `scTitleKeyIsStrong(k)` (any word `>= 4` chars) now gates the
+  reject arm: a weak key may only **confirm**, never reject (the same doctrine as the short artist credit in 63.x), and
+  it can only turn a refusal into an acceptance — the artist/title/duration checks still gate the audio. Also in
+  `scSpToBuffer()`: a search that could not **reach** the source (`window.__scHttpWhy` set) is retried **once** after
+  900 ms, because a burst of songs mid-album can come back blocked; a search that plainly answered with nothing is
+  never repeated. `dev/test-66424.mjs` **runs** both (it extracts `scTitleMatch…scSourceClaimsSibling`, reproduces the
+  old rule inline and shows it threw the candidate away, then shows the fix does not).
+- **7. THREE PROBES CHANGED SHAPE, BY HAND.** `dev/railpaint-6423-check.cjs`, `dev/chatvis-6422-check.cjs`, plus the two
+  chip-line pins in `dev/test-66423.mjs` / `dev/test-6642.mjs`: the two probes asserted "a settled scroll promoted the
+  surface" (true at 64.2.3, false now), so they assert **"a healthy surface is not re-rastered at all"** and gained a
+  companion check that real damage still gets the fresh raster. All three are real regression tests — against
+  `git show HEAD:index.html` the rail probe fails on the healthy-rail check and the notif/theme/library probes fail 7–8
+  checks each.
+- **THE RELEASE / REPINS**: `APP_VERSION` **64.2.3 -> 64.2.4**, six-note head entry (every note <= 260 chars, no
+  downloader term, no "no source found", note 1 names *blink*, note 4 keeps "Ok"/"Ya", note 6 keeps *rollback*),
+  title `The blink on every scroll and every launch, the album that lost a few songs, and the glow that kept the phone
+  busy` (no `\bpass\b`); `sw.js` -> **`sidecut-shell-v63.0.22`**; the usual quoted-version repins;
+  `dev/test-66423.mjs` moved to read its own 64.2.3 entry **by version** (the same move test-66422 needed at 64.2.3);
+  bundles at **ota/ 752373**, **ota-play/ 752381**, root `manifest.json` 1504 bytes. Green: 66424 100, 66423 52,
+  66422 87, 66421 49, 6642 74, 6641 119, 662 75, 663 49, 658 63, 6058 48, 6055 62, 60510 46, play-copy 28, play 59,
+  check-dom 0, audit-calls 4715 names / 3 blocks / 6268 line comments, all eight `.cjs` probes. The only failure is the
+  long-standing baseline `dev/test-617.mjs` (66/1, identical on pristine `origin/main`).
+
 ## 64.2.3 (Sep 27, 2026): the pinned-artists blink, and the forced layout out of a settled scroll
 - **The user's words**, two screenshots: "At some points there are lag spikes and pinned artists island sometimes
   doesn't show but comes back after a split second." No version was named; the line after 64.2.2 is 64.2.3.

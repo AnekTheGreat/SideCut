@@ -162,7 +162,7 @@ const THEMES = ['coral', 'rosegold', 'royal', 'blue', 'gold', 'emerald', 'sunset
   const grid = doc.getElementById('homeBubbles');
   const home = doc.getElementById('homeView');
 
-  console.log('\n— a settled scroll never hides the grid —');
+  console.log('\n— a settled scroll never hides the grid, and no longer re-rasters a healthy one —');
   {
     ok('Home is rendered', !!grid && kinds(win).length > 0, kinds(win).join(','));
     // Record the grid's inline style at the moment each frame callback runs: a
@@ -179,7 +179,7 @@ const THEMES = ['coral', 'rosegold', 'royal', 'blue', 'gold', 'emerald', 'sunset
     await settle(win);
     const hidden = frames.filter((f) => f.v && f.v !== 'visible');
     ok('no frame of the repaint was ever hidden', hidden.length === 0, JSON.stringify(hidden.slice(0, 3)));
-    ok('the repaint promoted the grid instead', frames.some((f) => /translateZ/.test(f.t || '')), JSON.stringify(frames.slice(0, 3)));
+    ok('and a healthy grid is not re-rastered at all', !frames.some((f) => /translateZ/.test(f.t || '')), JSON.stringify(frames.slice(0, 3)));
     ok('and left nothing promoted behind', !grid.style.transform, grid.style.transform);
     ok('nor an inline visibility', !grid.style.visibility, grid.style.visibility);
     // And the guard still repairs, which is why it is still there at all.
@@ -187,6 +187,23 @@ const THEMES = ['coral', 'rosegold', 'royal', 'blue', 'gold', 'emerald', 'sunset
     fav.parentNode.removeChild(fav);
     await settle(win);
     ok('a grid that lost a bubble is still drawn again', !!grid.querySelector('.home-bubble[data-bubble="favorites"]'));
+    // ... and a bubble left holding what a drag gives it is the other kind of
+    // damage, which is the one the fresh raster is for.
+    const b = grid.querySelector('.home-bubble[data-bubble="notifications"]');
+    b.classList.add('hb-dragging');
+    b.style.position = 'fixed';
+    b.style.transform = 'translate(0px, 0px) scale(1.05)';
+    const dragFrames = [];
+    win.requestAnimationFrame = function (cb) {
+      return raf(function (t) {
+        dragFrames.push({ t: grid.style.transform });
+        cb(t);
+      });
+    };
+    await settle(win);
+    win.requestAnimationFrame = raf;
+    ok('the drag carry is cleared', !!b && !b.classList.contains('hb-dragging'));
+    ok('and that grid really was rastered again', dragFrames.some((f) => /translateZ/.test(f.t || '')), JSON.stringify(dragFrames.slice(0, 3)));
   }
 
   console.log('\n— the assistant\'s text has usable contrast in every theme —');

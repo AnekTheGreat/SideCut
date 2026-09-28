@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.3';
+const VER = '64.2.4';
 const PREV = '64.2.2';
 
 let pass = 0, fail = 0;
@@ -56,10 +56,14 @@ console.log('[1] release metadata');
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
-  if (entries) {
-    const head = entries[0];
+  // The head entry belongs to whatever shipped last, so read the 64.2.3 entry by
+  // version: this gate describes 64.2.3.
+  const entry6423 = entries ? entries.find((x) => /^64\.2\.3$/.test(String(x.version))) : null;
+  ok(!!entry6423 && String(entry6423.version) === '64.2.3', 'the 64.2.3 entry this gate describes is still here');
+  if (entry6423) {
+    const head = entry6423;
     const items = head.items || [];
-    ok(String(head.version) === VER, 'the head entry is v' + head.version);
+    ok(String(head.version) === '64.2.3', 'the entry this gate describes is v' + head.version);
     ok(items.length === 6, 'six notes (' + items.length + ')');
     // "put the patch notes in simple terms not so long" - the length is the point
     // of these entries, so it is pinned rather than described.
@@ -70,6 +74,7 @@ console.log('[1] release metadata');
       'every note publishes on both channels, so a store reader is never told less');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     ok(String(head.date).indexOf('7:40 PM') === -1, 'and it is not ' + PREV + "'s stamp");
+    ok(head.items && head.items.every((it) => it.length <= 260), 'and every 64.2.3 note is still short');
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the entry');
     ok(!/play build|play version|play install/i.test(notes), 'and it never names the other build');
     ok(!/\bmp3\b|converting|conversion|\bget song\b|hand-?off/i.test(notes), 'nor a term the wider store list knows');
@@ -99,7 +104,7 @@ console.log('[2] the rail repaints without hiding itself and without a forced la
     'so a rail that really has no chips is still built again');
   ok(has("    var dv = $('discoverView');"), 'the watch is still attached to Discover');
   ok(has('    dv._paRailWatch = true;'), 'wired once, not once per render');
-  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }"),
+  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }"),
     'a chip still holding what a drag gives it is still put back');
   ok(has('  function renderPinnedArtists(){'), 'the rail still has its builder');
   ok(!/void strip\.offsetHeight/.test(code), 'no settled scroll anywhere still lays the page out');
