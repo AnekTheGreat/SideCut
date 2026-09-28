@@ -1,6 +1,110 @@
 # SideCut — repository memory
 
 
+## 64.2.8 (Sep 28, 2026): the media-player line comes out of Things to know about SideCut
+- **The user's words**, with a screenshot of the bullet: "Remove this part from things to know about SideCut". The
+  bullet was "The phone's media player can't open SideCut. The notification-shade / lock-screen player can play,
+  pause, and skip - but tapping it won't open the app. To get back to the song list, open SideCut from your
+  launcher." No version was named; the line after 64.2.7 is 64.2.8.
+- **1. THE LINE IS REMOVED WHOLE, NOT EMPTIED.** It is one `<div>` under `<!-- Collapsible: Things to know about
+  SideCut -->`, and the trailing newline goes with it, so the list closes up with no row opened where it stood. The
+  list goes 12 bullets -> 11 and the file 47 -> 46. **`dev/test-66428.mjs` pins the ROWS, not just the count**: a
+  line emptied instead of removed leaves the same 11 markers but a gap between two row numbers, and that is what the
+  `bulletRows.every((n, k) => n === bulletRows[k - 1] + 1)` check is for. `dev/test-66425.mjs` pinned the line as
+  PRESENT (`and the media-player limitation is still stated`) - it now asserts it is gone, keeping its 101 checks and
+  deliberately leaving its `>= 13` bullet counter alone, because one of 47 cannot change what that means.
+- **2. THE OLDEST RELEASE THAT RECORDED THE TIP IS NOT TOUCHED.** An earlier changelog entry says the tip was added,
+  and a changelog entry is a record of what that release did. `(open it from your launcher)` is still in it;
+  `from your launcher` now appears exactly twice (that history line and this release's own note).
+- **3. THE FIRST NOTE WITH AN APOSTROPHE BROKE TWO THINGS - the one to remember.** No release before 64.2.8 had an
+  apostrophe in a note, so two latent assumptions had never been tested:
+  * **The changelog stopped parsing.** `HEAD_NEW` emits `NOTES`, and `NOTES` holds the DECODED text - so emitting it
+    into a single-quoted literal produced `'... the phone's media player ...'` and `eval` died with `Unexpected
+    identifier 's'`. **Rule: anything that re-emits a note into a quoted literal has to escape the apostrophe**
+    (`esc()` in `dev/patch-66428.mjs`). The first run of that script wrote the broken line, so the script also owns
+    a `BROKEN_HEAD` repair step for it; a fresh run uses `esc()` from the start.
+  * **`dev/notifgroup-6424-check.cjs` pulls the newest note out of the SOURCE with a regex** and compares it with the
+    text that was drawn, so the raw `phone\'s` never matched the drawn `phone's` and the probe went red over an
+    escape rather than over the app. It `eval`s what it extracted now. **No other gate or probe in `dev/` reads a
+    note out of the raw source** - everything else `eval`s the whole block, which decodes escapes correctly.
+- **4. THE HEAD-ENTRY WORD CONTRACT, AND THE FIRST BITE TAKEN OUT OF IT.** 64.2.8's notes still carry `rollback`,
+  `blank`, `list` and `record` because `dev/test-66425.mjs` and `dev/test-66426.mjs` read the HEAD entry (see 64.2.7
+  point 4) - they are written for it, not padded: the list, the row left behind and the record player tip are all
+  genuinely part of what this release does and does not touch. What changed is `dev/test-66427.mjs`: it was written
+  for 64.2.7 and read `entries[0]`, so repinning it would have made it demand the words "flicker", "pinned artists"
+  and "favorites" of THIS release's notes. **The words it was written about are read from the 64.2.7 entry by version
+  now - the same rule `dev/test-66423.mjs` and `dev/test-66424.mjs` already follow - while the general wording rules
+  stay on the head entry, which is what they are for.** The lever for any future release that wants to go further is
+  the same one: point the release-specific words at your own version.
+- **BUNDLE FIXPOINT**: `ota/` **757527**, `ota-play/` **757534**, root `manifest.json` **757527** and equal to
+  `ota/update.zip`, both `--check`s OK. A true fixed point this time - rounds 2, 3 and 4 are byte-identical, where
+  64.2.7 cycled by a byte. Green: **66428 73 (new)**, 66427 82, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87,
+  66421 49, 6642 74, 6641 119, 663 49, 662 75, 6058 48, 60510 46, 658 63, 651 35, 653 31, 614 108, play 59,
+  play-copy 28, boot-639 45 (v64.2.8), libhalf 18, homecard 26, themepaint 11, notifgroup 27, librarytools 15,
+  railpaint 21, chatvis 26, homepaint 17, ota-guard 20, audit-calls clean (4731 names / 6367 comments), check-dom 0
+  failures. **Only `dev/test-617.mjs` fails, its one long-standing baseline check - identical on pristine
+  `origin/main`. `dev/v60-check.cjs` fails exactly 2 (the v60 Home bubble order and the RGB tick rate) and fails
+  them identically against `git show HEAD:index.html`; it is not in the gate set.**
+
+
+## 64.2.7 (Sep 28, 2026): the colour filter comes off the dynamic-theme backdrop, and the island watches its own scroller
+- **The user's words**, two messages: "The favorites bubble issue is a dynamic theme only issue so Is the pinned artist
+  flicker dynamic theme only issue" then the correction "I said pinned artist plateau and the favorites bubble are
+  affected by slightly disappearing before reappearing with dynamic themes". No version was named; the line after 64.2.6
+  is 64.2.7. **THE FIRST ANSWER GIVEN TO THIS WAS WRONG, AND THE CORRECTION IS THE POINT OF THE RELEASE.** Reading the
+  island's own CSS finds no `theme-dyn` rule at all on `#pinnedArtistsStrip`, `#pinnedArtistsList` or
+  `.pinned-artist-chip`, so the answer given was "the island is not dynamic-theme-gated". That is true of the island
+  and false as an answer, because the two surfaces share something that only exists on a dynamic theme.
+- **1. A DYNAMIC THEME ADDS EXACTLY THREE ANIMATED THINGS, AND TWO OF THEM SIT UNDER EVERY SCREEN.** Enumerated from
+  the stylesheet: every `theme-dyn` rule in this file is one of two things - `body[class*="theme-dyn-"]::before` /
+  `::after` (the full-viewport backdrop layers, `position:fixed; inset:-32%/-26%; z-index:-1`) and
+  `body[class*="theme-dyn-"] .home-bubble .hb-glow`. Nothing dynamic-theme-gated touches the island, and a chip
+  carries no animated child at all. So the island and the Home grid can only be flickering on a dynamic theme for the
+  one thing they both have - the backdrop. **When a report says "only on a dynamic theme", enumerate what a dynamic
+  theme actually animates, then look for what the NAMED surface shares; do not stop at the surface's own rules.**
+- **2. THE FILTER THE V60 NOTE ALREADY SAID SHOULD NOT BE THERE.** Every dynamic theme's `::before` was still
+  animating `sd-dyn-hue` (`filter: hue-rotate() saturate()`) in all 13 of its rules - the shared seven-theme rule plus
+  the 12 per-theme ones. A filter is not a compositor-only property on a layer this large: it re-runs the paint of the
+  whole backdrop, and the backdrop is the one layer every screen sits on. The v60 comment the rules carry already
+  describes the intended design as "all of it is transform/opacity only so the compositor runs it without repainting"
+  and calls the old mechanism "a filter re-runs the paint on the whole backdrop every frame" - the keyframes and their
+  13 uses were simply never removed with that pass. Removing them is therefore both the fix and the completion of a
+  documented intent, which is why it needed no product decision: the drift, the counter-moving `::after` and the sheen
+  are untouched, so the themes keep their motion and only the continuous whole-backdrop re-paint goes.
+- **3. THE ISLAND'S OWN SCROLLER NEVER ASKED FOR A REPAIR.** `watchPinnedRail()` listened on `#discoverView` only. A
+  `scroll` event on an element does NOT bubble, and `#pinnedArtistsList` is its own `overflow-x:auto` scroller - so the
+  sideways swipe over the chips, the one gesture that moves the island itself, never reached the repair at all. The
+  settle body moved into a named `onRailScroll` attached to both scrollers. The nesting depth was preserved on purpose
+  (`var onRailScroll = function(){` sits at the same indent as the old `dv.addEventListener('scroll', function(){`),
+  so the 10-space shape `dev/test-66426.mjs` pins did not have to move with it.
+- **4. THE HEAD-ENTRY WORDING CONTRACT IS CUMULATIVE - THIS IS THE TRAP OF THE REPIN SWEEP.** `dev/test-66425.mjs`
+  and `dev/test-66426.mjs` read the HEAD changelog entry, so the repin sweep turns them into gates on the NEWEST
+  release's notes. 66425 wants `blank` in them; 66426 wants `list` AND `record`; `dev/test-6642.mjs` and
+  `dev/test-6641.mjs` want `rollback`. The 64.2.7 notes are written to satisfy all of them deliberately, not by
+  accident. Older gates read their own entry by version with a regex and are unaffected.
+- **5. THE FILE TOOLS CANNOT TOUCH index.html - USE THE PATCH SCRIPT INSTEAD.** In this environment `write_file` /
+  `str_replace` resolve paths against `/home/daytona/codebase`, so every path must be given as `.wt-641/...`, and they
+  CANNOT match a needle inside the 2 MB `index.html` (a correct, verified-exact needle is still reported "not found";
+  `dev/patch-66427.mjs` edits it, `dev/test-*.mjs` reads it, so anything in it goes through a patch step). The first
+  patch run wrote note 2 at 297 chars and failed its own `<= 260` check, so the script now owns the shortening
+  (`LONG_NOTE`); a rerun lands on the entry the gate describes without hand-editing the page.
+- **BUNDLE FIXPOINT**: `ota/` **757228** (pair {757227, 757228}), `ota-play/` **757236** (pair {757235, 757236}), root
+  `manifest.json` **1402 bytes** and equal to `ota/update.zip`, both `--check`s OK, `ota/`-recorded size equal to the
+  zip on the final round. Green: **66427 82 (new)**, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49,
+  6642 74, 6641 119, 663 49, 662 75, 6058 48, 60510 46, 658 63, 651 35, 653 31, 614 108, play 59, play-copy 28,
+  boot-639 45 (v64.2.7), libhalf 18, homecard 26, themepaint 11, notifgroup 27, librarytools 15, railpaint 21,
+  chatvis 26, homepaint 17, ota-guard 20, audit-calls clean (4731 names / 6367 comments), check-dom 0 failures.
+  **Only `dev/test-617.mjs` fails, its one long-standing baseline check ("hits and misses are both persisted") -
+  identical on pristine `origin/main`. `dev/v60-check.cjs` also fails exactly 2 of its checks (the v60 Home bubble
+  order and the RGB tick rate) and fails them identically against `git show HEAD:index.html`; it is not in the gate
+  set.**
+- **STILL OPEN**: this is a device-side paint fault and the sandbox cannot reproduce it. What shipped removes the only
+  continuous whole-backdrop re-paint a dynamic theme had, which is the shared cause and a real cost on its own - but
+  the flicker itself still has to be judged on a phone. If it comes back, the three things a dynamic theme animates
+  listed in point 1 are the whole search space, and the per-bubble `sd-glow-pulse` (opacity only) is the one remaining
+  candidate that is a child of a clipped, rounded box.
+
+
 ## 64.2.6 (Sep 28, 2026): the Favorites bubble stops blinking out, and the record tap moves only the list it belongs to
 - **The user's words**: "Why does me clicking on the record player in albums or playlists influence the other it
   shouldnt scroll down in another place only in its place, the favorites bubble keeps disappearing fix these damn

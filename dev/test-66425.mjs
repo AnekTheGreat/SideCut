@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.6';
+const VER = '64.2.8';
 const PREV = '64.2.4';
 
 let pass = 0, fail = 0;
@@ -195,7 +195,7 @@ console.log('[5] Things to know about SideCut says what the app does today');
   ok(list.indexOf('it scrolls to that song in the list, in Albums it opens the album it is in') === -1,
     'and no longer describes the old jump');
   ok(list.indexOf('Hold the mini record player to adjust its angle') !== -1, 'the long-press tip is kept');
-  ok(list.indexOf("The phone's media player can't open SideCut.") !== -1, 'and the media-player limitation is still stated');
+  ok(list.indexOf("The phone's media player can't open SideCut.") === -1, 'and the media-player line has been taken out of the list');
   ok(list.indexOf('Back up before rolling back.') !== -1, 'as is the advice to back up before rolling back');
   ok(count('style="color:var(--coral); flex-shrink:0;">\u2022</span>') >= 13,
     'every bullet still carries its marker (' + count('style="color:var(--coral); flex-shrink:0;">\u2022</span>') + ')');

@@ -153,7 +153,7 @@ console.log('\n[9] the release says so');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) {}
-  ok(ver === '64.2.6', 'APP_VERSION = ' + ver);
+  ok(ver === '64.2.8', 'APP_VERSION = ' + ver);
   ok(!!entries && entries[0].version === ver, 'the newest changelog matches APP_VERSION');
   if (entries) {
     const head = entries[0];

@@ -136,7 +136,8 @@ const appVersion = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1] || '';
   // This probe describes the GROUP UI, so it reads the newest entry's own words
   // out of the page instead of pinning one release's wording.
   const headTitle = (html.match(/const CHANGELOG = \[\n  \{ version: '[^']+', date: '[^']+', title: '(.*?)', items:/) || [])[1] || '';
-  const headFirstNote = (html.match(/const CHANGELOG = \[[\s\S]*?items: \[\n    '(.*?)',/) || [])[1] || '';
+  let headFirstNote = '';
+  try { headFirstNote = eval("'" + ((html.match(/const CHANGELOG = \[[\s\S]*?items: \[\n    '(.*?)',/) || [])[1] || '') + "'"); } catch (_eNote) { headFirstNote = ''; }
   ok('the header names the version and what it did', /v64\./.test(headHdr.textContent) && !!headTitle && headHdr.textContent.indexOf(headTitle) !== -1, headHdr.textContent.slice(0, 60));
   ok('and says how many notes are behind it', /\d+ updates?/.test(headHdr.textContent), headHdr.textContent.slice(-60));
   ok('the newest release is already open', headHdr.getAttribute('aria-expanded') === 'true' && headBody.style.display !== 'none');
