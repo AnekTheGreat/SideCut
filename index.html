@@ -5309,6 +5309,14 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     if(!tid && queueIndex >= 0 && queueIndex < queue.length) tid = queue[queueIndex];
     const t = tid ? allTracks.find(tr => tr.id === tid) : null;
     if(!t){ toast('Nothing is playing right now — start a song first.'); return; }
+    // Which half of the library the tap belongs in follows the tab you are in, and
+    // it is settled FIRST. The resolution below can MAKE an album out of the tag on
+    // the song (that is deliberate, it is how the jump never lands on an empty
+    // screen), and doing that before the half was known meant a tap made in the
+    // Playlists half wrote an album into the Albums half on its way to bouncing back
+    // to the song jump: a tap in one list changing the other. (64.3)
+    const _inAlbums = (typeof libraryMode !== 'undefined' && libraryMode === 'albums');
+    if(!_inAlbums){ jumpToPlayingSong(t); return; }
     // 1. an album you made that already holds this song
     let albumName = null;
     Object.keys(userAlbums || {}).some(n => {
@@ -5338,11 +5346,6 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       jumpToPlayingSong(t);
       return;
     }
-    // Which half of the library the tap belongs in follows the tab you are in:
-    // in Playlists it takes you to the song in the list you are looking at, in
-    // Albums it opens the album that song is in.
-    const _inAlbums = (typeof libraryMode !== 'undefined' && libraryMode === 'albums');
-    if(!_inAlbums){ jumpToPlayingSong(t); return; }
     const wanted = t.id;
     navigate('albums');
     // An album card's rows are built the first time the card is expanded, and a
@@ -11598,8 +11601,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // Changelog timestamps: this build sandbox runs on UTC with no tzdata, so
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
+  //   AND THE DATE ROLLS BACK WITH IT. 64.2.4 to 64.2.9 were stamped by taking
+  //   the UTC time-of-day minus four hours while KEEPING the UTC date, which put
+  //   64.2.4 and 64.2.5 a day ahead of themselves and every one of them hours
+  //   ahead of the clock the build was made on (fixed in 64.3). A stamp is
+  //   the Eastern time of the release COMMIT - git log -1 --format=%aI - so
+  //   check it against that, and never write a stamp that is in the future.
 
-  const APP_VERSION = '64.2.9';
+  const APP_VERSION = '64.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12021,7 +12030,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '64.2.9', date: 'September 28, 2026 · 11:55 PM EDT', title: 'The update installs itself on launch, and the animated backdrop stops being redrawn', items: [
+  { version: '64.3', date: 'September 28, 2026 · 5:50 PM EDT', title: 'The library list you are not looking at stops being moved, and the patch-note times are right', items: [
+    'The library half you are not looking at keeps its place now. Tapping the record player or a playlist tab used to leave a wish to jump to the playing song armed for the next list drawn, and that list was often the other half, so it lost where it was.',
+    'Entering Albums puts Albums back where you left it, never at the offset Playlists was at, and the same the other way round. That cross-over is the scroll you saw in another place, and the record tap is what made it obvious.',
+    'The wish is taken and cleared by the render that reads it, so it cannot survive into a render for the other half. The Albums half never had a landing of its own and now simply always restores its own position.',
+    'Tapping the record player while you are in Playlists no longer adds an album. The tap settles which half it belongs to first, so it only points at the song and leaves your albums alone.',
+    'The times on these notes are the real ones. The entries from 64.2.4 to 64.2.9 were stamped without the date rolling back with the clock, so two carried the day after they shipped and all of them ran hours ahead; each now reads its own release time.',
+    'Nothing else moved: the blank-paint repairs on Home, the pinned artists island, the update installing itself on launch and every saved rollback copy behave as they did. This is 64.3, not a rebuild of 64.2.9.',
+  ] },
+  { version: '64.2.9', date: 'September 28, 2026 · 5:15 PM EDT', title: 'The update installs itself on launch, and the animated backdrop stops being redrawn', items: [
     'SideCut installs an update by itself on launch now: when the app opens and a newer build is published, it is fetched and handed over with no Install tap. The sheet still shows the notes, the size and a live progress bar while it works.',
     'A track playing is still not interrupted. The hand-over waits for the app to close, that version one attempt record is left unused, and the next launch installs it, so nothing is ever cut off mid-song.',
     'The animated themes no longer scale or rotate their backdrop. A scale change has to be drawn again at the new size, and those two layers are larger than the screen, so that ran continuously behind every list in the app.',
@@ -12029,7 +12046,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     'Nothing else moved: the library list, the playlists, the pinned artists island, the record tap in the now bar and every saved rollback copy behave as they did, and no song, cover, playlist or setting is touched.',
     'This is 64.2.9 and not a rebuild of 64.2.8: a phone already on that version is offered it, and this time it installs itself on the next launch.',
   ] },
-  { version: '64.2.8', date: 'September 28, 2026 · 11:40 PM EDT', title: 'The media player line comes out of Things to know about SideCut', items: [
+  { version: '64.2.8', date: 'September 28, 2026 · 7:50 AM EDT', title: 'The media player line comes out of Things to know about SideCut', items: [
     'The note about the phone\'s media player not being able to open SideCut is gone from Things to know about SideCut. The bullet and its paragraph are removed whole, and the list closes up where they were with no blank line left behind.',
     'Nothing about playback changed with it. The notification-shade and lock-screen player still plays, pauses and skips, and SideCut still opens from your launcher - what went was the paragraph describing that, not the behaviour.',
     'The list in Settings > More says only what the app does today. It is the one place that describes built-in behaviour, so a line that read as a warning rather than a fact is the sort of line it is meant to lose.',
@@ -12037,7 +12054,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     'Every other line in that list is untouched - the record player angle tip, the DJ Mode opt-out, the rollback and Storage lines, the home-card tips and the lyrics drift note all still read as they did.',
     'This is 64.2.8 and not a rebuild of 64.2.7: a phone already on that version is offered it and installs it.',
   ] },
-  { version: '64.2.7', date: 'September 28, 2026 · 11:15 PM EDT', title: 'The pinned artists island and the Favorites bubble stop flickering on the animated themes', items: [
+  { version: '64.2.7', date: 'September 28, 2026 · 7:25 AM EDT', title: 'The pinned artists island and the Favorites bubble stop flickering on the animated themes', items: [
     'The pinned artists island and the Favorites bubble stop flickering on the animated themes. Both sit on the two animated background layers, and one of them was still running a colour filter that re-painted the whole background every frame. It is gone.',
     'That filter was the one thing an animated theme added under every screen. It re-painted the background continuously, and the dropped paint behind every blank card this app has chased is much harder to put back while that is going on.',
     'The pinned artists island now repairs itself when you swipe the artists sideways. A scroll event on an element does not travel up to the page around it, so the repair on Discover never saw that gesture - the one that moves the island itself.',
@@ -12045,7 +12062,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     'The animated themes keep their motion. The two background layers still drift, one counter-moving in the theme accents with the slow sheen on top, and the glow on a bubble still breathes. Only the colour-cycling filter that sat on them has been taken away.',
     'This is 64.2.7 and not a rebuild of 64.2.6: a phone already on that version is offered it and installs it.',
   ] },
-  { version: '64.2.6', date: 'September 28, 2026 · 10:40 PM EDT', title: 'The Favorites bubble stops blinking out, and the record tap moves only the list it belongs to', items: [
+  { version: '64.2.6', date: 'September 28, 2026 · 6:35 AM EDT', title: 'The Favorites bubble stops blinking out, and the record tap moves only the list it belongs to', items: [
     'The Favorites bubble on Home stops coming back blank. The repair could not work: it wrote and cleared its paint request inside one frame, so the phone merged both and asked for nothing. It now holds for a frame, which is what makes the bubble draw again.',
     'Home is only rebuilt when something on it really changed. The grid was thrown away by things that have nothing to do with it - a play count, a metadata read, the play button settling - and a rebuild on a scrolled Home is what leaves a bubble blank.',
     'Tapping the record on the now bar moves only the list you are looking at. Playlists and Albums share one list area, and the position of the half you were not in was carried into the one you tapped - that is the scroll you saw in the other place.',
@@ -12053,7 +12070,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     'The pinned artists island asks for its own paint the moment it is rebuilt instead of waiting for the next scroll to settle, and a bubble built into a scrolled Home does the same.',
     'This is 64.2.6 and not a rebuild of 64.2.5: a phone already on that version is offered it and installs it.',
   ] },
-  { version: '64.2.5', date: 'September 28, 2026 · 10:05 PM EDT', title: 'The bubble that still came back blank, a finished card you can tap away, and a record tap that glides', items: [
+  { version: '64.2.5', date: 'September 27, 2026 · 10:30 PM EDT', title: 'The bubble that still came back blank, a finished card you can tap away, and a record tap that glides', items: [
     'Home bubbles and pinned artists stop coming back blank. The repair now asks the phone to draw them again in a way nothing can see - nothing is hidden, nothing moves, and nothing is put on a layer of its own for a phone to drop in the first place.',
     'A finished card on Home can be tapped away. When a job like Watermark Remover finishes, the card leaves the moment you touch it instead of sitting there until it times itself out.',
     'Tapping the record on the now bar glides to the playing song. It used to cancel the scroll the list had already started and run a shorter, faster one from wherever that left it - that is the roughness you feel. It is one move now, paced by the distance.',
@@ -12061,7 +12078,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     'Nothing in your library is touched. Same songs, playlists, covers and pinned artists, and no setting or saved rollback copy is changed by this update.',
     'This is 64.2.5 and not a rebuild of 64.2.4: a phone already on that version is offered it and installs it.',
   ] },
-  { version: '64.2.4', date: 'September 28, 2026 · 9:10 PM EDT', title: 'The blink on every scroll and every launch, the album that lost a few songs, and the glow that kept the phone busy', items: [
+  { version: '64.2.4', date: 'September 27, 2026 · 9:40 PM EDT', title: 'The blink on every scroll and every launch, the album that lost a few songs, and the glow that kept the phone busy', items: [
     'The app no longer re-paints itself on every scroll. A settled scroll made the phone raster Home, or the pinned artists island, again a moment after it stopped - that is the slight blink you see while scrolling, and it was work with nothing to show for it.',
     'And it no longer repaints itself a moment after it opens. SideCut used to appear in the default colours and then restyle every colour in it once your saved theme came back from the device - that whole-app flicker at launch is gone.',
     'The playing row glows on its own layer now instead of re-painting the row about sixty times a second while a song plays. The look is unchanged, and that steady repaint is part of what the foreground drain was made of.',
@@ -18331,8 +18348,12 @@ function _fallbackCopy(text){
         reorderMode = false;
         if(shuffle) regenerateShuffleOrder();
         renderTabs();
+        // Armed BEFORE the list is drawn - renderList coalesces into a frame of its
+        // own, so the wish it reads is this one - and only when the setting that asks
+        // for it is on. Armed afterwards and unconditionally it was a wish this render
+        // never consumed, left standing for the next one. (64.3)
+        if(autoScrollToSong) renderListInner._scrollToPlaying = true;
         renderList();
-        renderListInner._scrollToPlaying = true;
       });
       tabs.appendChild(el);
       // "Unsorted" is a virtual, always-pinned tab rendered right after All Songs —
@@ -19102,6 +19123,21 @@ function _fallbackCopy(text){
       : ((renderListInner._lastPlaylist === activePlaylist) ? pane.scrollTop : 0);
     renderListInner._lastHalf = libHalf;
     renderListInner._lastPlaylist = activePlaylist;
+    // The "land on the playing song" wish is TAKEN here, not read: it belongs to
+    // the one render it was asked for, so it is cleared whichever branch this render
+    // ends up taking and however early it returns. Left armed it survived into the
+    // NEXT render - which is a render for the OTHER half - and every condition below
+    // that skips "put the scroll back where it was" then skipped it for a half that
+    // had never asked to move. Tapping a playlist tab armed it, tapping the record
+    // player in Albums rendered twice without ever clearing it, and with no track
+    // playing nothing cleared it at all. That is the half the user was not in coming
+    // back at the top, or at an offset that was never its own. (64.3)
+    const wantPlayingJump = renderListInner._scrollToPlaying === true;
+    renderListInner._scrollToPlaying = false;
+    // Did this render really hand the user over to the playing row? Only the
+    // Playlists list can, and only the restore at the end of the Playlists branch
+    // cares. (64.3)
+    let landedOnPlaying = false;
     const isUnsortedView = activePlaylist === UNSORTED_VIEW;
     let rawIds;
     if(isUnsortedView){
@@ -19775,7 +19811,12 @@ function _fallbackCopy(text){
       // playlists half happened to be at - the scroll the user saw "in another
       // place" - and the record tap, which renders the list before it glides,
       // moved it on the way every time.
-      if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;
+      // Albums can never grant the wish to land on the playing song - it has no
+      // landing of its own - so it ALWAYS puts its own offset back, whatever is
+      // armed. Gating this on the one-shot was what handed Albums whatever the
+      // previous render had left in the pane, and then saved that as the Albums
+      // place on the way out). (64.3)
+      if(halfChanged || prevScrollTop) pane.scrollTop = prevScrollTop;
       return;
     }
 
@@ -19884,18 +19925,16 @@ function _fallbackCopy(text){
           // Auto-scroll to the currently playing / most-recently-played song when
           // the user just switched INTO the Playlists tab. Highlight-only used to
           // mean you had to manually hunt for it; now it lands in view.
-          if(renderListInner._scrollToPlaying && autoScrollToSong){
-            renderListInner._scrollToPlaying = false;
+          if(wantPlayingJump && autoScrollToSong){
+            landedOnPlaying = true;
             // Small delay lets the DOM settle before measuring positions,
             // matching the smooth feel of the albums auto-scroll.
             requestAnimationFrame(function(){ smoothScrollIn(pane, row); });
-          } else {
-            renderListInner._scrollToPlaying = false;
           }
         }
       }
     }
-    if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;
+    if(!landedOnPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;
   }
 
   // ---------------- Multi-select (long-press) ----------------

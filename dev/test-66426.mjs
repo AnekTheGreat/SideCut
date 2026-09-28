@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.9';
+const VER = '64.3';
 const PREV = '64.2.5';
 
 let pass = 0, fail = 0;
@@ -73,7 +73,7 @@ console.log('[1] release metadata');
     ok(items.every((it) => it.indexOf('[FULL]') === -1),
       'every note publishes on both channels, so a store reader is never told less');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
-    ok(String(head.date).indexOf('10:05 PM') === -1, 'and it is not ' + PREV + "'s stamp");
+    ok(String(head.date).indexOf('10:30 PM') === -1, 'and it is not ' + PREV + "'s stamp");
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the entry');
     ok(!/play build|play version|play install/i.test(notes), 'and it never names the other build');
     ok(!/\bmp3\b|converting|conversion|\bget song\b|hand-?off|no source found/i.test(notes), 'nor a term the wider store list knows');
@@ -160,9 +160,11 @@ console.log('[4] each library half keeps its own place');
     'the half being left is remembered where it was, before the pane is emptied');
   ok(has('      ? (scLibScroll[libHalf] || 0)'), 'and the half being entered is handed its own offset');
   ok(has('    renderListInner._lastHalf = libHalf;'), 'so the half this render belongs to is recorded');
-  ok(count('if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;') === 2,
-    'both halves restore through the same line (' +
-      count('if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;') + ')');
+  // 64.3 gave each half its own restore: Playlists skips it only when it really
+  // landed on the song, and Albums always puts its own offset back.
+  ok(count('if(!landedOnPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;') === 1 &&
+    count('if(halfChanged || prevScrollTop) pane.scrollTop = prevScrollTop;') === 1,
+    'each half restores its own position');
   ok(!/&& prevScrollTop\) pane\.scrollTop/.test(code),
     'which is applied even when the offset is the top, because the pane is shared by two lists');
   const albumTail = slice('      // Albums is the other half of the library', '    ids.forEach((id,i) => {');

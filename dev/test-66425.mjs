@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.9';
+const VER = '64.3';
 const PREV = '64.2.4';
 
 let pass = 0, fail = 0;
@@ -80,7 +80,7 @@ console.log('[1] release metadata');
     ok(items.every((it) => it.indexOf('[FULL]') === -1),
       'every note publishes on both channels, so a store reader is never told less');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
-    ok(String(head.date).indexOf('9:10 PM') === -1, 'and it is not ' + PREV + "'s stamp");
+    ok(String(head.date).indexOf('9:40 PM') === -1, 'and it is not ' + PREV + "'s stamp");
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the entry');
     ok(!/play build|play version|play install/i.test(notes), 'and it never names the other build');
     ok(!/\bmp3\b|converting|conversion|\bget song\b|hand-?off|no source found/i.test(notes), 'nor a term the wider store list knows');

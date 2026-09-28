@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const ota = fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8');
-const VER = '64.2.9';
+const VER = '64.3';
 const PREV = '64.2.8';
 
 let pass = 0, fail = 0;
@@ -78,23 +78,27 @@ console.log('[1] release metadata');
     ok(items.every((it) => it.indexOf('[FULL]') === -1),
       'every note publishes on both channels, so a store reader is never told less');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
-    ok(String(head.date).indexOf('11:40 PM') === -1, 'and it is not ' + PREV + "'s stamp");
+    ok(String(head.date).indexOf('7:50 AM') === -1, 'and it is not ' + PREV + "'s stamp");
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the entry');
     ok(!/play build|play version|play install/i.test(notes), 'and it never names the other build');
     ok(!/\bmp3\b|converting|conversion|\bget song\b|hand-?off|no source found/i.test(notes), 'nor a term the wider store list knows');
     ok(/rollback/i.test(notes), 'and it still says what this release left alone');
-    ok(/\blaunch\b/i.test(notes), 'while naming where the install happens now');
-    // The two gates that read the HEAD entry are repinned to this version, so
-    // what they read it for has to survive here.
-    ok(/blank/i.test(notes), 'the word dev/test-66425 reads the head entry for is there (blank)');
-    ok(/list/i.test(notes) && /record/i.test(notes), 'and the two dev/test-66426 reads it for (list, record)');
+    // The words THIS gate was written about are read from the release it
+    // describes, by version - the same rule dev/test-66423.mjs,
+    // dev/test-66424.mjs, dev/test-66427.mjs and dev/test-66428.mjs already
+    // follow. A newer release is not made to carry them.
+    const entry6429 = entries.find((e) => /^64\.2\.9$/.test(String(e.version))) || {};
+    const notes6429 = (entry6429.items || []).join('\n');
+    ok(/\blaunch\b/i.test(notes6429), 'while naming where the install happens now');
+    ok(/blank/i.test(notes6429), 'the word dev/test-66425 reads the head entry for is there (blank)');
+    ok(/list/i.test(notes6429) && /record/i.test(notes6429), 'and the two dev/test-66426 reads it for (list, record)');
     ok(!/\bpass\b/i.test(String(head.title)), 'the head title states the changes (' + head.title + ')');
     ok(entries.some((e) => /^64\.2\.8$/.test(String(e.version))), 'the release before this one is still listed');
     ok(entries.some((e) => /^64\.2\.7$/.test(String(e.version))), 'and so is the one before that');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.27', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v63.0.28', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
 }
 
@@ -208,8 +212,11 @@ console.log('[5] what 64.2.8, 64.2.7 and 64.2.6 shipped is still standing');
   ok(scBody !== '' && !/visibility|translateZ|offsetHeight|getBoundingClientRect/.test(scBody),
     'and still hiding nothing, promoting nothing and measuring nothing');
   ok(has('if(renderHome._lastHtml === gridHtml && homeGridIsWhole()){'), 'an unchanged Home grid is still left alone');
-  ok(count('if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;') === 2,
-    'and both library halves still restore through the same line');
+  // 64.3 gave each half its own restore: Playlists skips it only when it really
+  // landed on the song, and Albums always puts its own offset back.
+  ok(count('if(!landedOnPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;') === 1 &&
+    count('if(halfChanged || prevScrollTop) pane.scrollTop = prevScrollTop;') === 1,
+    'each half restores its own position');
   ok(has('  function repaintHomeGrid(){') && has('  function repaintPinnedRail(list){'), 'both surfaces still have their repair');
   ok(has('#pinnedArtistsStrip{ position:relative; z-index:1; }'), 'the island still carries its stacking context');
 }

@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.9';
+const VER = '64.3';
 const PREV = '64.2.7';
 
 let pass = 0, fail = 0;
@@ -76,7 +76,7 @@ console.log('[1] release metadata');
     ok(items.every((it) => it.indexOf('[FULL]') === -1),
       'every note publishes on both channels, so a store reader is never told less');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
-    ok(String(head.date).indexOf('11:15 PM') === -1, 'and it is not ' + PREV + "'s stamp");
+    ok(String(head.date).indexOf('7:25 AM') === -1, 'and it is not ' + PREV + "'s stamp");
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the entry');
     ok(!/play build|play version|play install/i.test(notes), 'and it never names the other build');
     ok(!/\bmp3\b|converting|conversion|\bget song\b|hand-?off|no source found/i.test(notes), 'nor a term the wider store list knows');
@@ -190,8 +190,11 @@ console.log('[4] what 64.2.7, 64.2.6, 64.2.5 and 64.2.4 shipped is still standin
   ok(scBody !== '' && !/visibility|translateZ|offsetHeight|getBoundingClientRect/.test(scBody),
     'and still hiding nothing, promoting nothing and measuring nothing');
   ok(has('if(renderHome._lastHtml === gridHtml && homeGridIsWhole()){'), 'an unchanged Home grid is still left alone');
-  ok(count('if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;') === 2,
-    'and both library halves still restore through the same line');
+  // 64.3 gave each half its own restore: Playlists skips it only when it really
+  // landed on the song, and Albums always puts its own offset back.
+  ok(count('if(!landedOnPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;') === 1 &&
+    count('if(halfChanged || prevScrollTop) pane.scrollTop = prevScrollTop;') === 1,
+    'each half restores its own position');
   // 64.2.5 - the dismissable finished card.
   ok(count('data-dismiss=') === 3 && count('title="Tap to dismiss"') === 3,
     'a finished card on Home can still be tapped away (' + count('data-dismiss=') + ')');

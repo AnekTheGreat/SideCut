@@ -1,6 +1,88 @@
 # SideCut — repository memory
 
 
+## 64.3 (Sep 28, 2026): the half you are not looking at stops being moved, and the ship times are the real ones
+- **The user's words**, verbatim and in one message (with a screenshot of Home): "Why does me clicking the record player
+  in playlists or albums affect the other, it shouldn't do that it should stay where it is if its at the top it stays at
+  the top. The times for the patch notes are incorrect". Two reports, one release. The FIRST is 64.2.6's fix reported as
+  still broken - and it was, in a way 64.2.6 could not have covered; the second is a clock, not a feature.
+- **1. THE ONE-SHOT 64.2.6 INTRODUCED WAS NEVER GUARANTEED TO BE CLEARED - THAT IS THE WHOLE OF THE FIRST REPORT.**
+  64.2.6 gave each half its own remembered position (`scLibScroll`) and wired the "put the scroll back where it was"
+  restore to skip itself while `renderListInner._scrollToPlaying` was armed. That flag is a WISH ("land on the playing
+  song"), and nothing cleared it reliably: the playlist-tab click armed it unconditionally and AFTER `renderList()`
+  (it only worked at all through the rAF that coalesces `renderList`), the Albums half READ it and cleared it never
+  (it has no landing of its own), and with no track playing the entire block that clears it is skipped. So the wish
+  survived into the NEXT render - a render for the OTHER half - and that half threw its own offset away, then saved the
+  stranger's offset as its own on the way out. **Driven on the real app before the fix (`dev/halfplace-6643-check.cjs`,
+  SC_HTML=the 64.2.9 build): tap a playlist tab whose list does not hold the playing song, enter Albums, and Albums
+  comes up at 900 instead of its own 240 and the app writes NOTHING to the pane (wrote []); Albums' remembered place is
+  then overwritten with 900; and after the record tap in Albums, Playlists comes back at 0 instead of 900.** That is
+  the report word for word - the half the user was not in moved.
+- **2. THE FIX: TAKE THE WISH, DO NOT READ IT.** `renderListInner` takes it at the top (`const wantPlayingJump =
+  renderListInner._scrollToPlaying === true; renderListInner._scrollToPlaying = false;`), so no branch and no early
+  return can leave it armed; the Albums branch drops the flag from its restore entirely (it can never grant the wish,
+  so it always puts its own offset back); and the Playlists branch skips its restore only when it really handed over to
+  the playing row (`!landedOnPlaying && ...`, which is the old condition exactly, scoped to the only list that can
+  honour it). The tab-arm is gated on `autoScrollToSong` and moved ahead of the `renderList()` it arms. **Rule: a
+  one-shot read by a render that has more than one exit path must be TAKEN where it is read, or it leaks into the next
+  render - and the next render is usually for the other surface.**
+- **3. A TAP IN ONE HALF NO LONGER WRITES TO THE OTHER.** `openAlbumForCurrentSong` resolved - and could CREATE - the
+  song's album (via `ensureAlbumSaved` + `markAlbumManual`) BEFORE it checked which half the tap belonged in, so a tap
+  made in the Playlists half could add an album to the Albums half on its way to bouncing back to the song jump. The
+  half is settled first now. Same family as 64.2.6's "the record tap moved the list you were not in": a tap is an event
+  in ONE half and must not touch the other.
+- **4. THE SHIP TIMES: EASTERN IS UTC MINUS FOUR, AND THE DATE MOVES BACK WITH IT.** Every entry from 64.2.4 to 64.2.9
+  was stamped from a clock read whose DATE did not roll back with the four hours, so 64.2.4 and 64.2.5 carried the day
+  after they shipped (their commits are Sep 28 01:40Z / 02:31Z, i.e. Sep 27 9:40 PM / 10:30 PM EDT) and all six carried
+  a time hours ahead of the clock the build was made on - a phone reading the bell was shown times in its own FUTURE.
+  Each now reads the Eastern time of its own release COMMIT (git `%aI`), which is the only objective record of when a
+  release happened: 64.2.4 Sep 27 9:40 PM, 64.2.5 Sep 27 10:30 PM, 64.2.6 Sep 28 6:35 AM, 64.2.7 Sep 28 7:25 AM, 64.2.8
+  Sep 28 7:50 AM (7 and 8 shipped in one commit; their 25-minute gap was kept), 64.2.9 Sep 28 5:15 PM. **The rule is
+  now written at the `APP_VERSION` comment and in `dev/patch-6643.mjs`: `date -u` minus four hours, with the DATE
+  rolling back when the UTC hour is before 04:00.** `dev/test-6643.mjs` section [2] enforces the shape, not the
+  literals: every recent stamp parses, the run reads newest-first, and nothing is stamped more than 15 minutes ahead of
+  the clock at check time. (Two earlier precedents: `dev/fix-613-date.mjs` fixed a future stamp, `dev/fix-6049-date.mjs`
+  a draft-time one - this is the third time a ship stamp has needed a script.)
+- **5. THE TRAP THIS RELEASE ACTUALLY FELL INTO, AND THE LESSON.** After the first successful run of
+  `dev/patch-6643.mjs` the comment it had just written was re-wrapped for reading - and because a `sub()` step
+  recognises its own work BY THE TEXT IT WROTE, the next run no longer saw its block as present and INSERTED A SECOND
+  COPY of it, leaving two `const _inAlbums = ...` in `openAlbumForCurrentSong`. The gate caught it instantly ("the half
+  is asked exactly once"), and the script now folds the doubled text back to one copy. **Rule: once a patch has been
+  applied, never change what it writes - its own output IS its idempotence marker.** If the wording has to change, own
+  the repair in the same script (this one does; so does `dev/patch-66428.mjs`'s `BROKEN_HEAD`).
+- **6. THE GATES MOVED WITH IT, WITHOUT LOSING A CHECK.** Four older gates (66426, 66427, 66428, 66429) each pinned the
+  ONE line both halves restored through; they now look for the PAIR that replaced it, one `ok(` in and one `ok(` out,
+  so none of them loses a check (86 / 82 / 73 / 83 unchanged). `dev/test-66429.mjs` was re-pointed the documented way
+  (its `launch` / `blank` / `list` + `record` words are read from the 64.2.9 entry by version, like 66427 and 66428
+  before it), and its `swCache` pin needed a SECOND repin pattern because it compares the bare
+  `'sidecut-shell-v63.0.27'` string with no `CACHE_NAME = ` in front of it. `dev/test-6052.mjs` pins the head stamp
+  itself and moved with it. New: `dev/test-6643.mjs` (**90 checks**) and `dev/halfplace-6643-check.cjs` (**27
+  checks**, and 5 of them FAIL on the 64.2.9 build - it is a real regression gate, not a description of the new code).
+- **7. THE RELEASE NUMBER, AND THE NAME OF THIS RELEASE'S OWN FILES.** The user caught this one: "It should be v64.3
+  never .10". It should, and the app says so itself - the `APP_VERSION` comment has always carried the rule **"the
+  third number stops at nine: 60.0.9 is followed by 60.1 (never 60.0.10)"** - so the release after 64.2.9 is **64.3**.
+  The first draft of this patch shipped as 64.2.10 (it was even named `patch-664210.mjs`), and the fix had to be owned
+  by the same script for the reason point 5 gives: the version string is part of the markers the patch recognises its
+  own work by. The renumber is therefore the FIRST step of section A (before any block checks whether it is already on
+  the page), it rewrites every `64.2.10` on the page - the constant, the head entry, one note, the stamp-rule comment
+  AND the version markers inside the comments this patch wrote - and a tree straight from 64.2.9 has nothing to
+  renumber. The dev/ files were renamed with it: **`patch-6643.mjs` / `test-6643.mjs` / `halfplace-6643-check.cjs`**,
+  which is the repo's own convention (6 + the version digits without dots: 6642 for 64.2, 66426 for 64.2.6, 60510 for
+  60.5.10). **Rule: a version number is a version number - check it against the rule the file states about itself
+  before it is used as a directory of the work.**
+- **BUNDLE FIXPOINT**: `ota/` **761828**, `ota-play/` **761835**, root `manifest.json` **1443 bytes** and its size field
+  equal to `ota/update.zip`, both `--check`s OK, three rounds (rebuilt after the last index.html edit) byte-identical.
+  Green: **6643 90 (new)**, 66429 83, 66428
+  73, 66427 82, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74, 6641 119, 663 49, 662 75, 6058
+  48, 60510 46, 658 63, 651 35, 653 31, 614 108, play 59, play-copy 28, boot-639 45 (v64.3), libhalf 18, homecard
+  26, themepaint 11, notifgroup 27, librarytools 15, railpaint 21, chatvis 26, homepaint 17, halfplace 27 (new),
+  ota-update 52, ota-guard 20, ota-bootapply 24, ota-loop 26, native-snapshot 13, audit-calls clean (6397 comments),
+  check-dom 0 failures. **Only the two known baselines remain: `dev/test-617.mjs` fails exactly 1 ("hits and misses are
+  both persisted") and `dev/v60-check.cjs` fails exactly 2 (the v60 bubble order and the RGB tick rate), both identical
+  on pristine `origin/main`; v60-check is not in the gate set.** `dev/ota-loop-check.cjs` needs its own run - it takes
+  longer than a combined loop allows, and reports 26 passed.
+
+
 ## 64.2.9 (Sep 28, 2026): the update installs itself on launch, and the animated backdrop stops being redrawn
 - **The user's words**, verbatim and in one message: "The glitch with dynamic themes and the favorites bubble and pinned
   artist plateau still happens and the ota update should automatically happen on boot no manually clicking install".

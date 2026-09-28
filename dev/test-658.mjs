@@ -205,7 +205,7 @@ ok(src.indexOf('not created by you') === -1, 'and nothing anywhere still calls t
 console.log('\n[5] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '64.2.9', 'APP_VERSION = ' + ver);
+  ok(ver === '64.3', 'APP_VERSION = ' + ver);
   ok(!/^63\.\d+\.\d{2,}$/.test(ver) && !/^63\.1\.10$/.test(ver), 'not a rolled-over patch number');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
