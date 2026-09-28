@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '64.2.3';
+const VER = '64.2.4';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -184,7 +184,7 @@ console.log('[6] the pinned-artist row');
     'by asking the compositor to raster the card again');
   ok(has("      requestAnimationFrame(function(){ try{ strip.style.transform = ''; }catch(_eRpr){} });"),
     'and taking that back one frame later, without ever hiding it');
-  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }"),
+  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }"),
     'any chip still holding a drag lift is put back to a plain chip');
   ok(has("    try{ list.scrollLeft = 0; }catch(_eSc){}"), 'a redrawn rail still starts at its left edge');
   const watch = src.slice(src.indexOf('(function watchPinnedRail(){'), src.indexOf('// ---------------- Release page for pinned-artist releases'));
