@@ -590,13 +590,26 @@
      so it can never sit above a sibling row's clickable surface. */
   .track.playing{
     background: color-mix(in srgb, var(--coral) 8%, transparent);
-    box-shadow: inset 3px 0 0 var(--coral), inset 0 0 14px color-mix(in srgb, var(--coral) 12%, transparent);
-    animation: glowPulse 2s ease-in-out infinite;
+    box-shadow: inset 3px 0 0 var(--coral);
     z-index:0;
   }
+  /* The playing row's glow used to PULSE A BOX-SHADOW, which no compositor can
+     animate: every frame re-painted the row - 60 to 120 times a second for as
+     long as a song played with the list open, in the foreground, right where you
+     scroll. The glow is a layer of its own now (the ::after below) and it is its
+     OPACITY that pulses, which the compositor animates with nothing painted. Same
+     glow, and the row is only painted when it really changes. z-index:-1 keeps it
+     above the row's own background and below its content, exactly where the
+     row-level inset shadow used to be drawn. */
+  .track.playing::after{
+    content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+    box-shadow: inset 3px 0 0 var(--coral), inset 0 0 20px color-mix(in srgb, var(--coral) 28%, transparent);
+    opacity:0.4;
+    animation: glowPulse 2s ease-in-out infinite;
+  }
   @keyframes glowPulse{
-    0%, 100%{ box-shadow: inset 3px 0 0 var(--coral), inset 0 0 10px color-mix(in srgb, var(--coral) 10%, transparent); }
-    50%{ box-shadow: inset 3px 0 0 var(--coral), inset 0 0 20px color-mix(in srgb, var(--coral) 28%, transparent); }
+    0%, 100%{ opacity:0.4; }
+    50%{ opacity:1; }
   }
   .track.playing .track-info .t{ color: var(--coral); transition: color 0.3s ease; }
   .genre-tag{
@@ -3312,6 +3325,10 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
             <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Try to fetch covers from multiple sources.</div>
           </div>
           <div style="margin-bottom:12px;">
+            <button class="playlist-pick-btn" id="refetchCoversBtn" style="text-align:center; width:100%;"><span id="refetchCoversLabel">Refetch missing covers</span> <span class="online-badge" style="font-size:7px;padding:1px 3px;">ONLINE</span></button>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Ask every cover source again for every song, not only the ones with no cover. It never touches your music.</div>
+          </div>
+          <div style="margin-bottom:12px;">
             <button class="playlist-pick-btn" id="fetchMissingLyricsBtn" style="text-align:center; width:100%;">Fetch missing lyrics</button>
             <div id="lyricsProgressBar" style="display:none; height:4px; background:var(--line); border-radius:2px; margin-top:6px; overflow:hidden;"><div id="lyricsProgressFill" style="height:100%; background:var(--coral); width:0%; transition:width 0.2s;"></div></div>
             <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">Try to fetch lyrics from LRCLIB for all songs.</div>
@@ -3341,7 +3358,6 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
               <button class="tab" id="watermarkConfirmBtn" style="flex:1; padding:10px; font-size:13px; font-weight:600;">Apply</button>
               <button class="tab" id="watermarkResetBtn" style="padding:10px; font-size:13px; background:rgba(255,107,107,0.1); border-color:rgba(255,107,107,0.3);">Reset</button>
             </div>
-            <button class="tab" id="refetchCoversBtn" style="width:100%; padding:10px; font-size:13px;">Refetch Missing Covers <span class="online-badge" style="font-size:7px;padding:1px 3px;">ONLINE</span></button>
           </div>
         </div>
       </div>
@@ -4526,6 +4542,34 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
      the device it is actually running on. -->
 <script>window.__scBootClock = (window.performance && performance.now) ? performance.now() : Date.now();</script>
 <script>
+// ---- The saved theme, applied before the app paints (64.2.4) ---------------
+// The theme lives in the database with everything else, and that read is
+// asynchronous - so the app used to paint itself in the DEFAULT colours and
+// then restyle every colour in it (and the accent text colour with it) the
+// moment the saved row came back. On a phone that is a visible flicker on
+// every launch. applyTheme() writes the colours it just applied to a tiny
+// cache, and this runs at the top of the app script, before the first frame,
+// so the launch already carries them.
+//
+// The cache is never a second source of truth: it is rewritten from the same
+// database row every time applyTheme() runs, and it is only read here, once,
+// to seed the first paint. A stale or unreadable cache simply paints the
+// defaults, which is what every launch did before.
+(function scPrepaintTheme(){
+  try{
+    var raw = localStorage.getItem('sidecut_theme_prepaint');
+    if(!raw) return;
+    var c = JSON.parse(raw);
+    if(!c || c.v !== 1) return;
+    var root = document.documentElement.style;
+    if(c.bg) root.setProperty('--bg', c.bg);
+    if(c.bgRaised) root.setProperty('--bg-raised', c.bgRaised);
+    if(c.coral) root.setProperty('--coral', c.coral);
+    if(c.gold) root.setProperty('--gold', c.gold);
+    if(c.onCoral) root.setProperty('--on-coral', c.onCoral);
+    if(c.dyn) document.body.classList.add('theme-dyn-' + c.dyn);
+  }catch(_ePrepaint){}
+})();
 // ---- Upcoming-release day gate (shared by BOTH script blocks) --------------
 // Only a real YYYY-MM-DD that is strictly after today counts as upcoming.
 // The old raw string compares let junk beat today's date: a full ISO stamp
@@ -6043,6 +6087,14 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     if(th.liquidGlass) setLiquidGlass(true); // one-tap iOS-style glass look
     dbPut('meta', { key: 'theme', value: key });
     updateFavicon();
+    // What the next launch paints with, before it can read the row above.
+    try{
+      localStorage.setItem('sidecut_theme_prepaint', JSON.stringify({
+        v: 1, key: key, bg: th.bg, bgRaised: th.bgRaised, coral: th.coral, gold: th.gold,
+        onCoral: th.rgb ? '' : scOnAccent(th.coral),
+        dyn: th.dynamic || ''
+      }));
+    }catch(_ePrepaint){}
   }
 
   function renderThemeOptions(){
@@ -11503,7 +11555,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '64.2.3';
+  const APP_VERSION = '64.2.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11925,6 +11977,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '64.2.4', date: 'September 28, 2026 · 9:10 PM EDT', title: 'The blink on every scroll and every launch, the album that lost a few songs, and the glow that kept the phone busy', items: [
+    'The app no longer re-paints itself on every scroll. A settled scroll made the phone raster Home, or the pinned artists island, again a moment after it stopped - that is the slight blink you see while scrolling, and it was work with nothing to show for it.',
+    'And it no longer repaints itself a moment after it opens. SideCut used to appear in the default colours and then restyle every colour in it once your saved theme came back from the device - that whole-app flicker at launch is gone.',
+    'The playing row glows on its own layer now instead of re-painting the row about sixty times a second while a song plays. The look is unchanged, and that steady repaint is part of what the foreground drain was made of.',
+    'An album no longer comes back with a few songs missing. A very short track title in the run ("Ok", "Ya") used to match inside unrelated titles and throw the right recording away; a title that short can only confirm a source, never reject one.',
+    'A search that could not reach the source is tried once more before that song is given up on, so a run of them in the middle of an album no longer loses the songs in the middle.',
+    'Refetch missing covers now sits with the rest of the library tools instead of inside Watermark Remover, and the patch notes in the bell are grouped by version with a header you can open. Nothing else changes - same songs, covers and saved rollback copies.',
+  ] },
   { version: '64.2.3', date: 'September 27, 2026 · 8:35 PM EDT', title: 'The pinned artists island stops blinking, and a settled scroll no longer lays the page out again', items: [
     'The pinned artists island no longer blinks. It used to be hidden for a moment after a scroll so it could be redrawn - the same blink the Favorites bubble had in 64.2.2. It is redrawn now without ever being hidden.',
     'Scrolling no longer makes the page lay itself out again. Home and the pinned artists island each did that every time a scroll stopped, and that was the hitch you feel right after you stop.',
@@ -14317,6 +14377,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     toast(`Fetched ${window.coverFetchState.fetched} covers`);
   });
 
+  // The button's label lives in its own element: writing textContent on the
+  // button itself took the ONLINE badge with it the first time it ran.
+  function scSetRefetchLabel(txt){
+    const el = $('refetchCoversLabel') || $('refetchCoversBtn');
+    if(el) el.textContent = txt;
+  }
   $('refetchCoversBtn').addEventListener('click', async () => {
     if(window.coverFetchState && window.coverFetchState.active){ toast('Already fetching covers...'); return; }
     if(enrichState.active){ toast('Already fetching...'); return; }
@@ -14329,19 +14395,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
     
     const btn = $('refetchCoversBtn');
     btn.disabled = true;
-    btn.textContent = 'Fetching...';
+    scSetRefetchLabel('Fetching...');
     refreshEnrichNotif();
     
     for(const t of needsCover){
       const gotCover = await fetchCoverForTrack(t);
       if(gotCover) window.coverFetchState.fetched++;
       window.coverFetchState.done++;
-      btn.textContent = `${window.coverFetchState.done}/${total}`;
+      scSetRefetchLabel(`${window.coverFetchState.done}/${total}`);
       refreshEnrichNotif();
     }
     
     btn.disabled = false;
-    btn.textContent = 'Refetch Missing Covers';
+    scSetRefetchLabel('Refetch missing covers');
     window.coverFetchState.active = false;
     refreshEnrichNotif();
     
@@ -14592,6 +14658,28 @@ function startLyricsAutoScroll(keepPos, noReset) {
       + '<div id="notifBootDetail" style="display:none; margin-top:8px; border-top:1px dashed var(--line); padding-top:8px;">' + rows + '</div>'
       + '</div>';
   }
+  // ---- Patch notes: a header per release, and the detail behind it ---------
+  // Each release is one group - the version, when it shipped, what it did and
+  // how many notes are behind it, plus the opening of the first note as the
+  // glance - and the notes themselves, which are there when you want them and
+  // out of the way when you only wanted to look. The newest entry is open; the
+  // rest stay shut until you tap one, and what you opened stays open while the
+  // panel is re-rendered under you (a progress update redraws it every few
+  // seconds, and losing the group you had just opened would be maddening).
+  const openChangelogGroups = new Set();
+  let changelogGroupsTouched = false;
+  function scApplyChangelogGroup(v, open){
+    const body = $('notifBody');
+    if(!body) return;
+    const h = body.querySelector('[data-cl-group="' + v + '"]');
+    const b = body.querySelector('[data-cl-body="' + v + '"]');
+    const g = body.querySelector('[data-cl-glance="' + v + '"]');
+    if(h) h.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if(b) b.style.display = open ? 'flex' : 'none';
+    if(g) g.style.display = open ? 'none' : 'block';
+    const chev = h && h.querySelector('.cl-chev');
+    if(chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(-90deg)';
+  }
   function renderNotifPanel(){
     const body = $('notifBody');
     const summary = $('notifSummary');
@@ -14667,17 +14755,63 @@ function startLyricsAutoScroll(keepPos, noReset) {
         </div>
       `;
     }
-    html += CHANGELOG.map(entry => `
-      <div style="border-bottom:1px solid var(--line); padding-bottom:10px;">
-        <div style="font-weight:600; font-size:13.5px; margin-bottom:6px;">v${entry.version}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''} — ${escapeHtml(changelogTitle(entry))}</div>
-        <div style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--ink-dim);">
+    html += CHANGELOG.map((entry, idx) => {
+      const v = String(entry.version);
+      const open = changelogGroupsTouched ? openChangelogGroups.has(v) : idx === 0;
+      const items = changelogItems(entry);
+      const glance = items.length ? String(items[0]) : '';
+      const glanceShort = glance.length > 132 ? glance.slice(0, 129).replace(/\s+\S*$/, '') + '…' : glance;
+      const n = items.length;
+      return `
+      <div style="border-bottom:1px solid var(--line);">
+        <button class="cl-hdr" data-cl-group="${escapeHtml(v)}" aria-expanded="${open ? 'true' : 'false'}" style="width:100%; display:flex; gap:10px; align-items:flex-start; text-align:left; background:none; border:none; padding:9px 0; color:var(--ink); cursor:pointer; font-family:var(--font-ui);">
+          <span style="flex:1; min-width:0;">
+            <span style="font-weight:600; font-size:13.5px;">v${escapeHtml(v)}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''}</span>
+            <span style="display:block; font-size:12.5px; margin-top:3px;">${escapeHtml(changelogTitle(entry))}</span>
+            <span data-cl-glance="${escapeHtml(v)}" style="display:${open ? 'none' : 'block'}; font-size:11.5px; color:var(--ink-dim); margin-top:4px; line-height:1.45;">${escapeHtml(glanceShort)}</span>
+            <span style="display:block; font-size:11px; color:var(--ink-dim); margin-top:5px;">${n} update${n === 1 ? '' : 's'} · ${open ? 'tap to close' : 'tap for the detail'}</span>
+          </span>
+          <span class="cl-chev" style="flex-shrink:0; color:var(--ink-dim); font-size:12px; line-height:1.35; transform:rotate(${open ? '0deg' : '-90deg'}); transition:transform 0.2s ease;">▾</span>
+        </button>
+        <div data-cl-body="${escapeHtml(v)}" style="display:${open ? 'flex' : 'none'}; flex-direction:column; gap:5px; font-size:12px; color:var(--ink-dim); padding:0 0 12px 2px;">
           ${changelogItems(entry).map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
     html += bootProfileNotifHtml();
     summary.innerHTML = summaryHtml;
     body.innerHTML = html;
+    // Wired once: this panel is re-rendered again and again while a job is
+    // reporting progress, and a fresh listener per render would stack them up.
+    // Opening a group changes the DOM in place, never by re-rendering - that
+    // would throw away the reader's place in the notes.
+    if(!body._scClWired){
+      body._scClWired = true;
+      body.addEventListener('click', function(ev){
+        const h = ev.target && ev.target.closest ? ev.target.closest('[data-cl-group]') : null;
+        if(!h) return;
+        const v = h.getAttribute('data-cl-group');
+        if(!v) return;
+        // The first tap adopts what is already open on screen: the newest entry
+        // opens by itself, and it has to stay open - a re-render that shut it
+        // the moment the reader opened an older release would be the opposite
+        // of helpful.
+        if(!changelogGroupsTouched){
+          changelogGroupsTouched = true;
+          const shown = body.querySelectorAll('[data-cl-body]');
+          for(let i = 0; i < shown.length; i++){
+            if(shown[i].style.display !== 'none'){
+              const sv = shown[i].getAttribute('data-cl-body');
+              if(sv) openChangelogGroups.add(sv);
+            }
+          }
+        }
+        const wasOpen = openChangelogGroups.has(v);
+        if(wasOpen) openChangelogGroups.delete(v); else openChangelogGroups.add(v);
+        scApplyChangelogGroup(v, !wasOpen);
+      });
+    }
     const updInstallBtn = document.getElementById('notifUpdateInstall');
     if(updInstallBtn) updInstallBtn.addEventListener('click', () => {
       $('notifBackdrop').style.display = 'none';
@@ -30168,13 +30302,22 @@ if(!isDiscover) stopDiscoverPreview();
   //     64.2.2 both did) lays the whole page out again in the same task as the
   //     scroll settle, and that is a lag spike you can feel;
   //   - and a grid that really is missing a bubble the layout asks for is drawn
-  //     from the layout again instead of waiting for the next update to notice.
+  //     from the layout again instead of waiting for the next update to notice;
+  //
+  // and NONE of it runs on a scroll that found nothing wrong. Promoting the grid
+  // on every settled scroll re-rastered the whole surface a moment after you
+  // stopped - the slight blink while scrolling - so the fresh paint above is now
+  // only asked for when there is something to repair.
   function repaintHomeGrid(){
     var wrap = $('homeBubbles');
     if(!wrap) return;
+    // Nothing carried and no placeholder left behind means there is nothing to
+    // repair - see repaintPinnedRail for why a settled scroll over a healthy
+    // grid must not schedule a raster at all.
+    var carried = 0;
     try{
       var phs = wrap.querySelectorAll('.hb-drag-placeholder');
-      for(var i = 0; i < phs.length; i++){ if(phs[i].parentNode) phs[i].parentNode.removeChild(phs[i]); }
+      for(var i = 0; i < phs.length; i++){ if(phs[i].parentNode){ phs[i].parentNode.removeChild(phs[i]); carried++; } }
       var bs = wrap.querySelectorAll('.home-bubble');
       for(var j = 0; j < bs.length; j++){
         var b = bs[j];
@@ -30182,8 +30325,10 @@ if(!isDiscover) stopDiscoverPreview();
         b.classList.remove('hb-dragging');
         b.style.position = ''; b.style.left = ''; b.style.top = '';
         b.style.width = ''; b.style.height = ''; b.style.transform = ''; b.style.transition = '';
+        carried++;
       }
     }catch(_eCarry){}
+    if(!carried) return;
     // A frame of a hidden grid is a frame a phone can show, and that is the
     // blink this replaces. The layer promotion forces the same fresh raster
     // with the grid on screen the whole time, and it is taken away at once so
@@ -31642,13 +31787,21 @@ if(!isDiscover) stopDiscoverPreview();
   //
   // A rail that really has lost its chips is still drawn again from scratch.
   function repaintPinnedRail(list){
+    var carried = 0;
     try{
       var chips = list.querySelectorAll('.pinned-artist-chip');
       for(var i = 0; i < chips.length; i++){
         var c = chips[i];
-        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }
+        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }
       }
     }catch(_eLift){}
+    // A chip left carrying a drag lift is damage, and the fresh raster below is
+    // for it. A settled scroll over a rail that is simply fine is NOT damage:
+    // promoting the card on every settled scroll made the compositor raster the
+    // whole strip again a moment after you stopped, which is the slight blink
+    // seen while scrolling - and a whole extra GPU pass per scroll that bought
+    // nothing at all.
+    if(!carried) return;
     var strip = $('pinnedArtistsStrip');
     if(!strip) return;
     // 64.2.2 took the hide out of Home's repaint and left the rail with it: a
@@ -36164,6 +36317,18 @@ if(!isDiscover) stopDiscoverPreview();
     if(onStatus) onStatus('Searching for "' + title + '" by ' + (artist || 'the artist') + '…');
     window.__scHttpWhy = '';
     var cands = await scYtSearch(query, artist, album);
+    // One retry, and only when the source could not be REACHED (__scHttpWhy is
+    // set by the transport itself). A run of songs is a burst of requests, and a
+    // search in the middle of one can come back blocked or rate-limited instead
+    // of empty - that song used to be failed for the rest of the run, which is
+    // what "a few songs of the album" looks like. A search that plainly answered
+    // with nothing is never repeated, so a track that simply is not there costs
+    // no extra request.
+    if((!cands || !cands.length) && window.__scHttpWhy){
+      await new Promise(function(r){ setTimeout(r, 900); });
+      window.__scHttpWhy = '';
+      cands = await scYtSearch(query, artist, album);
+    }
     if(!cands || !cands.length){
       // Two different failures used to share one line. A search that never got
       // an answer from the source is a transport problem — say so, and say how
@@ -36519,6 +36684,21 @@ if(!isDiscover) stopDiscoverPreview();
   // fragment of theirs — "Pind" sitting inside "Pind Waliyan"). Either way the
   // upload belongs to that track: similar titles plus a similar length is still
   // two guesses, not one song.
+  // Is this title key specific enough to throw a source away over? The sibling
+  // test below is a SUBSTRING test, so a key with no word longer than three
+  // characters ("ok", "ya", "pt 1") matches inside unrelated titles - "ok" sits
+  // inside "smoking", "ya" inside "yacht", "1" inside "2021". An album with one
+  // such track title in the run therefore threw the RIGHT recording away for its
+  // neighbours, which is an album that comes back with a few songs missing while
+  // the rest are fine. A key that weak can only CONFIRM a source now, never
+  // reject one - the same rule the artist credit check already carries for a
+  // short name. It can only ever turn a refusal into an acceptance: a source
+  // still has to pass the artist and title checks afterwards.
+  function scTitleKeyIsStrong(k){
+    var words = String(k || '').split(' ');
+    for(var i = 0; i < words.length; i++){ if(words[i].length >= 4) return true; }
+    return false;
+  }
   function scSourceClaimsSibling(candTitle, myTitle, myKey, siblingKeys){
     if(!candTitle || !siblingKeys) return false;
     var mine = String(myKey || scTrackTitleKey(myTitle) || '');
@@ -36526,6 +36706,7 @@ if(!isDiscover) stopDiscoverPreview();
     var mineStrong = scTitleStrong(mine, '', candTitle);
     for(var k in siblingKeys){
       if(!k || k === mine) continue;
+      if(!scTitleKeyIsStrong(k)) continue;             // too weak to reject on
       if(!scTitleStrong(k, '', candTitle)) continue;   // not that sibling's upload either
       if(!mineStrong) return true;                     // plainly the sibling's, not ours
       if(k.length > mine.length) return true;          // they claim it more specifically
