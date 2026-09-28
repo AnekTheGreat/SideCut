@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.5';
+const VER = '64.2.6';
 const PREV = '64.2.4';
 
 let pass = 0, fail = 0;
@@ -100,7 +100,7 @@ console.log('[2] the repair cannot be seen, and no scroll can miss it');
 {
   ok(has('  function scRepaint(el){'), 'one helper asks an element to paint again');
   ok(has("      el.style.outline = '1px solid transparent';"), 'through a property only paint reads');
-  ok(has("        try{ el.style.outline = ''; }catch(_eRpBack){}"), 'and puts it back on the next frame');
+  ok(has("          try{ el.style.outline = ''; }catch(_eRpBack){}"), 'and puts it back a frame later, so the frame that carries it is really painted');
   ok(!/visibility/.test(sliceC('  function scRepaint(el){', '  function scRepaintSurface(root, sel){')),
     'nothing in it hides anything');
   ok(has('  function scRepaintSurface(root, sel){'), 'a second one covers a whole surface');

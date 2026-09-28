@@ -1,6 +1,61 @@
 # SideCut — repository memory
 
 
+## 64.2.6 (Sep 28, 2026): the Favorites bubble stops blinking out, and the record tap moves only the list it belongs to
+- **The user's words**: "Why does me clicking on the record player in albums or playlists influence the other it
+  shouldnt scroll down in another place only in its place, the favorites bubble keeps disappearing fix these damn
+  issues bro". No version was named; the line after 64.2.5 is 64.2.6.
+- **1. THE REPAIR 64.2.5 ADDED COULD NEVER TAKE EFFECT - THIS IS THE FAVORITES BUBBLE.** `scRepaint()` wrote a
+  transparent outline and cleared it "on the next frame". The repair is started by a TIMER (the settle debounce),
+  and a timer task runs BEFORE the frame's rendering update - so the rAF callback scheduled from it runs inside that
+  SAME update, and the browser then styles, lays out and paints **once**: the write and the clear collapse into that
+  single pass, the only painted frame carries no outline, nothing is invalidated, and the repair asks for a paint
+  that never comes. The clear is now on the **SECOND** frame (a rAF scheduled from a rAF), so exactly one painted
+  frame carries the invalidation. **Rule for the future: a paint request written and cleared inside one frame is
+  not a paint request. Any write-then-clear invalidation must straddle a painted frame.**
+- **2. THE GRID WAS REBUILT FOR NO REASON.** `renderHome()` is called by a play count ticking up, a metadata read
+  landing, the mini-play button settling - and every call threw the grid away and built it again, while a rebuild
+  that lands on a Home which is already scrolled is precisely what a WebView leaves half drawn (the new nodes arrive
+  with the scroller where it is). `renderHome()` now assembles its markup into `gridHtml` first, and when that
+  equals `renderHome._lastHtml` AND `homeGridIsWhole()` it applies the sizes and returns; a rebuild that DOES happen
+  ends with `scRepaintSurface(bubbles, '.home-bubble')`, and `renderPinnedArtists()` ends with
+  `repaintPinnedRail(list)` - so a rebuild paints itself instead of waiting for a settle that may never come.
+  `applyHomeBubbleSizes()` is still called on the skip path, because that is what applies a bubble's size class.
+  **Rule: never rebuild a scrolled surface for something that is not on it, and never wait for the next scroll to
+  repair a rebuild.**
+- **3. THE TWO LIBRARY HALVES SHARED ONE SCROLL POSITION - THIS IS THE RECORD TAP.** Playlists and Albums render
+  into one `#listPane`, and `renderListInner`'s "put the scroll back" restore did not know which half it belonged
+  to: leaving Albums at 240 and switching to Playlists put the playlists list at 240 (and the reverse), and the
+  record tap - which renders the list before it glides - moved the half the user was NOT looking at on the way to
+  the one they were. `scLibScroll` (exposed as `window.__scLibScroll`) keeps one position per half, taken from the
+  pane at the TOP of `renderListInner`, before the rebuild, keyed on `renderListInner._lastHalf` - the half the pane
+  is actually SHOWING, never `libraryMode`, which the single-button library toggle flips *before* it calls
+  `navigate`. Both paths now restore through
+  `if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;`: the
+  **albums branch returns early, right after its cards are built, and had no restore at all**, which is why the
+  albums list opened at the playlists offset. `halfChanged || prevScrollTop` matters - arriving at offset 0 has to
+  be said out loud, because a shared pane does not go back to the top by itself. **No scroll listener is used:** the
+  first draft kept the map current from the pane's `scroll` event, and a clamp during a rebuild then wrote the
+  leaving half's offset into the entering half's slot (jsdom caught it immediately).
+- **4. THE GATES THAT PINNED THIS REPAIR MOVED WITH IT** (same rule as 64.2.3/64.2.4/64.2.5): `dev/test-66424.mjs`
+  and `dev/test-66425.mjs` pinned the take-back line's indentation - they now assert the 10-space nested line and
+  describe it as "a frame later"; then the usual version sweep (37 repins). New: **`dev/test-66426.mjs` (86
+  checks)** and **`dev/libhalf-6426-check.cjs` (18 checks, drives both halves through the real `navigate()` and
+  records every `scrollTop` WRITE on the pane, because jsdom lays nothing out and a glide there always ends at 0).
+  Regression proof: against `git show HEAD:index.html` (64.2.5) the probe fails **8** checks, including "entering
+  Albums does NOT start at the Playlists offset" and "Playlists comes back where it was".
+- **THE RELEASE / REPINS**: `APP_VERSION` **64.2.5 -> 64.2.6**, six-note head entry (every note <= 260 chars, no
+  downloader term, note 4 keeps *rollback*), title `The Favorites bubble stops blinking out, and the record tap
+  moves only the list it belongs to` (no `\bpass\b`); `sw.js` -> **`sidecut-shell-v63.0.24`**; bundles at **ota/
+  756353**, **ota-play/ 756360** (this cycle is a 1-byte 2-cycle - the embedded manifest carries the size it is
+  about to have, so it settles on the pair {756353, 756354}), root `manifest.json` **1306 bytes**. Green: 66426 86,
+  66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74, 6641 119, 663 49, 662 75, 6058 48, 60510 46, 658
+  63, 651 35, 653 31, 614 108, play 59, play-copy 28, boot-639 45 (v64.2.6), libhalf 18, homecard 26, themepaint
+  11, notifgroup 27, librarytools 15, railpaint 21, chatvis 26, homepaint 17, ota-guard 20, audit-calls clean (4729
+  names / 6360 comments), check-dom 0 failures. **Only `dev/test-617.mjs` fails, its one long-standing baseline
+  check ("hits and misses are both persisted") - identical on pristine `origin/main`.**
+
+
 ## 64.2.5 (Sep 28, 2026): the bubble that still came back blank, a finished card you can tap away, a record tap that glides, and a Things-to-know list that says what the app does today
 - **The user's words** (three screenshots: Home with the *Watermarks removed / Cleaned 5 songs.* card and the record
   player playing, and the same Home with Notifications "All caught up"): "Update things to know about SideCut to now

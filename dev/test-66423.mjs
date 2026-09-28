@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.5';
+const VER = '64.2.6';
 const PREV = '64.2.2';
 
 let pass = 0, fail = 0;

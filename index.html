@@ -11575,7 +11575,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '64.2.5';
+  const APP_VERSION = '64.2.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11997,6 +11997,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '64.2.6', date: 'September 28, 2026 · 10:40 PM EDT', title: 'The Favorites bubble stops blinking out, and the record tap moves only the list it belongs to', items: [
+    'The Favorites bubble on Home stops coming back blank. The repair could not work: it wrote and cleared its paint request inside one frame, so the phone merged both and asked for nothing. It now holds for a frame, which is what makes the bubble draw again.',
+    'Home is only rebuilt when something on it really changed. The grid was thrown away by things that have nothing to do with it - a play count, a metadata read, the play button settling - and a rebuild on a scrolled Home is what leaves a bubble blank.',
+    'Tapping the record on the now bar moves only the list you are looking at. Playlists and Albums share one list area, and the position of the half you were not in was carried into the one you tapped - that is the scroll you saw in the other place.',
+    'Nothing in your library is touched. Same songs, playlists, covers and pinned artists, and no setting or saved rollback copy is changed by this update.',
+    'The pinned artists island asks for its own paint the moment it is rebuilt instead of waiting for the next scroll to settle, and a bubble built into a scrolled Home does the same.',
+    'This is 64.2.6 and not a rebuild of 64.2.5: a phone already on that version is offered it and installs it.',
+  ] },
   { version: '64.2.5', date: 'September 28, 2026 · 10:05 PM EDT', title: 'The bubble that still came back blank, a finished card you can tap away, and a record tap that glides', items: [
     'Home bubbles and pinned artists stop coming back blank. The repair now asks the phone to draw them again in a way nothing can see - nothing is hidden, nothing moves, and nothing is put on a layer of its own for a phone to drop in the first place.',
     'A finished card on Home can be tapped away. When a job like Watermark Remover finishes, the card leaves the moment you touch it instead of sitting there until it times itself out.',
@@ -18967,6 +18975,24 @@ function _fallbackCopy(text){
     });
   }
 
+  // ---- Each library half keeps its own place in the list --------------------
+  // Playlists and Albums are two different lists that render into the SAME
+  // #listPane, so the pane can only ever remember one position on its own.
+  // renderListInner restores the scroll position across a rebuild, and it used
+  // to ask the pane "where were we" without knowing which half "we" was: leaving
+  // Albums at album #30 and switching to Playlists put the playlists list at
+  // that same offset, and the other way round. Tapping the record on the now bar
+  // made it obvious, because that path renders the list before it glides - the
+  // tap scrolled the half the user was NOT looking at, then moved the one they
+  // were. Each half now has its own position: it is taken from the pane as that
+  // half is being replaced, and put back once the new half has been built.
+  var scLibScroll = { playlists: 0, albums: 0 };
+  function scLibHalfName(){
+    return (typeof libraryMode !== 'undefined' && libraryMode === 'albums') ? 'albums' : 'playlists';
+  }
+  // Reachable from a probe the same way the two jumps are, so a test can read
+  // what each half remembers instead of inferring it from the pane.
+  window.__scLibScroll = scLibScroll;
   function renderList(){
     // Debounce: coalesce rapid renderList calls (from metadata loads,
     // playback updates, etc.) into a single rAF to reduce DOM thrashing
@@ -19012,7 +19038,21 @@ function _fallbackCopy(text){
     // "scrolling up while playing a song is bugged" looked like. Skip the
     // restore when the playlist itself changed (tab switch) since jumping to
     // a stale scroll position on a different list looks wrong.
-    const prevScrollTop = (renderListInner._lastPlaylist === activePlaylist) ? pane.scrollTop : 0;
+    //
+    // The same reasoning covers the two halves of the library, and this is the
+    // part that was missing. The half the pane is actually SHOWING is read from
+    // what was last rendered (not from libraryMode, which the caller may have
+    // flipped already): the pane is about to be emptied and rebuilt, so its
+    // position is taken here, while it still belongs to the half being replaced,
+    // and the half being entered is handed its own remembered position instead.
+    const libHalf = scLibHalfName();
+    const leftHalf = renderListInner._lastHalf;
+    const halfChanged = !!(leftHalf && leftHalf !== libHalf);
+    if(halfChanged) scLibScroll[leftHalf] = pane.scrollTop;
+    const prevScrollTop = halfChanged
+      ? (scLibScroll[libHalf] || 0)
+      : ((renderListInner._lastPlaylist === activePlaylist) ? pane.scrollTop : 0);
+    renderListInner._lastHalf = libHalf;
     renderListInner._lastPlaylist = activePlaylist;
     const isUnsortedView = activePlaylist === UNSORTED_VIEW;
     let rawIds;
@@ -19680,6 +19720,14 @@ function _fallbackCopy(text){
           });
         }
       });
+      // Albums is the other half of the library, so it has to be put back where
+      // it was in exactly the same way the playlists path below is: the pane is
+      // emptied and rebuilt, and a scroller that has been emptied comes back at
+      // the top. Without this the albums list opened at whatever offset the
+      // playlists half happened to be at - the scroll the user saw "in another
+      // place" - and the record tap, which renders the list before it glides,
+      // moved it on the way every time.
+      if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;
       return;
     }
 
@@ -19799,7 +19847,7 @@ function _fallbackCopy(text){
         }
       }
     }
-    if(!renderListInner._scrollToPlaying && prevScrollTop) pane.scrollTop = prevScrollTop;
+    if(!renderListInner._scrollToPlaying && (halfChanged || prevScrollTop)) pane.scrollTop = prevScrollTop;
   }
 
   // ---------------- Multi-select (long-press) ----------------
@@ -30256,13 +30304,29 @@ if(!isDiscover) stopDiscoverPreview();
     const homeOrderNow = normalizeHomeOrder(homeOrder).filter(k => homeHidden.indexOf(k) === -1);
     bubbles.style.setProperty('--hb-s', (homeBubbleSize / 100).toFixed(2));
     bubbles.style.setProperty('--hb-phase', '-' + ((Date.now() % 6000) / 1000).toFixed(2) + 's');
-    bubbles.innerHTML = homeOrderNow.map(k => {
+    const gridHtml = homeOrderNow.map(k => {
       if(k.indexOf('custom-') === 0){
         const act = customQuickActions.find(x => 'custom-' + x.id === k);
         return act ? customActionBubbleHTML(act) : '';
       }
       return homeTemplates[k] || '';
     }).join('');
+    // A grid already showing this exact markup is left exactly as it is. Home is
+    // rebuilt by things that have nothing to do with the grid - a play count
+    // ticking up, a metadata read landing, the mini-play button settling - and
+    // every one of those used to throw every bubble away and build it again.
+    // That rebuild is what a phone can leave half drawn when it happens on a
+    // Home that is already scrolled: the new nodes arrive with the scroller
+    // where it is, and a bubble is left holding its space with nothing painted
+    // in it - the Favorites bubble that "keeps disappearing". If the markup is
+    // the same there is nothing to build, and when a bubble really is missing
+    // the DOM check says so and the rebuild below still happens.
+    if(renderHome._lastHtml === gridHtml && homeGridIsWhole()){
+      applyHomeBubbleSizes();
+      return;
+    }
+    renderHome._lastHtml = gridHtml;
+    bubbles.innerHTML = gridHtml;
 
     // Expand handle on every bubble — each tap cycles that bubble through
     // manual sizes (small → normal → tall → wide → full → small). The tap is
@@ -30320,10 +30384,15 @@ if(!isDiscover) stopDiscoverPreview();
       // Long-press a bubble → drag to reorder the Home layout.
       wireHomeBubbleDrag(b);
     });
+    // A rebuild that really happened asks for its paint here, instead of waiting
+    // for the next settled scroll. The rebuild can land after the last scroll
+    // settled, and a bubble built into a scrolled Home would then sit blank
+    // until the user scrolled again - which is the report, exactly.
+    try{ scRepaintSurface(bubbles, '.home-bubble'); }catch(_eRpBuilt){}
   }
 
-  // ---- Asking a surface to draw itself again (64.2.5) ------------------------
-  // This is the fourth answer to the same report, and the first one that costs
+  // ---- Asking a surface to draw itself again (64.2.6) ------------------------
+  // This is the fifth answer to the same report, and the first one that costs
   // nothing anywhere else. Each earlier attempt bought its repair somewhere a
   // user could see or feel it:
   //
@@ -30337,21 +30406,36 @@ if(!isDiscover) stopDiscoverPreview();
   //   - repairing only a surface that carried a drag lift (64.2.4) threw the
   //     trigger away. A phone that drops a paint leaves nothing in the page to
   //     find, so the one condition that could start the repair was never met -
-  //     which is why the bubble still sometimes comes back blank.
+  //     which is why the bubble still sometimes comes back blank;
+  //   - and asking for the paint from inside one frame (64.2.5) asked for it in
+  //     a frame that already had nothing to notice: the write and the take-back
+  //     collapsed into the same paint, so nothing was ever invalidated at all.
   //
   // An outline is read by paint and by nothing else: it takes no space, it moves
   // nothing, and a fully transparent one draws no pixels. Writing one and putting
-  // it back on the next frame tells the phone that this element, and everything
-  // drawn under it, has to be painted again - with nothing hidden, nothing
-  // measured and no layer created or destroyed on the way. That makes the repair
-  // invisible and cheap enough to run on every settled scroll, which is the
-  // trigger that actually repaired the fault.
+  // it back tells the phone that this element, and everything drawn under it, has
+  // to be painted again - with nothing hidden, nothing measured and no layer
+  // created or destroyed on the way.
+  //
+  // The take-back happens on the SECOND frame, and that is the whole of 64.2.6's
+  // bubble fix. This repair is started by a TIMER (the debounce after a scroll
+  // settles), and a timer task runs BEFORE the frame's rendering update - so a
+  // requestAnimationFrame callback scheduled from it runs inside that SAME
+  // update, after which the phone styles, lays out and paints once. Write and
+  // clear then collapse into that single pass: the one frame that does get
+  // painted already has no outline, nothing is invalidated, and the repair asks
+  // for a paint that never comes. That is why a bubble could still come back
+  // blank with 64.2.5's repair in place. Clearing a frame later guarantees one
+  // painted frame carrying the invalidation, and the extra frame is a fully
+  // transparent outline - still nothing anyone can see.
   function scRepaint(el){
     if(!el || !el.style) return;
     try{
       el.style.outline = '1px solid transparent';
       requestAnimationFrame(function(){
-        try{ el.style.outline = ''; }catch(_eRpBack){}
+        requestAnimationFrame(function(){
+          try{ el.style.outline = ''; }catch(_eRpBack){}
+        });
       });
     }catch(_eRp){}
   }
@@ -31849,6 +31933,12 @@ if(!isDiscover) stopDiscoverPreview();
     // blank space past the last chip, which reads as "my artists are gone"
     // while every one of them is still in the DOM.
     try{ list.scrollLeft = 0; }catch(_eSc){}
+    // A rebuilt rail is the same shape as a rebuilt grid: the chips are new
+    // nodes in a scroller that is already where it is, and a phone can leave
+    // them unpainted. The rail's own repair is asked for here rather than at the
+    // next settle, so a rail that is rebuilt while Discover is on screen cannot
+    // sit blank until something else scrolls.
+    try{ repaintPinnedRail(list); }catch(_eRpRail){}
   }
 
   // The pinned-artist rail has been reported as vanishing three times now, and
