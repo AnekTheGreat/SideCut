@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.4';
+const VER = '64.2.5';
 const PREV = '64.2.1';
 
 let pass = 0, fail = 0;
@@ -88,10 +88,10 @@ console.log('[2] the Home repaint does not hide the grid (the reported blink)');
   const repaint = slice('  function repaintHomeGrid(){', '  function homeGridIsWhole(){');
   ok(repaint !== '', 'the repaint is still there');
   ok(!/visibility/.test(repaint), 'it never touches visibility - a hidden frame IS the blink');
-  ok(has("    wrap.style.transform = 'translateZ(0)';"),
-    'it promotes the grid to force a fresh raster');
-  ok(has("    requestAnimationFrame(function(){\n      requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });"),
-    'and takes the promotion back one frame later, so nothing stays on its own layer');
+  ok(has("    scRepaintSurface(wrap, '.home-bubble');"),
+    'it asks every bubble on the grid to paint again');
+  ok(!/translateZ/.test(repaint) && has("      el.style.outline = '1px solid transparent';"),
+    'through a transparent outline, so nothing is put on a layer of its own');
   ok(has("      var phs = wrap.querySelectorAll('.hb-drag-placeholder');"),
     'a dashed placeholder an abandoned drag left behind is still removed');
   ok(has("        if(!b.classList.contains('hb-dragging') && !b.style.position) continue;"),

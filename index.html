@@ -3427,11 +3427,15 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
         </button>
         <div id="collapsibleThingsToKnowContent" style="padding:12px; border-top:1px solid var(--line); display:none; font-size:11.5px; color:var(--ink-dim); line-height:1.6;">
           <div style="margin-bottom:6px; color:var(--ink);">A few built-in behaviors worth knowing:</div>
+          <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Tap a finished card on Home to dismiss it.</b> When a background job finishes -- removing watermarks, fetching covers or lyrics, an export -- its card sits at the top of Home. Tap it and it leaves at once; left alone it clears itself after a few seconds.</span></div>
+          <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>The patch notes in the bell are grouped by version.</b> Each release has a header with a one-line summary; tap it to open the detail, or leave every header closed for the glance view.</span></div>
+          <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>The library tools live together in Settings → More.</b> <b>Refetch missing covers</b>, the duplicate finder and the rest are under <b>Library Tools &amp; Fetching</b>. <b>Watermark Remover</b> is its own card under them and starts switched on.</span></div>
+          <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Every version keeps its own copy, so a rollback is two-way.</b> The list in <b>Settings → More → Roll back app</b> starts with the way forward to the build you are on. <b>Storage</b> shows the room your phone gives the app -- SideCut sets no size of its own.</span></div>
           <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Hold the mini record player to adjust its angle.</b> Long-press the little turntable at the bottom of the screen — a <b>Turntable angle</b> popup opens with TILT / SPIN / ROLL sliders. Drag them while the preview moves live; <b>Reset</b> brings back the default look. A quick tap still jumps to the playing song.</span></div>
           <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>DJ Mode is disabled for certain playlists.</b> If a playlist is named <b>Paath</b>, <b>Gurbani</b>, <b>Kirtaan</b>, <b>Dhadi Jhatta</b>, <b>Gurmukhi</b>, <b>Religious</b>, or <b>Prayer</b> — uppercase or lowercase, it doesn't matter — DJ Mode steps aside for that playlist. You can also turn DJ Mode off manually for <i>any</i> playlist from <b>DJ Mode per playlist</b> above — handy for religious or devotional playlists you'd rather listen to as-is. You'll see a small note when this happens.</span></div>
           <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Your music stays on your device.</b> SideCut plays files you import — it never uploads them. Fetching new lyrics or covers, and update checks, are the only things that need internet.</span></div>
           <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Update timestamps are in Eastern time (EDT).</b> Every changelog entry shows its date and time in Eastern time — never UTC, and never the build machine's clock.</span></div>
-          <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Jump to the playing song from anywhere.</b> Tap the <b>record</b> on the now bar — in Playlists it scrolls to that song in the list, in Albums it opens the album it is in. Either way the row is highlighted so you never have to hunt for it.</span></div>
+          <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Jump to the playing song from anywhere.</b> Tap the <b>record</b> on the now bar — in Playlists the list glides to that song, in Albums the album it is in opens and glides to the song inside it. Either way the row is highlighted so you never have to hunt for it.</span></div>
           <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>The phone's media player can't open SideCut.</b> The notification-shade / lock-screen player can play, pause, and skip — but tapping it won\'t open the app. To get back to the song list, open SideCut from your launcher.</span></div>
           <div style="display:flex; gap:8px; margin-bottom:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Lyrics auto-scroll isn't perfect.</b> Timed lyrics are matched to a best-effort sync, so the highlight can drift — tap <b>Auto-scroll</b> in the lyrics view to turn it off and read at your own pace.</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Back up before rolling back.</b> Older app versions can break things or lose data. Use <b>Export library</b> to save a .zip first, since recovering from a bad rollback may require clearing app data.</span></div>
@@ -5361,8 +5365,7 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       // nav pills ride up with it — the "app lifting" glitch). The app's own
       // engine only ever writes scrollTop on the pane it was handed.
       try{
-        cancelScrollAnim(pane);
-        smoothScrollIn(pane, row, 220);
+        smoothScrollIn(pane, row);
       }catch(_eScroll){
         // Last resort, still only inside the pane: centre the row's own rect.
         try{
@@ -5395,21 +5398,38 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         activePlaylist = 'All Songs';
         try{ rememberPlaylist(activePlaylist); }catch(_e){}
       }
+      // This jump does its own gliding below, so the list is told not to start
+      // one of its own. Switching into the Playlists tab makes renderListInner
+      // begin a 350ms scroll to the playing row, and this function used to start
+      // its own 220ms one 140ms later on top of it - CANCEL the one in flight and
+      // begin again from wherever it had got to. That cancel-and-restart, always
+      // at the same fixed speed, is the roughness the tap had.
+      renderListInner._scrollToPlaying = false;
       navigate('playlists');
-      renderTabs();
-      renderList();
     }catch(_e){ toast('Could not open the song list — try again.'); return; }
-    setTimeout(function(){
-      try{
-        const pane = $('listPane');
-        if(!pane) return;
-        const row = pane.querySelector('.track[data-id="' + t.id + '"]');
-        if(!row){ toast('Opened All Songs — "' + t.name + '" is in your library.'); return; }
-        cancelScrollAnim(pane);
-        smoothScrollIn(pane, row, 220);
-        scFocusRow(t.id);
-      }catch(_eFocus){}
-    }, 140);
+    // navigate() has already drawn the tabs and the list for the playlists half,
+    // and renderList() coalesces its calls into one frame anyway, so the list is
+    // not asked for a second time here.
+    //
+    // Then one glide, started once the rows are really in the DOM and measured
+    // (two frames - the first has them, the second has their positions), and
+    // sized by the distance it has to travel. The hard-coded 220ms it used to be
+    // is the other half of the roughness: a screen and a half of list in a fifth
+    // of a second is a teleport with a wobble on the end, while a short hop
+    // crawled. The shared engine scales the duration with the distance and
+    // honours the user's Scroll speed setting.
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        try{
+          const pane = $('listPane');
+          if(!pane) return;
+          const row = pane.querySelector('.track[data-id="' + t.id + '"]');
+          if(!row){ toast('Opened All Songs — "' + t.name + '" is in your library.'); return; }
+          smoothScrollIn(pane, row);
+          scFocusRow(t.id);
+        }catch(_eFocus){}
+      });
+    });
   }
   window.__scJumpToPlayingSong = jumpToPlayingSong;
 
@@ -11555,7 +11575,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '64.2.4';
+  const APP_VERSION = '64.2.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11977,6 +11997,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '64.2.5', date: 'September 28, 2026 · 10:05 PM EDT', title: 'The bubble that still came back blank, a finished card you can tap away, and a record tap that glides', items: [
+    'Home bubbles and pinned artists stop coming back blank. The repair now asks the phone to draw them again in a way nothing can see - nothing is hidden, nothing moves, and nothing is put on a layer of its own for a phone to drop in the first place.',
+    'A finished card on Home can be tapped away. When a job like Watermark Remover finishes, the card leaves the moment you touch it instead of sitting there until it times itself out.',
+    'Tapping the record on the now bar glides to the playing song. It used to cancel the scroll the list had already started and run a shorter, faster one from wherever that left it - that is the roughness you feel. It is one move now, paced by the distance.',
+    'The "Things to know about SideCut" list in Settings > More says what the app does today - the record tap, the patch notes in the bell, where the cover tools live, and how rollback and Storage behave.',
+    'Nothing in your library is touched. Same songs, playlists, covers and pinned artists, and no setting or saved rollback copy is changed by this update.',
+    'This is 64.2.5 and not a rebuild of 64.2.4: a phone already on that version is offered it and installs it.',
+  ] },
   { version: '64.2.4', date: 'September 28, 2026 · 9:10 PM EDT', title: 'The blink on every scroll and every launch, the album that lost a few songs, and the glow that kept the phone busy', items: [
     'The app no longer re-paints itself on every scroll. A settled scroll made the phone raster Home, or the pinned artists island, again a moment after it stopped - that is the slight blink you see while scrolling, and it was work with nothing to show for it.',
     'And it no longer repaints itself a moment after it opens. SideCut used to appear in the default colours and then restyle every colour in it once your saved theme came back from the device - that whole-app flicker at launch is gone.',
@@ -15450,12 +15478,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
         ? `Updated ${enrichState.updated} song${enrichState.updated>1?'s':''} with covers & metadata.`
         : `Checked ${enrichState.total} song${enrichState.total>1?'s':''} — nothing new to add.`;
       tasks.push(`
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div data-dismiss="enrich" title="Tap to dismiss" style="display:flex; align-items:center; gap:10px; cursor:pointer;">
           <span style="font-size:18px; color:${ok ? 'var(--coral)' : 'var(--ink-dim)'};">${ok ? '✓' : '—'}</span>
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:13.5px; color:${ok ? 'var(--coral)' : 'var(--ink-dim)'};">${ok ? 'Song details updated' : 'Nothing to update'}</div>
             <div style="font-size:11.5px; color:var(--ink-dim);">${escapeHtml(msg)}</div>
           </div>
+          <span style="font-size:13px; color:var(--ink-dim); flex-shrink:0;">✕</span>
         </div>`);
     }
     if(typeof watermarkCleanState !== 'undefined' && watermarkCleanState && watermarkCleanState.active){
@@ -15472,12 +15501,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     if(typeof watermarkCleanState !== 'undefined' && watermarkCleanState && watermarkCleanState.finishedAt && !watermarkCleanState.seen){
       tasks.push(`
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div data-dismiss="watermark" title="Tap to dismiss" style="display:flex; align-items:center; gap:10px; cursor:pointer;">
           <span style="font-size:18px; color:var(--coral);">✓</span>
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:13.5px; color:var(--coral);">Watermarks removed</div>
             <div style="font-size:11.5px; color:var(--ink-dim);">Cleaned ${watermarkCleanState.changed} song${watermarkCleanState.changed===1?'':'s'}.</div>
           </div>
+          <span style="font-size:13px; color:var(--ink-dim); flex-shrink:0;">✕</span>
         </div>`);
     }
     if(bgImportState && bgImportState.total && bgImportState.completed < bgImportState.total){
@@ -15509,13 +15539,28 @@ function startLyricsAutoScroll(keepPos, noReset) {
       + tasks.map(t => sep + t + sepClose).join('');
     el.innerHTML = inner;
     el.style.display = 'block';
-    // Tapping a finished background-task card dismisses it immediately.
+    // Tapping a finished background-task card dismisses it immediately. The
+    // handler has been here since the export card was written, but nothing on
+    // the page ever carried the attribute, so a tap on "Watermarks removed" did
+    // nothing at all - every finished card carries one now.
     el.querySelectorAll('[data-dismiss]').forEach(card => {
       card.addEventListener('click', () => {
-        if(card.dataset.dismiss === 'pinned' && typeof pinnedCheckState !== 'undefined' && pinnedCheckState){
-          pinnedCheckState.seen = true;
-        }
+        const which = card.dataset.dismiss;
+        try{
+          if(which === 'export'){ exportState.seen = true; exportState.finishedAt = 0; }
+          else if(which === 'enrich'){ enrichState.seen = true; enrichState.finishedAt = 0; }
+          else if(which === 'watermark' && typeof watermarkCleanState !== 'undefined' && watermarkCleanState){
+            watermarkCleanState.seen = true; watermarkCleanState.finishedAt = 0;
+          }
+          else if(which === 'pinned' && typeof pinnedCheckState !== 'undefined' && pinnedCheckState){
+            pinnedCheckState.seen = true;
+          }
+        }catch(_eDismiss){}
+        // The 6s auto-hide timer is armed for cards that are never touched, so it
+        // can be left alone: with every 'seen' flag set the next render empties
+        // the card, and the timer's own pass finds nothing left to clear.
         renderHomeExportPopup();
+        try{ updateNotifBadge(); }catch(_eDismissBadge){}
       });
     });
 
@@ -15569,12 +15614,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
         ? `Done — ${exportState.total} song${exportState.total===1?'':'s'} bundled into a .zip.`
         : `Export failed: ${exportState.lastErr || 'unknown error'}.`;
       inner = `
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div data-dismiss="export" title="Tap to dismiss" style="display:flex; align-items:center; gap:10px; cursor:pointer;">
           <span style="font-size:18px;">${ok ? '✓' : '✗'}</span>
           <div style="flex:1; min-width:0;">
             <div style="font-weight:600; font-size:13.5px; color:${ok ? 'var(--coral)' : '#ff6b6b'};">${ok ? 'Export complete' : 'Export failed'}</div>
             <div style="font-size:11.5px; color:var(--ink-dim);">${escapeHtml(msg)}</div>
           </div>
+          <span style="font-size:13px; color:var(--ink-dim); flex-shrink:0;">✕</span>
         </div>`;
     }
     return inner;
@@ -19746,7 +19792,7 @@ function _fallbackCopy(text){
             renderListInner._scrollToPlaying = false;
             // Small delay lets the DOM settle before measuring positions,
             // matching the smooth feel of the albums auto-scroll.
-            requestAnimationFrame(function(){ smoothScrollIn(pane, row, 350); });
+            requestAnimationFrame(function(){ smoothScrollIn(pane, row); });
           } else {
             renderListInner._scrollToPlaying = false;
           }
@@ -24343,12 +24389,12 @@ function _fallbackCopy(text){
                 });
               })();
               if(tid === id){
-                setTimeout(function(){ smoothScrollIn(body, row, 200); }, 100);
+                setTimeout(function(){ smoothScrollIn(body, row); }, 100);
               }
             });
           } else if(body && body.style.display !== 'none'){
             var pr = body.querySelector('[data-id="' + id + '"]');
-            if(pr) smoothScrollIn(body, pr, 200);
+            if(pr) smoothScrollIn(body, pr);
           }
         }
       });
@@ -25607,7 +25653,7 @@ function _fallbackCopy(text){
                   _kb.addEventListener('click', function(e){ e.stopPropagation(); openSongActions(_tid, _foundAlb); });
                 }
                 if(_tid === t.id){
-                  setTimeout(function(){ smoothScrollIn(_body, _row, 200); }, 100);
+                  setTimeout(function(){ smoothScrollIn(_body, _row); }, 100);
                 }
               });
               // Hold a song to open the reorder popup for this album
@@ -25642,7 +25688,7 @@ function _fallbackCopy(text){
             var _pr = _body.querySelector('[data-id="' + t.id + '"]');
             if(_pr){
               _pr.classList.add('playing');
-              setTimeout(function(){ smoothScrollIn(_body, _pr, 200); }, 100);
+              setTimeout(function(){ smoothScrollIn(_body, _pr); }, 100);
             }
           }
         }
@@ -30276,6 +30322,50 @@ if(!isDiscover) stopDiscoverPreview();
     });
   }
 
+  // ---- Asking a surface to draw itself again (64.2.5) ------------------------
+  // This is the fourth answer to the same report, and the first one that costs
+  // nothing anywhere else. Each earlier attempt bought its repair somewhere a
+  // user could see or feel it:
+  //
+  //   - hiding the surface for a frame is a frame a phone can present. That is
+  //     "the bubble disappears for a split second and comes back" (64.2.1, and
+  //     the pinned rail in 64.2.2);
+  //   - promoting the surface onto its own layer and taking the promotion away a
+  //     frame later re-rastered the WHOLE surface on every settled scroll
+  //     (64.2.3) - the slight blink while scrolling - and a layer of its own is
+  //     precisely the shape a phone discards on a long scroll;
+  //   - repairing only a surface that carried a drag lift (64.2.4) threw the
+  //     trigger away. A phone that drops a paint leaves nothing in the page to
+  //     find, so the one condition that could start the repair was never met -
+  //     which is why the bubble still sometimes comes back blank.
+  //
+  // An outline is read by paint and by nothing else: it takes no space, it moves
+  // nothing, and a fully transparent one draws no pixels. Writing one and putting
+  // it back on the next frame tells the phone that this element, and everything
+  // drawn under it, has to be painted again - with nothing hidden, nothing
+  // measured and no layer created or destroyed on the way. That makes the repair
+  // invisible and cheap enough to run on every settled scroll, which is the
+  // trigger that actually repaired the fault.
+  function scRepaint(el){
+    if(!el || !el.style) return;
+    try{
+      el.style.outline = '1px solid transparent';
+      requestAnimationFrame(function(){
+        try{ el.style.outline = ''; }catch(_eRpBack){}
+      });
+    }catch(_eRp){}
+  }
+  // A surface and everything in it: whichever of them was left holding dropped
+  // pixels, the element that owns them is the one that has to paint again.
+  function scRepaintSurface(root, sel){
+    scRepaint(root);
+    if(!root || !sel) return;
+    try{
+      var els = root.querySelectorAll(sel);
+      for(var i = 0; i < els.length; i++) scRepaint(els[i]);
+    }catch(_eRpAll){}
+  }
+
   // ---- Home grid: drawn again after a scroll settles -------------------------
   // The Favorites bubble has been reported coming back blank: scroll Home up and
   // down and the last bubble - the bottom-right one - is left as an empty cell,
@@ -30290,34 +30380,33 @@ if(!isDiscover) stopDiscoverPreview();
   //     the inline box that lifts it out of the grid) is put back as a plain
   //     bubble. A carried bubble is drawn on a layer of its own, and that is the
   //     shape a phone discards on a long scroll;
-  //   - the grid's painted pixels are thrown away and painted again WITHOUT
-  //     hiding it. 64.2.1 hid the whole grid for a frame to force the redraw, and
-  //     a phone can present that frame: that hide is the "the Favorites bubble
-  //     disappears for a split second and comes back" reported about it.
-  //     Promoting the grid onto its own layer and taking the promotion away one
-  //     frame later makes the compositor raster it again while it stays on
-  //     screen - the same fresh paint, nothing ever off the screen. It is taken
-  //     back on the SECOND frame so the promoted frame is really presented, and
-  //     the grid is never measured: reading offsetHeight here (which 64.2.1 and
-  //     64.2.2 both did) lays the whole page out again in the same task as the
-  //     scroll settle, and that is a lag spike you can feel;
+  //   - the grid asks for a fresh paint WITHOUT being hidden and WITHOUT being
+  //     put on a layer, bubble by bubble (see scRepaint above). 64.2.1 hid the
+  //     whole grid for a frame to force the redraw, and a phone can present that
+  //     frame: that hide is the "the Favorites bubble disappears for a split
+  //     second and comes back" reported about it. 64.2.2/64.2.3 replaced the
+  //     hide with a layer promotion, which re-rastered the whole surface on
+  //     every scroll and left the grid on a layer a phone can drop. Nothing is
+  //     measured either: reading offsetHeight here (which 64.2.1 and 64.2.2 both
+  //     did) lays the whole page out in the same task as the scroll settle, and
+  //     that is a lag spike you can feel;
   //   - and a grid that really is missing a bubble the layout asks for is drawn
-  //     from the layout again instead of waiting for the next update to notice;
+  //     from the layout again instead of waiting for the next update to notice.
   //
-  // and NONE of it runs on a scroll that found nothing wrong. Promoting the grid
-  // on every settled scroll re-rastered the whole surface a moment after you
-  // stopped - the slight blink while scrolling - so the fresh paint above is now
-  // only asked for when there is something to repair.
+  // This runs on EVERY settled scroll, which is the difference from 64.2.4: that
+  // release only repaired a grid carrying a drag lift, and a grid whose paint was
+  // dropped carries nothing at all, so the repair never ran and the bubble could
+  // still come back blank. Because nothing here can be seen or measured, running
+  // it every time is free in the way that matters.
   function repaintHomeGrid(){
     var wrap = $('homeBubbles');
     if(!wrap) return;
     // Nothing carried and no placeholder left behind means there is nothing to
     // repair - see repaintPinnedRail for why a settled scroll over a healthy
     // grid must not schedule a raster at all.
-    var carried = 0;
     try{
       var phs = wrap.querySelectorAll('.hb-drag-placeholder');
-      for(var i = 0; i < phs.length; i++){ if(phs[i].parentNode){ phs[i].parentNode.removeChild(phs[i]); carried++; } }
+      for(var i = 0; i < phs.length; i++){ if(phs[i].parentNode){ phs[i].parentNode.removeChild(phs[i]); } }
       var bs = wrap.querySelectorAll('.home-bubble');
       for(var j = 0; j < bs.length; j++){
         var b = bs[j];
@@ -30325,19 +30414,10 @@ if(!isDiscover) stopDiscoverPreview();
         b.classList.remove('hb-dragging');
         b.style.position = ''; b.style.left = ''; b.style.top = '';
         b.style.width = ''; b.style.height = ''; b.style.transform = ''; b.style.transition = '';
-        carried++;
       }
     }catch(_eCarry){}
-    if(!carried) return;
-    // A frame of a hidden grid is a frame a phone can show, and that is the
-    // blink this replaces. The layer promotion forces the same fresh raster
-    // with the grid on screen the whole time, and it is taken away at once so
-    // nothing stays promoted (a bubble left on its own layer is the shape this
-    // guard exists to clear in the first place).
-    wrap.style.transform = 'translateZ(0)';
-    requestAnimationFrame(function(){
-      requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });
-    });
+    // Unconditional on purpose - see the note above the function.
+    scRepaintSurface(wrap, '.home-bubble');
   }
   // Is every bubble the Home layout asks for actually on the page? Built through
   // the same rules renderHome() uses, so a custom action that no longer exists is
@@ -31782,47 +31862,30 @@ if(!isDiscover) stopDiscoverPreview();
   //     own composited layer, and a layer like that is what a WebView discards
   //     on a long scroll. The styles are dropped in place rather than by
   //     re-rendering, so no cover is decoded again;
-  //   - the card itself is hidden and shown again, which throws its painted
-  //     pixels away and paints them fresh, whether or not its artists are there.
+  //   - the card asks for a fresh paint without being hidden and without being
+  //     put on a layer, chip by chip (see scRepaint above), on EVERY settled
+  //     scroll. 64.2.4 only repaired a rail carrying a drag lift, and a rail
+  //     whose paint was dropped carries nothing to find, so the repair never ran
+  //     and the artists could still come back blank.
   //
   // A rail that really has lost its chips is still drawn again from scratch.
   function repaintPinnedRail(list){
-    var carried = 0;
     try{
       var chips = list.querySelectorAll('.pinned-artist-chip');
       for(var i = 0; i < chips.length; i++){
         var c = chips[i];
-        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }
+        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }
       }
     }catch(_eLift){}
-    // A chip left carrying a drag lift is damage, and the fresh raster below is
-    // for it. A settled scroll over a rail that is simply fine is NOT damage:
-    // promoting the card on every settled scroll made the compositor raster the
-    // whole strip again a moment after you stopped, which is the slight blink
-    // seen while scrolling - and a whole extra GPU pass per scroll that bought
-    // nothing at all.
-    if(!carried) return;
     var strip = $('pinnedArtistsStrip');
     if(!strip) return;
-    // 64.2.2 took the hide out of Home's repaint and left the rail with it: a
-    // frame of a hidden strip is a frame a phone can present, and that is "the
-    // pinned artists island sometimes doesn't show but comes back after a split
-    // second". Promoting the strip onto its own layer and taking the promotion
-    // away one frame later makes the compositor raster it again with the strip
-    // on screen the whole time.
-    //
-    // No forced layout here either. The old `void strip.offsetHeight` made the
-    // page lay itself out again in the same task as the scroll settle, which is
-    // the lag spike felt right after you stop scrolling. That flush was only
-    // ever needed by the hide-and-restore - a hidden frame has to be committed
-    // before it can be restored - while a transform change is committed by the
-    // frame it is scheduled on. The inner requestAnimationFrame is the same
-    // two-frame pattern the album reorder sheet uses to let the browser apply
-    // an entrance.
-    strip.style.transform = 'translateZ(0)';
-    requestAnimationFrame(function(){
-      requestAnimationFrame(function(){ try{ strip.style.transform = ''; }catch(_eRpr){} });
-    });
+    // Ask for a fresh paint on every settled scroll, whether or not a drag left
+    // a lift behind. There is no hidden frame here and no layer: 64.2.2's hide
+    // was the "island sometimes doesn't show for a split second", and the layer
+    // promotion that replaced it was the slight blink while scrolling in 64.2.3
+    // and the shape a phone drops in the first place. Nothing is measured, so
+    // this cannot lay the page out in the same task as the scroll settle either.
+    scRepaintSurface(strip, '.pinned-artist-chip');
   }
   (function watchPinnedRail(){
     var dv = $('discoverView');

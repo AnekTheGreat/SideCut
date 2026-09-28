@@ -140,14 +140,16 @@ const settle = async (win) => {
     const raf = win.requestAnimationFrame.bind(win);
     win.requestAnimationFrame = function (cb) {
       return raf(function (t) {
-        frames.push({ v: strip.style.visibility, t: strip.style.transform });
+        frames.push({ v: strip.style.visibility, t: strip.style.transform, o: strip.style.outline });
         cb(t);
       });
     };
     await settle(win);
     const hidden = frames.filter((f) => f.v && f.v !== 'visible');
     ok('no frame of the repaint was ever hidden', hidden.length === 0, JSON.stringify(hidden.slice(0, 3)));
-    ok('and a healthy rail is not re-rastered at all', !frames.some((f) => /translateZ/.test(f.t || '')), JSON.stringify(frames.slice(0, 3)));
+    ok('and a healthy rail is asked to paint again, without a layer and without being hidden',
+    frames.some((f) => /1px solid transparent/.test(f.o || '')) && !frames.some((f) => /translateZ/.test(f.t || '')),
+    JSON.stringify(frames.slice(0, 3)));
     ok('nothing was promoted and left behind', !strip.style.transform, strip.style.transform);
     ok('nor an inline visibility', !strip.style.visibility, strip.style.visibility);
     win.requestAnimationFrame = raf;
@@ -176,14 +178,14 @@ const settle = async (win) => {
     const raf2 = win.requestAnimationFrame.bind(win);
     win.requestAnimationFrame = function (cb) {
       return raf2(function (t) {
-        dragFrames.push({ t: strip.style.transform });
+        dragFrames.push({ t: strip.style.transform, o: strip.style.outline });
         cb(t);
       });
     };
     await settle(win);
     win.requestAnimationFrame = raf2;
     ok('the drag carry is cleared', !chip.style.transform && !chip.style.zIndex, chip.style.transform);
-    ok('and that rail really was rastered again', dragFrames.some((f) => /translateZ/.test(f.t || '')), JSON.stringify(dragFrames.slice(0, 3)));
+    ok('and that rail was asked to paint again', dragFrames.some((f) => /1px solid transparent/.test(f.o || '')), JSON.stringify(dragFrames.slice(0, 3)));
     ok('with nothing left promoted', !strip.style.transform, strip.style.transform);
   }
 
@@ -198,7 +200,7 @@ const settle = async (win) => {
 
   console.log('\n— and nothing about the guard can be seen or can throw —');
   {
-    ok('a drag carry on a chip is still cleared', html.indexOf("if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }") !== -1);
+    ok('a drag carry on a chip is still cleared', html.indexOf("if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }") !== -1);
     ok('the watch is wired once, not once per render', /dv\._paRailWatch/.test(html));
     ok('with the 140ms settle', html.indexOf('      }, 140);') !== -1);
     const errs = realErrors(errors);

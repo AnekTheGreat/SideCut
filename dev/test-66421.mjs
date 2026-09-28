@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.4';
+const VER = '64.2.5';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -77,10 +77,10 @@ console.log('[2] Home repaints its grid once a scroll settles');
   // 64.2.2 replaced the hide-and-restore with a layer promotion: hiding the whole
   // grid for a frame IS the blink that release reported, so these two now pin the
   // repaint that cannot be seen instead of the one that could.
-  ok(has("    wrap.style.transform = 'translateZ(0)';"),
-    'by forcing the grid to be rastered again');
-  ok(has("    requestAnimationFrame(function(){\n      requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });"),
-    'and taking that back one frame later, with no layout and no hide');
+  ok(has("    scRepaintSurface(wrap, '.home-bubble');"),
+    'by asking every bubble on the grid to paint again');
+  ok(has("      el.style.outline = '1px solid transparent';"),
+    'through a transparent outline - paint only, so no layout and no hide');
   ok(!/void wrap\.offsetHeight/.test(src.slice(src.indexOf('  function repaintHomeGrid(){'), src.indexOf('  function homeGridIsWhole(){'))),
     'the forced layout that made a settled scroll hitch is gone');
   ok(has("      var phs = wrap.querySelectorAll('.hb-drag-placeholder');"),

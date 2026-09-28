@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.4';
+const VER = '64.2.5';
 const PREV = '64.2.2';
 
 let pass = 0, fail = 0;
@@ -95,16 +95,16 @@ console.log('[2] the rail repaints without hiding itself and without a forced la
   const watch = sliceC('  (function watchPinnedRail(){', '  function ');
   ok(rail !== '', 'the rail repaint is still there');
   ok(!/visibility/.test(rail), 'it never touches visibility - a hidden frame IS the reported blink');
-  ok(has("    strip.style.transform = 'translateZ(0)';"), 'it promotes the strip to force a fresh raster');
-  ok(has("    requestAnimationFrame(function(){\n      requestAnimationFrame(function(){ try{ strip.style.transform = ''; }catch(_eRpr){} });"),
-    'and drops the promotion one frame later, so nothing stays on its own layer');
+  ok(has("    scRepaintSurface(strip, '.pinned-artist-chip');"), 'the strip and every chip in it are asked to paint again');
+  ok(!/translateZ/.test(rail) && !/offsetHeight|getBoundingClientRect/.test(rail),
+    'and nothing is put on a layer of its own, or measured, on the way');
   ok(!/void strip\.offsetHeight/.test(rail), 'the layout flush that made a settled scroll hitch is gone');
   ok(!/getBoundingClientRect/.test(watch), 'and the rebuild is decided from the DOM, not by measuring the strip');
   ok(has("          if(l.querySelector('.pinned-artist-chip')) return;\n          renderPinnedArtists();"),
     'so a rail that really has no chips is still built again');
   ok(has("    var dv = $('discoverView');"), 'the watch is still attached to Discover');
   ok(has('    dv._paRailWatch = true;'), 'wired once, not once per render');
-  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }"),
+  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }"),
     'a chip still holding what a drag gives it is still put back');
   ok(has('  function renderPinnedArtists(){'), 'the rail still has its builder');
   ok(!/void strip\.offsetHeight/.test(code), 'no settled scroll anywhere still lays the page out');
@@ -116,8 +116,7 @@ console.log('[3] Home keeps the precedent the rail now follows');
   ok(grid !== '', 'the Home repaint is still there');
   ok(!/visibility/.test(grid), 'it still never hides the grid');
   ok(!/offsetHeight/.test(grid), 'and it does not force a layout either');
-  ok(has("    requestAnimationFrame(function(){\n      requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });"),
-    'the promotion is taken back one frame later');
+  ok(has("    scRepaintSurface(wrap, '.home-bubble');"), 'and every bubble on it is asked to paint again');
   ok(has("      var phs = wrap.querySelectorAll('.hb-drag-placeholder');"),
     'a dashed placeholder an abandoned drag left behind is still removed');
   ok(has("        if(!b.classList.contains('hb-dragging') && !b.style.position) continue;"),

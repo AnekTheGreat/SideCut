@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.4';
+const VER = '64.2.5';
 const PREV = '64.2.3';
 
 let pass = 0, fail = 0;
@@ -63,10 +63,13 @@ console.log('[1] release metadata');
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
-  if (entries) {
-    const head = entries[0];
+  // The head entry belongs to whatever shipped last, so read the 64.2.4 entry by
+  // version: this gate describes 64.2.4.
+  const entry6424 = entries ? entries.find((x) => /^64\.2\.4$/.test(String(x.version))) : null;
+  if (entry6424) {
+    const head = entry6424;
     const items = head.items || [];
-    ok(String(head.version) === VER, 'the head entry is v' + head.version);
+    ok(String(head.version) === '64.2.4', 'the entry this gate describes is v' + head.version);
     ok(items.length === 6, 'six notes (' + items.length + ')');
     // "put the patch notes in simple terms not so long" - the length is the point
     // of these entries, so it is pinned rather than described.
@@ -116,20 +119,21 @@ console.log('[2] the launch paints in the saved theme, and a settled scroll repa
   const grid = sliceC('  function repaintHomeGrid(){', '  function homeGridIsWhole(){');
   ok(rail !== '' && grid !== '', 'both settle repaints are still there');
   ok(!/visibility/.test(rail) && !/visibility/.test(grid), 'neither ever hides its surface (the 64.2.1/64.2.2/64.2.3 fix)');
-  ok(has("    if(!carried) return;\n    var strip = $('pinnedArtistsStrip');"),
-    'the rail is left alone when no chip carries a drag');
-  ok(has("    if(!carried) return;\n    // A frame of a hidden grid is a frame a phone can show"),
-    'and so is Home when no bubble carries one and no placeholder is left');
-  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }"),
-    'a chip still carrying what a drag gave it is still put back, and counts as damage');
-  ok(has("      for(var i = 0; i < phs.length; i++){ if(phs[i].parentNode){ phs[i].parentNode.removeChild(phs[i]); carried++; } }"),
-    'a dashed placeholder an abandoned drag left behind still counts too');
-  ok(has("        carried++;\n      }\n    }catch(_eCarry){}\n    if(!carried) return;"),
-    'and so does a bubble still holding its drag lift');
-  ok(has("    strip.style.transform = 'translateZ(0)';") && has("    wrap.style.transform = 'translateZ(0)';"),
-    'the fresh raster is still there for real damage on both surfaces');
-  ok(has("    requestAnimationFrame(function(){\n      requestAnimationFrame(function(){ try{ strip.style.transform = ''; }catch(_eRpr){} });"),
-    'and it is still taken back one frame later');
+  ok(has("    }catch(_eLift){}" + "\n" + "    var strip = $('pinnedArtistsStrip');"),
+    'the rail no longer waits for a drag to leave something behind');
+  ok(has("    }catch(_eCarry){}" + "\n" + "    // Unconditional on purpose - see the note above the function." + "\n" + "    scRepaintSurface(wrap, '.home-bubble');"),
+    'and neither does Home');
+  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }"),
+    'a chip still carrying what a drag gave it is still put back');
+  ok(has("      for(var i = 0; i < phs.length; i++){ if(phs[i].parentNode){ phs[i].parentNode.removeChild(phs[i]); } }"),
+    'a dashed placeholder an abandoned drag left behind is still cleared');
+  ok(has("        b.style.width = ''; b.style.height = ''; b.style.transform = ''; b.style.transition = '';"),
+    'and a bubble still holding its drag lift is still put back to a plain bubble');
+  ok(has("    scRepaintSurface(strip, '.pinned-artist-chip');") && has("    scRepaintSurface(wrap, '.home-bubble');"),
+    'the fresh paint is asked for on both surfaces');
+  ok(has("      el.style.outline = '1px solid transparent';"), 'through a property only paint reads');
+  ok(has("        try{ el.style.outline = ''; }catch(_eRpBack){}"), 'that is taken back on the next frame');
+  ok(!/translateZ/.test(rail) && !/translateZ/.test(grid), 'so nothing is put on a layer of its own');
   ok(!/void (wrap|strip)\.offsetHeight/.test(code), 'no settled scroll lays the page out again');
   ok(!/offsetHeight|getBoundingClientRect/.test(rail) && !/offsetHeight|getBoundingClientRect/.test(grid),
     'and neither repaint measures anything');
@@ -256,8 +260,8 @@ console.log('[7] what 64.2.2 and 64.2.3 shipped is still standing');
   ok(!/visibility/.test(sliceC('  function repaintPinnedRail(list){', '  (function watchPinnedRail(){')) &&
      !/visibility/.test(sliceC('  function repaintHomeGrid(){', '  function homeGridIsWhole(){')),
     'neither hides its surface any more');
-  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }") ||
-     has("if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; carried++; }"),
+  ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }" ) ||
+     has("if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }"),
     'a chip still holding a drag lift is still put back');
   ok(has('<span>Roll back app (or go forward again)</span>'), 'rolling forward is still one tap from the picker');
   ok(has('Go forward to the latest version (v${APP_VERSION})</button>`'), 'and still names the installed version');

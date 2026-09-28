@@ -172,14 +172,16 @@ const THEMES = ['coral', 'rosegold', 'royal', 'blue', 'gold', 'emerald', 'sunset
     const raf = win.requestAnimationFrame.bind(win);
     win.requestAnimationFrame = function (cb) {
       return raf(function (t) {
-        frames.push({ v: grid.style.visibility, t: grid.style.transform });
+        frames.push({ v: grid.style.visibility, t: grid.style.transform, o: grid.style.outline });
         cb(t);
       });
     };
     await settle(win);
     const hidden = frames.filter((f) => f.v && f.v !== 'visible');
     ok('no frame of the repaint was ever hidden', hidden.length === 0, JSON.stringify(hidden.slice(0, 3)));
-    ok('and a healthy grid is not re-rastered at all', !frames.some((f) => /translateZ/.test(f.t || '')), JSON.stringify(frames.slice(0, 3)));
+    ok('and a healthy grid is asked to paint again, without a layer and without being hidden',
+    frames.some((f) => /1px solid transparent/.test(f.o || '')) && !frames.some((f) => /translateZ/.test(f.t || '')),
+    JSON.stringify(frames.slice(0, 3)));
     ok('and left nothing promoted behind', !grid.style.transform, grid.style.transform);
     ok('nor an inline visibility', !grid.style.visibility, grid.style.visibility);
     // And the guard still repairs, which is why it is still there at all.
@@ -196,14 +198,14 @@ const THEMES = ['coral', 'rosegold', 'royal', 'blue', 'gold', 'emerald', 'sunset
     const dragFrames = [];
     win.requestAnimationFrame = function (cb) {
       return raf(function (t) {
-        dragFrames.push({ t: grid.style.transform });
+        dragFrames.push({ t: grid.style.transform, o: grid.style.outline });
         cb(t);
       });
     };
     await settle(win);
     win.requestAnimationFrame = raf;
     ok('the drag carry is cleared', !!b && !b.classList.contains('hb-dragging'));
-    ok('and that grid really was rastered again', dragFrames.some((f) => /translateZ/.test(f.t || '')), JSON.stringify(dragFrames.slice(0, 3)));
+    ok('and that grid was asked to paint again', dragFrames.some((f) => /1px solid transparent/.test(f.o || '')), JSON.stringify(dragFrames.slice(0, 3)));
   }
 
   console.log('\n— the assistant\'s text has usable contrast in every theme —');

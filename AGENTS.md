@@ -1,6 +1,82 @@
 # SideCut — repository memory
 
 
+## 64.2.5 (Sep 28, 2026): the bubble that still came back blank, a finished card you can tap away, a record tap that glides, and a Things-to-know list that says what the app does today
+- **The user's words** (three screenshots: Home with the *Watermarks removed / Cleaned 5 songs.* card and the record
+  player playing, and the same Home with Notifications "All caught up"): "Update things to know about SideCut to now
+  information because it is old and outdated, the favorites bubble and pinned artist bubble still sometimes disappear
+  when scrolling. When there is a home screen notification that finishes such as watermark remover I should be able to
+  tap it and it goes away. And when clicking on the record player to go to my current song in my library and playlists
+  it should be smooth not rough like it is now make this nice see if you can push to main if not open up a pr." No
+  version was named; the line after 64.2.4 is 64.2.5.
+- **1. THE BUBBLE THAT STILL CAME BACK BLANK WAS 64.2.4'S OWN REPAIR-ONLY GUARD.** Four releases have now chased the
+  same WebView fault (content inside a scroller keeps its space and loses its paint), and each earlier answer paid for
+  the repair somewhere a user can see or feel: 64.2.1/64.2.2 **hid** the surface for a frame (the blink); 64.2.3
+  **promoted** it onto its own layer and took the promotion away (a full re-raster per settled scroll — and a layer of
+  its own is the very shape a phone drops); 64.2.4 repaired **only what carried a drag lift**, which threw the trigger
+  away, because a phone that drops a paint writes nothing in the page to find. The repair is now `scRepaint(el)` /
+  `scRepaintSurface(root, sel)`: write `outline: 1px solid transparent`, put it back on the **next frame**. An outline
+  is read by paint and nothing else, so the element and everything drawn under it must be painted again — while
+  nothing is hidden, nothing moves, nothing is measured and **no layer is created or destroyed**. That is cheap and
+  invisible enough to run on **every** settled scroll again (the trigger 64.2.1–64.2.3 had and the one that actually
+  repaired the fault): `repaintHomeGrid()` calls `scRepaintSurface(wrap, '.home-bubble')` unconditionally and
+  `repaintPinnedRail()` calls `scRepaintSurface(strip, '.pinned-artist-chip')` unconditionally. **Rules for the
+  future: `carried` is gone from both repairs — never gate a paint repair on DOM damage again; never hide a surface,
+  never promote one, never measure one.** The drag cleanup (placeholder removal, the `hb-dragging` reset, the chip
+  lift reset) is unchanged and still runs first.
+- **2. THE FINISHED CARD COULD NOT BE DISMISSED AT ALL.** `#homeExportPopup` has had a `[data-dismiss]` click handler
+  since the export card was written, and **nothing on the page ever carried the attribute** — so tapping "Watermarks
+  removed" did nothing and the card sat there until its own timeout. The three finished cards (watermark, `enrich`,
+  `export`) now carry `data-dismiss` + `title="Tap to dismiss"` + `cursor:pointer` + a ✕ cue, and the handler maps each
+  key to the state it belongs to (`watermarkCleanState`, `enrichState`, `exportState`, `pinnedCheckState`), re-renders
+  and calls `updateNotifBadge()`. **Only a finished card carries it** (`count('data-dismiss=') === 3`): a running card
+  must not be tappable away. `dev/homecard-6425-check.cjs` clicks the real `#watermarkConfirmBtn`, waits for the real
+  run to finish, and taps the real card.
+- **3. THE ROUGH RECORD TAP WAS A CANCEL-AND-RESTART AT A FIXED SPEED.** `jumpToPlayingSong()` navigated (which makes
+  `renderListInner` begin a **350 ms** scroll to the playing row when the tab is switched into) and then, 140 ms later,
+  `cancelScrollAnim(pane)` killed that glide mid-flight and started a hard-coded **220 ms** one from wherever it had got
+  to — a teleport with a wobble on a long jump, a crawl on a short one. It now sets
+  `renderListInner._scrollToPlaying = false` **before** `navigate('playlists')` (so the list never starts one of its
+  own), drops the redundant `renderTabs(); renderList();` (note: `renderList()` is **rAF-debounced and coalesces**, so
+  that pair was never the extra DOM work it looks like — do not claim it was), and starts **one** glide on the second
+  `requestAnimationFrame` with **no duration argument**, which is what makes the shared engine size it by distance and
+  honour the Scroll-speed setting. The same fixed `200`/`220` durations were dropped from `openAlbumForCurrentSong()`,
+  from the disc handler's album expand, and from `highlightPlaying()`. **Rule: never pass a fixed duration to
+  `smoothScrollIn()`.** `dev/test-66425.mjs` asserts no `smoothScrollIn(x, y, <number>)` call is left anywhere.
+- **4. "THINGS TO KNOW ABOUT SIDECUT" (Settings → More) SAID 64.2.2.** Four bullets added (tap a finished card away;
+  the bell's notes are grouped by version; the library tools live together and Watermark Remover starts on; every
+  version keeps its own copy so a rollback is two-way and Storage shows the room the *phone* gives the app) and the
+  record-tap bullet now describes the glide. The block sits between
+  `<!-- Collapsible: Things to know about SideCut -->` and `<div id="settingsPaneSandbox"`.
+- **5. THE GATES THAT PINNED THE OLD SHAPE MOVED WITH IT** (same rule as 64.2.3/64.2.4): `dev/test-66423.mjs`,
+  `dev/test-66424.mjs`, `dev/test-6642.mjs`, `dev/test-66421.mjs`, `dev/test-66422.mjs` (the translateZ/two-frame/
+  `carried` lines), `dev/railpaint-6423-check.cjs` and `dev/chatvis-6422-check.cjs` (they now **record the outline** and
+  assert "a healthy surface IS asked to paint again, without a layer and without being hidden" plus that real damage is
+  still repaired), and `dev/notifgroup-6424-check.cjs` (it pinned 64.2.4's title/**blink** wording — it now reads the
+  newest title and first note **out of the page itself**, because that probe describes the group UI, not one release).
+  `dev/test-66424.mjs` was moved to read its own **64.2.4** entry by version (the same move test-66423 needed at
+  64.2.4). New: **`dev/test-66425.mjs` (102 checks)** and **`dev/homecard-6425-check.cjs` (26 checks, built on the
+  real button, the real run and the exposed `window.__scJumpToPlayingSong`)**. Regression proof: against
+  `git show HEAD:index.html` the Home probe fails **7** checks (the healthy-surface repair and the whole dismissable
+  card) and railpaint/chatvis fail 3/2.
+- **THE RELEASE / REPINS**: `APP_VERSION` **64.2.4 -> 64.2.5**, six-note head entry (every note <= 260 chars, no
+  downloader term, note 4 keeps *rollback*), title `The bubble that still came back blank, a finished card you can tap
+  away, and a record tap that glides` (no `\bpass\b`); `sw.js` -> **`sidecut-shell-v63.0.23`**; the usual
+  quoted-version repins (`dev/test-*.mjs`, 36 of them, `ver === '...'` / `const VER = '...'` / `version: '...'` /
+  the ship stamp / the shell cache); bundles at **ota/ 754117**, **ota-play/ 754123**, root `manifest.json` **1246
+  bytes**. Green: 66425 102, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74, 6641 119, 663 49, 662 75, 6058 48,
+  test-play 59, test-play-copy 28, boot-639 45 (v64.2.5), homepaint 17, railpaint 21, chatvis 26, homecard 26,
+  notifgroup 27, librarytools 15, themepaint 11, ota-guard 20, audit-calls clean (4720 names / 6301 comments),
+  check-dom 0 failures, both OTA `--check`s OK. **Only `dev/test-617.mjs` fails, its one long-standing baseline check
+  ("hits and misses are both persisted") — identical on pristine `origin/main`.**
+- **NEW TRAP (cost an hour): a `\n` inside a template literal in a patch script is a REAL line break.** Several gates
+  write a two-line needle as a **string containing the two characters backslash-n** (e.g.
+  `ok(has("    if(!carried) return;\n    var strip = ..."))`), so a patch needle for one of those files needs those two
+  characters — and `\n` in a template literal (or a tool round-trip that turns `\\n` into `\n`) silently gives a real
+  newline instead, which never matches. Build it as `const NL = String.fromCharCode(92) + 'n';` and interpolate
+  `${NL}`. Always `node --check dev/patch-*.mjs` first, and let `sub()`/`fileSub()` throw loudly on a count of 0.
+
+
 ## 64.2.4 (Sep 28, 2026): the blink on every scroll and every launch, the album that lost a few songs, the glow that kept the phone busy
 - **The user's words**, three screenshots (Settings → More with the cover refetch still in the Watermark Remover card, the
   bell's flat bulleted notes, the battery screen 24.3 % / 703 mAh foreground / 1 h 29 m): "Every time it boots or you
