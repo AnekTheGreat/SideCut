@@ -1,6 +1,85 @@
 # SideCut — repository memory
 
 
+## 64.2.9 (Sep 28, 2026): the update installs itself on launch, and the animated backdrop stops being redrawn
+- **The user's words**, verbatim and in one message: "The glitch with dynamic themes and the favorites bubble and pinned
+  artist plateau still happens and the ota update should automatically happen on boot no manually clicking install".
+  Two reports, one release, and they are RELATED: a phone that never installs an update by itself is a phone still
+  running the build before the last fix, so the flicker report cannot be judged until the install report is answered.
+  No version was named; the line after 64.2.8 is 64.2.9.
+- **1. THE UPDATE INSTALLS ITSELF ON A REAL LAUNCH.** THIS IS THE REPORT THAT WAS REALLY NEW. Every automatic path
+  before this one stopped at the update SHEET: the boot check found the newer version, wrote its notes into the card
+  and waited for a tap on "Download & install", so the update only ever arrived on a phone whose owner pressed it -
+  and every fix that shipped in between reached nobody who did not press it. `autoInstall()` in
+  `dev/native-updates.js` closes that gap: fetch (progress in the sheet, same card), `next()`, then `set()` -
+  `applyStagedNow()`, the sheet's own Install now, with the force flag OFF, so every guard applies exactly as it does
+  when the button is tapped and a track that is playing still defers to app-close instead of being cut off.
+- **2. ONLY THE BOOT CHECK INSTALLS - THE OTHER TWO CHECKS STILL ONLY OFFER, AND THAT IS DELIBERATE.** The two reports
+  pull against each other (AGENTS.md, 64.2.6 point 3 and dev/ota-loop-check: "I open the app it refreshes
+  automatically and I have to click play" vs "can it auto update on boot so I actually get the update"). The
+  resolution is the one the staged hand-over already used in v58.9.1: install on a REAL LAUNCH (the `load` event, now
+  the boot check with `{ silent: true, auto: true }`) and only there. The 3-hour timer and the foreground resume keep
+  `checkForUpdate({ silent: true })` and still just show the sheet - they run while the user is listening to
+  something, and a hand-over there is the refresh-mid-use report. **The boot check also RETRIES until `appBooted()`
+  (window.toast), because a check against a page that had not booted returned `null` silently - a slow cold start used
+  to mean no update check at all.**
+- **3. A LATENT BUG THE CHANGE EXPOSED, AND THE FIX (THIS IS THE ONE TO REMEMBER).** The boot check now hands over at
+  ~2.5s and the launch hand-over (`_bootTick`) runs at 4s. On a device `set()` reloads in between, so the second never
+  sees the first. If `set()` were slow or failed, the old context kept running, `getNextBundle()` still reported the
+  bundle we had just installed, and `applyInBackground()`'s "already handed over to once" rule would call
+  `markBadVersion()` on a version that is MID-SWAP - refusing that release for ever, which is exactly the "the fix did
+  nothing" trap 64.2.8's point 3 and 64.2.6's point 1 are about. `HANDED_OVER_THIS_SESSION` (set in `applyStagedNow`)
+  is read in TWO places now: the launch hand-over skips that bundle, and a later non-automatic check (the app runs one
+  of its own) neither re-offers it as "staged, Install now" nor marks it. **Rule: an automatic hand-over has to be
+  visible to every other path in the same session, or they will "repair" it into a failure.**
+- **4. THE FLICKER, PART TWO: THE BACKDROP WAS STILL BEING RASTERED, TWICE, EVERY FRAME.** 64.2.7 removed the animated
+  `filter` and wrote that the remaining motion was "transform/opacity only so the compositor runs it without
+  repainting" - but `sd-dyn-drift` and `sd-dyn-drift-rev` both animated `scale()` (1.0-1.14) and `rotate()` as well,
+  and a SCALE CHANGE IS NOT A COMPOSITOR PROPERTY: the layer has to be drawn again at its new size, and both backdrop
+  layers are larger than the screen (`inset:-32%`/`-26%`). That is a fresh raster of a screen-and-a-bit, twice, for as
+  long as the app is open, behind every screen in it - the raster/memory pressure a phone answers by dropping the
+  paint of the card nearest the edge, which is the six-times-repeated report. Both keyframes are pure `translate3d`
+  now (amplitudes grown so the motion still reads), and with no zoom to cover the layers come in to `inset:-20%` /
+  `-18%`. **Rule: "transform" is not one thing. translate/rotate are composited; `scale` re-rasters the layer.**
+- **5. THE FLICKER, PART THREE: THE ONE REMAINING CANDIDATE 64.2.7 NAMED.** Its "STILL OPEN" note ended with "the
+  per-bubble `sd-glow-pulse` (opacity only) is the one remaining candidate that is a child of a clipped, rounded box",
+  and that is still true: every Home card holds a `.hb-glow` pulsing for as long as a dynamic theme is on, inside
+  `overflow:hidden; border-radius:22px`. `.home-bubble` now carries `contain:paint`, which says every pixel of that
+  stays inside the card - same glow, same clip, same corner, and the scroller around it cannot be invalidated by it.
+  It is a hint, not a visual change. **The search space 64.2.7 enumerated is now exhausted: the filter is gone (64.2.7),
+  the scale and rotation are gone and the layers are smaller (64.2.9), and the last animated child of a clipped box is
+  contained (64.2.9).**
+- **6. THE GATES MOVED WITH IT, AND ONE OF THEM HAD TO.** `dev/ota-update-check.cjs` (46 -> 52 checks) drove the OLD
+  shape - it booted with a newer manifest, read the sheet, pressed the button and asserted the download - so its boot
+  section now runs the same client with no tap at all, and the native stub can HOLD THE FETCH OPEN (`holdDownload`) so
+  the fetching state (notes, version, progress, NO button) is asserted while it is on screen instead of inferred from
+  what is left afterwards. Its `NEXT_VERSION` bumps the LAST segment, so a three-part version (64.2.9) gets `64.2.10`
+  instead of falling through to the `99.9` placeholder. Two more pins moved: `dev/ota-loop-check.cjs`'s stale-record
+  loop scenario is pinned to `manifestVersion: APP_VERSION` (a genuinely newer bundle now installs itself, so a pure
+  stale-record test must not have one in the mix - it still asserts 0 `set()` and 0 reloads over 3 boots), and
+  `dev/test-66428.mjs` reads the words it was written about ("things to know", and its own first note) from the 64.2.8
+  entry by version, keeping its 73 checks - the rule from 64.2.7 point 4. **`dev/patch-66429.mjs` also had to learn one
+  thing about itself: two `sub()` steps inserting in front of the same line broke each other's "already applied"
+  marker, and the second run duplicated its own insert. Both blocks are ONE step now, with the marker on the line they
+  leave behind.**
+- **BUNDLE FIXPOINT**: `ota/` **760347**, `ota-play/` **760354**, root `manifest.json` **1372 bytes** with `size`
+  760347 equal to `ota/update.zip`, both `--check`s OK, byte-identical from round 2 on. Green at 64.2.9: **66429 83
+  (new)**, 66428 73, 66427 82, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74, 6641 119, 663
+  49, 662 75, 6058 48, 60510 46, 658 63, 651 35, 653 31, 614 108, play 59, play-copy 28, boot-639 45 (v64.2.9),
+  libhalf 18, homecard 26, themepaint 11, notifgroup 27, librarytools 15, railpaint 21, chatvis 26, homepaint 17,
+  ota-update **52**, ota-guard 20, ota-bootapply 24, ota-loop 26, native-snapshot 13, audit-calls OK (4731 names /
+  6367 comments), check-dom 0 failures. (`ota-bootapply` 24, `ota-loop` 26 and `native-snapshot` 13 are the counts a
+  PRISTINE `origin/main` checkout reports too - the 25/27/14 in older notes were stale. **Only `dev/test-617.mjs` fails,
+  its one long-standing baseline check - identical on pristine `origin/main`. `dev/v60-check.cjs` fails exactly 2 (the
+  v60 Home bubble order and the RGB tick rate) and fails them identically against `git show HEAD:index.html`; it is not
+  in the gate set.**)
+- **STILL OPEN**: the flicker itself is a device-side paint fault and the sandbox cannot reproduce it, so it still has
+  to be judged on a phone - but note the ORDER the two halves of this release landed in: the install half is what gets
+  this build onto the phone at all. If it comes back again, the three things a dynamic theme animates (64.2.7 point 1)
+  are now all translation/opacity or contained, so the next honest step is a real device trace rather than another
+  round of CSS.
+
+
 ## 64.2.8 (Sep 28, 2026): the media-player line comes out of Things to know about SideCut
 - **The user's words**, with a screenshot of the bullet: "Remove this part from things to know about SideCut". The
   bullet was "The phone's media player can't open SideCut. The notification-shade / lock-screen player can play,

@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.8';
+const VER = '64.2.9';
 const PREV = '64.2.7';
 
 let pass = 0, fail = 0;
@@ -81,7 +81,13 @@ console.log('[1] release metadata');
     ok(!/play build|play version|play install/i.test(notes), 'and it never names the other build');
     ok(!/\bmp3\b|converting|conversion|\bget song\b|hand-?off|no source found/i.test(notes), 'nor a term the wider store list knows');
     ok(/rollback/i.test(notes), 'and it still says what this release left alone');
-    ok(/\bthings to know\b/i.test(notes), 'while naming the list it changed');
+    // The list this entry names is 64.2.8's, and the head entry belongs to
+    // whatever shipped last: the words THIS gate was written about are read from
+    // the release it describes, by version - the same rule dev/test-66423.mjs,
+    // dev/test-66424.mjs and dev/test-66427.mjs already follow.
+    const entry6428 = entries.find((e) => /^64\.2\.8$/.test(String(e.version))) || {};
+    const notes6428 = (entry6428.items || []).join('\n');
+    ok(/\bthings to know\b/i.test(notes6428), 'while naming the list it changed');
     // The two gates that read the HEAD entry are repinned to this version, so
     // what they read it for has to survive here.
     ok(/blank/i.test(notes), 'the word dev/test-66425 reads the head entry for is there (blank)');
@@ -92,7 +98,7 @@ console.log('[1] release metadata');
     // The note itself carries an apostrophe, which is the one thing a
     // single-quoted CHANGELOG string has to escape. Nothing before this release
     // needed it, so it is pinned: the array above only parses because it is there.
-    ok(head.items[0].indexOf("phone's media player") !== -1, 'the first note names the line that went');
+    ok((entry6428.items || [])[0].indexOf("phone's media player") !== -1, 'the first note names the line that went');
     const raw = block[1];
     ok(raw.indexOf("phone\\'s media player") !== -1, "and its apostrophe is escaped in the source, so the array parses");
   }

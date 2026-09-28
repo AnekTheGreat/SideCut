@@ -22,9 +22,13 @@ function ok(name, cond, extra) {
 }
 
 const APP_VERSION = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+// Bumps the LAST segment, so a three-part app version (64.2.9) is followed by a
+// realistic next release (64.2.10) instead of falling through to the placeholder.
 const NEXT_VERSION = (() => {
-  const m = String(APP_VERSION || '0').match(/^(\d+)\.(\d+)$/);
-  return m ? (m[1] + '.' + (Number(m[2]) + 1)) : '99.9';
+  const parts = String(APP_VERSION || '0').split('.');
+  if (!parts.length || !/^\d+$/.test(parts[parts.length - 1])) return '99.9';
+  parts[parts.length - 1] = String(Number(parts[parts.length - 1]) + 1);
+  return parts.join('.');
 })();
 
 function makeCtx() {
@@ -66,6 +70,11 @@ const calls = { notifyAppReady: 0, downloads: [], next: [], set: [], getNextBund
 let manifestVersion = NEXT_VERSION;
 let httpFails = false;
 let downloadFails = false;
+// Held open on request, so the automatic install can be asserted while it is
+// still fetching - the one moment the notes and the progress bar are on screen
+// and there is no button to press.
+let holdDownload = false;
+let releaseDownload = () => {};
 
 function makeNative(win) {
   const NOTES = ['Reorder songs inside an album by holding one down', 'Album rename no longer leaves a ghost album'];
@@ -80,7 +89,9 @@ function makeNative(win) {
       lastDownloadVersion = opts && opts.version;
       calls.downloads.push({ url: opts && opts.url, version: opts && opts.version });
       if (downloadFails) return Promise.reject(new Error('network down'));
-      return Promise.resolve({ id: 'bundle-' + String(opts && opts.version), version: String(opts && opts.version) });
+      const bundle = { id: 'bundle-' + String(opts && opts.version), version: String(opts && opts.version) };
+      if (holdDownload) { holdDownload = false; return new Promise((r) => { releaseDownload = () => r(bundle); }); }
+      return Promise.resolve(bundle);
     },
     // Staging is real: once next() is called the bundle is what getNextBundle()
     // returns, exactly as the plugin does on the device.
@@ -147,6 +158,8 @@ function sheetVisible() { const s = sheet(); return !!s && s.style.display === '
 function sheetText() { const s = sheet(); return s ? s.textContent.replace(/\s+/g, ' ').trim() : ''; }
 function btn(id) { return dom.window.document.getElementById(id); }
 
+holdDownload = true;
+
 (async () => {
   const win = dom.window;
   await wait(2000);
@@ -159,31 +172,39 @@ function btn(id) { return dom.window.document.getElementById(id); }
     return true;
   })());
 
-  // Boot wiring fires 4s after load, then the auto-check 2.5s later.
-  await wait(8000);
-  console.log('\n— boot —');
+  // The boot check fires ~2.5s after load and INSTALLS by itself (64.2.9): the
+  // newer build is fetched, staged with next() and handed over with set(), and no
+  // tap happens anywhere in the path. The fetch is held open by the native stub
+  // (see holdDownload) so that the state a user actually watches while it runs can
+  // be read off the page instead of inferred from what is on screen afterwards.
+  console.log('\n— boot: the update installs itself, no tap —');
+  await wait(3300);
   ok('the bundle confirms it booted (notifyAppReady), so Capgo cannot roll it back',
      calls.notifyAppReady >= 1, 'calls=' + calls.notifyAppReady);
-  ok('a newer version is offered on screen', sheetVisible(), JSON.stringify(sheetText().slice(0, 80)));
-  ok('the sheet carries the real patch notes', sheetText().indexOf('holding one down') !== -1, JSON.stringify(sheetText().slice(0, 120)));
-  ok('the sheet names the new version', sheetText().indexOf(NEXT_VERSION) !== -1, JSON.stringify(sheetText().slice(0, 80)));
-
-  console.log('\n— install now: download, stage, apply —');
-  const now = btn('scOtaNow');
-  ok('an Install/Download button is present', !!now);
-  now.click();
-  await wait(1500);
-  ok('the bundle was downloaded', calls.downloads.length >= 1, JSON.stringify(calls.downloads));
+  ok('the boot check fetches the new version with no tap', calls.downloads.length === 1,
+     JSON.stringify(calls.downloads.map((d) => d.version)));
+  ok('the sheet is on screen while it fetches', sheetVisible(), JSON.stringify(sheetText().slice(0, 60)));
+  ok('it carries the real patch notes', sheetText().indexOf('holding one down') !== -1, JSON.stringify(sheetText().slice(0, 120)));
+  ok('and names the new version', sheetText().indexOf(NEXT_VERSION) !== -1, JSON.stringify(sheetText().slice(0, 80)));
+  ok('with no Install button to press', !btn('scOtaNow') || btn('scOtaNow').style.display === 'none',
+     btn('scOtaNow') ? btn('scOtaNow').style.display : 'missing');
   const first = calls.downloads[0] || {};
-  ok('it downloaded from raw.githubusercontent (no CDN cache) first',
+  ok('it fetched from raw.githubusercontent (no CDN cache) first',
      String(first.url || '').indexOf('raw.githubusercontent.com') !== -1, String(first.url || ''));
   ok('it requested the new version', String(first.version) === NEXT_VERSION, JSON.stringify(first));
-  ok('the download was staged with next()', calls.next.length === 1, JSON.stringify(calls.next));
-  ok('the sheet switches to a staged state', sheetText().indexOf('Install now') !== -1 || sheetText().indexOf('ready') !== -1, JSON.stringify(sheetText().slice(0, 80)));
-  const stagedBtn = btn('scOtaNow');
-  if (stagedBtn) stagedBtn.click();
-  await wait(1200);
-  ok('applying calls set() with the staged bundle', calls.set.length === 1, JSON.stringify(calls.set));
+  releaseDownload();
+  await wait(2500);
+  ok('the fetched bundle was staged with next()', calls.next.length === 1, JSON.stringify(calls.next));
+  ok('and hands the app over to it with no tap', calls.set.length === 1, JSON.stringify(calls.set));
+  ok('the sheet says it is installing instead of going silent',
+     /Installing/i.test(sheetText()), JSON.stringify(sheetText().slice(-70)));
+  // The launch hand-over runs at 4s, and getNextBundle() still reports the bundle
+  // that was just installed: it has to leave it alone (one set() for this launch)
+  // and must not mark a bundle that is mid-swap as one that failed to take over.
+  ok('the launch hand-over leaves the bundle it already installed alone', calls.set.length === 1, JSON.stringify(calls.set));
+  ok('and that bundle is not marked as a failure',
+     !win.localStorage.getItem('sidecut_ota_bad_' + NEXT_VERSION),
+     String(win.localStorage.getItem('sidecut_ota_bad_' + NEXT_VERSION)));
 
   console.log('\n— a download failure falls back to the hosted copy —');
   win.Capacitor._resetStaged();

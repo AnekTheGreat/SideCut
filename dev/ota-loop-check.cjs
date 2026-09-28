@@ -232,7 +232,12 @@ function boot(opts) {
   let ls = {};
   let staleSets = 0, staleReloads = 0;
   for (let i = 0; i < 3; i++) {
-    const w = boot({ manifestVersion: NEXT_VERSION, stagedVersion: APP_VERSION, localStorage: ls });
+    // The manifest is the RUNNING version here on purpose (64.2.9): a genuinely
+    // newer published bundle installs itself on launch now - that is the feature -
+    // so the stale-record hazard has to be tested without one in the mix. What is
+    // left is exactly the report this scenario models: a queued record for the
+    // version that is already running.
+    const w = boot({ manifestVersion: APP_VERSION, stagedVersion: APP_VERSION, localStorage: ls });
     await wait(9000);
     staleSets += w.calls.set.length;
     staleReloads += w.navs.length;

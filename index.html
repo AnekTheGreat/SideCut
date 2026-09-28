@@ -1471,13 +1471,20 @@ body.sandbox-invert-colors .brand-mark{
 }
 
 /* ─────────────── Premium dynamic themes: animated layered backgrounds ─────────────── */
+/* 64.2.9: the drift is translation only. A scale change is not a compositor
+   property - the layer has to be drawn again at its new size - and this one is
+   wider and taller than the screen, so the scale (and the rotation, which has to
+   be resampled the same way) meant a fresh raster of a screen-and-a-bit, twice
+   over with ::after, for as long as the app was open. translate3d is run by the
+   compositor with no raster at all, which is what the v60 note above always said
+   all of this was. The amplitudes are a little larger so the motion still reads. */
 @keyframes sd-dyn-drift{
-  0%{ transform: translate3d(-6%, -4%, 0) scale(1) rotate(0deg); }
-  20%{ transform: translate3d(4%, -6%, 0) scale(1.08) rotate(2deg); }
-  40%{ transform: translate3d(7%, 4%, 0) scale(1.14) rotate(-1deg); }
-  60%{ transform: translate3d(-3%, 7%, 0) scale(1.1) rotate(1deg); }
-  80%{ transform: translate3d(-7%, -2%, 0) scale(1.06) rotate(-2deg); }
-  100%{ transform: translate3d(-6%, -4%, 0) scale(1) rotate(0deg); }
+  0%{ transform: translate3d(-6%, -4%, 0); }
+  20%{ transform: translate3d(5%, -7%, 0); }
+  40%{ transform: translate3d(9%, 5%, 0); }
+  60%{ transform: translate3d(-4%, 9%, 0); }
+  80%{ transform: translate3d(-9%, -3%, 0); }
+  100%{ transform: translate3d(-6%, -4%, 0); }
 }
 /* 64.2.7: the sd-dyn-hue keyframes and their 13 uses lived here. They animated
    a colour filter on the ::before backdrop, and a filter is not a compositor
@@ -1494,7 +1501,7 @@ body.sandbox-invert-colors .brand-mark{
 body.theme-dyn-aurora::before, body.theme-dyn-synthwave::before, body.theme-dyn-ocean::before,
 body.theme-dyn-ember::before, body.theme-dyn-galaxy::before, body.theme-dyn-cyberpunk::before,
 body.theme-dyn-glacier::before{
-  content:''; position:fixed; inset:-32%; z-index:-1; pointer-events:none;
+  content:''; position:fixed; inset:-20%; z-index:-1; pointer-events:none;
   animation: sd-dyn-drift 18s ease-in-out infinite;
 }
 body.theme-dyn-aurora::before{
@@ -1583,19 +1590,21 @@ body.theme-dyn-galaxy .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in
    Home grid both flickered on it. It is gone now, which is what this note
    claimed all along. The drift, the counter-moving ::after and the sheen are
    untouched: every remaining bit of this motion is transform and opacity. */
+/* 64.2.9: same rule as the drift above - the counter-layer translates and fades,
+   and no longer scales or rotates. */
 @keyframes sd-dyn-drift-rev{
-  0%{ transform: translate3d(7%, 5%, 0) scale(1.12) rotate(0deg); opacity:.5; }
-  25%{ transform: translate3d(-5%, 7%, 0) scale(1.02) rotate(-3deg); opacity:.8; }
-  50%{ transform: translate3d(-8%, -4%, 0) scale(1.14) rotate(2deg); opacity:.55; }
-  75%{ transform: translate3d(4%, -7%, 0) scale(1.04) rotate(3deg); opacity:.85; }
-  100%{ transform: translate3d(7%, 5%, 0) scale(1.12) rotate(0deg); opacity:.5; }
+  0%{ transform: translate3d(9%, 6%, 0); opacity:.5; }
+  25%{ transform: translate3d(-6%, 9%, 0); opacity:.8; }
+  50%{ transform: translate3d(-10%, -5%, 0); opacity:.55; }
+  75%{ transform: translate3d(5%, -9%, 0); opacity:.85; }
+  100%{ transform: translate3d(9%, 6%, 0); opacity:.5; }
 }
 @keyframes sd-dyn-sheen{
   0%, 100%{ opacity:.3; }
   50%{ opacity:.6; }
 }
 body[class*="theme-dyn-"]::after{
-  content:''; position:fixed; inset:-26%; z-index:-1; pointer-events:none;
+  content:''; position:fixed; inset:-18%; z-index:-1; pointer-events:none;
   background:
     radial-gradient(44% 44% at 72% 28%, color-mix(in srgb, var(--coral) 30%, transparent), transparent 68%),
     radial-gradient(40% 40% at 28% 72%, color-mix(in srgb, var(--gold) 26%, transparent), transparent 68%);
@@ -1608,7 +1617,7 @@ body.sandbox-reduce-motion[class*="theme-dyn-"]::before{ animation: none !import
 /* The five new ones: each with its own composition and its own speeds. */
 body.theme-dyn-nebula::before, body.theme-dyn-neonpulse::before, body.theme-dyn-solstice::before,
 body.theme-dyn-abyss::before, body.theme-dyn-orchid::before{
-  content:''; position:fixed; inset:-32%; z-index:-1; pointer-events:none;
+  content:''; position:fixed; inset:-20%; z-index:-1; pointer-events:none;
 }
 body.theme-dyn-nebula::before{
   background:
@@ -1790,6 +1799,14 @@ body.theme-dyn-orchid::before{
 .home-bubble{
   position:relative; min-width:0; min-height:calc(118px * var(--hb-s, 1));
   border-radius:22px; border:1px solid var(--line); cursor:pointer; overflow:hidden;
+  /* 64.2.9: paint containment. Every card holds a .hb-glow that pulses on opacity
+     for as long as a dynamic theme is on, and that is an animated layer inside a
+     rounded, clipped box - 64.2.7 named it as the last thing a dynamic theme draws
+     inside one. Without containment that layer invalidates the scroller the card
+     sits in, and a dropped paint there is the empty cell the Favorites bubble and
+     the pinned-artists island have both been reported as. Same pixels, same clip,
+     same corner: the invalidation just cannot leave the card. */
+  contain:paint;
   display:flex; flex-direction:column; justify-content:flex-end; padding:12px;
   background:linear-gradient(150deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 70%, #000));
   transition: transform 0.18s cubic-bezier(0.2,0.8,0.2,1), border-color 0.2s ease, box-shadow 0.2s ease;
@@ -11582,7 +11599,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '64.2.8';
+  const APP_VERSION = '64.2.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12004,6 +12021,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '64.2.9', date: 'September 28, 2026 · 11:55 PM EDT', title: 'The update installs itself on launch, and the animated backdrop stops being redrawn', items: [
+    'SideCut installs an update by itself on launch now: when the app opens and a newer build is published, it is fetched and handed over with no Install tap. The sheet still shows the notes, the size and a live progress bar while it works.',
+    'A track playing is still not interrupted. The hand-over waits for the app to close, that version one attempt record is left unused, and the next launch installs it, so nothing is ever cut off mid-song.',
+    'The animated themes no longer scale or rotate their backdrop. A scale change has to be drawn again at the new size, and those two layers are larger than the screen, so that ran continuously behind every list in the app.',
+    'The corner glow on a Home card is contained to the card now: its pulse cannot invalidate the scroller holding it, which is the last thing a dynamic theme animated inside a clipped box. Losing that paint is what leaves a blank cell behind.',
+    'Nothing else moved: the library list, the playlists, the pinned artists island, the record tap in the now bar and every saved rollback copy behave as they did, and no song, cover, playlist or setting is touched.',
+    'This is 64.2.9 and not a rebuild of 64.2.8: a phone already on that version is offered it, and this time it installs itself on the next launch.',
+  ] },
   { version: '64.2.8', date: 'September 28, 2026 · 11:40 PM EDT', title: 'The media player line comes out of Things to know about SideCut', items: [
     'The note about the phone\'s media player not being able to open SideCut is gone from Things to know about SideCut. The bullet and its paragraph are removed whole, and the list closes up where they were with no blank line left behind.',
     'Nothing about playback changed with it. The notification-shade and lock-screen player still plays, pauses and skips, and SideCut still opens from your launcher - what went was the paragraph describing that, not the behaviour.',

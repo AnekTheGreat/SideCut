@@ -468,6 +468,60 @@
     });
   }
 
+  // ---- The boot install (64.2.9) ---------------------------------------------
+  // "the ota update should automatically happen on boot no manually clicking
+  // install." Every automatic path before this one stopped at the update SHEET:
+  // the boot check found the newer version, wrote its notes into the card, and
+  // waited for a tap on Download & install - so the update only ever arrived on a
+  // phone whose owner pressed it. Nothing was missing except the step between
+  // "found" and "fetching", which is this function.
+  //
+  // It runs ONLY from the boot check (the load event - the same "real launch" the
+  // staged hand-over was pinned to in v58.9.1). The 3-hour timer and the
+  // foreground resume still only OFFER the update: those are the checks that run
+  // while the user is listening to something, and a hand-over there is the "the
+  // app refreshes itself while I am using it" report that has to stay out.
+  //
+  // The hand-over is applyStagedNow() - the sheet's own Install now - so every
+  // guard applies exactly as it does when the button is tapped: never older, never
+  // a bundle that failed to start here before, nothing during a restart loop, the
+  // one-attempt-per-version record, and the ledger written to disk before the
+  // swap. With the force flag off, a track that is playing defers to app-close
+  // instead of being cut off, and that deferral does not burn the attempt.
+  async function autoInstall(Updater, man, o){
+    if(!Updater || !man || !man.version || !man.url) return null;
+    var version = String(man.version);
+    if(isBadVersion(version)){ log('v' + version + ' failed to start here before - not fetching it automatically'); return null; }
+    if(bootLooping()){ log('boot loop detected - not installing anything this session'); return null; }
+    if(autoHandledAlready(version)){ markBadVersion(version, 'auto-installed once without taking over'); return null; }
+    var seenKey = INSTALL_PROMPT_SEEN + version;
+    try{
+      persistSheet({ version: version, notes: man.notes || [], size: man.size || 0, date: man.date || '', phase: 'downloading', startedAt: Date.now() });
+      showSheet({ phase: 'downloading', version: version, date: man.date || '', notes: man.notes, showProgress: true,
+        onNow: function(){}, onLater: function(){ try{ localStorage.setItem(seenKey, '1'); }catch(e){} hideSheet(); toast('Update will continue in the background.', 3000); } });
+      sheetProgress(0, 'starting');
+      var bundle = await downloadWithProgress(Updater, man);
+      if(!bundle || !bundle.id){ log('the download returned no bundle'); sheetMsg('The update could not be fetched - it will be offered again on the next launch.', 0); return null; }
+      await Updater.next({ id: bundle.id });
+      try{ localStorage.setItem(LS_KEY, JSON.stringify({ version: version, at: Date.now() })); }catch(_e){}
+      log('staged ' + version + ' (id ' + bundle.id + ') from the boot check');
+      persistSheet({ version: version, notes: man.notes || [], size: man.size || 0, date: man.date || '', phase: 'staged', stagedAt: Date.now() });
+      var nb = { id: bundle.id, version: version };
+      // "Install later" was picked for this version: fetch it, install it when the
+      // app closes, and never re-offer it in the sheet. That choice still means
+      // no tap; it just means "not in front of me right now".
+      if(wantDeferredInstall(version)){ applyInBackground(Updater, nb); return man; }
+      // Now. A track that is playing defers to app-close inside applyStagedNow()
+      // and says so with the same toast the sheet's own Install now uses.
+      applyStagedNow(Updater, nb);
+      return man;
+    }catch(e){
+      log('the automatic install failed: ' + ((e && e.message) || e));
+      sheetMsg('The update could not be fetched - it will be offered again on the next launch.', 5000);
+      return null;
+    }
+  }
+
   // Applies a staged bundle in place. set() reloads the WebView into the new
   // bundle (the JS context dies — nothing after it runs), so only do this when
   // no song is playing. Returns true when the apply was DEFERRED to app-close
@@ -528,6 +582,7 @@
     // next boot compares this with what actually came up (noteBootOutcome).
     try{ localStorage.setItem(PENDING_KEY, JSON.stringify({ version: String(nb.version || ''), at: Date.now() })); }catch(e){}
     markAutoHandled(String(nb.version || ''));
+    HANDED_OVER_THIS_SESSION = String(nb.version || '');
     clearInstallDelay(Updater);
     // Show the Installing state in the sheet (not just a toast) — the set()
     // reload below destroys the JS context, so this is the last thing the
@@ -864,6 +919,13 @@
     })();
   }
 
+  // Set when a bundle is handed over during THIS session. The boot check installs
+  // by itself now, and getNextBundle() keeps reporting the bundle it installed until
+  // a boot confirms it - on a device the swap reloads the page before anything else
+  // can look at it, but a slow or failed set() leaves this context running, and the
+  // launch hand-over a second later must not mistake the bundle we just handed over
+  // to for one that failed to take over (which would mark that release bad for ever).
+  var HANDED_OVER_THIS_SESSION = null;
   function persistSheet(state){
     try{ localStorage.setItem(SHEET_KEY, JSON.stringify(state)); }catch(e){}
   }
@@ -984,6 +1046,23 @@
           var seenKey = INSTALL_PROMPT_SEEN + man.version;
           var seen = false;
           try{ seen = !!localStorage.getItem(seenKey); }catch(e){}
+          // A boot check hands an already-staged bundle over here, by the same
+          // one-attempt-per-bundle rule the launch path uses (installStagedOnBoot):
+          // a bundle waiting at launch is the normal state after a fetch on the
+          // previous launch, and waiting for another close/reopen cycle was the
+          // "the update never installs by itself" half of the report.
+          if(o.auto && installStagedOnBoot(Updater, nb)) return man;
+          // The bundle this launch already handed over to: the app is reloading
+          // into it, so there is nothing to offer, nothing to stage and nothing to
+          // mark. Without this, a non-automatic check a moment later (the app runs
+          // one of its own) found the same bundle still staged, painted a fresh
+          // "staged, Install now" card for a version that was already mid-swap, and
+          // marked it as one that failed to take over - the confusing half-installed
+          // state this release exists to remove.
+          if(HANDED_OVER_THIS_SESSION && String(nb.version) === HANDED_OVER_THIS_SESSION){
+            log('v' + nb.version + ' was handed over on this launch already');
+            return man;
+          }
           var applied = applyInBackground(Updater, nb); // 'immediate' = apply started now
           // An immediate apply repaints the sheet to "Installing…" and reloads
           // the app ~450ms later — never repaint a "staged" card over it.
@@ -1013,7 +1092,9 @@
         try{ localStorage.setItem(LS_KEY, JSON.stringify({ version: String(man.version), at: Date.now(), available: true })); }catch(_e){}
         return null;
       }
-      return await promptAndInstall(Updater, man, o);
+      // A boot check installs by itself; every other check offers (the sheet with
+      // its Install now / Install later buttons), which is what it always did.
+      return await (o.auto ? autoInstall(Updater, man, o) : promptAndInstall(Updater, man, o));
     }catch(e){
       log('update check failed: ' + ((e && e.message) || e));
       if(!o.silent) toast('Update check failed — check your connection.', 3000);
@@ -1120,7 +1201,15 @@
   // missed — the timer is just no longer a reason to wake the radio.
   function startAutoCheck(){
     if(!IS_NATIVE) return;
-    setTimeout(function(){ if(document.visibilityState !== 'hidden') checkForUpdate({ silent: true }); }, 2500);
+    // The boot check installs the update by itself now. It waits for the app to have
+    // really booted - window.toast is the app's own early global - and runs ONCE. The
+    // 3-hour timer and the foreground resume below are left exactly as they were.
+    var _bootCheckTries = 0;
+    (function bootCheck(){
+      if(!appBooted() && ++_bootCheckTries < 20){ setTimeout(bootCheck, 1000); return; }
+      if(document.visibilityState === 'hidden') return;
+      checkForUpdate({ silent: true, auto: true });
+    })();
     setInterval(function(){
       if(document.visibilityState === 'hidden') return;
       checkForUpdate({ silent: true });
@@ -1221,6 +1310,16 @@
               // One automatic hand-over per version. If we already auto-applied this
               // exact bundle on a boot and the version did not change, it never took
               // over: treat it as failed instead of reloading into it forever.
+              // A bundle already handed over on THIS launch (the boot check
+              // installs by itself now) must not be looked at again here:
+              // getNextBundle() still reports it, this is the same session, and the
+              // "handled once" rule below would mark a bundle that is mid-swap as
+              // failed - refusing that release for ever. On a device the swap has
+              // already reloaded the page; this is the guard for a slow set().
+              if(HANDED_OVER_THIS_SESSION && String(nb.version) === HANDED_OVER_THIS_SESSION){
+                log('v' + nb.version + ' was handed over on this launch already');
+                return;
+              }
               var bootApplyKey = BOOTAPPLY_KEY + nb.version;
               try{
                 if(localStorage.getItem(bootApplyKey) === '1'){
