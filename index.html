@@ -11503,7 +11503,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
 
-  const APP_VERSION = '64.2.2';
+  const APP_VERSION = '64.2.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11925,6 +11925,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '64.2.3', date: 'September 27, 2026 · 8:35 PM EDT', title: 'The pinned artists island stops blinking, and a settled scroll no longer lays the page out again', items: [
+    'The pinned artists island no longer blinks. It used to be hidden for a moment after a scroll so it could be redrawn - the same blink the Favorites bubble had in 64.2.2. It is redrawn now without ever being hidden.',
+    'Scrolling no longer makes the page lay itself out again. Home and the pinned artists island each did that every time a scroll stopped, and that was the hitch you feel right after you stop.',
+    'The island is only rebuilt when it has nothing to show. The old check made the phone measure the strip on every scroll - slow, and it missed the fault it was written for.',
+    'Nothing in your library is touched. Same songs, playlists, covers, pinned artists and saved rollback copies, and no setting is reset by this update.',
+    'This is 64.2.3 and not a rebuild of 64.2.2: a phone already on 64.2.2 is offered it and installs it.',
+    'This finishes what 64.2.2 started. That release stopped a Home bubble blinking; this one does the same for the pinned artists island and takes the extra work out of the scroll.',
+  ] },
   { version: '64.2.2', date: 'September 27, 2026 · 7:40 PM EDT', title: 'Small fixes: no Home flash, a readable assistant, shorter notes', items: [
     'The Favorites bubble no longer blinks off. Home used to hide its whole grid for a moment after a scroll to redraw it; the grid is redrawn without ever being hidden now.',
     'The assistant chat is readable in every theme. Its replies and the Send button were white text on a light accent in themes like Monochrome and Liquid Glass; the text now follows the accent instead.',
@@ -30152,9 +30160,13 @@ if(!isDiscover) stopDiscoverPreview();
   //     hiding it. 64.2.1 hid the whole grid for a frame to force the redraw, and
   //     a phone can present that frame: that hide is the "the Favorites bubble
   //     disappears for a split second and comes back" reported about it.
-  //     Promoting the grid onto its own layer and taking the promotion away on
-  //     the next frame makes the compositor raster it again while it stays on
-  //     screen - the same fresh paint, nothing ever off the screen;
+  //     Promoting the grid onto its own layer and taking the promotion away one
+  //     frame later makes the compositor raster it again while it stays on
+  //     screen - the same fresh paint, nothing ever off the screen. It is taken
+  //     back on the SECOND frame so the promoted frame is really presented, and
+  //     the grid is never measured: reading offsetHeight here (which 64.2.1 and
+  //     64.2.2 both did) lays the whole page out again in the same task as the
+  //     scroll settle, and that is a lag spike you can feel;
   //   - and a grid that really is missing a bubble the layout asks for is drawn
   //     from the layout again instead of waiting for the next update to notice.
   function repaintHomeGrid(){
@@ -30178,8 +30190,9 @@ if(!isDiscover) stopDiscoverPreview();
     // nothing stays promoted (a bubble left on its own layer is the shape this
     // guard exists to clear in the first place).
     wrap.style.transform = 'translateZ(0)';
-    void wrap.offsetHeight;
-    requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });
+    });
   }
   // Is every bubble the Home layout asks for actually on the page? Built through
   // the same rules renderHome() uses, so a custom action that no longer exists is
@@ -31638,9 +31651,25 @@ if(!isDiscover) stopDiscoverPreview();
     }catch(_eLift){}
     var strip = $('pinnedArtistsStrip');
     if(!strip) return;
-    strip.style.visibility = 'hidden';
-    void strip.offsetHeight;
-    requestAnimationFrame(function(){ try{ strip.style.visibility = ''; }catch(_eRpr){} });
+    // 64.2.2 took the hide out of Home's repaint and left the rail with it: a
+    // frame of a hidden strip is a frame a phone can present, and that is "the
+    // pinned artists island sometimes doesn't show but comes back after a split
+    // second". Promoting the strip onto its own layer and taking the promotion
+    // away one frame later makes the compositor raster it again with the strip
+    // on screen the whole time.
+    //
+    // No forced layout here either. The old `void strip.offsetHeight` made the
+    // page lay itself out again in the same task as the scroll settle, which is
+    // the lag spike felt right after you stop scrolling. That flush was only
+    // ever needed by the hide-and-restore - a hidden frame has to be committed
+    // before it can be restored - while a transform change is committed by the
+    // frame it is scheduled on. The inner requestAnimationFrame is the same
+    // two-frame pattern the album reorder sheet uses to let the browser apply
+    // an entrance.
+    strip.style.transform = 'translateZ(0)';
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ try{ strip.style.transform = ''; }catch(_eRpr){} });
+    });
   }
   (function watchPinnedRail(){
     var dv = $('discoverView');
@@ -31656,7 +31685,14 @@ if(!isDiscover) stopDiscoverPreview();
           var l = $('pinnedArtistsList');
           if(!l) return;
           repaintPinnedRail(l);
-          if(l.querySelector('.pinned-artist-chip') && l.getBoundingClientRect().height) return;
+          // Decided from the DOM on purpose: measuring the list
+          // (getBoundingClientRect/offsetHeight) is a forced layout on every
+          // settled scroll, and it could never catch the fault it was written
+          // for - a rail whose painting had been dropped still measures its full
+          // height, which is the same reason the chip list is asked whether it
+          // holds chips and not how tall it is. Only a rail with no chips on the
+          // page has to be built again.
+          if(l.querySelector('.pinned-artist-chip')) return;
           renderPinnedArtists();
         }catch(_eRailWatch){}
       }, 140);

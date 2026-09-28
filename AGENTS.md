@@ -1,6 +1,39 @@
 # SideCut — repository memory
 
 
+## 64.2.3 (Sep 27, 2026): the pinned-artists blink, and the forced layout out of a settled scroll
+- **The user's words**, two screenshots: "At some points there are lag spikes and pinned artists island sometimes
+  doesn't show but comes back after a split second." No version was named; the line after 64.2.2 is 64.2.3.
+- **1. THE RAIL WAS STILL DOING 64.2.1'S HIDE.** 64.2.2 took `visibility:hidden` -> flush -> restore out of Home's
+  repaint and left it in the rail: `repaintPinnedRail()` hid `#pinnedArtistsStrip`, forced a layout and restored it on
+  the next frame. A phone can present that frame, which is "the island sometimes doesn't show but comes back after a
+  split second". The rail now repaints exactly the way Home does — `transform:translateZ(0)` on the strip, promotion
+  dropped **one frame later** (the two-frame pattern the album reorder sheet already uses) — never hidden.
+- **2. BOTH SETTLE HANDLERS FORCED A FULL PAGE LAYOUT.** `void strip.offsetHeight` (rail), `void
+  wrap.offsetHeight` (Home) and `l.getBoundingClientRect().height` (the rail's "is it drawn?" check) each ran in the
+  same task as the scroll settle — that is the lag spike felt the moment a scroll stops. The flush only ever existed
+  to commit a **hidden** frame before restoring it, so it is gone everywhere; a transform change is committed by the
+  frame it is scheduled on. **Never re-introduce a `void …offsetHeight` inside a scroll-settle handler** — if a
+  redraw really needs to be committed, wait an extra frame instead.
+- **3. THE RAIL'S REDRAW CHECK COULD NEVER CATCH THE FAULT.** `!.pinned-artist-chip && l.getBoundingClientRect().height`
+  was a forced layout AND useless: a rail whose painting had been dropped still measures its full height. It is
+  decided from the DOM now — `if(l.querySelector('.pinned-artist-chip')) return; renderPinnedArtists();`.
+- **4. NEW PROBE `dev/railpaint-6423-check.cjs` (18 checks)** boots the app in jsdom, seeds two pins, wraps
+  `requestAnimationFrame` and records the strip's inline style **at the moment every frame callback runs**. It is a
+  real regression test: against pre-fix `index.html` it fails on "no frame of the repaint was ever hidden" with
+  `{"v":"hidden"}` recorded — the blink itself. `dev/test-66423.mjs` (50 checks) is the static release gate and also
+  carries a **carry-forward block** asserting 64.2.2's six fixes are still standing.
+- **5. `dev/patch-66423.mjs` REWRITES TWO OLDER GATES BY CHARACTER CODE.** `test-6642.mjs` (64.2) pinned the rail's
+  hide-and-restore and `test-6641.mjs` (64.1) pinned the measuring check, so their assertions now describe the new
+  shape via a local `editTest()` and needles built with `String.fromCharCode(92/39/34)`. **Trap that cost real time:**
+  a double-quoted JS string can never span lines — an "array element" written as several physical lines is a syntax
+  error, not a multi-line value. Build the value with `+` or use a **backtick template literal** (that is how the two
+  needles in this patch script are written), and check `node --check dev/patch-*.mjs` before believing an edit landed.
+- **THE RELEASE / REPINS**: `APP_VERSION` **64.2.2 -> 64.2.3**, six-note head entry, every note <= 260 chars, plain
+  title, no `\bpass\b` (title: `The pinned artists island stops blinking, and a settled scroll no longer lays the page
+  out again`), note 4 keeps *rollback*, note 1 names *pinned artists*; `sw.js` -> **`sidecut-shell-v63.0.21`**; the
+  usual quoted-version repins across `dev/test-*.mjs`; bundles at **ota/ 747976**, **ota-play/ 747988**.
+
 ## 64.2.2 (Sep 27, 2026): the 64.2.1 blink, roll-forward made visible, a per-build assistant, the storage allowance, watermark on by default
 - **The user's words**, one message with six screenshots: "If you roll back the app make sure you can roll forward again
   back to current version. Now the favorites bubble sometimes disappears for a split second and reappear put the patch

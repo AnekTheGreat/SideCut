@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '64.2.2';
+const VER = '64.2.3';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -180,10 +180,10 @@ console.log('[6] the pinned-artist row');
     'and its nested scroller no longer carries the legacy property');
   ok(has('  function repaintPinnedRail(list){'), 'a settled scroll repaints the card');
   ok(has('    var strip = $(\'pinnedArtistsStrip\');'), 'the repaint is aimed at the card itself');
-  ok(has('    strip.style.visibility = \'hidden\';\n    void strip.offsetHeight;'),
-    'by throwing its painted pixels away');
-  ok(has('    requestAnimationFrame(function(){ try{ strip.style.visibility = \'\'; }catch(_eRpr){} });'),
-    'and painting them again on the next frame');
+  ok(has("    strip.style.transform = 'translateZ(0)';"),
+    'by asking the compositor to raster the card again');
+  ok(has("      requestAnimationFrame(function(){ try{ strip.style.transform = ''; }catch(_eRpr){} });"),
+    'and taking that back one frame later, without ever hiding it');
   ok(has("        if(c.style.transform){ c.style.transform = ''; c.style.zIndex = ''; c.style.boxShadow = ''; }"),
     'any chip still holding a drag lift is put back to a plain chip');
   ok(has("    try{ list.scrollLeft = 0; }catch(_eSc){}"), 'a redrawn rail still starts at its left edge');

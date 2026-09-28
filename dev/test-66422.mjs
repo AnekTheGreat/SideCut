@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '64.2.2';
+const VER = '64.2.3';
 const PREV = '64.2.1';
 
 let pass = 0, fail = 0;
@@ -50,10 +50,14 @@ console.log('[1] release metadata');
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
-  if (entries) {
-    const head = entries[0];
+  // The head entry belongs to whatever shipped last, so read the 64.2.2 entry by
+  // version: this gate describes 64.2.2.
+  const entry6422 = entries ? entries.find((x) => /^64\.2\.2$/.test(String(x.version))) : null;
+  ok(!!entry6422 && String(entry6422.version) === '64.2.2', 'the 64.2.2 entry this gate describes is still here');
+  if (entry6422) {
+    const head = entry6422;
     const items = head.items || [];
-    ok(String(head.version) === VER, 'the head entry is v' + VER);
+    ok(String(head.version) === '64.2.2', 'the entry this gate describes is v' + head.version);
     ok(items.length === 6, 'six notes (' + items.length + ')');
     // "put the patch notes in simple terms not so long" - the length is the point
     // of this release, so it is pinned rather than described.
@@ -84,10 +88,10 @@ console.log('[2] the Home repaint does not hide the grid (the reported blink)');
   const repaint = slice('  function repaintHomeGrid(){', '  function homeGridIsWhole(){');
   ok(repaint !== '', 'the repaint is still there');
   ok(!/visibility/.test(repaint), 'it never touches visibility - a hidden frame IS the blink');
-  ok(has("    wrap.style.transform = 'translateZ(0)';\n    void wrap.offsetHeight;"),
+  ok(has("    wrap.style.transform = 'translateZ(0)';"),
     'it promotes the grid to force a fresh raster');
-  ok(has("    requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });"),
-    'and takes the promotion back, so nothing stays on its own layer');
+  ok(has("    requestAnimationFrame(function(){\n      requestAnimationFrame(function(){ try{ wrap.style.transform = ''; }catch(_eRpH){ } });"),
+    'and takes the promotion back one frame later, so nothing stays on its own layer');
   ok(has("      var phs = wrap.querySelectorAll('.hb-drag-placeholder');"),
     'a dashed placeholder an abandoned drag left behind is still removed');
   ok(has("        if(!b.classList.contains('hb-dragging') && !b.style.position) continue;"),
@@ -105,8 +109,8 @@ console.log('[2] the Home repaint does not hide the grid (the reported blink)');
   // The surface fixed before this one still carries its guard: a release that
   // dropped it would be trading one blink for another.
   ok(has('  function repaintPinnedRail(list){'), 'the pinned-artists rail still repaints');
-  ok(slice('  function repaintPinnedRail(list){', '  function homeGridIsWhole(){').indexOf("strip.style.visibility = 'hidden';") !== -1
-    || has("    strip.style.visibility = 'hidden';"), 'the way it always has');
+  ok(!/visibility/.test(slice('  function repaintPinnedRail(list){', '  function watchPinnedRail(){')),
+    'and it repaints without hiding itself, the way Home does');
 }
 
 console.log('[3] rolling forward is one tap');
