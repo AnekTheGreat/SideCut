@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '64.2.1';
+const VER = '64.2.3';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -188,7 +188,7 @@ console.log('[5] the pinned-artist rail cannot come back empty');
   ok(has('align-items:flex-start;gap:12px;overflow-x:auto'), 'and its chips sit at the top');
   ok(has('    try{ list.scrollLeft = 0; }catch(_eSc){}'), 'a redrawn rail always starts at its left edge');
   ok(has('(function watchPinnedRail(){'), 'a scroll of Discover watches the rail');
-  ok(has("if(l.querySelector('.pinned-artist-chip') && l.getBoundingClientRect().height) return;"),
+  ok(has("if(l.querySelector('.pinned-artist-chip')) return;"),
     'and redraws it only when it is really empty');
   ok(has('renderPinnedArtists();\n        }catch(_eRailWatch){}'), 'the redraw is the real render');
   ok(src.indexOf('dv._paRailWatch = true;') !== -1, 'and it is wired once, not once per render');
