@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const ota = fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8');
-const VER = '64.3';
+const VER = '70.0'; /* repinned by dev/repin-70.mjs */
 const PREV = '64.2.8';
 
 let pass = 0, fail = 0;
@@ -68,9 +68,11 @@ console.log('[1] release metadata');
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
   if (entries) {
-    const head = entries[0];
+    // head = the 64.2.9 entry, read by version: the top of the array belongs to
+    // whatever shipped last, which is no longer this gate's release.
+    const head = entries.find((e) => String(e.version) === '64.2.9') || entries[0];
     const items = head.items || [];
-    ok(String(head.version) === VER, 'the head entry is v' + head.version);
+    ok(String(head.version) === '64.2.9', 'the entry this gate reads is v' + head.version);
     ok(items.length === 6, 'six notes (' + items.length + ')');
     const longest = items.reduce((n, it) => Math.max(n, it.length), 0);
     ok(longest <= 260, 'every note is one short sentence or two (longest ' + longest + ' chars)');
@@ -98,7 +100,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.28', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v63.0.30', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
 }
 

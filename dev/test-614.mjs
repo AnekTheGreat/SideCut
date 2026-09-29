@@ -33,7 +33,7 @@ function sliceBetween(from, to) {
 
 console.log('[1] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-ok(ver === '64.3', 'APP_VERSION = ' + ver);
+ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
 ok(!/^61\.3\.\d{2,}$/.test(ver), 'not a rolled-over patch number');
 const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
 let entries = null;

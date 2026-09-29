@@ -153,7 +153,7 @@ console.log('\n[9] the release says so');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) {}
-  ok(ver === '64.3', 'APP_VERSION = ' + ver);
+  ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
   ok(!!entries && entries[0].version === ver, 'the newest changelog matches APP_VERSION');
   if (entries) {
     const head = entries[0];
@@ -162,9 +162,11 @@ console.log('\n[9] the release says so');
     ok(!/play build|play version|play install/i.test(head.items.join('\n')), 'and it never names the other build');
     ok((head.items || []).slice(0, 6).every((it) => it.indexOf('[FULL]') === -1),
       'the first six publish on both channels');
-    ok((head.items || []).slice(6).every((it) => it.indexOf('[FULL] ') === 0),
-      'and the rest are marked for the full build');
-    ok(/rollback/i.test(head.items.join('\n')), 'and it describes what this release did');
+    // 70.0 publishes every note on both channels, so the rule underneath this is
+    // "nothing is withheld without saying so", not "the rest are withheld".
+    ok((head.items || []).every((it) => it.indexOf('[FULL]') === -1),
+      'and none of them is withheld from the other channel');
+    ok(/studio/i.test(head.items.join('\n')), 'and it describes what this release did');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';

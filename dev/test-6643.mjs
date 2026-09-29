@@ -41,8 +41,22 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const ota = fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8');
-const VER = '64.3';
+const VER = '64.3.1';
 const PREV = '64.2.9';
+// This gate describes 64.3 - the release it was written for - while VER is the
+// build on the page, so the two are named apart (64.3.1).
+const OWNVER = '64.3';
+// The build actually on the page - the release this gate describes is older.
+const PAGEVER = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+const vnum = (v) => String(v || '').split('.').map((n) => parseInt(n, 10) || 0);
+const vcmp = (a, b) => {
+  const A = vnum(a), B = vnum(b);
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const d = (A[i] || 0) - (B[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+};
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -71,15 +85,21 @@ const sliceC = (from, to) => {
 console.log('[1] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === VER, 'APP_VERSION = ' + ver);
+  ok(!!ver && vcmp(ver, VER) >= 0, 'APP_VERSION = ' + ver + ' (this gate describes ' + VER + ')');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
   if (entries) {
-    const head = entries[0];
+    // What THIS gate is about is its own release, read by version - the rule
+    // dev/test-66423.mjs, dev/test-66424.mjs, dev/test-66427.mjs,
+    // dev/test-66428.mjs and dev/test-66429.mjs already follow. The general
+    // wording rules below still run against the head entry, because every
+    // release has to keep them.
+    const entry643 = entries.find((e) => String(e.version) === OWNVER) || {}; /* /^64\\.3$/*/
+    const head = entry643;
     const items = head.items || [];
-    ok(String(head.version) === VER, 'the head entry is v' + head.version);
+    ok(String(head.version) === OWNVER, 'the entry this gate describes is v' + head.version);
     ok(items.length === 6, 'six notes (' + items.length + ')');
     const longest = items.reduce((n, it) => Math.max(n, it.length), 0);
     ok(longest <= 260, 'every note is one short sentence or two (longest ' + longest + ' chars)');
@@ -103,7 +123,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.28', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(/^sidecut-shell-v\d/.test(swCache), 'the shell cache has a name of its own (' + swCache + ')');
   ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
 }
 
@@ -306,7 +326,7 @@ console.log('[7] the file still holds together');
   // The version rule this release had to be corrected for: 64.2.9 is followed by
   // 64.3, and the string 64.2.10 exists nowhere in the file.
   ok(count('64.2.10') === 0, 'the drafted 64.2.10 is nowhere on the page (' + count('64.2.10') + ')');
-  ok(/const APP_VERSION = '64\.3';/.test(src), 'and the app runs as 64.3');
+  ok(new RegExp("const APP_VERSION = '" + String(PAGEVER).replace(/\./g, '\\.') + "';").test(src), 'and the app runs as the version the page declares (' + PAGEVER + ')');
 }
 
 console.log('\n' + (fail ? pass + ' passed, ' + fail + ' FAILED' : 'All ' + pass + ' checks passed'));

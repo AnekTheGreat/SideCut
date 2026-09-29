@@ -1,0 +1,545 @@
+// 70.0, driven for real. The user's request, in one message:
+//
+//   "A new tab in the app: Studio tab: one home for the creative tools, with crop,
+//    slowed + reverb, karaoke mode, sampler pads and loop recorder... Achievements
+//    and streaks... Storage cleaner... Crop -> share as clip... Assistant that
+//    acts, not just answers... Auto-DJ / beat-matched crossfade... Batch tag
+//    editor... Make the 3 dots menu for songs nicer too."
+//
+// This boots the REAL app in jsdom with a synthetic AudioContext and drives what
+// the release actually does:
+//
+//   [1] the dock: the Studio tab switches the view, and the dock/player/dock
+//       stacking is what the stylesheet says it is;
+//   [2] the Studio view renders its five tools, its badge grid, its storage rows
+//       and its two gesture switches;
+//   [3] the live FX chain is built into the app's own graph - a dry path, a
+//       reverb send and a vocal-cancel path per deck - and the fader moves them;
+//   [4] the BPM reader finds 120 BPM in a synthetic 120 BPM click track, which is
+//       what the beat-matched crossfade is built on;
+//   [5] achievements unlock from the real stats, once, and never twice;
+//   [6] the storage cleaner ranks the biggest songs correctly and a re-encode
+//       swaps the stored file for a smaller one with a working undo;
+//   [7] the batch tag editor writes to the SONGS, and __scWriteTagsToFile really
+//       rewrites the ID3 tag inside the stored bytes;
+//   [8] the assistant acts: a theme request switches the theme, a playlist request
+//       builds the playlist, and a crop request opens Studio with the range armed;
+//   [9] the grouped song menu moves the real buttons into labelled sections;
+//   [10] gestures: a shake and a swipe both reach the app's own next/prev.
+//
+//   node dev/studio-70-check.cjs
+const fs = require('fs');
+const path = require('path');
+const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
+
+const ROOT = process.env.SC_ROOT || path.join(__dirname, '..');
+const html = fs.readFileSync(process.env.SC_HTML || path.join(ROOT, 'index.html'), 'utf8');
+
+let pass = 0, fail = 0;
+// (condition, name) - the other probe files read (name, condition), which is a
+// trap for a file written top-down like this one, so the order is stated here.
+function ok(cond, name, extra) {
+  if (cond) { pass++; console.log('  + ' + name); }
+  else { fail++; console.log('  X ' + name + (extra !== undefined ? '  [' + extra + ']' : '')); }
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* --------------------------------------------------------------- fake audio */
+function fakeBuffer(ch, len, sr) {
+  const data = [];
+  for (let i = 0; i < ch; i++) data.push(new Float32Array(len));
+  return {
+    numberOfChannels: ch,
+    length: len,
+    sampleRate: sr,
+    duration: len / sr,
+    getChannelData: (i) => data[Math.min(i, data.length - 1)],
+  };
+}
+function anode(extra) {
+  const n = {
+    connect() { return n; }, disconnect() {}, start() {}, stop() {},
+    gain: { value: 1, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {} },
+    frequency: { value: 0 }, Q: { value: 0 },
+    threshold: { value: 0 }, knee: { value: 0 }, ratio: { value: 0 }, attack: { value: 0 }, release: { value: 0 },
+    delayTime: { value: 0 }, pan: { value: 0 }, offset: { value: 0 },
+    playbackRate: { value: 1 },
+    type: '', value: 0, buffer: null, loop: false, stream: {}, fftSize: 1024, frequencyBinCount: 512,
+    getByteFrequencyData() {}, getByteTimeDomainData() {}, getFloatFrequencyData() {},
+    createPeriodicWave() { return {}; }, setPeriodicWave() {}, curve: null, oversample: 'none',
+    reduction: 0, normalRange: {}, getFrequencyResponse() {},
+  };
+  return Object.assign(n, extra || {});
+}
+// The app's boot reaches for a wide slice of the Web Audio API (the DJ deck, the
+// scratch engine, the analysers), so the fake has to answer all of it or an
+// uncaught TypeError in block 1 stops the whole app from booting - which is
+// exactly what happened the first time this probe was written.
+class FakeAudioContext {
+  constructor() {
+    this.sampleRate = 44100; this.currentTime = 0; this.state = 'running'; this.destination = anode();
+    this.baseLatency = 0.01; this.outputLatency = 0.01;
+  }
+  resume() { this.state = 'running'; return Promise.resolve(); }
+  close() { return Promise.resolve(); }
+  suspend() { this.state = 'suspended'; return Promise.resolve(); }
+  createGain() { return anode(); }
+  createConvolver() { return anode(); }
+  createChannelSplitter() { return anode(); }
+  createChannelMerger() { return anode(); }
+  createBiquadFilter() { return anode(); }
+  createDynamicsCompressor() { return anode(); }
+  createAnalyser() { return anode(); }
+  createOscillator() { return anode(); }
+  createBufferSource() { return anode(); }
+  createMediaElementSource() { return anode(); }
+  createMediaStreamSource() { return anode(); }
+  createMediaStreamDestination() { return anode(); }
+  createDelay() { return anode(); }
+  createWaveShaper() { return anode(); }
+  createStereoPanner() { return anode(); }
+  createPanner() { return anode(); }
+  createConstantSource() { return anode(); }
+  createIIRFilter() { return anode(); }
+  createScriptProcessor() { return anode(); }
+  createBuffer(ch, len, sr) { return fakeBuffer(ch, len, sr); }
+  decodeAudioData(ab, okCb, errCb) {
+    // Five minutes at 8kHz: long enough that a "1:20 to 2:00" clip request is not
+    // clamped to the end of the buffer (which a short stand-in silently did), and
+    // cheap enough to keep allocating.
+    const b = fakeBuffer(2, 8000 * 300, 8000);
+    setTimeout(() => { try { okCb && okCb(b); } catch (e) { errCb && errCb(e); } }, 0);
+    return Promise.resolve(b);
+  }
+}
+function make2dCtx() {
+  return new Proxy({}, {
+    get(t, p) {
+      if (p in t) return t[p];
+      if (p === 'canvas') return { width: 64, height: 64 };
+      if (p === 'createLinearGradient' || p === 'createRadialGradient') return () => ({ addColorStop() {} });
+      if (p === 'createPattern') return () => ({});
+      if (p === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
+      if (p === 'measureText') return () => ({ width: 10 });
+      if (typeof p === 'string' && /^[a-z]/.test(p)) return () => undefined;
+      return undefined;
+    },
+    set(t, p, v) { t[p] = v; return true; },
+  });
+}
+
+/* -------------------------------------------------------------- fake library */
+const SIZES = {};
+let TRACKS = [];
+function buildTracks(win) {
+  TRACKS = TRACK_META.map((m) => Object.assign({}, m, {
+    blob: new win.Blob([new win.Uint8Array(SIZES[m.id])], { type: 'audio/mpeg' }),
+  }));
+  return TRACKS;
+}
+const TRACK_META = [];
+for (let i = 1; i <= 12; i++) {
+  const id = 't' + i;
+  // Deliberately NOT in library order, so "biggest songs" has to sort rather than
+  // read the library order.
+  SIZES[id] = 100000 + ((i * 7919) % 9) * 100000;
+  TRACK_META.push({
+    id, name: 'Song ' + i, artist: 'Artist ' + (i % 3), album: 'Album ' + (i % 2),
+    duration: 150 + i * 7, playCount: 40 - i * 3, dateAdded: 1000 + i,
+    blobType: 'audio/mpeg', fileName: 'song' + i + '.mp3',
+  });
+}
+// The audio Blobs are built INSIDE the jsdom window: a Blob from this Node realm
+// is not a Blob as far as jsdom's File constructor is concerned, so it would be
+// stringified to "[object Blob]" - thirteen bytes - and every size in the storage
+// cleaner would read 13. buildTracks(win) fills TRACKS in beforeParse.
+const PLAYLISTS = { 'All Songs': TRACK_META.map((t) => t.id), Favorites: ['t3', 't4'] };
+
+function fakeIndexedDB() {
+  const data = {
+    tracks: new Map(TRACKS.map((t) => [t.id, t])),
+    meta: new Map([
+      ['playlists', { key: 'playlists', value: JSON.parse(JSON.stringify(PLAYLISTS)) }],
+      ['stats', { key: 'stats', value: { totalListenSeconds: 100 * 3600, totalPlays: 1234 } }],
+    ]),
+  };
+  function tx(store) {
+    const t = { oncomplete: null, onerror: null, onabort: null, error: null };
+    const fire = () => setTimeout(() => { try { t.oncomplete && t.oncomplete(); } catch (e) {} }, 0);
+    t.objectStore = () => ({
+      put(v) { const k = v && v.key !== undefined ? v.key : v.id; data[store].set(k, v); fire(); return {}; },
+      get(k) { const q = {}; setTimeout(() => { q.result = data[store].get(k); q.onsuccess && q.onsuccess(); }, 0); return q; },
+      getAll() { const q = {}; setTimeout(() => { q.result = Array.from(data[store].values()); q.onsuccess && q.onsuccess(); }, 0); return q; },
+      delete(k) { data[store].delete(k); fire(); return {}; },
+    });
+    return t;
+  }
+  return {
+    open() {
+      const req = { error: null };
+      const db = { objectStoreNames: { contains: () => true }, createObjectStore: () => ({}), transaction: (n) => tx(n) };
+      setTimeout(() => {
+        try { req.onupgradeneeded && req.onupgradeneeded({ target: req }); } catch (e) {}
+        req.result = db;
+        try { req.onsuccess && req.onsuccess({ target: req }); } catch (e) {}
+      }, 0);
+      return req;
+    },
+  };
+}
+
+function boot() {
+  const errors = [];
+  const vc = new VirtualConsole();
+  vc.on('jsdomError', (e) => errors.push('' + (e && e.message)));
+  vc.on('error', (...a) => errors.push(a.map(String).join(' ')));
+  const dom = new JSDOM(html, {
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    url: 'https://anekthegreat.github.io/SideCut/',
+    virtualConsole: vc,
+    beforeParse(win) {
+      win.HTMLCanvasElement.prototype.getContext = function () { return make2dCtx(); };
+      win.HTMLCanvasElement.prototype.toDataURL = function () { return 'data:image/png;base64,'; };
+      // jsdom leaves the media element half-implemented: play() answers
+      // undefined, and the app chains .catch() onto it, so asking it to play a
+      // song throws instead of starting one. These three make it a no-op that
+      // keeps its promise, which is all this probe needs from it.
+      win.HTMLMediaElement.prototype.play = function () { return Promise.resolve(); };
+      win.HTMLMediaElement.prototype.pause = function () {};
+      win.HTMLMediaElement.prototype.load = function () {};
+      // BEFORE the fake database is built: it copies the track list at call time.
+      buildTracks(win);
+      win.indexedDB = fakeIndexedDB();
+      win.AudioContext = FakeAudioContext;
+      win.webkitAudioContext = FakeAudioContext;
+      // jsdom has no object URLs, and the library load is what asks for one per
+      // song - without this the whole auto-load fails and nothing below is real.
+      win.URL.createObjectURL = () => 'blob:jsdom-' + (win.__scObjN = (win.__scObjN || 0) + 1);
+      win.URL.revokeObjectURL = () => {};
+      win.confirm = () => true;
+      win.localStorage.clear();
+      win.fetch = () => Promise.reject(new Error('offline'));
+    },
+  });
+  return { dom, errors, win: dom.window };
+}
+const realErrors = (errors) => errors.filter((e) =>
+  e.indexOf('dbPromise') === -1 && e.indexOf('Not implemented') === -1 &&
+  e.indexOf('Could not parse CSS') === -1 && e.indexOf('not implemented') === -1);
+
+/* ---------------------------------------------------------------------- run */
+(async () => {
+  const { win, errors } = boot();
+  await wait(3600);
+  const doc = win.document;
+
+  console.log('[1] the dock and the Studio tab');
+  {
+    const strip = doc.querySelector('#action-strip, .action-strip');
+    ok(!!strip, 'the nav strip is still in the document');
+    ok(!!doc.getElementById('studioBtn'), 'and it has a Studio tab');
+    const dockRule = html.match(/\.action-strip\{\s*position:\s*fixed[^}]*\}/);
+    ok(!!dockRule, 'the dock is fixed to the bottom of the screen');
+    ok(!!dockRule && /bottom:\s*0/.test(dockRule[0]), 'at the very bottom');
+    const npRule = html.match(/#nowPlaying\{[^}]*bottom:\s*calc\(var\(--sc-dock-h\)/);
+    ok(!!npRule, 'and the player is lifted above it');
+
+    const before = doc.getElementById('homeView').classList.contains('active');
+    doc.getElementById('studioBtn').click();
+    await wait(120);
+    ok(before, 'Home is the view you start on');
+    ok(doc.getElementById('studioView').classList.contains('active'), 'tapping Studio opens the Studio view');
+    ok(!doc.getElementById('homeView').classList.contains('active'), 'and Home closes');
+    ok(doc.getElementById('studioBtn').classList.contains('active'), 'the Studio tab lights up');
+    ok(doc.getElementById('libraryBtn').className.indexOf('active') === -1, 'and the library tab goes dark');
+    doc.getElementById('studioBtn').click();
+    await wait(120);
+    ok(doc.getElementById('homeView').classList.contains('active'), 'tapping Studio again goes back Home');
+  }
+
+  console.log('[2] the Studio view');
+  {
+    ok(!!win.SC70 && win.SC70.version === '70.0', 'the Studio module is on the page as 70.0');
+    win.SC70.renderStudio();
+    await wait(60);
+    const tools = Array.from(doc.querySelectorAll('#studioView [data-tool]')).map((b) => b.getAttribute('data-tool'));
+    ok(tools.length === 5, 'five tool cards (' + tools.join(',') + ')');
+    ['clip', 'fx', 'karaoke', 'sampler', 'looper'].forEach((k) =>
+      ok(tools.indexOf(k) !== -1, 'including ' + k));
+    const badges = doc.querySelectorAll('#studioView .sc-badge');
+    ok(badges.length >= 25, 'the badge grid has ' + badges.length + ' badges');
+    ok(doc.querySelectorAll('#studioView .sc-badge-bar').length === badges.length,
+      'every badge carries its own progress bar');
+    ok(doc.querySelectorAll('#studioView [data-act="autodj"], #studioView [data-act="shake"], #studioView [data-act="swipe"]').length === 3,
+      'Auto-DJ and both gestures have switches');
+    ok(doc.querySelectorAll('#studioView .sc-store-row').length > 0, 'the storage cleaner lists the big songs');
+    ok(doc.querySelectorAll('#studioView [data-reenc]').length === doc.querySelectorAll('#studioView .sc-store-row').length,
+      'with a re-encode button on every one');
+  }
+
+  console.log('[3] the live FX chain (slowed + reverb, karaoke)');
+  {
+    ok(typeof win.scStudioBuildChain === 'function', 'the chain builder is published for the app graph');
+    // Build one the way ensureAudioGraph does and read the fader positions.
+    const ctx = new FakeAudioContext();
+    const deckGain = ctx.createGain(), limiter = ctx.createGain();
+    const ch = win.scStudioBuildChain(ctx, 0, deckGain, limiter);
+    ok(!!ch && !!ch.fxIn && !!ch.fxOut, 'deck gain now lands in a chain that closes on the limiter');
+    ok(!!ch.dry && !!ch.send && !!ch.wet, 'the chain has a dry path and a reverb send');
+    ok(!!ch.kar && !!ch.kar.gate, 'and a vocal-cancel path of its own');
+    ok(!!ch.loopIn, 'and an input the sampler and the loop recorder play into');
+
+    win.SC70.setFx({ reverb: 0.7, karaoke: 0, rate: 1 }, true);
+    ok(Math.abs(ch.send.gain.value - 0.7) < 1e-6, 'the reverb fader moves the send');
+    ok(Math.abs(ch.dry.gain.value - 1) < 1e-6, 'and leaves the dry path alone');
+    win.SC70.setFx({ karaoke: 1, rate: 1 }, true);
+    ok(Math.abs(ch.kar.gate.gain.value - 1) < 1e-6, 'and the karaoke fader opens the cancel path');
+    ok(Math.abs(ch.dry.gain.value - 0.1) < 1e-6, 'while ducking the dry path so the two do not fight');
+    win.SC70.setFx({ karaoke: 0, reverb: 0, rate: 1 }, true);
+    ok(Math.abs(ch.dry.gain.value - 1) < 1e-6 && Math.abs(ch.kar.gate.gain.value) < 1e-6,
+      'and turning it off restores a plain dry signal');
+    ok(win.__scStudioRate() === 1, 'the Studio speed reads 1x when it is off');
+    win.SC70.setFx({ rate: 0.85 }, true);
+    ok(win.__scStudioRate() === 0.85, 'and 0.85x after a slowed preset');
+    ok(html.indexOf('.playbackRate = playbackSpeed * (typeof window.__scStudioRate') !== -1,
+      'every place the app sets a deck rate multiplies by it');
+    win.SC70.setFx({ rate: 1, reverb: 0, karaoke: 0 }, true);
+  }
+
+  console.log('[4] the BPM reader behind Auto-DJ');
+  {
+    // A synthetic 120 BPM click track: a kick every half second on a 44.1k stream.
+    const sr = 44100, seconds = 8, len = sr * seconds;
+    const data = new Float32Array(len);
+    for (let b = 0; b < seconds * 2; b++) {
+      const at = b * 22050;
+      for (let i = 0; i < 900 && at + i < len; i++) data[at + i] = Math.sin((i / 900) * Math.PI * 8) * Math.exp(-i / 220);
+    }
+    const buf = { sampleRate: sr, length: len, numberOfChannels: 1, duration: seconds, getChannelData: () => data };
+    const r = win.SC70.detectBpm(buf);
+    ok(!!r, 'a tempo is read off the buffer');
+    ok(r && Math.abs(r.bpm - 120) < 6, 'and a 120 BPM click track reads ' + (r ? r.bpm : '?') + ' BPM');
+    ok(r && r.firstBeat >= 0 && r.firstBeat < 1, 'with a downbeat inside the first second (' + (r ? r.firstBeat : '?') + 's)');
+
+    win.SC70.setAutoDj(true);
+    ok(win.SC70.autodj.on === true, 'Auto-DJ can be turned on');
+    ok(typeof win.__scAutoDjGate === 'function', 'and the app asks the gate before it starts a blend');
+    ok(html.indexOf('if(scBeatOk) maybeStartCrossfade();') !== -1, 'the gate decides when the crossfade starts');
+    ok(typeof win.__scAutoDjAlign === 'function', 'and where the incoming song starts');
+    ok(html.indexOf('nxt.currentTime = scAlign') !== -1, 'which the crossfade applies to the incoming deck');
+    win.SC70.setAutoDj(false);
+    ok(win.__scAutoDjGate({ currentTime: 3.7 }, 5) === true, 'with Auto-DJ off the blend is never held back');
+  }
+
+  console.log('[5] achievements and streaks');
+  {
+    const before = win.SC70.unlockedCount();
+    ok(before > 0, 'badges already earned from the real stats: ' + before);
+    const all = win.SC70.achievements();
+    const hundred = all.filter((a) => a.id === 'hour_100')[0];
+    ok(!!hundred, 'there is a 100-hour badge');
+    ok(hundred.need.got >= hundred.need.want, 'and 100 hours of real listening meets it');
+    const lists = all.map((a) => a.id);
+    ok(lists.length === new Set(lists).size, 'no badge id appears twice');
+    ok(all.every((a) => a.need.want > 0), 'every badge has a target above zero');
+    ok(all.every((a) => Number.isFinite(a.need.got)), 'and a countable progress');
+
+    win.SC70.markFeature('clip');
+    const fresh = win.SC70.checkAchievements(true);
+    ok(fresh.some((a) => a.id === 'clip_1'), 'exporting a clip unlocks the clip badge');
+    const after = win.SC70.unlockedCount();
+    ok(after === before + 1, 'and the count moves by exactly one (' + before + ' -> ' + after + ')');
+    const again = win.SC70.checkAchievements(true);
+    ok(again.length === 0, 'checking again unlocks nothing a second time');
+    ok(win.localStorage.getItem('sidecut_achievements') !== null, 'and what is unlocked is remembered on the device');
+  }
+
+  console.log('[6] the storage cleaner');
+  {
+    const rows = win.SC70.biggestSongs(24);
+    ok(rows.length === TRACKS.length, 'every song with a file is listed (' + rows.length + ')');
+    let sorted = true;
+    for (let i = 1; i < rows.length; i++) if (rows[i].size > rows[i - 1].size) sorted = false;
+    ok(sorted, 'biggest first');
+    const biggest = Math.max.apply(null, rows.map((r) => r.size));
+    ok(rows[0].size === biggest, 'and the largest file really is first');
+
+    const victim = win.SC70.biggestSongs(1)[0].t;
+    const oldFile = victim.file;
+    const oldSize = oldFile.size;
+    const oldUrl = victim.url;
+    // Stand in for the encoder: the app's mp3 encoder is a CDN script that jsdom
+    // does not load, so the swap is what is driven here, not lamejs.
+    const realEncode = win.__scEncodeMp3;
+    win.__scEncodeMp3 = () => Promise.resolve(new Blob([new Uint8Array(2000)], { type: 'audio/mpeg' }));
+    ok(typeof win.SC70.reencodeTrack === 'function', 'the cleaner can re-encode a song');
+    win.SC70.reencodeTrack(victim.id, 128);
+    await wait(1400);
+    ok(victim.file !== oldFile, 'the stored file is replaced');
+    ok(victim.file.size < oldSize, 'with a smaller one (' + oldSize + ' -> ' + (victim.file && victim.file.size) + ')');
+    ok(victim.reencoded === true, 'and the song is marked as re-encoded');
+    ok(String(victim.url || '').indexOf('blob:') === 0, 'the player is pointed at the new file');
+    win.SC70.undoReencode(victim.id);
+    ok(victim.file === oldFile, 'undo puts the original file back');
+    ok(victim.reencoded === false, 'and clears the re-encoded mark');
+    win.__scEncodeMp3 = realEncode;
+  }
+
+  console.log('[7] the batch tag editor, and the tag inside the file');
+  {
+    ok(typeof win.__scWriteTagsToFile === 'function', 'the app can write a tag into a stored file');
+    ok(html.indexOf('selectTagBtn') !== -1, 'the selection bar has a tag button');
+    ok(html.indexOf('openBatchTags(Array.from(selectedIds))') !== -1, 'and it opens the editor on the selection');
+
+    const ids = ['t1', 't2', 't3'];
+    win.SC70.openBatchTags(ids);
+    await wait(40);
+    const sheet = doc.getElementById('scSheet');
+    ok(sheet && sheet.style.display === 'flex', 'the editor opens as a sheet');
+    ok(doc.getElementById('scSheetTitle').textContent === 'Batch tag editor', 'titled as the tag editor');
+    doc.getElementById('scBatchArtist').value = 'One Artist For Three';
+    doc.getElementById('scBatchAlbum').value = 'One Album';
+    doc.getElementById('scBatchGo').click();
+    await wait(900);
+    const done = ids.map((id) => win.__scGetAllTracks().filter((t) => t.id === id)[0]);
+    ok(done.every((t) => t.artist === 'One Artist For Three'), 'the artist is changed on every selected song');
+    ok(done.every((t) => t.album === 'One Album'), 'and so is the album');
+    ok(win.__scGetAllTracks().filter((t) => t.id === 't4')[0].artist !== 'One Artist For Three',
+      'and a song that was not selected is untouched');
+    ok(win.localStorage.getItem('sidecut_feature_flags').indexOf('retag') !== -1, 'the feature is recorded for the badges');
+
+    // The part that makes it a change to the FILES: a real ID3v2 block written in
+    // front of the stored bytes.
+    const t = win.__scGetAllTracks().filter((x) => x.id === 't5')[0];
+    const raw = new Uint8Array([0xFF, 0xFB, 0x90, 0x00, 1, 2, 3, 4, 5, 6, 7, 8]);
+    t.file = new File([raw], 'plain.mp3', { type: 'audio/mpeg' });
+    const wrote = await win.__scWriteTagsToFile(t);
+    ok(wrote === true, 'writing the tag reports success');
+    const bytes = new Uint8Array(await t.file.arrayBuffer());
+    ok(bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33, 'the file now starts with an ID3 tag');
+    ok(bytes.length > raw.length, 'and the audio behind it is still there');
+    const tail = bytes.slice(bytes.length - raw.length);
+    ok(tail[0] === 0xFF && tail[1] === 0xFB, 'byte for byte');
+  }
+
+  console.log('[8] the assistant that acts');
+  {
+    ok(!!win.SCACT && typeof win.SCACT.tryRun === 'function', 'the action layer is on the page');
+    ok(html.indexOf('var _scAction = window.SCACT.tryRun(msg);') !== -1, 'and the chat asks it before anything else');
+    ok(html.indexOf('statusEl.textContent = \'Done in SideCut\'' ) !== -1, 'and says so when it acted');
+
+    // The crop request cuts the CURRENT song's audio, so something has to be
+    // playing for it to be a real request (and a request with an empty player is
+    // answered honestly rather than claimed - see the module).
+    win.playFromList(['t1', 't2', 't3'], 't1');
+    await wait(120);
+    ok(!!win.__scCurrentTrack(), 'a song is loaded for the assistant to act on');
+
+    const themeBefore = win.__scGetTheme();
+    const said = win.SCACT.tryRun('turn on the Ember theme');
+    ok(!!said, 'a theme request is answered with what was done');
+    ok(win.__scGetTheme() === 'ember', 'and the theme really is Ember now (' + themeBefore + ' -> ' + win.__scGetTheme() + ')');
+
+    const pls = win.__scGetPlaylists();
+    const before = Object.keys(pls).length;
+    const said2 = win.SCACT.tryRun('make a playlist of my most played songs');
+    ok(!!said2, 'a playlist request is carried out');
+    const made = Object.keys(win.__scGetPlaylists()).filter((n) => pls[n] === undefined || n.indexOf('Most played') === 0)[0];
+    ok(!!made, 'a playlist called "' + made + '" exists');
+    const ids = win.__scGetPlaylists()[made] || [];
+    ok(ids.length > 0, 'with songs in it (' + ids.length + ')');
+    const counts = ids.map((id) => (win.__scGetAllTracks().filter((t) => t.id === id)[0] || {}).playCount || 0);
+    let ranked = true;
+    for (let i = 1; i < counts.length; i++) if (counts[i] > counts[i - 1]) ranked = false;
+    ok(ranked, 'sorted by play count, most played first');
+    ok(Object.keys(win.__scGetPlaylists()).length === before + 1, 'and nothing else was added');
+
+    const said3 = win.SCACT.tryRun('crop this from 1:20 to 2:00');
+    await wait(120);
+    ok(!!said3, 'a crop request is carried out');
+    ok(doc.getElementById('scSheet').style.display === 'flex', 'Studio opens with the clip sheet up');
+    ok(win.SC70.clip.start === 80 && win.SC70.clip.end === 120,
+      'and the range is armed at 1:20-2:00 (' + win.SC70.clip.start + '-' + win.SC70.clip.end + ')');
+    ok(win.SCACT.tryRun('what is the capital of France') === null, 'and a question it cannot act on is left alone');
+  }
+
+  console.log('[9] the grouped song menu');
+  {
+    const host = doc.getElementById('songActionsList');
+    host.classList.remove('sc-grouped');
+    host.innerHTML = '<button>▶ Play now</button><button>✂ Crop song</button>' +
+      '<button>♡ Add to favourites</button><button>⬇ Download</button><button>🗑 Delete from library</button>' +
+      '<button>✎ Edit info</button><button>🎤 Lyrics</button>';
+    const did = win.__scDecorSongSheet();
+    ok(did === true, 'the sheet is grouped');
+    ok(host.classList.contains('sc-grouped'), 'and marked as grouped');
+    const labels = Array.from(host.querySelectorAll('.sc-sheet-group-label')).map((e) => e.textContent);
+    ok(labels.length >= 4, 'with labelled sections (' + labels.join(', ') + ')');
+    ok(labels.indexOf('Play') !== -1 && labels.indexOf('Edit') !== -1 && labels.indexOf('Danger') !== -1,
+      'Play, Edit and Danger among them');
+    const danger = host.querySelector('.sc-sheet-group.danger');
+    ok(!!danger, 'the destructive one is its own group');
+    ok(danger.textContent.indexOf('Delete from library') !== -1, 'and it holds the delete');
+    ok(host.querySelectorAll('.sc-sheet-group-body button').length === 7, 'no button was lost in the move');
+    ok(Array.from(host.querySelectorAll('.sc-sheet-ico')).length >= 6, 'and every row got its icon');
+  }
+
+  console.log('[10] gestures');
+  {
+    const realNext = win.__scNext, realPrev = win.__scPrev;
+    let nexts = 0, prevs = 0;
+    win.__scNext = () => { nexts++; };
+    win.__scPrev = () => { prevs++; };
+
+    win.SC70.enableShake(true);
+    const motion = new win.Event('devicemotion');
+    Object.defineProperty(motion, 'accelerationIncludingGravity', { value: { x: 30, y: 2, z: 1 } });
+    win.dispatchEvent(motion);
+    await wait(30);
+    ok(nexts === 1, 'a shake skips the song');
+    const motion2 = new win.Event('devicemotion');
+    Object.defineProperty(motion2, 'accelerationIncludingGravity', { value: { x: 31, y: 2, z: 1 } });
+    win.dispatchEvent(motion2);
+    await wait(30);
+    ok(nexts === 1, 'and a second shake inside the same moment does not skip twice');
+
+    const host = doc.getElementById('nowPlaying');
+    function swipe(dx) {
+      const e = new win.Event('touchstart');
+      Object.defineProperty(e, 'touches', { value: [{ clientX: 200, clientY: 300, target: host }] });
+      Object.defineProperty(e, 'target', { value: host });
+      host.dispatchEvent(e);
+      const e2 = new win.Event('touchend');
+      Object.defineProperty(e2, 'changedTouches', { value: [{ clientX: 200 + dx, clientY: 300 }] });
+      host.dispatchEvent(e2);
+    }
+    win.SC70.gestures.swipe = true;
+    swipe(-90);
+
+    await wait(20);
+    ok(nexts === 2, 'a swipe left on the player goes to the next song');
+    swipe(90);
+    await wait(20);
+    ok(prevs === 1, 'and a swipe right goes back');
+
+    win.SC70.gestures.swipe = false;
+    swipe(-90);
+    await wait(20);
+    ok(nexts === 2, 'switched off, the swipe does nothing');
+
+    win.__scNext = realNext;
+    win.__scPrev = realPrev;
+    win.SC70.gestures.shake = false;
+  }
+
+  console.log('[11] the page still holds together');
+  {
+    const bad = realErrors(errors);
+    ok(bad.length === 0, 'the boot log is clean' + (bad.length ? ': ' + bad.slice(0, 3).join(' | ') : ''));
+    ok(win.__scGetAllTracks().length === TRACKS.length, 'the library still loads');
+  }
+
+  console.log('\n' + (fail ? pass + ' passed, ' + fail + ' FAILED' : 'All ' + pass + ' checks passed'));
+  process.exit(fail ? 1 : 0);
+})();

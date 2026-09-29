@@ -1,6 +1,133 @@
 # SideCut — repository memory
 
 
+## 70.0 (Sep 28, 2026): THE MEGA UPDATE — Studio, achievements, a batch tag editor, gestures, an assistant that acts, and the app reshaped around a bottom dock
+- **This is the release the user asked for by name**, and it is a series restart, not an increment: `APP_VERSION = '70.0'`. The
+  rule was already written down at the changelog and is worth repeating where the number is chosen — the third number stops
+  at nine (64.3.1 -> 64.4, never 64.3.10), and a whole new series reads `70.0` rather than `70.0.0`. The service worker's
+  `CACHE_NAME` keeps its OWN counter and must never contain the app version; it moved to `sidecut-shell-v63.0.30`.
+- **The shape of the app changed: there is a bottom dock now.** Home / Library⧄Albums (one diagonal split tab) / Discover /
+  Studio, with the player sitting above it and everything else sized around it (`--sc-dock-h`, `#nowPlaying{ bottom: ... }`,
+  the view padding insets and the list pane's bottom inset all read the same variable). Four screenshots of the intended
+  result were used as the look reference, and the follow-up feedback on the dock is what the final pills are: `.action-strip`
+  pills at 42px min-height, `#libraryBtn{ flex:1.18 1 0 }` so the split tab is only slightly wider than its neighbours.
+- **Studio is a whole new tab, and it is deliberately its own file.** `dev/sc70-module.js` is the entire tab - crop and
+  export-as-clip, slowed + reverb, karaoke, eight sampler pads, a loop recorder, the storage cleaner, the badge grid - and
+  it is spliced into `index.html` as its own top-level `<script id="sc-studio-70">` block. It reaches the app ONLY through
+  `window.__sc*` hooks and publishes `window.SC70`; the app reaches it the same way. `dev/sc70-styles.css` is spliced the
+  same way, appended last so every rule in it is the last word on the property it sets, and every colour in it comes from
+  the theme tokens so all 25 themes restyle it with no theme-specific rule. `dev/patch-70.mjs` applies all of it and
+  re-splices its own block in place, so the module stays the editable source of truth rather than a copy in a 2.7MB page.
+- **The FX chain is one insert, not five.** `window.__scStudioBuildChain()` returns the nodes (fxIn/fxOut/dry/send/wet/kar/
+  loopIn) and `ensureAudioGraph` splices it in once; rate is a single multiplier, `window.__scStudioRate()`, folded into the
+  five `playbackRate = playbackSpeed` writes that already existed. Karaoke is the oldest trick there is - an L-R cancel -
+  and the reverb is a synthetic impulse response (`makeIR()`), so nothing is fetched.
+- **Crop -> share as clip is a second, different crop.** `Crop song` in the song menu still trims in place; `openClipSheet()`
+  exports the picked section as its OWN tagged file, which is what makes the same tool a ringtone maker. Writing the tag back
+  is real byte surgery: `retagBytes()` strips and rewrites the ID3v2 tag and rebuilds the WAV `fmt `/`data`/`id3 ` chunks.
+  Batch tag editing rides the same writer - `openBatchTags()`/`runBatchTags()` only touch the fields that were filled in.
+- **The storage cleaner grows a size axis.** `biggestSongs()` sorts by what each track actually occupies and
+  `reencodeTrack()`/(`undoReencode()`) re-encode in place at 96/128/160 kbps through the existing cooperative encoder, which
+  gained a `kbps` parameter (clamped 32-320, default 192). Nothing is deleted that the user did not pick, and Undo holds the
+  pre-re-encode file exactly like the crop flow does.
+- **Achievements are measured, never awarded twice.** Thirty badges read `__scStats()` - plays, listen seconds, library size,
+  the day streak from `computeStreak()`, the longest streak and night plays - plus `markFeature()` flags written into
+  `sidecut_feature_flags` for "first time you used it". Unlocks are persisted once to `sidecut_achievements`, checked on
+  boot and again on visibilitychange, and the bar on a locked badge is the progress, not a decoration.
+- **The assistant acts.** `window.SCACT.tryRun(msg)` sits behind the existing knowledge base and returns null when it cannot
+  act, so anything it does not recognise still falls through to the normal answer. It speaks plain requests: a clip range
+  ("crop this from 1:20 to 2:00"), a most-played playlist, a theme by name, karaoke/slowed/nightcore/lofi, the storage
+  cleaner, Studio itself, Auto-DJ, batch tags, and next/prev/pause/play.
+- **Auto-DJ detects tempo instead of assuming it.** `detectBpm()` runs an energy envelope plus autocorrelation (lags for
+  200->60 BPM, folded to 70-190) and returns `{bpm, firstBeat}`; the crossfade is gated by `window.__scAutoDjGate()` so it
+  only starts a mix when the remaining time is within one beat, and `window.__scAutoDjAlign()` lines the next track up.
+- **Gestures, with the boring guards written down.** Shake-to-skip is devicemotion at a threshold of 26 with a 1600ms
+  debounce and a real permission request where one is needed. Swipe is 56px horizontal, ignores anything that starts on a
+  control, changes track on the mini player and seeks when the gesture starts on `#miniBar`/`.seek-row`/`.seek-line-wrap`.
+- **The 3-dots menu was reorganised, not replaced.** `__scDecorSongSheet()` moves the app's own real buttons into
+  Play / Edit / Organize / Share / Danger groups, matching on the label with any leading glyph stripped so the icons the app
+  draws do not defeat the match. It decorates the sheet the app already has, so every existing handler keeps working.
+- **Verified on the real app, not on a description of it.** `dev/studio-70-check.cjs` drives the whole release inside jsdom
+  with a faked AudioContext (full Web Audio surface), URL.createObjectURL and HTMLMediaElement shims, in-window Blobs and an
+  8kHz/300s decode stand-in - 108 checks, including a 120 BPM click reading back as 120. `dev/test-70.mjs` is the release
+  gate at 182 checks and runs that probe plus the older suites, the OTA guard, `audit-calls.mjs` and `check-dom.mjs`.
+  `dev/repin-70.mjs` re-pointed the older gates that read a version or a shell-cache literal by shape instead of by literal
+  (49 + 4 edits across 33 + 3 files); `dev/test-66431.mjs`, `dev/test-6643.mjs` and `dev/test-70.mjs` were re-pointed by hand
+  and deliberately skipped by the sweep. The page is now 7 inline script blocks, and the two audits that count them
+  (`v609`, and the older `v606`/`v607` pair that already failed before this release) are updated/known-failing as such.
+- **Both OTA channels carry 70.0.** `dev/ota-bundle.mjs` rebuilds `ota/` and re-seeds `ota/updates.json`, `ota/manifest.json`
+  and the legacy root `updates.json`; the root `manifest.json` is seeded from the built bundle with
+  `node dev/patch-70.mjs --manifest`. `ota-play/` is rebuilt by `dev/ota-bundle-play.mjs`, which is the only one allowed to
+  bake `window.__PLAY_BUILD__` into the zip - a Play install must never receive the sideload bundle.
+- **Still not measurable here.** The feel of the dock and of the gesture layer on a real phone - swipe distance, shake
+  threshold, how the reverb sits on a car stereo - cannot be judged from this sandbox. They are wired and driven in jsdom;
+  the numbers above are the ones to move if the phone disagrees.
+
+
+## 64.3.1 (Sep 28, 2026): the list stops being rebuilt while you are scrolling it
+- **The user's words**, verbatim and in one message: "The scrolling still needs to be smooth it's smooth for like 2
+  seconds then gets clunky for the record player when you tap on it". The THIRD report about the list's roughness, and
+  the first one I pointed at the right thing. 64.2.5 answered the same complaint by removing a cancel-and-restart from
+  the glide that lands on the playing song, and 64.2.7/64.2.9 took the last per-frame work a dynamic theme did out of
+  the backdrop; both were real, and neither is what is felt. The roughness is not in the glide - it is in the list the
+  glide is moving through.
+- **THE CAUSE: A BACKGROUND PASS WAS EMPTYING AND REBUILDING THE WHOLE LIBRARY LIST.** `runAutoEnrich()` runs 2.5s
+  after the library loads (every launch - the boot code, `setTimeout(function(){ runAutoEnrich(); }, 2500)`) and fills
+  in missing covers and artist names in batches of twenty. **Every batch ended with a plain `renderList()`.** And
+  `renderList()` is not a patch-up: `renderListInner()` starts with `pane.innerHTML = ''` and builds every row again -
+  row element, inline album art, kebab SVG and event listeners, per song, for a library hundreds of songs deep. Landing
+  while the list is being scrolled (or glided to the playing song after a record tap), the rows under the finger become
+  new elements, every one of them is rastered for the first time and the list is measured again, in the same frames the
+  scroll needs. **"Smooth for a moment, then clunky", 2.5 seconds after launch, is exactly that shape.** Measured on the
+  real app with sixty songs that need metadata (a scratch probe, then `dev/listredraw-66431-check.cjs`): the pass built
+  **61 rows again** on its own. After this release it builds none.
+- **1. THE GUARD: the list is not rebuilt while it is moving.** `scListIsMoving()` is the pane's own two signals - a
+  glide in flight (`container.__scScrollAnim`, which the shared engine already leaves on the container and clears when
+  it finishes, and which hands control back the instant a touch lands) or a scroll event in the last
+  `SC_LIST_MOVING_MS` (120ms), stamped by the pane's OWN scroll handler because element scroll events do not bubble -
+  and `renderList()` now goes through `scRenderListTick()`, which re-arms for the next frame instead of drawing while
+  that is true. **It is never held longer than `SC_LIST_STILL_MAX` (1200ms)**, counted from the first request (the wait
+  clock is only reset when a draw really happens), so a list being scrolled for a long time still catches up and a list
+  that is not moving draws in the same frame it always did. Reachable as `window.__scListMoving`.
+- **2. THE PASS NOW UPDATES ROWS INSTEAD OF REBUILDING THEM.** A batch knows what it changed
+  (`if(updated){ enrichState.updated++; _batchTouched.push(t.id); }`) and `scPatchListRows(ids)` writes the new art and
+  the new title/artist text into the rows that are ALREADY on screen - the `.track-art` background and the two lines
+  under it, which is the whole of what a cover or an artist read can change. Rows that are not on screen cost nothing:
+  they are built with the new data the next time they are. It builds nothing (`innerHTML` does not appear in it) and
+  returns how many rows it touched. The Albums half still asks for a redraw, because a song lives there inside an album
+  card that carries a cover of its own - and that redraw goes through the guard above, so it waits for the list to be
+  still. Reachable as `window.__scPatchListRows`.
+- **3. THE TWO RECORD TAPS ARE NEVER MADE TO WAIT.** `scRenderListNow()` cancels a pending frame and draws in the same
+  task, ignoring the guard. `jumpToPlayingSong()` and `openAlbumForCurrentSong()` call it right after they navigate,
+  because they navigate, wait two frames and then MEASURE the playing row's position (`smoothScrollIn(pane, row)`) or
+  look for the album card and expand it. Deferring those would have turned a tap into "Opened All Songs - your song is
+  in your library" instead of a glide. **Rule: a user-initiated draw says so; everything else waits its turn.**
+- **THE GATE**: `dev/test-66431.mjs` (**94 checks**, including the real-app probe) and
+  `dev/listredraw-66431-check.cjs` (**23 checks, driven on the real app**): it opens the library, lets the metadata pass
+  run to the end, and asserts the pane was never emptied and no row was built again, that a row the pass did not change
+  is still the same element the list made, that a redraw asked for mid-glide (the real engine, given a scroll range) and
+  mid-finger (a real scroll event on the pane) is held and lands once the list is still, and that the record tap still
+  draws at once. **Regression proof: against `SC_HTML=<64.3 index.html>` it fails 7 of its 23 checks** (no guard, no
+  patch helper, 61 rows rebuilt by the pass and 61 more mid-glide).
+- **THE OTHER GATES MOVED WITH IT**: `dev/test-6643.mjs` now reads the release it describes by version (`OWNVER = 64.3`)
+  while `VER` is the build on the page, so a newer release is not made to carry its words - the same move
+  test-66427/66428/66429 got. It keeps its 90 checks. The repin sweep moved the version and stamp pins across the rest
+  of `dev/test-*.mjs`; `test-6643` and `test-66431` are skipped by it (each names a release other than the head's), so
+  their own pins are written by the patch.
+- **THE RELEASE / REPINS**: `APP_VERSION` **64.3 -> 64.3.1**, six-note head entry, title `The list stops being rebuilt
+  while you are scrolling it`, stamp `September 28, 2026 · 6:45 PM EDT` (the Eastern time of the release commit - see
+  the stamp rule at `APP_VERSION`), `sw.js` -> `sidecut-shell-v63.0.29`. Bundles at a true fixed point: `ota/`
+  **764509**, `ota-play/` **764517**, root `manifest.json` = the zip. Full suite green at 64.3.1: 66431 94, 6643 90,
+  66429 83, 66428 73, 66427 82, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74, 6641 119,
+  663 49, 662 75, 6058 48, 60510 46, 658 63, 651 35, 653 31, 614 108, play 59, play-copy 28, boot-639 45, libhalf 18,
+  homecard 26, themepaint 11, notifgroup 27, librarytools 15, railpaint 21, chatvis 26, homepaint 17, ota-update 52,
+  ota-guard 20, ota-bootapply 24, ota-loop 26, native-snapshot 13, audit-calls clean, check-dom 0. Only the two known
+  baselines remain (`test-617` 1 check, `v60-check` 2 - both identical on pristine `origin/main`).
+- **STILL OPEN**: the feel of a scroll on a phone. This release removes provable main-thread work from the frames a
+  scroll needs (the pass no longer builds 60+ rows under the finger, and no rebuild lands while the list moves), but
+  the device itself cannot be measured from this sandbox. If the roughness survives this build, the next step is a
+  device trace rather than another CSS or duration round - 64.2.5 and 64.2.7/64.2.9 already spent those.
+
 ## 64.3 (Sep 28, 2026): the half you are not looking at stops being moved, and the ship times are the real ones
 - **The user's words**, verbatim and in one message (with a screenshot of Home): "Why does me clicking the record player
   in playlists or albums affect the other, it shouldn't do that it should stay where it is if its at the top it stays at

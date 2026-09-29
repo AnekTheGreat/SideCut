@@ -227,7 +227,10 @@ return { fn: fetchArtistSingles, calls: CALLS, results: { us: ${JSON.stringify(U
   // 6 since 63.0.8: the boot stopwatch's clock is stamped by its own one-line
   // block placed BEFORE the app's script, so the parse cost of that script is
   // measurable on the device. Nothing else about the block layout changed.
-  ok('there are still the expected number of blocks', blocks.length === 6, String(blocks.length));
+  // 7 since 70.0: Studio ships as its own <script id="sc-studio-70"> module
+  // appended after the app's script, so every earlier block keeps its index
+  // (the boot stopwatch is still block 4).
+  ok('there are still the expected number of blocks', blocks.length === 7, String(blocks.length));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
