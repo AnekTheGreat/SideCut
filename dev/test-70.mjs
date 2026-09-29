@@ -60,20 +60,26 @@ const slice = (from, to, hay = src) => {
 console.log('[1] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === VER, 'the app runs as ' + VER + ' (' + ver + ')');
-  ok(/const APP_VERSION = '70\.0';/.test(src), 'and the version string is exactly 70.0, not 70.0.0');
+  // The build on the page is 70.0 or a patch on it; the release this gate
+  // DESCRIBES is still 70.0, which is why VER did not move with APP_VERSION.
+  ok(ver === VER || String(ver).indexOf(VER + '.') === 0,
+     'the app runs as ' + VER + ' or a patch on it (' + ver + ')');
+  ok(/const APP_VERSION = '70\.0(\.\d+)?';/.test(src),
+     'and the version is a 70.0 series number, never a 70.0.0 cascade');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
   if (entries) {
-    const head = entries[0];
+    // head = the 70.0 entry, read by version: the top of the array belongs to
+    // whatever shipped last, which is no longer this gate's release.
+    const head = entries.find((e) => String(e.version) === '70.0') || entries[0];
     const items = head.items || [];
-    ok(String(head.version) === VER, 'the head entry is v' + head.version);
+    ok(String(head.version) === '70.0', 'the entry this gate reads is v' + head.version);
     ok(items.length === 10, 'ten notes, one per thing the user asked for (' + items.length + ')');
     const longest = items.reduce((n, it) => Math.max(n, it.length), 0);
     ok(longest <= 320, 'every note is one short sentence or two (longest ' + longest + ' chars)');
-    ok(String(entries[1] && entries[1].version) === PREV, 'the release before this one is still listed next');
+    ok(String((entries[entries.findIndex((e) => String(e.version) === String(head.version)) + 1] || {}).version) === PREV, 'the release before this one is still listed next');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     // The stamp rule at APP_VERSION: Eastern is UTC-4 and the DATE rolls back with
     // it. A stamp in the reader's future is the bug 64.3 fixed, so it is checked
@@ -97,7 +103,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.30', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v63.0.31', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
 }
 

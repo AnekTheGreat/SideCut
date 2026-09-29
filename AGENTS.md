@@ -1,6 +1,117 @@
 # SideCut — repository memory
 
 
+## 70.0.5 (Sep 28, 2026): the add-songs pill leaves the dock for a + in the header, and thirty badges grow to 201 with five rewards
+- **The user's words**, verbatim, in THREE messages, all released as 70.0.5: "Remove the add songs tab from bottom
+  and remove the refresh button from the top and replace that with a plus sign for add songs v70.0.5"; then "Achivements
+  should have over 200 of them including 1 secret 1 where you have to enter dev mode in order to obtain them" with free
+  themes at 50/100/150 badges, a finger-whirled theme at 200 and free SideCut Premium at all 201; then, straight after
+  seeing the wall, "Make the achivements actually possible and without sharing your songs". Two controls moved, one of
+  them load-bearing, and the interesting part is what was NOT moved.
+- **THE DOCK LOST THE PILL AND ITS WRAP, NOT JUST THE PILL.** `#addSongsWrap` was a flex child of `.action-strip`, and
+  `.action-strip > *{ flex:1 1 0 }` is what makes the pills share the row evenly. Deleting only the `+ Add songs ▾`
+  button would have left an invisible wrap still holding a fifth share of the width - the row would have looked
+  4-wide with a phantom gap in it. The wrap goes with the pill; the dock is `homeBtn, libraryBtn, discoverBtn,
+  studioBtn` as direct children, in that order.
+- **THE MENU STAYED IN THE DOCK'S SUBTREE ON PURPOSE.** `#addSongsMenu` and `#addSongsBackdrop` were children of the
+  wrap and are now children of the strip itself. They are `position:fixed`, so their DOM home does not move them on
+  screen - but `.action-strip.menu-open{ z-index:300 }` (added with 70.0) is what lifts them over the player, since
+  `#nowPlaying` sits at `z-index:20` and the dock at 25. Move them out to body level and the lift is gone. Nothing
+  about the menu's 5 entries, its centred position or its tap-outside-to-close changed.
+- **The header + takes the refresh button's own slot**: same `.icon-btn` class, same `flex-shrink:0`, same place in
+  `<header>` between the bell and settings, with `title="Add songs"`. Only the id, the tooltip and the glyph differ,
+  so the header cannot drift apart. The refresh button's `location.reload()` wiring went with it - it read an id that
+  no longer exists, which is exactly what `dev/check-dom.mjs` is written to catch.
+- **The copy kept its words and lost its caret.** 13 places said `+ Add songs ▾ → + Files`; the caret is the glyph for
+  "this opens a menu" and there is no longer anything wearing it, so it is dropped and the sentence stays. That
+  choice is not cosmetic: five older gates (`test-6052`, `test-6054`, `test-6058`, `test-619`, `test-play-copy`) assert
+  the words `+ Add songs` and `+ Files` in the how-to text, and the button's tooltip plus the menu's own title are
+  still "Add songs" - so the instructions point at something that really exists and the gates stay true.
+- **The Studio header no longer pins a release.** `sc70-module.js` had `var VERSION = '70.0'` and printed it on the
+  Studio screen; the app already publishes `window.APP_VERSION`, and the module is spliced AFTER that block, so it now
+  reads it (falling back to the old literal). Otherwise a 70.0.5 build would have shown "70.0" on its own Studio page.
+- **Release machinery**: `dev/patch-705.mjs` (13 anchored edits, idempotent, `--check`, `--manifest`) moves the two
+  controls; `dev/patch-705b.mjs` is the achievements half (the reward themes, the live gating, the Premium grant, and
+  the module + CSS re-splice); `dev/patch-705c.mjs` is the follow-up that makes the wall earnable (below). Run order is
+  705 then 705b then 705c - all three write into the same head entry, so it grows rather than being rewritten, and all
+  three are idempotent and report on the tree a run WOULD produce. `dev/repin-705.mjs` (26 edits across 18 files: 13
+  `const VER` pins, the 2 changelog-head-line pins, the 7 shell-cache literals) re-points the older gates by SHAPE, so a
+  point release does not break them for no reason. `dev/test-705.mjs` is the release gate at **135 checks**, and it
+  drives everything test-70 does except test-70 itself, so neither gate runs the other's probe twice. `dev/test-70.mjs`
+  is re-pinned by SHAPE - it still DESCRIBES 70.0 and its ten notes, while reading that entry out of the array by
+  version instead of assuming it is the head. `dev/studio-70-check.cjs` grew 108 -> **185 checks**, driving the real app
+  in jsdom: four tabs, the +, the menu opening from up there and its backdrop closing it, the 201 tiles and their nine
+  group heads, the 7-tap door, the five reward gates and the Vortex drag.
+- **201 BADGES, AND ONLY THIRTY OF THEM ARE WRITTEN OUT.** `dev/sc70-module.js` keeps the original thirty badge
+  definitions verbatim and GENERATES the other 171 from two tables - `BADGE_TIERS` (id prefix, label, group, metric) x
+  `BADGE_COUNTS` (the rungs a metric is measured at) through `tierBadges()`. A new metric is one row in each table, not
+  a hundred edits, and the thresholds can be retuned without touching the badge list. `derivedStats()` is the single
+  place every stat is read from (`__scStats()`, the streak, the library, the theme/dynamic counters, the named
+  milestones), `BASE_GROUPS`/`GROUP_TITLES` turn them into the nine sections the grid paints (`streak, listen, explore,
+  library, studio, assistant, themes, miles, secret`), and `unlockedCount()` is what the rewards AND the gates read -
+  never a literal.
+- **ONE SECRET BADGE, AND ITS DOOR IS DEV MODE.** `secret_devmode` is `secret: true` in the `secret` group; until it is
+  met the group paints `secretTile()` - a single blank tile - so the wall reads as 200 + a question mark rather than 201
+  with an empty slot. The door is a 7-tap gesture on `#currentVersionLabel` inside a 1600ms window (`wireDevGesture`),
+  and it is deliberately that element: the app already prints its version there and already has its own tap handler, so
+  the gesture attaches separately and neither disturbs the other. `setDevMode(on)` writes `sidecut_devmode` AND sets the
+  app's own `localStorage.sidecut_testMode = '1'` - an affordance the app already had (`__scTestMode()`) - so leaving
+  dev mode clears the flag it set.
+- **THE PRE-DEV-MODE BUG THAT WOULD HAVE COST THE PREMIUM: the secret group returned `''` while unearned**, which made
+  the wall read as exactly 200 and left the 201st reward unreachable from the grid. The group always renders now and only
+  its TILE is conditional (which is also why the now-dangling `g.have ?` before the group's `return` had to go). What
+  found it is the check that compares what the tiles say against `unlockedCount()` - the reason the reward gates are
+  asserted against the count instead of against a literal.
+- **FIVE REWARDS, FOUR OF THEM LIVE RATHER THAN FLAGGED.** `REWARDS` pays at 50 / 100 / 150 / 200 with `cinder`, `quartz`,
+  `lumen` and `vortex` (the last `dynamic: true`), and at 201 with Premium. The themes are gated by
+  `rewardThemeOK(key)`/`rewardThemeNeed(key)`, which read the count EVERY time a tile is built, so a badge earned hands
+  the theme over on the next paint with nothing to unlock - the `themeGroupHTML` tile tag and click gate ask exactly the
+  function the Theme tab does. Premium is granted ONCE through the app's own path: `window.__scGrantPremium` calls
+  `setPremiumActive({plan:'gifted',gifted:true,source:'badges'})`, the same state a purchase writes, and the recorded
+  `sidecut_reward_premium` flag is what stops a badge reset from taking it back. `__scRewardThemeUnlocked` and
+  `__scRewardThemeProgress` are the read-only hooks the gates use.
+- **THE BUG THAT MADE DEV MODE UNABLE TO SEE ITS OWN REWARD: `grantRewards` sat inside `if(fresh.length)`.** Its job is
+  to notice a reward's COUNT, not a newly-earned badge, and the dev-mode self-test ("pretend the whole wall is earned",
+  `simAll`, honoured only while dev mode is on) changes no badge's own progress - so the one path that is meant to hand
+  out everything never ran it. `grantRewards(!!silent)` now runs on EVERY `checkAchievements()` and returns the fresh
+  list.
+- **THE VORTEX WHIRL IS A FINGER ANGLE WRITTEN TO ONE CSS VARIABLE.** The theme follows the finger about the screen
+  centre - `whirlAngle(e)` is an `atan2` about the viewport centre, `whirlPaint()` writes the degrees to `--whirl-deg` on
+  `<html>`, and the momentum carries on through `whirlSpin()` (`vel *= 0.965`) until it stops - while the whole visual is
+  `body.theme-dyn-vortex::before`: a `conic-gradient` with `transform: rotate(var(--whirl-deg, 0deg))` and
+  `will-change: transform`. **Transform only, no filter** (the 64.2.7 lesson), and `sandbox-reduce-motion` disables it,
+  so moving the layer never repaints it. `wireWhirl()` listens on the document but declines any drag starting on
+  `#nowPlaying, input, .sc-sheet, .sc-slider`, so the whirl never steals a seek, a slider or the player.
+- **THE FOLLOW-UP ASKED FOR STRAIGHT AFTER THE WALL SHIPPED** - "Make the achivements actually possible and without
+  sharing your songs". Three tiers could not be earned: (1) the seven album tiers read `d.albums`, which `derivedStats()`
+  hard-coded to zero - the stat is now a real union of the album names the songs already carry and the albums built by
+  hand, published through the app's own `userAlbums` via the one hook the patch adds; (2) "Blended" read `flags.autodj`
+  and nothing ever set that flag - only the counter - so `window.__scAutoDjAlign()` marks the feature; (3) two tiers
+  counted the two export buttons, and on a phone an export opens the SHARE SHEET, which is the sharing the user meant -
+  they count a library search and a song queued to play next now, both entirely local and wired by the module's own
+  delegated listeners. The tallest generated thresholds were pulled down to ceilings a year of real listening reaches,
+  because Premium needs ALL 201 and one unreachable tile blocks the reward.
+- **THE OTA BUNDLE NOW ITERATES TO A FIXED POINT, AND THAT FIXES A REAL DRIFT.** The root `manifest.json` is itself
+  inside `ota/update.zip` and `ota-play/update.zip`, and it carries the size of the bundle it lives in -
+  `dev/ota-bundle.mjs` deliberately does not rewrite it (it writes root `updates.json` instead). Seeding it after the
+  build therefore left the committed zip carrying a manifest that did not match it, which is why
+  `dev/ota-update-check.cjs`'s "a second generation produces the same bytes" failed on the 70.0 tree and passed on the
+  next run. `dev/ota-fixpoint.mjs` seeds, rebuilds and repeats until a rebuild produces the size it was seeded with
+  (two passes for 70.0.5), and reports every manifest against the zip it describes. Run it as the last build step. At this
+  fixed point `ota/` is **808501** and `ota-play/` is **808509**, all five manifests agree with the zip they describe
+  (`ota-update-check` 52, `ota-guard` 20, `ota-bootapply` 24, `ota-loop` 26, both `--check`s OK), and the head entry
+  publishes its **10 notes**, of which the OTA bundle carries the newest 6.
+- **The shell cache moved to `sidecut-shell-v63.0.31`** - its own counter, no app version in it (70.0.5 would have
+  carried `70.0`, and two releases sharing a cache name is the bug that check exists for).
+- **Still not measurable here.** Whether a four-tab dock looks right at the widths people hold, and how the + reads
+  next to the bell on a narrow phone, cannot be judged from this sandbox. The numbers to move if the phone disagrees
+  are `.action-strip`'s `gap`/`padding` and the 42px pill `min-height`. The same goes for the OTHER two things this
+  release asks of a finger: whether 7 taps inside 1600ms is a comfortable door (the window is the number to move, in
+  `wireDevGesture`), and how the Vortex whirl FEELS - jsdom proves the angle arrives in `--whirl-deg` and that a drag on
+  a control is never stolen, but the momentum decay (`vel *= 0.965`) and the phrase "whirls with your finger" are
+  device judgments, not sandbox ones.
+
+
 ## 70.0 (Sep 28, 2026): THE MEGA UPDATE — Studio, achievements, a batch tag editor, gestures, an assistant that acts, and the app reshaped around a bottom dock
 - **This is the release the user asked for by name**, and it is a series restart, not an increment: `APP_VERSION = '70.0'`. The
   rule was already written down at the changelog and is worth repeating where the number is chosen — the third number stops

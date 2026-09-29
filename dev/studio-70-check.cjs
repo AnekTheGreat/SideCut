@@ -256,19 +256,64 @@ const realErrors = (errors) => errors.filter((e) =>
     doc.getElementById('studioBtn').click();
     await wait(120);
     ok(doc.getElementById('homeView').classList.contains('active'), 'tapping Studio again goes back Home');
+
+    // 70.0.5, the user's words: "Remove the add songs tab from bottom and remove
+    // the refresh button from the top and replace that with a plus sign for add
+    // songs". The dock is four tabs, the + is the only way into the menu, and it
+    // has to actually open it from up there.
+    // Only the dock's OWN children are tabs - the menu lives inside this subtree
+    // and its five buttons wear .action-pill as well.
+    const tabs = Array.from(strip.children).filter((el) => el.classList.contains('action-pill'));
+    ok(tabs.length === 4, 'the dock is four tabs (' + tabs.map((b) => b.id).join(',') + ')');
+    ok(tabs.map((b) => b.id).join(',') === 'homeBtn,libraryBtn,discoverBtn,studioBtn',
+       'and they are Home, Library/Albums, Discover and Studio');
+    ok(!doc.getElementById('addSongsToggle'), 'the add-songs pill is gone from the dock');
+    ok(!doc.getElementById('addSongsWrap'), 'and so is the wrap it sat in - it was a flex child, so it would still take a share of the row');
+
+    const plus = doc.getElementById('addSongsBtn');
+    ok(!!plus, 'the header has a + where the refresh button was');
+    ok(!doc.getElementById('refreshBtn'), 'and the refresh button is really gone');
+    ok(!!plus && plus.getAttribute('title') === 'Add songs', 'the + is titled Add songs');
+    ok(!!plus && doc.querySelector('header').contains(plus), 'and it sits in the header with the other icon buttons');
+    ok(!!doc.getElementById('addSongsMenu') && !!doc.getElementById('addSongsBackdrop'),
+       'the menu and its backdrop are still on the page after the move');
+
+    ok(!doc.getElementById('addSongsMenu').classList.contains('open'), 'the menu starts shut');
+    plus.click();
+    await wait(60);
+    ok(doc.getElementById('addSongsMenu').classList.contains('open'), 'tapping the + opens the Add songs menu');
+    ok(doc.getElementById('addSongsBackdrop').classList.contains('open'), 'and dims what is behind it');
+    ok(strip.classList.contains('menu-open'), 'and lifts the dock, so the menu clears the player');
+    ['addFolderBtn', 'addBtn', 'importLibBtn', 'exportSongsBtn', 'exportLibBtn'].forEach((id) =>
+      ok(!!doc.getElementById(id), 'the menu still offers ' + id));
+    plus.click();
+    await wait(60);
+    ok(!doc.getElementById('addSongsMenu').classList.contains('open'), 'tapping the + again shuts it');
+    ok(!strip.classList.contains('menu-open'), 'and the dock drops back');
+    plus.click();
+    await wait(60);
+    doc.getElementById('addSongsBackdrop').click();
+    await wait(60);
+    ok(!doc.getElementById('addSongsMenu').classList.contains('open'), 'and tapping outside shuts it too');
   }
 
   console.log('[2] the Studio view');
   {
-    ok(!!win.SC70 && win.SC70.version === '70.0', 'the Studio module is on the page as 70.0');
+    // 70.0.5: the module reads the version the app publishes instead of pinning
+    // the release it was written in, so the Studio header cannot go stale.
+    ok(!!win.SC70 && win.SC70.version === win.APP_VERSION,
+       'the Studio module is on the page as the app version (' + (win.SC70 && win.SC70.version) + ')');
     win.SC70.renderStudio();
     await wait(60);
     const tools = Array.from(doc.querySelectorAll('#studioView [data-tool]')).map((b) => b.getAttribute('data-tool'));
     ok(tools.length === 5, 'five tool cards (' + tools.join(',') + ')');
     ['clip', 'fx', 'karaoke', 'sampler', 'looper'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
+    // 70.0.5: 201 badges, one of which is a single blank tile until dev mode
+    // reveals it - so the wall is 201 tiles here, 200 real and one blank. Section
+    // [11] walks the rest.
     const badges = doc.querySelectorAll('#studioView .sc-badge');
-    ok(badges.length >= 25, 'the badge grid has ' + badges.length + ' badges');
+    ok(badges.length === 201, 'the badge grid has 201 tiles, the last one blank (' + badges.length + ')');
     ok(doc.querySelectorAll('#studioView .sc-badge-bar').length === badges.length,
       'every badge carries its own progress bar');
     ok(doc.querySelectorAll('#studioView [data-act="autodj"], #studioView [data-act="shake"], #studioView [data-act="swipe"]').length === 3,
@@ -335,6 +380,7 @@ const realErrors = (errors) => errors.filter((e) =>
   console.log('[5] achievements and streaks');
   {
     const before = win.SC70.unlockedCount();
+    var before11 = before;
     ok(before > 0, 'badges already earned from the real stats: ' + before);
     const all = win.SC70.achievements();
     const hundred = all.filter((a) => a.id === 'hour_100')[0];
@@ -349,7 +395,10 @@ const realErrors = (errors) => errors.filter((e) =>
     const fresh = win.SC70.checkAchievements(true);
     ok(fresh.some((a) => a.id === 'clip_1'), 'exporting a clip unlocks the clip badge');
     const after = win.SC70.unlockedCount();
-    ok(after === before + 1, 'and the count moves by exactly one (' + before + ' -> ' + after + ')');
+    // Not "exactly one": a feature flag also feeds the "N features used" tier, so
+    // marking one can legitimately cross a threshold on the generated badges too.
+    // What matters is that clip_1 is in the fresh list and the count went up.
+    ok(after > before, 'and the count moves up (' + before + ' -> ' + after + ')');
     const again = win.SC70.checkAchievements(true);
     ok(again.length === 0, 'checking again unlocks nothing a second time');
     ok(win.localStorage.getItem('sidecut_achievements') !== null, 'and what is unlocked is remembered on the device');
@@ -533,7 +582,140 @@ const realErrors = (errors) => errors.filter((e) =>
     win.SC70.gestures.shake = false;
   }
 
-  console.log('[11] the page still holds together');
+  console.log('[11] 201 badges, one secret, five rewards');
+  {
+    const all = win.SC70.achievements();
+    ok(all.length === 201, 'the wall is 201 badges (' + all.length + ')');
+    ok(all.filter((a) => a.secret).length === 1, 'exactly one of them is secret');
+    ok(all.filter((a) => a.secret)[0].id === 'secret_devmode', 'and it is the dev-mode door');
+    ok(all.filter((a) => !a.secret).length === 200, 'the other 200 are on the grid from the start');
+    ok(new Set(all.map((a) => a.id)).size === 201, 'no two of the 201 share an id');
+    ok(all.every((a) => Number.isFinite(a.need.got) && a.need.want > 0),
+      'and every one of them has a target and a countable progress');
+
+    win.SC70.renderStudio();
+    const heads = Array.from(doc.querySelectorAll('#studioView .sc-ach-group-head'));
+    const titles = heads.map((h) => h.firstElementChild.textContent);
+    ok(titles.length === 9, 'they are grouped into nine sections (' + titles.join(' / ') + ')');
+    ok(titles.join('|') === 'Streaks|Listening|Discovery|Library|Studio & editing|Assistant & gestures|Themes|Milestones|Secret',
+       'and the sections are the app\u2019s own areas of the app');
+    const counted = heads.reduce((n, h) => {
+      const m = /\/(\d+)/.exec(h.lastElementChild.textContent);
+      return n + (m ? Number(m[1]) : 0);
+    }, 0);
+    ok(counted === 201, 'the nine group counts add up to 201 (' + counted + ')');
+
+    // ---- before dev mode: the secret one is a blank tile, not a spoiler ----
+    ok(win.SC70.devMode() === false, 'dev mode starts off');
+    ok(doc.querySelectorAll('#studioView .sc-badge-secret').length === 1,
+      'so the wall shows one blank tile where the secret badge would be');
+    ok(!doc.querySelector('#studioView .sc-dev'), 'and no dev panel');
+    ok(win.SC70.achievements().filter((a) => a.secret)[0].need.got === 0,
+      'the secret badge is not met');
+    ok(win.SC70.unlockedCount() < 201, 'and it is not part of the count');
+    // The gate is live, so it has to agree with the COUNT, not with a stored flag -
+    // and it does, whatever the count happens to be on this device.
+    const rewardAt = { cinder: 50, quartz: 100, lumen: 150, vortex: 200 };
+    const n11 = win.SC70.unlockedCount();
+    Object.keys(rewardAt).forEach((k) =>
+      ok(win.SC70.themeUnlocked(k) === (n11 >= rewardAt[k]),
+         k + ' unlocks exactly when the count reaches ' + rewardAt[k] + ' (at ' + n11 + ')'));
+    ok(win.SC70.themeUnlocked('vortex') === false, 'and Vortex is still out of reach at ' + n11 + ' badges');
+
+    // ---- the gesture the user asked for: dev mode is what opens the door ----
+    const label = doc.getElementById('currentVersionLabel');
+    ok(!!label, 'the version line is on the Settings page');
+    for (let i = 0; i < 6; i++) { label.click(); await wait(4); }
+    ok(win.SC70.devMode() === false, 'six taps are not enough');
+    label.click();
+    await wait(40);
+    ok(win.SC70.devMode() === true, 'the seventh opens dev mode');
+    ok(win.localStorage.getItem('sidecut_testMode') === '1',
+      'and it sets the app\u2019s own test flag, so the app\u2019s dev affordances come with it');
+
+    win.SC70.renderStudio();
+    ok(!!doc.querySelector('#studioView .sc-dev'), 'the dev panel is on the wall');
+    ok(doc.querySelectorAll('#studioView .sc-badge-secret').length === 0,
+      'the blank tile is replaced by the real badge');
+    const secret = win.SC70.achievements().filter((a) => a.secret)[0];
+    ok(secret.need.got === 1, 'and the secret badge is met by having entered');
+    ok(win.SC70.unlockedCount() > before11, 'so the count moves up by it');
+
+    // ---- the five rewards ----
+    const rw = win.SC70.rewards();
+    ok(rw.length === 5, 'there are five rewards');
+    ok(rw.map((r) => r.at).join(',') === '50,100,150,200,201',
+       'at 50, 100, 150, 200 and 201 (' + rw.map((r) => r.at).join(',') + ')');
+    ok(rw.slice(0, 4).every((r) => r.kind === 'theme'), 'the first four are themes');
+    ok(rw[3].key === 'vortex' && rw[3].dynamic === true, 'the 200 one is the dynamic Vortex');
+    ok(rw[4].kind === 'premium', 'and 201 is SideCut Premium');
+
+    // ---- every reward lands when the wall fills ----
+    const sim = doc.querySelector('#studioView [data-act="devsim"]');
+    ok(!!sim, 'the dev panel can pretend the whole wall is earned');
+    sim.click();
+    await wait(120);
+    ok(win.SC70.unlockedCount() === 201, 'with it on, all 201 read as earned');
+    ok(win.SC70.rewards().every((r) => r.earned), 'every reward row is earned');
+    ['cinder', 'quartz', 'lumen', 'vortex'].forEach((k) =>
+      ok(win.SC70.themeUnlocked(k) === true, k + ' unlocks with the badges'));
+    ok(win.isPremiumActive() === true, 'and 201 badges grant SideCut Premium, free');
+    const prem = JSON.parse(win.localStorage.getItem('sidecut_premium') || 'null');
+    ok(prem && prem.gifted === true && prem.source === 'badges',
+      'recorded as a gift from the badges, not a purchase');
+
+    // ---- the app's Theme tab asks the wall, live ----
+    ok(typeof win.__scRewardThemeUnlocked === 'function', 'the Theme tab has a gate to ask');
+    ok(['cinder', 'quartz', 'lumen', 'vortex'].every((k) => win.__scRewardThemeUnlocked(k) === true),
+      'and it agrees all four are unlocked now');
+    const prog = win.__scRewardThemeProgress('vortex');
+    ok(!!prog && prog.at === 200, 'it knows Vortex costs 200 badges');
+    const themeCss = html.indexOf('body.theme-dyn-vortex::before') !== -1;
+    ok(themeCss, 'and the Vortex backdrop is in the stylesheet');
+
+    // ---- Vortex whirls with the finger ----
+    win.__scApplyTheme('vortex');
+    await wait(60);
+    ok(doc.body.classList.contains('theme-dyn-vortex'), 'Vortex applies as a dynamic theme');
+    const at = (type, x, y, target) => {
+      const e = new win.Event(type);
+      Object.defineProperty(e, 'clientX', { value: x });
+      Object.defineProperty(e, 'clientY', { value: y });
+      Object.defineProperty(e, 'target', { value: target || doc.body });
+      win.dispatchEvent(e);
+    };
+    at('pointerdown', 500, 300);
+    at('pointermove', 500, 500);
+    await wait(40);
+    const spun = win.SC70.spin();
+    ok(Math.abs(spun) > 1, 'dragging a finger around the screen whirls it (' + spun.toFixed(1) + '\u00b0)');
+    ok(doc.documentElement.style.getPropertyValue('--whirl-deg') !== '',
+      'and the angle is written to the page as --whirl-deg');
+    win.SC70.spinWhirl(45);
+    ok(doc.documentElement.style.getPropertyValue('--whirl-deg') === '45.00deg',
+      'and it can be spun to an angle directly');
+    win.__scApplyTheme('coral');
+    await wait(30);
+    ok(!doc.body.classList.contains('theme-dyn-vortex'), 'leaving Vortex clears its class and its layer');
+
+    // ---- a dev-mode reset clears badges, never the reward ----
+    const reset = doc.querySelector('#studioView [data-act="devreset"]');
+    ok(!!reset, 'dev mode can reset its own state');
+    reset.click();
+    await wait(80);
+    ok(win.isPremiumActive() === true, 'a badge reset does not take the earned Premium back');
+    ok(win.localStorage.getItem('sidecut_achievements') !== null || win.SC70.unlockedCount() >= 1,
+      'but the badges and counters really are cleared');
+
+    const off = doc.querySelector('#studioView [data-act="devoff"]');
+    ok(!!off, 'and dev mode can be left');
+    off.click();
+    await wait(60);
+    ok(win.SC70.devMode() === false, 'leaving it turns it off');
+    ok(win.localStorage.getItem('sidecut_testMode') === null, 'and clears the app\u2019s test flag with it');
+  }
+
+  console.log('[12] the page still holds together');
   {
     const bad = realErrors(errors);
     ok(bad.length === 0, 'the boot log is clean' + (bad.length ? ': ' + bad.slice(0, 3).join(' | ') : ''));

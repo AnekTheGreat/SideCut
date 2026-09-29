@@ -17,14 +17,25 @@
 (function(){
   'use strict';
 
-  var VERSION = '70.0';
+  // The app publishes window.APP_VERSION from block 1, and this block is spliced
+  // AFTER it, so the Studio header and window.SC70.version name the build that is
+  // actually on the page instead of pinning the release this module was written
+  // in and going stale on the next one.
+  var VERSION = (typeof window !== 'undefined' && window.APP_VERSION) || '70.0';
   var LS = {
     fx: 'sidecut_studio_fx',
     pads: 'sidecut_studio_pads',
     ach: 'sidecut_achievements',
     flags: 'sidecut_feature_flags',
     gestures: 'sidecut_gestures',
-    autodj: 'sidecut_autodj'
+    autodj: 'sidecut_autodj',
+    // 70.0.5
+    ctr: 'sidecut_ach_counters',
+    dev: 'sidecut_devmode',
+    padsSeen: 'sidecut_pads_seen',
+    themes: 'sidecut_themes_used',
+    reward: 'sidecut_reward_premium',
+    sim: 'sidecut_dev_sim'
   };
 
   function $(id){ return document.getElementById(id); }
@@ -210,8 +221,17 @@
   // speed is a multiplier on the app's own speed rather than a fight with it.
   window.__scStudioRate = function(){ return fxState.rate || 1; };
   function saveFx(){ lsSet(LS.fx, fxState); }
+  // Distinct presets tried, not preset taps: the badge is "every Studio preset",
+  // so pressing the same one ten times must not walk it.
+  function seenPreset(id){
+    if(!id) return;
+    counters['preset_' + id] = 1;
+    counters.presets = Object.keys(counters).filter(function(k){ return k.indexOf('preset_') === 0; }).length;
+    lsSet(LS.ctr, counters);
+  }
   function setFx(patch, quiet){
     for(var k in patch) fxState[k] = patch[k];
+    if(patch && patch.preset) seenPreset(patch.preset);
     saveFx();
     applyFx();
     applyRate();
@@ -280,6 +300,7 @@
     });
   }
   function playPad(i){
+    seenPad(i);
     var b = samplerBuffer();
     if(!b){ toast('Load the sampler first.'); return; }
     var pad = sampler.pads[i];
@@ -336,6 +357,7 @@
 
   var looper = { layers: [], running: false, length: 4 };
   function recordLoop(){
+    bump('loops');
     var t = currentTrack();
     if(!t){ toast('Play a song first, then record a loop.'); return; }
     var a = call('__scActiveAudio');
@@ -470,6 +492,7 @@
     var l = $('scClipLen'); if(l) l.textContent = secToClock(Math.max(0, clip.end - clip.start));
   }
   function exportClip(){
+    bump('clips');
     if(clip.busy || !clip.tr) return;
     var len = clip.end - clip.start;
     if(len < 0.5){ toast('Pick at least half a second.'); return; }
@@ -547,6 +570,7 @@
           markFeature('reencode');
           renderStudio();
           var saved = Math.max(0, oldSize - newFile.size);
+          bump('savedBytes', saved);
           toastWithUndo('Re-encoded "' + (t.name || 'song') + '" at ' + kbps + ' kbps \u2014 ' + fmtBytes(saved) + ' smaller', function(){ undoReencode(id); });
         });
       });
@@ -584,6 +608,10 @@
   var achState = lsGet(LS.ach, {}) || {};
   var flags = lsGet(LS.flags, {}) || {};
   function markFeature(k){
+    // The flag is once-ever; the counter is every time. 'crop' arrives from the
+    // app's own crop button, which calls SC70.markFeature, so its counter lives
+    // here rather than in a second hook the app would have to remember to call.
+    if(k === 'crop') bump('crops');
     if(flags[k]) return;
     flags[k] = Date.now();
     lsSet(LS.flags, flags);
@@ -592,7 +620,7 @@
     var s = call('__scStats') || {};
     return s;
   }
-  function ACHIEVEMENTS(){
+  function BASE_ACHIEVEMENTS(){
     var s = stats();
     var plays = s.plays || 0, secs = s.listenSeconds || 0, lib = s.library || 0;
     var hours = secs / 3600;
@@ -607,7 +635,10 @@
       { id: 'first_play', name: 'First spin', sub: 'Play one song', ico: '\u25b6', tone: 'a', need: p(plays, 1) },
       { id: 'plays_100', name: 'Hundred club', sub: '100 songs played', ico: '\u266b', tone: 'a', need: p(plays, 100) },
       { id: 'plays_1000', name: 'Thousand club', sub: '1,000 songs played', ico: '\u266b', tone: 'b', need: p(plays, 1000) },
-      { id: 'plays_5000', name: 'Five thousand', sub: '5,000 songs played', ico: '\u266b', tone: 'c', need: p(plays, 5000) },
+      // 5,000 plays was the one hand-written target that only a multi-year library
+      // could ever meet, and every badge is needed for the Premium reward - so it
+      // is 3,000 now, which a year of daily listening reaches.
+      { id: 'plays_3000', name: 'Three thousand', sub: '3,000 songs played', ico: '\u266b', tone: 'c', need: p(plays, 3000) },
       { id: 'hour_1', name: 'One hour in', sub: '1 hour listened', ico: '\u23f1', tone: 'a', need: p(hours, 1) },
       { id: 'hour_10', name: 'Ten hours', sub: '10 hours listened', ico: '\u23f1', tone: 'a', need: p(hours, 10) },
       { id: 'hour_100', name: 'Century of sound', sub: '100 hours listened', ico: '\ud83c\udfc6', tone: 'c', need: p(hours, 100) },
@@ -636,12 +667,341 @@
       { id: 'all_tools', name: 'Every tool', sub: 'Use all five Studio tools', ico: '\ud83d\udee0', tone: 'c', need: p(['slow', 'karaoke', 'sampler', 'looper', 'clip'].filter(function(k){ return flags[k]; }).length, 5) }
     ];
   }
+  /* --------------------------------------------------------------------------
+     5b. TWO HUNDRED BADGES, ONE SECRET, AND FIVE REWARDS (70.0.5)
+
+     The user asked for over two hundred achievements, one of them secret and only
+     obtainable by entering dev mode, plus a free theme at 50, 100 and 150 badges,
+     a dynamic theme that whirls under your finger at 200, and free Premium at 201
+     with the secret one.
+
+     Three design decisions worth writing down:
+
+       * Every badge on the wall is REACHABLE by using the app normally, and none
+         of them asks for a song to be shared, exported or uploaded. Three things
+         had to change for that to be true: the album tiers read a stat the app
+         always reported as zero (so all seven were impossible), the "Blended"
+         badge asked for a flag nothing ever set, and two tiers counted the two
+         export buttons. The album stat is real now, Auto-DJ sets its own flag, and
+         those two slots count a search and a queued song instead - both local. The
+         generated thresholds were also pulled down from their originals (2,000
+         songs, 4,000 plays, 365 days, 200 hours, 500 artists) to ceilings a year of
+         real listening reaches, and every table is asserted to stay under them.
+
+       * The 30 badges 70.0 shipped are kept as they were written (nicer
+         names, hand-written subs) and the rest are GENERATED from threshold tables.
+         A hundred and seventy hand-written tiles would be a transcription exercise
+         with a hundred and seventy chances to typo a number; tables are exact and
+         the count is asserted by the gate instead of trusted.
+
+       * The themes are gated LIVE - the app asks whether the badge count has reached
+         the reward, every time it draws the Theme tab - so there is nothing to
+         unlock, nothing to lose on a reinstall that keeps badges, and no state that
+         can disagree with the badges themselves. Premium is the one reward with a
+         side effect, so that one is granted once and recorded.
+     -------------------------------------------------------------------------- */
+  var counters = lsGet(LS.ctr, {}) || {};
+  function bump(k, n){
+    counters[k] = (counters[k] || 0) + (n == null ? 1 : n);
+    lsSet(LS.ctr, counters);
+    return counters[k];
+  }
+  function ctr(k){ return counters[k] || 0; }
+  var padsSeen = lsGet(LS.padsSeen, {}) || {};
+  function seenPad(i){ padsSeen[i] = 1; lsSet(LS.padsSeen, padsSeen); return Object.keys(padsSeen).length; }
+  var themesUsed = lsGet(LS.themes, {}) || {};
+  function noteTheme(key){
+    if(!key) return 0;
+    themesUsed[key] = 1;
+    lsSet(LS.themes, themesUsed);
+    return Object.keys(themesUsed).length;
+  }
+  var DYN_KEYS = ['rgb', 'rgbplus', 'ember', 'galaxy', 'glacier', 'aurora', 'synthwave', 'ocean', 'cyberpunk', 'nebula', 'neonpulse', 'solstice', 'abyss', 'orchid', 'vortex'];
+  function dynCount(){ return DYN_KEYS.filter(function(k){ return themesUsed[k]; }).length; }
+
+  // ---- dev mode ------------------------------------------------------------
+  // Seven taps on the version label in Settings - a control everyone can see and
+  // nobody taps twice. It sets the app's own hidden test flag too, so the app's
+  // dev affordances light up with ours.
+  var devOn = !!lsGet(LS.dev, null);
+  function devMode(){ return devOn; }
+  function setDevMode(on){
+    devOn = !!on;
+    lsSet(LS.dev, devOn ? { at: Date.now() } : null);
+    try{
+      if(devOn) localStorage.setItem('sidecut_testMode', '1');
+      else localStorage.removeItem('sidecut_testMode');
+    }catch(e){}
+    try{ document.body.classList.toggle('sc-dev-on', devOn); }catch(e){}
+    if(devOn){
+      toast('\ud83d\udd27 Dev mode on \u00b7 the hidden badge is on the grid now.', 4200);
+      checkAchievements();
+    } else {
+      toast('Dev mode off.');
+    }
+    renderStudio();
+  }
+  function wireDevGesture(){
+    var el = $('currentVersionLabel');
+    if(!el || el.__scDevTaps !== undefined) return;
+    el.__scDevTaps = 0;
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', function(){
+      el.__scDevTaps++;
+      clearTimeout(el.__scDevTimer);
+      el.__scDevTimer = setTimeout(function(){ el.__scDevTaps = 0; }, 1600);
+      var left = 7 - el.__scDevTaps;
+      if(left > 0 && left <= 3) toast(left + ' more\u2026', 900);
+      if(el.__scDevTaps >= 7){ el.__scDevTaps = 0; setDevMode(!devOn); }
+    });
+  }
+
+  // ---- the five rewards ----------------------------------------------------
+  var REWARDS = [
+    { at: 50,  kind: 'theme',   key: 'cinder',  name: 'Cinder',  note: 'Six metallic palettes in one' },
+    { at: 100, kind: 'theme',   key: 'quartz',  name: 'Quartz',  note: 'Cool glass and silver' },
+    { at: 150, kind: 'theme',   key: 'lumen',   name: 'Lumen',   note: 'Daylight green and mint' },
+    { at: 200, kind: 'theme',   key: 'vortex',  name: 'Vortex',  note: 'A dynamic theme that whirls under your finger', dynamic: true },
+    { at: 201, kind: 'premium', key: 'premium', name: 'SideCut Premium', note: 'Every badge in the app, including the secret one' }
+  ];
+  function rewardEarned(at){ return unlockedCount() >= at; }
+  function rewardState(){
+    var n = unlockedCount();
+    return REWARDS.map(function(r){
+      return { at: r.at, kind: r.kind, key: r.key, name: r.name, note: r.note, dynamic: !!r.dynamic, earned: n >= r.at, have: n };
+    });
+  }
+  function themeRewards(){ return REWARDS.filter(function(r){ return r.kind === 'theme'; }); }
+  // Called from the app's Theme tab, through window.SC70 - a reward theme is free
+  // the moment the badges are there, for everyone, with or without Premium.
+  function themeUnlocked(key){
+    for(var i = 0; i < REWARDS.length; i++){
+      if(REWARDS[i].kind === 'theme' && REWARDS[i].key === key) return rewardEarned(REWARDS[i].at);
+    }
+    return true;
+  }
+  function grantRewards(silent){
+    if(!rewardEarned(201)) return false;
+    if(lsGet(LS.reward, null)) return false;
+    var ok = call('__scGrantPremium', { plan: 'badges', gifted: true, note: 'All 201 badges' });
+    lsSet(LS.reward, { at: Date.now(), granted: !!ok });
+    if(!silent) toast('\ud83d\ude80 201 of 201 \u00b7 SideCut Premium is yours, free. Thank you for playing with all of it.', 6000);
+    return !!ok;
+  }
+  var REWARD_MARKS = REWARDS.map(function(r){ return r.at; });
+  function celebrateRewards(before){
+    var after = unlockedCount();
+    REWARDS.forEach(function(r){
+      if(before < r.at && after >= r.at){
+        if(r.kind === 'theme') toast('\ud83c\udf89 ' + r.at + ' badges \u00b7 ' + r.name + ' is unlocked in Settings \u2192 Theme, free.', 5200);
+      }
+    });
+  }
+
+  // ---- the generated tiers -------------------------------------------------
+  // Every table is { group, key, ico, unit, sub, vals[], get(stats), name(v) }.
+  // The thresholds deliberately avoid the 30 hand-written badges' numbers, so no
+  // milestone is celebrated twice under two names.
+  function fmtNum(v){ return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  // Every feature the app can mark as used. The capstone badge at the end of the
+  // counting tables wants ALL of them, so this list IS that badge's definition: a
+  // new flag cannot be counted without joining it. Nothing here is a share or an
+  // export - every one of these happens on the phone, to your own files.
+  var FEATURE_KEYS = ['studio', 'slow', 'karaoke', 'sampler', 'looper', 'clip', 'crop', 'retag', 'reencode', 'assistant', 'autodj', 'gestures'];
+  var BADGE_TIERS = [
+    { g: 'listen', k: 'plays', ico: '\u266b', sub: 'Songs played',
+      vals: [3, 5, 10, 25, 50, 150, 250, 400, 600, 800, 1200],
+      get: function(s){ return s.plays || 0; }, name: function(v){ return fmtNum(v) + ' plays'; } },
+    { g: 'listen', k: 'hours', ico: '\u23f1', sub: 'Time listened',
+      vals: [0.1, 0.25, 0.5, 2, 5, 7.5, 15, 20, 25, 40, 50, 60, 75, 90],
+      get: function(s){ return (s.listenSeconds || 0) / 3600; },
+      name: function(v){ return v < 1 ? Math.round(v * 60) + ' minutes listened' : (v === 1 ? '1 hour listened' : fmtNum(v) + ' hours listened'); } },
+    { g: 'explore', k: 'song', ico: '\ud83d\udd01', sub: 'One song, over and over',
+      vals: [2, 3, 5, 15, 20, 25],
+      get: function(s, d){ return d.maxPlays; }, name: function(v){ return 'One song played ' + v + ' times'; } },
+    { g: 'explore', k: 'distinct', ico: '\ud83c\udfb5', sub: 'Songs actually played',
+      vals: [1, 5, 10, 20, 30, 100, 200],
+      get: function(s, d){ return d.playedTracks; }, name: function(v){ return fmtNum(v) + ' different songs played'; } },
+    { g: 'explore', k: 'night', ico: '\ud83c\udf19', sub: 'After 1 AM',
+      vals: [3, 5, 10, 15, 20, 25],
+      get: function(s){ return s.nightPlays || 0; }, name: function(v){ return v + ' late-night songs'; } },
+    { g: 'explore', k: 'artists', ico: '\ud83c\udfa4', sub: 'Across your library',
+      vals: [2, 5, 10, 15, 35, 50, 75, 100, 125, 150, 200],
+      get: function(s, d){ return d.artists; }, name: function(v){ return fmtNum(v) + ' different artists'; } },
+    { g: 'explore', k: 'genres', ico: '\ud83c\udfad', sub: 'Genres in the library',
+      vals: [1, 3, 5, 8, 10, 12, 15, 18, 20],
+      get: function(s, d){ return d.genres; }, name: function(v){ return v + ' genres'; } },
+    { g: 'streak', k: 'streak', ico: '\ud83d\udd25', sub: 'Days in a row',
+      vals: [2, 4, 5, 6, 8, 10, 14, 21, 45, 60, 75, 90],
+      get: function(s){ return s.streak || 0; }, name: function(v){ return v + ' days in a row'; } },
+    { g: 'streak', k: 'longest', ico: '\u2b50', sub: 'Your best run',
+      vals: [7, 21, 30, 45, 60],
+      get: function(s){ return s.longest || 0; }, name: function(v){ return 'Best streak of ' + v + ' days'; } },
+    { g: 'library', k: 'lib', ico: '\u2630', sub: 'Songs in the library',
+      vals: [1, 5, 10, 25, 75, 150, 250, 400, 600, 700, 800, 900, 1000],
+      get: function(s){ return s.library || 0; }, name: function(v){ return fmtNum(v) + ' songs shelved'; } },      // "Albums you made" used to read a number the app always reported as zero,
+      // which made all seven of these impossible. It counts the albums in your
+      // library now: a hand-built album, or an album name the songs already carry.
+      { g: 'library', k: 'albums', ico: '\ud83d\udcbf', sub: 'Albums in your library',
+      vals: [1, 2, 3, 5, 8, 10, 12],
+      get: function(s, d){ return d.albums; }, name: function(v){ return v + ' album' + (v === 1 ? '' : 's') + ' shelved'; } },
+    { g: 'library', k: 'playlists', ico: '\ud83d\udcdc', sub: 'Playlists you built',
+      vals: [1, 2, 3, 5, 8, 10, 12],
+      get: function(s, d){ return d.playlists; }, name: function(v){ return v + ' playlist' + (v === 1 ? '' : 's') + ' of your own'; } },
+    { g: 'library', k: 'favorites', ico: '\u2665', sub: 'Songs you marked',
+      vals: [1, 3, 5, 10, 20, 35, 50, 75, 100],
+      get: function(s, d){ return d.favorites; }, name: function(v){ return v + ' favorites'; } }
+  ];
+  // The counting tiers - things the app does rather than things it holds.
+  var BADGE_COUNTS = [
+    { g: 'studio', k: 'cleaner', ico: '\ud83e\uddf9', sub: 'Storage cleaner', vals: [1], get: function(){ return ctr('cleaner'); }, name: function(){ return 'Opened the storage cleaner'; } },
+    { g: 'studio', k: 'presets', ico: '\ud83c\udf9b', sub: 'Studio presets tried', vals: [1, 3, 6], get: function(){ return ctr('presets'); }, name: function(v){ return v === 6 ? 'Every Studio preset' : v + ' Studio presets'; } },
+    { g: 'studio', k: 'pads', ico: '\ud83c\udfb9', sub: 'Sampler pads used', vals: [1, 4, 8], get: function(){ return Object.keys(padsSeen).length; }, name: function(v){ return v === 8 ? 'All eight pads' : v + ' pads played'; } },
+    { g: 'studio', k: 'loops', ico: '\ud83d\udd01', sub: 'Loops recorded', vals: [1, 5, 25], get: function(){ return ctr('loops'); }, name: function(v){ return v + ' loops recorded'; } },
+    { g: 'studio', k: 'clips', ico: '\u2702', sub: 'Clips exported', vals: [1, 3, 10], get: function(){ return ctr('clips'); }, name: function(v){ return v + ' clips exported'; } },
+    { g: 'studio', k: 'crops', ico: '\u2702', sub: 'Songs cropped', vals: [1, 5], get: function(){ return ctr('crops'); }, name: function(v){ return v + ' songs cropped'; } },
+    { g: 'studio', k: 'reenc', ico: '\u2b07', sub: 'Re-encoded smaller', vals: [1, 5, 15], get: function(s, d){ return d.reencoded; }, name: function(v){ return v + ' songs re-encoded'; } },
+    { g: 'studio', k: 'batch', ico: '\u270e', sub: 'Batch tag runs', vals: [1, 5], get: function(){ return ctr('batch'); }, name: function(v){ return v + ' batch tag run' + (v === 1 ? '' : 's'); } },
+    { g: 'studio', k: 'tagged', ico: '\ud83c\udff7', sub: 'Songs tagged in a batch', vals: [10, 50], get: function(){ return ctr('tagged'); }, name: function(v){ return v + ' songs retagged'; } },
+    { g: 'studio', k: 'saved', ico: '\ud83d\udcbe', sub: 'Space won back', vals: [5242880, 52428800], get: function(){ return ctr('savedBytes'); }, name: function(v){ return fmtBytes(v) + ' saved by re-encoding'; } },
+    { g: 'studio', k: 'visits', ico: '\ud83c\udfa7', sub: 'Studio visits', vals: [10, 50], get: function(){ return ctr('studio'); }, name: function(v){ return 'Into Studio ' + v + ' times'; } },
+    { g: 'assistant', k: 'asst', ico: '\u2728', sub: 'Things done for you', vals: [5, 10, 25, 50], get: function(){ return ctr('assistant'); }, name: function(v){ return v + ' things done by the assistant'; } },
+    { g: 'assistant', k: 'asst_t', ico: '\u23ed', sub: 'Assistant transport', vals: [1], get: function(){ return ctr('asstTransport'); }, name: function(){ return 'Skipped a song by asking'; } },
+    { g: 'assistant', k: 'asst_p', ico: '\ud83d\udcdc', sub: 'Assistant playlists', vals: [1], get: function(){ return ctr('asstPlaylist'); }, name: function(){ return 'A playlist built by asking'; } },
+    { g: 'assistant', k: 'asst_th', ico: '\ud83c\udfa8', sub: 'Assistant themes', vals: [1], get: function(){ return ctr('asstTheme'); }, name: function(){ return 'Changed the theme by asking'; } },
+    { g: 'assistant', k: 'asst_c', ico: '\u2702', sub: 'Assistant clips', vals: [1], get: function(){ return ctr('asstClip'); }, name: function(){ return 'A clip cut by asking'; } },
+    { g: 'assistant', k: 'shake', ico: '\ud83d\udcf1', sub: 'Shake to skip', vals: [1], get: function(){ return ctr('shake'); }, name: function(){ return 'Skipped a song by shaking the phone'; } },
+    { g: 'assistant', k: 'swipe_t', ico: '\ud83d\udc46', sub: 'Swiped the player', vals: [1], get: function(){ return ctr('swipeTrack'); }, name: function(){ return 'Changed track with a swipe'; } },
+    { g: 'assistant', k: 'swipe_s', ico: '\ud83c\udfaf', sub: 'Swiped the progress bar', vals: [1], get: function(){ return ctr('swipeSeek'); }, name: function(){ return 'Seeked with a swipe'; } },
+    { g: 'themes', k: 'themec', ico: '\ud83c\udfa8', sub: 'Theme changes', vals: [1, 5, 10, 25], get: function(){ return ctr('themeChange'); }, name: function(v){ return v + ' theme change' + (v === 1 ? '' : 's'); } },
+    { g: 'themes', k: 'dyn', ico: '\u2728', sub: 'Dynamic themes used', vals: [1, 3, 6], get: function(){ return dynCount(); }, name: function(v){ return v + ' dynamic themes used'; } },
+    { g: 'themes', k: 'rgb', ico: '\ud83c\udf08', sub: 'The RGB cycle', vals: [1], get: function(){ return themesUsed.rgb ? 1 : 0; }, name: function(){ return 'Turned on the RGB cycle'; } },
+    { g: 'themes', k: 'vortex', ico: '\ud83c\udf00', sub: 'The 200-badge theme', vals: [1], get: function(){ return themesUsed.vortex ? 1 : 0; }, name: function(){ return 'Spun the Vortex'; } },
+    // Nothing on the wall asks anyone to export or share their music. These two
+    // slots used to count the two export buttons; they count two equally real,
+    // entirely local actions now - searching your own shelf, and lining a song up
+    // to play next - so no badge needs your songs to leave the phone.
+    { g: 'library', k: 'search', ico: '\ud83d\udd0e', sub: 'Finding things', vals: [1], get: function(){ return ctr('search'); }, name: function(){ return 'Searched your library'; } },
+    { g: 'listen', k: 'queue', ico: '\ud83d\udd1c', sub: 'Lining up', vals: [1], get: function(){ return ctr('queue'); }, name: function(){ return 'Queued a song to play next'; } },
+    { g: 'miles', k: 'import', ico: '\ud83d\udce5', sub: 'Backups', vals: [1], get: function(){ return ctr('importLib'); }, name: function(){ return 'Imported a library'; } },
+    { g: 'miles', k: 'files_added', ico: '\u2795', sub: 'Getting music in', vals: [1], get: function(){ return ctr('addFiles'); }, name: function(){ return 'Brought your own files in'; } },
+    { g: 'miles', k: 'grid_seen', ico: '\ud83c\udfc5', sub: 'This screen', vals: [1], get: function(){ return ctr('badgeGrid'); }, name: function(){ return 'Found the badge grid'; } },
+    { g: 'miles', k: 'notif', ico: '\ud83d\udd14', sub: 'Patch notes', vals: [1], get: function(){ return ctr('notif'); }, name: function(){ return 'Opened the patch notes'; } },
+    { g: 'miles', k: 'everything', ico: '\ud83d\udee0', sub: 'Every feature touched',
+      vals: [FEATURE_KEYS.length], get: function(s, d){ return d.featuresUsed; },
+      name: function(v){ return 'Used all ' + v + ' features the app has'; } }
+  ];
+
+  // s and d are passed in, never recomputed here: 170 badges each asking for the
+  // stats and the library would be 340 scans of every song on every repaint, and
+  // the app repaints this screen whenever it approves of the moment.
+  function tierBadges(t, s, d){
+    return t.vals.map(function(v, i){
+      var tone = i < t.vals.length * 0.5 ? 'a' : (i < t.vals.length * 0.85 ? 'b' : 'c');
+      return {
+        id: 'p_' + t.k + '_' + String(v).replace(/\./g, '_'),
+        name: t.name(v), sub: t.sub, ico: t.ico, tone: tone, group: t.g,
+        need: { got: Math.min(t.get(s, d) || 0, v), want: v }
+      };
+    });
+  }
+  function derivedStats(){
+    var tracks = allTracks();
+    var artists = {}, genres = {}, played = 0, maxPlays = 0, reencoded = 0, albums = {};
+    tracks.forEach(function(t){
+      if(!t) return;
+      if(t.artist) artists[String(t.artist).toLowerCase()] = 1;
+      if(t.genre) genres[String(t.genre).toLowerCase()] = 1;
+      // Albums are counted as a UNION: a name the songs already carry, plus any
+      // album built by hand. The app used to report zero for both, so all seven
+      // album badges could never be earned by anyone. Counting the library's own
+      // album names as well means the badges are reachable whatever the library
+      // looks like - the album tags are already there to be counted.
+      if(t.album) albums[String(t.album).toLowerCase()] = 1;
+      var pc = t.playCount || 0;
+      if(pc > 0) played++;
+      if(pc > maxPlays) maxPlays = pc;
+      if(t.reencoded) reencoded++;
+    });
+    var ua = call('__scUserAlbums');
+    var made = 0;
+    if(ua && typeof ua === 'object'){
+      Object.keys(ua).forEach(function(n){ albums[String(n).toLowerCase()] = 1; });
+      made = Object.keys(ua).length;
+    } else if(typeof ua === 'number'){
+      made = ua || 0;
+    }
+    var pls = call('__scPlaylists') || {};
+    return {
+      artists: Object.keys(artists).length,
+      genres: Object.keys(genres).length,
+      playedTracks: played,
+      maxPlays: maxPlays,
+      reencoded: reencoded,
+      userAlbums: made,
+      albums: Object.keys(albums).length,
+      playlists: Object.keys(pls).filter(function(n){ return n !== 'All Songs' && n !== 'Favorites'; }).length,
+      favorites: (pls['Favorites'] || []).length,
+      albumsMade: made,
+      featuresUsed: FEATURE_KEYS.filter(function(k){ return flags[k]; }).length
+    };
+  }
+  // The 30 hand-written badges keep their names and their subs; they only need the
+  // group they belong to so the grid can section them.
+  var BASE_GROUPS = {
+    first_play: 'listen', plays_100: 'listen', plays_1000: 'listen', plays_3000: 'listen',
+    hour_1: 'listen', hour_10: 'listen', hour_100: 'listen', one_song_10: 'listen', one_song_30: 'listen',
+    streak_3: 'streak', streak_7: 'streak', streak_30: 'streak', streak_best_14: 'streak',
+    lib_100: 'library', lib_500: 'library',
+    artists_25: 'explore', played_50_songs: 'explore', night_owl: 'explore',
+    studio_first: 'studio', slow_wet: 'studio', karaoke_1: 'studio', sampler_1: 'studio', looper_1: 'studio',
+    clip_1: 'studio', crop_1: 'studio', retag_1: 'studio', reencode_1: 'studio', all_tools: 'studio',
+    assistant_1: 'assistant', autodj_1: 'assistant'
+  };
+  var GROUP_TITLES = [
+    ['streak', 'Streaks'], ['listen', 'Listening'], ['explore', 'Discovery'], ['library', 'Library'],
+    ['studio', 'Studio & editing'], ['assistant', 'Assistant & gestures'], ['themes', 'Themes'],
+    ['miles', 'Milestones'], ['secret', 'Secret']
+  ];
+  function EXTRA_ACHIEVEMENTS(s, d){
+    var out = [];
+    BADGE_TIERS.forEach(function(t){ out = out.concat(tierBadges(t, s, d)); });
+    BADGE_COUNTS.forEach(function(t){ out = out.concat(tierBadges(t, s, d)); });
+    // The one badge that is not on the grid until you have earned it: dev mode is
+    // the door, and the badge is what is behind it.
+    out.push({
+      id: 'secret_devmode', name: 'The door', sub: 'Enter dev mode', ico: '\ud83d\udd13', tone: 'c',
+      group: 'secret', secret: true, need: { got: devOn ? 1 : 0, want: 1 }
+    });
+    return out;
+  }
+  function ACHIEVEMENTS(){
+    var d = derivedStats();
+    var s = stats();
+    var base = BASE_ACHIEVEMENTS().map(function(a){ return Object.assign({ group: BASE_GROUPS[a.id] || 'listen' }, a); });
+    return base.concat(EXTRA_ACHIEVEMENTS(s, d));
+  }
+  function badgesByGroup(list){
+    var all = list || ACHIEVEMENTS();
+    return GROUP_TITLES.map(function(g){
+      var items = all.filter(function(a){ return a.group === g[0]; });
+      return { key: g[0], title: g[1], items: items, have: items.filter(isUnlocked).length };
+    });
+  }
+
+  // Dev mode can pretend every badge is earned, so the reward path can be walked
+  // without playing ten thousand songs first. It is honoured ONLY while dev mode
+  // is on, and the panel says so on the line above the button.
+  var simAll = !!lsGet(LS.sim, false);
   function unlockedCount(){
+    var all = ACHIEVEMENTS();
+    if(simAll && devOn) return all.length;
     var n = 0;
-    ACHIEVEMENTS().forEach(function(a){ if(a.need.got >= a.need.want) n++; });
+    all.forEach(function(a){ if(a.need.got >= a.need.want) n++; });
     return n;
   }
   function checkAchievements(silent){
+    var before = Object.keys(achState).length;
     var fresh = [];
     ACHIEVEMENTS().forEach(function(a){
       if(a.need.got < a.need.want) return;
@@ -651,12 +1011,23 @@
     });
     if(fresh.length){
       lsSet(LS.ach, achState);
+      celebrateRewards(before);
       if(!silent){
-        fresh.forEach(function(a, i){
-          setTimeout(function(){ toast('\ud83c\udfc5 Badge unlocked \u00b7 ' + a.name + ' \u2014 ' + a.sub, 4000); }, i * 900);
-        });
+        // 201 badges means a big library can unlock a dozen at once on the first
+        // run. Twelve toasts over eleven seconds is not a celebration, it is a
+        // queue, so past four the rest are counted in one line.
+        if(fresh.length > 4){
+          toast('\ud83c\udfc5 ' + fresh.length + ' badges unlocked at once \u00b7 ' + unlockedCount() + ' of ' + ACHIEVEMENTS().length, 5200);
+        } else {
+          fresh.forEach(function(a, i){
+            setTimeout(function(){ toast('\ud83c\udfc5 Badge unlocked \u00b7 ' + a.name + ' \u2014 ' + a.sub, 4000); }, i * 900);
+          });
+        }
       }
     }
+    // See the note above the reward table: Premium follows the count, so it is
+    // granted on every evaluation of it, not only when a badge unlocks.
+    grantRewards(!!silent);
     return fresh;
   }
 
@@ -816,6 +1187,8 @@
       if(!ids.length){
         call('__scRenderList');
         markFeature('retag');
+        bump('batch');
+        bump('tagged', done);
         checkAchievements();
         closeSheet();
         toast('Updated ' + done + ' song' + (done === 1 ? '' : 's') + (tagged ? ' \u00b7 ' + tagged + ' file tag' + (tagged === 1 ? '' : 's') + ' rewritten' : '') + (failed ? ' \u00b7 ' + failed + ' could not be re-tagged' : ''));
@@ -863,6 +1236,7 @@
     var mag = Math.sqrt((a.x || 0) * (a.x || 0) + (a.y || 0) * (a.y || 0) + (a.z || 0) * (a.z || 0));
     var now = Date.now();
     if(mag > 26 && now - lastShake > 1600){
+      bump('shake');
       lastShake = now;
       call('__scNext');
       toast('\u23ed Shake - next song');
@@ -929,8 +1303,9 @@
       var p = (e.changedTouches && e.changedTouches[0]) || e;
       if(!p) return;
       var dx = p.clientX - sx, dy = p.clientY - sy;
-      if(scrubbing) return;
+      if(scrubbing){ bump('swipeSeek'); return; }
       if(Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.5){
+        bump('swipeTrack');
         markFeature('gestures');
         if(dx < 0){ call('__scNext'); toast('\u23ed Swipe - next song'); }
         else { call('__scPrev'); toast('\u23ee Swipe - previous song'); }
@@ -1020,6 +1395,11 @@
   // Where the incoming song should start so the blend lands on its own downbeat.
   window.__scAutoDjAlign = function(curEl, nextTrack){
     if(!autodj.on || !nextTrack) return 0;
+    // The flag, not just the counter: the "Blended" badge reads flags.autodj, and
+    // this is the one place a beat-matched blend is actually handed over. Without
+    // it that badge was unreachable no matter how much Auto-DJ was used.
+    markFeature('autodj');
+    bump('autodj');
     var b = bpmCache[nextTrack.id];
     if(!b) { bpmFor(nextTrack); return 0; }
     return b.firstBeat > 0 ? b.firstBeat : 0;
@@ -1054,7 +1434,7 @@
     'deep teal': 'teal', teal: 'teal', forest: 'forest', midnight: 'midnight', rgb: 'rgb',
     'liquid glass': 'liquidglass'
   };
-  var SCACT = {
+  var SCACT_INNER = {
     // Returns a sentence when the app carried the request out, or null.
     tryRun: function(msg){
       var text = String(msg || '').trim();
@@ -1068,6 +1448,7 @@
         var s0 = clockToSec(m[1]), s1 = clockToSec(m[2]);
         if(s1 > s0){
           markFeature('assistant');
+          bump('asstClip');
           if(!openClipSheet(s0, s1)){
             return 'Nothing is playing, so there is no audio to cut. Start a song and ask me again - I will set the clip to ' + secToClock(s0) + ' to ' + secToClock(s1) + ' and open it in Studio.';
           }
@@ -1096,6 +1477,7 @@
         while(existing[name]){ name = 'Most played ' + (k++); }
         call('__scSetPlaylist', name, top.map(function(t){ return t.id; }));
         markFeature('assistant');
+        bump('asstPlaylist');
         checkAchievements(true);
         return 'Made a playlist called "' + name + '" with your ' + top.length + ' most-played songs. "' + (top[0].name || 'the top one') + '" is first with ' + (top[0].playCount || 0) + ' plays.';
       }
@@ -1105,7 +1487,9 @@
         var key = THEME_WORDS[m[1].trim()];
         if(key){
           call('__scApplyTheme', key);
+          noteTheme(key);
           markFeature('assistant');
+          bump('asstTheme');
           return 'Theme switched to ' + m[1].trim() + '.';
         }
       }
@@ -1149,11 +1533,21 @@
         return 'Opened the batch tag editor. Tick the songs in your library first if the list came up empty, then write the change once for all of them.';
       }
       // playback verbs
-      if(/^(next|skip)\b/.test(low)){ call('__scNext'); markFeature('assistant'); return 'Skipped to the next song.'; }
+      if(/^(next|skip)\b/.test(low)){ call('__scNext'); markFeature('assistant'); bump('asstTransport'); return 'Skipped to the next song.'; }
       if(/^(previous|prev|back a song|go back)\b/.test(low)){ call('__scPrev'); markFeature('assistant'); return 'Back to the previous song.'; }
       if(/^(pause|stop the music|stop)\b/.test(low)){ call('__scPause'); markFeature('assistant'); return 'Paused.'; }
       if(/^(play|resume)\b/.test(low) && low.length < 14){ call('__scResume'); markFeature('assistant'); return 'Playing.'; }
       return null;
+    }
+  };
+  // Every action that actually happened, counted once, at the one place that can
+  // tell the difference: the inner object returns a sentence when the app carried
+  // the request out and null when it did not.
+  var SCACT = {
+    tryRun: function(msg){
+      var r = SCACT_INNER.tryRun(msg);
+      if(r){ bump('assistant'); checkAchievements(true); }
+      return r;
     }
   };
   window.SCACT = SCACT;
@@ -1166,6 +1560,7 @@
     if(has('__scNavigate')) window.__scNavigate(view);
   }
   function scrollStudioTo(id){
+    if(id === 'scStudioStorage') bump('cleaner');
     var el = $(id);
     var host = $('studioView');
     if(el && host) host.scrollTop = Math.max(0, el.offsetTop - 8);
@@ -1185,16 +1580,95 @@
     }
     return out;
   }
-  function achievementsHtml(){
-    return ACHIEVEMENTS().map(function(a){
+  // One badge tile. The grouped grid calls this per badge (70.0.5 added 171 of
+  // them, in nine sections, so the grid needs a tile it can call rather than a
+  // map over everything), and the secret badge has a tile of its own below it
+  // because it must not be spoiled before it is earned.
+  function badgeTile(a){
       var have = isUnlocked(a);
       var p = pctNeed(a);
-      return '<div class="sc-badge' + (have ? ' have' : '') + ' tone-' + a.tone + '">' +
+      var out = '';
+      out += '<div class="sc-badge' + (have ? ' have' : '') + ' tone-' + a.tone + '">' +
         '<div class="sc-badge-ico">' + a.ico + '</div>' +
         '<div class="sc-badge-txt"><div class="sc-badge-name">' + esc(a.name) + '</div>' +
         '<div class="sc-badge-sub">' + esc(have ? a.sub : a.sub + ' \u00b7 ' + p + '%') + '</div>' +
         '<div class="sc-badge-bar"><i style="width:' + (have ? 100 : p) + '%"></i></div></div></div>';
+      return out;
+  }
+  var achFilter = 'all';
+  function secretTile(){
+    return '<div class="sc-badge sc-badge-secret">' +
+      '<div class="sc-badge-ico">?</div>' +
+      '<div class="sc-badge-txt"><div class="sc-badge-name">Hidden badge</div>' +
+      '<div class="sc-badge-sub">One of the 201 is not in this list.</div>' +
+      '<div class="sc-badge-bar"><i style="width:0%"></i></div></div></div>';
+  }
+  function achievementsHtml(all){
+    var list = all || ACHIEVEMENTS();
+    var html = badgesByGroup(list).map(function(g){
+      var isSecret = g.key === 'secret';
+      // Before dev mode, the secret group is one blank tile and nothing else: the
+      // hint that there IS a 201st badge is the point, the answer is not.
+      if(isSecret && !devOn){
+        return '<div class="sc-ach-group">' +
+          '<div class="sc-ach-group-head"><span>' + esc(g.title) + '</span><span>' + g.have + '/' + g.items.length + '</span></div>' +
+          '<div class="sc-badges">' + (g.have ? g.items.filter(isUnlocked).map(badgeTile).join('') : secretTile()) + '</div></div>';
+      }
+      var items = g.items.filter(function(a){
+        if(achFilter === 'have') return isUnlocked(a);
+        if(achFilter === 'todo') return !isUnlocked(a);
+        return true;
+      });
+      if(!items.length) return '';
+      var tiles = items.map(function(a){
+        if(a.secret && !isUnlocked(a)) return secretTile();
+        return badgeTile(a);
+      }).join('');
+      return '<div class="sc-ach-group">' +
+        '<div class="sc-ach-group-head"><span>' + esc(g.title) + '</span><span>' + g.have + '/' + g.items.length + '</span></div>' +
+        '<div class="sc-badges">' + tiles + '</div></div>';
     }).join('');
+    return html || '<div class="sc-note">Nothing matches that filter yet.</div>';
+  }
+  function achFilterChips(){
+    return '<div class="sc-chips sc-ach-filters"><span class="sc-chip-label">Show</span>' +
+      [['all', 'Everything'], ['have', 'Earned'], ['todo', 'Still to get']].map(function(f){
+        return '<button class="sc-chip' + (achFilter === f[0] ? ' on' : '') + '" data-act="achfilter" data-f="' + f[0] + '">' + f[1] + '</button>';
+      }).join('') + '</div>';
+  }
+  function rewardRowHtml(r){
+    var pct = r.earned ? 100 : Math.round((r.have / r.at) * 100);
+    var state = r.earned
+      ? (r.kind === 'premium' ? '<span class="sc-reward-have">Granted, free</span>' : '<span class="sc-reward-have">Unlocked</span>')
+      : '<span class="sc-reward-need">' + (r.at - r.have) + ' to go</span>';
+    var act = !r.earned ? ''
+      : (r.kind === 'theme'
+        ? '<button class="sc-btn tiny primary" data-act="usetheme" data-key="' + r.key + '">Use it</button>'
+        : '<button class="sc-btn tiny" data-act="openpremium">Open Premium</button>');
+    return '<div class="sc-reward' + (r.earned ? ' on' : '') + '">' +
+      '<div class="sc-reward-at">' + r.at + '</div>' +
+      '<div class="sc-reward-txt"><div class="sc-reward-name">' + esc(r.name) + '</div>' +
+      '<div class="sc-reward-note">' + esc(r.note) + '</div>' +
+      '<div class="sc-reward-bar"><i style="width:' + pct + '%"></i></div></div>' +
+      '<div class="sc-reward-act">' + state + act + '</div></div>';
+  }
+  function rewardsHtml(){
+    return '<div class="sc-rewards">' + rewardState().map(rewardRowHtml).join('') + '</div>';
+  }
+  function devPanelHtml(){
+    if(!devOn) return '';
+    var all = ACHIEVEMENTS().length;
+    return '<div class="sc-dev">' +
+      '<div class="sc-dev-head"><span>\ud83d\udd27 Dev mode</span><span class="sc-dev-sub">' + unlockedCount() + '/' + all + ' met, ' + Object.keys(achState).length + ' recorded</span></div>' +
+      '<div class="sc-dev-note">Seven taps on the version line in Settings opens this. It sets the app\u2019s own test flag as well, so the app\u2019s hidden debug affordances come with it.</div>' +
+      '<div class="sc-actions">' +
+        '<button class="sc-btn tiny" data-act="devself">Self-test</button>' +
+        '<button class="sc-btn tiny" data-act="devsim">' + (simAll ? 'Stop pretending' : 'Pretend all ' + all + ' are earned') + '</button>' +
+        '<button class="sc-btn tiny" data-act="devreset">Reset badge state</button>' +
+        '<button class="sc-btn tiny" data-act="devoff">Exit dev mode</button>' +
+      '</div>' +
+      '<div class="sc-dev-note">A reset clears badges, counters and feature flags. It never takes Premium back \u2014 a reward is not a switch, and a real purchase is not a dev tool\u2019s to undo.</div>' +
+      '</div>';
   }
   function storageHtml(){
     var rows = biggestSongs(24);
@@ -1219,16 +1693,27 @@
     return html;
   }
   var reenKbps = 128;
-  function achievementsSummaryHtml(){
+  // The whole Achievements section, built once per repaint: the hero, the five
+  // rewards, the filter, the nine groups and (when it is on) the dev panel. It
+  // counts the badges ONCE and passes that list down - ACHIEVEMENTS() walks the
+  // library, and this section used to ask for it four times a repaint.
+  function achievementsSectionHtml(){
     var s = stats();
-    var unlocked = unlockedCount();
-    var all = ACHIEVEMENTS().length;
+    var allList = ACHIEVEMENTS();
+    var unlocked = allList.filter(function(a){ return a.need.got >= a.need.want; }).length;
+    var all = allList.length;
+    if(!ctr('badgeGrid')) bump('badgeGrid', 1); // the one-time "you found this screen" badge
     var hours = (s.listenSeconds || 0) / 3600;
     return '<div class="sc-hero">' +
       '<div class="sc-hero-num">' + hours.toFixed(1) + 'h</div>' +
       '<div class="sc-hero-sub">listened \u00b7 ' + (s.plays || 0) + ' plays \u00b7 ' + (s.streak || 0) + '-day streak</div>' +
       '<div class="sc-hero-ring"><i style="width:' + Math.round((unlocked / Math.max(1, all)) * 100) + '%"></i></div>' +
       '<div class="sc-hero-badges">' + unlocked + ' of ' + all + ' badges</div>' +
+      '</div>' +
+      '<div class="sc-sub-head">Rewards</div>' + rewardsHtml() +
+      devPanelHtml() +
+      achFilterChips() +
+      '<div class="sc-ach-groups">' + achievementsHtml(allList) + '</div>' +
       '</div>';
   }
 
@@ -1255,8 +1740,7 @@
         toolCard('sampler', '\ud83c\udf9b', 'Sampler pads', sampler.trackId ? 'Loaded with "' + esc(trackName(sampler.trackId)) + '"' : 'Eight pads over the song you are playing.', sampler.trackId ? 'on' : '') +
         toolCard('looper', '\ud83d\udd01', 'Loop recorder', looper.layers.length ? looper.layers.length + ' loop' + (looper.layers.length === 1 ? '' : 's') + ' repeating' : 'Record a bar and layer it.', looper.layers.length ? 'on' : '') +
       '</div>' +
-      '<div class="sc-sec" id="scStudioAch"><div class="sc-sec-head"><span>Achievements</span><span class="sc-sec-sub">' + unlockedCount() + '/' + ACHIEVEMENTS().length + '</span></div>' +
-        achievementsSummaryHtml() + '<div class="sc-badges">' + achievementsHtml() + '</div></div>' +
+      achievementsSectionHtml() +
       '<div class="sc-sec" id="scStudioStorage"><div class="sc-sec-head"><span>Storage cleaner</span><span class="sc-sec-sub">' + fmtBytes(totalAudioBytes()) + '</span></div>' +
         storageHtml() + '</div>' +
       '<div class="sc-sec"><div class="sc-sec-head"><span>Auto-DJ</span><span class="sc-sec-sub">' + (autodj.on ? 'on' : 'off') + '</span></div>' +
@@ -1318,6 +1802,33 @@
         else if(act === 'shake') enableShake(!gestures.shake);
         else if(act === 'swipe'){ gestures.swipe = !gestures.swipe; lsSet(LS.gestures, gestures); toast(gestures.swipe ? 'Swipe the player is on' : 'Swipe the player is off'); renderStudio(); }
         else if(act === 'batch') openBatchTags(call('__scSelectedIds') || []);
+        else if(act === 'achfilter'){ achFilter = b.getAttribute('data-f') || 'all'; renderStudio(); }
+        else if(act === 'usetheme'){
+          var k = b.getAttribute('data-key');
+          if(themeUnlocked(k)){
+            call('__scApplyTheme', k); noteTheme(k); bump('themeChange');
+            var rw = REWARDS.filter(function(r){ return r.key === k; })[0] || {};
+            toast('Theme: ' + (rw.name || k));
+            renderStudio();
+          } else toast('Earn the badges for that theme first.');
+        }
+        else if(act === 'openpremium'){ if(typeof window.openPremiumSettings === 'function') window.openPremiumSettings(); }
+        else if(act === 'devself'){
+          var f = checkAchievements(true);
+          toast('Self-test: ' + unlockedCount() + '/' + ACHIEVEMENTS().length + ' met, ' + Object.keys(achState).length + ' recorded' + (f.length ? ', ' + f.length + ' just unlocked' : '') + '.', 4200);
+        }
+        else if(act === 'devsim'){
+          simAll = !simAll; lsSet(LS.sim, simAll);
+          toast(simAll ? 'Dev: pretending every badge is earned.' : 'Dev: back to the real count.');
+          checkAchievements(true); renderStudio();
+        }
+        else if(act === 'devreset'){
+          achState = {}; counters = {}; flags = {};
+          lsSet(LS.ach, achState); lsSet(LS.ctr, counters); lsSet(LS.flags, flags);
+          toast('Dev: badges, counters and feature flags cleared. Premium was left alone.', 4200);
+          checkAchievements(true); renderStudio();
+        }
+        else if(act === 'devoff') setDevMode(false);
       });
     });
     document.querySelectorAll('#studioView [data-reenc]').forEach(function(b){
@@ -1328,6 +1839,7 @@
     });
   }
   function openTool(id){
+    bump('studio');
     markFeature('studio');
     if(id === 'clip') return openClipSheet();
     if(id === 'fx') return openFxSheet();
@@ -1583,13 +2095,124 @@
     if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(host, anchor);
     else document.body.appendChild(host);
   }
+  // ---- what the new badges count -------------------------------------------
+  // One delegated listener for the controls the app owns: the theme buttons, the
+  // add-songs menu's own export/import entries, the bell. Counting here rather
+  // than inside the app keeps the release to one file, and it cannot drift from
+  // the button it counts, because it IS the button.
+  function wireAppWatch(){
+    if(document.__scWatch) return;
+    document.__scWatch = true;
+    document.addEventListener('click', function(e){
+      var el = e.target;
+      if(!el || !el.closest) return;
+      var th = el.closest('[data-theme-key]');
+      if(th){
+        var key = th.getAttribute('data-theme-key');
+        if(key){ noteTheme(key); bump('themeChange'); }
+      }
+      if(el.closest('#exportLibBtn')) bump('exportAll', 1);
+      if(el.closest('#exportSongsBtn')) bump('exportSongs', 1);
+      if(el.closest('#importLibBtn')) bump('importLib', 1);
+      // Lining a song up to play next from the song menu. Nothing here is a share
+      // or an export - the badge this feeds says so.
+      var _ql = (el.textContent || '').trim().replace(/^[^\p{L}\p{N}]+/u, '');
+      if(_ql === 'Play next' || _ql === 'Add to queue' || _ql === 'Queue') bump('queue', 1);
+      if(el.closest('#addBtn') || el.closest('#addFolderBtn')) bump('addFiles', 1);
+      if(el.closest('#notifBtn')) bump('notif', 1);
+      // Those controls all move badges, so the check runs on the next turn of the
+      // loop rather than inside the click that caused it.
+      setTimeout(function(){ checkAchievements(true); }, 60);
+    }, true);
+    // Typing in the Library search box is the one local action the click listener
+    // above cannot see, so it gets a listener of its own.
+    document.addEventListener('input', function(e){
+      var el = e.target;
+      if(el && el.closest && el.closest('#searchInput')){
+        bump('search', 1);
+        setTimeout(function(){ checkAchievements(true); }, 60);
+      }
+    }, true);
+  }
+
+  // ---- Vortex: the 200-badge theme, spun by the finger ----------------------
+  // The drag angle around the middle of the screen is added to a rotation, and the
+  // angle's own speed is kept as momentum, so a flick keeps it turning and it
+  // eases to a stop. Transform only - nothing here repaints the backdrop.
+  var whirl = { deg: 0, vel: 0, lastA: null, raf: 0, dragging: false };
+  function whirlThemeOn(){
+    try{ return document.body.classList.contains('theme-dyn-vortex'); }catch(e){ return false; }
+  }
+  function whirlPaint(){
+    try{ document.documentElement.style.setProperty('--whirl-deg', whirl.deg.toFixed(2) + 'deg'); }catch(e){}
+  }
+  function whirlSpin(){
+    if(whirl.dragging) return;
+    if(Math.abs(whirl.vel) < 0.02){ whirl.vel = 0; return; }
+    whirl.deg += whirl.vel;
+    whirl.vel *= 0.965;
+    whirlPaint();
+    whirl.raf = requestAnimationFrame(whirlSpin);
+  }
+  function whirlAngle(e){
+    try{
+      var cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+      var x = (e.clientX || 0) - cx, y = (e.clientY || 0) - cy;
+      return Math.atan2(y, x) * 180 / Math.PI;
+    }catch(err){ return 0; }
+  }
+  function wireWhirl(){
+    if(document.__scWhirl) return;
+    document.__scWhirl = true;
+    var down = function(e){
+      if(!whirlThemeOn()) return;
+      // Never steal a drag from the player's own controls or from a sheet.
+      if(e.target && e.target.closest && e.target.closest('#nowPlaying, input, .sc-sheet, .sc-slider')) return;
+      whirl.dragging = true;
+      whirl.lastA = whirlAngle(e);
+      whirl.vel = 0;
+    };
+    var move = function(e){
+      if(!whirl.dragging || !whirlThemeOn()) return;
+      var a = whirlAngle(e);
+      var d = a - whirl.lastA;
+      if(d > 180) d -= 360;
+      if(d < -180) d += 360;
+      whirl.deg += d;
+      whirl.vel = d;      // the last frame's angle IS the speed it is flung at
+      whirl.lastA = a;
+      whirlPaint();
+    };
+    var up = function(){
+      if(!whirl.dragging) return;
+      whirl.dragging = false;
+      whirl.raf = requestAnimationFrame(whirlSpin);
+    };
+    window.addEventListener('pointerdown', down, { passive: true });
+    window.addEventListener('pointermove', move, { passive: true });
+    window.addEventListener('pointerup', up, { passive: true });
+    window.addEventListener('pointercancel', up, { passive: true });
+  }
+  function spinWhirl(deg){
+    whirl.deg = deg || 0;
+    whirl.vel = 0;
+    whirlPaint();
+  }
+
   function boot(){
     buildStudioView();
     applyFx();
     applyRate();
     wireSwipe();
+    wireAppWatch();
+    wireWhirl();
+    wireDevGesture();
+    try{ document.body.classList.toggle('sc-dev-on', devOn); }catch(e){}
     renderStudio();
     checkAchievements(true);
+    // Someone already past a reward - an update, or a restore - is synced here
+    // rather than left with a reward row that says Granted and nothing granted.
+    grantRewards(true);
     // A play can happen before this block loads, so re-apply once the graph is
     // definitely up. Nothing else here is time-sensitive.
     setTimeout(function(){ applyFx(); applyRate(); if(bpmCache) paintBpmNote(); }, 1200);
@@ -1607,6 +2230,11 @@
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
+
+  // The app applies a theme from its own tab as well as from ours, and the
+  // "wore N dynamic themes" badges count either way - so the app reports
+  // every change through here.
+  window.__scNoteTheme = noteTheme;
 
   // The module's own surface, for the gates and for the assistant.
   window.SC70 = {
@@ -1637,6 +2265,21 @@
     achievements: ACHIEVEMENTS,
     checkAchievements: checkAchievements,
     unlockedCount: unlockedCount,
+    rewards: rewardState,
+    rewardEarned: rewardEarned,
+    themeUnlocked: themeUnlocked,
+    rewardFor: function(key){
+      var r = REWARDS.filter(function(x){ return x.key === key; })[0];
+      if(!r) return null;
+      return { at: r.at, key: r.key, name: r.name, kind: r.kind, earned: rewardEarned(r.at), have: unlockedCount() };
+    },
+    devMode: devMode,
+    setDevMode: setDevMode,
+    simulateAll: function(){ return simAll; },
+    bump: bump,
+    counters: function(){ return counters; },
+    spinWhirl: spinWhirl,
+    spin: function(){ return whirl.deg; },
     flags: function(){ return flags; },
     markFeature: markFeature,
     biggestSongs: biggestSongs,
