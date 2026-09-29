@@ -593,6 +593,13 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(all.every((a) => Number.isFinite(a.need.got) && a.need.want > 0),
       'and every one of them has a target and a countable progress');
 
+    // 70.0.6, the user's words: "The badges shouldny do with altering your songs".
+    // Crop, the batch tag editor and the re-encoder are tools, not achievements -
+    // no tile on the wall may name one of them or what it saves.
+    const EDIT_WORD = /re-encod|retagg|batch tag|cropped|space won|saved by/i;
+    ok(all.every((a) => !EDIT_WORD.test(a.name + ' ' + a.sub)),
+      'and no badge asks you to alter a song you already have');
+
     win.SC70.renderStudio();
     const heads = Array.from(doc.querySelectorAll('#studioView .sc-ach-group-head'));
     const titles = heads.map((h) => h.firstElementChild.textContent);

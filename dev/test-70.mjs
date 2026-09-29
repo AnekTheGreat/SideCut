@@ -103,7 +103,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.31', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v63.0.32', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
 }
 
@@ -213,8 +213,12 @@ console.log('[5] achievements, streaks and the storage cleaner');
   const ids = (mod.match(/id: '[a-z0-9_]+'/g) || []).map((s) => s.slice(5, -1));
   ok(ids.length >= 30, 'there are ' + ids.length + ' badges');
   ok(ids.length === new Set(ids).size, 'and no id appears twice');
-  ['streak_7', 'hour_100', 'studio_first', 'clip_1', 'retag_1', 'reencode_1'].forEach((id) =>
+  ['streak_7', 'hour_100', 'studio_first', 'clip_1'].forEach((id) =>
     ok(ids.indexOf(id) !== -1, 'including ' + id));
+  // 70.0.6 took the two editing badges off the wall (test-705 owns that release);
+  // this gate keeps its six checks by asking about them the other way round.
+  ['retag_1', 'reencode_1'].forEach((id) =>
+    ok(ids.indexOf(id) === -1, 'and no longer including ' + id));
   ok(mod.indexOf('var s = call(\'__scStats\') || {};') !== -1 || mod.indexOf("call('__scStats')") !== -1,
     'and every one of them is measured against the app\u2019s own stats, not a new counter');
   ok(src.indexOf('streak: computeStreak()') !== -1, 'the streak comes from the app\u2019s own streak');

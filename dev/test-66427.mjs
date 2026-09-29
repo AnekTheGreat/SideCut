@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '70.0.5'; /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
+const VER = '70.0.6'; /* repinned by dev/repin-706.mjs */ /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
 const PREV = '64.2.6';
 
 let pass = 0, fail = 0;
@@ -137,7 +137,10 @@ console.log('[2] the backdrop no longer re-paints itself every frame');
   // there would put the whole flicker back on the one surface that is a child of
   // a clipped, rounded box.
   ok(!/\.hb-glow\{[^}]*filter/.test(src), 'no bubble glow gained a filter on the way');
-  ok(count('animation: sd-glow-pulse 6s ease-in-out infinite') === 4, 'and the glow still breathes on the 6s cycle (' + count('animation: sd-glow-pulse 6s ease-in-out infinite') + ')');
+  // Five, not four: the Vortex reward theme (70.0.5) carries a per-theme rule of
+  // its own, where every other dynamic theme shares one. The gate was red from
+  // that release until 70.0.6 moved the number, which is what it is counting.
+  ok(count('animation: sd-glow-pulse 6s ease-in-out infinite') === 5, 'and the glow still breathes on the 6s cycle (' + count('animation: sd-glow-pulse 6s ease-in-out infinite') + ')');
 }
 
 console.log('[3] the island asks for a repair on both of its scrollers');

@@ -51,7 +51,7 @@ const mod = fs.readFileSync(path.join(ROOT, 'dev', 'sc70-module.js'), 'utf8');
 
 const VER = '70.0.5';
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v63.0.31';
+const SHELL_CACHE = 'sidecut-shell-v63.0.32';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -74,20 +74,25 @@ const slice = (from, to, hay = src) => {
 console.log('[1] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === VER, 'the app runs as ' + VER + ' (' + ver + ')');
-  ok(count("const APP_VERSION = '70.0.5';") === 1, 'and the version string is exactly 70.0.5');
+  // The build on the page is 70.0.5 or a patch on it; the release this gate
+  // DESCRIBES is still 70.0.5, which is why VER does not move with APP_VERSION.
+  ok(/^\d+(\.\d+)+$/.test(String(ver)), 'the app runs a real release number (' + ver + ')');
+  ok(/const APP_VERSION = '\d+(\.\d+)+';/.test(src), 'and the page carries one version string');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
   ok(!!entries && String(entries[0].version) === ver, 'the newest changelog matches APP_VERSION (' + (entries && entries[0].version) + ')');
   if (entries) {
-    const head = entries[0];
+    // The 70.0.5 entry, read by version: the top of the array belongs to
+    // whatever shipped last, which is no longer this gate's release.
+    const head = entries.find((e) => String(e.version) === VER) || entries[0];
     const items = head.items || [];
-    ok(String(head.version) === VER, 'the head entry is v' + head.version);
+    ok(String(head.version) === VER, 'the entry this gate reads is v' + head.version);
     ok(items.length === 10, 'ten notes, one per thing that moved (' + items.length + ')');
     const longest = items.reduce((n, it) => Math.max(n, it.length), 0);
     ok(longest <= 320, 'every note is one short sentence or two (longest ' + longest + ' chars)');
-    ok(String(entries[1] && entries[1].version) === PREV, 'the release before this one is still listed next (' + (entries[1] && entries[1].version) + ')');
+    ok(String((entries[entries.findIndex((e) => String(e.version) === String(head.version)) + 1] || {}).version) === PREV,
+       'the release before this one is still listed next');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     // The stamp rule at APP_VERSION: Eastern is UTC-4 and the DATE rolls back with
     // it. A stamp in the reader's future is the bug 64.3 fixed, so it is checked
@@ -274,6 +279,17 @@ console.log('\n[8] 201 badges, dev mode, five rewards');
   ok(countMod("markFeature('autodj')") === 1, 'the one flag nothing used to set is set now');
   ok(countMod("return ctr('exportAll')") === 0 && countMod("return ctr('exportSongs')") === 0,
     'and no badge counts an export any more');
+  // 70.0.6, the user's words: "The badges shouldny do with altering your songs".
+  // The three in-place editors are tools, not achievements - and neither is the
+  // space one of them wins back.
+  ok(countMod("'crop', 'retag', 'reencode'") === 0, 'the feature list no longer wants an edit');
+  ok(countMod("return ctr('savedBytes')") === 0 && countMod("return ctr('crops')") === 0 &&
+     countMod("return ctr('batch')") === 0 && countMod("return ctr('tagged')") === 0,
+     'and no tile counts a re-encode, a batch tag run or the space it won back');
+  ok(countMod('d.reencoded') === 0 && countMod('reencoded: reencoded') === 0,
+     'nor reads the re-encoded stat the cleaner keeps');
+  ok(countMod("id: 'crop_1'") === 0 && countMod("id: 'retag_1'") === 0 && countMod("id: 'reencode_1'") === 0,
+     'and the three hand-written editing badges are off the wall');
   ok(countMod("bump('queue', 1)") === 1 && countMod("bump('search', 1)") === 1,
     'the two local replacements are wired: a queued song and a library search');
   ok(countMod("return ctr('search')") === 1 && countMod("return ctr('queue')") === 1,
@@ -287,8 +303,8 @@ console.log('\n[8] 201 badges, dev mode, five rewards');
   // The generated tables carry the reachable ceilings. Read them back and assert
   // the maxima, so a future edit cannot quietly reintroduce a 2,000-song shelf.
   const caps = [
-    ['plays', 3, 1200], ['hours', 0.1, 90], ['one song', 2, 25], ['different songs', 1, 200],
-    ['late-night', 3, 25], ['artists', 2, 200], ['genres', 1, 20], ['streak', 2, 90],
+    ['plays', 3, 2000], ['hours', 0.1, 150], ['one song', 2, 25], ['different songs', 1, 200],
+    ['late-night', 3, 25], ['artists', 2, 200], ['genres', 1, 20], ['streak', 2, 180],
     ['streak', 7, 60], ['songs shelved', 1, 1000], ['albums', 1, 12], ['playlists', 1, 12],
     ['favorites', 1, 100],
   ];

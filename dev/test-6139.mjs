@@ -161,7 +161,7 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 
 console.log('[11] release metadata');
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.31';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.32';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');
@@ -171,7 +171,8 @@ ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v63.0.31';"), 'sw.js cache = s
     ok(!/play build|play version|play install/i.test(head.items.join('\n')), 'notes never name the play build');
     ok(head.date.endsWith('EDT'), 'ship date (' + head.date + ')');
   }
-  ok(entries[0].version === '64.3.1', '64.3.1 heads the changelog');
+  // Still LISTED, not still first: the head belongs to whatever shipped last.
+  ok(entries.some((e) => String(e.version) === '64.3.1'), '64.3.1 is still in the changelog');
 }
 
 console.log('[12] inline script syntax');

@@ -1,6 +1,68 @@
 # SideCut — repository memory
 
 
+## 70.0.6 (Sep 29, 2026): the badges stop asking you to change your songs
+- **The user's words**, verbatim, sent with a screenshot of the Studio section of the badge wall (15 songs re-encoded,
+  1/5 batch tag runs, 10/50 songs retagged, 5.0/50.0 MB saved by re-encoding): "The badges shouldny do with altering
+  your songs". A fair complaint, and that section is exactly what it looks like - every tile in it is paid for by
+  permanently rewriting a song the user already has. Re-encoding replaces the stored file in place, the batch tag
+  editor rewrites the tags inside the files, cropping trims the audio in place, and the megabytes won back are a side
+  effect of the first of those. A wall that pays out free Premium at 201 must not need anybody to edit their own music.
+- **THE RULE IS "NOTHING CHANGES A SONG YOU ALREADY HAVE", AND IT COST 14 TILES.** Removed: the five BADGE_COUNTS rows
+  and their eleven tiers (`crops` [1, 5], `reenc` [1, 5, 15], `batch` [1, 5], `tagged` [10, 50], `saved`
+  [5 MB, 50 MB]), and the three hand-written badges that are the same complaint with a nicer name (`crop_1`
+  "Trimmed", `retag_1` "Naming things", `reencode_1` "Space saver"). Also gone: the `reencoded` stat `derivedStats()`
+  computed for the re-encode tiers, and three entries in `FEATURE_KEYS` - the capstone badge ("used every feature")
+  counted crop, retag and reencode too, so completing it wanted an edit. It is nine features now.
+- **THE FOURTEEN REPLACEMENTS ARE MORE RUNGS ON THINGS YOU DO**, two each, so the wall never moves off 201 and the
+  five rewards stay at 50/100/150/200/201: plays +1500/2000, hours +110/150, streak +120/180, theme changes +40/60,
+  assistant actions +100/200, loops recorded +75/150, Studio visits +100/250. Recording a loop and opening Studio
+  change nothing on disk. The threshold TABLES are why this was a fourteen-number change instead of a rewrite, and the
+  total (201) is asserted by the gates rather than trusted.
+- **THE TOOLS ARE UNTOUCHED.** Crop, the batch tag editor and the re-encoder all still work, with the same Undo chips
+  they always had, and the storage cleaner still offers a re-encode button per row. They are simply not achievements.
+  The lesson worth keeping: an achievement is a statement about what the app should REWARD, so an optional,
+  destructive tool belongs in the tool list and not on the wall.
+- **`dev/patch-706.mjs` then `dev/repin-706.mjs`** (after the 70.0.5 trio: patch-705, 705b, 705c). patch-706 edits
+  `dev/sc70-module.js` (whole table rows are deleted by SHAPE - a regex on the line - rather than by retyping a line
+  full of \uXXXX escapes), the changelog head, `APP_VERSION` **70.0.5 -> 70.0.6** and the `sw.js` cache
+  `sidecut-shell-v63.0.31 -> sidecut-shell-v63.0.32`, re-splices the module and the stylesheet, and re-points three
+  gates. repin-706 is the mechanical sweep: **22 edits across 19 files** (12 `const VER = '70.0.5'` pins, the 2
+  changelog head-line pins in test-6137/6138, and the 8 shell-cache literals) - and it SKIPS `dev/test-705.mjs`,
+  which is the 70.0.5 gate and has to keep describing 70.0.5.
+- **A RELEASE GATE KEEPS DESCRIBING ITS RELEASE, AND THAT IS THE PATCH'S JOB, NOT THE SWEEP'S.** patch-706 re-pointed
+  test-705 exactly as repin-705 did for test-70: it now finds ITS entry by version (`entries.find((e) =>
+  String(e.version) === VER)`) and its two "which build is on the page" pins became shape tests
+  (`/^\d+(\.\d+)+$/`), so a later release is not made to carry its words. Its new assertions read the module's table
+  KEYS (`k: 'reenc'` absent) while the real-app probe reads the badge OBJECTS for the wording - deliberately, because
+  this patch's own design note names those tools on purpose and a phrase-based check would have caught the note
+  instead of the tiles.
+- **TWO GATES HAD BEEN RED SINCE 70.0 AND 70.0.5, AND THIS RELEASE'S SWEEP FOUND THEM.** `dev/test-66427.mjs` asked
+  for **four** `sd-glow-pulse` rules and the Vortex reward theme (70.0.5) added a fifth - per-theme, where every other
+  dynamic theme shares one. `dev/test-6139.mjs` pinned `entries[0].version === '64.3.1'`, which 70.0 broke by putting
+  its own entry at the top. Both are fixed here, and both are the same lesson: **a gate that describes a release must
+  read its own entry by version, and a gate that counts something must say why the number is that number.** Neither is
+  in the release gate set, which is how two releases shipped over them.
+- **IDEMPOTENCE: A KEY HAS TO BE A REAL SUBSTRING OF WHAT THE EDIT WRITES.** patch-706's first run passed and wrote
+  the tree; the SECOND run reported 25 "anchor missing" failures, because most `sub` calls carried no `key` at all.
+  Keys were added, and one was still wrong - typed from the intended text (`(entries.findIndex(...`) rather than the
+  text the edit actually leaves behind (`entries[entries.findIndex(...`). **The proof that a patch reproduces its own
+  tree is not the diff: copy every file it touches out of `git show HEAD:<file>` into a scratch tree, run the patch
+  there, and `diff` the result against the real one.** Done here - byte-identical for index.html, sw.js, the module and
+  the probe, with only the repin-owned cache pins differing, which is precisely what the sweep is for.
+- **Verified.** test-705 **139** (4 new), studio-70-check **186** (1 new; driven on the real app, it asserts no badge
+  name or sub names a re-encode, a batch tag run, a crop or the space one saves), test-70 **182**, 66431 95, 6643 90,
+  66427 82 (was 81 + 1 failed), 6139 all pass (was 1 failure), 66429 83, 66426 86, 66425 101, 66424 102, 66423 52,
+  66422 87, 66421 49, 6642 74, 6641 119, 651 35, 6138 ALL PASS, 6137 0 failures, 6136/612 all pass, check-dom 0
+  failures, audit-calls OK (6661 line comments). OTA at a true fixed point: `ota/` **808950**, `ota-play/` **808958**,
+  all five manifests agree with the zip they describe (ota-update 52, ota-guard 20, ota-bootapply 24, ota-loop 26,
+  both `--check`s OK, 6 published notes).
+- **STILL NOT MEASURABLE HERE.** Whether the wall now READS as being about the app rather than about editing files is a
+  judgment made by playing with it; what is provable, and asserted, is that no tile on it can be earned by changing a
+  song. The balance to move if it reads wrong is the per-family rung lists in `BADGE_TIERS`/`BADGE_COUNTS` - they are
+  tables for exactly that reason.
+
+
 ## 70.0.5 (Sep 28, 2026): the add-songs pill leaves the dock for a + in the header, and thirty badges grow to 201 with five rewards
 - **The user's words**, verbatim, in THREE messages, all released as 70.0.5: "Remove the add songs tab from bottom
   and remove the refresh button from the top and replace that with a plus sign for add songs v70.0.5"; then "Achivements
