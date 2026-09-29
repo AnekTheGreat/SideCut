@@ -14,6 +14,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The release step at the bottom attaches every built APK and AAB to a GitHub
+    # release. A workflow artifact has no download counter of any kind, so a
+    # release asset is the only place the count exists - which is what the app's
+    # APK downloads panel reads.
+    permissions:
+      contents: write
     strategy:
       # Two flavors from one pipeline:
       #   play - Play flag injected (licensed sources, ota-play channel) -> upload AAB to Play
@@ -135,3 +141,53 @@ jobs:
             SideCut-${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.suffix }}.apk
             upload_certificate.pem
           if-no-files-found: error
+
+      - name: Publish the APK as a release asset (this is what can be counted)
+        # WHY A RELEASE AS WELL AS AN ARTIFACT. "Artifact" downloads cannot be
+        # counted: the API does not report a count for them and they expire. A
+        # RELEASE ASSET does report one (`download_count`), it is public, it does
+        # not expire, and the app's Studio panel reads it straight from
+        # api.github.com - so the same file is published twice, on purpose.
+        #
+        # One tag per flavor, because both matrix jobs run at the same time and
+        # two jobs creating the same release race each other; a tag of its own is
+        # the only shape that is safe with a matrix. `--clobber` makes a re-run of
+        # the same version replace the files instead of failing on them.
+        #
+        # Tagged with the APP's version (index.html's APP_VERSION) and the flavor,
+        # and NOT with package.json's - which is what the file names carry because
+        # that is what the Android build numbers itself from. The tag has to move
+        # with the app, not with the Android shell: two pushes can share a
+        # package.json version, and a release whose asset is replaced by --clobber
+        # starts its download count again from zero. One release per app version
+        # per flavor is what makes the total add up, and the flavor in the tag keeps
+        # a sideloaded full APK and the Play APK apart in the asset list.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          V="${{ steps.ver.outputs.version }}"
+          S="${{ steps.ver.outputs.suffix }}"
+          APPV="$(node -p "require('fs').readFileSync('index.html','utf8').match(/const APP_VERSION = '([^']+)'/)[1]")"
+          TAG="apk-$APPV-$S"
+          echo "app version $APPV, android version $V, flavor $S -> release $TAG"
+          gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "SideCut $APPV ($S APK)" \
+              --notes "Signed Android build of SideCut $APPV, $S flavor (Android build $V). The app itself updates over the air once installed; this is the installable file. The download count on this page is what the Studio reads under APK downloads." \
+              --prerelease
+          gh release upload "$TAG" "SideCut-$V-$S.apk" --clobber
+          gh release upload "$TAG" "SideCut-$V-$S.aab" --clobber
+          gh release upload "$TAG" upload_certificate.pem --clobber
+          # `set +e` is above so that the create-or-update dance cannot fail the
+          # build on a release that already exists - but the whole POINT of this
+          # step is that the count exists, and an upload that silently did nothing
+          # would leave Studio reading a number that is never going to move. So the
+          # assets are listed and checked by name, and a missing one fails here.
+          gh release view "$TAG" --json assets -q '.assets[].name' | sort
+          for f in "SideCut-$V-$S.apk" "SideCut-$V-$S.aab"; do
+            gh release view "$TAG" --json assets -q '.assets[].name' | grep -qx "$f" || {
+              echo "::error::$f did not reach release $TAG, so its download count cannot be tracked"
+              exit 1
+            }
+          done

@@ -50,8 +50,18 @@ const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const mod = fs.readFileSync(path.join(ROOT, 'dev', 'sc70-module.js'), 'utf8');
 
 const VER = '70.0.5';
+
+// 70.0.7. One surface has to reserve the bottom inset: the one that touches the
+// bottom edge of the screen. That is the dock, and this is the half of that rule
+// that a page-wide text check cannot accidentally satisfy with the wrong element.
+function mustStillReserve(page, selector){
+  const hit = page.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+    "\\{\\s*[^}]*padding:[^}]*env\\(safe-area-inset-bottom\\)[^}]*\\}"));
+  ok(!!hit, "and " + selector + " is the surface that reserves the inset");
+}
+
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v63.0.32';
+const SHELL_CACHE = 'sidecut-shell-v63.0.35';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -198,6 +208,69 @@ console.log('\n[6] the styles');
   ok(count('.action-strip > *{ flex: 1 1 0; min-width: 0; }') === 1, 'every dock pill still shares the row');
   ok(has('#libraryBtn{ flex: 1.18 1 0; border-radius: 14px; }'), 'and the split tab still keeps its extra room');
   ok(has('--sc-dock-h: 56px'), 'the dock height token is untouched');
+  // 70.0.8. Four complaints, one release, and none of them is a layout - so all
+  // four are asserted as what the page and the module actually contain.
+  // [1] the crop: Studio opens the app cropper, and the clip exporter is its own
+  // card instead of wearing the word crop.
+  ok(count('window.__scCropSong = function') === 1, 'the Studio gets the app cropper through one hook');
+  ok(countMod("toolCard('crop',") === 1, 'the Studio tool card is a Crop song card');
+  ok(countMod('Crop \\u2192 clip') === 0, 'and no longer calls a clip exporter a crop');
+  ok(countMod('__scCropSong\', t.id)') === 1, 'and the card calls the real modal rather than a second one');
+  // [2] the speed slider: the sheet rebuild must keep what is not a button.
+  ok(countMod('var extras = [];') === 1, 'the song sheet collects what is not a button');
+  ok(countMod("if(ch.tagName === 'BUTTON') return;") === 1, 'and that is how it decides');
+  ok(countMod("ch.classList.contains('sc-sheet-group')") === 1, 'without dragging its own grouped sections along');
+  ok(countMod('var anchor = target.firstChild;') === 1, 'and puts it back into the Play group');
+  // [3] lyrics off: one flag, persisted cheaply, honoured everywhere it must be.
+  ok(count('lyricsOff: t.lyricsOff || false,') === 1, 'the track record keeps the lyrics-off flag');
+  ok(has("'gain', 'waveform', 'lyricsOff']"), 'and the sidecar is what stores it, so no audio is rewritten');
+  ok(count('if(track.lyricsOff){ scLyricsShowOff(track); return; }') === 1, 'a song switched off is never fetched');
+  ok(count('if(t.lyricsOff) return false;') === 1, 'and the background lyrics pass skips it');
+  ok(count('id="lyricsDisableBtn"') === 1 && count('id="lyricsOffPanel"') === 1,
+     'the switch and the panel it opens are both in the sheet');
+  ok(count("$('lyricsOffBack').addEventListener('click'") === 1, 'and off can be undone from inside it');
+  ok(has("t.lyricsOff ? 'Lyrics (off for this song)' : 'Lyrics'"), 'the song menu says when they are off');
+  // [4] the count: a real, public API that carries a real download count.
+  ok(count("'https://api.github.com/repos/'") === 1, 'Studio reads the counts from the GitHub API');
+  ok(has('/releases?per_page=30') && has('a.download_count'), 'and it is the release asset count, which is the one GitHub keeps');
+  ok(countMod('data-act="apkread"') === 1, 'with one button that asks for it');
+  // 70.0.7, the user's words: "why is their a huge gap between the media player and
+  // tabs". The player is the MIDDLE surface now - the dock touches the screen edge,
+  // and the bar's own `bottom` already counts the inset - so the bar's padding must
+  // not count the same inset a third time. The inset is only visible on a device that
+  // reports one (Android 15 is edge to edge; 3-button nav is ~48px), which is exactly
+  // why this is asserted as a cascade and not as a picture.
+  // A rule is a rule: comments are stripped before anything is matched, because
+  // this file's own design note names this selector and this inset on purpose.
+  const cssOnly = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  const padRules = (cssOnly.match(/#nowPlaying[^{}]*\{[^}]*padding[^}]*\}/g) || []);
+  const envPads = padRules.filter((r) => /env\(safe-area-inset-bottom\)/.test(r));
+  ok(envPads.length === 4, 'the four player paddings that counted the inset are still there (' + envPads.length + ')');
+  ok(count('#nowPlaying{ padding-bottom: 10px; }') === 1, 'and the override that drops it ships once');
+  ok(count('body.sandbox-compact-nowbar #nowPlaying{ padding-bottom: 6px; }') === 1,
+     'the compact now bar keeps its 6px, without the inset');
+  ok(has('@media (max-width: 360px){ #nowPlaying{ padding-bottom: 8px; } }'),
+     'and the very narrow phone keeps its 8px');
+  ok(has('@media (max-height: 500px) and (orientation: landscape){ #nowPlaying{ padding-bottom: 6px; } }'),
+     'and the landscape bar keeps its 6px');
+  ok(cssOnly.indexOf('#nowPlaying{ padding-bottom: 10px; }') > Math.max.apply(null, envPads.map((r) => cssOnly.indexOf(r))),
+     'and it comes after every padding that counted it, so it is the last word');
+  mustStillReserve(src, '.action-strip');
+  // 70.0.9. The lift is measured, not guessed - and the fallback is the guess.
+  ok(count('html.sc-dock-measured #nowPlaying{ bottom: var(--sc-dock-real') === 1,
+     'the measured lift is not the last word on the player position');
+  ok(has('var(--sc-dock-real, calc(var(--sc-dock-h) + env(safe-area-inset-bottom)))'),
+     'and it falls back to the guess rather than leaving the player unpositioned');
+  ok(countMod('function measureDock(){') === 1, 'the dock is measured');
+  ok(countMod('if(!h || h < DOCK_MIN || h > DOCK_MAX){') === 1, 'and a nonsense height is refused');
+  ok(countMod('getBoundingClientRect().height') === 1, 'by reading the dock that is on the screen');
+  ok(countMod("root.classList.add('sc-dock-measured')") === 1 &&
+     countMod("root.classList.remove('sc-dock-measured')") === 1,
+     'and the player is switched to it, or back off it, in one place');
+  ok(countMod('watchDock();') === 1, 'and the measurement is watched (rotation, resize, the dock itself)');
+  ok(/#nowPlaying\{ bottom: calc\(var\(--sc-dock-h\) \+ env\(safe-area-inset-bottom\)\)/.test(src),
+     'while the position that lifts the bar onto the dock still counts it');
+
 }
 
 console.log('\n[7] the Studio header names the real build');

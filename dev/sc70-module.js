@@ -394,6 +394,20 @@
      -------------------------------------------------------------------------- */
   var clip = { start: 0, end: 30, dur: 0, tr: null, busy: false };
 
+  // 70.0.8 - "Crop song in studio should be like one for songs". 70.0 had put a
+  // SECOND cropper here: a clip exporter that writes a new file. The song menu
+  // trims the song you already have, in place, and Undo crop in the song info
+  // sheet puts it back - that is the one a crop should be, so the card opens
+  // exactly that, on the song that is loaded. The app owns the modal; the hook is
+  // the only way across from this block.
+  function cropCurrent(){
+    var t = currentTrack();
+    if(!t){ toast('Play a song first, then crop it.'); return false; }
+    if(!t.file){ toast('This song has no audio file to crop.'); return false; }
+    if(!call('__scCropSong', t.id)){ toast('The cropper is not available in this build.'); return false; }
+    bump('studio');
+    return true;
+  }
   function openClipSheet(preStart, preEnd){
     var t = currentTrack();
     if(!t){ toast('Play a song first.'); return false; }
@@ -1735,11 +1749,13 @@
         '<div class="sc-now-sub">' + esc(t ? (t.artist || 'Unknown artist') : 'Tap a song in Library to load the tools') + '</div>' +
         '<div class="sc-now-tools">' +
           '<button class="sc-btn tiny" data-act="loadsampler">Load sampler</button>' +
+          '<button class="sc-btn tiny" data-act="crop">Crop</button>' +
           '<button class="sc-btn tiny" data-act="clip">Make a clip</button>' +
         '</div></div>' +
       '</div>' +
       '<div class="sc-tools">' +
-        toolCard('clip', '\u2702', 'Crop \u2192 clip', 'Cut a section out and save it as its own MP3 \u2014 a ringtone or a story clip.', 'accent') +
+        toolCard('crop', '\u2702', 'Crop song', 'Trim the start and the end in place \u2014 the same cropper as the \u22ee menu, with Undo crop on the song.', 'accent') +
+        toolCard('clip', '\ud83c\udfb5', 'Ringtone / clip', 'Save a section as its own tagged MP3. Nothing in your library changes.', '') +
         toolCard('fx', '\ud83c\udf0a', 'Slowed + reverb', fxState.rate === 1 && !fxState.reverb ? 'Add weight and space, or speed it up.' : fxState.rate.toFixed(2) + 'x \u00b7 ' + Math.round(fxState.reverb * 100) + '% wet', fxState.rate !== 1 || fxState.reverb > 0 ? 'on' : '') +
         toolCard('karaoke', '\ud83c\udfa4', 'Karaoke mode', fxState.karaoke > 0 ? 'Vocal pulled out \u00b7 ' + Math.round(fxState.karaoke * 100) + '%' : 'Take the lead vocal out of what is playing.', fxState.karaoke > 0 ? 'on' : '') +
         toolCard('sampler', '\ud83c\udf9b', 'Sampler pads', sampler.trackId ? 'Loaded with "' + esc(trackName(sampler.trackId)) + '"' : 'Eight pads over the song you are playing.', sampler.trackId ? 'on' : '') +
@@ -1748,6 +1764,7 @@
       achievementsSectionHtml() +
       '<div class="sc-sec" id="scStudioStorage"><div class="sc-sec-head"><span>Storage cleaner</span><span class="sc-sec-sub">' + fmtBytes(totalAudioBytes()) + '</span></div>' +
         storageHtml() + '</div>' +
+        apkSectionHtml() +
       '<div class="sc-sec"><div class="sc-sec-head"><span>Auto-DJ</span><span class="sc-sec-sub">' + (autodj.on ? 'on' : 'off') + '</span></div>' +
         '<div class="sc-toggle-row"><div><div class="sc-toggle-name">Blend on the beat</div><div class="sc-toggle-sub">Reads the tempo of the song that is finishing and starts the next one on a beat inside the crossfade.</div></div>' +
         '<button class="sc-switch' + (autodj.on ? ' on' : '') + '" data-act="autodj" role="switch" aria-checked="' + (autodj.on ? 'true' : 'false') + '"><i></i></button></div>' +
@@ -1766,6 +1783,58 @@
     host.innerHTML = html;
     wireStudio();
     paintBpmNote();
+  }
+  /* --------------------------------------------------------------------------
+     13b. APK DOWNLOADS - the one number only GitHub keeps
+     -------------------------------------------------------------------------- */
+  // "to see how many apks I have downloaded". GitHub counts downloads against
+  // RELEASE assets; a workflow artifact is a private build output with no counter
+  // on it at all. The Android workflow attaches each flavor to a release as well
+  // as to the artifact, and this reads the public API. Nothing is fetched until
+  // the button is pressed, and a failure says so instead of showing a zero.
+  var GH_REPO = 'AnekTheGreat/SideCut';
+  var apk = { busy: false, error: '', rows: null };
+  function apkTotal(){
+    if(!apk.rows) return 0;
+    return apk.rows.reduce(function(n, r){ return n + (r.count || 0); }, 0);
+  }
+  function apkBodyHtml(){
+    if(apk.busy) return '<div class="sc-note">Asking GitHub\u2026</div>';
+    if(apk.error) return '<div class="sc-note sc-bad">' + esc(apk.error) + '</div>';
+    if(!apk.rows) return '<div class="sc-note">Read the download count for every APK the Android build has published. GitHub keeps the number, because the APKs are attached to a release as well as to the build artifact.</div>';
+    if(!apk.rows.length) return '<div class="sc-note">No APK is attached to a release yet. The next push to main publishes one, and the count appears here.</div>';
+    return '<div class="sc-apks">' + apk.rows.map(function(r){
+      return '<div class="sc-apk-row"><span class="sc-apk-name">' + esc(r.name) + '</span>' +
+        '<span class="sc-apk-count">' + r.count + ' download' + (r.count === 1 ? '' : 's') + '</span>' +
+        '<span class="sc-apk-when">' + esc(r.when) + '</span></div>';
+    }).join('') + '</div>';
+  }
+  function apkSectionHtml(){
+    return '<div class="sc-sec" id="scStudioApks"><div class="sc-sec-head"><span>APK downloads</span><span class="sc-sec-sub">' +
+      (apk.rows ? apkTotal() + ' total' : 'not read yet') + '</span></div>' + apkBodyHtml() +
+      '<div class="sc-actions"><button class="sc-btn' + (apk.rows ? '' : ' primary') + '" data-act="apkread"' +
+      (apk.busy ? ' disabled' : '') + '>' + (apk.rows ? 'Refresh' : 'Read the counts') + '</button></div></div>';
+  }
+  function loadApkDownloads(){
+    if(apk.busy) return;
+    apk.busy = true; apk.error = ''; renderStudio();
+    fetch('https://api.github.com/repos/' + GH_REPO + '/releases?per_page=30', { headers: { Accept: 'application/vnd.github+json' } })
+      .then(function(r){ if(!r.ok) throw new Error('GitHub answered ' + r.status); return r.json(); })
+      .then(function(list){
+        var rows = [];
+        (list || []).forEach(function(rel){
+          (rel.assets || []).forEach(function(a){
+            if(!/\.apk$/i.test(a.name || '')) return;
+            rows.push({ name: a.name, count: a.download_count || 0, when: String(rel.tag_name || '') });
+          });
+        });
+        apk.rows = rows; apk.busy = false; renderStudio();
+      })
+      .catch(function(e){
+        apk.busy = false; apk.rows = null;
+        apk.error = 'Could not read the counts from GitHub (' + ((e && e.message) || 'network') + '). Reading them needs the SideCut repository to be public and to have releases.';
+        renderStudio();
+      });
   }
   function trackName(id){
     var t = trackById(id);
@@ -1802,6 +1871,8 @@
       b.addEventListener('click', function(){
         var act = b.getAttribute('data-act');
         if(act === 'loadsampler') loadSamplerFor(currentTrack());
+        else if(act === 'apkread') loadApkDownloads();
+        else if(act === 'crop') cropCurrent();
         else if(act === 'clip') openClipSheet();
         else if(act === 'autodj') setAutoDj(!autodj.on);
         else if(act === 'shake') enableShake(!gestures.shake);
@@ -1846,6 +1917,7 @@
   function openTool(id){
     bump('studio');
     markFeature('studio');
+    if(id === 'crop') return cropCurrent();
     if(id === 'clip') return openClipSheet();
     if(id === 'fx') return openFxSheet();
     if(id === 'karaoke') return openKaraokeSheet();
@@ -2040,6 +2112,19 @@
       if(!host) return false;
       var btns = Array.prototype.slice.call(host.querySelectorAll('button'));
       if(btns.length < 3) return false;
+      // 70.0.8 - "where is speed adjuster in song 3 dots menu". It was always
+      // built: the app puts a Playback speed slider in this sheet. It is a <div>
+      // with a range input rather than a button, and the rebuild below throws the
+      // whole list away and puts back only what it collected - so the slider was
+      // discarded every time the sheet opened. Everything that is not a button is
+      // carried across now and put back at the top of the Play group, where a
+      // speed control belongs.
+      var extras = [];
+      Array.prototype.slice.call(host.children).forEach(function(ch){
+        if(ch.tagName === 'BUTTON') return;
+        if(ch.classList && ch.classList.contains('sc-sheet-group')) return;
+        extras.push(ch);
+      });
       var buckets = GROUPS.map(function(g){ return { label: g.label, test: g.test, items: [], danger: g.label === 'Danger' }; });
       var other = { label: 'More', test: null, items: [], danger: false };
       btns.forEach(function(b){
@@ -2085,6 +2170,12 @@
         sec.appendChild(box);
         host.appendChild(sec);
       });
+      if(extras.length){
+        var playBody = host.querySelector('.sc-sheet-group-body');
+        var target = playBody || host;
+        var anchor = target.firstChild;
+        extras.forEach(function(x){ target.insertBefore(x, anchor); });
+      }
       return true;
     }catch(e){ return false; }
   };
@@ -2204,11 +2295,57 @@
     whirlPaint();
   }
 
+  /* --------------------------------------------------------------------------
+     13c. HOW TALL IS THE DOCK, REALLY
+     -------------------------------------------------------------------------- */
+  // The player is `bottom: calc(--sc-dock-h + env(safe-area-inset-bottom))`, and
+  // --sc-dock-h is a written-down 56px. That is the right number for a phone with
+  // no bottom inset and the wrong one nearly everywhere else - the >=768 width
+  // breakpoint raises the pill to 44px, an unfolded foldable reports a bottom inset
+  // no phone has, the sandbox compact bar changes it again - so on those devices the
+  // player floats above the dock and the difference is a strip of nothing between
+  // the seek row and the dock. This measures the dock that is actually on the screen
+  // and hands the player that number, so its bottom edge lands where the dock begins
+  // on any device, at any width, at any inset. One getBoundingClientRect; nothing is
+  // written unless the measurement is a believable dock.
+  var DOCK_MIN = 30, DOCK_MAX = 300;
+  function measureDock(){
+    try{
+      var strip = document.querySelector('.action-strip');
+      var root = document.documentElement;
+      if(!strip || !root) return false;
+      var h = Math.round(strip.getBoundingClientRect().height || 0);
+      // Hidden, not laid out, or four hundred pixels tall: not a dock. The
+      // measurement is dropped and the stylesheet own arithmetic takes over.
+      if(!h || h < DOCK_MIN || h > DOCK_MAX){
+        root.classList.remove('sc-dock-measured');
+        return false;
+      }
+      root.style.setProperty('--sc-dock-real', h + 'px');
+      root.classList.add('sc-dock-measured');
+      return true;
+    }catch(e){ return false; }
+  }
+  function watchDock(){
+    measureDock();
+    try{
+      var strip = document.querySelector('.action-strip');
+      if(window.ResizeObserver && strip) new ResizeObserver(measureDock).observe(strip);
+    }catch(_eRo){}
+    window.addEventListener('resize', measureDock);
+    window.addEventListener('orientationchange', measureDock);
+    // The first paint is not trustworthy - the fonts, the theme and the dock own
+    // transition all settle after it - so it is measured again once the page has.
+    setTimeout(measureDock, 250);
+    setTimeout(measureDock, 1500);
+  }
+
   function boot(){
     buildStudioView();
     applyFx();
     applyRate();
     wireSwipe();
+    watchDock();
     wireAppWatch();
     wireWhirl();
     wireDevGesture();
@@ -2256,6 +2393,11 @@
     looper: looper,
     recordLoop: recordLoop,
     stopLoops: stopLoops,
+    measureDock: measureDock,
+    watchDock: watchDock,
+    cropCurrent: cropCurrent,
+    loadApkDownloads: loadApkDownloads,
+    apkRows: function(){ return apk.rows; },
     openClipSheet: openClipSheet,
     exportClip: exportClip,
     clip: clip,

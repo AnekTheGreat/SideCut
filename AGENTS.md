@@ -1,6 +1,201 @@
 # SideCut — repository memory
 
 
+## 70.0.9 (Sep 29, 2026): the player stops guessing how tall the dock is
+- **The user's words**, verbatim, with a screenshot of the app on an **unfolded foldable**: "This is not how it should look on
+  a foldable phone there is way to much of a gap". The same complaint as 70.0.7 - and **the first thing to know is that the
+  device making it is still running 70.0.6**: nothing has been pushed since `389fe8a` (70.0.6), so 70.0.7's fix, which is
+  in this tree, has never reached the phone or the foldable. Before diagnosing a repeat report, check what the device can
+  possibly be running.
+- **WHAT THE STRIP ACTUALLY IS, and this is why it looks like one tall dark panel rather than a hole in the page**: the
+  space between the player's last row and the dock is the player's OWN bottom padding painted with the player's own
+  background. `#nowPlaying` is a fixed box whose bottom edge sits exactly on the dock's top edge
+  (`bottom: calc(56px + env(safe-area-inset-bottom))` against a dock of `54px + inset` - the SAFE terms cancel, which is
+  why the bar's POSITION is right on every device), and everything the box contains below its last row is that padding.
+  Before 70.0.7 that padding was `calc(10px + env(safe-area-inset-bottom))` - written when the player WAS the bottom-most
+  surface - so the strip was `10px + SAFE`. On a phone SAFE is ~48px (Android 15 draws every app edge to edge; a 3-button
+  nav bar reports about that). **On an unfolded foldable the bottom system area is bigger again, so the same 10px became
+  10px + a much larger number.** Same bug, bigger inset, worse result - which is the whole of the "it is much worse on a
+  foldable" half of the report.
+- **THE TWO HALVES, AND WHICH RELEASE OWNS WHICH.** 70.0.7 owns the padding half (only the surface that touches the bottom
+  edge reserves the inset - the dock - so `#nowPlaying{padding-bottom:10px}` and its three variants). **70.0.9 owns the
+  other half: the 56px guess.** `--sc-dock-h: 56px` is 42px pills plus 6px of padding either side, on a phone, with no
+  inset. It is wrong nearly everywhere else: the `min-width:561px/768px/1024px` breaks change the pill and the padding, an
+  unfolded foldable reports an inset no phone has, `body.sandbox-compact-nowbar` changes it again, and the Premium "now
+  bar size" scales the bar on top of all of it. The player is lifted by `calc(--sc-dock-h + inset)`, so where the guess is
+  wrong the player floats ABOVE the dock and the difference is a strip of nothing between the seek row and the dock.
+- **THE FIX: MEASURE THE DOCK, KEEP THE GUESS AS THE FALLBACK.** `--sc-dock-h` is not the last word any more -
+  `html.sc-dock-measured #nowPlaying{ bottom: var(--sc-dock-real, calc(var(--sc-dock-h) + env(safe-area-inset-bottom))); }`
+  is, and the module sets `--sc-dock-real` from `Math.round(strip.getBoundingClientRect().height)` of the real
+  `.action-strip` (`measureDock`, published on `SC70`, driven by `watchDock()` from `boot()`: once immediately, on `resize`,
+  on `orientationchange`, on a `ResizeObserver` of the dock itself, and again at 250ms and 1500ms because the first paint
+  is not trustworthy). The believable range is `DOCK_MIN 30 .. DOCK_MAX 300`; outside it - hidden dock, unlaid-out page,
+  or the 0 that jsdom reports for everything - the class is dropped and **the page falls back to exactly today's
+  arithmetic**. **The `var()` fallback is not decoration**: if the custom property were ever missing, `bottom` would be
+  invalid at computed-value time and the player would fall back to its static position, which is a far worse bug than the
+  one being fixed.
+- **`dev/patch-709.mjs` then `dev/repin-709.mjs`.** patch-709 bumps `APP_VERSION` **70.0.8 -> 70.0.9**, adds the
+  changelog head (6 notes), moves the shell cache `v63.0.34 -> v63.0.35`, adds the measurement to the module and the
+  measured rule to the stylesheet, re-splices both, and re-points the new assertions in `dev/test-705.mjs` and
+  `dev/studio-70-check.cjs` (**12 edits**, `--check` reports 0/12 when clean). repin-709 is the mechanical sweep -
+  **22 edits across 19 files** - and still SKIPS `dev/test-705.mjs`.
+- **Two gate lessons from this release, both worth remembering.** (1) **A stamp in the FUTURE fails the build**: the first
+  stamp written here was 4:41 PM EDT while the sandbox clock said 3:45 PM, and `dev/test-6643.mjs` asserts "not one of them
+  in the future" - so a stamp has to be anchored to the clock the release is actually cut at, and one already applied to
+  the page is repaired with `heal()` (the helper patch-708 introduced). (2) **`dev/test-662.mjs` pinned the word "studio"
+  in the head entry's notes** ("and it describes what this release did"), which 70.0, 70.0.5 and 70.0.8 all satisfied and a
+  release about the player and the dock cannot. The rule underneath it is "the notes name a surface this app actually
+  has", so it now reads `/(studio|player|dock)/i` - widened rather than dropped, and never satisfied by writing the word
+  "studio" into notes about the dock.
+- **Verified.** test-705 **172** (7 new), studio-70-check **216** (8 new, on the real app: an unmeasurable dock leaves the
+  guess alone, a faked 132px dock switches the player to the measured lift, a 4000px one is refused and falls back),
+  test-70 182, 662 **75**, 663 49, 66431 95, 6643 90, 66429 83, 66428 73, 66427 82, 66426 86, 66425 101, 66424 102,
+  66423 52, 66422 87, 66421 49, 6642 74, 6641 119, 651 35, 6139/6138 ALL PASS, 6137 0 failures, 6136/612 all pass,
+  check-dom 0 failures, audit-calls OK (5057 declared names across 4 script blocks, 6722 line comments), ota-guard 20,
+  ota-bootapply 24, ota-loop 26, ota-update 52. OTA at a true fixed point: `ota/` **816426**, `ota-play/` **816436**, all
+  five manifests agree, both `--check`s OK with 6 notes.
+- **Reproduction proven, including the gate**: `git archive HEAD` (70.0.6) into a scratch tree, then patch-707, repin-707,
+  patch-708, repin-708, patch-709, repin-709 in that order -> `index.html` and `sw.js` byte-identical, `diff -rq dev`
+  clean except the hand-written `dev/apk-downloads.mjs` - **and `node dev/test-705.mjs` inside that scratch tree passes
+  172/172**, so the whole chain is reproducible from the committed tip.
+- **Not verifiable here.** jsdom measures every element as 0 and cannot make `env(safe-area-inset-bottom)` non-zero, so
+  the probe drives the mechanism with faked heights rather than a real layout. The device-side proof is the arithmetic:
+  the strip is the player's own padding (fixed in 70.0.7) plus whatever the guess got wrong (fixed here, by measuring).
+  If a phone or foldable still shows a strip, the first thing to read is whether the build on it is even the one that has
+  these fixes - see the note at the top of this section.
+
+
+## 70.0.8 (Sep 29, 2026): one cropper, the speed slider back, lyrics off per song, and a count of the APKs
+- **The user's words**, verbatim, in one message with two screenshots: "Can you build me a seperate apk in git artifacts
+  to see how many apks I have downloaded and is their a way play billing can work on the apk?" / "Crop song in studio
+  should be like one for songs and where is speed adjuster in song 3 dots menu" / "If the lyrics is not right just add
+  an option to disable lyrics for that song". **Four complaints and only one of them is a missing feature**: the crop
+  was two different tools under one word, the speed control existed and was being thrown away, the lyrics switch did
+  not exist, and the APK count has no home on GitHub's artifacts at all.
+- **[1] CROP: THE RULE IS "ONE CROPPER".** 70.0 shipped `openClipSheet()` inside Studio under the card name "Crop ->
+  clip" - a clip exporter that writes a NEW tagged MP3 - while the song menu's **Crop song** (`openCropSongModal()`)
+  trims the song you already have, in place, with **Undo crop** in the song info sheet. Two things called crop, and the
+  one in Studio was not the one the user meant. The Studio card now opens the app's own modal: the Studio block is a
+  separate `<script>` and the app is an IIFE, so it goes through a new **`window.__scCropSong(id)`** hook (defined
+  next to `__scResume`, implemented as `openCropSongModal(trackById(id))`, `false` when there is no song or no file).
+  Module side: `cropCurrent()` (in `dev/sc70-module.js`, right before `openClipSheet`), the tool card `crop`,
+  `data-act="crop"` on the now-bar "Crop" button, `openTool('crop')`, and `SC70.cropCurrent`. **The clip exporter was
+  not deleted** - it is its own card, "Ringtone / clip", and it still makes a new file without touching the library.
+- **[2] SPEED: IT WAS NEVER MISSING, IT WAS THROWN AWAY.** The app builds the three-dot song sheet with a real
+  "Playback speed" slider (`#actionSpeedSlider`, wired to `setPlaybackSpeed`, at index.html ~21090). 70.0's grouping
+  (`__scDecorSongSheet`) rebuilds that sheet out of its **buttons only** - `host.querySelectorAll('button')` then
+  `host.innerHTML = ''` - and the slider is a `<div>` with a range input, so it was discarded every single time the
+  sheet opened. The rebuild now collects every non-button child and puts the batch back at the top of the **Play**
+  group. Two details that matter: the collection **ignores the module's own `.sc-sheet-group` sections** (a
+  second decoration would otherwise nest one whole grouping inside the new Play group), and the batch is inserted
+  before ONE anchor so several controls keep their order instead of arriving upside down. The app's inline
+  `padding:10px 4px 4px` on that wrapper became `2px 4px 6px`, because it is a row inside a group now, not a sheet.
+- **[3] LYRICS OFF, PER SONG.** A wrong match (words for a different recording, or for another song with the same
+  title) is worse than no lyrics. New per-track flag **`lyricsOff`**, and four things make it a real switch rather
+  than a UI state: it is in **`SC_SIDECAR_FIELDS`** (so it costs no audio rewrite - the same store as `playCount` -
+  and it rides along in backups), it is in **`buildTrackRecord`** (so a later full write cannot drop it), **
+  `scLyricsRecheckRun` skips it** (otherwise the background pass would re-fetch a switched-off song five times a
+  launch), and **`fetchLyrics` returns early** on it - after the manual guess, because manual lyrics are the user's
+  own words and still work. One setter, `scLyricsSetOff(track, off)` (published as `window.__scLyricsSetOff` for the
+  gates), drives both the new chip `#lyricsDisableBtn` ("Lyrics are wrong - turn them off" / "Turn lyrics back on")
+  and the button in the panel `#lyricsOffPanel` it opens. `scLyricsOffPanelHide()` is called from `showLyrics`,
+  `scLyricsSayNotFound` and `renderManualLyrics` so the explanation never sits on screen over the next song's words,
+  and the song menu's row reads **"Lyrics (off for this song)"** when it is off.
+- **[4] APK COUNT: ARTIFACTS CANNOT BE COUNTED, RELEASE ASSETS CAN.** `.github/workflows/android-build.yml` already
+  built and uploaded a signed AAB **and** APK per flavor as a workflow artifact, and that is all an artifact can ever
+  be: GitHub reports no download count for one and they expire. A **release asset** reports `download_count`, is
+  public and does not expire - so the workflow now also publishes each flavor's files to a release (**one tag per
+  flavor, `apk-<package.json version>-<flavor>`**, because two matrix jobs creating one release race each other),
+  via `gh release create/upload --clobber` with `permissions: contents: write`, and then **lists the assets and fails
+  the step by name if the APK or AAB did not land** (the count must not be silently untrackable). Studio reads it under
+  **APK downloads** (`GH_REPO = 'AnekTheGreat/SideCut'`, `https://api.github.com/repos/<repo>/releases?per_page=30`,
+  summed per `.apk` asset, `data-act="apkread"`), and says so plainly when GitHub cannot be reached instead of showing
+  a zero. `dev/apk-downloads.mjs` is the terminal version of the same number (`gh api` first, so a private repo works
+  too). **Watch the wording**: `dev/test-662.mjs` refuses the word "download" anywhere in the changelog head's notes
+  (the Play policy row over downloader claims), so the note says the APKs have been **fetched** from the release page.
+- **PLAY BILLING, ANSWERED.** It is already wired (`@capgo/native-purchases`, `patch-billing.py`, and the fixes in
+  `FIX_NOTES.md` - `PLAY_TIP_PRODUCTS`, the `com.android.vending.BILLING` permission, the base-plan `planIdentifier`),
+  and it **cannot work on a sideloaded build, by design and by Google's rules**: BillingClient only sells to an app
+  that was installed from Play. The `full` flavor cannot buy at all - it is a different `applicationId`
+  (`com.SideCut.myapp.full`, so both can be installed side by side) and is not on Play - and outside the plugin the
+  purchase buttons fall back to opening the Play listing. The supported path is the **`play` AAB on an internal or
+  closed testing track** (free, no review, instant) where the tester installs from the Play link.
+- **`dev/patch-708.mjs` then `dev/repin-708.mjs`.** patch-708 bumps `APP_VERSION` **70.0.7 -> 70.0.8**, adds the
+  changelog head (6 notes), moves the shell cache `sidecut-shell-v63.0.33 -> sidecut-shell-v63.0.34`, edits the module
+  and the stylesheet and re-splices both, and re-points the new assertions in `dev/test-705.mjs` and
+  `dev/studio-70-check.cjs` (**42 edits**, `--check` reports 0/42 when clean). It also carries a **`heal()`** helper -
+  a correction that must not fail when there is nothing to correct - used twice, because index.html is far too large
+  to edit by hand and far too load-bearing to revert: once to rename a helper (`scLyricsOffPanelShow` ->
+  `scLyricsShowOff`) whose call site was written against the other name, once to reword the sixth changelog note.
+  **Lesson for the next patch**: a `sub()` whose `key` is already satisfied in the tree is SKIPPED, so anything that
+  tightens a block an earlier `sub()` in the same patch inserted needs its own follow-up `sub()` (or `heal()`) that is
+  keyed on the CORRECTED text - and the earlier sub's key must then be the corrected marker, or it becomes unreachable.
+  repin-708 is the mechanical sweep - **22 edits across 19 files** - and still SKIPS `dev/test-705.mjs`.
+- **Verified.** test-705 **165** (18 new), studio-70-check **208** (19 new, on the real app: the sheet keeps
+  `#actionSpeedSlider` in the Play group, the crop card drives `__scCropSong` by id and reports a build without it,
+  lyrics off/on through the sidecar, and the APK panel reporting an unreachable GitHub), test-70 **182**, 66431 95,
+  6643 90, 66429 83, 66428 73, 66427 82, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6643 90,
+  6642 74, 6641 119, 663 49, 662 **75**, 651 35, 6139/6138 ALL PASS, 6137 0 failures, 6136/612 all pass, check-dom 0
+  failures, audit-calls OK (5052 declared names across 4 script blocks, 6708 line comments), ota-guard 20,
+  ota-bootapply 24, ota-loop 26, ota-update 52. OTA at a true fixed point: `ota/` **814873**, `ota-play/` **814881**,
+  all five manifests agree with the zip they describe, both `--check`s OK with 6 notes.
+- **Reproduction proven the repo way**: `git archive HEAD` (70.0.6) into a scratch tree, then patch-707, repin-707,
+  patch-708, repin-708 in that order -> `index.html` and `sw.js` **byte-identical**, `diff -rq dev` clean except the
+  new `dev/apk-downloads.mjs` - which, like `.github/workflows/android-build.yml` and this file, is hand-written and
+  not produced by a patch script.
+- **Not verifiable here.** The speed slider and the lyrics switch are asserted against the real app in jsdom (no
+  layout engine, no fingers), and the release-asset count needs one real push to `main`: until the workflow runs, the
+  Studio panel correctly reports that no APK is attached to a release yet. The billing answer above is the shape of
+  Google Play's rule, not a checkout that was completed in this sandbox.
+
+
+## 70.0.7 (Sep 29, 2026): the player stops reserving the bottom of the screen twice
+- **The user's words**, verbatim, sent with a photo of a fresh install (no settings touched, no Premium) beside a
+  screenshot of the app as they know it: "On download with no settings changed and no premium why is their a huge gap
+  between the media player and tabs when look how it is over here." Real, geometric, and not a settings problem - and
+  the tell is in the photo: the phone with the gap is using the **3-button nav bar**, the one that looks right is
+  using gestures. That is the whole bug: a bottom inset.
+- **THE ARITHMETIC, and every number in it is 70.0.6 as shipped.** `.action-strip` is `bottom:0` with `6px` top and
+  `6px + env(safe-area-inset-bottom)` bottom padding over 42px pills, so its top edge is `54px + SAFE` above the
+  screen edge; `#nowPlaying` is `bottom: 56px + SAFE` with `10px + SAFE` of its own bottom padding. The visible space
+  between the seek row and the dock is therefore `18px + SAFE` - the designed 18px on a device that reports no inset
+  (any browser tab, any WebView that is not edge to edge), and **18px + the nav bar** on one that does. The 3-button
+  bar made that ~66px: a hole exactly one dock tall, which is what the photo shows. The inset was counted THREE times
+  - the dock's own padding, the bar's `bottom`, and the bar's padding. The first two are right.
+- **THE RULE: THE BOTTOM INSET BELONGS TO THE SURFACE THAT TOUCHES THE BOTTOM EDGE.** That is the dock, and only the
+  dock. `#nowPlaying`'s own `padding: 10px ... calc(10px + env(safe-area-inset-bottom))` was written when the player
+  WAS the bottom-most surface (pre-70.0) and survived the dock landing under it. The fix is four declarations in
+  `dev/sc70-styles.css`, each restating the padding that case already had - 10px default, 8px at `max-width:360px`,
+  6px in short landscape, 6px with `body.sandbox-compact-nowbar` - minus the inset. **On a device that reports 0 the
+  page renders pixel for pixel what it rendered before**, which is exactly why 70.0, 70.0.5 and 70.0.6 all shipped it.
+- **WHY IT SURVIVED THREE RELEASES, AND WHY IT IS ASSERTED AS A CASCADE.** Every phone this was written and viewed on
+  reports no inset, and every layout number the gates can see is identical either way. Android 15 draws every app
+  edge to edge, so a Capacitor WebView there reports the real thing (~48px behind a 3-button bar); a device that is
+  not edge to edge reports 0. jsdom has no layout engine, so neither the gate nor the probe can measure the gap -
+  they assert the CASCADE instead: `dev/test-705.mjs` checks that every `#nowPlaying` rule whose padding still counts
+  the inset is overridden by a later rule that does not, that `mustStillReserve(src, '.action-strip')` still holds,
+  and that the bar's `bottom` still counts it; `dev/studio-70-check.cjs` asserts the same against the page the app
+  actually loads. **A CSS-text check must strip comments first**: the note this release adds names the selector and
+  the inset on purpose, and the first cut of the scanner read the note as a rule and found five paddings where there
+  are four.
+- **`dev/patch-707.mjs` then `dev/repin-707.mjs`.** patch-707 bumps `APP_VERSION` **70.0.6 -> 70.0.7**, adds the
+  changelog head, moves the `sw.js` cache `sidecut-shell-v63.0.32 -> sidecut-shell-v63.0.33`, re-splices the module
+  and the stylesheet, and re-points both halves of the check. repin-707 is the mechanical sweep - **22 edits across 19
+  files** (12 `const VER` pins, the 2 changelog head-line pins in test-6137/6138, the 8 shell-cache literals) - and it
+  SKIPS `dev/test-705.mjs`, which keeps describing 70.0.5 while it runs the rule about whatever build is on the page.
+- **Verified.** test-705 **147** (8 new), studio-70-check **189** (3 new, on the real app), test-70 **182**, 66431 95,
+  6643 90, 66427 82, 6139 all pass, 66429 83, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74,
+  6641 119, 651 35, 6138 ALL PASS, 6137 0 failures, 6136/612 all pass, check-dom 0 failures, audit-calls OK (6661
+  line comments). OTA at a true fixed point: `ota/` **810021** (was 808950), `ota-play/` **810029** (was 808958), all
+  five manifests agree with the zip they describe (ota-update 52, ota-guard 20, ota-bootapply 24, ota-loop 26, both
+  `--check`s OK, 6 published notes).
+- **STILL NOT MEASURABLE HERE.** The gap itself cannot be reproduced in this sandbox - there is no layout engine and
+  no way to make `env(safe-area-inset-bottom)` non-zero - so the only device-side proof is the arithmetic above plus
+  the cascade the gates assert. If a phone still shows a strip under the player, the number to move is
+  `--sc-dock-h` (56px) against the dock's real height (54px + inset), and the surface to look at is whichever one is
+  adding the inset that is already accounted for around it.
+
+
 ## 70.0.6 (Sep 29, 2026): the badges stop asking you to change your songs
 - **The user's words**, verbatim, sent with a screenshot of the Studio section of the badge wall (15 songs re-encoded,
   1/5 batch tag runs, 10/50 songs retagged, 5.0/50.0 MB saved by re-encoding): "The badges shouldny do with altering

@@ -29,6 +29,33 @@
 #libraryBtn #playlistsHalf span, #libraryBtn #albumsHalf span{ font-size: 9.5px; }
 /* The player sits ON the dock, not under it. */
 #nowPlaying{ bottom: calc(var(--sc-dock-h) + env(safe-area-inset-bottom)); }
+/* 70.0.9 - "there is way to much of a gap" on a foldable. 56px is a GUESS at the
+   dock height: it is 42px pills plus 6px of padding either side, on a phone, with
+   no bottom inset. The >=768 breakpoint raises that pill to 44px, an unfolded
+   foldable reports a bottom inset no phone has, the sandbox compact bar changes it
+   again - and the player is lifted by the guess plus the inset, so wherever the
+   guess is wrong the player floats above the dock and the difference is a strip of
+   nothing between the seek row and the dock. The dock is measured instead
+   (dev/sc70-module.js, measureDock) and this is the last word on the player
+   position when it can be. The var() fallback is the arithmetic above, so a
+   missing measurement is exactly the behaviour that shipped before. */
+html.sc-dock-measured #nowPlaying{ bottom: var(--sc-dock-real, calc(var(--sc-dock-h) + env(safe-area-inset-bottom))); }
+/* ...and it must not reserve the same bottom inset a SECOND time in its own
+   padding. #nowPlaying's padding was written when the player WAS the bottom-most
+   surface, so it carried `+ env(safe-area-inset-bottom)` the way the dock still
+   does. Once the dock landed under it (70.0) that inset was counted three times
+   over - the dock's own padding, this bar's `bottom`, and this bar's padding - so
+   the bar's last 10px of breathing room became 10px + the inset. Where the inset
+   is 0 (any non-edge-to-edge WebView, and a browser tab) the design is exactly
+   right and this changes nothing; where it is not 0 (Android 15 forces every app
+   edge to edge, and a 3-button nav bar reports ~48px) the seek row sat a whole
+   nav-bar-tall hole above the dock. The four rules below are the paddings the
+   app already had, minus the inset, so the player keeps its 10px (8px on a very
+   narrow phone, 6px in landscape or with the compact now bar) on every device. */
+#nowPlaying{ padding-bottom: 10px; }
+body.sandbox-compact-nowbar #nowPlaying{ padding-bottom: 6px; }
+@media (max-width: 360px){ #nowPlaying{ padding-bottom: 8px; } }
+@media (max-height: 500px) and (orientation: landscape){ #nowPlaying{ padding-bottom: 6px; } }
 
 /* Every scrolling view has to clear the player AND the dock under it. This is
    the last rule for any of these containers, so one declaration holds at every
@@ -314,6 +341,19 @@
 .sc-dev-sub{ font-size: 10px; font-weight: 400; color: var(--ink-dim); font-family: 'JetBrains Mono', monospace; }
 .sc-dev-note{ font-size: 11px; line-height: 1.5; color: var(--ink-dim); margin-top: 6px; }
 .sc-dev .sc-actions{ margin-top: 10px; }
+
+/* ---------- APK downloads: one row per published APK ---------- */
+/* Name, count, then the release tag it came from. The count is the only coloured
+   part, because it is the answer to the question the section exists for. */
+.sc-apks{ display: flex; flex-direction: column; gap: 6px; margin: 2px 0 6px; }
+.sc-apk-row{
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: rgba(255,255,255,0.03); font-size: 11.5px;
+}
+.sc-apk-name{ flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'JetBrains Mono', monospace; color: var(--ink); }
+.sc-apk-count{ color: var(--coral); font-weight: 650; white-space: nowrap; }
+.sc-apk-when{ color: var(--ink-dim); font-size: 10.5px; white-space: nowrap; }
 
 /* ---------- Vortex: the 200-badge theme ---------- */
 /* The Studio block writes --whirl-deg on <html> from the finger's angle around

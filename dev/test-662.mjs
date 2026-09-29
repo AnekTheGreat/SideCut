@@ -166,7 +166,10 @@ console.log('\n[9] the release says so');
     // "nothing is withheld without saying so", not "the rest are withheld".
     ok((head.items || []).every((it) => it.indexOf('[FULL]') === -1),
       'and none of them is withheld from the other channel');
-    ok(/studio/i.test(head.items.join('\n')), 'and it describes what this release did');
+    // 70.0.9 is about the player and the dock, and the rule underneath the word
+    // is that the notes name a surface this app really has - not one in particular.
+    ok(/(studio|player|dock)/i.test(head.items.join('\n')),
+      'and it describes what this release did');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';

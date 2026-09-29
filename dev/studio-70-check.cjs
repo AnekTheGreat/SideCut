@@ -245,6 +245,21 @@ const realErrors = (errors) => errors.filter((e) =>
     const npRule = html.match(/#nowPlaying\{[^}]*bottom:\s*calc\(var\(--sc-dock-h\)/);
     ok(!!npRule, 'and the player is lifted above it');
 
+    // 70.0.7, the user's words: "why is their a huge gap between the media player and
+    // tabs". The bar is the middle surface now, so its own padding must not reserve the
+    // bottom inset the dock already reserves and `bottom` already counts - on a phone
+    // that reports a real inset (Android 15 edge to edge, 3-button nav) that stray
+    // inset was the gap. Asserted against the page the app loads, not a description.
+    const cssOnly = html.replace(/\/\*[\s\S]*?\*\//g, '');
+    const npPads = (cssOnly.match(/#nowPlaying[^{}]*\{[^}]*padding[^}]*\}/g) || [])
+      .filter((r) => /env\(safe-area-inset-bottom\)/.test(r));
+    ok(npPads.length === 4, 'the player paddings that counted the inset are all still in the page');
+    ok(npPads.every((r) => cssOnly.indexOf(r) < cssOnly.indexOf('#nowPlaying{ padding-bottom: 10px; }')),
+      'and a later rule overrides every one of them, so the bar does not reserve it twice');
+    ok(/\.action-strip\{\s*position:\s*fixed[^}]*padding:\s*6px 10px calc\(6px \+ env\(safe-area-inset-bottom\)\)/.test(html),
+      'while the dock, which does touch the bottom edge, still reserves it');
+
+
     const before = doc.getElementById('homeView').classList.contains('active');
     doc.getElementById('studioBtn').click();
     await wait(120);
@@ -306,8 +321,11 @@ const realErrors = (errors) => errors.filter((e) =>
     win.SC70.renderStudio();
     await wait(60);
     const tools = Array.from(doc.querySelectorAll('#studioView [data-tool]')).map((b) => b.getAttribute('data-tool'));
-    ok(tools.length === 5, 'five tool cards (' + tools.join(',') + ')');
-    ['clip', 'fx', 'karaoke', 'sampler', 'looper'].forEach((k) =>
+    // 70.0.8: six of them. Crop is the app's own cropper now (the card that used to
+    // wear that word was a clip exporter), and the clip exporter kept a card of its
+    // own instead of being deleted - so the Studio grew a card, it did not trade one.
+    ok(tools.length === 6, 'six tool cards (' + tools.join(',') + ')');
+    ['crop', 'clip', 'fx', 'karaoke', 'sampler', 'looper'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
     // 70.0.5: 201 badges, one of which is a single blank tile until dev mode
     // reveals it - so the wall is 201 tiles here, 200 real and one blank. Section
@@ -513,6 +531,39 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(win.SCACT.tryRun('what is the capital of France') === null, 'and a question it cannot act on is left alone');
   }
 
+  console.log('[8b] lyrics off for one song, and the APK count');
+  {
+    // 70.0.8 - "If the lyrics is not right just add an option to disable lyrics for
+    // that song". Driven through the real setter that the chip and the panel both
+    // call: the flag has to put the panel up, live in the sidecar (next to the play
+    // count, so no audio is rewritten for one boolean) and come back off again.
+    const t0 = win.__scGetAllTracks()[0];
+    const btn = doc.getElementById('lyricsDisableBtn');
+    const panel = doc.getElementById('lyricsOffPanel');
+    ok(!!btn && !!panel, 'the lyrics sheet has a switch and a panel for it');
+    ok(typeof win.__scLyricsSetOff === 'function', 'and one setter behind both of them');
+    ok(t0.lyricsOff !== true, 'a song starts with online lyrics on');
+    win.__scLyricsSetOff(t0, true);
+    await wait(40);
+    ok(t0.lyricsOff === true, 'switching it off flags the song');
+    ok(panel.style.display === 'block', 'and the sheet says so instead of loading');
+    const side = win.__scSidecar()[t0.id] || {};
+    ok(side.lyricsOff === true, 'and it is kept in the sidecar, so no audio is rewritten for one flag');
+    win.__scLyricsSetOff(t0, false);
+    await wait(60);
+    ok(t0.lyricsOff === false, 'and it can be turned back on');
+    ok(panel.style.display === 'none', 'with the panel out of the way again');
+
+    // The APK count reads GitHub, which is not reachable here - so what gets driven
+    // is the failure: the section is wired, and it reports what happened instead of
+    // showing a made-up zero.
+    const read = doc.querySelector('#studioView [data-act="apkread"]');
+    ok(!!read, 'the Studio has a button that reads the APK download counts');
+    read.click();
+    await wait(80);
+    ok(!!doc.querySelector('#scStudioApks .sc-bad'), 'and an unreachable GitHub is reported, not counted as nothing');
+  }
+
   console.log('[9] the grouped song menu');
   {
     const host = doc.getElementById('songActionsList');
@@ -531,6 +582,36 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(!!danger, 'the destructive one is its own group');
     ok(danger.textContent.indexOf('Delete from library') !== -1, 'and it holds the delete');
     ok(host.querySelectorAll('.sc-sheet-group-body button').length === 7, 'no button was lost in the move');
+    // 70.0.8 - "where is speed adjuster in song 3 dots menu". The real sheet is
+    // built with a speed control in it, and the control is NOT a button - so the
+    // rebuild that groups the sheet has to carry it across. Driven here on the
+    // real host, with the real markup the app puts there.
+    const speed = doc.createElement('div');
+    speed.innerHTML = '<span>Playback speed</span><input type="range" id="actionSpeedSlider" min="0.5" max="2" step="0.05" value="1">';
+    host.insertBefore(speed, host.firstChild);
+    host.classList.remove('sc-grouped');
+    host.innerHTML = speed.outerHTML + host.innerHTML.replace(speed.outerHTML, '');
+    const did2 = win.__scDecorSongSheet();
+    ok(did2 === true, 'the sheet groups again with a control in it');
+    const slider = doc.getElementById('actionSpeedSlider');
+    ok(!!slider, 'and the playback speed slider is still in the sheet, not thrown away by the rebuild');
+    const playGroup = host.querySelector('.sc-sheet-group-body');
+    ok(!!slider && !!playGroup && playGroup.contains(slider), 'and it was put back at the top of the Play group');
+    ok(!!playGroup && playGroup.firstChild && playGroup.firstChild.contains(slider), 'where it is the first row');
+
+    // 70.0.8 - one cropper. The Studio card asks the app for it by id through the
+    // hook, so this drives exactly the path the card drives.
+    const tapped = [];
+    const realCropHook = win.__scCropSong;
+    const loaded = win.__scCurrentTrack();
+    ok(!!loaded, 'a song is loaded in the Studio');
+    win.__scCropSong = (id) => { tapped.push(id); return true; };
+    ok(win.SC70.cropCurrent() === true, 'the Studio crop card opens the app cropper');
+    ok(tapped.length === 1 && tapped[0] === loaded.id, 'for the song that is loaded, by id');
+    win.__scCropSong = () => false;
+    ok(win.SC70.cropCurrent() === false, 'and a build without the cropper says so instead of pretending');
+    win.__scCropSong = realCropHook;
+
     ok(Array.from(host.querySelectorAll('.sc-sheet-ico')).length >= 6, 'and every row got its icon');
   }
 
@@ -720,6 +801,28 @@ const realErrors = (errors) => errors.filter((e) =>
     await wait(60);
     ok(win.SC70.devMode() === false, 'leaving it turns it off');
     ok(win.localStorage.getItem('sidecut_testMode') === null, 'and clears the app\u2019s test flag with it');
+  }
+
+  console.log('[11b] the player is lifted by the dock that is really there');
+  {
+    // 70.0.9 - "there is way to much of a gap" on a foldable. Driven with a fake
+    // dock height, because jsdom measures every element as 0: the mechanism is the
+    // class plus the custom property, and the fallback has to survive a dock that
+    // cannot be measured.
+    const strip = doc.querySelector('.action-strip');
+    ok(!!strip, 'the dock is in the page');
+    ok(win.SC70.measureDock() === false, 'an unmeasurable dock (0 tall) leaves the guess alone');
+    ok(!doc.documentElement.classList.contains('sc-dock-measured'), 'and the measured lift stays off');
+    const real = strip.getBoundingClientRect;
+    strip.getBoundingClientRect = () => ({ height: 132, width: 400, top: 0, left: 0, right: 400, bottom: 132 });
+    ok(win.SC70.measureDock() === true, 'a real dock height is taken');
+    ok(doc.documentElement.classList.contains('sc-dock-measured'), 'and the player is switched to it');
+    ok(doc.documentElement.style.getPropertyValue('--sc-dock-real') === '132px',
+      'with the measured height (' + doc.documentElement.style.getPropertyValue('--sc-dock-real') + ')');
+    strip.getBoundingClientRect = () => ({ height: 4000, width: 400, top: 0, left: 0, right: 400, bottom: 4000 });
+    ok(win.SC70.measureDock() === false, 'and a 4000px dock is refused as nonsense');
+    ok(!doc.documentElement.classList.contains('sc-dock-measured'), 'falling back to the arithmetic');
+    strip.getBoundingClientRect = real;
   }
 
   console.log('[12] the page still holds together');
