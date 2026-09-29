@@ -324,8 +324,10 @@ const realErrors = (errors) => errors.filter((e) =>
     // 70.0.8: six of them. Crop is the app's own cropper now (the card that used to
     // wear that word was a clip exporter), and the clip exporter kept a card of its
     // own instead of being deleted - so the Studio grew a card, it did not trade one.
-    ok(tools.length === 6, 'six tool cards (' + tools.join(',') + ')');
-    ['crop', 'clip', 'fx', 'karaoke', 'sampler', 'looper'].forEach((k) =>
+    // 70.1.2: eight of them. The sleep timer and the practice loop were added to
+    // the row, and nothing that was there was traded away for either.
+    ok(tools.length === 8, 'eight tool cards (' + tools.join(',') + ')');
+    ['crop', 'clip', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
     // 70.0.5: 201 badges, one of which is a single blank tile until dev mode
     // reveals it - so the wall is 201 tiles here, 200 real and one blank. Section
@@ -823,6 +825,187 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(win.SC70.measureDock() === false, 'and a 4000px dock is refused as nonsense');
     ok(!doc.documentElement.classList.contains('sc-dock-measured'), 'falling back to the arithmetic');
     strip.getBoundingClientRect = real;
+  }
+
+  console.log('[11c] a license key bought on the web unlocks without Google Play');
+  {
+    // 70.1 - "APK payment: License key + web checkout". jsdom has no store on the
+    // other end, so fetch is stubbed with the answers the store really gives
+    // (checked against the live API: a refusal is a 404 with {"valid":false,
+    // "error":"license_key not found."} in the body). What is driven is the rule
+    // that matters: a real answer unlocks, a refusal does not, and a store that
+    // cannot be reached never takes anything away.
+    ok(!!doc.querySelector('#premiumLicenseInput'), 'the paste-a-key box is in the pane');
+    ok(!!doc.querySelector('#premiumLicenseBtn'), 'with a button to redeem it');
+    ok(!!doc.querySelector('#premiumLicenseBuyBtn'), 'and a button that opens the checkout');
+    // typeof, not instanceof Function: the app runs in the jsdom realm, so its
+    // functions are not instances of this file's Function.
+    ok(typeof win.__scLicenseRedeem === 'function' && typeof win.__scLicenseCheck === 'function',
+      'and the path is reachable for a probe');
+    const realFetch = win.fetch;
+    const KEY = '38b1460a-5104-4067-a91d-77b872934d51';
+    let sent = null;
+    win.localStorage.removeItem('sidecut_premium');
+    const answer = (data) => { win.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) }); };
+    const refuse = (msg) => { win.fetch = (url, opts) => { sent = { url: url, body: String(opts && opts.body) };
+      return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({ valid: false, activated: false, error: msg, license_key: null, instance: null, meta: null }) }); }; };
+    refuse('license_key not found.');
+    const shape = await win.__scLicenseRedeem('SC-WPd5Wafj-YFdlBz3Z');
+    ok(shape.ok === false && shape.reason === 'shape', 'a gift code is not handed to the store as a key');
+    ok(sent === null, 'and the store is never asked about it');
+    const bad = await win.__scLicenseRedeem('00000000-0000-0000-0000-000000000000');
+    ok(bad.ok === false && bad.reason === 'refused', 'a key the store refuses does not unlock');
+    ok(win.isPremiumActive() === false, 'and premium stays off');
+    ok(!!sent && /\/licenses\/activate$/.test(sent.url), 'the key is handed to the activate endpoint');
+    ok(/license_key=0/.test(sent.body) && /instance_name=SideCut\+/.test(sent.body),
+      'with the key and this device named as the activation');
+    ok(!/api[-_]?key=/i.test(sent.body), 'and with no secret of ours anywhere in the request');
+    win.fetch = () => Promise.reject(new Error('offline'));
+    const offline = await win.__scLicenseRedeem(KEY);
+    ok(offline.ok === false && offline.reason === 'offline', 'a store that cannot be reached does not unlock');
+    ok(win.isPremiumActive() === false, 'and does not unlock by accident either');
+    answer({ activated: true, error: null, license_key: { id: 1, status: 'active', activation_limit: 3 },
+      instance: { id: 'inst-1', name: 'SideCut node 3f9a2b' },
+      meta: { store_id: 1, product_id: 2, customer_email: 'buyer@example.com' } });
+    const good = await win.__scLicenseRedeem(KEY);
+    ok(good.ok === true, 'a key the store activates unlocks');
+    ok(win.isPremiumActive() === true, 'premium is on');
+    const rec = JSON.parse(win.localStorage.getItem('sidecut_premium') || '{}');
+    ok(rec.plan === 'license' && rec.code === KEY, 'as a license key, kept so it can move to the next phone');
+    ok(rec.instance === 'inst-1', 'and with the activation the store handed back');
+    rec.checked = 0;
+    win.localStorage.setItem('sidecut_premium', JSON.stringify(rec));
+    win.fetch = () => Promise.reject(new Error('offline'));
+    ok((await win.__scLicenseCheck()) === false, 'a re-check that cannot reach the store returns nothing');
+    ok(win.isPremiumActive() === true, 'and a paying user keeps what they paid for');
+    answer({ valid: false, error: 'license_key not found.', license_key: null, instance: null, meta: null });
+    ok((await win.__scLicenseCheck()) === true, 'and a key the store no longer knows is checked');
+    ok(win.isPremiumActive() === false, 'which locks it, the way a refund should');
+    answer({ valid: true, error: null, license_key: { status: 'active' }, instance: null, meta: {} });
+    win.localStorage.setItem('sidecut_premium', JSON.stringify({ active: true, plan: 'license', code: KEY, instance: 'inst-1', checked: 0 }));
+    ok((await win.__scLicenseCheck()) === true && win.isPremiumActive() === true, 'and a renewed key stays unlocked');
+    if(realFetch) win.fetch = realFetch; else delete win.fetch;
+  }
+
+  console.log('[11d] a badge that reaches its goal shows up on the wall');
+  {
+    // 70.1.1 - "fix the badges not working when you reach the goal". The wall is
+    // drawn when it is drawn, and nothing redrew it when the count moved, so a
+    // badge could be earned, saved and toasted with the grid in front of the user
+    // still showing the count from an earlier paint. Driven for real here: the
+    // header, the ring and the tiles all have to agree with the count after a
+    // goal is crossed, and opening Studio has to redraw.
+    const hero = () => { const el = doc.querySelector('.sc-hero-badges'); return el ? el.textContent : ''; };
+    const all = win.SC70.achievements().length;
+    doc.querySelector('#studioBtn').click();
+    await wait(120);
+    ok(!!doc.querySelector('#studioView').classList.contains('active'), 'Studio is the view');
+    ok(hero() === win.SC70.unlockedCount() + ' of ' + all + ' badges',
+      'and its wall is drawn from the real count (' + hero() + ')');
+    const chip = doc.querySelector('#studioView [data-f="all"]');
+    if (chip && !chip.classList.contains('on')) { chip.click(); await wait(60); }
+    // Cross the next goal the honest way: move a counter the badges read.
+    const before = win.SC70.unlockedCount();
+    let steps = 0;
+    while (win.SC70.unlockedCount() <= before && steps < 400) { win.SC70.bump('studio', 1); steps++; }
+    const after = win.SC70.unlockedCount();
+    ok(after > before, 'a goal that is reached is counted (' + before + ' -> ' + after + ')');
+    const fresh = win.SC70.checkAchievements(true);
+    ok(fresh.length > 0, 'and recorded (' + fresh.length + ' at once)');
+    await wait(80);
+    ok(hero() === after + ' of ' + all + ' badges',
+      'and the wall the user is looking at agrees with it (' + hero() + ')');
+    ok(doc.querySelectorAll('#studioView .sc-badge.have').length >= after,
+      'with every earned badge a lit tile on that wall');
+    // Opening Studio has to redraw rather than trust the last paint: the
+    // sentinel can only disappear if a fresh render really ran.
+    const wall = doc.querySelector('.sc-hero-badges');
+    wall.textContent = 'STALE';
+    doc.querySelector('#libraryBtn').click();
+    await wait(80);
+    doc.querySelector('#studioBtn').click();
+    await wait(140);
+    ok(hero() !== 'STALE', 'and opening Studio redraws it rather than trusting the last paint');
+  }
+
+  console.log('[11e] the sleep timer stops the music, the practice loop only loops on Premium');
+  {
+    // 70.1.2 - "add more features to studio" and "make their an actual reason to
+    // get SideCut premium". Both halves driven: the free timer really pauses when
+    // the song ends, and the paid loop really refuses to run until Premium is on
+    // and really seeks back to A when it is.
+    ok(typeof win.SC70.setSleep === 'function' && typeof win.SC70.practiceRun === 'function',
+      'the new tools are on the module surface');
+    ok(!!doc.querySelector('#studioView [data-tool="sleep"]') && !!doc.querySelector('#studioView [data-tool="practice"]'),
+      'and both are cards on the Studio screen');
+    // --- the free half: the sleep timer
+    const audio = win.__scActiveAudio();
+    ok(!!audio, 'the app has an audio element to stop');
+    // jsdom never plays anything, so the app own pause hook is watched instead:
+    // the timer has to ASK the app to pause - that is the whole mechanism.
+    let pauses = 0;
+    const realPause = win.__scPause;
+    win.__scPause = function(){ pauses++; };
+    win.SC70.setSleep('song');
+    ok(win.SC70.sleep().mode === 'song', 'a sleep timer can be set to the end of the song');
+    audio.dispatchEvent(new win.Event('ended'));
+    await wait(40);
+    ok(win.SC70.sleep().mode === '', 'and when the song ends the timer has done its job');
+    ok(pauses === 1, 'and it asks the app to pause (' + pauses + ' call(s))');
+    win.__scPause = realPause;
+    win.SC70.setSleep('15');
+    ok(win.SC70.sleep().mode === '15' && /15 min/.test(win.SC70.sleepLabel()),
+      'and a timed one counts down (' + win.SC70.sleepLabel() + ')');
+    win.SC70.setSleep('off');
+    ok(win.SC70.sleep().mode === '', 'and it can be cancelled');
+    // --- the paid half: the practice loop
+    win.localStorage.removeItem('sidecut_premium');
+    ok(win.SC70.isPro() === false, 'Premium is off');
+    audio.currentTime = 12;
+    win.SC70.practiceMark('a');
+    audio.currentTime = 20;
+    win.SC70.practiceMark('b');
+    ok(win.SC70.practice.a === 12 && win.SC70.practice.b === 20, 'the loop can be set to a section');
+    win.SC70.practiceRun();
+    ok(win.SC70.practice.on === false, 'and it does not loop without Premium');
+    win.__scGrantPremium({ plan: 'lifetime' });
+    ok(win.SC70.isPro() === true, 'Premium granted, and Studio sees it through the app');
+    // The loop only steps while the element says it is playing, and jsdom is
+    // never playing anything, so this is the one thing that has to be forced.
+    Object.defineProperty(audio, 'paused', { get: () => false, configurable: true });
+    win.SC70.practiceRun();
+    ok(win.SC70.practice.on === true, 'now it loops');
+    audio.currentTime = 21;
+    await wait(320);
+    ok(audio.currentTime >= 12 && audio.currentTime < 20, 'and it really pulled playback back to the start of the section (' + audio.currentTime + ')');
+    const passes = win.SC70.practice.passes;
+    ok(passes >= 1, 'a pass was counted (' + passes + ')');
+    const rateBefore = win.SC70.fx.rate;
+    win.SC70.practice.ramp = true;
+    win.SC70.practiceRun();
+    win.SC70.practice.passes = 1;
+    audio.currentTime = 21;
+    await wait(320);
+    ok(win.SC70.fx.rate > rateBefore, 'and the ramp speeds it up (' + rateBefore + 'x -> ' + win.SC70.fx.rate + 'x)');
+    win.SC70.practiceStop();
+    ok(win.SC70.practice.on === false, 'stopping the loop stops the seeking');
+    // --- the paid half: your own presets
+    win.localStorage.removeItem('sidecut_sidecut_studio_mypresets');
+    win.SC70.myPresets().length = 0;
+    win.SC70.fx.rate = 0.9; win.SC70.fx.reverb = 0.4; win.SC70.fx.karaoke = 0;
+    const beforeCount = win.SC70.myPresets().length;
+    win.localStorage.removeItem('sidecut_premium');
+    win.SC70.saveMyPreset();
+    ok(win.SC70.myPresets().length === beforeCount, 'a preset is not saved without Premium');
+    win.__scGrantPremium({ plan: 'lifetime' });
+    win.SC70.saveMyPreset();
+    ok(win.SC70.myPresets().length === beforeCount + 1, 'and is saved with it');
+    const saved = win.SC70.myPresets()[win.SC70.myPresets().length - 1];
+    win.SC70.fx.rate = 1.2; win.SC70.fx.reverb = 0.1;
+    win.SC70.useMyPreset(saved.id);
+    ok(win.SC70.fx.rate === saved.rate && win.SC70.fx.reverb === saved.reverb, 'and recalling it puts the chain back');
+    win.SC70.dropMyPreset(saved.id);
+    ok(win.SC70.myPresets().length === beforeCount, 'and it can be deleted again');
   }
 
   console.log('[12] the page still holds together');

@@ -166,9 +166,10 @@ console.log('\n[9] the release says so');
     // "nothing is withheld without saying so", not "the rest are withheld".
     ok((head.items || []).every((it) => it.indexOf('[FULL]') === -1),
       'and none of them is withheld from the other channel');
-    // 70.0.9 is about the player and the dock, and the rule underneath the word
-    // is that the notes name a surface this app really has - not one in particular.
-    ok(/(studio|player|dock)/i.test(head.items.join('\n')),
+    // 70.0.9 was about the player and the dock, and 70.1 is about how the app is
+    // paid for: the rule underneath the word is that the notes name a surface this
+    // app really has, not one in particular, so the list grows with the app.
+    ok(/(studio|player|dock|premium|license)/i.test(head.items.join('\n')),
       'and it describes what this release did');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');

@@ -60,12 +60,19 @@ const slice = (from, to, hay = src) => {
 console.log('[1] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  // The build on the page is 70.0 or a patch on it; the release this gate
-  // DESCRIBES is still 70.0, which is why VER did not move with APP_VERSION.
-  ok(ver === VER || String(ver).indexOf(VER + '.') === 0,
-     'the app runs as ' + VER + ' or a patch on it (' + ver + ')');
-  ok(/const APP_VERSION = '70\.0(\.\d+)?';/.test(src),
-     'and the version is a 70.0 series number, never a 70.0.0 cascade');
+  // The build on the page is 70.0, a patch on it, or the series the page own
+  // rule says follows it - 70.1, because "the third number stops at nine: 60.0.9
+  // is followed by 60.1, never 60.0.10". The release this gate DESCRIBES is
+  // still 70.0, which is why VER did not move with APP_VERSION.
+  ok(ver === VER || String(ver).indexOf(VER + '.') === 0 || /^70\.1(\.\d+)?$/.test(ver),
+     'the app runs as ' + VER + ', a patch on it, or the series that follows it (' + ver + ')');
+  // The rule the page states about its own version rather than a literal: the
+  // series is 70.x, the third number stops at nine, and a new series does not
+  // read 70.1.0 - so 70.0.10 and 70.1.0 are both refused.
+  const verParts = String(ver).split('.').map((n) => Number(n));
+  ok(/^70\.\d+(\.\d+)?$/.test(ver) &&
+     !(verParts.length === 3 && (verParts[2] === 0 || verParts[2] > 9)),
+     'and the version is a 70.x number whose third number never reaches ten');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
@@ -103,7 +110,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.35', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v63.0.38', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
 }
 

@@ -61,7 +61,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v63.0.35';
+const SHELL_CACHE = 'sidecut-shell-v63.0.38';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -256,6 +256,76 @@ console.log('\n[6] the styles');
   ok(cssOnly.indexOf('#nowPlaying{ padding-bottom: 10px; }') > Math.max.apply(null, envPads.map((r) => cssOnly.indexOf(r))),
      'and it comes after every padding that counted it, so it is the last word');
   mustStillReserve(src, '.action-strip');
+  // 70.1.2. More Studio, and a Premium that is worth something - without taking
+  // anything away from the free half or moving the badge wall.
+  ok(has('window.__scIsPremium = function(){'), 'Studio has no way to ask whether Premium is on');
+  ok(countMod("function isPro(){ return !!call('__scIsPremium'); }") === 1,
+     'and it keeps its own copy of the entitlement instead of asking');
+  ok(countMod("toolCard('sleep'") === 1 && countMod("toolCard('practice'") === 1,
+     'the two new Studio tools are not on the tools row');
+  ok(countMod('function setSleep(mode){') === 1 && countMod("el.addEventListener('ended', fn)") === 1,
+     'the sleep timer does not really stop anything');
+  ok(countMod("if(!proOnly('The practice loop')){ renderStudio(); return; }") === 1,
+     'the practice loop is not the paid half');
+  ok(countMod('function saveMyPreset(){') === 1 && countMod("function proOnly(what){") === 1,
+     'and saving your own presets is not');
+  ok(countMod('FREE_LOOPS') === 0 && countMod('looper.layers.length >=') === 0,
+     'something that used to be free was capped to sell Premium');
+  ok(countMod('function premiumStudioHtml(){') === 1 && countMod('if(isPro()) return \'\';') === 1,
+     'and Premium is not named where it is used');
+  // The wall must not move: the same FEATURE_KEYS, the same one capstone, the
+  // same five rewards. New tools are tools, not badges.
+  ok(countMod("var FEATURE_KEYS = ['studio', 'slow', 'karaoke', 'sampler', 'looper', 'clip', 'assistant', 'autodj', 'gestures'];") === 1,
+     'the feature list the capstone badge counts was changed');
+  ok(countMod('at: 201, kind: \'premium\'') === 1 && countMod('function myPresetsHtml(){') === 1,
+     'the rewards moved, or the presets are not in the sheet');
+  // 70.1.1. The tab you are on says so, and the wall is never a picture of an
+  // earlier moment than the badges it describes.
+  ok(count('#discoverBtn.active, #homeBtn.active, #studioBtn.active{ background: var(--coral);') === 1,
+     'the Studio tab is not lit up like the other tabs');
+  ok(countMod('function badgeRepaintIfVisible(){') === 1 &&
+     countMod('if(fresh.length) badgeRepaintIfVisible();') === 1,
+     'a badge that reaches its goal leaves the wall stale');
+  ok(countMod("el.closest('#studioBtn')") === 1,
+     'and opening Studio does not redraw the wall');
+  ok(countMod('host && host.classList.contains') === 1,
+     'and the repaint is only done while the wall is on screen');
+  // 70.1. Paying for the APK: a key bought on the web, checked by the store,
+  // kept offline. The rules are about what must NOT be in the file, and about
+  // what must never happen to somebody who has already paid.
+  ok(has('const LICENSE_CONFIG = {'), 'the web checkout is not configured in the app');
+  ok(has("validateUrl: 'https://api.lemonsqueezy.com/v1/licenses/validate'") &&
+     has("activateUrl: 'https://api.lemonsqueezy.com/v1/licenses/activate'") &&
+     has("deactivateUrl: 'https://api.lemonsqueezy.com/v1/licenses/deactivate'"),
+     'and it does not point at a store licence API');
+  ok(has('NOTHING SECRET GOES IN THIS OBJECT') &&
+     !/LEMONSQUEEZY_API_KEY|LEMON_SQUEEZY_API_KEY/i.test(src),
+     'and no store secret is shipped in the page (the endpoints need none)');
+  ok(count("licensePost(LICENSE_CONFIG.activateUrl") === 1 &&
+     count("licensePost(LICENSE_CONFIG.validateUrl") === 1,
+     'a key is activated against the store and validated against it');
+  ok(count('instance_name: licenseInstanceName()') === 1,
+     'and the device is recorded as an activation, so a device limit means something');
+  ok(count('// unreachable store: the unlock stays, untouched') === 1,
+     'a store that cannot be reached must never lock a paying user out');
+  ok(count("if(data.valid === false){") === 1 && count('clearPremiumQuietly();') >= 2,
+     'only the store saying not valid can take the unlock away');
+  ok(count('offerLicenseOrPlayStore(msg, url);') === 2,
+     'both Play buttons hand over to the web checkout when Play cannot sell');
+  ok(count('id="premiumLicenseInput"') === 1 && count('id="premiumLicenseBtn"') === 1 &&
+     count('id="premiumLicenseBuyBtn"') === 1,
+     'and the pane offers both halves: the checkout and the box to paste the key in');
+  ok(has('The web checkout is not open yet'),
+     'an unset checkout link says so instead of opening a dead link');
+  ok(count('releaseLicenseActivation(); clearPremium();') === 1,
+     'removing premium gives the activation back to the store');
+  ok(count("const PREMIUM_HMAC_KEY_B64 = ") === 1 && count("parts[0] !== 'SC'") === 1,
+     'and the gift-code path is exactly where it was');
+  ok(count('id="premiumLicenseMsg"') === 1,
+     'and the pane can say what the store answered');
+  ok(count("'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'") === 1,
+     'and the only thing sent with a key is the key itself');
+  ok(count('new URLSearchParams()') === 1, 'and the body is encoded like the form it is');
   // 70.0.9. The lift is measured, not guessed - and the fallback is the guess.
   ok(count('html.sc-dock-measured #nowPlaying{ bottom: var(--sc-dock-real') === 1,
      'the measured lift is not the last word on the player position');

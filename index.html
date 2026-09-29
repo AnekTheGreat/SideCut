@@ -97,8 +97,13 @@
   .action-pill{ transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1), background 0.2s ease; }
   .action-pill.primary{ background: var(--coral); color:#161616; border-color:var(--coral); }
   /* The active nav pill lights up (solid accent) so it's clear which view you're in —
-     same affordance as a selected tab. Home/Playlists/Discover all use it. */
-  #discoverBtn.active, #homeBtn.active{ background: var(--coral); color:#161616; border-color:var(--coral); }
+     same affordance as a selected tab. Home, Discover and Studio all use it.
+     Library is deliberately not here: it lights its own two halves instead
+     (active-half), which is what says WHICH half of the library you are in.
+     70.1.1 - "Studio tab dont highlight like the other tabs do": navigate() had
+     always marked the Studio pill as current, and this rule simply never
+     listed it, so it was the one tab that never showed it. */
+  #discoverBtn.active, #homeBtn.active, #studioBtn.active{ background: var(--coral); color:#161616; border-color:var(--coral); }
 
   /* ---------- Empty state ---------- */
   #emptyState{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center; }   .disc{
@@ -3125,7 +3130,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
         <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Manage premium</div>
         <div id="premiumPlanLine" style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:14px;"></div>
         <div id="premiumCodeBox" style="display:none; border:1px dashed var(--line); border-radius:10px; padding:10px 12px; margin-bottom:14px;">
-          <div style="font-size:11px; color:var(--ink-dim); margin-bottom:4px;">Your unlock code — tap to copy. Enter it under Redeem a code on any device to transfer premium there:</div>
+          <div id="premiumCodeLabel" style="font-size:11px; color:var(--ink-dim); margin-bottom:4px;">Your unlock code — tap to copy. Enter it under Redeem a code on any device to transfer premium there:</div>
           <div id="premiumCodeValue" style="font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--ink); cursor:pointer; user-select:all; word-break:break-all;"></div>
         </div>
         <button id="premiumTransferBtn" style="display:block; width:100%; background:var(--bg); border:1px solid var(--coral); color:var(--coral); border-radius:10px; padding:11px 12px; font-size:13px; font-weight:600; cursor:pointer; margin-bottom:14px;">📤 Transfer to any device</button>
@@ -3204,6 +3209,18 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
             <button id="premiumRedeemBtn" style="padding:10px 16px; border-radius:8px; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink); font-size:13px; font-weight:600; cursor:pointer;">Redeem</button>
           </div>
           <div id="premiumCodeMsg" style="font-size:12px; color:var(--ink-dim); min-height:16px; line-height:1.5;"></div>
+        </div>
+
+        <!-- Paid by card on the web: the APK and the browser cannot use Play -->
+        <div style="border-top:1px solid var(--line); padding-top:16px; margin-top:16px;">
+          <div style="font-size:14px; font-weight:600; margin-bottom:4px;">Paid by card? Paste your license key</div>
+          <div style="font-size:12px; color:var(--ink-dim); line-height:1.5; margin-bottom:10px;">The copy of SideCut from Google Play is paid for through Play. Everywhere else — the APK, the web app — is paid for on the web: the store emails a license key when you buy, and pasting it here unlocks Discover on this device.</div>
+          <div style="display:flex; gap:8px; margin-bottom:10px;">
+            <input type="text" id="premiumLicenseInput" placeholder="Paste your license key" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="flex:1; min-width:0; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:13px; font-family:'JetBrains Mono',monospace;">
+            <button id="premiumLicenseBtn" style="padding:10px 16px; border-radius:8px; background:var(--bg-raised); border:1px solid var(--coral); color:var(--coral); font-size:13px; font-weight:600; cursor:pointer;">Unlock</button>
+          </div>
+          <button id="premiumLicenseBuyBtn" style="width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:11px 12px; font-size:13px; font-weight:600; cursor:pointer;">💳 Buy lifetime — $10 on the web</button>
+          <div id="premiumLicenseMsg" style="font-size:12px; color:var(--ink-dim); min-height:16px; line-height:1.5; margin-top:8px;"></div>
         </div>
       </div>
     </div>
@@ -6966,6 +6983,47 @@ function getApiHeaders() {
     // (Package: com.SideCut.myapp; matches .well-known/assetlinks.json.)
     playStoreListing: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',
   };
+  // ---- LICENSING: the way this app is paid for outside Google Play --------
+  // Play Billing is not a payment API the app can call - it is a purchase made
+  // THROUGH the Play Store, and the Play Store only sells for a package it
+  // recognises as its own, installed by Play. The APK handed out here is the
+  // `full` flavour (com.SideCut.myapp.full): a deliberately different package id
+  // so it can sit next to the Play copy, and Play has never heard of it. So the
+  // APK - and the plain browser, which has no Billing at all - is paid for here
+  // instead: the buyer checks out on the web, the store issues a licence key and
+  // emails it, and the key is pasted into Settings -> Premium below.
+  //
+  // NOTHING SECRET GOES IN THIS OBJECT. The endpoints are the store customer-
+  // facing licence API: they take nothing but the key itself, so there is no
+  // shared secret in this file to dig out, and lifting this whole block out of
+  // the page gets an attacker exactly what every paying customer already has.
+  // (The gift-code HMAC key above is a different story, and it is why gift codes
+  // are for giving away and not for selling.)
+  const LICENSE_CONFIG = {
+    // Where the buyer pays: the product checkout link from the store dashboard.
+    // EMPTY means selling has not been switched on yet, and every button that
+    // would open it says so instead of opening a dead link. Filling this line in
+    // is the whole of what is left to do.
+    checkoutUrl: '',
+    // The store licence API. These defaults are Lemon Squeezy's, which is the
+    // store this was written against: validate/activate/deactivate take no API
+    // key, which is the entire reason a static app can use them. Changing store
+    // is these three lines and the two id fields below - nothing else in the app
+    // knows or cares who sold the key.
+    validateUrl: 'https://api.lemonsqueezy.com/v1/licenses/validate',
+    activateUrl: 'https://api.lemonsqueezy.com/v1/licenses/activate',
+    deactivateUrl: 'https://api.lemonsqueezy.com/v1/licenses/deactivate',
+    // 0 means "do not check". Set either to the store/product ids the keys are
+    // issued for and a key from somebody else's product is refused outright
+    // instead of unlocking this app.
+    storeId: 0,
+    productId: 0,
+    // How long a licence is trusted without asking the store again. The store
+    // stays the source of truth; this is what keeps the app unlocked on a plane.
+    // A lookup that FAILS never locks anything - only the store saying "not
+    // valid" does.
+    revalidateMs: 7 * 24 * 60 * 60 * 1000,
+  };
   // Derived HMAC-SHA256 key (base64, 32 bytes). The source PEM lives only in
   // dev/premium-private-key.pem (never shipped). Generate codes with:
   //   node dev/make-premium-code.js [count]
@@ -7308,6 +7366,177 @@ function getApiHeaders() {
     }
   }
 
+  // ---- licence keys: paying for the APK without Google Play ----------------
+  // One device label per install, kept in localStorage. It names the activation
+  // in the store dashboard ("SideCut android 3f9a2b"), so a buyer who runs out of
+  // activations can see which device to drop.
+  const LICENSE_INSTALL_KEY = 'sidecut_install_id';
+  function licenseInstallId(){
+    try{
+      const seen = localStorage.getItem(LICENSE_INSTALL_KEY);
+      if(seen && /^[0-9a-z]{8,16}$/.test(seen)) return seen;
+      const bytes = new Uint8Array(6);
+      crypto.getRandomValues(bytes);
+      let out = '';
+      for(const b of bytes) out += ('0' + b.toString(36)).slice(-2);
+      localStorage.setItem(LICENSE_INSTALL_KEY, out);
+      return out;
+    }catch(_e){ return 'nodevice'; }
+  }
+  function licenseInstanceName(){
+    let plat = 'web';
+    try{ if(window.Capacitor && window.Capacitor.getPlatform) plat = window.Capacitor.getPlatform(); }catch(_e){ }
+    if(plat === 'web') plat = 'browser';
+    return 'SideCut ' + plat + ' ' + licenseInstallId();
+  }
+  function openExternal(url){
+    try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
+  }
+  // The store licence API, spoken the way it documents itself: form-encoded, and
+  // only the fields that have a value. x-www-form-urlencoded plus Accept is a CORS
+  // "simple" request, so there is no preflight to fail, and the store answers with
+  // Access-Control-Allow-Origin: * - which is why this works from the browser and
+  // from the app WebView alike. (In the installed app CapacitorHttp takes the call
+  // over before the WebView sees it, so it is not subject to CORS at all.)
+  async function licensePost(url, fields){
+    // URLSearchParams, because this is a form body: a space in the activation
+    // name has to go out as a + the way a browser form sends it, and it is the
+    // one encoder that is right about that everywhere.
+    const params = new URLSearchParams();
+    Object.keys(fields).forEach((k) => {
+      if(fields[k] === undefined || fields[k] === null || fields[k] === '') return;
+      params.append(k, fields[k]);
+    });
+    const body = params.toString();
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body,
+    });
+    let data = null;
+    try{ data = await res.json(); }catch(_e){ data = null; }
+    // A refusal is a 404 WITH a real body ("license_key not found."), so the body
+    // is what decides - never the status code. No readable body is the case that
+    // must not be mistaken for a refusal: that is the store being unreachable or
+    // having moved, and it must never lock anybody out of what they paid for.
+    if(!data || typeof data !== 'object') throw new Error('the store answered ' + res.status + ' with no readable body');
+    return data;
+  }
+  // Tells a licence key from a gift code, because they share the pane. A gift code
+  // is SC-xxxxxxxx-xxxxxxxx; a licence key is whatever the store issues (a
+  // 36-character uuid-shaped string by default) and is never that shape.
+  function licenseShaped(code){
+    const s = String(code || '').trim();
+    if(/^SC-[0-9A-Za-z]{8}-[0-9A-Za-z]{8}$/.test(s)) return false;
+    return /^[0-9A-Za-z][0-9A-Za-z-]{15,79}$/.test(s);
+  }
+  function licenseBelongsToThisStore(meta){
+    if(!meta) return true;
+    if(LICENSE_CONFIG.storeId && Number(meta.store_id) !== Number(LICENSE_CONFIG.storeId)) return false;
+    if(LICENSE_CONFIG.productId && Number(meta.product_id) !== Number(LICENSE_CONFIG.productId)) return false;
+    return true;
+  }
+  function setPremiumChecked(){
+    try{
+      const info = getPremiumInfo();
+      if(!info) return;
+      info.checked = Date.now();
+      localStorage.setItem(PREMIUM_STORAGE_KEY, JSON.stringify(info));
+    }catch(_e){ }
+  }
+  // Redeem a key bought on the web. The store activate call is what records this
+  // device as an activation, so a device limit means something and a buyer who
+  // changes phone can move the licence. Only a real answer unlocks: an unreachable
+  // store reports itself as such and changes nothing.
+  async function activateLicenseKey(key){
+    const clean = String(key || '').trim();
+    if(!licenseShaped(clean)) return { ok: false, reason: 'shape' };
+    let data;
+    try{
+      data = await licensePost(LICENSE_CONFIG.activateUrl, {
+        license_key: clean,
+        instance_name: licenseInstanceName(),
+      });
+    }catch(e){
+      return { ok: false, reason: 'offline', detail: String((e && e.message) || e) };
+    }
+    if(!data || data.activated !== true){
+      return { ok: false, reason: 'refused', detail: String((data && data.error) || '') };
+    }
+    if(!licenseBelongsToThisStore(data.meta)) return { ok: false, reason: 'wrong-product' };
+    const inst = data.instance || {};
+    setPremiumActive({
+      plan: 'license',
+      code: clean,
+      source: 'license',
+      instance: inst.id || '',
+      instanceName: inst.name || '',
+      licensee: (data.meta && data.meta.customer_email) || '',
+      checked: Date.now(),
+    });
+    return { ok: true, meta: data.meta || {} };
+  }
+  // The store stays the source of truth. This runs on launch, on focus and on
+  // return to the app, and only asks when the last answer is old (a week), which
+  // is what keeps the app working offline. A lookup that fails changes nothing:
+  // the ONLY way a licence locks is the store itself saying it is no longer valid
+  // (refunded, deactivated, expired) - that is the point of paying for a licence
+  // instead of typing in a code.
+  let licenseCheckInFlight = false;
+  async function revalidateLicense(){
+    if(licenseCheckInFlight) return false;
+    const info = getPremiumInfo();
+    if(!info || info.plan !== 'license' || !info.code) return false;
+    const since = Number(info.checked) || 0;
+    if(since && Date.now() - since < LICENSE_CONFIG.revalidateMs) return false;
+    licenseCheckInFlight = true;
+    let data = null;
+    try{
+      data = await licensePost(LICENSE_CONFIG.validateUrl, {
+        license_key: info.code,
+        instance_id: info.instance || '',
+      });
+    }catch(_e){
+      licenseCheckInFlight = false;
+      return false;   // unreachable store: the unlock stays, untouched
+    }
+    licenseCheckInFlight = false;
+    if(data.valid === true){ setPremiumChecked(); return true; }
+    if(data.valid === false){
+      clearPremiumQuietly();
+      try{ toast('This license key is no longer valid, so Discover is locked again. Paste it again if that looks wrong.', 6500); }catch(_e){ }
+      return true;
+    }
+    return false;
+  }
+  // Give this device activation back when the user removes premium, so a licence
+  // with a device limit does not fill up with phones they no longer have. Best
+  // effort by design: the local removal must never wait on the network.
+  function releaseLicenseActivation(){
+    const info = getPremiumInfo();
+    if(!info || info.plan !== 'license' || !info.code || !info.instance) return;
+    if(!LICENSE_CONFIG.deactivateUrl) return;
+    try{ licensePost(LICENSE_CONFIG.deactivateUrl, { license_key: info.code, instance_id: info.instance }); }catch(_e){ }
+  }
+  // The end of a Play purchase that Play cannot complete. With a web checkout
+  // configured this is where the APK and the browser get their money taken; with
+  // none it is exactly the behaviour that shipped before, unchanged.
+  function offerLicenseOrPlayStore(msgEl, playUrl){
+    if(LICENSE_CONFIG.checkoutUrl){
+      msgEl.style.color = 'var(--ink-dim)';
+      msgEl.textContent = 'Google Play billing only works for the copy of SideCut installed from Google Play, and this is not that copy. Opening the web checkout - pay by card there and paste the license key it emails you into the box under the plans.';
+      openExternal(LICENSE_CONFIG.checkoutUrl);
+      return;
+    }
+    if(!playUrl){
+      msgEl.style.color = 'var(--coral)';
+      msgEl.textContent = 'Play billing only works inside the SideCut app installed from Google Play, and the web checkout is not open yet - check back soon.';
+      return;
+    }
+    msgEl.style.color = 'var(--ink-dim)';
+    msgEl.textContent = 'Play billing only works inside the SideCut app installed from Google Play. Opening the Play Store so you can install it.';
+    openExternal(playUrl);
+  }
   function refreshPremiumUI(){
     const statusBox = $('premiumStatusBox');
     const statusSub = $('premiumStatusSub');
@@ -7329,7 +7558,7 @@ function getApiHeaders() {
     const cancelSubBtn = $('premiumCancelSubBtn');
     if(cancelSubBtn) cancelSubBtn.style.display = (active && info && info.plan === 'sub') ? 'block' : 'none';
     if(active){
-      const plan = info && info.plan === 'sub' ? 'subscription' : (info && info.plan === 'lifetime' ? 'lifetime' : 'gifted');
+      const plan = info && info.plan === 'sub' ? 'subscription' : (info && info.plan === 'lifetime' ? 'lifetime' : (info && info.plan === 'license' ? 'license' : 'gifted'));
       statusSub.textContent = plan === 'subscription'
         ? 'Discover is unlocked via subscription. Thanks for supporting SideCut! ✨'
         : 'Thanks for supporting SideCut — Discover is unlocked. ✨';
@@ -7338,6 +7567,9 @@ function getApiHeaders() {
           const exp = info && info.expires ? new Date(info.expires) : null;
           const expStr = exp ? exp.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
           planLine.textContent = 'Plan: Subscription ($1.29 / month)' + (expStr ? ' · renews/ends ' + expStr : '');
+        } else if(plan === 'license'){
+          planLine.textContent = 'Plan: License key — unlocked on this device.' +
+            (info && info.licensee ? ' · ' + info.licensee : '');
         } else if(plan === 'lifetime'){
           planLine.textContent = 'Plan: Lifetime — unlocked forever on this device.';
         } else {
@@ -7352,6 +7584,15 @@ function getApiHeaders() {
         if(info && info.code){
           codeVal.textContent = info.code;
           codeBox.style.display = 'block';
+          // One box, two kinds of unlock, and they are not interchangeable: a gift
+          // code is typed into Redeem a code, a licence key into its own box above,
+          // so the label has to say which one this is.
+          const codeLabel = $('premiumCodeLabel');
+          if(codeLabel){
+            codeLabel.textContent = (info.plan === 'license')
+              ? 'Your license key — tap to copy. Paste it under Paid by card on any device to move premium there (each device uses one activation):'
+              : 'Your unlock code — tap to copy. Enter it under Redeem a code on any device to transfer premium there:';
+          }
         } else {
           codeBox.style.display = 'none';
         }
@@ -7416,9 +7657,7 @@ function getApiHeaders() {
         msg.textContent = 'Subscription is being set up — check back soon, or redeem a code if you have one.';
         return;
       }
-      msg.style.color = 'var(--ink-dim)';
-      msg.textContent = 'Play billing only works inside the SideCut app installed from Google Play. Opening the Play Store so you can install it.';
-      try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
+      offerLicenseOrPlayStore(msg, url);
     });
     // Lifetime uses native Google Play Billing inside the installed Capacitor app;
     // outside it, it falls back to the Play Store listing.
@@ -7464,9 +7703,7 @@ function getApiHeaders() {
         msg.textContent = 'Lifetime is being set up — check back soon, or redeem a code if you have one.';
         return;
       }
-      msg.style.color = 'var(--ink-dim)';
-      msg.textContent = 'Play billing only works inside the SideCut app installed from Google Play. Opening the Play Store so you can install it.';
-      try { window.open(url, '_blank', 'noopener'); } catch(e){ window.location.href = url; }
+      offerLicenseOrPlayStore(msg, url);
     });
 
     const codeVal = $('premiumCodeValue');
@@ -7526,6 +7763,53 @@ function getApiHeaders() {
     };
     redeemBtn.addEventListener('click', doRedeem);
     input.addEventListener('keydown', e => { if(e.key === 'Enter') doRedeem(); });
+
+    // Paid by card on the web (the APK and the browser). The key is checked with
+    // the store, and only a real answer from the store unlocks anything.
+    const licInput = $('premiumLicenseInput');
+    const licBtn = $('premiumLicenseBtn');
+    const licBuy = $('premiumLicenseBuyBtn');
+    const licMsg = $('premiumLicenseMsg');
+    function licenseSay(colour, text){ if(!licMsg) return; licMsg.style.color = colour; licMsg.textContent = text; }
+    function licenseOpenCheckout(){
+      if(!LICENSE_CONFIG.checkoutUrl){
+        licenseSay('var(--ink-dim)', 'The web checkout is not open yet — check back soon, and thank you for wanting to pay for it.');
+        return;
+      }
+      licenseSay('var(--ink-dim)', 'Opening the checkout — pay by card there and the store will email you a license key. Paste it here when it arrives.');
+      openExternal(LICENSE_CONFIG.checkoutUrl);
+    }
+    if(licBuy) licBuy.addEventListener('click', licenseOpenCheckout);
+    async function doLicenseRedeem(){
+      const key = licInput ? licInput.value.trim() : '';
+      if(!key){
+        licenseSay('var(--coral)', 'Paste the license key from your receipt email.');
+        return;
+      }
+      licenseSay('var(--ink-dim)', 'Checking that key with the store…');
+      const out = await activateLicenseKey(key);
+      if(out.ok){
+        licenseSay('var(--coral)', '✨ Unlocked — Discover is yours. Thanks for paying for SideCut!');
+        toast('Premium unlocked. Enjoy Discover! ✨', 2600);
+        licInput.value = '';
+        return;
+      }
+      if(out.reason === 'shape'){
+        licenseSay('var(--coral)', 'That does not look like a license key. A gift code is SC-xxxxxxxx-xxxxxxxx and goes in the box above.');
+        return;
+      }
+      if(out.reason === 'offline'){
+        licenseSay('var(--coral)', 'Could not reach the store to check that key — it needs the internet once, to record this device. Try again in a moment.');
+        return;
+      }
+      if(out.reason === 'wrong-product'){
+        licenseSay('var(--coral)', 'That key is for a different product. Check that you bought SideCut.');
+        return;
+      }
+      licenseSay('var(--coral)', 'The store refused that key' + (out.detail ? ': ' + out.detail : '.') + ' If it is a fresh purchase, give the email a moment and try again.');
+    }
+    if(licBtn) licBtn.addEventListener('click', doLicenseRedeem);
+    if(licInput) licInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') doLicenseRedeem(); });
     removeBtn.addEventListener('click', () => {
       // Styled confirmation modal
       var backdrop = document.createElement('div');
@@ -7542,7 +7826,7 @@ function getApiHeaders() {
       document.body.appendChild(backdrop);
       backdrop.addEventListener('click', function(e){ if(e.target === backdrop) backdrop.remove(); });
       card.querySelector('.cancel').addEventListener('click', function(){ backdrop.remove(); });
-      card.querySelector('.confirm').addEventListener('click', function(){ backdrop.remove(); clearPremium(); });
+      card.querySelector('.confirm').addEventListener('click', function(){ backdrop.remove(); releaseLicenseActivation(); clearPremium(); });
     });
     // Cancel subscription: open Play Store subscription management
     const cancelSubBtn = $('premiumCancelSubBtn');
@@ -12131,7 +12415,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '70.0.9';
+  const APP_VERSION = '70.1.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12553,6 +12837,30 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '70.1.2', date: 'September 29, 2026 · 5:40 PM EDT', title: 'Studio gets a sleep timer, a practice loop that speeds up as you go, and presets you save yourself - and Premium finally looks like something to buy', items: [
+    'Studio has a sleep timer: five, fifteen, thirty or forty-five minutes, or end of this song, or end of the queue. It is free, because a timer that stops your music is not a creative tool and nobody should pay to fall asleep.',
+    'Studio has a practice loop. Set the start and the end on the song that is playing and it repeats that section, and with the ramp on it speeds up a little every other pass until you stop, which is how a part is actually learned.',
+    'Studio remembers your own presets now. The built-in ones are a taste of what the slowed + reverb chain can do - this is saving the chain you arrived at, under a name you choose, and getting it back in one tap from the same sheet.',
+    'Premium now has something to be here. The practice loop and your own presets are what it adds in Studio, and with Premium off the Studio screen names them where they are used instead of leaving the pitch in Settings, where the value of it was invisible.',
+    'None of this caps anything that used to be free. The loop recorder still layers as many loops as you like, every tool is still open to everyone, and the wall is still exactly two hundred and one badges with the same five rewards - the new half of Studio is added to Premium rather than taken away from everybody else.',
+    'The entitlement is asked for, never copied: Studio puts one question to the app, which is the part that knows about a purchase, a license key, a gift code and the badge wall, so the two can never disagree about whether Premium is on.',
+  ] },
+  { version: '70.1.1', date: 'September 29, 2026 · 5:11 PM EDT', title: 'Studio lights up in the dock like the tab it is, and the badge wall stops showing a count from the last time it was painted', items: [
+    'Studio lights up in the dock when you are in it. The app was already marking the Studio pill as the current tab, the way it does for Home and Discover, but the rule that paints a lit tab only ever listed those two - so Studio was the one tab that never said which view you were looking at.',
+    'The badge wall is redrawn when it changes. It was only drawn when the screen was built and when the app came back from the background, so a badge you had already earned could be missing from the wall in front of you, with the header, the ring and the tile all still showing the count from an older paint.',
+    'That is what made a badge look like it did not work when you reached its goal: the badge was earned, saved and celebrated, and the wall you were looking at was simply a picture of an earlier moment.',
+    'Opening Studio redraws the wall now, and a badge that reaches its goal while Studio is on the screen repaints it in place - the count, the ring and the tile move as the last play lands instead of after a trip to another tab.',
+    'The wall is still only redrawn when something has actually changed, because walking the library to draw two hundred badges is real work and it is not done on every counter that moves.',
+    'Nothing else moved. No badge changed its target, no counter changed what it counts, and nothing was taken away - this is the wall saying what it already knew about you.',
+  ] },
+  { version: '70.1', date: 'September 29, 2026 · 4:11 PM EDT', title: 'The APK stops being unpayable: a card checkout on the web issues a license key that unlocks the same Premium the Play copy buys', items: [
+    'The APK can be paid for now. Google Play Billing only sells to a copy of an app that came from Google Play, and this package is a separate one with its own id, so Play had nothing to charge for - the buttons in Settings that used to end in a Play error now open a real card checkout instead.',
+    'Paying there gets you a license key by email, and that key is the unlock: paste it under Paid by card in Settings, and the store is asked to record this device, so the app knows a real sale happened and you can move the key to your next phone.',
+    'The key is only checked once. After that the app is unlocked offline like the rest of it is, and the store is asked again quietly in the background about once a week - a lookup that fails changes nothing at all, and only the store actually saying the key is no longer valid takes the unlock away.',
+    'This changes nothing for the copy of SideCut sold through Google Play: Play Billing is exactly as it was there, and both ways of paying unlock the same Premium, so a keyed copy and a purchased one are the same app from then on.',
+    'Gift codes still work exactly as before, which is the point of them - they are minted by hand and given away, and nothing about them moved. The new keys are the ones checked by the store, so a refund or a deactivated key really does stop working.',
+    'Removing premium hands your activation back, so a key with a device limit does not fill up with phones you no longer own, and your key travels inside your backup the way every other unlock does.',
+  ] },
   { version: '70.0.9', date: 'September 29, 2026 · 3:41 PM EDT', title: 'The player stops guessing how tall the dock is, so the strip above the dock closes on a foldable too', items: [
     'The strip of nothing between the player and the dock is gone on an unfolded foldable. The player reserved the bottom system inset inside its own padding while the dock under it reserves that space as well, so the last row of the player sat that far too high - and the bottom inset on a foldable is a much bigger number than on a phone, which is why the same bug looked far worse there.',
     'Only the surface that touches the bottom edge of the screen reserves that space, the way it should have from the start: the dock. The player keeps the breathing room it was designed with - 10px under the seek row, 8px on a very narrow phone, 6px in landscape or with the compact bar - on every device.',
@@ -24072,9 +24380,16 @@ function _fallbackCopy(text){
           try{
             // Verify the premium code from the backup — works on any device
             // so you can transfer premium to a new phone.
-            const ok = await verifyPremiumCode(manifest.premium.code);
+            // A licence key bought on the web is not an HMAC gift code and cannot
+            // be verified offline - it is restored and then re-checked with the store
+            // on the next launch, which is how the Play purchase below behaves too.
+            // The difference is that this one can be revoked.
+            const lic = licenseShaped(manifest.premium.code);
+            const ok = lic || await verifyPremiumCode(manifest.premium.code);
             if(ok){
-              setPremiumActive({ plan: manifest.premium.plan || 'gifted', code: manifest.premium.code });
+              setPremiumActive(lic
+                ? { plan: 'license', code: manifest.premium.code, source: 'license', checked: 0 }
+                : { plan: manifest.premium.plan || 'gifted', code: manifest.premium.code });
               toast('Premium restored from your backup. ✨', 3200);
             } else {
               toast('Backup had a premium code, but it didn’t verify — ignoring it.');
@@ -34578,8 +34893,9 @@ function _renderAhFromData(artistAlbums){
   // Play Billing: re-verify purchases on launch and whenever the app regains
   // focus (e.g. after returning from the Play billing sheet).
   syncPlayEntitlement();
-  window.addEventListener('focus', () => { syncPlayEntitlement(); if(window.__scCheckBackgroundPlayback) window.__scCheckBackgroundPlayback(); });
-  document.addEventListener('visibilitychange', () => { if(!document.hidden) syncPlayEntitlement(); });
+  revalidateLicense();
+  window.addEventListener('focus', () => { syncPlayEntitlement(); revalidateLicense(); if(window.__scCheckBackgroundPlayback) window.__scCheckBackgroundPlayback(); });
+  document.addEventListener('visibilitychange', () => { if(!document.hidden){ syncPlayEntitlement(); revalidateLicense(); } });
   // New-release checks only run when the user asks for them — via the Discover
   // "Fetch latest" / pinned-section "Check now" buttons (no boot/focus auto-checks).
 
@@ -39501,6 +39817,10 @@ window.showSettingsTab = showSettingsTab;
   // name: id in, the real modal (in place trim, Undo crop, the lot) out. It
   // refuses a song with no file exactly the way the modal does, and it returns
   // false rather than throwing when there is nothing to crop.
+  // The licence path lives inside the app IIFE, so the release probe reaches it
+  // through the same bridge the other 70.x hooks use.
+  window.__scLicenseRedeem = function(key){ return activateLicenseKey(key); };
+  window.__scLicenseCheck = function(){ return revalidateLicense(); };
   window.__scCropSong = function(id){
     try{
       var t = null;
@@ -39530,6 +39850,12 @@ window.showSettingsTab = showSettingsTab;
   // gifted and carries where it came from, so the Premium tab can say so, and
   // nothing but a real purchase is what it takes to lose. A dev-mode badge reset
   // deliberately does not touch it.
+  // 70.1.2 - Studio asks the app whether Premium is on, once per question,
+  // instead of keeping a copy that could disagree with the purchase, the licence
+  // key, the gift code or the badge wall. Same function every other gate uses.
+  window.__scIsPremium = function(){
+    try{ return isPremiumActive(); }catch(e){ return false; }
+  };
   window.__scGrantPremium = function(opts){
     try{
       if(isPremiumActive()) return true;
@@ -41880,6 +42206,7 @@ window.showAlbumReorderPopup = function(albumName){
     autodj: 'sidecut_autodj',
     // 70.0.5
     ctr: 'sidecut_ach_counters',
+    mypresets: 'sidecut_studio_mypresets',
     dev: 'sidecut_devmode',
     padsSeen: 'sidecut_pads_seen',
     themes: 'sidecut_themes_used',
@@ -42238,6 +42565,199 @@ window.showAlbumReorderPopup = function(albumName){
     renderStudio();
   }
 
+  /* --------------------------------------------------------------------------
+     3b. THE SLEEP TIMER, THE PRACTICE LOOP, AND YOUR OWN PRESETS (70.1.2)
+
+     "add more features to studio" and "make their an actual reason to get
+     SideCut premium", in one section, because they are the same answer to the
+     same question: the free half is the sleep timer (a player needs it, a
+     musician does not pay for it) and the paid half is the two tools with a
+     memory - a loop that speeds up as you learn the part, and presets you save
+     yourself.
+
+     The entitlement is never kept here. `isPro()` asks the app, which is the
+     part that knows about a purchase, a licence key, a gift code and the badge
+     wall, so Studio cannot disagree with it.
+     -------------------------------------------------------------------------- */
+  function isPro(){ return !!call('__scIsPremium'); }
+  function proOnly(what){
+    if(isPro()) return true;
+    toast(what + ' is part of Studio Premium \u2014 the Studio Premium section on this screen opens it.');
+    return false;
+  }
+
+  // ---- the sleep timer (free) ---------------------------------------------
+  var SLEEP_CHOICES = [
+    ['off',   'Off',               'stop it'],
+    ['5',     '5 min',             ''],
+    ['15',    '15 min',            ''],
+    ['30',    '30 min',            ''],
+    ['45',    '45 min',            ''],
+    ['song',  'End of this song',  'when the song does'],
+    ['queue', 'End of the queue',  'after the last queued song']
+  ];
+  var sleep = { mode: '', until: 0, timer: 0, bound: null };
+  function sleepClear(){
+    if(sleep.timer){ clearTimeout(sleep.timer); sleep.timer = 0; }
+    if(sleep.bound){
+      try{ sleep.bound.el.removeEventListener('ended', sleep.bound.fn); }catch(_e){ }
+      sleep.bound = null;
+    }
+    sleep.mode = ''; sleep.until = 0;
+  }
+  function sleepLabel(){
+    if(!sleep.mode) return '';
+    if(sleep.mode === 'song') return 'stops with this song';
+    if(sleep.mode === 'queue') return 'stops after the queue';
+    var left = Math.max(0, Math.round((sleep.until - Date.now()) / 60000));
+    return 'pauses in ' + left + ' min';
+  }
+  function sleepFire(){
+    sleepClear();
+    call('__scPause');
+    toast('\ud83c\udf19 Sleep timer: paused. Tap play when you are back.');
+    renderStudio();
+  }
+  function setSleep(mode){
+    sleepClear();
+    if(!mode || mode === 'off'){ toast('Sleep timer off.'); renderStudio(); return; }
+    sleep.mode = mode;
+    if(mode === 'song' || mode === 'queue'){
+      var el = call('__scActiveAudio');
+      if(!el){ sleepClear(); toast('Play something first and the timer will stop it.'); renderStudio(); return; }
+      var fn = function(){
+        // "End of the queue" means the LAST queued song: the app advances on its
+        // own, so this only fires when there is nothing after this one.
+        if(mode === 'queue'){
+          var q = call('__scQueue') || [], i = call('__scQueueIndex') || 0;
+          if(i < q.length - 1) return;
+        }
+        sleepFire();
+      };
+      try{ el.addEventListener('ended', fn); }catch(_e2){ }
+      sleep.bound = { el: el, fn: fn };
+    } else {
+      var min = parseInt(mode, 10) || 0;
+      if(min > 0){
+        sleep.until = Date.now() + min * 60000;
+        sleep.timer = setTimeout(sleepFire, min * 60000);
+      }
+    }
+    toast('Sleep timer: ' + (sleepLabel() || 'on'));
+    renderStudio();
+  }
+
+  // ---- the practice loop (Premium) ----------------------------------------
+  var practice = { on: false, a: 0, b: 0, ramp: false, passes: 0, tick: 0 };
+  function practiceMark(which){
+    var el = call('__scActiveAudio');
+    if(!el){ toast('Play a song first, then set the loop.'); return; }
+    var at = Math.round((el.currentTime || 0) * 10) / 10;
+    if(which === 'a'){
+      practice.a = at;
+      if(practice.b && practice.b <= practice.a + 1) practice.b = 0;
+    } else {
+      practice.b = at;
+      if(practice.a && practice.b <= practice.a + 1) practice.a = 0;
+    }
+    toast((which === 'a' ? 'Loop start' : 'Loop end') + ': ' + secToClock(at));
+    renderStudio();
+    openPracticeSheet();
+  }
+  function practiceStop(quiet){
+    if(practice.tick){ clearInterval(practice.tick); practice.tick = 0; }
+    var was = practice.on;
+    practice.on = false;
+    if(!quiet){
+      practice.passes = 0;
+      if(was) toast('Practice loop off.');
+      renderStudio();
+    }
+  }
+  function practiceRun(){
+    practiceStop(true);
+    if(!practice.a && !practice.b){ toast('Set the loop start first - play the song and press Set A.'); return; }
+    if(practice.b <= practice.a){ toast('Set the loop end after the loop start.'); return; }
+    if(!proOnly('The practice loop')){ renderStudio(); return; }
+    practice.on = true;
+    practice.passes = 0;
+    practice.tick = setInterval(function(){
+      var el = call('__scActiveAudio');
+      if(!el || el.paused) return;
+      var cur = el.currentTime || 0;
+      // Past the end, or before the start (the user or the app sought away), so
+      // the section is entered again rather than left half-played.
+      if(cur >= practice.b || cur < practice.a - 0.35){
+        try{ el.currentTime = practice.a; }catch(_e){ }
+        practice.passes++;
+        if(practice.ramp && practice.passes % 2 === 0){
+          fxState.rate = Math.min(1.5, Math.round((fxState.rate + 0.05) * 100) / 100);
+          applyRate();
+        }
+      }
+    }, 120);
+    toast('Practice loop: ' + secToClock(practice.a) + ' - ' + secToClock(practice.b) +
+      (practice.ramp ? ', speeding up every other pass' : ''));
+    renderStudio();
+  }
+
+  // ---- your own presets (Premium) -----------------------------------------
+  // The built-in presets are a taste; this is the chain you actually arrived at,
+  // saved under your own name. Stored beside the rest of the Studio state.
+  var myPresets = lsGet(LS.mypresets, []) || [];
+  function myPresetsHtml(){
+    var head = '<div class="sc-sub-head">Your presets</div>';
+    var rows = myPresets.length
+      ? myPresets.map(function(p){
+          return '<div class="sc-reward"><div class="sc-reward-at">' + Math.round(p.rate * 100) + '</div>' +
+            '<div class="sc-reward-txt"><div class="sc-reward-name">' + esc(p.name) + '</div>' +
+            '<div class="sc-reward-note">' + p.rate.toFixed(2) + 'x \u00b7 ' + Math.round(p.reverb * 100) + '% wet' +
+              (p.karaoke > 0 ? ' \u00b7 vocal out ' + Math.round(p.karaoke * 100) + '%' : '') + '</div></div>' +
+            '<div class="sc-reward-act"><button class="sc-btn tiny primary" data-myuse="' + p.id + '">Use</button>' +
+              '<button class="sc-btn tiny" data-mydrop="' + p.id + '">Delete</button></div></div>';
+        }).join('')
+      : '<div class="sc-note">Nothing saved yet. Set the speed, the reverb and the vocal out how you like them, then name the chain and keep it.</div>';
+    var save = isPro()
+      ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="text" id="scMyName" maxlength="40" placeholder="Name this chain" autocomplete="off"><button class="sc-btn primary" id="scMySave">Save current</button></div>'
+      : '<div class="sc-actions"><button class="sc-btn tiny" data-act="openpremium">Unlock Premium to save your own</button></div>';
+    return head + rows + save;
+  }
+  function saveMyPreset(){
+    if(!proOnly('Saving your own presets')) return;
+    var el = $('scMyName');
+    var name = el ? String(el.value || '').trim() : '';
+    if(!name) name = 'My chain ' + (myPresets.length + 1);
+    if(name.length > 40) name = name.slice(0, 40);
+    myPresets.push({ id: 'my' + Date.now(), name: name, rate: fxState.rate, reverb: fxState.reverb, karaoke: fxState.karaoke });
+    lsSet(LS.mypresets, myPresets);
+    toast('Saved "' + name + '" to your presets.');
+    openFxSheet();
+  }
+  function useMyPreset(id){
+    var p = myPresets.filter(function(x){ return x.id === id; })[0];
+    if(!p) return;
+    setFx({ rate: p.rate, reverb: p.reverb, karaoke: p.karaoke, preset: '' }, true);
+    markFeature('studio');
+    if(p.rate !== 1) markFeature('slow');
+    if(p.karaoke > 0) markFeature('karaoke');
+    toast('Preset: ' + p.name);
+    openFxSheet();
+  }
+  function dropMyPreset(id){
+    myPresets = myPresets.filter(function(x){ return x.id !== id; });
+    lsSet(LS.mypresets, myPresets);
+    openFxSheet();
+  }
+
+  // ---- what Premium adds HERE, said where it is used -----------------------
+  // The pitch used to live only in Settings, which is where the value was least
+  // visible. Shown while Premium is off, and gone the moment it is on.
+  function premiumStudioHtml(){
+    if(isPro()) return '';
+    return '<div class="sc-sec"><div class="sc-sec-head"><span>Studio Premium</span><span class="sc-sec-sub">what it adds here</span></div>' +
+      '<div class="sc-note">Every tool above is free and stays free. Premium adds the two that remember things for you: the practice loop, which repeats a section and speeds up every other pass, and presets you save yourself. It is also what unlocks Discover, pinned artists, word-by-word lyrics, nine animated themes and the Sandbox toggles.</div>' +
+      '<div class="sc-actions"><button class="sc-btn tiny primary" data-act="openpremium">See Premium</button></div></div>';
+  }
   /* --------------------------------------------------------------------------
      4. CROP -> SHARE AS CLIP, AND THE RE-ENCODER
      -------------------------------------------------------------------------- */
@@ -42868,6 +43388,18 @@ window.showAlbumReorderPopup = function(albumName){
     all.forEach(function(a){ if(a.need.got >= a.need.want) n++; });
     return n;
   }
+  // Drawing the wall walks the whole library (201 badges read real stats), so
+  // it is NOT redrawn on every counter that moves - that was a deliberate
+  // choice and it stays. What it must never be is what the user is looking at
+  // with an old number on it, so this is called from the two places where the
+  // picture can go stale: a badge unlocking, and the view being opened.
+  function badgeRepaintIfVisible(){
+    try{
+      var host = $('studioView');
+      if(host && host.classList.contains('active')) renderStudio();
+    }catch(_e){ }
+  }
+
   function checkAchievements(silent){
     var before = Object.keys(achState).length;
     var fresh = [];
@@ -42893,6 +43425,11 @@ window.showAlbumReorderPopup = function(albumName){
         }
       }
     }
+    // A badge that just unlocked has to appear on the wall the user is looking
+    // at. Recording it and celebrating it while the grid still shows the count
+    // and the tile from an earlier paint is the bug this release is about: the
+    // state was right and the picture was old.
+    if(fresh.length) badgeRepaintIfVisible();
     // See the note above the reward table: Premium follows the count, so it is
     // granted on every evaluation of it, not only when a badge unlocks.
     grantRewards(!!silent);
@@ -43609,7 +44146,13 @@ window.showAlbumReorderPopup = function(albumName){
         toolCard('karaoke', '\ud83c\udfa4', 'Karaoke mode', fxState.karaoke > 0 ? 'Vocal pulled out \u00b7 ' + Math.round(fxState.karaoke * 100) + '%' : 'Take the lead vocal out of what is playing.', fxState.karaoke > 0 ? 'on' : '') +
         toolCard('sampler', '\ud83c\udf9b', 'Sampler pads', sampler.trackId ? 'Loaded with "' + esc(trackName(sampler.trackId)) + '"' : 'Eight pads over the song you are playing.', sampler.trackId ? 'on' : '') +
         toolCard('looper', '\ud83d\udd01', 'Loop recorder', looper.layers.length ? looper.layers.length + ' loop' + (looper.layers.length === 1 ? '' : 's') + ' repeating' : 'Record a bar and layer it.', looper.layers.length ? 'on' : '') +
+        // 70.1.2. The sleep timer is free and says so by not mentioning money;
+        // the practice loop is the paid one, so Premium is named on the card
+        // itself rather than only inside the sheet.
+        toolCard('sleep', '\ud83c\udf19', 'Sleep timer', sleep.mode ? 'Set: ' + sleepLabel() : 'Stop the music after a while.', sleep.mode ? 'on' : '') +
+        toolCard('practice', '\ud83c\udfaf', 'Practice loop', (practice.on ? 'Looping ' + secToClock(practice.a) + ' - ' + secToClock(practice.b) + (practice.ramp ? ', faster every other pass' : '') : 'Loop a section until you have it' + (practice.ramp ? ', speeding up every other pass' : '') + '.'), practice.on ? 'on' : '') +
       '</div>' +
+      premiumStudioHtml() +
       achievementsSectionHtml() +
       '<div class="sc-sec" id="scStudioStorage"><div class="sc-sec-head"><span>Storage cleaner</span><span class="sc-sec-sub">' + fmtBytes(totalAudioBytes()) + '</span></div>' +
         storageHtml() + '</div>' +
@@ -43772,6 +44315,8 @@ window.showAlbumReorderPopup = function(albumName){
     if(id === 'karaoke') return openKaraokeSheet();
     if(id === 'sampler') return openSamplerSheet();
     if(id === 'looper') return openLooperSheet();
+    if(id === 'sleep') return openSleepSheet();
+    if(id === 'practice') return openPracticeSheet();
   }
 
   /* --------------------------------------------------------------------------
@@ -43821,6 +44366,7 @@ window.showAlbumReorderPopup = function(albumName){
       '<div class="sc-slider"><label>Reverb <span id="scFxRevV">' + Math.round(fxState.reverb * 100) + '%</span></label><input type="range" id="scFxRev" min="0" max="1" step="0.01" value="' + fxState.reverb + '"></div>' +
       '<div class="sc-slider"><label>Vocal out (karaoke) <span id="scFxKarV">' + Math.round(fxState.karaoke * 100) + '%</span></label><input type="range" id="scFxKar" min="0" max="1" step="0.01" value="' + fxState.karaoke + '"></div>' +
       '<div class="sc-note">Slowed down, the pitch drops with the speed \u2014 that is the sound of the preset, not a bug.</div>' +
+      myPresetsHtml() +
       '<div class="sc-actions"><button class="sc-btn" data-preset="off">Reset to normal</button><button class="sc-btn primary" id="scFxDone">Done</button></div>';
     openSheet('Slowed + reverb', body);
     document.querySelectorAll('#scSheetBody [data-preset]').forEach(function(b){
@@ -43836,6 +44382,16 @@ window.showAlbumReorderPopup = function(albumName){
         openFxSheet();
       });
     });
+    // Your own presets. The sheet is not part of #studioView, so wireStudio never
+    // sees these buttons - they are wired here, the way the loop recorder does it.
+    document.querySelectorAll('#scSheetBody [data-myuse]').forEach(function(b){
+      b.addEventListener('click', function(){ useMyPreset(b.getAttribute('data-myuse')); });
+    });
+    document.querySelectorAll('#scSheetBody [data-mydrop]').forEach(function(b){
+      b.addEventListener('click', function(){ dropMyPreset(b.getAttribute('data-mydrop')); });
+    });
+    var saveMy = $('scMySave');
+    if(saveMy) saveMy.addEventListener('click', saveMyPreset);
     var rate = $('scFxRate');
     if(rate) rate.addEventListener('input', function(){
       fxState.rate = parseFloat(rate.value); fxState.preset = '';
@@ -43945,6 +44501,56 @@ window.showAlbumReorderPopup = function(albumName){
     if(d) d.addEventListener('click', function(){ checkAchievements(true); closeSheet(); renderStudio(); });
   }
 
+  function openSleepSheet(){
+    var body = '<div class="sc-note">The music stops by itself: after a set time, when this song ends, or after the last song in the queue. Free, and it stays free.</div>' +
+      '<div class="sc-chips sc-sleep-chips">' + SLEEP_CHOICES.map(function(c){
+        return '<button class="sc-chip' + (sleep.mode === c[0] ? ' on' : '') + '" data-sleepmin="' + c[0] + '"><b>' + c[1] + '</b>' + (c[2] ? '<i>' + c[2] + '</i>' : '') + '</button>';
+      }).join('') + '</div>' +
+      '<div class="sc-layer-hint">' + (sleep.mode ? 'Set: ' + sleepLabel() : 'Not set') + '</div>' +
+      '<div class="sc-actions"><button class="sc-btn" id="scSleepOff">Cancel the timer</button><button class="sc-btn primary" id="scSleepDone">Done</button></div>';
+    openSheet('Sleep timer', body);
+    document.querySelectorAll('#scSheetBody [data-sleepmin]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var m = b.getAttribute('data-sleepmin');
+        if(m === 'off') setSleep('off'); else setSleep(m);
+        if($('scSheet') && $('scSheet').style.display === 'flex' && $('scSheetTitle').textContent === 'Sleep timer') openSleepSheet();
+      });
+    });
+    var off = $('scSleepOff');
+    if(off) off.addEventListener('click', function(){ setSleep('off'); openSleepSheet(); });
+    var done = $('scSleepDone');
+    if(done) done.addEventListener('click', function(){ closeSheet(); renderStudio(); });
+  }
+
+  function openPracticeSheet(){
+    var setAB = (practice.a || practice.b)
+      ? '<div class="sc-note">Looping <b>' + secToClock(practice.a) + ' \u2192 ' + secToClock(practice.b) + '</b>' +
+          (practice.ramp ? ' \u00b7 speeding up every other pass' : '') + '</div>'
+      : '<div class="sc-note">Play the song, press Set A where the part starts and Set B where it ends. Then loop it until you have it.</div>';
+    var pro = isPro()
+      ? '<button class="sc-btn primary" id="scPracGo">' + (practice.on ? 'Restart the loop' : 'Start looping') + '</button>' +
+        (practice.on ? '<button class="sc-btn" id="scPracOff">Stop</button>' : '')
+      : '<button class="sc-btn primary" data-act="openpremium">Unlock Premium to loop it</button>';
+    var body = '<div class="sc-note">A practice loop repeats one section of the song. With the ramp on it is a little faster every other pass, which is how a part is actually learned rather than played once.</div>' +
+      setAB +
+      '<div class="sc-actions"><button class="sc-btn" id="scPracA">Set A \u00b7 start</button><button class="sc-btn" id="scPracB">Set B \u00b7 end</button></div>' +
+      '<div class="sc-chips"><button class="sc-chip' + (practice.ramp ? ' on' : '') + '" id="scPracRamp">' + (practice.ramp ? 'Ramp on \u00b7 faster every other pass' : 'Ramp off \u00b7 same speed') + '</button></div>' +
+      (practice.on ? '<div class="sc-layer-hint">Pass ' + practice.passes + ' \u00b7 ' + fxState.rate.toFixed(2) + 'x</div>' : '') +
+      '<div class="sc-actions">' + pro + '<button class="sc-btn" id="scPracDone">Done</button></div>';
+    openSheet('Practice loop', body);
+    var a = $('scPracA'); if(a) a.addEventListener('click', function(){ practiceMark('a'); });
+    var b = $('scPracB'); if(b) b.addEventListener('click', function(){ practiceMark('b'); });
+    var ramp = $('scPracRamp');
+    if(ramp) ramp.addEventListener('click', function(){
+      practice.ramp = !practice.ramp;
+      toast(practice.ramp ? 'Ramp on: every other pass is a little faster' : 'Ramp off: same speed every pass');
+      if(practice.on) practiceRun(); else openPracticeSheet();
+      renderStudio();
+    });
+    var go = $('scPracGo'); if(go) go.addEventListener('click', function(){ practiceRun(); openPracticeSheet(); });
+    var stop = $('scPracOff'); if(stop) stop.addEventListener('click', function(){ practiceStop(); openPracticeSheet(); });
+    var done = $('scPracDone'); if(done) done.addEventListener('click', function(){ closeSheet(); renderStudio(); });
+  }
   /* --------------------------------------------------------------------------
      13. THE SONG MENU, GROUPED (called from openSongActions in block 1)
      -------------------------------------------------------------------------- */
@@ -44065,6 +44671,10 @@ window.showAlbumReorderPopup = function(albumName){
       if(_ql === 'Play next' || _ql === 'Add to queue' || _ql === 'Queue') bump('queue', 1);
       if(el.closest('#addBtn') || el.closest('#addFolderBtn')) bump('addFiles', 1);
       if(el.closest('#notifBtn')) bump('notif', 1);
+      // Opening Studio is when the wall has to be right: tapping a dock tab is
+      // not a visibility change, so nothing else would redraw a grid that was
+      // last painted before any of this was earned.
+      if(el.closest('#studioBtn')) setTimeout(function(){ renderStudio(); }, 80);
       // Those controls all move badges, so the check runs on the next turn of the
       // loop rather than inside the click that caused it.
       setTimeout(function(){ checkAchievements(true); }, 60);
@@ -44242,6 +44852,20 @@ window.showAlbumReorderPopup = function(albumName){
     looper: looper,
     recordLoop: recordLoop,
     stopLoops: stopLoops,
+    // 70.1.2 - the new half of Studio, for the gates and the assistant.
+    isPro: isPro,
+    sleep: function(){ return sleep; },
+    setSleep: setSleep,
+    sleepLabel: sleepLabel,
+    practice: practice,
+    practiceMark: practiceMark,
+    practiceRun: practiceRun,
+    practiceStop: practiceStop,
+    openPracticeSheet: openPracticeSheet,
+    myPresets: function(){ return myPresets; },
+    saveMyPreset: saveMyPreset,
+    useMyPreset: useMyPreset,
+    dropMyPreset: dropMyPreset,
     measureDock: measureDock,
     watchDock: watchDock,
     cropCurrent: cropCurrent,

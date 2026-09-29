@@ -1,6 +1,174 @@
 # SideCut — repository memory
 
 
+## 70.1.2 (Sep 29, 2026): Studio grows up, and Premium gets something to be
+- **The user's words**, the two asks left over from the same message as 70.1.1: "add more features to studio" and "make
+  their an actual reason to get SideCut premium".
+- **WHAT WAS ADDED, AND WHY THESE FOUR RATHER THAN ANOTHER KNOB.** (1) **A sleep timer** (off / 5 / 15 / 30 / 45 minutes /
+  end of this song / end of the queue) - the one thing a player is asked for that Studio is the natural home for, needing
+  no new permission, and useful every single day rather than another effects slider. It is **free on purpose**: a timer
+  that stops your music is not a creative tool and nobody should pay to fall asleep. (2) **A practice loop** (Premium) -
+  set A and B on the song that is playing and that section repeats; switch the ramp on and it speeds up a little every
+  other pass, which is how a part is actually learned. (3) **Your own presets** (Premium) - the built-in presets are a
+  taste of what the chain can do, this is saving the chain you actually arrived at under your own name. (4) **A "Studio
+  Premium" section**, shown only while Premium is off, naming what Premium adds **in Studio** - because the old pitch lived
+  in Settings and the value of it was invisible from where it is used.
+- **NOTHING THAT WAS FREE GOT CAPPED TO SELL IT.** The loop recorder still layers as many loops as you like, every tool is
+  still open to everyone, and **the wall is still exactly 201 badges with the same five rewards** at 50, 100, 150, 200 and
+  201 - adding features must not move anybody's progress or un-complete a wall somebody finished. The practice loop's
+  sheet is not hidden from free users; **starting** the loop is the paid part and the sheet says so. The premium half is
+  additive, which is the only honest way to sell an app that already gave the rest away.
+- **THE ENTITLEMENT IS ASKED FOR, NEVER COPIED.** `isPro()` in the Studio module asks the app (`window.__scIsPremium`),
+  which is the only part that knows about a Play purchase, a licence key, a gift code and the badge wall. There is one
+  answer to one question, so the module and Settings can never disagree about whether Premium is on. This is the same
+  rule 70.1 established by keeping the licence logic in `index.html` and this is the second place it applies.
+- **THE TITLE MAY NOT SAY "pass".** test-6642 and test-66421 refuse the word in any changelog title from 60 onward - it
+  was used for whole releases ("a polish pass") and stopped meaning anything. The practice loop really does repeat a
+  pass, so the word is allowed in a **note** and the title was reworded off it (the patch carries the `OLD_TITLE` it
+  heals). Same family of lesson as the 70.1 test-70 rewrite: know which string the rule is actually about.
+- **`dev/patch-7012.mjs` / `dev/repin-7012.mjs`** (70.1.2 -> 7012): `APP_VERSION` **70.1.1 -> 70.1.2**, stamp
+  `September 29, 2026 \u00b7 5:40 PM EDT` (built 21:40 UTC = 5:40 PM EDT), shell cache `v63.0.37 -> v63.0.38`, a 6-note
+  changelog head, the module section and its wiring, the gate edits, and `--check` reporting **0 to apply / 17 already in
+  place** once done. `repin-7012` is the usual sweep (**22 edits across 19 files**) and still SKIPS `dev/test-705.mjs`
+  (the 70.0.5 gate's own version pins stay; only its shell-cache pin moves).
+- **Verified.** test-705 **201 all passed** (4 new, and the sub-gate that had been failing is green now), studio-70-check
+  **268** (driven on the real app), test-70 pass, 662 **75**, 663 49, 66431 95, 6643 90, 66429 83, 66428 73, 66427 82,
+  66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74, 6641 119, 651 35, 612/6136/6137/6138/6139 all
+  pass, check-dom 0 failures, audit-calls OK (6835 line comments), ota-guard 20, ota-bootapply 24, ota-update 52,
+  ota-loop 26. OTA at a true fixed point: `ota/` **827922**, `ota-play/` **827931**, all five manifests agree, both
+  `--check`s OK with 6 notes, `patch-7012 --manifest` reseeded the root manifest.
+- **THE WHOLE CHAIN REPRODUCES FROM THE TIP, and this is the check worth repeating.** `git archive HEAD` (the committed
+  70.0.9 tree) into a scratch dir, copy the untracked `dev/patch-70*.mjs` / `dev/repin-70*.mjs` in, symlink
+  `node_modules` to the root checkout's, then run `patch-701 -> repin-701 -> patch-7011 -> repin-7011 -> patch-7012 ->
+  repin-7012` and the OTA chain. Result: **`index.html`, `sw.js`, `dev/sc70-module.js`, all four gate files and all five
+  OTA manifests are byte-identical**, the fixpoint converges to the same 827922 / 827931, and the only bytes that differ
+  are the **permission bits recorded inside the zips** (`0x81a40000` = 0644 vs `0x81b40000` = 0664, the umask of whoever
+  wrote the files) - entry names, entry contents, sizes, normalised timestamps (2020-01-01 00:00) and deflate output are
+  all identical. A mode bit is not part of the release; nothing in the app or the updater reads it.
+
+
+## 70.1.1 (Sep 29, 2026): the Studio tab says you are in it, and the badge wall stops being stale
+- **The user's words**, two reports about one screen: "Studio tab don't highlight like the other tabs do when you click
+  on them" and "fix the badges not working when you reach the goal".
+- **THE TAB WAS ONE MISSING SELECTOR, and the honest version of the bug matters.** `navigate()` has always marked the
+  current pill - `$('studioBtn').classList.toggle('active', isStudio)` - but the rule that **paints** a lit tab was
+  `#discoverBtn.active, #homeBtn.active{ background: var(--coral); ... }`. Home and Discover were in it, Library lights
+  its own two halves (`#playlistsHalf` / `#albumsHalf`), and Studio had **no rule at all** - so Studio carried the class
+  that said "this is the current tab" and was the one tab that never showed it. The fix is `#studioBtn.active` added to
+  that selector, in `index.html` (this is **not** in `dev/sc70-styles.css`; do not go looking for it there).
+- **THE WALL WAS A STALE PAINT, NOT A BROKEN BADGE.** The grid is drawn by `renderStudio()`, which is expensive - it walks
+  the whole library for the stats behind 201 badges - so it is drawn when the view is built and again on
+  `visibilitychange`. `checkAchievements()` recorded the badge, saved it, toasted it and granted any reward, and then
+  **left the screen alone**. Tapping a dock tab is **not** a visibility change either, so opening Studio did not repaint.
+  That is exactly what "the badges not working when you reach the goal" looks like: **the state was right and the picture
+  was old** - a badge that had already been earned, saved and celebrated missing from the wall in front of you, with the
+  header, the ring and the tile all still showing an earlier count.
+- **THE FIX, AND WHY IT IS NOT A REPAINT ON EVERY COUNTER.** `badgeRepaintIfVisible()` (immediately before
+  `checkAchievements` in the module) does nothing unless the Studio view is the one on screen:
+  `var host = $('studioView'); if(host && host.classList.contains('active')) renderStudio();`. It is called from
+  `checkAchievements` when `fresh.length` - i.e. only when something was actually earned - and `wireAppWatch()`'s click
+  handler repaints on a `#studioBtn` tap. Walking the library stays expensive, and a counter that moved with Studio
+  closed still costs nothing.
+- **A GATE-AUTHORING LESSON, THE FOURTH KIND OF SILENT FAILURE.** The needle was written as
+  `contains('active')` **inside a single-quoted JS string** in the probe, so the escapes came out as
+  `contains(\'active\')` and the file died with `SyntaxError: missing ) after argument list` before a single check ran.
+  Repaired with a **`heal()`** whose backslashes are built with `String.fromCharCode(92)`, replacing the needle with the
+  quote-free `countMod('host && host.classList.contains')`. Same conclusion as 70.1's three: a broken needle can look
+  like a passing check, so read the file and not the summary.
+- **`dev/patch-7011.mjs` / `dev/repin-7011.mjs`** (70.1.1 -> 7011): `APP_VERSION` **70.1 -> 70.1.1**, stamp
+  `September 29, 2026 \u00b7 5:11 PM EDT`, shell cache `v63.0.36 -> v63.0.37`, a 6-note changelog head, the CSS selector,
+  the module repaint + wiring, the gate edits, and `--check` **0 to apply / 10 already in place**. `repin-7011`: **22
+  edits across 19 files**, still skipping `dev/test-705.mjs`. Gate edits: test-705 **+4**, and studio-70-check gained
+  `[11d] a badge that reaches its goal shows up on the wall` - it clicks `#studioBtn`, bumps the `studio` counter until
+  the count crosses a goal, calls `checkAchievements(true)`, asserts the hero text and `.sc-badge.have` agree, then writes
+  `'STALE'` into `.sc-hero-badges`, switches tabs and back, and asserts it was redrawn. **245/245** at the time.
+- **OTA** at the 70.1.1 fixed point: `ota/` **823061**, `ota-play/` **823069**, all five manifests agree, both `--check`s
+  OK with 6 notes.
+
+
+## 70.1 (Sep 29, 2026): the APK gets a way to be paid for (license key + web checkout)
+- **The user's words**, after being told Play Billing cannot sell to a sideloaded build: "Why won't it work on the apk can't we
+  do smth else", and then the choice they made: "APK payment: License key + web checkout" / "Processor: Not sure yet".
+- **WHY PLAY CANNOT DO IT, AND THAT IT IS NOT A WIRING BUG.** Play Billing is not a payment API the app calls - it is a
+  purchase made THROUGH the Play Store, and the Play Store only sells for a package it recognises as its own, **installed by
+  Play**. Two hard gates: (1) the package must exist in Play Console, or `launchBillingFlow` / the product lookup comes back
+  `BILLING_UNAVAILABLE` / "not configured for billing through Google Play"; (2) **the APK distributed here is the OTHER
+  flavour** - `com.SideCut.myapp.full`, a deliberately different package id so it installs side by side with the Play copy,
+  which **is not on Play at all**. There is nothing to charge for. No amount of code fixes that, which is why the answer has
+  to be a second way to pay. The Play path (`play` flavour, `com.SideCut.myapp`) is untouched and still the only route for
+  the subscription and the lifetime product bought inside Play.
+- **THE WAY TO PAY: the store's own customer-facing license API.** `LICENSE_CONFIG` in `index.html` (next to
+  `PAYMENT_CONFIG`) holds `checkoutUrl` plus `validateUrl` / `activateUrl` / `deactivateUrl`, defaulted to **Lemon Squeezy**
+  (`https://api.lemonsqueezy.com/v1/licenses/...`). The buyer checks out on the web, the store issues a key and emails it,
+  the key is pasted into Settings → Premium, and `activate` records this device as an activation (so the device limit is
+  real and the licence can move to the next phone); `validate` is the source of truth afterwards; `deactivate` hands the
+  activation back when premium is removed. **Nothing secret goes in the file** - these three endpoints take nothing but the
+  key itself, which is exactly why a static, backendless app can use them. Contrast the gift codes: **their HMAC key is in
+  the page**, so gift codes are for giving away and this is the paid path. Verified against the live API: a refusal is a
+  **404 with a JSON body** (`{"valid":false,"error":"license_key not found."}`), so the body decides and not the status
+  code; the response carries `access-control-allow-origin: *`; and `application/x-www-form-urlencoded` + `Accept` is a
+  CORS-**simple** request, so there is no preflight to fail. `capacitor.config.json` already sets
+  `plugins.CapacitorHttp.enabled = true`, so in the installed app the call never reaches CORS at all.
+- **THE ONE RULE THAT MATTERS MOST: a store that cannot be reached must NEVER lock a paying user out.** Only
+  `data.valid === false` (refunded / deactivated / expired) clears premium; a thrown `licensePost` returns `false` and
+  changes nothing. `revalidateLicense()` asks `validate` only when the last answer is older than `revalidateMs` (7 days,
+  the same grace idea as `PLAY_SUB_GRACE_MS`), and it is wired into the three places `syncPlayEntitlement()` already runs
+  (launch, `focus`, `visibilitychange`). This is asserted three times over: in test-705 (`// unreachable store: the unlock
+  stays, untouched` must be there exactly once), and twice in the probe, which drives a rejecting `fetch` and asserts
+  premium is still on.
+- **THE REST OF THE WIRING.** `offerLicenseOrPlayStore(msg, url)` replaces the identical three-line tails of **both** Play
+  buttons (`all: true` - the two tails are byte-identical): with a checkout configured it says Google Play only works for
+  the copy installed from Play and opens the web checkout; with none it is **exactly the behaviour that shipped before**.
+  `checkoutUrl` ships **EMPTY** and every button that would open it says the checkout is not open yet rather than opening a
+  dead link - so the single line the user still has to fill in is the whole of what is left to do. The buy view gains a
+  paste-a-key box (`#premiumLicenseInput` / `#premiumLicenseBtn`) and a `#premiumLicenseBuyBtn`; a key rides inside backups
+  (the existing `buildPremiumPayload` already ships `info.code`), and on import `licenseShaped()` sends it down the licence
+  branch instead of `verifyPremiumCode()` - restored, then re-checked with the store on the next launch, which is how the
+  Play purchase already behaves, except this one really can be revoked. `licenseShaped()` is also what keeps the two kinds
+  of unlock apart: `SC-xxxxxxxx-xxxxxxxx` is a gift code and is **never handed to the store as a key**.
+- **WHY LEMON SQUEEZY, AND WHAT CHANGING STORE COSTS.** It issues licence keys for a product out of the box, it is a
+  merchant of record (so VAT is its problem, not a solo dev's), and its validate/activate/deactivate take **no API key** -
+  which is the only reason a static app can call them at all. Changing store is the three URLs, the two optional ids
+  (`storeId` / `productId`, 0 = do not check) and the fields the two responses are read with; **no other line in the app
+  knows who sold the key.** `dev/license-check.mjs` is the terminal half of the same flow (`validate` / `activate` /
+  `deactivate` against the live API, exit 0/1/2) so a key can be tested before a customer ever pastes one.
+- **THIS IS A SERIES RESTART, NOT AN INCREMENT: 70.0.9 -> 70.1.** The rule is the page's own ("the third number stops at
+  nine: 60.0.9 is followed by 60.1, never 60.0.10"), and the patch/repin numbers are the version without its dots, so
+  **`dev/patch-701.mjs` / `dev/repin-701.mjs`** (70.1 -> 701, the same way 64.3 -> patch-643). patch-701: `APP_VERSION`
+  **70.0.9 -> 70.1**, a 6-note changelog head, shell cache `v63.0.35 -> v63.0.36`, the configuration + machinery + markup
+  + wiring, the gate edits, and `--check` reports **0 to apply / 19 already in place** once done. repin-701 is the usual
+  sweep (**22 edits across 19 files**) and still SKIPS `dev/test-705.mjs`.
+- **THE RESTART BROKE `dev/test-70.mjs`, AND THE FIX IS THE INTERESTING PART.** test-70 is the 70.0 gate and its `VER` is
+  `'70.0'` - it was never repinned, by design - so its two "the build on the page" rules failed on 70.1: one pinned the page
+  to `70.0` or a patch on it, the other pinned the literal `/const APP_VERSION = '70\.0(\.\d+)?';/`. The first is widened
+  to the series the page's own rule says follows (`/^70\.1(\.\d+)?$/`), and the second literal is replaced by **the rule
+  the page states about itself**: the version is `70.x`, the third number never reaches ten, and a new series does not read
+  `70.1.0`. (Same lesson as 70.0.9's test-662: widen the rule to what it was always about rather than satisfy it by
+  accident.)
+- **THREE GATE/PATCH LESSONS, ALL OF THEM SILENT-FAILURE KIND.** (1) **A `sub()` argument list can be broken by two
+  inserted lines that forget their `\n' +` continuation** - the concatenation ends early, the following lines become extra
+  *arguments*, `opts` silently becomes a plain string (so `opts.key` is undefined and the idempotence guard disappears), and
+  the sub applies a **truncated** replacement. Nothing errors; the symptom was the patch's own file check counting two
+  `[11c]` markers instead of one, and it was found by noticing the probe's `[11c]` header still on disk while the run said
+  "healed". **A sub that skips for the wrong reason looks exactly like a sub that worked - check the file, not the
+  summary.** (2) **`x instanceof Function` is false for a function from another realm**: the app runs in the jsdom VM, so
+  the probe must use `typeof x === 'function'`. (3) **`encodeURIComponent` is the wrong encoder for a form body** (a space
+  goes out as `%20` where a form sends `+`); `new URLSearchParams()` is right, and the tree that already had the old
+  construction was repaired with **`heal()`** - which is what heal is for: a correction that must not fail when this tree
+  no longer needs it. The probe asserts the activation name is really sent (`/instance_name=SideCut\+/`), so the encoder is
+  pinned by behaviour and not by a comment.
+- **Verified.** test-705 **186** (14 new), studio-70-check **238** (22 new, driven on the real app: a gift code is never
+  sent to the store, a refused key does not unlock, an unreachable store neither unlocks nor locks, an activated key
+  unlocks with `plan: 'license'` and the store's instance id kept, a re-check that cannot reach the store keeps a paying
+  user in, `valid:false` locks, and a renewed key stays unlocked), test-70 **182**, 662 **75**, 663 49, 66431 95, 6643 90,
+  66429 83, 66428 73, 66427 82, 66426 86, 66425 101, 66424 102, 66423 52, 66422 87, 66421 49, 6642 74, 6641 119, 651 35,
+  6139/6138 ALL PASS, 6137 0 failures, 6136/612 all pass, check-dom 0 failures, audit-calls OK (6802 line comments),
+  ota-guard 20, ota-bootapply 24, ota-loop 26, ota-update 52. **test-66429's 82+FAIL was the known flake** - it is 83.
+  `dev/license-check.mjs` was run against the live store (a junk key is refused by both `validate` and `activate`). OTA at a
+  true fixed point: `ota/` **822071**, `ota-play/` **822079**, all five manifests agree, both `--check`s OK with 6 notes,
+  `patch-701 --manifest` reseeded the root manifest from `ota/updates.json`.
+
+
 ## 70.0.9 (Sep 29, 2026): the player stops guessing how tall the dock is
 - **The user's words**, verbatim, with a screenshot of the app on an **unfolded foldable**: "This is not how it should look on
   a foldable phone there is way to much of a gap". The same complaint as 70.0.7 - and **the first thing to know is that the

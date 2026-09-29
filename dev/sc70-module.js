@@ -31,6 +31,7 @@
     autodj: 'sidecut_autodj',
     // 70.0.5
     ctr: 'sidecut_ach_counters',
+    mypresets: 'sidecut_studio_mypresets',
     dev: 'sidecut_devmode',
     padsSeen: 'sidecut_pads_seen',
     themes: 'sidecut_themes_used',
@@ -389,6 +390,199 @@
     renderStudio();
   }
 
+  /* --------------------------------------------------------------------------
+     3b. THE SLEEP TIMER, THE PRACTICE LOOP, AND YOUR OWN PRESETS (70.1.2)
+
+     "add more features to studio" and "make their an actual reason to get
+     SideCut premium", in one section, because they are the same answer to the
+     same question: the free half is the sleep timer (a player needs it, a
+     musician does not pay for it) and the paid half is the two tools with a
+     memory - a loop that speeds up as you learn the part, and presets you save
+     yourself.
+
+     The entitlement is never kept here. `isPro()` asks the app, which is the
+     part that knows about a purchase, a licence key, a gift code and the badge
+     wall, so Studio cannot disagree with it.
+     -------------------------------------------------------------------------- */
+  function isPro(){ return !!call('__scIsPremium'); }
+  function proOnly(what){
+    if(isPro()) return true;
+    toast(what + ' is part of Studio Premium \u2014 the Studio Premium section on this screen opens it.');
+    return false;
+  }
+
+  // ---- the sleep timer (free) ---------------------------------------------
+  var SLEEP_CHOICES = [
+    ['off',   'Off',               'stop it'],
+    ['5',     '5 min',             ''],
+    ['15',    '15 min',            ''],
+    ['30',    '30 min',            ''],
+    ['45',    '45 min',            ''],
+    ['song',  'End of this song',  'when the song does'],
+    ['queue', 'End of the queue',  'after the last queued song']
+  ];
+  var sleep = { mode: '', until: 0, timer: 0, bound: null };
+  function sleepClear(){
+    if(sleep.timer){ clearTimeout(sleep.timer); sleep.timer = 0; }
+    if(sleep.bound){
+      try{ sleep.bound.el.removeEventListener('ended', sleep.bound.fn); }catch(_e){ }
+      sleep.bound = null;
+    }
+    sleep.mode = ''; sleep.until = 0;
+  }
+  function sleepLabel(){
+    if(!sleep.mode) return '';
+    if(sleep.mode === 'song') return 'stops with this song';
+    if(sleep.mode === 'queue') return 'stops after the queue';
+    var left = Math.max(0, Math.round((sleep.until - Date.now()) / 60000));
+    return 'pauses in ' + left + ' min';
+  }
+  function sleepFire(){
+    sleepClear();
+    call('__scPause');
+    toast('\ud83c\udf19 Sleep timer: paused. Tap play when you are back.');
+    renderStudio();
+  }
+  function setSleep(mode){
+    sleepClear();
+    if(!mode || mode === 'off'){ toast('Sleep timer off.'); renderStudio(); return; }
+    sleep.mode = mode;
+    if(mode === 'song' || mode === 'queue'){
+      var el = call('__scActiveAudio');
+      if(!el){ sleepClear(); toast('Play something first and the timer will stop it.'); renderStudio(); return; }
+      var fn = function(){
+        // "End of the queue" means the LAST queued song: the app advances on its
+        // own, so this only fires when there is nothing after this one.
+        if(mode === 'queue'){
+          var q = call('__scQueue') || [], i = call('__scQueueIndex') || 0;
+          if(i < q.length - 1) return;
+        }
+        sleepFire();
+      };
+      try{ el.addEventListener('ended', fn); }catch(_e2){ }
+      sleep.bound = { el: el, fn: fn };
+    } else {
+      var min = parseInt(mode, 10) || 0;
+      if(min > 0){
+        sleep.until = Date.now() + min * 60000;
+        sleep.timer = setTimeout(sleepFire, min * 60000);
+      }
+    }
+    toast('Sleep timer: ' + (sleepLabel() || 'on'));
+    renderStudio();
+  }
+
+  // ---- the practice loop (Premium) ----------------------------------------
+  var practice = { on: false, a: 0, b: 0, ramp: false, passes: 0, tick: 0 };
+  function practiceMark(which){
+    var el = call('__scActiveAudio');
+    if(!el){ toast('Play a song first, then set the loop.'); return; }
+    var at = Math.round((el.currentTime || 0) * 10) / 10;
+    if(which === 'a'){
+      practice.a = at;
+      if(practice.b && practice.b <= practice.a + 1) practice.b = 0;
+    } else {
+      practice.b = at;
+      if(practice.a && practice.b <= practice.a + 1) practice.a = 0;
+    }
+    toast((which === 'a' ? 'Loop start' : 'Loop end') + ': ' + secToClock(at));
+    renderStudio();
+    openPracticeSheet();
+  }
+  function practiceStop(quiet){
+    if(practice.tick){ clearInterval(practice.tick); practice.tick = 0; }
+    var was = practice.on;
+    practice.on = false;
+    if(!quiet){
+      practice.passes = 0;
+      if(was) toast('Practice loop off.');
+      renderStudio();
+    }
+  }
+  function practiceRun(){
+    practiceStop(true);
+    if(!practice.a && !practice.b){ toast('Set the loop start first - play the song and press Set A.'); return; }
+    if(practice.b <= practice.a){ toast('Set the loop end after the loop start.'); return; }
+    if(!proOnly('The practice loop')){ renderStudio(); return; }
+    practice.on = true;
+    practice.passes = 0;
+    practice.tick = setInterval(function(){
+      var el = call('__scActiveAudio');
+      if(!el || el.paused) return;
+      var cur = el.currentTime || 0;
+      // Past the end, or before the start (the user or the app sought away), so
+      // the section is entered again rather than left half-played.
+      if(cur >= practice.b || cur < practice.a - 0.35){
+        try{ el.currentTime = practice.a; }catch(_e){ }
+        practice.passes++;
+        if(practice.ramp && practice.passes % 2 === 0){
+          fxState.rate = Math.min(1.5, Math.round((fxState.rate + 0.05) * 100) / 100);
+          applyRate();
+        }
+      }
+    }, 120);
+    toast('Practice loop: ' + secToClock(practice.a) + ' - ' + secToClock(practice.b) +
+      (practice.ramp ? ', speeding up every other pass' : ''));
+    renderStudio();
+  }
+
+  // ---- your own presets (Premium) -----------------------------------------
+  // The built-in presets are a taste; this is the chain you actually arrived at,
+  // saved under your own name. Stored beside the rest of the Studio state.
+  var myPresets = lsGet(LS.mypresets, []) || [];
+  function myPresetsHtml(){
+    var head = '<div class="sc-sub-head">Your presets</div>';
+    var rows = myPresets.length
+      ? myPresets.map(function(p){
+          return '<div class="sc-reward"><div class="sc-reward-at">' + Math.round(p.rate * 100) + '</div>' +
+            '<div class="sc-reward-txt"><div class="sc-reward-name">' + esc(p.name) + '</div>' +
+            '<div class="sc-reward-note">' + p.rate.toFixed(2) + 'x \u00b7 ' + Math.round(p.reverb * 100) + '% wet' +
+              (p.karaoke > 0 ? ' \u00b7 vocal out ' + Math.round(p.karaoke * 100) + '%' : '') + '</div></div>' +
+            '<div class="sc-reward-act"><button class="sc-btn tiny primary" data-myuse="' + p.id + '">Use</button>' +
+              '<button class="sc-btn tiny" data-mydrop="' + p.id + '">Delete</button></div></div>';
+        }).join('')
+      : '<div class="sc-note">Nothing saved yet. Set the speed, the reverb and the vocal out how you like them, then name the chain and keep it.</div>';
+    var save = isPro()
+      ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="text" id="scMyName" maxlength="40" placeholder="Name this chain" autocomplete="off"><button class="sc-btn primary" id="scMySave">Save current</button></div>'
+      : '<div class="sc-actions"><button class="sc-btn tiny" data-act="openpremium">Unlock Premium to save your own</button></div>';
+    return head + rows + save;
+  }
+  function saveMyPreset(){
+    if(!proOnly('Saving your own presets')) return;
+    var el = $('scMyName');
+    var name = el ? String(el.value || '').trim() : '';
+    if(!name) name = 'My chain ' + (myPresets.length + 1);
+    if(name.length > 40) name = name.slice(0, 40);
+    myPresets.push({ id: 'my' + Date.now(), name: name, rate: fxState.rate, reverb: fxState.reverb, karaoke: fxState.karaoke });
+    lsSet(LS.mypresets, myPresets);
+    toast('Saved "' + name + '" to your presets.');
+    openFxSheet();
+  }
+  function useMyPreset(id){
+    var p = myPresets.filter(function(x){ return x.id === id; })[0];
+    if(!p) return;
+    setFx({ rate: p.rate, reverb: p.reverb, karaoke: p.karaoke, preset: '' }, true);
+    markFeature('studio');
+    if(p.rate !== 1) markFeature('slow');
+    if(p.karaoke > 0) markFeature('karaoke');
+    toast('Preset: ' + p.name);
+    openFxSheet();
+  }
+  function dropMyPreset(id){
+    myPresets = myPresets.filter(function(x){ return x.id !== id; });
+    lsSet(LS.mypresets, myPresets);
+    openFxSheet();
+  }
+
+  // ---- what Premium adds HERE, said where it is used -----------------------
+  // The pitch used to live only in Settings, which is where the value was least
+  // visible. Shown while Premium is off, and gone the moment it is on.
+  function premiumStudioHtml(){
+    if(isPro()) return '';
+    return '<div class="sc-sec"><div class="sc-sec-head"><span>Studio Premium</span><span class="sc-sec-sub">what it adds here</span></div>' +
+      '<div class="sc-note">Every tool above is free and stays free. Premium adds the two that remember things for you: the practice loop, which repeats a section and speeds up every other pass, and presets you save yourself. It is also what unlocks Discover, pinned artists, word-by-word lyrics, nine animated themes and the Sandbox toggles.</div>' +
+      '<div class="sc-actions"><button class="sc-btn tiny primary" data-act="openpremium">See Premium</button></div></div>';
+  }
   /* --------------------------------------------------------------------------
      4. CROP -> SHARE AS CLIP, AND THE RE-ENCODER
      -------------------------------------------------------------------------- */
@@ -1019,6 +1213,18 @@
     all.forEach(function(a){ if(a.need.got >= a.need.want) n++; });
     return n;
   }
+  // Drawing the wall walks the whole library (201 badges read real stats), so
+  // it is NOT redrawn on every counter that moves - that was a deliberate
+  // choice and it stays. What it must never be is what the user is looking at
+  // with an old number on it, so this is called from the two places where the
+  // picture can go stale: a badge unlocking, and the view being opened.
+  function badgeRepaintIfVisible(){
+    try{
+      var host = $('studioView');
+      if(host && host.classList.contains('active')) renderStudio();
+    }catch(_e){ }
+  }
+
   function checkAchievements(silent){
     var before = Object.keys(achState).length;
     var fresh = [];
@@ -1044,6 +1250,11 @@
         }
       }
     }
+    // A badge that just unlocked has to appear on the wall the user is looking
+    // at. Recording it and celebrating it while the grid still shows the count
+    // and the tile from an earlier paint is the bug this release is about: the
+    // state was right and the picture was old.
+    if(fresh.length) badgeRepaintIfVisible();
     // See the note above the reward table: Premium follows the count, so it is
     // granted on every evaluation of it, not only when a badge unlocks.
     grantRewards(!!silent);
@@ -1760,7 +1971,13 @@
         toolCard('karaoke', '\ud83c\udfa4', 'Karaoke mode', fxState.karaoke > 0 ? 'Vocal pulled out \u00b7 ' + Math.round(fxState.karaoke * 100) + '%' : 'Take the lead vocal out of what is playing.', fxState.karaoke > 0 ? 'on' : '') +
         toolCard('sampler', '\ud83c\udf9b', 'Sampler pads', sampler.trackId ? 'Loaded with "' + esc(trackName(sampler.trackId)) + '"' : 'Eight pads over the song you are playing.', sampler.trackId ? 'on' : '') +
         toolCard('looper', '\ud83d\udd01', 'Loop recorder', looper.layers.length ? looper.layers.length + ' loop' + (looper.layers.length === 1 ? '' : 's') + ' repeating' : 'Record a bar and layer it.', looper.layers.length ? 'on' : '') +
+        // 70.1.2. The sleep timer is free and says so by not mentioning money;
+        // the practice loop is the paid one, so Premium is named on the card
+        // itself rather than only inside the sheet.
+        toolCard('sleep', '\ud83c\udf19', 'Sleep timer', sleep.mode ? 'Set: ' + sleepLabel() : 'Stop the music after a while.', sleep.mode ? 'on' : '') +
+        toolCard('practice', '\ud83c\udfaf', 'Practice loop', (practice.on ? 'Looping ' + secToClock(practice.a) + ' - ' + secToClock(practice.b) + (practice.ramp ? ', faster every other pass' : '') : 'Loop a section until you have it' + (practice.ramp ? ', speeding up every other pass' : '') + '.'), practice.on ? 'on' : '') +
       '</div>' +
+      premiumStudioHtml() +
       achievementsSectionHtml() +
       '<div class="sc-sec" id="scStudioStorage"><div class="sc-sec-head"><span>Storage cleaner</span><span class="sc-sec-sub">' + fmtBytes(totalAudioBytes()) + '</span></div>' +
         storageHtml() + '</div>' +
@@ -1923,6 +2140,8 @@
     if(id === 'karaoke') return openKaraokeSheet();
     if(id === 'sampler') return openSamplerSheet();
     if(id === 'looper') return openLooperSheet();
+    if(id === 'sleep') return openSleepSheet();
+    if(id === 'practice') return openPracticeSheet();
   }
 
   /* --------------------------------------------------------------------------
@@ -1972,6 +2191,7 @@
       '<div class="sc-slider"><label>Reverb <span id="scFxRevV">' + Math.round(fxState.reverb * 100) + '%</span></label><input type="range" id="scFxRev" min="0" max="1" step="0.01" value="' + fxState.reverb + '"></div>' +
       '<div class="sc-slider"><label>Vocal out (karaoke) <span id="scFxKarV">' + Math.round(fxState.karaoke * 100) + '%</span></label><input type="range" id="scFxKar" min="0" max="1" step="0.01" value="' + fxState.karaoke + '"></div>' +
       '<div class="sc-note">Slowed down, the pitch drops with the speed \u2014 that is the sound of the preset, not a bug.</div>' +
+      myPresetsHtml() +
       '<div class="sc-actions"><button class="sc-btn" data-preset="off">Reset to normal</button><button class="sc-btn primary" id="scFxDone">Done</button></div>';
     openSheet('Slowed + reverb', body);
     document.querySelectorAll('#scSheetBody [data-preset]').forEach(function(b){
@@ -1987,6 +2207,16 @@
         openFxSheet();
       });
     });
+    // Your own presets. The sheet is not part of #studioView, so wireStudio never
+    // sees these buttons - they are wired here, the way the loop recorder does it.
+    document.querySelectorAll('#scSheetBody [data-myuse]').forEach(function(b){
+      b.addEventListener('click', function(){ useMyPreset(b.getAttribute('data-myuse')); });
+    });
+    document.querySelectorAll('#scSheetBody [data-mydrop]').forEach(function(b){
+      b.addEventListener('click', function(){ dropMyPreset(b.getAttribute('data-mydrop')); });
+    });
+    var saveMy = $('scMySave');
+    if(saveMy) saveMy.addEventListener('click', saveMyPreset);
     var rate = $('scFxRate');
     if(rate) rate.addEventListener('input', function(){
       fxState.rate = parseFloat(rate.value); fxState.preset = '';
@@ -2096,6 +2326,56 @@
     if(d) d.addEventListener('click', function(){ checkAchievements(true); closeSheet(); renderStudio(); });
   }
 
+  function openSleepSheet(){
+    var body = '<div class="sc-note">The music stops by itself: after a set time, when this song ends, or after the last song in the queue. Free, and it stays free.</div>' +
+      '<div class="sc-chips sc-sleep-chips">' + SLEEP_CHOICES.map(function(c){
+        return '<button class="sc-chip' + (sleep.mode === c[0] ? ' on' : '') + '" data-sleepmin="' + c[0] + '"><b>' + c[1] + '</b>' + (c[2] ? '<i>' + c[2] + '</i>' : '') + '</button>';
+      }).join('') + '</div>' +
+      '<div class="sc-layer-hint">' + (sleep.mode ? 'Set: ' + sleepLabel() : 'Not set') + '</div>' +
+      '<div class="sc-actions"><button class="sc-btn" id="scSleepOff">Cancel the timer</button><button class="sc-btn primary" id="scSleepDone">Done</button></div>';
+    openSheet('Sleep timer', body);
+    document.querySelectorAll('#scSheetBody [data-sleepmin]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var m = b.getAttribute('data-sleepmin');
+        if(m === 'off') setSleep('off'); else setSleep(m);
+        if($('scSheet') && $('scSheet').style.display === 'flex' && $('scSheetTitle').textContent === 'Sleep timer') openSleepSheet();
+      });
+    });
+    var off = $('scSleepOff');
+    if(off) off.addEventListener('click', function(){ setSleep('off'); openSleepSheet(); });
+    var done = $('scSleepDone');
+    if(done) done.addEventListener('click', function(){ closeSheet(); renderStudio(); });
+  }
+
+  function openPracticeSheet(){
+    var setAB = (practice.a || practice.b)
+      ? '<div class="sc-note">Looping <b>' + secToClock(practice.a) + ' \u2192 ' + secToClock(practice.b) + '</b>' +
+          (practice.ramp ? ' \u00b7 speeding up every other pass' : '') + '</div>'
+      : '<div class="sc-note">Play the song, press Set A where the part starts and Set B where it ends. Then loop it until you have it.</div>';
+    var pro = isPro()
+      ? '<button class="sc-btn primary" id="scPracGo">' + (practice.on ? 'Restart the loop' : 'Start looping') + '</button>' +
+        (practice.on ? '<button class="sc-btn" id="scPracOff">Stop</button>' : '')
+      : '<button class="sc-btn primary" data-act="openpremium">Unlock Premium to loop it</button>';
+    var body = '<div class="sc-note">A practice loop repeats one section of the song. With the ramp on it is a little faster every other pass, which is how a part is actually learned rather than played once.</div>' +
+      setAB +
+      '<div class="sc-actions"><button class="sc-btn" id="scPracA">Set A \u00b7 start</button><button class="sc-btn" id="scPracB">Set B \u00b7 end</button></div>' +
+      '<div class="sc-chips"><button class="sc-chip' + (practice.ramp ? ' on' : '') + '" id="scPracRamp">' + (practice.ramp ? 'Ramp on \u00b7 faster every other pass' : 'Ramp off \u00b7 same speed') + '</button></div>' +
+      (practice.on ? '<div class="sc-layer-hint">Pass ' + practice.passes + ' \u00b7 ' + fxState.rate.toFixed(2) + 'x</div>' : '') +
+      '<div class="sc-actions">' + pro + '<button class="sc-btn" id="scPracDone">Done</button></div>';
+    openSheet('Practice loop', body);
+    var a = $('scPracA'); if(a) a.addEventListener('click', function(){ practiceMark('a'); });
+    var b = $('scPracB'); if(b) b.addEventListener('click', function(){ practiceMark('b'); });
+    var ramp = $('scPracRamp');
+    if(ramp) ramp.addEventListener('click', function(){
+      practice.ramp = !practice.ramp;
+      toast(practice.ramp ? 'Ramp on: every other pass is a little faster' : 'Ramp off: same speed every pass');
+      if(practice.on) practiceRun(); else openPracticeSheet();
+      renderStudio();
+    });
+    var go = $('scPracGo'); if(go) go.addEventListener('click', function(){ practiceRun(); openPracticeSheet(); });
+    var stop = $('scPracOff'); if(stop) stop.addEventListener('click', function(){ practiceStop(); openPracticeSheet(); });
+    var done = $('scPracDone'); if(done) done.addEventListener('click', function(){ closeSheet(); renderStudio(); });
+  }
   /* --------------------------------------------------------------------------
      13. THE SONG MENU, GROUPED (called from openSongActions in block 1)
      -------------------------------------------------------------------------- */
@@ -2216,6 +2496,10 @@
       if(_ql === 'Play next' || _ql === 'Add to queue' || _ql === 'Queue') bump('queue', 1);
       if(el.closest('#addBtn') || el.closest('#addFolderBtn')) bump('addFiles', 1);
       if(el.closest('#notifBtn')) bump('notif', 1);
+      // Opening Studio is when the wall has to be right: tapping a dock tab is
+      // not a visibility change, so nothing else would redraw a grid that was
+      // last painted before any of this was earned.
+      if(el.closest('#studioBtn')) setTimeout(function(){ renderStudio(); }, 80);
       // Those controls all move badges, so the check runs on the next turn of the
       // loop rather than inside the click that caused it.
       setTimeout(function(){ checkAchievements(true); }, 60);
@@ -2393,6 +2677,20 @@
     looper: looper,
     recordLoop: recordLoop,
     stopLoops: stopLoops,
+    // 70.1.2 - the new half of Studio, for the gates and the assistant.
+    isPro: isPro,
+    sleep: function(){ return sleep; },
+    setSleep: setSleep,
+    sleepLabel: sleepLabel,
+    practice: practice,
+    practiceMark: practiceMark,
+    practiceRun: practiceRun,
+    practiceStop: practiceStop,
+    openPracticeSheet: openPracticeSheet,
+    myPresets: function(){ return myPresets; },
+    saveMyPreset: saveMyPreset,
+    useMyPreset: useMyPreset,
+    dropMyPreset: dropMyPreset,
     measureDock: measureDock,
     watchDock: watchDock,
     cropCurrent: cropCurrent,
