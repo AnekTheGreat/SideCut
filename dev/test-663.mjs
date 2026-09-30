@@ -106,8 +106,10 @@ ok(count('Settings ' + ARR + ' EQ') === 0 && count('Settings ' + ARR + ' Equaliz
   'nor to an EQ or Equalizer tab');
 ok(src.indexOf('Settings ' + ARR + ' More ' + ARR + ' Playback') !== -1,
   'they name Settings More Playback, which is where it lives');
-ok(src.indexOf("if(tab === 'refresh' || tab === 'playback' || tab === 'eq') tab = 'more';") !== -1,
-  'which is what showSettingsTab() already said');
+  // 70.1.3 added the removed Premium tab to the same fold, so the literal moved.
+  ok(src.indexOf("if(tab === 'refresh' || tab === 'playback' || tab === 'eq' || tab === 'premium') tab = 'more';") !== -1,
+    'which is what showSettingsTab() already said');
+
 ok(src.indexOf('var _aiGroundNote =') !== -1 &&
    src.indexOf("_aiSystemPrompt + (kbGround ? _aiGroundNote + kbGround : '')") !== -1,
   'the app own entry for the question rides along as ground truth');

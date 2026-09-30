@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '70.1.2'; /* repinned by dev/repin-7012.mjs */ /* repinned by dev/repin-7011.mjs */ /* repinned by dev/repin-701.mjs */ /* repinned by dev/repin-709.mjs */ /* repinned by dev/repin-708.mjs */ /* repinned by dev/repin-707.mjs */ /* repinned by dev/repin-706.mjs */ /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
+const VER = '70.1.3'; /* repinned by dev/repin-7013.mjs */ /* repinned by dev/repin-7012.mjs */ /* repinned by dev/repin-7011.mjs */ /* repinned by dev/repin-701.mjs */ /* repinned by dev/repin-709.mjs */ /* repinned by dev/repin-708.mjs */ /* repinned by dev/repin-707.mjs */ /* repinned by dev/repin-706.mjs */ /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -109,15 +109,18 @@ console.log('[2] the entry names state the changes');
 
 console.log('[3] the settings tabs are back in the order they had');
 {
-  const order = ['settingsTabPremium', 'settingsTabExpand', 'settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
+  // 70.1.3 took the Premium tab out of the strip, so there are eight now and
+  // every position after it moved one to the left.
+  const order = ['settingsTabExpand', 'settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
     'settingsTabSandbox', 'settingsTabSupport', 'settingsTabWidget', 'settingsTabMore']
     .map((id) => src.indexOf('id="' + id + '"'));
-  ok(order.every((i) => i !== -1), 'all nine tabs are present');
+  ok(order.every((i) => i !== -1), 'all eight tabs are present');
   ok(order.every((v, i) => i === 0 || order[i - 1] < v),
-    'and the strip runs Premium, Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, More');
-  ok(order[8] > order[7] && order[8] > order[6], 'More is the last tab');
-  ok(order[3] < order[4], 'Donate is where it was (fourth)');
-  ok(order[6] < order[7], 'and Support is seventh, before Widget');
+    'and the strip runs Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, More');
+  ok(order[7] > order[6] && order[7] > order[5], 'More is the last tab');
+  ok(order[2] < order[3], 'Donate is where it was (third now, not fourth)');
+  ok(order[5] < order[6], 'and Support is sixth, before Widget');
+  ok(src.indexOf('id="settingsTabPremium"') === -1, 'and the tab that was first is still in the strip');
   // The labels must still be the ones a reader expects against those ids.
   ok(has('id="settingsTabMore" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">More</button>'),
     'the last button really is More');
@@ -155,12 +158,12 @@ console.log('[5] only the pane scrolls, and every tab opens at its own top');
   ok(/scroll-behavior: auto;/.test(scrollBlock) && !/scroll-behavior: smooth;/.test(scrollBlock),
     'the pane still follows the wheel one to one');
   ok(/overscroll-behavior: contain;/.test(scrollBlock), 'and contains its own ends');
-  const fn = src.slice(src.indexOf('function showSettingsTab(tab){'), src.indexOf("$('settingsTabPremium').addEventListener"));
+  const fn = src.slice(src.indexOf('function showSettingsTab(tab){'), src.indexOf("$('settingsTabExpand').addEventListener"));
   ok(/var _panes = \$\('settingsPanesWrap'\); if\(_panes\) _panes\.scrollTop = 0;/.test(fn),
     'switching tab resets the shared pane scroll');
   ok(/var _sheet = _tbd \? _tbd\.querySelector\('\.modal'\) : null;\n\s*if\(_sheet\) _sheet\.scrollTop = 0;/.test(fn),
     'and the sheet itself, so nothing can start half-way down');
-  ok(fn.indexOf('_panes') < fn.indexOf("$('settingsPanePremium')"),
+  ok(fn.indexOf('_panes') < fn.indexOf("$('settingsPaneExpand')"),
     'both resets run before any pane is shown');
 }
 

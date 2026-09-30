@@ -391,25 +391,14 @@
   }
 
   /* --------------------------------------------------------------------------
-     3b. THE SLEEP TIMER, THE PRACTICE LOOP, AND YOUR OWN PRESETS (70.1.2)
+     3b. THE SLEEP TIMER, THE PRACTICE LOOP, AND YOUR OWN PRESETS (70.1.3)
 
-     "add more features to studio" and "make their an actual reason to get
-     SideCut premium", in one section, because they are the same answer to the
-     same question: the free half is the sleep timer (a player needs it, a
-     musician does not pay for it) and the paid half is the two tools with a
-     memory - a loop that speeds up as you learn the part, and presets you save
-     yourself.
-
-     The entitlement is never kept here. `isPro()` asks the app, which is the
-     part that knows about a purchase, a licence key, a gift code and the badge
-     wall, so Studio cannot disagree with it.
+     "add more features to studio", and then "Remove premium make everything
+     free keep donations". So the two tools that remember things for you are
+     just here: the loop that steps up as you learn the part, and presets you
+     save yourself. There is no half of Studio to pay for and no entitlement to
+     ask the app for - 70.1.3 took the paywall out of the whole app.
      -------------------------------------------------------------------------- */
-  function isPro(){ return !!call('__scIsPremium'); }
-  function proOnly(what){
-    if(isPro()) return true;
-    toast(what + ' is part of Studio Premium \u2014 the Studio Premium section on this screen opens it.');
-    return false;
-  }
 
   // ---- the sleep timer (free) ---------------------------------------------
   var SLEEP_CHOICES = [
@@ -472,7 +461,7 @@
     renderStudio();
   }
 
-  // ---- the practice loop (Premium) ----------------------------------------
+  // ---- the practice loop ---------------------------------------------------
   var practice = { on: false, a: 0, b: 0, ramp: false, passes: 0, tick: 0 };
   function practiceMark(which){
     var el = call('__scActiveAudio');
@@ -503,7 +492,6 @@
     practiceStop(true);
     if(!practice.a && !practice.b){ toast('Set the loop start first - play the song and press Set A.'); return; }
     if(practice.b <= practice.a){ toast('Set the loop end after the loop start.'); return; }
-    if(!proOnly('The practice loop')){ renderStudio(); return; }
     practice.on = true;
     practice.passes = 0;
     practice.tick = setInterval(function(){
@@ -526,7 +514,7 @@
     renderStudio();
   }
 
-  // ---- your own presets (Premium) -----------------------------------------
+  // ---- your own presets ----------------------------------------------------
   // The built-in presets are a taste; this is the chain you actually arrived at,
   // saved under your own name. Stored beside the rest of the Studio state.
   var myPresets = lsGet(LS.mypresets, []) || [];
@@ -542,13 +530,10 @@
               '<button class="sc-btn tiny" data-mydrop="' + p.id + '">Delete</button></div></div>';
         }).join('')
       : '<div class="sc-note">Nothing saved yet. Set the speed, the reverb and the vocal out how you like them, then name the chain and keep it.</div>';
-    var save = isPro()
-      ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="text" id="scMyName" maxlength="40" placeholder="Name this chain" autocomplete="off"><button class="sc-btn primary" id="scMySave">Save current</button></div>'
-      : '<div class="sc-actions"><button class="sc-btn tiny" data-act="openpremium">Unlock Premium to save your own</button></div>';
+    var save = '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="text" id="scMyName" maxlength="40" placeholder="Name this chain" autocomplete="off"><button class="sc-btn primary" id="scMySave">Save current</button></div>';
     return head + rows + save;
   }
   function saveMyPreset(){
-    if(!proOnly('Saving your own presets')) return;
     var el = $('scMyName');
     var name = el ? String(el.value || '').trim() : '';
     if(!name) name = 'My chain ' + (myPresets.length + 1);
@@ -574,15 +559,6 @@
     openFxSheet();
   }
 
-  // ---- what Premium adds HERE, said where it is used -----------------------
-  // The pitch used to live only in Settings, which is where the value was least
-  // visible. Shown while Premium is off, and gone the moment it is on.
-  function premiumStudioHtml(){
-    if(isPro()) return '';
-    return '<div class="sc-sec"><div class="sc-sec-head"><span>Studio Premium</span><span class="sc-sec-sub">what it adds here</span></div>' +
-      '<div class="sc-note">Every tool above is free and stays free. Premium adds the two that remember things for you: the practice loop, which repeats a section and speeds up every other pass, and presets you save yourself. It is also what unlocks Discover, pinned artists, word-by-word lyrics, nine animated themes and the Sandbox toggles.</div>' +
-      '<div class="sc-actions"><button class="sc-btn tiny primary" data-act="openpremium">See Premium</button></div></div>';
-  }
   /* --------------------------------------------------------------------------
      4. CROP -> SHARE AS CLIP, AND THE RE-ENCODER
      -------------------------------------------------------------------------- */
@@ -844,7 +820,7 @@
       { id: 'plays_100', name: 'Hundred club', sub: '100 songs played', ico: '\u266b', tone: 'a', need: p(plays, 100) },
       { id: 'plays_1000', name: 'Thousand club', sub: '1,000 songs played', ico: '\u266b', tone: 'b', need: p(plays, 1000) },
       // 5,000 plays was the one hand-written target that only a multi-year library
-      // could ever meet, and every badge is needed for the Premium reward - so it
+      // could ever meet, and every badge is needed for the reward at the end - so it
       // is 3,000 now, which a year of daily listening reaches.
       { id: 'plays_3000', name: 'Three thousand', sub: '3,000 songs played', ico: '\u266b', tone: 'c', need: p(plays, 3000) },
       { id: 'hour_1', name: 'One hour in', sub: '1 hour listened', ico: '\u23f1', tone: 'a', need: p(hours, 1) },
@@ -873,11 +849,11 @@
     ];
   }
   /* --------------------------------------------------------------------------
-     5b. TWO HUNDRED BADGES, ONE SECRET, AND FIVE REWARDS (70.0.5, revised 70.0.6)
+     5b. TWO HUNDRED BADGES, ONE SECRET, AND FIVE REWARDS (70.0.5, revised 70.1.3)
 
      The user asked for over two hundred achievements, one of them secret and only
      obtainable by entering dev mode, plus a free theme at 50, 100 and 150 badges,
-     a dynamic theme that whirls under your finger at 200, and free Premium at 201
+     a dynamic theme that whirls under your finger at 200, and the whole wall at 201
      with the secret one.
 
      Three design decisions worth writing down:
@@ -911,12 +887,14 @@
          fourteen tiles came back as more rungs on things you DO - more plays, more
          hours listened, a longer streak, more Studio visits, more loops, more
          theme changes and more things done by the assistant - so the wall is still
-         201 and the five rewards still sit at 50, 100, 150, 200 and 201.
+          201 and the five rewards still sit at 50, 100, 150, 200 and 201, the
+          last of them the finished wall since 70.1.3 rather than a purchase.
        * The themes are gated LIVE - the app asks whether the badge count has reached
          the reward, every time it draws the Theme tab - so there is nothing to
          unlock, nothing to lose on a reinstall that keeps badges, and no state that
-         can disagree with the badges themselves. Premium is the one reward with a
-         side effect, so that one is granted once and recorded.
+         can disagree with the badges themselves. The last one used to have the table’s
+         only side effect, a grant of Premium, and 70.1.3 took that away with it, so
+         the wall ends in a trophy now.
      -------------------------------------------------------------------------- */
   var counters = lsGet(LS.ctr, {}) || {};
   function bump(k, n){
@@ -980,7 +958,7 @@
     { at: 100, kind: 'theme',   key: 'quartz',  name: 'Quartz',  note: 'Cool glass and silver' },
     { at: 150, kind: 'theme',   key: 'lumen',   name: 'Lumen',   note: 'Daylight green and mint' },
     { at: 200, kind: 'theme',   key: 'vortex',  name: 'Vortex',  note: 'A dynamic theme that whirls under your finger', dynamic: true },
-    { at: 201, kind: 'premium', key: 'premium', name: 'SideCut Premium', note: 'Every badge in the app, including the secret one' }
+    { at: 201, kind: 'complete', key: 'complete', name: 'The whole wall', note: 'Every badge in the app, including the secret one' }
   ];
   function rewardEarned(at){ return unlockedCount() >= at; }
   function rewardState(){
@@ -991,20 +969,21 @@
   }
   function themeRewards(){ return REWARDS.filter(function(r){ return r.kind === 'theme'; }); }
   // Called from the app's Theme tab, through window.SC70 - a reward theme is free
-  // the moment the badges are there, for everyone, with or without Premium.
+  // the moment the badges are there, for everyone.
   function themeUnlocked(key){
     for(var i = 0; i < REWARDS.length; i++){
       if(REWARDS[i].kind === 'theme' && REWARDS[i].key === key) return rewardEarned(REWARDS[i].at);
     }
     return true;
   }
+  // 70.1.3 - the wall used to end in a purchase, and there is no purchase to end
+  // in. The trophy is the wall itself, so this is the celebration and nothing else.
   function grantRewards(silent){
     if(!rewardEarned(201)) return false;
     if(lsGet(LS.reward, null)) return false;
-    var ok = call('__scGrantPremium', { plan: 'badges', gifted: true, note: 'All 201 badges' });
-    lsSet(LS.reward, { at: Date.now(), granted: !!ok });
-    if(!silent) toast('\ud83d\ude80 201 of 201 \u00b7 SideCut Premium is yours, free. Thank you for playing with all of it.', 6000);
-    return !!ok;
+    lsSet(LS.reward, { at: Date.now(), granted: true });
+    if(!silent) toast('\ud83d\ude80 201 of 201 \u00b7 the whole wall. Thank you for playing with all of it.', 6000);
+    return true;
   }
   var REWARD_MARKS = REWARDS.map(function(r){ return r.at; });
   function celebrateRewards(before){
@@ -1255,8 +1234,8 @@
     // and the tile from an earlier paint is the bug this release is about: the
     // state was right and the picture was old.
     if(fresh.length) badgeRepaintIfVisible();
-    // See the note above the reward table: Premium follows the count, so it is
-    // granted on every evaluation of it, not only when a badge unlocks.
+    // See the note above the reward table: the 201st tile is a reward, so it is
+    // celebrated on every evaluation of the count, not only when one unlocks.
     grantRewards(!!silent);
     return fresh;
   }
@@ -1869,12 +1848,12 @@
   function rewardRowHtml(r){
     var pct = r.earned ? 100 : Math.round((r.have / r.at) * 100);
     var state = r.earned
-      ? (r.kind === 'premium' ? '<span class="sc-reward-have">Granted, free</span>' : '<span class="sc-reward-have">Unlocked</span>')
+      ? '<span class="sc-reward-have">Unlocked</span>'
       : '<span class="sc-reward-need">' + (r.at - r.have) + ' to go</span>';
     var act = !r.earned ? ''
       : (r.kind === 'theme'
         ? '<button class="sc-btn tiny primary" data-act="usetheme" data-key="' + r.key + '">Use it</button>'
-        : '<button class="sc-btn tiny" data-act="openpremium">Open Premium</button>');
+        : '');
     return '<div class="sc-reward' + (r.earned ? ' on' : '') + '">' +
       '<div class="sc-reward-at">' + r.at + '</div>' +
       '<div class="sc-reward-txt"><div class="sc-reward-name">' + esc(r.name) + '</div>' +
@@ -1897,7 +1876,7 @@
         '<button class="sc-btn tiny" data-act="devreset">Reset badge state</button>' +
         '<button class="sc-btn tiny" data-act="devoff">Exit dev mode</button>' +
       '</div>' +
-      '<div class="sc-dev-note">A reset clears badges, counters and feature flags. It never takes Premium back \u2014 a reward is not a switch, and a real purchase is not a dev tool\u2019s to undo.</div>' +
+      '<div class="sc-dev-note">A reset clears badges, counters and feature flags. It never takes a reward back \u2014 a reward is not a switch, and the four themes and the trophy at the end of the wall are not this tool\u2019s to undo.</div>' +
       '</div>';
   }
   function storageHtml(){
@@ -1972,12 +1951,11 @@
         toolCard('sampler', '\ud83c\udf9b', 'Sampler pads', sampler.trackId ? 'Loaded with "' + esc(trackName(sampler.trackId)) + '"' : 'Eight pads over the song you are playing.', sampler.trackId ? 'on' : '') +
         toolCard('looper', '\ud83d\udd01', 'Loop recorder', looper.layers.length ? looper.layers.length + ' loop' + (looper.layers.length === 1 ? '' : 's') + ' repeating' : 'Record a bar and layer it.', looper.layers.length ? 'on' : '') +
         // 70.1.2. The sleep timer is free and says so by not mentioning money;
-        // the practice loop is the paid one, so Premium is named on the card
-        // itself rather than only inside the sheet.
+        // the sleep timer and the practice loop are simply two more tools, with no
+      // price named on either of them.
         toolCard('sleep', '\ud83c\udf19', 'Sleep timer', sleep.mode ? 'Set: ' + sleepLabel() : 'Stop the music after a while.', sleep.mode ? 'on' : '') +
         toolCard('practice', '\ud83c\udfaf', 'Practice loop', (practice.on ? 'Looping ' + secToClock(practice.a) + ' - ' + secToClock(practice.b) + (practice.ramp ? ', faster every other pass' : '') : 'Loop a section until you have it' + (practice.ramp ? ', speeding up every other pass' : '') + '.'), practice.on ? 'on' : '') +
       '</div>' +
-      premiumStudioHtml() +
       achievementsSectionHtml() +
       '<div class="sc-sec" id="scStudioStorage"><div class="sc-sec-head"><span>Storage cleaner</span><span class="sc-sec-sub">' + fmtBytes(totalAudioBytes()) + '</span></div>' +
         storageHtml() + '</div>' +
@@ -2105,7 +2083,6 @@
             renderStudio();
           } else toast('Earn the badges for that theme first.');
         }
-        else if(act === 'openpremium'){ if(typeof window.openPremiumSettings === 'function') window.openPremiumSettings(); }
         else if(act === 'devself'){
           var f = checkAchievements(true);
           toast('Self-test: ' + unlockedCount() + '/' + ACHIEVEMENTS().length + ' met, ' + Object.keys(achState).length + ' recorded' + (f.length ? ', ' + f.length + ' just unlocked' : '') + '.', 4200);
@@ -2118,7 +2095,7 @@
         else if(act === 'devreset'){
           achState = {}; counters = {}; flags = {};
           lsSet(LS.ach, achState); lsSet(LS.ctr, counters); lsSet(LS.flags, flags);
-          toast('Dev: badges, counters and feature flags cleared. Premium was left alone.', 4200);
+          toast('Dev: badges, counters and feature flags cleared.', 4200);
           checkAchievements(true); renderStudio();
         }
         else if(act === 'devoff') setDevMode(false);
@@ -2352,10 +2329,8 @@
       ? '<div class="sc-note">Looping <b>' + secToClock(practice.a) + ' \u2192 ' + secToClock(practice.b) + '</b>' +
           (practice.ramp ? ' \u00b7 speeding up every other pass' : '') + '</div>'
       : '<div class="sc-note">Play the song, press Set A where the part starts and Set B where it ends. Then loop it until you have it.</div>';
-    var pro = isPro()
-      ? '<button class="sc-btn primary" id="scPracGo">' + (practice.on ? 'Restart the loop' : 'Start looping') + '</button>' +
-        (practice.on ? '<button class="sc-btn" id="scPracOff">Stop</button>' : '')
-      : '<button class="sc-btn primary" data-act="openpremium">Unlock Premium to loop it</button>';
+    var pro = '<button class="sc-btn primary" id="scPracGo">' + (practice.on ? 'Restart the loop' : 'Start looping') + '</button>' +
+        (practice.on ? '<button class="sc-btn" id="scPracOff">Stop</button>' : '');
     var body = '<div class="sc-note">A practice loop repeats one section of the song. With the ramp on it is a little faster every other pass, which is how a part is actually learned rather than played once.</div>' +
       setAB +
       '<div class="sc-actions"><button class="sc-btn" id="scPracA">Set A \u00b7 start</button><button class="sc-btn" id="scPracB">Set B \u00b7 end</button></div>' +
@@ -2678,7 +2653,6 @@
     recordLoop: recordLoop,
     stopLoops: stopLoops,
     // 70.1.2 - the new half of Studio, for the gates and the assistant.
-    isPro: isPro,
     sleep: function(){ return sleep; },
     setSleep: setSleep,
     sleepLabel: sleepLabel,

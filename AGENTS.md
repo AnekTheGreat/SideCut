@@ -1,6 +1,72 @@
 # SideCut — repository memory
 
 
+## 70.1.3 (Sep 29, 2026): Premium is removed, everything it locked is free, Donate stays
+- **The user's words**, in two messages: "Remove it remove premium only thing is keep donations" and then, after the
+  Lemon Squeezy store signup served a 429 and the slug field kept rejecting `SideCut`, "Remove premium make everything
+  free keep donations". The store was never created, so 70.1's `LICENSE_CONFIG.checkoutUrl` shipped empty and then left
+  with everything around it. **This release is the removal, not a switch**: the cheap version - make `isPremiumActive()`
+  answer `true` and walk away - leaves four ways to buy a thing that cannot be bought and a gate on every screen.
+- **WHAT WENT.** (1) **Every gate**: 27 `if(!isPremiumActive())` guards in four shapes (own line, inline, spread over
+  braces, brace-less one-liner), the Discover tab's refusal, the pinned-artists bubble, the theme tile's lock and FREE
+  tag, the Sandbox PRO toggles, word-by-word lyrics, the PRO scroll pace, the boot library view, the background
+  discovery fetches and the Quick actions Discover button. (2) **The Premium surface**: the tab, the whole pane (plan
+  cards, gift-code box, paste-a-license-key box, transfer copy, cancel/remove buttons), the settings-dropdown option,
+  `SETTINGS_TABS`/`LABELS`, the quick-action meta and the assistant's tab list. (3) **The money**: `isPremiumActive`,
+  `getPremiumInfo`, `setPremiumActive`, `clearPremium*`, `PREMIUM_HMAC_KEY_B64`, `verifyPremiumCode`, `b64ToBytes`,
+  `bytesToB62`, the whole `LICENSE_CONFIG` + licence module (`licensePost`, `activateLicenseKey`, `revalidateLicense`,
+  `releaseLicenseActivation`, `licenseShaped`, `licenseInstanceOfThisStore`, `offerLicenseOrPlayStore`, `openExternal`),
+  `PLAY_SUBSCRIPTION_PRODUCT_ID`, `PLAY_LIFETIME_PRODUCT_ID`, `PLAY_SUB_GRACE_MS`, `syncPlayEntitlement`,
+  `nativePurchasesAvailable`, `purchasePlaySubscription`, `purchasePlayLifetime`, `refreshPremiumUI`, `initPremiumTab`,
+  `openPremiumSettings`, and the published hooks `__scIsPremium` / `__scGrantPremium` / `__scLicenseRedeem` /
+  `__scLicenseCheck` / `window.isPremiumActive` / `window.openPremiumSettings` / `window.syncPlayEntitlement`.
+  (4) **Premium in the backup**: `buildPremiumPayload`, the manifest's `premium` field and the import-side restore, plus
+  the export-confirm checkbox. An old `.zip` that still has the field is ignored on the way back in.
+- **THE GATES ASSERT THE ABSENCE, WHICH IS A STRONGER CLAIM THAN THE ONE THEY MADE.** `dev/test-705.mjs` now carries the
+  invariant list: `isPremiumActive`, `sidecut_premium`, `LICENSE_CONFIG`, `PREMIUM_HMAC_KEY_B64`, `PREMIUM_STORAGE_KEY`,
+  `activateLicenseKey`, `revalidateLicense`, `licensePost`, `buildPremiumPayload`, `manifest.premium`,
+  `syncPlayEntitlement`, both Play product ids, `__scGrantPremium`, `__scIsPremium`, `__scLicenseRedeem`, `premium:true`,
+  `data-act="openpremium"`, `isPro(`, `proOnly(`, `premiumStudioHtml` and the Premium pane's three ids must all count
+  **zero** in `index.html`. The same list is repeated as `mustNot()` inside `dev/patch-7013.mjs`, which refuses to write
+  if any of them survived. **A comment counts as an appearance** - the first run failed on this file's own bridge
+  comment naming `__scIsPremium`, which is why that comment now says "the ask and the mint" instead.
+- **WHAT HAD TO SURVIVE IT: DONATE.** The tip tiers, their product map, the Play sheet and the tab are untouched - a tip
+  unlocks nothing on purpose, which is exactly right now that nothing is locked. The one thing added is a **route out
+  for a copy that cannot bill**: the APK and the browser used to get a sentence about Google Play and nothing to click,
+  and they now open the Play listing, because that install is still the only place a tip can be made. **This is the
+  piece that is not finished**: donations still cannot be given on the APK itself, and the fix is a web donate link
+  (see the 70.1.4 note below).
+- **THE 201st BADGE.** The wall is still 201 tiles with the same five reward rows; the last one was the table's only
+  reward with a side effect (a grant of Premium) and it is `kind: 'complete'` - "The whole wall" - now. `grantRewards`
+  still runs on every evaluation of the count and still records `LS.reward` under its original storage key
+  `sidecut_reward_premium` (renaming it would re-celebrate for everyone who already finished the wall, which is worse
+  than the word staying in one constant).
+- **TWO SUB-AUTHORING BUGS THIS RELEASE FOUND IN ITSELF, BOTH SILENT.** (1) **A `cut()` whose `from` IS a closing
+  brace**: the gift-code/licence deletion started at `  }  // base64 -> Uint8Array` (the line that closes
+  `purchasePlayTip`) and deleted it, so the IIFE sixty lines above lost its end and **four gates died on the same
+  parse error**. Fixed by putting the brace back in `opts.keep`, and the lesson is in the code comment. (2) **A sub that
+  drops the trailing newline of its anchor joins two lines, and the join parses** - eleven of them, none visible in a
+  green test run. `sub()` now refuses `oldStr` ending in `\n` with a `newStr` that does not (unless `newStr` is empty,
+  which is a whole block coming out and SHOULD take its newline with it). Both are the same family as 70.1's three.
+- **A GATE-READING LESSON.** `dev/test-705.mjs`'s `count()` takes ONE argument and reads `index.html`; the two-argument
+  call `count(src, x)` that 70.1 wrote was a **tautology** (`src.split(src).length - 1` is always 1), so a check meant to
+  fail could not. The new rules use the one-argument form.
+- **`dev/patch-7013.mjs` / `dev/repin-7013.mjs`** (70.1.3 -> 7013): `APP_VERSION` **70.1.2 -> 70.1.3**, stamp
+  `September 29, 2026 \u00b7 7:54 PM EDT` (built 23:54 UTC = 7:54 PM EDT), shell cache `v63.0.38 -> v63.0.39`, a 6-note
+  changelog head, **141 edits**. `repin-7013` is the usual sweep (**22 edits across 19 files**) and still SKIPS
+  `dev/test-705.mjs`. **`--check` here reads the version rather than carrying a `key` on ninety subs**: on a tree already at
+  70.1.3 it says so and exits 0. On a tree that is not, it names every anchor that moved, which is how this release was
+  built.
+- **Five older gates pinned the paywall and were repointed, not deleted:** `test-663` (the `showSettingsTab` fold now
+  includes `|| tab === 'premium'`), `test-6641` (`[3]` is "every animated theme is free now" - all fourteen present,
+  `premium:true` count zero, no lock left), `test-6642` and its own copy inside `test-6641` (eight tabs, Donate third,
+  More last, and both `$('settingsPanePremium')` anchors moved to `Expand`), and `test-66422/66423/66424/66425/66426`
+  (the accent-fill count `>= 15` -> `>= 14`: the fill it lost was on the **Cancel subscription** button in the pane).
+- **`index.html` also still carries the word "premium" in history and in one constant** (the changelog's older entries,
+  `LS.reward = 'sidecut_reward_premium'`, and two "this used to be" comments). That is deliberate - the wall keeps its
+  past, and a storage key is not a paywall.
+
+
 ## 70.1.2 (Sep 29, 2026): Studio grows up, and Premium gets something to be
 - **The user's words**, the two asks left over from the same message as 70.1.1: "add more features to studio" and "make
   their an actual reason to get SideCut premium".

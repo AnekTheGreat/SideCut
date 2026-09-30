@@ -738,7 +738,7 @@ const realErrors = (errors) => errors.filter((e) =>
        'at 50, 100, 150, 200 and 201 (' + rw.map((r) => r.at).join(',') + ')');
     ok(rw.slice(0, 4).every((r) => r.kind === 'theme'), 'the first four are themes');
     ok(rw[3].key === 'vortex' && rw[3].dynamic === true, 'the 200 one is the dynamic Vortex');
-    ok(rw[4].kind === 'premium', 'and 201 is SideCut Premium');
+    ok(rw[4].kind === 'complete', 'and 201 is the finished wall');
 
     // ---- every reward lands when the wall fills ----
     const sim = doc.querySelector('#studioView [data-act="devsim"]');
@@ -749,10 +749,9 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(win.SC70.rewards().every((r) => r.earned), 'every reward row is earned');
     ['cinder', 'quartz', 'lumen', 'vortex'].forEach((k) =>
       ok(win.SC70.themeUnlocked(k) === true, k + ' unlocks with the badges'));
-    ok(win.isPremiumActive() === true, 'and 201 badges grant SideCut Premium, free');
-    const prem = JSON.parse(win.localStorage.getItem('sidecut_premium') || 'null');
-    ok(prem && prem.gifted === true && prem.source === 'badges',
-      'recorded as a gift from the badges, not a purchase');
+    ok(typeof win.isPremiumActive === 'undefined', 'and there is no entitlement for it to mint');
+    ok(win.localStorage.getItem('sidecut_premium') === null,
+      'and nothing is recorded, because there is nothing to lock');
 
     // ---- the app's Theme tab asks the wall, live ----
     ok(typeof win.__scRewardThemeUnlocked === 'function', 'the Theme tab has a gate to ask');
@@ -793,7 +792,8 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(!!reset, 'dev mode can reset its own state');
     reset.click();
     await wait(80);
-    ok(win.isPremiumActive() === true, 'a badge reset does not take the earned Premium back');
+    ok(win.SC70.rewards().length === 5 && win.localStorage.getItem('sidecut_premium') === null,
+      'and a badge reset has no entitlement left to take back');
     ok(win.localStorage.getItem('sidecut_achievements') !== null || win.SC70.unlockedCount() >= 1,
       'but the badges and counters really are cleared');
 
@@ -825,66 +825,6 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(win.SC70.measureDock() === false, 'and a 4000px dock is refused as nonsense');
     ok(!doc.documentElement.classList.contains('sc-dock-measured'), 'falling back to the arithmetic');
     strip.getBoundingClientRect = real;
-  }
-
-  console.log('[11c] a license key bought on the web unlocks without Google Play');
-  {
-    // 70.1 - "APK payment: License key + web checkout". jsdom has no store on the
-    // other end, so fetch is stubbed with the answers the store really gives
-    // (checked against the live API: a refusal is a 404 with {"valid":false,
-    // "error":"license_key not found."} in the body). What is driven is the rule
-    // that matters: a real answer unlocks, a refusal does not, and a store that
-    // cannot be reached never takes anything away.
-    ok(!!doc.querySelector('#premiumLicenseInput'), 'the paste-a-key box is in the pane');
-    ok(!!doc.querySelector('#premiumLicenseBtn'), 'with a button to redeem it');
-    ok(!!doc.querySelector('#premiumLicenseBuyBtn'), 'and a button that opens the checkout');
-    // typeof, not instanceof Function: the app runs in the jsdom realm, so its
-    // functions are not instances of this file's Function.
-    ok(typeof win.__scLicenseRedeem === 'function' && typeof win.__scLicenseCheck === 'function',
-      'and the path is reachable for a probe');
-    const realFetch = win.fetch;
-    const KEY = '38b1460a-5104-4067-a91d-77b872934d51';
-    let sent = null;
-    win.localStorage.removeItem('sidecut_premium');
-    const answer = (data) => { win.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) }); };
-    const refuse = (msg) => { win.fetch = (url, opts) => { sent = { url: url, body: String(opts && opts.body) };
-      return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({ valid: false, activated: false, error: msg, license_key: null, instance: null, meta: null }) }); }; };
-    refuse('license_key not found.');
-    const shape = await win.__scLicenseRedeem('SC-WPd5Wafj-YFdlBz3Z');
-    ok(shape.ok === false && shape.reason === 'shape', 'a gift code is not handed to the store as a key');
-    ok(sent === null, 'and the store is never asked about it');
-    const bad = await win.__scLicenseRedeem('00000000-0000-0000-0000-000000000000');
-    ok(bad.ok === false && bad.reason === 'refused', 'a key the store refuses does not unlock');
-    ok(win.isPremiumActive() === false, 'and premium stays off');
-    ok(!!sent && /\/licenses\/activate$/.test(sent.url), 'the key is handed to the activate endpoint');
-    ok(/license_key=0/.test(sent.body) && /instance_name=SideCut\+/.test(sent.body),
-      'with the key and this device named as the activation');
-    ok(!/api[-_]?key=/i.test(sent.body), 'and with no secret of ours anywhere in the request');
-    win.fetch = () => Promise.reject(new Error('offline'));
-    const offline = await win.__scLicenseRedeem(KEY);
-    ok(offline.ok === false && offline.reason === 'offline', 'a store that cannot be reached does not unlock');
-    ok(win.isPremiumActive() === false, 'and does not unlock by accident either');
-    answer({ activated: true, error: null, license_key: { id: 1, status: 'active', activation_limit: 3 },
-      instance: { id: 'inst-1', name: 'SideCut node 3f9a2b' },
-      meta: { store_id: 1, product_id: 2, customer_email: 'buyer@example.com' } });
-    const good = await win.__scLicenseRedeem(KEY);
-    ok(good.ok === true, 'a key the store activates unlocks');
-    ok(win.isPremiumActive() === true, 'premium is on');
-    const rec = JSON.parse(win.localStorage.getItem('sidecut_premium') || '{}');
-    ok(rec.plan === 'license' && rec.code === KEY, 'as a license key, kept so it can move to the next phone');
-    ok(rec.instance === 'inst-1', 'and with the activation the store handed back');
-    rec.checked = 0;
-    win.localStorage.setItem('sidecut_premium', JSON.stringify(rec));
-    win.fetch = () => Promise.reject(new Error('offline'));
-    ok((await win.__scLicenseCheck()) === false, 'a re-check that cannot reach the store returns nothing');
-    ok(win.isPremiumActive() === true, 'and a paying user keeps what they paid for');
-    answer({ valid: false, error: 'license_key not found.', license_key: null, instance: null, meta: null });
-    ok((await win.__scLicenseCheck()) === true, 'and a key the store no longer knows is checked');
-    ok(win.isPremiumActive() === false, 'which locks it, the way a refund should');
-    answer({ valid: true, error: null, license_key: { status: 'active' }, instance: null, meta: {} });
-    win.localStorage.setItem('sidecut_premium', JSON.stringify({ active: true, plan: 'license', code: KEY, instance: 'inst-1', checked: 0 }));
-    ok((await win.__scLicenseCheck()) === true && win.isPremiumActive() === true, 'and a renewed key stays unlocked');
-    if(realFetch) win.fetch = realFetch; else delete win.fetch;
   }
 
   console.log('[11d] a badge that reaches its goal shows up on the wall');
@@ -928,12 +868,12 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(hero() !== 'STALE', 'and opening Studio redraws it rather than trusting the last paint');
   }
 
-  console.log('[11e] the sleep timer stops the music, the practice loop only loops on Premium');
+  console.log('[11e] the sleep timer stops the music, and the loops and presets just work');
   {
-    // 70.1.2 - "add more features to studio" and "make their an actual reason to
-    // get SideCut premium". Both halves driven: the free timer really pauses when
-    // the song ends, and the paid loop really refuses to run until Premium is on
-    // and really seeks back to A when it is.
+    // 70.1.2 - "add more features to studio", and 70.1.3 - "Remove premium make
+    // everything free keep donations". Driven here: the timer really pauses when
+    // the song ends, and the loop really seeks back to A with no entitlement to
+    // ask for first.
     ok(typeof win.SC70.setSleep === 'function' && typeof win.SC70.practiceRun === 'function',
       'the new tools are on the module surface');
     ok(!!doc.querySelector('#studioView [data-tool="sleep"]') && !!doc.querySelector('#studioView [data-tool="practice"]'),
@@ -959,22 +899,16 @@ const realErrors = (errors) => errors.filter((e) =>
     win.SC70.setSleep('off');
     ok(win.SC70.sleep().mode === '', 'and it can be cancelled');
     // --- the paid half: the practice loop
-    win.localStorage.removeItem('sidecut_premium');
-    ok(win.SC70.isPro() === false, 'Premium is off');
     audio.currentTime = 12;
     win.SC70.practiceMark('a');
     audio.currentTime = 20;
     win.SC70.practiceMark('b');
     ok(win.SC70.practice.a === 12 && win.SC70.practice.b === 20, 'the loop can be set to a section');
-    win.SC70.practiceRun();
-    ok(win.SC70.practice.on === false, 'and it does not loop without Premium');
-    win.__scGrantPremium({ plan: 'lifetime' });
-    ok(win.SC70.isPro() === true, 'Premium granted, and Studio sees it through the app');
     // The loop only steps while the element says it is playing, and jsdom is
     // never playing anything, so this is the one thing that has to be forced.
     Object.defineProperty(audio, 'paused', { get: () => false, configurable: true });
     win.SC70.practiceRun();
-    ok(win.SC70.practice.on === true, 'now it loops');
+    ok(win.SC70.practice.on === true, 'and it loops with nothing to unlock');
     audio.currentTime = 21;
     await wait(320);
     ok(audio.currentTime >= 12 && audio.currentTime < 20, 'and it really pulled playback back to the start of the section (' + audio.currentTime + ')');
@@ -994,12 +928,8 @@ const realErrors = (errors) => errors.filter((e) =>
     win.SC70.myPresets().length = 0;
     win.SC70.fx.rate = 0.9; win.SC70.fx.reverb = 0.4; win.SC70.fx.karaoke = 0;
     const beforeCount = win.SC70.myPresets().length;
-    win.localStorage.removeItem('sidecut_premium');
     win.SC70.saveMyPreset();
-    ok(win.SC70.myPresets().length === beforeCount, 'a preset is not saved without Premium');
-    win.__scGrantPremium({ plan: 'lifetime' });
-    win.SC70.saveMyPreset();
-    ok(win.SC70.myPresets().length === beforeCount + 1, 'and is saved with it');
+    ok(win.SC70.myPresets().length === beforeCount + 1, 'a preset saves with nothing to ask for');
     const saved = win.SC70.myPresets()[win.SC70.myPresets().length - 1];
     win.SC70.fx.rate = 1.2; win.SC70.fx.reverb = 0.1;
     win.SC70.useMyPreset(saved.id);

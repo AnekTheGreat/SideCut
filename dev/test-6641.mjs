@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '70.1.2'; /* repinned by dev/repin-7012.mjs */ /* repinned by dev/repin-7011.mjs */ /* repinned by dev/repin-701.mjs */ /* repinned by dev/repin-709.mjs */ /* repinned by dev/repin-708.mjs */ /* repinned by dev/repin-707.mjs */ /* repinned by dev/repin-706.mjs */ /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
+const VER = '70.1.3'; /* repinned by dev/repin-7013.mjs */ /* repinned by dev/repin-7012.mjs */ /* repinned by dev/repin-7011.mjs */ /* repinned by dev/repin-701.mjs */ /* repinned by dev/repin-709.mjs */ /* repinned by dev/repin-708.mjs */ /* repinned by dev/repin-707.mjs */ /* repinned by dev/repin-706.mjs */ /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -98,44 +98,45 @@ console.log('[2] the crop sheet can be listened through');
   ok(count('cropScrubSetUI(') >= 3, 'the clock and the playhead are kept in step in one place');
 }
 
-console.log('[3] which animated themes are premium');
+console.log('[3] every animated theme is free now');
 {
-  const free = [
+  // 70.1.3 - "Remove premium make everything free keep donations". v64.1 drew a
+  // line through this list: five animated themes were free and nine were sold
+  // with a lock on the tile. The line is gone, so what is checked now is that
+  // all fourteen are still there and that none of them carries the flag.
+  const animated = [
     ["rgb:true  },", 'RGB'],
     ["rgb:true, rgbPlus:true  },", 'RGB +'],
     ["coral:'#FF8A5C', gold:'#FFC46B', dynamic:'ember'", 'Ember'],
     ["coral:'#B084F5', gold:'#8FD0FF', dynamic:'galaxy'", 'Galaxy'],
     ["coral:'#A6E8FF', gold:'#E8F7FF', dynamic:'glacier'", 'Glacier'],
+    ["dynamic:'aurora'", 'Aurora'],
+    ["dynamic:'synthwave'", 'Synthwave'],
+    ["dynamic:'ocean'", 'Deep Ocean'],
+    ["dynamic:'cyberpunk'", 'Cyberpunk'],
+    ["dynamic:'nebula'", 'Nebula'],
+    ["dynamic:'neonpulse'", 'Neon Pulse'],
+    ["dynamic:'solstice'", 'Solstice'],
+    ["dynamic:'abyss'", 'Abyss'],
+    ["dynamic:'orchid'", 'Orchid'],
   ];
-  const paid = [
-    ["premium:true, dynamic:'aurora'", 'Aurora'],
-    ["premium:true, dynamic:'synthwave'", 'Synthwave'],
-    ["premium:true, dynamic:'ocean'", 'Deep Ocean'],
-    ["premium:true, dynamic:'cyberpunk'", 'Cyberpunk'],
-    ["premium:true, dynamic:'nebula'", 'Nebula'],
-    ["premium:true, dynamic:'neonpulse'", 'Neon Pulse'],
-    ["premium:true, dynamic:'solstice'", 'Solstice'],
-    ["premium:true, dynamic:'abyss'", 'Abyss'],
-    ["premium:true, dynamic:'orchid'", 'Orchid'],
-  ];
-  for (const [needle, name] of free) ok(has(needle), name + ' is free');
-  for (const [needle, name] of paid) ok(has(needle), name + ' is premium only');
-  // No free theme may carry the flag, and no premium one may have lost it: the
-  // five free entries are the only animated entries without `premium:true`.
-  for (const [needle, name] of free) {
-    const line = src.slice(src.indexOf(needle) - 10, src.indexOf(needle));
+  for (const [needle, name] of animated) ok(has(needle), name + ' is still in the theme list');
+  ok(count('premium:true') === 0, 'and not one of them is sold any more (' + count('premium:true') + ' flag(s))');
+  // The flag is what put a lock on the tile, so the flag is what is looked for
+  // on every entry rather than on the nine that used to carry it.
+  for (const [needle, name] of animated) {
+    const line = src.slice(src.indexOf(needle) - 60, src.indexOf(needle));
     ok(line.indexOf('premium') === -1, name + ' carries no premium flag (' + line.trim().slice(-24) + ')');
   }
-  ok(has('every static theme, plus five of the animated ones: RGB, RGB +, Ember, Galaxy and Glacier.'),
-    'the premium page says what free keeps');
-  ok(has('nine animated themes (Aurora, Synthwave, Deep Ocean, Cyberpunk, Nebula, Neon Pulse, Solstice, Abyss, Orchid)'),
-    'and names the nine premium adds');
   ok(count('Avoid the <b>RGB</b>, <b>RGB+</b>, and every animated <b>dynamic theme</b>') === 2,
     'both seizure warnings name every animated theme');
   ok(has('Orchid) ' + String.fromCodePoint(0x2014) + ' the Theme tab lists all of them under Dynamic themes.'),
     'including the ones a photosensitive user must not open by accident');
-  // The lock is what enforces it, and it reads the flag.
-  ok(has('if(th.premium && !isPremiumActive()){'), 'the Theme tab still locks a premium theme');
+  // The lock is what enforced the split, and there is no lock left to enforce.
+  ok(count('if(th.premium && !isPremiumActive()){') === 0 && count('isPremiumActive') === 0,
+    'the Theme tab still locks a premium theme');
+  ok(has('Every switch in Sandbox is on for everyone.'),
+    'and the Sandbox page still divides its own list in two');
 }
 
 console.log('[4] a greeting is answered as a greeting');
@@ -203,11 +204,13 @@ console.log('[5] the pinned-artist rail cannot come back empty');
 
 console.log('[6] Settings is back in the order and the shape it had');
 {
-  const order = ['settingsTabPremium', 'settingsTabExpand', 'settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
+  // 70.1.3 removed the Premium tab, so the strip is eight tabs and the names
+  // that follow it each moved one place to the left.
+  const order = ['settingsTabExpand', 'settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
     'settingsTabSandbox', 'settingsTabSupport', 'settingsTabWidget', 'settingsTabMore']
     .map((id) => src.indexOf('id="' + id + '"'));
-  ok(order.every((i) => i !== -1), 'all nine tabs are present');
-  ok(order.every((v, i) => i === 0 || order[i - 1] < v), 'and the strip runs Premium, Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, More (More last)');
+  ok(order.every((i) => i !== -1), 'all eight tabs are present');
+  ok(order.every((v, i) => i === 0 || order[i - 1] < v), 'and the strip runs Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, More (More last)');
   const heads = ['This build and help', 'Playback', 'History and extras'].map((t) => src.indexOf('>' + t + '</div>'));
   ok(heads.every((i) => i === -1), 'the group headings 64.1 added inside More are gone');
   const card = src.indexOf('<!-- Diagonal / Single button toggle -->');
