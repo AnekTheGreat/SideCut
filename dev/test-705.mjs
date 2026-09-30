@@ -61,7 +61,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v63.0.40';
+const SHELL_CACHE = 'sidecut-shell-v63.0.45';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -317,6 +317,25 @@ console.log('\n[6] the styles');
      'or the tip tiers it is built on');
   ok(count('donate-quick') >= 12 && count('PAYMENT_CONFIG.playStoreListing') >= 2,
      'or the tip buttons, or the route out for a copy that cannot bill');
+  // 70.1.9. A copy that cannot bill is not sent away any more: the amounts with a
+  // hosted card page open it. Structural, because the links themselves are
+  // settings - what has to be true is that the route exists, that the fallback
+  // branch is the one that takes it, that the amount the user tapped is the one
+  // that travels with the link, and that an amount with no page keeps the route
+  // the earlier release left it.
+  ok(count('function donateUrlFor(') === 1 && count('function donateTierList(') === 1,
+     'a copy that cannot bill has no card page to open');
+  ok(count("const web = SC_IS_PLAY ? '' : donateUrlFor(amt);") === 1 &&
+     count('runTip(sku, amt);') === 1 && count('async function runTip(sku, amt){') === 1,
+     'or the tip that cannot be billed never asks for that link');
+  ok(count("const web = SC_IS_PLAY ? '' : donateUrlFor(amt);") === 1 &&
+     count("const tierList = SC_IS_PLAY ? '' : donateTierList();") === 1,
+     'and the copy installed from Google Play never leaves Billing for one');
+  ok(count('if(promise && !SC_IS_PLAY){') === 1 && count("const promise = $('donatePromise');") === 1,
+     'with the pane naming a card page only where one exists');
+  ok(count('donateLinks: {') === 1 && count('PAYMENT_CONFIG.donateLinks') >= 2 &&
+     count("return base.split('{amt}').join(String(n));") === 1,
+     'or an amount without a page of its own has nowhere to go');
   // 70.0.9. The lift is measured, not guessed - and the fallback is the guess.
   ok(count('html.sc-dock-measured #nowPlaying{ bottom: var(--sc-dock-real') === 1,
      'the measured lift is not the last word on the player position');
@@ -515,6 +534,89 @@ console.log('\n[10] what the earlier releases shipped is still standing');
     const last = (r.o.trim().split('\n').filter(Boolean).pop() || '(no output)');
     ok(r.c === 0, what + ' (' + file + ': ' + last + ')');
   });
+}
+
+console.log('\n[10b] the streak, the album cover, the search box and the sheet');
+{
+  // 70.1.5. Four reported defects, one rule each. The streak rules are the
+  // whole point: the failure was a restore that wrote the meta row and never
+  // handed it to the running session, so BOTH paths in have to be asserted,
+  // not just the presence of the row.
+  ok(count('function scAdoptLiveStats(') === 1 && count('scAdoptLiveStats(manifest.stats);') === 1 &&
+     count('scAdoptLiveStats(state.meta);') === 1,
+     'a restored listening streak is handed to the running session, both ways in');
+  ok(count('function albumCoverModal(') === 1 && count('function applyAlbumCover(') === 1 &&
+     count('alb-cover-btn') >= 1,
+     'an album cover can be changed from its card');
+  ok(count('searchClearBtn') >= 3 &&
+     count('#searchInput:not(:placeholder-shown) + #searchClearBtn') === 1,
+     'the library search box has a clear button the field itself shows');
+  ok(count('width:440px; max-width:calc(100vw - 32px)') === 1,
+     'the Add songs sheet is wide enough for its five buttons');
+}
+
+console.log('\n[10c] the select bar and the Discover search row');
+{
+  // 70.1.6. Both are layout, and jsdom measures every element as 0, so what is
+  // asserted here is the stylesheet and the class the script has to emit. The
+  // real-app probe drives both rows; this is the static half of the same claim.
+  ok(count('pane-header.select-bar') === 4 &&
+     count("header.className = 'pane-header' + (selectMode ? ' select-bar' : '')") === 1,
+     'the select bar keeps its label on one line and wraps its seven buttons');
+  ok(count('id="discoverSearchWrap"') === 1 &&
+     count('#discoverSearch:not(:placeholder-shown) + #discoverSearchClear') === 1,
+     'the Discover field and its clear button are one control');
+  ok(count('#discoverSearchRow #discoverSearchBtn{ flex:0 0 auto; }') === 1,
+     'and the Search button no longer takes the field width');
+}
+
+console.log('\n[10d] the DJ Mode loop controls');
+{
+  // 70.1.7. Every one of these is a hole that made a loop control do nothing:
+  // a guard that needed a live sound source, a window that only ever existed on
+  // the node, a playhead that walked out of the loop, and a hold the browser
+  // could cancel. The audio half cannot run here (no Web Audio in a text gate),
+  // so this is the code shape and the real-app probe drives the resting state.
+  ok(count('function applyDeckLoop(') === 1 && count('function armDeckLoop(') === 1 &&
+     count('function clearDeckLoop(') === 1 && count('    loop: null,         // { start, end } or null') === 1,
+     'the loop window is armed on the deck, not only on the sound source');
+  ok(count('if(!deckEngine.buffer || !deckEngine.node){ toast') === 0 &&
+     count('if(!deckEngine.buffer || !deckEngine.running || !deckEngine.node) return;') === 0,
+     'and neither the LOOP button nor a beat pad needs a live node any more');
+  ok(count('pos = lp.start + (pos - lp.start) % span;') === 1,
+     'the playhead is folded back into the loop instead of walking out of it');
+  ok(count('btn.setPointerCapture(e.pointerId)') >= 1 &&
+     count("['pointerup','pointercancel'].forEach(ev => btn.addEventListener(ev, () => {") === 1 &&
+     count("['pointerup','pointercancel','pointerleave'].forEach(ev => btn.addEventListener(ev, () => {") === 0,
+     'a held pad keeps the pointer and ends only when the finger is released');
+  ok(count('.beat-pad, .fx-pad, .drum-pad, .hotcue-btn{ touch-action:none; }') === 1,
+     'and the pads own the touch so a scrolling sheet cannot cancel the hold');
+}
+
+console.log('\n[10e] SAVE COPY in DJ Mode');
+{
+  // 70.1.8. The claim is that a DJ copy is the song with the deck's own sound on
+  // it, as a NEW song. What a text gate can hold: the button exists, the render is
+  // offline, every baked value is read from a live node, and the result goes in
+  // through the same helper a finished conversion uses. The audio itself cannot be
+  // rendered here (no Web Audio in jsdom) - the probe drives the resting state.
+  ok(count('id="djCopyBtn"') === 1 && count('async function saveDjCopy(') === 1,
+     'the DJ deck has a SAVE COPY button that is really wired');
+  ok(count('const octx = new Offline(chCount') === 1 &&
+     count('const rendered = await octx.startRendering();') === 1,
+     'and it renders the song offline rather than recording it in real time');
+  ok(count('src.playbackRate.value = state.rate;') === 1 &&
+     count('src.detune.value = state.detune;') === 1 &&
+     count('if(node.detune) detune = node.detune.value || 0;') === 1,
+     'the copy is the speed the deck is really playing, detune included');
+  ok(count('const liveFilter = deckEngine.filterNode;') === 1 &&
+     count('(eqNodes[0] || []).forEach') === 1 &&
+     count('conv.buffer = rv.convolver.buffer;') === 1 &&
+     count('const liveLimiter = limiterNodes[0];') === 1,
+     'and every baked value is read from the live chain, not the knobs');
+  ok(count('scAddConvertedToLibrary(blob, meta, { fmt: \'mp3\', source: \'djmode\' })') === 1 &&
+     count(" + ' (DJ edit)';") === 1,
+     'the copy lands in the library as its own song, and the original is never written');
 }
 
 console.log('\n[11] the file still holds together');

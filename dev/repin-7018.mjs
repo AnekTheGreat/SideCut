@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * 70.1.5 - the repin sweep.
+ * 70.1.8 - the repin sweep.
  *
- * Same shape as dev/repin-7014.mjs, and for the same reason: every gate written
+ * Same shape as dev/repin-7017.mjs, and for the same reason: every gate written
  * before this release pinned the build it was written against, so a release that
  * moves APP_VERSION breaks it for no reason at all. Three mechanical moves:
  *
- *   A. `const VER = '70.1.4';` becomes the new build.
- *   B. `version: '70.1.4'` becomes the new head, for the gates that read the
+ *   A. `const VER = '70.1.7';` becomes the new build.
+ *   B. `version: '70.1.7'` becomes the new head, for the gates that read the
  *      changelog's first line as text rather than reading the array.
  *   C. the shell cache literal becomes the name this release ships.
  *
@@ -15,8 +15,8 @@
  * 70.0.5 gate: it DESCRIBES that release while it runs on whatever the app is
  * now. Only its shell-cache pin moves (C), because that one is about sw.js.
  *
- *   node dev/repin-7015.mjs            # apply
- *   node dev/repin-7015.mjs --check    # report only
+ *   node dev/repin-7018.mjs            # apply
+ *   node dev/repin-7018.mjs --check    # report only
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,10 +27,10 @@ const ROOT = process.env.SC_ROOT
 const DEV = path.join(ROOT, 'dev');
 const CHECK = process.argv.includes('--check');
 
-const OLDVER = '70.1.4';
-const NEWVER = '70.1.5';
-const OLDCACHE = 'sidecut-shell-v63.0.40';
-const NEWCACHE = 'sidecut-shell-v63.0.41';
+const OLDVER = '70.1.7';
+const NEWVER = '70.1.8';
+const OLDCACHE = 'sidecut-shell-v63.0.43';
+const NEWCACHE = 'sidecut-shell-v63.0.44';
 
 // The gate that describes 70.0.5 keeps its own version pins.
 const KEEPS_ITS_VERSION = new Set(['test-705.mjs']);
@@ -50,7 +50,7 @@ for (const name of fs.readdirSync(DEV).sort()) {
     // A. the build pin
     const pin = new RegExp("const VER = '" + esc(OLDVER) + "';", 'g');
     if (pin.test(src)) {
-      src = src.replace(pin, "const VER = '" + NEWVER + "'; /* repinned by dev/repin-7015.mjs */");
+      src = src.replace(pin, "const VER = '" + NEWVER + "'; /* repinned by dev/repin-7018.mjs */");
       n++;
     }
     // B. a literal pin on the head ENTRY (a gate reading the changelog's first line)
@@ -76,7 +76,7 @@ for (const name of fs.readdirSync(DEV).sort()) {
 }
 
 report.forEach((l) => console.log(l));
-console.log('\nrepin-7015: ' + edits + ' edit(s) across ' + files + ' file(s)' + (CHECK ? ' (check only)' : ''));
+console.log('\nrepin-7018: ' + edits + ' edit(s) across ' + files + ' file(s)' + (CHECK ? ' (check only)' : ''));
 
 // A stale pin would only be felt as a mystery failure inside some other gate, so
 // the sweep proves it is done: no gate may still name the old build or cache.
@@ -90,7 +90,7 @@ if (!CHECK) {
     if (src.indexOf("{ version: '" + OLDVER + "'") !== -1) stale.push(name + ' head');
   }
   if (stale.length) {
-    console.error('repin-7015: a pin survived: ' + stale.join(', '));
+    console.error('repin-7018: a pin survived: ' + stale.join(', '));
     process.exit(1);
   }
 }

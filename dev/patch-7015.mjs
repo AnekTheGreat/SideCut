@@ -1,42 +1,43 @@
 #!/usr/bin/env node
 /**
- * SideCut 70.1.5 - donations reach the copies Google Play will not sell to.
+ * SideCut 70.1.5 - the four things the user reported, one release.
  *
- * The user's words: "make donations work on the apk".
+ * The user's words: "listening streaks didn't transfer over and in albums add the
+ * option to change the cover picture and in the search bar the actual regular one
+ * there needs to be a clear button. And the add songs button the popup
+ * specifically needs to be wider to not look weird."
  *
- * WHY THE APK COULD NOT DONATE. SideCut ships two Android packages. The `play`
- * flavour is com.SideCut.myapp, the one in the Play listing, and Google Play
- * Billing sells inside it. The `full` flavour is a separate package that Play has
- * never heard of, so Play has no products to offer it and never will: billing
- * inside a sideloaded copy is a lookup that returns nothing, not a permission
- * problem that can be worked around in code. That is a rule of the store, not a
- * bug in the app, and no amount of billing code changes it.
+ * 1. THE STREAK THAT DID NOT COME BACK. This is the real bug, and it is the same
+ * half-a-restore the play counters had in 70.1.4. The day streak is computed from
+ * `listenedDates`, a Set of 'YYYY-MM-DD' strings held in the session AND mirrored
+ * to a meta row. Both restore paths - the backup zip's full-state snapshot
+ * (`__scSnapHydrate`) and its hand-written stats block - wrote the row straight to
+ * storage and never touched the live Set. So an imported streak read as zero, and
+ * worse, the first song played afterwards called recordListeningDay(), which saves
+ * the (still empty) live Set plus today back over the row: the restored history
+ * was destroyed by the next play. `scAdoptLiveStats` hands the restored values to
+ * the session from both paths, and the best-ever streak travels with them.
  *
- * WHAT 70.1.3 DID. Nothing the paywall removal touched - the tip tiers, the Play
- * products and the billing call are all unchanged. It added a route out: a copy
- * that cannot bill is told so and the Play listing is opened, which is honest but
- * is still not a tip. The money only moves after the user installs a different
- * build and comes back.
+ * 2. AN ALBUM COVER YOU CAN SET. An album card drew the cover of its first song
+ * and there was no way to say otherwise. `userAlbums[name].cover` is the override:
+ * a small data URL on the album entry, so it rides in the meta row like the rest
+ * of the album - which is what puts it in the backup zip and the on-device
+ * snapshot, and keeps it across an update. A camera button on every album card
+ * opens a picker: a picture from this device, or the cover of any song the album
+ * already holds. Deliberately NOT a blob URL: those die with the page.
  *
- * WHAT THIS RELEASE DOES. It gives those copies a payment rail that does not go
- * through Google at all: a hosted donation page. `PAYMENT_CONFIG.donateUrl` is
- * the setting, and when it is set a tap on a tier opens it in the browser instead
- * of stopping at a sentence. `{amt}` in the URL is replaced with the tier that
- * was tapped, which is how PayPal.me and Cash App carry a number in the path; a
- * URL without it opens exactly as configured and the page picks the amount up
- * (that is what a Stripe Payment Link set to "let customers choose what they pay"
- * does). With no URL set, the Play listing stays the only route out and the pane
- * behaves exactly as it did in 70.1.3.
+ * 3. A CLEAR BUTTON ON THE LIBRARY SEARCH. The main search box is the one above
+ * the playlist tabs; the only way back to the whole list was holding backspace
+ * down. The X is shown by the stylesheet (:placeholder-shown) rather than by
+ * script, so the several places that empty this field by hand cannot leave it
+ * behind.
  *
- * WHY NOT JUST RESTORE THE PLAY ROUTE. It is still there, underneath, and it is
- * still the fallback. What was missing is a way to actually pay from the copy the
- * user has installed.
+ * 4. THE ADD SONGS SHEET IS WIDE. Five full-width buttons and the note about
+ * export times were laid out in a 240px column, so every label was squeezed and
+ * the note wrapped to a few words a line. It is a real sheet now.
  *
- *   SC_DONATE_URL='https://...' node dev/patch-7015.mjs
- *   SC_DONATE_URL='https://...' node dev/patch-7015.mjs --check   # report only
- *
- * The URL is required rather than defaulted: a release that ships an empty
- * donation route would be indistinguishable from 70.1.3 while claiming not to be.
+ *   node dev/patch-7015.mjs
+ *   node dev/patch-7015.mjs --check   # report only
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,25 +56,23 @@ const VERSION = '70.1.5';
 const PREV = '70.1.4';
 // Eastern is UTC-4 and the DATE rolls back with it (the rule at APP_VERSION).
 // A stamp in the FUTURE is a gate failure (test-6643 allows the next 15 minutes).
-const STAMP = 'September 29, 2026 \u00b7 8:57 PM EDT';
+const STAMP = 'September 30, 2026 \u00b7 7:30 AM EDT';
 const CACHE = 'sidecut-shell-v63.0.41';
 const OLDCACHE = 'sidecut-shell-v63.0.40';
-const TITLE = 'Donations reach the sideloaded APK: a tap on a tip tier opens a card page on the web instead of stopping at the Play listing';
-
-// The one thing this release needs from the outside world: a hosted tip page.
-const DONATE = String(process.env.SC_DONATE_URL || '').trim();
+const TITLE = 'Your listening streak survives a restore, album covers are yours to set, the search box gets a clear button, and the Add songs sheet is wide enough for what is in it';
 
 // Six notes. None carries an apostrophe (a note is emitted into a single-quoted
-// literal), none says "download", none uses "play build", "play version" or "play
-// install" - test-662, test-6642 and test-66421 refuse those - and the set names a
-// surface the 662 surface rule looks for (player, dock, Studio).
+// literal), none says "download" or "convert", and none uses "play build", "play
+// version" or "play install" - test-662, test-6642 and test-66421 refuse those.
+// One of them names a surface the 662 surface rule looks for (player, dock,
+// Studio, premium, license).
 const NOTES = [
-  'Donations work on the APK. Google Play only sells inside the copy Google Play distributed, so the package this repo builds for sideloading had nothing to charge and every tip ended at a sentence telling you to install a different build. A tip there opens a real card page in the browser now, and the money moves.',
-  'The tip tiers mean the same thing everywhere. Tip five dollars on the copy from Google Play and the Play sheet still opens; the same tap on the APK or in a browser opens the donation page, with the amount already set where the page takes one and chosen on the page where it does not.',
-  'The donation page is one setting. It is the donateUrl in the PAYMENT_CONFIG block near the top of the paid-features module, and any hosted page will do: a payment link, a PayPal link or a Cash App link, with the tapped amount dropped into the one placeholder the page understands.',
-  'The browser gets the same route. SideCut in a plain browser tab cannot bill either, so the Donate tab there opens the donation page instead of sending you off to another copy first - which is where a tip from a tab used to end.',
-  'Nothing about the app changes when you tip, and nothing changes if you do not. A tip unlocks nothing on purpose: the player, the dock and the library are the same app whether a tip was made or not, on the APK exactly as on the Play copy.',
-  'Nothing else moved in this release. The badge wall is still two hundred and one tiles with the same five rewards, Studio is untouched, and Donate is still the only thing SideCut asks anybody for.',
+  'Your listening streak comes back with a backup. The streak is the set of days you played something, and a restore wrote that set to storage without handing it to the session that had to use it - so the streak read as zero, and the next song you played saved a one-day set straight over the history that had just been restored. Both halves of the restore now put the live streak back in step.',
+  'The best streak travels with it too. It is kept as its own number so a broken current streak cannot erase your record, and it arrived as zero on a restored library for the same reason. It is read back with the rest of your listening stats now.',
+  'An album cover is yours to set. Album cards used the cover of the first song in them and nothing could change that: there is a camera button on every album card now, and it sets a picture from this device or reuses the cover of any song the album already holds. The same one tap removes it and goes back to the first song.',
+  'The search box has a clear button. Typing in the library search puts an X on the right edge of the field, and one tap empties it and puts your whole list back - no holding backspace down until the box is empty again.',
+  'The Add songs sheet is wide enough for what is in it. Five full-width buttons and the note about export times sat in a narrow column in the middle of the screen, so every label was squeezed and the note wrapped a few words to a line; it is a proper sheet now.',
+  'Nothing else moved. The player, the dock, Studio, the badge wall and Donate are exactly as the last release left them - this one is the four fixes above and nothing more.',
 ];
 
 const problems = [];
@@ -110,109 +109,313 @@ if(CHECK && count(html.text, "const APP_VERSION = '" + VERSION + "';") === 1){
   process.exit(0);
 }
 
-if(!DONATE){
-  problems.push('SC_DONATE_URL is missing - this release exists to ship a donation page, so there is nothing to apply without one');
-} else if(!/^https:\/\/[^\s'\\]+$/.test(DONATE)){
-  problems.push('SC_DONATE_URL must be a plain https URL with no quote, backslash or space in it (got: ' + DONATE + ')');
-} else if(/^https:\/\/(play\.google\.com|buy\.stripe\.com)?\/?$/.test(DONATE)){
-  problems.push('SC_DONATE_URL is not a page (got: ' + DONATE + ')');
-}
+/* ========================= 1. THE STREAK A RESTORE HAS TO HAND TO THE SESSION === */
+// The live values, put back in step with the rows that were just written. Reads the
+// same shape from both callers: a stats block writes manifest.stats and the
+// full-state snapshot writes state.meta, and both carry listenedDates and
+// longestStreak under those names.
+sub(html, 'scAdoptLiveStats',
+  '  function recordListeningDay(){\n',
+  block([
+    '  // 70.1.5. The day streak is this Set plus its meta row. A restore used to',
+    '  // write only the row, which is half a restore twice over: the streak read as',
+    '  // zero in the session that has to show it, and recordListeningDay() then saved',
+    '  // the empty Set plus today back over the row - so the very next song played',
+    '  // destroyed the history that had just been restored. Both restore paths hand',
+    '  // the values they wrote to this, so the live streak is what the backup held.',
+    '  function scAdoptLiveStats(src){',
+    '    if(!src) return;',
+    '    if(Array.isArray(src.listenedDates)) listenedDates = new Set(src.listenedDates);',
+    "    if(typeof src.longestStreak === 'number') longestStreak = src.longestStreak;",
+    '  }',
+    '',
+  ]) + '  function recordListeningDay(){\n',
+  { key: 'function scAdoptLiveStats(' });
 
-/* ============================================ A. THE ROUTE OUT OF THE DONATE TAB */
-// The config block has held one field since 70.1.3 - the Play listing - and this
-// is the second one. It is deliberately last: everything above it is unchanged
-// and the diff should read as one field added.
-sub(html, 'PAYMENT_CONFIG.donateUrl',
-  "    playStoreListing: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',\n" +
-  '  };\n',
-  "    playStoreListing: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',\n" +
-  '    // 70.1.5 - the web route out. Google only sells inside the copy it\n' +
-  '    // distributed, so a copy that came from anywhere else - the sideloaded APK\n' +
-  '    // this repo builds, and a plain browser - had nothing to charge and every\n' +
-  '    // tip ended at "install the Play build", with no tip possible anywhere.\n' +
-  '    // Set this to a hosted donation page and a tap on a tier opens it instead.\n' +
-  '    // `{amt}` is replaced with the tier that was tapped, which is how PayPal.me\n' +
-  '    // and Cash App take a number in the path; a URL without it opens as it is\n' +
-  '    // and the page picks the amount up. Empty keeps the Play listing as the\n' +
-  '    // only route out, exactly as 70.1.3 left it.\n' +
-  "    donateUrl: '" + DONATE + "',\n" +
-  '  };\n',
-  { key: 'donateUrl:' });
+// The backup zip's stats block. Its rows are written a few lines above this call.
+sub(html, 'the import stats hand-off',
+  block([
+    '        if(manifest.stats.longestStreak){',
+    "          dbPut('meta', { key: 'longestStreak', value: manifest.stats.longestStreak });",
+    '        }',
+    '      }',
+  ]),
+  block([
+    '        if(manifest.stats.longestStreak){',
+    "          dbPut('meta', { key: 'longestStreak', value: manifest.stats.longestStreak });",
+    '        }',
+    '        // 70.1.5. The rows are in - now put the LIVE streak in step with them,',
+    '        // or the streak reads as zero and the next play overwrites the history',
+    '        // that was just restored. (The play counters had this same half-restore.)',
+    '        scAdoptLiveStats(manifest.stats);',
+    '      }',
+  ]),
+  { key: 'scAdoptLiveStats(manifest.stats);' });
 
-// The link builder. Kept beside the billing code it stands in for, and tolerant
-// on purpose: an unset URL and a templated URL asked for no amount both come back
-// empty, which is the same "there is no web route" answer the caller branches on.
-sub(html, 'donateUrlFor',
-  '  async function purchasePlayTip(sku){\n' +
-  '    return purchasePlayItem(sku, true);\n' +
-  '  }\n',
-  '  // 70.1.5. The web donation link for a chosen amount. `{amt}` in the configured\n' +
-  '  // URL is replaced with the tier that was tapped - that is how a PayPal.me or a\n' +
-  '  // Cash App link carries a number - and a URL without the placeholder opens\n' +
-  '  // exactly as it was set, with the amount chosen on the page. An empty result\n' +
-  '  // means there is no web route and the caller falls back to the Play listing.\n' +
-  '  function donateUrlFor(amt){\n' +
-  "    const base = String(PAYMENT_CONFIG.donateUrl || '').trim();\n" +
-  "    if(!base) return '';\n" +
-  "    if(base.indexOf('{amt}') === -1) return base;\n" +
-  '    const n = parseInt(amt, 10);\n' +
-  '    if(!isFinite(n) || n <= 0) return \'\';\n' +
-  "    return base.split('{amt}').join(String(n));\n" +
-  '  }\n\n' +
-  '  async function purchasePlayTip(sku){\n' +
-  '    return purchasePlayItem(sku, true);\n' +
-  '  }\n',
-  { key: 'function donateUrlFor(' });
+// And the full-state snapshot, for a zip whose stats block predates the fields it
+// carries. A snapshot restore at boot reloads the page, so this only matters for
+// the import path - which is exactly the path that had the bug.
+sub(html, 'the snapshot hand-off',
+  block([
+    '      if(state.meta){',
+    "        for(var mk in state.meta){ try{ await dbPut('meta', { key: mk, value: state.meta[mk] }); }catch(e){} }",
+    '      }',
+  ]),
+  block([
+    '      if(state.meta){',
+    "        for(var mk in state.meta){ try{ await dbPut('meta', { key: mk, value: state.meta[mk] }); }catch(e){} }",
+    '        // 70.1.5 - the row is not the streak on its own: the session computes it',
+    '        // from the Set. Hand the restored values over with the rows.',
+    '        try{ scAdoptLiveStats(state.meta); }catch(_eSnapStats){ }',
+    '      }',
+  ]),
+  { key: 'scAdoptLiveStats(state.meta);' });
 
-/* ======================================== B. A TAP THE APK CAN ACTUALLY COMPLETE */
-// runTip now carries the amount as well as the product id, because the web route
-// needs the number the user tapped and the Play route does not.
-sub(html, 'runTip signature', '    async function runTip(sku){\n', '    async function runTip(sku, amt){\n',
-  { key: 'async function runTip(sku, amt){' });
+/* ============================================== 2. THE ALBUM COVER YOU CAN SET === */
+// The override and the picker that sets it. Placed with the other album tools.
+sub(html, 'the album cover picker',
+  '  function openAlbumPickerForReorder(){\n',
+  block([
+    '  // 70.1.5. An album card shows the cover of the first song in it, and there was',
+    '  // no way to say otherwise. userAlbums[name].cover is that override: a small',
+    '  // data URL kept on the album entry, so it rides in the meta row like every',
+    '  // other album field - which is what puts it in the backup zip and the',
+    '  // on-device snapshot, and keeps it across an update. A blob URL would not do:',
+    '  // those die with the page, and the cover has to still be there on the next boot.',
+    '  function albumCoverDataUrl(name){',
+    "    try{ return String((userAlbums[name] && userAlbums[name].cover) || ''); }catch(_eAC){ return ''; }",
+    '  }',
+    '  function closeAlbumCover(){',
+    "    const m = document.getElementById('albumCoverBackdrop');",
+    '    if(m) m.remove();',
+    '  }',
+    '  function applyAlbumCover(name, dataUrl){',
+    '    if(!name) return;',
+    '    try{',
+    '      if(!userAlbums[name]) userAlbums[name] = { trackIds: [], createdAt: Date.now() };',
+    '      if(dataUrl) userAlbums[name].cover = dataUrl;',
+    '      else delete userAlbums[name].cover;',
+    "      dbPut('meta', { key: 'userAlbums', value: userAlbums });",
+    '      renderList();',
+    "      toast(dataUrl ? 'Album cover saved.' : 'Back to the cover of its first song.', 2600);",
+    "    }catch(e){ console.error('album cover save failed:', e); toast('Could not save that picture.', 3000); }",
+    '  }',
+    '  // One picture in, one small cover out. Whatever was picked - a camera photo or',
+    '  // a cover already in the library - is drawn to at most 512px on its long edge',
+    '  // and encoded as a JPEG, because this value lives in a meta row that every',
+    '  // backup and every snapshot copy carries. `fallback` is used when the picture',
+    '  // cannot be drawn - a data URL that is already usable is still a cover.',
+    '  function albumCoverFromImage(name, srcUrl, fallback){',
+    '    try{',
+    '      const img = new Image();',
+    '      img.onload = function(){',
+    "        let out = '';",
+    '        try{',
+    '          const s = Math.min(1, 512 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));',
+    '          const w = Math.max(1, Math.round((img.naturalWidth || 512) * s));',
+    '          const h = Math.max(1, Math.round((img.naturalHeight || 512) * s));',
+    "          const cv = document.createElement('canvas');",
+    '          cv.width = w; cv.height = h;',
+    "          cv.getContext('2d').drawImage(img, 0, 0, w, h);",
+    "          out = cv.toDataURL('image/jpeg', 0.78);",
+    "        }catch(_ce){ out = ''; }",
+    '        if(out && out.length > 64) applyAlbumCover(name, out);',
+    '        else if(fallback) applyAlbumCover(name, fallback);',
+    "        else toast('Could not read that picture.', 3000);",
+    '        closeAlbumCover();',
+    '      };',
+    '      img.onerror = function(){',
+    '        if(fallback) applyAlbumCover(name, fallback);',
+    "        else toast('Could not read that picture.', 3000);",
+    '        closeAlbumCover();',
+    '      };',
+    '      img.src = srcUrl;',
+    "    }catch(e){ toast('Could not read that picture.', 3000); }",
+    '  }',
+    '  function albumCoverModal(name){',
+    '    try{',
+    '      if(!name || !userAlbums[name]) return;',
+    '      closeAlbumCover();',
+    '      const cur = albumCoverDataUrl(name);',
+    '      // The cover of any song the album already holds, offered beside the file',
+    '      // picker: the sleeve wanted is usually one that is already in the library.',
+    '      const picks = [];',
+    "      ((userAlbums[name] && userAlbums[name].trackIds) || []).forEach(function(id){",
+    '        const t = allTracks.find(function(x){ return x.id === id; });',
+    '        if(t && t.artUrl && picks.indexOf(t.artUrl) === -1) picks.push(t.artUrl);',
+    '      });',
+    '      const grid = picks.length',
+    "        ? '<div style=\"font-size:12px;color:var(--ink-dim);\">Or use the cover of a song in this album:</div>'",
+    "          + '<div style=\"display:grid;grid-template-columns:repeat(4,1fr);gap:6px;\">'",
+    '          + picks.slice(0, 24).map(function(u, i){',
+    `              return '<div class="alb-cover-pick" data-i="' + i + '" style="width:100%;aspect-ratio:1;border-radius:8px;background-image:url(' + u.replace(/"/g, '&quot;') + ');background-size:cover;background-position:center;border:2px solid ' + (u === cur ? 'var(--coral)' : 'var(--line)') + ';cursor:pointer;"></div>';`,
+    "            }).join('') + '</div>'",
+    "        : '';",
+    "      const modal = document.createElement('div');",
+    "      modal.id = 'albumCoverBackdrop';",
+    "      modal.className = 'modal-backdrop';",
+    "      modal.style.display = 'flex';",
+    `      modal.innerHTML = '<div class="modal" style="gap:12px;">'`,
+    `        + '<h3 style="font-size:15px;margin:0;">Album cover</h3>'`,
+    `        + '<div style="font-size:12px;color:var(--ink-dim);word-break:break-word;">' + escapeHtml(name) + '</div>'`,
+    `        + '<button id="albCoverFile" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink);font-size:13px;cursor:pointer;text-align:left;">&#128247; Choose a picture</button>'`,
+    `        + grid`,
+    `        + (cur ? '<button id="albCoverClear" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;cursor:pointer;">Remove custom cover</button>' : '')`,
+    `        + '<button id="albCoverCancel" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;cursor:pointer;">Cancel</button>'`,
+    `        + '</div>';`,
+    '      document.body.appendChild(modal);',
+    `      const fileBtn = modal.querySelector('#albCoverFile');`,
+    `      if(fileBtn) fileBtn.addEventListener('click', function(){`,
+    "        const input = document.createElement('input');",
+    "        input.type = 'file';",
+    "        input.accept = 'image/*';",
+    "        input.style.display = 'none';",
+    '        document.body.appendChild(input);',
+    `        input.addEventListener('change', function(){`,
+    '          try{',
+    '            if(input.files && input.files[0]){',
+    '              const file = input.files[0];',
+    '              const reader = new FileReader();',
+    "              reader.onload = function(){ albumCoverFromImage(name, String(reader.result || ''), ''); };",
+    "              reader.onerror = function(){ toast('Could not read that picture.', 3000); };",
+    '              reader.readAsDataURL(file);',
+    '            } else if(input.parentNode) input.parentNode.removeChild(input);',
+    '          }catch(_eCF){ }',
+    '        });',
+    '        input.click();',
+    '      });',
+    `      Array.prototype.forEach.call(modal.querySelectorAll('.alb-cover-pick'), function(el){`,
+    `        el.addEventListener('click', function(){`,
+    `          const u = picks[parseInt(el.getAttribute('data-i'), 10)];`,
+    `          if(u) albumCoverFromImage(name, u, '');`,
+    '        });',
+    '      });',
+    `      const clr = modal.querySelector('#albCoverClear');`,
+    `      if(clr) clr.addEventListener('click', function(){ applyAlbumCover(name, ''); closeAlbumCover(); });`,
+    `      const cancel = modal.querySelector('#albCoverCancel');`,
+    `      if(cancel) cancel.addEventListener('click', closeAlbumCover);`,
+    `      modal.addEventListener('click', function(e){ if(e.target === modal) closeAlbumCover(); });`,
+    "    }catch(e){ console.error('album cover picker failed:', e); }",
+    '  }',
+    '',
+  ]) + '  function openAlbumPickerForReorder(){\n',
+  { key: 'function albumCoverModal(' });
 
-sub(html, 'runTip web route',
-  '      // 70.1.3: this is the APK and the browser, which have no Billing at all.\n' +
-  '      // A tip still cannot be made here - but the install that CAN make one is\n' +
-  '      // one tap away, so the message ends in the Play listing instead of a stop.\n' +
-  "      msg.textContent = (reason || 'Tips are processed through Google Play and only work inside the SideCut app installed from Play.') +\n" +
-  "        ' Opening the Play Store so you can install that copy.';\n",
-  '      // 70.1.5: this is the APK built for sideloading and the browser, and this\n' +
-  '      // is the branch that used to end the tip. Google will never sell to a copy\n' +
-  '      // it did not distribute, so the only way a tip can be made here is off the\n' +
-  '      // store entirely - a hosted donation page. With one configured the tap goes\n' +
-  '      // there and the money moves; with none set the Play listing below is still\n' +
-  '      // the route out, exactly as 70.1.3 left it.\n' +
-  '      const web = donateUrlFor(amt);\n' +
-  '      if(web){\n' +
-  "        msg.style.color = 'var(--coral)';\n" +
-  "        msg.textContent = 'Google Play only sells inside the copy it distributed, so this tip is opening the donation page in your browser instead' +\n" +
-  "          (String(PAYMENT_CONFIG.donateUrl).indexOf('{amt}') === -1 ? ' - you can pick the amount there.' : ' for $' + (parseInt(amt, 10) || 0) + '.') +\n" +
-  "          ' Thank you for chipping in.';\n" +
-  "        try{ window.open(web, '_blank', 'noopener'); }catch(_eDon){ }\n" +
-  '        return;\n' +
-  '      }\n' +
-  "      msg.textContent = (reason || 'Tips are processed through Google Play and only work inside the SideCut app installed from Play.') +\n" +
-  "        ' Opening the Play Store so you can install that copy.';\n",
-  { key: 'const web = donateUrlFor(amt);' });
+// The card draws the override when there is one, and the first song's art when
+// there is not - the same fallback order the picker previews.
+sub(html, 'the card cover',
+  "cover: (firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '' };",
+  "cover: (ua.cover || ((firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '')) };",
+  { key: 'cover: (ua.cover || ' });
 
-sub(html, 'the tier hands its amount to runTip',
-  '        runTip(sku);\n', '        runTip(sku, amt);\n',
-  { key: 'runTip(sku, amt);' });
+sub(html, 'the camera on the card',
+  "          + '<span style=\"font-size:11px;color:var(--ink-dim);flex-shrink:0;\">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'\n",
+  "          + '<span style=\"font-size:11px;color:var(--ink-dim);flex-shrink:0;\">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'\n" +
+  "          + '<button class=\"alb-cover-btn\" title=\"Change album cover\" aria-label=\"Change album cover\" style=\"flex-shrink:0;width:28px;height:28px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:12px;line-height:1;cursor:pointer;padding:0;\">&#128247;</button>'\n",
+  { key: 'alb-cover-btn' });
 
-/* ================================================= C. WHAT THE PANE SAYS IT DOES */
-// 70.1.3's copy promised Google Play and nothing else. Both rails are real now, so
-// the pane names both rather than describing the copy the user might not have.
-sub(html, 'the pane promise',
-  'Pick an amount \u2014 Google Play handles the payment.',
-  'Pick an amount \u2014 Google Play takes it inside the copy installed from Play, and a secure card page takes it in every other copy.',
-  { key: 'and a secure card page takes it in every other copy' });
+// The button must not also toggle the card, which is what a click on the header
+// does. The long-press drag already ignores a <button>, so holding it is safe.
+sub(html, 'the camera wiring',
+  "        hdr.addEventListener('click', function(){\n",
+  block([
+    "        var _covBtn = hdr.querySelector('.alb-cover-btn');",
+    '        if(_covBtn){',
+    "          _covBtn.addEventListener('click', function(ev){",
+    '            ev.stopPropagation(); // the camera is not the expand/collapse tap',
+    '            albumCoverModal(aName);',
+    '          });',
+    '        }',
+  ]) + "        hdr.addEventListener('click', function(){\n",
+  { key: 'albumCoverModal(aName);' });
 
-sub(html, 'the pane description',
-  'processed through Google Play. Thank you!',
-  'processed through Google Play inside the copy installed from Play, and through a secure card page everywhere else. Thank you!',
-  { key: 'and through a secure card page everywhere else' });
+/* ==================================== 3. THE CLEAR BUTTON ON THE SEARCH BOX === */
+// Shown by the field itself rather than by script: several places empty this box by
+// hand (an import, a tab change, a fresh pick), and a flag kept by script would be
+// left behind by whichever one forgot. :placeholder-shown is exactly "empty".
+sub(html, 'the clear button css',
+  block([
+    '.add-songs-menu{',
+    '  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200;',
+    '  min-width:240px; max-width:calc(100vw - 32px); padding:10px; gap:6px; flex-direction:column;',
+  ]),
+  block([
+    "/* 70.1.5 - the clear button on the library search box. It is shown by the",
+    "   field's own state, not by script: :placeholder-shown IS \"empty\", so the X",
+    '   cannot be left behind by one of the several places that empty this box. */',
+    '#searchClearBtn{',
+    '  display:none; position:absolute; right:10px; top:50%; transform:translateY(-50%);',
+    '  width:22px; height:22px; border-radius:50%; border:none; background:rgba(255,255,255,0.12);',
+    '  color:var(--ink-dim); font-size:13px; line-height:1; cursor:pointer; padding:0;',
+    '  align-items:center; justify-content:center;',
+    '}',
+    '#searchInput:not(:placeholder-shown) + #searchClearBtn{ display:flex; }',
+    '.add-songs-menu{',
+    '  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200;',
+    '  width:440px; max-width:calc(100vw - 32px); padding:12px; gap:6px; flex-direction:column;',
+  ]),
+  { key: '#searchInput:not(:placeholder-shown) + #searchClearBtn' });
 
-/* ===================================================== D. THE RELEASE METADATA */
+// Wide screens: the sheet gets a little more room rather than a min-width that the
+// five labels then had to fit inside.
+sub(html, 'the wide-screen sheet',
+  '  .add-songs-menu{ min-width:260px; }\n',
+  '  .add-songs-menu{ width:520px; max-width:calc(100vw - 48px); }\n',
+  { key: '  .add-songs-menu{ width:520px;' });
+
+sub(html, 'the search field markup',
+  block([
+    '  <div style="padding: 6px 20px 12px;">',
+    '    <input type="text" id="searchInput" placeholder="Search songs or artists\u2026"',
+    '      style="width:100%; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);',
+    '      border-radius:20px; padding:9px 14px; font-size:13.5px; font-family:var(--font-ui);">',
+    '  </div>',
+  ]),
+  block([
+    '  <div style="padding: 6px 20px 12px;">',
+    '  <div style="position:relative;">',
+    '    <input type="text" id="searchInput" placeholder="Search songs or artists\u2026"',
+    '      style="width:100%; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);',
+    '      border-radius:20px; padding:9px 38px 9px 14px; font-size:13.5px; font-family:var(--font-ui);">',
+    '    <button id="searchClearBtn" type="button" aria-label="Clear search" title="Clear">&#215;</button>',
+    '  </div>',
+    '  </div>',
+  ]),
+  { key: 'id="searchClearBtn"' });
+
+// The wide-screen override of the field's padding has to leave the X its room.
+sub(html, 'the wide-screen field padding',
+  '  #searchInput{ padding:11px 16px; font-size:14px; }\n',
+  '  #searchInput{ padding:11px 38px 11px 16px; font-size:14px; }\n',
+  { key: '#searchInput{ padding:11px 38px 11px 16px;' });
+
+sub(html, 'the clear button wiring',
+  block([
+    "  $('searchInput').addEventListener('input', (e) => {",
+    '    searchQuery = e.target.value.trim().toLowerCase();',
+    '    renderList();',
+    '  });',
+  ]),
+  block([
+    "  $('searchInput').addEventListener('input', (e) => {",
+    '    searchQuery = e.target.value.trim().toLowerCase();',
+    '    renderList();',
+    '  });',
+    '  // 70.1.5. The library search box had no way back to the whole list but holding',
+    '  // backspace down until it was empty. The X is only drawn while there is',
+    '  // something to clear (see the stylesheet), and one tap empties the field, the',
+    '  // query and the list together and puts the cursor back where it was.',
+    "  $('searchClearBtn').addEventListener('click', () => {",
+    "    const si = $('searchInput');",
+    "    if(si) si.value = '';",
+    "    searchQuery = '';",
+    '    renderList();',
+    '    try{ if(si) si.focus(); }catch(_eSC){ }',
+    '  });',
+  ]),
+  { key: "  $('searchClearBtn').addEventListener" });
+
+/* ===================================================== 4. THE RELEASE METADATA === */
 sub(html, 'APP_VERSION',
   "  const APP_VERSION = '" + PREV + "';",
   "  const APP_VERSION = '" + VERSION + "';",
@@ -230,112 +433,140 @@ sub(sw, 'shell cache',
   "const CACHE_NAME = '" + CACHE + "';",
   { key: "const CACHE_NAME = '" + CACHE + "';" });
 
-/* ==================================================================== E. THE GATES */
-// test-705 is the standing 70.x gate. The structural claims below are about the
-// route rather than about the URL, because the URL is a build-time setting and
-// this gate runs on whatever page is in front of it.
-sub(t705, 'test-705 web route',
-  "  ok(count('donate-quick') >= 12 && count('PAYMENT_CONFIG.playStoreListing') >= 2,\n" +
-  "     'or the tip buttons, or the route out for a copy that cannot bill');\n",
-  "  ok(count('donate-quick') >= 12 && count('PAYMENT_CONFIG.playStoreListing') >= 2,\n" +
-  "     'or the tip buttons, or the route out for a copy that cannot bill');\n" +
-  '  // 70.1.5. A copy that cannot bill is not sent away any more: with a donation\n' +
-  '  // page configured, the tap goes there. Structural, because the URL itself is a\n' +
-  '  // build-time setting - what has to be true is that the route exists, that it is\n' +
-  '  // the fallback branch that takes it, and that the tier the user tapped is the\n' +
-  '  // amount that travels with the link.\n' +
-  "  ok(count('function donateUrlFor(') === 1 && count('PAYMENT_CONFIG.donateUrl') >= 2,\n" +
-  "     'a copy that cannot bill has no web route out of the Donate tab');\n" +
-  "  ok(count('const web = donateUrlFor(amt);') === 1 && count('runTip(sku, amt);') === 1,\n" +
-  "     'or the tip that cannot be billed never asks for that link');\n" +
-  "  ok(count(\"return base.split('{amt}').join(String(n));\") === 1,\n" +
-  "     'and the amount on the tier does not travel with it');\n",
-  { key: 'a copy that cannot bill has no web route out of the Donate tab' });
+/* ==================================================================== 5. THE GATES === */
+sub(t705, 'test-705 the four fixes',
+  "console.log('\\n[11] the file still holds together');\n",
+  block([
+    "console.log('\\n[10b] the streak, the album cover, the search box and the sheet');",
+    '{',
+    '  // 70.1.5. Four reported defects, one rule each. The streak rules are the',
+    '  // whole point: the failure was a restore that wrote the meta row and never',
+    '  // handed it to the running session, so BOTH paths in have to be asserted,',
+    '  // not just the presence of the row.',
+    "  ok(count('function scAdoptLiveStats(') === 1 && count('scAdoptLiveStats(manifest.stats);') === 1 &&",
+    "     count('scAdoptLiveStats(state.meta);') === 1,",
+    "     'a restored listening streak is handed to the running session, both ways in');",
+    "  ok(count('function albumCoverModal(') === 1 && count('function applyAlbumCover(') === 1 &&",
+    "     count('alb-cover-btn') >= 1,",
+    "     'an album cover can be changed from its card');",
+    "  ok(count('searchClearBtn') >= 3 &&",
+    "     count('#searchInput:not(:placeholder-shown) + #searchClearBtn') === 1,",
+    "     'the library search box has a clear button the field itself shows');",
+    "  ok(count('width:440px; max-width:calc(100vw - 32px)') === 1,",
+    "     'the Add songs sheet is wide enough for its five buttons');",
+    '}',
+    '',
+  ]) + "console.log('\\n[11] the file still holds together');\n",
+  { key: '[10b] the streak, the album cover, the search box and the sheet' });
 
-// The real-app probe is where this is actually DRIVEN: jsdom has no
-// window.Capacitor, which is the APK and the browser exactly, so a tap on a tier
-// takes the branch this release exists to add. It reads the configured URL out of
-// the page instead of hard-coding one, so the same section is meaningful whatever
-// the build ships - and a tree with no page configured still has to fall back.
-sub(studio, 'studio-70 donate drive',
+// Driven for real in the probe: the clear button is the one of the four that can be
+// exercised without a layout engine or a clock. jsdom does not implement
+// :placeholder-shown, which is exactly why the button is not hidden by an inline
+// style - the stylesheet decides whether it is drawn, and the wiring is driven here.
+sub(studio, 'studio-70 the four fixes',
   "  console.log('[12] the page still holds together');\n",
-  '  // 70.1.5. The sideloaded APK and the browser have no Play Billing at all, and\n' +
-  '  // jsdom is that environment exactly: window.Capacitor is undefined, so the\n' +
-  "  // billing call answers 'unavailable' and used to end the tip at a sentence.\n" +
-  '  // What has to be true now is that the tap leaves for the configured donation\n' +
-  '  // page with the tier that was tapped in it, and that a tree with no page\n' +
-  '  // configured still falls back to the Play listing rather than doing nothing.\n' +
-  "  console.log('[11f] a tip from a copy that cannot bill');\n" +
-  '  {\n' +
-  "    const conf = html.match(/donateUrl: '([^']*)'/);\n" +
-  "    ok(!!conf, 'the Donate tab names where a copy that cannot bill goes');\n" +
-  '    if (conf) {\n' +
-  '      const configured = conf[1];\n' +
-  '      const realOpen = win.open;\n' +
-  '      const opened = [];\n' +
-  '      Object.defineProperty(win, \'open\', { value: (url) => { opened.push(String(url)); return null; }, writable: true, configurable: true });\n' +
-  "      win.showSettingsTab('donate');\n" +
-  "      const pane = doc.querySelector('#settingsPaneDonate');\n" +
-  '      const btn = pane && pane.querySelector(\'.donate-quick[data-amt="5"]\');\n' +
-  "      ok(!!btn, 'the five dollar tier is still a button in the pane');\n" +
-  '      if (btn) {\n' +
-  '        btn.click();\n' +
-  '        await wait(200);\n' +
-  '        const want = configured\n' +
-  "          ? configured.split('{amt}').join('5')\n" +
-  "          : 'https://play.google.com/store/apps/details?id=com.SideCut.myapp';\n" +
-  '        ok(opened.length === 1 && opened[0] === want,\n' +
-  "          'and tapping it opens ' + (configured ? 'the donation page' : 'the Play listing') + ' (' + (opened[0] || 'nothing') + ')');\n" +
-  "        const msg = doc.querySelector('#donateMsg');\n" +
-  "        ok(!!msg && msg.textContent.length > 20, 'with a sentence saying where it went');\n" +
-  '      }\n' +
-  '      Object.defineProperty(win, \'open\', { value: realOpen, writable: true, configurable: true });\n' +
-  '    }\n' +
-  '  }\n\n' +
-  "  console.log('[12] the page still holds together');\n",
-  { key: "[11f] a tip from a copy that cannot bill" });
+  block([
+    "  console.log('[11h] the search box clears, and the sheet and the cover are real');",
+    '  {',
+    '    // 70.1.5 - "in the search bar the actual regular one there needs to be a',
+    '    // clear button". Driven here: type, watch the list narrow to the match, tap',
+    '    // the X, and require the field, the query and the whole list back.',
+    "    doc.querySelector('#libraryBtn').click();",
+    '    await wait(120);',
+    "    const si = doc.querySelector('#searchInput');",
+    "    const x = doc.querySelector('#searchClearBtn');",
+    "    ok(!!si && !!x, 'the library search box has a clear button beside it');",
+    "    ok(html.indexOf('#searchInput:not(:placeholder-shown) + #searchClearBtn') !== -1,",
+    "      'and the stylesheet is what decides whether it is shown');",
+    '    if (si && x) {',
+    "      si.value = 'song 3';",
+    "      si.dispatchEvent(new win.Event('input', { bubbles: true }));",
+    '      await wait(140);',
+    '      const narrowed = doc.querySelectorAll(\'#listPane .track\').length;',
+    "      ok(narrowed > 0 && narrowed < TRACKS.length, 'typing narrows the list (' + narrowed + ' of ' + TRACKS.length + ')');",
+    '      x.click();',
+    '      await wait(140);',
+    "      ok(si.value === '', 'tapping the X empties the field');",
+    "      ok(doc.querySelectorAll('#listPane .track').length === TRACKS.length,",
+    "        'and puts the whole list back (' + doc.querySelectorAll('#listPane .track').length + ')');",
+    '    }',
+    '    // The album cover and the sheet are markup this release adds. The picker is',
+    '    // only reachable from an album card and a card only exists once an album does,',
+    '    // so what is required here is that both halves shipped and the card is wired.',
+    "    ok(html.indexOf('albumCoverModal(aName);') !== -1 && html.indexOf('albumCoverBackdrop') !== -1,",
+    "      'and an album card can open the cover picker');",
+    "    ok(html.indexOf('width:440px; max-width:calc(100vw - 32px)') !== -1,",
+    "      'with the Add songs sheet wide enough for its buttons');",
+    '  }',
+    '',
+  ]) + "  console.log('[12] the page still holds together');\n",
+  { key: '[11h] the search box clears, and the sheet and the cover are real' });
 
-/* ============================================================ F. WHAT MUST STILL HOLD */
+/* ============================================================ 6. WHAT MUST STILL HOLD === */
 {
   const page = html.text;
   const must = (cond, msg) => { if(!cond) problems.push(msg); };
 
-  // Nothing about the removal or the surviving tip rail may have moved.
-  must(count(page, 'settingsPanePremium') === 0 && count(page, 'isPremiumActive') === 0,
-    'Premium came back with this release');
-  must(count(page, "id=\"settingsTabDonate\"") === 1 && count(page, "id=\"settingsPaneDonate\"") === 1 &&
-    count(page, 'function initDonateTab(){') === 1,
-    'the Donate tab left with the release');
-  must(count(page, 'const PLAY_TIP_PRODUCTS = {') === 1 && count(page, 'purchasePlayTip') === 2,
-    'the tip tiers and the Play call are not both intact');
-  must(count(page, 'donate-quick') >= 12, 'the tip buttons are not all there');
-  must(count(page, 'playStoreListing') === 3,
-    'the Play listing is not used exactly twice in code and once in the config');
-  // The route itself.
-  must(count(page, 'function donateUrlFor(') === 1 && count(page, '{amt}') >= 2,
-    'the link builder or its placeholder is missing');
-  must(count(page, 'const web = donateUrlFor(amt);') === 1 &&
-    count(page, "window.open(web, '_blank', 'noopener'); }catch(_eDon){ }") === 1,
-    'the web route does not open the built link');
-  must(count(page, 'runTip(sku, amt);') === 1 && count(page, 'async function runTip(sku, amt){') === 1,
-    'the tapped amount does not reach the tip');
-  must(count(page, "donateUrl: '" + DONATE + "',") === 1,
-    'the configured donation page is not the one in the file');
-  // The release.
+  // The streak fix has to be complete: every path that restores the days must hand
+  // them over, and the live values must still be the ones the recorder writes back.
+  must(count(page, 'function scAdoptLiveStats(') === 1 &&
+    count(page, 'scAdoptLiveStats(manifest.stats);') === 1 &&
+    count(page, 'scAdoptLiveStats(state.meta);') === 1,
+    'a restore still leaves the live listening streak empty');
+  must(count(page, "dbPut('meta', { key: 'listenedDates', value: Array.from(listenedDates) });") === 3 &&
+    count(page, "const listenedDatesRow = metaRows.find(r => r.key === 'listenedDates');") === 1,
+    'the live Set is no longer the one the app records days into');
+  must(count(page, "dbPut('meta', { key: 'longestStreak', value: longestStreak });") === 2,
+    'the best streak is no longer written from the live value');
+
+  // The album cover.
+  must(count(page, 'function albumCoverModal(') === 1 && count(page, 'function applyAlbumCover(') === 1 &&
+    count(page, 'function albumCoverFromImage(') === 1 && count(page, 'function albumCoverDataUrl(') === 1,
+    'the album cover picker is not all there');
+  must(count(page, "cover: (ua.cover || ((firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '')) };") === 1,
+    'the album card does not draw the cover the user set');
+  must(count(page, 'userAlbums[name].cover = dataUrl;') === 1 &&
+    count(page, 'delete userAlbums[name].cover;') === 1,
+    'the album cover is not saved to the album entry');
+  must(count(page, 'albumCoverModal(aName);') === 1 &&
+    count(page, 'ev.stopPropagation(); // the camera is not the expand/collapse tap') === 1,
+    'the camera on the card is not wired, or it also toggles the card');
+
+  // The search clear button.
+  must(count(page, 'id="searchClearBtn"') === 1 &&
+    count(page, '#searchInput:not(:placeholder-shown) + #searchClearBtn{ display:flex; }') === 1,
+    'the search box has no clear button, or it is not shown by the field itself');
+  must(count(page, "$('searchClearBtn').addEventListener('click'") === 1 &&
+    count(page, "    searchQuery = '';\n    renderList();\n    try{ if(si) si.focus(); }") === 1,
+    'the clear button does not empty the query and the list');
+  must(count(page, '#searchInput{ padding:11px 38px 11px 16px; font-size:14px; }') === 1,
+    'the wide-screen field padding has no room for the clear button');
+
+  // The sheet.
+  must(count(page, 'min-width:240px; max-width:calc(100vw - 32px)') === 0,
+    'the narrow Add songs sheet is still in the stylesheet');
+  must(count(page, 'width:440px; max-width:calc(100vw - 32px); padding:12px; gap:6px;') === 1 &&
+    count(page, '.add-songs-menu{ width:520px; max-width:calc(100vw - 48px); }') === 1,
+    'the Add songs sheet is not the wider one');
+  must(count(page, 'id="addSongsMenu"') === 1 && count(page, 'id="exportLibBtn"') === 1 &&
+    count(page, 'id="importLibBtn"') === 1,
+    'the Add songs sheet lost one of its buttons');
+
+  // The release itself.
   must(count(page, "const APP_VERSION = '70.1.5';") === 1, 'the version is not 70.1.5');
-  must(count(page, "date: 'September 29, 2026 \u00b7 8:57 PM EDT'") === 1, 'the head stamp is not the one this release ships');
   must(count(page, "  { version: '70.1.5',") === 1 && count(page, "  { version: '70.1.4',") === 1 &&
     count(page, "  { version: '70.1.3',") === 1,
     'the changelog head did not move, or an older entry was overwritten');
   for(const note of NOTES) must(count(page, "'" + note + "',") === 1, 'a note did not land: ' + note.slice(0, 40));
-  must(count(page, "'{amt}',") === 0, 'a note leaked the placeholder as its own literal');
   must(count(sw.text, "const CACHE_NAME = '" + CACHE + "';") === 1, 'the shell cache did not move');
   must(count(sw.text, OLDCACHE) === 0, 'the old shell cache name survived in sw.js');
   must(count(t705.text, "const VER = '70.0.5';") === 1, 'test-705 stopped describing 70.0.5');
-  must(count(t705.text, 'a copy that cannot bill has no web route out of the Donate tab') === 1,
-    'the new gate rule did not land');
-  must(count(studio.text, '[11f] a tip from a copy that cannot bill') === 1,
-    'the real-app probe does not drive the web route');
+  must(count(t705.text, '[10b] the streak, the album cover, the search box and the sheet') === 1,
+    'the new gate rules did not land');
+  must(count(studio.text, '[11h] the search box clears, and the sheet and the cover are real') === 1,
+    'the real-app probe does not drive the clear button');
+  must(count(page, 'function exportLibrary(') === 1 && count(page, 'function importLibrary(') === 1,
+    'the two backup paths left with the release');
 }
 
 if(problems.length){

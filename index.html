@@ -406,6 +406,14 @@
     padding:10px 0; border-radius:8px; border:1px solid rgba(255,255,255,0.1);
     background:#232220; color:var(--ink-dim); cursor:pointer;
   }   .beat-pad.active{ background: color-mix(in srgb, var(--coral) 35%, #232220); color:var(--coral); border-color:var(--coral); }
+  /* 70.1.7 - every one of these is pressed and held, and the DJ sheet scrolls
+     (`.modal` is max-height:82vh with overflow-y:auto), so a finger that drifted
+     was handed to the browser as a scroll: pointercancel fired, the hold died a
+     fraction of a second in, and the beat-repeat pads read as "finicky" rather
+     than broken. A pad is a performance surface - it does not scroll anything.
+     touch-action:none is what keeps the gesture, and it is the same medicine the
+     app already uses on its other drag handles. */
+  .beat-pad, .fx-pad, .drum-pad, .hotcue-btn{ touch-action:none; }
   .record-row{ display:flex; align-items:center; justify-content:center; gap:14px; }
   .record-btn{
     display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700;
@@ -519,6 +527,19 @@
   .pane-header-spacer{ display:none; }
   .pane-actions{ display:flex; gap:8px; flex-shrink:0; }
   .pane-actions #mixBtn{ display:none; } .pane-actions #reorderModeBtn{ display:flex; }
+  /* 70.1.6 - SELECT MODE PUTS SEVEN BUTTONS WHERE THE BAR USUALLY HAS TWO OR THREE,
+     and on a phone that is wider than the row. The label column is the only child
+     that can shrink (`.pane-header > div:first-child` is flex:1 1 0 with min-width:0)
+     and its h2 wraps anywhere, so it collapsed to a single character and "2 selected"
+     stacked one letter per line - a ten-line header with the button strip under it,
+     which is the screenshot this release fixes. In select mode the label keeps its
+     own width and the buttons wrap onto the next row instead of taking it from the
+     label. Scoped to this class so no other header can move. */
+  .pane-header.select-bar{ flex-wrap:wrap; }
+  .pane-header.select-bar > div:first-child{ flex:0 0 auto; }
+  .pane-header.select-bar h2{ white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+  .pane-header.select-bar .pane-actions{ flex:1 1 auto; flex-wrap:wrap; justify-content:flex-end; }
+
   /* On wide (desktop) screens the reorder entry is a labeled pill button so it's
      unmissable — an icon alone reads as decoration and the old one hid the
      gesture ("drag ≡") behind a hover tooltip. The pill uses the pressed state
@@ -1680,12 +1701,29 @@ body.theme-dyn-orchid::before{
    behind it (every other card here uses rgba white), so it is what a glow wash
    over the view shows up as. It gets the same lift as its view. */
 #pinnedArtistsStrip{ position:relative; z-index:1; }
-#discoverSearchRow{ display:flex; gap:8px; padding:6px 0 12px; }
+/* 70.1.6 - THE ROW HAD TWO CHILDREN THAT BOTH GREW. `.action-pill` carries flex:1
+   from the dock pill rule, so the Search button took half the row and squeezed the
+   field down to "Search songs, a" with its own placeholder ellipsised, while the
+   clear X sat between them as a bare square that was on screen even when the field
+   was empty. The field and its X are one control now - the same relative wrapper and
+   the same round X inside the right edge that the library search box has - and the
+   pill keeps its own width. The row stretches its children so the field and the
+   button are one height instead of two. */
+#discoverSearchRow{ display:flex; align-items:stretch; gap:10px; padding:6px 0 12px; }
+#discoverSearchWrap{ position:relative; flex:1 1 auto; min-width:0; display:flex; }
 #discoverSearch{
-  flex:1; min-width:0; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);
-  border-radius:20px; padding:9px 14px; font-size:13.5px; font-family:var(--font-ui);
+  flex:1 1 auto; min-width:0; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);
+  border-radius:20px; padding:9px 38px 9px 14px; font-size:13.5px; font-family:var(--font-ui);
 }
 #discoverSearch::placeholder{ color:var(--ink-dim); }
+#discoverSearchClear{
+  display:none; position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  width:22px; height:22px; border-radius:50%; border:none; background:rgba(255,255,255,0.12);
+  color:var(--ink-dim); font-size:13px; line-height:1; cursor:pointer; padding:0;
+  align-items:center; justify-content:center;
+}
+#discoverSearch:not(:placeholder-shown) + #discoverSearchClear{ display:flex; }
+#discoverSearchRow #discoverSearchBtn{ flex:0 0 auto; }
 #discoverChips{ display:flex; flex-direction:column; gap:6px; }
 #discoverChips::-webkit-scrollbar{ display:none; }
 .discover-chip{
@@ -1760,9 +1798,19 @@ body.theme-dyn-orchid::before{
   @media (max-width: 380px){
     .action-pill{ font-size:10px; padding:8px 2px; letter-spacing:-0.2px; }
   }
+/* 70.1.5 - the clear button on the library search box. It is shown by the
+   field's own state, not by script: :placeholder-shown IS "empty", so the X
+   cannot be left behind by one of the several places that empty this box. */
+#searchClearBtn{
+  display:none; position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  width:22px; height:22px; border-radius:50%; border:none; background:rgba(255,255,255,0.12);
+  color:var(--ink-dim); font-size:13px; line-height:1; cursor:pointer; padding:0;
+  align-items:center; justify-content:center;
+}
+#searchInput:not(:placeholder-shown) + #searchClearBtn{ display:flex; }
 .add-songs-menu{
   display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200;
-  min-width:240px; max-width:calc(100vw - 32px); padding:10px; gap:6px; flex-direction:column;
+  width:440px; max-width:calc(100vw - 32px); padding:12px; gap:6px; flex-direction:column;
   background:var(--bg-raised); border:1px solid var(--line); border-radius:16px;
   box-shadow:0 18px 48px rgba(0,0,0,0.6);
 }
@@ -2111,7 +2159,7 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
   #miniBar, #nowPlaying.mini #miniBar{ max-width:760px; margin:0 auto; }
   #discoverResults{ display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; }
   .discover-card{ flex-wrap:nowrap; }
-  .add-songs-menu{ min-width:260px; }
+  .add-songs-menu{ width:520px; max-width:calc(100vw - 48px); }
 }
 
 /* ---------- 4. Tablets & unfolded foldables (≥768) ------------------------ */
@@ -2168,7 +2216,7 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
   .discover-card{ padding:12px; }
   .discover-meta{ min-width:0; }
   #pinnedArtistsActions{ grid-template-columns:repeat(5, 1fr) !important; }
-  #searchInput{ padding:11px 16px; font-size:14px; }
+  #searchInput{ padding:11px 38px 11px 16px; font-size:14px; }
   .modal{ max-width:540px; }
   #themeBackdrop .modal{ max-width:700px; }
   #lyricsBackdrop .modal{ max-width:720px; }
@@ -2753,9 +2801,12 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
 
 <div id="library">
   <div style="padding: 6px 20px 12px;">
+  <div style="position:relative;">
     <input type="text" id="searchInput" placeholder="Search songs or artists…"
       style="width:100%; background:var(--bg-raised); border:1px solid var(--line); color:var(--ink);
-      border-radius:20px; padding:9px 14px; font-size:13.5px; font-family:var(--font-ui);">
+      border-radius:20px; padding:9px 38px 9px 14px; font-size:13.5px; font-family:var(--font-ui);">
+    <button id="searchClearBtn" type="button" aria-label="Clear search" title="Clear">&#215;</button>
+  </div>
   </div>
   <div style="display:flex; align-items:center; gap:6px; padding:0 20px 4px;">
     <div class="tabs" id="tabs" style="flex:1; padding:4px 0 10px;"></div>
@@ -2777,8 +2828,10 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
     <div id="pinnedArtistsList" style="display:flex;align-items:flex-start;gap:12px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;min-height:64px;padding:0 2px 4px;"></div>
   </div>
   <div id="discoverSearchRow">
-    <input type="text" id="discoverSearch" placeholder="Search songs, artists, albums…">
-    <button id="discoverSearchClear" title="Clear" style="padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:12px; cursor:pointer;">x</button>
+    <div id="discoverSearchWrap">
+      <input type="text" id="discoverSearch" placeholder="Search songs, artists, albums…">
+      <button id="discoverSearchClear" type="button" aria-label="Clear search" title="Clear">&#215;</button>
+    </div>
     <button class="action-pill primary" id="discoverSearchBtn" style="padding:9px 16px;">Search</button>
   </div>
     <div id="pinnedArtistsActions" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
@@ -3230,9 +3283,9 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
     <div id="settingsPaneDonate" style="display:none; padding:6px 0;">
       <div style="text-align:center; margin-bottom:18px;">
         <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Support SideCut</div>
-        <div style="font-size:12px; color:var(--ink-dim); line-height:1.5;">SideCut is free and ad-free. If it's made your listening better, a tip helps keep it running and improving — processed through Google Play. Thank you! 💛</div>
+        <div id="donateIntro" style="font-size:12px; color:var(--ink-dim); line-height:1.5;">SideCut is free and ad-free. If it's made your listening better, a tip helps keep it running and improving — processed through Google Play. Thank you! 💛</div>
       </div>
-      <div style="font-size:12px; color:var(--ink-dim); margin-bottom:12px; text-align:center;">Pick an amount — Google Play handles the payment.</div>
+      <div id="donatePromise" style="font-size:12px; color:var(--ink-dim); margin-bottom:12px; text-align:center;">Pick an amount — Google Play handles the payment.</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
         <button class="donate-quick" data-amt="1" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">Tip $1</button>
         <button class="donate-quick" data-amt="2" style="flex:1; min-width:60px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:8px 6px; font-size:13px; cursor:pointer;">Tip $2</button>
@@ -4592,6 +4645,10 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
           <button class="deck-btn" id="djRecordSaveBtn" style="display:none;">SAVE MIX</button>
         </div>
         <div style="font-size:10.5px; color:var(--ink-dim); margin-top:6px;">Records everything you hear on this deck — scratches, EQ, pitch, all of it.</div>
+        <div class="record-row" style="margin-top:10px;">
+          <button class="deck-btn" id="djCopyBtn" style="flex:1;" title="Render this song with everything this deck is doing to it, and keep it as a new song">SAVE COPY</button>
+        </div>
+        <div style="font-size:10.5px; color:var(--ink-dim); margin-top:6px;">SAVE COPY writes THIS song out with your speed, pitch, EQ, filter, gain and FX as a new song called “… (DJ edit)”. It renders in seconds, and the song you loaded is not touched.</div>
       </div>
     </div>
 
@@ -5006,6 +5063,7 @@ if(SC_IS_PLAY){
       + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">3.</span><span>A whole album in one go: <b style="color:var(--ink);">+ Add songs → + Add folder</b>.</span></div>'
       + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">4.</span><span>Each file keeps its own title, artist, album and cover art, and lands in <b style="color:var(--ink);">Playlists → All songs</b>.</span></div>'
       + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">5.</span><span>Moving phones or restoring a backup: <b style="color:var(--ink);">Import library</b> brings back the whole .zip — playlists, albums and tags included.</span></div>'
+      + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b style="color:var(--ink);">MP3s from external sources work too</b> — a computer, a cloud drive, an SD card, an email, a chat or another app. Once the file is on the phone it imports exactly like the rest.</span></div>'
       + '</div>';
     ['getSongsHowToDisc','getSongsHowToSettings'].forEach(function(_id){
       var _el = document.getElementById(_id);
@@ -5029,11 +5087,12 @@ if(SC_IS_PLAY){
       + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">1.</span><span>Tap <b>+ Add songs → + Files</b> and pick the audio already on your phone — it lands in your library right away.</span></div>'
       + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">2.</span><span><b>+ Add folder</b> grabs a whole folder at once — handy for a full album.</span></div>'
       + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">3.</span><span><b>Import library</b> restores a full backup .zip, including playlists, albums and tags.</span></div>'
+      + '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Audio from external sources works too</b> — a computer, a cloud drive, an SD card, an email, a chat or another app. Once the file is on the phone, <b>+ Add songs</b> brings it in.</span></div>'
       + '</div>';
     var _s1 = document.getElementById('howToScenario1Head');
     if(_s1 && _s1.parentNode) _s1.parentNode.style.display = 'none';
     var _tsg = document.getElementById('tutSumGetMusic');
-    if(_tsg) _tsg.innerHTML = '<span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Getting music in:</b> SideCut plays audio files saved on your device — bring them in with <b>+ Add songs → + Files</b> or <b>+ Add folder</b>; <b>Import library</b> restores a backup .zip.</span>';
+    if(_tsg) _tsg.innerHTML = '<span style="color:var(--coral); flex-shrink:0;">•</span><span><b>Getting music in:</b> SideCut plays audio files saved on your device — bring them in with <b>+ Add songs → + Files</b> or <b>+ Add folder</b>; <b>Import library</b> restores a backup .zip. <b>MP3s from external sources work the same way</b> — once the file is on the phone, <b>+ Add songs</b> brings it in.</span>';
   }catch(_ePlayUI){}
 }
 // ---- Frame-rate independent drag auto-scroll ---------------------------------
@@ -6855,6 +6914,28 @@ function getApiHeaders() {
     // open the listing to install it.
     // (Package: com.SideCut.myapp; matches .well-known/assetlinks.json.)
     playStoreListing: 'https://play.google.com/store/apps/details?id=com.SideCut.myapp',
+    // 70.1.9 - the web route out. Google only sells inside the copy it
+    // distributed, so a copy that came from anywhere else - the package this
+    // repo builds for sideloading, and a plain browser - had nothing to charge
+    // and every tip ended at "install the Play build", with no tip possible
+    // anywhere. One hosted card page per amount: a tap on a tier opens its own
+    // link in the browser. Stripe Payment Links are fixed amounts, which is why
+    // there is one per tier rather than one page for all of them. An amount with
+    // no entry here keeps the route the earlier release left it (the listing),
+    // and a copy installed from Google Play never looks any of this up at all:
+    // it has Billing, and the store build stays on it.
+    donateLinks: {
+      2: 'https://buy.stripe.com/eVqcN48Yn37BeBOagIdMI00',
+      5: 'https://buy.stripe.com/28E4gyb6vfUn1P2dsUdMI01',
+      10: 'https://buy.stripe.com/4gM4gy5Mb8rVbpC1KcdMI02',
+      25: 'https://buy.stripe.com/6oUdR8fmLaA351e1KcdMI03',
+      50: 'https://buy.stripe.com/4gM8wOb6v23x8dqcoQdMI04',
+    },
+    // One page for every amount instead of one per tier. A link that carries the
+    // number in its path (PayPal.me, Cash App) takes `{amt}` here; a page the
+    // payer sets the amount on is used exactly as it is. Empty - the default -
+    // means the per-amount links above are the only web route.
+    donateUrl: '',
   };
 // ---------------- Google Play billing (native Capacitor Play Billing) ----------------
   // SideCut's Android app is a Capacitor WebView (not a TWA), so the Play
@@ -7028,6 +7109,37 @@ function getApiHeaders() {
 
 
 
+  // 70.1.9. The web card page for a chosen amount, or an empty string when the
+  // copy has no page for it. The per-amount table is asked first, because a
+  // Payment Link fixes the amount in the link itself; the templated field is the
+  // one-page-for-every-amount alternative underneath it.
+  function donateUrlFor(amt){
+    const n = parseInt(amt, 10);
+    let links = {};
+    try{ links = PAYMENT_CONFIG.donateLinks || {}; }catch(_eLinks){ links = {}; }
+    const direct = links[n];
+    if(direct) return String(direct).trim();
+    const base = String(PAYMENT_CONFIG.donateUrl || '').trim();
+    if(!base) return '';
+    if(base.indexOf('{amt}') === -1) return base;
+    if(!isFinite(n) || n <= 0) return '';
+    return base.split('{amt}').join(String(n));
+  }
+  // The amounts that do have a card page, read off the table above rather than
+  // written out again, so a sentence about them cannot go stale when a link is
+  // added. Returns "2, 5, 10, 25 or 50", or an empty string when there are none.
+  function donateTierList(){
+    let keys = [];
+    try{ keys = Object.keys(PAYMENT_CONFIG.donateLinks || {}); }catch(_eTiers){ keys = []; }
+    const labels = keys.map(function(k){ return parseInt(k, 10); })
+      .filter(function(n){ return isFinite(n) && n > 0; })
+      .sort(function(a, b){ return a - b; })
+      .map(function(n){ return "$" + n; });
+    if(!labels.length) return "";
+    const last = labels.pop();
+    return labels.length ? labels.join(", ") + " or " + last : last;
+  }
+
   async function purchasePlayTip(sku){
     return purchasePlayItem(sku, true);
   }
@@ -7039,8 +7151,23 @@ function getApiHeaders() {
     const pane = $('settingsPaneDonate');
     const msg = $('donateMsg');
     if(!pane || pane._donateInit) return;
+    // 70.1.9. A copy that can offer a card page says so, and names the amounts
+    // it can take there from the table itself - a second list in markup would go
+    // stale the first time a link was added, which is exactly what happened while
+    // this release was being written. THE COPY INSTALLED FROM GOOGLE PLAY IS NOT
+    // TOUCHED AT ALL: it has Billing, neither sentence changes, and nothing below
+    // runs for it.
+    const promise = $('donatePromise');
+    if(promise && !SC_IS_PLAY){
+      const tierList = donateTierList();
+      if(tierList){
+        const intro = $('donateIntro');
+        promise.textContent = 'Pick an amount — Google Play takes it inside the copy installed from Play, and ' + tierList + ' open a secure card page in every other copy.';
+        if(intro) intro.textContent = "SideCut is free and ad-free. If it's made your listening better, a tip helps keep it running and improving — a secure card page takes it here. Thank you! 💛";
+      }
+    }
 
-    async function runTip(sku){
+    async function runTip(sku, amt){
       msg.style.color = 'var(--ink-dim)';
       msg.textContent = 'Opening Google Play billing…';
       const result = await purchasePlayTip(sku);
@@ -7068,11 +7195,28 @@ function getApiHeaders() {
       // available. Report the specific reason instead of a generic fallback.
       const reason = await playBillingUnavailableReason();
       msg.style.color = 'var(--ink-dim)';
-      // 70.1.3: this is the APK and the browser, which have no Billing at all.
-      // A tip still cannot be made here - but the install that CAN make one is
-      // one tap away, so the message ends in the Play listing instead of a stop.
+      // 70.1.9: this is the package built for sideloading and the browser, and
+      // this is the branch that used to end the tip. Google will never sell to a
+      // copy it did not distribute, so the only way a tip can be made here is off
+      // the store entirely - a hosted card page. The amounts that have one open
+      // it and the money moves; an amount that does not still ends in the Play
+      // listing the way 70.1.3 left it, now saying which amounts do work here.
+      //
+      // THE STORE BUILD IS NOT A PART OF THIS AT ALL. A copy installed from
+      // Google Play has Billing, so it never looks a card page up and never
+      // names one - if Billing is unavailable there, the sentence it always
+      // had is the sentence it gets, and the listing is still the route.
+      const web = SC_IS_PLAY ? '' : donateUrlFor(amt);
+      if(web){
+        msg.style.color = 'var(--coral)';
+        msg.textContent = 'Google Play only sells inside the copy it distributed, so this tip is opening a secure card page in your browser for $' +
+          (parseInt(amt, 10) || 0) + ' instead. Thank you for chipping in.';
+        try{ window.open(web, '_blank', 'noopener'); }catch(_eDon){ }
+        return;
+      }
+      const tierList = SC_IS_PLAY ? '' : donateTierList();
       msg.textContent = (reason || 'Tips are processed through Google Play and only work inside the SideCut app installed from Play.') +
-        ' Opening the Play Store so you can install that copy.';
+        (tierList ? ' Tip ' + tierList + ' to pay by card here, or open the Play Store so you can install that copy.' : ' Opening the Play Store so you can install that copy.');
       if(PAYMENT_CONFIG.playStoreListing){
         try{ window.open(PAYMENT_CONFIG.playStoreListing, '_blank', 'noopener'); }catch(_eDon){ }
       }
@@ -7087,7 +7231,7 @@ function getApiHeaders() {
           msg.textContent = 'This tip tier isn\'t set up yet — check back soon.';
           return;
         }
-        runTip(sku);
+        runTip(sku, amt);
       });
     });
 
@@ -11597,7 +11741,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '70.1.4';
+  const APP_VERSION = '70.1.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11993,6 +12137,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
       if(state.meta){
         for(var mk in state.meta){ try{ await dbPut('meta', { key: mk, value: state.meta[mk] }); }catch(e){} }
+        // 70.1.5 - the row is not the streak on its own: the session computes it
+        // from the Set. Hand the restored values over with the rows.
+        try{ scAdoptLiveStats(state.meta); }catch(_eSnapStats){ }
       }
       return true;
     };
@@ -12064,6 +12211,46 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '70.1.9', date: 'September 30, 2026 · 5:00 PM EDT', title: 'Donations reach the sideloaded package and the browser: a tap on a tip tier opens a real card page, and the store build says the audio can come from anywhere', items: [
+    'Donations work on the copy Google Play will not sell to. Google Play only sells inside the copy Google Play distributed, so the package this repo builds for sideloading had nothing to charge and every tip ended at a sentence telling you to install a different build. A tap on a tier there opens a real card page in the browser now, and the money moves.',
+    'Two, five, ten, twenty-five and fifty each have their own card page, and they belong to the package built for sideloading and to the browser. A copy installed from Google Play is exactly the app it was: Billing, the Play sheet and the listing are untouched by this release, and no card page is reachable from it. In the other copies the tap opens the card page with that amount already set, so nothing has to be typed in.',
+    'The store build now says the audio can come from anywhere. Its walkthrough for getting music into the library - the same one Discover shows - and the first-run sheet and tutorial summary on that build all add that audio from external sources works too: a computer, a cloud drive, an SD card, an email, a chat or another app, because the file on the phone is the whole route in.',
+    'A tip from a browser tab works too. SideCut in a plain browser cannot bill either, so the Donate tab there opens the card page instead of sending you off to another copy first - which is where a tip from a tab used to end.',
+    'Nothing unlocks when you tip, and nothing changes if you do not. A tip buys no entitlement on purpose: the player, the dock and the library are the same app whether a tip was made or not, on the standalone package exactly as on the copy from Google Play.',
+    'Nothing else moved in this release. The badge wall, Studio and the DJ Mode deck are the ones the last release left, and a library saved before this release comes back the same way.',
+  ] },
+  { version: '70.1.8', date: 'September 30, 2026 · 4:05 PM EDT', title: 'DJ Mode can save the song you have built: SAVE COPY renders it with your speed, pitch, EQ, filter, gain and FX as a new song, and leaves the original alone', items: [
+    'DJ Mode has SAVE COPY. Everything you do to a song on the deck - the pitch and speed, GAIN, the FILTER sweep, the kill switches and EQ, the reverb, flanger and delay, and the pump from the DUCK knob - can be written out as a NEW song called "your song (DJ edit)", which lands in All Songs like any other track. The song you were playing is not touched: nothing is written over it, and it is still exactly as it was.',
+    'It renders instead of recording, so it does not take as long as the song does. REC is still there for capturing a mix, and it is real time on purpose - it captures what happens while it runs. SAVE COPY takes the whole song straight out of memory and runs it through your settings in one pass, so a four minute song is a few seconds of waiting, not four minutes.',
+    'The copy is the whole song, not the loop. If you have a loop going it keeps looping while the copy is rendered and the copy is still the entire track, because a loop is where playback is rather than part of the song. The same is true of where the playhead happens to be: the copy always starts at the beginning.',
+    'The copy carries its tags. The title becomes "your song (DJ edit)" with the same artist and album, the cover art travels into the file, and the copy keeps the original song name so the two are easy to tell apart in the list - the original never gains the words "DJ edit".',
+    'Every value baked into the copy is read from what the deck is actually doing rather than from the knobs on the screen, so the copy is the sound that is going to the speakers - every one of them, including the ones the DUCK knob pumps and the ones a beat repeat is holding. The player, the dock, the library list, Studio and the badge wall are exactly as the last release left them.',
+    'Nothing else moved in this release. The mix recorder, the beat pads, the hot cues, the crossfade and the loop controls are the ones 70.1.7 shipped, and a library saved before this release comes back the same way.',
+  ] },
+  { version: '70.1.7', date: 'September 30, 2026 · 3:35 PM EDT', title: 'The DJ Mode loop controls hold when you hold them: the beat pads keep the touch, a loop can be set while the deck is stopped, and the playhead stops walking out of the loop', items: [
+    'The beat-repeat pads in DJ Mode hold now. Arming a slice is a press and hold, and the DJ sheet scrolls - so a finger that drifted even slightly was handed to the browser as a scroll, the press was cancelled, and the slice died a fraction of a second after it started. The pads claim the touch for themselves now and hold the pointer until you actually let go, so the slice plays for as long as you hold it, even if your thumb slides across the pad.',
+    'The LOOP button works while the deck is stopped. It used to need a live sound source, and a stopped deck does not have one - so tapping LOOP while paused said the song was still loading, which was not true, and did nothing at all. A loop set on a stopped deck is armed for the moment you press PLAY, which is how it is done on real gear, and the beat pads arm the same way.',
+    'A loop survives a restart. Scratching the platter, tapping a hot cue or changing the pitch rebuilds the deck sound source, and the loop points lived on the old one - so the loop quietly stopped while the button still said it was on. The loop is kept on the deck itself now and put back on whatever source is playing; it is only dropped, and the button with it, when a restarted playhead lands somewhere outside the loop.',
+    'The playhead no longer walks out of the loop, which is what made the buttons feel random. While a loop repeats, the audio jumps back to the start of the loop every pass but the clock the app was reading did not, so it drifted further and further ahead of what you were hearing - and everything that asks it for a position answered wrong: the platter, the play count, the countdown to the next track, and the place a loop or a hot cue gets set. Holding a beat pad for ten seconds and then tapping LOOP used to jump the song forward by ten seconds, which is exactly what a loop button must never do.',
+    'Loop Lock tells the truth. It says ON only once a slice has really been armed, the pad lights only when it is, changing the loop length while a loop is running now re-windows the loop instead of doing nothing, and letting go of a beat pad while the LOOP button is on hands the loop back to the button rather than switching it off underneath you.',
+    'Nothing else about the deck moved. The pads, the drum pads, the FX pads, the hot cues, the kill switches, the crossfade and the player are exactly as the last release left them - this is the loop controls and nothing more.',
+  ] },
+  { version: '70.1.6', date: 'September 30, 2026 · 3:05 PM EDT', title: 'The select-mode bar keeps its label on one line and the Discover search field keeps the width the Search button was taking from it', items: [
+    'The row of buttons you get when you select songs is one line of buttons now. The label beside them is the only part of that row that was allowed to shrink, and with seven action buttons in it on a phone there was no room left for anything else - so "2 selected" broke to one letter a line and the bar grew ten lines tall around a button strip. The buttons wrap to a second row now, and the label keeps its own width.',
+    'The Discover search field is the width it should always have been. The field and the Search button beside it were both set to grow, so the button took half the row and the field was cut down to "Search songs, a" with its own placeholder ellipsised.',
+    'The clear X on the Discover field is the same round one the library search box has, in the same place: inside the right edge of the field, one tap empties it, and it is only on screen while there is something to clear. Before this it was a bare square sitting between the field and the button, and it showed even when the field was empty.',
+    'The field and the Search button are the same height now. The row stretches the two of them together instead of leaving the button taller than the field, which is what made the pair look misaligned.',
+    'Both of these were layout only. No song, playlist, album, listening stat, setting or stored value was read or written - the player, the dock, the library list, Studio, the badge wall and Donate are exactly as the last release left them.',
+    'A library saved before this release comes back the same way. Nothing about the backup, the play counts, the streaks or the album covers changed, so this is a drawing fix and not a data one.',
+  ] },
+  { version: '70.1.5', date: 'September 30, 2026 · 7:30 AM EDT', title: 'Your listening streak survives a restore, album covers are yours to set, the search box gets a clear button, and the Add songs sheet is wide enough for what is in it', items: [
+    'Your listening streak comes back with a backup. The streak is the set of days you played something, and a restore wrote that set to storage without handing it to the session that had to use it - so the streak read as zero, and the next song you played saved a one-day set straight over the history that had just been restored. Both halves of the restore now put the live streak back in step.',
+    'The best streak travels with it too. It is kept as its own number so a broken current streak cannot erase your record, and it arrived as zero on a restored library for the same reason. It is read back with the rest of your listening stats now.',
+    'An album cover is yours to set. Album cards used the cover of the first song in them and nothing could change that: there is a camera button on every album card now, and it sets a picture from this device or reuses the cover of any song the album already holds. The same one tap removes it and goes back to the first song.',
+    'The search box has a clear button. Typing in the library search puts an X on the right edge of the field, and one tap empties it and puts your whole list back - no holding backspace down until the box is empty again.',
+    'The Add songs sheet is wide enough for what is in it. Five full-width buttons and the note about export times sat in a narrow column in the middle of the screen, so every label was squeezed and the note wrapped a few words to a line; it is a proper sheet now.',
+    'Nothing else moved. The player, the dock, Studio, the badge wall and Donate are exactly as the last release left them - this one is the four fixes above and nothing more.',
+  ] },
   { version: '70.1.4', date: 'September 29, 2026 · 9:55 PM EDT', title: 'Export everything now carries the whole app: the play counts, the loudness gains, the seek waveforms and the cover maps a big library had been leaving out, and a cropped song brings its undo', items: [
     'Export everything really does export everything now. The backup used to read the same list of stored values as the on-device safety copy, and that copy is capped so it stays small - so anything past a couple of hundred kilobytes was skipped on the way into the zip. The play counts, the loudness gains and the seek waveforms the player draws all live in one row that grows past that on a real library, and the cover maps for your artists and albums did too. They ride in the backup now, at whatever size they reached.',
     'That cap is still there where it belongs. The on-device copy is rewritten a second and a half after any change and has to stay small, because it is a safety net for settings and not a file store, and it is untouched. Only the zip you make on purpose had the ceiling taken off it.',
@@ -18410,6 +18597,17 @@ function _fallbackCopy(text){
     searchQuery = e.target.value.trim().toLowerCase();
     renderList();
   });
+  // 70.1.5. The library search box had no way back to the whole list but holding
+  // backspace down until it was empty. The X is only drawn while there is
+  // something to clear (see the stylesheet), and one tap empties the field, the
+  // query and the list together and puts the cursor back where it was.
+  $('searchClearBtn').addEventListener('click', () => {
+    const si = $('searchInput');
+    if(si) si.value = '';
+    searchQuery = '';
+    renderList();
+    try{ if(si) si.focus(); }catch(_eSC){ }
+  });
   $('importLibBtn').addEventListener('click', () => $('importLibInput').click());
   $('importLibInput').addEventListener('change', e => {
     const file = e.target.files[0];
@@ -19450,7 +19648,9 @@ function _fallbackCopy(text){
     const durLabel = totalSeconds > 0 ? ' · ' + fmtDurationLong(totalSeconds) : '';
     const canDelete = !isAllSongs && activePlaylist !== 'Favorites';
     const header = document.createElement('div');
-    header.className = 'pane-header';
+    // 70.1.6. The select-mode bar is the one header in the app with seven action
+  // buttons in it, and it is the only one whose label has to survive them.
+  header.className = 'pane-header' + (selectMode ? ' select-bar' : '');
     // The sort actually applied to the list — perPlaylistSort wins over currentSort
     // when that feature is on, so every reorder check below keys off this, not
     // currentSort, or reordering can get gated/sorted wrong (see reorderModeBtn).
@@ -19665,7 +19865,7 @@ function _fallbackCopy(text){
         var visibleTracks = ua.trackIds.filter(function(tid){ return ids.indexOf(tid) !== -1; });
         if(!visibleTracks.length) return;
         var firstTrack = allTracks.find(function(tr){ return tr.id === visibleTracks[0]; });
-        _albumMap[aName] = { name: aName, artist: (ua.artist || (firstTrack ? (firstTrack.artist||'').trim() : 'Unknown artist')), tracks: visibleTracks, cover: (firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '' };
+        _albumMap[aName] = { name: aName, artist: (ua.artist || (firstTrack ? (firstTrack.artist||'').trim() : 'Unknown artist')), tracks: visibleTracks, cover: (ua.cover || ((firstTrack && firstTrack.artUrl) ? firstTrack.artUrl : '')) };
         _albumOrder.push(aName);
       });
       // Cards come from userAlbums only. This used to add one card per album
@@ -19713,6 +19913,7 @@ function _fallbackCopy(text){
           + '<div style="font-size:11px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + '" ' + (albTotalStr ? 'data-dur-bubble="1" ' : '') + '>' + escapeHtml(alb.artist || 'Unknown artist') + (albTotalStr ? ' \u00b7 ' + albTotalStr : '') + '</div>'
           + '</div>'
           + '<span style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + '</span>'
+          + '<button class="alb-cover-btn" title="Change album cover" aria-label="Change album cover" style="flex-shrink:0;width:28px;height:28px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:12px;line-height:1;cursor:pointer;padding:0;">&#128247;</button>'
         card.appendChild(hdr);
         var body = document.createElement('div');
         body.id = cardId;
@@ -19729,6 +19930,13 @@ function _fallbackCopy(text){
             if(!window.__scDurBubble.isClamped(_albDurEl)){ window.__scDurBubble.hide(); return; }
             window.__scDurBubble.toggle(_albDurEl, albTotalSec,
               alb.tracks.length + ' track' + (alb.tracks.length !== 1 ? 's' : '') + ' \u00b7 ' + alb.name);
+          });
+        }
+        var _covBtn = hdr.querySelector('.alb-cover-btn');
+        if(_covBtn){
+          _covBtn.addEventListener('click', function(ev){
+            ev.stopPropagation(); // the camera is not the expand/collapse tap
+            albumCoverModal(aName);
           });
         }
         hdr.addEventListener('click', function(){
@@ -20644,6 +20852,128 @@ function _fallbackCopy(text){
   // people's albums arrive. Building this picker from userAlbums alone left it
   // empty for those users, so tapping "Reorder an album's songs" did nothing at
   // all (the only feedback was a toast hidden behind the menu that just closed).
+  // 70.1.5. An album card shows the cover of the first song in it, and there was
+  // no way to say otherwise. userAlbums[name].cover is that override: a small
+  // data URL kept on the album entry, so it rides in the meta row like every
+  // other album field - which is what puts it in the backup zip and the
+  // on-device snapshot, and keeps it across an update. A blob URL would not do:
+  // those die with the page, and the cover has to still be there on the next boot.
+  function albumCoverDataUrl(name){
+    try{ return String((userAlbums[name] && userAlbums[name].cover) || ''); }catch(_eAC){ return ''; }
+  }
+  function closeAlbumCover(){
+    const m = document.getElementById('albumCoverBackdrop');
+    if(m) m.remove();
+  }
+  function applyAlbumCover(name, dataUrl){
+    if(!name) return;
+    try{
+      if(!userAlbums[name]) userAlbums[name] = { trackIds: [], createdAt: Date.now() };
+      if(dataUrl) userAlbums[name].cover = dataUrl;
+      else delete userAlbums[name].cover;
+      dbPut('meta', { key: 'userAlbums', value: userAlbums });
+      renderList();
+      toast(dataUrl ? 'Album cover saved.' : 'Back to the cover of its first song.', 2600);
+    }catch(e){ console.error('album cover save failed:', e); toast('Could not save that picture.', 3000); }
+  }
+  // One picture in, one small cover out. Whatever was picked - a camera photo or
+  // a cover already in the library - is drawn to at most 512px on its long edge
+  // and encoded as a JPEG, because this value lives in a meta row that every
+  // backup and every snapshot copy carries. `fallback` is used when the picture
+  // cannot be drawn - a data URL that is already usable is still a cover.
+  function albumCoverFromImage(name, srcUrl, fallback){
+    try{
+      const img = new Image();
+      img.onload = function(){
+        let out = '';
+        try{
+          const s = Math.min(1, 512 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+          const w = Math.max(1, Math.round((img.naturalWidth || 512) * s));
+          const h = Math.max(1, Math.round((img.naturalHeight || 512) * s));
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          out = cv.toDataURL('image/jpeg', 0.78);
+        }catch(_ce){ out = ''; }
+        if(out && out.length > 64) applyAlbumCover(name, out);
+        else if(fallback) applyAlbumCover(name, fallback);
+        else toast('Could not read that picture.', 3000);
+        closeAlbumCover();
+      };
+      img.onerror = function(){
+        if(fallback) applyAlbumCover(name, fallback);
+        else toast('Could not read that picture.', 3000);
+        closeAlbumCover();
+      };
+      img.src = srcUrl;
+    }catch(e){ toast('Could not read that picture.', 3000); }
+  }
+  function albumCoverModal(name){
+    try{
+      if(!name || !userAlbums[name]) return;
+      closeAlbumCover();
+      const cur = albumCoverDataUrl(name);
+      // The cover of any song the album already holds, offered beside the file
+      // picker: the sleeve wanted is usually one that is already in the library.
+      const picks = [];
+      ((userAlbums[name] && userAlbums[name].trackIds) || []).forEach(function(id){
+        const t = allTracks.find(function(x){ return x.id === id; });
+        if(t && t.artUrl && picks.indexOf(t.artUrl) === -1) picks.push(t.artUrl);
+      });
+      const grid = picks.length
+        ? '<div style="font-size:12px;color:var(--ink-dim);">Or use the cover of a song in this album:</div>'
+          + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">'
+          + picks.slice(0, 24).map(function(u, i){
+              return '<div class="alb-cover-pick" data-i="' + i + '" style="width:100%;aspect-ratio:1;border-radius:8px;background-image:url(' + u.replace(/"/g, '&quot;') + ');background-size:cover;background-position:center;border:2px solid ' + (u === cur ? 'var(--coral)' : 'var(--line)') + ';cursor:pointer;"></div>';
+            }).join('') + '</div>'
+        : '';
+      const modal = document.createElement('div');
+      modal.id = 'albumCoverBackdrop';
+      modal.className = 'modal-backdrop';
+      modal.style.display = 'flex';
+      modal.innerHTML = '<div class="modal" style="gap:12px;">'
+        + '<h3 style="font-size:15px;margin:0;">Album cover</h3>'
+        + '<div style="font-size:12px;color:var(--ink-dim);word-break:break-word;">' + escapeHtml(name) + '</div>'
+        + '<button id="albCoverFile" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink);font-size:13px;cursor:pointer;text-align:left;">&#128247; Choose a picture</button>'
+        + grid
+        + (cur ? '<button id="albCoverClear" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;cursor:pointer;">Remove custom cover</button>' : '')
+        + '<button id="albCoverCancel" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:12px;cursor:pointer;">Cancel</button>'
+        + '</div>';
+      document.body.appendChild(modal);
+      const fileBtn = modal.querySelector('#albCoverFile');
+      if(fileBtn) fileBtn.addEventListener('click', function(){
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.addEventListener('change', function(){
+          try{
+            if(input.files && input.files[0]){
+              const file = input.files[0];
+              const reader = new FileReader();
+              reader.onload = function(){ albumCoverFromImage(name, String(reader.result || ''), ''); };
+              reader.onerror = function(){ toast('Could not read that picture.', 3000); };
+              reader.readAsDataURL(file);
+            } else if(input.parentNode) input.parentNode.removeChild(input);
+          }catch(_eCF){ }
+        });
+        input.click();
+      });
+      Array.prototype.forEach.call(modal.querySelectorAll('.alb-cover-pick'), function(el){
+        el.addEventListener('click', function(){
+          const u = picks[parseInt(el.getAttribute('data-i'), 10)];
+          if(u) albumCoverFromImage(name, u, '');
+        });
+      });
+      const clr = modal.querySelector('#albCoverClear');
+      if(clr) clr.addEventListener('click', function(){ applyAlbumCover(name, ''); closeAlbumCover(); });
+      const cancel = modal.querySelector('#albCoverCancel');
+      if(cancel) cancel.addEventListener('click', closeAlbumCover);
+      modal.addEventListener('click', function(e){ if(e.target === modal) closeAlbumCover(); });
+    }catch(e){ console.error('album cover picker failed:', e); }
+  }
+
   function openAlbumPickerForReorder(){
     const names = [];
     const counts = {};
@@ -23589,6 +23919,10 @@ function _fallbackCopy(text){
         if(manifest.stats.longestStreak){
           dbPut('meta', { key: 'longestStreak', value: manifest.stats.longestStreak });
         }
+        // 70.1.5. The rows are in - now put the LIVE streak in step with them,
+        // or the streak reads as zero and the next play overwrites the history
+        // that was just restored. (The play counters had this same half-restore.)
+        scAdoptLiveStats(manifest.stats);
       }
       
       // Restore discovery data (album history, hidden albums/singles, album edits, recently deleted, releases)
@@ -23917,6 +24251,18 @@ function _fallbackCopy(text){
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   }
+  // 70.1.5. The day streak is this Set plus its meta row. A restore used to
+  // write only the row, which is half a restore twice over: the streak read as
+  // zero in the session that has to show it, and recordListeningDay() then saved
+  // the empty Set plus today back over the row - so the very next song played
+  // destroyed the history that had just been restored. Both restore paths hand
+  // the values they wrote to this, so the live streak is what the backup held.
+  function scAdoptLiveStats(src){
+    if(!src) return;
+    if(Array.isArray(src.listenedDates)) listenedDates = new Set(src.listenedDates);
+    if(typeof src.longestStreak === 'number') longestStreak = src.longestStreak;
+  }
+
   function recordListeningDay(){
     const key = todayKey();
     if(listenedDates.has(key)) return;
@@ -26096,6 +26442,12 @@ function _fallbackCopy(text){
     running: false,     // true if a source is actively playing (not paused)
     decoding: false,
     gainNode: null,     // per-lane gain, used to blend during a DJ-mode crossfade
+    // 70.1.7. The loop window, in buffer-seconds, or null. It lives on the deck
+    // rather than only on the live AudioBufferSourceNode for two reasons: a loop
+    // set while the deck is PAUSED has to survive until PLAY builds a node, and a
+    // restart (scratch, hot cue, pitch) has to put the loop back on the new node
+    // instead of quietly dropping it while the button still says it is on.
+    loop: null,         // { start, end } or null
   };
   // A second lane so DJ Mode can genuinely crossfade between two buffer sources —
   // the crossfader UI used to call the main queue's <audio>-based crossfade
@@ -26132,7 +26484,60 @@ function _fallbackCopy(text){
     if(!deckEngine.buffer || !audioCtx) return 0;
     if(!deckEngine.running) return deckEngine.startOffset;
     const elapsed = (audioCtx.currentTime - deckEngine.startedAt) * deckEngine.rate;
-    return deckEngine.startOffset + elapsed;
+    let pos = deckEngine.startOffset + elapsed;
+    // 70.1.7. A native loop sends the NODE playhead back to loopStart on every
+    // pass, but this is a projection of wall-clock time and knows nothing about
+    // it: left alone it walks past loopEnd and keeps going, so every pass puts it
+    // further ahead of the audio - and everything that asks for a position gets a
+    // wrong answer: the platter, the play count, the auto-fade countdown, the
+    // place a hot cue is set, and above all the anchor the LOOP button itself
+    // uses (tap LOOP after holding a beat pad and the loop jumped forward by the
+    // length of the hold). Fold the elapsed time back into the window instead.
+    const lp = deckEngine.loop;
+    if(lp && lp.end - lp.start > 0.01 && pos > lp.end){
+      const span = lp.end - lp.start;
+      pos = lp.start + (pos - lp.start) % span;
+    }
+    return pos;
+  }
+
+  // 70.1.7. The armed window, put on whichever node is live (or taken off it).
+  // Called after every node start, which is what makes a loop survive a restart.
+  function applyDeckLoop(){
+    const node = deckEngine.node;
+    if(!node) return;
+    const lp = deckEngine.loop;
+    try{
+      if(lp && lp.end - lp.start > 0.01){
+        node.loopStart = lp.start;
+        node.loopEnd = lp.end;
+        node.loop = true;
+      } else {
+        node.loop = false;
+      }
+    }catch(_eLoop){}
+  }
+
+  // Arm a loop of `len` seconds where the deck is right now - playing or paused,
+  // because a paused deck has no node and a loop you cannot set while stopped is
+  // not a loop button. Near the end of a track the window is pulled BACK so it
+  // still fits, the way a CDJ sets a loop, instead of clamping to a few
+  // milliseconds of audio and sounding like a click.
+  function armDeckLoop(len){
+    const dur = (deckEngine.buffer && deckEngine.buffer.duration) || 0;
+    if(!dur || !(len > 0)) return false;
+    const span = Math.min(len, dur);
+    const start = Math.max(0, Math.min(deckNow(), dur - span));
+    const end = Math.min(dur, start + span);
+    if(!(end - start > 0.01)) return false;
+    deckEngine.loop = { start: start, end: end };
+    applyDeckLoop();
+    return true;
+  }
+
+  function clearDeckLoop(){
+    deckEngine.loop = null;
+    applyDeckLoop();
   }
 
   function deckStop(){
@@ -26171,13 +26576,23 @@ function _fallbackCopy(text){
     if(typeof keylockOn !== 'undefined' && keylockOn){
       try{ node.detune.setValueAtTime(-1200 * Math.log2(rate), audioCtx.currentTime); }catch(e){}
     }
-    // A fresh node never has loop points set — if the LOOP button's UI still said
-    // "on" from before this restart, turn it off rather than let the button lie
-    // about what's actually playing.
-    if(typeof loopActive !== 'undefined' && loopActive){
-      loopActive = false;
-      const btn = document.getElementById('djLoopBtn');
-      if(btn) btn.classList.remove('active');
+    // 70.1.7. A fresh node carries no loop points, so an armed loop goes back on
+    // it - that is what lets the LOOP button and the beat pads survive a scratch,
+    // a hot cue or a pitch restart. A restart that lands OUTSIDE the window (a hot
+    // cue to another part of the song, say) drops the loop instead, and the button
+    // follows it, so the UI can never claim a loop over audio that is not looping.
+    if(deckEngine.loop){
+      if(offset >= deckEngine.loop.start && offset < deckEngine.loop.end){
+        applyDeckLoop();
+      } else {
+        clearDeckLoop();
+        if(typeof loopActive !== 'undefined' && loopActive){
+          loopActive = false;
+          const btn = document.getElementById('djLoopBtn');
+          if(btn) btn.classList.remove('active');
+        }
+        if(typeof beatRepeatActive !== 'undefined' && beatRepeatActive) beatRepeatActive = false;
+      }
     }
   }
 
@@ -26661,8 +27076,12 @@ function _fallbackCopy(text){
         killButtons.mid.classList.remove('killed');
         killButtons.treble.classList.remove('killed');
       }
+      // 70.1.7. A loop window belongs to THIS track and buffer, so it goes with
+      // the rest of the per-song deck state (hot cues, kill switches, tap tempo).
       loopActive = false;
       if($('djLoopBtn')) $('djLoopBtn').classList.remove('active');
+      clearDeckLoop();
+      if(beatRepeatLocked) setLoopLock(false);
       djCuePoint = 0;
       // Tap tempo is per-song too — a stale BPM from the last track would throw
       // off beat-repeat timing on the new one.
@@ -26782,26 +27201,36 @@ function _fallbackCopy(text){
   // point was crossed — the same node-hammering bug that broke beat repeat.
   // Uses native AudioBufferSourceNode looping now: zero restarts, no glitching.
   let loopActive = false;
-  let loopStart = 0;
   let loopLen = 4;
-  $('loopLenSelect').addEventListener('change', (e) => { loopLen = parseFloat(e.target.value); });
+  $('loopLenSelect').addEventListener('change', (e) => {
+    loopLen = parseFloat(e.target.value) || 4;
+    // 70.1.7. Changing the length WHILE a loop was running did nothing at all -
+    // the window was set when the loop was armed and never read again - so the
+    // control only worked if you switched the loop off and on. Re-window it.
+    if(loopActive) armDeckLoop(loopLen);
+  });
+  function setDeckLoop(on){
+    if(!deckEngine.buffer) return false;
+    loopActive = !!on;
+    const btn = $('djLoopBtn');
+    if(loopActive && !armDeckLoop(loopLen)) loopActive = false;
+    if(!loopActive) clearDeckLoop();
+    if(btn) btn.classList.toggle('active', loopActive);
+    return loopActive;
+  }
   $('djLoopBtn').addEventListener('click', () => {
-    if(!deckEngine.buffer || !deckEngine.node){ toast('Still loading…'); return; }
-    loopActive = !loopActive;
-    $('djLoopBtn').classList.toggle('active', loopActive);
+    // 70.1.7. The old guard was `!deckEngine.buffer || !deckEngine.node`, and a
+    // PAUSED deck has no node (deckStop() nulls it) - so tapping LOOP while
+    // stopped toasted "Still loading…" about a song that was loaded, and did
+    // nothing. A loop set on a stopped deck is armed for PLAY, which is how it is
+    // done on real gear.
+    if(!deckEngine.buffer){ toast('Still loading…'); return; }
     if(loopActive){
-      const pos = deckNow();
-      loopStart = Math.max(0, pos);
-      const loopEnd = Math.min(deckEngine.buffer.duration, loopStart + loopLen);
-      try{
-        deckEngine.node.loop = true;
-        deckEngine.node.loopStart = loopStart;
-        deckEngine.node.loopEnd = loopEnd;
-      }catch(e){}
-      toast(`Looping last ${loopLen}s`);
-    } else {
-      if(deckEngine.node){ try{ deckEngine.node.loop = false; }catch(e){} }
+      setDeckLoop(false);
       toast('Loop off');
+    } else if(setDeckLoop(true)){
+      toast(deckEngine.running ? ('Looping ' + loopLen + 's')
+        : ('Loop armed · ' + loopLen + 's · starts when you press PLAY'));
     }
   });
 
@@ -27159,60 +27588,73 @@ function _fallbackCopy(text){
   // re-triggering playback, we just point the SAME running node's loop window
   // at the desired slice — zero restarts, zero glitching.
   let beatRepeatActive = false;
-  let beatRepeatLen = 0.5;
-  let beatRepeatResumeOffset = 0;
   function beatLenToSeconds(beats){
     const bpm = liveBpm || (allTracks.find(tr => tr.id === djCurrentTrackId)?.bpm) || 120;
     return (60 / bpm) * beats;
   }
+  // 70.1.7. Arm one beat length at the playhead and report whether it landed.
+  // The caller decides what to light up from that answer, so a pad with nothing
+  // loaded can no longer show as active over silence. It used to also demand a
+  // RUNNING deck and a live node, which is why a pad held while stopped looped
+  // nothing at all - a slice armed now starts repeating the moment you press PLAY.
   function startBeatRepeat(beats){
-    if(!deckEngine.buffer || !deckEngine.running || !deckEngine.node) return;
+    if(!deckEngine.buffer) return false;
+    if(!armDeckLoop(beatLenToSeconds(beats))) return false;
     beatRepeatActive = true;
-    beatRepeatLen = beatLenToSeconds(beats);
-    const pos = deckNow();
-    beatRepeatResumeOffset = pos; // remember where to resume normal playback on release
-    const loopStart = Math.max(0, pos);
-    const loopEnd = Math.min(deckEngine.buffer.duration, loopStart + beatRepeatLen);
-    try{
-      deckEngine.node.loop = true;
-      deckEngine.node.loopStart = loopStart;
-      deckEngine.node.loopEnd = loopEnd;
-    }catch(e){}
+    return true;
   }
   function stopBeatRepeat(){
     if(!beatRepeatActive) return;
     beatRepeatActive = false;
-    if(deckEngine.node){
-      try{ deckEngine.node.loop = false; }catch(e){}
-    }
-    // The native loop kept playing inside the small window the whole time, so
-    // just let it continue forward from wherever it naturally is right now —
-    // no restart needed, which is what kept this glitch-free.
+    // Releasing the pad ends the SLICE. If the LOOP button is still on, its own
+    // window comes back underneath rather than being switched off with the pad.
+    // The native loop played inside the window the whole time, so letting go
+    // needs no restart - the audio simply carries on from where it is.
+    if(loopActive) armDeckLoop(loopLen); else clearDeckLoop();
   }
   let beatRepeatLocked = false;
   let beatRepeatLockedBeats = 0.5;
-  $('beatRepeatLockBtn').addEventListener('click', () => {
-    beatRepeatLocked = !beatRepeatLocked;
-    $('beatRepeatLockBtn').textContent = `LOOP LOCK: ${beatRepeatLocked ? 'ON' : 'OFF'}`;
+  function setLoopLock(on){
+    beatRepeatLocked = !!on;
+    $('beatRepeatLockBtn').textContent = 'LOOP LOCK: ' + (beatRepeatLocked ? 'ON' : 'OFF');
     $('beatRepeatLockBtn').classList.toggle('active', beatRepeatLocked);
-    if(beatRepeatLocked){
-      startBeatRepeat(beatRepeatLockedBeats);
+    if(!beatRepeatLocked){
+      stopBeatRepeat();
+      document.querySelectorAll('.beat-pad').forEach(b => b.classList.remove('active'));
+    }
+  }
+  $('beatRepeatLockBtn').addEventListener('click', () => {
+    if(beatRepeatLocked){ setLoopLock(false); return; }
+    // 70.1.7. Loop Lock only goes ON once a slice is REALLY armed. It used to
+    // claim ON and keep the pad lit over an empty deck or a paused one, where
+    // there was nothing looping at all.
+    if(startBeatRepeat(beatRepeatLockedBeats)){
+      setLoopLock(true);
       const btn = document.querySelector(`.beat-pad[data-beats="${beatRepeatLockedBeats}"]`);
       if(btn) btn.classList.add('active');
     } else {
-      stopBeatRepeat();
-      document.querySelectorAll('.beat-pad').forEach(b => b.classList.remove('active'));
+      toast('Still loading…');
     }
   });
   document.querySelectorAll('.beat-pad').forEach(btn => {
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      // 70.1.7. Capture the pointer for the whole hold. Without it a finger that
+      // drifts, or a scroll this sheet decides to start, took the gesture away:
+      // pointercancel/pointerleave fired a fraction of a second in and the slice
+      // died. With capture the pad keeps receiving the move and the release even
+      // if the thumb slides right off it.
+      try{ if(btn.setPointerCapture) btn.setPointerCapture(e.pointerId); }catch(_eCap){ }
       document.querySelectorAll('.beat-pad').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
       beatRepeatLockedBeats = parseFloat(btn.dataset.beats);
-      startBeatRepeat(beatRepeatLockedBeats);
+      // Light the pad only if a slice was actually armed - the old order lit it
+      // first and asked questions later.
+      if(startBeatRepeat(beatRepeatLockedBeats)) btn.classList.add('active');
     });
-    ['pointerup','pointercancel','pointerleave'].forEach(ev => btn.addEventListener(ev, () => {
+    // pointerup / pointercancel only, never pointerleave: this app already refuses
+    // to cancel a hold on pointerleave for exactly this reason (a drifting cursor
+    // or thumb fires it constantly on desktop and on Android WebView alike).
+    ['pointerup','pointercancel'].forEach(ev => btn.addEventListener(ev, () => {
       if(beatRepeatLocked) return; // stays looping until Loop Lock is switched off
       btn.classList.remove('active');
       stopBeatRepeat();
@@ -27297,6 +27739,232 @@ function _fallbackCopy(text){
     a.remove();
     toast('Saved to your downloads');
   });
+
+  // ---------------- SAVE COPY: the song, with everything this deck is doing to
+  // it, as a NEW library song. REC above captures the deck live and hands you a
+  // file: real time, and a recording of the mix rather than a copy of the song.
+  // This renders the same chain offline instead. The track is already decoded
+  // into deckEngine.buffer, so the whole thing happens in one pass in a few
+  // seconds, and the result goes into the library through scAddConvertedToLibrary
+  // - the helper a finished conversion uses - so it arrives with tags, cover art,
+  // a real duration and an All Songs entry like any imported file. Nothing here
+  // writes to the loaded song.
+  //
+  // Every value below is read from the LIVE nodes rather than re-derived from the
+  // knobs (the filter type and frequency, each EQ band gain, the sends’ delay
+  // times and wet gains, the limiter’s five settings, the source’s playbackRate
+  // and detune). One implementation, two contexts: whatever the knobs are doing
+  // to the sound is what gets baked, with no second copy of the mapping to drift.
+  let djCopyBusy = false;
+  function djCopySourceState(){
+    // A buffer source really plays at playbackRate * 2^(detune/1200) - detune is
+    // not an independent pitch shifter, it scales the rate. Both are copied so
+    // the copy is the sound the deck is making, KEYLOCK included. A paused deck
+    // has no node, so the same two values are mirrored from the engine.
+    const node = deckEngine.node;
+    let rate = deckEngine.rate || 1;
+    let detune = 0;
+    try{
+      if(node){
+        if(node.playbackRate) rate = node.playbackRate.value || rate;
+        if(node.detune) detune = node.detune.value || 0;
+      } else if(keylockOn){
+        detune = -1200 * Math.log2(rate);
+      }
+    }catch(_eSrcState){ }
+    const speed = Math.max(0.05, rate * Math.pow(2, detune / 1200));
+    return { rate: rate, detune: detune, speed: speed };
+  }
+  function djCopyTailSeconds(){
+    // Room for the sends to ring out, and none at all when they are off: three
+    // seconds of silence on the end of a copy is three seconds of silence.
+    let tail = 0;
+    if(deckEngine.reverbNodes) tail += 3.4;
+    if(deckEngine.delayNodes) tail += 2;
+    if(deckEngine.flangerNodes) tail += 0.4;
+    return tail;
+  }
+  function buildDjCopySource(octx, buffer, state){
+    const src = octx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = state.rate;
+    try{ if(src.detune) src.detune.value = state.detune; }catch(_eCopyDet){ }
+    // The GAIN knob, with the DUCK pump replayed if it is running - it is a beat
+    // automation, so the copy has to carry the automation and not a snapshot of
+    // wherever the gain happened to be when the button was tapped.
+    const knob = octx.createGain();
+    const baseGain = Math.pow(10, (deckGainDb || 0) / 20);
+    knob.gain.value = baseGain;
+    try{
+      if(duckAmount > 0){
+        const bpm = liveBpm || (allTracks.find(tr => tr.id === djCurrentTrackId)?.bpm) || 120;
+        const beat = Math.max(0.08, (60 / bpm) / state.speed);
+        const duckedGain = baseGain * (1 - duckAmount);
+        const total = Math.max(beat, buffer.duration / state.speed);
+        for(let t = 0; t < total; t += beat){
+          knob.gain.setValueAtTime(duckedGain, t);
+          knob.gain.linearRampToValueAtTime(baseGain, t + beat * 0.85);
+        }
+      }
+    }catch(_eCopyDuck){ }
+    // The FILTER sweep, exactly as the knob left it.
+    const filter = octx.createBiquadFilter();
+    const liveFilter = deckEngine.filterNode;
+    try{
+      filter.type = liveFilter ? liveFilter.type : 'allpass';
+      filter.frequency.value = liveFilter ? liveFilter.frequency.value : 20000;
+      filter.Q.value = liveFilter ? liveFilter.Q.value : 0.0001;
+    }catch(_eCopyFilter){ }
+    // The blend the sends return into, then the EQ, the normalization/auto-gain
+    // nodes and the limiter - the same order the live deck is wired in.
+    const blend = octx.createGain();
+    blend.gain.value = 1;
+    const bands = [];
+    (eqNodes[0] || []).forEach(function(liveBand){
+      const band = octx.createBiquadFilter();
+      try{
+        band.type = liveBand.type;
+        band.frequency.value = liveBand.frequency.value;
+        band.Q.value = liveBand.Q.value;
+        band.gain.value = liveBand.gain.value;
+      }catch(_eCopyBand){ }
+      bands.push(band);
+    });
+    const norm = octx.createGain();
+    norm.gain.value = gainNodes[0] ? gainNodes[0].gain.value : 1;
+    const deckGain = octx.createGain();
+    deckGain.gain.value = deckGainNodes[0] ? deckGainNodes[0].gain.value : 1;
+    const limiter = octx.createDynamicsCompressor();
+    try{
+      const liveLimiter = limiterNodes[0];
+      if(liveLimiter){
+        limiter.threshold.value = liveLimiter.threshold.value;
+        limiter.knee.value = liveLimiter.knee.value;
+        limiter.ratio.value = liveLimiter.ratio.value;
+        limiter.attack.value = liveLimiter.attack.value;
+        limiter.release.value = liveLimiter.release.value;
+      }
+    }catch(_eCopyLimiter){ }
+    src.connect(knob);
+    knob.connect(filter);
+    filter.connect(blend);
+    let tail = blend;
+    bands.forEach(function(band){ tail.connect(band); tail = band; });
+    tail.connect(norm);
+    norm.connect(deckGain);
+    deckGain.connect(limiter);
+    limiter.connect(octx.destination);
+    // The three sends, tapped off the filter and returning into the blend, the
+    // way the live ones are. Each is skipped when the knob was never touched,
+    // which is also why the render has no tail to wait for.
+    try{
+      const rv = deckEngine.reverbNodes;
+      if(rv && rv.convolver && rv.convolver.buffer){
+        const pre = octx.createDelay(0.1);
+        pre.delayTime.value = rv.preDelay.delayTime.value;
+        const conv = octx.createConvolver();
+        // The SAME impulse the live convolver is using, so the copy sits in the
+        // space that was actually being heard rather than a re-generated guess.
+        conv.buffer = rv.convolver.buffer;
+        conv.normalize = rv.convolver.normalize;
+        const hp = octx.createBiquadFilter();
+        hp.type = rv.wetHighpass.type;
+        hp.frequency.value = rv.wetHighpass.frequency.value;
+        const lp = octx.createBiquadFilter();
+        lp.type = rv.wetLowpass.type;
+        lp.frequency.value = rv.wetLowpass.frequency.value;
+        const wet = octx.createGain();
+        wet.gain.value = rv.wetGain.gain.value;
+        filter.connect(pre); pre.connect(conv); conv.connect(hp);
+        hp.connect(lp); lp.connect(wet); wet.connect(blend);
+      }
+    }catch(_eCopyReverb){ console.warn('SAVE COPY: the reverb send could not be mirrored', _eCopyReverb); }
+    try{
+      const fl = deckEngine.flangerNodes;
+      if(fl){
+        const d = octx.createDelay(0.02);
+        d.delayTime.value = fl.delay.delayTime.value;
+        const lfo = octx.createOscillator();
+        lfo.type = fl.lfo.type;
+        lfo.frequency.value = fl.lfo.frequency.value;
+        const depth = octx.createGain();
+        depth.gain.value = fl.lfoGain.gain.value;
+        lfo.connect(depth); depth.connect(d.delayTime);
+        const fb = octx.createGain();
+        fb.gain.value = fl.feedback.gain.value;
+        const wet = octx.createGain();
+        wet.gain.value = fl.wetGain.gain.value;
+        filter.connect(d); d.connect(fb).connect(d); d.connect(wet).connect(blend);
+        lfo.start(0);
+      }
+    }catch(_eCopyFlanger){ console.warn('SAVE COPY: the flanger send could not be mirrored', _eCopyFlanger); }
+    try{
+      const dl = deckEngine.delayNodes;
+      if(dl){
+        const d = octx.createDelay(2);
+        d.delayTime.value = dl.delay.delayTime.value;
+        const fb = octx.createGain();
+        fb.gain.value = dl.feedback.gain.value;
+        const wet = octx.createGain();
+        wet.gain.value = dl.wetGain.gain.value;
+        filter.connect(d); d.connect(fb).connect(d); d.connect(wet).connect(blend);
+      }
+    }catch(_eCopyDelay){ console.warn('SAVE COPY: the delay send could not be mirrored', _eCopyDelay); }
+    return src;
+  }
+  async function saveDjCopy(){
+    if(djCopyBusy) return;
+    const t = allTracks.find(tr => tr.id === djCurrentTrackId);
+    if(!t){ toast('Load a song onto the deck first'); return; }
+    if(!deckEngine.buffer){ toast('This song is still being read — try again in a moment'); return; }
+    const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if(!Offline){ toast('This device cannot render a copy of the song'); return; }
+    djCopyBusy = true;
+    const btn = $('djCopyBtn');
+    if(btn){ btn.disabled = true; btn.textContent = 'RENDERING…'; }
+    try{
+      const buffer = deckEngine.buffer;
+      const state = djCopySourceState();
+      const sr = Math.max(8000, Math.round(buffer.sampleRate || 44100));
+      const chCount = Math.max(1, Math.min(2, buffer.numberOfChannels || 2));
+      const seconds = (buffer.duration / state.speed) + djCopyTailSeconds();
+      const octx = new Offline(chCount, Math.max(1, Math.ceil(seconds * sr)), sr);
+      const src = buildDjCopySource(octx, buffer, state);
+      src.start(0);
+      const rendered = await octx.startRendering();
+      if(!rendered) throw new Error('the render produced nothing');
+      // The tag a re-encoded song gets, plus this copy's own name, so the two are
+      // told apart in the list and the original keeps its own title.
+      const title = (t.name || 'Untitled') + ' (DJ edit)';
+      const meta = { title: title, artist: t.artist || '', album: t.album || '', genre: t.genre || '' };
+      try{
+        if(t.artBlob){
+          meta.artBytes = new Uint8Array(await blobToArrayBufferFallbackCrop(t.artBlob));
+          meta.artMime = t.artBlob.type || 'image/jpeg';
+        }
+      }catch(_eCopyArt){ }
+      const blob = await scEncodeAudioCooperative(rendered, 'mp3', meta, function(p){
+        if(btn) btn.textContent = 'ENCODING ' + Math.round(Math.max(0, Math.min(1, p)) * 100) + '%';
+      });
+      if(!blob) throw new Error('the MP3 encoder produced nothing');
+      const made = scAddConvertedToLibrary(blob, meta, { fmt: 'mp3', source: 'djmode' });
+      if(!made) throw new Error('the copy could not be added to the library');
+      toast('Saved “' + title + '” to All Songs — your own copy of the song is untouched', 5200);
+    }catch(e){
+      console.warn('SAVE COPY failed', e);
+      toast('Could not save the copy: ' + (e && e.message ? e.message : e), 5200);
+    }finally{
+      djCopyBusy = false;
+      if(btn){ btn.disabled = false; btn.textContent = 'SAVE COPY'; }
+    }
+  }
+  // Guarded because this button is markup from this same release: if a shell ever
+  // loads with an older page, a missing button must not take the rest of the boot
+  // wiring down with it.
+  (function(){
+    const copyBtn = $('djCopyBtn');
+    if(copyBtn) copyBtn.addEventListener('click', saveDjCopy);
+  })();
 
   function updatePitchUI(){
     const thumb = $('pitchThumb');
@@ -38322,7 +38990,7 @@ var _aiBusyFallback = false;
 var _aiKB = [
   // ═══ GETTING STARTED ═══
   {q:['how do i add songs','how to add music','how to import songs','import music','add files'],a:'To add songs: on the welcome screen tap **+ Choose files** (pick MP3s one by one) — or use **+ Add songs → Choose folder / Choose files**. To restore a backup, tap **Import backup (everything)** and pick your .zip.'},
-  {q:['how to get songs','where to get music','download music','can i download music','download music from the app','can i download songs','does sidecut download music','get mp3s','spotify to mp3','how do i get music'],a: SC_IS_PLAY ? 'No - this build does not download music from anywhere. SideCut stores and plays the music files you already have: tap **+ Add songs → + Files** (or **+ Add folder**) to bring audio in from your device, and **Import backup (everything)** to restore a .zip with playlists, albums, tags and covers. That is what it is for - your files, on your device, with no ads.' : 'SideCut has a built-in **Spotify to MP3 / WAV / FLAC converter** — no external site needed. In **Spotify**, tap **Share → Copy link** on a song, album or playlist, then paste that link into the converter in **Discover → Conversion Tools** (or **Settings → Get Songs**) and tap **Convert**. Pick MP3 (small) or WAV/FLAC (lossless). A song gives you one tagged file; an album or playlist converts and auto-downloads every song one by one, in order, with title/artist/album/track-number and cover art embedded in each file.'},
+  {q:['how to get songs','where to get music','download music','can i download music','download music from the app','can i download songs','does sidecut download music','get mp3s','spotify to mp3','how do i get music'],a: SC_IS_PLAY ? 'No - this build does not download music from anywhere. SideCut stores and plays the music files you already have: tap **+ Add songs → + Files** (or **+ Add folder**) to bring audio in from your device, and **Import backup (everything)** to restore a .zip with playlists, albums, tags and covers. That is what it is for - your files, on your device, with no ads. Audio from external sources works as well: a computer, a cloud drive, an SD card, an email, a chat or another app all end up as a file on the phone, and **+ Add songs** imports it.' : 'SideCut has a built-in **Spotify to MP3 / WAV / FLAC converter** — no external site needed. In **Spotify**, tap **Share → Copy link** on a song, album or playlist, then paste that link into the converter in **Discover → Conversion Tools** (or **Settings → Get Songs**) and tap **Convert**. Pick MP3 (small) or WAV/FLAC (lossless). A song gives you one tagged file; an album or playlist converts and auto-downloads every song one by one, in order, with title/artist/album/track-number and cover art embedded in each file.'},
   {q:['what file types','supported formats','file types','audio formats','what files','can i use flac','can i use wav','can i use ogg'],a:'SideCut supports: **Audio:** .mp3, .m4a, .wav, .flac, .ogg, .aac, .wma, .opus, .aiff, .alac. **Other:** .zip (library/playlist import), .csv (Spotify playlist import).'},
   {q:['expand url','spotify link','paste link','convert url','what is expand url'],a: SC_IS_PLAY ? '**Expand URL** takes a Spotify short link (like open.spotify.com/track/...) and expands it to the full open.spotify.com URL. It&apos;s in **Settings → Get Songs** or at the top of **Discover**.' : '**Expand URL** takes a Spotify short link (like open.spotify.com/track/...) and expands it to the full open.spotify.com URL. It&apos;s in **Settings → Get Songs** or at the top of **Discover**. Usually you can paste your Spotify link straight into the built-in **Spotify to MP3 / WAV / FLAC** converter without expanding it first — song, album and playlist links (and spotify.link short links) all resolve automatically.'},
   {q:['first time','getting started','new user','how to start','setup'],a: SC_IS_PLAY ? 'Welcome! The quick start: 1) Tap **+ Add songs → + Files** to bring the MP3s already on your device into the app. 2) Tap any song to play it. 3) Use the mini player at the bottom for play/pause, skip, shuffle. 4) Check **Settings → Theme** to customize the look.' : 'Welcome! Here\'s the quick start: 1) Tap **+ Add songs → + Files** to import MP3s from your device. 2) Tap any song to play it. 3) Use the mini player at the bottom for play/pause, skip, shuffle. 4) Check **Settings → Theme** to customize the look. For more music: use the built-in **Spotify to MP3** converter in Discover (or Settings → Get Songs).'},

@@ -1,6 +1,300 @@
 # SideCut — repository memory
 
 
+## 70.1.9 (Sep 30, 2026): donations reach the sideloaded package and the browser, and the store build says where audio can come from
+- **The user's words**: "make donations work on the apk" (the parked release, finally unblocked) plus the payment links,
+  "In play version you can put that you can get mp3's from external sources as well", and then the two corrections that
+  reshaped it: "What about 2 dollar stripe” and **"store is for apk/web only not play store that has play billing"**.
+  Two things shipped in one release: the tip rail, and four copy edits on the store build.
+- **ASK BEFORE MAPPING MONEY.** The links arrived as `...MI03 ...MI02 ...MI04 these are 10 25 and 50 this is 5 ...MI01`,
+  which reads positionally as 03=$10, 02=$25, 04=$50, 01=$5 - and that reading is **wrong**. The user confirmed
+  **01=$5, 02=$10, 03=$25, 04=$50**, and later **MI00=$2**. One `ask_user` question was much cheaper than four
+  mislabelled donation buttons, and a wrong tier is invisible in the UI (the button already says "Tip $25"; only the link
+  behind it is wrong). **Ask.**
+- **THE RAIL: `PAYMENT_CONFIG.donateLinks`, one hosted card page per amount, AND ONLY ON A COPY PLAY DOES NOT SELL TO.**
+  Google Play Billing only sells inside the copy Play distributed, so the `full` flavour (com.SideCut.myapp.full) and a
+  plain browser had nothing to charge and every tip ended at "install the Play build". Stripe Payment Links are **fixed
+  amounts**, so this is a table (`2:`, `5:`, `10:`, `25:`, `50:`) and not a template: `donateUrlFor(amt)` asks the table
+  first, then falls back to the optional templated `donateUrl` (a PayPal.me / Cash App link takes `{amt}`; a "customers
+  choose what they pay" link is used as-is). Empty result = no web route, which is the answer `runTip` branches on.
+  `runTip(sku)` became `runTip(sku, amt)` because the web rail needs the number the user tapped.
+- **THE STORE BUILD IS NOT PART OF THE CARD ROUTE AT ALL** - the user drew that line explicitly, and it is the difference
+  between a product rule and a bug: `const web = SC_IS_PLAY ? '' : donateUrlFor(amt);` and
+  `const tierList = SC_IS_PLAY ? '' : donateTierList();`, so a copy installed from Play never looks a card page up and
+  never names one, and its fallback sentence is character-for-character the one 70.1.3 shipped. `SC_IS_PLAY` is a `var`
+  in the same script block as `initDonateTab` and `runTip`, so it is in scope with no plumbing. A tier with **no** page of
+  its own keeps 70.1.3's route (message + Play listing), now saying which amounts do work here, read off the table by
+  `donateTierList()` rather than written out a second time - and **the store build's Donate pane is untouched copy too,
+  because the user said so twice** ("No the play build should stay as is with play billing no stripe for that"). Both
+  sentences a card page changes therefore live behind `if(promise && !SC_IS_PLAY){` in `initDonateTab`: `#donatePromise`
+  ("Pick an amount - Google Play handles the payment." becomes the rail sentence plus the amounts) and `#donateIntro`
+  (the "processed through Google Play" clause becomes a card page). The markup those rewrites target is the 70.1.8
+  markup character for character; only the two `id` attributes are new, and a copy with no links leaves the sentence
+  alone. Putting the amount list in static markup had already gone stale once - it said four amounts the day a fifth
+  arrived - which is why the list is read from the table at the moment the pane opens.
+- **THE STORE BUILD'S COPY, four edits, all inside the `SC_IS_PLAY` block**: the walkthrough that `getSongsHowToDisc`
+  and `getSongsHowToSettings` both render, the first-run sheet's `howToGetMusicHead` rewrite, the tutorial summary
+  (`tutSumGetMusic`) and the first help answer in `_aiKB`. Before, that copy said "SideCut plays the audio files saved on
+  your device" - true, but it reads as a limit. It now adds that audio from external sources works too (a computer, a
+  cloud drive, an SD card, an email, a chat or another app). **Nothing about what the build does changed** - it still
+  fetches nothing - and `dev/test-play-copy.mjs` holds that copy to its wider term list (`converter|spotify|youtube|to
+  mp3|download|expand url` on the walkthrough string, evaluated with `new Function`), which is why none of the new
+  wording names a source or a tool.
+- **A NOTE THAT SAILS WITH THE PLAY BUNDLE IS AUDITED HARDER THAN ANY OTHER TEXT.** `ota-bundle-play.mjs` copies the
+  head entry's first six items into `ota-play/updates.json` **unfiltered** (`scHidesOnPlay` is not applied), and
+  `test-play-copy.mjs` `[3]` runs a **wider** list over them than the shipped filter knows:
+  `/(downloader|downloading|\bdownload|converter|converts|converting|conversion|\bconvert\b|\bmp3\b|get song|no source
+  found|hand-?off|ytmp3|vocal remover|spotisaver|spotmate|spotidown|spoticatch)/i`. So **a changelog head note may not say
+  "MP3"**, may not say "save the file" (`test-play-copy` `[2]`), and may not say "download", "convert" or "get song"
+  (test-662 `[9]`, test-6642/66421). The notes that shipped say "the audio can come from anywhere" for exactly this
+  reason. The patch asserts the rule against its own `NOTES` before writing.
+- **AMENDING AN UNCOMMITTED RELEASE IS A RESTORE PLUS A RE-RUN.** The first cut of this release was applied, bundled and
+  verified - and then the user's "apk/web only" correction arrived. Nothing had been committed or pushed, so the release
+  was amended rather than followed by a second patch: `cp /tmp/sc7018/index.html /tmp/sc7018/sw.js .` and
+  `cp -r /tmp/sc7018/dev/. dev/` put the tree back on the 70.1.8 state (**the scratch tree from the previous release is
+  the revert, so keep it until the release is committed**), then the rewritten `patch-7019.mjs` + `repin-7019.mjs` ran
+  again from scratch (`--check` first: `would apply 17 edit(s), 0 already in place`). The compare that proves the restore
+  was exact is `diff -rq /tmp/sc7018/dev dev` - it must list only the files you intend to change.
+- **Verified.** test-705 **222** (was 217; the new rule is five web-route and store-build checks added under the 70.1.3
+  donate block), studio-70-check **284** (was 271). The probe now **boots twice** - `boot(play)` sets
+  `window.__PLAY_BUILD__` in `beforeParse`, before any inline script has read `SC_IS_PLAY` - so both sides of the user's
+  line are MEASURED, not reasoned about: `[11l]` (no flag, the sideloaded package exactly, since jsdom has no
+  `window.Capacitor`) sees the pane promise `$2, $5, $10, $25 or $50`, opens
+  `https://buy.stripe.com/28E4gyb6vfUn1P2dsUdMI01` on a tap of `$5`, and still ends `$7` in the Play listing; `[11m]`
+  (flag set, the store build exactly) sees the two sentences the last release shipped, **no mention of a card page
+  anywhere it says**, and a `$5` tap that ends in the Play listing.
+  test-662 75, test-663 49, 6641 128, 6642 75, 66421 49, 6643 90, 66429 83, test-play-copy 28, test-619 55,
+  ota-guard 20, ota-bootapply 24, ota-loop 26, ota-update 52. `dev/test-6058.mjs` reports **47 passed, 1 failed** -
+  "free-tier blurb says 30-second previews" (`'Album History, 30-second previews'` is absent from index.html). **That is
+  pre-existing**: the string is missing from the 70.1.7 tree too, so it is a baseline failure and not this release's.
+- **`dev/patch-7019.mjs` / `dev/repin-7019.mjs`**: `APP_VERSION` **70.1.8 -> 70.1.9**, stamp
+  `September 30, 2026 \u00b7 5:00 PM EDT` (the clock read 5:06 PM when it was re-applied), shell cache
+  `v63.0.44 -> v63.0.45`, a 6-note changelog head, **19 edits**; the usual repin (**22 edits across 19 files**, still
+  skipping `test-705.mjs`). The old `SC_DONATE_URL` env requirement is gone - the links are in the file, where a public
+  Payment Link belongs.
+- **THE OTA BUNDLE: A FIXED POINT, BUT ONLY AFTER ONE HUNT.** The first cut of this release oscillated
+  **828407 <-> 828408** (the 70.1.7 shape), and the final content converges at **828625** with `ota/update.zip` real size
+  828625 and `manifest.json` + `updates.json` + `ota/manifest.json` + `ota/updates.json` all **828625**;
+  `ota-play/update.zip` + `ota-play/updates.json` **828633**. Two consecutive `ota-bundle.mjs` /
+  `ota-bundle-play.mjs` runs are byte-identical (`md5sum` on all six files), which is what `deploy.yml`'s
+  `git diff --quiet` and `ota-update-check.cjs`'s "a second generation produces the same bytes" actually require, and
+  `ota-fixpoint.mjs` itself now reports `(fixed point)` and five `OK` lines. **Check convergence every release instead of
+  assuming either answer** - 70.1.6, 70.1.8 and 70.1.9's final content converged; 70.1.7 and 70.1.9's first cut did not.
+  The manual loop is `S=$(node -e "...ota/updates.json.size"); cp ota/updates.json manifest.json; node dev/ota-bundle.mjs;
+  node dev/ota-bundle-play.mjs; echo seeded/built`, repeated until the size stops moving.
+
+
+## 70.1.8 (Sep 30, 2026): SAVE COPY renders the song with the deck's own sound as a new song
+- **The user's words**: "in dj mode make it so that all the changes you've made can be saved as a dj mode copy of the
+  song seperate front the actual song". The label on the button is **SAVE COPY**, and it sits under the record panel.
+- **REC WAS THE WRONG TOOL, TWICE.** DJ Mode already had `REC`, which captures the deck live through a
+  `MediaStreamDestination`: real time (a four minute song is four minutes of waiting, plus whatever is played while it
+  runs) and it hands back a file to save, not a song in the library. SAVE COPY renders instead: the deck has already
+  decoded the track into `deckEngine.buffer`, so an `OfflineAudioContext` runs the whole thing in one pass in a few
+  seconds, and the result goes into the library through `scAddConvertedToLibrary` - the same helper a finished
+  conversion uses - as `"<name> (DJ edit)"`. **The loaded song is never written to.**
+- **EVERY BAKED VALUE IS READ OFF THE LIVE NODES, not re-derived from the knobs**: the filter's `type`/`frequency`/`Q`
+  off `deckEngine.filterNode`, each of the eight `eqNodes[0]` band's own gain, `gainNodes[0]`,
+  `deckGainNodes[0]`, the limiter's five settings, the reverb's **same convolver buffer** plus preDelay/highpass/lowpass
+  and wet gain, the flanger and delay sends (`lfoGain` -> `delayTime`, feedback, wet) and the DUCK pump rebuilt as beat
+  automation (`setValueAtTime` / `linearRampToValueAtTime` at `60/bpm/speed`), because a snapshot of the gain at the
+  moment of the tap is not the pump. One mapping, two contexts, nothing to drift.
+- **KEYLOCK SETTLES THE ONE SUBTLE CASE.** `applyKeylockDetune` countershifts `detune` by `-1200*log2(rate)`, and a
+  buffer source really plays at **`playbackRate * 2^(detune/1200)`** (the Web Audio spec's `computedPlaybackRate`, W3C
+  Web Audio 1.1). Baking **both** is what reproduces the sound the deck is making; the offline source gets
+  `src.playbackRate.value = state.rate` **and** `src.detune.value = state.detune`, and a paused deck (no node) mirrors
+  the same two from the engine.
+- **THE LOOP IS NOT PART OF THE COPY, on purpose**: a loop is where playback is, not part of the song, and so is the
+  playhead position. The copy is the whole track from the beginning with the deck's sound on it. The render length is
+  `buffer.duration / speed` plus a tail that is **only added for sends that exist** (`djCopyTailSeconds()`), so a copy
+  made with everything off has no silence on the end.
+- **TWO DEFECTS IN `dev/patch-7018.mjs` WERE CAUGHT BY READING IT BEFORE APPLYING IT.** (1) The flanger used
+  `lfo.connect(depth); lfo.connect(depth).connect(d.delayTime);` - `AudioNode.connect()` returns the **destination**
+  node only in the spec's newer form; against real Web Audio the chained call is `undefined.connect(...)` and throws,
+  leaving a half-built send. It is `lfo.connect(depth); depth.connect(d.delayTime);`. (2) The `must()` block carried a
+  nonsense always-true clause (`count('' + 'src.detune...') >= 0`). **Read a patch's assertions, not just its edits.**
+- **THE GATE HAD TO ASSERT WHAT THE RELEASE BUILDS, NOT THE FEATURE DETECT.** The first cut of `[10e]` counted
+  `window.OfflineAudioContext || window.webkitOfflineAudioContext` and demanded exactly 1 - but that string is already in
+  the file **four** times (the export path, the decode path, the crop path). The rule now pins
+  `const octx = new Offline(chCount` and `const rendered = await octx.startRendering();`, which is the render this
+  release adds. **A count-based needle is a claim about the whole file; scratch-run it before believing it.**
+- **`dev/repin-7018.mjs` HAD TO BE WRITTEN BEFORE THIS COULD SHIP**: the sweep had already been renamed to
+  `repin-7019.mjs` for the parked donation release while `patch-7018.mjs` was being written, so the 70.1.7 -> 70.1.8
+  repin did not exist. Same shape as its neighbours (`test-705.mjs` keeps its own pins; **22 edits across 19 files**).
+- **Verified.** test-705 **217** (`[10e]`, 5 checks), studio-70-check **271** (`[11k]`, 4 checks - jsdom has no Web
+  Audio, so it drives the resting state: the button says `Load a song onto the deck first` rather than throwing), test-662
+  75, 663 49, 6641 128, 6642 75, 66421 49, 6643 90, 66429 83, audit-calls clean, ota-guard 20, ota-bootapply 24,
+  ota-loop 26, ota-update 52. The OTA converged without a manual hunt: fixpoint **826035** (root manifest and all four
+  published manifests agree), play zip **826044**, two consecutive generations byte-identical.
+- **RENUMBERING:** the parked donation work moved **70.1.8 -> 70.1.9** while this shipped, and it is no longer blocked
+  (see the 70.1.9 section above).
+
+
+## 70.1.7 (Sep 30, 2026): the DJ Mode loop controls hold, arm while stopped, and stop lying
+- **The user's words**: "The loop buttons in dj mode are finicky and don't work". Four causes, and they compounded each
+  other. All four are fixed; nothing else about the deck moved.
+- **1. THE HOLD PADS LOST THEIR GESTURE, and this is the "finicky" half.** The beat-repeat pads arm a slice on
+  `pointerdown` and end it when the pointer comes up - but the DJ sheet scrolls (`.modal{ max-height:82vh;
+  overflow-y:auto }`), so the moment a finger drifted the browser claimed the touch for a scroll and fired
+  `pointercancel`, and `pointerleave` fired as soon as the finger slid off the pad. The pads had **no `touch-action`**, so
+  both happened constantly and the slice died a fraction of a second in. Fix: `touch-action:none` on the four press
+  surfaces (`.beat-pad, .fx-pad, .drum-pad, .hotcue-btn` - the app already uses exactly this medicine on its other drag
+  handles), `btn.setPointerCapture(e.pointerId)` for the whole hold, and the release list is
+  `['pointerup','pointercancel']` with **`pointerleave` removed on purpose** - the same rule the app already states at its
+  reorder handles ("no pointerleave-cancel on purpose. On desktop a mouse cursor drifts").
+- **2. THE LOOP BUTTON DID NOT WORK WHILE THE DECK WAS PAUSED, AND BLAMED LOADING.** Its guard was
+  `if(!deckEngine.buffer || !deckEngine.node)` - and a paused deck has **no node** (`deckStop()` nulls it), so tapping
+  LOOP while stopped toasted `Still loading…` about a song that was loaded, and did nothing. A beat pad had the same hole
+  (`!deckEngine.running`). Both now only need a buffer, and a loop set while stopped is **armed for PLAY**, which is how a
+  CDJ behaves.
+- **3. THE LOOP LIVED ONLY ON THE NODE.** `loopStart`/`loopEnd`/`loop` were written straight onto the live
+  `AudioBufferSourceNode`, and every restart - scratch, hot cue, pitch - builds a fresh node with no loop points;
+  `deckStart()` then switched the LOOP button off so it could not lie. The loop is now a window on the deck
+  (`deckEngine.loop`, with `applyDeckLoop()` / `armDeckLoop(len)` / `clearDeckLoop()`), put back on whatever node exists,
+  so it survives a restart - and it is dropped, **with the button**, only when a restart lands outside the window.
+- **4. THE PLAYHEAD WALKED OUT OF THE LOOP, WHICH IS WHY IT FELT RANDOM.** `deckNow()` is a projection of wall-clock
+  time; a native loop sends the **NODE's** playhead back to `loopStart` every pass and the projection knew nothing about
+  it. Hold a beat pad for ten seconds and the app's idea of the position had drifted ten seconds ahead of the audio - the
+  platter, the play count, the auto-fade countdown, the position a hot cue stores, and above all **the anchor the LOOP
+  button itself uses**: tap LOOP after a beat repeat and the loop jumped forward by the length of the hold. `deckNow()`
+  now folds the elapsed time back into the window (`pos = lp.start + (pos - lp.start) % span`).
+- **Honesty fixes that fall out of the same four**: Loop Lock only says ON once a slice is really armed (it used to claim
+  ON, and keep the pad lit, over an empty or paused deck); the pad lights only if arming succeeded (the old order lit it
+  first and asked questions later); changing the loop length **while a loop is running** now re-windows it instead of
+  doing nothing; and releasing a pad while the LOOP button is on hands the loop back to the button instead of switching it
+  off underneath.
+- **A SUB-KEY LESSON, THE FIFTH KIND OF SILENT FAILURE.** The per-song reset sub was keyed on `      clearDeckLoop();\n`
+  (six spaces) while `deckStart`'s own `clearDeckLoop()` sits **eight** spaces in - so the key was already "satisfied",
+  the sub was SKIPPED via `already++`, and half the reset never landed while `patch --check` said nothing was wrong. The
+  key is now the line this release adds (`      if(beatRepeatLocked) setLoopLock(false);`). Same family as 70.1's three and
+  70.0.8's: **a sub that skips for the wrong reason looks exactly like a sub that worked - read the file, not the
+  summary.**
+- **REGRESSION WATCH.** `dev/test-705.mjs` **+5 (212 total)** gets `[10d]` (the code shape: the window on the deck, no
+  guard needing a live node, the loop fold, the capture, and `touch-action:none`); `dev/studio-70-check.cjs` **+5 (267
+  total)** gets `[11j]`, which drives the resting state - a pad `pointerdown` with no deck buffer must **not** light up,
+  and Loop Lock must stay `OFF` - plus the stylesheet and the pointer list. **The audio half cannot run in jsdom** (there
+  is no Web Audio and no decoded deck buffer), so the audible claim rests on the code and the reasoning above; the probe's
+  stray needle that also matched the hot-cue pads' own `pointerleave` cancel was the only gate bug, and it is fixed by
+  ending the needle at the handler's `{`.
+- **`dev/patch-7017.mjs` / `dev/repin-7017.mjs`**: `APP_VERSION` **70.1.6 -> 70.1.7**, stamp
+  `September 30, 2026 \u00b7 3:35 PM EDT` (the clock was 3:39 PM), shell cache `v63.0.42 -> v63.0.43`, a 6-note changelog
+  head, **14 edits**; the usual repin (**22 edits across 19 files**, still skipping `test-705.mjs`).
+- **RENUMBERED AGAIN:** the parked donation work is now **70.1.8** (`dev/patch-7018.mjs` / `dev/repin-7018.mjs`, stamp
+  `September 30, 2026 \u00b7 4:00 PM EDT`, cache `v63.0.44`) - still waiting on the user's hosted donation URL
+  (`SC_DONATE_URL`), still refusing to apply without one.
+- **THE OTA BUNDLE HAS NO FIXED POINT FOR THIS CONTENT EITHER - the 70.1.6 convergence was the lucky one.**
+  `dev/ota-fixpoint.mjs` oscillates **822199 <-> 822200** and exits 1 after eight passes. The shipped state is the same
+  shape as 70.1.5's: `ota/update.zip` **822199** (the real size) and `ota/updates.json` + `ota/manifest.json` +
+  `updates.json` **822199**; root `manifest.json` **822200** (the seed it was built with - a 1-byte lie in a field
+  nothing verifies, exactly like the copy baked inside the zip); `ota-play/update.zip` + `ota-play/updates.json`
+  **822206**. Two consecutive `ota-bundle.mjs` / `ota-bundle-play.mjs` runs are byte-identical (checked with `md5sum -c`
+  on all seven files), and both `--check`s pass - which is what `deploy.yml`'s `git diff --quiet` and
+  `ota-update-check.cjs`'s "a second generation produces the same bytes" actually require. **Check convergence every
+  release instead of assuming either answer.**
+- **Verified.** test-705 **212**, studio-70-check **267**, test-662 **75**, test-663 49, 6641 128, 6642 75, 66421 49,
+  6643 90, 66429 **83** (its one failure before the OTA rebuild is expected - it is the gate that reads the built
+  bundle), check-dom 0 failures, ota-guard 20, ota-bootapply 24, ota-loop 26, ota-update 52.
+
+
+## 70.1.6 (Sep 30, 2026): the select-mode bar stops stacking its label, and the Discover field gets its width back
+- **The user's words**: "Fix these bugs UI bugs", with two photos - the library in select mode and the Discover tab. Two
+  reports, two fixes, nothing else.
+- **1. THE SELECT-MODE ACTION BAR STACKED ITS OWN LABEL, and the arithmetic is the whole bug.** Selecting songs builds a
+  `.pane-header` with a label and **seven** action buttons (cancel, add to album, add to playlist, create album, edit
+  tags, export, delete). The header is a nowrap flex row in which the label column is the **only** child allowed to
+  shrink (`  .pane-header > div:first-child{ min-width:0; flex:1 1 0; }`) and its `h2` wraps anywhere
+  (`overflow-wrap:anywhere`). On a phone the seven buttons alone are wider than the row, so the row resolved by crushing
+  the label to its one-character minimum: `2 selected` broke to a letter a line - ten lines at 18px, which is the
+  ~250px-tall bar in the photo - with the button strip below it. Fix: the script now emits
+  `header.className = 'pane-header' + (selectMode ? ' select-bar' : '')` and four rules scoped to `.pane-header.select-bar`
+  let the bar wrap (`flex-wrap:wrap`), stop the label shrinking (`flex:0 0 auto` on the first child, `white-space:nowrap`
+  on the h2) and let the buttons wrap onto a second row (`flex:1 1 auto; flex-wrap:wrap; justify-content:flex-end` on
+  `.pane-actions`). **Scoped on purpose**: every other header keeps the no-wrap single row it relies on.
+- **2. THE DISCOVER SEARCH ROW SPLIT ITS WIDTH WITH ITS OWN BUTTON.** `.action-pill` carries **`flex:1`** from the dock's
+  pill rule, and the row held the field, a clear button and the Search pill - so **both** the field and the button grew,
+  the button took half the row, the field was cut to "Search songs, a" with its placeholder ellipsised, and the clear X sat
+  between them as a bare bordered square that was **on screen while the field was empty**. Fix: the field and its X are one
+  control now - `#discoverSearchWrap` (relative, `flex:1 1 auto`) with the same round 22px inside-the-right-edge X the
+  library box has had since 70.1.5, shown by `#discoverSearch:not(:placeholder-shown) + #discoverSearchClear` rather than by
+  script - and `#discoverSearchRow #discoverSearchBtn{ flex:0 0 auto; }` stops the pill growing. The row is
+  `align-items:stretch` so the field and the button are one height instead of two. **The library `#searchClearBtn` rule is
+  asserted untouched** by the patch, because this is the same idea a release later.
+- **Both are layout only.** No song, playlist, album, listening stat, setting or storage key is read or written, so there
+  is no data half to this release and no migration.
+- **REGRESSION WATCH.** `dev/test-705.mjs` **+3 (207 total)** gets `[10c]` (the stylesheet and the class, which is all a
+  text gate can honestly claim about layout); `dev/studio-70-check.cjs` **+7 (262 total)** gets `[11i]`, which **drives both
+  rows**: `win.__scEnterSelect(ids)` (the hook that already existed for the gates) and asserts the class list on the header
+  the app actually builds is exactly `pane-header select-bar`, that all seven actions are still in it, that cancelling takes
+  the mark off, and that the Discover field and its X are one control whose click empties the field. **The Discover tab
+  itself is deliberately not switched to** in that probe: showing it starts the chart fetch, which cannot resolve in jsdom
+  and would leave an error in the boot log `[12]` asserts is clean - the row is static markup with a real click handler, so
+  the driving is the same without the navigation. **That is what the first run of this section proved** (261 passed, 1
+  FAILED, `the boot log is clean: Top 25 chart failed`).
+- **`dev/patch-7016.mjs` / `dev/repin-7016.mjs`**: `APP_VERSION` **70.1.5 -> 70.1.6**, stamp
+  `September 30, 2026 \u00b7 3:05 PM EDT` (built 19:03 UTC = 3:03 PM EDT, so it is in the PAST - a stamp more than
+  fifteen minutes ahead fails test-6643), shell cache `v63.0.41 -> v63.0.42`, a 6-note changelog head, **9 edits**; the
+  usual repin (**22 edits across 19 files**, still skipping `test-705.mjs`).
+- **RENUMBERED AGAIN, and this is now the pattern:** the parked donation work became **70.1.7** (`dev/patch-7017.mjs` /
+  `dev/repin-7017.mjs`, stamp `September 30, 2026 \u00b7 3:20 PM EDT`, cache `v63.0.43`). It still needs the user's hosted
+  donation URL (`SC_DONATE_URL`) and is verified on a scratch tree only - `node dev/patch-7017.mjs --check` correctly
+  refuses without it.
+- **THE OTA FIXED POINT CONVERGED THIS TIME - the 70.1.5 caveat does NOT apply to this release.** `dev/ota-fixpoint.mjs`
+  settled in **two passes** (`seeded 818875 -> built 818868`, then `818868 -> 818868`) and all five manifests agree: web
+  **818868**, play **818877**. Two consecutive `ota-bundle.mjs` / `ota-bundle-play.mjs` runs are byte-identical and
+  `ota-bundle --check` says `ota/ is v70.1.6 and complete (6 notes)`. So the 2-cycle that 70.1.5 hit is a property of that
+  particular content, not of the toolchain - check it every release rather than assuming either answer.
+- **Verified.** test-705 **207**, studio-70-check **262**, test-662 **75**, test-663 49, 6641 128, 6642 75, 66421 49,
+  6643 90, 66429 **83**, check-dom 0 failures and audit-calls OK (inside test-705's own sub-gates), ota-guard 20,
+  ota-bootapply 24, ota-loop 26, ota-update 52. **test-66429's first run failed on `ota-update-check` (49 passed, 3
+  failed) purely because the bundle was still 70.1.5 while `index.html` was 70.1.6** - it is the one gate that reads the
+  built bundle, so it is expected to fail between the patch and the OTA rebuild, and it is green afterwards.
+- **Not verifiable here.** jsdom measures every element as 0 and cannot apply a stylesheet's flex layout, so the pixel
+  half of both fixes is reasoned from the CSS and not measured; what the gates pin is the class the app emits and the rule
+  text, and what the probe pins is the markup and the wiring. The two screenshots are the visual claim.
+
+
+## 70.1.5 (Sep 30, 2026): the streak survives a restore, album covers, a clear button, a wider Add songs sheet
+- **The user's words**: "listening streaks didn't transfer over and in albums add the option to change the cover picture
+  and in the search bar the actual regular one there needs to be a clear button. And the add songs button the popup
+  specifically needs to be wider to not look weird." Four reports, four fixes, nothing else.
+- **1. THE STREAK (the real bug, and it is 70.1.4's bug wearing a different hat).** The day streak is not a stored
+  number - it is `listenedDates`, a `Set` of `'YYYY-MM-DD'` strings held **in the session** and mirrored to a meta row.
+  Both restore paths (the zip's full-state snapshot via `__scSnapHydrate`, and its hand-written `manifest.stats` block)
+  wrote the **row** and never touched the live `Set`. So a restored streak read as zero, and then
+  `recordListeningDay()` - which saves the live Set plus today - **destroyed the restored history on the very next
+  play**. `scAdoptLiveStats(src)` now hands the restored values to the session from both paths; the best-ever streak
+  travels with them. This is the same half-a-restore the play counters had in 70.1.4, and the comment at
+  `__scSnapHydrate` says so.
+- **2. ALBUM COVERS.** `userAlbums[name].cover` is a data URL override, shown instead of the first song's art; a camera
+  button on every album card (`albumCoverModal`) sets it from a file or from any song the album already holds. Stored on
+  the album entry so it rides the meta row, the zip and the snapshot - **never a blob URL**, those die with the page.
+- **3. THE SEARCH CLEAR BUTTON.** `#searchClearBtn` is shown by `#searchInput:not(:placeholder-shown) + #searchClearBtn`
+  rather than by script, because five other places empty that field by hand and a script flag would be left behind by
+  whichever one forgot. The wide-screen rule that re-pads the field keeps the X its room (`11px 38px 11px 16px`).
+- **4. THE ADD SONGS SHEET.** Was `min-width:240px` inside `max-width:calc(100vw - 32px)` - five full-width labels
+  squeezed into a narrow column. Now `width:440px` (and `520px` at ≥561px), same centring.
+- **REGRESSION WATCH.** `dev/test-705.mjs` **+4 (204 total)** gets `[10b]`; `dev/studio-70-check.cjs` **+7 (255 total)**
+  gets `[11h]`, which **drives the clear button for real**: type `song 3`, assert the list narrowed, tap the X, assert
+  the field is empty and all 12 rows are back.
+- **`dev/patch-7015.mjs` / `dev/repin-7015.mjs`**: `APP_VERSION` **70.1.4 -> 70.1.5**, stamp
+  `September 30, 2026 \u00b7 7:30 AM EDT`, shell cache `v63.0.40 -> v63.0.41`, a 6-note changelog head, **17 edits**;
+  the usual repin (**22 edits across 19 files**, still skipping `test-705.mjs`).
+- **RENUMBERED AGAIN:** the parked donation work became **70.1.6** (`dev/patch-7016.mjs` / `dev/repin-7016.mjs`,
+  stamp `September 30, 2026 \u00b7 7:40 AM EDT`, cache `v63.0.42`) - it still needs the user's hosted donation URL
+  (`SC_DONATE_URL`), and its applied state is verified on a scratch tree only.
+- **THE OTA BUNDLE CANNOT REACH A FIXED POINT FOR THIS CONTENT - KNOW THIS BEFORE TRUSTING `ota-fixpoint.mjs`.** The
+  bundle contains the root `manifest.json`, whose `size` is the size of the archive it lives inside, so the size is
+  fed back through itself. `ota-fixpoint.mjs` iterates that to a fixed point and **this toolchain's deflate answers a
+  ±1 change in those digits with a ±2 change in the archive**, giving the 2-cycle `817528 <-> 817530` and no fixed point
+  anywhere in the reachable range (probed 817515..817545: none). 70.1.4's content *was* a fixed point, so this is new.
+  The state that was committed: `ota/update.zip` **817528**, `ota/updates.json` + `ota/manifest.json` + `updates.json`
+  **817528** (the real size - these are what a client fetches), root `manifest.json` **817530** (the seed it was built
+  with, a 2-byte lie in a field nothing verifies, exactly like the manifest baked inside the zip). Two consecutive
+  `ota-bundle.mjs` runs are byte-identical, which is what `deploy.yml`'s `git diff --quiet -- ota ota-play updates.json`
+  and `ota-update-check.cjs`'s "a second generation produces the same bytes" actually require - **and both pass.**
+  OTA sizes: web **817528**, play **817534**.
+
+
 ## 70.1.4 (Sep 29, 2026): "Export everything" now really exports everything
 - **The user's words**: "Make sure export includes everything all functions of the app".
 - **THE ACTUAL BUG.** The app had two full sweeps of its stored data and they were the SAME sweep. One is the

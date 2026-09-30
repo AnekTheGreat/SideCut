@@ -188,7 +188,7 @@ function fakeIndexedDB() {
   };
 }
 
-function boot() {
+function boot(play) {
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', (e) => errors.push('' + (e && e.message)));
@@ -218,6 +218,8 @@ function boot() {
       win.URL.createObjectURL = () => 'blob:jsdom-' + (win.__scObjN = (win.__scObjN || 0) + 1);
       win.URL.revokeObjectURL = () => {};
       win.confirm = () => true;
+      // Before any inline script runs: SC_IS_PLAY reads this once, at parse time.
+      if (play) win.__PLAY_BUILD__ = true;
       win.localStorage.clear();
       win.fetch = () => Promise.reject(new Error('offline'));
     },
@@ -963,6 +965,218 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(html.indexOf('var MAX_ITEM = 262144;') !== -1 && html.indexOf('if(valSize > MAX_ITEM) continue;') !== -1,
       'and the on-device mirror still skips oversized rows');
     win.localStorage.removeItem('sidecut_probe_big');
+  }
+
+  console.log('[11h] the search box clears, and the sheet and the cover are real');
+  {
+    // 70.1.5 - "in the search bar the actual regular one there needs to be a
+    // clear button". Driven here: type, watch the list narrow to the match, tap
+    // the X, and require the field, the query and the whole list back.
+    doc.querySelector('#libraryBtn').click();
+    await wait(120);
+    const si = doc.querySelector('#searchInput');
+    const x = doc.querySelector('#searchClearBtn');
+    ok(!!si && !!x, 'the library search box has a clear button beside it');
+    ok(html.indexOf('#searchInput:not(:placeholder-shown) + #searchClearBtn') !== -1,
+      'and the stylesheet is what decides whether it is shown');
+    if (si && x) {
+      si.value = 'song 3';
+      si.dispatchEvent(new win.Event('input', { bubbles: true }));
+      await wait(140);
+      const narrowed = doc.querySelectorAll('#listPane .track').length;
+      ok(narrowed > 0 && narrowed < TRACKS.length, 'typing narrows the list (' + narrowed + ' of ' + TRACKS.length + ')');
+      x.click();
+      await wait(140);
+      ok(si.value === '', 'tapping the X empties the field');
+      ok(doc.querySelectorAll('#listPane .track').length === TRACKS.length,
+        'and puts the whole list back (' + doc.querySelectorAll('#listPane .track').length + ')');
+    }
+    // The album cover and the sheet are markup this release adds. The picker is
+    // only reachable from an album card and a card only exists once an album does,
+    // so what is required here is that both halves shipped and the card is wired.
+    ok(html.indexOf('albumCoverModal(aName);') !== -1 && html.indexOf('albumCoverBackdrop') !== -1,
+      'and an album card can open the cover picker');
+    ok(html.indexOf('width:440px; max-width:calc(100vw - 32px)') !== -1,
+      'with the Add songs sheet wide enough for its buttons');
+  }
+
+  console.log('[11i] the select bar and the Discover search row');
+  {
+    // 70.1.6. Driven, not read: select mode really builds a new header, and the
+    // class on that header is what the stylesheet keys off. jsdom has no layout,
+    // so what is claimed is the class and the wiring, not the pixel widths.
+    doc.querySelector('#libraryBtn').click();
+    await wait(120);
+    const pick = win.__scGetAllTracks().slice(0, 2).map((t) => t.id);
+    win.__scEnterSelect(pick);
+    await wait(140);
+    const bar = doc.querySelector('#listPane .pane-header');
+    ok(!!bar && bar.classList.contains('select-bar'),
+      'entering select mode marks the bar the stylesheet keeps one line tall');
+    const marks = bar ? bar.className.split(' ').filter(Boolean) : [];
+    ok(marks.length === 2 && marks.indexOf('pane-header') !== -1 && marks.indexOf('select-bar') !== -1,
+      'and the class list is exactly the header plus the select mark (' + (bar ? bar.className : 'no bar') + ')');
+    ok(doc.querySelectorAll('#listPane .pane-header .pane-actions .icon-btn').length >= 7,
+      'with all seven of its actions still in it');
+    const cancel = doc.querySelector('#selectCancelBtn');
+    if (cancel) cancel.click();
+    await wait(140);
+    const after = doc.querySelector('#listPane .pane-header');
+    ok(!!after && !after.classList.contains('select-bar'),
+      'and cancelling takes the mark off again');
+    // The Discover tab is deliberately not switched to here: showing it starts the
+    // chart fetch, which cannot resolve in jsdom and would leave an error in the
+    // boot log the next section asserts is clean. The row is static markup with a
+    // real click handler either way.
+    const wrap = doc.querySelector('#discoverSearchWrap');
+    const field = doc.querySelector('#discoverSearch');
+    const clear = doc.querySelector('#discoverSearchClear');
+    const go = doc.querySelector('#discoverSearchBtn');
+    ok(!!wrap && !!field && !!clear && !!go && field.parentElement === wrap && clear.parentElement === wrap,
+      'the Discover field and its clear button are one control');
+    if (field && clear) {
+      field.value = 'BK';
+      clear.click();
+      ok(field.value === '', 'and the X empties the field');
+    }
+    ok(html.indexOf('#discoverSearch:not(:placeholder-shown) + #discoverSearchClear') !== -1,
+      'with the stylesheet deciding whether it is on screen at all');
+  }
+
+  console.log('[11j] the DJ Mode loop controls do not lie');
+  {
+    // 70.1.7. There is no Web Audio and no decoded deck buffer in jsdom, which is
+    // exactly the "nothing is armed" case these controls used to lie about: a beat
+    // pad lit up over silence and Loop Lock went ON with nothing looping. What is
+    // driven here is that they now stay OFF and say so - and that the pads own the
+    // touch, which is the half of the fix a stylesheet can be wrong about.
+    ok(doc.querySelectorAll('.beat-pad').length === 6, 'the six beat-repeat pads are there');
+    const pad = doc.querySelector('.beat-pad[data-beats="0.25"]');
+    if (pad) {
+      pad.dispatchEvent(new win.Event('pointerdown', { bubbles: true }));
+      await wait(60);
+      ok(!pad.classList.contains('active'),
+        'a pad that could not arm a slice does not light up as if it had');
+    }
+    const lock = doc.querySelector('#beatRepeatLockBtn');
+    if (lock) {
+      lock.click();
+      await wait(60);
+      ok(lock.textContent.indexOf('OFF') !== -1,
+        'and Loop Lock does not claim ON over an empty deck (' + lock.textContent + ')');
+    }
+    ok(html.indexOf('.beat-pad, .fx-pad, .drum-pad, .hotcue-btn{ touch-action:none; }') !== -1,
+      'with the pads owning the touch so a hold is not cancelled by the sheet');
+    ok(html.indexOf("['pointerup','pointercancel'].forEach(ev => btn.addEventListener(ev, () => {") !== -1 &&
+       html.indexOf("['pointerup','pointercancel','pointerleave'].forEach(ev => btn.addEventListener(ev, () => {") === -1,
+      'and a held pad ending only when the finger really comes up');
+  }
+
+  console.log('[11k] SAVE COPY says what it needs');
+  {
+    // 70.1.8. SAVE COPY renders through an OfflineAudioContext, which jsdom does not
+    // implement and the deck has no decoded buffer for either - so what is driven
+    // here is that the control is on the deck, that tapping it with nothing loaded
+    // says so instead of throwing, and that the copy is named rather than overwriting
+    // the song that was loaded.
+    const copyBtn = doc.querySelector('#djCopyBtn');
+    ok(!!copyBtn, 'the DJ deck has a SAVE COPY button');
+    if (copyBtn) {
+      copyBtn.click();
+      await wait(120);
+      const said = doc.querySelector('#toast');
+      ok(!!said && /load a song|still being read|cannot render/i.test(said.textContent || ''),
+        'and it says what it is waiting for instead of failing silently (' + (said ? said.textContent : '') + ')');
+    }
+    ok(html.indexOf(" + ' (DJ edit)';") !== -1,
+      'with the copy named as an edit so the original keeps its own title');
+    ok(html.indexOf('scAddConvertedToLibrary(blob, meta') !== -1,
+      'and going in through the library path a finished conversion uses');
+  }
+
+  console.log('[11l] a tip from a copy that cannot bill');
+  {
+    // 70.1.9. A copy that cannot bill used to end every tip at a sentence. What
+    // has to be true now is that a tier with its own card page opens it in the
+    // browser, that the pane says which amounts those are, and that an amount
+    // with no page still ends in the Play listing the way the earlier release
+    // left it.
+    const pages = {};
+    const dlBlock = html.slice(html.indexOf('donateLinks: {'));
+    const dlSeg = dlBlock.slice(0, dlBlock.indexOf('}'));
+    for (const m of dlSeg.matchAll(/(\d+): '(https:\/\/[^']+)'/g)) pages[m[1]] = m[2];
+    ok(Object.keys(pages).length >= 4, 'the Donate tab names a card page per amount (' + Object.keys(pages).sort((a, b) => a - b).map((n) => '$' + n).join(', ') + ')');
+    const realOpen = win.open;
+    const opened = [];
+    Object.defineProperty(win, 'open', { value: (url) => { opened.push(String(url)); return null; }, writable: true, configurable: true });
+    win.showSettingsTab('donate');
+    const pane = doc.querySelector('#settingsPaneDonate');
+    const promise = doc.querySelector('#donatePromise');
+    ok(!!promise && promise.textContent.indexOf('secure card page') !== -1,
+      'and the pane says a card page is one of the rails (' + (promise ? promise.textContent : '') + ')');
+    const intro = doc.querySelector('#donateIntro');
+    ok(!!intro && intro.textContent.indexOf('secure card page') !== -1,
+      'and the paragraph above it says the same on a copy that can take one');
+    const tier = pane && pane.querySelector('.donate-quick[data-amt="5"]');
+    ok(!!tier, 'the five dollar tier is still a button in the pane');
+    if (tier) {
+      tier.click();
+      await wait(250);
+      ok(opened.length === 1 && opened[0] === pages['5'],
+        'and tapping it opens the card page for that amount (' + (opened[0] || 'nothing') + ')');
+      const said = doc.querySelector('#donateMsg');
+      ok(!!said && /card page/i.test(said.textContent || ''),
+        'with a sentence saying where it went');
+    }
+    opened.length = 0;
+    const odd = pane && pane.querySelector('.donate-quick[data-amt="7"]');
+    if (odd) {
+      odd.click();
+      await wait(250);
+      ok(opened.length === 1 && /play\.google\.com/.test(opened[0]),
+        'and an amount with no page of its own still ends in the Play listing');
+      const said = doc.querySelector('#donateMsg');
+      ok(!!said && /\$2, \$5, \$10, \$25 or \$50/.test(said.textContent || ''),
+        'saying which amounts do work here');
+    }
+    Object.defineProperty(win, 'open', { value: realOpen, writable: true, configurable: true });
+  }
+
+  console.log('[11m] the copy installed from Google Play is the app it was');
+  {
+    // 70.1.9. The user drew this line himself: "the play build should stay as is
+    // with play billing no stripe for that". So the store build is booted AS the
+    // store build and its Donate pane is compared with the sentences the release
+    // before this one shipped. A card page must be unreachable from it, and no
+    // sentence of it may mention one.
+    const store = boot(true);
+    await wait(1500);
+    const swin = store.win;
+    const sdoc = swin.document;
+    swin.showSettingsTab('donate');
+    await wait(150);
+    const sPromise = sdoc.querySelector('#donatePromise');
+    ok(!!sPromise && sPromise.textContent === 'Pick an amount — Google Play handles the payment.',
+      'the store build still promises Google Play alone (' + (sPromise ? sPromise.textContent : '') + ')');
+    const sIntro = sdoc.querySelector('#donateIntro');
+    ok(!!sIntro && sIntro.textContent.indexOf('processed through Google Play') !== -1 &&
+       sIntro.textContent.indexOf('secure card page') === -1,
+      'and its paragraph is the one it shipped, with no card page in it');
+    const sOpened = [];
+    const sRealOpen = swin.open;
+    Object.defineProperty(swin, 'open', { value: (url) => { sOpened.push(String(url)); return null; }, writable: true, configurable: true });
+    const sTier = sdoc.querySelector('.donate-quick[data-amt="5"]');
+    ok(!!sTier, 'with its tip tiers still there');
+    if (sTier) {
+      sTier.click();
+      await wait(300);
+      ok(sOpened.length === 1 && /play\.google\.com/.test(sOpened[0]),
+        'and a tap on one still ends in the Play listing, never a card page (' + (sOpened[0] || 'nothing') + ')');
+      const sSaid = sdoc.querySelector('#donateMsg');
+      ok(!!sSaid && sSaid.textContent.indexOf('card page') === -1,
+        'with nothing it says naming a card page');
+    }
+    Object.defineProperty(swin, 'open', { value: sRealOpen, writable: true, configurable: true });
   }
 
   console.log('[12] the page still holds together');
