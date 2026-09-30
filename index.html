@@ -11597,7 +11597,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '70.1.3';
+  const APP_VERSION = '70.1.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -11736,6 +11736,48 @@ function startLyricsAutoScroll(keepPos, noReset) {
           catch(_ve){ valSize = MAX_ITEM + 1; }
           if(valSize > MAX_ITEM) continue;
           out[key] = val;
+        }
+      }catch(e){}
+      return out;
+    }
+
+    // 70.1.4 - THE BACKUP IS NOT THE MIRROR. Everything above is the on-device
+    // safety copy: written 1.5 s after any change and capped (1 MB total, 256 KB
+    // per row), which is what keeps it cheap. The .zip a user makes on purpose
+    // has no such ceiling, and until now it read the SAME capped sweep - so every
+    // stored value past 256 KB was silently left out of the backup. That is
+    // exactly the rows that grow with use: the track sidecar (play counts,
+    // loudness gains and the seek waveforms the player draws) and the artist and
+    // album cover maps. These two take every real value at any size and still
+    // skip the app's own page HTML: the rollback copies
+    // (`versionSnapshot_<v>`, ~1.8 MB each - that is the app, not the user's
+    // data), the pinned PWA snapshot, and the ephemeral session beacons the
+    // mirror already ignores.
+    function collectLocalStorageForBackup(){
+      var out = {};
+      try{
+        for(var i = 0; i < localStorage.length; i++){
+          var k = localStorage.key(i);
+          if(!k || typeof k !== 'string') continue;
+          if(k.indexOf('discPopupCache_') === 0) continue;
+          if(k === 'sidecut_pinned_snapshot') continue;   // a whole page of HTML
+          if(k === 'scLastOp' || k === 'scLeftFgAt' || k === 'scAliveAt' || k === 'sidecut_ahPending' || k === 'bgImportState') continue;
+          var v = null; try{ v = localStorage.getItem(k); }catch(e){ v = null; }
+          if(v === null || v === undefined) continue;
+          out[k] = v;
+        }
+      }catch(e){}
+      return out;
+    }
+    async function collectMetaForBackup(){
+      var out = {};
+      try{
+        var rows = await scMetaSettingsRows();   // already skips the rollback rows
+        for(var i = 0; i < rows.length; i++){
+          var key = rows[i] && rows[i].key;
+          if(typeof key !== 'string') continue;
+          if(key.indexOf('versionSnapshot_') === 0) continue;
+          out[key] = rows[i].value;
         }
       }catch(e){}
       return out;
@@ -11933,12 +11975,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }
     };
     // Full-state collect/hydrate for the in-app backup zip (export everything /
-    // import everything). Same sweep the on-device snapshot uses: every
-    // localStorage key and every meta row, minus caches, oversized values and
-    // shell snapshots — i.e. nothing a user can see in the app is left behind
-    // when they move to a fresh install or a different build.
+    // import everything). This is the UNCAPPED sweep since 70.1.4: every
+    // localStorage key and every meta row, minus the caches, the session beacons
+    // and the app's own rollback page HTML - but with no size limit at all,
+    // because this feeds a file the user asked for and not a mirror that is
+    // rewritten every 1.5 s. i.e. nothing a user can see in the app is left
+    // behind when they move to a fresh install or a different build, however big
+    // it grew.
     window.__scSnapCollect = async function(){
-      try{ return { v: 1, localStorage: collectLocalStorage(), meta: await collectMeta() }; }
+      try{ return { v: 1, localStorage: collectLocalStorageForBackup(), meta: await collectMetaForBackup() }; }
       catch(e){ return null; }
     };
     window.__scSnapHydrate = async function(state){
@@ -12019,6 +12064,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '70.1.4', date: 'September 29, 2026 · 9:55 PM EDT', title: 'Export everything now carries the whole app: the play counts, the loudness gains, the seek waveforms and the cover maps a big library had been leaving out, and a cropped song brings its undo', items: [
+    'Export everything really does export everything now. The backup used to read the same list of stored values as the on-device safety copy, and that copy is capped so it stays small - so anything past a couple of hundred kilobytes was skipped on the way into the zip. The play counts, the loudness gains and the seek waveforms the player draws all live in one row that grows past that on a real library, and the cover maps for your artists and albums did too. They ride in the backup now, at whatever size they reached.',
+    'That cap is still there where it belongs. The on-device copy is rewritten a second and a half after any change and has to stay small, because it is a safety net for settings and not a file store, and it is untouched. Only the zip you make on purpose had the ceiling taken off it.',
+    'A cropped song brings its undo with it. Cropping is carried as three fields on the song itself, and the backup listed every field except those three - so a song restored on a new phone came back trimmed with no Undo crop left to put the original back. The trim flag and the original length ride along now.',
+    'A hand-edited field stays hand-edited. If you corrected a song by hand instead of letting the app tag it, that mark lived in the same three fields and was dropped on the way out, so the new phone saw a song nobody had touched. It is carried now, and it merges onto a song you already have without overwriting anything you changed since.',
+    'Nothing else about the backup changed. The same one zip, the same Import library to put it back, and the same playlists, albums, favourites, listening stats, streaks, theme, equalizer, sandbox and Studio settings coming along with the songs and their cover art.',
+    'Import is the other half of the same job, so it reads the three fields back: a song that does not exist on the new phone is created with them, and one that is already there takes them the way it takes every other piece of metadata - only where it has nothing of its own.',
+  ] },
   { version: '70.1.3', date: 'September 29, 2026 · 7:54 PM EDT', title: 'Premium is gone: every tool it used to lock is free for everyone, and Donate is the only thing left that asks for anything', items: [
     'Premium is gone. Nothing in SideCut is locked any more: Discover, pinned artists and new releases, word-by-word lyrics, every animated theme, the Sandbox toggles, and the practice loop and your own presets in Studio are open to everyone, with nothing to buy and nothing to unlock.',
     'The Premium tab is out of Settings, and everything that was in it went with it - the plan cards, the gift-code box, the paste-a-license-key box and the store fallback. There is no paywall left to hit and no purchase left to make, in the app or on the web.',
@@ -22620,7 +22673,12 @@ function _fallbackCopy(text){
           id: t.id, name: t.name, artist: t.artist, album: t.album || null, duration: t.duration,
           bpm: t.bpm, genre: t.genre, gain: t.gain, lyrics: t.lyrics,
           lyricsSynced: t.lyricsSynced, notes: t.notes, vibe: t.vibe,
-          playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, dateAdded: t.dateAdded || null, releaseDate: t.releaseDate || null, path: t.file ? zipPath : null, hasCover: !!t.artBlob
+          playCount: t.playCount, lastPlayedAt: t.lastPlayedAt, dateAdded: t.dateAdded || null, releaseDate: t.releaseDate || null, path: t.file ? zipPath : null, hasCover: !!t.artBlob,
+          // 70.1.4 - the three per-song fields the export used to drop. They are
+          // not in the sidecar and they were not in this list, so a song that had
+          // been cropped came back on the new phone with its trimmed audio and no
+          // "Undo crop" left, and a hand-corrected tag was silently forgotten.
+          cropped: t.cropped || false, originalDuration: t.originalDuration || null, manualOverride: t.manualOverride || false
         });
         if(!opts.songsOnly && t.artBlob){
           // Covers are tiny; still pass the Blob directly to avoid extra copies.
@@ -22809,7 +22867,7 @@ function _fallbackCopy(text){
   // sandbox settings, seek style, liquid glass, auto volume, playback speed, watermark patterns, and more.
   async function exportLibrary(){
     if(!allTracks.length){ toast('No songs to export yet.'); return; }
-    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} (${allTracks.filter(t=>t.file).length} with audio, ${allTracks.filter(t=>!t.file).length} metadata only) PLUS playlists, listening stats, streak, theme, EQ, all settings, EVERY stored preference (lyrics sync nudges, album order, widget theme, API bases, manual album edits), — as a full restorable backup .zip?`, async () => {
+    showExportConfirm(`Export everything — all ${allTracks.length} song${allTracks.length>1?'s':''} (${allTracks.filter(t=>t.file).length} with audio, ${allTracks.filter(t=>!t.file).length} metadata only) PLUS playlists, listening stats, streak, theme, EQ, all settings, EVERY stored preference (lyrics sync nudges, album order, widget theme, API bases, manual album edits), every stored value at whatever size it grew to (play counts, loudness gains, seek waveforms, the artist and album cover maps), — as a full restorable backup .zip?`, async () => {
       if(typeof JSZip === 'undefined'){ toast('Export tool failed to load — check your connection and reload.'); return; }
       await runZipExport({
         kindLabel: 'library',
@@ -23120,6 +23178,11 @@ function _fallbackCopy(text){
             if(m.lastPlayedAt !== undefined && (existing.lastPlayedAt === undefined || existing.lastPlayedAt < m.lastPlayedAt)) existing.lastPlayedAt = m.lastPlayedAt;
             if(m.dateAdded !== undefined && !existing.dateAdded) existing.dateAdded = m.dateAdded;
             if(m.releaseDate !== undefined && !existing.releaseDate) existing.releaseDate = m.releaseDate;
+            // 70.1.4 - the three states the export carries now (see manifest.tracks),
+            // filled in only where this device has nothing of its own.
+            if(m.cropped !== undefined && !existing.cropped) existing.cropped = m.cropped;
+            if(m.manualOverride !== undefined && !existing.manualOverride) existing.manualOverride = m.manualOverride;
+            if(m.originalDuration !== undefined && !existing.originalDuration) existing.originalDuration = m.originalDuration;
             // Import cover art for existing track
             if(m.hasCover && !existing.artBlob){
               const coverEntry = zipApi.file(`covers/${m.id}.jpg`);
@@ -23172,7 +23235,12 @@ function _fallbackCopy(text){
           releaseDate: m.releaseDate || null,
           artBlob: null,
           artUrl: null,
-          watermarkCleaned: cleaned.changed
+          watermarkCleaned: cleaned.changed,
+          // 70.1.4 - carried through so a cropped song still offers its undo, and
+          // a field you corrected by hand stays corrected, on the new phone.
+          cropped: m.cropped || false,
+          originalDuration: m.originalDuration || null,
+          manualOverride: m.manualOverride || false
         };
         
         // Import cover art from v2 export

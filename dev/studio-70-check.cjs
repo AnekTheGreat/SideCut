@@ -938,6 +938,33 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(win.SC70.myPresets().length === beforeCount, 'and it can be deleted again');
   }
 
+  console.log('[11g] a backup carries everything, at any size');
+  {
+    // 70.1.4 - "Make sure export includes everything all functions of the app".
+    // The backup used to read the same size-capped sweep as the on-device
+    // mirror, so any stored value past 256 KB was dropped from the zip. This
+    // writes two of those - one localStorage key and one meta row - and asks the
+    // collector the export actually calls for them back.
+    const big = 'x'.repeat(300000);
+    ok(typeof win.__scSnapCollect === 'function' && typeof win.__scSnapHydrate === 'function',
+      'the backup collector and its hydrate are on the window');
+    win.localStorage.setItem('sidecut_probe_big', big);
+    await win.__scSnapHydrate({ v: 1, meta: { probeBigRow: big } });
+    const state = await win.__scSnapCollect();
+    ok(!!state && state.v === 1, 'the collector answers with a v1 state');
+    ok(!!state && !!state.localStorage && state.localStorage.sidecut_probe_big === big,
+      'a stored value past the snapshot cap rides in the backup');
+    ok(!!state && !!state.meta && state.meta.probeBigRow === big,
+      'and so does a meta row of the same size');
+    ok(!!state && !!state.localStorage && state.localStorage.sidecut_pinned_snapshot === undefined,
+      'while a pinned shell page is still kept out of it');
+    // The mirror must NOT follow the backup up: it is rewritten every 1.5 s and
+    // its own cap is the whole reason that stays cheap.
+    ok(html.indexOf('var MAX_ITEM = 262144;') !== -1 && html.indexOf('if(valSize > MAX_ITEM) continue;') !== -1,
+      'and the on-device mirror still skips oversized rows');
+    win.localStorage.removeItem('sidecut_probe_big');
+  }
+
   console.log('[12] the page still holds together');
   {
     const bad = realErrors(errors);

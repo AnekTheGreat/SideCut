@@ -1,6 +1,39 @@
 # SideCut — repository memory
 
 
+## 70.1.4 (Sep 29, 2026): "Export everything" now really exports everything
+- **The user's words**: "Make sure export includes everything all functions of the app".
+- **THE ACTUAL BUG.** The app had two full sweeps of its stored data and they were the SAME sweep. One is the
+  **on-device mirror** (`sidecut-snapshot.json` in `Directory.Data`): written 1.5 s after any storage change and capped
+  on purpose (`MAX_ITEM = 262144` per value, `MAX_SNAP_BYTES = 1000000` for the file) so it stays a cheap safety net.
+  The other is the `.zip` a user makes deliberately (`exportLibrary` -> `runZipExport` -> `manifest.state`), and it
+  called the same capped collectors - so **every stored value past 256 KB was silently left out of the backup**. On a
+  real library those are exactly the rows that grow with use: `trackSidecar` (play counts, loudness gains, the seek
+  waveforms) and the artist/album cover maps (`sidecut_ahCovers`, `sidecut_ahCoversMirror`, `sidecut_ahArtCacheMirror`).
+- **THE FIX.** Two uncapped collectors, `collectLocalStorageForBackup()` and `collectMetaForBackup()`, used only by
+  `window.__scSnapCollect` (i.e. the backup). **The mirror keeps its caps** - they are the only reason it is cheap. The
+  uncapped sweeps still skip the app's own page HTML: `versionSnapshot_<v>` rows (~1.8 MB each), `sidecut_pinned_snapshot`,
+  the `discPopupCache_*` caches and the ephemeral beacons (`scLastOp`/`scLeftFgAt`/`scAliveAt`/`sidecut_ahPending`/
+  `bgImportState`). The call site keeps the name `__scSnapCollect` on purpose: the **play-build gate** greps for
+  `manifest.state = await window.__scSnapCollect()`.
+- **THE SONGS.** `buildTrackRecord()` writes `cropped`, `originalDuration` and `manualOverride` per song, and the export
+  manifest listed **every field except those three** - they are not in the sidecar either, so a song restored on a new
+  phone came back trimmed with **no "Undo crop"** left and a hand-corrected tag forgotten. `manifest.tracks` now carries
+  all three, the import builds a new song with them, and the merge onto a song that is already here fills only what the
+  device does not have.
+- **REGRESSION WATCH.** `dev/test-705.mjs` **+6 (200 total)** asserts the two collectors exist, that the export uses
+  them, that the mirror still has its two `MAX_ITEM` skips, that `sidecut_pinned_snapshot` is still kept out, that the
+  export list carries the three fields and that the merge reads them. `dev/studio-70-check.cjs` gets **`[11g]` (248
+  total)**: it writes a 300 KB localStorage value and a 300 KB meta row through the app's own `__scSnapHydrate`, then
+  asks the collector the export calls for them back - so the cap that used to eat them cannot return unnoticed.
+- **`dev/patch-7014.mjs` / `dev/repin-7014.mjs`**: `APP_VERSION` **70.1.3 -> 70.1.4**, stamp
+  `September 29, 2026 \u00b7 9:55 PM EDT` (built 01:55 UTC = 9:55 PM EDT), shell cache `v63.0.39 -> v63.0.40`, a 6-note
+  changelog head, **12 edits**; the usual repin (**22 edits across 19 files**, still skipping `test-705.mjs`). OTA fixed
+  point **813870** (web) / **813877** (play), five manifests agree.
+- **RENUMBERED:** the parked donation work became **70.1.5** (`dev/patch-7015.mjs` / `dev/repin-7015.mjs`) because it
+  ships after this one - it still needs the user's hosted donation URL (`SC_DONATE_URL`).
+
+
 ## 70.1.3 (Sep 29, 2026): Premium is removed, everything it locked is free, Donate stays
 - **The user's words**, in two messages: "Remove it remove premium only thing is keep donations" and then, after the
   Lemon Squeezy store signup served a 429 and the slug field kept rejecting `SideCut`, "Remove premium make everything
@@ -35,7 +68,7 @@
   for a copy that cannot bill**: the APK and the browser used to get a sentence about Google Play and nothing to click,
   and they now open the Play listing, because that install is still the only place a tip can be made. **This is the
   piece that is not finished**: donations still cannot be given on the APK itself, and the fix is a web donate link
-  (see the 70.1.4 note below).
+  (see the 70.1.5 note below).
 - **THE 201st BADGE.** The wall is still 201 tiles with the same five reward rows; the last one was the table's only
   reward with a side effect (a grant of Premium) and it is `kind: 'complete'` - "The whole wall" - now. `grantRewards`
   still runs on every evaluation of the count and still records `LS.reward` under its original storage key

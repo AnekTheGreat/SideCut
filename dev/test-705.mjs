@@ -61,7 +61,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v63.0.39';
+const SHELL_CACHE = 'sidecut-shell-v63.0.40';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -331,6 +331,26 @@ console.log('\n[6] the styles');
   ok(countMod('watchDock();') === 1, 'and the measurement is watched (rotation, resize, the dock itself)');
   ok(/#nowPlaying\{ bottom: calc\(var\(--sc-dock-h\) \+ env\(safe-area-inset-bottom\)\)/.test(src),
      'while the position that lifts the bar onto the dock still counts it');
+
+  // 70.1.4. "Make sure export includes everything all functions of the app". The
+  // backup used to read the same size-capped sweep as the on-device mirror, so
+  // every value past 256 KB was left out of the zip - and the rows that grow with
+  // use (the sidecar with the play counts, gains and waveforms, and the cover
+  // maps) are exactly the ones that pass it. The two sweeps are separate now.
+  ok(count('function collectLocalStorageForBackup(){') === 1 && count('function collectMetaForBackup(){') === 1,
+     'the export still reads the same size-capped sweep as the on-device mirror');
+  ok(count('collectLocalStorageForBackup(), meta: await collectMetaForBackup()') === 1,
+     'or the backup is not the one built from the uncapped sweep');
+  ok(count('if(v === null || v === undefined || v.length > MAX_ITEM) continue;') === 1 &&
+     count('if(valSize > MAX_ITEM) continue;') === 1,
+     'and the on-device mirror stopped skipping oversized rows');
+  ok(count("if(k === 'sidecut_pinned_snapshot') continue;") === 1,
+     'or a whole pinned shell page is riding into every backup');
+  ok(count('cropped: t.cropped || false, originalDuration: t.originalDuration || null, manualOverride: t.manualOverride || false') === 1,
+     'the backup still drops the crop undo and the manual tag mark');
+  ok(count('existing.cropped = m.cropped') === 1 && count('existing.originalDuration = m.originalDuration') === 1 &&
+     count('existing.manualOverride = m.manualOverride') === 1,
+     'or a song that is already here does not get them back');
 
 }
 
