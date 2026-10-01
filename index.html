@@ -11988,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '72.0';
+  const APP_VERSION = '72.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12465,6 +12465,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '72.1', date: 'October 1, 2026 \u00b7 6:26 PM EDT', title: 'A refetch keeps the albums and singles you removed, and the deep-refetch chip that put them back is gone', items: [
+    'A refetch keeps the albums and singles you removed. Refetching used to be able to pull a deleted album or single straight back into the list, and now nothing a refetch does can put one back.',
+    'The red deep-refetch chip in Singles is gone. It existed only to put every removed song back, which is the opposite of what a refresh should do, so the refresh beside it is the only one there now.',
+    'The removed list is honored by every source a fetch asks. The AI discography lookup was the one place that never checked it, so an album you removed could ride back in on a refetch, and it asks now.',
+    'A saved list cannot resurrect one either. When a refresh cannot reach the catalog it falls back to the list it saved, and that list is checked against your removals before any of it is shown.',
+    'Nothing comes back on its own. An album or a single you remove still sits in Recently Deleted for thirty days, and restoring it there is the only way it returns to the list.',
+    'The player, the dock, the queue, your albums and every saved song behave exactly as they did before this release. No song, no cover and no listening stat is rewritten, and nothing is deleted.',
+    'Nothing else about Discover moved: the same fetch, the same rows and the same Recently Deleted history, with no removed item reappearing.',
+  ] },
   { version: '72.0', date: 'October 1, 2026 \u00b7 5:12 PM EDT', title: 'An album export carries the artist, an imported album can no longer read Unknown artist, and an import can no longer drop a playlist', items: [
     'Albums know who they are by again. An album that came in from a .zip used to arrive reading Unknown artist under its name, every album in the file, because that was the only artist an older album zip had to give it.',
     'The artist now comes from the songs. An album reads the artist the songs inside it agree on, and the album tag on those songs is the second place it looks, so a compilation with one guest credit still reads right.',
@@ -31028,6 +31037,22 @@ window.__refetchArtistAlbums = async function(artistName){
       if(ahDataCache && ahDataCache.artists){
         artistAlbums = ahDataCache.artists;
         totalAlbums = ahDataCache.total || 0;
+        // 72.1 - the seed is filtered here, the same way __refetchAlbums filters
+        // its own cache seed. This function saves artistAlbums back whole, so a
+        // removed album still sitting in the cache would be re-rendered AND
+        // re-saved - which is exactly a removed album returning on a refetch.
+        try{
+          var _hSeed = JSON.parse(localStorage.getItem('sidecut_hiddenAlbums') || '[]');
+          Object.keys(artistAlbums).forEach(function(k){
+            artistAlbums[k] = (artistAlbums[k] || []).filter(function(a){
+              if(_hSeed.indexOf(String(a.collectionId)) !== -1) return false;
+              var _t = (a.collectionName || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+              if(_t && _hSeed.indexOf('t:' + _t) !== -1) return false;
+              return true;
+            });
+            if(!artistAlbums[k].length) delete artistAlbums[k];
+          });
+        }catch(_eSeed){}
       }
     }catch(e){}
     // Find the artist object
@@ -31587,6 +31612,12 @@ window.__refetchAlbums = async function(wasRefetch){
               // be 'ai_<artist>_<index>', so a refetch renumbered every AI row and
               // a date set on one no longer belonged to it.
               var _aiCid = 'ai_' + a.name.toLowerCase().replace(/[^a-z0-9]/g,'') + '_' + String(_aiA.title).toLowerCase().replace(/[^a-z0-9]/g,'');
+              // 72.1 - every other source in this function asks isAlbumHidden()
+              // before it pushes; this one never did, so an album removed from
+              // Album History came straight back whenever the AI key was set.
+              // Checked by title too, because the store id an album was removed
+              // under is not the id this path invents for it.
+              if(isAlbumHidden(_aiCid, _aiA.title)) continue;
               _aiSeenT[_aiTN] = [_aiY];
               artistAlbums[a.name].push({
                 collectionId: _aiCid,
@@ -31842,7 +31873,12 @@ function _renderAhFromData(artistAlbums){
   // hundred-odd the release-list union produced.
   async function fetchArtistSingles(artistName, opts){
     opts = opts || {};
-    var skipHidden = !opts.includeHidden;
+    // 72.1 - ALWAYS FILTER. This used to be opt-out, and the red chip in the
+    // per-artist header was the one caller that opted out, so it put every
+    // removed single back on one tap. There is no refetch that ignores the
+    // removed list any more; a single you removed stays removed until you
+    // restore it from Recently Deleted.
+    var skipHidden = true;
     var out = [];
     var seen = {};
     var want = String(primaryArtistName(artistName) || '').toLowerCase().trim();
@@ -31919,6 +31955,19 @@ function _renderAhFromData(artistAlbums){
       }
       var tmp = document.createElement('div');
       tmp.innerHTML = d.body;
+      // 72.1 - a saved snapshot can outlive a removal (it was written before
+      // the row was removed, or its own update was skipped). This path hands
+      // that HTML straight back into the list, so a removed single would come
+      // back with it on the next refetch. Every row is checked against the
+      // removed list here, so a saved snapshot can never resurrect one.
+      try{
+        Array.prototype.forEach.call(tmp.querySelectorAll('.dp-ah-x[data-tid]'), function(x){
+          if(isSingleHidden(x.getAttribute('data-tid') || '', x.getAttribute('data-tname') || '')){
+            var _r = x.closest('.dp-track');
+            if(_r && _r.parentNode) _r.parentNode.removeChild(_r);
+          }
+        });
+      }catch(_eCacheHide){}
       Array.prototype.forEach.call(tmp.querySelectorAll('.dp-ah-artist'), function(g){
         var hdr = g.querySelector('.dp-ah-artist-hdr span[style*="flex:1"]');
         var nm = hdr ? String(hdr.textContent || '').trim() : '';
@@ -32010,7 +32059,7 @@ function _renderAhFromData(artistAlbums){
           html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
           html += '<span style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(artist) + '</span>';
           html += '<span class="dp-si-count" style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + singles.length + ' single' + (singles.length!==1?'s':'') + '</span>';
-          html += '<span class="dp-si-refetch" data-artist="' + escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span><span class="dp-si-deep-refetch" data-artist="' + escapeHtml(artist) + '" title="Refetch ALL singles (including removed)" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,80,80,0.12);color:#ff6b6b;font-size:11px;cursor:pointer;flex-shrink:0;margin-left:1px;">⚡</span>';
+          html += '<span class="dp-si-refetch" data-artist="' + escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span>';
           html += '</div>';
           html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
           for(var sri=0; sri<singles.length; sri++){
@@ -41579,7 +41628,7 @@ window.__refetchSingles = async function(){
     html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
     html += '<span style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(artist) + '</span>';
     html += '<span class="dp-si-count" style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + singles.length + ' single' + (singles.length!==1?'s':'') + '</span>';
-    html += '<span class="dp-si-refetch" data-artist="' + window.escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span><span class="dp-si-deep-refetch" data-artist="' + window.escapeHtml(artist) + '" title="Refetch ALL singles (including removed)" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,80,80,0.12);color:#ff6b6b;font-size:11px;cursor:pointer;flex-shrink:0;margin-left:1px;">⚡</span>';
+    html += '<span class="dp-si-refetch" data-artist="' + window.escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span>';
     html += '</div>';
     html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
     for(var sri=0; sri<singles.length; sri++){

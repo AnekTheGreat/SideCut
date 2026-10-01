@@ -1,6 +1,52 @@
 # SideCut — repository memory
 
 
+## 72.1 (Oct 1, 2026): a refetch keeps the albums and singles you removed
+- **The owner's words**: "Refetching albums or singles shouldnt refetch every single or album that was deleted too". A removed
+  album or single is kept out of the Discover lists by the removed list (`sidecut_hiddenAlbums` / `sidecut_hiddenSingles`, a
+  collectionId or trackId plus a `t:<normalized title>` marker) and by the caches pruned when it was removed. A refetch has
+  to honour BOTH, and it did not everywhere - four entry points could put a removed row back.
+- **1. SINGLES HAD A PUT-THEM-ALL-BACK CHIP.** The per-artist header carried a red chip (class `dp-si-deep-refetch`, title
+  "Refetch ALL singles (including removed)") wired to `__singlesDeepRefreshArtistGroup()`, which was the ordinary refresh
+  with `__scFetchArtistSingles(name, {includeHidden: true})` - the one call that asked `fetchArtistSingles` to drop its
+  filter (`var skipHidden = !opts.includeHidden`). It even warned "Previously removed songs will reappear". `skipHidden`
+  is now **`true` unconditionally** and the chip is **out of the render markup** (both render sites, ~`:32013` and
+  `:41582`). The click handler and `__singlesDeepRefreshArtistGroup` are left in place on purpose: a saved popup from an
+  older build can still carry the chip, and letting it refresh is harmless now that the fetch always filters.
+- **2. THE SAVED LIST WAS HANDED BACK UNCHECKED.** When a refresh cannot reach the catalog it keeps the group it already
+  had (`keptArtistGroupsHTML` -> `cachedArtistGroups`, parsing `discPopupCache_` and re-inserting saved rows verbatim),
+  so a snapshot written before a removal put the removed single straight back. `cachedArtistGroups` (~`:31908`) now drops
+  every `.dp-ah-x[data-tid]` row that `isSingleHidden` matches, before the HTML is reused.
+- **3. THE AI SOURCE NEVER ASKED.** Every catalog source filters (iTunes via `filterInto`, Deezer and MusicBrainz each
+  call `isAlbumHidden`) - except the Gemini merge in `__refetchAlbums`, which pushed its albums with no check at all.
+  It now does `if(isAlbumHidden(_aiCid, _aiA.title)) continue;` (~`:31589`), checked by title too because the store id an
+  album was removed under is not the `ai_...` id this path invents.
+- **4. THE PER-ARTIST ALBUM REFETCH SEEDED FROM AN UNFILTERED CACHE.** `__refetchArtistAlbums` loaded `sidecut_ahArtistData`
+  into `artistAlbums` whole (`~:31027`) and saved it back whole (`~:31218`), so a removed album still in that cache was
+  re-rendered AND re-saved. The seed is filtered against `sidecut_hiddenAlbums` now, the same way `__refetchAlbums`
+  already filtered its own (`~:31316`).
+- **`dev/patch-721.mjs` - 9 edits**, applied and self-verified; **`dev/repin-721.mjs` - 46 edits / 27 files**, `--check`
+  proves no stale pin survives. The sweep adds `test-720.mjs` to `PREV_MOVES`; no bespoke series step (test-70 already
+  names `^72`).
+- **THE OWN SPLIT REACHED A THIRD AND FOURTH GATE.** test-719 and test-720 read `entries[0]` (the HEAD) for their own
+  theme checks (`/album/ && /playlist/`, and test-720's `/artist/`). That only ever passed because 71.9 and 72.0 happen to
+  share the words album and playlist - 72.1 does not carry "playlist", so both failed the moment the head moved. Both got
+  the `const OWN = '...'` split (like test-718 before them): the theme checks now read `entries.find(v === OWN)`.
+- **`dev/test-721.mjs` - 54 checks**, sections [1] release metadata [2] the singles fetch always filters the removed list
+  [3] a saved list cannot hand a removed row back [4] every album source asks the removed list, including the AI one
+  [5] what did not move [6] the repin moved every gate (no stale pin) [7] inline script syntax.
+- **OTA BUNDLE AT A TRUE FIXED POINT**: **860630** (`ota/`) / **860638** (`ota-play/`). `dev/ota-fixpoint.mjs` settles in
+  3 passes (860699 -> 860631 -> 860630 -> fixed), and a SECOND generation is **byte-identical across all 7 artifacts**
+  (`md5sum -c` against `/tmp/gen721.md5`). Both `ota-bundle.mjs --check` and `ota-bundle-play.mjs --check` OK (6 notes
+  each). (72.0 had NO fixed point; 72.1's content does - check convergence every release.)
+- **Verified on the finished tree**: `test-721` **54** (new), `test-720` 66, `test-719` 70, `test-718` 46, `test-717` 94,
+  `test-716` 83, `test-715` 72, `test-714` 137, `test-713` 50, `test-70` 182, `test-662` 75, `test-6643` 90,
+  `test-66429` 83, `test-66431` 95, `test-play-copy` 28, `studio-70-check.cjs` 389, `check-dom` DOM INTEGRITY FAILURES 0,
+  ota-guard 20/0, ota-update 52/0. **Pre-existing reds, unchanged and NOT in the gate set**: `test-705` 223/7,
+  `batch-635-check` 35/7, `test-6058` 47/1.
+- **NEXT RELEASE**: `72.2` (the third number stops at nine). Shell cache `sidecut-shell-v72.1` -> `sidecut-shell-v72.2`
+  (still derived in `dev/patch-72x.mjs` and the sweep). Add `test-721.mjs` to `PREV_MOVES`.
+
 ## 72.0 (Oct 1, 2026): an album knows who it is by, and an import can never drop a playlist
 - **The owner's words**: "something from before importing albums deleted my existing playlists" and "all the albums say
   unknown artist when you import them", then "make sure stuff like this never happens ever again". Three asks, one

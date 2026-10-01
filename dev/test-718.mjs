@@ -35,9 +35,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.0'; /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */
-const PREV = '71.9'; /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */
-const SHELL_CACHE = 'sidecut-shell-v72.0';
+const VER = '72.1'; /* repinned by dev/repin-721.mjs */ /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */
+const PREV = '72.0'; /* repinned by dev/repin-721.mjs */ /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.1';
 const OWN = '71.8'; // repin-719: the release this gate describes
 
 let pass = 0, fail = 0;
