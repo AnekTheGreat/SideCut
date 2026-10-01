@@ -61,7 +61,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v63.0.53';
+const SHELL_CACHE = 'sidecut-shell-v71.9';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -132,7 +132,7 @@ console.log('[1] release metadata');
   }
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(swCache === SHELL_CACHE, 'the shell cache moved with the release (' + swCache + ')');
-  ok(swCache.indexOf(VER) === -1 && swCache.indexOf('70.0') === -1, 'and carries none of the app version');
+  ok(swCache === 'sidecut-shell-v' + (src.match(/const APP_VERSION = '([^']+)'/) || [])[1], 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('\n[2] the dock is four tabs');

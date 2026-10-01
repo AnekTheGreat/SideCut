@@ -1547,6 +1547,77 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(cwin.__scAlbumFindByTitle('Not A Song At All', '') === null, 'while a name that is not here matches nothing');
   }
 
+  console.log('[11r] a playlist can be deleted from the Library');
+  {
+    // 71.9. The owner's second ask: "add a delete playlist function in library".
+    // This drives the ONE delete path through the real in-app confirmation, so it
+    // covers the wiring as well as the function, and it proves the two lists that
+    // are not the user's are refused rather than silently removed.
+    const c = boot('apk', {
+      playlists: { 'All Songs': TRACKS.map((t) => t.id), Favorites: ['t3', 't4'], 'Road Trip': ['t1', 't2', 't3'], Spare: ['t5'] },
+    });
+    await wait(1600);
+    const cwin = c.win;
+    const cdoc = cwin.document;
+    const pl = cwin.__scGetPlaylists();
+    ok(!!pl['Road Trip'] && !!pl.Spare, 'the library boots with playlists to delete');
+
+    // The Library tab, so the list header (and its kebab) is on screen at all.
+    const libTab = cdoc.querySelector('#libraryBtn');
+    ok(!!libTab, 'the dock has a Library tab');
+    if (libTab) libTab.click();
+    await wait(200);
+
+    // The kebab menu, then Manage playlists, exactly as a tap would.
+    const more = cdoc.getElementById('listMoreBtn');
+    ok(!!more, 'the list header carries the kebab that opens Manage playlists');
+    if (more) more.click();
+    await wait(80);
+    const menu = cdoc.getElementById('songActionsList');
+    const manage = Array.from(menu.querySelectorAll('button')).find((b) => /Manage playlists/.test(b.textContent || ''));
+    ok(!!manage, 'the list menu still offers Manage playlists');
+    if (manage) manage.click();
+    await wait(80);
+    ok(cdoc.getElementById('managePlaylistsBackdrop').style.display === 'flex', 'which opens the panel');
+    const rows = Array.from(cdoc.getElementById('managePlaylistsList').querySelectorAll('button'));
+    const bins = rows.filter((b) => b.title === 'Delete playlist');
+    ok(bins.length === 2, 'every playlist you can delete carries a bin, and only those (' + bins.length + ')');
+
+    // The two lists that are not the user's to delete are refused by the path.
+    ok((await cwin.__scDeletePlaylist('All Songs')) === false, 'Library cannot be deleted');
+    ok(!!cwin.__scGetPlaylists()['All Songs'], 'and it is still there');
+    ok((await cwin.__scDeletePlaylist('Favorites')) === false, 'Favorites cannot be deleted');
+    ok(!!cwin.__scGetPlaylists().Favorites, 'and it is still there too');
+    // 71.9, caught by this very probe: the app stores a REAL 'Unsorted' list
+    // (imports land in it) behind the virtual tab, and UNSORTED_VIEW is the
+    // virtual name - so refusing only that left the stored list deletable.
+    ok((await cwin.__scDeletePlaylist('Unsorted')) === false, 'and neither can the stored Unsorted list');
+    ok(!!cwin.__scGetPlaylists().Unsorted, 'which is still there as well');
+    ok((await cwin.__scDeletePlaylist('Not A Playlist')) === false, 'a name that is not a playlist deletes nothing');
+
+    // Delete for real, through the confirmation the app shows.
+    const del = cwin.__scDeletePlaylist('Road Trip');
+    await wait(80);
+    const yes = cdoc.getElementById('_modalConfirmYes');
+    const msg = cdoc.getElementById('_modalConfirmMsg');
+    ok(!!yes, 'deleting asks with the app\'s own confirmation, not confirm()');
+    ok(!!msg && /3 songs/.test(msg.textContent || ''), 'which counts the songs that stay in the library');
+    if (yes) yes.click();
+    ok((await del) === true, 'confirming deletes the playlist');
+    ok(!cwin.__scGetPlaylists()['Road Trip'], 'and it is gone from the library');
+    ok(cwin.__scGetAllTracks().length === TRACKS.length, 'while none of its songs are touched');
+    ok(!cdoc.getElementById('_modalConfirmYes'), 'and the confirmation is taken down again');
+
+    // And cancelling keeps it - a delete that cannot be called off is not one.
+    const del2 = cwin.__scDeletePlaylist('Spare');
+    await wait(80);
+    const no = cdoc.getElementById('_modalConfirmNo');
+    ok(!!no, 'the confirmation has a way out');
+    if (no) no.click();
+    ok((await del2) === false, 'cancelling deletes nothing');
+    ok(!!cwin.__scGetPlaylists().Spare, 'and the playlist is still there');
+  }
+
   console.log('[12] the page still holds together');
   {
     const bad = realErrors(errors);

@@ -175,7 +175,7 @@ console.log('\n[9] the release says so');
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(/^sidecut-shell-v\d+(\.\d+)*$/.test(swCache), 'service worker cache is versioned (' + swCache + ')');
-  ok(swCache.indexOf(String(ver)) === -1, 'and is not the app version');
+  ok(swCache === 'sidecut-shell-v' + ver, 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('\n[10] inline script syntax');

@@ -116,8 +116,8 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.53', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
-  ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
+  ok(swCache === 'sidecut-shell-v71.9', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v' + (src.match(/const APP_VERSION = '([^']+)'/) || [])[1], 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('[2] the dock: navigation moved to the bottom of the screen');

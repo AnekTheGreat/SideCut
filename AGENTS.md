@@ -1,6 +1,106 @@
 # SideCut — repository memory
 
 
+## 71.9 (Oct 1, 2026): an album export carries albums, and a playlist can be deleted
+- **The owner's words**: "Whenever I import my zip for albums it imports it as playlists in library it not supposed do that
+  obviously and add a delete playlist function in library". Two asks, one release: an album export that imports as albums, and
+  a delete next to a playlist in the Library.
+- **WHY ALBUMS CAME BACK AS PLAYLISTS.** `exportAlbums()` (~`index.html:22782`) built `albumGroups` - album name -> ARRAY
+  OF IDS - and handed it to `doExportTracks(...)` in the **`manifestPlaylists`** slot (~`:22796`), even though the confirm
+  text it had just shown said "No playlists are included". `doExportTracks` (~`:22843`) wrote that straight into
+  `manifest: { playlists: manifestPlaylists || {}, ... }` (~`:22967`), so the zip declared a PLAYLIST per album. Importing
+  merged `manifest.playlists` into the Library's playlists (~`:24368`), which is the bug, verbatim. An album export now passes
+  `undefined` in the playlist slot and its album map as a NEW fifth parameter, writes `settings.userAlbums` +
+  `settings.albumOrder`, sets `manifest.kind = 'albums'`, and writes `playlists: {}`.
+- **THE ZIPS PEOPLE ALREADY HAVE STILL HAVE TO WORK.** Fixing only the export would leave every zip made before this
+  release importing as playlists - for the owner that zip is the only copy of those albums. So the import recognizes an
+  albums zip by the marker **AND** by the older zips, which say it only in their file name (`sidecut-albums.zip`):
+  `const _isAlbumsZip = (manifest.kind === 'albums') || (!manifest.settings && /^sidecut-albums/i.test(file.name))`
+  (~`:24184`). An older one has no `settings.userAlbums`, so the block just below synthesises one from its
+  `manifest.playlists` (skipping `All Songs`/`Favorites`/`Unsorted`), and the playlist-merge loop is guarded with
+  `if(!_isAlbumsZip)` (~`:24368`) - the DOUBLE READ was the bug, so an album zip must not be read as albums AND playlists.
+- **THE CARD ORDER RIDES ALONG.** `userAlbums`' key order cannot hold a name like "2003" in place, so the export writes an
+  explicit `albumOrder`, and the full backup carries it too (~`:23997`). The import's order restore now prefers the
+  backup's list (`var _bkOrder = manifest.settings.albumOrder`, ~`:24783`) and pushes the local row after it, instead of the
+  local row winning - an album's position is the half of "my albums are back" a list of names cannot show.
+- **DELETE A PLAYLIST, FROM THE LIBRARY.** New `modalConfirm(title, message, okLabel)` (~`:22731`) - `confirm()` and
+  `prompt()` are unreliable in the Android WebView (the app already carries its own prompt for that reason), so anything
+  destructive asks in-app; its backdrop is `zIndex '250'` so it sits above a Discover popup (`.disc-popup-overlay` is 70).
+  New **one** delete path `async function deletePlaylist(name)` (~`:22764`): refuses `All Songs`, `Favorites` and the virtual
+  `UNSORTED_VIEW` with a toast; counts the songs for the confirmation; deletes the name and clears every per-playlist row
+  it left behind (`hiddenPlaylists`, `djDisabledPlaylists`, `perPlaylistSort`, each with its own `dbPut`); moves
+  `activePlaylist` to `All Songs` (+ `rememberPlaylist`) if it was open; then `saveMeta(); renderManagePlaylistsList();
+  renderTabs(); renderList();`. `deleteActivePlaylist()` (the old menu action, ~`:22707`) is now a THIN WRAPPER over it, so
+  there is one path. `renderManagePlaylistsList` (~`:19225`) gained a coral trash `delBtn` beside the rename pencil for
+  every name except `All Songs` and `Favorites` (the `if(name !== 'All Songs')` block already excludes All Songs).
+- **`dev/patch-719.mjs` - 13 edits**, applied and self-verified; **`dev/repin-719.mjs` - 41 edits / 26 files**, `--check`
+  reports 0 and PROVES no stale pin survives. Three fixes now in the sweep's lineage: `PREV_MOVES` adds test-718, and
+  `test-718.mjs` got the `const OWN` split (it reads the head for two checks that are about 71.8's own notes) - the same
+  OWN-by-version lesson 71.7 and 71.8 recorded, now applied to a third gate. A repin sweep that reads a gate's file from
+  disk during `--check` sees PRE-sweep text (nothing written yet), so `repin-719.mjs` keeps an in-memory `swept` map and
+  runs the bespoke step against `swept.get(name)`.
+- **`dev/test-719.mjs` - 70 checks**, sections [1] release metadata [2] an album export carries albums, never playlists
+  [3] the import reads an album zip as albums [4] one delete path, and the bin in Manage playlists [5] what did not move
+  [6] the repin moved every gate [7] inline script syntax. **A `confirm()` assertion must name the exact string**: the
+  first draft asserted no `if(!confirm(` anywhere and failed on the unrelated delete-songs confirm (~`:22467`).
+- **OTA BUNDLE AT A TRUE FIXED POINT**: **857313** (`ota/`) / **857320** (`ota-play/`). `dev/ota-fixpoint.mjs` settles in
+  3 passes (854360 -> 857140 -> 857313 -> fixed), and a SECOND generation is **byte-identical across all 8 artifacts**
+  (`md5sum -c` against `/tmp/gen719.md5`). Both `ota-bundle.mjs --check` and `ota-bundle-play.mjs --check` OK (6 notes each).
+- **Verified on the finished tree**: `test-719` **70** (new), `test-718` 46, `test-717` 94, studio-70-check **367**,
+  `test-716` 83, `test-715` 72, `test-714` 137, `test-713` 50, `test-70` 182, `test-662` 75, `test-663` 49, `test-6641` 128,
+  `test-6642` 75, `test-66421` 49, `test-6643` 90, `test-66431` 95, `test-66429` 83, `test-6056` 48/0, `test-619` 55,
+  `test-widget-anim`, `test-widget-dim`, `test-play-copy` 28, album-rename-check 40/0, albums-manual-check 40/0,
+  `check-dom` DOM INTEGRITY FAILURES 0, ota-guard 20/0, ota-bootapply 24/0, ota-update 52/0, ota-loop 26/0.
+  **Pre-existing reds, unchanged and NOT in the gate set**: `test-705` 223/7, `batch-635-check` 35/7, `test-6058` 47/1.
+- **NEXT RELEASE**: the third number stops at nine, so `71.9` is the last in this line and the next is **72.0** - the shell
+  cache becomes `sidecut-shell-v72.0` (still derived in the patch and the sweep). Add `test-719` to `PREV_MOVES`.
+
+## 71.8 (Oct 1, 2026): the shell cache is named after the release
+- **The owner's words**: "The cache should be whatever the patch notes number is" and "Every release bumps it". `sw.js`
+  `CACHE_NAME` is now **`sidecut-shell-v71.8`** - the release number itself, DERIVED in the patch (`const CACHE =
+  'sidecut-shell-v' + VERSION`) and in the sweep (`const NEWCACHE = 'sidecut-shell-v' + NEWVER`), so the two cannot drift
+  apart again.
+- **THIS REVERSES 63.1.4 ON PURPOSE.** `dev/patch-623.mjs` decoupled the cache name from `APP_VERSION`, and every gate
+  written since asserts the OLD rule ("carries none of the app version"). The reason was real: the FIRST scheme built the
+  name out of the version's leading line (`sidecut-shell-v70.0`), so two releases in one line SHARED a cache name and the
+  later one was served the earlier one's shell. One name per RELEASE cannot do that - `APP_VERSION` moves every release.
+  The old rule is kept in `## sw.js cache name` below as history; it is no longer the contract.
+- **AN INVARIANT FLIP IS A GATE SWEEP, NOT A FILE EDIT.** ~20 gates asserted the old rule across `dev/test-*.mjs` and
+  `dev/ota-update-check.cjs`. All of them are moved by **`dev/repin-718.mjs` (step F)**: one regex rewrites
+  `ok(<cache>.indexOf(<ver>) === -1, 'and carries none of the app version')` into
+  `ok(<cache> === 'sidecut-shell-v' + <ver>, 'the shell cache is the release number')`, and the sweep then PROVES no gate
+  anywhere still carries the old strings. A half-moved rule would otherwise fail one file at a time, in gates nobody ran.
+  Three shapes needed bespoke handling: `test-705.mjs` and `test-70.mjs`, whose `const VER` names the release they
+  DESCRIBE (70.0.5 / 70.0) rather than the app now, and `test-6643.mjs` / `test-66431.mjs`, which keep the app version in
+  `PAGEVER` (fixed by a PAGEVER post-pass). **`test-718.mjs` is excluded from the sweep's stale check** because it NAMES
+  the old rule on purpose - it is the gate that proves the rule moved.
+- **THE HEAD IS ANOTHER RELEASE NOW, AND TWO GATES READ IT BY ACCIDENT.** `test-716.mjs` and `test-717.mjs` asserted
+  things about THEIR release against `entries[0]`; that only worked while they were the head. Both got the `const OWN`
+  split `dev/test-715.mjs` already uses (release-specific checks read the OWN entry by version, everything about the
+  changelog itself still reads the head) - `repin-718.mjs` step F3. **Lesson: a gate that describes release X must read X
+  BY VERSION.** Also watch a new gate's own text against the sweep: `test-718.mjs` first carried the old cache literal and
+  step E rewrote it, which is why its repin assertions are regexes now.
+- **`dev/patch-718.mjs` is only three edits** (`APP_VERSION` 71.7 -> 71.8, the 7-note head entry, the `sw.js` cache). The
+  release is a rule change, and the rule lives in the sweep.
+- **THE OWNER'S OTHER REPORT WAS INVESTIGATED AND IS NOT A PUBLISHING BUG.** "I don't see an ota for the full [APK] on my
+  phone": `ota/` IS the full/sideload channel, and it was live and current (v71.7, `update.zip` 854194, `manifest.json` +
+  `SideCut-web.zip` present) on GitHub Pages and on `raw.githubusercontent.com/AnekTheGreat/SideCut/main/ota/updates.json`.
+  The zip carries all six `OTA_FILES`, the right `APP_VERSION`, and NO `__PLAY_BUILD__` (the play zip carries one), and
+  `apk-71.7-full` / `apk-71.7-release` both exist with assets. **One real latent defect found**: the ROOT `updates.json` /
+  `manifest.json` (the pre-`ota/` locations, still published and still the `<link rel="manifest">` target) carry
+  `url: "update.zip"`, which resolves to `https://anekthegreat.github.io/SideCut/update.zip` - a **404**. Nothing in the
+  current app reads them (`index.html` and `dev/native-updates.js` both read `ota/` | `ota-play/`), so they were left
+  alone; fix that before trusting any old build's update check.
+- **OTA BUNDLE AT A TRUE FIXED POINT**: **854360** (`ota/`) / **854369** (`ota-play/`). `dev/ota-fixpoint.mjs` settles in
+  3 passes (854194 -> 854530 -> 854360 -> fixed), and a SECOND generation is **byte-identical across all 8 artifacts**
+  (`md5sum -c` against `/tmp/gen718.md5`). Both `ota-bundle.mjs --check` and `ota-bundle-play.mjs --check` OK (6 notes each).
+- **Verified on the finished tree**: `test-718` **46** (new), `test-717` 94, studio-70-check **367**, `test-716` 83,
+  `test-715` 72, `test-714` 137, `test-713` 50, `test-70` 182, `test-662` 75, `test-663` 49, `test-6641` 128,
+  `test-6642` 75, `test-66421` 49, `test-6643` 90, `test-66431` 95, `test-66429` 83, `test-6056` 48/0, `test-619` 55,
+  `test-widget-anim`, `test-widget-dim`, `test-play-copy` 28, album-rename-check 40/0, albums-manual-check 40/0,
+  `check-dom` DOM INTEGRITY FAILURES 0, ota-guard 20/0, ota-bootapply 24/0, ota-update 52/0, ota-loop 26/0.
+  **Pre-existing reds, unchanged and NOT in the gate set**: `test-705` 223/7, `batch-635-check` 35/7, `test-6058` 47/1.
+
 ## 71.7 (Oct 1, 2026): the rebuild shows what it would make, one tap undoes it, and the backup has the real albums
 - **The owner's words, after 71.6**: "I'm missing mad albums and you made every single damn song be an album of it's own fix it
   and I need my songs in the correct order in albums and I'm missing songs inside of albums". **71.6's rebuild ran on one
@@ -1398,7 +1498,8 @@
 - **This is the release the user asked for by name**, and it is a series restart, not an increment: `APP_VERSION = '70.0'`. The
   rule was already written down at the changelog and is worth repeating where the number is chosen — the third number stops
   at nine (64.3.1 -> 64.4, never 64.3.10), and a whole new series reads `70.0` rather than `70.0.0`. The service worker's
-  `CACHE_NAME` keeps its OWN counter and must never contain the app version; it moved to `sidecut-shell-v63.0.30`.
+  `CACHE_NAME` moved to `sidecut-shell-v63.0.30` on its own counter, which must never contain the app version (**reversed
+  by 71.8** - the cache name IS the release number again, see `## 71.8`).
 - **The shape of the app changed: there is a bottom dock now.** Home / Library⧄Albums (one diagonal split tab) / Discover /
   Studio, with the player sitting above it and everything else sized around it (`--sc-dock-h`, `#nowPlaying{ bottom: ... }`,
   the view padding insets and the list pane's bottom inset all read the same variable). Four screenshots of the intended
@@ -3331,7 +3432,12 @@
   `dev/album-hold-check.cjs` 34/34. The shipped notes in `ota/updates.json` are clean of every term
   `dev/test-6058` / `dev/test-60510` forbid.
 
-## sw.js cache name (Sep 26, 2026): decoupled from APP_VERSION — 63.0.1 → 63.0.2 → 63.0.3
+## sw.js cache name (Sep 26, 2026): decoupled from APP_VERSION, then put back by 71.8
+
+**SUPERSEDED by 71.8** - the cache name is the release number again (`sidecut-shell-v71.8`). What follows records WHY the
+  decoupling happened (an early scheme shared one name across a whole version LINE, so the later release was served the
+  earlier one's shell); 71.8 keeps that lesson by naming the cache after the full release number, which is unique per
+  release. See `## 71.8` at the top of this file. — 63.0.1 → 63.0.2 → 63.0.3
 - **The user's words**: "The sw.js can be 63.0.1", then "Just make the sw.js v63.0.2 you are not allowed to make full jumps
   from v63 to v64 without my consent". Only `sw.js`'s `CACHE_NAME` moves — it is now **`sidecut-shell-v63.0.2`** while the app
   is **62.1**. That name is a pure cache-buster: nothing in `index.html` compares it to `APP_VERSION` (there is no

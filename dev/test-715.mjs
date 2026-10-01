@@ -28,13 +28,13 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const py = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '71.7'; /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */
-const PREV = '71.6'; /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */
+const VER = '71.9'; /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */
+const PREV = '71.8'; /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */
 // The release this gate DESCRIBES, which never moves. A check on what 71.5's
 // notes SAY has to look them up, because VER moves with every release and the
 // head entry with it.
 const OWN = '71.5';
-const SHELL_CACHE = 'sidecut-shell-v63.0.53';
+const SHELL_CACHE = 'sidecut-shell-v71.9';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -79,7 +79,7 @@ console.log('[1] release metadata');
   }
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(swCache === SHELL_CACHE, 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
-  ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
+  ok(swCache === 'sidecut-shell-v' + VER, 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('[2] the switch, in Settings > Widget');

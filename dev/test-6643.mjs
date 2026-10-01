@@ -124,7 +124,7 @@ console.log('[1] release metadata');
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(/^sidecut-shell-v\d/.test(swCache), 'the shell cache has a name of its own (' + swCache + ')');
-  ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
+  ok(swCache === 'sidecut-shell-v' + PAGEVER, 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('[2] the ship times are the real ones');

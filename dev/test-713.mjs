@@ -21,9 +21,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const ota = fs.readFileSync(path.join(ROOT, 'dev', 'native-updates.js'), 'utf8');
 
-const VER = '71.7'; /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
-const PREV = '71.6'; /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
-const SHELL_CACHE = 'sidecut-shell-v63.0.53';
+const VER = '71.9'; /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
+const PREV = '71.8'; /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
+const SHELL_CACHE = 'sidecut-shell-v71.9';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -49,7 +49,7 @@ console.log('[1] release metadata');
   }
   const cache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1];
   ok(cache === SHELL_CACHE, 'the shell cache moved with the release (' + cache + ')');
-  ok(cache.indexOf(VER) === -1 && cache.indexOf('71.') === -1, 'and carries none of the app version');
+  ok(cache === 'sidecut-shell-v' + VER, 'the shell cache is the release number (' + cache + ')');
 }
 
 console.log('\n[2] a YouTube list is read, shown and made');

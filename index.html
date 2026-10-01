@@ -11988,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '71.7';
+  const APP_VERSION = '71.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12465,6 +12465,24 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '71.9', date: 'October 1, 2026 \u00b7 3:52 PM EDT', title: 'An album export carries albums instead of playlists, the album order rides along, and Manage playlists gains a bin', items: [
+    'Exporting your albums no longer writes them as playlists. The zip an album export makes carries the albums themselves, so importing it gives you albums in the Albums tab and nothing added to your playlists - which is what that screen always promised.',
+    'That is the fix for albums arriving as playlists after an import. The album export was handing its album list to the playlist side of the file, so every album came back as a playlist wearing the same name.',
+    'The zips you already have are read the same way. An album export made before this release says it only in its file name, and the import recognizes it, so those older album zips stop arriving as playlists too.',
+    'The card order rides along. An album export records the order your album cards were in, and an import uses it, so the albums come back in the arrangement you left them in.',
+    'Delete playlist is in Manage playlists now: a bin beside the rename pencil on every playlist, with a real confirmation that says how many songs stay in your library. Only the playlist goes - the songs are never touched.',
+    'The playlist menu above the list keeps the same delete, and both go through one path, so the hidden flag, the DJ Mode setting and the saved sort for a deleted name are cleared with it. Library, Favorites and Unsorted cannot be deleted, so the bin is never offered for them.',
+    'Nothing else moved: the player, the dock, the queue, your albums and every saved song behave exactly as they did before this release, and the tag rebuild is still in Manage albums with its undo.',
+  ] },
+  { version: '71.8', date: 'October 1, 2026 \u00b7 3:14 PM EDT', title: 'The page kept offline is named after the release now, so an update always opens the build that was installed and never the one before it', items: [
+    'The copy of the page your device keeps for offline use is now named after the release, so every update starts from the build you just installed instead of the one before it.',
+    'That closes the last case of a new version opening onto the previous page. The cache name and the version the app reports are the same number now, and they change together.',
+    'The update check itself is unchanged: it still runs when the app opens, when you come back to it and when you ask it to, and it still asks before it installs anything.',
+    'The look of the app is unchanged. The player, the dock, the queue, your playlists and every saved song behave exactly as they did before this release.',
+    'Your library is untouched: no song, no album, no playlist, no cover and no setting is read or rewritten by this release.',
+    'Nothing is added to the app by this change: there is no new screen, no new setting and no new permission to grant.',
+    'And it costs nothing to keep: the cache holds one release of the page, so a new one replaces the old copy rather than piling up beside it.',
+  ] },
   { version: '71.7', date: 'October 1, 2026 \u00b7 7:32 AM EDT', title: 'The album rebuild shows what it would make and offers only the tags shared by several songs, one tap undoes it, and a backup brings the real albums back', items: [
     'Rebuilding albums from tags says what it would make before it makes it. A sheet counts the album tags on your songs and offers the ones that cover more than one song - so a library whose files carry one tag per song can no longer be turned into one album per song by a single tap.',
     'Only three of the tags on a real library are usually albums. A tag that appears on one song is normally the song own name rather than an album, which is exactly what the old rebuild was making hundreds of.',
@@ -19246,6 +19264,18 @@ function _fallbackCopy(text){
         renameBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
         renameBtn.addEventListener('click', (e) => { e.stopPropagation(); renamePlaylist(name); });
         row.appendChild(renameBtn);
+        // 71.9 - the way to delete a playlist from the Library itself. Every
+        // playlist you can rename is one you can remove, and the two favourites are
+        // protected (Unsorted is virtual and never appears in this list at all).
+        if(name !== 'Favorites' && name !== 'Unsorted'){
+          const delBtn = document.createElement('button');
+          delBtn.className = 'icon-btn';
+          delBtn.title = 'Delete playlist';
+          delBtn.style.cssText = 'flex-shrink:0; color:var(--coral);';
+          delBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>';
+          delBtn.addEventListener('click', (e) => { e.stopPropagation(); deletePlaylist(name); });
+          row.appendChild(delBtn);
+        }
         // DJ Mode disable toggle
         const djBuiltIn = DJ_MODE_DISABLED_PLAYLISTS.some(p => p.toLowerCase() === name.trim().toLowerCase());
         const djOff = djBuiltIn || djDisabledPlaylists.has(name);
@@ -22695,13 +22725,75 @@ function _fallbackCopy(text){
     renderList();
   }
 
-  function deleteActivePlaylist(){
-    if(!confirm(`Delete "${activePlaylist}"? This won't delete the songs themselves.`)) return;
-    delete playlists[activePlaylist];
-    activePlaylist = 'All Songs';
+  // 71.9 - a real in-app confirmation. confirm() and prompt() are unreliable in
+  // the Android WebView (the app already carries its own prompt for that reason),
+  // so anything that destroys something asks here instead.
+  function modalConfirm(title, message, okLabel){
+    return new Promise(function(resolve){
+      var bd = document.createElement('div');
+      bd.className = 'modal-backdrop';
+      bd.style.zIndex = '250';
+      bd.style.display = 'flex';
+      var sh = document.createElement('div');
+      sh.className = 'modal';
+      sh.style.maxWidth = '340px';
+      sh.innerHTML = '<h3>' + escapeHtml(title) + '</h3>' +
+        '<div id="_modalConfirmMsg" style="font-size:13px; color:var(--ink-dim); line-height:1.55; margin-bottom:12px;"></div>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button id="_modalConfirmNo" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg-raised);color:var(--ink);font-weight:600;font-size:13px;">Cancel</button>' +
+        '<button id="_modalConfirmYes" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--coral);color:#161616;font-weight:700;font-size:13px;">' + escapeHtml(okLabel || 'OK') + '</button>' +
+        '</div>';
+      bd.appendChild(sh);
+      var msg = sh.querySelector('#_modalConfirmMsg');
+      if(msg) msg.textContent = String(message || '');
+      document.body.appendChild(bd);
+      function done(v){ try{ if(bd.parentNode) bd.parentNode.removeChild(bd); }catch(e){} resolve(v); }
+      var no = sh.querySelector('#_modalConfirmNo'), yes = sh.querySelector('#_modalConfirmYes');
+      if(no) no.addEventListener('click', function(){ done(false); });
+      if(yes) yes.addEventListener('click', function(){ done(true); });
+      bd.addEventListener('click', function(e){ if(e.target === bd) done(false); });
+    });
+  }
+
+  // 71.9 - ONE delete path for a playlist, reachable from the Library itself
+  // (Manage playlists has a bin beside every playlist it lets you rename). It
+  // refuses the three lists that are not yours to delete - Library (All Songs),
+  // Favorites and the virtual Unsorted - clears every per-playlist row the name
+  // left behind, and moves the view somewhere that still exists instead of leaving
+  // the app pointed at a list that is gone.
+  async function deletePlaylist(name){
+    var target = String(name || '').trim();
+    if(!target || !playlists[target]) return false;
+    if(target === 'All Songs' || target === 'Favorites' || target === UNSORTED_VIEW || target === 'Unsorted'){
+      toast('That list belongs to the app - it cannot be deleted.', 3500);
+      return false;
+    }
+    var n = (playlists[target] || []).length;
+    var sure = await modalConfirm('Delete playlist?',
+      'Delete "' + target + '"? The ' + n + ' song' + (n === 1 ? '' : 's') + ' in it stay in your library - only the playlist goes.',
+      'Delete');
+    if(!sure) return false;
+    delete playlists[target];
+    try{
+      if(hiddenPlaylists.has(target)){ hiddenPlaylists.delete(target); dbPut('meta', { key: 'hiddenPlaylists', value: Array.from(hiddenPlaylists) }); }
+      if(djDisabledPlaylists.has(target)){ djDisabledPlaylists.delete(target); dbPut('meta', { key: 'djDisabledPlaylists', value: Array.from(djDisabledPlaylists) }); }
+      if(perPlaylistSort && perPlaylistSort[target] !== undefined){ delete perPlaylistSort[target]; dbPut('meta', { key: 'perPlaylistSort', value: perPlaylistSort }); }
+    }catch(_eClean){}
+    if(activePlaylist === target){
+      activePlaylist = 'All Songs';
+      try{ rememberPlaylist(activePlaylist); }catch(_eRem){}
+    }
     saveMeta();
+    renderManagePlaylistsList();
     renderTabs();
     renderList();
+    toast('Deleted "' + target + '".', 3000);
+    return true;
+  }
+  window.__scDeletePlaylist = deletePlaylist;
+
+  function deleteActivePlaylist(){
+    deletePlaylist(activePlaylist);
   }
 
   // Export confirmation modal helpers
@@ -22774,17 +22866,30 @@ function _fallbackCopy(text){
     const ids = typeof buildAlbumsIds === 'function' ? buildAlbumsIds() : [];
     if(!ids.length){ toast('No albums to export yet.'); return; }
     const albumGroups = {};
-    Object.keys(userAlbums || {}).forEach(function(name){
+    // 71.9 - built as ALBUMS, in card order, because this map is now written to
+    // settings.userAlbums. It used to be an array of ids per name and went to the
+    // playlist slot of the manifest, which is the bug this release fixes: an album
+    // export produced a playlist per album on import.
+    const _albNames = (typeof albumOrder !== 'undefined' && Array.isArray(albumOrder) ? albumOrder.slice() : [])
+      .filter(function(n){ return userAlbums[n] && !albumIsAuto(n); });
+    Object.keys(userAlbums || {}).forEach(function(n){ if(_albNames.indexOf(n) === -1) _albNames.push(n); });
+    _albNames.forEach(function(name){
       if(albumIsAuto(name)) return; // created automatically, not an album you made
       const entry = userAlbums[name];
       if(!entry || !Array.isArray(entry.trackIds)) return;
       const kept = entry.trackIds.filter(function(id){ return ids.indexOf(id) >= 0; });
-      if(kept.length) albumGroups[name] = kept;
+      if(!kept.length) return;
+      albumGroups[name] = {
+        artist: entry.artist || 'Unknown artist',
+        trackIds: kept,
+        createdAt: entry.createdAt || Date.now(),
+        manual: true
+      };
     });
     const albumCount = Object.keys(albumGroups).length;
     if(!albumCount){ toast('No albums to export yet.'); return; }
     showExportConfirm(`Export your ${albumCount} album${albumCount===1?'':'s'} (${ids.length} song${ids.length===1?'':'s'}) as a .zip file? — the songs and the albums they belong to. No playlists are included.`, async () => {
-      await doExportTracks(ids.slice(), 'sidecut-albums', albumGroups, `${albumCount} album${albumCount===1?'':'s'}`);
+      await doExportTracks(ids.slice(), 'sidecut-albums', undefined, `${albumCount} album${albumCount===1?'':'s'}`, albumGroups);
     });
   }
 
@@ -22831,7 +22936,7 @@ function _fallbackCopy(text){
   // select mode). manifestPlaylists, if given, is included so importing the
   // zip elsewhere restores that playlist grouping too; omit it for a plain
   // bundle of tracks with no playlist association (e.g. an ad-hoc selection).
-  async function doExportTracks(ids, filenameBase, manifestPlaylists, kindLabel){
+  async function doExportTracks(ids, filenameBase, manifestPlaylists, kindLabel, manifestAlbums){
     if(!ids.length){ toast('Nothing to export yet.'); return; }
     if(typeof JSZip === 'undefined'){
       // Try loading JSZip dynamically as a fallback
@@ -22854,7 +22959,14 @@ function _fallbackCopy(text){
     await runZipExport({
       kindLabel: kindLabel || 'selection',
       tracks,
-      manifest: { playlists: manifestPlaylists || {}, tracks: [], version: 2 },
+      // 71.9 - an ALBUM export carries albums. Handing the album groups to the
+      // playlist slot is what made a zip "for albums" import as a playlist per
+      // album, and it made the confirm text's own promise false. The groups are
+      // written where albums live (settings.userAlbums), in album shape, with the
+      // card order beside them, and manifest.kind says which kind of zip this is.
+      manifest: manifestAlbums
+        ? { kind: 'albums', playlists: {}, tracks: [], settings: { userAlbums: manifestAlbums, albumOrder: Object.keys(manifestAlbums) }, version: 2 }
+        : { playlists: manifestPlaylists || {}, tracks: [], version: 2 },
       filename: filenameBase + '.zip',
       toastOk: 'Exported — import this .zip on another device to restore it',
     });
@@ -23877,6 +23989,13 @@ function _fallbackCopy(text){
             // User-created albums
             userAlbums: userAlbums || {},
 
+            // 71.9 - the album CARD order. userAlbums' key order cannot hold a
+            // name like "2003" in place, so the explicit list comes along and the
+            // import prefers it over whatever this device already had. An album's
+            // position is the half of "my albums are back" that a list of names
+            // and songs cannot show.
+            albumOrder: (typeof albumOrder !== 'undefined' && Array.isArray(albumOrder)) ? albumOrder.slice() : [],
+
             // UI positions
             activePlaylist: activePlaylist,
 
@@ -24056,6 +24175,26 @@ function _fallbackCopy(text){
       if(!manifestEntry){ toast('That doesn\'t look like a SideCut library file.'); return; }
       const manifest = JSON.parse(await manifestEntry.async('string'));
       const isV2 = manifest.version === 2;
+      // 71.9 - A ZIP THIS APP MADE FOR ALBUMS IS NOT A PLAYLIST ZIP. An album
+      // export used to hand its album groups to the playlist slot of the manifest,
+      // so importing one produced a playlist per album in the Library. New exports
+      // say so with manifest.kind; an OLDER one says it only in its file name
+      // (sidecut-albums.zip), and both are read as albums here, so the zips people
+      // already have stop coming back as playlists.
+      const _isAlbumsZip = (manifest.kind === 'albums') ||
+        (!manifest.settings && /^sidecut-albums/i.test(String((file && file.name) || '')));
+      if(_isAlbumsZip && !manifest.settings){
+        const _albFromZip = {};
+        Object.keys(manifest.playlists || {}).forEach(function(n){
+          if(n === 'All Songs' || n === 'Favorites' || n === 'Unsorted') return;
+          const _ids = manifest.playlists[n];
+          if(!Array.isArray(_ids) || !_ids.length) return;
+          _albFromZip[n] = { artist: 'Unknown artist', trackIds: _ids.slice(), createdAt: Date.now(), manual: true };
+        });
+        if(Object.keys(_albFromZip).length){
+          manifest.settings = { userAlbums: _albFromZip, albumOrder: Object.keys(_albFromZip) };
+        }
+      }
       // Full-state hydration FIRST: write every stored key back (lyrics sync
       // nudges, album order, widget theme, API bases, hidden playlists, manual
       // album data ...), then the targeted restores below fix the live JS
@@ -24223,7 +24362,10 @@ function _fallbackCopy(text){
       // storage-quota or alloc error surfaces instead of silently dropping
       // tracks on the next reload.
       await flushStoreBatch();
-      Object.keys(manifest.playlists || {}).forEach(name => {
+      // 71.9 - an album zip's groups were read into ALBUMS above, so they must not
+      // be made into playlists as well. That double-read is exactly the owner's
+      // report: a playlist per album, in the Library, from a zip for albums.
+      if(!_isAlbumsZip) Object.keys(manifest.playlists || {}).forEach(name => {
         if(name === 'All Songs') return;
         if(!playlists[name]) playlists[name] = [];
         (manifest.playlists[name] || []).forEach(rawId => {
@@ -24635,7 +24777,12 @@ function _fallbackCopy(text){
         try{
           var _aoRow = await dbGet('meta', 'albumOrder');
           var _ao = (_aoRow && Array.isArray(_aoRow.value)) ? _aoRow.value : [];
+          // 71.9 - the backup's own order comes FIRST. An album export writes the
+          // card order into the manifest, and taking the local row first meant the
+          // albums came back in this device's old arrangement instead.
+          var _bkOrder = (manifest.settings && Array.isArray(manifest.settings.albumOrder)) ? manifest.settings.albumOrder : [];
           var _mergedOrder = [];
+          _bkOrder.forEach(function(n){ if(userAlbums[n] && _mergedOrder.indexOf(n) === -1) _mergedOrder.push(n); });
           _ao.forEach(function(n){ if(userAlbums[n] && _mergedOrder.indexOf(n) === -1) _mergedOrder.push(n); });
           Object.keys(userAlbums).forEach(function(n){ if(_mergedOrder.indexOf(n) === -1) _mergedOrder.push(n); });
           albumOrder = _mergedOrder;

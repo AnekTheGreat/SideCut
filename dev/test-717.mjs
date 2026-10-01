@@ -34,9 +34,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '71.7'; /* repinned by dev/repin-717.mjs */
-const PREV = '71.6';
-const SHELL_CACHE = 'sidecut-shell-v63.0.53';
+const VER = '71.9'; /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */
+const PREV = '71.8'; /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */
+const SHELL_CACHE = 'sidecut-shell-v71.9';
+const OWN = '71.7'; // repin-718: the release this gate describes
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -58,6 +59,8 @@ console.log('[1] release metadata');
   if (entries) {
     const head = entries[0];
     const items = head.items || [];
+    const own = entries.find((e) => String(e.version) === OWN) || head;
+    const ownNotes = (own.items || []).join('\n');
     ok(String(head.version) === VER, 'the newest entry is the release (' + head.version + ')');
     ok(items.length >= 6, 'with at least six notes (' + items.length + ')');
     ok(items.length > 6, 'and a note past the six that ride to the store channel (' + items.length + ')');
@@ -73,13 +76,13 @@ console.log('[1] release metadata');
     ok(!/downloader|downloading|download|converter|converts|converting|conversion|convert|mp3|get song|no source found|hand-off|ytmp3|vocal remover|spotisaver|spotmate|spotidown|spoticatch/i
       .test(items.slice(0, 6).join('\n')), 'and none of the six that ride to the store trips its wider list');
     ok(!/play build|play version|play install/i.test(items.slice(0, 6).join('\n')), 'nor reads as a store-channel note');
-    ok(/undo/i.test(notes), 'the notes promise the undo');
-    ok(/backup/i.test(notes), 'and the backup as the copy with the real albums');
+    ok(/undo/i.test(ownNotes), 'the 71.7 notes promise the undo');
+    ok(/backup/i.test(ownNotes), 'and the backup as the copy with the real albums');
     ok(items.every((it) => it.indexOf("'") === -1), 'no note carries an apostrophe into the single-quoted array');
   }
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(swCache === SHELL_CACHE, 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
-  ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
+  ok(swCache === 'sidecut-shell-v' + VER, 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('[2] the sheet - what it would make, before it makes it');

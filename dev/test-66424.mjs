@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const VER = '71.7'; /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */ /* repinned by dev/repin-713.mjs */ /* repinned by dev/repin-712.mjs */ /* repinned by dev/repin-7021.mjs */ /* repinned by dev/repin-7020.mjs */ /* repinned by dev/repin-7019.mjs */ /* repinned by dev/repin-7018.mjs */ /* repinned by dev/repin-7017.mjs */ /* repinned by dev/repin-7016.mjs */ /* repinned by dev/repin-7015.mjs */ /* repinned by dev/repin-7014.mjs */ /* repinned by dev/repin-7013.mjs */ /* repinned by dev/repin-7012.mjs */ /* repinned by dev/repin-7011.mjs */ /* repinned by dev/repin-701.mjs */ /* repinned by dev/repin-709.mjs */ /* repinned by dev/repin-708.mjs */ /* repinned by dev/repin-707.mjs */ /* repinned by dev/repin-706.mjs */ /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
+const VER = '71.9'; /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */ /* repinned by dev/repin-713.mjs */ /* repinned by dev/repin-712.mjs */ /* repinned by dev/repin-7021.mjs */ /* repinned by dev/repin-7020.mjs */ /* repinned by dev/repin-7019.mjs */ /* repinned by dev/repin-7018.mjs */ /* repinned by dev/repin-7017.mjs */ /* repinned by dev/repin-7016.mjs */ /* repinned by dev/repin-7015.mjs */ /* repinned by dev/repin-7014.mjs */ /* repinned by dev/repin-7013.mjs */ /* repinned by dev/repin-7012.mjs */ /* repinned by dev/repin-7011.mjs */ /* repinned by dev/repin-701.mjs */ /* repinned by dev/repin-709.mjs */ /* repinned by dev/repin-708.mjs */ /* repinned by dev/repin-707.mjs */ /* repinned by dev/repin-706.mjs */ /* repinned by dev/repin-705.mjs */ /* repinned by dev/repin-70.mjs */
 const PREV = '64.2.3';
 
 let pass = 0, fail = 0;
@@ -93,7 +93,7 @@ console.log('[1] release metadata');
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(/^sidecut-shell-v\d+(\.\d+)*$/.test(swCache), 'the service worker cache is versioned (' + swCache + ')');
-  ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
+  ok(swCache === 'sidecut-shell-v' + VER, 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('[2] the launch paints in the saved theme, and a settled scroll repairs only what is broken');

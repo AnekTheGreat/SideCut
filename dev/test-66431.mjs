@@ -122,7 +122,7 @@ console.log('[1] release metadata');
   // is really for is that the cache is the SHELL's and that it is not a copy of
   // the app version (which is what the old naming bug looked like).
   ok(/^sidecut-shell-v\d/.test(swCache), 'the shell cache has a name of its own (' + swCache + ')');
-  ok(swCache.indexOf(ver) === -1 && swCache.indexOf(VER) === -1, 'and carries none of the app version');
+  ok(swCache === 'sidecut-shell-v' + PAGEVER, 'the shell cache is the release number (' + swCache + ')');
 }
 
 console.log('[2] the list is not rebuilt while it is moving');
