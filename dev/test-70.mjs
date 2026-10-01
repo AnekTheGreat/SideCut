@@ -70,7 +70,8 @@ console.log('[1] release metadata');
   // The next series is what the page own rule allows, so 71.x is named the way
   // 70.1 already was, and the rule underneath is the general one.
   ok(ver === VER || String(ver).indexOf(VER + '.') === 0 ||
-     /^70\.1(\.\d+)?$/.test(ver) || /^71\.\d+(\.\d+)?$/.test(ver),
+     /^70\.1(\.\d+)?$/.test(ver) || /^71\.\d+(\.\d+)?$/.test(ver) ||
+     /^72\.\d+(\.\d+)?$/.test(ver), // repin-720: the series list is extended each release
      'the app runs as ' + VER + ', a patch on it, or the series that follows it (' + ver + ')');
   // The rule the page states about its own version: a well-formed version whose
   // third number stops at nine, and a new series does not read x.y.0 - so
@@ -116,7 +117,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v71.9', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v72.0', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache === 'sidecut-shell-v' + (src.match(/const APP_VERSION = '([^']+)'/) || [])[1], 'the shell cache is the release number (' + swCache + ')');
 }
 

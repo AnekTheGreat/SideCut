@@ -1,6 +1,58 @@
 # SideCut — repository memory
 
 
+## 72.0 (Oct 1, 2026): an album knows who it is by, and an import can never drop a playlist
+- **The owner's words**: "something from before importing albums deleted my existing playlists" and "all the albums say
+  unknown artist when you import them", then "make sure stuff like this never happens ever again". Three asks, one
+  release: an album that reads the artist it is actually by, an import that cannot lose a playlist, and neither of those
+  regressing again.
+- **WHY EVERY IMPORTED ALBUM SAID UNKNOWN ARTIST.** An album `.zip` made before 71.9 had no field to keep an album's
+  artist - `exportAlbums()` handed `albumGroups` (album name -> array of ids) to `doExportTracks()`, so the file's only
+  record of an album was a name and its ids. The import therefore SYNTHESIZED the album entry and stamped
+  `artist: 'Unknown artist'` into it (~`index.html:24289`). That string is TRUTHY, so the album card's own fallback
+  (`ua.artist || firstTrack.artist`) never ran and every album in the zip read Unknown artist.
+- **ONE ANSWER TO "WHO IS THIS ALBUM BY".** New `scAlbumArtist(name)` (~`:22107`) - the entry's own artist when it is a
+  real one, else the artist the album's OWN songs agree on (the most common, so a compilation with a stray guest credit
+  still reads right), else the `album` TAG on the songs carrying this name, and `''` when nothing knows. It treats a
+  stored literal `"Unknown artist"` as "nothing", so that string can never win again. Everything that shows an album
+  artist asks here; `window.__scAlbumArtist` is the hook the gates drive.
+- **AND THE ANSWER IS WRITTEN BACK, SO OLD LIBRARIES HEAL THEMSELVES.** New `scHealAlbumArtists()` (~`:22149`) fills the
+  real artist into every album entry that carries none or the literal, writing the `userAlbums` row and NOTHING else (at
+  boot it runs before the stored playlists are read back, so persisting playlists from there would write the empty
+  placeholder over them). It runs at boot (`~:17654`) AND right after an import (`~:24882`), so a library that already
+  came through an album zip is repaired by the update itself with no re-import. The import no longer stamps the literal
+  (`_albFromZip[n] = { artist: '', ... }`, ~`:24289`), and `exportAlbums()` writes the artist it found so a zip made after
+  this release carries the real name from the first tap.
+- **AN IMPORT MUST NOT BE ABLE TO DROP A PLAYLIST.** The playlist side has always merged additively
+  (`if(!playlists[name]) playlists[name] = []; ... push`) and there is exactly ONE `delete playlists[` in the app - the
+  71.9 bin, behind its own confirmation. What was NOT guaranteed is that the merged result is WRITTEN: `saveMeta()`
+  writes nothing about playlists while the Library is on Albums (so the album paths cannot touch them), and "Restore from
+  my backup" is offered from the ALBUMS side - album mode. So the import now writes the row itself, next to the merge
+  (`dbPut('meta', { key: 'playlists', value: playlists })`, ~`:24496`), instead of leaving it to a function whose whole job
+  is to refuse it in that mode.
+- **`dev/patch-720.mjs` - 9 edits**, applied and self-verified (`APP_VERSION 72.0`, `CACHE_NAME sidecut-shell-v72.0`);
+  **`dev/repin-720.mjs` - 44 edits / 27 files**, `--check` proves no stale pin survives. The sweep adds `test-719.mjs` to
+  `PREV_MOVES` and skips nothing new (`KEEPS_ITS_VERSION` is still `test-705.mjs`, `test-70.mjs`).
+- **`dev/test-720.mjs` - 66 checks**, sections [1] release metadata [2] the album-artist lookup, run for real [3] the
+  import stops making an artist up [4] the repair passes (boot + after an album restore) [5] an import can never drop a
+  playlist [6] what did not move [7] the repin moved every gate (no stale pin) [8] inline script syntax.
+- **THE OTA BUNDLE HAS NO FIXED POINT FOR THIS CONTENT - the 70.1.5 / 70.1.7 caveat applies.** `dev/ota-fixpoint.mjs`
+  oscillates **859746 <-> 859747** and exits 1 after eight passes (probed 859740..859760: no seed builds itself - the zip
+  size barely moves with the seed and never lands on it). The shipped state is the accepted shape: `ota/update.zip`
+  **859746** (the real size), and `ota/updates.json` + `ota/manifest.json` + `updates.json` **859746** (what a client
+  actually fetches); root `manifest.json` **859747** (the seed it was built with - a 1-byte lie in a field nothing
+  verifies, exactly like the manifest baked inside the zip); `ota-play/update.zip` + `ota-play/updates.json` **859754**.
+  Two consecutive `ota-bundle.mjs` / `ota-bundle-play.mjs` runs are **byte-identical across all seven files**
+  (`md5sum -c`), and both `--check`s pass (6 notes each) - which is what `deploy.yml`'s `git diff --quiet` and
+  `ota-update-check.cjs`'s "a second generation produces the same bytes" actually require. **Check convergence every
+  release instead of assuming either answer.**
+- **Verified on the finished tree**: `test-720` **66** (new), `test-719` 70, `test-718` 46, `test-717` 94, `test-716` 83,
+  `test-715` 72, `test-714` 137, `test-713` 50, `test-70` 182, `test-662` 75, `test-6643` 90, `test-66431` 95,
+  `test-play-copy` 28, `check-dom` DOM INTEGRITY FAILURES 0, `studio-70-check.cjs` 389, ota-guard 20/0, ota-update 52/0.
+  **Pre-existing reds, unchanged and NOT in the gate set**: `test-705` 223/7, `batch-635-check` 35/7, `test-6058` 47/1.
+- **NEXT RELEASE**: `72.1` (the third number stops at nine). Shell cache `sidecut-shell-v72.0` -> `sidecut-shell-v72.1`
+  (still derived in `dev/patch-72x.mjs` and the sweep). Add `test-720.mjs` to `PREV_MOVES`.
+
 ## 71.9 (Oct 1, 2026): an album export carries albums, and a playlist can be deleted
 - **The owner's words**: "Whenever I import my zip for albums it imports it as playlists in library it not supposed do that
   obviously and add a delete playlist function in library". Two asks, one release: an album export that imports as albums, and

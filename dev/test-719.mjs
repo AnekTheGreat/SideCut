@@ -36,9 +36,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '71.9'; /* repinned by dev/repin-72x.mjs when the next release lands */
-const PREV = '71.8'; /* repinned by dev/repin-72x.mjs */
-const SHELL_CACHE = 'sidecut-shell-v71.9';
+const VER = '72.0'; /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-72x.mjs when the next release lands */
+const PREV = '71.9'; /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-72x.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.0';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
