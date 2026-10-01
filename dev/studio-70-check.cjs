@@ -188,7 +188,35 @@ function fakeIndexedDB() {
   };
 }
 
-function boot(play) {
+// 70.2.0. The sideloaded package is NOT "no Capacitor" - it is Capacitor with a
+// Billing plugin that Play refuses, which is a different answer from the browser
+// and the one that was broken. This stands in for it: the plugin reports itself
+// supported and then has no products, which is exactly what a package Google Play
+// never distributed gets back (getProducts -> [] -> "not-found").
+function fakeCapacitor() {
+  return {
+    isNativePlatform: () => true,
+    getPlatform: () => 'android',
+    Plugins: {
+      NativePurchases: {
+        isBillingSupported: async () => ({ isBillingSupported: true }),
+        getPluginVersion: async () => ({ version: '7.19.3' }),
+        getProducts: async () => ({ products: [] }),
+        purchaseProduct: async () => { throw new Error('BILLING_SETUP_FAILED'); },
+      },
+    },
+  };
+}
+
+// 71.2. The last id in the dock. reorderActionPills() runs at boot and rebuilds
+// the strip from the saved order, so "after Studio" is a claim about what that
+// pass leaves behind rather than about the written markup.
+function stripsLastId(strip) {
+  const kids = Array.from(strip.children).filter((el) => el.tagName === "BUTTON");
+  return kids.length ? kids[kids.length - 1].id : "";
+}
+
+function boot(mode) {
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', (e) => errors.push('' + (e && e.message)));
@@ -218,8 +246,10 @@ function boot(play) {
       win.URL.createObjectURL = () => 'blob:jsdom-' + (win.__scObjN = (win.__scObjN || 0) + 1);
       win.URL.revokeObjectURL = () => {};
       win.confirm = () => true;
+      // A fake Capacitor for the apk boot: see fakeCapacitor() below.
+      if (mode === 'apk') win.Capacitor = fakeCapacitor();
       // Before any inline script runs: SC_IS_PLAY reads this once, at parse time.
-      if (play) win.__PLAY_BUILD__ = true;
+      if (mode === 'play') win.__PLAY_BUILD__ = true;
       win.localStorage.clear();
       win.fetch = () => Promise.reject(new Error('offline'));
     },
@@ -274,24 +304,28 @@ const realErrors = (errors) => errors.filter((e) =>
     await wait(120);
     ok(doc.getElementById('homeView').classList.contains('active'), 'tapping Studio again goes back Home');
 
-    // 70.0.5, the user's words: "Remove the add songs tab from bottom and remove
-    // the refresh button from the top and replace that with a plus sign for add
-    // songs". The dock is four tabs, the + is the only way into the menu, and it
-    // has to actually open it from up there.
+    // 71.2 reverses 70.0.5's trade. The user asked for the refresh button back
+    // beside the gear at the top, and for the add-songs plus to come down to the
+    // tab bar as just the smaller plus icon. The dock therefore carries a COMPACT
+    // plus at the end of the row - not a fifth tab, so it is filtered out of the
+    // tab list by its own dock-add class - and the header carries refresh again.
     // Only the dock's OWN children are tabs - the menu lives inside this subtree
     // and its five buttons wear .action-pill as well.
-    const tabs = Array.from(strip.children).filter((el) => el.classList.contains('action-pill'));
-    ok(tabs.length === 4, 'the dock is four tabs (' + tabs.map((b) => b.id).join(',') + ')');
+    const tabs = Array.from(strip.children)
+      .filter((el) => el.classList.contains('action-pill') && !el.classList.contains('dock-add'));
+    ok(tabs.length === 4, 'the dock is still four tabs (' + tabs.map((b) => b.id).join(',') + ')');
     ok(tabs.map((b) => b.id).join(',') === 'homeBtn,libraryBtn,discoverBtn,studioBtn',
        'and they are Home, Library/Albums, Discover and Studio');
-    ok(!doc.getElementById('addSongsToggle'), 'the add-songs pill is gone from the dock');
+    ok(!doc.getElementById('addSongsToggle'), 'the old add-songs pill is still gone from the dock');
     ok(!doc.getElementById('addSongsWrap'), 'and so is the wrap it sat in - it was a flex child, so it would still take a share of the row');
 
-    const plus = doc.getElementById('addSongsBtn');
-    ok(!!plus, 'the header has a + where the refresh button was');
-    ok(!doc.getElementById('refreshBtn'), 'and the refresh button is really gone');
-    ok(!!plus && plus.getAttribute('title') === 'Add songs', 'the + is titled Add songs');
-    ok(!!plus && doc.querySelector('header').contains(plus), 'and it sits in the header with the other icon buttons');
+    const plus = doc.getElementById('dockAddBtn');
+    ok(!!plus, 'the dock has the add-songs plus');
+    ok(!!plus && plus.parentNode === strip, 'and it is a child of the dock itself');
+    ok(!!plus && plus.getAttribute('title') === 'Add songs', 'titled Add songs, so it says what it is when held');
+    ok(!!plus && stripsLastId(strip) === 'dockAddBtn', 'last in the row, after Studio and the four tabs');
+    ok(!!doc.getElementById('refreshBtn') && !doc.getElementById('addSongsBtn'),
+       'and the header has refresh back with no + left in it');
     ok(!!doc.getElementById('addSongsMenu') && !!doc.getElementById('addSongsBackdrop'),
        'the menu and its backdrop are still on the page after the move');
 
@@ -991,11 +1025,14 @@ const realErrors = (errors) => errors.filter((e) =>
       ok(doc.querySelectorAll('#listPane .track').length === TRACKS.length,
         'and puts the whole list back (' + doc.querySelectorAll('#listPane .track').length + ')');
     }
-    // The album cover and the sheet are markup this release adds. The picker is
-    // only reachable from an album card and a card only exists once an album does,
-    // so what is required here is that both halves shipped and the card is wired.
-    ok(html.indexOf('albumCoverModal(aName);') !== -1 && html.indexOf('albumCoverBackdrop') !== -1,
-      'and an album card can open the cover picker');
+    // The album cover picker is markup 70.1.5 added, and 70.2.1 moved the camera
+    // off the album card into Manage albums. Driving it needs an album to exist,
+    // so what is pinned here is where it is reached from: the row button in
+    // Manage albums, and never the album header again.
+    ok(html.indexOf('albumCoverBackdrop') !== -1 &&
+      html.indexOf("bEl.querySelectorAll('.mgr-alb-cover')") !== -1 &&
+      html.indexOf('alb-cover-btn') === -1,
+      'and the cover picker is reached from Manage albums, not the album row');
     ok(html.indexOf('width:440px; max-width:calc(100vw - 32px)') !== -1,
       'with the Add songs sheet wide enough for its buttons');
   }
@@ -1149,7 +1186,7 @@ const realErrors = (errors) => errors.filter((e) =>
     // store build and its Donate pane is compared with the sentences the release
     // before this one shipped. A card page must be unreachable from it, and no
     // sentence of it may mention one.
-    const store = boot(true);
+    const store = boot('play');
     await wait(1500);
     const swin = store.win;
     const sdoc = swin.document;
@@ -1177,6 +1214,42 @@ const realErrors = (errors) => errors.filter((e) =>
         'with nothing it says naming a card page');
     }
     Object.defineProperty(swin, 'open', { value: sRealOpen, writable: true, configurable: true });
+  }
+
+  console.log('[11n] a tip from the sideloaded package, where Billing exists and refuses');
+  {
+    // 70.2.0. The user's report, driven: "the stripe is not linked on the apk
+    // while on the web it is". This boot IS that package - Capacitor present,
+    // NativePurchases present, Play answering with no products - and window.open
+    // stubbed to answer null the way the WebView does, so the address fallback is
+    // what has to carry the tap. jsdom reports the fallback as a refused
+    // navigation, which is how it can be seen at all.
+    const apk = boot('apk');
+    await wait(1500);
+    const awin = apk.win;
+    const adoc = awin.document;
+    const links = {};
+    const dl = html.slice(html.indexOf('donateLinks: {'));
+    for (const m of dl.slice(0, dl.indexOf('}')).matchAll(/(\d+): '(https:\/\/[^']+)'/g)) links[m[1]] = m[2];
+    awin.showSettingsTab('donate');
+    await wait(150);
+    const opened = [];
+    const realOpen = awin.open;
+    Object.defineProperty(awin, 'open', { value: (url) => { opened.push(String(url)); return null; }, writable: true, configurable: true });
+    const tier = adoc.querySelector('.donate-quick[data-amt="5"]');
+    ok(!!tier, 'the five dollar tier is on the deck on the package built for sideloading');
+    if (tier) {
+      tier.click();
+      await wait(350);
+      ok(opened.length === 1 && opened[0] === links['5'],
+        'and a tap on it opens the card page the browser copy already reached (' + (opened[0] || 'nothing') + ')');
+      ok(apk.errors.some((e) => /Not implemented: navigation/.test(e)),
+        'because the address was handed to Android, not only to window.open()');
+      const said = adoc.querySelector('#donateMsg');
+      ok(!!said && /card page/i.test(said.textContent || ''),
+        'with a sentence saying where it went');
+    }
+    Object.defineProperty(awin, 'open', { value: realOpen, writable: true, configurable: true });
   }
 
   console.log('[12] the page still holds together');

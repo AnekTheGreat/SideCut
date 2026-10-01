@@ -1,6 +1,195 @@
 # SideCut — repository memory
 
 
+## 71.3 (Sep 30, 2026): YouTube playlists, the song's own metadata, and updates that wait for a run
+- **The user's words**: "Make it so that in YouTube converter you can convert YouTube playlists and make the updates not
+  interrupt downloads. Also make YouTube converter fetch the metadata for that song too." Three asks, one release.
+- **1. A PLAYLIST LINK MAKES THE WHOLE LIST.** The card only knew `extractYtVideoId`, so a list address (no `v=` of its
+  own) ended at "Couldn't extract video ID". `convertYtToMp3` now reads `scYtPlaylistId(url)` first and hands a list to
+  `scYtConvertPlaylist` **only when there is no direct video** (`_listId && !_directVideoId`) - a watch link still
+  makes just its video. The list is read by `scYtResolvePlaylist(listId)`, which fetches
+  `https://www.youtube.com/playlist?list=…&hl=en&gl=US` through `fetchWithProxy` (the device network path) and parses
+  the **`ytInitialData` object the page embeds** - a balanced-brace scan then `JSON.parse` - walking it for BOTH
+  `playlistVideoRenderer` and the newer `lockupViewModel`, deduped by an 11-character `/^[\w-]{11}$/` id. A picker lists
+  every song ticked (`yt-pl-cb`, All/None), and the run loops `scYtOneVideo(...)` per song, landing each in the library
+  and reporting into the floating pill. **Scraping markup would have been the wrong call** - YouTube reshapes it weekly;
+  the embedded data object is the stable interface.
+- **2. THE SONG'S OWN METADATA, NOT JUST THE UPLOAD'S.** `scYtEnrichMeta(title, author)` asks the iTunes Search API
+  for the official title/artist/album/year/genre/track and the **600x600** cover, and accepts a hit only when BOTH
+  `scArtistMatch(artist, row.artistName, '', '', '')` and `scYtTitleMatch(cleanTitle, row.trackName)` pass - a
+  look-alike channel cannot dress a song up as another and nothing is borrowed on no match. `scYtSearchTitle` strips
+  `(Official Video)`-family noise first; without it every lookup missed. The cover bytes are read in the same call so
+  the tag and the library row carry them. The single-link path runs the SAME enrichment inside `tryMeta()` (which
+  `tryYtAudioFormat` already awaited before encoding) and the player's own `videoTitle`/`author` fill in whatever oEmbed
+  left empty. The tag and `scAddConvertedToLibrary` both receive album/year/genre/track/`artBytes`/`artMime`.
+- **3. AN UPDATE NO LONGER CUTS A RUN OFF.** `dev/native-updates.js` reloads the WebView to apply a bundle, which kills
+  the job. The page already publishes "a run is in flight" on **`window.__scNotifConv`** (the flag the bell reads, set by
+  `scConvertPillUpdate`, cleared by `scConvertPillDone`) - and `scConvertPill(false)` now clears it too, so a **cancelled**
+  run stops looking busy the moment its pill goes (otherwise the flag would stick and hold every update back until a
+  restart). The updater gained `somethingIsDownloading()` and, in `applyStagedNow`, a deferral block placed **before**
+  the `!force && somethingIsPlaying()` one - deliberately, so even a deliberate **Install now** (`force`) cannot cut a
+  run off; the bundle is pinned to a real app kill via `applyInBackground` + `waitForRelaunch`.
+- **`dev/patch-713.mjs` / `dev/repin-713.mjs`**: `APP_VERSION` **71.2 -> 71.3**, stamp `September 30, 2026 \u00b7
+  7:48 PM EDT`, shell cache **`v63.0.48 -> v63.0.49`**, a 6-note changelog head, **11 edits** (10 in index.html, 1 in
+  sw.js) with every sub keying on text IT adds; repin **22 edits across 19 files**, still skipping `test-705.mjs`.
+- **`dev/patch-713b.mjs` - THE SANDBOX PRO TAGS COME OFF** ("On sandbox remove the pro tags"). 70.1.3 removed the last
+  entitlement ("Nothing is PRO any more") and the panel's own description says the paywall line is gone, but the twelve
+  little gold `PRO` badges in the markup were left behind telling every reader half the list is held back. All twelve are
+  the **same exact string** and all twelve live in `#settingsPaneSandbox`, so the removal is one global replace. **A
+  follow-up script, NOT an edit inside `patch-713.mjs`, because that script short-circuits on `APP_VERSION === '71.3'` -
+  which is exactly the tree this runs on** (the repo's own `patch-6055b/c.mjs` did the same for 60.5.5). **A removal has
+  to key on its RESULT**: `'Compact now bar </span>'` is absent before and present after. It also appends a **7th** note to
+  the 71.3 entry - past the first six, so it never rides to `ota-play`.
+- **A STALE GATE THAT IS NOT OURS**: `dev/batch-635-check.cjs` is **35 passed / 7 failed AT HEAD** (v70.1.9, verified
+  with `SC_HTML=<git show HEAD:index.html>`), because it still asserts a free user is denied the PRO visuals the 70.1.3
+  release deliberately removed. It is unrelated to this release and stays as it is.
+- **THE BIG BLOCK IS EMITTED WITH `String.raw`.** It is source code for index.html, not data to interpret, so `\u26a0`,
+  `\u2705`, `\w`, `\.` etc. must survive the patch script verbatim - `String.raw` is the only way to write them once.
+  The one thing it cannot contain is a backtick or `${`; keep new helpers free of both.
+- **THE HEAD NOTES RIDE TO PLAY.** The head entry's first six items are copied into `ota-play/updates.json` verbatim, so
+  they must clear the WIDER list `dev/test-play-copy.mjs` audits (no download/downloading/converter/convert(s|ing|ion)/
+  mp3/get song/hand-off) as well as `dev/test-662.mjs` (`\bdownload|converter|convert\b`, no Play-build naming, must
+  name studio|player|dock|premium|license). They say "made", "in flight", "reloading", and name the player/dock/Studio.
+- **VERIFIED**: test-713 **50** (new gate), test-705 **230**, studio-70 **289**, test-70 **182**, test-662 75, test-663
+  49, 6641 128, 6642 75, 66421 49, 6643 90, 66429 83, test-play-copy 28, test-619 55, album-rename 40, albums-manual
+  40, check-dom DOM INTEGRITY FAILURES 0, ota-guard 20, ota-bootapply 24, ota-loop 26, ota-update 52. test-6058 is the
+  known 47/1 ("free-tier blurb says 30-second previews").
+- **THE OTA BUNDLE CONVERGES**: 837402 -> 837414 -> **837414 (fixed point)**, `ota-play` **837422**; after the 713b badge
+  removal 837414 -> 837440 -> **837440 (fixed point)**, `ota-play` **837448**; two consecutive `ota-bundle` /
+  `ota-bundle-play` generations are **byte-identical** (md5sum on all seven artifacts) and both `--check` runs report
+  v71.3 with 6 notes (the head entry carries 7; the first six are what ride to Play).
+- **UNCOMMITTED IN THIS WORKTREE**: **70.2.0**, **70.2.1**, **71.2** and **71.3** are all applied-and-verified but not
+  committed or pushed. One commit carrying all four matches the `7d5c746` ("70.1.5-70.1.9") convention.
+
+
+## 71.2 (Sep 30, 2026): the refresh button comes back to the header and the add-songs plus moves to the dock
+- **The user's words**: "And add an refresh button back next to the settings icon at the top and move the plus icon for
+  exporting importing add songs ect... to the bottom tabs just the smaller plus icon. Make sure there are all in v71.2 one
+  update." This **reverses 70.0.5** (f8b2587), which had taken the add-songs pill out of the dock and the refresh button
+  out of the header and left one + at the top as the only way into the menu.
+- **WHAT MOVED**: (1) the header's `#addSongsBtn` + becomes `#refreshBtn` in the SAME slot - the row is now
+  notifications / refresh / settings, and the refresh is wired again (`_scRefreshWired`, `saveMeta()` then
+  `location.reload()`); (2) a compact `#dockAddBtn` sits on the dock after Studio and toggles the same `#addSongsMenu`.
+- **THE DOCK PLUS IS `action-pill dock-add`, AND IT HAS TO BE BOTH.** `.action-strip > *{ flex:1 1 0 }` makes every
+  direct child an equal-width cell, so the plus carries a more specific rule
+  (`.action-strip .action-pill.dock-add{ flex:0 0 auto; width:44px; ... }`) to stay the **smaller icon** - a fifth equal
+  cell is exactly what squeezed the old "+ Add songs" pill. And it must keep the `action-pill` class: `reorderActionPills()`
+  runs at boot, appends the ordered tabs to a fragment, then **every other `.action-pill`**, then re-attaches - a button
+  that was NOT `.action-pill` would be left in front of the four tabs and the plus would jump to the left of the row.
+  Both dock readers (`getStripItems()`, the studio probe's tab list) skip it by its `dock-add` class.
+- **`body.sandbox-large-touch .action-pill{ padding:12px 18px !important; }` WOULD SQUARE-IFY IT BACK INTO A TAB** - a
+  matching `padding:0 !important` rule lands with it, plus a 38px override under 380px.
+- **`dev/test-70.mjs` POLICED THE 70 SERIES BY LITERAL** and failed on 71.2 for no reason but its major:
+  `/^70\.\d+(\.\d+)?$/` and a `70.x`-only series arm. The series arms now name 71.x the way they already named 70.1, and
+  the rule underneath is the **general** one (well-formed version, third number under ten, a new series not reading
+  x.y.0). Its `VER` still says `70.0` - that gate DESCRIBES 70.0 and reads that entry by version.
+- **`dev/patch-712.mjs` / `dev/repin-712.mjs`**: `APP_VERSION` **70.2.1 -> 71.2**, stamp `September 30, 2026 \u00b7
+  7:14 PM EDT`, shell cache **`v63.0.47 -> v63.0.48`**, a 6-note changelog head, **12 edits** (13 with the test-70
+  repoint, which was added after the first pass and applied on a re-run - every other sub skipped on its key); the usual
+  repin (**22 edits across 19 files**, still skipping `test-705.mjs`).
+- **THE GATES WERE REVERSED, NOT ADDED**: `dev/test-705.mjs` `[2]`/`[3]` now assert the dock plus + the header refresh,
+  and the 70.0.5 rules that said the opposite (`count('id="refreshBtn"') === 0`, `count('id="addSongsBtn"') === 1`) are
+  gone; `dev/studio-70-check.cjs` `[1]` drives the same two claims and its tab list filters out `dock-add`. **A release
+  that reverses an older one has to reverse that older release's gates too**, or the suite asserts both.
+- **VERIFIED**: test-705 **230**, studio-70 **289**, test-70 **182**, test-662 75, test-663 49, 6641 128, 6642 75,
+  66421 49, 6643 90, 66429 83, test-play-copy 28, test-619 55, album-rename 40, albums-manual 40, check-dom DOM
+  INTEGRITY FAILURES 0, ota-guard 20, ota-bootapply 24, ota-loop 26, ota-update 52.
+- **THE OTA BUNDLE CONVERGES**: seed 830879 -> 830975 -> **830975 (fixed point)**, `ota-play` **830982**; two
+  consecutive generations are **byte-identical** and both `--check` runs report v71.2 with 6 notes.
+- **UNCOMMITTED IN THIS WORKTREE**: **70.2.0**, **70.2.1** and **71.2** are all applied-and-verified but not committed or
+  pushed. One commit carrying all three matches the `7d5c746` ("70.1.5-70.1.9") convention.
+
+
+## 70.2.1 (Sep 30, 2026): the album cover camera moves into Manage albums
+- **The user's words**: "The camera button for setting the image should be in manage albums not next to the actual
+  album in the album row like it is in the screenshot." 70.1.5 had put it on the album **card header**, which is also
+  the tap that opens and closes the album - so the camera sat inside the tap target and a press aimed at the chevron
+  could land on it instead. Manage albums already owns the per-album controls (Rename, Delete, the search box, the
+  ordering), so the camera went beside them and the card header went back to being one thing.
+- **WHAT MOVED**: (1) the `.alb-cover-btn` button is **gone from the album card header** and so is the `_covBtn`
+  handler that opened the picker from it; (2) `manageAlbumsHTML()` grows a `.mgr-alb-cover` camera button per row,
+  ahead of Rename/Delete, built from the **same `data-i` row index** they already use; (3) `wireManageAlbums()` wires
+  it next to the Rename wiring, resolved through `names` by index the same way. The picker itself
+  (`albumCoverModal`/`applyAlbumCover`, the song-cover grid, the remove, the save path) is untouched.
+- **THE ONE THING THAT WOULD HAVE LOOKED BROKEN**: the picker appends a bare `.modal-backdrop`, which is
+  **`z-index:60`**, and the Discover popup Manage albums lives in is **`z-index:70`** - so opened from that panel it
+  would have rendered **BEHIND the list** and read as a tap that did nothing. `albumCoverModal` now sets
+  `modal.style.zIndex = '10001'` (the level `#artistPromptBackdrop` already uses). **Any modal opened from a Discover
+  popup needs this**; a bare `.modal-backdrop` will always be under it.
+- **A REMOVAL HAS NO TEXT TO KEY ON.** `sub()`'s idempotence guard is "if the key is present, skip" - which works for
+  an edit that ADDS text and not for one that deletes it. Both removals here key on `class="mgr-alb-cover"`, the
+  markup written by a LATER sub in the same patch: absent before the release, present after it, and because that sub
+  runs after these two it cannot skip them. **Do not key a removal on `@@ marker @@`-style text; the anchor-missing
+  path makes the second run refuse to write.**
+- **`dev/patch-7021.mjs` / `dev/repin-7021.mjs`**: `APP_VERSION` **70.2.0 -> 70.2.1**, stamp
+  `September 30, 2026 \u00b7 6:43 PM EDT`, shell cache **`v63.0.46 -> v63.0.47`**, a 6-note changelog head,
+  **10 edits**; the usual repin (**22 edits across 19 files**, still skipping `test-705.mjs`).
+- **THE GATES WERE REPOINTED, NOT ADDED**: `dev/test-705.mjs` `[10b]` now asserts `alb-cover-btn === 0` **and**
+  `class="mgr-alb-cover" === 1` + the row wiring; `dev/studio-70-check.cjs` `[11h]` pins where the picker is reached
+  from (jsdom cannot resolve a z-index, so the stacking above cannot be asserted there).
+- **VERIFIED**: test-705 **225**, studio-70 **288**, test-662 75, test-663 49, 6641 128, 6642 75, 66421 49,
+  6643 90, 66429 83, test-play-copy 28, test-619 55, album-rename 40, albums-manual 40, ota-guard 20, ota-bootapply
+  24, ota-loop 26, ota-update 52.
+- **THE OTA BUNDLE CONVERGES**: seed 829973 -> 829779 -> **829779 (fixed point)**, `ota-play` **829786**; two
+  consecutive generations are **byte-identical** and both `--check` runs report v70.2.1 with 6 notes.
+- **UNCOMMITTED IN THIS WORKTREE**: both **70.2.0** and **70.2.1** sit applied-and-verified but not committed or
+  pushed. A single commit carrying both matches the `7d5c746` ("70.1.5-70.1.9") convention.
+
+
+## 70.2.0 (Sep 30, 2026): the tip rail works from the sideloaded package, and a page the app opens really opens
+- **The user's words**: "The stripe isn't linked on the apk like it should while on the Web it is". Both halves were true,
+  and they are **two independent defects** - the browser worked because it failed in the one way 70.1.9 handled, and the
+  APK failed in the two ways it did not.
+- **1. THE APK DOES NOT FAIL THE WAY THE BROWSER DOES, and that is the whole bug.** `runTip` reached the card page only
+  from the `'unavailable'` branch - the answer when `getPlayBillingService()` finds **no plugin at all**, which is exactly
+  a plain browser. The sideloaded package ships `@capgo/native-purchases`, so the plugin IS there and `purchasePlayItem`
+  really asks Play: a package Play never distributed has **no products**, so it answers **`'not-found'`**, or `'error'`
+  when the sheet itself refuses. Both of those returned early with a sentence, so the card page was unreachable from the
+  one copy that needed it. The lookup now sits **above** both returns: the rail a copy can use is a property of the copy,
+  not of the way Play declined. `'cancelled'` still stops the tip (the branch above it returns first) - someone who
+  backed out of the Play sheet did not ask to be sent to Stripe - and `SC_IS_PLAY` still keeps the store build out of the
+  lookup entirely. **A test that only ever drives the browser copy thinks a two-branch sentence is the whole story.**
+- **2. `window.open()` DOES NOTHING IN THIS WEBVIEW.** Capacitor's WebView has no window support, so
+  `window.open(url, '_blank', 'noopener')` answers **null** and no window is ever created: the app's own note next to the
+  Spotify handoff says so ("Capacitor's WebView cannot open new windows"), which is why that code already falls back to
+  `window.location.href`. Assigning an address whose host is **not** in `allowNavigation` is handed to Android as an
+  ACTION_VIEW intent, so the system browser takes it - which is what "opens the card page in your browser" always
+  promised. `scOpenExternal(url)` is now that idiom in one place (try the window, fall back to the address, never
+  silently do nothing) and both the card page and the Play listing go through it. **Nothing in this repo could have
+  proved this without a device; the evidence was the app's own comment about the WebView, in the file.**
+- **THE PROBE BOOTS THREE WAYS NOW**, which is what makes the reported path measurable: `boot()` (the browser),
+  `boot('play')` (`__PLAY_BUILD__`) and `boot('apk')` (a `fakeCapacitor()` whose `NativePurchases` reports itself
+  supported and then has **no products** - what the sideloaded package really gets back). `[11n]` stubs `win.open` to
+  answer null the way the WebView does, taps Tip $5, and requires the card URL **and** a refused navigation
+  (`/Not implemented: navigation/`, which is how jsdom reports the address fallback) - so "handed to Android, not only
+  to `window.open()`" is measured, not asserted in prose. `boot(play)` became `boot(mode)` for this.
+- **TWO PATCH-AUTHORING TRAPS FIRED, BOTH OF THE SAME FAMILY AS 70.1.7's.** (1) The sub that REMOVES the old card block
+  was keyed on `const web = SC_IS_PLAY` - the very text it deletes - so the guard skipped it on the first run and
+  `--check` reported **nothing wrong**; the result was two card blocks and a gate that failed two claims later. The key
+  is now a phrase the OTHER sub adds. (2) `count("try{ window.open(web,") === 0` was too broad: the same call shape
+  exists in the Spotify handoff (`scOpenSpotifySearch`, `catch(_e){ }` instead of `catch(_eDon){ }`), so the check failed
+  against a correct file. **A count needle is a claim about the whole 2.8MB file - anchor it on the line this release
+  touched.** (3) A third one the `must()` block caught for free: this release's last changelog note was written
+  identically to 70.1.9's, so `count(note) === 1` found two.
+- **Verified.** test-705 **225** (was 222; three rules: the helper and its fallback, both call sites going through it,
+  and the lookup above the `not-found`/`error` returns), studio-70-check **288** (was 284; `[11n]`, the sideloaded
+  package driving the exact report), test-662 75, test-663 49, 6641 128, 6642 75, 66421 49, 6643 90, 66429 83,
+  test-play-copy 28, test-619 55, audit-calls clean, ota-guard 20, ota-bootapply 24, ota-loop **26** (see below),
+  ota-update 52. `dev/test-6058.mjs` still reports **47 passed, 1 failed** - the pre-existing "free-tier blurb"
+  baseline failure documented in 70.1.9.
+- **`dev/ota-loop-check.cjs` IS TIMING-SENSITIVE.** One run inside a long chain of commands reported
+  **24 passed, 2 failed**; three standalone runs after it reported 26/0 and one of those needed most of a 180s budget.
+  It boots the app repeatedly and counts reloads, so a loaded machine can shift its windows. Re-run it alone before
+  believing a failure.
+- **`dev/patch-7020.mjs` / `dev/repin-7020.mjs`**: `APP_VERSION` **70.1.9 -> 70.2.0** (the third number stops at nine),
+  stamp `September 30, 2026 \u00b7 5:52 PM EDT`, shell cache `v63.0.45 -> v63.0.46`, a 6-note changelog head,
+  **15 edits**; the usual repin (**22 edits across 19 files**, still skipping `test-705.mjs`).
+- **THE OTA BUNDLE CONVERGES.** seed 829639 -> 829528 -> **829528**, and the shipped state has
+  `ota/update.zip` **829528** (real size) with `manifest.json` + `updates.json` + `ota/manifest.json` +
+  `ota/updates.json` all **829528**, and `ota-play/updates.json` **829533**; two consecutive generations are
+  byte-identical and `ota-fixpoint.mjs` reports `(fixed point)` with five `OK` lines.
+
+
 ## 70.1.9 (Sep 30, 2026): donations reach the sideloaded package and the browser, and the store build says where audio can come from
 - **The user's words**: "make donations work on the apk" (the parked release, finally unblocked) plus the payment links,
   "In play version you can put that you can get mp3's from external sources as well", and then the two corrections that

@@ -282,6 +282,18 @@
     return false;
   }
 
+  // True while SideCut is making songs - one track or a whole list is in flight.
+  // The page publishes exactly that on window.__scNotifConv, the same flag the
+  // notification bell reads, and it is cleared the moment the run ends OR its pill
+  // is dismissed (see scConvertPill/scConvertPillDone in index.html). An OTA
+  // hand-over reloads the WebView, which would kill the run mid-song, so an update
+  // offered while this is true waits instead of cutting in.
+  function somethingIsDownloading(){
+    try{ if(window.__scNotifConv) return true; }catch(e){}
+    try{ return (Number(window.__scActiveConversions) || 0) > 0; }catch(e){}
+    return false;
+  }
+
   // ---------------- Update sheet (bottom card, above the mini player) ----------
   // A real UI instead of a toast: patch notes, progress with %/MB/ETA, and
   // explicit Install now / Install later buttons. Kept plain-HTML so it works
@@ -555,6 +567,19 @@
       clearSheet();
       neutralizeStaged(Updater, nb, 'older than the running version');
       return false;
+    }
+    if(somethingIsDownloading()){
+      // NEVER cut off a run in flight - not even for a deliberate Install now. The
+      // user asked for the app NOT to interrupt what it is making, and a reload
+      // here destroys it. The bundle is pinned to a real app kill (the same wiring
+      // the music deferral uses), the choice is remembered so silent checks stop
+      // re-offering it, and the "ready" toast fires at most once per version.
+      try{ localStorage.setItem(INSTALL_PROMPT_SEEN + nb.version, '1'); }catch(e){}
+      applyInBackground(Updater, nb);
+      var _dlToastKey = READY_TOAST_KEY + nb.version;
+      try{ if(localStorage.getItem(_dlToastKey) === '1') return true; localStorage.setItem(_dlToastKey, '1'); }catch(e){}
+      toast('Update ' + nb.version + ' is saved - it installs once the songs being made are finished and you close the app.', 5000);
+      return true;
     }
     if(!force && somethingIsPlaying()){
       // Defer for real instead of just talking about it: install the moment the

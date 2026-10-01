@@ -64,15 +64,21 @@ console.log('[1] release metadata');
   // rule says follows it - 70.1, because "the third number stops at nine: 60.0.9
   // is followed by 60.1, never 60.0.10". The release this gate DESCRIBES is
   // still 70.0, which is why VER did not move with APP_VERSION.
-  ok(ver === VER || String(ver).indexOf(VER + '.') === 0 || /^70\.1(\.\d+)?$/.test(ver),
+  // 71.2. This gate DESCRIBES 70.0 and keeps reading that entry below, but the
+  // two checks here are about the build ON the page, and they were written as
+  // literals for the 70 series - which refused 71.2 for no reason but its major.
+  // The next series is what the page own rule allows, so 71.x is named the way
+  // 70.1 already was, and the rule underneath is the general one.
+  ok(ver === VER || String(ver).indexOf(VER + '.') === 0 ||
+     /^70\.1(\.\d+)?$/.test(ver) || /^71\.\d+(\.\d+)?$/.test(ver),
      'the app runs as ' + VER + ', a patch on it, or the series that follows it (' + ver + ')');
-  // The rule the page states about its own version rather than a literal: the
-  // series is 70.x, the third number stops at nine, and a new series does not
-  // read 70.1.0 - so 70.0.10 and 70.1.0 are both refused.
+  // The rule the page states about its own version: a well-formed version whose
+  // third number stops at nine, and a new series does not read x.y.0 - so
+  // 70.0.10 and 70.1.0 are both refused, whichever series shipped last.
   const verParts = String(ver).split('.').map((n) => Number(n));
-  ok(/^70\.\d+(\.\d+)?$/.test(ver) &&
+  ok(/^\d+(\.\d+)*$/.test(ver) &&
      !(verParts.length === 3 && (verParts[2] === 0 || verParts[2] > 9)),
-     'and the version is a 70.x number whose third number never reaches ten');
+     'and the third number never reaches ten');
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
@@ -110,7 +116,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v63.0.45', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v63.0.49', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache.indexOf(VER) === -1, 'and carries none of the app version');
 }
 

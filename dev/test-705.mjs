@@ -61,7 +61,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v63.0.45';
+const SHELL_CACHE = 'sidecut-shell-v63.0.49';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -146,29 +146,45 @@ console.log('\n[2] the dock is four tabs');
   ['homeBtn', 'libraryBtn', 'discoverBtn', 'studioBtn'].forEach((id, i) => {
     ok(pills[i] === `<button id="${id}" class="action-pill"`, 'pill ' + (i + 1) + ' is ' + id);
   });
-  ok(count('id="addSongsToggle"') === 0, 'the add-songs pill is gone');
+  ok(count('id="addSongsToggle"') === 0, 'the old add-songs pill is still gone');
   ok(count('id="addSongsWrap"') === 0, 'and so is the wrap it sat in (it was a flex child of the strip)');
   ok(count('class="add-songs-wrap"') === 0, 'with no class reference left behind');
+  // 71.2. The plus came back to the dock as a COMPACT icon at the end of the row,
+  // not a fifth tab: it is a direct child of the strip after Studio, it carries its
+  // own dock-add class, and a rule stops it sharing the row equally with the tabs.
+  ok(count('id="dockAddBtn"') === 1 && strip.indexOf('id="dockAddBtn"') !== -1,
+     'the dock carries the add-songs plus');
+  ok(strip.indexOf('id="studioBtn"') < strip.indexOf('id="dockAddBtn"'),
+     'and it sits after Studio, at the end of the row');
+  ok(count('class="action-pill dock-add"') === 1,
+     'as a compact icon rather than a fifth full-width tab');
+  ok(/\.action-strip \.action-pill\.dock-add\{[^}]*flex: 0 0 auto/.test(src),
+     'with a rule that keeps it out of the tabs equal-width share');
   // The dock is still the fixed bar the v70 release built, and every scrolling
   // view still clears it.
   ok(/\.action-strip\{\s*position:\s*fixed[^}]*z-index:\s*25/.test(src), 'the dock is still fixed to the bottom');
   ok(has('#nowPlaying{ bottom: calc(var(--sc-dock-h)'), 'and the player is still lifted onto it');
 }
 
-console.log('\n[3] the header +');
+console.log('\n[3] the header refresh button');
 {
-  ok(count('id="refreshBtn"') === 0, 'the refresh button is gone');
-  ok(!has("getElementById('refreshBtn')"), 'and nothing reads its id any more');
-  ok(count('id="addSongsBtn"') === 1, 'the header has one +');
+  // 71.2 reverses 70.0.5 here: the refresh is back beside the gear and the + is
+  // gone from the header. Both halves are asserted, because half of this move
+  // would leave the menu reachable only from the dock or the button dead.
+  ok(count('id="refreshBtn"') === 1, 'the refresh button is back');
+  ok(has("getElementById('refreshBtn')"), 'and something reads its id again');
+  ok(count('id="addSongsBtn"') === 0, 'and the header + is gone');
   const header = slice('<header>', '</header>');
-  ok(header.indexOf('id="addSongsBtn"') !== -1, 'and it is the header it sits in');
+  ok(header.indexOf('id="refreshBtn"') !== -1, 'the refresh sits in the header');
   ok(header.indexOf('id="notifBtn"') !== -1 && header.indexOf('id="themeBtn"') !== -1,
-     'between the notifications bell and settings, where the refresh button was');
-  const plusTag = header.slice(header.indexOf('id="addSongsBtn"'), header.indexOf('</button>', header.indexOf('id="addSongsBtn"')));
-  ok(plusTag.indexOf('title="Add songs"') !== -1, 'titled Add songs, so it says what it is when held');
-  ok(has('<path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>'), 'with the plus glyph, not the refresh arrow');
-  ok(!has('M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42'), 'and the refresh arrow is gone from the page');
-  ok(count("  $('addSongsBtn').addEventListener('click'") === 1, 'the + is wired to the menu');
+     'beside the notifications bell and settings');
+  const refreshTag = header.slice(header.indexOf('id="refreshBtn"'), header.indexOf('</button>', header.indexOf('id="refreshBtn"')));
+  ok(refreshTag.indexOf('title="Refresh app"') !== -1, 'titled Refresh app, so it says what it does when held');
+  ok(refreshTag.indexOf('M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42') !== -1, 'with the refresh arrow');
+  ok(refreshTag.indexOf('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z') === -1, 'and no plus glyph left in the header');
+  ok(has("_rb.addEventListener('click'") && has('_scRefreshWired = true;') &&
+     has('window.location.reload()'), 'and the refresh really reloads the app');
+  ok(count("  $('dockAddBtn').addEventListener('click'") === 1, 'the dock + is wired to the menu');
   ok(has("if($('addSongsMenu').classList.contains('open')) closeAddSongsMenu();"),
      'and it toggles rather than only opening');
 }
@@ -336,6 +352,21 @@ console.log('\n[6] the styles');
   ok(count('donateLinks: {') === 1 && count('PAYMENT_CONFIG.donateLinks') >= 2 &&
      count("return base.split('{amt}').join(String(n));") === 1,
      'or an amount without a page of its own has nowhere to go');
+  // 70.2.0. Two claims, and the second is the one the APK proved was missing.
+  // (a) A page opened from the Android build has somewhere to go: a WebView has
+  // no windows, so window.open() alone is a link that goes nowhere. (b) The card
+  // page is looked up ABOVE the not-found and error returns, because the package
+  // this repo builds for sideloading fails in exactly those two ways - it has the
+  // Billing plugin, and Play simply declines.
+  ok(count('function scOpenExternal(url){') === 1 && count('window.location.href = String(url);') === 1 &&
+     count("if(window.open(String(url), '_blank', 'noopener')) return true;") === 1,
+     'a page this app opens from the Android build has somewhere to go');
+  ok(count('scOpenExternal(web);') === 1 && count('scOpenExternal(PAYMENT_CONFIG.playStoreListing);') === 1 &&
+     count("try{ window.open(web, '_blank', 'noopener'); }catch(_eDon){ }") === 0,
+     'and neither the card page nor the listing is opened into a window that cannot exist');
+  ok(src.indexOf("const web = SC_IS_PLAY ? '' : donateUrlFor(amt);") < src.indexOf("if(result === 'not-found'){") &&
+     count("const web = SC_IS_PLAY ? '' : donateUrlFor(amt);") === 1,
+     'with the lookup above the failures, so a decline for any reason still reaches it');
   // 70.0.9. The lift is measured, not guessed - and the fallback is the guess.
   ok(count('html.sc-dock-measured #nowPlaying{ bottom: var(--sc-dock-real') === 1,
      'the measured lift is not the last word on the player position');
@@ -545,9 +576,13 @@ console.log('\n[10b] the streak, the album cover, the search box and the sheet')
   ok(count('function scAdoptLiveStats(') === 1 && count('scAdoptLiveStats(manifest.stats);') === 1 &&
      count('scAdoptLiveStats(state.meta);') === 1,
      'a restored listening streak is handed to the running session, both ways in');
+  // 70.2.1. The camera moved off the album card and into Manage albums: the
+  // card header no longer carries it (it shared the row with the tap that opens
+  // the album), and every row in Manage albums has its own cover button.
   ok(count('function albumCoverModal(') === 1 && count('function applyAlbumCover(') === 1 &&
-     count('alb-cover-btn') >= 1,
-     'an album cover can be changed from its card');
+     count('alb-cover-btn') === 0 && count('class="mgr-alb-cover"') === 1 &&
+     count("bEl.querySelectorAll('.mgr-alb-cover')") === 1,
+     'an album cover is changed from Manage albums, not from the album row');
   ok(count('searchClearBtn') >= 3 &&
      count('#searchInput:not(:placeholder-shown) + #searchClearBtn') === 1,
      'the library search box has a clear button the field itself shows');
