@@ -193,11 +193,21 @@ function fakeIndexedDB() {
 // and the one that was broken. This stands in for it: the plugin reports itself
 // supported and then has no products, which is exactly what a package Google Play
 // never distributed gets back (getProducts -> [] -> "not-found").
+// 71.5. Every theme object the web layer pushes to the widget, in order. The
+// bars themselves are drawn by the Android widget, so the half the web layer
+// owes it is the ANSWER - and [11o] reads it out of these payloads.
+const widgetThemePushes = [];
+
 function fakeCapacitor() {
   return {
     isNativePlatform: () => true,
     getPlatform: () => 'android',
     Plugins: {
+      // 71.5. The widget plugin CI injects, standing in for it: it records what
+      // it was told instead of drawing anything.
+      SideCutWidget: {
+        update: (body) => { try { widgetThemePushes.push(JSON.parse((body && body.theme) || '{}')); } catch (_) {} },
+      },
       NativePurchases: {
         isBillingSupported: async () => ({ isBillingSupported: true }),
         getPluginVersion: async () => ({ version: '7.19.3' }),
@@ -1269,6 +1279,50 @@ const realErrors = (errors) => errors.filter((e) =>
         'with a sentence saying where it went');
     }
     Object.defineProperty(awin, 'open', { value: realOpen, writable: true, configurable: true });
+  }
+
+  console.log('[11o] the widget heartbeat switch, driven on a pushed theme');
+  {
+    // 71.5. The user's words: "This heartbeat is way too fast in the widgit and
+    // it's it necessary like is their a way to hide it like I don't see other
+    // widgits have it". The bars live in the Android widget, so the only honest
+    // way to check the web half is to flip the switch in the booted app and read
+    // the theme it pushes - which is exactly what a placed widget is handed.
+    const w = boot('apk');
+    await wait(1500);
+    const wwin = w.win;
+    const wdoc = wwin.document;
+    wwin.showSettingsTab('widget');
+    await wait(150);
+    const row = wdoc.querySelector('#widgetBarsRow');
+    const tog = wdoc.querySelector('#widgetBarsToggle');
+    ok(!!row && !!tog, 'Settings > Widget offers the Playing bars switch');
+    ok(!!tog && tog.checked === true, 'and a copy that has never touched it starts with the bars on');
+    ok(!!row && /Playing bars/.test(row.textContent || ''), 'the row is labelled Playing bars');
+    ok(!!row && /equalizer/.test(row.textContent || ''), 'and says what the bars are');
+    ok(!!row && /every widget you have placed/.test(row.textContent || ''),
+      'and that off means off on every widget, not just this one');
+    if (tog) {
+      const before = widgetThemePushes.length;
+      tog.click();
+      await wait(250);
+      ok(tog.checked === false, 'tapping it turns the switch off');
+      ok(widgetThemePushes.length === before + 1,
+        'and pushes the widget state on the spot, without waiting for a beat (' + (widgetThemePushes.length - before) + ')');
+      ok((widgetThemePushes[widgetThemePushes.length - 1] || {}).eq === false,
+        'the theme that reached the widget says the bars are off (eq=' + JSON.stringify((widgetThemePushes[widgetThemePushes.length - 1] || {}).eq) + ')');
+      ok(String(wwin.localStorage.getItem('sidecut_widgetBars')) === '0', 'and the answer is stored on the device');
+      ok(!/border-radius:2px/.test(wdoc.getElementById('widgetThemePreview').innerHTML),
+        'the preview drops the bars with it');
+      tog.click();
+      await wait(250);
+      ok(tog.checked === true, 'tapping it again turns the switch back on');
+      ok((widgetThemePushes[widgetThemePushes.length - 1] || {}).eq === true,
+        'all the way to the widget');
+      ok(String(wwin.localStorage.getItem('sidecut_widgetBars')) === '1', 'with the stored answer following');
+      ok(/border-radius:2px/.test(wdoc.getElementById('widgetThemePreview').innerHTML),
+        'and the preview drawing them again');
+    }
   }
 
   console.log('[12] the page still holds together');

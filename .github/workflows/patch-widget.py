@@ -14,6 +14,11 @@ Injects the SideCut 2x2 home-screen widget into the generated android project:
   - User-themeable: the web layer sends a "theme" object inside update() -
     bg (bg1/bg2 gradient + radius), title/artist text colors. All colors are
     applied at render time via RemoteViews.
+  - The playing equalizer (the little "heartbeat" next to the artist) is
+    OPTIONAL and user-controlled: the same theme payload carries "eq": false
+    when the Settings > Widget "Playing bars" switch is off, and then the bars
+    are never drawn and the repaint loop never starts at all. Its frame is slow
+    on purpose (EQ_FRAME_MS): at 480ms the wave read as a fast flicker.
   - res/layout/sidecut_widget.xml + res/xml/sidecut_widget_info.xml (2x2 cell)
     + custom white vector transport icons + cover-card background (res/drawable).
   - AndroidManifest.xml receiver entry (idempotent).
@@ -113,7 +118,9 @@ public class SideCutWidgetPlugin extends Plugin {
             ed2.apply();
             SideCutWidgetProvider.cancelWatchdog(ctx);
         }
-        SideCutWidgetProvider.setAnimating(ctx, playing);
+        // 71.5 - only animate what the user can actually see: bars switched off
+        // means no loop, no repaints, no battery.
+        SideCutWidgetProvider.setAnimating(ctx, playing && SideCutWidgetProvider.barsOn(ctx));
         SideCutWidgetProvider.pushAll(ctx);
         call.resolve();
     }
@@ -221,6 +228,16 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         catch (Exception e) { return -1L; }
     }
 
+    // 71.5 - the bars are user-hideable. The web layer's Settings > Widget
+    // "Playing bars" switch rides into the theme payload as "eq": false; when it
+    // is off nothing is drawn AND the repaint loop never starts, so a hidden
+    // heartbeat costs no battery at all. Anything but an explicit false keeps
+    // the bars - which is also what an install that never opened Widget
+    // settings sees.
+    static boolean barsOn(Context ctx) {
+        try { return readTheme(ctx).optBoolean("eq", true); } catch (Exception e) { return true; }
+    }
+
     // Visibility wave for the playing equalizer (bar1, bar2, bar3).
     // The web layer sends a monotonic pulse; each phase shows a different
     // combo so the bars appear to shimmer while a track is playing.
@@ -239,6 +256,10 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
     // looking at the widget. This loop lives in the app process instead and runs
     // until playback stops or the process dies; the watchdog still repaints a
     // paused widget if the process is killed mid-song.
+    // 71.5 - one frame every 900ms instead of every 480ms. The 480ms wave read
+    // as a fast flicker ("way too fast" - the bars visibly blink), and a calmer
+    // beat also halves the repaint cost while a song plays.
+    static final long EQ_FRAME_MS = 900L;
     private static android.os.Handler sAnimH = null;
     private static Runnable sAnimT = null;
     private static Context sAnimCtx = null;
@@ -259,11 +280,15 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
                     @Override
                     public void run() {
                         if (sAnimT == null) return;
+                        // 71.5 - the bars can be switched off mid-song. Stop the
+                        // loop the moment the theme says so instead of painting
+                        // frames nobody can see.
+                        if (sAnimCtx != null && !barsOn(sAnimCtx)) { setAnimating(sAnimCtx, false); return; }
                         ph = ph + 1;
                         if (ph >= EQ_WAVE.length) ph = 0;
                         animPhase = ph;
                         if (sAnimCtx != null) pushAll(sAnimCtx);
-                        sAnimH.postDelayed(this, 480L);
+                        sAnimH.postDelayed(this, EQ_FRAME_MS);
                     }
                 };
                 sAnimH.post(sAnimT);
@@ -324,6 +349,10 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
 
             // User theme (from the Widget settings tab, persisted in prefs).
             JSONObject th = readTheme(ctx);
+            // 71.5 - "Playing bars" off: the heartbeat is never drawn. The
+            // plugin also refuses to start the repaint loop, so a hidden
+            // heartbeat does not redraw the widget twice a second either.
+            boolean bars = th.optBoolean("eq", true);
 
             // Background: user-themeable gradient, rendered as a bitmap onto
             // the wBg ImageView (RemoteViews cannot take arbitrary drawables,
@@ -356,10 +385,10 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             int pulse = 0;
             if (o != null) { try { pulse = o.optInt("pulse", 0); } catch (Exception ignored) {} }
             // While playing, the self-driving loop owns the frame - its phase
-            // advances every 480ms even when the web heartbeat is asleep.
-            if (playing && animPhase >= 0) pulse = animPhase;
+            // advances every EQ_FRAME_MS even when the web heartbeat is asleep.
+            if (playing && bars && animPhase >= 0) pulse = animPhase;
             int accent = (int) parseColor(th.optString("accent", "#E3B23C"));
-            if (playing) {
+            if (playing && bars) {
                 rv.setViewVisibility(R.id.wEqWrap, android.view.View.VISIBLE);
                 int ph = ((pulse %% 4) + 4) %% 4;
                 int[] v = EQ_WAVE[ph];

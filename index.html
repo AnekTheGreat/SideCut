@@ -3346,6 +3346,15 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget. Changes apply to every widget you have placed; re-adding one also picks these up.</div>
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">Note: if the app is closed or swiped away from recents, the widget will not play the right audio — open SideCut again to get the widget back in sync.</div>
       <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
+      <div id="widgetBarsRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
+        <label for="widgetBarsToggle" style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+          <input type="checkbox" id="widgetBarsToggle" style="width:18px; height:18px; margin:1px 0 0; flex:0 0 auto; accent-color:var(--gold);">
+          <span>
+            <span style="font-size:13px; font-weight:600;">Playing bars</span>
+            <span style="display:block; font-size:11px; color:var(--ink-dim); margin-top:4px; line-height:1.5;">The small equalizer that pulses beside the artist while a song plays. Turn it off for a calmer widget &mdash; the bars are hidden on every widget you have placed and nothing else changes.</span>
+          </span>
+        </label>
+      </div>
       <div id="widgetCustomWrap" style="margin-bottom:16px;">
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Fine-tune</div>
         <div id="widgetCustomColors" style="display:grid; grid-template-columns:1fr 1fr; gap:10px 14px;"></div>
@@ -6751,6 +6760,20 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         toast("Widget theme updated");
       });
     });
+    // 71.5 - the Playing bars switch. Wired once, then only re-synced: this
+    // render runs on every Settings > Widget open, and re-adding the listener
+    // would push a state update per tick.
+    const barsTog = $('widgetBarsToggle');
+    if(barsTog){
+      barsTog.checked = !!widgetBarsOn;
+      if(!barsTog._wired){
+        barsTog._wired = true;
+        barsTog.addEventListener('change', () => {
+          setWidgetBars(barsTog.checked);
+          toast(barsTog.checked ? 'Playing bars on' : 'Playing bars hidden');
+        });
+      }
+    }
     renderWidgetCustomColors();
     renderWidgetPreview();
   }
@@ -6818,9 +6841,19 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     if(!pv) return;
     const t = getWidgetTheme();
     pv.style.background = 'linear-gradient(160deg,' + t.bg1 + ',' + t.bg2 + ')';
+    // 71.5 - the three little bars the widget paints while a song plays, in the
+    // theme's own accent. Switched off, the preview shows the same widget with
+    // nothing there - which is the whole point of the row above it.
+    const barsHtml = widgetBarsOn
+      ? '<span style="display:inline-flex; align-items:flex-end; gap:2px; height:14px; margin-left:8px; vertical-align:middle;">' +
+        '<span style="display:inline-block; width:3px; height:8px; border-radius:2px; background:' + t.accent + ';"></span>' +
+        '<span style="display:inline-block; width:3px; height:14px; border-radius:2px; background:' + t.accent + ';"></span>' +
+        '<span style="display:inline-block; width:3px; height:10px; border-radius:2px; background:' + t.accent + ';"></span>' +
+        '</span>'
+      : '';
     pv.innerHTML = '<div style="width:64px; height:64px; border-radius:10px; background:linear-gradient(135deg,#3a3f4b,#22252c); margin-bottom:10px;"></div>' +
       '<div style="font-size:16px; font-weight:700; color:' + t.title + '; margin-bottom:3px;">Song title</div>' +
-      '<div style="font-size:13px; color:' + t.artist + '; margin-bottom:12px;">Artist name</div>' +
+      '<div style="font-size:13px; color:' + t.artist + '; margin-bottom:12px;">Artist name' + barsHtml + '</div>' +
       '<div style="display:flex; gap:22px; font-size:18px; color:' + t.title + ';"><span>|&#9664;</span><span>&#9654;</span><span>&#9654;|</span></div>';
   }
   function renderGlowControls(){    // Glow color swatches — tap to pick instead of the clunky native wheel.
@@ -11955,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '71.4';
+  const APP_VERSION = '71.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12425,6 +12458,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '71.5', date: 'September 30, 2026 · 10:15 PM EDT', title: 'The widget heartbeat slows to a calm once-a-beat pulse and gains a switch to hide it', items: [
+    'The widget heartbeat is slower. The little bars beside the artist used to step through their wave about twice a second, which read as a fast blink; they now step once a beat, so the widget breathes instead of strobing.',
+    'And you can hide them. Settings > Widget has a Playing bars switch: turn it off and the bars are gone from every widget you have placed, and the redraw loop behind them stops too - so a hidden heartbeat costs no battery at all.',
+    'The switch rides along with the widget theme, which is what the colours already do, so every widget you have placed picks it up on the next state push. Nothing has to be removed and re-added.',
+    'Your answer is remembered on the device, so a relaunch, an update, or a widget you add next month all keep it.',
+    'Everything else about the widget is exactly as it was: the cover art, the title and artist colours, the theme presets, the fine-tune colours and the prev / play-pause / next buttons.',
+    'And the player in the app is untouched - the dock, the queue, the equalizer and your library all behave exactly as they did before this release.',
+    'A library saved before this release comes back exactly as it was, and no stored song, cover or playlist is rewritten by any of it.',
+  ] },
   { version: '71.4', date: 'September 30, 2026 · 9:08 PM EDT', title: 'Studio answers every button and gains a real edit rack, releases older than a week stay in the New Releases bubble, the lyrics get a letter-by-letter highlight, and the Donate tab offers only the tiers your copy can really take', items: [
     'Studio answers every button. A tool that could not open and a run that could not start used to fail in silence - the tap simply had no answer - and each one now says what went wrong instead of leaving you tapping at nothing.',
     'Studio has a working song of its own. It follows whatever is playing, and a picker lets you point it at any song in your library instead - so cropping, the clip maker, the sampler pads and the edit rack all open on a real song before a single note has played.',
@@ -24744,7 +24786,30 @@ function _fallbackCopy(text){
   };
   let widgetThemeKey = 'ocean';
   try{ const _savedWT = localStorage.getItem('sidecut_widgetTheme'); if(_savedWT && WIDGET_THEMES[_savedWT]) widgetThemeKey = _savedWT; }catch(_){ }
-  function getWidgetTheme(){ return applyWidgetCustom(WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.ocean); }
+  // 71.5 - the widget's playing bars (the little "heartbeat" beside the artist)
+  // are optional. Settings > Widget owns this flag; it is stored on the device,
+  // it rides to the native widget in the theme payload every state push already
+  // carries, and the native side then draws no bars and runs no repaint loop.
+  // Default ON - it is what the widget has always shown; the switch is there for
+  // anyone who would rather have the calmer widget.
+  let widgetBarsOn = true;
+  try{ const _savedWB = localStorage.getItem('sidecut_widgetBars'); if(_savedWB === '1') widgetBarsOn = true; else if(_savedWB === '0') widgetBarsOn = false; }catch(_){ }
+  function setWidgetBars(on){
+    widgetBarsOn = !!on;
+    try{ localStorage.setItem('sidecut_widgetBars', widgetBarsOn ? '1' : '0'); }catch(_){ }
+    try{ renderWidgetPreview(); }catch(_){ }
+    // Push straight away so a placed widget follows the switch without waiting
+    // for the next beat (this is the same push the theme buttons use).
+    try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
+  }
+  function getWidgetTheme(){
+    const _wt = applyWidgetCustom(WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.ocean);
+    // 71.5 - the switch travels with the colours: every push (state, theme
+    // change, and the battery-saving dim) already sends this object, so the
+    // native widget learns the answer with no extra bridge call.
+    _wt.eq = !!widgetBarsOn;
+    return _wt;
+  }
   // Merge user custom color overrides (Settings > Widget) on top of a preset.
   function applyWidgetCustom(base){
     try{

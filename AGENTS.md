@@ -1,6 +1,64 @@
 # SideCut — repository memory
 
 
+## 71.5 (Sep 30, 2026): the widget heartbeat is slower, and a switch hides it for good
+- **The user's words**: "This heartbeat is way too fast in the widgit and it's it necessary like is their a way to hide it
+  like I don't see other widgits have it" (with a screenshot of the **SideCut Full** widget: cover art, `Ashke` /
+  `Karan Aujla, Mxrci`, two little blue bars at mid-right, then prev / pause / next). Two asks: slow it, and let me hide it.
+- **WHAT THE "HEARTBEAT" ACTUALLY IS — name it correctly, it is NOT the web heartbeat.** The bars beside the artist are
+  the **playing equalizer of the ANDROID widget**: `wEqWrap` + `wEq1/wEq2/wEq3` in `LAYOUT_XML`, painted by
+  `setAnimating()` ("Self-driving EQ animation") in **`.github/workflows/patch-widget.py`**, the Java that CI injects after
+  `npx cap add android` - the web layer cannot draw them at all. **The `pulse` in the widget JSON is only the fallback**:
+  `if (playing && animPhase >= 0) pulse = animPhase;` means the app's own 6s heartbeat stops driving the frame while that
+  loop runs. **The screenshot shows TWO bars because `EQ_WAVE` phases 1 and 3 set bar 2 INVISIBLE** (bar1 + bar3 visible).
+  Do not "fix" this in the 6000ms web heartbeat; that number is unrelated and was left alone.
+- **1. SLOWER**: the loop repainted every **480ms**, which reads as a fast blink. `480L` is gone entirely - the frame is
+  now `static final long EQ_FRAME_MS = 900L` and `sAnimH.postDelayed(this, EQ_FRAME_MS)`, i.e. one step a beat. Half the
+  repaint cost while a song plays, as a side effect. `dev/test-widget-anim.mjs` fails on any surviving `480L`.
+- **2. HIDEABLE — the switch is in Settings > Widget, not in the Android settings.** `#widgetBarsRow` +
+  `#widgetBarsToggle` (a real checkbox inside its `<label>`, `accent-color:var(--gold)`) sits between `#widgetThemeGrid`
+  and `#widgetCustomWrap`. The answer is `let widgetBarsOn = true` (default ON - it is what every existing place shows),
+  stored at **`localStorage 'sidecut_widgetBars'` as `'1'`/`'0'`**, and applied by `setWidgetBars(on)`, which saves,
+  re-renders the preview and **pushes the state on the spot** instead of waiting for the next beat.
+- **HOW THE WIDGET HEARS IT — `eq` rides in the THEME object, so no new bridge call exists.**
+  `getWidgetTheme()` (called from BOTH payload builders: `pushWidgetState` and the battery-saving dim) now stamps
+  `_wt.eq = !!widgetBarsOn`. **It must be a real JSON boolean, not 1/0**: the native side reads it with
+  `org.json`'s `optBoolean("eq", true)`, which understands `true`/`false` and silently returns the default for a number.
+  Native: new `static boolean barsOn(Context ctx)`, `boolean bars = th.optBoolean("eq", true)` in `pushAll()` gating
+  `if (playing && bars)`, the plugin's `setAnimating(ctx, playing && SideCutWidgetProvider.barsOn(ctx))`, and
+  `if (sAnimCtx != null && !barsOn(sAnimCtx)) { setAnimating(sAnimCtx, false); return; }` inside the runnable so a switch
+  flipped mid-song stops the loop instead of painting hidden frames. **Hidden = nothing drawn AND no loop, so it costs no
+  battery at all** - which is the honest answer to the user's "is it necessary".
+- **`dev/patch-715.mjs` (7 edits) / `dev/repin-715.mjs` / `dev/test-715.mjs` (72 checks)**: `APP_VERSION` **71.4 -> 71.5**,
+  stamp `September 30, 2026 \u00b7 10:15 PM EDT`, shell cache **`v63.0.50 -> v63.0.51`**, a **7-note** head (six ride to
+  Play, all clean of the wider word list; note 7 is past the cut because `test-714.mjs` still pins that a note exists
+  there and that the first six never say Stripe).
+- **REPIN STEP D, SECOND LESSON — THE ADJACENCY PINS COME IN PAIRS.** `test-713.mjs` and `test-714.mjs` BOTH still read
+  `const PREV = '71.3'` after the last repin (both compare `entries[1]` to the head build), so both had to move to `'71.4'`
+  and `test-713.mjs` was red until they did. **The next repin must add `['test-715.mjs', ['71.4', OLDVER]]`** for the same
+  reason. Only gates shaped that way are listed - `test-70.mjs` finds its own entry by version and never moves.
+- **`dev/studio-70-check.cjs` 296 -> 310 checks.** New **`[11o]`** boots the sideloaded copy and DRIVES the switch: the
+  row exists, defaults to on, tapping it pushes **exactly one** theme whose `eq === false`, stores `'0'`, drops the bars
+  from `#widgetThemePreview`, and turning it back on sends `eq === true` and draws them again. `fakeCapacitor()` gained a
+  recording **`SideCutWidget.update`** that collects every theme payload (`widgetThemePushes`) - that is how the web half of
+  a NATIVE feature becomes assertable without a device.
+- **WHAT THIS RELEASE CANNOT PROVE IN THE SANDBOX**: the bars are drawn by the Android widget, so the 900ms beat and the
+  hidden state have to be seen **on a device** - and only in an APK built **after** this commit, because `patch-widget.py`
+  runs in the Android CI job, not at web runtime. An OTA update alone does not change the widget.
+- **OTA fixed point 846207 -> `847440` (play `847448`)**, verified byte-identical on a second generation (`md5sum` over all
+  eight artifacts) and with `ota-play/updates.json` carrying exactly the head's first six notes.
+- **Stamp arithmetic**: `date -u` = `2026-10-01 02:15 UTC` -> Eastern is UTC-4 **with the date rolling back**, so
+  `September 30, 2026 \u00b7 10:15 PM EDT`.
+- **Android flavors**, for the screenshot: **`full` = `com.SideCut.myapp.full`, labelled "SideCut Full"** - the widget in the
+  picture - and `play` = `com.SideCut.myapp` (the Play listing, which must never change its id).
+- **VERIFIED**: test-715 **72**, studio-70-check **310**, test-70 **182** (it execs studio-70-check and test-66431),
+  test-714 **137**, test-713 **50**, test-widget-anim **18**, test-widget-dim pass, test-662 75, test-663 49, test-6641 128,
+  test-6642 75, test-66421 49, test-6643 90, test-66429 83, test-play-copy 28, test-6056 48, test-619 55, album-rename 40,
+  albums-manual 40, check-dom DOM INTEGRITY FAILURES 0, ota-guard 20, ota-bootapply 24, ota-loop 26, ota-update 52,
+  ota-bundle/ota-bundle-play `--check` OK. Pre-existing and unchanged: `test-705` **223/7** (all seven red at HEAD), and
+  `batch-635-check.cjs` 35/7.
+
+
 ## 71.4 (Sep 30, 2026): Studio answers every button and gains an edit rack, a week is the floor on "recent", letters flow, and the tip tiers are the ones your copy can take
 - **The user's words**: "Half the buttons in studio don't work and make it like a professional editing app for studio with
   the functions. If songs eps or albums are over a week old they should show in the new releases home bubble. Make lyrics
