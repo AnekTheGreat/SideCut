@@ -1,6 +1,94 @@
 # SideCut — repository memory
 
 
+## 71.4 (Sep 30, 2026): Studio answers every button and gains an edit rack, a week is the floor on "recent", letters flow, and the tip tiers are the ones your copy can take
+- **The user's words**: "Half the buttons in studio don't work and make it like a professional editing app for studio with
+  the functions. If songs eps or albums are over a week old they should show in the new releases home bubble. Make lyrics
+  highlight work with every song and add another highlight option called letter by letter where it like smoothly flows
+  between letters and syllables like a wave", then "on apk/web version it should only display on donations the actual ones
+  that bring you to stripe only 2,5,10,25,50 should display and it should say brings you through stripe for donations then
+  on play version it's Google play billing all of them". Five asks, one release.
+- **1. WHY STUDIO'S BUTTONS LOOKED DEAD — AND THE FIX.** Every file tool read `currentTrack()`, i.e. "the song that is
+  playing". **On a fresh launch nothing is playing, so crop, the clip maker and the sampler each answered "Play a song
+  first"** and the screen read as broken - there was no way to aim Studio at a song at all. Studio now has a **WORKING
+  SONG**: `workTrack()` = a song you picked (`studioPickId`, persisted at `sidecut_studio_pick`) -> else `currentTrack()`
+  -> else the first song in the library, so a tool always has something real. `openSongPickerSheet()` is a searchable list
+  (`data-pickid`, `.sc-pick`) and `playWorkTrack()` starts it through the NEW `window.__scPlayTrack(id)` hook, which calls
+  the app's own `playTrackInPlaylistContext(id)` so the queue keeps the song's playlist instead of dumping the library.
+  `renderStudio` paints `workTrack()` (the header now says **Working song**), and `cropCurrent` / `openClipSheet` /
+  `loadSamplerFor` / the sampler sheet all read it.
+- **2. A TOOL THAT THREW LOOKED EXACTLY LIKE A TOOL THAT WAS NEVER WIRED.** `openTool()` and the whole `[data-act]` chain
+  are wrapped in `try/catch` with a toast ("could not open" / "could not answer"); an unknown id says "not in this build"
+  rather than nothing. The clip sheet's chips were also the only ones queried **document-wide**
+  (`document.querySelectorAll('[data-clipnudge]')`) - they are now scoped to `#scSheetBody`, like every other sheet.
+- **3. THE EDIT RACK** (`openEditSheet`, card id `edit`, glyph 🎚) is the "professional functions" half: **trim silence**
+  (`editThreshold` against the song's own peak, one span for every channel so a stereo pair cannot unbalance), **fade in /
+  out**, **gain** (dB chips), **level match** (peak to 0.98, measured AFTER the gain so the two cannot fight into
+  clipping), **reverse**, **preview** (a `createBufferSource` on the rendered audio itself) and **Save a copy**
+  (`__scEncodeMp3` at 128/192/256/320 -> `__scSaveClip` as `name (edit).mp3`). All of it is plain sample math on the ONE
+  decoded buffer Studio already caches - no second decoder, no second encoder, so preview and export are the same audio.
+  **Nothing touches the library copy**: `editExport` never calls `__scPersistTrack` and never swaps `t.file` (the
+  re-encode path does both, which is the difference the gate pins).
+- **4. A WEEK IS THE FLOOR ON "RECENT".** The New-releases bubble never dropped anything - that was never the bug - but
+  nothing said so and it read as a last-few-days list. New `window.__scRelWeekMs = 7 * 86400000`,
+  `window.__scRelIsRecent(date)`, `window.__scRelCountText(list, unseen)` ("**N this week · M earlier · T recent
+  releases**"), and the in-place painter inserts ONE `#hbRelEarlier` heading ("Earlier than a week", styled
+  `.hb-rel-earlier`) in front of the first row whose own `data-date` is past the week, removing it when none is. Panel and
+  repaint both call the same one function.
+- **5. LETTER BY LETTER, AND A HIGHLIGHT THAT NO LONGER NEEDS THE SCROLL SWITCH.** New `lyricsLetterByLetter`
+  (persisted, exported and imported with the other setting) + a `#lyricsLetterBtn` chip beside `#lyricsWordBtn`; letter
+  mode **turns the word spans on** (it needs them) and word mode off takes letter mode with it. `scEnsureLetterSpans(word)`
+  wraps one word's characters **once**, each `<span class="lyric-letter">` carrying `transition-delay: i*26ms` - that delay
+  IS the wave - and `scPaceWords` (the single place a word becomes `.current` in both branches) now lights
+  `math.ceil(frac * letters)` of them, clearing every other word back to the trough. Both chips are painted from one
+  helper, `window.__scLyricsHighlightChips()`.
+- **THE REAL EVERY-SONG BUG**: in the **plain-lyrics** branch the entire block - the current-line tracking AND the word
+  pacing - sat behind `if (lyricsAutoScroll && audio.duration > 0)`, so **turning auto-scroll off silenced the highlight on
+  every song without timestamps**. The guard is now `if (audio.duration > 0)`; `scrollLyricsToLine` already returns early
+  on `!lyricsAutoScroll`, so the scroll half is unchanged.
+- **6. THE DONATE PANE OFFERS ONLY WHAT THE COPY CAN TAKE.** A copy with no Billing can only be paid on a card page, so a
+  tier with no page behind it had nothing to offer but a sentence and a detour to the Play listing.
+  `if(!donateUrlFor(amt)) btn.style.display = 'none';` runs over the pane's own `.donate-quick` buttons inside the existing
+  `if(promise && !SC_IS_PLAY)` block, and the two sentences now say the tip **brings you through Stripe for donations**.
+  **The markup is untouched - all eleven tiers stay** and the hiding is per copy at run time; the Play build keeps every
+  tier and never resolves a card page at all (`const web = SC_IS_PLAY ? '' : donateUrlFor(amt);`). The refresh-rate row
+  reuses the `donate-quick` class but lives in `#refreshRateOptions`, so the pane-scoped query cannot reach it.
+- **`dev/patch-714.mjs` / `dev/repin-714.mjs`**: `APP_VERSION` **71.3 -> 71.4**, stamp `September 30, 2026 \u00b7
+  9:08 PM EDT`, shell cache **`v63.0.49 -> v63.0.50`**, an **8-note** head (the donations note is 7th so it never rides to
+  Play), **40 edits**, every sub keying on text IT adds; repin **25 edits across 20 files**, still skipping `test-705.mjs`.
+- **A NEW REPIN STEP, LEARNED THE HARD WAY: `const PREV`.** `dev/test-713.mjs` asserts "the release before it is still
+  listed next" and pinned `PREV = '71.2'` - which was right when it was written and wrong one release later, so 71.4 left
+  it red until the repin learned to move it. Step **D** in `repin-714.mjs` has an explicit `PREV_MOVES` map (the source
+  pin -> the pin it must become) plus a stale check for it; **only gates that assert ADJACENCY are listed**, because every
+  other `PREV` in `dev/` pins the release ITS OWN gate describes (61.3.7, 64.2.8, 70.0 …) and must never move.
+  **The next release's repin must add its own entry for `test-714.mjs` (71.3 -> 71.4).**
+- **THE `key` GOTCHA, HIT AGAIN**: a key matching text another sub **ADDS LATER** silently skips that sub while `--check`
+  looks clean. Here the clip-maker sub keyed on `toast('Add a song to your library first.'); return false; }` - text the
+  BIG STUDIO BLOCK (emitted earlier in the same run) already contains, because `playWorkTrack` uses the same sentence. The
+  fix is the repo's own rule: give the sub a sentence **only it writes** ("…and it can be clipped here."). `SC_DEBUG=1
+  node dev/patch-714.mjs --check` now prints which sub was skipped, which is how this was found.
+- **WHERE THE 71.4 CODE LIVES**: the new Studio block sits between section 11 and `buildStudioView()` (working song,
+  picker, edit rack); `renderStudio`'s header card, `openTool`, the `[data-act]` chain and `cropCurrent`/`openClipSheet`
+  are edited in place; the week split goes in beside `window.__scHbRelRowInner` and the heading is inserted in
+  `__scHbPaintRelRows` after the rows; `scEnsureLetterSpans` / `clearLetters` / `lettersOn` sit above the `// Pace a
+  line's words from fromSec to toSec:` comment, and the letter run is lit from inside `scPaceWords` itself; and
+  `window.__scPlayTrack` is published with the other 70.0 hooks next to `window.__scNext`.
+- **A STALE GATE, NOT OURS: `dev/test-705.mjs` is 223 passed / 7 FAILED** (it was **222/8 AT HEAD**, measured with a
+  scratch tree built from `git show HEAD:index.html`) - its badge-wall/whirl checks read `dev/sc70-module.js`, which is
+  untouched; they were already red and 71.4 happens to fix one. `dev/studio-70-check.cjs` moved from **289 to 296** checks
+  (the Donate tier assertions) and its `[2]` now expects **nine** tool cards, `edit` included.
+- **VERIFIED**: test-714 **137** (new gate), studio-70 **296**, test-70 **182**, test-705 **223/7 (7 pre-existing)**, test-713
+  50, test-662 75, test-663 49, 6641 128, 6642 75, 66421 49, 6643 90, 66429 83, test-play-copy 28, test-619 55,
+  album-rename 40, albums-manual 40, check-dom DOM INTEGRITY FAILURES 0, ota-guard 20, ota-bootapply 24, ota-loop 26,
+  ota-update 52. `test-66429` read 82/1 on one run and 83/0 on the next two with no edit in between - it is count-sensitive
+  to the machine, so re-run it before believing a single failure.
+- **THE OTA BUNDLE CONVERGES**: 846113 -> **846207 (fixed point)**, `ota-play` **846215**; two consecutive
+  `ota-bundle`/`ota-bundle-play` generations are **byte-identical** (md5sum on all eight artifacts) and
+  `ota-play/updates.json` carries exactly the head entry's first six notes with **no mention of Stripe**.
+- **THE STAMP ARITHMETIC** (unchanged): Eastern is UTC-4 for these releases, with the date rolling back. `date -u` read
+  `2026-10-01 01:08 UTC` while `TZ=America/New_York date` printed an inconsistent `01:08 AM America`, so the stamp follows
+  the repo's own precedent (UTC - 4) - `September 30, 2026 \u00b7 9:08 PM EDT` - and all three stamp gates pass.
+
 ## 71.3 (Sep 30, 2026): YouTube playlists, the song's own metadata, and updates that wait for a run
 - **The user's words**: "Make it so that in YouTube converter you can convert YouTube playlists and make the updates not
   interrupt downloads. Also make YouTube converter fetch the metadata for that song too." Three asks, one release.

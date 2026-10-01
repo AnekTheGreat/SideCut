@@ -362,8 +362,11 @@ const realErrors = (errors) => errors.filter((e) =>
     // own instead of being deleted - so the Studio grew a card, it did not trade one.
     // 70.1.2: eight of them. The sleep timer and the practice loop were added to
     // the row, and nothing that was there was traded away for either.
-    ok(tools.length === 8, 'eight tool cards (' + tools.join(',') + ')');
-    ['crop', 'clip', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
+    // 71.4: nine. The edit rack joined the row for the pro-editing pass - trim,
+    // fades, level, reverse and a saved copy - and again nothing was traded away
+    // for it.
+    ok(tools.length === 9, 'nine tool cards (' + tools.join(',') + ')');
+    ['crop', 'clip', 'edit', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
     // 70.0.5: 201 badges, one of which is a single blank tile until dev mode
     // reveals it - so the wall is 201 tiles here, 200 real and one blank. Section
@@ -1166,16 +1169,26 @@ const realErrors = (errors) => errors.filter((e) =>
         'with a sentence saying where it went');
     }
     opened.length = 0;
+    // 71.4. "on apk/web version it should only display on donations the actual
+    // ones that bring you to stripe only 2,5,10,25,50 should display and it
+    // should say brings you through stripe for donations". A copy with no
+    // Billing can only be paid on a card page, so a tier with no page behind it
+    // is not a tier this copy can take: it is gone from the pane instead of
+    // ending in a detour to the Play listing.
+    const shown = Array.from(pane.querySelectorAll('.donate-quick'))
+      .filter((b) => b.style.display !== 'none')
+      .map((b) => b.dataset.amt);
+    ok(shown.join(',') === '2,5,10,25,50',
+      'a copy with no Billing shows only the amounts that really open a card page (' + shown.join(',') + ')');
+    const hidden = Array.from(pane.querySelectorAll('.donate-quick'))
+      .filter((b) => b.style.display === 'none')
+      .map((b) => b.dataset.amt);
+    ok(hidden.join(',') === '1,3,7,15,75,100',
+      'and every tier with no card page behind it is hidden (' + hidden.join(',') + ')');
     const odd = pane && pane.querySelector('.donate-quick[data-amt="7"]');
-    if (odd) {
-      odd.click();
-      await wait(250);
-      ok(opened.length === 1 && /play\.google\.com/.test(opened[0]),
-        'and an amount with no page of its own still ends in the Play listing');
-      const said = doc.querySelector('#donateMsg');
-      ok(!!said && /\$2, \$5, \$10, \$25 or \$50/.test(said.textContent || ''),
-        'saying which amounts do work here');
-    }
+    ok(!!odd && odd.style.display === 'none', 'the seven dollar tier is one of them');
+    ok(/Stripe/.test(promise.textContent || ''), 'and the pane says the tip comes through Stripe');
+    ok(!!intro && /Stripe/.test(intro.textContent || ''), 'in the paragraph above it as well');
     Object.defineProperty(win, 'open', { value: realOpen, writable: true, configurable: true });
   }
 
@@ -1213,6 +1226,12 @@ const realErrors = (errors) => errors.filter((e) =>
       ok(!!sSaid && sSaid.textContent.indexOf('card page') === -1,
         'with nothing it says naming a card page');
     }
+    // 71.4: the store build is the one copy nothing about the tier hiding
+    // touches - every tier is still on the deck and every one of them is Play's.
+    const sAll = Array.from(sdoc.querySelectorAll('#settingsPaneDonate .donate-quick'));
+    ok(sAll.length === 11, 'the store build still lists all eleven tiers (' + sAll.length + ')');
+    ok(sAll.every((b) => b.style.display !== 'none'), 'and hides none of them');
+    ok(sPromise.textContent.indexOf('Stripe') === -1, 'with nothing it says naming Stripe');
     Object.defineProperty(swin, 'open', { value: sRealOpen, writable: true, configurable: true });
   }
 
