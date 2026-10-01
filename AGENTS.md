@@ -1,6 +1,66 @@
 # SideCut — repository memory
 
 
+## 71.7 (Oct 1, 2026): the rebuild shows what it would make, one tap undoes it, and the backup has the real albums
+- **The owner's words, after 71.6**: "I'm missing mad albums and you made every single damn song be an album of it's own fix it
+  and I need my songs in the correct order in albums and I'm missing songs inside of albums". **71.6's rebuild ran on one
+  tap and took EVERY album tag** - and on a library whose files carry one album tag per song (what a converter writes into
+  the album field), that is one album per song. The grouping the owner actually had (the old card-drag auto-save, anything
+  hand-made) is **not derivable from a tag at all**, which is why albums were still missing and the ones that came back
+  were short. Lesson: a recovery that guesses must say what it is about to do, and must be undoable.
+- **1. THE SHEET (`rebuildAlbumsFromTagsPrompt()`, `#albRebuildSheet`).** `scAlbumRebuildPlan()` counts the tags first
+  (`tags`, `counts`, `multi`, `single`), and the sheet shows those counts before anything is made. `rebuildAlbumsFromTags(mode)`
+  takes **'multi' | 'all'**: the primary button is the tags shared by more than one song ("Rebuild the 2 albums"), the second
+  is every tag ("Rebuild all 6 tags"), and with no shared tag at all it **refuses** ("a rebuild would make one album per
+  song") and points at a backup. `plan.counts[t] > 1` is checked BEFORE `scAlbumUndoArm()`, so a bad rebuild cannot even
+  start. zIndex `250` on the sheet - above `.disc-popup-overlay` (70), because Manage albums opens from a Discover popup.
+- **2. THE UNDO.** `scAlbumUndoArm()` copies `{ at, albums, order }` into **`localStorage 'sidecut_albumsUndo'`** before the
+  first album is made (localStorage because it must be synchronous to keep the rebuild sync, and it is a short-lived undo
+  POINT, not library data). **The FIRST snapshot is the one kept** (`if(localStorage.getItem(KEY)) return false`), so
+  rebuilding twice cannot bury the good state under a bad one - which is exactly what the owner had done. `undoAlbumRebuild()`
+  restores both rows, `scAlbumsMarkOurs()`es them (or the next sweep takes what was just restored), spends the point, and
+  re-renders. `#mgrAlbumUndo` is rendered **only while a point exists**, so it is never a dead button.
+- **3. THE BACKUP IS OFFERED FIRST-CLASS.** `scOpenBackupImport()` clicks `#importLibInput` (the SAME importer Settings
+  uses - one path, one set of rules), and it is a button in **both** places: `#mgrAlbumRestore` in Manage albums and
+  `#albRestoreBtn` under the empty Albums screen. The copy says which of the two is the real album list, because a tag can
+  never reconstruct names, membership and order.
+- **4. THE ORDER THE BACKUP BRINGS NOW WINS.** The import used to keep the local `albumOrder` unless the device had none,
+  so importing over a library that had an order (or had just been tag-rebuilt) left the albums in the OLD arrangement. Now
+  it merges the backup's order first and appends local-only names (`_mergedOrder`) and writes it back. This is the half of
+  "my albums are back" that a list of names cannot show.
+- **5. A SONG THE ID REMAP MISSED IS NOT DROPPED ("missing songs inside of albums").** The import's remap is keyed on
+  name + artist + **DURATION**; a cleaned title or a duration one side lacks makes it miss, and a miss deleted that song
+  from its album while the song sat in the library. New **top-level** `scAlbumFindByTitle(name, artist)` / `scAlbumLooseNorm`
+  give it a third chance: the name the backup recorded, artist first then title alone. **Top-level on purpose** - the gate
+  drives it, and a helper that only exists after an import has run is a helper nobody can test. (An earlier draft declared
+  it inside `importLibrary`; `window.__scAlbumFindByTitle` was then missing at boot and the jsdom case caught it.)
+- **PATCH EMITTING LESSON - BACKSLASHES.** `sub()`'s strings are TEMPLATE LITERALS: to land a `\s+` in index.html the patch
+  source needs `\\s` (two backslashes), not four. Verify with `awk 'NR==<line>' index.html | od -c`, not with `grep -c` -
+  the tool's JSON escaping doubles what you see in the output and cost a full detour. **Never use a backtick inside an
+  emitted string or comment**: an earlier edit put `` ` `` in a comment and broke the whole patch file's parse.
+- **GATES THAT DESCRIBE THEIR OWN RELEASE.** 71.7 legitimately changed 71.6's panel wiring and its tag collection, so
+  `dev/test-716.mjs` was updated to follow the code (the tag counting moved into `scAlbumRebuildPlan()`; the two-tap arm
+  became the sheet) while keeping its release-specific claims (the notes, the entry, the restore paths). `repin-717.mjs`
+  added `['test-716.mjs', ['71.5', OLDVER]]` to `PREV_MOVES` - every gate that compares `entries[1]` moves.
+- **`dev/patch-717.mjs` (14 edits) / `dev/repin-717.mjs` (33 edits / 23 files) / `dev/test-717.mjs` (94 checks)**: `APP_VERSION`
+  **71.6 -> 71.7**, stamp `October 1, 2026 \u00b7 7:32 AM EDT`, shell cache **`v63.0.52 -> v63.0.53`**, a **7-note** head
+  (six ride to Play, clean of the wider word list; note 7 past the cut; no apostrophes).
+- **`dev/studio-70-check.cjs` 332 -> 362**: new **`[11q]`** builds the library that broke - four songs tagged `Record A`,
+  four `Record B`, four tagged with their own name, plus one hand-made album - and drives it: the plan's 2/4 split, the
+  sheet's counts and its Cancel, the default making exactly the two shared-tag albums (and **not** one per song), the songs
+  already in another album staying put, `'all'` making all seven, the undo going back to the state before the **first**
+  rebuild, the point being spent, and the refusal when every tag covers one song. `[11p]` now taps the sheet's primary
+  button (the empty-screen button opens the sheet) and its note check follows the new copy.
+- **OTA fixed point 850021 -> `854194` (play `854202`)**, byte-identical on a second generation (`md5sum -c`, eight
+  artifacts), both bundles `--check` OK (6 notes each).
+- **VERIFIED**: test-717 **94**, studio-70-check **362**, test-716 **83**, test-715 **72**, test-714 **137**, test-713 **50**,
+  test-70 **182**, test-widget-anim **18**, test-widget-dim pass, test-662 75, test-663 49, test-6641 128, test-6642 75,
+  test-66421 49, test-6643 90, test-66429 83, test-play-copy 28, test-6056 48, test-619 55, album-rename-check 40,
+  albums-manual-check 40, check-dom DOM INTEGRITY FAILURES 0, ota-guard 20, ota-bootapply 24, ota-loop 26,
+  ota-update 52, ota-bundle/-play `--check` OK. Pre-existing and unchanged: `test-705` **223/7**, `batch-635-check.cjs` 35/7,
+  `test-6058.mjs` 47/1, check-dom's critical static ids 2/6.
+
+
 ## 71.6 (Oct 1, 2026): the albums come back from the tags on the songs, and a restored backup sticks
 - **The user's words**: "Why did all of my albums disappear" - answered "Where: Library → Albums tab AND Manage albums",
   "Songs: All my songs are still there", "Toast: No / I don't remember", "Backup: Yes, I have an export .zip", and the

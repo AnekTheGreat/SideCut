@@ -34,9 +34,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '71.6'; /* repinned by dev/repin-716.mjs */
-const PREV = '71.5';
-const SHELL_CACHE = 'sidecut-shell-v63.0.52';
+const VER = '71.7'; /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */
+const PREV = '71.6'; /* repinned by dev/repin-717.mjs */
+const SHELL_CACHE = 'sidecut-shell-v63.0.53';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -86,12 +86,20 @@ console.log('[1] release metadata');
 
 console.log('[2] the rebuild, from the album tags on the songs');
 {
-  ok(count(src, 'function rebuildAlbumsFromTags(){') === 1, 'the rebuild is one function');
-  const body = sliceBetween('function rebuildAlbumsFromTags(){', 'window.__scRebuildAlbumsFromTags');
-  ok(body.length > 200, 'and it has a body');
-  ok(/String\(t\.album \|\| ''\)\.trim\(\)/.test(body), 'it reads the album tag off each song, trimmed');
-  ok(/if\(!tag \|\| seen\[tag\]\) return;/.test(body), 'an empty tag is skipped, and each tag is taken once');
-  ok(/allTracks\.forEach/.test(body), 'it walks the library, not a stored album list');
+  // 71.7 moved the tag collection into scAlbumRebuildPlan() (so the sheet can
+  // count before anything is made) and gave the rebuild a `mode`. These checks
+  // follow the code as it is, which is what a gate about a LIVE function has to
+  // do; the release-specific claims are the notes and the entry.
+  ok(count(src, 'function scAlbumRebuildPlan(){') === 1, 'the album tags are counted in one function');
+  const plan = sliceBetween('function scAlbumRebuildPlan(){', 'window.__scAlbumRebuildPlan');
+  ok(plan.length > 200, 'and it has a body');
+  ok(/String\(t\.album \|\| ''\)\.trim\(\)/.test(plan), 'it reads the album tag off each song, trimmed');
+  ok(/if\(!tag\) return;/.test(plan), 'an empty tag is skipped');
+  ok(/if\(!counts\[tag\]\)\{ counts\[tag\] = 0; tags\.push\(tag\); \}/.test(plan), 'and each tag is counted once');
+  ok(/allTracks\.forEach/.test(plan), 'it walks the library, not a stored album list');
+  ok(/multi\+\+/.test(plan) && /single\+\+/.test(plan), 'it reports how many tags cover more than one song');
+  const body = sliceBetween('function rebuildAlbumsFromTags(mode){', 'window.__scRebuildAlbumsFromTags');
+  ok(body.length > 200, 'and the rebuild has a body');
   ok(/ensureAlbumSaved\(tag\)/.test(body), 'a tag with no album gets one through the existing saver');
   ok(/markAlbumManual\(tag\)/.test(body), 'a tag that already has an album is stamped as yours instead');
   ok(/scAlbumsMarkOurs\(userAlbums\)/.test(body), 'and every album it meets is marked as yours');
@@ -114,9 +122,11 @@ console.log('[3] both places an empty Albums screen shows the way back');
   const emptyState = sliceBetween('pane.appendChild(empty);', '// Insert-pick mode');
   ok(emptyState.indexOf("id = 'albRebuildBtn'") !== -1, 'the empty list offers Rebuild albums from my songs');
   ok(/if\(libraryMode === 'albums'\)\{/.test(emptyState), 'only in the Albums half, not on an empty playlist');
-  ok(/rebuildAlbumsFromTags\(\)/.test(emptyState), 'and the button runs the rebuild');
-  ok(/album tag/i.test(emptyState), 'with a line saying where the albums come from');
-  ok(/No song is moved, renamed or re-tagged/.test(emptyState), 'and what it will not touch');
+  // 71.7: the button opens the sheet (which is the confirmation), and the backup
+  // restore now stands beside it, because that is the copy with the real albums.
+  ok(/rebuildAlbumsFromTagsPrompt\(\)/.test(emptyState), 'and the button opens the sheet rather than rebuilding blind');
+  ok(/Restore from my backup/.test(emptyState), 'with the backup restore beside it');
+  ok(/albums you actually had/.test(emptyState), 'and a line saying which of the two has the real albums');
   ok(!/confirm\(/.test(emptyState), 'no confirm() - the Android WebView can swallow it (it is additive anyway)');
 
   const panel = sliceBetween('function manageAlbumsHTML(){', 'function wireManageAlbums(){');
@@ -130,13 +140,12 @@ console.log('[3] both places an empty Albums screen shows the way back');
     'and it is not one of the searchable rows, so a typed query cannot hide it');
 
   const wiring = sliceBetween('var _rbWire = bEl.querySelector', 'function refreshManageAlbums');
-  ok(wiring.length > 100, 'the panel button is wired');
-  ok(/rebuildAlbumsFromTags\(\)/.test(wiring), 'to the rebuild');
-  ok(/this\.dataset\.armed !== '1'/.test(wiring), 'armed on the first tap, like Delete beside it');
-  ok(/Tap again to rebuild/.test(wiring), 'with the second tap spelled out');
-  ok(/}, 4000\)/.test(wiring), 'and the arm expires on its own, like Delete');
-  ok(/_rbWire\._armedWired/.test(wiring), 'wired once, so a re-render cannot stack listeners');
+  ok(wiring.length > 100, 'the panel button is wired');  ok(/rebuildAlbumsFromTagsPrompt\(\)/.test(wiring), 'to the rebuild, through the sheet');
+  ok(/_rbWire\._rbWired/.test(wiring), 'wired once, so a re-render cannot stack listeners');
   ok(!/confirm\(/.test(wiring), 'and it does not lean on window.confirm()');
+  // 71.7 replaced the blind two-tap arm here with the sheet, which is the
+  // confirmation that says what it would make.
+  ok(/rebuildAlbumsFromTagsPrompt\(\)/.test(wiring), 'and it now opens the sheet rather than rebuilding blind');
 }
 
 console.log('[4] a restored backup sticks - an album out of your own backup is yours');

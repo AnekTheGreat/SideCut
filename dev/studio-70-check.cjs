@@ -1364,12 +1364,26 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(!!rebuildBtn, 'the empty Albums tab offers Rebuild albums from my songs');
     ok(!!rebuildBtn && /Rebuild albums/.test(rebuildBtn.textContent || ''),
       'and the button says what it does (' + ((rebuildBtn && rebuildBtn.textContent) || '') + ')');
-    const rbNote = rebuildBtn && rebuildBtn.nextElementSibling;
-    ok(!!rbNote && /album tag/i.test(rbNote.textContent || ''), 'with a line about where the albums come from');
+    // 71.7 put the backup restore next to it, because that is the copy that has
+    // the real albums, and the note under both says which is which.
+    const rbRestore = bdoc.getElementById('albRestoreBtn');
+    ok(!!rbRestore && /Restore from my backup/.test(rbRestore.textContent || ''),
+      'with the backup restore beside it');
+    const rbNote = bpane ? bpane.lastElementChild : null;
+    ok(!!rbNote && /backup/i.test(rbNote.textContent || ''),
+      'and a line saying which of the two has the albums that were there');
     ok(!!bpane && bpane.querySelectorAll('[data-album-name]').length === 0, 'and there is nothing in the grid yet');
 
     if (rebuildBtn) {
       rebuildBtn.click();
+      await wait(250);
+      // 71.7 - the button opens the sheet rather than rebuilding on the spot, so
+      // this taps the sheet's own primary button to get the rebuild.
+      const sheet = bdoc.getElementById('albRebuildSheet');
+      ok(!!sheet, 'and it opens the sheet that says what a rebuild would make');
+      const multiBtn = bdoc.getElementById('albRebuildMulti');
+      ok(!!multiBtn, 'whose primary button is the shared-tag albums');
+      if (multiBtn) multiBtn.click();
       await wait(400);
       const names = bwin.__scVisibleAlbumNames().slice().sort();
       ok(names.join(',') === 'Album 0,Album 1',
@@ -1423,6 +1437,114 @@ const realErrors = (errors) => errors.filter((e) =>
          bwin.__scGetUserAlbums()['Album 0'].trackIds.length === 6,
         'and the albums it made are untouched by it');
     }
+  }
+
+  console.log('[11q] a rebuild that cannot make one album per song, and the undo');
+  {
+    // 71.7. The owner's words after 71.6: "you made every single damn song be an
+    // album of it's own fix it and I need my songs in the correct order in albums
+    // and I'm missing songs inside of albums". The tag rebuild ran on one tap and
+    // took EVERY tag - on files whose album field holds the song's own name, that
+    // is one album per song. This case builds exactly that library and checks
+    // that the default can no longer touch it, that asking for all of them still
+    // works, and that one tap puts the albums back.
+    const c = boot('apk', {
+      userAlbums: { 'Kept Group': { artist: 'Someone', trackIds: ['t1'], createdAt: 1, manual: true } },
+    });
+    await wait(1500);
+    const cwin = c.win;
+    const cdoc = cwin.document;
+    const tracks = cwin.__scGetAllTracks();
+    const byId = {};
+    tracks.forEach((t) => { byId[t.id] = t; });
+    ['t1', 't2', 't3', 't4'].forEach((id) => { byId[id].album = 'Record A'; });
+    ['t5', 't6', 't7', 't8'].forEach((id) => { byId[id].album = 'Record B'; });
+    ['t9', 't10', 't11', 't12'].forEach((id) => { byId[id].album = 'Song ' + id.slice(1); });
+
+    const plan = cwin.__scAlbumRebuildPlan();
+    ok(plan.tags.length === 6, 'the songs carry six album tags (' + plan.tags.length + ')');
+    ok(plan.multi === 2 && plan.single === 4,
+      'two of them on several songs and four on one (' + plan.multi + ' / ' + plan.single + ')');
+
+    // The sheet, and what it offers to make.
+    cwin.__scAlbumRebuildPrompt();
+    await wait(150);
+    const sheet = cdoc.getElementById('albRebuildSheet');
+    ok(!!sheet, 'the rebuild opens a sheet before it does anything');
+    ok(!!sheet && /6<\/b> album tags/.test(sheet.innerHTML), 'which counts the tags on the songs');
+    ok(!!sheet && /2<\/b> appear on more than one song/.test(sheet.innerHTML), 'and the ones on several songs');
+    ok(!!sheet && /one album per song/.test(sheet.innerHTML), 'and says what the per-song tags are');
+    const multiBtn = cdoc.getElementById('albRebuildMulti');
+    const allBtn = cdoc.getElementById('albRebuildAll');
+    ok(!!multiBtn && /Rebuild the 2 albums/.test(multiBtn.textContent || ''),
+      'the primary button names the two albums it would make (' + ((multiBtn && multiBtn.textContent) || '') + ')');
+    ok(!!allBtn && /Rebuild all 6/.test(allBtn.textContent || ''), 'the second offers every tag, spelled out');
+    cdoc.getElementById('albRebuildCancel').click();
+    await wait(150);
+    ok(!cdoc.getElementById('albRebuildSheet'), 'cancelling closes the sheet');
+    ok(cwin.__scVisibleAlbumNames().slice().sort().join(',') === 'Kept Group', 'and makes no album at all');
+
+    // The default: only the shared tags.
+    const added = cwin.__scRebuildAlbumsFromTags();
+    await wait(400);
+    ok(added === 2, 'the default rebuild makes two albums (' + added + ')');
+    const names = cwin.__scVisibleAlbumNames().slice().sort();
+    ok(names.join(',') === 'Kept Group,Record A,Record B', 'one per shared tag (' + names.join(',') + ')');
+    ok(names.every((n) => !/^Song \d+$/.test(n)), 'and not one album per song, which is what it used to do');
+    const albs = cwin.__scGetUserAlbums();
+    ok(albs['Record A'].trackIds.join(',') === 't2,t3,t4',
+      'the songs already in another album are left where they are (' + albs['Record A'].trackIds.join(',') + ')');
+    ok(albs['Kept Group'].trackIds.join(',') === 't1', 'so the album that was there keeps its own song');
+    ok(!!cwin.__scAlbumUndoAvailable(), 'and an undo point is waiting');
+
+    // Asking for every tag still works - and is what the undo has to cover.
+    cwin.__scAlbumRebuildPrompt();
+    await wait(150);
+    cdoc.getElementById('albRebuildAll').click();
+    await wait(400);
+    ok(cwin.__scVisibleAlbumNames().length === 7,
+      'asking for all of them rebuilds every tag (' + cwin.__scVisibleAlbumNames().length + ')');
+
+    // The panel's own buttons, and the undo taken through the one that is really
+    // there - so this covers the markup and the wiring as well as the function.
+    // A rebuild re-renders Manage albums itself (`refreshManageAlbums(true)`), so
+    // the panel is already on screen; nothing here has to reach a private opener.
+    await wait(200);
+    const panelBody = cdoc.getElementById('discPopupBody');
+    ok(!!panelBody && !!cdoc.getElementById('mgrAlbumRebuild'), 'Manage albums offers the rebuild');
+    ok(!!cdoc.getElementById('mgrAlbumUndo'), 'and an undo, while a rebuild is really undoable');
+    ok(!!cdoc.getElementById('mgrAlbumRestore'), 'and the backup restore beside them');
+    ok(!!panelBody && /Undo the last rebuild/.test(panelBody.textContent || ''), 'with the undo spelled out');
+    ok(!!panelBody && /names, songs and their order/.test(panelBody.textContent || ''),
+      'and a line saying what the backup brings back that a tag cannot');
+
+    // One tap back: the state before the FIRST rebuild, not before the second.
+    ok(!!cdoc.getElementById('mgrAlbumUndo'), 'the undo button is there to tap');
+    cdoc.getElementById('mgrAlbumUndo').click();
+    await wait(400);
+    ok(cwin.__scVisibleAlbumNames().slice().sort().join(',') === 'Kept Group',
+      'and it is the list from before the first rebuild (' + cwin.__scVisibleAlbumNames().join(',') + ')');
+    ok(cwin.__scGetUserAlbums()['Kept Group'].trackIds.join(',') === 't1', 'with its songs exactly as they were');
+    ok(cwin.__scAlbumUndoAvailable() === null, 'the undo point is spent once it is used');
+
+    // And with nothing but per-song tags, the default refuses instead of making
+    // the library again wearing album cards.
+    tracks.forEach((t) => { t.album = 'Solo ' + t.id; });
+    const none = cwin.__scRebuildAlbumsFromTags();
+    await wait(250);
+    ok(none === 0, 'with only per-song tags the default makes nothing at all');
+    ok(cwin.__scVisibleAlbumNames().slice().sort().join(',') === 'Kept Group', 'and leaves the albums alone');
+    ok(cwin.__scAlbumUndoAvailable() === null, 'without arming an undo point for a rebuild it did not do');
+
+    // And the import's third chance at a song, which is what "I'm missing songs
+    // inside of albums" comes from: the content key the importer matches on is
+    // name + artist + duration, so one that missed is looked up by the name the
+    // backup recorded, before being dropped out of its album.
+    ok(cwin.__scAlbumFindByTitle('song 1', 'ARTIST 1') === 't1',
+      'a title that differs only in case still finds its song');
+    ok(cwin.__scAlbumFindByTitle('Song 1', 'Nobody At All') === 't1',
+      'and the artist fallback keeps a song whose artist was retagged');
+    ok(cwin.__scAlbumFindByTitle('Not A Song At All', '') === null, 'while a name that is not here matches nothing');
   }
 
   console.log('[12] the page still holds together');
