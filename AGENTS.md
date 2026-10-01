@@ -1,6 +1,75 @@
 # SideCut — repository memory
 
 
+## 71.6 (Oct 1, 2026): the albums come back from the tags on the songs, and a restored backup sticks
+- **The user's words**: "Why did all of my albums disappear" - answered "Where: Library → Albums tab AND Manage albums",
+  "Songs: All my songs are still there", "Toast: No / I don't remember", "Backup: Yes, I have an export .zip", and the
+  line that settles it: **"It's purely because of the apk because on the play version my albums are still there"**.
+- **THE CAUSE — 63.1.4's one-time cleanup running for the FIRST time, which is exactly what a freshly installed APK does.**
+  Albums in this app used to be entries the app wrote for itself (the old card-drag auto-save, or a tag album materialised
+  so a reorder had somewhere to live), marked `auto: true`. `removeAutoAlbums()` runs at **every** launch (index.html ~29132)
+  and deletes every entry where `albumIsAuto(name)` = `e.auto === true && e.manual !== true`, then toasts "N album(s) the app
+  had added on its own were removed — your songs and their album tags are untouched" (3s after boot, 7s long - missable).
+  **Nothing in the current code writes `auto: true` any more**, so the only way a library still holds such entries is that
+  it has never run the sweep: an APK older than 63.1.4. The changelog entry for 63.1.4 says it outright: *"Those entries are
+  deleted on the first launch after this update, not hidden."* Songs, playlists and the album TAGS on the files were never
+  touched - **only the entries** - and that is the whole reason this release can put them back. The `play` install kept its
+  albums because it was still the old APK, so the sweep had never run there.
+- **1. THE REBUILD (`rebuildAlbumsFromTags()`)** - one album per album tag on the songs, in the order the songs carry it.
+  The tags are grouped off `allTracks` (`String(t.album||'').trim()`, empty skipped, each tag once), a tag that already has
+  an album is `markAlbumManual()`-ed instead of duplicated, and a tag with none goes through **`ensureAlbumSaved(tag)`** -
+  which is why the no-stealing rule and `manual: true` come for free. New names go on the END of `albumOrder` (never key
+  order: a name like "2003" cannot hold a position), then both meta rows are written, `renderList()` and
+  `refreshManageAlbums(true)` run, and the count is toasted. **It only ever ADDS**: it never deletes an album, never empties
+  or splices a track list, and never calls `persistTrackMeta`/`buildTrackRecord`, so no song is renamed or re-tagged.
+- **2. THE WAY BACK IS IN BOTH PLACES AN EMPTY SCREEN SHOWS.** `#albRebuildBtn` in the empty Albums tab (added in the
+  `if(!ids.length)` branch of `renderList`, guarded by `if(libraryMode === 'albums')` so an empty playlist does not grow a
+  button it has no business having), and `#mgrAlbumRebuild` in Manage albums. **The panel block (`var _rebuild`) is declared
+  ONCE and used by both branches** - emitting it twice declares `_rebuild` twice - and it sits OUTSIDE the `.mgr-alb-row`
+  rows on purpose, because the search box hides those by class and the way back must not vanish under a typed query. The
+  panel button arms on the first tap ("Tap again to rebuild", 4s) exactly like Delete above it: **never `window.confirm()`
+  in this panel** - the Android WebView can silently swallow it.
+- **3. A RESTORE STICKS — `scAlbumsMarkOurs(albs)`** sets `manual = true` and `delete e.auto` on every entry. Without it the
+  old marker rides in with the backup and the next launch's sweep deletes the album that was just restored - which is what
+  *"an imported album keeps whatever marker it came with, and the next boot settles it"* (a comment in the .zip import)
+  used to mean, and why restoring a backup looked like it had brought nothing back. It is now called on **all three paths
+  that can bring an album in**: the .zip import merge (`userAlbums = _albMerged;`), `__scSnapHydrate` (`state.meta.userAlbums`,
+  the "import everything" path), and `__scSnapRestore` (`snap.meta.userAlbums`, the on-device hydrate after a wipe) - each
+  BEFORE it writes a single row.
+- **THE SWEEP IS NOT LOOSENED, and must not be.** `albumIsAuto` still requires `auto === true && manual !== true` and
+  `removeAutoAlbums()` still takes nothing else. The fix is the marker plus the way back, not a weaker cleanup; an entry the
+  app made for itself is still the one that goes.
+- **SCOPE LESSON (why `scAlbumsMarkOurs` is a top-level `function`).** The snapshot block (`(function(){ ... })()` at ~12074)
+  and the album helpers (~21940) look like separate scopes but are both inside the ONE script block that starts at line 4984,
+  so a hoisted function declaration in it is visible to both. **`dev/studio-70-check.cjs` [11p] proves it by DRIVING the
+  hydrate and reading the row it wrote**, instead of trusting a source grep - the guard `typeof x === 'function'` would
+  have failed silently here.
+- **`dev/patch-716.mjs` (11 edits) / `dev/repin-716.mjs` (31 edits / 22 files) / `dev/test-716.mjs` (82 checks)**: `APP_VERSION`
+  **71.5 -> 71.6**, stamp `October 1, 2026 \u00b7 6:59 AM EDT`, shell cache **`v63.0.51 -> v63.0.52`**, a **7-note** head
+  (six ride to Play and are clean of the wider word list; note 7 is past the cut). Notes carry **no apostrophes** - they are
+  emitted inside single quotes - and `test-716.mjs` pins that.
+- **PATCH-KEY GOTCHA, ONE MORE TIME**: `scAlbumsMarkOurs(userAlbums);` is NOT usable as a `sub()` key because sub 1a puts
+  that exact call inside `rebuildAlbumsFromTags()` earlier in the same run - the key would match text this run added, skip
+  the sub silently, and `--check` would still look clean. The key is a fragment only that sub emits.
+- **REPIN LESSON — A GATE'S CONTENT CHECKS MUST BE KEYED TO ITS OWN RELEASE.** `test-715.mjs` reads `entries[0]` for its
+  head checks, and two of them are about what **71.5's** notes SAY (`/widget/`, `/heartbeat|bars/`). VER moves every release,
+  so those two now look the 71.5 entry up by version through a new **`const OWN = '71.5'`** - deliberately not a
+  `const VER`/`{ version: … }` shape, so the repin sweep leaves it alone. `PREV_MOVES` gained
+  `['test-715.mjs', ['71.4', '71.5']]` alongside test-713 and test-714 (which moved 71.4 -> 71.5 in the same sweep).
+- **OTA fixed point 847440 -> `850021` (play `850029`)**, verified byte-identical on a second generation (`md5sum -c` over
+  all eight artifacts) with both `ota-bundle.mjs --check` and `ota-bundle-play.mjs --check` OK (6 notes each).
+- **THE OWNER'S OWN RECOVERY, worth telling them**: their `play` install still had the album entries, so a fresh Export
+  .zip from THAT install is the only copy of the original names/order/covers - and with this release that zip now imports
+  and stays. `dev/album-rename-check.cjs` / `dev/albums-manual-check.cjs` / `dev/album-hold-check.cjs` are the album gates.
+- **VERIFIED**: test-716 **82**, studio-70-check **332** ([11p] is the new case; `fakeIndexedDB(seedMeta)` and
+  `boot(mode, seedMeta)` are the new plumbing), test-70 **182**, test-715 **72**, test-714 **137**, test-713 **50**,
+  test-widget-anim **18**, test-widget-dim pass, test-662 75, test-663 49, test-6641 128, test-6642 75, test-66421 49,
+  test-6643 90, test-66429 83, test-play-copy 28, test-6056 48, test-619 55, album-rename-check 40, albums-manual-check 40,
+  check-dom DOM INTEGRITY FAILURES 0, ota-guard 20, ota-bootapply 24, ota-loop 26 (slow - give it the full 180s),
+  ota-update 52, ota-bundle/-play `--check` OK. Pre-existing and unchanged: `test-705` **223/7**, `batch-635-check.cjs` 35/7,
+  `test-6058.mjs` 47/1, check-dom's critical static ids 2/6.
+
+
 ## 71.5 (Sep 30, 2026): the widget heartbeat is slower, and a switch hides it for good
 - **The user's words**: "This heartbeat is way too fast in the widgit and it's it necessary like is their a way to hide it
   like I don't see other widgits have it" (with a screenshot of the **SideCut Full** widget: cover art, `Ashke` /

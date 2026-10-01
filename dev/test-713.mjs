@@ -21,9 +21,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const ota = fs.readFileSync(path.join(ROOT, 'dev', 'native-updates.js'), 'utf8');
 
-const VER = '71.5'; /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
-const PREV = '71.4'; /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
-const SHELL_CACHE = 'sidecut-shell-v63.0.51';
+const VER = '71.6'; /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
+const PREV = '71.5'; /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
+const SHELL_CACHE = 'sidecut-shell-v63.0.52';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };

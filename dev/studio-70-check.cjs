@@ -155,7 +155,10 @@ for (let i = 1; i <= 12; i++) {
 // cleaner would read 13. buildTracks(win) fills TRACKS in beforeParse.
 const PLAYLISTS = { 'All Songs': TRACK_META.map((t) => t.id), Favorites: ['t3', 't4'] };
 
-function fakeIndexedDB() {
+// 71.6. `seedMeta` is the boot's stored settings, for the cases that have to
+// start from a library with something already in it - [11p] boots one whose
+// albums were taken by the 63.1.4 sweep and whose tags are still on the songs.
+function fakeIndexedDB(seedMeta) {
   const data = {
     tracks: new Map(TRACKS.map((t) => [t.id, t])),
     meta: new Map([
@@ -163,6 +166,7 @@ function fakeIndexedDB() {
       ['stats', { key: 'stats', value: { totalListenSeconds: 100 * 3600, totalPlays: 1234 } }],
     ]),
   };
+  for (const k of Object.keys(seedMeta || {})) data.meta.set(k, { key: k, value: seedMeta[k] });
   function tx(store) {
     const t = { oncomplete: null, onerror: null, onabort: null, error: null };
     const fire = () => setTimeout(() => { try { t.oncomplete && t.oncomplete(); } catch (e) {} }, 0);
@@ -226,7 +230,7 @@ function stripsLastId(strip) {
   return kids.length ? kids[kids.length - 1].id : "";
 }
 
-function boot(mode) {
+function boot(mode, seedMeta) {
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', (e) => errors.push('' + (e && e.message)));
@@ -248,7 +252,7 @@ function boot(mode) {
       win.HTMLMediaElement.prototype.load = function () {};
       // BEFORE the fake database is built: it copies the track list at call time.
       buildTracks(win);
-      win.indexedDB = fakeIndexedDB();
+      win.indexedDB = fakeIndexedDB(seedMeta);
       win.AudioContext = FakeAudioContext;
       win.webkitAudioContext = FakeAudioContext;
       // jsdom has no object URLs, and the library load is what asks for one per
@@ -1322,6 +1326,102 @@ const realErrors = (errors) => errors.filter((e) =>
       ok(String(wwin.localStorage.getItem('sidecut_widgetBars')) === '1', 'with the stored answer following');
       ok(/border-radius:2px/.test(wdoc.getElementById('widgetThemePreview').innerHTML),
         'and the preview drawing them again');
+    }
+  }
+
+  console.log('[11p] the albums the cleanup took, rebuilt from the tags on the songs');
+  {
+    // 71.6. The owner's words: "Why did all of my albums disappear" - answered
+    // "Library > Albums tab AND Manage albums", "All my songs are still there",
+    // "It's purely because of the apk because on the play version my albums are
+    // still there". That is 63.1.4's sweep running for the first time on a newly
+    // installed APK: it deletes album ENTRIES older builds wrote for themselves,
+    // and never a tag on a file. So this case boots exactly that library - the
+    // tags are on the songs, one app-created entry is still in the store - and
+    // then drives the way back the release adds.
+    const b = boot('apk', {
+      userAlbums: { 'Album 1': { artist: 'Artist 1', trackIds: ['t1'], createdAt: 1, auto: true } },
+    });
+    await wait(1500);
+    const bwin = b.win;
+    const bdoc = bwin.document;
+
+    ok(bwin.__scGetAllTracks().length === 12, 'the songs are all still there, as they were on the phone');
+    ok(bwin.__scVisibleAlbumNames().length === 0,
+      'and the launch sweep has taken the app-created album, exactly as it did on the new APK (' +
+      bwin.__scVisibleAlbumNames().join(',') + ')');
+    ok(bwin.__scAutoAlbumNames().length === 0, 'with nothing left for it to take a second time');
+    ok(bwin.__scGetAllTracks().every((t) => String(t.album || '') === 'Album 0' || String(t.album || '') === 'Album 1'),
+      'and every song still carries its album tag - which is what the way back reads');
+
+    // The way back, where anyone whose albums disappeared looks first.
+    bwin.navigate('albums');
+    await wait(300);
+    try { bwin.renderList(); } catch (e) {}
+    await wait(250);
+    const bpane = bdoc.getElementById('listPane');
+    const rebuildBtn = bdoc.getElementById('albRebuildBtn');
+    ok(!!rebuildBtn, 'the empty Albums tab offers Rebuild albums from my songs');
+    ok(!!rebuildBtn && /Rebuild albums/.test(rebuildBtn.textContent || ''),
+      'and the button says what it does (' + ((rebuildBtn && rebuildBtn.textContent) || '') + ')');
+    const rbNote = rebuildBtn && rebuildBtn.nextElementSibling;
+    ok(!!rbNote && /album tag/i.test(rbNote.textContent || ''), 'with a line about where the albums come from');
+    ok(!!bpane && bpane.querySelectorAll('[data-album-name]').length === 0, 'and there is nothing in the grid yet');
+
+    if (rebuildBtn) {
+      rebuildBtn.click();
+      await wait(400);
+      const names = bwin.__scVisibleAlbumNames().slice().sort();
+      ok(names.join(',') === 'Album 0,Album 1',
+        'tapping it makes one album per album tag on the songs (' + names.join(',') + ')');
+      const albs = bwin.__scGetUserAlbums();
+      ok(!!albs['Album 0'] && albs['Album 0'].trackIds.length === 6,
+        'and the first one holds the six songs that carry its tag (' +
+        ((albs['Album 0'] && albs['Album 0'].trackIds.length) || 0) + ')');
+      ok(!!albs['Album 1'] && albs['Album 1'].trackIds.length === 6, 'and so does the other');
+      ok(!!albs['Album 0'] && albs['Album 0'].manual === true && albs['Album 0'].auto === undefined,
+        'each one is marked as yours, which is the mark the sweep never touches');
+      ok(bwin.__scRemoveAutoAlbums() === 0 && bwin.__scVisibleAlbumNames().length === 2,
+        'so the next launch sweep finds nothing to take, and they survive it');
+      ok(bwin.__scGetAllTracks().every((t) => String(t.album || '') === 'Album 0' || String(t.album || '') === 'Album 1'),
+        'and not one song was re-tagged by the rebuild');
+      const cards = bpane.querySelectorAll('[data-album-name]');
+      ok(cards.length === 2, 'the Albums tab draws them as cards (' + cards.length + ')');
+      ok(Array.from(cards).map((c) => c.dataset.albumName).sort().join(',') === 'Album 0,Album 1',
+        'under their own names');
+      ok(!bdoc.getElementById('albRebuildBtn'), 'and the button is gone, because the screen is not empty any more');
+      // And the restore half of the release: an album out of your OWN backup
+      // must not arrive wearing the marker the sweep looks for. These hydrate
+      // paths live in a different block of the same page, so the helper has to
+      // resolve where they run - which is why this drives the hydrate for real
+      // and reads the row it wrote, instead of reading the source.
+      await bwin.__scSnapHydrate({
+        v: 1,
+        localStorage: {},
+        meta: { userAlbums: { 'Backup Album': { artist: 'Someone', trackIds: ['t2'], createdAt: 2, auto: true } } },
+      });
+      await wait(250);
+      const storedRow = await new Promise((res) => {
+        const req = bwin.indexedDB.open('sidecut_local_db', 1);
+        req.onsuccess = () => {
+          const tx = req.result.transaction('meta');
+          const q = tx.objectStore('meta').get('userAlbums');
+          q.onsuccess = () => res(q.result);
+        };
+      });
+      const backAlb = storedRow && storedRow.value && storedRow.value['Backup Album'];
+      ok(!!backAlb, 'a full-state restore still writes the albums it brought');
+      ok(!!backAlb && backAlb.manual === true && backAlb.auto === undefined,
+        'and they arrive marked as yours, not as the app\'s own');
+      ok(!!backAlb && backAlb.trackIds.join(',') === 't2', 'with their songs left exactly as the backup had them');
+
+      // A second run is a no-op: nothing is duplicated and nothing is lost.
+      const again = bwin.__scRebuildAlbumsFromTags();
+      await wait(150);
+      ok(again === 0, 'asking again has nothing left to rebuild');
+      ok(bwin.__scVisibleAlbumNames().length === 2 &&
+         bwin.__scGetUserAlbums()['Album 0'].trackIds.length === 6,
+        'and the albums it made are untouched by it');
     }
   }
 

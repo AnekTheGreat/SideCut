@@ -28,9 +28,13 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const py = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '71.5'; /* repinned by dev/repin-715.mjs */
-const PREV = '71.4';
-const SHELL_CACHE = 'sidecut-shell-v63.0.51';
+const VER = '71.6'; /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */
+const PREV = '71.5'; /* repinned by dev/repin-716.mjs */
+// The release this gate DESCRIBES, which never moves. A check on what 71.5's
+// notes SAY has to look them up, because VER moves with every release and the
+// head entry with it.
+const OWN = '71.5';
+const SHELL_CACHE = 'sidecut-shell-v63.0.52';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -63,8 +67,15 @@ console.log('[1] release metadata');
     ok(/(studio|player|dock|premium|license)/i.test(notes), 'the notes name a surface this app really has');
     ok(items.every((it) => it.indexOf('[FULL]') === -1), 'every note publishes on both channels');
     ok(!/stripe/i.test(items.slice(0, 6).join('\n')), 'and the first six name no card page');
-    ok(/widget/i.test(notes), 'the notes actually talk about the widget');
-    ok(/heartbeat|bars/i.test(notes), 'and name the thing that was too fast');
+    // 71.6 - these two read THIS release's entry, not the head. VER moves with
+    // every release (the gate runs on whatever the app is now); what 71.5's
+    // notes SAY does not move, so they are looked up by version. OWN is
+    // deliberately not a `const VER`/`{ version: … }` pin, so the repin sweep
+    // leaves it alone.
+    const own = entries.find((e) => String(e.version) === OWN) || head;
+    const ownNotes = (own.items || []).join('\n');
+    ok(/widget/i.test(ownNotes), 'the notes actually talk about the widget');
+    ok(/heartbeat|bars/i.test(ownNotes), 'and name the thing that was too fast');
   }
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(swCache === SHELL_CACHE, 'the service worker cache moves on for the shell that shipped (' + swCache + ')');

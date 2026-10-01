@@ -11988,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '71.5';
+  const APP_VERSION = '71.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12341,6 +12341,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
           }
         }
         if(metaWiped && snap.meta){
+          // 71.6 - same rule as the .zip import. A library that survived a wipe
+          // by being restored must not be deleted by the very next launch.
+          try{ if(snap.meta.userAlbums) snap.meta.userAlbums = scAlbumsMarkOurs(snap.meta.userAlbums); }catch(_eMark){}
           for(var mk in snap.meta){
             try{ await dbPut('meta', { key: mk, value: snap.meta[mk] }); }catch(e){}
           }
@@ -12383,6 +12386,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
         for(var k in state.localStorage){ try{ localStorage.setItem(k, state.localStorage[k]); }catch(e){} }
       }
       if(state.meta){
+        // 71.6 - an album restored out of a backup is yours; the marker the app
+        // put on the entries it made for ITSELF must not survive the trip, or
+        // the next launch's sweep deletes what this restore just put back.
+        try{ if(state.meta.userAlbums) state.meta.userAlbums = scAlbumsMarkOurs(state.meta.userAlbums); }catch(_eMark){}
         for(var mk in state.meta){ try{ await dbPut('meta', { key: mk, value: state.meta[mk] }); }catch(e){} }
         // 70.1.5 - the row is not the streak on its own: the session computes it
         // from the Set. Hand the restored values over with the rows.
@@ -12458,6 +12465,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '71.6', date: 'October 1, 2026 \u00b7 6:59 AM EDT', title: 'The albums the cleanup took can be rebuilt from the album tags on your songs, and a restored backup finally sticks', items: [
+    'The Albums tab has a way back. A blank Albums screen now offers Rebuild albums from my songs, and Manage albums carries the same button: one album for every album tag on your files, in the order the songs carry it.',
+    'It only ever adds. A song another album already holds is left where it is, no song is renamed, re-tagged or removed, and an album you already have keeps its songs, its own order and its artist exactly as they were.',
+    'Everything the rebuild makes - and every album it meets - is marked as yours, which is the one mark the launch cleanup never touches. That is what stops an album it put back from being taken a second time.',
+    'A restored backup sticks now. An album that arrived with your export .zip, or from the copy the app keeps on the device, used to keep the mark the app had put on the entries it made for itself - and the next launch deleted it, so a restore looked like it had brought nothing back.',
+    'The player is untouched: the dock, the queue, your playlists, your covers and every saved song behave exactly as they did before this release.',
+    'Nothing here rewrites your music. No stored track, cover or playlist changes, and the album tags on your files are simply the source the rebuild reads.',
+    'And the cleanup itself was never wrong about your songs: it removed entries the app had made for itself, and it never touched a tag on a file. That is why a library whose albums were all app-created can be put back from the songs, entry for entry, without a backup at all.',
+  ] },
   { version: '71.5', date: 'September 30, 2026 · 10:15 PM EDT', title: 'The widget heartbeat slows to a calm once-a-beat pulse and gains a switch to hide it', items: [
     'The widget heartbeat is slower. The little bars beside the artist used to step through their wave about twice a second, which read as a fast blink; they now step once a beat, so the widget breathes instead of strobing.',
     'And you can hide them. Settings > Widget has a Playing bars switch: turn it off and the bars are gone from every widget you have placed, and the redraw loop behind them stops too - so a hidden heartbeat costs no battery at all.',
@@ -20062,6 +20078,23 @@ function _fallbackCopy(text){
         ? 'No albums yet — select songs and choose Create album, or use ⋮ → Add to albums on any song.'
         : (isAllSongs ? 'Add some songs using the button up top.' : 'This playlist is empty. Add tracks from "All Songs".');
       pane.appendChild(empty);
+      // 71.6 - an empty Albums tab is where anyone whose albums were taken looks
+      // first, so the way back belongs here too, not only in Manage albums. The
+      // tags are still on the songs; this turns them into albums again. It only
+      // ever adds, so there is nothing to warn about.
+      if(libraryMode === 'albums'){
+        const _rbBtn = document.createElement('button');
+        _rbBtn.id = 'albRebuildBtn';
+        _rbBtn.className = 'playlist-pick-btn';
+        _rbBtn.style.cssText = 'width:100%; text-align:center; margin-top:10px; border-color:var(--coral); color:var(--coral);';
+        _rbBtn.textContent = 'Rebuild albums from my songs';
+        _rbBtn.addEventListener('click', function(){ try{ rebuildAlbumsFromTags(); }catch(_eRb){} });
+        pane.appendChild(_rbBtn);
+        const _rbNote = document.createElement('div');
+        _rbNote.style.cssText = 'font-size:11px; color:var(--ink-dim); margin-top:10px; line-height:1.55; text-align:center;';
+        _rbNote.textContent = 'One album for every album tag on your files. No song is moved, renamed or re-tagged by it.';
+        pane.appendChild(_rbNote);
+      }
       return;
     }
 
@@ -20786,7 +20819,11 @@ function _fallbackCopy(text){
     // markup rather than injected at open time, because the panel is re-rendered
     // in place after every rename and every delete.
     var names = (typeof visibleAlbumNames === 'function') ? visibleAlbumNames() : Object.keys(userAlbums || {});
-    if(!names.length) return '<div class="dp-empty">No albums yet.</div>';
+    var _rebuild = '<div style="padding:14px 2px 2px; border-top:1px solid var(--line); margin-top:8px;">'
+      + '<button id="mgrAlbumRebuild" style="width:100%; padding:10px; border-radius:10px; border:1px solid var(--line); background:none; color:var(--coral); font-size:12.5px; font-weight:700; cursor:pointer;">Rebuild albums from my songs</button>'
+      + '<div style="font-size:11px; color:var(--ink-dim); margin-top:8px; line-height:1.55;">One album for every album tag on your files. Nothing is taken from a song and no album you already have is changed.</div>'
+      + '</div>';
+    if(!names.length) return '<div class="dp-empty">No albums yet.</div>' + _rebuild;
     var html = '<div style="padding:12px;">';
     html += '<div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border:1px solid var(--line);border-radius:10px;padding:8px 12px;">';
     html += '<span style="color:var(--ink-dim);font-size:13px;">\ud83d\udd0d</span>';
@@ -20812,6 +20849,7 @@ function _fallbackCopy(text){
       html += '</div>';
     });
     html += '<div id="mgrAlbumNoMatch" class="dp-empty" style="display:none;">No album matches that search.</div>';
+    html += _rebuild;
     html += '</div>';
     return html;
   }
@@ -20907,6 +20945,28 @@ function _fallbackCopy(text){
         }, 4000);
       });
     });
+    // 71.6 - Rebuild, armed on the first tap like Delete above.
+    var _rbWire = bEl.querySelector('#mgrAlbumRebuild');
+    if(_rbWire && !_rbWire._armedWired){
+      _rbWire._armedWired = true;
+      _rbWire.addEventListener('click', function(e){
+        e.stopPropagation();
+        if(this.dataset.armed !== '1'){
+          this.dataset.armed = '1';
+          this.textContent = 'Tap again to rebuild';
+          var _self = this;
+          setTimeout(function(){
+            if(_self.dataset.armed !== '1') return;
+            _self.dataset.armed = '';
+            _self.textContent = 'Rebuild albums from my songs';
+          }, 4000);
+          return;
+        }
+        this.dataset.armed = '';
+        this.textContent = 'Rebuild albums from my songs';
+        try{ rebuildAlbumsFromTags(); }catch(_eRb){}
+      });
+    }
   }
   function refreshManageAlbums(keepQuery){
     if(!keepQuery) _mgrAlbumQuery = '';   // a fresh open starts unfiltered
@@ -21958,6 +22018,80 @@ function _fallbackCopy(text){
   function autoAlbumNames(){
     return Object.keys(userAlbums || {}).filter(function(n){ return albumIsAuto(n); });
   }
+  // ---- 71.6 - the albums the cleanup took, rebuilt from the tags -----------
+  // 63.1.4 deleted the album entries older builds had written for themselves.
+  // It deleted ENTRIES, never songs, and never a tag on a file - every one of
+  // those albums was a copy of an album tag that is still on the songs. That is
+  // what makes them rebuildable, and this is the pass that does it.
+  //
+  // scAlbumsMarkOurs() is the other half. An album that arrives with a backup or
+  // an on-device restore came out of YOUR library, so it leaves with the mark
+  // that says so. Without this the old "auto" marker rides in with the backup
+  // and the next launch's sweep deletes the album that was just restored - a
+  // restore that looks like it brought nothing back.
+  function scAlbumsMarkOurs(albs){
+    try{
+      Object.keys(albs || {}).forEach(function(n){
+        var e = albs[n];
+        if(!e || typeof e !== 'object') return;
+        e.manual = true;
+        delete e.auto;
+      });
+    }catch(_eMark){}
+    return albs;
+  }
+  window.__scAlbumsMarkOurs = scAlbumsMarkOurs;
+
+  // One album per album tag on the files, in the order the songs carry it. A tag
+  // that already has an album is left alone (and stamped as yours, so it cannot
+  // be swept); a tag with no album gets one, taking only the songs no other
+  // album has claimed - the same no-stealing rule ensureAlbumSaved() documents.
+  // Additive, always: nothing here ever removes a song from an album.
+  function rebuildAlbumsFromTags(){
+    var tags = [], seen = {};
+    allTracks.forEach(function(t){
+      if(!t) return;
+      var tag = String(t.album || '').trim();
+      if(!tag || seen[tag]) return;
+      seen[tag] = 1;
+      tags.push(tag);
+    });
+    if(!tags.length){
+      toast('None of your songs carry an album tag, so there is nothing to rebuild from.', 4500);
+      return 0;
+    }
+    var added = 0, met = 0;
+    tags.forEach(function(tag){
+      if(userAlbums[tag]){ markAlbumManual(tag); met++; return; }
+      try{ if(ensureAlbumSaved(tag)) added++; }catch(_eSave){}
+    });
+    scAlbumsMarkOurs(userAlbums);
+    if(added){
+      // The new names go on the END of your order. Falling back to key order
+      // would put a name like "2003" wherever the language hoists it, which is
+      // the one thing an explicit order exists to prevent.
+      tags.forEach(function(tag){
+        if(userAlbums[tag] && albumOrder.indexOf(tag) === -1) albumOrder.push(tag);
+      });
+      try{ dbPut('meta', { key: 'albumOrder', value: albumOrder }); }catch(_eOrder){}
+    }
+    // ensureAlbumSaved() writes a row per album it makes; this covers the marks.
+    try{ dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(_eRow){}
+    try{ renderList(); }catch(_eRl){}
+    try{ refreshManageAlbums(true); }catch(_eMg){}
+    var total = 0;
+    try{ total = visibleAlbumNames().length; }catch(_eTot){}
+    if(added){
+      toast('Rebuilt ' + added + ' album' + (added === 1 ? '' : 's') + ' from the tags on your songs - ' + total + ' in your library now.', 5000);
+      setTimeout(function(){ try{ toast(met ? (met + ' album' + (met === 1 ? '' : 's') + ' you already had were left exactly as they were.') : 'Your album tags are what it read - nothing on a file was changed.', 5000); }catch(_eT2){} }, 2600);
+    } else {
+      toast(met
+        ? ('Nothing to rebuild - all ' + met + ' album tags on your songs already have their album.')
+        : 'Nothing to rebuild yet.', 4500);
+    }
+    return added;
+  }
+  window.__scRebuildAlbumsFromTags = rebuildAlbumsFromTags;
   // ---- The albums the app added for you are deleted, not hidden ------------
   // Older builds wrote album entries by themselves (a card-drag auto-save, or a
   // tag album materialised so a reorder had somewhere to live) and kept them out
@@ -24280,9 +24414,12 @@ function _fallbackCopy(text){
           if(touched) e.trackIds = mapped;
         });
         userAlbums = _albMerged;
+        // 71.6 - every album that came out of this backup is one of yours, so
+        // the app's own old marker comes off it here. Left on, that marker is
+        // what the next launch's sweep deletes: the import restored the albums
+        // and then the relaunch took them away again.
+        try{ scAlbumsMarkOurs(userAlbums); }catch(_eMark){}
         dbPut('meta', { key: 'userAlbums', value: userAlbums });
-        // (No album-flag pass to fend off any more: an imported album keeps
-        // whatever marker it came with, and the next boot settles it.)
         try{
           var _aoRow = await dbGet('meta', 'albumOrder');
           if(_aoRow && Array.isArray(_aoRow.value) && _aoRow.value.length && (!Array.isArray(albumOrder) || !albumOrder.length)) albumOrder = _aoRow.value;
