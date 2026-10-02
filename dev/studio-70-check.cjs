@@ -379,8 +379,10 @@ const realErrors = (errors) => errors.filter((e) =>
     // 71.4: nine. The edit rack joined the row for the pro-editing pass - trim,
     // fades, level, reverse and a saved copy - and again nothing was traded away
     // for it.
-    ok(tools.length === 9, 'nine tool cards (' + tools.join(',') + ')');
-    ['crop', 'clip', 'edit', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
+    // 72.2: ten. The clean-up joined the row - the rack's silence trim and level
+    // match with the knobs already set - and again nothing was traded away for it.
+    ok(tools.length === 10, 'ten tool cards (' + tools.join(',') + ')');
+    ['crop', 'clip', 'edit', 'cleanup', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
     // 70.0.5: 201 badges, one of which is a single blank tile until dev mode
     // reveals it - so the wall is 201 tiles here, 200 real and one blank. Section

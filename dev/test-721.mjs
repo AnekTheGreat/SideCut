@@ -26,9 +26,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.1'; /* repinned by dev/repin-72x.mjs when the next release lands */
-const PREV = '72.0'; /* repinned by dev/repin-72x.mjs */
-const SHELL_CACHE = 'sidecut-shell-v72.1';
+const VER = '72.2'; /* repinned by dev/repin-722.mjs */ /* repinned by dev/repin-72x.mjs when the next release lands */
+const PREV = '72.1'; /* repinned by dev/repin-722.mjs */ /* repinned by dev/repin-72x.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.2';
+// OWN is the release THIS gate describes. The head (entries[0]) moves on every
+// release, so the checks about 72.1 itself must read the 72.1 entry - the head
+// is 72.2 now, and its notes are about Studio (72.2's repin added this split).
+const OWN = '72.1';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -60,8 +64,10 @@ console.log('[1] release metadata');
     ok(!/downloader|downloading|download|converter|converts|converting|conversion|convert|mp3|get song|no source found|hand-off|ytmp3|vocal remover|spotisaver|spotmate|spotidown|spoticatch/i
       .test(items.slice(0, 6).join('\n')), 'and none of the six that ride to the store trips its wider list');
     ok(!/play build|play version|play install/i.test(items.slice(0, 6).join('\n')), 'nor reads as a store-channel note');
-    ok(/album/i.test(notes) && /single/i.test(notes), 'the notes name the two things this release is about');
-    ok(/refetch/i.test(notes), 'and the thing the owner actually reported');
+    const ownEntry = entries.find((e) => String(e.version) === OWN) || head;
+    const ownNotes = (ownEntry.items || []).join('\n');
+    ok(/album/i.test(ownNotes) && /single/i.test(ownNotes), 'the notes name the two things this release is about');
+    ok(/refetch/i.test(ownNotes), 'and the thing the owner actually reported');
     ok(items.every((it) => it.indexOf("'") === -1), 'no note carries an apostrophe into the single-quoted array');
     ok(!!entries.find((e) => String(e.version) === '72.0'), 'the 72.0 entry is still behind it');
   }

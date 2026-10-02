@@ -1,6 +1,58 @@
 # SideCut — repository memory
 
 
+## 72.2 (Oct 2, 2026): Studio runs the whole batch, and one tap cleans up a song
+- **The owner's words**: "Next release: Everything". This is the **Studio half** of that: the three Studio upgrades that
+  were offered and never picked between, ALL of them, because the machinery was already there. (The MediaSession half
+  needed nothing - `registerMediaSessionHandlers` already registers play / pause / previoustrack / nexttrack /
+  seekbackward / seekforward / stop / seekto on BOTH sessions via `mediaSetActionHandler`, so Wear and the lock screen
+  already get the full button set; and the native Android Auto bridge stays parked - `android/` is generated only in CI,
+  `node_modules/` is not installed here, and a hand-written native patch's first test is the next APK build.)
+- **1. ONE TAP CLEANS A SONG.** New `cleanUpSong()` (`dev/patch-722.mjs`) - the rack's two safest operations with the
+  knobs already set: trim the silence off both ends + match the level, at 192 kbps, saved as its own `(clean)` tagged
+  file. New `toolCard('cleanup', '\u2728', 'Clean up this song', ...)` in the `sc-tools` row and
+  `if(id === 'cleanup') return cleanUpSong();` in `openTool`.
+- **2. THE RACK RUNS OVER A SELECTION (batch edit) and 3. A BATCH RE-ENCODE.** ONE run object `batchRun`
+  (`{ mode, busy, i, n, fails, saved, log }`), ONE `runBatch(mode)` loop, ONE progress line (`batchProgressHtml()`,
+  ids `scBatchLine` / `scBatchDone`). A song that throws is pushed to `batchRun.fails` and the run carries on, so one bad
+  file cannot strand the selection. New Studio section **"Batch on selected"** with `data-act="batchreen"` and
+  `data-act="batchedit"` (wired in `wireStudio`) and a second set of `data-reenk` bitrate chips.
+- **THE RENDER IS REUSED WITHOUT BEING REWRITTEN - THE KEY TRICK.** `editRender(buf)` reads the single `edit` object and
+  is otherwise pure sample math. Threading a config parameter through it would rewrite the whole body AND break
+  `test-714`, which pins `count(studio, 'function editRender(buf){') === 1` and each `edit.<field>` reference. Instead new
+  `editRenderWith(buf, cfg)` (`EDIT_KEYS = ['silent','fades','fadeIn','fadeOut','reverse','normalize','gainDb']`) swaps
+  those seven fields on `edit` for the length of a **synchronous** render and puts them back in a `finally`. There is no
+  await inside the render, so the swap cannot be observed and the user's rack is never left changed.
+- **ONE COPY-SAVE PATH.** New `editedCopy(t, cfg, kbps, purpose)` = decode -> `editRenderWith(b, cfg)` -> `tagMetaFor` ->
+  `window.__scEncodeMp3` -> `window.__scSaveClip(blob, name + ' (' + purpose + ').mp3')`. It **never** calls
+  `__scPersistTrack`, so no path here overwrites a library file. `cleanUpSong` uses purpose `'clean'`, the batch uses
+  `'edit'`. `editExport` (the rack's own save) is left exactly as it was.
+- **THE RE-ENCODE IS SPLIT, NOT DUPLICATED.** `reencodeOne(t, kbps)` holds the decode/tag/encode/swap core and resolves
+  with the bytes won back; it says nothing itself. `reencodeTrack(id, kbps, btn)` is now a thin wrapper that keeps its
+  own `Encoding\u2026` button state and `toastWithUndo(..., undoReencode(id))`. The batch calls the same `reencodeOne`, so
+  a batch re-encode and a single one cannot drift. (`dev/studio-70-check.cjs` still drives `SC70.reencodeTrack`.)
+- **`dev/patch-722.mjs` - 9 edits**, applied and self-verified. It adds a `subRange()` helper for the one rewrite too
+  long to quote byte-for-byte (the re-encode function), anchored on `function reencodeTrack(id, kbps, btn){` ->
+  `\n  function undoReencode(id){`. **`dev/repin-722.mjs` - 52 edits / 30 files**, `--check` proves no stale pin survives,
+  `PREV_MOVES` adds `test-721.mjs`, plus TWO bespoke moves: **(F1)** test-721 gets the `const OWN = '72.1'` split (it read
+  the HEAD for `/refetch/` and `/album/ && /single/` - the same lesson test-718/719/720 already learned); **(F2)**
+  `studio-70-check.cjs` moves **nine tool cards -> ten** and names `cleanup`.
+- **`dev/test-722.mjs` - 79 checks**, sections [1] release metadata [2] one tap cleans up a song [3] the batch - one run,
+  one progress line, both workers [4] the render is reused without being rewritten [5] the re-encode is callable, and the
+  button still is [6] what did not move [7] the repin moved every gate [8] inline script syntax.
+- **OTA BUNDLE AT A TRUE FIXED POINT**: **862755** (`ota/`) / **862764** (`ota-play/`). `dev/ota-fixpoint.mjs` settles in
+  3 passes (862791 -> 862756 -> 862755 -> fixed), and a SECOND generation is byte-identical. Both `ota-bundle.mjs --check`
+  and `ota-bundle-play.mjs --check` OK (6 notes each).
+- **Verified on the finished tree**: `test-722` **79** (new), `test-721` 54, `test-720` 66, `test-719` 70, `test-718` 46,
+  `test-717` 94, `test-716` 83, `test-715` 72, `test-714` 137, `test-713` 50, `test-70` 182, `test-662` 75,
+  `test-6643` 90, `test-66429` 83, `test-66431` 95, `test-play-copy` 28, `studio-70-check.cjs` **390**, `check-dom` DOM
+  INTEGRITY FAILURES 0, ota-guard 20/0, ota-update 52/0, ota-loop 26/0.
+- **Pre-existing reds, unchanged and NOT in the gate set**: `test-705` 223/7, `batch-635-check` 35/7, `test-6058` 47/1,
+  and **`test-66428` 72/1** (its page-wide bullet canary expects **46**, but the page has held **48** since at least 72.0 -
+  verified identical at `HEAD~1` and `HEAD`; it is NOT caused by this release and was left untouched).
+- **NEXT RELEASE**: `72.3` (the third number stops at nine). Shell cache `sidecut-shell-v72.2` -> `sidecut-shell-v72.3`
+  (still derived in `dev/patch-72x.mjs` and the sweep). Add `test-722.mjs` to `PREV_MOVES`.
+
 ## 72.1 (Oct 1, 2026): a refetch keeps the albums and singles you removed
 - **The owner's words**: "Refetching albums or singles shouldnt refetch every single or album that was deleted too". A removed
   album or single is kept out of the Discover lists by the removed list (`sidecut_hiddenAlbums` / `sidecut_hiddenSingles`, a

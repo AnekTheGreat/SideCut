@@ -11988,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '72.1';
+  const APP_VERSION = '72.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12465,6 +12465,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '72.2', date: 'October 1, 2026 \u00b7 7:44 PM EDT', title: 'Studio runs the whole batch, and one tap cleans up a song', items: [
+    'Studio can run a batch now. Tick songs in Library and re-encode or edit every one of them in one go, with a line that says which song it is on and how much space came back.',
+    'The batch saves a copy of each song. The songs in your library keep their own names, artists, albums and covers, and nothing about them is overwritten.',
+    'One tap cleans up the song in Studio. Clean up this song trims the silence off both ends and matches the level, then saves the result as its own tagged file.',
+    'A batch keeps going when one song cannot finish. It records that song, moves to the next, and the summary names how many completed and how many were skipped.',
+    'The rack and the cleaner are the same tool underneath. Both work on a copy and both use the same silence trim and level match, so a batch sounds exactly like the single-song edit you previewed.',
+    'Nothing in the player, the dock, the queue or the lock screen moved. Your saved songs, albums and playlists behave exactly as they did, and no song is deleted.',
+    'The batch reads the songs you ticked in Library, so what it runs on is always the selection you can see, and an empty selection simply says so instead of guessing.',
+  ] },
   { version: '72.1', date: 'October 1, 2026 \u00b7 6:26 PM EDT', title: 'A refetch keeps the albums and singles you removed, and the deep-refetch chip that put them back is gone', items: [
     'A refetch keeps the albums and singles you removed. Refetching used to be able to pull a deleted album or single straight back into the list, and now nothing a refetch does can put one back.',
     'The red deep-refetch chip in Singles is gone. It existed only to put every removed song back, which is the opposite of what a refresh should do, so the refresh beside it is the only one there now.',
@@ -44100,12 +44109,12 @@ window.showAlbumReorderPopup = function(albumName){
 
   // ---- re-encode to a smaller bitrate, in place, with the crop's own undo ----
   var REENCODE_RATES = [96, 128, 160];
-  function reencodeTrack(id, kbps, btn){
-    var t = trackById(id);
-    if(!t || !t.file){ toast('That song has no audio file to re-encode.'); return; }
-    var before = t.file.size || 0;
-    if(btn){ btn.disabled = true; btn.textContent = 'Encoding\u2026'; }
-    decoded(t).then(function(b){
+  // 72.2 - the re-encode itself, split out of its own button so a batch can run
+  // the same code. It resolves with the bytes won back, and it does not toast:
+  // the caller decides what to say, because a batch has one voice for many songs.
+  function reencodeOne(t, kbps){
+    if(!t || !t.file) return Promise.reject(new Error('no audio file to re-encode'));
+    return decoded(t).then(function(b){
       return tagMetaFor(t).then(function(meta){
         // A re-encode of a lossless file is the case that pays: keep the length,
         // drop the bitrate.
@@ -44126,12 +44135,20 @@ window.showAlbumReorderPopup = function(albumName){
           call('__scPersistTrack', t);
           try{ window.__scRefreshMedia && window.__scRefreshMedia(t); }catch(e){}
           markFeature('reencode');
-          renderStudio();
           var saved = Math.max(0, oldSize - newFile.size);
           bump('savedBytes', saved);
-          toastWithUndo('Re-encoded "' + (t.name || 'song') + '" at ' + kbps + ' kbps \u2014 ' + fmtBytes(saved) + ' smaller', function(){ undoReencode(id); });
+          return saved;
         });
       });
+    });
+  }
+  function reencodeTrack(id, kbps, btn){
+    var t = trackById(id);
+    if(!t || !t.file){ toast('That song has no audio file to re-encode.'); return; }
+    if(btn){ btn.disabled = true; btn.textContent = 'Encoding\u2026'; }
+    reencodeOne(t, kbps).then(function(saved){
+      renderStudio();
+      toastWithUndo('Re-encoded "' + (t.name || 'song') + '" at ' + kbps + ' kbps \u2014 ' + fmtBytes(saved) + ' smaller', function(){ undoReencode(id); });
     }).catch(function(e){
       toast('Re-encode failed: ' + (e && e.message ? e.message : 'could not encode'));
       if(btn){ btn.disabled = false; btn.textContent = 'Re-encode'; }
@@ -45328,6 +45345,7 @@ window.showAlbumReorderPopup = function(albumName){
         toolCard('crop', '\u2702', 'Crop song', 'Trim the start and the end in place \u2014 the same cropper as the \u22ee menu, with Undo crop on the song.', 'accent') +
         toolCard('edit', '\ud83c\udf9a', 'Edit rack', editSummary(), (edit.silent || edit.fades || edit.reverse || edit.gainDb) ? 'on' : '') +
         toolCard('clip', '\ud83c\udfb5', 'Ringtone / clip', 'Save a section as its own tagged MP3. Nothing in your library changes.', '') +
+        toolCard('cleanup', '\u2728', 'Clean up this song', 'Trim the silence and match the level, then save it as its own tagged file.', '') +
         toolCard('fx', '\ud83c\udf0a', 'Slowed + reverb', fxState.rate === 1 && !fxState.reverb ? 'Add weight and space, or speed it up.' : fxState.rate.toFixed(2) + 'x \u00b7 ' + Math.round(fxState.reverb * 100) + '% wet', fxState.rate !== 1 || fxState.reverb > 0 ? 'on' : '') +
         toolCard('karaoke', '\ud83c\udfa4', 'Karaoke mode', fxState.karaoke > 0 ? 'Vocal pulled out \u00b7 ' + Math.round(fxState.karaoke * 100) + '%' : 'Take the lead vocal out of what is playing.', fxState.karaoke > 0 ? 'on' : '') +
         toolCard('sampler', '\ud83c\udf9b', 'Sampler pads', sampler.trackId ? 'Loaded with "' + esc(trackName(sampler.trackId)) + '"' : 'Eight pads over the song you are playing.', sampler.trackId ? 'on' : '') +
@@ -45356,6 +45374,15 @@ window.showAlbumReorderPopup = function(albumName){
       '<div class="sc-sec"><div class="sc-sec-head"><span>Batch tag editor</span><span class="sc-sec-sub">' + ((call('__scSelectedIds') || []).length) + ' selected</span></div>' +
         '<div class="sc-note">Tick songs in Library (long-press one to start selecting) and fix the artist, the album or the cover for all of them at once. The tag inside each stored file is rewritten.</div>' +
         '<div class="sc-actions"><button class="sc-btn primary" data-act="batch">Edit tags for selected songs</button></div>' +
+      '</div>' +
+      '<div class="sc-sec"><div class="sc-sec-head"><span>Batch on selected</span><span class="sc-sec-sub">' + ((call('__scSelectedIds') || []).length) + ' selected</span></div>' +
+        '<div class="sc-note">Re-encode or run the edit rack over every song you have ticked, in one go. Each song is saved as its own copy \u2014 nothing in your library is overwritten.</div>' +
+        '<div class="sc-chips"><span class="sc-chip-label">Bitrate</span>' + REENCODE_RATES.map(function(k){ return '<button class="sc-chip' + (reenKbps === k ? ' on' : '') + '" data-reenk="' + k + '">' + k + ' kbps</button>'; }).join('') + '</div>' +
+        '<div class="sc-actions">' +
+          '<button class="sc-btn' + (batchRun.busy ? '' : ' primary') + '" data-act="batchreen"' + (batchRun.busy ? ' disabled' : '') + '>Re-encode selected</button>' +
+          '<button class="sc-btn" data-act="batchedit"' + (batchRun.busy ? ' disabled' : '') + '>Edit selected</button>' +
+        '</div>' +
+        batchProgressHtml() +
       '</div>';
     host.innerHTML = html;
     wireStudio();
@@ -45458,6 +45485,8 @@ window.showAlbumReorderPopup = function(albumName){
         else if(act === 'autodj') setAutoDj(!autodj.on);
         else if(act === 'shake') enableShake(!gestures.shake);
         else if(act === 'swipe'){ gestures.swipe = !gestures.swipe; lsSet(LS.gestures, gestures); toast(gestures.swipe ? 'Swipe the player is on' : 'Swipe the player is off'); renderStudio(); }
+        else if(act === 'batchreen') runBatch('reen');
+        else if(act === 'batchedit') runBatch('edit');
         else if(act === 'batch') openBatchTags(call('__scSelectedIds') || []);
         else if(act === 'achfilter'){ achFilter = b.getAttribute('data-f') || 'all'; renderStudio(); }
         else if(act === 'usetheme'){
@@ -45507,6 +45536,7 @@ window.showAlbumReorderPopup = function(albumName){
       if(id === 'crop') return cropCurrent();
       if(id === 'clip') return openClipSheet();
       if(id === 'edit') return openEditSheet();
+      if(id === 'cleanup') return cleanUpSong();
       if(id === 'fx') return openFxSheet();
       if(id === 'karaoke') return openKaraokeSheet();
       if(id === 'sampler') return openSamplerSheet();
@@ -46020,6 +46050,95 @@ window.showAlbumReorderPopup = function(albumName){
       }
     }
     return out;
+  }
+  // 72.2 - the member tools need the SAME render with different settings. The
+  // rack reads the one edit object, so its settings are swapped for the length
+  // of a synchronous render and put back afterwards. editRender is pure sample
+  // math with no await inside, so nothing can observe the swap, and whatever the
+  // rack is set to is exactly what it is set to when the render is done.
+  var EDIT_KEYS = ['silent', 'fades', 'fadeIn', 'fadeOut', 'reverse', 'normalize', 'gainDb'];
+  function editRenderWith(buf, cfg){
+    if(!cfg) return editRender(buf);
+    var saved = {};
+    for(var k = 0; k < EDIT_KEYS.length; k++){
+      var key = EDIT_KEYS[k];
+      saved[key] = edit[key];
+      if(cfg[key] !== undefined) edit[key] = cfg[key];
+    }
+    try{ return editRender(buf); }
+    finally{ for(var j = 0; j < EDIT_KEYS.length; j++) edit[EDIT_KEYS[j]] = saved[EDIT_KEYS[j]]; }
+  }
+  // 72.2 - one save path for a copy a tool makes: decode, render with the given
+  // settings, encode at the given rate and save it beside the library file. The
+  // song in the library is never the one this writes.
+  function editedCopy(t, cfg, kbps, purpose){
+    if(!t || !t.file) return Promise.reject(new Error('no audio file to edit'));
+    return decoded(t).then(function(b){
+      var out = editRenderWith(b, cfg);
+      if(!out) throw new Error('the edit produced no audio');
+      return tagMetaFor(t, (t.name || 'Edit') + ' (' + purpose + ')').then(function(meta){
+        return window.__scEncodeMp3(out, kbps, meta).then(function(blob){
+          if(!blob) throw new Error('the encoder produced no output');
+          var base = (t.file && t.file.name ? t.file.name.replace(/\.[^/.]+$/, '') : (t.name || 'edit'));
+          var fname = base + ' (' + purpose + ').mp3';
+          return window.__scSaveClip(blob, fname).then(function(saved){ return { saved: saved, fname: fname }; });
+        });
+      });
+    });
+  }
+  // 72.2 - one tap: trim the silence and match the level, saved as its own
+  // tagged file. The rack's two safest operations, with the knobs already set,
+  // so an uneven library can be fixed a song at a time without opening the rack.
+  function cleanUpSong(){
+    var t = workTrack();
+    if(!t){ toast('Choose a song first.'); return; }
+    if(!t.file){ toast('That song has no audio file to clean up.'); return; }
+    bump('studio'); markFeature('studio');
+    toast('Cleaning up "' + (t.name || 'this song') + '"\u2026');
+    editedCopy(t, { silent: true, fades: false, reverse: false, normalize: true, gainDb: 0 }, 192, 'clean').then(function(r){
+      toast(r && r.saved ? ('Cleaned up \u00b7 ' + r.fname) : ('Clean copy ready \u00b7 ' + ((r && r.fname) || 'the copy')), 4800);
+    }).catch(function(e){
+      toast('The clean-up failed: ' + ((e && e.message) || 'could not finish'), 5200);
+    });
+  }
+  // 72.2 - the batch. One song at a time, in the order they were ticked, with a
+  // line naming the one it is on. A song that cannot finish is recorded and the
+  // run carries on, so one bad file cannot strand the rest of the selection.
+  var batchRun = { mode: '', busy: false, i: 0, n: 0, fails: [], saved: 0, log: '' };
+  function batchProgressHtml(){
+    if(batchRun.busy) return '<div class="sc-layer-hint" id="scBatchLine">' + esc(batchRun.log || 'Working\u2026') + '</div>';
+    if(batchRun.n && batchRun.i >= batchRun.n){
+      var doneN = batchRun.n - batchRun.fails.length;
+      return '<div class="sc-note" id="scBatchDone">Finished: ' + doneN + ' of ' + batchRun.n + (batchRun.mode === 'reen' ? ' re-encoded' : ' edited') + (batchRun.saved ? ' \u00b7 ' + fmtBytes(batchRun.saved) + ' smaller' : '') + (batchRun.fails.length ? ' \u00b7 ' + batchRun.fails.length + ' could not finish' : '') + '.</div>';
+    }
+    return '';
+  }
+  function runBatch(mode){
+    var ids = (call('__scSelectedIds') || []).slice();
+    var songs = ids.map(trackById).filter(function(t){ return t && t.file; });
+    if(!songs.length){ toast('Tick the songs you want in Library first.'); return; }
+    if(batchRun.busy) return;
+    batchRun = { mode: mode, busy: true, i: 0, n: songs.length, fails: [], saved: 0, log: '' };
+    renderStudio();
+    var cfg = { silent: edit.silent, fades: edit.fades, fadeIn: edit.fadeIn, fadeOut: edit.fadeOut, reverse: edit.reverse, normalize: edit.normalize, gainDb: edit.gainDb };
+    var kbps = reenKbps;
+    var step = function(){
+      if(batchRun.i >= batchRun.n){
+        batchRun.busy = false;
+        renderStudio();
+        var doneN = batchRun.n - batchRun.fails.length;
+        toast((mode === 'reen' ? 'Re-encoded ' : 'Edited ') + doneN + ' of ' + batchRun.n + (batchRun.saved ? ' \u00b7 ' + fmtBytes(batchRun.saved) + ' back' : '') + (batchRun.fails.length ? ' \u00b7 ' + batchRun.fails.length + ' could not finish' : ''), 5200);
+        return;
+      }
+      var t = songs[batchRun.i];
+      batchRun.log = (mode === 'reen' ? 'Re-encoding ' : 'Editing ') + (batchRun.i + 1) + ' of ' + batchRun.n + ' \u00b7 ' + (t.name || 'song');
+      renderStudio();
+      var work = (mode === 'reen')
+        ? reencodeOne(t, kbps).then(function(saved){ batchRun.saved += saved; })
+        : editedCopy(t, cfg, kbps, 'edit').then(function(){ });
+      work.catch(function(){ batchRun.fails.push(t.id); }).then(function(){ batchRun.i++; step(); });
+    };
+    step();
   }
   var editSrcNode = null;
   function editPreview(){

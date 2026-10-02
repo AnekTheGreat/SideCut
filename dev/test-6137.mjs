@@ -33,7 +33,7 @@ console.log('[1] the file parses — every inline script block');
     try { new Function(m[1]); } catch (e) { bad++; console.log('       ' + e.message); }
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');  ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '72.1'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(/const CHANGELOG = \[\n  \{ version: '72.2'/.test(src), 'the newest entry sits inside CHANGELOG');
 }
 
 console.log('[2] add-drop sheet: no example, no +7 days');
@@ -95,7 +95,7 @@ console.log('[6] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 const sw = fs.readFileSync('sw.js', 'utf8');
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.1';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.2';"), 'sw.js cache = sidecut-shell-v61.5');
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.6'"), '61.5 heads the changelog');
 
 console.log('');
