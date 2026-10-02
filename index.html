@@ -11988,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '72.4';
+  const APP_VERSION = '72.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12465,6 +12465,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '72.5', date: 'October 2, 2026 \u00b7 3:34 PM EDT', title: 'All Songs tells the truth about every song in it', items: [
+    'A song can no longer appear twice in All Songs. A list that had picked up a repeated entry is flattened on the next launch, and one is never filed twice again.',
+    'Every song in the library is in All Songs. A song that was added to the library but left out of the list is put back on the next launch, and a song is drawn the moment it lands rather than when the list next gets a chance.',
+    'No two songs can share a library id any more. The next free id is worked out from the songs actually on the device, so an id from an older save can never be handed to a new song, which is what made two rows behave as one.',
+    'A search for an artist returns that artist. The album a song carries no longer answers a search on its own unless nothing in your library is named or credited that way, so looking up one performer stops returning others.',
+    'A playlist is not an album. Songs taken from one no longer have the playlist name written into their album, which is what put unrelated performers in the same search result.',
+    'The lookup that finds the audio asks for much less. A candidate whose length already rules it out costs no request, and the search stops as soon as a full-length match is in hand.',
+    'A long run finishes sooner for the same reason, and a song that fails is still the one retry it always had, so nothing is skipped to save a request.',
+    'Nothing in the player, the dock or the queue moved. Your saved songs, albums and playlists are read exactly as they were, and no song is deleted.',
+  ] },
   { version: '72.4', date: 'October 2, 2026 \u00b7 3:10 PM EDT', title: 'A song from a Spotify link is named by the link', items: [
     'A Spotify link now fills the song with the name the link itself carries, and a catalog lookup can no longer answer for a different performer whose title merely looks similar.',
     'A song whose performer the link does not name stays unnamed rather than being given someone else, so the tag, the file name and the library row all agree on what the song is.',
@@ -17733,14 +17743,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // every playlist; that would destroy intentionally curated playlists.
     const allTrackIds = new Set(allTracks.map(t => t.id));
     let staleCleaned = 0;
+    // 72.5 - and a repeat is flattened out of every list, All Songs included.
+    // This pass used to check membership and nothing else, so an id that got
+    // into All Songs twice stayed there: the same song drawn twice, and one
+    // delete (which filters every playlist by id) taking both rows - they were
+    // never two songs. Repaired once, here, and saved.
+    let repeatsFlattened = 0;
     Object.keys(playlists).forEach(name => {
-        if(name === 'All Songs') return;
-        const before = playlists[name].length;
-        playlists[name] = playlists[name].filter(id => allTrackIds.has(id));
-        staleCleaned += before - playlists[name].length;
+        const arr = playlists[name] || [];
+        const keep = name === 'All Songs' ? arr : arr.filter(id => allTrackIds.has(id));
+        if(name !== 'All Songs') staleCleaned += arr.length - keep.length;
+        const seen = new Set();
+        const flat = keep.filter(id => { if(seen.has(id)) return false; seen.add(id); return true; });
+        repeatsFlattened += keep.length - flat.length;
+        playlists[name] = flat;
     });
 
-    if(recovered > 0 || staleCleaned > 0){
+    if(recovered > 0 || staleCleaned > 0 || repeatsFlattened > 0){
         dbPut('meta', {
             key:'playlists',
             value:playlists
@@ -17748,7 +17767,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
 
 
-    idCounter = metaMap.idCounter || allTracks.length;
+    // 72.5 - never below an id already in use. The stored counter is a hint; the
+    // songs on the device are the fact.
+    idCounter = Math.max(Number(metaMap.idCounter) || 0, scHighestTrackId() + 1);
 
     lastPlaybackState = metaMap.playback || null;
 
@@ -18303,7 +18324,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       const key = dupKey(file.size, cleaned.name, cleaned.artist, 0, file.lastModified);
       if(seenKeys.has(key)){ skippedDup++; return; }
       seenKeys.add(key);
-      const id = 't' + (idCounter++);
+      // 72.5 - a free id, not whatever the counter happened to hold.
+      const id = scNextTrackId();
       const url = URL.createObjectURL(file);
       const track = { id, file, name: cleaned.name, artist: cleaned.artist, album: meta.album || null, url, duration: null, genre: null, gain: null, artBlob: null, artUrl: null, watermarkCleaned: cleaned.changed, dateAdded: Date.now() };
       allTracks.push(track);
@@ -19523,6 +19545,30 @@ function _fallbackCopy(text){
 
   // Global track lookup map — rebuilt when allTracks changes, reused everywhere
   var _trackMap = null;
+  function scHighestTrackId(){
+    var hi = -1;
+    for(var i = 0; i < allTracks.length; i++){
+      var m = /^t(\d+)$/.exec(String((allTracks[i] && allTracks[i].id) || ''));
+      if(m){ var n = parseInt(m[1], 10); if(isFinite(n) && n > hi) hi = n; }
+    }
+    return hi;
+  }
+  // 72.5 - the one place a new song gets its id. It is never a counter read
+  // back from storage: that number was `metaMap.idCounter || allTracks.length`
+  // at boot, so after a delete - or after the snapshot restore rewrote the meta
+  // store from an older save and reloaded - it could sit BELOW ids already in
+  // use, and a new song was handed an id an older song already had. Two songs
+  // on one id is one row in the track map, one row in the list, and one delete
+  // that takes both. This asks the library what is taken.
+  function scNextTrackId(){
+    var taken = new Set();
+    for(var i = 0; i < allTracks.length; i++){ if(allTracks[i] && allTracks[i].id) taken.add(allTracks[i].id); }
+    var n = Number(idCounter) || 0;
+    while(taken.has('t' + n)) n++;
+    idCounter = n + 1;
+    return 't' + n;
+  }
+  window.__scNextTrackId = scNextTrackId;
   function _ensureTrackMap(){
     if(!_trackMap || _trackMap.size !== allTracks.length){
       _trackMap = new Map();
@@ -20013,6 +20059,13 @@ function _fallbackCopy(text){
     } else {
       rawIds = playlists[activePlaylist] || [];
     }
+    // 72.5 - a repeat can never reach a row. The stored lists are repaired at
+    // boot and nothing files a song twice, but this is the line that makes the
+    // screen honest: one id, one row, whatever the array holds.
+    if(rawIds.length > 1){
+      const _scSeenId = new Set();
+      rawIds = rawIds.filter(id => { if(_scSeenId.has(id)) return false; _scSeenId.add(id); return true; });
+    }
     let ids;
     if(shuffle && shuffledOrderCache && shuffledOrderCache.playlist === activePlaylist){
       // Keep only ids still actually in this playlist (in case something was removed/deleted)
@@ -20035,11 +20088,19 @@ function _fallbackCopy(text){
     const fullIds = ids.slice(); // full playlist order, before search narrows what's shown — this is what playback should queue
     const _rlMap = _ensureTrackMap();
     if(searchQuery){
-      ids = ids.filter(id => {
-        const t = _rlMap.get(id);
-        if(!t) return false;
-        return (t.name||'').toLowerCase().includes(searchQuery) || (t.artist||'').toLowerCase().includes(searchQuery) || (t.album||'').toLowerCase().includes(searchQuery);
-      });
+      // 72.5 - a search for an artist returns that artist. This filter matched
+      // the album field exactly as hard as the name and the artist, so a query
+      // was answered by anything that merely shared an album tag with it: look
+      // one performer up and every song on the same record came back, other
+      // performers included. The name and the artist are what was asked for, so
+      // they decide the list; an album-only match is shown only when nothing in
+      // the library is named or credited that way.
+      const _scFieldHit = (t, field) => {
+        const v = String((t && t[field]) || '').toLowerCase();
+        return !!v && v.indexOf(searchQuery) !== -1;
+      };
+      const _scNamed = ids.filter(id => { const t = _rlMap.get(id); return !!t && (_scFieldHit(t, 'name') || _scFieldHit(t, 'artist')); });
+      ids = _scNamed.length ? _scNamed : ids.filter(id => { const t = _rlMap.get(id); return !!t && _scFieldHit(t, 'album'); });
     }
     // Unsorted behaves like All Songs for capability purposes: no reorder
     // (there's no real order to reorder), no "remove from playlist" (there's
@@ -37814,7 +37875,8 @@ function _renderAhFromData(artistAlbums){
           artUrl = URL.createObjectURL(artBlob);
         }catch(_ab){}
       }
-      var id = 't' + (idCounter++);
+      // 72.5 - a free id, not whatever the counter happened to hold.
+      var id = scNextTrackId();
       var track = {
         id: id, file: file, name: title, artist: artist, album: album,
         url: URL.createObjectURL(file), duration: null,
@@ -37824,15 +37886,22 @@ function _renderAhFromData(artistAlbums){
         convertedFrom: o.source || 'converter'
       };
       allTracks.push(track);
+      // 72.5 - one entry per song, whatever happened on the way here.
       if(!playlists['All Songs']) playlists['All Songs'] = [];
-      playlists['All Songs'].push(id);
+      if(playlists['All Songs'].indexOf(id) === -1) playlists['All Songs'].push(id);
       if(!playlists['Unsorted']) playlists['Unsorted'] = [];
-      playlists['Unsorted'].push(id);
+      if(playlists['Unsorted'].indexOf(id) === -1) playlists['Unsorted'].push(id);
       persistTrackMeta(track);
       saveMeta();
       readLazyMeta(track);   // fills in the real duration from the file itself
       try{ renderTabs(); }catch(_rt){}
+      // 72.5 - arm the draw and then take the frame over, in that order: the
+      // deferred path only ARMS a frame and its arm declines to draw while the
+      // list is moving (it re-arms for the next frame instead), which is why a
+      // run could report a song as added while the list it belongs to still
+      // showed none of them. renderList() sets the pending flag this needs.
       try{ renderList(); }catch(_rl){}
+      try{ scRenderListNow(); }catch(_rl2){}
       return track;
     }catch(e){
       console.warn('could not add the converted song to the library', e);
@@ -38165,7 +38234,11 @@ function _renderAhFromData(artistAlbums){
     for(var i = 0; i < tracks.length; i++){
       var meta = Object.assign({}, tracks[i]);
       if(!meta.position) meta.position = i + 1;
-      if(!meta.album && plan.album) meta.album = plan.album;
+      // 72.5 - a playlist is not an album. Every song of a converted playlist
+      // used to be stamped with the PLAYLIST's name as its album, which put a
+      // tag on unrelated songs that a search then answered with. Only a real
+      // album plan names the album here; a song of a playlist keeps its own.
+      if(!meta.album && plan.album && plan.kind === 'album') meta.album = plan.album;
       if(!meta.cover && plan.cover) meta.thumb = plan.cover;
       if(meta.cover && !meta.thumb) meta.thumb = meta.cover;
       var row = document.createElement('div');
@@ -39081,19 +39154,36 @@ function _renderAhFromData(artistAlbums){
     // A second, looser YouTube search catches songs whose title alone matched
     // nothing usable (regional spellings, "Song (Official Video)" uploads):
     // title + artist + the word audio.
+    // 72.5 - these two searches used to run for EVERY song, on top of the first
+    // one and the player calls: three searches before any audio is asked for.
+    // They now run only when the first search plainly did not carry this track.
+    // The test is local (a search title and a channel name are already in hand),
+    // so the common case - the first result IS the song - costs one search.
+    var _scFirstCarriesIt = false;
+    try{
+      _scFirstCarriesIt = cands.some(function(c){
+        if(!c || !scTitleMatch(title, c.title, c.title)) return false;
+        if(!artist) return true;
+        var own = String(c.owner || '').toLowerCase();
+        return String(artist).split(/\s*(?:,|;|\/|&|\u00b7|\bfeat\.?\b|\bft\.?\b|\bwith\b|\bx\b)\s*/i)
+          .some(function(nm){ nm = String(nm || '').trim().toLowerCase(); return !!nm && own.indexOf(nm) !== -1; });
+      });
+    }catch(_scCarry){ _scFirstCarriesIt = false; }
     var cands2 = [];
-    try{ cands2 = await scYtSearch(title + ' ' + artist + ' ' + album + ' audio', artist, album) || []; }catch(_e2){}
-    if(cands2 && cands2.length){
-      var _seenC = {};
-      for(var _c1 = 0; _c1 < cands.length; _c1++) _seenC[cands[_c1].videoId] = true;
-      var _extra = [];
-      for(var _c2 = 0; _c2 < cands2.length; _c2++){ if(!_seenC[cands2[_c2].videoId]){ _seenC[cands2[_c2].videoId] = true; _extra.push(cands2[_c2]); } }
-      if(_extra.length) cands = cands.concat(_extra);
+    if(!_scFirstCarriesIt){
+      try{ cands2 = await scYtSearch(title + ' ' + artist + ' ' + album + ' audio', artist, album) || []; }catch(_e2){}
+      if(cands2 && cands2.length){
+        var _seenC = {};
+        for(var _c1 = 0; _c1 < cands.length; _c1++) _seenC[cands[_c1].videoId] = true;
+        var _extra = [];
+        for(var _c2 = 0; _c2 < cands2.length; _c2++){ if(!_seenC[cands2[_c2].videoId]){ _seenC[cands2[_c2].videoId] = true; _extra.push(cands2[_c2]); } }
+        if(_extra.length) cands = cands.concat(_extra);
+      }
     }
     // Always run a stricter quoted-title search to pin the exact track —
     // this prevents common titles from drifting to lyric videos, remixes,
     // and covers. Results are merged ahead of the plain search's.
-    if(title && cands.length > 0){
+    if(!_scFirstCarriesIt && title && cands.length > 0){
       var q2 = await scYtSearch('\"' + title + '\" ' + artist, artist);
       if(q2 && q2.length){
         var seenIds = {};
@@ -39136,6 +39226,12 @@ function _renderAhFromData(artistAlbums){
       // the other, and "close enough" is not identity.
       if(runSiblings && scSourceClaimsSibling(cands[ci].title, title, myTitleKey, runSiblings)) continue;
       tried++;
+      // 72.5 - the length is checked FIRST. It came with the search result, and
+      // the wrong length is the single most common rejection, so this used to
+      // spend a request on every candidate of the wrong length before it could
+      // say no. One request per candidate now, and only when it could be right.
+      var cSec = Number(cands[ci].duration) || 0;
+      if(expectedSec > 0 && cSec > 0 && Math.abs(expectedSec - cSec) > 60) continue; // different recording
       if(onStatus) onStatus('Verifying source ' + tried + ' is really ' + (artist || 'the artist') + '…');
       var pa = await scYtPlayer(cands[ci].videoId);
       if(!pa) continue;
@@ -39145,9 +39241,12 @@ function _renderAhFromData(artistAlbums){
       if(!fallback){ fallback = pa; fallbackCand = cands[ci]; }
       if(scArtistMatch(artist, pa.author, pa.videoTitle, cands[ci].owner, cands[ci].title) &&
          scTitleMatch(title, pa.videoTitle, cands[ci].title)){
-        var cSec = Number(cands[ci].duration) || 0;
-        if(expectedSec > 0 && cSec > 0 && Math.abs(expectedSec - cSec) > 60) continue; // different recording
-        verified.push({ pa: pa, vid: cands[ci].videoId, delta: (expectedSec > 0 && cSec > 0) ? Math.abs(expectedSec - cSec) : -1, strong: scTitleStrong(title, pa.videoTitle, cands[ci].title) });
+        var _delta = (expectedSec > 0 && cSec > 0) ? Math.abs(expectedSec - cSec) : -1;
+        verified.push({ pa: pa, vid: cands[ci].videoId, delta: _delta, strong: scTitleStrong(title, pa.videoTitle, cands[ci].title) });
+        // 72.5 - a strong, full-length match is exactly what the ranking below
+        // picks first, so there is nothing left for the remaining candidates to
+        // change. This loop used to keep asking the player for up to ten of them.
+        if(verified[verified.length - 1].strong && expectedSec > 0 && cSec > 0 && Math.abs(expectedSec - cSec) <= 15) break;
       }
     }
     // An exact-title match decodes first; the length only breaks THAT tie.
@@ -46744,6 +46843,4 @@ window.showAlbumReorderPopup = function(albumName){
 </script>
 </body>
 </html>
-
-
 

@@ -215,7 +215,9 @@ console.log('[4] the two record taps draw their own list at once');
   ok(album.indexOf("navigate('albums');") !== -1 && album.indexOf('scRenderListNow();') !== -1 &&
     album.indexOf("navigate('albums');") < album.indexOf('scRenderListNow();'),
     'and it draws its own cards right after it navigates');
-  ok(countC('scRenderListNow();') === 2, 'and those two taps are the only callers (' + countC('scRenderListNow();') + ')');
+  ok(countC('scRenderListNow();') === 3, 'and the only other caller is the one that files a song (' + countC('scRenderListNow();') + ')');
+  ok(sliceC('  function scAddConvertedToLibrary(blob, meta, opts){', '  function scOpenLibraryAfterDownload(').indexOf('scRenderListNow();') !== -1,
+    'which draws the new row itself rather than waiting for the scheduler');
   ok(!has('    if(scListIsMoving() && Date.now() - Date.now()'), 'the guard is never asked to ignore itself');
 }
 

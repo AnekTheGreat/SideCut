@@ -1,6 +1,84 @@
 # SideCut — repository memory
 
 
+## 72.5 (Oct 2, 2026): All Songs tells the truth about every song in it
+- **The owner's words** (all one message, mid-conversion): "WHY ARE THEIR DUPLICATE SONGS IN ALL SONGS", "WHY ARE
+  SONGS THAT EXIST IN THE APP NOT SHOWING IN ALL SONGS", "SONGS THAT ARE COMPLETE DUPLICATES IN ALL SONGS BUT DELETING
+  ONE DELETS THE OTHER", "SEARCH ISNT EVEN WORKING I LOOK UP SHUBH WHY IS CHEEMA Y POPPING UP", "the downloader saying
+  the songs are in my library and the number goes up but it keeps not showing", "IT TAKES FOREVER TO DOWNLOAD MUSIC".
+  Two screenshots: All Songs whose rows repeat (23 / Excuse Me / What..? / Bucks & Fame, then 23 / Excuse Me / What..?
+  again) while the duplicate banner says only "Found 1 duplicate song (1 extra copy)", and a search for `Shubh` whose
+  list is `Bucks & Fame`, `23`, `Excuse Me`, `What..?` — none of them by Shubh.
+- **THE THREE FAULTS.** (1) A repeated id in `playlists['All Songs']` renders the SAME song twice, and `deleteTrack`
+  filters every playlist by id — so one tap removes both rows, because they were never two songs. That is why the visual
+  duplicates outnumbered the banner: `getDuplicateGroups()` walks `allTracks` (the objects), the rows come from the id
+  array, and only one of the two had a real second copy. (2) A search matched the **album** field exactly as hard as the
+  name and the artist, and every song of a converted PLAYLIST was stamped with the playlist's own name as its album —
+  so `Shubh` answered for anything filed under that tag, which was a whole converted list. (3) The verify loop called
+  `scYtPlayer` for up to TEN ranked candidates one after another, including candidates whose length (already in the
+  search result) ruled them out — a request each.
+- **WHY TWO SONGS COULD SHARE AN ID (the "delete one, both go" mechanism).** `idCounter = metaMap.idCounter ||
+  allTracks.length` — the fallback was the COUNT of songs. Delete anything, or come back from the snapshot restore
+  (which rewrites the whole meta store and reloads), and the counter sat BELOW ids already in use, so a new song was
+  handed an id an older song already had: one row in `_trackMap`, one row in the list, one delete taking both.
+- **`dev/patch-725.mjs` — 19 edits, EVERY sub keyed.** (1) New `scNextTrackId()` scans `allTracks` for a free id and
+  `scHighestTrackId()` parses `^t(\d+)$`; boot is now `idCounter = Math.max(Number(metaMap.idCounter) || 0,
+  scHighestTrackId() + 1);`. (2) The converted-add and import id sites ask for a free id. (3) The boot repair flattens
+  repeats out of EVERY playlist (All Songs included) and persists when it did (`repeatsFlattened`). (4) The two filing
+  pushes are `indexOf(...) === -1` guarded. (5) `renderListInner` dedupes `rawIds` before sorting/counting. (6) The
+  search is name-or-artist first, album only as a fallback (`_scFieldHit`/`_scNamed`). (7) `plan.album` is applied only
+  when `plan.kind === 'album'`. (8) The audio query skips the two extra searches via the local `_scFirstCarriesIt` test,
+  the expected length is checked BEFORE `scYtPlayer`, and the loop `break`s on a strong full-length match.
+- **THE DRAW FIX AND ITS ORDERING TRAP.** `scAddConvertedToLibrary` now calls `renderList()` **then** `scRenderListNow()`.
+  The order is the whole point: `scRenderListNow()` returns early unless `_renderListPending` is set (which is what
+  `renderList()` does), and the deferred arm refuses to draw while `scListIsMoving()` — which is exactly why a run could
+  report songs as added while the list showed none.
+- **IDEMPOTENCE (learned the hard way).** Two of the 72.5 subs are INSERTIONS whose anchor survives, and a first run of
+  the script left them keyless, so a re-run inserted `scNextTrackId` and the `_scSeenId` dedupe a SECOND time (caught by
+  `count(...) === 1` verification added after the fact). **Every sub in patch-725 carries a `key`**, and the top
+  short-circuit no longer requires `--check` (keyless text-REMOVAL subs can never be keyed, so the guard is what protects
+  the padding move). Expect `19 edit(s) applied, 0 already in place` from 72.4 and `0 applied, 19 already in place` after.
+- **THE OTA TWO-CYCLE, AND THAT THE FIXPOINT CAN BE TRAPPED.** For 72.5's content the size map is
+  `869361 -> 869363`, `869362 -> 869361`, `869363 -> 869363`, i.e. **the fixed point (869363) is NOT in the 2-cycle the
+  real tree gets stuck in**, so `dev/ota-fixpoint.mjs` burned all 8 passes reporting "the size did not settle". Probing
+  trailing newlines 1..15 (`dev/tmp-pad-exp.mjs`, since deleted, over a /tmp/exp tree) showed a **two-newline tail
+  settles in one pass from 869361** while four or more sit in the cycle. patch-725 therefore replaces the 72.3 FOUR
+  newlines (`</html>\n\n\n\n`, which is what HEAD actually held — the 72.3 sub appended three to a single one) with
+  **TWO**. `</html>` + 2 newlines is invisible to the page and rides in the bundle only. **Settled: 869361 (`ota/`) /
+  869371 (`ota-play/`), one pass**, and two generations are byte-identical across 8 artifacts (`/tmp/gen725.md5`).
+  **If a future release hits this again, probe the tail rather than trusting the 8-pass loop.**
+- **`dev/repin-725.mjs` — 61 edits / 32 files** (59 mechanical + 2 bespoke). `OLDVER='72.4'`, `NEWVER='72.5'`,
+  `NEWCACHE` derived; `PREV_MOVES` maps test-713..test-724 `['72.3','72.4']`; KEEPS_ITS_VERSION = test-705.mjs,
+  test-70.mjs. **TWO bespoke moves**: F1 test-724.mjs gets the OWN split (`const OWN = '72.4'`) for its `/artist/` and
+  `/album/`+`/tag/` note checks; F2 test-66431.mjs pinned "those two record taps are the only callers" of
+  `scRenderListNow()` (count === 2) — 72.5 adds a deliberate third (the add path), so the count moves to **3** and the
+  gate now asserts that the extra caller is `scAddConvertedToLibrary`. test-70 runs test-66431, so this showed up as a
+  test-70 failure too.
+- **`dev/test-725.mjs` — 103 checks**, sections [1] release metadata [2] an id is never handed out twice **[the real
+  `scNextTrackId`/`scHighestTrackId` are lifted out of the page with `bindFn` and DRIVEN: a library `t0,t1,t7,t9` with
+  `idCounter = 2` must yield 6 unique ids, step over `t7`/`t9`, use `t2`/`t8`, and leave no two songs on one id]**
+  [3] a song is in All Songs once and a landed song is drawn at once [4] the search answer [5] the request savings
+  [6] what did not move [7] the repin moved every gate [8] inline script syntax. ⚠ **The `renderListInner` slice must end
+  at `const fullIds = ids.slice();` and the `scSpToBuffer` slice at `function scArtistMatch(` — `_isUserAlbumTrack` and
+  `scEscapeHtml` both come BEFORE those functions, so those end-markers silently produce an empty slice.**
+- **Gate set all green**: test-725 **103** (new), test-724 79, test-723 87, test-722 79, test-721 54, test-720 66,
+  test-719 70, test-718 46, test-717 94, test-716 83, test-715 72, test-714 137, test-713 50, test-70 182, test-662 75,
+  test-6643 90, test-6642 75, test-66421 49, test-66422 87, test-66423 52, test-66424 102, test-66425 101,
+  test-66426 86, test-66427 82, test-66429 83, test-66431 96, test-play-copy 28, test-612, test-6136, test-6137,
+  test-6138, test-6139, test-651 35, test-6641 128, **studio-70-check.cjs 390**, check-dom 0 failures, ota-guard 20/0,
+  ota-update 52/0, ota-loop 26/0.
+- **Pre-existing reds, NOT in the gate set, unchanged** (each verified NOT caused by 72.5): test-705.mjs 223/7,
+  batch-635-check.cjs 35/7, test-6058.mjs 47/1, test-66428.mjs 72/1 (its page-wide bullet canary; the page has held 48
+  since at least 72.0).
+- **NOTE on the two-byte-identical OTA checks**: `dev/ota-guard-check.cjs` and `dev/ota-update-check.cjs` reported
+  14/6 and 42/10 on the first run immediately after a `--check` pair in the same shell, then 20/0 and 52/0 on a clean
+  re-run. They rebuild the bundle themselves; run them on their own.
+- **STILL OPEN (the owner's longer report):** Spotify streams are DRM-protected and its ToS forbid ripping, so a
+  Spotify→MP3 replacement is off the table; the offered alternative is bulk local file/folder import with
+  auto-tagging. Also open: "adding to library" adding the wrong song or none, and the album-level artist mismatch on a
+  *fallback* album resolve (no `author_name` in oEmbed, so `scDeezerLookup`/`scItunesLookup` get an empty artist hint).
+- **NEXT RELEASE: 72.6**
+
 ## 72.4 (Oct 2, 2026): a song from a Spotify link is named by the link
 - **The owner's words**: "Ya do that and make sure it fetches the right metadata" - the follow-on to the longer report
   that still had the converter's "no matching source" for brand-new singles, Spotify-linked songs arriving without

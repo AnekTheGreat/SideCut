@@ -26,9 +26,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.4';
-const PREV = '72.3';
-const SHELL_CACHE = 'sidecut-shell-v72.4';
+const VER = '72.5'; /* repinned by dev/repin-725.mjs */
+const PREV = '72.4'; /* repinned by dev/repin-725.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.5';
+// OWN is the release THIS gate describes. The head (entries[0]) moves on every
+// release, so the checks about 72.4 itself must read the 72.4 entry - the head
+// is 72.5 now, and its notes are about All Songs (72.5's repin added this
+// split).
+const OWN = '72.4';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -62,8 +67,10 @@ console.log('[1] release metadata');
     ok(items.length > 6, 'and a note past the six that ride to the store channel (' + items.length + ')');
     ok(String((entries[1] || {}).version) === PREV, 'and the release before it is still listed next');
     const notes = items.join('\n');
-    ok(/artist/i.test(notes), 'the notes say the artist is the thing this release is about');
-    ok(/album/i.test(notes) && /tag/i.test(notes), 'and the album a song is tagged with');
+    const ownEntry = entries.find((e) => String(e.version) === OWN) || head;
+    const ownNotes = (ownEntry.items || []).join('\n');
+    ok(/artist/i.test(ownNotes), 'the notes say the artist is the thing this release is about');
+    ok(/album/i.test(ownNotes) && /tag/i.test(ownNotes), 'and the album a song is tagged with');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     ok(!/\bpass\b/i.test(String(head.title)), 'the title never uses the word the store gate refuses');
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the head notes');
