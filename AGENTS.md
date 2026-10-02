@@ -1,6 +1,72 @@
 # SideCut — repository memory
 
 
+## 72.3 (Oct 2, 2026): a new single is caught when it lands, and the release page plays it
+- **The owner's words**: "How the hell did upcoming releases or fetch latest didn't catch the new single but refetching
+  discover did" + "make upcoming releases and new releases home bubble actually give you the track on the release date".
+  Both halves shipped: the release check now reads the artist's own catalog, and a landed drop is handed its track.
+- **THE DIAGNOSIS (probed live Oct 2, 2026)**: New releases, Upcoming and the Home bubble are ALL fed from ONE place,
+  `pinnedReleases`, and only `checkPinnedArtistReleases()` writes it, via `fetchArtistReleases()`. That reader had three
+  blind spots the Discover refetches do not have: (a) its song pass is an `entity=song` search, which iTunes ranks by
+  POPULARITY - a single that came out this morning has no plays, so it is not in the 200 results (measured: 4 of one
+  prolific artist's 6 newest releases, every one a one-track single, were absent from BOTH the US and the IN song
+  results); (b) its artist-catalog pass - the one place a fresh single really lives - ran only INSIDE the success branch
+  of a popularity-ranked album search, and even then threw away every `trackCount===1` release as "comes through the song
+  query", which it does not; (c) it read only the default storefront, while the Discover refetches read IN (and more).
+  **The bubble was never broken - it was showing exactly what the reader had stored.**
+- **`dev/patch-723.mjs` - 12 edits.** (1) `scItunesArtistAlbums` now loops `['', '&country=IN']` and collapses a
+  collection named twice by its id. (2) New `scSingleTitle(name)` strips a trailing `- Single`/`-Single`/`- Single`
+  wrapper (a one-track release is named `<Song> - Single` by Apple; the song is the release, the wrapper is the filing
+  label). (3) The catalog read moved OUT of the album-search success branch into its own pass (new comment anchored on
+  `var _catAlbums = await scItunesArtistAlbums(artist);`), gated `_catNew = <60d` OR `_catNoNewer = >= newest stored`,
+  sorted, `slice(0, 8)`, deduped against `prevKeys`/`freshTitles`/`fresh`, and **keeps a one-track release as
+  `kind:'single'`**. (4) New `scDeliverDueReleases()` (+ `window.__scDeliverDueReleases`): for every stored drop whose
+  day has arrived and which lacks a playable track, look the song up once (`entity=song&limit=10`), match artist via
+  `__scSameArtistName` and title by normalized prefix, and fill in `previewUrl`/`url`/`cid`/`art`, setting `kind:'single'`
+  on a one-track match. Bounded (`slice(0,12)`), one look per drop per day (`_deliverTried`), `_scDeliverBusy` guard, and
+  **called from `checkPinnedArtistReleases` right before `pinnedCheckState.finishedAt`**, so the boot check, the
+  six-hour check, a foreground return and the Fetch latest button all deliver it on the day. (5) **`saveMeta()` no longer
+  returns early in Albums mode** - see below. (6) APP_VERSION / changelog / cache, and three trailing newlines.
+- **THE All Songs BUG (same patch, note 7).** `saveMeta()` opened with `if(libraryMode === 'albums'){ ...write idCounter +
+  userAlbums...; return; }`, a guard from when album browsing could rewrite playlists. Nothing in an album path touches
+  `playlists` any more (the only two writes reachable from the Albums half - the song kebab and the reorder commit - are
+  BOTH gated on `libraryMode === 'albums'`), so all the guard did was drop the write for the paths that legitimately
+  change playlists while the user is on Albums: a converted song pushed into All Songs, a delete, a favourite. **All
+  Songs is a STORED list; Unsorted is a LIVE FILTER over `allTracks`** (`rawIds = allTracks.map(t=>t.id).filter(id =>
+  !inSomePlaylist.has(id))`) - which is exactly the reported shape: the song shows in Unsorted, is missing from All
+  Songs, and vanishes from All Songs entirely on the next reload. The row is written unconditionally now.
+- **`dev/repin-723.mjs` - 60 edits / 33 files** (54 mechanical + 6 bespoke). `PREV_MOVES` maps test-713..test-722
+  `['72.1','72.2']`; KEEPS_ITS_VERSION = test-705.mjs, test-70.mjs. **FOUR bespoke moves**: F1 test-722.mjs gets the OWN
+  split (`const OWN = '72.2'`, the `studio`/`batch` note checks now read that entry - the head is 72.3, whose notes are
+  about the release check); F2 test-612.mjs + test-6138.mjs watched the catalog read sit inside the album loop guarded by
+  `catch(_idE)` - 72.3 moved the read into its own pass and named the guard `catch(_catE)`, so both are repointed
+  (`scItunesArtistAlbums(artist)` is now AFTER `albPick.slice(0, 5)`, not before `const albPick = []`); F3 test-6139.mjs
+  counts moved: `SC_RELEASE_FETCH` 7 -> **8** (the due-drop resolver is a new catalog read), `freshTitles.add(` 2 -> **3**
+  (the catalog pass records its own title+day), and the junk-test needle became the forEach form
+  `if(window.__scJunkTitle(r.collectionName)) return;`.
+- **`dev/test-723.mjs` - 87 checks**, sections [1] release metadata [2] the catalog is read on its own, and a one-track
+  release is kept [3] the check reaches a second storefront [4] a landed drop is handed its track [5] a song in the
+  library is in All Songs [6] what did not move [7] the repin moved every gate [8] inline script syntax.
+- **OTA at a TRUE byte-identical fixed point: 865246 (`ota/`) / 865254 (`ota-play/`).** The `size` field was in a
+  one-byte two-cycle (865245 <-> 865246) for this content, so the patch appends **three** trailing newlines after
+  `</html>` (invisible to the page, rides in the OTA bundle only) - `sub(html, 'a trailing newline moves the bundle off
+  its one-byte two-cycle', '</html>\n', '</html>\n\n\n', { key: '</html>\n\n\n' })`. Two generations verified byte-identical
+  across 8 artifacts (`/tmp/gen723.md5`). Both bundle `--check`s OK (6 notes each).
+- **Gate set all green**: test-723 **87** (new), test-722 79, test-721 54, test-720 66, test-719 70, test-718 46,
+  test-717 94, test-716 83, test-715 72, test-714 137, test-713 50, test-70 182, test-662 75, test-6643 90, test-6642 75,
+  test-66421 49, test-66422 87, test-66423 52, test-66424 102, test-66425 101, test-66426 86, test-66427 82,
+  test-66429 83, test-66431 95, test-play-copy 28, test-612, test-6136, test-6137, test-6138, test-6139, test-651,
+  test-6641 128, **studio-70-check.cjs 390**, check-dom 0 failures, ota-guard 20/0, ota-update 52/0, ota-loop 26/0.
+- **Pre-existing reds, NOT in the gate set, unchanged**: test-705.mjs 223/7, batch-635-check.cjs 35/7, test-6058.mjs
+  47/1, test-66428.mjs 72/1 (its page-wide bullet canary expects 46 `•` markers; the page has held 48 since at least 72.0).
+- **STILL OPEN / NOT DONE in 72.3** (the owner's later, longer report - converter + Spotify metadata + wrong-song
+  matches + album artist - was NOT fully addressed; only the All Songs persistence bug was). The converter/source-matching
+  work lives in `scArtistMatch` / `scTitleMatch` / `scSourceClaimsSibling` / `scSpToBuffer` / `scRunBatchConvert` /
+  `scConvertOneTrack` (~:38024-39209) and the Spotify lookup paths - none of it was changed here.
+- **NEXT RELEASE: 72.4** - `dev/patch-724.mjs` + `repin-724.mjs` + `test-724.mjs`; add `test-723.mjs` to `PREV_MOVES`
+  (OLDVER `72.3`); KEEP the derived cache name; the trailing-newline OTA trick may need re-tuning if the size two-cycles
+  again; update this file.
+
 ## 72.2 (Oct 2, 2026): Studio runs the whole batch, and one tap cleans up a song
 - **The owner's words**: "Next release: Everything". This is the **Studio half** of that: the three Studio upgrades that
   were offered and never picked between, ALL of them, because the machinery was already there. (The MediaSession half

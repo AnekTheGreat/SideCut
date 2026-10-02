@@ -26,9 +26,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.2'; /* repinned by dev/repin-722.mjs */
-const PREV = '72.1';
-const SHELL_CACHE = 'sidecut-shell-v72.2';
+const VER = '72.3'; /* repinned by dev/repin-723.mjs */ /* repinned by dev/repin-722.mjs */
+const PREV = '72.2'; /* repinned by dev/repin-723.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.3';
+// OWN is the release THIS gate describes. The head (entries[0]) moves on every
+// release, so the checks about 72.2 itself must read the 72.2 entry - the head
+// is 72.3 now, and its notes are about the release check (72.3's repin added
+// this split).
+const OWN = '72.2';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -59,8 +64,10 @@ console.log('[1] release metadata');
     ok(!/downloader|downloading|download|converter|converts|converting|conversion|convert|mp3|get song|no source found|hand-off|ytmp3|vocal remover|spotisaver|spotmate|spotidown|spoticatch/i
       .test(items.slice(0, 6).join('\n')), 'and none of the six that ride to the store trips its wider list');
     ok(!/play build|play version|play install/i.test(items.slice(0, 6).join('\n')), 'nor reads as a store-channel note');
-    ok(/studio/i.test(notes), 'the notes name the surface this release is about');
-    ok(/batch/i.test(notes), 'and the thing this release adds');
+    const ownEntry = entries.find((e) => String(e.version) === OWN) || head;
+    const ownNotes = (ownEntry.items || []).join('\n');
+    ok(/studio/i.test(ownNotes), 'the notes name the surface this release is about');
+    ok(/batch/i.test(ownNotes), 'and the thing this release adds');
     ok(items.every((it) => it.indexOf("'") === -1), 'no note carries an apostrophe into the single-quoted array');
     ok(!!entries.find((e) => String(e.version) === '72.1'), 'the 72.1 entry is still behind it');
   }

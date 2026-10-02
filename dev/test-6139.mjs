@@ -92,7 +92,7 @@ ok(proxy && proxy.includes('Math.max(800, Math.min(8000, _left))'), 'the per-hop
 
 console.log('[4] the release path opts in, at all five catalog reads');
 ok(src.includes('var SC_RELEASE_FETCH = { noCancel: true, budgetMs: 4000 };'), 'the release options are defined once');
-ok(count('SC_RELEASE_FETCH') === 7, 'defined + used by 6 catalog reads (' + count('SC_RELEASE_FETCH') + ')');
+ok(count('SC_RELEASE_FETCH') === 8, 'defined + used by 7 catalog reads (' + count('SC_RELEASE_FETCH') + ')');
 const idFn = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");
 ok(idFn && idFn.split('SC_RELEASE_FETCH').length - 1 === 2, 'the artist search and the catalog lookup both use it');
 const mb = slice('async function scFetchMbUpcoming(artist){', 'window.__scMbUpcoming = scFetchMbUpcoming;');
@@ -114,7 +114,7 @@ console.log('[6] cross-source dedupe — one row per drop');
 const check = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
 ok(!!check, 'fetchArtistReleases slice extracted');
 ok(check && check.includes('const freshTitles = new Set();'), 'a per-run title set is kept');
-ok(check && check.split('freshTitles.add(').length - 1 === 2, 'songs and albums both record their title+day (' + (check ? check.split('freshTitles.add(').length - 1 : 0) + ')');
+ok(check && check.split('freshTitles.add(').length - 1 === 3, 'songs, albums and the catalog pass all record their title+day (' + (check ? check.split('freshTitles.add(').length - 1 : 0) + ')');
 ok(check && check.includes("if(!prevKeys.has(key) && !freshTitles.has(key)){"), 'a song already listed this run is skipped');
 ok(check && check.includes("if(freshTitles.has(nt + '|' + x.date)) return;"), 'the MusicBrainz pass respects what Apple listed');
 ok(check && check.includes("'mbt:' + nt + '|' + x.date"), 'its own source key survives for stored-entry checks');
@@ -161,7 +161,7 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 
 console.log('[11] release metadata');
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.2';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.3';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');
@@ -199,7 +199,7 @@ console.log('[13] no remixes, nothing off the pinned artists');
   ok(check2 && check2.includes('!window.__scJunkTitle(r.trackName)'), 'the iTunes song pass refuses a remix title');
   ok(check2 && check2.includes('if(window.__scJunkTitle(r.collectionName)) return;'), 'so does the album pass');
   const idFn2 = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");
-  ok(idFn2 && idFn2.includes('if(window.__scJunkTitle(r.collectionName)) return false;'), 'and the artist-catalog lookup');
+  ok(idFn2 && idFn2.includes('if(window.__scJunkTitle(r.collectionName)) return;'), 'and the artist-catalog lookup');
   ok(mb && mb.includes('if(window.__scJunkTitle(rg.title)) return;'), 'MusicBrainz too');
   ok(src.includes('if(window.__scJunkTitle(title)) return;'), 'and Wikidata');
   ok(src.includes('if(!r || window.__scJunkTitle(r.title)) return;'), 'the Upcoming list');

@@ -11988,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '72.2';
+  const APP_VERSION = '72.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12465,6 +12465,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '72.3', date: 'October 2, 2026 \u00b7 7:12 AM EDT', title: 'A new single is caught when it lands, and the release page plays it', items: [
+    'New releases and Upcoming releases read the catalog of each pinned artist directly now, so a single is picked up the day it lands instead of the day it happens to become popular.',
+    'The release check used to lean on a popularity-ranked song search, which does not carry a single the day it comes out, and it threw away every one-track release it did find. It keeps them now, so a drop is seen for what it is.',
+    'The check reads the Indian storefront as well, where plenty of singles are listed first, so a drop the discover refetch could see is a drop these lists can see too.',
+    'On the release day the lists resolve the track itself. The row gains its cover, its play button and the real release page, instead of sitting there as a dated name.',
+    'A release that is still on the way keeps its countdown and its pre-save, and a drop is looked up once and remembered, so the check never hammers a catalog that is slow to list it.',
+    'A drop added by hand is treated exactly like one the check found, and the list stays newest first across every artist.',
+    'A song that reaches your library reaches All Songs. The save that files a new or converted song used to skip the playlists row whenever the Library was left on Albums, so the song was in Unsorted and missing from All Songs until the next reload wiped it. That save writes every time now.',
+    'Nothing in the player, the dock, the queue or the lock screen moved. Your saved songs, albums and playlists behave exactly as they did, and no song is deleted.',
+  ] },
   { version: '72.2', date: 'October 1, 2026 \u00b7 7:44 PM EDT', title: 'Studio runs the whole batch, and one tap cleans up a song', items: [
     'Studio can run a batch now. Tick songs in Library and re-encode or edit every one of them in one go, with a line that says which song it is on and how much space came back.',
     'The batch saves a copy of each song. The songs in your library keep their own names, artists, albums and covers, and nothing about them is overwritten.',
@@ -17348,13 +17358,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
   window.__scFreeUpSpace = scFreeUpSpace;
 
   function saveMeta(){
-    // Nuclear safety net: never persist playlist changes while in album mode.
-    // Album-mode operations should only modify userAlbums, never playlists.
-    if(libraryMode === 'albums'){
-      dbPut('meta', { key: 'idCounter', value: idCounter });
-      dbPut('meta', { key: 'userAlbums', value: userAlbums });
-      return;
-    }
+    // 72.3 - the playlists row is written unconditionally. This used to return
+    // early in Albums mode, on the theory that album browsing must never touch
+    // playlists. No album path changes playlists any more (every one of them is
+    // gated on libraryMode, and the album reorder writes userAlbums itself), so
+    // all the guard did was drop the write for the paths that DO change
+    // playlists while the user is on Albums - a converted song into All Songs,
+    // a delete, a favourite. All Songs is a stored list, so that song survived
+    // in the track list and in Unsorted but vanished from All Songs on reload.
     dbPut('meta', { key: 'playlists', value: playlists });
     dbPut('meta', { key: 'idCounter', value: idCounter });
     dbPut('meta', { key: 'userAlbums', value: userAlbums });
@@ -34712,24 +34723,51 @@ function _renderAhFromData(artistAlbums){
         if(credited(norm(primaryArtistName(r.artistName)))) artistId = r.artistId;
       });
       if(!artistId) return [];
-      var lkUrl = 'https://itunes.apple.com/lookup?id=' + encodeURIComponent(artistId) + '&entity=album&limit=200';
-      var lkResp = await fetchWithProxy(lkUrl, SC_RELEASE_FETCH);
-      if(!lkResp || !lkResp.ok) return [];
-      var lkData = await lkResp.json();
-      return ((lkData && lkData.results) || []).filter(function(r){
-        if(!r || !r.collectionName) return false;
-        if(window.__scJunkTitle(r.collectionName)) return false;
-        return credited(norm(primaryArtistName(r.artistName || '')));
-      });
+      // 72.3 - read the artist's own catalog from more than the default
+      // storefront. Plenty of releases (Punjabi and Indian film singles
+      // especially) are IN-only, and the Discover refetches already read IN -
+      // this is the same reach, so a drop a refetch can see is a drop the
+      // release check can see. Two storefronts answer into one list, and a
+      // collection named twice is collapsed by its id.
+      var _catSeen = {};
+      var _catOut = [];
+      var _catStores = ['', '&country=IN'];
+      for(var _csi = 0; _csi < _catStores.length; _csi++){
+        var lkUrl = 'https://itunes.apple.com/lookup?id=' + encodeURIComponent(artistId) + '&entity=album&limit=200' + _catStores[_csi];
+        var lkResp = await fetchWithProxy(lkUrl, SC_RELEASE_FETCH);
+        if(!lkResp || !lkResp.ok) continue;
+        var lkData = await lkResp.json();
+        ((lkData && lkData.results) || []).forEach(function(r){
+          if(!r || !r.collectionName) return;
+          if(window.__scJunkTitle(r.collectionName)) return;
+          if(!credited(norm(primaryArtistName(r.artistName || '')))) return;
+          var _ccid = String(r.collectionId || r.collectionName);
+          if(_catSeen[_ccid]) return;
+          _catSeen[_ccid] = 1;
+          _catOut.push(r);
+        });
+      }
+      return _catOut;
     }catch(_eId){ return []; }
   }
+
+  // 72.3 - a one-track release comes out of the catalog named "<Song> - Single".
+  // The song is the release; the wrapper is Apple's filing label, not the title.
+  function scSingleTitle(name){
+    var _s = String(name || '').replace(/\s+[-\u2013\u2014]\s*single\s*$/i, '').trim();
+    return _s || String(name || '').trim();
+  }
+  window.__scSingleTitle = scSingleTitle;
 
   // Query iTunes for an artist's recent tracks and merge into the snapshot.
   // Returns the list of newly-discovered releases (empty array if none/failed).
   async function fetchArtistReleases(artist){
     // Use primary name for iTunes lookup (cleaner results)
     // limit=200 (not 50) — iTunes returns by POPULARITY, not date.
-    // A brand-new single may not be in the top-50 by plays, but IS in top-200.
+    // A brand-new single may not be in the top-50 by plays, and - probed Oct 2 -
+    // it is often not in the top-200 either: four of one prolific artist's six
+    // newest releases were absent from the 200 song results. The catalog pass
+    // below is what actually catches a fresh single.
     try{
       const url = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=song&limit=200`;
       const resp = await fetchWithProxy(url, SC_RELEASE_FETCH);
@@ -34797,17 +34835,11 @@ function _renderAhFromData(artistAlbums){
             if(!isNewish && !noNewer) return;
             albCand.push(r);
           });
-          // The artist's own catalog, read by ID: this is where a dated
-          // pre-order actually lives, and it goes through the exact same
-          // credited-artist / track-count / dedupe rules below.
-          try{
-            var _idAlbums = await scItunesArtistAlbums(artist);
-            (_idAlbums || []).forEach(function(r){
-              if(!r || !r.collectionName) return;
-              if((r.trackCount || 0) === 1) return;   // one-track releases come through the song query
-              albCand.push(r);
-            });
-          }catch(_idE){}
+          // 72.3 - the artist's own catalog is read once, unconditionally and
+          // keeping its one-track releases, in the pass below. It used to be
+          // read here, inside the success branch of the popularity-ranked album
+          // search, and it dropped every trackCount===1 release as if the song
+          // query had it - which is exactly how a fresh single went missing.
           albCand.sort(function(x, y){ return ((y.releaseDate||'').slice(0,10)).localeCompare((x.releaseDate||'').slice(0,10)); });
           // Two sources can name the same album: the artist-catalog lookup and
           // the term search both carry a pre-order, and a cross-storefront
@@ -34849,6 +34881,52 @@ function _renderAhFromData(artistAlbums){
           });
         }
       }catch(_ae){}
+      // ---- The artist's own catalog, read by ID ----------------------------
+      // 72.3 - this is where a brand-new single actually lives. The song pass
+      // above ranks by popularity, so a single that dropped today is not in it
+      // yet, and the album block above discards every one-track release as if
+      // the song query had it. It does not. Read the catalog directly, keep a
+      // one-track release as the single it is, and give it the same title+day
+      // key the other sources use, so a drop named twice still yields one row.
+      try{
+        var _catAlbums = await scItunesArtistAlbums(artist);
+        var _catNewest = prev.reduce(function(mx, pr){ return (pr.date || '') > (mx || '') ? pr.date : mx; }, '');
+        var _catCut = 60 * 86400000;
+        var _catCand = [];
+        (_catAlbums || []).forEach(function(r){
+          if(!r || !r.collectionName) return;
+          var _cDate = (r.releaseDate || '').slice(0, 10);
+          var _cMs = new Date(_cDate + 'T00:00:00Z').getTime();
+          var _cNew = !isNaN(_cMs) && (Date.now() - _cMs) < _catCut;
+          var _cNoNewer = !_catNewest || _cDate >= (_catNewest || '').slice(0, 10);
+          if(!_cNew && !_cNoNewer) return;
+          _catCand.push(r);
+        });
+        _catCand.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
+        _catCand.slice(0, 8).forEach(function(r){
+          var _cDate = (r.releaseDate || '').slice(0, 10);
+          var _ck = 'alb:' + r.collectionName.toLowerCase().trim() + '|' + _cDate;
+          if(prevKeys.has(_ck)) return;
+          if(freshTitles.has(r.collectionName.toLowerCase().trim() + '|' + _cDate)) return;
+          for(var _fi = 0; _fi < fresh.length; _fi++){
+            var _fe = fresh[_fi];
+            if(_fe && String(_fe.title || '').toLowerCase().trim() === r.collectionName.toLowerCase().trim() && String(_fe.date || '').slice(0, 10) === _cDate) return;
+          }
+          var _oneTrack = (r.trackCount || 0) === 1;
+          fresh.push({
+            title: _oneTrack ? window.__scSingleTitle(r.collectionName) : r.collectionName,
+            date: _cDate,
+            art: r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : null,
+            url: r.collectionViewUrl || null,
+            previewUrl: null,
+            kind: _oneTrack ? 'single' : 'album',
+            cid: r.collectionId || null,
+            seen: false
+          });
+          freshTitles.add(r.collectionName.toLowerCase().trim() + '|' + _cDate);
+          prevKeys.add(_ck);
+        });
+      }catch(_catE){}
       // ---- Dated drops with nothing to connect -----------------------------
       // MusicBrainz carries announced releases with the day already set, and
       // reading it needs no account at all — which is what a public app has to
@@ -34972,6 +35050,10 @@ function _renderAhFromData(artistAlbums){
     }finally{
       pinnedCheckState.active = false;
     }
+    // 72.3 - a release whose day has arrived gets its playable track here, so
+    // the boot check, the six-hour check, a return to the app and the Fetch
+    // latest button all deliver it on the day rather than on a later catalog.
+    try{ await scDeliverDueReleases(); }catch(_eDel){}
     pinnedCheckState.finishedAt = Date.now();
     pinnedCheckState.newCount = totalNew;
     try{ await savePinnedArtists(); }catch(_eSv2){}
@@ -34985,6 +35067,62 @@ function _renderAhFromData(artistAlbums){
     try{ return await pinnedCheckPromise; }
     finally{ pinnedCheckPromise = null; }
   }
+
+  // 72.3 - a drop the day it lands. An upcoming row is stored before the track
+  // is out, so it can sit there with no preview and no release id; the moment its
+  // day arrives this looks the song up and hands the row the playable version, so
+  // the bubble and the release page open the real song instead of a placeholder.
+  // Bounded per run and remembered per drop per day, so a catalog that is slow to
+  // list it is picked up on the next check rather than hammered for it.
+  var _scDeliverBusy = false;
+  async function scDeliverDueReleases(){
+    if(_scDeliverBusy) return;
+    _scDeliverBusy = true;
+    try{
+      var _today = new Date().toISOString().slice(0, 10);
+      var _due = [];
+      Object.keys(pinnedReleases).forEach(function(artist){
+        (pinnedReleases[artist] || []).forEach(function(r){
+          if(!r || !r.title || !r.date) return;
+          if(window.__scUpcomingDay(r.date)) return;    // still on the way
+          if(r.previewUrl && (r.url || r.cid)) return;  // already carries the track
+          if(r._deliverTried === _today) return;        // one look per drop per day
+          _due.push({ artist: artist, rel: r });
+        });
+      });
+      _due = _due.slice(0, 12);
+      var _hit = 0;
+      for(var i = 0; i < _due.length; i++){
+        var _d = _due[i];
+        _d.rel._deliverTried = _today;
+        try{
+          var _q = _d.rel.title + ' ' + _d.artist;
+          var _resp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(_q) + '&media=music&entity=song&limit=10', SC_RELEASE_FETCH);
+          if(!_resp || !_resp.ok) continue;
+          var _data = await _resp.json();
+          var _want = String(_d.rel.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          var _match = null;
+          ((_data && _data.results) || []).forEach(function(s){
+            if(_match || !s || !s.trackName) return;
+            if(!window.__scSameArtistName(primaryArtistName(s.artistName || ''), primaryArtistName(_d.artist))) return;
+            var _tn = String(s.trackName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if(!_tn) return;
+            if(_tn === _want || _tn.indexOf(_want) === 0 || _want.indexOf(_tn) === 0) _match = s;
+          });
+          if(!_match) continue;
+          _d.rel.previewUrl = _match.previewUrl || _d.rel.previewUrl || null;
+          _d.rel.url = _match.trackViewUrl || _d.rel.url || null;
+          _d.rel.cid = _match.collectionId || _d.rel.cid || null;
+          if(!_d.rel.art && _match.artworkUrl100) _d.rel.art = _match.artworkUrl100.replace('/100x100bb.jpg', '/600x600bb.jpg');
+          if((_match.trackCount || 0) === 1) _d.rel.kind = 'single';
+          _hit++;
+        }catch(_eOne){ }
+      }
+      if(_due.length){ try{ await savePinnedArtists(); }catch(_eSv){ } }
+      if(_hit){ try{ renderNewReleases(); }catch(_eRn){ } }
+    }finally{ _scDeliverBusy = false; }
+  }
+  window.__scDeliverDueReleases = scDeliverDueReleases;
 
   // The notification bell surfaces "new releases" alongside the existing
   // enrich/export/duplicate alerts.
@@ -46550,3 +46688,6 @@ window.showAlbumReorderPopup = function(albumName){
 </script>
 </body>
 </html>
+
+
+

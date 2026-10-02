@@ -53,10 +53,10 @@ console.log('[1] the file parses — every inline script block');
   }
   ok(blocks >= 2 && bad === 0, blocks + ' inline script block(s) parse');
   ok(count("version: '61.5'") === 1, 'exactly one 61.5 changelog entry');
-  ok(/const CHANGELOG = \[\n  \{ version: '72.2'/.test(src), 'the newest entry sits inside CHANGELOG');
+  ok(/const CHANGELOG = \[\n  \{ version: '72.3'/.test(src), 'the newest entry sits inside CHANGELOG');
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
   ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.2';"), 'sw.js cache = sidecut-shell-v61.5');
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.3';"), 'sw.js cache = sidecut-shell-v61.5');
   ok(src.indexOf(`version: '61.5'`) < src.indexOf(`version: '${PREV}'`), '61.5 heads the changelog');
 }
 
@@ -165,13 +165,13 @@ console.log('[9] the album pass folds it in and collapses the same drop');
 const check = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
 ok(!!check, 'fetchArtistReleases slice extracted');
 ok(check && check.includes('scItunesArtistAlbums(artist)'), 'the artist-catalog pass runs in the album loop');
-ok(check && check.indexOf('scItunesArtistAlbums(artist)') < check.indexOf('const albPick = []'),
-  'its albums join the candidate pool before the collapse');
+ok(check && check.indexOf('scItunesArtistAlbums(artist)') > check.indexOf('albPick.slice(0, 5)'),
+  'its albums join the pool in their own pass, after the term-search collapse');
 ok(check && check.includes('if((r.trackCount || 0) === 1) return;'), 'one-track releases still defer to the song query');
 ok(check && check.includes('const albSeen = new Set();'), 'cross-source albums collapse by title+day');
 ok(check && check.includes('albPick.slice(0, 5)'), 'the deduped pool is what gets listed');
 ok(check && check.includes('alb:') && check.includes('prevKeys.has(keyA)'), 'the same drop already stored is skipped');
-ok(check && check.includes('catch(_idE)'), 'a catalog failure cannot break the check');
+ok(check && check.includes('catch(_catE)'), 'a catalog failure cannot break the check');
 
 console.log('[10] no Spotify anywhere in the release check');
 ok(count('scSpotifySilentToken') === 0, 'the silent token is gone');

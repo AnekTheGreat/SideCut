@@ -49,7 +49,7 @@ ok(check && !check.includes('__scSpotifyUpcoming'), 'no Spotify pass in the rele
 ok(check && check.includes('window.__scMbUpcoming(artist)'), 'the open MusicBrainz pass still runs');
 ok(check && check.includes("'mbt:' + nt + '|' + x.date"), 'dedupe key names its open source');
 ok(check && check.includes('pe.date = x.date'), 'an undated entry gets the date in place instead of duplicating');
-ok(check && check.includes('_idE'), 'best-effort: a catalog failure cannot break the check');
+ok(check && check.includes('catch(_catE)'), 'best-effort: a catalog failure cannot break the check');
 
 console.log('[5] the empty state asks you to connect nothing');
 ok(count('window.__scWireUpcomingCta = function') === 1, 'wiring helper defined once');
@@ -67,7 +67,7 @@ ok(src.includes("_manual: true"), 'manual drops stored with the fetched shape');
 console.log('[7] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.2';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.3';"), 'sw.js cache = sidecut-shell-v61.5');
 const head = src.indexOf("version: '61.5'");
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.2'"), 'CHANGELOG head entry is 61.5');
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.5'"), '61.5 is ahead of 61.3.5');
