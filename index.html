@@ -11988,7 +11988,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '72.3';
+  const APP_VERSION = '72.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12465,6 +12465,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '72.4', date: 'October 2, 2026 \u00b7 3:10 PM EDT', title: 'A song from a Spotify link is named by the link', items: [
+    'A Spotify link now fills the song with the name the link itself carries, and a catalog lookup can no longer answer for a different performer whose title merely looks similar.',
+    'A song whose performer the link does not name stays unnamed rather than being given someone else, so the tag, the file name and the library row all agree on what the song is.',
+    'A one-track release is tagged with the song as its album. The "<Song> - Single" wrapper these catalogs file it under is dropped, so the album field reads the same on every surface.',
+    'The link reading reaches the network through the device itself, the way every other lookup in the app already does, so a song that exists is found on a phone where the page request never gets an answer.',
+    'A short link is read the same way, so a brand-new release is not left empty just because its page has not been picked up by the public relays yet.',
+    'A song already in your library keeps its name, its artist and its artwork. Nothing is re-tagged, and no song is replaced or removed.',
+    'Nothing in the player, the dock or the queue moved. What plays, what is next and what the lock screen shows are exactly as they were.',
+    'Songs you already saved sound the same, because only the names a new song is filed under are read differently.',
+  ] },
   { version: '72.3', date: 'October 2, 2026 \u00b7 7:12 AM EDT', title: 'A new single is caught when it lands, and the release page plays it', items: [
     'New releases and Upcoming releases read the catalog of each pinned artist directly now, so a single is picked up the day it lands instead of the day it happens to become popular.',
     'The release check used to lean on a popularity-ranked song search, which does not carry a single the day it comes out, and it threw away every one-track release it did find. It keeps them now, so a drop is seen for what it is.',
@@ -34758,6 +34768,21 @@ function _renderAhFromData(artistAlbums){
     return _s || String(name || '').trim();
   }
   window.__scSingleTitle = scSingleTitle;
+  // 72.4 - a one-track release is filed by every catalog as "<Song> - Single".
+  // The song IS the release, so the wrapper is dropped from a plan's own name
+  // and from the album each of its tracks would otherwise be tagged with - the
+  // same rule the release lists already apply, applied to what a newly saved
+  // song is named after.
+  function scPlanDropSingleSuffix(plan){
+    if(!plan) return plan;
+    if(plan.title) plan.title = scSingleTitle(plan.title);
+    if(plan.album) plan.album = scSingleTitle(plan.album);
+    var _tr = plan.tracks || [];
+    for(var _i = 0; _i < _tr.length; _i++){
+      if(_tr[_i] && _tr[_i].album) _tr[_i].album = scSingleTitle(_tr[_i].album);
+    }
+    return plan;
+  }
 
   // Query iTunes for an artist's recent tracks and merge into the snapshot.
   // Returns the list of newly-discovered releases (empty array if none/failed).
@@ -37113,6 +37138,19 @@ function _renderAhFromData(artistAlbums){
   // oEmbed via direct + public CORS relays (albums/playlists are not CORS-open).
   async function scSpOembed(url){
     var base = 'https://open.spotify.com/oembed?url=' + encodeURIComponent(url) + '&format=json';
+    // 72.4 - this is the one reader of open.spotify.com that never used the
+    // device network. It is also the only source of a single-track link's
+    // NAME and cover, because the track oEmbed carries no artist at all. A
+    // plain page fetch gets no answer in the app (Spotify sends no
+    // cross-origin permission) and the public relays below are a browser-only
+    // fallback that goes quiet for days - so a link that had a name arrived
+    // empty, and a plan with no title is no plan: the fresh release looked
+    // like it held nothing. Native first, the same attempt shape the two
+    // embed readers already use; the relays stay as the browser fallback.
+    try{
+      var _nResp = await __scNativeFetch(base);
+      if(_nResp && _nResp.ok){ var _nj = await _nResp.json(); if(_nj && _nj.title) return _nj; }
+    }catch(_ne){}
     var attempts = [
       base,
       'https://api.allorigins.win/raw?url=' + encodeURIComponent(base),
@@ -37389,7 +37427,7 @@ function _renderAhFromData(artistAlbums){
         var embedEnt = await scSpEmbedEntity(url);
         if(embedEnt){
           var eArtist = scArtistCredits(embedEnt.subtitle || '');
-          var eName = String(embedEnt.name || embedEnt.title || '').trim();
+          var eName = scSingleTitle(String(embedEnt.name || embedEnt.title || '').trim());
           var eCover = '';
           try{
             var csrc = ((embedEnt.coverArt || {}).sources || []);
@@ -37458,14 +37496,14 @@ function _renderAhFromData(artistAlbums){
           if(!pl) pl = await scItunesLookup(title, '', 'album');
           if(pl && pl.tracks.length){
             pl.kind = 'playlist'; pl.title = title; pl.cover = thumb || (pl.tracks[0] && pl.tracks[0].cover) || '';
-            scAlbumResolveCache[url] = pl;
+            scAlbumResolveCache[url] = scPlanDropSingleSuffix(pl);
           }
         } else if(kind === 'album'){
           var ab = await scDeezerLookup(title, author, 'album');
           if(!ab) ab = await scItunesLookup(title, author, 'album');
           if(ab && ab.tracks.length){
             ab.kind = 'album'; ab.title = title; ab.cover = thumb || (ab.tracks[0] && ab.tracks[0].cover) || '';
-            scAlbumResolveCache[url] = ab;
+            scAlbumResolveCache[url] = scPlanDropSingleSuffix(ab);
           }
         }
         if(!scAlbumResolveCache[url]){
@@ -37501,6 +37539,21 @@ function _renderAhFromData(artistAlbums){
         var it = await ir.json();
         var hit = null;
         for(var i = 0; i < ((it.results) || []).length && i < 3; i++){
+          // 72.4 - the hit has to BE this song. scDeezerArtistOk answers true
+          // when the artist is unknown (nothing to judge on), so a link that
+          // resolved without an artist - the whole of a brand-new single
+          // whose embed was not readable - took the top result of a search
+          // for the TITLE ALONE. That result is routinely a cover, a
+          // re-record or a different performer's song with a similar name,
+          // and every field it supplied was borrowed from it: the tag, the
+          // file name and the library row named the wrong performer, and the
+          // search for the audio was then built FROM that name, which is how
+          // the right song came back as no matching source.
+          if(!scAlbumTitleOk(it.results[i].trackName, meta.title)) continue;
+          // With no artist on the link there is nothing else to judge on, so
+          // the name must be the same name, not merely a name that contains
+          // it. A blank is better than a lie.
+          if(!meta.artist && scTrackTitleKey(it.results[i].trackName) !== scTrackTitleKey(meta.title)) continue;
           if(!scDeezerArtistOk(meta.artist, it.results[i].artistName)) continue;
           hit = it.results[i]; break;
         }
@@ -38973,7 +39026,10 @@ function _renderAhFromData(artistAlbums){
     // seconds = expected track length from Spotify's own track list, used to
     // reject a decoded buffer that is a completely different song.
     var expectedSec = Number(meta.seconds) || 0;
-    var query = ((title + ' ' + artist + ' ' + album).trim());
+    // 72.4 - a part the link did not name leaves no blank in the query. This
+    // search alone decides what gets looked at, and an unknown artist used to
+    // run the title and the album together.
+    var query = [title, artist, album].filter(function(p){ return !!String(p || '').trim(); }).join(' ').trim();
     if(!query) return null;
     if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
     if(onStatus) onStatus('Searching for "' + title + '" by ' + (artist || 'the artist') + '…');

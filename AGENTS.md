@@ -1,6 +1,69 @@
 # SideCut — repository memory
 
 
+## 72.4 (Oct 2, 2026): a song from a Spotify link is named by the link
+- **The owner's words**: "Ya do that and make sure it fetches the right metadata" - the follow-on to the longer report
+  that still had the converter's "no matching source" for brand-new singles, Spotify-linked songs arriving without
+  metadata, and "HOW IS IT GETTING THE ARTIST WRONG IN ALBUMS AND IN GETTING A SONG" on the open list.
+- **THE DIAGNOSIS.** A single-track Spotify link resolves through three readers, and all three could lose or invent the
+  name: `scSpOembed(url)` (the track NAME + cover - the track oEmbed carries **no artist at all**),
+  `scSpEmbedTrack(url)` (the ARTIST, from the embed page's `__NEXT_DATA__`), then `scEnrichSingleMeta(meta)` (whatever the
+  first two left blank, from iTunes). Three defects, one per reader:
+  1. **`scSpOembed` was the ONE reader of `open.spotify.com` that never used the device network.** It called the page
+     itself and then three public relays. On Android the page request gets no answer (Spotify sends no cross-origin
+     permission) and the relays are a browser-only fallback the app's own comment calls "go quiet for days". So the
+     title and the cover of a fresh track arrived EMPTY, and a plan with no title is no plan - the link looked like it
+     held nothing. `scSpEmbedEntity`/`scSpEmbedTrack` already go `native:` first for exactly this reason.
+  2. **`scEnrichSingleMeta` accepted the first iTunes result for the TITLE ALONE whenever the link had no artist** -
+     which is the whole case of a brand-new single whose embed was not readable, i.e. exactly when metadata is scarce.
+     `scDeezerArtistOk` answers `true` on an empty hint ("nothing to judge on"), so `result[0]` was taken whatever it
+     was. That is routinely a cover, a re-record, a karaoke cut or another performer's song with a similar name, and its
+     artist, album, year, genre and cover were ALL borrowed: the tag, the file name and the library row named the wrong
+     performer. The audio search was then built FROM that wrong name, which is how the right song answered "no matching
+     source". **This is the single root cause behind three of the owner's reported symptoms.**
+  3. **A one-track release is filed by every one of these catalogs as `<Song> - Single`.** That wrapper was copied into
+     the album a song was tagged with and into the album the search asked for. 72.3 already strips it for the release
+     lists (`scSingleTitle`); the same rule now applies to a plan.
+- **`dev/patch-724.mjs` - 10 edits.** (1) `scSpOembed` tries `await __scNativeFetch(base)` first and only accepts a reply
+  with `title`, before `var attempts = [` (relays kept as the browser fallback). (2) The iTunes loop in
+  `scEnrichSingleMeta` now requires `scAlbumTitleOk(it.results[i].trackName, meta.title)` first, and when `meta.artist`
+  is empty also requires `scTrackTitleKey(found) === scTrackTitleKey(meta.title)` (the SAME name, not merely a name
+  containing it). The artist test stays, and only gaps are still filled. (3) New `scPlanDropSingleSuffix(plan)`
+  (inserted right after `window.__scSingleTitle = scSingleTitle;`) strips the wrapper from a plan's `title`, its `album`
+  and every `tracks[i].album`. (4) The album-embed plan's `eName` runs through `scSingleTitle`. (5) Both fallback
+  assignments in `scResolveSpotifyPlan` became `scAlbumResolveCache[url] = scPlanDropSingleSuffix(pl/ab);`. (6) The audio
+  query in `scSpToBuffer` is now `[title, artist, album].filter(...).join(' ').trim()` so an unnamed part leaves no
+  blank. (7) APP_VERSION / changelog / cache. **Do NOT touch the `</html>\n\n\n` padding** - it is what holds the OTA
+  bundle off its size two-cycle, and it is already in the tree.
+- **`dev/repin-724.mjs` - 58 edits / 31 files** (55 mechanical + 3 bespoke). `OLDVER='72.3'`, `NEWVER='72.4'`,
+  `NEWCACHE` derived; `PREV_MOVES` maps test-713..test-723 `['72.2','72.3']`; KEEPS_ITS_VERSION = test-705.mjs, test-70.mjs.
+  **ONE bespoke move**: F1 test-723.mjs gets the OWN split (`const OWN = '72.3'`, `const ownEntry = entries.find(...)`,
+  `const ownNotes = ...`) so its `/all songs/i` and `/single/i && /release/i` checks read the 72.3 entry rather than the
+  new head (72.4's notes are about metadata). Every other head check in that gate is a rule every release must satisfy
+  and correctly stays on the head. Ends with "no stale pin left in any gate".
+- **`dev/test-724.mjs` - 79 checks**, sections [1] release metadata [2] the link reader reaches the device network
+  [3] a look-alike cannot name the song **[behavioural: `scAlbumTitleOk` + `scTrackTitleKey` are lifted out of the page
+  and RUN, not read]** [4] a one-track release is filed as its own song [5] the audio query carries no blank part
+  [6] what did not move [7] the repin moved every gate [8] inline script syntax.
+- **OTA at a TRUE byte-identical fixed point: 866774 (`ota/`) / 866783 (`ota-play/`)**, settled in 3 passes; the 72.3
+  three-newline padding still holds, so no new padding was added. Two generations verified byte-identical across 8
+  artifacts (`/tmp/gen724a.md5`). Both bundle `--check`s OK (6 notes each).
+- **Gate set all green**: test-724 **79** (new), test-723 87, test-722 79, test-721 54, test-720 66, test-719 70,
+  test-718 46, test-717 94, test-716 83, test-715 72, test-714 137, test-713 50, test-70 182, test-662 75, test-6643 90,
+  test-6642 75, test-66421 49, test-66422 87, test-66423 52, test-66424 102, test-66425 101, test-66426 86,
+  test-66427 82, test-66429 83, test-66431 95, test-play-copy 28, test-612, test-6136, test-6137, test-6138, test-6139,
+  test-651 35, test-6641 128, **studio-70-check.cjs 390**, check-dom 0 failures, ota-guard 20/0, ota-update 52/0,
+  ota-loop 26/0.
+- **Pre-existing reds, NOT in the gate set, unchanged** (each verified NOT caused by 72.4): test-705.mjs 223/7,
+  batch-635-check.cjs 35/7, test-6058.mjs 47/1, test-66428.mjs 72/1 (its page-wide bullet canary; the page has held 48
+  since at least 72.0).
+- **STILL OPEN (the owner's longer report, none of it touched here):** "adding to library" adding the wrong song or none;
+  and the album-level artist mismatch on a *fallback* resolve (when `scSpEmbedEntity` is unreachable, `oEmbed` carries no
+  `author_name`, so `scDeezerLookup`/`scItunesLookup` are called with an empty artist hint and only `scAlbumTitleOk`
+  guards the album name). A conservative guard for that - require the fallback album's own artist, and require the
+  tracks to agree with it - is the natural next step.
+- **NEXT RELEASE: 72.5**
+
 ## 72.3 (Oct 2, 2026): a new single is caught when it lands, and the release page plays it
 - **The owner's words**: "How the hell did upcoming releases or fetch latest didn't catch the new single but refetching
   discover did" + "make upcoming releases and new releases home bubble actually give you the track on the release date".

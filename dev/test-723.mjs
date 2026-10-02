@@ -25,9 +25,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.3';
-const PREV = '72.2';
-const SHELL_CACHE = 'sidecut-shell-v72.3';
+const VER = '72.4'; /* repinned by dev/repin-724.mjs */
+const PREV = '72.3'; /* repinned by dev/repin-724.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.4';
+// OWN is the release THIS gate describes. The head (entries[0]) moves on every
+// release, so the checks about 72.3 itself must read the 72.3 entry - the head
+// is 72.4 now, and its notes are about what a Spotify link is named after
+// (72.4's repin added this split).
+const OWN = '72.3';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -49,13 +54,15 @@ console.log('[1] release metadata');
     ok(items.length > 6, 'and a note past the six that ride to the store channel (' + items.length + ')');
     ok(String((entries[1] || {}).version) === PREV, 'and the release before it is still listed next');
     const notes = items.join('\n');
-    ok(/all songs/i.test(notes), 'and the note about a song reaching All Songs');
+    const ownEntry = entries.find((e) => String(e.version) === OWN) || head;
+    const ownNotes = (ownEntry.items || []).join('\n');
+    ok(/all songs/i.test(ownNotes), 'and the note about a song reaching All Songs');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     ok(!/\bpass\b/i.test(String(head.title)), 'the title never uses the word the store gate refuses');
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the head notes');
     ok(!/\bmp3\b/i.test(notes), 'and nothing about encoding');
     ok(/(studio|player|dock|premium|license)/i.test(notes), 'the notes name a surface this app really has');
-    ok(/single/i.test(notes) && /release/i.test(notes), 'and the two things this release is about');
+    ok(/single/i.test(ownNotes) && /release/i.test(ownNotes), 'and the two things this release is about');
     ok(items.every((it) => it.indexOf('[FULL]') === -1), 'every note publishes on both channels');
     ok(!/downloader|downloading|download|converter|converts|converting|conversion|convert|mp3|get song|no source found|hand-off|ytmp3|vocal remover|spotisaver|spotmate|spotidown|spoticatch/i
       .test(items.slice(0, 6).join('\n')), 'and none of the six that ride to the store trips its wider list');
