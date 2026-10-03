@@ -1,6 +1,76 @@
 # SideCut — repository memory
 
 
+## 72.8 (Oct 3, 2026 · 5:45 PM EDT): scrobbling to Last.fm, and the lyrics chips light up
+- **The owner's ask, verbatim**: "Next feature: Last.fm scrobbling | Letter by letter doesn't work and the button
+  itself should be highlighted if you click on it same thing with word by word". Feature release, three things.
+- **1. LAST.FM SCROBBLING — CLIENT-SIDE, NO BACKEND.** `var LF_API = 'https://ws.audioscrobbler.com/2.0/';` plus a
+  self-contained module in front of the play counters. **Checked against the live endpoint before choosing the
+  design**: `ws.audioscrobbler.com` answers `access-control-allow-origin: *`, `access-control-allow-methods: POST,
+  GET, OPTIONS`, and its OPTIONS preflight already allows `content-type` — so the browser can call it directly and the
+  secret never has to reach a server of ours. The app's own backend base (`sidecut_api_base`, default the Render
+  service) lives in ANOTHER repo, so a proxy here could not have worked for existing users anyway. The user brings
+  **their own** API key + shared secret (`last.fm/api/account/create`), which is also how every other local-first
+  scrobbler does it, and they live in `localStorage` (`sidecut_lastfm_key/secret/session/user/on/queue`).
+- **MD5 had to be written.** Last.fm signs with MD5 and `crypto.subtle` does not offer it, so a compact digest rides in
+  the module (`lfMd5`). Verified against vectors (`""`, `abc`, the pangram) AND against `node:crypto` for UTF-8
+  (`é`, `日本語`) — the byte length must come from the UTF-8 encoding, not `.length`.
+- **The signature, and how it is proven.** MD5 of every parameter except `format`/`callback`, sorted by name,
+  concatenated name+value, then the shared secret. `dev/test-728.mjs` does not trust that description: it isolates the
+  module, stubs `fetch`, captures the POST body and compares `api_sig` with a signature it builds itself from
+  `node:crypto`. Now-playing (`track.updateNowPlaying`) and the scrobble (`track.scrobble` with the bracketed
+  `artist[0]`/`track[0]`/`timestamp[0]` keys) are both checked that way.
+- **The rules the feature honors.** Now-playing on every track change (hooked into `recordPlay`, one call site);
+  scrobble when the song has been heard — hooked into `commitPlay`, which is the app's existing >=50%-heard counter,
+  so scrobbles and play counts can never disagree; **nothing under 30 seconds is ever sent** (`LF_MIN_SECONDS`, Last.fm
+  would refuse it); a failed scrobble is parsed into `scLastfm.queue` and retried on `online`, on connect and 9s after
+  boot, capped at 200 items so a long offline stretch stays bounded. Connect = `auth.getToken` -> open
+  `last.fm/api/auth` -> poll `auth.getSession` every 3s (error 14 = not authorized yet; gives up after ~100 tries).
+- **2. LETTER-BY-LETTER WAS NOT BROKEN, IT WAS INVISIBLE — and this was measured, not guessed.** A throwaway jsdom
+  harness ran the shipped `scPaceWords` and confirmed the `.lit` classes ARE applied in order (4 of 5 letters lit
+  mid-word). The failure was the cascade: `.ww-on .lyric-word.current` paints the WHOLE current word gold + glowing +
+  pulsing, so gold letters had nothing to stand out against. New rule `#lyricsText.ll-on .lyric-word.current` (placed
+  AFTER the `.ww-on` rule so equal specificity resolves to it) drops the word to `--ink-dim` with `background:none`,
+  `text-shadow:none`, `animation:none`; the `.lit` letters are the only gold. **test-714's exact selectors were left
+  byte-identical** (`#lyricsText .lyric-word .lyric-letter{` once, `… .lyric-letter.lit{` once).
+- **3. THE CHIPS NEVER LOOKED ON.** Both carry their base border/colour as an INLINE style and an inline style outranks
+  a plain class rule, so the `.active` class the chips already toggled painted nothing — the label flipped to "On" and
+  the chip stayed grey. `#lyricsWordBtn.active` (no `!important`) was powerless; it is now the combined
+  `#lyricsWordBtn.active, #lyricsLetterBtn.active` rule with `!important` on all three declarations, the same trick
+  `#lyricsHighlightBtn.active` already used. **There was no `#lyricsLetterBtn.active` rule at all before this.**
+- **`dev/patch-728.mjs`** (`VERSION='72.8'`, `OLDVER='72.7.1'`, `STAMP='October 3, 2026 \\u00b7 5:45 PM EDT'`, 9 notes,
+  `CACHE` derived). 10 keyed subs: version, changelog head, sw cache, the two CSS rules, the settings card, the
+  scrobbler module, the two hooks, and the OTA tail. First run `6 applied, 4 already in place` (the CSS + card were
+  edited directly first), re-run `0 applied, 10 already in place`. The module and the card ride as one template blob
+  each, so they land in exactly one place.
+- **`dev/repin-728.mjs` — 81 edits / 42 files**, second run 0, "no stale pin left in any gate". `PREV_MOVES` moves
+  test-713..**test-7271** from `'72.7'` -> `'72.7.1'` (18 entries — the previous release's own gate now carries an
+  adjacent-entry pin too). `KEEPS_ITS_VERSION` = test-705.mjs / test-70.mjs. Bespoke **F1–F5** retarget the stale-cache
+  sweep needles in test-7251/7252/726/727/**7271** (`sidecut-shell-v72.7` -> `v72.7.1`), each carrying `(?![0-9.])`.
+  `'72.7.1'` is not a prefix of `'72.8'`, so A/B/E need no lookahead; the cache move keeps one anyway.
+- **THE OTA TAIL held for a FOURTH release.** Two newlines after `</html>`; `node dev/ota-bundle.mjs && node
+  dev/ota-bundle-play.mjs && node dev/ota-fixpoint.mjs` -> **pass 2 fixed point, no oscillation**, `ota/` + root
+  manifest/updates **882452**, `ota-play/` **882460**, all 5 entries OK. **The OTA channel publishes only the FIRST SIX
+  notes** (`ota-bundle.mjs` `.slice(0, 6)`) — the changelog keeps 9, the bundle takes 6, so the store-facing six must
+  still satisfy the store gate's wider word list.
+- **`dev/test-728.mjs` — 94 checks, all green**: release metadata (head notes name widget/player/last.fm/lyrics, 9 notes,
+  >6, EDT, no apostrophes, store word list clean in the first six, patch derives the cache); the letter trough rule and
+  the shared `!important` chip rule (3 declarations, old powerless rule gone); the scrobbler's ids, storage keys, 30s
+  floor, token/session flow, indexed params, queue + online flush, and exactly one hook call site each; **the module
+  isolated and its signatures checked against node:crypto**; the repin moved every gate; inline syntax + two-newline tail.
+- **Gates green after the bump**: test-713..test-724, test-725 103/103, test-7251 109/109, test-7252 57/57, test-726
+  74/74, test-727 59/59, test-7271 59/59, test-728 94/94, test-619 55/55, test-718 46/46, test-662 75/75,
+  test-play-copy 28/28, ota-guard 20/20, ota-update 52/52, ota-loop 26/26, ota-bootapply 24/24, both bundle `--check`
+  OK. Pre-existing reds (test-705, test-617, test-70) were not touched.
+- **NOT VERIFIED HERE**: nothing can actually reach Last.fm in this sandbox with a real account, so the live
+  authorization round-trip and a real scrobble landing on a profile are unproven — the request math is proven, the
+  network handshake is not. The `android/` widget is CI-only and the OTA behavior is exercised by the jsdom checks
+  above rather than on a device.
+- **APPROVED DESIGN DECLINE, unchanged**: Spotify -> MP3 ripping stays refused, so scrobbling is the only Last.fm
+  surface and it deliberately sends no audio, only the five metadata fields the API takes.
+- **NEXT RELEASE**: a fix inside 72.8 -> **72.8.1** (`dev/patch-7281.mjs` + `repin-7281.mjs` + `test-7281.mjs`), or a
+  feature release -> **72.9**. `PREV_MOVES` will need to move test-713..**test-728** from `'72.7.1'` -> `'72.8'`.
+
 ## 72.7.1 (Oct 3, 2026 · 4:23 PM EDT): the lyrics toast tells you which songs it means
 - **The owner's ask, verbatim**: "if it says lyrics found for x amount of songs then if you click on the toast it
   should tell you which songs it found it for". Behaviour release, one feature: a toast can now carry a tap.
