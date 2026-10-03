@@ -1,6 +1,47 @@
 # SideCut — repository memory
 
 
+## 72.7.1 (Oct 3, 2026 · 4:23 PM EDT): the lyrics toast tells you which songs it means
+- **The owner's ask, verbatim**: "if it says lyrics found for x amount of songs then if you click on the toast it
+  should tell you which songs it found it for". Behaviour release, one feature: a toast can now carry a tap.
+- **`dev/patch-7271.mjs`** (`VERSION='72.7.1'`, `OLDVER='72.7'`, `STAMP='October 3, 2026 \\u00b7 4:23 PM EDT'`, 8 notes,
+  `CACHE='sidecut-shell-v'+VERSION` derived). 11 keyed subs + the OTA tail (first run `11 applied, 1 already in place`;
+  re-run `0 applied, 12 already in place`):
+  1. `APP_VERSION '72.7'` -> `'72.7.1'`; 2. changelog head inserted before the 72.7 entry; 3. `sw.js` `CACHE_NAME`
+     `sidecut-shell-v72.7` -> `v72.7.1`;
+  4. **`toast()` gains an optional third argument** `opts`. With `opts.list` it arms `toastEl._onTap`; the once-bound tap
+     handler now reads that action, hides the toast, and runs it (otherwise it dismisses exactly as before). `toast()`
+     clears `_onTap` on every fresh message, and `toastWithUndo` clears it too, so a stale list can never open under a
+     later toast.
+  5. **`showToastList(title, items)`** is the panel: a centered card that reuses the shipped `.modal-backdrop` / `.modal`
+     styling, numbers each song, escapes every name, and closes on its own `Close` button or a tap outside it.
+  6. **the batch run** (`fetchMissingLyricsBtn`) now collects `foundNames` while it loops and its closing toast carries
+     `{ title: 'Lyrics found for', list: foundNames }` and lives `6000` ms when the list is non-empty (message gains
+     ` \\u2014 tap to see which`).
+  7. **the background re-check** (`scLyricsRecheckRun`) collects `addedNames` the same way and hands them to the same
+     toast shape. Its call still starts `toast('Lyrics found for '`, so the test-617 substring pin still matches.
+- **`dev/repin-7271.mjs` — 77 edits / 40 files** (`OLDVER='72.7'`, `NEWVER='72.7.1'`, `NEWCACHE` derived; second run 0;
+  "no stale pin left in any gate"). `PREV_MOVES` maps test-713..**test-727** from `'72.6'` -> `'72.7'` (17 entries).
+  `KEEPS_ITS_VERSION` = test-705.mjs / test-70.mjs. **THE VERSION-PREFIX TRAP, other way round**: `'72.7'` IS a prefix of
+  `'72.7.1'`, so the cache move carries `(?!\\[\\d.])` — a bare `sidecut-shell-v72.7` needle would bite the released
+  `…-v72.7.1` and double-rewrite it on a re-run. Bespoke **F1–F4** retarget the stale-cache sweep needles in test-7251.mjs
+  (`sidecut-shell-v72\\.6` -> `…v72\\.7`), test-7252.mjs, test-726.mjs and **test-727.mjs** (`sidecut-shell-v72[.]6` ->
+  `…-v72[.]7`), each now `(?![0-9.])` so the released name is never matched.
+- **THE OTA TAIL held.** The two-newline padding from 72.5/72.7 still settles this content: `node dev/ota-bundle.mjs &&
+  node dev/ota-bundle-play.mjs && node dev/ota-fixpoint.mjs` -> pass 2 fixed point, `ota/` **875802**, `ota-play/`
+  **875810**, all 5 manifest/updates entries OK. No throwaway probe was needed this time.
+- **`dev/test-7271.mjs` — 59 checks, all green**: release metadata (head notes name widget/player and lyrics; patch derives
+  cache); the toast takes an optional third arg, arms `_onTap`, routes the tap, opens `showToastList`, which reuses the
+  modal styling, numbers/escapes and closes on button or backdrop; both lyrics runs collect names and pass the list (the
+  tap affordance appears exactly twice); a fresh toast and an undo toast clear `_onTap`; the older test-617 message pin
+  still matches; the repin moved every gate and its cache move is prefix-safe; inline script syntax (4 blocks parse).
+- **Gates green after the bump**: test-727 59/59, test-7271 59/59, test-619 55/55, test-718 46/46, test-725 103/103,
+  test-7251 109/109, test-7252 57/57, test-726 74/74, test-play-copy 28/28, and test-713..test-724 all green.
+  **test-617 is a PRE-EXISTING red at HEAD** (`66 passed, 1 FAILED`, `hits and misses are both persisted`) — reproduced on a
+  clean HEAD copy, so it is not caused by this release.
+- **NEXT RELEASE: 72.7.2** for another fix inside 72.7, or **72.8** for a feature release. New trio
+  `dev/patch-728.mjs` + `repin-728.mjs` + `test-728.mjs`.
+
 ## 72.7 (Oct 3, 2026 · 9:29 AM EDT): the instructions are tap-by-tap now — the tools bar says it opens, and every step names the tap
 - **The owner's ask, verbatim**: "Make the instructions more clearer of to like click on conversion tools and stuff and a
   drop-down will appear stuff like that to make it more clearer do that". Wording-only release: no markup was reshaped, no

@@ -5502,20 +5502,57 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('dragstart', (e) => e.preventDefault());
   const toastEl = $('toast');
-  function toast(msg, ms=2200){
+  // `opts.list` makes a toast one you can tap for detail: the tap opens a panel
+  // naming the songs instead of just dismissing. The lyrics runs use it so
+  // "Found lyrics for N songs" can answer which ones.
+  function toast(msg, ms=2200, opts){
+    toastEl._onTap = (opts && opts.list && opts.list.length)
+      ? function(){ showToastList(opts.title || msg, opts.list); }
+      : null;
     toastEl.textContent = msg;
     toastEl.style.display='block';
     toastEl.style.cursor='pointer';
     clearTimeout(toastEl._t);
     toastEl._t = setTimeout(()=> toastEl.style.display='none', ms);
-    // Tap to dismiss (only bind once)
+    // Tap once: open the detail if there is one, otherwise dismiss as before.
     if(!toastEl._tapDismissed){
       toastEl._tapDismissed = true;
       toastEl.addEventListener('click', function(){
         clearTimeout(toastEl._t);
         toastEl.style.display='none';
+        var _fn = toastEl._onTap;
+        toastEl._onTap = null;
+        if(typeof _fn === 'function'){ try{ _fn(); }catch(_eToastTap){ console.error('toast tap failed', _eToastTap); } }
       });
     }
+  }
+
+  // The panel a tappable toast opens: a centered card listing the songs, reusing
+  // the shipped modal styling. Closes on its own button or a tap outside it.
+  function showToastList(title, items){
+    var list = (items || []).filter(Boolean);
+    var rows = list.map(function(s, i){
+      return '<div style="display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px; color:var(--ink);">' +
+        '<span style="color:var(--ink-dim); flex-shrink:0; min-width:18px;">' + (i + 1) + '.</span>' +
+        '<span style="flex:1; min-width:0; word-break:break-word;">' + escapeHtml(String(s)) + '</span></div>';
+    }).join('');
+    if(!rows) rows = '<div style="color:var(--ink-dim); font-size:13px; padding:6px 0;">No songs to list.</div>';
+    var bd = document.createElement('div');
+    bd.className = 'modal-backdrop';
+    bd.style.zIndex = '250';
+    bd.style.display = 'flex';
+    var sh = document.createElement('div');
+    sh.className = 'modal';
+    sh.style.maxWidth = '380px';
+    sh.innerHTML = '<h3>' + escapeHtml(title) + '</h3>' +
+      '<div style="max-height:50vh; overflow-y:auto; margin-bottom:10px;">' + rows + '</div>' +
+      '<button id="_toastListClose" style="width:100%; padding:11px; border-radius:8px; border:none; background:var(--coral); color:#fff; font-weight:600; font-size:13px; cursor:pointer;">Close</button>';
+    bd.appendChild(sh);
+    document.body.appendChild(bd);
+    function close(){ try{ bd.remove(); }catch(_eClose){} }
+    var btn = document.getElementById('_toastListClose');
+    if(btn) btn.addEventListener('click', close);
+    bd.addEventListener('click', function(e){ if(e.target === bd) close(); });
   }
 
   // Android WebView blocks native prompt() — use a proper modal instead
@@ -5548,6 +5585,7 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   // Toast with an inline Undo action (used by unpin). Reuses the #toast element,
   // keeps the message + Undo button up for 6 seconds, then clears itself.
   function toastWithUndo(msg, onUndo){
+    toastEl._onTap = null;
     toastEl.textContent = '';
     const span = document.createElement('span');
     span.textContent = msg;
@@ -10028,6 +10066,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     due = due.slice(0, SC_LYRICS_RECHECK_MAX);
     scLyricsRecheckRunning = true;
     var added = 0;
+    var addedNames = [];
     try{
       for(var i = 0; i < due.length; i++){
         if(typeof navigator !== 'undefined' && navigator.onLine === false) break;
@@ -10043,6 +10082,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           t.lyricsCheckedAt = Date.now();
           try{ await persistTrackMeta(t); }catch(_eRecheckSave){}
           added++;
+          try{ addedNames.push(t.name || 'Untitled'); }catch(_eRecheckName){}
         }else{
           // Stamped on a miss as well — that is what stops the next launch from
           // asking about the same song again straight away.
@@ -10057,7 +10097,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       scLyricsRecheckRunning = false;
     }
     if(added){
-      try{ toast('Lyrics found for ' + added + ' newer song' + (added === 1 ? '' : 's')); }catch(_eToast){}
+      try{ toast('Lyrics found for ' + added + ' newer song' + (added === 1 ? '' : 's') + ' \u2014 tap to see which', 6000, { title: 'Lyrics found for', list: addedNames }); }catch(_eToast){}
       try{ refreshEnrichNotif(); }catch(_eNotif){}
     }
     return added;
@@ -12006,7 +12046,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '72.7';
+  const APP_VERSION = '72.7.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12567,6 +12607,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '72.7.1', date: 'October 3, 2026 \u00b7 4:23 PM EDT', title: 'Tap the lyrics toast to see which songs it found', items: [
+    'The lyrics run now ends with a toast you can tap: tap it and a panel opens listing every song that came back with words.',
+    'The list follows the order the songs were checked, so the ones at the top are the songs the run reached first.',
+    'The toast also stays on screen a few seconds longer, so there is time to tap it before it goes away.',
+    'A run that finds nothing reads exactly as before, with nothing to open and nothing to tap.',
+    'The quiet re-check that runs a little while after launch reports the newer songs it found words for the same way, on the same tap.',
+    'The panel numbers each song, closes on its own Close button or a tap outside it, and changes nothing else in the app.',
+    'Everything the previous update fixed stays fixed, and the stopwatch in the bell and the storage panel are untouched.',
+    'The player, your library, your queue, your saved songs and the home-screen widget controls are all left exactly where they were.',
+  ] },
   { version: '72.7', date: 'October 3, 2026 \u00b7 9:29 AM EDT', title: 'The way in is tap-by-tap now: the tools bar says it opens, and every step names the tap', items: [
     'The how-to boxes walk you through the taps now: tap the tools bar and a drop-down opens, tap the song-link card inside it, tap the box to paste, then tap the button.',
     'The tools bar itself says "tap to open", so it reads as a drop-down you press instead of a heading you read past.',
@@ -15406,6 +15456,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     
     window.lyricsFetchState = { active: true, total: needsLyrics.length, done: 0, fetched: 0 };
     const total = needsLyrics.length;
+    const foundNames = [];
     
     const btn = $('fetchMissingLyricsBtn');
     const bar = $('lyricsProgressBar');
@@ -15424,6 +15475,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         t.lyricsSynced = result.isSynced;
         persistTrackMeta(t);
         window.lyricsFetchState.fetched++;
+        foundNames.push(t.name || t.title || 'Untitled');
       }
       window.lyricsFetchState.done++;
       fill.style.width = Math.round((window.lyricsFetchState.done/total)*100) + '%';
@@ -15433,7 +15485,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     
     btn.disabled = false;
     bar.style.display = 'none';
-    toast(`Found lyrics for ${window.lyricsFetchState.fetched} songs`);
+    const _lyricsCount = window.lyricsFetchState.fetched;
+    const _lyricsList = foundNames.slice();
+    const _lyricsOpen = _lyricsCount > 0 && _lyricsList.length > 0;
+    toast(`Found lyrics for ${_lyricsCount} songs` + (_lyricsOpen ? ' \u2014 tap to see which' : ''),
+      _lyricsOpen ? 6000 : 2200,
+      _lyricsOpen ? { title: 'Lyrics found for', list: _lyricsList } : undefined);
     window.lyricsFetchState = null;
     refreshEnrichNotif();
   });
