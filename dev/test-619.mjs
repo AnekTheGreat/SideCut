@@ -22,7 +22,10 @@
 // Two things make that safe, and both are checked here rather than assumed:
 //   * `nextElementSibling` only works if the tool section really IS a sibling
 //     that comes next. [3] walks the markup tag by tag to prove it, and proves
-//     the tools are NOT nested inside the how-to box.
+//     the tools are NOT nested inside the how-to box. Note that the how-to box
+//     is allowed to *name* the section in its copy ("Tap 🎛️ Conversion Tools")
+//     — that is teaching, not nesting — so [3] keys off the tool section's own
+//     markup, never off the bare phrase.
 //   * hiding rather than removing keeps every element the converter wiring
 //     further down still looks up in place, so no screen can break. [2c] checks
 //     each of those ids is still in the file and still inside the hidden
@@ -174,14 +177,18 @@ console.log('[3] the markup really puts the tool section right after each box');
 // This is the assertion the fix rests on. `nextElementSibling` is only correct
 // if (a) the tool section is NOT inside the box, and (b) it is the very next
 // element after it. Both are measured here with a tag-depth walk.
+const TOOL_MARKUP = '🎛️ Conversion Tools <span';
 for (const [label, boxId, ownId, toolId] of [
   ['Discover', 'getSongsHowToDisc', 'expandUrlInput', 'expandUrlInput'],
   ['Settings', 'getSongsHowToSettings', 'expandUrlInputSettings', 'expandUrlInputSettings']
 ]) {
   const { self, next } = elementAndNext(openAt(boxId));
-  ok(!/🎛️ Conversion Tools/.test(self) && !self.includes(toolId),
+  // The section's own markup signature, not the bare phrase: the box may (and
+  // now does) tell the reader to tap 🎛️ Conversion Tools, so only the real
+  // summary element proves nesting.
+  ok(!self.includes(TOOL_MARKUP) && !self.includes(toolId),
     label + ': the tool section is not nested inside the box');
-  ok(/🎛️ Conversion Tools/.test(next), label + ': the next element IS the Conversion Tools section');
+  ok(next.includes(TOOL_MARKUP), label + ': the next element IS the Conversion Tools section');
   ok(next.includes('id="' + toolId + '"'), label + ': it contains the Expand URL card');
   ok(next.includes('mp4ToMp3' + (label === 'Settings' ? 'FileSettings' : 'File')), label + ': it contains the MP4 card');
   ok(next.includes('spCard' + (label === 'Settings' ? 'Settings' : 'Disc')), label + ': it contains the Spotify card');

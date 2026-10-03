@@ -22,9 +22,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.6';
-const PREV = '72.5.2';
-const SHELL_CACHE = 'sidecut-shell-v72.6';
+const VER = '72.7'; /* repinned by dev/repin-727.mjs */
+const PREV = '72.6'; /* repinned by dev/repin-727.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.7';
 const OWN = '72.6';
 
 let pass = 0, fail = 0;
@@ -195,12 +195,12 @@ console.log('[5] the repin moved every gate');
   ok(repin.indexOf("['test-7252.mjs', ['72.5.1', OLDVER]]") !== -1, 'and it moves the adjacent-entry pin for its own gate too');
   ok(repin.indexOf("bespoke('test-7252.mjs'") !== -1, 'with the sweep corrections written for the gates it displaces');
   const dev = fs.readdirSync(path.join(ROOT, 'dev'));
-  const OLD_VER_PIN = 'const VER = ' + "'72.5.2" + "';";
+  const OLD_VER_PIN = 'const VER = ' + "'" + PREV + "';";
   const stale = dev.filter((n) => /^test-.*\.mjs$/.test(n) && n !== 'test-705.mjs' && n !== 'test-70.mjs')
     .filter((n) => fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf(OLD_VER_PIN) !== -1);
   ok(stale.length === 0, 'no gate still pins the old build (' + stale.join(',') + ')');
   const cacheStale = dev.filter((n) => /^test-.*\.mjs$/.test(n))
-    .filter((n) => /sidecut-shell-v72[.]5[.]2(?![0-9])/.test(fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8')));
+    .filter((n) => /sidecut-shell-v72[.]6(?![0-9])/.test(fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8')));
   ok(cacheStale.length === 0, 'and no gate still names the old shell cache (' + cacheStale.join(',') + ')');
 }
 

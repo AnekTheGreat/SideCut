@@ -1,6 +1,64 @@
 # SideCut — repository memory
 
 
+## 72.7 (Oct 3, 2026 · 9:29 AM EDT): the instructions are tap-by-tap now — the tools bar says it opens, and every step names the tap
+- **The owner's ask, verbatim**: "Make the instructions more clearer of to like click on conversion tools and stuff and a
+  drop-down will appear stuff like that to make it more clearer do that". Wording-only release: no markup was reshaped, no
+  id invented, no element moved. The `getSongsHowTo*` / walkthrough / scenario copy now **names the tap and the drop-down**
+  instead of saying "open the built-in converter below".
+- **`dev/patch-727.mjs`** (`VERSION='72.7'`, `OLDVER='72.6'`, `STAMP='October 3, 2026 \\u00b7 9:29 AM EDT'`, 7 notes,
+  `CACHE='sidecut-shell-v'+VERSION` derived). 10 keyed subs, so a re-run is a no-op (first run `9 applied, 1 already in
+  place`; re-run `0 applied, 10 already in place`):
+  1. `APP_VERSION '72.6'` -> `'72.7'`; 2. changelog head inserted before the 72.6 entry; 3. `sw.js` `CACHE_NAME`
+     `sidecut-shell-v72.6` -> `v72.7`;
+  4. **the tools-bar hint** (global, `all:true`, 2 occurrences): `Spotify · YouTube · MP4 · Expand URL</span></summary>` ->
+     `… Expand URL — tap to open ▾</span></summary>`. The bar now reads as a control you press, not a heading you read past.
+  5-9. **every teaching line names the tap**: Discover step 2 and Settings step 2 now `Tap <b>🎛️ Conversion Tools</b> below —
+     a drop-down opens. … tap the link box to paste the link and tap Convert.`; the `howToGetMusicHead` walkthrough step 2
+     and scenario 1 (`howToScenario1Head`) both `Tap 🎛️ Conversion Tools — a drop-down opens; tap 🎵 Spotify to MP3 / WAV /
+     FLAC, tap the link box to paste the link …`; `tutSumGetMusic` gains `tap 🎛️ Conversion Tools in Settings → Get Songs or
+     Discover first and a drop-down opens`.
+  Preserved VERBATIM so the older pins hold: `Open the built-in converter below`, `Paste the link into the built-in`,
+  `tap <b>Convert</b>. SideCut tags it, gives it its cover art and files it into your library` (test-662) and
+  `<b>Getting music in:</b> paste a Spotify link`.
+- **`dev/repin-727.mjs` — 74 edits / 38 files** (`OLDVER='72.6'`, `NEWVER='72.7'`, `NEWCACHE` derived; second run 0;
+  "no stale pin left in any gate"). `PREV_MOVES` maps test-713..**test-726** from `'72.5.2'` -> `'72.6'` (16 entries).
+  `KEEPS_ITS_VERSION` = test-705.mjs / test-70.mjs. Bespoke: **F1** `test-7251.mjs` stale-cache needle
+  `sidecut-shell-v72\.5\.2` -> `…v72\.6`; **F2** `test-7252.mjs` `sidecut-shell-v72[.]5[.]2` -> `…v72[.]6`; **F3**
+  `test-726.mjs` gets the same regex change PLUS its hardcoded `OLD_VER_PIN` converted to the derived
+  `'const VER = ' + "'" + PREV + "';"`. The **version-prefix trap** again: `'72.6'` is not a prefix of `'72.7'`.
+- **THE OTA 2-CYCLE AND THE TWO-NEWLINE FIX.** The 72.7 content landed in the known **one-newline 2-cycle**
+  (`874738 <-> 874739`, 8 passes, never settles). Probed the tail padding over a scratch copy (`SC_ROOT=/tmp/exp727`) with
+  a **throwaway** `dev/tmp-pad-exp.mjs` (DELETED before commit, like `dev/fix-726-cards.mjs`): pad 0 (one `\n`) = no fixed
+  point; pads 1, 2, 4, 5 settle pass 2; pads 3, 6 settle pass 1. Chose **TWO newlines** after `</html>` (the 72.5
+  precedent for this exact problem). Result: `ota/` **874740**, `ota-play/` **874747**, settled pass 2, all 5
+  manifest/updates entries OK. Lesson: when the fixpoint oscillates by ONE byte, the tail padding is the knob — probe it on a
+  scratch copy, do not hand-guess.
+- **`dev/test-727.mjs` — 59 checks, all green**: release metadata (incl. widget/player words in the head notes, patch
+  derives cache); the tools bar reads as a control (the new hint appears exactly twice, the old heading-only hint 0 times);
+  every step names the tap + drop-down (Discover/Settings slices to `<!-- Expand URL card -->`, the modal slice, the tutsum
+  slice; the two teaching lines still exactly once; fallback links kept); the Play-only build is given no converter language
+  (`_getSongsSteps` intact, header free of drop-down/Conversion Tools/spotisaver, `nextElementSibling.style.display =
+  'none'` count 1); the repin moved every gate; inline script syntax (4 blocks parse).
+- **`dev/test-619.mjs` NEEDED A RETARGET — and it is the interesting one.** Its `[3]` used the bare phrase
+  `🎛️ Conversion Tools` as a proxy for "the tool section", so once the how-to box legitimately *names* the section
+  ("Tap 🎛️ Conversion Tools") it reported `the tool section is not nested inside the box` as a false FAIL (53/2). The
+  structural guarantee (box does not *contain* the section; `nextElementSibling` IS the section) is independently proven by
+  the id assertions, so the fix was to key `[3]` off the section's own markup signature (`TOOL_MARKUP =
+  '🎛️ Conversion Tools <span'`), never the bare phrase. Now 55/55. Lesson: **a test that proxies a structure with a phrase
+  breaks the moment the copy starts using that phrase — proxy on markup, not on words.**
+- **PRE-EXISTING REDS, NOT caused by this work** (identical on `git show HEAD:index.html`): test-705.mjs 223/7,
+  batch-635-check.cjs 35/7, test-6058.mjs 47/1, test-66428.mjs 72/1, media-controls-check.cjs 18/1,
+  native-snapshot-check.cjs 12/1, audio-focus-check.cjs 35/3. Several gates need `NODE_PATH=/tmp/h/node_modules`.
+  `test-66429.mjs` is a known FLAKE (fails in a batch, passes alone). `ota-guard-check` / `ota-update-check` /
+  `ota-loop-check` misreport right after `ota-bundle --check` — run each ALONE; `ota-bootapply-check.cjs` needs ~60-150 s.
+  The real play-copy gate is `dev/test-play-copy.mjs` (there is no `play-copy-check.cjs`).
+- **PREVIEW CAVEAT**: the Freebuff preview serves the workspace root `/home/daytona/codebase` (a separate checkout at
+  APP_VERSION 63.1), NOT the `.wt-641` worktree — so the live preview shows the old build and cannot show the new copy.
+- **NEXT RELEASE: 72.7.1** for a fix inside 72.7, or **72.8** for a feature release. New trio
+  `dev/patch-72Xn.mjs` + `repin-72Xn.mjs` + `test-72Xn.mjs`; `NEWCACHE = 'sidecut-shell-v' + NEWVER`; add test-726.mjs to
+  `PREV_MOVES`; and write the repin's bespoke stale-cache sweep correction.
+
 ## 72.6 (Oct 2, 2026 · 9:24 PM EDT): the way in is spelled out, a hidden playlist stays hidden, and Expand URL moves down
 - **The owner's four asks, in one update**: (1) move the Expand URL card to the BOTTOM of the conversion tools; (2) make
   the "get songs into your library" instructions much clearer; (3) a hidden playlist must stay hidden on reopen; (4) update
