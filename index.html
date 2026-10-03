@@ -3544,6 +3544,13 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
           </div>
           <button id="autoScrollToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Off</button>
         </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0 4px;">
+          <div>
+            <div style="font-size:13px; font-weight:600;">Keep the playing album open</div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">Leaving Albums closes every album except the one the playing song is in</div>
+          </div>
+          <button id="albumFocusPlayingToggle" style="padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:none; color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">Off</button>
+        </div>
       </div>
 
       <!-- Collapsible: Tutorial summary (text) -->
@@ -7407,6 +7414,7 @@ function getApiHeaders() {
     if(tab === 'widget') renderWidgetThemeControls();
     // Nested panes are only visible inside the (open) More playback section.
     if(tab === 'more'){
+      scSyncAlbumFocusToggles();
       renderRefreshRateOptions();
       // Playback & sound always starts collapsed when the More tab opens —
       // tap the header to expand it for this visit only.
@@ -11988,7 +11996,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 70.0 opens a new release series rather than advancing 64.3. The third number
   // stops at nine (64.3.1 -> 64.4), and a whole new series reads 70.0 - never
   // 70.0.0, which the updater would treat as the same build.
-  const APP_VERSION = '72.5';
+  // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
+  // updater compares the numbers one at a time, so it reads 72.5.1 as newer
+  // than 72.5 and installs it, while the release it belongs to stays 72.5.
+  const APP_VERSION = '72.5.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12023,12 +12034,95 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var toggleBtn = document.getElementById('diagonalSplitToggle');
     if(toggleBtn) toggleBtn.textContent = useDiagonalSplit ? 'Diagonal ✓' : 'Single ✓';
   }
+  // ---- 72.5.1: leaving Albums can close everything but the playing album -----
+  // An OPTIONAL switch (off by default, in Settings > More and in Manage albums).
+  // With it on, leaving the Albums tab collapses every album card except the one
+  // the playing song is in; a song that is in no album leaves them all shut.
+  // While you are ON the tab nothing is touched - you can keep as many albums
+  // open as you like, which is exactly how the list has always worked.
+  function scAlbumFocusOn(){
+    try{ return localStorage.getItem('sidecut_albumFocusPlaying') === '1'; }catch(e){ return false; }
+  }
+  // The album the playing song is in, or null. It never CREATES an album: a song
+  // whose tag names no album you have simply has no album to keep open.
+  function scAlbumForPlayingTrack(){
+    try{
+      var tid = null;
+      try{
+        var djOpen = $('djModeBackdrop') && $('djModeBackdrop').style.display === 'flex';
+        if(djOpen && typeof djCurrentTrackId !== 'undefined' && djCurrentTrackId) tid = djCurrentTrackId;
+      }catch(_eDj){}
+      if(!tid && queueIndex >= 0 && queueIndex < queue.length) tid = queue[queueIndex];
+      if(!tid) return null;
+      var t = allTracks.find(function(tr){ return tr.id === tid; });
+      if(!t) return null;
+      var found = null;
+      Object.keys(userAlbums || {}).some(function(n){
+        var e = userAlbums[n];
+        if(!e || !Array.isArray(e.trackIds)) return false;
+        if(typeof albumIsAuto === 'function' && albumIsAuto(n)) return false;
+        if(e.trackIds.indexOf(t.id) !== -1){ found = n; return true; }
+        return false;
+      });
+      if(found) return found;
+      var tag = String(t.album || '').trim();
+      if(tag && userAlbums && userAlbums[tag]) return tag;
+      return null;
+    }catch(e){ return null; }
+  }
+  // Called on the way OUT of the Albums tab. It PERSISTS the collapse state as
+  // well as painting it, because the cards are rebuilt from that state on the
+  // next render - so what you see when you come back is what was decided here.
+  function scAlbumsRememberOnLeave(){
+    try{
+      if(!scAlbumFocusOn()) return 0;                          // off by default
+      if(typeof libraryMode === 'undefined' || libraryMode !== 'albums') return 0;
+      var pane = document.getElementById('listPane');
+      if(!pane) return 0;
+      var cards = pane.querySelectorAll('[data-album-name]');
+      if(!cards || !cards.length) return 0;                    // the Albums list is not on screen
+      var keepName = scAlbumForPlayingTrack();
+      var closed = 0;
+      Array.prototype.forEach.call(cards, function(card){
+        var nm = card.dataset ? card.dataset.albumName : '';
+        var open = !!(keepName && nm === keepName);
+        if(!open) closed++;
+        try{ localStorage.setItem('sidecut_albColl_' + nm, open ? '0' : '1'); }catch(_eSt){}
+        var body = card.querySelector('[id^="alb_card_"]');
+        if(body) body.style.display = open ? 'block' : 'none';
+        var hdr = card.firstElementChild;
+        var chev = hdr ? hdr.querySelector('span') : null;
+        if(chev) chev.style.transform = open ? 'rotate(90deg)' : '';
+      });
+      return closed;
+    }catch(e){ return 0; }
+  }
+  function scSyncAlbumFocusToggles(){
+    try{
+      var on = scAlbumFocusOn();
+      var label = on ? 'On \u2713' : 'Off';
+      var s = document.getElementById('albumFocusPlayingToggle');
+      if(s) s.textContent = label;
+      var m = document.getElementById('mgrAlbumFocusPlayingToggle');
+      if(m) m.textContent = label;
+    }catch(e){}
+  }
+  function scSetAlbumFocus(on){
+    try{ localStorage.setItem('sidecut_albumFocusPlaying', on ? '1' : '0'); }catch(e){}
+    scSyncAlbumFocusToggles();
+  }
+  window.__scAlbumFocusOn = scAlbumFocusOn;
+  window.__scAlbumsRememberOnLeave = scAlbumsRememberOnLeave;
+
   // Wire up the toggle button
   document.addEventListener('click', function(e){
     if(e.target.id === 'diagonalSplitToggle'){
       useDiagonalSplit = !useDiagonalSplit;
       localStorage.setItem('sidecut_diagonalSplit', useDiagonalSplit);
       applyLibraryButtonMode();
+    }
+    if(e.target.id === 'albumFocusPlayingToggle'){
+      scSetAlbumFocus(!scAlbumFocusOn());
     }
     if(e.target.id === 'autoScrollToggle'){
       autoScrollToSong = !autoScrollToSong;
@@ -12039,6 +12133,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // Apply on load
   setTimeout(function(){
     applyLibraryButtonMode();
+    scSyncAlbumFocusToggles();
     var asBtn = document.getElementById('autoScrollToggle');
     if(asBtn) asBtn.textContent = autoScrollToSong ? 'On \u2713' : 'Off';
   }, 100);
@@ -12465,6 +12560,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '72.5.1', date: 'October 2, 2026 \u00b7 7:27 PM EDT', title: 'The widget transport buttons reach the player again', items: [
+    'The play, pause, next and previous buttons on the home-screen widget now reach SideCut itself. A press was sent out as a general media key, which lands on the player the phone considers active, and in the background that was often another app.',
+    'The widget hands each press straight to the player SideCut owns, so the four buttons keep working whether the app is open, in the background, or only the lock screen is showing.',
+    'The notification and lock-screen player is armed as soon as the app can reach it and keeps trying if the first moment is missed, instead of being given up on for the whole session.',
+    'Every control is put back when you leave the app, not only when you return, so a card the system rebuilt while you were away comes back with all four buttons rather than play and pause on their own.',
+    'A press on the widget while SideCut is not running opens the app instead of doing nothing, so the transport button is never a dead one.',
+    'The rule for the previous button is unchanged: past a few seconds it restarts the song that is playing, and in the opening seconds it moves to the song before it.',
+    'A song that is still playing when you leave the app keeps playing. This release is about the buttons that control it from outside the app, not about playback itself.',
+    'Nothing about your songs, playlists or settings changed. Your library, your queue and your saved songs are read exactly as they were.',
+    'The Albums list can let go of the albums you are done with. A switch in Settings > More and in Manage albums, off by default, closes every album when you leave the tab and leaves the one the playing song is in open, if it is in one.',
+  ] },
   { version: '72.5', date: 'October 2, 2026 \u00b7 3:34 PM EDT', title: 'All Songs tells the truth about every song in it', items: [
     'A song can no longer appear twice in All Songs. A list that had picked up a repeated entry is flattened on the next launch, and one is never filed twice again.',
     'Every song in the library is in All Songs. A song that was added to the library but left out of the list is put back on the next launch, and a song is drawn the moment it lands rather than when the list next gets a chance.',
@@ -21007,6 +21113,11 @@ function _fallbackCopy(text){
     html += '<span id="mgrAlbumSearchClear" style="display:none;color:var(--ink-dim);font-size:15px;cursor:pointer;padding:0 2px;">\u00d7</span>';
     html += '</div>';
     html += '<div id="mgrAlbumCount" style="display:none;font-size:11px;color:var(--ink-dim);padding:6px 2px 2px;"></div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 2px 2px;">'
+      + '<div style="min-width:0;"><div style="font-size:12.5px;font-weight:600;">Keep the playing album open</div>'
+      + '<div style="font-size:11px;color:var(--ink-dim);margin-top:2px;line-height:1.5;">Leaving Albums closes every album except the one the playing song is in.</div></div>'
+      + '<button id="mgrAlbumFocusPlayingToggle" style="flex-shrink:0;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">' + (scAlbumFocusOn() ? 'On \u2713' : 'Off') + '</button>'
+      + '</div>';
     names.forEach(function(name, i){
       var alb = userAlbums[name] || {};
       // userAlbums entries store trackIds, not tracks - the old "N tracks"
@@ -21082,6 +21193,14 @@ function _fallbackCopy(text){
         _mgrAlbumQuery = '';
         applyAlbumFilter('');
         try{ if(sIn) sIn.focus(); }catch(_eF){}
+      });
+    }
+    var _afToggle = bEl.querySelector('#mgrAlbumFocusPlayingToggle');
+    if(_afToggle && !_afToggle._afWired){
+      _afToggle._afWired = true;
+      _afToggle.addEventListener('click', function(e){
+        e.stopPropagation();
+        scSetAlbumFocus(!scAlbumFocusOn());
       });
     }
     Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-cover'), function(btn){
@@ -25838,7 +25957,14 @@ function _fallbackCopy(text){
     // Opt-in notification player for the installed app: armed a few seconds
     // AFTER boot (never at startup), only when the user enabled it, and it
     // auto-disables itself if the process dies while it is active.
-    setTimeout(() => {
+    // 72.5.1 - ARM THE NOTIFICATION PLAYER RELIABLY. This was armed exactly once,
+    // three seconds after boot, and if the bridge was not ready at that one
+    // moment the app ran the whole session with NO media session at all: the
+    // lock-screen player never appeared and the home-screen widget had nothing
+    // to hand its play, pause, next and previous to. It keeps trying until it is
+    // armed instead - and if it did arm, _scMediaArmDone stops the retries.
+    let _scMediaArmDone = false;
+    function _scArmNativeMedia(){
       try{
         try{ if(window.__scMediaNotifOff(localStorage.getItem('sidecut_native_media'))) return; }catch(e){ }
         const C = window.Capacitor;
@@ -25868,6 +25994,7 @@ function _fallbackCopy(text){
           },
         };
         capMediaSessionActive = capMediaSessionNative;
+        _scMediaArmDone = true;
         if(window.__scMark) __scMark('the media player notification');
         registerMediaSessionHandlers();
         // If a song is already playing when the adapter arms (it deliberately
@@ -25885,7 +26012,15 @@ function _fallbackCopy(text){
           }catch(e){ }
         }, 0);
       }catch(e){ }
-    }, 3000);
+    }
+    setTimeout(function(){ try{ _scArmNativeMedia(); }catch(e){} }, 3000);
+    (function(){
+      let _scArmTries = 0;
+      const _scArmTimer = setInterval(function(){
+        if(_scMediaArmDone || ++_scArmTries > 30){ clearInterval(_scArmTimer); return; }
+        try{ _scArmNativeMedia(); }catch(e){}
+      }, 2000);
+    })();
   }
 
   function updateMediaSession(t){
@@ -26649,6 +26784,10 @@ function _fallbackCopy(text){
       // once the WebView is frozen, so the playhead is the only honest witness.
       const bgDead = !userPaused && !playbackSurvivedBackground();
       if(bgDead) mediaSetPlaybackState('paused');
+      // 72.5.1 - while a song plays this heartbeat is the one thing still
+      // running, so it is what puts the controls back if the session was
+      // rebuilt with none while the app was away.
+      if(mediaHandlersDirty){ try{ refreshMediaControls(); }catch(e){} }
       if(!capMediaSession && !('mediaSession' in navigator)) return;
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
       if(t) updateMediaSession(t);
@@ -26804,6 +26943,12 @@ function _fallbackCopy(text){
   }
   document.addEventListener('visibilitychange', function(){
     if(document.hidden){
+      // 72.5.1 - re-assert on the way OUT as well as the way back in. A session
+      // the system rebuilds while the app is away comes back with whatever
+      // buttons it was rebuilt with; without this a press on the home-screen
+      // widget or the lock screen had nothing to land on.
+      mediaHandlersNeedArm();
+      try{ refreshMediaControls(); }catch(e){}
       if(mediaPausedInBackground()) armMediaRelease();
     } else {
       cancelMediaRelease();
@@ -30122,6 +30267,11 @@ function _fallbackCopy(text){
   // Unified top-level navigation: only one of Home / Discover / Library is visible at a time.
   // The active action-strip pill is highlighted to match.
   function navigate(view){
+    // 72.5.1 - leaving the Albums tab with the switch on closes every album but
+    // the one the playing song is in. Re-entering the library view (view
+    // "library") is a redraw of whichever half is already showing, not a leave,
+    // so it is excluded - as is navigate("albums") itself.
+    if(view !== "albums" && view !== "library"){ try{ scAlbumsRememberOnLeave(); }catch(_eAf){ } }
     if(view === "albums"){ libraryMode = "albums"; try{ dbPut("meta",{key:"libraryMode",value:libraryMode}); }catch(_e){} view = "library"; }
     if(view === "playlists"){ libraryMode = "playlists"; try{ dbPut("meta",{key:"libraryMode",value:libraryMode}); }catch(_e){} view = "library"; }
     const isHome = view === 'home';
@@ -32192,6 +32342,9 @@ function _renderAhFromData(artistAlbums){
   $('libraryBtn').addEventListener('click', (e) => {
     // In single-button mode, toggle between playlists/albums on click
     if(!useDiagonalSplit && !e.target.closest('#playlistsHalf') && !e.target.closest('#albumsHalf')){
+      // Flipping AWAY from Albums is leaving the tab, so the switch applies here
+      // too (flipping TO Albums is not a leave).
+      try{ if(libraryMode === 'albums') scAlbumsRememberOnLeave(); }catch(_eAf2){}
       libraryMode = libraryMode === 'playlists' ? 'albums' : 'playlists';
       if(typeof dbPut === 'function') dbPut('meta', { key: 'libraryMode', value: libraryMode });
       activePlaylist = lastUsedPlaylist || 'All Songs';
@@ -46843,4 +46996,3 @@ window.showAlbumReorderPopup = function(albumName){
 </script>
 </body>
 </html>
-

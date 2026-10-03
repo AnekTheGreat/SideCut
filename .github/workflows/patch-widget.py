@@ -550,13 +550,57 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         else if (action.endsWith("_next")) code = KeyEvent.KEYCODE_MEDIA_NEXT;
         else if (action.endsWith("_playpause")) code = KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
         if (code != 0) {
+            // 72.5.1 - HAND THE PRESS TO SIDECUT'S OWN PLAYER FIRST.
+            //
+            // A media key was broadcast system-wide, and Android delivers a
+            // media key to whichever player it currently considers active.
+            // While SideCut is in the foreground that is SideCut; in the
+            // background it is frequently another app, or nothing at all,
+            // which is why play, pause, next and previous all did nothing
+            // while a song was audibly still playing. Sending the key straight
+            // to the service that owns SideCut's media session removes that
+            // guess entirely.
+            boolean sent = false;
+            try {
+                Intent mb = new Intent(Intent.ACTION_MEDIA_BUTTON);
+                mb.setClassName(context.getPackageName(),
+                        "io.github.jofr.capacitor.mediasessionplugin.MediaSessionService");
+                mb.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_DOWN, code));
+                context.startService(mb);
+                sent = true;
+            } catch (Exception ignored) {
+                sent = false;
+            }
+            boolean music = false;
             try {
                 AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-                if (am != null) {
-                    am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
-                    am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
-                }
+                if (am != null) music = am.isMusicActive();
             } catch (Exception ignored) {
+            }
+            if (!sent) {
+                // No session of ours to hand it to: fall back to the
+                // system-wide key, exactly as every earlier build did.
+                try {
+                    AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                    if (am != null) {
+                        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+                        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            if (!sent && !music) {
+                // Nothing is playing and there is no session of ours to move:
+                // open the app rather than leaving the press unanswered.
+                try {
+                    Intent open = context.getPackageManager()
+                            .getLaunchIntentForPackage(context.getPackageName());
+                    if (open != null) {
+                        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(open);
+                    }
+                } catch (Exception ignored) {
+                }
             }
         }
     }

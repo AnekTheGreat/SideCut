@@ -1,6 +1,83 @@
 # SideCut — repository memory
 
 
+## 72.5.1 (Oct 2, 2026): the widget transport buttons reach the player again
+- **The owner's request**: "I hit play then I exit the app since still playing and then I go to the widget and the pause
+  button and play button don't work neither to song forward and back fix this v72.5.1 fix any other bugs you find". A
+  second request landed mid-session and rides the SAME update: an OPTIONAL album switch (see below).
+- **THE WIDGET BUG, ROOT CAUSE.** The home-screen widget (`.github/workflows/patch-widget.py`, native Java injected only
+  during the Android CI build) turned button taps into `AudioManager.dispatchMediaKeyEvent` - a system-wide
+  media key. Android delivers a media key to whichever player it currently considers active; in the background that is
+  often another app or nothing, so all four buttons died while the song audibly played. The widget now hands the key
+  straight to our own session: `Intent(Intent.ACTION_MEDIA_BUTTON)` addressed at `io.github.jofr.capacitor.
+  mediasessionplugin.MediaSessionService` with an `EXTRA_KEY_EVENT` `KeyEvent(ACTION_DOWN, code)` via `startService`; the
+  system-wide `dispatchMediaKeyEvent` remains only as a fallback when `startService` throws, and if even that fails and
+  `!am.isMusicActive()` it opens the app. `pi(ctx, action, extra)` still builds `com.SideCut.myapp.WIDGET_<action>` and
+  `onReceive` still handles `_open/_prev/_next/_playpause/_HBCHECK/BOOT_COMPLETED/MY_PACKAGE_REPLACED/APPWIDGET_*`.
+- **THE WEB HALF, AND WHY IT WAS DEAD TOO.** `index.html` mirrored controls to BOTH `navigator.mediaSession` and the
+  native `@jofr/capacitor-media-session` plugin, but `_scArmNativeMedia` (was a bare one-shot `setTimeout(..., 3000)`)
+  armed EXACTLY ONCE, 3 s after boot; if the bridge wasn't ready at that one moment the whole session had NO handler. It
+  is now a named `function _scArmNativeMedia()` with a one-way `_scMediaArmDone` flag set ONLY right after
+  `capMediaSessionActive = capMediaSessionNative` (so it is set when the adapter is genuinely live), a 3 s first attempt,
+  and a bounded retry `setInterval(..., 2000)` that stops after `_scArmTries > 30` or on `_scMediaArmDone`.
+- **THE CONTROLS RE-ASSERT.** The `visibilitychange` HIDDEN branch now calls `mediaHandlersNeedArm();
+  refreshMediaControls();` before `armMediaRelease()`, and `startMediaSessionHeartbeat` fires `refreshMediaControls()`
+  once per beat while `mediaHandlersDirty`. So the transport is rebuilt on the way OUT and while the song is playing.
+- **DELIVERY IS SPLIT ON PURPOSE.** The web half rides OTA; the widget half needs the NEXT APK. They are complementary,
+  not alternatives - the widget hand-off only helps once a build carrying it is on the device, while the media-session
+  half improves the current one on the next OTA.
+- **THE OPTIONAL ALBUM SWITCH.** The other request, re-thought mid-session: "maybe in albums it should be like you can
+  have 2 albums open at once but the song playing in that album stays open when you leave the tab then all albums
+  collapse except for the one the current song is playing in if it's in an album ... optional". So it is **OFF by
+  default** (`localStorage['sidecut_albumFocusPlaying'] === '1'`). While ON the Albums tab **nothing is touched** - you
+  can keep as many albums open as you like, which is exactly how the list has always worked (each card has its own
+  `sidecut_albColl_<name>`). On the way OUT of the tab, `scAlbumsRememberOnLeave()` closes every album card except
+  `scAlbumForPlayingTrack()`, **persisting** the state (not just painting it) because the cards are rebuilt from
+  `sidecut_albColl_*` on the next render. `scAlbumForPlayingTrack()` reads the DJ track or `queue[queueIndex]`, finds it
+  in `userAlbums` (skipping auto-albums), falls back to the track's album TAG, and never CREATES an album - a song in no
+  album leaves them all shut.
+- **THE ALBUM SWITCH'S TWO HOMES AND TWO CALLERS.** Toggle row `#albumFocusPlayingToggle` in Settings > More (after
+  `autoScrollToggle`) and `#mgrAlbumFocusPlayingToggle` in `manageAlbumsHTML()`; both wired, both labels kept in sync by
+  `scSyncAlbumFocusToggles()` (also at boot). The two leave-callers are the `navigate()` hook
+  (`if(view !== "albums" && view !== "library")` before anything else) and the single-library-button flip, which reads
+  the OLD `libraryMode` before flipping it. Internal names: `scAlbumFocusOn`, `scAlbumForPlayingTrack`,
+  `scAlbumsRememberOnLeave`, `scSyncAlbumFocusToggles`, `scSetAlbumFocus`, `window.__scAlbumFocusOn`,
+  `window.__scAlbumsRememberOnLeave`.
+- **THE FOUR-PART VERSION / PREFIX TRAP (the central lesson of 72.5.1).** `'72.5'` is a PREFIX of `'72.5.1'`, and
+  `'sidecut-shell-v72.5'` a prefix of `'sidecut-shell-v72.5.1'`. Three consequences had to be handled. (1) repin's
+  cache step uses a lookahead `new RegExp(esc(OLDCACHE) + '(?!\\.1)', 'g')` else it re-fires on its own output and
+  produces `sidecut-shell-v72.5.1.1`. (2) The repin head-entry literal now matches `\{ version: '72.5'(?!\.)` because
+  some gates write it as a REGEX, and the lookahead stops self-matching. (3) test-719..test-725 each end with a "no gate
+  still names the PREVIOUS shell cache" sweep using a bare `t.indexOf('sidecut-shell-v' + PREV)`, TRUE for the new tree
+  - 1 FAILURE each in 7 gates until repin applies a bespoke **F2** replacing it with
+  `new RegExp('sidecut-shell-v' + PREV.replace(/\./g, '\\.') + '(?!\\.)').test(t)`. `dev/test-7251.mjs` itself is
+  scanned by its own sweep, so it builds the needle at runtime. `v72.5.1` IS legal for the version gates
+  (`test-662`/`test-6642` accept `/^\d+(\.\d+)*$/`; `native-updates.js` `compareVersions` splits on `.` and
+  `parseInt`s segment by segment, so `72.5.1 > 72.5`).
+- **THE OTA TAIL, PROBED AGAIN.** At this page size `ota-fixpoint.mjs` two-cycled `872146 <-> 872147` for all 8 passes. A
+  throwaway probe across pads 0..4 showed `pad 0 -> 872144 settled`, `pad 1 -> 872146 settled`, `pad 2 -> cycle`. So
+  patch-7251 NORMALIZES the tail to exactly ONE newline after `</html>` in code (a removal, so it cannot be a keyed
+  sub): `const trimmed = html.text.replace(/\s*$/, ''); const want = trimmed.endsWith('</html>') ? trimmed + '\n' :
+  trimmed;`. Re-run then settled in **pass 3: `ota/` 872146, `ota-play/` 872153**, all 5 manifest/updates entries OK.
+- **THE PATCH, REPIN AND GATE.** `dev/patch-7251.mjs` (`VERSION='72.5.1'`, `OLDVER='72.5'`, `STAMP='October 2, 2026
+  \u00b7 7:27 PM EDT'`, 9 notes, cache derived as `'sidecut-shell-v' + VERSION`) carries 21 keyed sub/steps and, by
+  DESIGN, **no top short-circuit guard** - the album subs were added AFTER the first pass, so every sub is an
+  insertion/swap and keyed; a re-run adds only what is missing (`0 applied, 21 already in place`).
+  `dev/repin-7251.mjs` final run **60 edits across 33 files**, second run 0, `PREV_MOVES` maps test-713..test-725 `72.4`
+  -> `72.5`, `KEEPS_ITS_VERSION` = test-705.mjs/test-70.mjs, plus the F1 test-725 `const OWN = '72.5'` split and the F2
+  correction above. `dev/test-7251.mjs` = **109 checks** across 9 sections, section [7] DRIVES the album helpers with
+  `bindFn()` against fake cards + a fake localStorage, section [8] copies `patch-widget.py` into a SCRATCH dir and runs
+  it to assert the emitted Java (never run it from the repo - it resolves its project root from its own file location
+  and would write an `android/` tree here).
+- **PRE-EXISTING REDS, NOT caused by this work** (identical on `git show HEAD:index.html`): `test-705.mjs` 223/7,
+  `batch-635-check.cjs` 35/7, `test-6058.mjs` 47/1, `test-66428.mjs` 72/1 (its page-wide `\u2022` canary expects 47;
+  the page has held 48 since >=72.0), `media-controls-check.cjs` 18/1, `audio-focus-check.cjs` 35/3. Several gates need
+  `NODE_PATH=/tmp/h/node_modules` (jsdom scratch).
+- **NEXT RELEASE: 72.6** - new trio `dev/patch-726.mjs` + `repin-726.mjs` + `test-726.mjs`; `OLDVER='72.5.1'`,
+  `NEWCACHE = 'sidecut-shell-v' + NEWVER`; move test-713..test-725 pins from `'72.5'` to `'72.5.1'`; add `test-7251.mjs`
+  to `PREV_MOVES`. Remember the prefix trap: `'72.5.1'` is a prefix of nothing here, but the lookahead guards and the F2
+  cache sweep are now the established pattern.
+
 ## 72.5 (Oct 2, 2026): All Songs tells the truth about every song in it
 - **The owner's words** (all one message, mid-conversion): "WHY ARE THEIR DUPLICATE SONGS IN ALL SONGS", "WHY ARE
   SONGS THAT EXIST IN THE APP NOT SHOWING IN ALL SONGS", "SONGS THAT ARE COMPLETE DUPLICATES IN ALL SONGS BUT DELETING

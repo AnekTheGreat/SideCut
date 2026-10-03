@@ -25,9 +25,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.5'; /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */
-const PREV = '72.4'; /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */
-const SHELL_CACHE = 'sidecut-shell-v72.5';
+const VER = '72.5.1'; /* repinned by dev/repin-7251.mjs */ /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */
+const PREV = '72.5'; /* repinned by dev/repin-7251.mjs */ /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */
+const SHELL_CACHE = 'sidecut-shell-v72.5.1';
 // OWN is the release THIS gate describes. The head (entries[0]) moves on every
 // release, so the checks about 72.3 itself must read the 72.3 entry - the head
 // is 72.4 now, and its notes are about what a Spotify link is named after
@@ -203,7 +203,10 @@ console.log('[7] the repin moved every gate');
     if (KEEPS.has(name)) continue;
     const t = fs.readFileSync(path.join(dev, name), 'utf8');
     if (t.indexOf(ownVer) !== -1) staleVer++;
-    if (t.indexOf('sidecut-shell-v' + PREV) !== -1) staleCache++;
+    // PREV is a PREFIX of this release name (72.5 of 72.5.1), so a bare indexOf
+    // would also match this release's own cache. The dot-boundary keeps the
+    // check about a cache that is genuinely older (added by dev/repin-7251.mjs).
+    if (new RegExp('sidecut-shell-v' + PREV.replace(/\./g, '\\.') + '(?!\\.)').test(t)) staleCache++;
   }
   ok(staleVer === 0, 'no gate still pins the previous version (' + staleVer + ')');
   ok(staleCache === 0, 'and none names the previous shell cache (' + staleCache + ')');
