@@ -548,7 +548,24 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         int code = 0;
         if (action.endsWith("_prev")) code = KeyEvent.KEYCODE_MEDIA_PREVIOUS;
         else if (action.endsWith("_next")) code = KeyEvent.KEYCODE_MEDIA_NEXT;
-        else if (action.endsWith("_playpause")) code = KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
+        else if (action.endsWith("_playpause")) {
+            // 72.5.2 - NAME THE ACTION. KEYCODE_MEDIA_PLAY_PAUSE is a TOGGLE the
+            // system resolves against the playback state IT last saw for the
+            // session, and a stale state kept answering pause - which is why the
+            // widget could pause but never play again. The widget already knows
+            // what its own icon says, so it sends that verb directly, and falls
+            // back to the toggle only when it has no state to go on.
+            boolean known = false, playing = false;
+            try {
+                android.content.SharedPreferences sp =
+                        context.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
+                org.json.JSONObject st = new org.json.JSONObject(sp.getString("state", "{}"));
+                if (st.has("playing")) { known = true; playing = st.optBoolean("playing", false); }
+            } catch (Exception ignored) {
+            }
+            code = !known ? KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                    : (playing ? KeyEvent.KEYCODE_MEDIA_PAUSE : KeyEvent.KEYCODE_MEDIA_PLAY);
+        }
         if (code != 0) {
             // 72.5.1 - HAND THE PRESS TO SIDECUT'S OWN PLAYER FIRST.
             //

@@ -1,6 +1,125 @@
 # SideCut — repository memory
 
 
+## 72.6 (Oct 2, 2026 · 9:24 PM EDT): the way in is spelled out, a hidden playlist stays hidden, and Expand URL moves down
+- **The owner's four asks, in one update**: (1) move the Expand URL card to the BOTTOM of the conversion tools; (2) make
+  the "get songs into your library" instructions much clearer; (3) a hidden playlist must stay hidden on reopen; (4) update
+  the Freebuff sandbox/preview environment. Plus an explicit "Push". **72.5.2 ships in the SAME push** - it was written but
+  never committed, and it is the PREDECESSOR this release pins against (`OLDVER='72.5.2'`).
+- **1. THE CARD MOVE — AND THE ANCHOR LESSON.** The Expand URL box is only the fallback for a SHORT Spotify link
+  (`open.spotify.com/s/...` -> the full track URL); it sat FIRST in both the Discover and Settings tool lists, in front of
+  the Spotify / YouTube / MP4 cards people actually came for. It now sits LAST in each list, after the audio-format
+  explainer. **The first attempt used generic anchors** (`'<!-- Expand URL card -->'`, `'<!-- Spotify card -->'`) - and the
+  Settings pass then matched the card the Discover pass had JUST INSERTED, slicing from there forward and swallowing the
+  whole Settings Spotify/YouTube/MP4/explainer block into the Discover list. The move block was rewritten around a single
+  `moveCard(text, startComment, nextComment, closeAnchor)` helper with **indentation-specific anchors** (Discover 6-space,
+  Settings 8-space) and each list's own `</details>` close. Lesson: a move that runs twice over two sibling lists must
+  anchor on the INDENTATION that distinguishes them, never a bare text comment. One-time `dev/fix-726-cards.mjs` repaired
+  the working tree (idempotence-guarded by marker count; throws if run twice on an already-repaired tree).
+- **Order, pinned**: Discover `spCardDisc` < `ytCardDisc` < MP4 < explainer < Expand URL; Settings the same. Two
+  `<!-- Expand URL card -->` markers remain, one per list. `dev/test-619.mjs` (55 checks) independently confirms it: each
+  how-to box's `nextElementSibling` IS the Conversion Tools section containing Expand URL + MP4 + Spotify + YouTube.
+- **2. TWO WAYS IN, SAID PLAINLY.** Both how-to boxes (`getSongsHowToDisc` and `getSongsHowToSettings`) and the first-run
+  walkthrough (`howToGetMusicHead`) now OPEN with a plain lead-in: there are two ways in - let the app make the file from a
+  Spotify or YouTube link, OR bring files you already have with `+ Add songs` - and either way the songs land in your
+  library, on your device. The existing steps and outside-site fallback links are untouched.
+- **3. A HIDDEN PLAYLIST STAYS HIDDEN.** Hiding a tab is the user saying "keep this out of the way", but the boot restore,
+  the Library button and the single-button toggle all picked `lastUsedPlaylist` WITHOUT checking whether it is hidden - so
+  reopening the app put a hidden playlist on screen, and it only vanished once a tab switch re-rendered/re-filtered. New
+  helpers `scPlaylistVisible(name)` and `scFirstVisiblePlaylist()` (inserted before `function rememberPlaylist(name)`) now
+  guard every one of those picks: boot restore (~:30043), the Library-button `pickReal` (~:32409), the single-button toggle
+  (~:32392) and the `◀ Library` tab `pl.addEventListener('click', ...)` (~:19206). Hiding is still not a delete: songs,
+  order and tags are untouched, and unhiding brings the tab straight back.
+- **THE VERSION-PREFIX TRAP, THIRD FORM.** `'72.5.1'` is not a prefix of `'72.6'` (nor of `'72.5.2'`), so the A/B/E steps
+  need no lookahead. Every gate written before a release still ends with a "no gate names the PREVIOUS shell cache" sweep,
+  and this release needs TWO bespoke retargets: **F1** in `test-7251.mjs` (its built needle was hardcoded `72.5.1` -> now
+  `72.5.2`) and **F2** in `test-7252.mjs` (whose hardcoded `OLD_VER_PIN` is replaced by a `PREV`-built needle matching
+  `72[.]5[.]2`). Expect a bespoke sweep correction in every repin from here.
+- **`dev/repin-726.mjs` - 70 edits / 36 files** (`OLDVER='72.5.2'`, `NEWVER='72.6'`, `NEWCACHE` derived), second run 0,
+  "no stale pin left in any gate". `PREV_MOVES` maps test-713..test-725 **and test-7251.mjs, test-7252.mjs** from `'72.5.1'`
+  to `'72.5.2'`; `KEEPS_ITS_VERSION` = test-705.mjs / test-70.mjs.
+- **`dev/patch-726.mjs`** (`VERSION='72.6'`, `OLDVER='72.5.2'`, `STAMP='October 2, 2026 \\u00b7 9:24 PM EDT'`, 8 notes, cache
+  derived, resolves its root from `SC_ROOT` else the script's parent dir) - every sub is an insertion/swap with a `key`, so a
+  re-run is a no-op; the card MOVE is code (a move cannot be a keyed sub) guarded by a marker; the OTA tail is normalised to
+  exactly ONE newline after `</html>`. Re-run: `0 applied, 13 already in place`.
+- **`dev/test-726.mjs` - 74 checks**: release metadata, the card move, the how-to text (scoped to the how-to box slice, so
+  `spotisaver`/`spotmate`/`Audio formats explained` duplicates no longer trip it), the hidden-playlist fix **DRIVEN** via
+  `bindFn`, the repin, inline syntax. **`dev/test-619.mjs`** re-passed 55/55 too.
+- **OTA SETTLED IN THREE PASSES**: pass 1 874288 -> 874361, pass 2 **874361** fixed point; `ota-play/` **874369**. All 5
+  manifest/updates entries OK; both `--check`s OK at v72.6. `dev/test-718.mjs` 46/46 (its [4] asserts `ota/`/`ota-play/`
+  `updates.json` version == VER and the notes are the head six, verbatim).
+- **4. FREEBUFF PREVIEW ENV.** `freebuff-preview set-install "npm install"`, `set "npm run preview" 8080`,
+  `set-build "npm run build"`, then `start` -> `running:true, listening:true`. `.wt-641/package.json` has ONLY
+  `preview`/`build` (no `dev`), so the preview command MUST be `npm run preview`. See the note under PRE-EXISTING REDS for
+  the `freebuff-preview`/`curl` reachability gotcha.
+- **PRE-EXISTING REDS, NOT caused by this work** (verified identical on `git show HEAD:index.html`): test-705.mjs 223/7,
+  batch-635-check.cjs 35/7, test-6058.mjs 47/1, test-66428.mjs 72/1, media-controls-check.cjs 18/1,
+  **native-snapshot-check.cjs 12/1** (`the recovery file is written at all`, 12/1 on HEAD too), audio-focus-check.cjs 35/3.
+  Several gates need `NODE_PATH=/tmp/h/node_modules`. `test-66429.mjs` is a known FLAKE (failed once in a batch, passes
+  alone). `ota-guard-check` / `ota-update-check` / `ota-loop-check` misreport if run right after `ota-bundle --check` - run
+  each ALONE. `dev/ota-bootapply-check.cjs` needs ~60-150 s (jsdom + real timers), so give it a long timeout.
+- **NEXT RELEASE: 72.6.1** for a fix inside 72.6 (the third number stops at nine), or **72.7** for a feature release. New
+  trio `dev/patch-72Xn.mjs` + `repin-72Xn.mjs` + `test-72Xn.mjs`; `NEWCACHE = 'sidecut-shell-v' + NEWVER`; move
+  test-713..test-7252 pins; add `test-726.mjs` to `PREV_MOVES`; and write the repin's bespoke stale-cache sweep correction.
+
+## 72.5.2 (Oct 2, 2026): the widget can pause, and now it can play again
+- **The owner's words**: "The widgit can pause but not play again and forward and backward songs don't work v72.5.2". That is
+  one press that had been working (pause) and three that had not (play, next, previous) - and there are TWO independent
+  causes, one on each side of the bridge. Both are fixed in this single update.
+- **CAUSE 1 (web, rides the OTA): STOPPING SET A MARK AND STARTING NEVER CLEARED IT.** Stopping sets `userPaused`, the flag
+  that tells the background heartbeat "this stop was deliberate - do not revive it". Nothing in the media-session
+  transport cleared it again, so after a pause from the widget every later play / next / previous ran with the mark still
+  set - and the ONE mechanism that puts a backgrounded WebView back together refuses to run while it is set: `recoverAudio`
+  returns at `if(userPaused) return;` (~:26990) and the revive loop is gated on `!userPaused` (~:26749). A song the phone
+  reclaimed while the app was away therefore could not be rebuilt, so resume and skips came out silent - while pause,
+  which needs none of that, kept working. That asymmetry IS the report. New helper `scTransportResume()` (one definition,
+  asserted) clears **`userPaused` AND `audioFocusInterrupted`**, and the `play`, `nexttrack` and `previoustrack` handlers
+  call it first. The `play` handler also RETRIES once (a rejected `play()` is the case `recoverAudio` exists for), and
+  `previoustrack` starts a paused song again instead of moving a playhead nobody can hear. `pause`/`stop` still SET the
+  mark - that is what makes the reset mean anything.
+- **CAUSE 2 (native widget, needs the next APK): THE TOGGLE ASKED THE PHONE TO DECIDE.** The widget sent
+  `KEYCODE_MEDIA_PLAY_PAUSE`, which is a TOGGLE the system resolves against the playback state IT last saw for the
+  session - and keeps resolving that way until the state changes, so a stale state answers "pause" for ever. That is
+  "can pause but not play again" in one line. `onReceive` now reads the widget's own stored state
+  (`SharedPreferences 'sidecut_widget'` -> `JSONObject` -> `st.has("playing")`) and names the verb outright
+  (`KEYCODE_MEDIA_PAUSE` while it shows pause, `KEYCODE_MEDIA_PLAY` while it shows play), falling back to the toggle ONLY
+  when there is no state to go on. The widget already draws its icon from that same flag, so it may as well act on it.
+- **DELIVERY IS STILL SPLIT.** The web half rides the OTA and reaches a phone in minutes; the widget half is native Java
+  injected only during the Android CI build, so it needs the NEXT APK. Complementary, not alternatives - same as 72.5.1.
+- **WHAT DID NOT MOVE, AND IS PINNED**: the eight registered controls (play / pause / previoustrack / nexttrack /
+  seekbackward / seekforward / stop / seekto), the >3s "previous restarts the song" rule, the single
+  `mediaSetActionHandler`, the 4 s skip-storm throttle, the ten-minute background release (`MEDIA_BG_GRACE_MS`) and the
+  single `mediaSetPlaybackState('none')` site. `dev/test-7252.mjs` asserts each of them, and asserts that pause still
+  sets the mark.
+- **THE VERSION-PREFIX TRAP, SECOND FORM.** `'72.5.2'` does NOT contain `'72.5.1'` (unlike 72.5.1 vs 72.5), so the A/B/E
+  steps need no lookahead. What still needs its delimiter is the D step: `const PREV = '72.5';` is a PREFIX of
+  `const PREV = '72.5.1';`, so the D move is written with the trailing `;` or it would rewrite the pin it just wrote.
+- **`dev/repin-7252.mjs` - 66 edits / 34 files** (`OLDVER='72.5.1'`, `NEWVER='72.5.2'`, `NEWCACHE` derived), second run 0,
+  `no stale pin left in any gate`. `PREV_MOVES` maps test-713..test-725 **and test-7251.mjs** from `'72.5'` to `'72.5.1'`,
+  `KEEPS_ITS_VERSION` = test-705.mjs/test-70.mjs. **Bespoke F1**: test-7251.mjs is a gate now, so its OWN [6] sweep moves
+  with this release - the built old-build needle is read from `PREV` instead of a hardcoded `'72.5'`, and its hardcoded
+  stale-cache regex `/sidecut-shell-v72\.5(?!\.1)/` - which was written to tell 72.5 from 72.5.1 and would now match this
+  release's own `sidecut-shell-v72.5.2` - is retargeted at 72.5.1. **This is the second release in a row where a gate's
+  own stale sweep had to be taught about the new name; expect it in every repin from here.**
+- **`dev/patch-7252.mjs`** (`VERSION='72.5.2'`, `OLDVER='72.5.1'`, `STAMP='October 2, 2026 \u00b7 8:53 PM EDT'`, 7 notes,
+  cache derived) - 6 keyed subs/steps plus the idempotent one-newline tail normaliser, and NO top guard (all keyed, same
+  reasoning as 72.5.1). It writes THREE files now: index.html, sw.js and `.github/workflows/patch-widget.py`.
+  Re-run: `0 applied, 7 already in place`.
+- **`dev/test-7252.mjs` - 57 checks**, sections [1] release metadata [2] the transport-resume fix **DRIVEN** (the real
+  `scTransportResume` and `registerMediaSessionHandlers` are lifted with `bindFn` and run against a stub element whose
+  `play()` rejects - asserting that play/next/previous clear the mark, that a rejected play reaches `recoverAudio`, that
+  next/prev really advance, and that pause still sets it) [3] the widget names its own verb, plus a scratch-tree emit of
+  the real provider Java [4] the repin moved every gate [5] inline script syntax.
+- **OTA SETTLED IN THREE PASSES, no tail fight this time**: pass 1 873113 -> 873065, pass 2 -> 873064, pass 3 **873064**
+  fixed point; `ota-play/` **873072**. All 5 manifest/updates entries OK; both `--check`s OK at v72.5.2.
+- **PRE-EXISTING REDS, NOT caused by this work** (identical on `git show HEAD:index.html`): test-705.mjs 223/7,
+  batch-635-check.cjs 35/7, test-6058.mjs 47/1, **test-66428.mjs 72/1** (its page-wide `\u2022` canary wants 47; the page
+  has held 48 since >=72.0), media-controls-check.cjs 18/1 (`and it no longer fires every half hour`),
+  audio-focus-check.cjs 35/3. Several gates need `NODE_PATH=/tmp/h/node_modules` (jsdom scratch).
+- **NEXT RELEASE: 72.5.3** for another fix inside 72.5 (the third number stops at nine), or **72.6** for a feature
+  release. New trio `dev/patch-72Xn.mjs` + `repin-72Xn.mjs` + `test-72Xn.mjs`; `NEWCACHE = 'sidecut-shell-v' + NEWVER`;
+  move test-713..test-7251 pins; add `test-7252.mjs` to `PREV_MOVES`; and remember the repin's bespoke sweep correction.
+
 ## 72.5.1 (Oct 2, 2026): the widget transport buttons reach the player again
 - **The owner's request**: "I hit play then I exit the app since still playing and then I go to the widget and the pause
   button and play button don't work neither to song forward and back fix this v72.5.1 fix any other bugs you find". A
