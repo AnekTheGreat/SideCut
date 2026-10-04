@@ -1,3 +1,21 @@
+// 73.1.3 - the lyrics can be lined up by hand, and AI Sync sends the recording.
+//
+// The owner's words for this release: "Lyric timing: Both" - they took the offer
+// of BOTH fixes for a drift no envelope can recover. A plain-text entry with no
+// timings (Waliyan by Diljit Dosanjh is filed that way) is handed to the app as
+// words with no times at all, so the chorus returns cannot be measured from the
+// audio no matter how the envelope is tuned. So there are two answers:
+//
+//   * a hand-align mode - tap Line up, play the song, tap the line being sung,
+//     and the timing is rebuilt around those taps (scApplyLyricAnchors); and
+//   * AI Sync attaches the actual recording to the model request, so it times
+//     each line against the singing it can hear (inline_data), instead of only
+//     seeing the words and guessing from their length.
+//
+// [7] lifts the shipped measuring code out of the page and RUNS it; [11] lifts
+// scApplyLyricAnchors out and RUNS it - every tap must land exactly on its time,
+// in order, with the lines outside the taps shifted by the nearest one.
+//
 // 73.1.2 - a track that opens on music is timed from where the VOICE enters.
 //
 // 73.1.1 - the letter-by-letter wave now crosses the whole word, and a song with
@@ -46,17 +64,17 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1.2'; /* repinned by dev/repin-7312.mjs */
-const PREV = '73.1.1'; /* repinned by dev/repin-7312.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1.2';
+const VER = '73.1.3'; /* repinned by dev/repin-7313.mjs */
+const PREV = '73.1.2'; /* repinned by dev/repin-7313.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1.3';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
   'test-713.mjs', 'test-714.mjs', 'test-715.mjs', 'test-716.mjs', 'test-717.mjs',
   'test-718.mjs', 'test-719.mjs', 'test-720.mjs', 'test-721.mjs', 'test-722.mjs',
   'test-723.mjs', 'test-724.mjs', 'test-725.mjs', 'test-7251.mjs', 'test-7252.mjs',
-  'test-726.mjs', 'test-727.mjs', 'test-7271.mjs', 'test-728.mjs', 'test-7281.mjs',
-  'test-7312.mjs',
+  'test-726.mjs', 'test-727.mjs', 'test-7271.mjs',  'test-728.mjs', 'test-7281.mjs',
+  'test-7313.mjs',
 ];
 
 let pass = 0, fail = 0;
@@ -64,8 +82,8 @@ const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, conso
 const count = (n) => src.split(n).length - 1;
 // Split so no literal build number or cache name the repin rewrites is ever
 // spelled in this file - a bare one here would be rewritten with it.
-const VER_BEFORE = '73' + '.1' + '.1';
-const PREV_BEFORE = '73' + '.1';
+const VER_BEFORE = '73' + '.1' + '.2';
+const PREV_BEFORE = '73' + '.1' + '.1';
 const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + VER_BEFORE.split('.').join('\\.') + '(?![\\d.])');
 
 console.log('[1] release metadata');
@@ -355,8 +373,8 @@ console.log('[7] words with no timings are timed from the song itself');
     'the model prompt no longer asks for an even split');
   ok(src.indexOf('in proportion to how long each is sung - a short line takes less time than a long one, and never an even split') !== -1,
     'it spaces the lines by how long each is actually sung');
-  ok(src.indexOf('if(lyrics && lyrics.trim()){') !== -1 && src.indexOf('scAutoTimeCurrentLyrics().then(function(timed){') !== -1,
-    'showLyrics times the words from the track itself');
+  ok(src.indexOf('if(!_aligned && lyrics && lyrics.trim()){') !== -1 && src.indexOf('scAutoTimeCurrentLyrics().then(function(timed){') !== -1,
+    'showLyrics times the words from the track itself, unless they are hand-pinned');
   ok(src.indexOf('if(!timed && !_hasStamps && _aiGeminiKey)') !== -1,
     'and only asks the model when there is no audio to measure');
   ok(src.indexOf('if(scAutoTimedKey === _atKey) return false;') !== -1,
@@ -438,15 +456,16 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
 
 console.log('[9] the repin moved every gate, including the neighbour');
 {
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7312.mjs'), 'utf8');
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7313.mjs'), 'utf8');
   ok(repin.indexOf("const OLDVER = '" + VER_BEFORE + "';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '73.1.2';") !== -1, 'and to');
+  ok(repin.indexOf("const NEWVER = '73.1.3';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
   // Both spellings carry each dot as `\.` or `[.]`, so neither the cache move
   // nor the stale check can mistake the needle for a cache literal.
-  ok(repin.indexOf('sidecut-shell-v73\\.1\\.1(?!') !== -1 && repin.indexOf('sidecut-shell-v73[.]1[.]1(?!') !== -1,
-    'the stale-cache sweeps are retargeted to 73.1.1, needle written raw');
-  ok(repin.indexOf('sidecut-shell-v73\\.1(?!') !== -1, 'from the spelling repin-7311 left behind');
+  ok(repin.indexOf("SWEEP_ESC_NEW = 'sidecut-shell-v73' + BS + '.1' + BS + '.2(?![' + BS + 'd.])'") !== -1 &&
+     repin.indexOf("SWEEP_BRK_NEW = 'sidecut-shell-v73[.]1[.]2(?![' + BS + 'd.])'") !== -1,
+    'the stale-cache sweeps are retargeted to 73.1.2, built from character codes');
+  ok(repin.indexOf("SWEEP_ESC_OLD = 'sidecut-shell-v73' + BS + '.1' + BS + '.1(?![' + BS + 'd.])'") !== -1, 'from the spelling repin-7312 left behind');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
@@ -456,7 +475,7 @@ console.log('[9] the repin moved every gate, including the neighbour');
   const stale = [];
   for (const name of fs.readdirSync(path.join(ROOT, 'dev')).sort()) {
     if (!/^test-.*\.mjs$/.test(name) && !/check\.cjs$/.test(name)) continue;
-    if (name === 'test-705.mjs' || name === 'test-70.mjs' || name === 'test-7311.mjs') continue;
+    if (name === 'test-705.mjs' || name === 'test-70.mjs') continue;
     const t = fs.readFileSync(path.join(ROOT, 'dev', name), 'utf8');
     if (t.indexOf("const VER = '" + VER_BEFORE + "';") !== -1) stale.push(name + ' VER');
     if (t.indexOf("const VER = '" + PREV_BEFORE + "';") !== -1) stale.push(name + ' old VER');
@@ -483,6 +502,74 @@ console.log('[10] inline script syntax and the OTA tail');
   ok(blocks >= 3, 'the page has its inline blocks (' + blocks + ')');
   ok(bad === 0, 'and every one of them parses');
   ok(/\n\n$/.test(src), 'the page ends with the two-newline OTA tail');
+}
+
+console.log('[11] a tap pins the line, and the timing is rebuilt around the taps');
+{
+  ok(count('id="lyricsLineUpBtn"') === 1, 'the lyrics bar has one Line up chip');
+  ok(src.indexOf("$('lyricsLineUpBtn').addEventListener('click'") !== -1, 'and it is wired');
+  ok(src.indexOf('var lyricsLineUpOn = false;') !== -1, 'the mode has its own flag');
+  ok(src.indexOf('if (lyricsLineUpOn) {') !== -1 && src.indexOf('ev.stopPropagation();') !== -1,
+    'and in that mode a tap on a line pins it instead of seeking');
+  ok(src.indexOf('pinned at ') !== -1, 'the toast says where each tap landed');
+  ok(src.indexOf('updateLyricsLineUpBtn') !== -1 && src.indexOf('scLyricAlignLoad') !== -1, 'the pins are loaded per song');
+
+  const mAt = src.indexOf('  function scParseLrcLines(lrc){');
+  const mEnd = src.indexOf('\n  var scAutoSyncBusy = {};', mAt);
+  ok(mAt !== -1 && mEnd > mAt, 'the aligning code can be lifted out of the page');
+  let A = null;
+  try {
+    A = new Function(src.slice(mAt, mEnd) + '\nreturn { parse: scParseLrcLines, apply: scApplyLyricAnchors, fmt: scFormatLrcRows };')();
+  } catch (e){ ok(false, 'and it evaluates: ' + e.message); }
+  ok(A && typeof A.apply === 'function', 'the shipped aligning code evaluates');
+  if (A) {
+    const base = '[00:10.00]one\n[00:20.00]two\n[00:30.00]three\n[00:40.00]four\n[00:50.00]five';
+    const times = (lrc) => A.parse(lrc).map((r) => r.t);
+    const out = A.apply(base, [{ i: 1, t: 18 }, { i: 3, t: 45 }]);
+    const t = times(out);
+    ok(Math.abs(t[1] - 18) < 0.01 && Math.abs(t[3] - 45) < 0.01, 'each tap lands exactly where it was tapped');
+    ok(t[0] < t[1] && t[1] < t[2] && t[2] < t[3] && t[3] < t[4], 'and the lines stay in order');
+    ok(Math.abs(t[2] - 31.5) < 0.05, 'a line between two taps keeps the base shape, rescaled into the window (' + t[2] + ')');
+    ok(Math.abs(t[0] - 8) < 0.01 && Math.abs(t[4] - 55) < 0.01, 'a line outside the taps shifts by the nearest one');
+    ok(A.apply(base, []) === base, 'no taps leaves the timing untouched');
+    ok(times(A.apply(base, [{ i: 2, t: 3 }, { i: 1, t: 9 }])).every((n) => isFinite(n)),
+      'a tap out of order cannot make a NaN stamp');
+  }
+  ok(src.indexOf('if(!_aligned && lyrics && lyrics.trim()){') !== -1,
+    'showLyrics never re-measures a timing the user pinned by hand');
+  ok(src.indexOf('scLyricsAlignedNow') !== -1 && src.indexOf('t.lyricsAligned = true') !== -1,
+    'the pinned state is recorded on the track');
+  ok(count('lyricsAligned: t.lyricsAligned || false,') === 1 && count('lyricsAligned: r.lyricsAligned || false,') === 1,
+    'and persisted into the track record, so a restart keeps it');
+}
+
+console.log('[12] AI Sync sends the recording, not only the words');
+{
+  ok(src.indexOf('var audioPart = null;') !== -1, 'the sync builds an audio part from the track');
+  ok(src.indexOf('blobToArrayBufferFallbackCrop(t.file)') !== -1, 'by reading the same bytes the pacer decodes');
+  ok(src.indexOf('scBytesToBase64(_arr)') !== -1, 'and base64ing them in chunks');
+  ok(src.indexOf('inline_data: { mime_type: _mime, data: _b64 }') !== -1, 'as a Gemini inline_data attachment');
+  ok(src.indexOf('var _parts = audioPart ? [{ text: prompt }, audioPart] : [{ text: prompt }];') !== -1,
+    'which rides beside the text prompt in the same request');
+  ok(src.indexOf("The song's audio recording is attached") !== -1, 'and the prompt tells the model to listen to it');
+  ok(src.indexOf('if(_b64.length <= 18000000)') !== -1, 'a recording past the body ceiling falls back to the text-only ask');
+
+  // The base64 helper is lifted out and RUN: a chunk that is not a multiple of
+  // three would leave padding in the middle of the output and break every upload
+  // a song long, so a buffer past one chunk is the case that matters.
+  const gAt = src.indexOf('  function scBytesToBase64(buf){');
+  const gEnd = src.indexOf('\n  }', gAt) + 4;
+  ok(gAt !== -1 && gEnd > gAt, 'the base64 helper can be lifted out of the page');
+  const B = new Function('btoa', src.slice(gAt, gEnd) + '\nreturn scBytesToBase64;')((s) => Buffer.from(s, 'binary').toString('base64'));
+  function roundTrips(n){
+    const big = new Uint8Array(n);
+    for (let i = 0; i < n; i++) big[i] = (i * 7) & 255;
+    const dec = Buffer.from(B(big.buffer), 'base64');
+    return dec.length === n && dec.equals(Buffer.from(big));
+  }
+  ok(roundTrips(10), 'a short buffer round-trips');
+  ok(roundTrips(0x8000), 'and one exactly the old chunk size, where the padding used to land (' + 0x8000 + ')');
+  ok(roundTrips(200000), 'and one several chunks long, byte for byte');
 }
 
 console.log('');
