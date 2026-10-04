@@ -10823,6 +10823,54 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       return '[' + (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss.toFixed(2) + ']' + r.text;
     }).join('\n');
   }
+  // 73.1.5 - the model proposes, the recording disposes.
+  //
+  // Even with the song attached, a model can put a line a beat early or late, and
+  // it can quietly hand back the even split it was told not to. The track's own
+  // energy rise is still the one signal that is actually at the right time, so
+  // every AI timestamp is checked and then snapped onto the nearest real onset
+  // within a short window. Order is always preserved: a line is never moved past
+  // its neighbour, and a line with no rise near it is left exactly where the model
+  // put it rather than dragged onto an unrelated beat.
+  function scRowsLookSane(rows, duration){
+    if(!rows || rows.length < 2) return false;
+    var dur = Number(duration) || 0;
+    var last = -1;
+    for(var i = 0; i < rows.length; i++){
+      var t = rows[i].t;
+      if(!isFinite(t) || t < 0) return false;
+      if(dur > 0 && t > dur + 2.5) return false;
+      if(t < last - 0.01) return false;
+      last = t;
+    }
+    return true;
+  }
+  function scSnapRowsToOnsets(rows, env, hopSec, win){
+    if(!rows || !rows.length || !env || !env.length) return rows;
+    var hop = hopSec > 0 ? hopSec : 0.02;
+    var w = win > 0 ? win : 1.3;
+    var maxF = env.length - 1;
+    var out = [];
+    for(var i = 0; i < rows.length; i++){
+      var t = rows[i].t;
+      var lo = Math.max(0, Math.round((t - w) / hop));
+      var hi = Math.min(maxF, Math.round((t + w) / hop));
+      var best = -1, bestScore = 0;
+      for(var f = lo; f <= hi; f++){
+        var v = env[f];
+        if(!(v > 0)) continue;
+        var d = Math.abs(f * hop - t);
+        var score = v / (0.25 + d);
+        if(score > bestScore){ bestScore = score; best = f; }
+      }
+      var at = (best >= 0) ? best * hop : t;
+      var prev = out.length ? out[out.length - 1].t : -1;
+      if(prev >= 0 && at < prev) at = Math.max(t, prev);
+      if(at < 0) at = 0;
+      out.push({ t: at, text: rows[i].text });
+    }
+    return out;
+  }
   // Rebuild the timings around the taps. Between two taps the base shape is kept
   // and rescaled - the syllables still decide how the lines share the window, the
   // taps decide where that window starts and ends - and outside the taps the run
@@ -10987,7 +11035,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // cannot hear, so the words no longer ride on how long a line is.
       if(_aiGeminiKey && t.file && !scAiTimedTracks[String(tid)]){
         var _aiOk = await aiSyncLyrics(true);
-        if(_aiOk) return true;
+        if(_aiOk){ toast('Lyrics timed to this song by AI', 2200); return true; }
       }
       var lrc = await scSyncLyricsFromAudio(t, currentLyricsText);
       if(!lrc) return false;
@@ -11219,29 +11267,79 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         }
       }catch(_eAudio){ audioPart = null; }
 
-      var prompt = "You are a lyrics synchronization engine. Given the plain-text lyrics below and the song duration in seconds, generate LRC-format synced lyrics with timestamps.\n\n";
-      if(audioPart) prompt += "The song's audio recording is attached. Listen to it and time each line to the moment it is actually sung.\n\n";
-      if(audioPart) prompt += "Listen for the tempo, the beat, the instrumental sections and the returning choruses, and place every line on the moment it is actually sung rather than where a length count would put it. ";
+      // 73.1.5 - the model is told exactly how many lines to time, in order, so it
+      // cannot quietly drop one, and the first line is placed where the singing
+      // actually starts instead of at a pinned 00:01 - a musical intro is exactly
+      // why a timing used to sit a bar behind the voice.
+      var _plainLines = String(rawLyrics).split(String.fromCharCode(10)).map(function(s){ return String(s).replace(/^[\s\u00A0]+|[\s\u00A0]+$/g, ""); }).filter(function(s){ return s.length > 0; });
+      var _numbered = _plainLines.map(function(s, i){ return (i + 1) + ". " + s; }).join(String.fromCharCode(10));
+      var prompt = "You are a lyrics synchronization engine. Time every line of the lyrics below to the recording.\n\n";
+      if(audioPart) prompt += "The song's audio recording is attached. Listen to it and place each line on the exact moment it is sung.\n\n";
+      if(audioPart) prompt += "Follow the tempo, the beat, the instrumental sections and the returning choruses. A repeated chorus is sung again later, so time its lines again at that later moment instead of leaving them where they first appeared. ";
       prompt += "Song: " + (t.name || "Unknown") + "\n";
       prompt += "Artist: " + (t.artist || "Unknown") + "\n";
-      prompt += "Duration: " + Math.round(duration) + " seconds\n\n";
+      prompt += "Duration: " + Math.round(duration) + " seconds\n";
+      prompt += "Lines to time: " + _plainLines.length + "\n\n";
       // 73.1 - NOT "distribute evenly". An even split follows the line count,
       // not the music, and this prompt used to say exactly that - which is how a
       // short intro and a repeated chorus pushed every later line away from the
       // voice. Space each line by how long it is actually sung, and never reorder
       // or rewrite the words.
-      prompt += "Rules:\n- Output ONLY the LRC text, no explanation\n- Format: [MM:SS.xx] lyric line\n- Space the lines across the duration in proportion to how long each is sung - a short line takes less time than a long one, and never an even split\n- Leave a real gap of several seconds where the song has an instrumental or a break\n- Start the first line at [00:01.00]\n- Keep the original lines in their original order, word for word\n\nLyrics:\n" + rawLyrics;
+      prompt += "Rules:\n";
+      prompt += "- Output ONLY the LRC text, no explanation and no commentary\n";
+      prompt += "- One timestamp per line, written as [MM:SS.xx] lyric line\n";
+      prompt += "- There are exactly " + _plainLines.length + " lines below: return exactly " + _plainLines.length + " timestamped lines, in the same order, word for word - never merge, skip, reorder or rewrite a line\n";
+      prompt += "- Put the first line at the moment the FIRST WORDS ARE SUNG, however long the musical intro before them is\n";
+      prompt += "- Space the lines by how long each is actually sung, never an even split\n";
+      prompt += "- Leave a real gap of several seconds where the song has an instrumental or a break\n";
+      prompt += "- The numbers below are line references only, never part of the lyrics\n\nLyrics:\n" + _numbered;
+      var _aiAskLyrics = async function(parts){
+        var resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + window.__scGeminiModel() + ":generateContent?key=" + _aiGeminiKey, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: parts }], generationConfig: { temperature: 0.2, maxOutputTokens: 8192 } })
+        });
+        if (!resp.ok) throw new Error("API error " + resp.status);
+        var data = await resp.json();
+        var out = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || "";
+        return String(out).replace(/```lrc\n?/g, "").replace(/```\n?/g, "").trim();
+      };
       var _parts = audioPart ? [{ text: prompt }, audioPart] : [{ text: prompt }];
-      var resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + window.__scGeminiModel() + ":generateContent?key=" + _aiGeminiKey, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: _parts }], generationConfig: { temperature: 0.3, maxOutputTokens: 8192 } })
-      });
-      if (!resp.ok) throw new Error("API error " + resp.status);
-      var data = await resp.json();
-      var text = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || "";
-      text = text.replace(/```lrc\n?/g, "").replace(/```\n?/g, "").trim();
-      if (!/\[\d{1,2}:\d{2}/.test(text)) { toast("AI could not generate valid timestamps."); return; }
+      var text = await _aiAskLyrics(_parts);
+      var _rows = scParseLrcLines(text);
+      // 73.1.5 - a model that drops a line shifts every line after it. One
+      // corrective ask names the count it returned against the count it owes.
+      if(!scRowsLookSane(_rows, duration) || _rows.length < Math.ceil(_plainLines.length * 0.75)){
+        var _fixPrompt = prompt + "\n\n---\nYour previous answer had " + _rows.length + " timed lines but there are " + _plainLines.length + ". Return exactly " + _plainLines.length + " timestamped lines, one per lyric, in order.";
+        try{
+          var _text2 = await _aiAskLyrics(audioPart ? [{ text: _fixPrompt }, audioPart] : [{ text: _fixPrompt }]);
+          var _rows2 = scParseLrcLines(_text2);
+          if(scRowsLookSane(_rows2, duration) && _rows2.length >= _rows.length){ text = _text2; _rows = _rows2; }
+        }catch(_eFix){}
+      }
+      if (!/\[\d{1,2}:\d{2}/.test(text)) { if(!silent) toast("AI could not generate valid timestamps."); delete scAiTimedTracks[String(t.id)]; return; }
+      // 73.1.5 - the model ignored the no-even-split rule: the measured layout
+      // follows the words, so take that instead of a length count dressed up.
+      if(scLyricsLookEvenlySpaced(text)){
+        if(!silent) toast("The AI returned an even split — timing from the recording instead.", 3400);
+        delete scAiTimedTracks[String(t.id)];
+        return false;
+      }
+      // 73.1.5 - the model names the line, the recording says the time. Decode the
+      // same bytes and snap each timestamp onto the nearest real energy rise, in
+      // order, so a line a beat early or late lands on the voice.
+      if(_rows.length && _arr && _arr.byteLength){
+        try{
+          var _eCtx = new (window.AudioContext || window.webkitAudioContext)();
+          var _eBuf = null;
+          try{ _eBuf = await _eCtx.decodeAudioData(_arr.slice(0)); }catch(_eD){ _eBuf = null; }
+          try{ _eCtx.close(); }catch(_eC){}
+          if(_eBuf){
+            var _snap = scSnapRowsToOnsets(_rows, scOnsetEnvelope(_eBuf), SC_ONSET_HOP, 1.3);
+            if(scRowsLookSane(_snap, duration)) text = scFormatLrcRows(_snap);
+          }
+        }catch(_eSnap){}
+      }
       t.lyrics = text;
       t.lyricsSynced = true;
       saveMeta();
@@ -11251,6 +11349,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(!silent) toast("AI Sync complete! Lyrics are now time-aligned.");
       return true;
     } catch (e) {
+      delete scAiTimedTracks[String(t.id)];
       console.error("AI Sync failed:", e);
       if(!silent) toast("AI Sync failed: " + (e.message || "Unknown error"));
     } finally {
@@ -12724,7 +12823,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.1.4';
+  const APP_VERSION = '73.1.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13285,6 +13384,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.1.5', date: 'October 4, 2026 · 10:20 AM EDT', title: 'The key says so out loud, and the model checks its timing against the song', items: [
+    'Paste your Gemini key and the app confirms it out loud: one toast says Gemini key connected, and it fires for the paste itself rather than on every keystroke.',
+    'The key field now lives in one place only. Support keeps the AI Assistant chat and the contact address, and every link that mentions the key points at the Important tab.',
+    'The lyrics timing asks the model to do more and then checks its work against the song: the prompt counts the lines and demands exactly that many timestamped lines back.',
+    'The first line is placed where the singing actually starts, however long the musical intro is. The pinned 00:01 is gone, which is what sat the words a bar behind the voice on songs that open on music.',
+    'If the model drops lines it is asked once more with the count it owes, and an even split dressed up as a timing is refused in favour of the measured layout the song itself gives.',
+    'Every timestamp the model returns is then snapped onto the nearest real energy rise in the recording, in order, so a line a beat early or late lands on the voice.',
+    'The widget, the player and the letter-by-letter wave are all untouched, and a hand-pinned lyric timing is still remembered and never re-timed on top of you.',
+    'Your files are exactly where they were: the library, the playlists, the albums, the tags and the covers are all intact.',
+  ]},
   { version: '73.1.4', date: 'October 4, 2026 · 8:20 AM EDT', title: 'The lyrics are timed by ear, a tap only lights the line, and Settings gains an Important tab', items: [
     'The lyrics are timed by the model listening to the actual recording now, so it hears the tempo, the beat, the instrumental sections and the returning choruses instead of counting how long each line is.',
     'A short line is no longer handed as much time as a long one. The old layout shared the song out by character count, which is what pushed whole verses off the beat on songs that change speed.',
@@ -32617,7 +32726,7 @@ window.__refetchAlbums = async function(wasRefetch){
   var _hpTxt0 = document.getElementById('ahFetchProgressText');
   if(_hpTxt0) _hpTxt0.textContent = 'Fetching albums... 0/' + pinnedArtists.length;
   var _aiEl0 = document.getElementById('ahAIStatus');
-  if(_aiEl0){ _aiEl0.innerHTML = (typeof _aiGeminiKey !== 'undefined' && _aiGeminiKey) ? '<span style="color:var(--coral);">&#9679;</span> <span style="color:var(--ink-dim);">Using AI for complete discographies</span>' : '<span style="color:var(--ink-dim);">&#9675;</span> <span style="color:var(--ink-dim);">No AI key — <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="openSettingsTo(\'ai\')">Open Settings → Support</span> to paste a Gemini API key for better album lookups</span>'; }
+  if(_aiEl0){ _aiEl0.innerHTML = (typeof _aiGeminiKey !== 'undefined' && _aiGeminiKey) ? '<span style="color:var(--coral);">&#9679;</span> <span style="color:var(--ink-dim);">Using AI for complete discographies</span>' : '<span style="color:var(--ink-dim);">&#9675;</span> <span style="color:var(--ink-dim);">No AI key — <span style="color:var(--coral);cursor:pointer;text-decoration:underline;" onclick="openSettingsTo(\'ai\')">Open Settings → Important</span> to paste a Gemini API key for better album lookups</span>'; }
   var cancelBtn = document.getElementById('ahCancelBtn');
   if(cancelBtn) cancelBtn.onclick = function(){ window.__ahCancelled = true; window.__ahFetching = false; toast('\ud83d\udcc0 Cancelling\u2026', 2000); };
   var minBtn = document.getElementById('ahMinimizeBtn');
@@ -41856,7 +41965,9 @@ var _aiChatHistory = [];
 var _aiInitialized = false;
 var _aiGeminiKey = '';
 try { _aiGeminiKey = localStorage.getItem('sidecut_aiGeminiKey') || ''; } catch(_e){}
-try { _aiGeminiKey = localStorage.getItem('sidecut_aiGeminiKey') || ''; } catch(_e){}
+// 73.1.5 - the last value we actually confirmed, so the "connected" toast fires
+// once per distinct key instead of on every keystroke debounce.
+var _aiLastSavedKey = _aiGeminiKey;
 
 // ---- Which Gemini model this key can actually use ---------------------------
 // Every call used to be pinned to 'gemini-2.0-flash'. A 404 from that request is
@@ -42206,7 +42317,7 @@ async function _aiGeminiQuery(userMessage, kbGround) {
       var _apiSays = (err && err.error && err.error.message) ? String(err.error.message) : '';
       if (resp.status === 400) return 'The API key was rejected' + (_apiSays ? ' — ' + _apiSays : '') + '. Check it in Settings → Support (aistudio.google.com → Get API key).';
       if (resp.status === 403) return 'The API refused this request' + (_apiSays ? ' — ' + _apiSays : '') + '. That is usually the key being restricted, or its quota being used up.';
-      if (resp.status === 404) return 'This key has no usable Gemini model' + (_apiSays ? ' — ' + _apiSays : '') + '. Open aistudio.google.com → Get API key, create a key in a project with the Gemini API enabled, and paste it in Settings → Support.';
+      if (resp.status === 404) return 'This key has no usable Gemini model' + (_apiSays ? ' — ' + _apiSays : '') + '. Open aistudio.google.com → Get API key, create a key in a project with the Gemini API enabled, and paste it in Settings → Important.';
       // A still-busy service is the caller's cue to answer from the knowledge
       // built into the app (see _aiSendMessage) rather than to leave the user
       // with an error.
@@ -42381,7 +42492,8 @@ window._aiPasteKey = async function() {
   if (text && input) {
     input.value = text.trim();
     input.focus();
-    window._aiSetGeminiKey();
+    // A paste is a deliberate act, so confirm it even when the value is unchanged.
+    window._aiSetGeminiKey(true);
     return;
   }
   // Nothing readable: put the cursor in the field and let the system keyboard
@@ -42389,17 +42501,24 @@ window._aiPasteKey = async function() {
   if (input) { input.focus(); try { input.select(); } catch(e) {} }
   toast('Could not read the clipboard — the field is focused, long-press it and choose Paste.', 3600);
 };
-window._aiSetGeminiKey = function() {
+window._aiSetGeminiKey = function(force) {
   var input = document.getElementById('aiGeminiKeyInput');
   if (!input) return;
   var key = input.value.trim();
   if (!key) { toast('Please enter a Gemini API key.', 3000); return; }
+  // 73.1.5 - one clear confirmation, once per distinct key. Every keystroke used
+  // to re-toast "saved", which read as noise; pasting always confirms, and so
+  // does any change to a value that is genuinely different.
+  var changed = (key !== _aiGeminiKey) || (typeof _aiLastSavedKey === 'undefined') || (_aiLastSavedKey !== key);
   _aiGeminiKey = key;
+  _aiLastSavedKey = key;
   try { localStorage.setItem('sidecut_aiGeminiKey', key); } catch(e) {}
-  toast('Gemini API key saved!', 2000);
   var statusEl = $('aiChatStatus');
   if (statusEl) statusEl.textContent = 'Gemini AI connected — I can answer any question now!';
-  _aiAddMessage('assistant', 'Gemini AI connected! Now I can answer questions beyond the knowledge base. Try asking me something!');
+  if (changed || force) {
+    toast('Gemini key connected \u2713 — AI lookups and lyric timing are on.', 2800);
+    if (changed) _aiAddMessage('assistant', 'Gemini AI connected! Now I can answer questions beyond the knowledge base. Try asking me something!');
+  }
 };
 window._aiClearGeminiKey = function() {
   _aiGeminiKey = '';

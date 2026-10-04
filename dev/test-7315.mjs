@@ -1,3 +1,27 @@
+// 73.1.5 - the key says so out loud, and the model answer is checked against the
+// song before it is kept.
+//
+// The owner's words for this release: "There should be a toast saying gemeni key
+// conected after you paste it in and you don't need the key field in support it
+// should still use it tho. The lyrics is still very off and the AI should be
+// doin more, how come Spotify gets it right but you don't". Three answers:
+//
+//   * pasting a key now toasts "Gemini key connected", once per distinct key,
+//     instead of a "saved" toast on every keystroke debounce, and the paste
+//     button always confirms;
+//   * the one key field lives in Important - the Support pane keeps its chat and
+//     contact card but no longer carries a key field, and every "paste a Gemini
+//     key" link now names Important;
+//   * the model does more work and is held to the recording: the prompt counts
+//     the lines and demands exactly that many back, the first line is placed
+//     where the SINGING starts rather than at a pinned 00:01, a short answer is
+//     asked again with the count it owes, an even split dressed up as a timing is
+//     refused, and every timestamp is validated then snapped onto the nearest
+//     real energy rise in the song (scRowsLookSane, scSnapRowsToOnsets).
+//
+// [15] lifts the new judging and snapping functions out of the page and RUNS
+// them against a synthetic envelope.
+//
 // 73.1.4 - the lyrics are timed by the model listening to the recording, and a
 // tap on a line only moves the highlight.
 //
@@ -79,9 +103,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1.4';
-const PREV = '73.1.3';
-const SHELL_CACHE = 'sidecut-shell-v73.1.4';
+const VER = '73.1.5';
+const PREV = '73.1.4';
+const SHELL_CACHE = 'sidecut-shell-v73.1.5';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
@@ -89,7 +113,7 @@ const PREV_GATES = [
   'test-718.mjs', 'test-719.mjs', 'test-720.mjs', 'test-721.mjs', 'test-722.mjs',
   'test-723.mjs', 'test-724.mjs', 'test-725.mjs', 'test-7251.mjs', 'test-7252.mjs',
   'test-726.mjs', 'test-727.mjs', 'test-7271.mjs',  'test-728.mjs', 'test-7281.mjs',
-  'test-7314.mjs',
+  'test-7315.mjs',
 ];
 
 let pass = 0, fail = 0;
@@ -97,8 +121,8 @@ const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, conso
 const count = (n) => src.split(n).length - 1;
 // Split so no literal build number or cache name the repin rewrites is ever
 // spelled in this file - a bare one here would be rewritten with it.
-const VER_BEFORE = '73' + '.1' + '.3';
-const PREV_BEFORE = '73' + '.1' + '.2';
+const VER_BEFORE = '73' + '.1' + '.4';
+const PREV_BEFORE = '73' + '.1' + '.3';
 const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + VER_BEFORE.split('.').join('\\.') + '(?![\\d.])');
 
 console.log('[1] release metadata');
@@ -386,7 +410,7 @@ console.log('[7] words with no timings are timed from the song itself');
 
   ok(src.indexOf('Distribute lines evenly across the song duration') === -1,
     'the model prompt no longer asks for an even split');
-  ok(src.indexOf('in proportion to how long each is sung - a short line takes less time than a long one, and never an even split') !== -1,
+  ok(src.indexOf('- Space the lines by how long each is actually sung, never an even split') !== -1,
     'it spaces the lines by how long each is actually sung');
   ok(src.indexOf('if(!_aligned && lyrics && lyrics.trim()){') !== -1 && src.indexOf('scAutoTimeCurrentLyrics().then(function(timed){') !== -1,
     'showLyrics times the words from the track itself, unless they are hand-pinned');
@@ -471,16 +495,16 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
 
 console.log('[9] the repin moved every gate, including the neighbour');
 {
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7314.mjs'), 'utf8');
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7315.mjs'), 'utf8');
   ok(repin.indexOf("const OLDVER = '" + VER_BEFORE + "';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '73.1.4';") !== -1, 'and to');
+  ok(repin.indexOf("const NEWVER = '73.1.5';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
   // Both spellings carry each dot as `\.` or `[.]`, so neither the cache move
   // nor the stale check can mistake the needle for a cache literal.
-  ok(repin.indexOf("SWEEP_ESC_NEW = 'sidecut-shell-v73' + BS + '.1' + BS + '.3(?![' + BS + 'd.])'") !== -1 &&
-     repin.indexOf("SWEEP_BRK_NEW = 'sidecut-shell-v73[.]1[.]3(?![' + BS + 'd.])'") !== -1,
-    'the stale-cache sweeps are retargeted to 73.1.3, built from character codes');
-  ok(repin.indexOf("SWEEP_ESC_OLD = 'sidecut-shell-v73' + BS + '.1' + BS + '.2(?![' + BS + 'd.])'") !== -1, 'from the spelling repin-7313 left behind');
+  ok(repin.indexOf("SWEEP_ESC_NEW = 'sidecut-shell-v73' + BS + '.1' + BS + '.4(?![' + BS + 'd.])'") !== -1 &&
+     repin.indexOf("SWEEP_BRK_NEW = 'sidecut-shell-v73[.]1[.]4(?![' + BS + 'd.])'") !== -1,
+    'the stale-cache sweeps are retargeted to 73.1.4, built from character codes');
+  ok(repin.indexOf("SWEEP_ESC_OLD = 'sidecut-shell-v73' + BS + '.1' + BS + '.3(?![' + BS + 'd.])'") !== -1, 'from the spelling repin-7314 left behind');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
@@ -594,7 +618,7 @@ console.log('[13] the model does the timing and a tap only lights the line');
   ok(src.indexOf('var scAiTimedTracks = {};') !== -1, 'the auto path remembers which songs it already asked about');
   ok(src.indexOf('if(_aiGeminiKey && t.file && !scAiTimedTracks[String(tid)]){') !== -1,
     'the model is asked first when a key is set and the song is here');
-  ok(src.indexOf('var _aiOk = await aiSyncLyrics(true);') !== -1 && src.indexOf('if(_aiOk) return true;') !== -1,
+  ok(src.indexOf('var _aiOk = await aiSyncLyrics(true);') !== -1 && src.indexOf("if(_aiOk){ toast('Lyrics timed to this song by AI', 2200); return true; }") !== -1,
     'and a model answer is used instead of the length-based layout');
   ok(src.indexOf('var lrc = await scSyncLyricsFromAudio(t, currentLyricsText);') !== -1,
     'with the energy measurement left as the stand-in for a song the model cannot hear');
@@ -602,9 +626,9 @@ console.log('[13] the model does the timing and a tap only lights the line');
     'the automatic ask happens once per song, while the button can always retry');
   ok(src.indexOf('currentLyricsSynced && !scLyricsLookEvenlySpaced(rawLyrics) &&') !== -1,
     'and a stored length-based timing is still allowed to be re-timed by the model');
-  ok(src.indexOf('Listen for the tempo, the beat, the instrumental sections and the returning choruses') !== -1,
+  ok(src.indexOf('Follow the tempo, the beat, the instrumental sections and the returning choruses') !== -1,
     'the prompt names the music the model should read');
-  ok(count('Listen for the tempo') === 1, 'and that guidance appears once');
+  ok(count('Follow the tempo') === 1, 'and that guidance appears once');
 
   const aiAt = src.indexOf('async function aiSyncLyrics(silent) {');
   const aiEnd = src.indexOf('  // Wire up highlight + AI sync buttons', aiAt);
@@ -662,6 +686,55 @@ console.log('[14] Settings gains an Important tab beside Donate');
     'and the tab button opens it');
   ok(src.indexOf("'donate', 'important', 'refresh'") !== -1, 'the new tab is a known settings destination');
   ok(src.indexOf("if(tab === 'ai') tab = 'important';") !== -1, 'and the old AI deep link lands on it too');
+}
+
+console.log('[15] the key confirms itself, and the recording checks the model');
+{
+  // (1) the paste confirms the key out loud.
+  ok(src.indexOf("toast('Gemini key connected") !== -1, 'pasting a key confirms it with a toast');
+  ok(src.indexOf('window._aiSetGeminiKey(true);') !== -1, 'the paste button forces that confirmation');
+  ok(src.indexOf('var _aiLastSavedKey = _aiGeminiKey;') !== -1, 'a remembered value keeps it to once per key');
+  ok(src.indexOf('if (changed || force) {') !== -1, 'so typing does not re-toast while a paste always does');
+
+  // (2) one key field, in Important - and the links say so.
+  ok(count('id="aiGeminiKeyInput"') === 1, 'there is still exactly one key field');
+  ok(src.indexOf('Open Settings → Important</span> to paste a Gemini API key') !== -1,
+    'the dashboard link names the tab the field actually lives in');
+  ok(src.indexOf('and paste it in Settings → Important.') !== -1, 'and so does the 404 helper text');
+
+  // (3) the model is told the count, checked, and snapped to the recording.
+  ok(src.indexOf('Lines to time: ') !== -1 && src.indexOf('return exactly ') !== -1,
+    'the prompt names how many lines there are and demands the same number back');
+  ok(src.indexOf('- Put the first line at the moment the FIRST WORDS ARE SUNG') !== -1,
+    'the first line is placed where the singing starts, not at a pinned 00:01');
+  ok(src.indexOf('[00:01.00]') === -1, 'so the old pinned first-line rule is gone');
+  ok(src.indexOf('var _aiAskLyrics = async function(parts){') !== -1, 'the request is reusable for a retry');
+  ok(src.indexOf('Your previous answer had ') !== -1, 'a short answer is asked again, with the count it owes');
+  ok(src.indexOf('delete scAiTimedTracks[String(t.id)];') !== -1, 'and a failed ask is forgotten so a later open can retry');
+  ok(src.indexOf('scSnapRowsToOnsets(_rows, scOnsetEnvelope(_eBuf), SC_ONSET_HOP, 1.3)') !== -1,
+    'the model answer is snapped onto the recording own energy rises');
+  ok(src.indexOf('if(scLyricsLookEvenlySpaced(text)){') !== -1,
+    'and an even split dressed up as a timing is refused');
+
+  const gAt = src.indexOf('  function scRowsLookSane(rows, duration){');
+  const sEnd = src.indexOf('\n  // Rebuild the timings around the taps.', gAt);
+  ok(gAt !== -1 && sEnd > gAt, 'the new timing checks can be lifted out of the page');
+  let J = null;
+  try { J = new Function(src.slice(gAt, sEnd) + '\nreturn { sane: scRowsLookSane, snap: scSnapRowsToOnsets };')(); }
+  catch (e) { ok(false, 'and they evaluate: ' + e.message); }
+  ok(J && typeof J.sane === 'function' && typeof J.snap === 'function', 'the shipped checks evaluate');
+  if (J) {
+    ok(J.sane([{ t: 1 }, { t: 2 }, { t: 3 }], 200) === true, 'a rising timing inside the song is sane');
+    ok(J.sane([{ t: 3 }, { t: 2 }], 200) === false, 'one that goes backwards is not');
+    ok(J.sane([{ t: 5 }, { t: 500 }], 200) === false, 'nor one that runs past the end');
+    ok(J.sane([{ t: 1 }], 200) === false, 'and a single line cannot be trusted');
+    const env = new Float32Array(200); env[50] = 1;
+    const snapped = J.snap([{ t: 0.7 }, { t: 3.0 }], env, 0.02, 1.3);
+    ok(Math.abs(snapped[0].t - 1.0) < 0.021, 'a line near a rise is pulled onto it (' + snapped[0].t + ')');
+    ok(snapped[1].t === 3.0, 'a line with no rise near it is left alone');
+    ok(snapped[0].t <= snapped[1].t, 'and snapping never reorders the lines');
+    ok(J.snap([{ t: 2 }], null, 0.02, 1.3)[0].t === 2, 'no envelope leaves the timing untouched');
+  }
 }
 
 console.log('');
