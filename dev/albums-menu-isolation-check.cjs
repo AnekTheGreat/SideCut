@@ -196,17 +196,31 @@ let toasts = [];
     console.log('    confirm: ' + body.slice(0, 160));
     ok('the export confirm is about albums', /album/i.test(body));
     ok('it never names the open playlist', body.indexOf(OPEN_PLAYLIST) === -1, body);
-    ok('it counts the songs of your hand-made albums (4, not the removed one)',
-       /\b4 songs?\b/.test(body), body.slice(0, 120));
-    ok('it names the two albums you made', /\b2 albums?\b/.test(body), body.slice(0, 120));
+    // 73.1.8: the flagged 'Tag Album' (single song, tag-supported) is kept and
+    // marked manual by the boot recovery instead of deleted, so the export is
+    // about all 3 albums the store holds. The hand-made two still lead it.
+    ok('it counts the songs of your albums (6 — the recovered tag album rides along)',
+       /\b6 songs?\b/.test(body), body.slice(0, 120));
+    ok('it names the albums you have', /\b3 albums?\b/.test(body), body.slice(0, 120));
   }
   win.document.getElementById('exportConfirmBackdrop').style.display = 'none';
   win.document.getElementById('songActionsBackdrop').style.display = 'none';
 
   console.log('\n— nothing above touched a playlist —');
   ok('playlists are byte-for-byte unchanged', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
-  ok('the hand-made album entries are unchanged too',
-     eq(idb._data.meta.get('userAlbums').value, ALBUMS_AFTER_BOOT), JSON.stringify(idb._data.meta.get('userAlbums').value));
+  // 73.1.8: the flagged 'Tag Album' (its name is NO file tag) is the junk shape
+  // the sweep still clears — but it is archived, and the boot recovery rebuilt
+  // 'MoonChild Era' from the unclaimed songs carrying that tag, marked yours.
+  ok('the hand-made album entries are unchanged too (the rebuilt tag album is marked yours, the junk entry archived)',
+     (() => {
+       const v = idb._data.meta.get('userAlbums').value || {};
+       const mine = { 'My Mix': v['My Mix'], 'Late Night': v['Late Night'] };
+       const rec = v['MoonChild Era'];
+       return eq(mine, ALBUMS_AFTER_BOOT) && !!rec && rec.manual === true && !rec.auto &&
+              eq(rec.trackIds, ['t2', 't3']) &&
+              typeof win.__scAlbumsArchivedNames === 'function' &&
+              win.__scAlbumsArchivedNames().indexOf('Tag Album') !== -1;
+     })(), JSON.stringify(idb._data.meta.get('userAlbums').value));
 
   console.log('\n— a playlist keeps its own playlist actions —');
   win.navigate('playlists');

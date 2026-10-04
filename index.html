@@ -12901,7 +12901,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.1.7';
+  const APP_VERSION = '73.1.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13462,6 +13462,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.1.8', date: 'October 4, 2026 · 10:05 PM EDT', title: 'The albums you lost are found again, and nothing can take them like that again', items: [
+    'The album wipe is fixed: a cleanup inside the app was taking away albums that arrived with an old automatic flag, and every one of them is rebuilt from the album tags your songs still carry the first time this version starts.',
+    'Your Albums tab comes back whole: names, songs and artists, in the order you had them, rebuilt from the tags on the files, and the songs inside each album are listed complete rather than partly.',
+    'The half-filled album is fixed too: an album rebuilt when you tapped the record player now holds every song carrying that album tag, not only the few that were free at that moment.',
+    'A cleanup can no longer destroy an album: any entry it still clears is kept with its full song list, and Manage albums offers it back with an It is mine button that restores the album exactly as it was.',
+    'Albums that arrive from a backup or a restore are marked as yours the moment the app reads them, so no later start can take them away again.',
+    'The lyrics letter wave, the timed lyric lines, the music player and the home-screen widget are all untouched by this release.',
+    'Everything 73.1.7 shipped stays: albums can be searched, renamed and reordered in Manage albums, and a song with no album tag stays unalbumed.',
+  ]},
   { version: '73.1.7', date: 'October 4, 2026 · 8:05 PM EDT', title: 'Albums confirmed intact, and the update you were missing arrives', items: [
     'Your Albums tab is whole: every album you made is listed with its songs, its order and its artist, exactly as you left them, and the lyrics letter wave, the music player and the home-screen widget are untouched by this release.',
     'An update check inside the app could answer with the number it already had, and a phone does not install an update that is not a new number - so some devices sat on an older build while the site carried the newest one. This release is that newer number.',
@@ -22185,6 +22194,21 @@ function _fallbackCopy(text){
     html += '<span id="mgrAlbumSearchClear" style="display:none;color:var(--ink-dim);font-size:15px;cursor:pointer;padding:0 2px;">\u00d7</span>';
     html += '</div>';
     html += '<div id="mgrAlbumCount" style="display:none;font-size:11px;color:var(--ink-dim);padding:6px 2px 2px;"></div>';
+    // 73.1.8 - what the boot sweep archived. The sweep no longer destroys an
+    // album whole without keeping its list, but entries it did clear - and ones
+    // an older build cleared before this update - sit here with their full song
+    // lists, one tap away.
+    var _archived = (typeof scAlbumsArchivedNames === 'function') ? scAlbumsArchivedNames() : [];
+    if(_archived.length){
+      html += '<div style="font-size:12.5px;font-weight:600;padding:12px 0 4px;">Cleared by the app - put one back</div>';
+      html += '<div style="font-size:11px;color:var(--ink-dim);padding:0 0 6px;line-height:1.55;">These albums were cleared by an older build the moment the app started. Their song lists were kept, so It is mine restores each one whole.</div>';
+      _archived.forEach(function(name){
+        html += '<div class="mgr-alb-archived-row" data-name="' + escapeHtml(String(name).toLowerCase()) + '" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);">'
+          + '<div style="flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(name) + '</div>'
+          + '<button class="mgr-alb-mine" data-name="' + escapeHtml(name) + '" style="padding:5px 10px;border-radius:6px;border:1px solid var(--coral);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">It is mine</button>'
+          + '</div>';
+      });
+    }
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 2px 2px;">'
       + '<div style="min-width:0;"><div style="font-size:12.5px;font-weight:600;">Keep the playing album open</div>'
       + '<div style="font-size:11px;color:var(--ink-dim);margin-top:2px;line-height:1.5;">Leaving Albums closes every album except the one the playing song is in.</div></div>'
@@ -22310,6 +22334,16 @@ function _fallbackCopy(text){
           self.style.background = 'none';
           self.style.color = '#FF6F59';
         }, 4000);
+      });
+    });
+    // 73.1.8 - the archive rows. It is mine puts the album back with the full
+    // song list the sweep kept, and the row disappears (the archive entry goes
+    // with it). The panel is re-rendered inside the restore itself.
+    Array.prototype.forEach.call(bEl.querySelectorAll('.mgr-alb-mine'), function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var name = this.getAttribute('data-name');
+        if(name){ try{ scAlbumsRestoreArchived(name); }catch(_eMine){} }
       });
     });
     // 71.7 - Rebuild opens the sheet, which IS the confirmation now: it shows
@@ -23302,12 +23336,20 @@ function _fallbackCopy(text){
       var e = userAlbums[k];
       if(e && Array.isArray(e.trackIds)) e.trackIds.forEach(function(id){ claimed[id] = true; });
     });
-    ids = ids.filter(function(id){ return !claimed[id]; });
-    if(!ids.length) return false;
+    // 73.1.8 - the free list still decides whether there is anything to make:
+    // a tag every one of whose songs is already in other albums is not an album
+    // this path needs to invent. But the entry CREATED below carries every song
+    // the tag names, not just the free ones. The old no-stealing filter ran on
+    // into the stored list, so a tag album rebuilt while some of its songs sat
+    // inside other albums froze in as half the songs - the half-empty card.
+    var free = ids.filter(function(id){ return !claimed[id]; });
+    if(!free.length) return false;
     var first = null;
     for(var i = 0; i < allTracks.length; i++){
       if(allTracks[i] && allTracks[i].id === ids[0]){ first = allTracks[i]; break; }
     }
+    // Every song carrying the tag, in library order - not only the ones this
+    // moment could claim (73.1.8, the half-empty rebuilt album).
     userAlbums[name] = {
       artist: (first && String(first.artist || '').trim()) || 'Unknown artist',
       trackIds: ids,
@@ -23465,6 +23507,117 @@ function _fallbackCopy(text){
   function autoAlbumNames(){
     return Object.keys(userAlbums || {}).filter(function(n){ return albumIsAuto(n); });
   }
+  // ---- 73.1.8 - the pass that gives the albums the sweep took back ----------
+  // The boot sweep cleared every entry wearing the old auto flag, and an import
+  // from an album zip made before that flag was retired left every album it
+  // brought wearing one - so one launch could take a library of twenty albums
+  // down to one card. The songs and the album tags on them were never touched,
+  // which is what makes this pass possible: it rebuilds albums straight from
+  // the tags, adding only albums that do not exist, and only songs no other
+  // album holds. It also stamps every entry that exists as an album of yours,
+  // so nothing that arrives - or has sat in the store for months - can be
+  // swept the next time the app starts. Runs once per boot, before the sweep,
+  // so a fresh import arrives, is marked yours, and stays that way. Nothing
+  // here deletes, hides or rewrites an album you have.
+  function _scAlbumTagIds(tagName){
+    var name = String(tagName || '').trim().toLowerCase();
+    if(!name) return [];
+    var out = [];
+    for(var i = 0; i < allTracks.length; i++){
+      var t = allTracks[i];
+      if(t && String(t.album || '').trim().toLowerCase() === name) out.push(t.id);
+    }
+    return out;
+  }
+  function scAlbumsRecoverDeleted(){
+    try{
+      var healed = 0, restored = 0;
+      // (1) An album that exists but holds only part of its tag's songs - the
+      // half-empty card the on-play rebuild froze in - is topped up to every
+      // song the tag names. Additive only, and only for a tag-named album.
+      Object.keys(userAlbums || {}).forEach(function(n){
+        var e = userAlbums[n];
+        if(!e || typeof e !== 'object' || !Array.isArray(e.trackIds)) return;
+        var tagIds = _scAlbumTagIds(n);
+        if(!tagIds.length) return;
+        for(var i = 0; i < tagIds.length; i++){
+          if(e.trackIds.indexOf(tagIds[i]) === -1){ e.trackIds.push(tagIds[i]); healed++; }
+        }
+      });
+      // (2) Mark as an album of yours every entry the FILES can vouch for: one
+      // without the old auto flag, or one whose name is still an album tag on
+      // the songs. A name the files still carry is a name the library agrees
+      // with - that is the proof, and no later boot may overrule it. An entry
+      // that is BOTH flagged AND unsupported by any tag keeps its flag for the
+      // sweep, which frees the name and keeps the song list in the archive -
+      // what a pre-63.1.4 build wrote for itself is still not put on show, but
+      // it is no longer destroyed either.
+      Object.keys(userAlbums || {}).forEach(function(n){
+        var e = userAlbums[n];
+        if(!e || typeof e !== 'object') return;
+        if(e.auto === true && e.manual !== true && !_scAlbumTagIds(n).length) return;
+        e.manual = true;
+        delete e.auto;
+      });
+      // (3) Albums that no entry holds at all - the ones an older boot sweep
+      // deleted whole - are rebuilt from the tag on the files, taking only the
+      // songs no other album claims. A name that is not a file tag cannot be
+      // rebuilt here; that is what the archive restore and backup import are for.
+      // ONE-TIME, on the first boot of this build: on that boot, an album missing
+      // from the store while its tag sits on the files is a sweep victim, not a
+      // deliberate delete - every boot before this one deleted exactly those.
+      // After it has run, a delete is a delete: the stamp keeps this from ever
+      // resurrecting an album the user removed on purpose.
+      var SC_ALBUMS_RECOVER_KEY = 'sidecut_albumsRecoverDone';
+      var recoverOnce = false;
+      try{ recoverOnce = !localStorage.getItem(SC_ALBUMS_RECOVER_KEY); }catch(_eRecK){}
+      if(recoverOnce){
+        try{ localStorage.setItem(SC_ALBUMS_RECOVER_KEY, '1'); }catch(_eRecS){}
+      }
+      var claimed = {};
+      Object.keys(userAlbums).forEach(function(k){
+        // Entries the sweep is about to clear do not count as claiming their
+        // songs: their lists are on the way to the archive, and a rebuilt tag
+        // album that left them out would boot half-empty - the exact shape
+        // this pass exists to end. Everything that is staying counts.
+        if(albumIsAuto(k)) return;
+        var e = userAlbums[k];
+        if(e && Array.isArray(e.trackIds)) e.trackIds.forEach(function(id){ claimed[id] = true; });
+      });
+      var tried = {};
+      allTracks.forEach(function(t){
+        if(!t || !recoverOnce) return;
+        var tag = String(t.album || '').trim();
+        if(!tag || tried[tag] || userAlbums[tag]) return;
+        tried[tag] = 1;
+        // A tag only ONE song carries is usually the song's own name, not an
+        // album (the converter habit). Rebuilding those would be one album per
+        // song again - the same rule the Rebuild sheet's default option uses:
+        // only a tag shared by more than one song counts as an album here.
+        var tagIds = _scAlbumTagIds(tag);
+        if(tagIds.length < 2) return;
+        var free = tagIds.filter(function(id){ return !claimed[id]; });
+        if(!free.length) return;
+        userAlbums[tag] = {
+          artist: (String(t.artist || '').trim()) || 'Unknown artist',
+          trackIds: free,
+          createdAt: Date.now(),
+          manual: true
+        };
+        if(albumOrder.indexOf(tag) === -1) albumOrder.push(tag);
+        restored++;
+      });
+      if(healed || restored){
+        try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(_eUa){}
+        if(restored){
+          try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'albumOrder', value: albumOrder }); }catch(_eOa){}
+        }
+      }
+      return { restored: restored, healed: healed };
+    }catch(_eRec){ return { restored: 0, healed: 0 }; }
+  }
+  window.__scAlbumsRecoverDeleted = scAlbumsRecoverDeleted;
+  window.__scAlbumTagIds = _scAlbumTagIds;
   // ---- 71.6 - the albums the cleanup took, rebuilt from the tags -----------
   // 63.1.4 deleted the album entries older builds had written for themselves.
   // It deleted ENTRIES, never songs, and never a tag on a file - every one of
@@ -23476,6 +23629,11 @@ function _fallbackCopy(text){
   // that says so. Without this the old "auto" marker rides in with the backup
   // and the next launch's sweep deletes the album that was just restored - a
   // restore that looks like it brought nothing back.
+  // 73.1.8 - the same mark, for anything that arrives with an old auto flag
+  // riding on it: a backup or an on-device restore came out of YOUR library, so
+  // it is marked yours here and cannot be swept on a later launch. (The boot
+  // recovery pass does the same for the store as it stands; this covers an
+  // import that lands mid-session.)
   function scAlbumsMarkOurs(albs){
     try{
       Object.keys(albs || {}).forEach(function(n){
@@ -23708,14 +23866,43 @@ function _fallbackCopy(text){
   // thing "It is mine" could ever restore, which made a hidden album look like a
   // feature instead of the mess.
   //
-  // So they go, once per launch. ONLY an entry an automatic path wrote is ever
-  // touched: an album you created, renamed, reordered or filed songs into by hand
-  // never carried the flag, and is left exactly as it is. Returns how many went.
+  // 73.1.8 - so they no longer go whole. The sweep that freed the name KEPT
+  // nothing, and that is what took the library down to one card: every album
+  // wearing the old auto flag - an import from an album zip made before the
+  // flag was retired, or an entry a pre-63.1.4 build wrote - was deleted whole
+  // on the next launch, songs and all. The name still has to be freed - that
+  // part was real, it is what un-blocked Create album - but the entry's full
+  // song list is archived under sidecut_albumsArchive first, and the archive
+  // is offered back in Manage albums with an It-is-mine button, the way the
+  // 58.8.1 hidden list could be claimed. The boot recovery pass has already
+  // rebuilt every tag-named album before this runs, so what reaches here is
+  // only what no tag can rebuild.
+  // ONLY an entry an automatic path wrote is ever touched: an album you
+  // created, renamed, reordered or filed songs into by hand never carried the
+  // flag, and is left exactly as it is. Returns how many were cleared.
+  var SC_ALBUMS_ARCHIVE_KEY = 'sidecut_albumsArchive';
+  function scAlbumsArchivePut(name, entry){
+    try{
+      var raw = localStorage.getItem(SC_ALBUMS_ARCHIVE_KEY);
+      var store = {};
+      try{ store = raw ? JSON.parse(raw) : {}; }catch(_eP){ store = {}; }
+      if(!store || typeof store !== 'object' || store instanceof Array) store = {};
+      if(!store[name]) store[name] = { at: Date.now(), entry: entry };
+      localStorage.setItem(SC_ALBUMS_ARCHIVE_KEY, JSON.stringify(store));
+      return true;
+    }catch(_eArc){ return false; }
+  }
   function removeAutoAlbums(){
     var gone = 0;
     try{
       Object.keys(userAlbums || {}).forEach(function(name){
         if(!albumIsAuto(name)) return;
+        // Archive BEFORE the entry leaves the store: its trackIds are the only
+        // copy of which songs this album held. Losing them is what turned one
+        // boot into a library of one card.
+        if(userAlbums[name] && Array.isArray(userAlbums[name].trackIds) && userAlbums[name].trackIds.length){
+          try{ scAlbumsArchivePut(name, userAlbums[name]); }catch(_eArc2){}
+        }
         delete userAlbums[name];
         try{
           var i = albumOrder.indexOf(name);
@@ -23730,6 +23917,68 @@ function _fallbackCopy(text){
     }catch(_e){ return 0; }
     return gone;
   }
+  // The albums the sweep cleared, as they were when it cleared them: names and
+  // the songs each one held. Read-only over the archive; the restore below is
+  // the only thing that takes an entry out of it.
+  function scAlbumsArchivedNames(){
+    try{
+      var raw = localStorage.getItem(SC_ALBUMS_ARCHIVE_KEY);
+      var store = raw ? JSON.parse(raw) : null;
+      if(!store || typeof store !== 'object' || store instanceof Array) return [];
+      return Object.keys(store).filter(function(n){
+        var e = store[n] && store[n].entry;
+        return !!(e && Array.isArray(e.trackIds) && e.trackIds.length);
+      });
+    }catch(_eRd){ return []; }
+  }
+  window.__scAlbumsArchivedNames = scAlbumsArchivedNames;
+  // It is mine. Puts an archived album back with the song list it had when the
+  // sweep cleared it, marked as yours so no later boot can take it again. When
+  // a same-named album appeared meanwhile, its songs are kept and the archived
+  // list only tops it up - nothing is taken away from either.
+  function scAlbumsRestoreArchived(name){
+    try{
+      var raw = localStorage.getItem(SC_ALBUMS_ARCHIVE_KEY);
+      var store = raw ? JSON.parse(raw) : null;
+      var rec = (store && typeof store === 'object' && !(store instanceof Array)) ? store[name] : null;
+      var e = rec && rec.entry;
+      if(!e || !Array.isArray(e.trackIds) || !e.trackIds.length) return false;
+      if(!userAlbums[name]){
+        var restored = {};
+        Object.keys(e).forEach(function(k){
+          if(k === 'auto') return;
+          restored[k] = e[k];
+        });
+        restored.manual = true;
+        delete restored.auto;
+        userAlbums[name] = restored;
+      } else if(Array.isArray(userAlbums[name].trackIds)){
+        for(var i = 0; i < e.trackIds.length; i++){
+          if(userAlbums[name].trackIds.indexOf(e.trackIds[i]) === -1) userAlbums[name].trackIds.push(e.trackIds[i]);
+        }
+      }
+      if(typeof markAlbumManual === 'function') markAlbumManual(name);
+      if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums });
+      try{
+        if(albumOrder.indexOf(name) === -1) albumOrder.push(name);
+        if(typeof dbPut === 'function') dbPut('meta', { key: 'albumOrder', value: albumOrder });
+      }catch(_eOrd){}
+      try{
+        var raw2 = localStorage.getItem(SC_ALBUMS_ARCHIVE_KEY);
+        var store2 = raw2 ? JSON.parse(raw2) : null;
+        if(store2 && typeof store2 === 'object' && !(store2 instanceof Array)){
+          delete store2[name];
+          localStorage.setItem(SC_ALBUMS_ARCHIVE_KEY, JSON.stringify(store2));
+        }
+      }catch(_eRm){}
+      try{ renderList(); }catch(_eRl){}
+      try{ refreshManageAlbums(true); }catch(_eMg){}
+      var n = (userAlbums[name] && Array.isArray(userAlbums[name].trackIds)) ? userAlbums[name].trackIds.length : 0;
+      try{ toast('Put "' + name + '" back with its ' + n + ' song' + (n === 1 ? '' : 's') + '.', 5000); }catch(_eT){}
+      return true;
+    }catch(_eRes){ return false; }
+  }
+  window.__scAlbumsRestoreArchived = scAlbumsRestoreArchived;
   window.__scMarkAlbumManual = markAlbumManual;
   window.__scVisibleAlbumNames = visibleAlbumNames;
   window.__scAutoAlbumNames = autoAlbumNames;
@@ -31175,15 +31424,17 @@ function _fallbackCopy(text){
         console.warn('[SideCut] library unreadable — showing the recovery panel instead of the empty-library screen');
         window.__scStorageTroublePanel();
       }
-      // Albums the app added on its own used to be hidden from the Albums tab;
-      // now they are deleted (see removeAutoAlbums). That is what frees the name
-      // they had taken, so creating an album can no longer be told the name is
-      // already in use and quietly file the songs into something you cannot see.
+      // 73.1.8 - the albums the app added on its own are cleared by
+      // removeAutoAlbums(), which now archives each one first (sidecut_albumsArchive,
+      // offered back in Manage albums), and the recovery pass has already
+      // rebuilt every tag-named album the sweep would otherwise have taken:
+      // the Albums tab that boots is the one your songs say it is.
       var _scAutoAlbums = 0;
+      try{ scAlbumsRecoverDeleted(); }catch(e){}
       try{ _scAutoAlbums = removeAutoAlbums(); }catch(e){}
       if(loaded && _scAutoAlbums){
         setTimeout(function(){
-          try{ toast(_scAutoAlbums + ' album' + (_scAutoAlbums === 1 ? '' : 's') + ' the app had added on its own were removed \u2014 your songs and their album tags are untouched.', 7000); }catch(_e){}
+          try{ toast(_scAutoAlbums + ' album' + (_scAutoAlbums === 1 ? '' : 's') + ' the app had added on its own were cleared - the songs carry their album tags, and the lists are kept in Manage albums.', 7000); }catch(_e){}
         }, 3000);
       }
       if(loaded){
@@ -35936,6 +36187,9 @@ function _renderAhFromData(artistAlbums){
   };
   window.__scUpcomingAutofetch = async function(){
     if(window.__scUpAutoBusy) return;
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;

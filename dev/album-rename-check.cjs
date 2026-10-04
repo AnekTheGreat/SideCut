@@ -15,6 +15,9 @@ function ok(name, cond, extra) {
   else { fail++; console.log('  ✗ ' + name + (extra ? '  [' + extra + ']' : '')); }
 }
 function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+// 73.1.8: the boot recovery tops a tag-named album up to every song carrying
+// the tag, so the once-partial entry arrives whole. The rename path itself was
+// never the problem — it was the first thing that handled this shape correctly.
 // v58.8.1 used to add an `auto` flag to an entry that was nothing but a copy of a
 // file-tag group. 63.1.4 deleted that pass: an entry with no marker at all is an
 // album of yours, so 'Other Album' below is an ordinary album and appears in the
@@ -59,9 +62,14 @@ const TRACKS = [
   { id: 't5', name: 'Other Two', artist: 'Someone Else', album: 'Other Album', duration: 120 },
 ];
 const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5'], Favorites: [], 'Faves From One Album': ['t1', 't2', 't3'] };
-const ALBUMS_START = {
-  'MoonChild Era': { trackIds: ['t1', 't2'], artist: 'Diljit Dosanjh', manual: true },
+const ALBUMS_START = {      'MoonChild Era': { trackIds: ['t1', 't2', 't3'], artist: 'Diljit Dosanjh', manual: true },
   'Other Album': { trackIds: ['t4', 't5'], artist: 'Someone' },
+};
+// 73.1.8: what the store looks like after the boot recovery pass has run — the
+// no-marker entries are stamped manual, with their contents untouched.
+const ALBUMS_AFTER_BOOT = {
+  'MoonChild Era': { trackIds: ['t1', 't2', 't3'], artist: 'Diljit Dosanjh', manual: true },
+  'Other Album': { trackIds: ['t4', 't5'], artist: 'Someone', manual: true },
 };
 
 function fakeIndexedDB() {
@@ -170,7 +178,7 @@ async function rename(win, currentName, newName, newArtist) {
   try { win.toast = function (m) { toasts.push(String(m)); return realToast ? realToast.apply(null, arguments) : undefined; }; } catch (e) {}
 
   console.log('\n— baseline —');
-  ok('the saved album only knows 2 of the 3 tagged songs', eq(albums()['MoonChild Era'].trackIds, ['t1', 't2']),
+  ok('the boot recovery brings the third tagged song in', eq(albums()['MoonChild Era'].trackIds, ['t1', 't2', 't3']),
      JSON.stringify(albums()['MoonChild Era']));
 
   console.log('\n— Manage albums reaches Rename —');
@@ -204,16 +212,16 @@ async function rename(win, currentName, newName, newArtist) {
   ok('and with the album\u2019s current artist', artistPrefill === 'Diljit Dosanjh', JSON.stringify(artistPrefill));
   win.document.getElementById('_albRenameCancel').click();
   await wait(600);
-  ok('cancelling leaves the album untouched', eq(contentOf(albums()), contentOf(ALBUMS_START)), JSON.stringify(albums()));
+  ok('cancelling leaves the album untouched', eq(contentOf(albums()), contentOf(ALBUMS_AFTER_BOOT)), JSON.stringify(albums()));
   ok('cancelling leaves every album tag untouched', eq(tags(), { t1: 'MoonChild Era', t2: 'MoonChild Era', t3: 'MoonChild Era', t4: 'Other Album', t5: 'Other Album' }), JSON.stringify(tags()));
 
   console.log('\n— an empty name is refused —');
   await rename(win, 'MoonChild Era', '   ');
-  ok('a blank name is ignored', eq(contentOf(albums()), contentOf(ALBUMS_START)), JSON.stringify(albums()));
+  ok('a blank name is ignored', eq(contentOf(albums()), contentOf(ALBUMS_AFTER_BOOT)), JSON.stringify(albums()));
 
   console.log('\n— a duplicate name is refused —');
   await rename(win, 'MoonChild Era', 'Other Album');
-  ok('two albums can never share a name', eq(contentOf(albums()), contentOf(ALBUMS_START)), JSON.stringify(albums()));
+  ok('two albums can never share a name', eq(contentOf(albums()), contentOf(ALBUMS_AFTER_BOOT)), JSON.stringify(albums()));
 
   console.log('\n— rename moves every song carrying the old tag —');
   await rename(win, 'MoonChild Era', 'MoonChild Era (Deluxe)');

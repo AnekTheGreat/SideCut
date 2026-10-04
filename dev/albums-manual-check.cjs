@@ -2,23 +2,24 @@
 // already exists just remove the auto albums and make sure that doesn't affect my
 // regular albums." The panel behind the report read "25 albums · 227 not created
 // by you" — so the library is polluted exactly the way older builds polluted it,
-// and this file proves what 63.1.4 does with it:
+// and this file proves what 73.1.8 does with it:
 //
 //   1. An entry the app created for itself (an old card-drag auto-save, or a tag
-//      album materialised so a reorder had somewhere to live) is DELETED at boot,
-//      not flagged and hidden. The name it had taken is free again — which is what
-//      made "Create album" answer "an album named X already exists" and then file
-//      the songs into an album that never appeared.
+//      album materialised so a reorder had somewhere to live) is cleared from the
+//      Albums tab by the boot sweep, and the name it had taken is free again —
+//      which is what made "Create album" answer "an album named X already exists"
+//      and then file the songs into an album that never appeared. 73.1.8: the
+//      entry's full song list is ARCHIVED first (sidecut_albumsArchive), and a
+//      tag-named entry is rebuilt before the sweep ever runs — a flag can cost a
+//      name, never an album again.
 //   2. Albums you made are untouched: same songs, same order, same artist, same
 //      entry. That includes an entry that predates the flag entirely and carries no
 //      marker at all — a "no marker means not yours" rule is what once emptied a
 //      library of twelve hand-made albums down to one card, so it is not applied.
 //   3. Nothing else moves: every song stays in the library, every album tag stays
-//      on its file, and playlists are byte-for-byte unchanged. An auto album was
-//      only ever a copy of a tag that is still there.
-//   4. Manage albums lists the albums you have and searches them: match count,
-//      hidden non-matches, an honest empty state, a clear button, and the query
-//      kept across the re-render a rename causes.
+//      on its file, and playlists are byte-for-byte unchanged.
+//   4. Manage albums lists the albums you have, searches them, and — 73.1.8 —
+//      offers the archived lists back with an It-is-mine button per album.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
@@ -59,6 +60,8 @@ const TRACKS = [
 // What the store looks like on a phone that lived through the old auto-save:
 //   • 'MoonChild Era' / 'G.O.A.T' — every track with that tag, in tag order, and
 //     wearing the flag the app put on the entries it wrote for itself: auto.
+//     73.1.8: the tag is on the files, so the recovery pass REBUILDS these as
+//     albums of yours before the sweep runs — they are kept, not cleared.
 //   • 'My Mix' — songs from TWO different tags, gathered by hand: keep.
 //   • 'DJ Set' — two songs of one tag in MY order: keep.
 //   • 'Pre Flag' — an entry that predates the flag and has no marker at all: keep.
@@ -71,7 +74,7 @@ const ALBUMS_POLLUTED = {
 };
 const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5'], Favorites: [], 'Moon Faves': ['t1', 't4'] };
 const ALBUM_ORDER_START = ['MoonChild Era', 'G.O.A.T', 'My Mix', 'DJ Set', 'Pre Flag'];
-const KEPT = ['My Mix', 'DJ Set', 'Pre Flag'];
+const KEPT = ['MoonChild Era', 'G.O.A.T', 'My Mix', 'DJ Set', 'Pre Flag'];
 // What an album IS: its songs and its artist. The bookkeeping fields are compared
 // separately, because those are the app's, not the album's.
 function contentOf(a) {
@@ -187,39 +190,44 @@ async function rename(win, currentName, newName, newArtist) {
 
 (async () => {
   const win = dom.window;
-  // The boot notice about the removed albums goes off on a 3 s timer, and the app's
+  // The boot notice about cleared auto entries goes off on a 3 s timer, and the app's
   // own toast() is an IIFE local, so it cannot be wrapped from here — the toast
-  // ELEMENT is watched instead, which is what the user reads.
-  let removalToast = '';
+  // ELEMENT is watched instead, which is what the user reads. On this library every
+  // flagged album is tag-named, so the recovery pass keeps them all and the sweep
+  // finds nothing to clear: NO destructive boot on a tag-named library.
+  let clearToast = '';
   const watchToast = setInterval(() => {
     const el = win.document.getElementById('toast');
-    if (el && /were removed/.test(el.textContent || '')) removalToast = String(el.textContent);
+    if (el && /were cleared/.test(el.textContent || '')) clearToast = String(el.textContent);
   }, 100);
   await wait(7000);
   clearInterval(watchToast);
 
-  console.log('\n— the albums the app added for you are deleted, not hidden —');
+  console.log('\n— a flagged album whose name is a file tag is kept, whole —');
   const after = storedAlbums() || {};
-  ok('the flagged entries are gone from the store',
-     eq(Object.keys(after), KEPT), JSON.stringify(Object.keys(after)));
-  ok('and they are gone as entries, not flagged and hidden',
-     !after['MoonChild Era'] && !after['G.O.A.T'], JSON.stringify(Object.keys(after)));
-  ok('the album order drops their names too',
-     eq(storedOrder(), KEPT), JSON.stringify(storedOrder()));
-  ok('the boot says what it did', /^2 albums .*were removed/.test(removalToast) && /untouched/.test(removalToast),
-     JSON.stringify(removalToast));
+  ok('every album in the store is still there',
+     eq(Object.keys(after).sort(), KEPT.slice().sort()), JSON.stringify(Object.keys(after)));
+  ok('the flagged tag albums kept every song they listed',
+     after['MoonChild Era'] && eq(after['MoonChild Era'].trackIds, ['t1', 't2', 't3']) &&
+     after['G.O.A.T'] && eq(after['G.O.A.T'].trackIds, ['t4', 't5']), JSON.stringify([after['MoonChild Era'], after['G.O.A.T']]));
+  ok('and the boot never announced a clearing',
+     clearToast === '', JSON.stringify(clearToast));
+  ok('the album order is exactly as it was',
+     eq(storedOrder(), ALBUM_ORDER_START), JSON.stringify(storedOrder()));
+
+  console.log('\n— the boot recovery marks every album as yours, once —');
+  ok('the flagged tag albums are marked manual (never sweepable again)',
+     after['MoonChild Era'] && after['MoonChild Era'].manual === true &&
+     after['G.O.A.T'] && after['G.O.A.T'].manual === true,
+     JSON.stringify([after['MoonChild Era'] && after['MoonChild Era'].manual, after['G.O.A.T'] && after['G.O.A.T'].manual]));
+  ok('the stale auto flag is gone',
+     !after['MoonChild Era'].auto && !after['G.O.A.T'].auto, JSON.stringify([after['MoonChild Era'].auto, after['G.O.A.T'].auto]));
 
   console.log('\n— every album you made is untouched —');
   const keptStart = {};
-  KEPT.forEach((k) => { keptStart[k] = ALBUMS_POLLUTED[k]; });
-  ok('the albums you made are exactly as they were', eq(contentOf(after), contentOf(keptStart)),
-     JSON.stringify(contentOf(after)));
-  ok('the flags on them were not touched either',
-     after['My Mix'] && after['My Mix'].manual === true && after['DJ Set'] && after['DJ Set'].manual === true,
-     JSON.stringify([after['My Mix'], after['DJ Set']]));
-  ok('an entry that predates the flag keeps no marker and keeps its songs',
-     after['Pre Flag'] && !after['Pre Flag'].auto && !after['Pre Flag'].manual &&
-     eq(after['Pre Flag'].trackIds, ['t5']), JSON.stringify(after['Pre Flag']));
+  ['My Mix', 'DJ Set', 'Pre Flag'].forEach((k) => { keptStart[k] = ALBUMS_POLLUTED[k]; });
+  ok('the albums you made are exactly as they were', eq(contentOf({ 'My Mix': after['My Mix'], 'DJ Set': after['DJ Set'], 'Pre Flag': after['Pre Flag'] }), contentOf(keptStart)),
+     JSON.stringify(contentOf({ 'My Mix': after['My Mix'], 'DJ Set': after['DJ Set'], 'Pre Flag': after['Pre Flag'] })));
   ok('the album you ordered by hand keeps your order',
      eq(after['DJ Set'].trackIds, ['t3', 't2']), JSON.stringify(after['DJ Set'].trackIds));
   ok('every album tag on every file is unchanged',
@@ -233,25 +241,64 @@ async function rename(win, currentName, newName, newArtist) {
   const rows = Array.from(win.document.querySelectorAll('#listPane .track')).map((r) => r.dataset.id);
   ok('every song is still in the library', eq(rows.slice().sort(), ['t1', 't2', 't3', 't4', 't5']), JSON.stringify(rows));
 
-  console.log('\n— the Albums tab shows your albums, and only yours —');
+  console.log('\n— the Albums tab shows every album, flagged or not —');
   win.navigate('albums');
   await wait(900);
   const names = cardNames(win);
-  ok('the albums the app added are not there at all',
-     names.indexOf('MoonChild Era') === -1 && names.indexOf('G.O.A.T') === -1, JSON.stringify(names));
-  ok('the albums you made are all there, and nothing else is',
-     eq(names.slice().sort(), ['DJ Set', 'My Mix', 'Pre Flag']), JSON.stringify(names));
-  ok('the header counts only your albums', /\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
+  ok('the albums the app once flagged are there again',
+     names.indexOf('MoonChild Era') !== -1 && names.indexOf('G.O.A.T') !== -1, JSON.stringify(names));
+  ok('the albums you made are all there too, and nothing else is',
+     eq(names.slice().sort(), KEPT.slice().sort()), JSON.stringify(names));
+  ok('the header counts the whole Albums tab',
+     /\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
 
-  console.log('\n— the removal is a settled state, not a nightly chore —');
+  console.log('\n— the sweep itself still frees a name, without keeping nothing —');
   ok('the removal hook exists', typeof win.__scRemoveAutoAlbums === 'function');
   ok('nothing is left flagged', (typeof win.__scAutoAlbumNames === 'function' ? win.__scAutoAlbumNames() : ['?']).length === 0,
      JSON.stringify(typeof win.__scAutoAlbumNames === 'function' ? win.__scAutoAlbumNames() : null));
   ok('running it again finds nothing to remove', win.__scRemoveAutoAlbums() === 0);
+  ok('the recovery hook exists', typeof win.__scAlbumsRecoverDeleted === 'function');
+  ok('the archived-names hook exists', typeof win.__scAlbumsArchivedNames === 'function');
+  ok('the it-is-mine restore hook exists', typeof win.__scAlbumsRestoreArchived === 'function');
+
+  console.log('\n— It is mine puts a cleared album back, whole —');
+  {
+    // The owner's case: an older boot cleared albums whole, so nothing is left
+    // in the store to rebuild from — the archive (or a backup) is what brings
+    // one back. Seed the archive the way the sweep writes it, then drive the
+    // real panel: the row, the button, the restore.
+    const m = idb._data.meta.get('userAlbums');
+    const snapshot = JSON.parse(JSON.stringify(m.value));
+    win.localStorage.setItem('sidecut_albumsArchive', JSON.stringify({
+      'Ghost Drag': { at: 1, entry: { artist: 'Diljit Dosanjh', trackIds: ['t1', 't4'], createdAt: 99, auto: true } },
+    }));
+    await openManage(win);
+    const row = win.document.querySelector('#discPopupBody .mgr-alb-archived-row');
+    ok('the cleared album is listed in Manage albums', !!row, row ? '' : 'no archived row');
+    const mine = row && row.querySelector('.mgr-alb-mine');
+    ok('with an It is mine button on it', !!mine);
+    if (mine) {
+      mine.click();
+      await wait(900);
+      const s = storedAlbums() || {};
+      ok('the album is back with the full song list it had', s['Ghost Drag'] && eq(s['Ghost Drag'].trackIds, ['t1', 't4']), JSON.stringify(s['Ghost Drag']));
+      ok('marked yours, no stale flag', s['Ghost Drag'] && s['Ghost Drag'].manual === true && !s['Ghost Drag'].auto, JSON.stringify(s['Ghost Drag'] && [s['Ghost Drag'].manual, s['Ghost Drag'].auto]));
+      ok('and it left the archive (claimed, not copied)', eq(win.__scAlbumsArchivedNames(), []), JSON.stringify(win.__scAlbumsArchivedNames()));
+      const cards = cardNames(win);
+      ok('it shows on the Albums tab like any album', cards.indexOf('Ghost Drag') !== -1, JSON.stringify(cards));
+      // Leave the store as the boot left it for the checks below.
+      win.deleteUserAlbum ? win.deleteUserAlbum('Ghost Drag') : null;
+      const afterDel = storedAlbums() || {};
+      if (afterDel['Ghost Drag']) { delete afterDel['Ghost Drag']; m.value = afterDel; win.__scRemoveAutoAlbums(); }
+      await openManage(win);
+      ok('the restored album is gone again after Delete', !(storedAlbums() || {})['Ghost Drag'], JSON.stringify(Object.keys(storedAlbums() || {})));
+    }
+    void snapshot;
+  }
 
   console.log('\n— Manage albums now searches —');
   ok('Manage albums opens', await openManage(win));
-  ok('one row per album you have', mgrRows(win).length === 3 && visibleRows(win).length === 3,
+  ok('one row per album you have', mgrRows(win).length === 5 && visibleRows(win).length === 5,
      'rows=' + mgrRows(win).length + ' visible=' + visibleRows(win).length);
   ok('no "not created by you" controls survive',
      !q(win, '.mgr-alb-restore') && !q(win, '.mgr-alb-rename-auto') && !q(win, '.mgr-alb-del-auto'));
@@ -262,26 +309,27 @@ async function rename(win, currentName, newName, newArtist) {
   ok('typing narrows the list', type(win, 'dj') && visibleRows(win).length === 1,
      'visible=' + visibleRows(win).length + ' [' + visibleRows(win).map((r) => r.getAttribute('data-name')).join(',') + ']');
   ok('and says how many still match',
-     q(win, '#mgrAlbumCount').textContent === '1 of 3 albums' && q(win, '#mgrAlbumCount').style.display === 'block',
+     q(win, '#mgrAlbumCount').textContent === '1 of 5 albums' && q(win, '#mgrAlbumCount').style.display === 'block',
      q(win, '#mgrAlbumCount').textContent);
   ok('the matching row is the one asked for',
      visibleRows(win)[0] && visibleRows(win)[0].getAttribute('data-name') === 'dj set',
      visibleRows(win)[0] ? visibleRows(win)[0].getAttribute('data-name') : 'none');
 
-  ok('an artist matches too', type(win, 'moose') && visibleRows(win).length === 1 &&
-     visibleRows(win)[0].getAttribute('data-name') === 'pre flag',
+  ok('an artist matches too', type(win, 'moose') && visibleRows(win).length === 2 &&
+     visibleRows(win).some((r) => r.getAttribute('data-name') === 'g.o.a.t') &&
+     visibleRows(win).some((r) => r.getAttribute('data-name') === 'pre flag'),
      visibleRows(win).map((r) => r.getAttribute('data-name')).join(','));
 
   ok('a search with no match hides every row', type(win, 'zzz') && visibleRows(win).length === 0,
      'visible=' + visibleRows(win).length);
   ok('and says so instead of showing an empty list',
-     q(win, '#mgrAlbumNoMatch').style.display === 'block' && q(win, '#mgrAlbumCount').textContent === '0 of 3 albums',
+     q(win, '#mgrAlbumNoMatch').style.display === 'block' && q(win, '#mgrAlbumCount').textContent === '0 of 5 albums',
      q(win, '#mgrAlbumNoMatch').style.display + ' / ' + q(win, '#mgrAlbumCount').textContent);
 
   q(win, '#mgrAlbumSearchClear').click();
   await wait(150);
   ok('the clear button puts them all back',
-     visibleRows(win).length === 3 && q(win, '#mgrAlbumSearch').value === '' &&
+     visibleRows(win).length === 5 && q(win, '#mgrAlbumSearch').value === '' &&
      q(win, '#mgrAlbumNoMatch').style.display === 'none' && q(win, '#mgrAlbumCount').style.display === 'none',
      'visible=' + visibleRows(win).length + ' value=' + JSON.stringify(q(win, '#mgrAlbumSearch').value));
 
@@ -300,21 +348,21 @@ async function rename(win, currentName, newName, newArtist) {
   ok('and the query is still in the box', q(win, '#mgrAlbumSearch').value === 'flag',
      JSON.stringify(q(win, '#mgrAlbumSearch').value));
   ok('with the count still honest about the new name',
-     q(win, '#mgrAlbumCount').textContent === '1 of 3 albums', q(win, '#mgrAlbumCount').textContent);
+     q(win, '#mgrAlbumCount').textContent === '1 of 5 albums', q(win, '#mgrAlbumCount').textContent);
   // Closing and reopening is a fresh start, not the same session: the panel must
   // come back unfiltered rather than holding a search the user has walked away from.
   closeManage(win);
   await wait(300);
   await openManage(win);
   ok('a fresh open starts with all albums and no query',
-     visibleRows(win).length === 3 && q(win, '#mgrAlbumSearch').value === '',
+     visibleRows(win).length === 5 && q(win, '#mgrAlbumSearch').value === '',
      'visible=' + visibleRows(win).length + ' value=' + JSON.stringify(q(win, '#mgrAlbumSearch').value));
 
   console.log('\n— the songs are all where they were —');
   const finalAlbums = storedAlbums() || {};
-  ok('the three albums you made are the three that are left',
-     eq(Object.keys(finalAlbums).sort(), ['DJ Set', 'My Mix', 'Pre Flag Hits']), JSON.stringify(Object.keys(finalAlbums)));
-  ok('the songs the removed entries carried are still in the library',
+  ok('every album you have is still in the store',
+     eq(Object.keys(finalAlbums).sort(), ['DJ Set', 'G.O.A.T', 'MoonChild Era', 'My Mix', 'Pre Flag Hits']), JSON.stringify(Object.keys(finalAlbums)));
+  ok('the songs are all still in the library',
      eq(Object.keys(tags()).sort(), ['t1', 't2', 't3', 't4', 't5']), JSON.stringify(Object.keys(tags())));
   ok('playlists are still byte-for-byte unchanged', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 

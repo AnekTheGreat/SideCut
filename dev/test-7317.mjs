@@ -30,9 +30,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '73.1.7';
-const PREV = '73.1.6';
-const SHELL_CACHE = 'sidecut-shell-v73.1.7';
+const VER = '73.1.8'; /* repinned by dev/repin-7318.mjs */
+const PREV = '73.1.7'; /* repinned by dev/repin-7318.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1.8';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -61,7 +61,9 @@ console.log('[1] release metadata');
     ok(items.length > 6, 'and a note past the six that ride to the store channel (' + items.length + ')');
     const notes = items.join('\n');
     ok(/album/i.test(notes), 'the notes name the Albums work this release confirms');
-    ok(/update/i.test(notes), 'and say plainly why this release exists (the update number)');
+    // 73.1.8 retarget: this release exists because the boot cleanup took the
+    // albums away, so the notes have to say that plainly (73.1.7 said "update").
+    ok(/wipe|took away|lost/i.test(notes), 'and say plainly why this release exists (the album wipe is fixed)');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     ok(!/\bpass\b/i.test(String(head.title)), 'the title never uses the word the store gate refuses');
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the head notes');

@@ -145,16 +145,23 @@ let toasts = [];
   console.log('\n— the Albums tab is the albums the user created —');
   win.navigate('albums');
   await wait(800);
-  ok('only the hand-made album has a card', eq(cardNames(win), ['My Mix']), JSON.stringify(cardNames(win)));
+  // 73.1.8: the one-time upgrade recovery rebuilds the sweep victims from their
+  // file tags — 'Other Album' is a real card alongside the hand-made one.
+  ok('only the hand-made album and the recovered tag album have cards',
+     eq(cardNames(win).slice().sort(), ['My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
   ok('the album tagged on the files is NOT listed', cardNames(win).indexOf('MoonChild Era') === -1, JSON.stringify(cardNames(win)));
-  ok('nor is the other tag-only album', cardNames(win).indexOf('Other Album') === -1, JSON.stringify(cardNames(win)));
-  ok('no album the user never created exists in storage', eq(Object.keys(storedAlbums() || {}), ['My Mix']),
+  ok('and no album outside those two exists as a card', cardNames(win).length === 2, JSON.stringify(cardNames(win)));
+  ok('no album beyond the recovered tag names exists in storage',
+     eq(Object.keys(storedAlbums() || {}).sort(), ['My Mix', 'Other Album']),
      JSON.stringify(Object.keys(storedAlbums() || {})));
   const myCard = cardEls(win).find((c) => c.dataset.albumName === 'My Mix');
   ok('the album shows all three of its songs', !!myCard && myCard.querySelectorAll('.track').length === 3,
      myCard ? String(myCard.querySelectorAll('.track').length) : 'no card');
-  ok('the header counts only the albums’ songs (3, not the whole library)', /\b3 tracks\b/.test(paneHeader(win)), paneHeader(win));
-  ok('the tag-only songs are not smuggled into the count', !/\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
+  // 73.1.8: the one-time upgrade-boot recovery rebuilds tag-named albums the old
+  // sweep deleted whole, so 'Other Album' (2 songs) is a card here alongside the
+  // hand-made one — and the header counts both albums' songs, not the library.
+  ok('the header counts only the albums’ songs (5, not more than the albums hold)', /\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
+  ok('the tag-only songs are not smuggled into the count beyond the albums', !/\b7 tracks\b/.test(paneHeader(win)), paneHeader(win));
 
   console.log('\n— rendering the Albums tab must not rewrite playlists —');
   ok('playlist backed by only album songs is untouched', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
@@ -199,7 +206,9 @@ let toasts = [];
   ok('the new order is persisted to userAlbums', eq((albumsAfter['My Mix'] || {}).trackIds, ['t2', 't3', 't1']),
      JSON.stringify((albumsAfter['My Mix'] || {}).trackIds));
   ok('no song was dropped from the album', ((albumsAfter['My Mix'] || {}).trackIds || []).length === 3);
-  ok('reordering invented no album', eq(Object.keys(albumsAfter), ['My Mix']), JSON.stringify(Object.keys(albumsAfter)));
+  // 73.1.8: the reorder itself must still invent NOTHING — the recovery's one
+  // tag-named album is the only extra entry, and it existed before the reorder.
+  ok('reordering invented no album beyond the recovered one', eq(Object.keys(albumsAfter).sort(), ['My Mix', 'Other Album']), JSON.stringify(Object.keys(albumsAfter)));
   ok('playlists untouched by the album reorder', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   // Done -> refresh the library view.
@@ -211,7 +220,7 @@ let toasts = [];
      myAfter ? String(myAfter.querySelectorAll('.track').length) : 'no card');
   ok('album card rows reflect the new order', !!myAfter && eq(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id), ['t2', 't3', 't1']),
      myAfter ? JSON.stringify(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id)) : 'no card');
-  ok('still no tag-only album card after a reorder', eq(cardNames(win), ['My Mix']), JSON.stringify(cardNames(win)));
+  ok('and no THIRD album appears out of the reorder', eq(cardNames(win).slice().sort(), ['My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
   ok('playlists still untouched after closing', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   console.log('\n— dragging a card can never invent an album —');
