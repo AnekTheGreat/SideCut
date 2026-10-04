@@ -2913,7 +2913,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
       <span style="color:var(--ink-dim);">New here? There are two ways in. Either let the app make the file for you from a Spotify link (steps 1-3 just below), or bring music you already have with <b style="color:var(--ink);">+ Add songs</b> (the last note here). Both end up in <b style="color:var(--ink);">🎵 Library → All Songs</b>, saved on your device with no ads.</span><br><br>
       <span style="color:var(--ink-dim);">1. In <b style="color:var(--ink);">Spotify</b>, tap <b style="color:var(--ink);">Share → Copy link</b> on the song to copy its link.<br>
       2. Tap <b style="color:var(--ink);">🎛️ Conversion Tools</b> below — a drop-down opens. Open the built-in converter below (<b style="color:var(--ink);">🎵 Spotify to MP3</b>), tap the link box to paste the link and tap <b style="color:var(--ink);">Convert</b>.<br>
-      3. Tap <b style="color:var(--ink);">⬇ Download</b> or <b style="color:var(--ink);">Import to Library</b> — the file keeps its title, artist, album and cover art, and stays on your device.</span><br>
+      3. That is it — when it finishes the song is already in your library (<b style="color:var(--ink);">🎵 Library → All Songs</b>), keeping its title, artist, album and cover art. Nothing to import. Want the file on your device too? Tap <b style="color:var(--ink);">⬇ Save the file too</b>.</span><br>
       <details style="margin-top:8px;" open>
         <summary style="cursor:pointer; color:var(--gold); font-size:11px; font-weight:600;">💡 Backup: if the in-app converter can&#39;t find the song</summary>
         <div style="margin-top:6px; font-size:11px;">These open your link pre-filled — convert there, download the MP3, then import it with + Add songs → + Files:
@@ -3213,7 +3213,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
         <span style="color:var(--ink-dim);">New here? There are two ways in. Either let the app make the file for you from a Spotify or YouTube link (steps 1-3 just below), or bring music you already have with <b style="color:var(--ink);">+ Add songs</b>. Both end up in <b style="color:var(--ink);">🎵 Library → All Songs</b>, saved on your device with no ads.</span><br><br>
         1. In <b style="color:var(--ink);">Spotify</b>, tap <b style="color:var(--ink);">Share → Copy link</b> on any song.<br>
         2. Tap <b style="color:var(--ink);">🎛️ Conversion Tools</b> below — a drop-down opens. Paste the link into the built-in <b style="color:var(--ink);">🎵 Spotify to MP3</b> converter below (tap the box to paste it) and tap <b style="color:var(--ink);">Convert</b>.<br>
-        3. Tap <b style="color:var(--ink);">⬇ Download</b> or <b style="color:var(--ink);">Import to Library</b> — the file keeps its title, artist, album and cover art, and stays on your device.
+        3. That is it — when it finishes the song is already in your library (<b style="color:var(--ink);">🎵 Library → All Songs</b>), keeping its title, artist, album and cover art. Nothing to import. Want the file on your device too? Tap <b style="color:var(--ink);">⬇ Save the file too</b>.
         <details style="margin-top:8px;" open>
           <summary style="cursor:pointer; color:var(--gold); font-size:11px; font-weight:600;">💡 Backup: if the in-app converter can&#39;t find the song</summary>
           <div style="margin-top:6px; font-size:11px; color:var(--ink-dim);">These open your link pre-filled — convert there, download the MP3, then import it with + Add songs → + Files:
@@ -10845,11 +10845,23 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
     return true;
   }
-  function scSnapRowsToOnsets(rows, env, hopSec, win){
+  function scSnapRowsToOnsets(rows, env, hopSec, win, gaps){
     if(!rows || !rows.length || !env || !env.length) return rows;
     var hop = hopSec > 0 ? hopSec : 0.02;
     var w = win > 0 ? win : 1.3;
     var maxF = env.length - 1;
+    // 73.1.6 - a frame inside a measured quiet stretch carries an instrumental
+    // hit, not a voice, so it is never a snap target. Otherwise a drum fill in a
+    // break would drag the line that belongs after it.
+    var skip = null;
+    if(gaps && gaps.length){
+      skip = new Uint8Array(env.length);
+      for(var gi = 0; gi < gaps.length; gi++){
+        var ga = Math.max(0, Math.round(gaps[gi].s / hop));
+        var gb = Math.min(maxF, Math.round(gaps[gi].e / hop));
+        for(var gf = ga; gf <= gb; gf++) skip[gf] = 1;
+      }
+    }
     var out = [];
     for(var i = 0; i < rows.length; i++){
       var t = rows[i].t;
@@ -10857,6 +10869,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       var hi = Math.min(maxF, Math.round((t + w) / hop));
       var best = -1, bestScore = 0;
       for(var f = lo; f <= hi; f++){
+        if(skip && skip[f]) continue;
         var v = env[f];
         if(!(v > 0)) continue;
         var d = Math.abs(f * hop - t);
@@ -10868,6 +10881,53 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(prev >= 0 && at < prev) at = Math.max(t, prev);
       if(at < 0) at = 0;
       out.push({ t: at, text: rows[i].text });
+    }
+    return out;
+  }
+  // 73.1.6 - the shape of a track that drifts: a long intro, a pause, an
+  // instrumental break or a tempo change. The one signal the app can measure and
+  // the model cannot guess is where the singing actually stops and starts, so the
+  // quiet stretches are read off the recording's own energy and used twice - once
+  // to brief the model, once to keep the model's own answer out of them.
+  function scQuietFloor(env){
+    if(!env || !env.length) return 0;
+    var max = 0;
+    for(var i = 0; i < env.length; i++){ if(env[i] > max) max = env[i]; }
+    return max * 0.05;
+  }
+  function scFindQuietGaps(env, hopSec, duration){
+    var gaps = [];
+    if(!env || !env.length) return gaps;
+    var hop = hopSec > 0 ? hopSec : 0.02;
+    var floor = scQuietFloor(env);
+    if(!(floor > 0)) return gaps;
+    var minRun = Math.max(1, Math.round(1.2 / hop));
+    var run = 0;
+    for(var i = 0; i <= env.length; i++){
+      var quiet = (i < env.length) && env[i] <= floor;
+      if(quiet){ run++; continue; }
+      if(run >= minRun){
+        var s = (i - run) * hop, e = i * hop;
+        if(!(duration > 0) || e <= duration + 1) gaps.push({ s: s, e: e });
+      }
+      run = 0;
+    }
+    return gaps;
+  }
+  // A line the model dropped inside a purely instrumental stretch cannot be
+  // right - nobody sings there. Move it to where the singing resumes, keep the
+  // order, and leave a line that is already outside every gap exactly where it is.
+  function scPullRowsClearOfGaps(rows, gaps){
+    if(!rows || !rows.length || !gaps || !gaps.length) return rows;
+    var out = [];
+    for(var i = 0; i < rows.length; i++){
+      var t = rows[i].t, moved = t;
+      for(var g = 0; g < gaps.length; g++){
+        if(t > gaps[g].s + 0.05 && t < gaps[g].e - 0.05){ moved = gaps[g].e; break; }
+      }
+      var prev = out.length ? out[out.length - 1].t : -1;
+      if(prev >= 0 && moved < prev) moved = Math.max(t, prev);
+      out.push({ t: Math.max(0, moved), text: rows[i].text });
     }
     return out;
   }
@@ -11267,6 +11327,24 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         }
       }catch(_eAudio){ audioPart = null; }
 
+      // 73.1.6 - decode the recording up front so the song itself can brief the
+      // model. A track with a long intro, pauses, an instrumental break or a
+      // tempo change is where one pass drifts: measuring the quiet stretches and
+      // the first sung moment gives the model a map to place the lines against,
+      // and gives the app a map to keep its own snapping honest.
+      var _aiEnv = null;
+      try{
+        if(_arr && _arr.byteLength){
+          var _dCtx = new (window.AudioContext || window.webkitAudioContext)();
+          var _dBuf = null;
+          try{ _dBuf = await _dCtx.decodeAudioData(_arr.slice(0)); }catch(_eD){ _dBuf = null; }
+          try{ _dCtx.close(); }catch(_eC){}
+          if(_dBuf) _aiEnv = scOnsetEnvelope(_dBuf);
+        }
+      }catch(_eEnv){ _aiEnv = null; }
+      var _gaps = [];
+      try{ if(_aiEnv) _gaps = scFindQuietGaps(_aiEnv, SC_ONSET_HOP, duration); }catch(_eGaps){ _gaps = []; }
+
       // 73.1.5 - the model is told exactly how many lines to time, in order, so it
       // cannot quietly drop one, and the first line is placed where the singing
       // actually starts instead of at a pinned 00:01 - a musical intro is exactly
@@ -11276,21 +11354,27 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       var prompt = "You are a lyrics synchronization engine. Time every line of the lyrics below to the recording.\n\n";
       if(audioPart) prompt += "The song's audio recording is attached. Listen to it and place each line on the exact moment it is sung.\n\n";
       if(audioPart) prompt += "Follow the tempo, the beat, the instrumental sections and the returning choruses. A repeated chorus is sung again later, so time its lines again at that later moment instead of leaving them where they first appeared. ";
+      prompt += "This track may mix languages or scripts, pause part-way through, change speed, or open on a long instrumental. Trust the recording over any even pace: each line still has to land on the voice that sings it. Never translate a line, never drop one, and never carry a timing across a silent break. ";
       prompt += "Song: " + (t.name || "Unknown") + "\n";
       prompt += "Artist: " + (t.artist || "Unknown") + "\n";
       prompt += "Duration: " + Math.round(duration) + " seconds\n";
+      if(_gaps.length){
+        prompt += "The recording has no singing at these times (instrumental or silence) - a line placed inside one of them is always wrong:\n";
+        var _gShow = Math.min(_gaps.length, 8);
+        for(var _gs = 0; _gs < _gShow; _gs++){ prompt += "- " + Math.round(_gaps[_gs].s) + "s to " + Math.round(_gaps[_gs].e) + "s\n"; }
+      }
       prompt += "Lines to time: " + _plainLines.length + "\n\n";
-      // 73.1 - NOT "distribute evenly". An even split follows the line count,
-      // not the music, and this prompt used to say exactly that - which is how a
-      // short intro and a repeated chorus pushed every later line away from the
-      // voice. Space each line by how long it is actually sung, and never reorder
-      // or rewrite the words.
+      // 73.1 - NOT "distribute evenly". An even split follows the line count, not
+      // the music, and this prompt used to say exactly that - which is how a short
+      // intro and a repeated chorus pushed every later line away from the voice.
+      // Space each line by how long it is actually sung, and never reorder the words.
       prompt += "Rules:\n";
       prompt += "- Output ONLY the LRC text, no explanation and no commentary\n";
       prompt += "- One timestamp per line, written as [MM:SS.xx] lyric line\n";
       prompt += "- There are exactly " + _plainLines.length + " lines below: return exactly " + _plainLines.length + " timestamped lines, in the same order, word for word - never merge, skip, reorder or rewrite a line\n";
       prompt += "- Put the first line at the moment the FIRST WORDS ARE SUNG, however long the musical intro before them is\n";
       prompt += "- Space the lines by how long each is actually sung, never an even split\n";
+      prompt += "- Where the song pauses, speeds up or slows down, follow the recording rather than an average\n";
       prompt += "- Leave a real gap of several seconds where the song has an instrumental or a break\n";
       prompt += "- The numbers below are line references only, never part of the lyrics\n\nLyrics:\n" + _numbered;
       var _aiAskLyrics = async function(parts){
@@ -11325,20 +11409,14 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         delete scAiTimedTracks[String(t.id)];
         return false;
       }
-      // 73.1.5 - the model names the line, the recording says the time. Decode the
-      // same bytes and snap each timestamp onto the nearest real energy rise, in
-      // order, so a line a beat early or late lands on the voice.
-      if(_rows.length && _arr && _arr.byteLength){
-        try{
-          var _eCtx = new (window.AudioContext || window.webkitAudioContext)();
-          var _eBuf = null;
-          try{ _eBuf = await _eCtx.decodeAudioData(_arr.slice(0)); }catch(_eD){ _eBuf = null; }
-          try{ _eCtx.close(); }catch(_eC){}
-          if(_eBuf){
-            var _snap = scSnapRowsToOnsets(_rows, scOnsetEnvelope(_eBuf), SC_ONSET_HOP, 1.3);
-            if(scRowsLookSane(_snap, duration)) text = scFormatLrcRows(_snap);
-          }
-        }catch(_eSnap){}
+      // 73.1.6 - the model names the line, the recording says the time. Pull any
+      // line the model dropped inside an instrumental stretch to where the voice
+      // resumes, then snap the rest onto the nearest real rise, ignoring the
+      // instrumental frames so a break can never swallow a line.
+      if(_rows.length && _aiEnv){
+        var _cleared = _gaps.length ? scPullRowsClearOfGaps(_rows, _gaps) : _rows;
+        var _snap = scSnapRowsToOnsets(_cleared, _aiEnv, SC_ONSET_HOP, 0.9, _gaps);
+        if(scRowsLookSane(_snap, duration)) text = scFormatLrcRows(_snap);
       }
       t.lyrics = text;
       t.lyricsSynced = true;
@@ -12823,7 +12901,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.1.5';
+  const APP_VERSION = '73.1.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13384,6 +13462,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.1.6', date: 'October 4, 2026 · 11:00 AM EDT', title: 'The tricky songs are timed from the shape of the recording', items: [
+    'Lyrics timing now reads the shape of the song first: the quiet stretches, the instrumental breaks and the long intro are measured from the recording and handed to the model as a map before it places a line.',
+    'A line that lands inside a measured instrumental stretch is moved to where the voice resumes, because nobody sings during a break, and a line that is already in the right place is left untouched.',
+    'When a song pauses, speeds up or changes tempo part-way through, the timing follows the recording rather than an even pace, so a verse after a break is no longer shifted by the part before it.',
+    'Songs that mix languages or scripts are timed line by line exactly as they are sung, without translating, dropping or merging a line.',
+    'The snap that pulls a line onto the nearest real rise in the song now ignores the instrumental frames, so a drum fill inside a break can never drag a lyric onto the drums.',
+    'The line count is still checked on every ask, and a short answer is requested again, which keeps one dropped line from shifting everything after it.',
+    'The widget, the player and the letter-by-letter wave are untouched, and a hand-pinned lyric timing is still remembered and never re-timed on top of you.',
+    'Your files are exactly where they were: the library, the playlists, the albums, the tags and the covers are all intact.',
+    'The how-to cards for getting music in no longer describe a step that is gone: they told you to save or import the file after the song was made, while a finished song now files itself into your library.',
+    'Both how-to boxes say the song is already in the library the moment it is ready, and name saving the file itself as the optional extra it is.',
+    'The walkthrough and its short summary already described the song landing in the library, and the two cards now agree with them.',
+  ]},
   { version: '73.1.5', date: 'October 4, 2026 · 10:20 AM EDT', title: 'The key says so out loud, and the model checks its timing against the song', items: [
     'Paste your Gemini key and the app confirms it out loud: one toast says Gemini key connected, and it fires for the paste itself rather than on every keystroke.',
     'The key field now lives in one place only. Support keeps the AI Assistant chat and the contact address, and every link that mentions the key points at the Important tab.',

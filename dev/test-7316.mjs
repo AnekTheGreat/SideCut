@@ -1,3 +1,31 @@
+// 73.1.6 - the songs that change shape are timed from the recording, and the
+// how-to steps now match where songs actually land.
+//
+// The owner's words for the timing work: "But then theirs other songs that work
+// perfectly with the lyrics sync it's just song with multiple languages, pauses,
+// switches in speed tempo, long intros ect". A song that keeps the same pace is
+// easy; the ones that pause, switch tempo, mix languages or open on a long
+// instrumental are where a single pass drifts. So the recording is measured
+// first: the quiet stretches become a map the model is handed, a line dropped
+// inside a break is pulled to where the voice resumes, and the snap that lands a
+// line avoids the instrumental frames entirely.
+//
+//   * scFindQuietGaps reads the silent/instrumental stretches off the recording;
+//   * the prompt carries them, plus the language, pause and tempo-change rules;
+//   * scPullRowsClearOfGaps moves a line out of a break to the voice resuming; and
+//   * scSnapRowsToOnsets takes the gaps and never targets a frame inside one.
+//
+// [16] lifts the new measuring code out and RUNS it against a synthetic envelope
+// with a loud - silent - loud shape.
+//
+// The owner's words for the copy fix: "The instructions to get songs into your
+// library is wrong because it automatically puts the songs into your library".
+// Both how-to boxes still told the reader to tap Download or Import to Library
+// after a conversion - a step that stopped existing when a converted song began
+// filing itself into the library. Step 3 now says the song is in the library the
+// moment it is ready, and that saving the file itself is the optional extra.
+// [17] pins the corrected wording.
+//
 // 73.1.5 - the key says so out loud, and the model answer is checked against the
 // song before it is kept.
 //
@@ -103,9 +131,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1.5';
-const PREV = '73.1.4';
-const SHELL_CACHE = 'sidecut-shell-v73.1.5';
+const VER = '73.1.6';
+const PREV = '73.1.5';
+const SHELL_CACHE = 'sidecut-shell-v73.1.6';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
@@ -113,7 +141,7 @@ const PREV_GATES = [
   'test-718.mjs', 'test-719.mjs', 'test-720.mjs', 'test-721.mjs', 'test-722.mjs',
   'test-723.mjs', 'test-724.mjs', 'test-725.mjs', 'test-7251.mjs', 'test-7252.mjs',
   'test-726.mjs', 'test-727.mjs', 'test-7271.mjs',  'test-728.mjs', 'test-7281.mjs',
-  'test-7315.mjs',
+  'test-7316.mjs',
 ];
 
 let pass = 0, fail = 0;
@@ -121,8 +149,8 @@ const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, conso
 const count = (n) => src.split(n).length - 1;
 // Split so no literal build number or cache name the repin rewrites is ever
 // spelled in this file - a bare one here would be rewritten with it.
-const VER_BEFORE = '73' + '.1' + '.4';
-const PREV_BEFORE = '73' + '.1' + '.3';
+const VER_BEFORE = '73' + '.1' + '.5';
+const PREV_BEFORE = '73' + '.1' + '.4';
 const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + VER_BEFORE.split('.').join('\\.') + '(?![\\d.])');
 
 console.log('[1] release metadata');
@@ -495,16 +523,16 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
 
 console.log('[9] the repin moved every gate, including the neighbour');
 {
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7315.mjs'), 'utf8');
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7316.mjs'), 'utf8');
   ok(repin.indexOf("const OLDVER = '" + VER_BEFORE + "';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '73.1.5';") !== -1, 'and to');
+  ok(repin.indexOf("const NEWVER = '73.1.6';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
   // Both spellings carry each dot as `\.` or `[.]`, so neither the cache move
   // nor the stale check can mistake the needle for a cache literal.
-  ok(repin.indexOf("SWEEP_ESC_NEW = 'sidecut-shell-v73' + BS + '.1' + BS + '.4(?![' + BS + 'd.])'") !== -1 &&
-     repin.indexOf("SWEEP_BRK_NEW = 'sidecut-shell-v73[.]1[.]4(?![' + BS + 'd.])'") !== -1,
-    'the stale-cache sweeps are retargeted to 73.1.4, built from character codes');
-  ok(repin.indexOf("SWEEP_ESC_OLD = 'sidecut-shell-v73' + BS + '.1' + BS + '.3(?![' + BS + 'd.])'") !== -1, 'from the spelling repin-7314 left behind');
+  ok(repin.indexOf("SWEEP_ESC_NEW = 'sidecut-shell-v73' + BS + '.1' + BS + '.5(?![' + BS + 'd.])'") !== -1 &&
+     repin.indexOf("SWEEP_BRK_NEW = 'sidecut-shell-v73[.]1[.]5(?![' + BS + 'd.])'") !== -1,
+    'the stale-cache sweeps are retargeted to 73.1.5, built from character codes');
+  ok(repin.indexOf("SWEEP_ESC_OLD = 'sidecut-shell-v73' + BS + '.1' + BS + '.4(?![' + BS + 'd.])'") !== -1, 'from the spelling repin-7315 left behind');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
@@ -711,10 +739,11 @@ console.log('[15] the key confirms itself, and the recording checks the model');
   ok(src.indexOf('var _aiAskLyrics = async function(parts){') !== -1, 'the request is reusable for a retry');
   ok(src.indexOf('Your previous answer had ') !== -1, 'a short answer is asked again, with the count it owes');
   ok(src.indexOf('delete scAiTimedTracks[String(t.id)];') !== -1, 'and a failed ask is forgotten so a later open can retry');
-  ok(src.indexOf('scSnapRowsToOnsets(_rows, scOnsetEnvelope(_eBuf), SC_ONSET_HOP, 1.3)') !== -1,
+  ok(src.indexOf('scSnapRowsToOnsets(_cleared, _aiEnv, SC_ONSET_HOP, 0.9, _gaps)') !== -1,
     'the model answer is snapped onto the recording own energy rises');
   ok(src.indexOf('if(scLyricsLookEvenlySpaced(text)){') !== -1,
     'and an even split dressed up as a timing is refused');
+  ok(src.indexOf('if(_rows.length && _aiEnv){') !== -1, 'and the snap runs once the recording has been measured');
 
   const gAt = src.indexOf('  function scRowsLookSane(rows, duration){');
   const sEnd = src.indexOf('\n  // Rebuild the timings around the taps.', gAt);
@@ -735,6 +764,71 @@ console.log('[15] the key confirms itself, and the recording checks the model');
     ok(snapped[0].t <= snapped[1].t, 'and snapping never reorders the lines');
     ok(J.snap([{ t: 2 }], null, 0.02, 1.3)[0].t === 2, 'no envelope leaves the timing untouched');
   }
+}
+
+console.log('[16] the tricky songs are timed from the shape of the recording');
+{
+  ok(src.indexOf('function scFindQuietGaps(env, hopSec, duration){') !== -1, 'the quiet gap finder ships');
+  ok(src.indexOf('function scPullRowsClearOfGaps(rows, gaps){') !== -1, 'and the pull-out-of-gaps helper');
+  ok(src.indexOf('_gaps = scFindQuietGaps(_aiEnv, SC_ONSET_HOP, duration)') !== -1,
+    'the recording is measured before the model is asked');
+  ok(src.indexOf('The recording has no singing at these times') !== -1, 'and the model is handed the map');
+  ok(src.indexOf('This track may mix languages or scripts, pause part-way through, change speed, or open on a long instrumental') !== -1,
+    'and told the song may change shape or language');
+  ok(src.indexOf('- Where the song pauses, speeds up or slows down, follow the recording rather than an average') !== -1,
+    'the rules cover a tempo change');
+  ok(src.indexOf('if(skip && skip[f]) continue;') !== -1, 'the snap never targets an instrumental frame');
+  ok(src.indexOf('scSnapRowsToOnsets(_cleared, _aiEnv, SC_ONSET_HOP, 0.9, _gaps)') !== -1, 'on a shorter window');
+
+  const gAt = src.indexOf('  function scQuietFloor(env){');
+  const gEnd = src.indexOf('\n  // Rebuild the timings around the taps.', gAt);
+  ok(gAt !== -1 && gEnd > gAt, 'the gap measuring code can be lifted out of the page');
+  let G = null;
+  try { G = new Function(src.slice(gAt, gEnd) + '\nreturn { floor: scQuietFloor, gaps: scFindQuietGaps, pull: scPullRowsClearOfGaps };')(); }
+  catch (e) { ok(false, 'and it evaluates: ' + e.message); }
+  ok(G && typeof G.gaps === 'function' && typeof G.pull === 'function', 'the shipped gap code evaluates');
+  if (G) {
+    const env = new Float32Array(250);
+    for (let i = 0; i < 50; i++) env[i] = 1;
+    for (let i = 200; i < 250; i++) env[i] = 1;
+    const gaps = G.gaps(env, 0.02, 10);
+    ok(gaps.length === 1, 'one quiet stretch is found in the middle (' + gaps.length + ')');
+    if (gaps.length) {
+      ok(Math.abs(gaps[0].s - 1.0) < 0.05 && Math.abs(gaps[0].e - 4.0) < 0.05,
+        'spanning exactly the silent run (' + gaps[0].s.toFixed(2) + ' to ' + gaps[0].e.toFixed(2) + ')');
+    }
+    ok(G.gaps(new Float32Array(100).fill(1), 0.02, 2).length === 0, 'a wall of sound has no gap');
+    const rows = [{ t: 0.5 }, { t: 2.5 }, { t: 7.0 }];
+    const out = G.pull(rows, gaps);
+    ok(Math.abs(out[1].t - 4.0) < 0.05, 'a line inside the break moves to where the voice resumes (' + out[1].t.toFixed(2) + ')');
+    ok(out[0].t === 0.5 && out[2].t === 7.0, 'lines outside the break are left alone');
+    ok(out[0].t <= out[1].t && out[1].t <= out[2].t, 'and the order is kept');
+    ok(G.pull(rows, []) === rows, 'no gaps leaves the timing untouched');
+  }
+}
+
+console.log('[17] the how-to steps put the songs in the library by themselves');
+{
+  const slice = (from, to) => {
+    const a = src.indexOf(from);
+    const b = src.indexOf(to, a);
+    return a === -1 || b === -1 ? '' : src.slice(a, b);
+  };
+  const disc = slice('id="getSongsHowToDisc"', '<!-- Expand URL card -->');
+  const settings = slice('id="getSongsHowToSettings"', '<!-- Expand URL card -->');
+  ok(disc !== '' && settings !== '', 'both how-to boxes can be sliced out');
+  for (const [label, box] of [['Discover', disc], ['Settings', settings]]) {
+    ok(box.indexOf('already in your library') !== -1, label + ': the last step says the song is already in the library');
+    ok(box.indexOf('Nothing to import') !== -1, label + ': and that there is nothing to import');
+    ok(box.indexOf('Import to Library') === -1, label + ': the stale Import to Library step is gone');
+    ok(box.indexOf('Save the file too') !== -1, label + ': saving the file is named as the optional extra');
+    ok(box.indexOf('a drop-down opens') !== -1 && box.indexOf('Conversion Tools') !== -1 && box.indexOf('Convert') !== -1,
+      label + ': and the tap steps the older gates pin still survive');
+    ok(box.indexOf('+ Add songs') !== -1 && box.indexOf('Library') !== -1,
+      label + ': and the two-ways-in intro is intact');
+  }
+  ok(count('Import to Library</b> — the file keeps') === 0,
+    'no how-to box still teaches the old save-or-import step');
 }
 
 console.log('');
