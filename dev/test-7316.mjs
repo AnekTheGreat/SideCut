@@ -131,9 +131,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1.6';
-const PREV = '73.1.5';
-const SHELL_CACHE = 'sidecut-shell-v73.1.6';
+const VER = '73.1.7'; /* repinned by dev/repin-7317.mjs */
+const PREV = '73.1.6'; /* repinned by dev/repin-7317.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1.7';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
@@ -536,8 +536,8 @@ console.log('[9] the repin moved every gate, including the neighbour');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
-  ok(repin.indexOf("const PREV_OLD = '" + PREV_BEFORE + "';") !== -1 && repin.indexOf("const PREV_NEW = '" + PREV + "';") !== -1,
-    'and the adjacent-entry pin DOES move, because this release adds an entry above it');
+  ok(repin.indexOf("const PREV_OLD = '" + PREV_BEFORE + "';") !== -1 && repin.indexOf("const PREV_NEW = '73.1.5';") !== -1,
+    'and the adjacent-entry pin DOES move, because this release adds an entry above it (the file this reads is repin-7316 itself, so its own PREV_NEW is the value; later repins retarget it in their own file)');
 
   const stale = [];
   for (const name of fs.readdirSync(path.join(ROOT, 'dev')).sort()) {
