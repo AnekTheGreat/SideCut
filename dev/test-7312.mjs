@@ -1,8 +1,11 @@
+// 73.1.2 - a track that opens on music is timed from where the VOICE enters.
+//
 // 73.1.1 - the letter-by-letter wave now crosses the whole word, and a song with
 // a long instrumental opening is timed from where the singing starts.
 //
-// This is a fix inside 73.1, not a new release line: 73.1 shipped and is already
-// published, so the fixes land as 73.1.1 - exactly as 72.8 was followed by 72.8.1.
+// These are fixes inside 73, not a new release line: 73 shipped and is already
+// published, so each lands as a release above the last - 73.1, then 73.1.1, then
+// 73.1.2, exactly as 72.8 was followed by 72.8.1.
 //
 // The owner's words for this fix:
 //   * "Letter by letter should be like a wave not just illuminate the first
@@ -20,16 +23,20 @@
 // The second was an anchor. The layout began at a lead-in measured from 0, so a
 // track with a long intro pinned its first line to the top of the file and spread
 // every later line from there - and the first line was the one line the snap loop
-// never touched. The first rise that is clearly singing anchors the layout now,
-// and every line is snapped, the first one included.
+// never touched. 73.1.1 anchored the layout to the first strong rise and snapped
+// every line. That was still not enough on a track that opens on a BEAT: a drum
+// rises harder than a voice does, so the anchor landed on the music and the first
+// lines lit during the opening. 73.1.2 makes the anchor the first place the rises
+// come thick and fast and keep coming - singing is a stream of articulations, not
+// one hit, and a beat every half second cannot reach the count a voice does.
 //
 // [7] lifts the shipped measuring code out of the page and RUNS it: the synthetic
 // long-intro envelope proves the first line lands on the entrance and not on 0.
 // [8] runs the shipped AIFF writer against a synthetic buffer and reads the
 // container back byte by byte.
 //
-// Version note: '73' is a prefix of '73.1', which is a prefix of '73.1.1' - the
-// repin is checked for that, not this file.
+// Version note: '73.1' is a prefix of '73.1.1', which is a prefix of '73.1.2' -
+// the repin is checked for that, not this file.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,17 +46,17 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1.1'; /* repinned by dev/repin-7311.mjs */
-const PREV = '73.1'; /* repinned by dev/repin-7311.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1.1';
+const VER = '73.1.2'; /* repinned by dev/repin-7312.mjs */
+const PREV = '73.1.1'; /* repinned by dev/repin-7312.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1.2';
 
-// The gates that carry the adjacent-entry pin. repin-7311 moves all of them.
+// The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
   'test-713.mjs', 'test-714.mjs', 'test-715.mjs', 'test-716.mjs', 'test-717.mjs',
   'test-718.mjs', 'test-719.mjs', 'test-720.mjs', 'test-721.mjs', 'test-722.mjs',
   'test-723.mjs', 'test-724.mjs', 'test-725.mjs', 'test-7251.mjs', 'test-7252.mjs',
   'test-726.mjs', 'test-727.mjs', 'test-7271.mjs', 'test-728.mjs', 'test-7281.mjs',
-  'test-7311.mjs',
+  'test-7312.mjs',
 ];
 
 let pass = 0, fail = 0;
@@ -57,9 +64,9 @@ const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, conso
 const count = (n) => src.split(n).length - 1;
 // Split so no literal build number or cache name the repin rewrites is ever
 // spelled in this file - a bare one here would be rewritten with it.
-const VER_BEFORE = '73' + '.1';
-const PREV_BEFORE = '7' + '3';
-const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + VER_BEFORE.replace('.', '\\.') + '(?![\\d.])');
+const VER_BEFORE = '73' + '.1' + '.1';
+const PREV_BEFORE = '73' + '.1';
+const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + VER_BEFORE.split('.').join('\\.') + '(?![\\d.])');
 
 console.log('[1] release metadata');
 {
@@ -318,22 +325,25 @@ console.log('[7] words with no timings are timed from the song itself');
     ok(sT[0] === pT[0], 'while the first line is left where the layout put it');
     ok(sT[1] > sT[0] + 0.3 && sT[2] > sT[1] + 0.3, 'and the order survives the snap');
 
-    // 73.1.1 - a song with a long instrumental opening. The layout must start
-    // where the singing starts, not at the top of the file, and the FIRST line
-    // is the one that has to land on the entrance.
+    // 73.1.2 - a track that OPENS ON MUSIC. The opening is a beat every half
+    // second (six rises in a three second window); the voice enters at 24s at
+    // four syllables a second (twelve in the same window). The anchor has to be
+    // the voice. A drum rises HARDER than a voice does, so "the first strong
+    // rise" - what 73.1.1 used - landed on the beat and lit the first lines
+    // during the opening.
     const introEnv = new Float32Array(Math.round(180 / hop));
-    introEnv[1200] = 1.0;   // 24s, the entrance
-    introEnv[1300] = 0.8;
-    introEnv[2500] = 0.7;
-    introEnv[4000] = 0.6;
+    for (let t = 0.5; t < 24; t += 0.5) introEnv[Math.round(t / hop)] = 0.6;
+    for (let t = 24; t < 150; t += 0.25) introEnv[Math.round(t / hop)] = 1.0;
     const iT = parse(T.time(lines, 180, introEnv, hop));
-    ok(iT[0] > 20 && iT[0] < 27,
-      'a long intro anchors the first line to the singing, not to the top of the file (' + iT[0].toFixed(2) + 's, it used to sit at 5.4s)');
+    ok(iT[0] > 18 && iT[0] < 28,
+      'a track that opens on a beat anchors the first line to the voice, not to the music (' + iT[0].toFixed(2) + 's, the voice enters at 24s and it used to sit at 5.4s)');
     ok(iT[1] > iT[0] + 0.3 && iT[2] > iT[1] + 0.3, 'and the rest follow it in order');
     ok(src.indexOf('for(var q = 0; q < t.length; q++){') !== -1,
       'every line is snapped, the first one included');
+    ok(src.indexOf('var wNeed = Math.max(4, Math.round(wSpan * 0.05));') !== -1,
+      'and the entrance is where the rises come thick and fast, not one strong hit');
     ok(src.indexOf('if(!(voiceStart > 0) || voiceStart > dur * 0.35) voiceStart = 0;') !== -1,
-      'and a stray spike past a third of the song cannot drag the words with it');
+      'with a cluster past a third of the song unable to drag the words with it');
 
     ok(T.even('[00:01.00]a\n[00:11.00]b\n[00:21.00]c\n[00:31.00]d\n[00:41.00]e\n[00:51.00]f') === true,
       'an even split is recognised as the old guess');
@@ -428,16 +438,15 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
 
 console.log('[9] the repin moved every gate, including the neighbour');
 {
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7311.mjs'), 'utf8');
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7312.mjs'), 'utf8');
   ok(repin.indexOf("const OLDVER = '" + VER_BEFORE + "';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '73.1.1';") !== -1, 'and to');
+  ok(repin.indexOf("const NEWVER = '73.1.2';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
-  // 73.1 left the needle as `v7[3]`; with a dot back in the name the ordinary
-  // escaped and bracket spellings are safe again, because neither carries the
-  // literal dot the cache move and the stale check look for.
-  ok(repin.indexOf('sidecut-shell-v73\\.1(?!') !== -1 && repin.indexOf('sidecut-shell-v73[.]1(?!') !== -1,
-    'the stale-cache sweeps are retargeted to 73.1, needle written raw');
-  ok(repin.indexOf('sidecut-shell-v7[3](?!') !== -1, 'from the bracket-digit form repin-731 left behind');
+  // Both spellings carry each dot as `\.` or `[.]`, so neither the cache move
+  // nor the stale check can mistake the needle for a cache literal.
+  ok(repin.indexOf('sidecut-shell-v73\\.1\\.1(?!') !== -1 && repin.indexOf('sidecut-shell-v73[.]1[.]1(?!') !== -1,
+    'the stale-cache sweeps are retargeted to 73.1.1, needle written raw');
+  ok(repin.indexOf('sidecut-shell-v73\\.1(?!') !== -1, 'from the spelling repin-7311 left behind');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
