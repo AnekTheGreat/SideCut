@@ -24,9 +24,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '73'; /* repinned by dev/repin-73.mjs */ /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */
-const PREV = '72.8.1'; /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73';
+const VER = '73.1'; /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-73.mjs */ /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */
+const PREV = '73'; /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1';
 const OWN = '72.7';
 
 let pass = 0, fail = 0;
@@ -98,7 +98,7 @@ console.log('[3] every step names the tap and the drop-down');
     ok(/Tap <b style="color:var\(--ink\);">🎛️ Conversion Tools<\/b>/.test(box),
       label + ': and names the bar to tap, with its own glyph');
     ok(/tap the (link )?box to paste/.test(box), label + ': and says to tap the box to paste');
-    ok(box.indexOf('Spotify to MP3 / WAV / FLAC') !== -1, label + ': and still names the card to open');
+    ok(box.indexOf('Spotify to MP3') !== -1, label + ': and still names the card to open');
     ok(box.indexOf('Convert') !== -1, label + ': and still ends at the Convert button');
   }
   // The teaching lines the older gates pin survive verbatim inside the new text.
@@ -146,7 +146,7 @@ console.log('[5] the repin moved every gate');
     .filter((n) => fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf(OLD_VER_PIN) !== -1);
   ok(stale.length === 0, 'no gate still pins the old build (' + stale.join(',') + ')');
   const cacheStale = dev.filter((n) => /^test-.*\.mjs$/.test(n))
-    .filter((n) => /sidecut-shell-v72[.]9(?![\d.])/.test(fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8')));
+    .filter((n) => /sidecut-shell-v7[3](?![\d.])/.test(fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8')));
   ok(cacheStale.length === 0, 'and no gate still names the old shell cache (' + cacheStale.join(',') + ')');
 }
 

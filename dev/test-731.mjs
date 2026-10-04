@@ -1,36 +1,31 @@
-// 73 - the lyrics follow the voice by syllable, long saves can be stopped,
-// new releases stop repeating and old drops leave the Home bubble, the widget
-// plays without opening the app, and the guide becomes a feature map.
+// 73.1 - the lyrics with no timings are timed from the song's own audio instead
+// of an even split, and every converter card reads "... to MP3" with a new lossless
+// output (AIFF) behind it.
 //
-// This is the 72.9 work shipped as 73. The 72 line stops at .9, so 72.9 was the
-// last in it and the next release in the line is 73 (AGENTS.md, and the version
-// guide in Settings). The release itself is unchanged - only its number moved,
-// which is why dev/repin-73.mjs only carries the mechanical sweep plus the two
-// needle retargets below.
+// This is a fix inside 73, not a new release line: the third number stops at nine,
+// so the release after 73 is 73.1, exactly as 72.8 was followed by 72.8.1.
 //
-// The owner's words, in order:
-//   * "The lyrics highlight word by word everything is just completely off. It
-//     should be like Spotify ... for songs with multiple languages in them it is
-//     completely off if it changes tempo from slow to fast or vice versa";
-//   * "there needs to be a way to cancel downloads like crossfaded mixes
-//     downloading playlists stuff like that there needs to be an x button";
-//   * "in new releases there shouldn't be so many duplicates and new releases in
-//     the home bubble should only display songs up to 1 month old";
-//   * "if I have the app open and didnt close it in the background from the
-//     widget I should just be able to play the song I shouldnt have to go into
-//     the app";
-//   * "Make more things easier and make the instructions to use the app and
-//     explain the vast amount of features easier. Then add more features".
+// The owner's words for this fix:
+//   * "Lyrics is still very off no language change or not this song is a good
+//     example it's really not getting the lyrics right at all";
+//   * "make this even all of them should say to mp3 and get more formats to
+//     convert to".
 //
-// The pacing is measured in SYLLABLES now, not characters, so [2] lifts the
-// shipped pacer out of the page and runs it: a two-character CJK word has to
-// earn a real share of a bilingual line, which the old length weighting could
-// not give it. [3] runs the shipped release-list builder against a map with the
-// same drop stored three times under two artist spellings, plus a drop older
-// than a month. [4] and [5] pin the cancel path and the second widget route.
+// The song in the report ("On The Loose" by Sukha) is the case: LRCLIB carries it
+// in plain text with no timings at all, it mixes Italian and Punjabi, and the only
+// automatic timing was a model asked to "distribute lines evenly across the song
+// duration". An even split follows the LINE COUNT, so a short intro and a repeated
+// chorus push every later line away from the voice - which is exactly what the
+// screenshot shows.
 //
-// Version note: 72.8.1 is a PREFIX of nothing here, but '72.8' is a prefix of
-// '72.8.1' - the repin is checked for that, not this file.
+// [7] lifts the shipped measuring code out of the page and RUNS it: it lays the
+// lines out by syllables and snaps each start onto the loudest energy rise within
+// a second of where the words put it. [8] runs the shipped AIFF writer against a
+// synthetic buffer and reads the container back byte by byte - that is how the
+// header size bug (8 bytes short, so every write ran past the buffer) was caught.
+//
+// Version note: 72.8.1 is a PREFIX of nothing here, but '73' is a prefix of '73.1'
+// - the repin is checked for that, not this file.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,13 +35,28 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73';
-const PREV = '72.8.1';
-const SHELL_CACHE = 'sidecut-shell-v73';
+const VER = '73.1'; /* repinned by dev/repin-731.mjs */
+const PREV = '73'; /* repinned by dev/repin-731.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1';
+
+// The gates that carry the adjacent-entry pin. repin-731 moves all of them.
+const PREV_GATES = [
+  'test-713.mjs', 'test-714.mjs', 'test-715.mjs', 'test-716.mjs', 'test-717.mjs',
+  'test-718.mjs', 'test-719.mjs', 'test-720.mjs', 'test-721.mjs', 'test-722.mjs',
+  'test-723.mjs', 'test-724.mjs', 'test-725.mjs', 'test-7251.mjs', 'test-7252.mjs',
+  'test-726.mjs', 'test-727.mjs', 'test-7271.mjs', 'test-728.mjs', 'test-7281.mjs',
+  'test-731.mjs',
+];
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
 const count = (n) => src.split(n).length - 1;
+// Split so no literal old build number or old cache name is ever spelled in this
+// file - the repin sweep rewrites those strings, and a bare one here would be
+// rewritten with it.
+const V7 = '7' + '3';
+const PREV_BEFORE = '72' + '.8.1';
+const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + V7 + '(?![\\d.])');
 
 console.log('[1] release metadata');
 {
@@ -251,38 +261,182 @@ console.log('[6] the guide is a map, and the lyrics bar gained a Copy');
     'the cancel path is documented where the reader looks');
   ok(src.indexOf('id="lyricsCopyBtn"') !== -1, 'the lyrics bar has a Copy chip');
   ok(src.indexOf("$('lyricsCopyBtn').addEventListener('click'") !== -1, 'and it is wired');
-  ok(src.indexOf('if(typeof copyTextToClipboard === \'function\') copyTextToClipboard(txt);') !== -1,
+  ok(src.indexOf("if(typeof copyTextToClipboard === 'function') copyTextToClipboard(txt);") !== -1,
     'through the same clipboard path the share code uses');
 }
 
-console.log('[7] the repin moved every gate');
+console.log('[7] words with no timings are timed from the song itself');
 {
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-73.mjs'), 'utf8');
-  ok(repin.indexOf("const OLDVER = '72.9';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '73';") !== -1, 'and to');
+  const at = src.indexOf('  var SC_ONSET_HOP = 0.02;');
+  const end = src.indexOf('\n  function showLyrics(lyrics, isSynced) {', at);
+  ok(at !== -1 && end > at, 'the measuring code can be lifted out of the page');
+  const block = src.slice(at, end);
+  let T = null;
+  try {
+    T = new Function(block + '\nreturn { syl: scSyllableCount, env: scOnsetEnvelope, time: scTimeLyricsFromOnsets, even: scLyricsLookEvenlySpaced };')();
+  } catch (e){ ok(false, 'and it evaluates: ' + e.message); }
+  ok(T && typeof T.time === 'function' && typeof T.env === 'function' && typeof T.even === 'function', 'the shipped timing code evaluates');
+
+  if (T) {
+    // Scripts are counted as units, not letters: a two-character CJK word has to
+    // earn a real share of a bilingual line.
+    ok(Math.round(T.syl('素敵') * 100) / 100 === 2, 'a two-character CJK word counts two units (' + T.syl('素敵') + ')');
+    ok(T.syl('beautiful') > T.syl('bat'), 'and vowels weigh more than consonants in a Latin word');
+
+    const parse = (lrc) => String(lrc).split('\n').map((l) => {
+      const m = l.match(/^\[(\d{1,2}):(\d{1,2}(?:\.\d+)?)\]/);
+      return m ? parseInt(m[1], 10) * 60 + parseFloat(m[2]) : NaN;
+    });
+    const lines = [
+      'Parla piu piano e vieni piu vicino a me',
+      'x',
+      'Voglio sentire gli occhi miei dentro di te',
+    ];
+    const dur = 60;
+    const plain = T.time(lines, dur, null, 0.02);
+    ok(typeof plain === 'string' && plain.split('\n').length === 3, 'every line comes back with a stamp');
+    ok(/^\[\d{2}:\d{2}\.\d{2}\]/.test(plain.split('\n')[0]), 'in LRC form (' + plain.split('\n')[0].slice(0, 12) + ')');
+    const pT = parse(plain);
+    ok(pT.every((t) => t >= 0 && t < dur), 'and every stamp sits inside the song');
+    ok(pT[1] > pT[0] && pT[2] > pT[1], 'the lines take over in order');
+    ok(pT[1] - pT[0] > 0.3 && pT[2] - pT[1] > 0.3, 'never on top of each other, however short a line is');
+    ok(Math.abs(pT[1] - dur / 3) > 1, 'and an even split is NOT what the layout does (' + pT[1].toFixed(2) + 's, an even split would be ' + (dur / 3).toFixed(2) + 's)');
+
+    // The snap. A big energy rise half a second after where the words put the
+    // second line, and a smaller one half a second before: the line must land on
+    // the louder one, which is the moment something actually starts.
+    const hop = 0.02;
+    const centre = Math.round(pT[1] / hop);
+    const env = new Float32Array(Math.round(dur / hop));
+    env[centre + 25] = 1.0;
+    env[centre - 25] = 0.6;
+    const snapped = T.time(lines, dur, env, hop);
+    const sT = parse(snapped);
+    ok(Math.abs(sT[1] - (pT[1] + 0.5)) < 0.03,
+      'a line snaps onto the loudest rise near it (' + sT[1].toFixed(2) + 's, the rise is at ' + (pT[1] + 0.5).toFixed(2) + 's)');
+    ok(sT[0] === pT[0], 'while the first line is left where the lead-in put it');
+    ok(sT[1] > sT[0] + 0.3 && sT[2] > sT[1] + 0.3, 'and the order survives the snap');
+
+    ok(T.even('[00:01.00]a\n[00:11.00]b\n[00:21.00]c\n[00:31.00]d\n[00:41.00]e\n[00:51.00]f') === true,
+      'an even split is recognised as the old guess');
+    ok(T.even('[00:01.00]a\n[00:05.00]b\n[00:14.00]c\n[00:19.00]d\n[00:29.00]e\n[00:44.00]f') === false,
+      'and real singing is not mistaken for one');
+  }
+
+  ok(src.indexOf('Distribute lines evenly across the song duration') === -1,
+    'the model prompt no longer asks for an even split');
+  ok(src.indexOf('in proportion to how long each is sung - a short line takes less time than a long one, and never an even split') !== -1,
+    'it spaces the lines by how long each is actually sung');
+  ok(src.indexOf('if(lyrics && lyrics.trim()){') !== -1 && src.indexOf('scAutoTimeCurrentLyrics().then(function(timed){') !== -1,
+    'showLyrics times the words from the track itself');
+  ok(src.indexOf('if(!timed && !_hasStamps && _aiGeminiKey)') !== -1,
+    'and only asks the model when there is no audio to measure');
+  ok(src.indexOf('if(scAutoTimedKey === _atKey) return false;') !== -1,
+    'one attempt per text, so a re-measure cannot loop on its own answer');
+  ok(src.indexOf('function scLyricsLookEvenlySpaced(lrc){') !== -1, 'a stored even split is re-measured too');
+  ok(src.indexOf("toast('Lyrics timed to this song', 2200)") !== -1, 'and it says so when it does');
+  ok(src.indexOf('await blobToArrayBufferFallbackCrop(track.file)') !== -1 && src.indexOf('ctx.decodeAudioData(arr)') !== -1,
+    'it measures the decoded audio, not the network');
+}
+
+console.log('[8] every converter card leads with MP3 and AIFF is a real output');
+{
+  ok(count('Spotify to MP3 / WAV / FLAC') === 0, 'the old multi-format Spotify title is gone');
+  ok(count('MP4 to WAV / FLAC / MP3 Converter') === 0, 'and the old MP4 one with it');
+  ok(count('Spotify to MP3') >= 2, 'the Spotify card reads Spotify to MP3 (' + count('Spotify to MP3') + ')');
+  ok(count('YouTube to MP3') >= 2, 'the YouTube card already did');
+  ok(count('MP4 to MP3 Converter') === 2, 'and the MP4 card now matches them');
+
+  const opts = (id) => {
+    const m = src.match(new RegExp('id="' + id + '"[^>]*>([\\s\\S]*?)</select>'));
+    return m ? m[1] : '';
+  };
+  const ids = ['spFmtDisc', 'ytFmtDisc', 'spFmtSettings', 'ytFmtSettings', 'mp4FmtDisc', 'mp4FmtSettings'];
+  for (const id of ids) {
+    const body = opts(id);
+    ok(/^<option value="mp3" selected>MP3<\/option>/.test(body), id + ' opens on MP3');
+    ok(body.indexOf('<option value="aiff">AIFF') !== -1, id + ' offers AIFF behind it');
+  }
+  ok(count('value="aiff"') === 8, 'all eight format menus carry it, the batch and playlist pickers too (' + count('value="aiff"') + ')');
+
+  ok(count('async function scEncodeAiffCooperative(buf, meta, onSlice){') === 1, 'there is one AIFF writer');
+  ok(src.indexOf("if(fmt === 'aiff') return await scEncodeAiffCooperative(buf, meta, onSlice);") !== -1,
+    'the cooperative dispatcher routes AIFF to it');
+  ok(src.indexOf("if(fmt === 'aiff') return null;") !== -1,
+    'and the plain synchronous encoder refuses rather than hand back a WAV labelled AIFF');
+  ok(count("fmt === 'aiff' ? 'audio/aiff'") === 2, 'the library credits an AIFF as audio/aiff');
+  ok(count("if(fmt === 'aiff'){") === 1, 'the MP4 handler routes AIFF as well, instead of falling through to its WAV branch');
+
+  // Run the shipped writer against a synthetic buffer and read the container back.
+  const aAt = src.indexOf('  async function scEncodeAiffCooperative(buf, meta, onSlice){');
+  const aEnd = src.indexOf('\n  async function scEncodeAudioCooperative(', aAt);
+  ok(aAt !== -1 && aEnd > aAt, 'the AIFF writer can be lifted out of the page');
+  const F = new Function('scId3v23Bytes', 'scYieldToUI',
+    src.slice(aAt, aEnd) + '\nreturn scEncodeAiffCooperative;')(() => null, () => Promise.resolve());
+  const ch0 = new Float32Array(1000), ch1 = new Float32Array(1000);
+  for (let i = 0; i < 1000; i++){ ch0[i] = 0.5; ch1[i] = -0.5; }
+  const fake = { sampleRate: 44100, length: 1000, numberOfChannels: 2, getChannelData: (c) => (c === 0 ? ch0 : ch1) };
+  let blob = null, threw = null;
+  try { blob = await F(fake, {}, null); } catch (e){ threw = e; }
+  ok(!threw, 'it encodes a 1000-frame stereo buffer without running off the end' + (threw ? ': ' + threw.message : ''));
+  if (blob) {
+    const dataSize = 1000 * 2 * 2;
+    ok(blob.size === 54 + dataSize, 'the file is exactly header + samples (' + blob.size + ', expected ' + (54 + dataSize) + ')');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const dv = new DataView(bytes.buffer);
+    const tag = (o) => String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]);
+    ok(tag(0) === 'FORM' && tag(8) === 'AIFF', 'it is a FORM/AIFF container');
+    ok(dv.getUint32(4, false) === blob.size - 8, 'whose FORM size counts the whole file after the first eight bytes');
+    ok(tag(12) === 'COMM' && dv.getUint32(16, false) === 18, 'with an 18-byte COMM chunk');
+    ok(dv.getUint16(20, false) === 2 && dv.getUint32(22, false) === 1000, 'carrying the two channels and the 1000 frames');
+    ok(dv.getUint16(26, false) === 16, 'at 16 bits a sample');
+    ok(dv.getUint16(28, false) === 0x400E, 'and the 80-bit sample rate exponent for 44100 (' + dv.getUint16(28, false).toString(16) + ')');
+    ok(tag(38) === 'SSND' && dv.getUint32(42, false) === 8 + dataSize, 'then the sample chunk, sized to hold the audio');
+    ok(dv.getInt16(54, false) === 16384 && dv.getInt16(56, false) === -16384, 'big-endian, left channel then right');
+    ok(src.indexOf("return new Blob([buffer], { type: 'audio/aiff' });") !== -1, 'and the blob is typed as AIFF');
+  }
+}
+
+console.log('[9] the repin moved every gate, including the neighbour');
+{
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-731.mjs'), 'utf8');
+  ok(repin.indexOf("const OLDVER = '" + V7 + "';") !== -1, 'the repin says which build it moves from');
+  ok(repin.indexOf("const NEWVER = '73.1';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
-  ok(repin.indexOf('sidecut-shell-v72[.]8[.]1(?!') !== -1 && repin.indexOf('sidecut-shell-v72[.]9(?!') !== -1,
-    'the stale-cache sweeps are retargeted from the old name to this line, needle written raw');
+  // The needle is written `v7[3]`, not `v73`: this release has no dot to escape,
+  // so a bare `v73` needle was itself rewritten by the cache sweep on the first
+  // run and the gate went hunting the release it was shipping.
+  ok(repin.indexOf('sidecut-shell-v7[3](?!') !== -1,
+    'the stale-cache sweeps are retargeted to this line, needle written raw');
+  ok(repin.indexOf('sidecut-shell-v72[.]9(?!') !== -1, 'from the line before it, which is what they hunted');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
+  ok(repin.indexOf("bespoke('test-727.mjs'") !== -1 && repin.indexOf('Spotify to MP3') !== -1,
+    'and the converter card the step text names moves with its new title');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
-  ok(repin.indexOf('const PREV_MOVES = new Map(') === -1 && repin.indexOf("const ADJACENT_STAYS = '72.8.1';") !== -1,
-    'and the adjacent-entry pin deliberately does not move, because this release renames only the head');
-  const VER_BEFORE = '72.9';
+  ok(repin.indexOf("const PREV_OLD = '72.8.1';") !== -1 && repin.indexOf("const PREV_NEW = '" + V7 + "';") !== -1,
+    'and the adjacent-entry pin DOES move, because this release adds an entry above it');
+
   const stale = [];
   for (const name of fs.readdirSync(path.join(ROOT, 'dev')).sort()) {
     if (!/^test-.*\.mjs$/.test(name) && !/check\.cjs$/.test(name)) continue;
-    if (name === 'test-705.mjs' || name === 'test-70.mjs' || name === 'test-73.mjs') continue;
+    if (name === 'test-705.mjs' || name === 'test-70.mjs' || name === 'test-731.mjs') continue;
     const t = fs.readFileSync(path.join(ROOT, 'dev', name), 'utf8');
-    if (t.indexOf("const VER = '" + VER_BEFORE + "';") !== -1) stale.push(name + ' VER');
-    if (/sidecut-shell-v72\.9(?![\d.])/.test(t)) stale.push(name + ' cache');
+    if (t.indexOf("const VER = '" + V7 + "';") !== -1) stale.push(name + ' VER');
+    if (t.indexOf("const VER = '" + PREV_BEFORE + "';") !== -1) stale.push(name + ' old VER');
+    if (OLD_CACHE_RE.test(t)) stale.push(name + ' cache');
   }
   ok(stale.length === 0, 'no gate still pins the build this release renumbered (' + stale.join(',') + ')');
-  const kept = ['test-713.mjs', 'test-7281.mjs'].every((n) =>
-    fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf("const PREV = '" + PREV + "';") !== -1);
-  ok(kept, 'and the twenty adjacent-entry pins stayed on ' + PREV);
+
+  const left = PREV_GATES.filter((n) =>
+    fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf("const PREV = '" + PREV + "';") === -1);
+  ok(left.length === 0, 'every one of the ' + PREV_GATES.length + ' adjacent-entry pins moved to ' + PREV + '(' + left.join(',') + ')');
+  const behind = PREV_GATES.filter((n) =>
+    fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf("const PREV = '" + PREV_BEFORE + "';") !== -1);
+  ok(behind.length === 0, 'and none was left behind on the old neighbour (' + behind.join(',') + ')');
 }
-console.log('[8] inline script syntax and the OTA tail');
+
+console.log('[10] inline script syntax and the OTA tail');
 {
   const re = /<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g;
   let m, blocks = 0, bad = 0;
