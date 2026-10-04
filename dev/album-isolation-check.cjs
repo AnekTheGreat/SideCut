@@ -147,12 +147,15 @@ let toasts = [];
   await wait(800);
   // 73.1.8: the one-time upgrade recovery rebuilds the sweep victims from their
   // file tags — 'Other Album' is a real card alongside the hand-made one.
-  ok('only the hand-made album and the recovered tag album have cards',
-     eq(cardNames(win).slice().sort(), ['My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
-  ok('the album tagged on the files is NOT listed', cardNames(win).indexOf('MoonChild Era') === -1, JSON.stringify(cardNames(win)));
-  ok('and no album outside those two exists as a card', cardNames(win).length === 2, JSON.stringify(cardNames(win)));
+  // 73.1.9: recovery is every-boot and WHOLE - both multi-song tags rebuild
+  // ('MoonChild Era' 3 songs + the recovered 'Other Album' 2 songs).
+  ok('the hand-made album and every recovered tag album have cards',
+     eq(cardNames(win).slice().sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
+  ok('and each recovered album lists its WHOLE tag (no song left out)',
+     (() => { const v = storedAlbums() || {}; return (!!v['MoonChild Era'] && v['MoonChild Era'].trackIds.length === 3); })(), JSON.stringify(storedAlbums()));
+  ok('and no album outside those three exists as a card', cardNames(win).length === 3, JSON.stringify(cardNames(win)));
   ok('no album beyond the recovered tag names exists in storage',
-     eq(Object.keys(storedAlbums() || {}).sort(), ['My Mix', 'Other Album']),
+     eq(Object.keys(storedAlbums() || {}).sort(), ['MoonChild Era', 'My Mix', 'Other Album']),
      JSON.stringify(Object.keys(storedAlbums() || {})));
   const myCard = cardEls(win).find((c) => c.dataset.albumName === 'My Mix');
   ok('the album shows all three of its songs', !!myCard && myCard.querySelectorAll('.track').length === 3,
@@ -208,7 +211,7 @@ let toasts = [];
   ok('no song was dropped from the album', ((albumsAfter['My Mix'] || {}).trackIds || []).length === 3);
   // 73.1.8: the reorder itself must still invent NOTHING — the recovery's one
   // tag-named album is the only extra entry, and it existed before the reorder.
-  ok('reordering invented no album beyond the recovered one', eq(Object.keys(albumsAfter).sort(), ['My Mix', 'Other Album']), JSON.stringify(Object.keys(albumsAfter)));
+  ok('reordering invented no album beyond the recovered ones', eq(Object.keys(albumsAfter).sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(Object.keys(albumsAfter)));
   ok('playlists untouched by the album reorder', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   // Done -> refresh the library view.
@@ -220,7 +223,7 @@ let toasts = [];
      myAfter ? String(myAfter.querySelectorAll('.track').length) : 'no card');
   ok('album card rows reflect the new order', !!myAfter && eq(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id), ['t2', 't3', 't1']),
      myAfter ? JSON.stringify(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id)) : 'no card');
-  ok('and no THIRD album appears out of the reorder', eq(cardNames(win).slice().sort(), ['My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
+  ok('and no FOURTH album appears out of the reorder', eq(cardNames(win).slice().sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
   ok('playlists still untouched after closing', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   console.log('\n— dragging a card can never invent an album —');
@@ -253,10 +256,10 @@ let toasts = [];
   win.__scOpenAlbumReorderPicker();
   await wait(400);
   const picks = Array.from(win.document.querySelectorAll('.ap-pick'));
-  // The saved album, plus the tag-only album whose songs no saved album claims.
-  // 'MoonChild Era' is not offered separately because t1..t3 already belong to
-  // 'My Mix' — offering it would split the same songs across two albums.
-  ok('picker offers the saved album and the unclaimed tag-only album', picks.length === 2,
+  // 73.1.9: the saved album, plus every recovered tag album. Albums may share
+  // songs now - sharing is what keeps a rebuilt album WHOLE - and the picker
+  // offers each of them.
+  ok('picker offers the saved album and the recovered tag albums', picks.length === 3,
      'picks=' + picks.length + ' ' + picks.map((b) => b.textContent.trim().replace(/\s+/g, ' ')).join(' | '));
   const pickOther = picks.find((b) => b.textContent.indexOf('Other Album') !== -1);
   ok('the tag-only album is offered by the picker', !!pickOther);
@@ -272,8 +275,8 @@ let toasts = [];
   // Only an explicit "reorder this tag album" action saves it — then it is an
   // album the user asked for, and it shows up like any other.
   ok('the album the user explicitly took in now has a card', cardNames(win).indexOf('Other Album') !== -1, JSON.stringify(cardNames(win)));
-  ok('and the hand-made album is still there, unmoved', cardNames(win)[0] === 'My Mix', JSON.stringify(cardNames(win)));
-  ok('no other album appeared', cardNames(win).length === 2, JSON.stringify(cardNames(win)));
+  ok('and the hand-made album is still there', cardNames(win).indexOf('My Mix') !== -1, JSON.stringify(cardNames(win)));
+  ok('no other album appeared', cardNames(win).length === 3, JSON.stringify(cardNames(win)));
 
   console.log('\n— everything still reachable in the normal views —');
   win.navigate('playlists');
@@ -300,7 +303,8 @@ let toasts = [];
   ok('the card is open and lists all three songs',
      !!myBody && myBody.querySelectorAll('.track').length === 3,
      myBody ? ('display=' + myBody.style.display + ' rows=' + myBody.querySelectorAll('.track').length) : 'no body');
-  ok('the playing highlight did not add or remove any album card', eq(cardNames(win), ['My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
+  ok('the playing highlight did not add or remove any album card',
+     eq(cardNames(win).slice().sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
 
   // jsdom cannot actually play audio ('Not implemented: HTMLMediaElement.play')
   // plus the app's known boot-order race; neither is an app error.

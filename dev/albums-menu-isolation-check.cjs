@@ -196,28 +196,31 @@ let toasts = [];
     console.log('    confirm: ' + body.slice(0, 160));
     ok('the export confirm is about albums', /album/i.test(body));
     ok('it never names the open playlist', body.indexOf(OPEN_PLAYLIST) === -1, body);
-    // 73.1.8: the flagged 'Tag Album' (single song, tag-supported) is kept and
-    // marked manual by the boot recovery instead of deleted, so the export is
-    // about all 3 albums the store holds. The hand-made two still lead it.
-    ok('it counts the songs of your albums (6 — the recovered tag album rides along)',
+    // 73.1.9: the junk single-song 'Tag Album' entry is cleared and archived
+    // (name not a file tag); recovery rebuilds 'MoonChild Era' WHOLE and
+    // 'G.O.A.T' whole, so the export is about 4 albums. The song count is the
+    // UNIQUE library songs across them (6 of 6) - the export dedupes by design.
+    ok('it counts the songs of your albums (6 unique songs across 4 albums)',
        /\b6 songs?\b/.test(body), body.slice(0, 120));
-    ok('it names the albums you have', /\b3 albums?\b/.test(body), body.slice(0, 120));
+    ok('it names the albums you have', /\b4 albums?\b/.test(body), body.slice(0, 120));
   }
   win.document.getElementById('exportConfirmBackdrop').style.display = 'none';
   win.document.getElementById('songActionsBackdrop').style.display = 'none';
 
   console.log('\n— nothing above touched a playlist —');
   ok('playlists are byte-for-byte unchanged', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
-  // 73.1.8: the flagged 'Tag Album' (its name is NO file tag) is the junk shape
-  // the sweep still clears — but it is archived, and the boot recovery rebuilt
-  // 'MoonChild Era' from the unclaimed songs carrying that tag, marked yours.
-  ok('the hand-made album entries are unchanged too (the rebuilt tag album is marked yours, the junk entry archived)',
+  // 73.1.9: the junk 'Tag Album' (name is NO file tag) is cleared and archived;
+  // recovery rebuilt 'MoonChild Era' WHOLE (t1,t2,t3,t6 — even the t1 that My
+  // Mix shares) and 'G.O.A.T' whole (t4,t5) from the tags on the files.
+  ok('the hand-made album entries are unchanged (rebuilt ones whole and marked yours, junk archived)',
      (() => {
        const v = idb._data.meta.get('userAlbums').value || {};
        const mine = { 'My Mix': v['My Mix'], 'Late Night': v['Late Night'] };
        const rec = v['MoonChild Era'];
+       const goat = v['G.O.A.T'];
        return eq(mine, ALBUMS_AFTER_BOOT) && !!rec && rec.manual === true && !rec.auto &&
-              eq(rec.trackIds, ['t2', 't3']) &&
+              eq(rec.trackIds, ['t1', 't2', 't3', 't6']) &&
+              !!goat && goat.manual === true && eq(goat.trackIds, ['t4', 't5']) &&
               typeof win.__scAlbumsArchivedNames === 'function' &&
               win.__scAlbumsArchivedNames().indexOf('Tag Album') !== -1;
      })(), JSON.stringify(idb._data.meta.get('userAlbums').value));

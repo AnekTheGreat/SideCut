@@ -230,6 +230,11 @@ async function rename(win, currentName, newName, newArtist) {
      JSON.stringify(contentOf({ 'My Mix': after['My Mix'], 'DJ Set': after['DJ Set'], 'Pre Flag': after['Pre Flag'] })));
   ok('the album you ordered by hand keeps your order',
      eq(after['DJ Set'].trackIds, ['t3', 't2']), JSON.stringify(after['DJ Set'].trackIds));
+  // 73.1.9: a no-marker entry is stamped manual at boot - the files vouch for
+  // it through its songs - so no future sweep can ever misread it again.
+  ok('the no-marker entry is stamped yours (its songs untouched)',
+     after['Pre Flag'] && !after['Pre Flag'].auto && after['Pre Flag'].manual === true &&
+     eq(after['Pre Flag'].trackIds, ['t5']), JSON.stringify(after['Pre Flag']));
   ok('every album tag on every file is unchanged',
      eq(tags(), { t1: 'MoonChild Era', t2: 'MoonChild Era', t3: 'MoonChild Era', t4: 'G.O.A.T', t5: 'G.O.A.T' }),
      JSON.stringify(tags()));
@@ -296,9 +301,48 @@ async function rename(win, currentName, newName, newArtist) {
     void snapshot;
   }
 
+  console.log('\n— 73.1.9: recovery is every-boot, whole-list, and respects a real delete —');
+  {
+    // A sweep victim whose name no entry holds any more. 73.1.8 rebuilt this
+    // only ONCE and only from the unclaimed songs; 73.1.9 rebuilds it on any
+    // boot and WHOLE - the song My Mix also holds comes back into it.
+    const m = idb._data.meta.get('userAlbums');
+    delete m.value['MoonChild Era'];
+    win.__scAlbumsRecoverDeleted();
+    const s2 = storedAlbums() || {};
+    ok('a sweep victim is rebuilt on a later boot too (every-boot, not one-shot)',
+       !!s2['MoonChild Era'], JSON.stringify(Object.keys(s2)));
+    ok('rebuilt WHOLE - the song My Mix also holds is included',
+       s2['MoonChild Era'] && eq(s2['MoonChild Era'].trackIds, ['t1', 't2', 't3']), JSON.stringify(s2['MoonChild Era']));
+    ok('the album that shared the song is untouched (additive only)',
+       s2['My Mix'] && eq(s2['My Mix'].trackIds, ['t1', 't4']), JSON.stringify(s2['My Mix']));
+    ok('and the rebuilt album is marked yours', s2['MoonChild Era'] && s2['MoonChild Era'].manual === true && !s2['MoonChild Era'].auto,
+       JSON.stringify([s2['MoonChild Era'] && s2['MoonChild Era'].manual, s2['MoonChild Era'] && s2['MoonChild Era'].auto]));
+  }
+
+  console.log('\n— a delete the user makes through the panel STAYS deleted —');
+  {
+    // The tombstone: recovery runs on every boot now, so the one way it could
+    // turn bad is resurrecting an album the user removed on purpose. Drive the
+    // real two-tap Delete and then boot again.
+    await openManage(win);
+    const delRow = mgrRows(win).find((r) => (r.getAttribute('data-name') || '') === 'moonchild era');
+    const del = delRow && delRow.querySelector('.mgr-alb-del');
+    ok('the delete control is there', !!del);
+    if (del) {
+      del.click();
+      await wait(150);
+      del.click();
+      await wait(800);
+      ok('the album was deleted through the panel', !(storedAlbums() || {})['MoonChild Era'], JSON.stringify(Object.keys(storedAlbums() || {})));
+      win.__scAlbumsRecoverDeleted();
+      ok('and it STAYS deleted on the next boot (tombstone)', !(storedAlbums() || {})['MoonChild Era'], JSON.stringify(Object.keys(storedAlbums() || {})));
+    }
+  }
+
   console.log('\n— Manage albums now searches —');
   ok('Manage albums opens', await openManage(win));
-  ok('one row per album you have', mgrRows(win).length === 5 && visibleRows(win).length === 5,
+  ok('one row per album you have', mgrRows(win).length === 4 && visibleRows(win).length === 4,
      'rows=' + mgrRows(win).length + ' visible=' + visibleRows(win).length);
   ok('no "not created by you" controls survive',
      !q(win, '.mgr-alb-restore') && !q(win, '.mgr-alb-rename-auto') && !q(win, '.mgr-alb-del-auto'));
@@ -309,7 +353,7 @@ async function rename(win, currentName, newName, newArtist) {
   ok('typing narrows the list', type(win, 'dj') && visibleRows(win).length === 1,
      'visible=' + visibleRows(win).length + ' [' + visibleRows(win).map((r) => r.getAttribute('data-name')).join(',') + ']');
   ok('and says how many still match',
-     q(win, '#mgrAlbumCount').textContent === '1 of 5 albums' && q(win, '#mgrAlbumCount').style.display === 'block',
+     q(win, '#mgrAlbumCount').textContent === '1 of 4 albums' && q(win, '#mgrAlbumCount').style.display === 'block',
      q(win, '#mgrAlbumCount').textContent);
   ok('the matching row is the one asked for',
      visibleRows(win)[0] && visibleRows(win)[0].getAttribute('data-name') === 'dj set',
@@ -323,13 +367,13 @@ async function rename(win, currentName, newName, newArtist) {
   ok('a search with no match hides every row', type(win, 'zzz') && visibleRows(win).length === 0,
      'visible=' + visibleRows(win).length);
   ok('and says so instead of showing an empty list',
-     q(win, '#mgrAlbumNoMatch').style.display === 'block' && q(win, '#mgrAlbumCount').textContent === '0 of 5 albums',
+     q(win, '#mgrAlbumNoMatch').style.display === 'block' && q(win, '#mgrAlbumCount').textContent === '0 of 4 albums',
      q(win, '#mgrAlbumNoMatch').style.display + ' / ' + q(win, '#mgrAlbumCount').textContent);
 
   q(win, '#mgrAlbumSearchClear').click();
   await wait(150);
   ok('the clear button puts them all back',
-     visibleRows(win).length === 5 && q(win, '#mgrAlbumSearch').value === '' &&
+     visibleRows(win).length === 4 && q(win, '#mgrAlbumSearch').value === '' &&
      q(win, '#mgrAlbumNoMatch').style.display === 'none' && q(win, '#mgrAlbumCount').style.display === 'none',
      'visible=' + visibleRows(win).length + ' value=' + JSON.stringify(q(win, '#mgrAlbumSearch').value));
 
@@ -348,20 +392,22 @@ async function rename(win, currentName, newName, newArtist) {
   ok('and the query is still in the box', q(win, '#mgrAlbumSearch').value === 'flag',
      JSON.stringify(q(win, '#mgrAlbumSearch').value));
   ok('with the count still honest about the new name',
-     q(win, '#mgrAlbumCount').textContent === '1 of 5 albums', q(win, '#mgrAlbumCount').textContent);
+     q(win, '#mgrAlbumCount').textContent === '1 of 4 albums', q(win, '#mgrAlbumCount').textContent);
   // Closing and reopening is a fresh start, not the same session: the panel must
   // come back unfiltered rather than holding a search the user has walked away from.
   closeManage(win);
   await wait(300);
   await openManage(win);
   ok('a fresh open starts with all albums and no query',
-     visibleRows(win).length === 5 && q(win, '#mgrAlbumSearch').value === '',
+     visibleRows(win).length === 4 && q(win, '#mgrAlbumSearch').value === '',
      'visible=' + visibleRows(win).length + ' value=' + JSON.stringify(q(win, '#mgrAlbumSearch').value));
 
   console.log('\n— the songs are all where they were —');
   const finalAlbums = storedAlbums() || {};
-  ok('every album you have is still in the store',
-     eq(Object.keys(finalAlbums).sort(), ['DJ Set', 'G.O.A.T', 'MoonChild Era', 'My Mix', 'Pre Flag Hits']), JSON.stringify(Object.keys(finalAlbums)));
+  // MoonChild Era is absent here ON PURPOSE: the tombstone test deleted it
+  // through the real panel, and 73.1.9's whole point is that it stays deleted.
+  ok('every album you have is still in the store (the one you deleted stays gone)',
+     eq(Object.keys(finalAlbums).sort(), ['DJ Set', 'G.O.A.T', 'My Mix', 'Pre Flag Hits']), JSON.stringify(Object.keys(finalAlbums)));
   ok('the songs are all still in the library',
      eq(Object.keys(tags()).sort(), ['t1', 't2', 't3', 't4', 't5']), JSON.stringify(Object.keys(tags())));
   ok('playlists are still byte-for-byte unchanged', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));

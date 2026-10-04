@@ -61,7 +61,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v73.1.8';
+const SHELL_CACHE = 'sidecut-shell-v73.1.9';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {

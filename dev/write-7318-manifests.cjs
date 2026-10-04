@@ -5,8 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const m = html.match(/const CHANGELOG = \[\s*\{[^{}]*?version: '73\.1\.8'[^{}]*?items: \[([\s\S]*?)\]\s*\},\s*\{/);
-if(!m){ console.error('73.1.8 head entry not found'); process.exit(1); }
+const m = html.match(/const CHANGELOG = \[\s*\{[^{}]*?version: '73\.1\.9'[^{}]*?items: \[([\s\S]*?)\]\s*\},\s*\{/);
+if(!m){ console.error('73.1.9 head entry not found'); process.exit(1); }
 const notes = [];
 const re = /'((?:[^'\\]|\\.)*)'/g; let x;
 while((x = re.exec(m[1])) !== null){ notes.push(x[1].replace(/\\'/g, "'")); if(notes.length === 6) break; }
@@ -24,9 +24,9 @@ const date = 'October 4, 2026 · 10:05 PM EDT';
 for(const f of ['updates.json', 'manifest.json']){
   const p = path.join(ROOT, f);
   const o = JSON.parse(fs.readFileSync(p, 'utf8'));
-  o.version = '73.1.8';
+  o.version = '73.1.9';
   o.date = date;
   o.notes = notes;
   fs.writeFileSync(p, JSON.stringify(o) + '\n');
-  console.log(f + ' -> 73.1.8 (' + notes.length + ' notes)');
+  console.log(f + ' -> 73.1.9 (' + notes.length + ' notes)');
 }

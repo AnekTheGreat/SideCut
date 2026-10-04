@@ -12901,7 +12901,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.1.8';
+  const APP_VERSION = '73.1.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13462,6 +13462,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.1.9', date: 'October 4, 2026 · 11:40 PM EDT', title: 'The albums come back with every song, and what you deleted stays deleted', items: [
+    'The albums that came back with songs still missing are fixed: an album is now rebuilt with every song carrying its album tag, including songs another album also holds, and a missing album is rebuilt whatever other albums have claimed its songs.',
+    'Single-song albums are albums too: a released single that the cleanup had removed is rebuilt like any other album, and the whole rebuild runs on every start so anything still missing is found on the next launch rather than never.',
+    'Deleting an album yourself is still yours to do: the app remembers the albums you removed on purpose and never brings those back, while everything the old cleanup took keeps coming back until it is all there.',
+    'The lyrics letter wave, the timed lyric lines, the music player and the home-screen widget are all untouched by this release.',
+    'Everything 73.1.8 shipped stays: albums can be searched, renamed and reordered in Manage albums, and an album the app cleared still waits there with an It is mine button that puts it back whole.',
+    'Your files are exactly where they were: every song stays in the library with its album tag, and nothing in this release moves, renames or removes a song.',
+    'If any album still looks short, Manage albums inside the Library tab has Rebuild albums from my songs, and Restore from my backup puts back the exact albums you had.',
+  ]},
   { version: '73.1.8', date: 'October 4, 2026 · 10:05 PM EDT', title: 'The albums you lost are found again, and nothing can take them like that again', items: [
     'The album wipe is fixed: a cleanup inside the app was taking away albums that arrived with an old automatic flag, and every one of them is rebuilt from the album tags your songs still carry the first time this version starts.',
     'Your Albums tab comes back whole: names, songs and artists, in the order you had them, rebuilt from the tags on the files, and the songs inside each album are listed complete rather than partly.',
@@ -22508,6 +22517,17 @@ function _fallbackCopy(text){
 
   function deleteUserAlbum(name){
     if(!userAlbums[name]) return;
+    // 73.1.9 - remember that YOU deleted this one. The boot recovery rebuilds
+    // missing tag-named albums on every launch now, and the one thing it must
+    // never do is resurrect an album the user removed on purpose. The name is
+    // tombstoned here, at the moment of the delete, and recovery skips it.
+    try{
+      var _udRaw = localStorage.getItem('sidecut_albumsUserDeleted');
+      var _ud = _udRaw ? JSON.parse(_udRaw) : {};
+      if(!_ud || typeof _ud !== 'object' || _ud instanceof Array) _ud = {};
+      _ud[String(name).toLowerCase()] = Date.now();
+      localStorage.setItem('sidecut_albumsUserDeleted', JSON.stringify(_ud));
+    }catch(_eTomb){}
     delete userAlbums[name];
     try{
       var _di = albumOrder.indexOf(name);
@@ -23560,47 +23580,54 @@ function _fallbackCopy(text){
         delete e.auto;
       });
       // (3) Albums that no entry holds at all - the ones an older boot sweep
-      // deleted whole - are rebuilt from the tag on the files, taking only the
-      // songs no other album claims. A name that is not a file tag cannot be
-      // rebuilt here; that is what the archive restore and backup import are for.
-      // ONE-TIME, on the first boot of this build: on that boot, an album missing
-      // from the store while its tag sits on the files is a sweep victim, not a
-      // deliberate delete - every boot before this one deleted exactly those.
-      // After it has run, a delete is a delete: the stamp keeps this from ever
-      // resurrecting an album the user removed on purpose.
-      var SC_ALBUMS_RECOVER_KEY = 'sidecut_albumsRecoverDone';
-      var recoverOnce = false;
-      try{ recoverOnce = !localStorage.getItem(SC_ALBUMS_RECOVER_KEY); }catch(_eRecK){}
-      if(recoverOnce){
-        try{ localStorage.setItem(SC_ALBUMS_RECOVER_KEY, '1'); }catch(_eRecS){}
-      }
-      var claimed = {};
-      Object.keys(userAlbums).forEach(function(k){
-        // Entries the sweep is about to clear do not count as claiming their
-        // songs: their lists are on the way to the archive, and a rebuilt tag
-        // album that left them out would boot half-empty - the exact shape
-        // this pass exists to end. Everything that is staying counts.
-        if(albumIsAuto(k)) return;
-        var e = userAlbums[k];
-        if(e && Array.isArray(e.trackIds)) e.trackIds.forEach(function(id){ claimed[id] = true; });
-      });
+      // deleted whole - are rebuilt from the tag on the files, and they come
+      // back WHOLE: every song carrying the tag, whether or not another album
+      // also lists it. The old free-songs-only filter is what left rebuilt
+      // albums with missing songs, and the every-song-is-claimed skip is what
+      // left some albums missing entirely. Albums tab cards may share a song -
+      // that is already the app's normal shape - and the flat Albums list
+      // dedupes.
+      // RUNS ON EVERY BOOT now, not once: a one-shot pass cannot repair what
+      // it got wrong on its one shot, and the owner paid for that in missing
+      // albums twice. It is safe to repeat because it is purely additive and
+      // tag-proven, and the ONE way it must not repeat - bringing back an
+      // album the user deleted on purpose - is handled by a tombstone that
+      // deleteUserAlbum writes at the moment of the delete.
+      var SC_ALBUMS_RECOVER_KEY = 'sidecut_albumsUserDeleted';
+      var userDeleted = {};
+      try{
+        var _udRaw = localStorage.getItem(SC_ALBUMS_RECOVER_KEY);
+        var _ud = _udRaw ? JSON.parse(_udRaw) : null;
+        if(_ud && typeof _ud === 'object' && !(_ud instanceof Array)) userDeleted = _ud;
+      }catch(_eRecK){}
       var tried = {};
       allTracks.forEach(function(t){
-        if(!t || !recoverOnce) return;
+        if(!t) return;
         var tag = String(t.album || '').trim();
         if(!tag || tried[tag] || userAlbums[tag]) return;
         tried[tag] = 1;
         // A tag only ONE song carries is usually the song's own name, not an
-        // album (the converter habit). Rebuilding those would be one album per
-        // song again - the same rule the Rebuild sheet's default option uses:
-        // only a tag shared by more than one song counts as an album here.
+        // album (the converter habit) - BUT it is also exactly what a released
+        // SINGLE looks like, and singles are real albums the sweep deleted like
+        // any other. So: multi-song tags rebuild outright; a single-song tag
+        // rebuilds only when the app itself has a record of having cleared an
+        // album of that name (the archive), which converter junk never has.
         var tagIds = _scAlbumTagIds(tag);
-        if(tagIds.length < 2) return;
-        var free = tagIds.filter(function(id){ return !claimed[id]; });
-        if(!free.length) return;
+        var archived = false;
+        try{
+          archived = (typeof scAlbumsArchivedNames === 'function' && scAlbumsArchivedNames().indexOf(tag) !== -1);
+        }catch(_eArc){}
+        if(tagIds.length < 2 && !archived) return;
+        // Deleted by the user on purpose? Then it stays deleted - this is the
+        // whole reason the tombstone exists.
+        if(userDeleted[tag.toLowerCase()]) return;
+        var first = null;
+        for(var fi = 0; fi < allTracks.length; fi++){
+          if(allTracks[fi] && allTracks[fi].id === tagIds[0]){ first = allTracks[fi]; break; }
+        }
         userAlbums[tag] = {
-          artist: (String(t.artist || '').trim()) || 'Unknown artist',
-          trackIds: free,
+          artist: (first && String(first.artist || '').trim()) || 'Unknown artist',
+          trackIds: tagIds.slice(),
           createdAt: Date.now(),
           manual: true
         };
@@ -36187,6 +36214,8 @@ function _renderAhFromData(artistAlbums){
   };
   window.__scUpcomingAutofetch = async function(){
     if(window.__scUpAutoBusy) return;
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
