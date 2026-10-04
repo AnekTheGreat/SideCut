@@ -161,7 +161,7 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 
 console.log('[11] release metadata');
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v72.8';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');
@@ -193,9 +193,11 @@ console.log('[12] inline script syntax');
 console.log('[13] no remixes, nothing off the pinned artists');
 {
   const check2 = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
-  // One shared test, applied by EVERY source and by BOTH lists. 12 hits = the
-  // definition, the pruning pass, the row painter, and nine call sites.
-  ok(count('__scJunkTitle') === 12, 'one junk test, applied everywhere (' + count('__scJunkTitle') + ')');
+  // One shared test, applied by EVERY source and by BOTH lists. 10 hits = the
+  // definition, the pruning pass, the release-list builder, and seven call
+  // sites: the three surfaces that used to each re-check a row now delegate to
+  // window.__scReleaseList, which does it once.
+  ok(count('__scJunkTitle') === 10, 'one junk test, applied everywhere, with the three surface copies folded into the shared list (' + count('__scJunkTitle') + ')');
   ok(check2 && check2.includes('!window.__scJunkTitle(r.trackName)'), 'the iTunes song pass refuses a remix title');
   ok(check2 && check2.includes('if(window.__scJunkTitle(r.collectionName)) return;'), 'so does the album pass');
   const idFn2 = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");

@@ -207,7 +207,7 @@ console.log('[6c] a timed lyric copy wins, and every script is paced');
   // was ~3x a slow ballad's real delivery and lit a line long before it is sung.
   const paceFn = bodies[2];
   ok(!/totalWeight \/ 14/.test(paceFn), 'the pacing rate is no longer the fixed 14 chars/s');
-  ok(/const rate = Math\.max\(6, Math\.min\(14, lineRate \* 1\.15\)\);/.test(paceFn), 'the rate follows the line, clamped to [6,14]');
+  ok(/const rate = Math\.max\(1\.6, Math\.min\(7, lineRate \* 1\.12\)\);/.test(paceFn), 'the rate follows the line in syllables, clamped to [1.6,7]');
   // A ballad line (measured: Kesariya 4.1 chars/s, Someone Like You 4.9) must
   // now pace across most of its window. The fixed 14 chars/s finished a line
   // like this in about half of it — the "words don't match on slower songs" bug.

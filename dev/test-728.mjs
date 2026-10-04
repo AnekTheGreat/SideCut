@@ -1,35 +1,35 @@
 #!/usr/bin/env node
 /**
- * 72.8 - Last.fm scrobbling, and the two lyrics highlight chips.
+ * 72.8 - the two lyrics highlight chips.
  *
- * Two things ride in this release, so this gate pins both:
+ * NOTE, 72.8.1: this gate originally pinned TWO things, the scrobbler and the
+ * lyrics chips. The owner removed the scrobbler in 72.8.1, so the Last.fm half of
+ * this gate is gone with it - keeping assertions about code that no longer ships
+ * would be the gate lying. What is left is the half that still describes the app:
+ * the letter wave is visible, and the two chips look on when they are on. The
+ * letter-by-letter PACING (which 72.8.1 reworked) is pinned by dev/test-7281.mjs.
  *
  *   [1] release metadata - APP_VERSION, the head entry, the shell cache;
  *   [2] the letter wave is visible: the word drops to the trough in letter mode,
  *       and the word/letter chips carry the !important coral state that an inline
  *       style cannot outrank;
- *   [3] the scrobbler exists and is wired: settings card, connect/disconnect,
- *       now-playing on a track change, scrobble once a song has been heard;
- *   [4] THE MATH IS REAL: the MD5 is checked against vectors and against
- *       node:crypto, and a scrobble is captured and its api_sig compared with a
- *       signature this test builds independently;
- *   [5] the repin moved every gate (no stale pin);
- *   [6] inline script syntax, and the OTA tail.
+ *   [3] nothing of the removed Last.fm feature is left behind;
+ *   [4] the repin moved every gate (no stale pin);
+ *   [5] inline script syntax, and the OTA tail.
  *
  *   node dev/test-728.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '72.8';
-const PREV = '72.7.1';
-const SHELL_CACHE = 'sidecut-shell-v72.8';
+const VER = '73'; /* repinned by dev/repin-73.mjs */ /* repinned by dev/repin-729.mjs */
+const PREV = '72.8.1'; /* repinned by dev/repin-729.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -61,19 +61,19 @@ console.log('[1] release metadata');
     ok(items.every((it) => it.length <= 260), 'every note is one short sentence or two (longest ' + Math.max(...items.map((i) => i.length)) + ')');
     ok(!/downloader|downloading|download|converter|converts|converting|conversion|convert|mp3|get song|no source found|hand-off|ytmp3|vocal remover|spotisaver|spotmate|spotidown|spoticatch/i
       .test(items.slice(0, 6).join('\n')), 'and none of the six that ride to the store trips its wider list');
-    ok(!!entries.find((e) => String(e.version) === PREV), 'the 72.7.1 entry is still behind it');
+    ok(!!entries.find((e) => String(e.version) === PREV), 'the 72.8 entry is still behind it');
     // The words the release before this one pinned on the HEAD have to be here:
     // test-7251 and test-7252 read the head for /widget/ and /player/.
     ok(/widget/i.test(notes), 'the head notes still name the widget the earlier gates look for');
     ok(/player/i.test(notes), 'and the player');
-    ok(/last\.fm/i.test(notes), 'and this release says what it is about');
+    ok(/letter/i.test(notes), 'and this release says what it is about');
     ok(/lyrics/i.test(notes), 'including the lyrics half of it');
   }
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
   ok(swCache === SHELL_CACHE, 'the shell cache is this release name (' + swCache + ')');
   ok(swCache === 'sidecut-shell-v' + VER, 'and it is exactly the release number');
-  const patch = fs.readFileSync(path.join(ROOT, 'dev', 'patch-728.mjs'), 'utf8');
-  ok(patch.indexOf("const VERSION = '72.8';") !== -1, 'the patch states the release once');
+  const patch = fs.readFileSync(path.join(ROOT, 'dev', 'patch-7281.mjs'), 'utf8');
+  ok(patch.indexOf("const VERSION = '72.8.1';") !== -1, 'the patch states the release once');
   ok(patch.indexOf("const CACHE = 'sidecut-shell-v' + VERSION;") !== -1,
     'and derives the cache name from it, so the two cannot drift');
 }
@@ -106,131 +106,56 @@ console.log('[2] the letter wave is visible and the chips look on');
     'and the letter chip lights whenever letter mode is on');
 }
 
-console.log('[3] the scrobbler is present and wired');
+console.log('[3] the removed Last.fm feature leaves nothing behind');
 {
-  ok(src.indexOf("var LF_API = 'https://ws.audioscrobbler.com/2.0/';") !== -1, 'the Last.fm endpoint is named');
-  for (const id of ['lastfmCard', 'lastfmStatus', 'lastfmToggle', 'lastfmKeyInput', 'lastfmSecretInput', 'lastfmConnectBtn', 'lastfmDisconnectBtn', 'lastfmQueueHint']) {
-    ok(src.indexOf('id="' + id + '"') !== -1, 'the settings card has ' + id);
-  }
-  ok(count(src, "var LF_K_KEY = 'sidecut_lastfm_key';") === 1, 'the key has its own storage slot');
-  ok(count(src, "var LF_K_SECRET = 'sidecut_lastfm_secret';") === 1, 'so does the secret');
-  ok(count(src, "var LF_K_SESSION = 'sidecut_lastfm_session';") === 1, 'and the authorized session');
-  ok(src.indexOf("var LF_MIN_SECONDS = 30;") !== -1, 'a thirty-second floor is declared');
-  ok(src.indexOf('if(duration > 0 && duration < LF_MIN_SECONDS) return;') !== -1,
-    'and a song under it is never sent');
-  ok(src.indexOf("method: 'auth.getToken'") !== -1 && src.indexOf("method: 'auth.getSession'") !== -1,
-    'the connect flow asks for a token then a session');
-  ok(src.indexOf("LF_AUTH + '?api_key=' + encodeURIComponent(key)") !== -1, 'and opens the Last.fm authorize page');
-  ok(src.indexOf("method: 'track.updateNowPlaying'") !== -1, 'now playing is sent');
-  ok(src.indexOf("method: 'track.scrobble'") !== -1, 'and the scrobble itself');
-  ok(src.indexOf("'artist[0]': item.artist") !== -1 && src.indexOf("'timestamp[0]': item.timestamp") !== -1,
-    'with the indexed parameters Last.fm expects');
-  ok(src.indexOf('function lfSig(params, secret){') !== -1, 'the signature is computed in one place');
-  ok(/keys\.sort\(\);/.test(src), 'over the sorted parameter names');
-  ok(src.indexOf("return lfMd5(s + secret);") !== -1, 'followed by the shared secret');
-  ok(/k !== 'format' && k !== 'callback'/.test(src), 'and neither format nor callback is signed');
-  ok(src.indexOf('function lfFlushQueue(){') !== -1, 'a queue flushes what could not be sent');
-  ok(src.indexOf('q.push(item); lfQueueSave(q);') !== -1, 'an offline scrobble is parked rather than lost');
-  ok(src.indexOf("window.addEventListener('online', function(){ lfFlushQueue(); });") !== -1,
-    'and coming back online spends it');
-  ok(count(src, 'window.scLastfm.nowPlaying(t)') === 1, 'a track change tells Last.fm, from exactly one place');
-  ok(count(src, 'window.scLastfm.scrobble(t)') === 1, 'and a heard song is scrobbled, from exactly one place');
-  ok(/recordListeningDay\(\);\s*\n\s*try\{ if\(window\.scLastfm\) window\.scLastfm\.nowPlaying\(t\); \}/.test(src),
-    'the now-playing hook rides the existing play recorder');
-  ok(/scSidecarSet\(t\.id, \{ playCount: t\.playCount \}\);\s*\n\s*try\{ if\(window\.scLastfm\) window\.scLastfm\.scrobble\(t\); \}/.test(src),
-    'and the scrobble hook rides the existing play counter, so the app half is where it always was');
+  // The cover-art lookup from 63.x legitimately still names Last.fm; the scrobbler
+  // is what had to go, so the checks below are on its identifiers.
+  ok(src.indexOf('fetchCoverFromLastFM') !== -1, 'the cover-art lookup that predates it is untouched');
+  ok(src.indexOf('lastfm') === -1, 'and no lastfm identifier of any kind');
+  ok(src.indexOf('scLastfm') === -1, 'no window global for it');
+  ok(src.indexOf('sidecut_lastfm') === -1, 'and none of its storage keys');
+  ok(count(src, "var LF_API = 'https://ws.audioscrobbler.com/2.0/';") === 0,
+    'the scrobbler is no longer wired to the Last.fm endpoint');
+  ok(count(src, 'ws.audioscrobbler.com') === 1,
+    'and the one pre-existing use of it - the cover-art search - is the only one left');
+  ok(src.indexOf('function lfMd5(') === -1, 'the MD5 helper it needed is gone with it');
+  // The two functions it hooked must read as they did before it existed.
+  ok(/recordListeningDay\(\);\n/.test(src), 'the play recorder is back to its plain self');
+  ok(count(src, 'recordListeningDay();') === 1, 'from exactly one place');
+  ok(/scSidecarSet\(t\.id, \{ playCount: t\.playCount \}\);\n/.test(src),
+    'and so is the play counter');
+  ok(count(src, 'scSidecarSet(t.id, { playCount: t.playCount });') === 1, 'from exactly one place');
+  // The card is out of the More pane, and the toggle it sat above is still there.
+  ok(count(src, 'id="lastfmCard"') === 0, 'the settings card is gone');
+  ok(count(src, 'id="lastfmKeyInput"') === 0 && count(src, 'id="lastfmConnectBtn"') === 0,
+    'with its key boxes and its connect button');
+  ok(count(src, '<!-- Diagonal / Single button toggle -->') === 1,
+    'and the card that followed it in the More pane is untouched');
+  ok(count(src, 'const PLAY_COUNTS_AFTER = 0.5;') === 1,
+    'the play-counting block it was inserted in front of is intact');
 }
 
-console.log('[4] the signature is real (checked against node:crypto)');
+console.log('[4] the repin moved every gate');
 {
-  const start = src.indexOf('  // ---- Last.fm scrobbling (72.8)');
-  const end = src.indexOf('  const PLAY_COUNTS_AFTER = 0.5;', start);
-  ok(start !== -1 && end !== -1, 'the module can be isolated');
-  const moduleSrc = src.slice(start, end);
-  const store = new Map();
-  const localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
-  let captured = null;
-  const fetchStub = (url, opts) => { captured = { url, opts }; return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('{"ok":1}') }); };
-  const win = { toast: () => {}, addEventListener: () => {}, open: () => {} };
-  const factory = (fetchImpl) => new Function('window', 'document', 'localStorage', 'fetch', 'URLSearchParams', '$', 'setInterval', 'clearInterval', 'setTimeout',
-    moduleSrc + '\n; return window.scLastfm;')(win, { activeElement: null }, localStorage, fetchImpl, URLSearchParams, () => null, () => 0, () => {}, () => {});
-  const lf = factory(fetchStub);
-
-  ok(lf.md5('') === 'd41d8cd98f00b204e9800998ecf8427e', 'md5("") matches the known digest');
-  ok(lf.md5('abc') === '900150983cd24fb0d6963f7d28e17f72', 'md5("abc") matches');
-  ok(lf.md5('The quick brown fox jumps over the lazy dog') === '9e107d9d372bb6826bd81d3542a419d6', 'and the pangram');
-  ok(lf.md5('é') === crypto.createHash('md5').update('é', 'utf8').digest('hex'), 'a UTF-8 digest matches node:crypto');
-  ok(lf.md5('日本語') === crypto.createHash('md5').update('日本語', 'utf8').digest('hex'), 'and a multi-byte one');
-
-  const key = 'APIKEY', secret = 'SECRET', sk = 'SESSKEY';
-  store.set('sidecut_lastfm_key', key); store.set('sidecut_lastfm_secret', secret);
-  store.set('sidecut_lastfm_session', sk); store.set('sidecut_lastfm_on', '1');
-  ok(lf.enabled() === true, 'the module reports itself connected');
-
-  const track = { id: 7, name: 'Song Name', artist: 'The Artist', album: 'The Album', duration: 200 };
-  captured = null;
-  lf.nowPlaying(track);
-  await new Promise((r) => setTimeout(r, 0));
-  const np = captured && new URLSearchParams(captured.opts.body);
-  ok(!!np, 'now playing was sent');
-  if (np) {
-    const expected = crypto.createHash('md5').update(
-      'album' + 'The Album' + 'api_key' + 'APIKEY' + 'artist' + 'The Artist' + 'duration' + '200' +
-      'method' + 'track.updateNowPlaying' + 'sk' + 'SESSKEY' + 'track' + 'Song Name' + 'SECRET'
-    ).digest('hex');
-    ok(np.get('method') === 'track.updateNowPlaying', 'with the right method');
-    ok(np.get('api_sig') === expected, 'and a signature built independently: ' + expected.slice(0, 8) + '…');
-  }
-
-  captured = null;
-  lf.scrobble(track);
-  await new Promise((r) => setTimeout(r, 0));
-  const sc = captured && new URLSearchParams(captured.opts.body);
-  ok(!!sc, 'a scrobble was sent');
-  if (sc) {
-    const ts = sc.get('timestamp[0]');
-    const expected = crypto.createHash('md5').update(
-      'album[0]' + 'The Album' + 'api_key' + 'APIKEY' + 'artist[0]' + 'The Artist' + 'duration[0]' + '200' +
-      'method' + 'track.scrobble' + 'sk' + 'SESSKEY' + 'timestamp[0]' + ts + 'track[0]' + 'Song Name' + 'SECRET'
-    ).digest('hex');
-    ok(sc.get('artist[0]') === 'The Artist' && sc.get('track[0]') === 'Song Name', 'carrying artist and track');
-    ok(sc.get('format') === 'json', 'asking for json');
-    ok(sc.get('api_sig') === expected, 'and signed the way Last.fm documents');
-    ok(String(Number(ts)).length === 10, 'with a unix timestamp');
-  }
-
-  captured = null;
-  lf.scrobble({ id: 9, name: 'Short', artist: 'X', duration: 12 });
-  await new Promise((r) => setTimeout(r, 0));
-  ok(captured === null, 'a song under thirty seconds is never sent');
-
-  const offline = factory(() => Promise.reject(new Error('offline')));
-  offline.scrobble({ id: 11, name: 'Kept', artist: 'Y', duration: 180 });
-  await new Promise((r) => setTimeout(r, 10));
-  const q = JSON.parse(store.get('sidecut_lastfm_queue') || '[]');
-  ok(q.length === 1 && q[0].track === 'Kept', 'and one that cannot be sent is queued for later');
-}
-
-console.log('[5] the repin moved every gate');
-{
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-728.mjs'), 'utf8');
-  ok(repin.indexOf("const OLDVER = '72.7.1';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '72.8';") !== -1, 'and to');
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7281.mjs'), 'utf8');
+  ok(repin.indexOf("const OLDVER = '72.8';") !== -1, 'the repin says which build it moves from');
+  ok(repin.indexOf("const NEWVER = '72.8.1';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
-  ok(repin.indexOf("['test-7271.mjs', ['72.7', OLDVER]]") !== -1, 'and it moves the adjacent-entry pin for the previous gate too');
-  ok(repin.indexOf("bespoke('test-7271.mjs'") !== -1, 'with the sweep corrections written for the gates it displaces');
+  ok(repin.indexOf("['test-728.mjs', ['72.7.1', OLDVER]]") !== -1, 'and it moves the adjacent-entry pin for the previous gate too');
+  ok(repin.indexOf("bespoke('test-728.mjs'") !== -1, 'with the sweep corrections written for the gates it displaces');
   ok(repin.indexOf("esc(OLDCACHE) + '(?![\\\\d.])'") !== -1, 'the cache move is prefix-safe');
+  ok(repin.indexOf("esc(OLDVER) + \"';\"") !== -1, 'and so is the build pin, because 72.8 is a prefix of 72.8.1');
   const dev = fs.readdirSync(path.join(ROOT, 'dev'));
   const OLD_VER_PIN = 'const VER = ' + "'" + PREV + "'" + ';';
-  const stale = dev.filter((n) => /^test-.*\.mjs$/.test(n) && n !== 'test-705.mjs' && n !== 'test-70.mjs' && n !== 'test-728.mjs')
+  const stale = dev.filter((n) => /^test-.*\.mjs$/.test(n) && n !== 'test-705.mjs' && n !== 'test-70.mjs')
     .filter((n) => fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf(OLD_VER_PIN) !== -1);
   ok(stale.length === 0, 'no gate still pins the old build (' + stale.join(',') + ')');
   const cacheStale = dev.filter((n) => /^test-.*\.mjs$/.test(n))
-    .filter((n) => /sidecut-shell-v72\.7\.1(?![\d.])/.test(fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8')));
+    .filter((n) => /sidecut-shell-v72\.9(?![\d.])/.test(fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8')));
   ok(cacheStale.length === 0, 'and no gate still names the old shell cache (' + cacheStale.join(',') + ')');
 }
 
-console.log('[6] inline script syntax and the OTA tail');
+console.log('[5] inline script syntax and the OTA tail');
 {
   const re = /<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g;
   let m, blocks = 0, bad = 0;

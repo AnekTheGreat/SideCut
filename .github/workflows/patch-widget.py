@@ -594,9 +594,18 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
                 if (am != null) music = am.isMusicActive();
             } catch (Exception ignored) {
             }
-            if (!sent) {
-                // No session of ours to hand it to: fall back to the
-                // system-wide key, exactly as every earlier build did.
+            // 72.9 - ALWAYS GIVE THE PRESS A SECOND ROUTE.
+            //
+            // startService from a backgrounded app is refused outright on
+            // Android 8+ (the call throws), and when it is not refused it can
+            // still reach an instance that is not the one holding the session.
+            // Either way the older builds answered by opening the app, which is
+            // exactly the report: with SideCut alive in the background, pressing
+            // play on the widget dragged you into the app instead of starting
+            // the song. The system media key reaches whichever player actually
+            // holds the session, so it is dispatched too whenever nothing is
+            // audibly playing yet - i.e. this press is a resume, not a pause.
+            if (!sent || !music) {
                 try {
                     AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
                     if (am != null) {
@@ -607,16 +616,20 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
                 }
             }
             if (!sent && !music) {
-                // Nothing is playing and there is no session of ours to move:
-                // open the app rather than leaving the press unanswered.
-                try {
-                    Intent open = context.getPackageManager()
-                            .getLaunchIntentForPackage(context.getPackageName());
-                    if (open != null) {
-                        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        context.startActivity(open);
+                // Nothing is playing, and there was no session of ours to move
+                // either: open the app rather than leaving the press unanswered.
+                // Only for a play - a prev/next with nothing playing has nothing
+                // to move on to, so it stays silent.
+                if (code == KeyEvent.KEYCODE_MEDIA_PLAY || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+                    try {
+                        Intent open = context.getPackageManager()
+                                .getLaunchIntentForPackage(context.getPackageName());
+                        if (open != null) {
+                            open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            context.startActivity(open);
+                        }
+                    } catch (Exception ignored) {
                     }
-                } catch (Exception ignored) {
                 }
             }
         }

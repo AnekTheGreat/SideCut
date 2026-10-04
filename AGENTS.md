@@ -1,6 +1,150 @@
 # SideCut — repository memory
 
 
+## 73 (Oct 3, 2026 · 8:57 PM EDT): lyrics follow the voice by syllable, saves can be stopped, new releases stop repeating, and the widget plays without opening the app
+- **WHY 73 AND NOT 72.10.** The third number stops at nine, so a `72.9` line is closed - 71.9 is the last 71 and the
+  release after it is 72.0, so the release after 72.9 is **73**. This work was prepared as `72.9` and ships as `73`; only
+  the number moved, which is why `dev/repin-73.mjs` carries just the mechanical sweep and two needle retargets rather
+  than a new feature gate.
+- **THE ADJACENT-ENTRY PIN DOES NOT MOVE THIS RELEASE.** A and B rename the HEAD, not the history: the entry below it
+  is still 72.8.1, so `PREV` stays `'72.8.1'` in all twenty gates. An earlier experimental sweep moved it to `'72.9'`
+  and broke every one of them - the repin now names those gates in `PREV_GATES` and asserts the pin is still there
+  (`ADJACENT_STAYS`), with no `PREV_MOVES` at all. **A repin that renumbers the head must leave the adjacent pin alone.**
+- **`dev/repin-73.mjs`**: `OLDVER='72.9'` → `NEWVER='73'`, 89 edits / 48 files, idempotent, plus F1-F6 (the six
+  stale-cache sweeps, `v72\.8\.1` → `v72\.9`) and F7 (test-6137/6138's comma-less regex-literal head pin).
+- **`dev/test-73.mjs`** (renamed from `test-729.mjs`, **80 checks, all pass**) is the release's gate; section [7] now
+  asserts the adjacent-entry pin stayed put as well as the build and cache moves.
+- **The owner's ask, verbatim**: "The lyrics highlight word by word everything is just completely off. It should be
+  like Spotify ... for songs with multiple languages in them it is completely off if it changes tempo from slow to fast
+  or vice versa", plus an X on long saves, fewer duplicate new releases, a one-month cap on the Home bubble, the widget
+  resuming playback without dragging you into the app, and "make the instructions to use the app and explain the vast
+  amount of features easier. Then add more features".
+- **1. LYRICS ARE WEIGHED IN SYLLABLES, NOT CHARACTERS.** This is the root of the "completely off" report on a
+  bilingual line and on a song that changes tempo. `scPaceWords` weighted every word by `w.textContent.length`, which
+  is wrong in both directions: an English word of nine letters is about three syllables, a two-character Han word is
+  two. The Latin word therefore out-held its real delivery while the CJK word flashed past. The pacer now carries a
+  **nested `const scWordWeight = function(word){...}`** — a vowel run opens a Latin syllable (0.6) with consonants at
+  0.15, and every CJK / kana / Hangul / Thai sound is 1 — and the rate is `Math.max(1.6, Math.min(7, lineRate * 1.12))`,
+  i.e. **syllables per second**, where real singing sits (ballad ~2, fast verse ~6). The old clamp was characters per
+  second at `[6, 14]`.
+- **WHY THE HELPER IS NESTED.** `test-614.mjs` and `test-7281.mjs` lift `scPaceWords` out of the page with `new
+  Function(...)` and call it against a fake DOM. A top-level `scWordWeight` would be an undefined reference inside that
+  extraction; nested inside `scPaceWords` it travels with the slice for free. The only gate text that moved is the
+  pinned rate line in `test-614.mjs` (repin F8a) and the delay clamp in `test-7281.mjs` (F8b).
+- **2. THE LETTER WAVE CAN SPREAD FURTHER.** `step = Math.max(14, Math.min(90, step))` became
+  `Math.max(11, Math.min(180, step))`: at 90ms a nine-letter word's wave finished while the singer was still on it, so
+  the light ran on after the word. The `scEnsureLetterSpans(w, (span * 1000) / Math.max(1, (w.textContent || '').length))`
+  call site, the `transition-delay` template and both CSS selectors `test-714.mjs` pins were left byte-identical.
+- **3. EVERY LONG SAVE HAS AN X.** `scDlChip(title)` is the one cancellable progress chip (same look as the mix chip
+  from 56.9.5, now with a real button because `pointer-events:none` is gone). "Download to phone"
+  (`downloadPlaylistToDevice`) uses it and breaks between files; the crossfaded mix grew `mixCancelBtn`, `mixCancelled`
+  and a single `mixStopped()` that is polled between chunks in every phase (6 call sites). Cancelling saves nothing
+  and says so. **No gate pinned any of this code**, so nothing else moved.
+- **4. NEW RELEASES ARE DE-DUPLICATED AND MONTH-BOUNDED.** `window.__scReleaseList(maxDays)` is a new global next to
+  `__scPruneJunkReleases`: it flattens `pinnedReleases` once, keys each row on the normalised title + day, and drops
+  anything older than `maxDays`. The Home bubble (`renderNewReleases`), the bubble overlay (`__scHbPaintRelRows`), the
+  bubble count and the Discover popup all read it — the popup passes `0` (no bound), the three bubble surfaces pass
+  `31`. That is what turned six identical "Ghostface Killah" rows into one.
+- **5. THE WIDGET ANSWERS A PLAY.** `.github/workflows/patch-widget.py` now dispatches the system media key whenever
+  `!sent || !music`, not only when `startService` threw. `startService` from a backgrounded app is refused on Android
+  8+ (it throws) and can still land on an instance that is not the session holder, and both cases used to end in
+  "open the app". The app is now opened only for a play press with nothing playing and no session of ours. **This is
+  the CI-only half — it ships through the widget injector and `test-7251.mjs`'s route assertion was retargeted (F9).**
+- **6. THE GUIDE IS A MAP.** Settings → More has a new collapsible **"What SideCut can do — every feature in one
+  place"** (`collapsibleFeatureMap`, wired through the existing `setupCollapsible`), each line naming where to find it.
+  The lyrics sheet gained a **Copy** chip (`lyricsCopyBtn`) that goes through the existing `copyTextToClipboard`, and
+  `lyricsWwInfo` now explains the pacing and the ±0.5s nudge. No gate pinned any of that text.
+- **REPIN.** `dev/repin-729.mjs` (OLDVER `72.8.1` → NEWVER `72.9`), 90 edits / 49 files, idempotent, with the bespoke
+  moves F1–F6 (the six stale-cache sweeps, retargeted `v72\.8` → `v72\.8\.1`), F7 (test-6137/6138's comma-less
+  regex-literal head pin), F8a/F8b (the two lyrics gates) and F9 (test-7251's widget route). **The needles are written
+  with `String.raw` and pasted verbatim** — one round of escaping too many is how a retarget silently no-ops and
+  reports `already in place`.
+- **`dev/test-729.mjs`** — **80 checks, all pass.** [1] release metadata; [2] the pacer is lifted out and RUN: the
+  two-character CJK word in `beautiful 素敵 song` owns 0.36 of the schedule (length weighting gave 0.13); [3] the
+  release-list builder is lifted out and RUN against four copies of one drop under two artist spellings plus a
+  40-day-old drop; [4] the cancel path; [5] the widget's second route; [6] the feature map and the Copy chip; [7] the
+  repin; [8] syntax + OTA tail.
+- **`test-614.mjs` has ONE pre-existing red** on `count('SC_RELEASE_FETCH') === 7` (the file carries 8, on HEAD too).
+  It is not this release's doing.
+
+
+## 72.8.1 (Oct 3, 2026 · 7:05 PM EDT): the letter-by-letter wave is paced, and the Last.fm card comes back out
+- **The owner's ask, verbatim**: "I don't think there's a point to that and letter by letter lyrics needs to be more
+  accurate and more flowy". Two things, one fix release: **72.8's scrobbling is removed outright**, and the lyrics wave
+  is re-paced.
+- **1. LAST.FM IS GONE.** The settings card, the whole scrobbler module (`lfMd5`, `lfSig`, `lfPost`, `lfNowPlaying`,
+  `lfScrobble`, `lfFlushQueue`, `lfConnect`, `lfDisconnect`, the six `sidecut_lastfm_*` storage keys and
+  `window.scLastfm`) and both hook lines are removed, so `recordPlay` / `commitPlay` read exactly as they did before
+  72.8 — one plain `recordListeningDay();` and one plain `scSidecarSet(t.id, { playCount: t.playCount });`. **The one
+  use of Last.fm that STAYS is the cover-art lookup** (`fetchCoverFromLastFM`, `https://ws.audioscrobbler.com/2.0/?
+  method=track.search`, and the 64.x changelog line that names it): that predates the scrobbler by eight versions and is
+  not what was removed. The gates therefore assert the REMOVED FEATURE's identifiers, not the word "Last.fm" — an
+  `indexOf('Last.fm') === -1` assertion is a false failure waiting to happen.
+- **THE KEYED-SUB TRAP (the lesson of this release).** The two hooks were first written as ordinary keyed `sub`s whose
+  `key` was the hook line itself — `window.scLastfm.nowPlaying(t)`. **A `key` means "this is already applied", and that
+  string is present BEFORE the patch**, so the sub reported `already in place` and left both hooks in the file, while
+  everything else applied cleanly (`9 applied, 3 already in place`). The patch grew a `stripHook(h, label, hook,
+  keep)` helper: it is a no-op only when the hook line is GENUINELY absent, and it anchors on `keep + hook` so it can
+  never half-remove. Lesson: **for a text REMOVAL the idempotence marker has to be the aftermath, never the thing being
+  removed.**
+- **2. THE LETTER WAVE WAS EVEN, WHICH IS WHY IT DRIFTED.** A word's slice of the line was already weighted by the
+  word's own length, but INSIDE that slice every letter got an equal step — an `i` and a `W` were lit for the same
+  amount of time — and the travelling glow ran on a hard-coded `transition-delay: i * 26ms` that knew nothing about
+  the song. Both are now paced: `scLetterWeight(ch)` (wide 1.35 / ordinary 1 / narrow 0.45 / space 0.3) folds into the
+  lit count, and `scEnsureLetterSpans(wordEl, letterMs)` takes the delay from `(span * 1000) / word length`, clamped to
+  `[14, 90]ms` and remembered per word in `dataset.letterMs` so a re-pace only rebuilds when it actually moved. The
+  letters also carry an eased `cubic-bezier(0.22,0.61,0.36,1)` 0.3s transition now instead of the linear 0.26s.
+  **`test-714.mjs`'s two CSS selectors were left byte-identical** (`#lyricsText .lyric-word .lyric-letter{` once,
+  `… .lyric-letter.lit{` once) — only its assertions about the wave's CODE moved.
+- **THE PACING IS MEASURED, NOT ASSERTED.** `dev/test-7281.mjs` lifts `lettersOn`, `scEnsureWordSpans`,
+  `scEnsureLetterSpans`, `clearLetters`, `scLetterWeight` and `scPaceWords` out of the page with `new Function`, hands
+  `scPaceWords` a fake line, and walks time forward until the light leaves the first letter. `'Wi'` holds it **3.00×**
+  as long as `'iW'` — the same two letters, reversed, same slice width — and an even split per letter can only ever
+  produce `1.00`. That ratio is the release; the test proves it rather than describing it.
+- **`dev/patch-7281.mjs`** (`VERSION='72.8.1'`, `OLDVER='72.8'`, `STAMP='October 3, 2026 \\u00b7 7:05 PM EDT'`, 8 notes,
+  `CACHE` derived). Version, changelog head, sw cache, the two `cut()` blocks (card + module), the two `stripHook`
+  removals, `scLetterWeight`, the rewritten letters block, `scEnsureLetterSpans`, the CSS transition, and the
+  two-newline OTA tail. `cut(h, label, start, end, key)` removes a whole block by its own boundaries, so the module's
+  ~260 lines never have to be restated in the patch. First run `9 applied, 3 already in place` (the two hooks were the
+  false "already"), after the `stripHook` fix `2 applied, 10 already in place`, re-run `0 applied, 12 already in place`.
+- **`dev/repin-7281.mjs` — 80 edits / 43 files**, second run 0, "no stale pin left in any gate". `PREV_MOVES` moves
+  test-713..**test-728** from `'72.7.1'` -> `'72.8'` (19 entries). `KEEPS_ITS_VERSION` = test-705.mjs / test-70.mjs.
+  **THE PREFIX TRAP IS THE OPPOSITE WAY ROUND THIS TIME — and it is now documented in the file.** `'72.8'` IS a prefix
+  of `'72.8.1'`, so A anchors on `"';"` and B on `"',"`, and E keeps `(?![\\d.])`. Bespoke **F1–F6** retarget the
+  stale-cache sweep needles in test-7251/7252/726/727/7271/**728** at `sidecut-shell-v72.8(?!\\d.)`.
+- **F7 — THE SWEEP MISSED TWO GATES, AND WHY.** test-6137.mjs and test-6138.mjs pin the head as a REGEX LITERAL:
+  `/const CHANGELOG = \\[\\n  \\{ version: '72.8'/`. There is **no trailing comma**, so step B (which needs `',`) never
+  saw it, and both gates reported `the newest entry sits inside CHANGELOG` as a FAIL. A bespoke pair fixes them, and
+  the repin's own stale sweep grew a third needle for that shape (`"{ version: '<old>'/"`). Lesson: **a version pin can
+  hide inside a regex literal; the sweep must look for the shape, not just the string.**
+- **F8 — test-714.mjs.** Its `[5]` block pinned the OLD wave's code, so it is replaced wholesale by `bespokeCut`
+  (anchors `// The wave itself.` .. `// The styles that make it read as a wave.`), which rewrites the assertions to the
+  weighted pacer. `bespokeCut` reports `bespoke already in place` on a re-run instead of a scary `start anchor missing`.
+- **`dev/test-728.mjs` WAS CUT DOWN, NOT DELETED.** It pinned the scrobbler; that feature is gone, so keeping those
+  assertions would be the gate lying. It now pins what survives — release metadata, the letter trough, the shared
+  `!important` chip rule, and (new) that the removal left nothing behind — at 63 checks. **`dev/test-7281.mjs` is the
+  new gate: 93 checks, all green.**
+- **THE OTA TAIL held for a fifth release.** Two newlines after `</html>`; `node dev/ota-bundle.mjs && node
+  dev/ota-bundle-play.mjs && node dev/ota-fixpoint.mjs` -> **pass 2 fixed point** at 878190 / 878198, and after the
+  last comment fix it re-settled in **one pass** at `ota/` + root manifest/updates **878243**, `ota-play/` **878251**,
+  all 5 entries OK. The channel still publishes only the FIRST SIX notes, and this head carries 8.
+- **Gates green after the bump**: test-713..test-7271 (test-718 46, test-719 70, test-720 66, test-721 54, test-722 79,
+  test-723 87, test-724 79, test-725 103, test-7251 109, test-7252 57, test-726 74, test-727 59, test-7271 59),
+  test-728 63, test-7281 93, test-714 140, test-619 55, test-662 75, test-play-copy 28, test-651 35, test-6641 128,
+  test-6642 75, test-66421..66427 all green, test-612/6136/6139 green, ota-guard 20/20, ota-update 52/52,
+  ota-loop 26/26, ota-bootapply 24/24, both bundle `--check` OK, `rgb-stall-check` 27/0.
+- **PRE-EXISTING REDS, confirmed NOT caused by this work** — each re-run on a clean `git archive HEAD` copy in
+  `/tmp/sc-head`: test-705.mjs 223/7, test-617.mjs 66/1, test-6057.mjs 64/4, test-6058.mjs 47/1, test-66428.mjs 71/2
+  (72/1 here — flaky), test-66422.mjs 85/2, media-controls-check 18/1, native-snapshot-check 12/1, audio-focus-check
+  35/3, batch-635-check 35/7, v604-check 45/1, v606-check 40/7, v607-check 46/2. **Only test-6137/6138 were genuinely
+  broken by this release**, and both are fixed.
+- **NOT VERIFIED HERE**: no device, so the sweep cannot be watched or heard; the pacing is proven by running the shipped
+  functions, not by seeing them on screen. Layout, audio and the `android/` widget remain CI-only.
+- **APPROVED DESIGN DECLINE, unchanged**: Spotify -> MP3 ripping stays refused (DRM/ToS).
+- **NEXT RELEASE**: a fix inside 72.8.1 -> **72.8.2** (`dev/patch-7282.mjs` + `repin-7282.mjs` + `test-7282.mjs`), or a
+  feature release -> **72.9**. `PREV_MOVES` will need test-713..**test-7281** moved from `'72.8'` -> `'72.8.1'`, and the
+  bespoke stale-cache needles in test-7251/7252/726/727/7271/728/7281 retargeted at `sidecut-shell-v72.8.1(?![\\d.])`.
+
 ## 72.8 (Oct 3, 2026 · 5:45 PM EDT): scrobbling to Last.fm, and the lyrics chips light up
 - **The owner's ask, verbatim**: "Next feature: Last.fm scrobbling | Letter by letter doesn't work and the button
   itself should be highlighted if you click on it same thing with word by word". Feature release, three things.
@@ -68,8 +212,9 @@
   above rather than on a device.
 - **APPROVED DESIGN DECLINE, unchanged**: Spotify -> MP3 ripping stays refused, so scrobbling is the only Last.fm
   surface and it deliberately sends no audio, only the five metadata fields the API takes.
-- **NEXT RELEASE**: a fix inside 72.8 -> **72.8.1** (`dev/patch-7281.mjs` + `repin-7281.mjs` + `test-7281.mjs`), or a
-  feature release -> **72.9**. `PREV_MOVES` will need to move test-713..**test-728** from `'72.7.1'` -> `'72.8'`.
+- **SUPERSEDED BY 72.8.1**: the scrobbling this section describes was removed one release later at the owner's
+  request, and the letter wave was re-paced then too. This section is kept as the record of what 72.8 shipped and why —
+  it is no longer a description of the app.
 
 ## 72.7.1 (Oct 3, 2026 · 4:23 PM EDT): the lyrics toast tells you which songs it means
 - **The owner's ask, verbatim**: "if it says lyrics found for x amount of songs then if you click on the toast it
