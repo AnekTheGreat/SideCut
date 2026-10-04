@@ -1,3 +1,18 @@
+// 73.1.4 - the lyrics are timed by the model listening to the recording, and a
+// tap on a line only moves the highlight.
+//
+// The owner's words for this release: "the ai should be doing that work to
+// analyze tempo and everything in the song to get the right lyrics timing and
+// clicking on a line to change the highlight shouldn't change the audio just
+// highlight". Two fixes:
+//
+//   * the automatic timing path now asks the model FIRST, with the song's own
+//     bytes attached, so it hears the tempo, the beat, the intro and the chorus
+//     returns instead of the app laying the words out by how long each line is
+//     (scTimeLyricsFromOnsets stays only as the offline stand-in); and
+//   * a tap on a lyric line is a highlight, not a seek - the old tap-to-seek
+//     helper is gone and the tracker holds the tapped line for a few seconds.
+//
 // 73.1.3 - the lyrics can be lined up by hand, and AI Sync sends the recording.
 //
 // The owner's words for this release: "Lyric timing: Both" - they took the offer
@@ -64,9 +79,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1.3'; /* repinned by dev/repin-7313.mjs */
-const PREV = '73.1.2'; /* repinned by dev/repin-7313.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1.3';
+const VER = '73.1.4';
+const PREV = '73.1.3';
+const SHELL_CACHE = 'sidecut-shell-v73.1.4';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
@@ -74,7 +89,7 @@ const PREV_GATES = [
   'test-718.mjs', 'test-719.mjs', 'test-720.mjs', 'test-721.mjs', 'test-722.mjs',
   'test-723.mjs', 'test-724.mjs', 'test-725.mjs', 'test-7251.mjs', 'test-7252.mjs',
   'test-726.mjs', 'test-727.mjs', 'test-7271.mjs',  'test-728.mjs', 'test-7281.mjs',
-  'test-7313.mjs',
+  'test-7314.mjs',
 ];
 
 let pass = 0, fail = 0;
@@ -82,8 +97,8 @@ const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, conso
 const count = (n) => src.split(n).length - 1;
 // Split so no literal build number or cache name the repin rewrites is ever
 // spelled in this file - a bare one here would be rewritten with it.
-const VER_BEFORE = '73' + '.1' + '.2';
-const PREV_BEFORE = '73' + '.1' + '.1';
+const VER_BEFORE = '73' + '.1' + '.3';
+const PREV_BEFORE = '73' + '.1' + '.2';
 const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + VER_BEFORE.split('.').join('\\.') + '(?![\\d.])');
 
 console.log('[1] release metadata');
@@ -456,16 +471,16 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
 
 console.log('[9] the repin moved every gate, including the neighbour');
 {
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7313.mjs'), 'utf8');
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7314.mjs'), 'utf8');
   ok(repin.indexOf("const OLDVER = '" + VER_BEFORE + "';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '73.1.3';") !== -1, 'and to');
+  ok(repin.indexOf("const NEWVER = '73.1.4';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
   // Both spellings carry each dot as `\.` or `[.]`, so neither the cache move
   // nor the stale check can mistake the needle for a cache literal.
-  ok(repin.indexOf("SWEEP_ESC_NEW = 'sidecut-shell-v73' + BS + '.1' + BS + '.2(?![' + BS + 'd.])'") !== -1 &&
-     repin.indexOf("SWEEP_BRK_NEW = 'sidecut-shell-v73[.]1[.]2(?![' + BS + 'd.])'") !== -1,
-    'the stale-cache sweeps are retargeted to 73.1.2, built from character codes');
-  ok(repin.indexOf("SWEEP_ESC_OLD = 'sidecut-shell-v73' + BS + '.1' + BS + '.1(?![' + BS + 'd.])'") !== -1, 'from the spelling repin-7312 left behind');
+  ok(repin.indexOf("SWEEP_ESC_NEW = 'sidecut-shell-v73' + BS + '.1' + BS + '.3(?![' + BS + 'd.])'") !== -1 &&
+     repin.indexOf("SWEEP_BRK_NEW = 'sidecut-shell-v73[.]1[.]3(?![' + BS + 'd.])'") !== -1,
+    'the stale-cache sweeps are retargeted to 73.1.3, built from character codes');
+  ok(repin.indexOf("SWEEP_ESC_OLD = 'sidecut-shell-v73' + BS + '.1' + BS + '.2(?![' + BS + 'd.])'") !== -1, 'from the spelling repin-7313 left behind');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
@@ -570,6 +585,83 @@ console.log('[12] AI Sync sends the recording, not only the words');
   ok(roundTrips(10), 'a short buffer round-trips');
   ok(roundTrips(0x8000), 'and one exactly the old chunk size, where the padding used to land (' + 0x8000 + ')');
   ok(roundTrips(200000), 'and one several chunks long, byte for byte');
+}
+
+console.log('[13] the model does the timing and a tap only lights the line');
+{
+  // AI first: the automatic path asks the model, with the song's own bytes,
+  // before it falls back to the energy stand-in.
+  ok(src.indexOf('var scAiTimedTracks = {};') !== -1, 'the auto path remembers which songs it already asked about');
+  ok(src.indexOf('if(_aiGeminiKey && t.file && !scAiTimedTracks[String(tid)]){') !== -1,
+    'the model is asked first when a key is set and the song is here');
+  ok(src.indexOf('var _aiOk = await aiSyncLyrics(true);') !== -1 && src.indexOf('if(_aiOk) return true;') !== -1,
+    'and a model answer is used instead of the length-based layout');
+  ok(src.indexOf('var lrc = await scSyncLyricsFromAudio(t, currentLyricsText);') !== -1,
+    'with the energy measurement left as the stand-in for a song the model cannot hear');
+  ok(src.indexOf('if(silent && scAiTimedTracks[String(t.id)]) { return false; }') !== -1,
+    'the automatic ask happens once per song, while the button can always retry');
+  ok(src.indexOf('currentLyricsSynced && !scLyricsLookEvenlySpaced(rawLyrics) &&') !== -1,
+    'and a stored length-based timing is still allowed to be re-timed by the model');
+  ok(src.indexOf('Listen for the tempo, the beat, the instrumental sections and the returning choruses') !== -1,
+    'the prompt names the music the model should read');
+  ok(count('Listen for the tempo') === 1, 'and that guidance appears once');
+
+  const aiAt = src.indexOf('async function aiSyncLyrics(silent) {');
+  const aiEnd = src.indexOf('  // Wire up highlight + AI sync buttons', aiAt);
+  ok(aiAt !== -1 && aiEnd > aiAt, 'the sync can be lifted out of the page');
+  const aiBody = src.slice(aiAt, aiEnd);
+  ok(aiBody.indexOf('return true;') !== -1, 'and the sync reports success so the caller can skip the stand-in');
+  ok(aiBody.indexOf('scBytesToBase64(_arr)') !== -1 && aiBody.indexOf('inline_data: { mime_type: _mime, data: _b64 }') !== -1,
+    'still sending the recording itself, not only the words');
+
+  // Highlight only: the tap path no longer writes the playhead.
+  ok(count('seekLyricsTo') === 0, 'the old tap-to-seek helper is gone');
+  ok(src.indexOf('audio.currentTime = t;') === -1, 'so no tap path writes the playhead any more');
+  ok(src.indexOf('if (line) { ev.stopPropagation(); scHighlightTapLine(line); }') !== -1,
+    'a tap on a line calls the highlight helper');
+  ok(src.indexOf('function scHighlightTapLine(el){') !== -1, 'which lights the line and scrolls it into view');
+  ok(src.indexOf('lyricsTapHoldUntil = Date.now() + 5000;') !== -1, 'and holds it so the tracker cannot steal it straight back');
+  ok(src.indexOf('if (!_tapHeld && currentIdx !== lastLyricsIdx) {') !== -1 &&
+     src.indexOf('if (!_tapHeld2 && targetIdx !== lastLyricsIdx) {') !== -1,
+    'the playback tracker respects the hold on both the synced and the plain paths');
+  ok(src.indexOf('if (lyricsLineUpOn) {') !== -1 && src.indexOf('t: audio.currentTime }') !== -1,
+    'and a Line up tap still only READS the clock to pin the line');
+}
+
+console.log('[14] Settings gains an Important tab beside Donate');
+{
+  ok(count('id="settingsTabImportant"') === 1, 'the strip has one Important tab');
+  ok(count('id="settingsPaneImportant"') === 1, 'and one Important pane');
+  const order = ['settingsTabDonate', 'settingsTabImportant', 'settingsTabGlow'].map((id) => src.indexOf('id="' + id + '"'));
+  ok(order.every((i) => i !== -1) && order[0] < order[1] && order[1] < order[2],
+    'and it sits right after Donate, before Glow');
+
+  // The Gemini key moved out of Support into Important - one field, one home.
+  ok(count('id="aiGeminiKeyInput"') === 1, 'the Gemini key field appears exactly once');
+  const paneAt = src.indexOf('id="settingsPaneImportant"');
+  const keyAt = src.indexOf('id="aiGeminiKeyInput"');
+  const widgetAt = src.indexOf('id="settingsPaneWidget"');
+  ok(paneAt !== -1 && keyAt > paneAt && keyAt < widgetAt, 'and it lives inside the Important pane');
+  const supAt = src.indexOf('id="settingsPaneSupport"');
+  const moreAt = src.indexOf('id="settingsPaneMore"');
+  const sup = src.slice(supAt, moreAt);
+  ok(sup.indexOf('aiGeminiKeyInput') === -1, 'the Support pane no longer carries the key field');
+  ok(sup.indexOf('id="aiChatMessages"') !== -1 && sup.indexOf('sidecutsupport@gmail.com') !== -1,
+    'while its chat and contact card stay put');
+
+  // The feature map moved out of More and into Important.
+  ok(count('id="collapsibleFeatureMap"') === 1, 'the feature map appears exactly once');
+  const mapAt = src.indexOf('id="collapsibleFeatureMap"');
+  ok(mapAt > paneAt && mapAt < widgetAt, 'and it sits inside the Important pane, not More');
+  ok(src.slice(supAt, moreAt).indexOf('collapsibleFeatureMap') === -1, 'More no longer lists it');
+
+  // The tab is wired like every other one.
+  ok(src.indexOf("$('settingsPaneImportant').style.display = tab === 'important' ? '' : 'none';") !== -1,
+    'the pane shows and hides with its tab');
+  ok(src.indexOf("$('settingsTabImportant').addEventListener('click', () => showSettingsTab('important'));") !== -1,
+    'and the tab button opens it');
+  ok(src.indexOf("'donate', 'important', 'refresh'") !== -1, 'the new tab is a known settings destination');
+  ok(src.indexOf("if(tab === 'ai') tab = 'important';") !== -1, 'and the old AI deep link lands on it too');
 }
 
 console.log('');
