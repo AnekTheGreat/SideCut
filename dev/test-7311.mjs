@@ -1,31 +1,35 @@
-// 73.1 - the lyrics with no timings are timed from the song's own audio instead
-// of an even split, and every converter card reads "... to MP3" with a new lossless
-// output (AIFF) behind it.
+// 73.1.1 - the letter-by-letter wave now crosses the whole word, and a song with
+// a long instrumental opening is timed from where the singing starts.
 //
-// This is a fix inside 73, not a new release line: the third number stops at nine,
-// so the release after 73 is 73.1, exactly as 72.8 was followed by 72.8.1.
+// This is a fix inside 73.1, not a new release line: 73.1 shipped and is already
+// published, so the fixes land as 73.1.1 - exactly as 72.8 was followed by 72.8.1.
 //
 // The owner's words for this fix:
-//   * "Lyrics is still very off no language change or not this song is a good
-//     example it's really not getting the lyrics right at all";
-//   * "make this even all of them should say to mp3 and get more formats to
-//     convert to".
+//   * "Letter by letter should be like a wave not just illuminate the first
+//     letter";
+//   * "for songs with music in the beginning the lyrics is still fully off".
 //
-// The song in the report ("On The Loose" by Sukha) is the case: LRCLIB carries it
-// in plain text with no timings at all, it mixes Italian and Punjabi, and the only
-// automatic timing was a model asked to "distribute lines evenly across the song
-// duration". An even split follows the LINE COUNT, so a short intro and a repeated
-// chorus push every later line away from the voice - which is exactly what the
-// screenshot shows.
+// The first was a double clock. The pacer already lights letter i at its own
+// weighted share of the word, and the CSS then gave that letter another
+// transition-delay of i*step before its fade could even begin - so the wave was
+// still crossing the word long after the word was over, and the pacer wiped the
+// tail when the line moved on. Only the first letter or two were ever seen to
+// light. The delay is gone; the wrap carries a fade now, sized from the word's
+// own window, and WHEN a letter lights is the pacer's clock again.
 //
-// [7] lifts the shipped measuring code out of the page and RUNS it: it lays the
-// lines out by syllables and snaps each start onto the loudest energy rise within
-// a second of where the words put it. [8] runs the shipped AIFF writer against a
-// synthetic buffer and reads the container back byte by byte - that is how the
-// header size bug (8 bytes short, so every write ran past the buffer) was caught.
+// The second was an anchor. The layout began at a lead-in measured from 0, so a
+// track with a long intro pinned its first line to the top of the file and spread
+// every later line from there - and the first line was the one line the snap loop
+// never touched. The first rise that is clearly singing anchors the layout now,
+// and every line is snapped, the first one included.
 //
-// Version note: 72.8.1 is a PREFIX of nothing here, but '73' is a prefix of '73.1'
-// - the repin is checked for that, not this file.
+// [7] lifts the shipped measuring code out of the page and RUNS it: the synthetic
+// long-intro envelope proves the first line lands on the entrance and not on 0.
+// [8] runs the shipped AIFF writer against a synthetic buffer and reads the
+// container back byte by byte.
+//
+// Version note: '73' is a prefix of '73.1', which is a prefix of '73.1.1' - the
+// repin is checked for that, not this file.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,28 +39,27 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1'; /* repinned by dev/repin-731.mjs */
-const PREV = '73'; /* repinned by dev/repin-731.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1';
+const VER = '73.1.1'; /* repinned by dev/repin-7311.mjs */
+const PREV = '73.1'; /* repinned by dev/repin-7311.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1.1';
 
-// The gates that carry the adjacent-entry pin. repin-731 moves all of them.
+// The gates that carry the adjacent-entry pin. repin-7311 moves all of them.
 const PREV_GATES = [
   'test-713.mjs', 'test-714.mjs', 'test-715.mjs', 'test-716.mjs', 'test-717.mjs',
   'test-718.mjs', 'test-719.mjs', 'test-720.mjs', 'test-721.mjs', 'test-722.mjs',
   'test-723.mjs', 'test-724.mjs', 'test-725.mjs', 'test-7251.mjs', 'test-7252.mjs',
   'test-726.mjs', 'test-727.mjs', 'test-7271.mjs', 'test-728.mjs', 'test-7281.mjs',
-  'test-731.mjs',
+  'test-7311.mjs',
 ];
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
 const count = (n) => src.split(n).length - 1;
-// Split so no literal old build number or old cache name is ever spelled in this
-// file - the repin sweep rewrites those strings, and a bare one here would be
-// rewritten with it.
-const V7 = '7' + '3';
-const PREV_BEFORE = '72' + '.8.1';
-const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + V7 + '(?![\\d.])');
+// Split so no literal build number or cache name the repin rewrites is ever
+// spelled in this file - a bare one here would be rewritten with it.
+const VER_BEFORE = '73' + '.1';
+const PREV_BEFORE = '7' + '3';
+const OLD_CACHE_RE = new RegExp('sidecut-shell-v' + VER_BEFORE.replace('.', '\\.') + '(?![\\d.])');
 
 console.log('[1] release metadata');
 {
@@ -168,7 +171,7 @@ console.log('[2] the pacer is measured in syllables, so scripts move together');
     'and nothing weights a word by its raw character count any more');
   ok(src.indexOf('const scWordWeight = function(word){') !== -1, 'the syllable weight is its own helper');
   ok(src.indexOf('step = Math.max(11, Math.min(180, step));') !== -1,
-    'the letter wave is allowed to spread across a whole word instead of piling up at the front');
+    'the letter fade is sized off the word window and clamped at both ends');
   ok(src.indexOf('step = Math.max(14, Math.min(90, step));') === -1, 'and the old narrow clamp is gone');
 
   function slide(paceSrc){ return paceSrc.indexOf('scWordWeight(w.textContent)') !== -1; }
@@ -278,8 +281,6 @@ console.log('[7] words with no timings are timed from the song itself');
   ok(T && typeof T.time === 'function' && typeof T.env === 'function' && typeof T.even === 'function', 'the shipped timing code evaluates');
 
   if (T) {
-    // Scripts are counted as units, not letters: a two-character CJK word has to
-    // earn a real share of a bilingual line.
     ok(Math.round(T.syl('素敵') * 100) / 100 === 2, 'a two-character CJK word counts two units (' + T.syl('素敵') + ')');
     ok(T.syl('beautiful') > T.syl('bat'), 'and vowels weigh more than consonants in a Latin word');
 
@@ -314,8 +315,25 @@ console.log('[7] words with no timings are timed from the song itself');
     const sT = parse(snapped);
     ok(Math.abs(sT[1] - (pT[1] + 0.5)) < 0.03,
       'a line snaps onto the loudest rise near it (' + sT[1].toFixed(2) + 's, the rise is at ' + (pT[1] + 0.5).toFixed(2) + 's)');
-    ok(sT[0] === pT[0], 'while the first line is left where the lead-in put it');
+    ok(sT[0] === pT[0], 'while the first line is left where the layout put it');
     ok(sT[1] > sT[0] + 0.3 && sT[2] > sT[1] + 0.3, 'and the order survives the snap');
+
+    // 73.1.1 - a song with a long instrumental opening. The layout must start
+    // where the singing starts, not at the top of the file, and the FIRST line
+    // is the one that has to land on the entrance.
+    const introEnv = new Float32Array(Math.round(180 / hop));
+    introEnv[1200] = 1.0;   // 24s, the entrance
+    introEnv[1300] = 0.8;
+    introEnv[2500] = 0.7;
+    introEnv[4000] = 0.6;
+    const iT = parse(T.time(lines, 180, introEnv, hop));
+    ok(iT[0] > 20 && iT[0] < 27,
+      'a long intro anchors the first line to the singing, not to the top of the file (' + iT[0].toFixed(2) + 's, it used to sit at 5.4s)');
+    ok(iT[1] > iT[0] + 0.3 && iT[2] > iT[1] + 0.3, 'and the rest follow it in order');
+    ok(src.indexOf('for(var q = 0; q < t.length; q++){') !== -1,
+      'every line is snapped, the first one included');
+    ok(src.indexOf('if(!(voiceStart > 0) || voiceStart > dur * 0.35) voiceStart = 0;') !== -1,
+      'and a stray spike past a third of the song cannot drag the words with it');
 
     ok(T.even('[00:01.00]a\n[00:11.00]b\n[00:21.00]c\n[00:31.00]d\n[00:41.00]e\n[00:51.00]f') === true,
       'an even split is recognised as the old guess');
@@ -337,6 +355,18 @@ console.log('[7] words with no timings are timed from the song itself');
   ok(src.indexOf("toast('Lyrics timed to this song', 2200)") !== -1, 'and it says so when it does');
   ok(src.indexOf('await blobToArrayBufferFallbackCrop(track.file)') !== -1 && src.indexOf('ctx.decodeAudioData(arr)') !== -1,
     'it measures the decoded audio, not the network');
+
+  // 73.1.1 - the letter wave is paced by the pacer, not by a second clock.
+  ok(src.indexOf("style=\"transition-duration:' + fade + 'ms\"") !== -1,
+    'each letter carries a fade, sized from the word it belongs to');
+  ok(count("transition-delay:' + Math.round(i * step)") === 0,
+    'and no additive delay is left - that second clock is what stalled the wave on the first letter');
+  ok(src.indexOf('var fade = Math.max(80, Math.min(300, Math.round(step * 2.4)));') !== -1,
+    'the fade is bounded at both ends, so a fast word still sweeps instead of lighting as a block');
+  ok(src.indexOf('if(frac < acc2){ upto = li + 1; break; }') !== -1,
+    'and WHEN a letter lights is still the pacer weighted clock');
+  ok(src.indexOf("words.forEach(function(w, wi){\n        if(wi !== litIdx){ clearLetters(w); return; }") !== -1,
+    'with every other word wiped back so no half-lit trail is left behind');
 }
 
 console.log('[8] every converter card leads with MP3 and AIFF is a real output');
@@ -367,7 +397,6 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
   ok(count("fmt === 'aiff' ? 'audio/aiff'") === 2, 'the library credits an AIFF as audio/aiff');
   ok(count("if(fmt === 'aiff'){") === 1, 'the MP4 handler routes AIFF as well, instead of falling through to its WAV branch');
 
-  // Run the shipped writer against a synthetic buffer and read the container back.
   const aAt = src.indexOf('  async function scEncodeAiffCooperative(buf, meta, onSlice){');
   const aEnd = src.indexOf('\n  async function scEncodeAudioCooperative(', aAt);
   ok(aAt !== -1 && aEnd > aAt, 'the AIFF writer can be lifted out of the page');
@@ -399,30 +428,28 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
 
 console.log('[9] the repin moved every gate, including the neighbour');
 {
-  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-731.mjs'), 'utf8');
-  ok(repin.indexOf("const OLDVER = '" + V7 + "';") !== -1, 'the repin says which build it moves from');
-  ok(repin.indexOf("const NEWVER = '73.1';") !== -1, 'and to');
+  const repin = fs.readFileSync(path.join(ROOT, 'dev', 'repin-7311.mjs'), 'utf8');
+  ok(repin.indexOf("const OLDVER = '" + VER_BEFORE + "';") !== -1, 'the repin says which build it moves from');
+  ok(repin.indexOf("const NEWVER = '73.1.1';") !== -1, 'and to');
   ok(repin.indexOf("const NEWCACHE = 'sidecut-shell-v' + NEWVER;") !== -1, 'deriving the cache, not typing it');
-  // The needle is written `v7[3]`, not `v73`: this release has no dot to escape,
-  // so a bare `v73` needle was itself rewritten by the cache sweep on the first
-  // run and the gate went hunting the release it was shipping.
-  ok(repin.indexOf('sidecut-shell-v7[3](?!') !== -1,
-    'the stale-cache sweeps are retargeted to this line, needle written raw');
-  ok(repin.indexOf('sidecut-shell-v72[.]9(?!') !== -1, 'from the line before it, which is what they hunted');
+  // 73.1 left the needle as `v7[3]`; with a dot back in the name the ordinary
+  // escaped and bracket spellings are safe again, because neither carries the
+  // literal dot the cache move and the stale check look for.
+  ok(repin.indexOf('sidecut-shell-v73\\.1(?!') !== -1 && repin.indexOf('sidecut-shell-v73[.]1(?!') !== -1,
+    'the stale-cache sweeps are retargeted to 73.1, needle written raw');
+  ok(repin.indexOf('sidecut-shell-v7[3](?!') !== -1, 'from the bracket-digit form repin-731 left behind');
   ok(repin.indexOf("bespoke('test-6137.mjs'") !== -1 && repin.indexOf("bespoke('test-6138.mjs'") !== -1,
     'and the comma-less changelog-head regex pin is retargeted');
-  ok(repin.indexOf("bespoke('test-727.mjs'") !== -1 && repin.indexOf('Spotify to MP3') !== -1,
-    'and the converter card the step text names moves with its new title');
   ok(repin.indexOf('esc(OLDCACHE)') !== -1, 'the cache move is derived, not typed');
-  ok(repin.indexOf("const PREV_OLD = '72.8.1';") !== -1 && repin.indexOf("const PREV_NEW = '" + V7 + "';") !== -1,
+  ok(repin.indexOf("const PREV_OLD = '" + PREV_BEFORE + "';") !== -1 && repin.indexOf("const PREV_NEW = '" + PREV + "';") !== -1,
     'and the adjacent-entry pin DOES move, because this release adds an entry above it');
 
   const stale = [];
   for (const name of fs.readdirSync(path.join(ROOT, 'dev')).sort()) {
     if (!/^test-.*\.mjs$/.test(name) && !/check\.cjs$/.test(name)) continue;
-    if (name === 'test-705.mjs' || name === 'test-70.mjs' || name === 'test-731.mjs') continue;
+    if (name === 'test-705.mjs' || name === 'test-70.mjs' || name === 'test-7311.mjs') continue;
     const t = fs.readFileSync(path.join(ROOT, 'dev', name), 'utf8');
-    if (t.indexOf("const VER = '" + V7 + "';") !== -1) stale.push(name + ' VER');
+    if (t.indexOf("const VER = '" + VER_BEFORE + "';") !== -1) stale.push(name + ' VER');
     if (t.indexOf("const VER = '" + PREV_BEFORE + "';") !== -1) stale.push(name + ' old VER');
     if (OLD_CACHE_RE.test(t)) stale.push(name + ' cache');
   }
@@ -430,7 +457,7 @@ console.log('[9] the repin moved every gate, including the neighbour');
 
   const left = PREV_GATES.filter((n) =>
     fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf("const PREV = '" + PREV + "';") === -1);
-  ok(left.length === 0, 'every one of the ' + PREV_GATES.length + ' adjacent-entry pins moved to ' + PREV + '(' + left.join(',') + ')');
+  ok(left.length === 0, 'every one of the ' + PREV_GATES.length + ' adjacent-entry pins moved to ' + PREV + ' (' + left.join(',') + ')');
   const behind = PREV_GATES.filter((n) =>
     fs.readFileSync(path.join(ROOT, 'dev', n), 'utf8').indexOf("const PREV = '" + PREV_BEFORE + "';") !== -1);
   ok(behind.length === 0, 'and none was left behind on the old neighbour (' + behind.join(',') + ')');

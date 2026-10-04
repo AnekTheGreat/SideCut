@@ -10680,27 +10680,48 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       kept.push(txt); weights.push(w); total += w;
     }
     if(kept.length < 2) return null;
+    var hop = hopSec || SC_ONSET_HOP;
+    // 73.1 - where the SINGING starts, not where the file starts. The layout used
+    // to begin at a lead-in measured from 0, so a song with a long instrumental
+    // opening pinned its first line to the top of the track and spread every
+    // later line from there - the whole lyric sat behind the voice, and the only
+    // line the snap loop never touched was the first one. The first rise that is
+    // clearly singing anchors the layout now, and past a third of the song a rise
+    // is not an entrance any more, so a stray spike cannot drag the words with it.
+    var voiceStart = 0;
+    if(env && env.length){
+      var peak0 = 0;
+      for(var m0 = 0; m0 < env.length; m0++){ if(env[m0] > peak0) peak0 = env[m0]; }
+      var strong = peak0 * 0.45;
+      for(var v = 0; v < env.length; v++){ if(env[v] >= strong){ voiceStart = v * hop; break; } }
+      if(!(voiceStart > 0) || voiceStart > dur * 0.35) voiceStart = 0;
+    }
     var lead = Math.min(6, Math.max(0.5, dur * 0.03));
-    var span = Math.max(1, dur - lead - Math.min(4, dur * 0.05));
+    var start = voiceStart > 0 ? voiceStart : lead;
+    var span = Math.max(1, dur - start - Math.min(4, dur * 0.05));
     var t = [], acc = 0;
     for(var j = 0; j < kept.length; j++){
-      t.push(lead + (acc / total) * span);
+      t.push(start + (acc / total) * span);
       acc += weights[j];
     }
-    var hop = hopSec || SC_ONSET_HOP;
     if(env && env.length){
       var peak = 0;
       for(var m = 0; m < env.length; m++){ if(env[m] > peak) peak = env[m]; }
       var floor = peak * 0.25;
       var win = Math.max(1, Math.round(SC_ONSET_PULL / hop));
-      for(var q = 1; q < t.length; q++){
+      // Every line is snapped, the first one included.
+      for(var q = 0; q < t.length; q++){
         var centre = Math.round(t[q] / hop);
-        var lo = Math.max(1, centre - win), hi = Math.min(env.length - 1, centre + win);
+        // The first line looks further FORWARD than back: with a long intro the
+        // estimate can sit well before the entrance, and the entrance is the one
+        // rise that has to win.
+        var lo = Math.max(0, centre - win);
+        var hi = Math.min(env.length - 1, centre + (q === 0 ? win * 3 : win));
         var bi = -1, bv = floor;
         for(var s = lo; s <= hi; s++){ if(env[s] > bv){ bv = env[s]; bi = s; } }
         if(bi >= 0) t[q] = bi * hop;
         // The search may not park a line on top of the one before it.
-        if(t[q] < t[q - 1] + 0.35) t[q] = t[q - 1] + 0.35;
+        if(q > 0 && t[q] < t[q - 1] + 0.35) t[q] = t[q - 1] + 0.35;
       }
     }
     function stamp(sec){
@@ -11289,14 +11310,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // singer had moved on; 11-180ms lets a nine-letter word spread across its
     // whole window instead of piling up at the start.
     step = Math.max(11, Math.min(180, step));
-    if(wordEl.dataset.letters !== '1' || wordEl.dataset.letterMs !== String(Math.round(step))){
+    // 73.1 - the delay used to be a SECOND CLOCK on top of the pacer's own. The
+    // pacer already lights letter i at its own weighted share of the word, so the
+    // extra i*step then pushed that letter's fade later by the same amount again:
+    // the wave was still crossing the word long after the word was over, the pacer
+    // wiped the tail when the line moved on, and only the first letter or two were
+    // ever seen to light - which is exactly "letter by letter just illuminates the
+    // first letter". The delay is gone, and WHEN a letter lights is the pacer's job
+    // again. What is sized here is how long each letter takes to fade, from the
+    // word's own window, so a fast word sweeps instead of lighting as one block.
+    var fade = Math.max(80, Math.min(300, Math.round(step * 2.4)));
+    if(wordEl.dataset.letters !== '1' || wordEl.dataset.letterMs !== String(Math.round(step)) || wordEl.dataset.letterFade !== String(fade)){
       var txt = wordEl.textContent || '';
       if(!txt) return [];
       var html2 = '';
       for(var i = 0; i < txt.length; i++){
-        html2 += '<span class="lyric-letter" style="transition-delay:' + Math.round(i * step) + 'ms">' + escapeHtml(txt.charAt(i)) + '</span>';
+        html2 += '<span class="lyric-letter" style="transition-duration:' + fade + 'ms">' + escapeHtml(txt.charAt(i)) + '</span>';
       }
       wordEl.dataset.letterMs = String(Math.round(step));
+      wordEl.dataset.letterFade = String(fade);
       wordEl.innerHTML = html2;
       wordEl.dataset.letters = '1';
     }
@@ -12431,7 +12463,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.1';
+  const APP_VERSION = '73.1.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12992,6 +13024,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.1.1', date: 'October 4, 2026 \u00b7 2:20 AM EDT', title: 'The letter wave crosses the whole word, and a long intro no longer pushes the lyrics behind the voice', items: [
+    'The letter-by-letter wave reaches the end of the word now. Each letter was lit on the pacer clock and then made to wait a second time before it began to fade, so the tail of the wave was wiped when the line moved on and only the first letter ever looked lit.',
+    'A letter now carries only its own fade, sized from the window the word is really sung over, so a fast word sweeps across it instead of lighting as one soft block.',
+    'A song with a long instrumental opening is timed from the rise where the singing actually starts, not from the top of the file. The layout was pinned to a lead-in measured from zero, which pushed every later line further behind the voice.',
+    'The first line is snapped onto that rise like every other line. It used to be the one line the search never touched, so it stayed wherever the flat spread had put it.',
+    'The word-by-word highlight, the syllable weighting and the syllable pacing are unchanged in every other way, and the letter fade is the only thing the wrap sets.',
+    'The widget and the player are untouched: a press on the home-screen widget still resumes the song without opening the app.',
+    'Your files have not moved: the library, the playlists, the albums, the tags and the covers are exactly where they were.',
+    'Nothing else on the lyrics bar changed - the Copy chip, the Sync button and the translate toggle all work as before.',
+  ]},
   { version: '73.1', date: 'October 4, 2026 \u00b7 1:35 AM EDT', title: 'The lyrics are timed from the song itself, and every format picker now leads with the same choice', items: [
     'The lyrics are timed from the song itself now. Words with no timed file used to go to a model that spread them evenly over the duration - a split by line count, so a short intro and a repeated chorus pushed the later lines aside.',
     'The audio decides instead: the lines are laid out by how much singing each one holds, then every start is snapped onto the nearest rise in the track, so a line lights when something actually begins.',

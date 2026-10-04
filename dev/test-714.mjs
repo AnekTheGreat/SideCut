@@ -23,9 +23,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '73.1'; /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-73.mjs */ /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */ /* repinned by dev/repin-727.mjs */ /* repinned by dev/repin-726.mjs */ /* repinned by dev/repin-7252.mjs */ /* repinned by dev/repin-7251.mjs */ /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */ /* repinned by dev/repin-723.mjs */ /* repinned by dev/repin-722.mjs */ /* repinned by dev/repin-721.mjs */ /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
-const PREV = '73'; /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */ /* repinned by dev/repin-727.mjs */ /* repinned by dev/repin-726.mjs */ /* repinned by dev/repin-7252.mjs */ /* repinned by dev/repin-7251.mjs */ /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */ /* repinned by dev/repin-723.mjs */ /* repinned by dev/repin-722.mjs */ /* repinned by dev/repin-721.mjs */ /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1';
+const VER = '73.1.1'; /* repinned by dev/repin-7311.mjs */ /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-73.mjs */ /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */ /* repinned by dev/repin-727.mjs */ /* repinned by dev/repin-726.mjs */ /* repinned by dev/repin-7252.mjs */ /* repinned by dev/repin-7251.mjs */ /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */ /* repinned by dev/repin-723.mjs */ /* repinned by dev/repin-722.mjs */ /* repinned by dev/repin-721.mjs */ /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */ /* repinned by dev/repin-714.mjs */
+const PREV = '73.1'; /* repinned by dev/repin-7311.mjs */ /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-729.mjs */ /* repinned by dev/repin-7281.mjs */ /* repinned by dev/repin-728.mjs */ /* repinned by dev/repin-7271.mjs */ /* repinned by dev/repin-727.mjs */ /* repinned by dev/repin-726.mjs */ /* repinned by dev/repin-7252.mjs */ /* repinned by dev/repin-7251.mjs */ /* repinned by dev/repin-725.mjs */ /* repinned by dev/repin-724.mjs */ /* repinned by dev/repin-723.mjs */ /* repinned by dev/repin-722.mjs */ /* repinned by dev/repin-721.mjs */ /* repinned by dev/repin-720.mjs */ /* repinned by dev/repin-719.mjs */ /* repinned by dev/repin-718.mjs */ /* repinned by dev/repin-717.mjs */ /* repinned by dev/repin-716.mjs */ /* repinned by dev/repin-715.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1.1';
 
 let pass = 0, fail = 0;
 const ok = (cond, name) => { cond ? (pass++, console.log('  PASS ' + name)) : (fail++, console.log('  FAIL ' + name)); };
@@ -190,8 +190,16 @@ console.log('\n[5] letter by letter, and a highlight that works on every song');
   // even slice per letter, and it is now weighed by each letter's own width and
   // driven by the window the word is being sung over. The gate describes that.
   ok(count(src, 'function scEnsureLetterSpans(wordEl, letterMs){') === 1, 'a word’s letters are wrapped once, at the pace it is sung');
-  ok(src.indexOf("style=\"transition-delay:' + Math.round(i * step) + 'ms\"") !== -1,
-    'each letter carrying its own share of the delay');
+  // 73.1 - the delay is gone and each letter carries its own FADE instead. The
+  // delay was a second clock on top of the pacer's, so a letter lit by the pacer
+  // then waited again before it began to fade and the wave was still crossing the
+  // word after the word was over - only the first letter or two were ever seen.
+  ok(src.indexOf("style=\"transition-duration:' + fade + 'ms\"") !== -1,
+    'each letter carrying its own share of the fade, not a second delay');
+  ok(src.indexOf("var fade = Math.max(80, Math.min(300, Math.round(step * 2.4)));") !== -1,
+    'sized from the word own window so a fast word still sweeps');
+  ok(count(src, "transition-delay:' + Math.round(i * step) + 'ms'") === 0,
+    'and the additive transition-delay is gone from the wrap');
   ok(src.indexOf('function scLetterWeight(ch){') !== -1, 'and a weight for what a single letter is worth');
   ok(count(src, 'function clearLetters(wordEl){') === 1, 'and a way to clear a run');
   ok(src.indexOf('if(lettersOn()){') !== -1 && count(src, 'function lettersOn(){') === 1, 'the pacing asks whether letter mode is on');

@@ -32,9 +32,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '73.1'; /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-73.mjs */ /* repinned by dev/repin-729.mjs */
-const PREV = '73'; /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-729.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1';
+const VER = '73.1.1'; /* repinned by dev/repin-7311.mjs */ /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-73.mjs */ /* repinned by dev/repin-729.mjs */
+const PREV = '73.1'; /* repinned by dev/repin-7311.mjs */ /* repinned by dev/repin-731.mjs */ /* repinned by dev/repin-729.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.1.1';
 
 // The changelog is prose and is allowed to say what was removed. Everything else
 // in the page is code and must be clean of it.
@@ -275,8 +275,12 @@ console.log('[4] the glow is timed from the song, not from a fixed step');
     'and the delay is remembered per word, so a re-pace only rebuilds when it moved');
   ok(/wordEl\.dataset\.letters !== '1' \|\| wordEl\.dataset\.letterMs !== String\(Math\.round\(step\)\)/.test(src),
     'which is exactly the condition the rebuild hangs on');
-  ok(src.indexOf("style=\"transition-delay:' + Math.round(i * step) + 'ms\"") !== -1,
-    'the delay grows with the letter position');
+  // 73.1 - the additive delay was removed: it was a second clock on top of the
+  // pacer's, so the tail of the wave was wiped before it ever showed. The step
+  // still sizes the fade, which is what the wrap carries now.
+  ok(src.indexOf("style=\"transition-duration:' + fade + 'ms\"") !== -1,
+    'the wrap carries a fade sized from the word own window');
+  ok(count(src, "transition-delay:' + Math.round(i * step) + 'ms'") === 0, 'and no additive delay is left on a letter');
   ok(count(src, "transition-delay:' + (i * 26) + 'ms'") === 0, 'and the fixed 26ms step is gone from the wrap');
   ok(src.indexOf("scEnsureLetterSpans(w, (span * 1000) / Math.max(1, (w.textContent || '').length))") !== -1,
     'the pacer hands in the word own window, measured from the song');
