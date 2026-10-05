@@ -30,9 +30,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '73.1.9'; /* repinned by dev/repin-7319.mjs */
-const PREV = '73.1.8'; /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1.9';
+const VER = '73.2'; /* repinned by dev/repin-732.mjs */
+const PREV = '73.1.9'; /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.2';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -64,7 +64,9 @@ console.log('[1] release metadata');
     // 73.1.9 retarget: this release exists because the 73.1.8 recovery left
     // some albums missing and some short, so the notes have to say that plainly
     // (73.1.8 said "wipe").
-    ok(/every song|missing|single-song/i.test(notes), 'and say plainly why this release exists (the recovery is complete now)');
+    // 73.2 - the head notes now say why THIS release exists: the albums obey
+    // your edits and the speed slider is a regular slider again.
+    ok(/regular slider|fighting your edits|zero songs/i.test(notes), 'and say plainly why this release exists (albums obey your edits)');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     ok(!/\bpass\b/i.test(String(head.title)), 'the title never uses the word the store gate refuses');
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the head notes');

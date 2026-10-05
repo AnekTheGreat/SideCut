@@ -131,9 +131,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.1.9'; /* repinned by dev/repin-7319.mjs */
-const PREV = '73.1.8'; /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */ /* repinned by dev/repin-7317.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.1.9';
+const VER = '73.2'; /* repinned by dev/repin-732.mjs */
+const PREV = '73.1.9'; /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */ /* repinned by dev/repin-7317.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.2';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
