@@ -767,11 +767,20 @@
   #miniBar .fill{ position:absolute; left:0; top:8px; height:4px; background:var(--coral); width:0%; border-radius:2px; }
   .speed-row{ display:flex; align-items:center; gap:8px; }
   .speed-row span{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-dim); flex-shrink:0; }
-  /* Playback-speed slider in the song ⋯ menu — rounded pill track + round thumb
-     with a filled coral portion showing the current speed, plus a subtle thumb
-     glow. Styled for both WebKit (Chromium/Safari) and Firefox. */
+  /* Playback-speed slider in the song ⋯ menu — a regular slider: thin rounded
+     track with a filled portion for the current speed and a round thumb. The
+     fill is painted on the track pseudo-element, NOT on the input box: a
+     WebView that sizes a bare range input itself drew the gradient across a
+     tall input and turned this into a fat pill with a tiny thumb. An
+     explicitly sized track cannot inflate, and accent-color keeps the native
+     control themed even if every pseudo rule were dropped. Styled for both
+     WebKit (Chromium/Safari) and Firefox. */
   #actionSpeedSlider{
     -webkit-appearance:none; appearance:none; height:8px; border-radius:999px; outline:none;
+    background:transparent; accent-color:var(--coral);
+  }
+  #actionSpeedSlider::-webkit-slider-runnable-track{
+    height:8px; border-radius:999px;
     background:linear-gradient(to right, var(--coral) 0%, var(--coral) var(--speed-fill,50%), var(--line) var(--speed-fill,50%), var(--line) 100%);
   }
   #actionSpeedSlider::-webkit-slider-thumb{
@@ -1187,6 +1196,8 @@
   .seek-row span{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--ink-dim); width:32px; flex-shrink:0; }
   .seek-row span:last-child{ text-align:right; }
   #seekBar{ flex:1; -webkit-appearance:none; appearance:none; height:8px; border-radius:999px; outline:none; touch-action:none;
+    background:transparent; accent-color:var(--coral); }
+  #seekBar::-webkit-slider-runnable-track{ height:8px; border-radius:999px;
     background:linear-gradient(to right, var(--coral) 0%, var(--coral) var(--seek-fill,0%), var(--line) var(--seek-fill,0%), var(--line) 100%); }
   #seekBar::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--coral);
     border:2px solid #161616; box-sizing:border-box; box-shadow:0 0 0 3px color-mix(in srgb, var(--coral) 25%, transparent); margin-top:-4px; cursor:pointer; }
@@ -1199,8 +1210,9 @@
      inputs — a small thumb and a tap that jumped the value — which is why
      changing one felt like a tap rather than a drag. #seekBar and
      #actionSpeedSlider keep their own styling (both paint their filled track
-     on the input itself, and a generic track would cover it), and the
-     equaliser bands are vertical faders that need the native rendering. */
+     on their own track pseudo-element, and a generic track would cover it),
+     and the equaliser bands are vertical faders that need the native
+     rendering. */
   input[type=range]:not(#seekBar):not(#actionSpeedSlider):not(.eq-band-slider){
     -webkit-appearance:none; appearance:none; height:28px; margin:0; padding:0;
     background:transparent; touch-action:pan-y; cursor:pointer;
@@ -42958,6 +42970,11 @@ window.showSettingsTab = showSettingsTab;
   // needs these to resolve album data at all.
   window.__scGetUserAlbums = function(){ return userAlbums; };
   window.__scGetAllTracks = function(){ return allTracks; };
+  // Harness hooks for the album edit paths (the repro probe and suites drive
+  // these the way the menus do, without depending on modal internals).
+  window.__scAddTracksToAlbum = function(ids, albumName, sourceLabel){ addTracksToAlbum(ids, albumName, sourceLabel); };
+  window.__scRemoveFromAlbum = function(trackId, albumName){ return scRemoveFromAlbum(trackId, albumName); };
+  window.__scOpenSongActions = function(id, albumCtx){ openSongActions(id, albumCtx); };
   window.__scGetPlaylists = function(){ return playlists; };
   window.__scGetLibraryMode = function(){ return libraryMode; };
   window.__scGetActivePlaylist = function(){ return activePlaylist; };
