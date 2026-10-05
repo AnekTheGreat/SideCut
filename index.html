@@ -5769,6 +5769,10 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   let queue = [];          // track ids, current playback order
   let queueIndex = -1;
   let queueSourcePlaylist = 'All Songs';
+  // The album a play was started from, so Albums-tab focus (cards collapsing
+  // around the playing song) names the album that was actually tapped instead
+  // of guessing by library scan. A play from anywhere else clears it.
+  let queueAlbumName = null;
   let shuffle = false;
   let repeatMode = 'off';  // off | one | all
   let playbackSpeed = 1;
@@ -12913,7 +12917,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.2';
+  const APP_VERSION = '73.2.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -12971,6 +12975,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(!tid) return null;
       var t = allTracks.find(function(tr){ return tr.id === tid; });
       if(!t) return null;
+      // A play started from an album row names that album outright — prefer it
+      // while it still holds the song. The scan below can answer with a
+      // DIFFERENT album that also holds the song, and the focus rule then
+      // collapses the card that was just tapped: the playing row vanishes and
+      // the whole tab reads as if playback jumped around. (73.2.1)
+      if(typeof queueAlbumName !== 'undefined' && queueAlbumName && userAlbums && userAlbums[queueAlbumName] &&
+         Array.isArray(userAlbums[queueAlbumName].trackIds) &&
+         userAlbums[queueAlbumName].trackIds.indexOf(t.id) !== -1){
+        if(!(typeof albumIsAuto === 'function' && albumIsAuto(queueAlbumName))) return queueAlbumName;
+      }
       var found = null;
       Object.keys(userAlbums || {}).some(function(n){
         var e = userAlbums[n];
@@ -13051,6 +13065,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   window.__scAlbumFocusOn = scAlbumFocusOn;
   window.__scAlbumsRememberOnLeave = scAlbumsRememberOnLeave;
+  // Test probes: which album the focus rule answers for the playing song, and
+  // what the live playback queue actually is. Read-only.
+  window.__scAlbumForPlayingTrack = scAlbumForPlayingTrack;
+  window.__scPlaybackSnapshot = function(){
+    try{ return { queue: queue.slice(), queueIndex: queueIndex, album: queueAlbumName || null, source: queueSourcePlaylist }; }
+    catch(e){ return null; }
+  };
 
   // Wire up the toggle button
   document.addEventListener('click', function(e){
@@ -13498,6 +13519,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.2.1', date: 'October 5, 2026 · 12:20 AM EDT', title: 'Albums play in the order you made them', items: [
+    'Albums play in the order you made: starting a song queues the whole album exactly as you arranged it, so a song you moved plays where you put it instead of the old order.',
+    'Reorder the songs and the very next tap plays the new order: the album list is read the moment you press play, so the card on screen can never play an arrangement you already replaced.',
+    'A song that sits in two albums now keeps open the album you played it from, so the Albums tab stops closing the card in front of you while the song is playing.',
+    'The home-screen widget, the lyrics letter wave, the timed lyric lines and the music player are untouched by this release.',
+    'Next and Previous follow the same album order as the song that is playing, and a stale tap can no longer push the player past the end of the queue.',
+    'Everything else from 73.2 stays: removals stick, emptied albums stay gone, cards collapse on the way out of the Albums tab, and the speed slider is still a regular slider.',
+    'Your songs never move: this release changes only what order albums play in, and nothing in your library is renamed, moved or removed.',
+  ]},
   { version: '73.2', date: 'October 4, 2026 · 9:05 PM EDT', title: 'Albums behave the way you use them, and the speed slider is a regular slider again', items: [
     'Playback speed in the song menu is a regular slider again: a thin rounded track, a filled portion and a round thumb you can hold, matched with the seek bar in the player.',
     'Albums stop fighting your edits: taking a song out of an album now sticks, and nothing refills the album behind your back on the next start.',
@@ -21694,7 +21724,7 @@ function _fallbackCopy(text){
                 + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
               row.addEventListener('click', function(e){
                 if(e.target.closest('.kebab-btn')) return;
-                playFromList(alb.tracks, tid);
+                playFromList(scAlbumQueueIds(aName, alb.tracks), tid, aName);
               });
               body.appendChild(row);
               try{ wireAlbumRowHold(row, aName); }catch(_e){}
@@ -21990,7 +22020,7 @@ function _fallbackCopy(text){
               + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
             row.addEventListener('click', function(e){
               if(e.target.closest('.kebab-btn')) return;
-              playFromList(alb.tracks, tid);
+              playFromList(scAlbumQueueIds(aName, alb.tracks), tid, aName);
             });
             body.appendChild(row);
             try{ wireAlbumRowHold(row, aName); }catch(_e){}
@@ -26805,11 +26835,44 @@ function _fallbackCopy(text){
     dbPut('meta', { key: 'lastUsedPlaylist', value: name });
   }
 
-  function playFromList(ids, startId){
+  // The play order for an album: the SAVED trackIds as they stand right now,
+  // dead ids dropped. Reading the saved list at tap time (instead of the copy
+  // the row was rendered with) is what keeps a just-reordered album playing in
+  // its new order — the card behind a sheet can be stale, the store is not.
+  function scAlbumQueueIds(name, fallback){
+    try{
+      var e = (typeof userAlbums !== 'undefined' && userAlbums) ? userAlbums[name] : null;
+      var ids = (e && Array.isArray(e.trackIds)) ? e.trackIds : null;
+      if(!ids) return fallback ? fallback.slice() : [];
+      var out = [];
+      for(var i = 0; i < ids.length; i++){
+        var id = ids[i];
+        if(out.indexOf(id) !== -1) continue;
+        if(allTracks.some(function(tr){ return tr && tr.id === id; })) out.push(id);
+      }
+      return out;
+    }catch(_eQ){ return fallback ? fallback.slice() : []; }
+  }
+  window.__scAlbumQueueIds = scAlbumQueueIds;
+
+  function playFromList(ids, startId, fromAlbumName){
     isMixMode = false;
-    queue = ids.slice(); // ids already reflect the currently shown order (shuffled or sorted)
+    // Never re-order what the caller queued. The album rows hand their own
+    // trackIds over (the saved, possibly reordered order), so the queue has to
+    // stay exactly this list — no sort, no shuffle on top.
+    queue = ids.slice();
     queueIndex = queue.indexOf(startId);
+    if(queueIndex < 0 && queue.length){
+      // A stale start id (song removed, or a card re-rendered mid-tap) must not
+      // push the index past the end of the queue and make Next skip songs.
+      queueIndex = 0;
+    }
     queueSourcePlaylist = activePlaylist;
+    // Which album this play belongs to. Album rows pass it so the Albums focus
+    // rule (cards collapsing around the playing song) follows the album you
+    // actually tapped, not a library-wide guess that can answer with another
+    // card when a song sits in two albums.
+    queueAlbumName = (typeof fromAlbumName === 'string' && fromAlbumName) ? fromAlbumName : null;
     rememberPlaylist(activePlaylist);
     cancelCrossfade();
     playCurrent(true);
@@ -27792,7 +27855,7 @@ function _fallbackCopy(text){
                 + '<button class="kebab-btn" data-kebab="' + tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
               row.addEventListener('click', function(e){
                 if(e.target.closest('.kebab-btn')) return;
-                playFromList(_cardIds, tid);
+                playFromList(scAlbumQueueIds(albName, _cardIds), tid, albName);
               });
               body.appendChild(row);
               try{ wireAlbumRowHold(row, albName); }catch(_e){}
@@ -29091,7 +29154,7 @@ function _fallbackCopy(text){
                   + '<button class="kebab-btn" data-kebab="' + _tid + '" title="More"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 2a2 2 0 100 4 2 2 0 000-4zm0 8a2 2 0 100 4 2 2 0 000-4z"/></svg></button>';
                 _row.addEventListener('click', function(e){
                   if(e.target.closest('.kebab-btn')) return;
-                  playFromList(_alb.trackIds, _tid);
+                  playFromList(scAlbumQueueIds(_foundAlb, _alb.trackIds), _tid, _foundAlb);
                 });
                 _body.appendChild(_row);
                 try{ wireAlbumRowHold(_row, _foundAlb); }catch(_e){}
@@ -36294,6 +36357,7 @@ function _renderAhFromData(artistAlbums){
   };
   window.__scUpcomingAutofetch = async function(){
     if(window.__scUpAutoBusy) return;
+    if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
     if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
