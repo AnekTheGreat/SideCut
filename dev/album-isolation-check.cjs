@@ -218,6 +218,14 @@ let toasts = [];
   Array.from(sheet.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Done').click();
   await wait(500);
   ok('sheet closed', !win.document.getElementById('albumReorderPopup'));
+  // 73.1.10: leaving the Albums tab with nothing playing now collapses every
+  // card (the new default). Re-open the reordered album the way a user does -
+  // leave, clear its collapse key, come back - before reading its rows.
+  win.navigate('playlists');
+  await wait(300);
+  try { win.localStorage.setItem('sidecut_albColl_My Mix', '0'); } catch (e) {}
+  win.navigate('albums');
+  await wait(500);
   const myAfter = cardEls(win).find((c) => c.dataset.albumName === 'My Mix');
   ok('album card still shows every song after the reorder', !!myAfter && myAfter.querySelectorAll('.track').length === 3,
      myAfter ? String(myAfter.querySelectorAll('.track').length) : 'no card');

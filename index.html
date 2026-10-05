@@ -12948,12 +12948,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var toggleBtn = document.getElementById('diagonalSplitToggle');
     if(toggleBtn) toggleBtn.textContent = useDiagonalSplit ? 'Diagonal ✓' : 'Single ✓';
   }
-  // ---- 72.5.1: leaving Albums can close everything but the playing album -----
-  // An OPTIONAL switch (off by default, in Settings > More and in Manage albums).
-  // With it on, leaving the Albums tab collapses every album card except the one
-  // the playing song is in; a song that is in no album leaves them all shut.
-  // While you are ON the tab nothing is touched - you can keep as many albums
-  // open as you like, which is exactly how the list has always worked.
+  // ---- 72.5.1: leaving Albums closes everything but the playing album -----
+  // 73.1.10 - this is now ALWAYS the behavior, no switch: on the way out of the
+  // Albums tab every album card collapses except the one the playing song is
+  // in; a song that is in no album leaves them all shut. While you are ON the
+  // tab nothing is touched - you can keep as many albums open as you like.
+  // (The old sidecut_albumFocusPlaying switch still exists for its toggle
+  // buttons but no longer gates this.)
   function scAlbumFocusOn(){
     try{ return localStorage.getItem('sidecut_albumFocusPlaying') === '1'; }catch(e){ return false; }
   }
@@ -12989,7 +12990,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // next render - so what you see when you come back is what was decided here.
   function scAlbumsRememberOnLeave(){
     try{
-      if(!scAlbumFocusOn()) return 0;                          // off by default
       if(typeof libraryMode === 'undefined' || libraryMode !== 'albums') return 0;
       var pane = document.getElementById('listPane');
       if(!pane) return 0;
@@ -13011,6 +13011,30 @@ function startLyricsAutoScroll(keepPos, noReset) {
       return closed;
     }catch(e){ return 0; }
   }
+  // 73.1.10 - the on-tab half of the leave rule: a song that STARTS PLAYING
+  // while you are on the Albums tab opens its own album card (and only that
+  // one), so the playing row is visible - "open unless it is the playing
+  // song's album" also means the playing song's album is the one that may open.
+  function scAlbumOpenForPlaying(){
+    try{
+      if(typeof libraryMode === 'undefined' || libraryMode !== 'albums') return;
+      var keepName = scAlbumForPlayingTrack();
+      if(!keepName) return;
+      var pane = document.getElementById('listPane');
+      if(!pane) return;
+      var touched = false;
+      Array.prototype.forEach.call(pane.querySelectorAll('[data-album-name]'), function(card){
+        var nm = card.dataset ? card.dataset.albumName : '';
+        var open = (nm === keepName);
+        try{
+          var was = localStorage.getItem('sidecut_albColl_' + nm);
+          if(was !== (open ? '0' : '1')){ localStorage.setItem('sidecut_albColl_' + nm, open ? '0' : '1'); touched = true; }
+        }catch(_eSt){}
+      });
+      if(touched && typeof renderList === 'function') renderList();
+    }catch(e){}
+  }
+  window.__scAlbumOpenForPlaying = scAlbumOpenForPlaying;
   function scSyncAlbumFocusToggles(){
     try{
       var on = scAlbumFocusOn();
@@ -22869,6 +22893,25 @@ function _fallbackCopy(text){
     const target = (albumName && holders.indexOf(albumName) !== -1) ? albumName : (holders[0] || '');
     if(!target) return '';
     userAlbums[target].trackIds = userAlbums[target].trackIds.filter(function(tid){ return tid !== trackId; });
+    // 73.1.10 - an album left with no songs is gone, and stays gone: deleted
+    // here and tombstoned like a hand delete, so the boot recovery cannot
+    // rebuild it from the album tag still on the files.
+    if(!userAlbums[target].trackIds.length){
+      try{
+        var _udRawR = localStorage.getItem('sidecut_albumsUserDeleted');
+        var _udR = _udRawR ? JSON.parse(_udRawR) : {};
+        if(!_udR || typeof _udR !== 'object' || _udR instanceof Array) _udR = {};
+        _udR[String(target).toLowerCase()] = Date.now();
+        localStorage.setItem('sidecut_albumsUserDeleted', JSON.stringify(_udR));
+      }catch(_eTombR){}
+      delete userAlbums[target];
+      try{
+        var _diR = albumOrder.indexOf(target);
+        if(_diR !== -1) albumOrder.splice(_diR, 1);
+        dbPut('meta', { key: 'albumOrder', value: albumOrder });
+      }catch(_eOrdR){}
+      dbPut('meta', { key: 'userAlbums', value: userAlbums });
+    }
     return target;
   }
 
@@ -23563,19 +23606,32 @@ function _fallbackCopy(text){
   }
   function scAlbumsRecoverDeleted(){
     try{
-      var healed = 0, restored = 0;
-      // (1) An album that exists but holds only part of its tag's songs - the
-      // half-empty card the on-play rebuild froze in - is topped up to every
-      // song the tag names. Additive only, and only for a tag-named album.
+      var healed = 0, restored = 0, removed = 0;
+      // (1) THE TOP-UP IS GONE (73.1.10). It re-added to every tag-named
+      // album every song its tag names - so on every boot it undid the songs
+      // you had removed from that album and refilled the albums you had
+      // emptied. Recovery heals only what the APP broke; an album that exists
+      // is yours exactly as you left it. What a boot still does here is
+      // finish what you started: an album left with zero songs is deleted,
+      // and tombstoned like a hand delete so the album tag still on the
+      // files cannot rebuild it on the next launch.
+      var _emptTomb = {};
+      try{
+        var _etRaw = localStorage.getItem('sidecut_albumsUserDeleted');
+        var _et = _etRaw ? JSON.parse(_etRaw) : null;
+        if(_et && typeof _et === 'object' && !(_et instanceof Array)) _emptTomb = _et;
+      }catch(_eEmpt){}
       Object.keys(userAlbums || {}).forEach(function(n){
         var e = userAlbums[n];
         if(!e || typeof e !== 'object' || !Array.isArray(e.trackIds)) return;
-        var tagIds = _scAlbumTagIds(n);
-        if(!tagIds.length) return;
-        for(var i = 0; i < tagIds.length; i++){
-          if(e.trackIds.indexOf(tagIds[i]) === -1){ e.trackIds.push(tagIds[i]); healed++; }
-        }
+        if(e.trackIds.length) return;
+        delete userAlbums[n];
+        _emptTomb[String(n).toLowerCase()] = Date.now();
+        var _ei = albumOrder.indexOf(n);
+        if(_ei !== -1) albumOrder.splice(_ei, 1);
+        removed++;
       });
+      try{ localStorage.setItem('sidecut_albumsUserDeleted', JSON.stringify(_emptTomb)); }catch(_eEmptW){}
       // (2) Mark as an album of yours every entry the FILES can vouch for: one
       // without the old auto flag, or one whose name is still an album tag on
       // the songs. A name the files still carry is a name the library agrees
@@ -23646,13 +23702,13 @@ function _fallbackCopy(text){
         if(albumOrder.indexOf(tag) === -1) albumOrder.push(tag);
         restored++;
       });
-      if(healed || restored){
+      if(healed || restored || removed){
         try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'userAlbums', value: userAlbums }); }catch(_eUa){}
-        if(restored){
+        if(restored || removed){
           try{ if(typeof dbPut === 'function') dbPut('meta', { key: 'albumOrder', value: albumOrder }); }catch(_eOa){}
         }
       }
-      return { restored: restored, healed: healed };
+      return { restored: restored, healed: healed, removed: removed };
     }catch(_eRec){ return { restored: 0, healed: 0 }; }
   }
   window.__scAlbumsRecoverDeleted = scAlbumsRecoverDeleted;
@@ -26748,6 +26804,9 @@ function _fallbackCopy(text){
     rememberPlaylist(activePlaylist);
     cancelCrossfade();
     playCurrent(true);
+    // A play on the Albums tab opens the playing song's album card (see the
+    // note above scAlbumOpenForPlaying).
+    try{ if(typeof scAlbumOpenForPlaying === 'function') scAlbumOpenForPlaying(); }catch(_eAfP){}
     // Native OTA: a manual play is the perfect moment to surface an already
     // staged update (it has patch notes waiting; the app reloads on the next
     // clean stop, never mid-song) — same as the boot-time staged check.
