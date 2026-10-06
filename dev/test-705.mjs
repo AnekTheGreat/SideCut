@@ -61,7 +61,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v73.2.1';
+const SHELL_CACHE = 'sidecut-shell-v73.3';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -296,7 +296,9 @@ console.log('\n[6] the styles');
   // same five rewards. New tools are tools, not badges.
   ok(countMod("var FEATURE_KEYS = ['studio', 'slow', 'karaoke', 'sampler', 'looper', 'clip', 'assistant', 'autodj', 'gestures'];") === 1,
      'the feature list the capstone badge counts was changed');
-  ok(countMod("at: 201, kind: 'complete'") === 1 && countMod('function myPresetsHtml(){') === 1,
+  // 73.3 retarget: the Discovery badges left the wall, so the wall and its
+  // reward thresholds shrank with them (201 -> 159; 50/100/150/200/201 -> 40/80/119/158/159).
+  ok(countMod("at: 159, kind: 'complete'") === 1 && countMod('function myPresetsHtml(){') === 1,
      'the rewards moved, or the presets are not in the sheet');
   // 70.1.1. The tab you are on says so, and the wall is never a picture of an
   // earlier moment than the badges it describes.
@@ -417,13 +419,15 @@ console.log('\n[7] the Studio header names the real build');
 console.log('\n[8] 201 badges, dev mode, five rewards');
 {
   // ---- the wall ----
-  ok(count(mod, 'TWO HUNDRED BADGES, ONE SECRET, AND FIVE REWARDS') === 1,
+  ok(count(mod, 'THE BADGE WALL, ONE SECRET, AND FIVE REWARDS') === 1,
     'the module states the size of the wall in its own words');
   ok(count(mod, "id: 'secret_devmode'") === 1, 'and there is exactly one secret badge');
   ok(count(mod, 'secret: true') === 1, 'marked as secret rather than left to the name');
   ok(/GROUP_TITLES = \[\s*\n\s*\['streak'/.test(mod), 'the grid is grouped');
-  ['streak', 'listen', 'explore', 'library', 'studio', 'assistant', 'themes', 'miles', 'secret'].forEach((g) =>
+  // 73.3 retarget: the explore/Discovery group is gone from the wall.
+  ['streak', 'listen', 'library', 'studio', 'assistant', 'themes', 'miles', 'secret'].forEach((g) =>
     ok(mod.indexOf(`['${g}', `) !== -1, 'including a ' + g + ' section'));
+  ok(mod.indexOf("['explore', ") === -1, 'and there is no Discovery section');
   ok(mod.indexOf('g.have ? g.items.filter(isUnlocked).map(badgeTile).join(\'\') : secretTile()') !== -1,
     'and the secret section still renders before dev mode, as one blank tile');
 
@@ -442,10 +446,10 @@ console.log('\n[8] 201 badges, dev mode, five rewards');
   // ---- the five rewards ----
   const ats = [...mod.matchAll(/\{ at: (\d+),\s*kind: '([a-z]+)',\s*key: '([a-z]+)'/g)].map((m) => ({ at: Number(m[1]), kind: m[2], key: m[3] }));
   ok(ats.length === 5, 'five rewards are declared (' + ats.length + ')');
-  ok(ats.map((r) => r.at).join(',') === '50,100,150,200,201', 'at 50, 100, 150, 200 and 201');
-  ok(ats[3].key === 'vortex', 'the 200 one is Vortex');
-  ok(ats[4].kind === 'complete' && ats[4].at === 201,
-     'and the 201 one finishes the wall, behind the secret badge');
+  ok(ats.map((r) => r.at).join(',') === '40,80,119,158,159', 'at 40, 80, 119, 158 and 159');
+  ok(ats[3].key === 'vortex', 'the 158 one is Vortex');
+  ok(ats[4].kind === 'complete' && ats[4].at === 159,
+     'and the 159 one finishes the wall, behind the secret badge');
 
   ok(ats.slice(0, 4).every((r) => r.kind === 'theme'), 'the other four are themes');
 
@@ -515,15 +519,17 @@ console.log('\n[8] 201 badges, dev mode, five rewards');
 
   // The generated tables carry the reachable ceilings. Read them back and assert
   // the maxima, so a future edit cannot quietly reintroduce a 2,000-song shelf.
+  // 73.3 retarget: the explore rows (one song, different songs, late-night,
+  // artists, genres) left the table with the Discovery group.
   const caps = [
-    ['plays', 3, 2000], ['hours', 0.1, 150], ['one song', 2, 25], ['different songs', 1, 200],
-    ['late-night', 3, 25], ['artists', 2, 200], ['genres', 1, 20], ['streak', 2, 180],
+    ['plays', 3, 2000], ['hours', 0.1, 150],
+    ['streak', 2, 180],
     ['streak', 7, 60], ['songs shelved', 1, 1000], ['albums', 1, 12], ['playlists', 1, 12],
     ['favorites', 1, 100],
   ];
   const tableBlock = mod.slice(mod.indexOf('var BADGE_TIERS = ['), mod.indexOf('// The counting tiers'));
   const vals = [...tableBlock.matchAll(/vals: \[([^\]]+)\]/g)].map((m) => m[1].split(',').map((n) => Number(n.trim())));
-  ok(vals.length === 13, 'the thirteen threshold rows are all present (' + vals.length + ')');
+  ok(vals.length === 8, 'the eight threshold rows are all present (' + vals.length + ')');
   const maxima = vals.map((v) => Math.max(...v));
   ok(maxima.every((m, i) => m <= (caps[i] ? caps[i][2] : Infinity)),
     'and none reaches past its ceiling (' + maxima.join(', ') + ')');

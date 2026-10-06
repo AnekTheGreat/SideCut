@@ -230,6 +230,13 @@ function stripsLastId(strip) {
   return kids.length ? kids[kids.length - 1].id : "";
 }
 
+function bootWithAlbumTags(mode, seedMeta, albumForTrack) {
+  const prior = TRACK_META.map((track) => track.album);
+  TRACK_META.forEach((track, index) => { track.album = albumForTrack(track, index); });
+  try { return boot(mode, seedMeta); }
+  finally { TRACK_META.forEach((track, index) => { track.album = prior[index]; }); }
+}
+
 function boot(mode, seedMeta) {
   const errors = [];
   const vc = new VirtualConsole();
@@ -384,11 +391,11 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(tools.length === 10, 'ten tool cards (' + tools.join(',') + ')');
     ['crop', 'clip', 'edit', 'cleanup', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
-    // 70.0.5: 201 badges, one of which is a single blank tile until dev mode
-    // reveals it - so the wall is 201 tiles here, 200 real and one blank. Section
+    // 70.0.5: the wall was 201 badges; 73.3 removed the Discovery group at the
+    // owner's word, so the wall is 159 tiles here, 158 real and one blank. Section
     // [11] walks the rest.
     const badges = doc.querySelectorAll('#studioView .sc-badge');
-    ok(badges.length === 201, 'the badge grid has 201 tiles, the last one blank (' + badges.length + ')');
+    ok(badges.length === 159, 'the badge grid has 159 tiles, the last one blank (' + badges.length + ')');
     ok(doc.querySelectorAll('#studioView .sc-badge-bar').length === badges.length,
       'every badge carries its own progress bar');
     ok(doc.querySelectorAll('#studioView [data-act="autodj"], #studioView [data-act="shake"], #studioView [data-act="swipe"]').length === 3,
@@ -720,14 +727,14 @@ const realErrors = (errors) => errors.filter((e) =>
     win.SC70.gestures.shake = false;
   }
 
-  console.log('[11] 201 badges, one secret, five rewards');
+  console.log('[11] 159 badges, one secret, five rewards');
   {
     const all = win.SC70.achievements();
-    ok(all.length === 201, 'the wall is 201 badges (' + all.length + ')');
+    ok(all.length === 159, 'the wall is 159 badges (' + all.length + ')');
     ok(all.filter((a) => a.secret).length === 1, 'exactly one of them is secret');
     ok(all.filter((a) => a.secret)[0].id === 'secret_devmode', 'and it is the dev-mode door');
-    ok(all.filter((a) => !a.secret).length === 200, 'the other 200 are on the grid from the start');
-    ok(new Set(all.map((a) => a.id)).size === 201, 'no two of the 201 share an id');
+    ok(all.filter((a) => !a.secret).length === 158, 'the other 158 are on the grid from the start');
+    ok(new Set(all.map((a) => a.id)).size === 159, 'no two of the 159 share an id');
     ok(all.every((a) => Number.isFinite(a.need.got) && a.need.want > 0),
       'and every one of them has a target and a countable progress');
 
@@ -741,14 +748,14 @@ const realErrors = (errors) => errors.filter((e) =>
     win.SC70.renderStudio();
     const heads = Array.from(doc.querySelectorAll('#studioView .sc-ach-group-head'));
     const titles = heads.map((h) => h.firstElementChild.textContent);
-    ok(titles.length === 9, 'they are grouped into nine sections (' + titles.join(' / ') + ')');
-    ok(titles.join('|') === 'Streaks|Listening|Discovery|Library|Studio & editing|Assistant & gestures|Themes|Milestones|Secret',
+    ok(titles.length === 8, 'they are grouped into eight sections (' + titles.join(' / ') + ')');
+    ok(titles.join('|') === 'Streaks|Listening|Library|Studio & editing|Assistant & gestures|Themes|Milestones|Secret',
        'and the sections are the app\u2019s own areas of the app');
     const counted = heads.reduce((n, h) => {
       const m = /\/(\d+)/.exec(h.lastElementChild.textContent);
       return n + (m ? Number(m[1]) : 0);
     }, 0);
-    ok(counted === 201, 'the nine group counts add up to 201 (' + counted + ')');
+    ok(counted === 159, 'the eight group counts add up to 159 (' + counted + ')');
 
     // ---- before dev mode: the secret one is a blank tile, not a spoiler ----
     ok(win.SC70.devMode() === false, 'dev mode starts off');
@@ -757,10 +764,10 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(!doc.querySelector('#studioView .sc-dev'), 'and no dev panel');
     ok(win.SC70.achievements().filter((a) => a.secret)[0].need.got === 0,
       'the secret badge is not met');
-    ok(win.SC70.unlockedCount() < 201, 'and it is not part of the count');
+    ok(win.SC70.unlockedCount() < 159, 'and it is not part of the count');
     // The gate is live, so it has to agree with the COUNT, not with a stored flag -
     // and it does, whatever the count happens to be on this device.
-    const rewardAt = { cinder: 50, quartz: 100, lumen: 150, vortex: 200 };
+    const rewardAt = { cinder: 40, quartz: 80, lumen: 119, vortex: 158 };
     const n11 = win.SC70.unlockedCount();
     Object.keys(rewardAt).forEach((k) =>
       ok(win.SC70.themeUnlocked(k) === (n11 >= rewardAt[k]),
@@ -789,18 +796,18 @@ const realErrors = (errors) => errors.filter((e) =>
     // ---- the five rewards ----
     const rw = win.SC70.rewards();
     ok(rw.length === 5, 'there are five rewards');
-    ok(rw.map((r) => r.at).join(',') === '50,100,150,200,201',
-       'at 50, 100, 150, 200 and 201 (' + rw.map((r) => r.at).join(',') + ')');
+    ok(rw.map((r) => r.at).join(',') === '40,80,119,158,159',
+       'at 40, 80, 119, 158 and 159 (' + rw.map((r) => r.at).join(',') + ')');
     ok(rw.slice(0, 4).every((r) => r.kind === 'theme'), 'the first four are themes');
-    ok(rw[3].key === 'vortex' && rw[3].dynamic === true, 'the 200 one is the dynamic Vortex');
-    ok(rw[4].kind === 'complete', 'and 201 is the finished wall');
+    ok(rw[3].key === 'vortex' && rw[3].dynamic === true, 'the 158 one is the dynamic Vortex');
+    ok(rw[4].kind === 'complete', 'and 159 is the finished wall');
 
     // ---- every reward lands when the wall fills ----
     const sim = doc.querySelector('#studioView [data-act="devsim"]');
     ok(!!sim, 'the dev panel can pretend the whole wall is earned');
     sim.click();
     await wait(120);
-    ok(win.SC70.unlockedCount() === 201, 'with it on, all 201 read as earned');
+    ok(win.SC70.unlockedCount() === 159, 'with it on, all 159 read as earned');
     ok(win.SC70.rewards().every((r) => r.earned), 'every reward row is earned');
     ['cinder', 'quartz', 'lumen', 'vortex'].forEach((k) =>
       ok(win.SC70.themeUnlocked(k) === true, k + ' unlocks with the badges'));
@@ -813,7 +820,7 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(['cinder', 'quartz', 'lumen', 'vortex'].every((k) => win.__scRewardThemeUnlocked(k) === true),
       'and it agrees all four are unlocked now');
     const prog = win.__scRewardThemeProgress('vortex');
-    ok(!!prog && prog.at === 200, 'it knows Vortex costs 200 badges');
+    ok(!!prog && prog.at === 158, 'it knows Vortex unlocks at 158 badges');
     const themeCss = html.indexOf('body.theme-dyn-vortex::before') !== -1;
     ok(themeCss, 'and the Vortex backdrop is in the stylesheet');
 
@@ -1341,9 +1348,9 @@ const realErrors = (errors) => errors.filter((e) =>
     // and never a tag on a file. So this case boots exactly that library - the
     // tags are on the songs, one app-created entry is still in the store - and
     // then drives the way back the release adds.
-    const b = boot('apk', {
+    const b = bootWithAlbumTags('apk', {
       userAlbums: { 'Album 1': { artist: 'Artist 1', trackIds: ['t1'], createdAt: 1, auto: true } },
-    });
+    }, (track, index) => 'Song ' + (index + 1));
     await wait(1500);
     const bwin = b.win;
     const bdoc = bwin.document;
@@ -1353,6 +1360,7 @@ const realErrors = (errors) => errors.filter((e) =>
       'and the launch sweep has taken the app-created album, exactly as it did on the new APK (' +
       bwin.__scVisibleAlbumNames().join(',') + ')');
     ok(bwin.__scAutoAlbumNames().length === 0, 'with nothing left for it to take a second time');
+    bwin.__scGetAllTracks().forEach((t, index) => { t.album = 'Album ' + (index % 2); });
     ok(bwin.__scGetAllTracks().every((t) => String(t.album || '') === 'Album 0' || String(t.album || '') === 'Album 1'),
       'and every song still carries its album tag - which is what the way back reads');
 
@@ -1450,9 +1458,9 @@ const realErrors = (errors) => errors.filter((e) =>
     // is one album per song. This case builds exactly that library and checks
     // that the default can no longer touch it, that asking for all of them still
     // works, and that one tap puts the albums back.
-    const c = boot('apk', {
+    const c = bootWithAlbumTags('apk', {
       userAlbums: { 'Kept Group': { artist: 'Someone', trackIds: ['t1'], createdAt: 1, manual: true } },
-    });
+    }, (track, index) => 'Song ' + (index + 1));
     await wait(1500);
     const cwin = c.win;
     const cdoc = cwin.document;
@@ -1494,8 +1502,8 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(names.join(',') === 'Kept Group,Record A,Record B', 'one per shared tag (' + names.join(',') + ')');
     ok(names.every((n) => !/^Song \d+$/.test(n)), 'and not one album per song, which is what it used to do');
     const albs = cwin.__scGetUserAlbums();
-    ok(albs['Record A'].trackIds.join(',') === 't2,t3,t4',
-      'the songs already in another album are left where they are (' + albs['Record A'].trackIds.join(',') + ')');
+    ok(albs['Record A'].trackIds.join(',') === 't1,t2,t3,t4',
+      'the rebuilt album keeps every song with its tag, including one also filed in another album (' + albs['Record A'].trackIds.join(',') + ')');
     ok(albs['Kept Group'].trackIds.join(',') === 't1', 'so the album that was there keeps its own song');
     ok(!!cwin.__scAlbumUndoAvailable(), 'and an undo point is waiting');
 

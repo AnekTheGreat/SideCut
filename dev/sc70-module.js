@@ -571,16 +571,16 @@
   // exactly that, on the song that is loaded. The app owns the modal; the hook is
   // the only way across from this block.
   function cropCurrent(){
-    var t = currentTrack();
-    if(!t){ toast('Play a song first, then crop it.'); return false; }
+    var t = workTrack();
+    if(!t){ toast('Add a song to your library and it can be cropped here.'); return false; }
     if(!t.file){ toast('This song has no audio file to crop.'); return false; }
     if(!call('__scCropSong', t.id)){ toast('The cropper is not available in this build.'); return false; }
     bump('studio');
     return true;
   }
   function openClipSheet(preStart, preEnd){
-    var t = currentTrack();
-    if(!t){ toast('Play a song first.'); return false; }
+    var t = workTrack();
+    if(!t){ toast('Add a song to your library and it can be clipped here.'); return false; }
     clip.tr = t;
     clip.busy = true;
     clip.start = preStart != null ? preStart : 0;
@@ -628,7 +628,7 @@
       '<div class="sc-actions"><button class="sc-btn primary" id="scClipGo">Export clip</button><button class="sc-btn" id="scClipCancel">Cancel</button></div>';
     openSheet('Export a clip', body);
     paintClipSel();
-    document.querySelectorAll('[data-clipnudge]').forEach(function(b){
+    document.querySelectorAll('#scSheetBody [data-clipnudge]').forEach(function(b){
       b.addEventListener('click', function(){
         var d = parseFloat(b.getAttribute('data-clipnudge'));
         clip.end = Math.max(clip.start + 0.5, Math.min(clip.dur, clip.end + d));
@@ -636,14 +636,14 @@
         paintClipSel();
       });
     });
-    var wh = document.querySelector('[data-cliptrue]');
+    var wh = document.querySelector('#scSheetBody [data-cliptrue]');
     if(wh) wh.addEventListener('click', function(){
       clip.start = 0; clip.end = clip.dur;
       var f = $('scClipFrom'); if(f) f.value = '0:00';
       var t2 = $('scClipTo'); if(t2) t2.value = secToClock(clip.dur);
       paintClipSel();
     });
-    var ring = document.querySelector('[data-clipring]');
+    var ring = document.querySelector('#scSheetBody [data-clipring]');
     if(ring) ring.addEventListener('click', function(){
       clip.start = 0; clip.end = Math.min(clip.dur, 30);
       var f = $('scClipFrom'); if(f) f.value = '0:00';
@@ -726,12 +726,12 @@
 
   // ---- re-encode to a smaller bitrate, in place, with the crop's own undo ----
   var REENCODE_RATES = [96, 128, 160];
-  function reencodeTrack(id, kbps, btn){
-    var t = trackById(id);
-    if(!t || !t.file){ toast('That song has no audio file to re-encode.'); return; }
-    var before = t.file.size || 0;
-    if(btn){ btn.disabled = true; btn.textContent = 'Encoding\u2026'; }
-    decoded(t).then(function(b){
+  // 72.2 - the re-encode itself, split out of its own button so a batch can run
+  // the same code. It resolves with the bytes won back, and it does not toast:
+  // the caller decides what to say, because a batch has one voice for many songs.
+  function reencodeOne(t, kbps){
+    if(!t || !t.file) return Promise.reject(new Error('no audio file to re-encode'));
+    return decoded(t).then(function(b){
       return tagMetaFor(t).then(function(meta){
         // A re-encode of a lossless file is the case that pays: keep the length,
         // drop the bitrate.
@@ -752,12 +752,20 @@
           call('__scPersistTrack', t);
           try{ window.__scRefreshMedia && window.__scRefreshMedia(t); }catch(e){}
           markFeature('reencode');
-          renderStudio();
           var saved = Math.max(0, oldSize - newFile.size);
           bump('savedBytes', saved);
-          toastWithUndo('Re-encoded "' + (t.name || 'song') + '" at ' + kbps + ' kbps \u2014 ' + fmtBytes(saved) + ' smaller', function(){ undoReencode(id); });
+          return saved;
         });
       });
+    });
+  }
+  function reencodeTrack(id, kbps, btn){
+    var t = trackById(id);
+    if(!t || !t.file){ toast('That song has no audio file to re-encode.'); return; }
+    if(btn){ btn.disabled = true; btn.textContent = 'Encoding\u2026'; }
+    reencodeOne(t, kbps).then(function(saved){
+      renderStudio();
+      toastWithUndo('Re-encoded "' + (t.name || 'song') + '" at ' + kbps + ' kbps \u2014 ' + fmtBytes(saved) + ' smaller', function(){ undoReencode(id); });
     }).catch(function(e){
       toast('Re-encode failed: ' + (e && e.message ? e.message : 'could not encode'));
       if(btn){ btn.disabled = false; btn.textContent = 'Re-encode'; }
@@ -832,11 +840,8 @@
       { id: 'streak_best_14', name: 'Personal best', sub: 'Best streak of 14 days', ico: '\u2b50', tone: 'b', need: p(s.longest, 14) },
       { id: 'lib_100', name: 'Shelved 100', sub: '100 songs in the library', ico: '\u2630', tone: 'a', need: p(lib, 100) },
       { id: 'lib_500', name: 'Shelved 500', sub: '500 songs in the library', ico: '\u2630', tone: 'b', need: p(lib, 500) },
-      { id: 'artists_25', name: 'Wide taste', sub: '25 different artists', ico: '\ud83c\udfa4', tone: 'a', need: p(artistCount, 25) },
-      { id: 'played_50_songs', name: 'Not a one-hit wonder', sub: '50 different songs played', ico: '\u266b', tone: 'b', need: p(playsTracks, 50) },
       { id: 'one_song_10', name: 'On repeat', sub: 'One song played 10 times', ico: '\ud83d\udd01', tone: 'a', need: p(top ? top.playCount : 0, 10) },
       { id: 'one_song_30', name: 'Obsessed', sub: 'One song played 30 times', ico: '\ud83d\udd01', tone: 'b', need: p(top ? top.playCount : 0, 30) },
-      { id: 'night_owl', name: 'Late-night listening', sub: 'Play something after 1 AM', ico: '\ud83c\udf19', tone: 'a', need: p(nights, 1) },
       { id: 'studio_first', name: 'Into the studio', sub: 'Open Studio and use a tool', ico: '\ud83c\udfa7', tone: 'a', need: p(flags.studio ? 1 : 0, 1) },
       { id: 'slow_wet', name: 'Slowed and wet', sub: 'Use slowed + reverb', ico: '\ud83c\udf0a', tone: 'a', need: p(flags.slow ? 1 : 0, 1) },
       { id: 'karaoke_1', name: 'Take the mic', sub: 'Use karaoke mode', ico: '\ud83c\udfa4', tone: 'a', need: p(flags.karaoke ? 1 : 0, 1) },
@@ -849,7 +854,10 @@
     ];
   }
   /* --------------------------------------------------------------------------
-     5b. TWO HUNDRED BADGES, ONE SECRET, AND FIVE REWARDS (70.0.5, revised 70.1.3)
+     5b. THE BADGE WALL, ONE SECRET, AND FIVE REWARDS (70.0.5; the Discovery
+     badges were removed in 73.3 at the owner's word — a wall that scores how
+     late you stay up is a habit worth encouraging, so it is gone, and the
+     reward thresholds follow the smaller wall down)
 
      The user asked for over two hundred achievements, one of them secret and only
      obtainable by entering dev mode, plus a free theme at 50, 100 and 150 badges,
@@ -954,11 +962,11 @@
 
   // ---- the five rewards ----------------------------------------------------
   var REWARDS = [
-    { at: 50,  kind: 'theme',   key: 'cinder',  name: 'Cinder',  note: 'Six metallic palettes in one' },
-    { at: 100, kind: 'theme',   key: 'quartz',  name: 'Quartz',  note: 'Cool glass and silver' },
-    { at: 150, kind: 'theme',   key: 'lumen',   name: 'Lumen',   note: 'Daylight green and mint' },
-    { at: 200, kind: 'theme',   key: 'vortex',  name: 'Vortex',  note: 'A dynamic theme that whirls under your finger', dynamic: true },
-    { at: 201, kind: 'complete', key: 'complete', name: 'The whole wall', note: 'Every badge in the app, including the secret one' }
+    { at: 40,  kind: 'theme',   key: 'cinder',  name: 'Cinder',  note: 'Six metallic palettes in one' },
+    { at: 80, kind: 'theme',   key: 'quartz',  name: 'Quartz',  note: 'Cool glass and silver' },
+    { at: 119,  kind: 'theme',   key: 'lumen',   name: 'Lumen',   note: 'Daylight green and mint' },
+    { at: 158, kind: 'theme',   key: 'vortex',  name: 'Vortex',  note: 'A dynamic theme that whirls under your finger', dynamic: true },
+    { at: 159, kind: 'complete', key: 'complete', name: 'The whole wall', note: 'Every badge in the app, including the secret one' }
   ];
   function rewardEarned(at){ return unlockedCount() >= at; }
   function rewardState(){
@@ -979,10 +987,10 @@
   // 70.1.3 - the wall used to end in a purchase, and there is no purchase to end
   // in. The trophy is the wall itself, so this is the celebration and nothing else.
   function grantRewards(silent){
-    if(!rewardEarned(201)) return false;
+    if(!rewardEarned(REWARDS[REWARDS.length - 1].at)) return false;
     if(lsGet(LS.reward, null)) return false;
     lsSet(LS.reward, { at: Date.now(), granted: true });
-    if(!silent) toast('\ud83d\ude80 201 of 201 \u00b7 the whole wall. Thank you for playing with all of it.', 6000);
+    if(!silent) toast('\ud83d\ude80 ' + unlockedCount() + ' of ' + ACHIEVEMENTS().length + ' \u00b7 the whole wall. Thank you for playing with all of it.', 6000);
     return true;
   }
   var REWARD_MARKS = REWARDS.map(function(r){ return r.at; });
@@ -1015,21 +1023,6 @@
       vals: [0.1, 0.25, 0.5, 2, 5, 7.5, 15, 20, 25, 40, 50, 60, 75, 90, 110, 150],
       get: function(s){ return (s.listenSeconds || 0) / 3600; },
       name: function(v){ return v < 1 ? Math.round(v * 60) + ' minutes listened' : (v === 1 ? '1 hour listened' : fmtNum(v) + ' hours listened'); } },
-    { g: 'explore', k: 'song', ico: '\ud83d\udd01', sub: 'One song, over and over',
-      vals: [2, 3, 5, 15, 20, 25],
-      get: function(s, d){ return d.maxPlays; }, name: function(v){ return 'One song played ' + v + ' times'; } },
-    { g: 'explore', k: 'distinct', ico: '\ud83c\udfb5', sub: 'Songs actually played',
-      vals: [1, 5, 10, 20, 30, 100, 200],
-      get: function(s, d){ return d.playedTracks; }, name: function(v){ return fmtNum(v) + ' different songs played'; } },
-    { g: 'explore', k: 'night', ico: '\ud83c\udf19', sub: 'After 1 AM',
-      vals: [3, 5, 10, 15, 20, 25],
-      get: function(s){ return s.nightPlays || 0; }, name: function(v){ return v + ' late-night songs'; } },
-    { g: 'explore', k: 'artists', ico: '\ud83c\udfa4', sub: 'Across your library',
-      vals: [2, 5, 10, 15, 35, 50, 75, 100, 125, 150, 200],
-      get: function(s, d){ return d.artists; }, name: function(v){ return fmtNum(v) + ' different artists'; } },
-    { g: 'explore', k: 'genres', ico: '\ud83c\udfad', sub: 'Genres in the library',
-      vals: [1, 3, 5, 8, 10, 12, 15, 18, 20],
-      get: function(s, d){ return d.genres; }, name: function(v){ return v + ' genres'; } },
     { g: 'streak', k: 'streak', ico: '\ud83d\udd25', sub: 'Days in a row',
       vals: [2, 4, 5, 6, 8, 10, 14, 21, 45, 60, 75, 90, 120, 180],
       get: function(s){ return s.streak || 0; }, name: function(v){ return v + ' days in a row'; } },
@@ -1145,13 +1138,15 @@
     hour_1: 'listen', hour_10: 'listen', hour_100: 'listen', one_song_10: 'listen', one_song_30: 'listen',
     streak_3: 'streak', streak_7: 'streak', streak_30: 'streak', streak_best_14: 'streak',
     lib_100: 'library', lib_500: 'library',
-    artists_25: 'explore', played_50_songs: 'explore', night_owl: 'explore',
     studio_first: 'studio', slow_wet: 'studio', karaoke_1: 'studio', sampler_1: 'studio', looper_1: 'studio',
     clip_1: 'studio', all_tools: 'studio',
     assistant_1: 'assistant', autodj_1: 'assistant'
   };
+  // 73.3 - the Discovery section is gone at the owner's word: a wall that
+  // scores how late you stay up (and turns your library into a checklist) is
+  // a habit worth encouraging, so the whole explore group left with it.
   var GROUP_TITLES = [
-    ['streak', 'Streaks'], ['listen', 'Listening'], ['explore', 'Discovery'], ['library', 'Library'],
+    ['streak', 'Streaks'], ['listen', 'Listening'], ['library', 'Library'],
     ['studio', 'Studio & editing'], ['assistant', 'Assistant & gestures'], ['themes', 'Themes'],
     ['miles', 'Milestones'], ['secret', 'Secret']
   ];
@@ -1929,23 +1924,32 @@
   function renderStudio(){
     var host = $('studioView');
     if(!host) return;
-    var t = currentTrack();
+    // 71.4 - the header, every card and every tool read the WORKING song, not
+    // "whatever is playing". Nothing playing is no longer the same thing as
+    // nothing to edit.
+    var t = workTrack();
     var s = stats();
     var html = '' +
       '<div class="sc-head"><h2>Studio</h2><div class="sc-head-sub">Everything creative, in one place \u00b7 ' + VERSION + '</div></div>' +
       '<div class="sc-now">' +
         '<div class="sc-art lg" style="' + (t && t.artUrl ? 'background-image:url(' + esc(t.artUrl) + ')' : '') + '"></div>' +
-        '<div class="sc-now-txt"><div class="sc-now-name">' + esc(t ? (t.name || 'Untitled') : 'Nothing is playing') + '</div>' +
-        '<div class="sc-now-sub">' + esc(t ? (t.artist || 'Unknown artist') : 'Tap a song in Library to load the tools') + '</div>' +
+        '<div class="sc-now-txt"><div class="sc-now-tag">Working song</div>' +
+        '<div class="sc-now-name">' + esc(t ? (t.name || 'Untitled') : 'No song loaded') + '</div>' +
+        '<div class="sc-now-sub">' + esc(t ? (t.artist || 'Unknown artist') : 'Add a song to your library to use the tools') + '</div>' +
         '<div class="sc-now-tools">' +
+          '<button class="sc-btn tiny" data-act="choose">Choose song</button>' +
+          '<button class="sc-btn tiny" data-act="edit">Edit rack</button>' +
           '<button class="sc-btn tiny" data-act="loadsampler">Load sampler</button>' +
           '<button class="sc-btn tiny" data-act="crop">Crop</button>' +
           '<button class="sc-btn tiny" data-act="clip">Make a clip</button>' +
+          '<button class="sc-btn tiny" data-act="playpick">Play it</button>' +
         '</div></div>' +
       '</div>' +
       '<div class="sc-tools">' +
         toolCard('crop', '\u2702', 'Crop song', 'Trim the start and the end in place \u2014 the same cropper as the \u22ee menu, with Undo crop on the song.', 'accent') +
+        toolCard('edit', '\ud83c\udf9a', 'Edit rack', editSummary(), (edit.silent || edit.fades || edit.reverse || edit.gainDb) ? 'on' : '') +
         toolCard('clip', '\ud83c\udfb5', 'Ringtone / clip', 'Save a section as its own tagged MP3. Nothing in your library changes.', '') +
+        toolCard('cleanup', '\u2728', 'Clean up this song', 'Trim the silence and match the level, then save it as its own tagged file.', '') +
         toolCard('fx', '\ud83c\udf0a', 'Slowed + reverb', fxState.rate === 1 && !fxState.reverb ? 'Add weight and space, or speed it up.' : fxState.rate.toFixed(2) + 'x \u00b7 ' + Math.round(fxState.reverb * 100) + '% wet', fxState.rate !== 1 || fxState.reverb > 0 ? 'on' : '') +
         toolCard('karaoke', '\ud83c\udfa4', 'Karaoke mode', fxState.karaoke > 0 ? 'Vocal pulled out \u00b7 ' + Math.round(fxState.karaoke * 100) + '%' : 'Take the lead vocal out of what is playing.', fxState.karaoke > 0 ? 'on' : '') +
         toolCard('sampler', '\ud83c\udf9b', 'Sampler pads', sampler.trackId ? 'Loaded with "' + esc(trackName(sampler.trackId)) + '"' : 'Eight pads over the song you are playing.', sampler.trackId ? 'on' : '') +
@@ -1974,6 +1978,15 @@
       '<div class="sc-sec"><div class="sc-sec-head"><span>Batch tag editor</span><span class="sc-sec-sub">' + ((call('__scSelectedIds') || []).length) + ' selected</span></div>' +
         '<div class="sc-note">Tick songs in Library (long-press one to start selecting) and fix the artist, the album or the cover for all of them at once. The tag inside each stored file is rewritten.</div>' +
         '<div class="sc-actions"><button class="sc-btn primary" data-act="batch">Edit tags for selected songs</button></div>' +
+      '</div>' +
+      '<div class="sc-sec"><div class="sc-sec-head"><span>Batch on selected</span><span class="sc-sec-sub">' + ((call('__scSelectedIds') || []).length) + ' selected</span></div>' +
+        '<div class="sc-note">Re-encode or run the edit rack over every song you have ticked, in one go. Each song is saved as its own copy \u2014 nothing in your library is overwritten.</div>' +
+        '<div class="sc-chips"><span class="sc-chip-label">Bitrate</span>' + REENCODE_RATES.map(function(k){ return '<button class="sc-chip' + (reenKbps === k ? ' on' : '') + '" data-reenk="' + k + '">' + k + ' kbps</button>'; }).join('') + '</div>' +
+        '<div class="sc-actions">' +
+          '<button class="sc-btn' + (batchRun.busy ? '' : ' primary') + '" data-act="batchreen"' + (batchRun.busy ? ' disabled' : '') + '>Re-encode selected</button>' +
+          '<button class="sc-btn" data-act="batchedit"' + (batchRun.busy ? ' disabled' : '') + '>Edit selected</button>' +
+        '</div>' +
+        batchProgressHtml() +
       '</div>';
     host.innerHTML = html;
     wireStudio();
@@ -2064,14 +2077,20 @@
     });
     document.querySelectorAll('#studioView [data-act]').forEach(function(b){
       b.addEventListener('click', function(){
+        // 71.4 - everything in this row answers. A control whose tool is missing
+        // from the build used to be indistinguishable from one that is simply not
+        // wired, because the exception went nowhere.
+        try{
         var act = b.getAttribute('data-act');
-        if(act === 'loadsampler') loadSamplerFor(currentTrack());
+        if(act === 'loadsampler') loadSamplerFor(workTrack());
         else if(act === 'apkread') loadApkDownloads();
         else if(act === 'crop') cropCurrent();
         else if(act === 'clip') openClipSheet();
         else if(act === 'autodj') setAutoDj(!autodj.on);
         else if(act === 'shake') enableShake(!gestures.shake);
         else if(act === 'swipe'){ gestures.swipe = !gestures.swipe; lsSet(LS.gestures, gestures); toast(gestures.swipe ? 'Swipe the player is on' : 'Swipe the player is off'); renderStudio(); }
+        else if(act === 'batchreen') runBatch('reen');
+        else if(act === 'batchedit') runBatch('edit');
         else if(act === 'batch') openBatchTags(call('__scSelectedIds') || []);
         else if(act === 'achfilter'){ achFilter = b.getAttribute('data-f') || 'all'; renderStudio(); }
         else if(act === 'usetheme'){
@@ -2099,6 +2118,10 @@
           checkAchievements(true); renderStudio();
         }
         else if(act === 'devoff') setDevMode(false);
+        else if(act === 'edit') openEditSheet();
+        else if(act === 'choose') openSongPickerSheet();
+        else if(act === 'playpick') playWorkTrack();
+        }catch(e){ toast('That tool could not answer: ' + ((e && e.message) || 'unknown error')); }
       });
     });
     document.querySelectorAll('#studioView [data-reenc]').forEach(function(b){
@@ -2111,14 +2134,23 @@
   function openTool(id){
     bump('studio');
     markFeature('studio');
-    if(id === 'crop') return cropCurrent();
-    if(id === 'clip') return openClipSheet();
-    if(id === 'fx') return openFxSheet();
-    if(id === 'karaoke') return openKaraokeSheet();
-    if(id === 'sampler') return openSamplerSheet();
-    if(id === 'looper') return openLooperSheet();
-    if(id === 'sleep') return openSleepSheet();
-    if(id === 'practice') return openPracticeSheet();
+    // 71.4 - a tool that throws used to look exactly like a tool that was never
+    // wired. Every card is answered, and one that cannot open says so.
+    try{
+      if(id === 'crop') return cropCurrent();
+      if(id === 'clip') return openClipSheet();
+      if(id === 'edit') return openEditSheet();
+      if(id === 'cleanup') return cleanUpSong();
+      if(id === 'fx') return openFxSheet();
+      if(id === 'karaoke') return openKaraokeSheet();
+      if(id === 'sampler') return openSamplerSheet();
+      if(id === 'looper') return openLooperSheet();
+      if(id === 'sleep') return openSleepSheet();
+      if(id === 'practice') return openPracticeSheet();
+      toast('That tool is not in this build.');
+    }catch(e){
+      toast('That tool could not open: ' + ((e && e.message) || 'unknown error'));
+    }
   }
 
   /* --------------------------------------------------------------------------
@@ -2241,7 +2273,7 @@
   }
   function openSamplerSheet(){
     var body = '<div class="sc-note">Tap a pad to play a slice of the song you are playing. Long-press a pad to capture it at the point that is playing right now.</div>' +
-      '<div class="sc-now"><div class="sc-art" style="' + (currentTrack() && currentTrack().artUrl ? 'background-image:url(' + esc(currentTrack().artUrl) + ')' : '') + '"></div>' +
+      '<div class="sc-now"><div class="sc-art" style="' + (workTrack() && workTrack().artUrl ? 'background-image:url(' + esc(workTrack().artUrl) + ')' : '') + '"></div>' +
       '<div class="sc-now-txt"><div class="sc-now-name">' + esc(sampler.trackId ? trackName(sampler.trackId) : 'Nothing loaded') + '</div>' +
       '<div class="sc-now-sub">' + (sampler.trackId ? '8 pads \u00b7 tap to play, hold to capture' : 'Load the sampler to start') + '</div></div></div>' +
       '<div class="sc-pads">' + padHtml() + '</div>' +
@@ -2252,7 +2284,7 @@
     openSheet('Sampler pads', body);
     wirePads();
     var l = $('scSamplerLoad');
-    if(l) l.addEventListener('click', function(){ loadSamplerFor(currentTrack()).then(function(){ openSamplerSheet(); }); });
+    if(l) l.addEventListener('click', function(){ loadSamplerFor(workTrack()).then(function(){ openSamplerSheet(); }); });
     var d = $('scSamplerDone');
     if(d) d.addEventListener('click', function(){ checkAchievements(true); closeSheet(); renderStudio(); });
   }
@@ -2438,6 +2470,399 @@
   /* --------------------------------------------------------------------------
      14. BOOT
      -------------------------------------------------------------------------- */
+  /* --------------------------------------------------------------------------
+     11b. 71.4 - THE WORKING SONG, AND THE EDIT RACK
+     -------------------------------------------------------------------------- */
+  // Studio could only ever edit one thing: whatever happened to be playing. On a
+  // fresh launch nothing is, so crop, the clip maker and the sampler each
+  // answered "Play a song first" and the whole screen read as broken. Studio now
+  // has a WORKING SONG of its own: it follows whatever is playing, a song you
+  // pick takes over, and every tool that works on a file - crop, the clip maker,
+  // the sampler, the edit rack, the re-encode list - runs off it.
+  var studioPickId = null;
+  (function(){
+    try{ var v = lsGet('sidecut_studio_pick', null); if(v && typeof v === 'string') studioPickId = v; }catch(_ePickLoad){}
+  })();
+  function workTrack(){
+    try{
+      if(studioPickId){ var picked = trackById(studioPickId); if(picked) return picked; }
+      var playing = currentTrack();
+      if(playing) return playing;
+      var all = allTracks();
+      return all.length ? all[0] : null;
+    }catch(_eWork){ return null; }
+  }
+  function pickSong(id){
+    if(!id || !trackById(id)) return false;
+    studioPickId = id;
+    lsSet('sidecut_studio_pick', id);
+    return true;
+  }
+  function playWorkTrack(){
+    var t = workTrack();
+    if(!t){ toast('Add a song to your library first.'); return false; }
+    if(!call('__scPlayTrack', t.id)){ toast('This build could not start that song.'); return false; }
+    toast('Playing "' + (t.name || 'this song') + '".');
+    return true;
+  }
+  function openSongPickerSheet(){
+    var all = allTracks();
+    if(!all.length){ toast('Your library is empty - add some songs first.'); return; }
+    var cur = workTrack();
+    var rows = all.map(function(t){
+      var on = !!(cur && t.id === cur.id);
+      return '<button class="sc-pick' + (on ? ' on' : '') + '" data-pickid="' + esc(t.id) + '">' +
+        '<span class="sc-art sm" style="' + (t.artUrl ? 'background-image:url(' + esc(t.artUrl) + ')' : '') + '"></span>' +
+        '<span class="sc-pick-txt"><span class="sc-pick-name">' + esc(t.name || 'Untitled') + '</span>' +
+        '<span class="sc-pick-sub">' + esc(t.artist || 'Unknown artist') + (t.duration ? ' \u00b7 ' + fmtTime(t.duration) : '') + '</span></span>' +
+        (on ? '<span class="sc-pick-on">editing</span>' : '') + '</button>';
+    }).join('');
+    openSheet('Choose the song to edit',
+      '<input type="text" id="scPickSearch" placeholder="Search your library\u2026" autocomplete="off" style="width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:var(--ink); font-size:13px; margin-bottom:10px;">' +
+      '<div class="sc-picks" id="scPicks">' + rows + '</div>');
+    var box = $('scPicks');
+    var search = $('scPickSearch');
+    if(search && box){
+      search.addEventListener('input', function(){
+        var q = String(search.value || '').toLowerCase().trim();
+        Array.prototype.slice.call(box.querySelectorAll('.sc-pick')).forEach(function(b){
+          var txt = String(b.textContent || '').toLowerCase();
+          b.style.display = (!q || txt.indexOf(q) !== -1) ? '' : 'none';
+        });
+      });
+    }
+    if(box){
+      Array.prototype.slice.call(box.querySelectorAll('.sc-pick')).forEach(function(b){
+        b.addEventListener('click', function(){
+          var id = b.getAttribute('data-pickid');
+          if(!pickSong(id)){ toast('That song is no longer in the library.'); return; }
+          closeSheet();
+          var t = trackById(id);
+          toast('Editing "' + ((t && t.name) || 'that song') + '".');
+          renderStudio();
+        });
+      });
+    }
+  }
+
+  /* ---- the edit rack ------------------------------------------------------- */
+  // Real editing on a COPY. Every operation is plain sample math on the one
+  // decoded buffer Studio already caches - no second decoder, no second encoder
+  // - so the preview and the saved file are the same audio, and the song in the
+  // library is never touched.
+  var edit = {
+    busy: false,
+    silent: true,      // trim the silence off both ends
+    fades: false,
+    fadeIn: 1.5,
+    fadeOut: 1.5,
+    reverse: false,
+    normalize: true,
+    gainDb: 0,
+    kbps: 256
+  };
+  function editSummary(){
+    var bits = [];
+    if(edit.silent) bits.push('trim silence');
+    if(edit.fades) bits.push('fades');
+    if(edit.reverse) bits.push('reverse');
+    if(edit.normalize) bits.push('level match');
+    if(edit.gainDb) bits.push((edit.gainDb > 0 ? '+' : '') + edit.gainDb + ' dB');
+    return bits.length ? ('Will ' + bits.join(' \u00b7 ') + ' \u00b7 then save a copy') : 'Trim, fades, level, reverse \u2014 then save a copy.';
+  }
+  // Silence is measured against the song's OWN peak, so a quiet recording is not
+  // read as all-silence and a loud one does not lose its opening breath.
+  function editThreshold(buf){
+    var peak = 0;
+    for(var c = 0; c < buf.numberOfChannels; c++){
+      var d = buf.getChannelData(c);
+      for(var i = 0; i < d.length; i += 16){ var v = Math.abs(d[i]); if(v > peak) peak = v; }
+    }
+    return Math.max(0.0005, peak * 0.008);
+  }
+  function editRender(buf){
+    if(!buf) return null;
+    var ch = Math.max(1, buf.numberOfChannels);
+    var c, i, n = buf.length;
+    var chan = [];
+    for(c = 0; c < ch; c++){
+      var copy = new Float32Array(n);
+      copy.set(buf.getChannelData(c));
+      chan.push(copy);
+    }
+    if(edit.reverse){
+      for(c = 0; c < ch; c++){
+        var src = chan[c], rev = new Float32Array(n);
+        for(i = 0; i < n; i++) rev[i] = src[n - 1 - i];
+        chan[c] = rev;
+      }
+    }
+    // 1. the silence off both ends. One threshold and one span for every channel,
+    //    so a stereo pair keeps its alignment and the trim cannot unbalance it.
+    if(edit.silent){
+      var th = editThreshold(buf);
+      var edge = function(step, from, to){
+        for(var k = from; step > 0 ? k <= to : k >= to; k += step){
+          for(var cc = 0; cc < ch; cc++){ if(Math.abs(chan[cc][k]) > th) return k; }
+        }
+        return -1;
+      };
+      var a = edge(1, 0, n - 1);
+      var b = edge(-1, n - 1, 0);
+      if(a !== -1 && b !== -1 && b > a){
+        var pad = Math.round(buf.sampleRate * 0.06);
+        var from2 = Math.max(0, a - pad);
+        var to2 = Math.min(n, b + pad);
+        for(c = 0; c < ch; c++) chan[c] = chan[c].subarray(from2, to2);
+        n = to2 - from2;
+      }
+    }
+    // 2. fades, on whatever is left.
+    if(edit.fades){
+      var fin = Math.max(0, Math.min(n, Math.round(edit.fadeIn * buf.sampleRate)));
+      var fout = Math.max(0, Math.min(n, Math.round(edit.fadeOut * buf.sampleRate)));
+      for(c = 0; c < ch; c++){
+        var d2 = chan[c];
+        for(i = 0; i < fin; i++) d2[i] *= i / fin;
+        for(i = 0; i < fout; i++) d2[n - 1 - i] *= i / fout;
+      }
+    }
+    // 3. the level. The chosen gain first, then (if asked) the peak pulled up to
+    //    just under full scale - measured AFTER the gain, so the two controls
+    //    cannot fight each other into clipping.
+    var g = edit.gainDb ? Math.pow(10, edit.gainDb / 20) : 1;
+    var peak2 = 0;
+    for(c = 0; c < ch; c++){
+      var d3 = chan[c];
+      for(i = 0; i < n; i++){ var v2 = d3[i] * g; d3[i] = v2; var av = Math.abs(v2); if(av > peak2) peak2 = av; }
+    }
+    if(edit.normalize && peak2 > 0){
+      var to = 0.98 / peak2;
+      for(c = 0; c < ch; c++){
+        var d4 = chan[c];
+        for(i = 0; i < n; i++) d4[i] *= to;
+      }
+    }
+    var cOut = ctx();
+    if(!cOut) return null;
+    var out = cOut.createBuffer(ch, Math.max(1, n), buf.sampleRate);
+    for(c = 0; c < ch; c++){
+      try{ out.copyToChannel(chan[c], c); }
+      catch(_eCopy){
+        var dst = out.getChannelData(c);
+        for(i = 0; i < n; i++) dst[i] = chan[c][i];
+      }
+    }
+    return out;
+  }
+  // 72.2 - the member tools need the SAME render with different settings. The
+  // rack reads the one edit object, so its settings are swapped for the length
+  // of a synchronous render and put back afterwards. editRender is pure sample
+  // math with no await inside, so nothing can observe the swap, and whatever the
+  // rack is set to is exactly what it is set to when the render is done.
+  var EDIT_KEYS = ['silent', 'fades', 'fadeIn', 'fadeOut', 'reverse', 'normalize', 'gainDb'];
+  function editRenderWith(buf, cfg){
+    if(!cfg) return editRender(buf);
+    var saved = {};
+    for(var k = 0; k < EDIT_KEYS.length; k++){
+      var key = EDIT_KEYS[k];
+      saved[key] = edit[key];
+      if(cfg[key] !== undefined) edit[key] = cfg[key];
+    }
+    try{ return editRender(buf); }
+    finally{ for(var j = 0; j < EDIT_KEYS.length; j++) edit[EDIT_KEYS[j]] = saved[EDIT_KEYS[j]]; }
+  }
+  // 72.2 - one save path for a copy a tool makes: decode, render with the given
+  // settings, encode at the given rate and save it beside the library file. The
+  // song in the library is never the one this writes.
+  function editedCopy(t, cfg, kbps, purpose){
+    if(!t || !t.file) return Promise.reject(new Error('no audio file to edit'));
+    return decoded(t).then(function(b){
+      var out = editRenderWith(b, cfg);
+      if(!out) throw new Error('the edit produced no audio');
+      return tagMetaFor(t, (t.name || 'Edit') + ' (' + purpose + ')').then(function(meta){
+        return window.__scEncodeMp3(out, kbps, meta).then(function(blob){
+          if(!blob) throw new Error('the encoder produced no output');
+          var base = (t.file && t.file.name ? t.file.name.replace(/\.[^/.]+$/, '') : (t.name || 'edit'));
+          var fname = base + ' (' + purpose + ').mp3';
+          return window.__scSaveClip(blob, fname).then(function(saved){ return { saved: saved, fname: fname }; });
+        });
+      });
+    });
+  }
+  // 72.2 - one tap: trim the silence and match the level, saved as its own
+  // tagged file. The rack's two safest operations, with the knobs already set,
+  // so an uneven library can be fixed a song at a time without opening the rack.
+  function cleanUpSong(){
+    var t = workTrack();
+    if(!t){ toast('Choose a song first.'); return; }
+    if(!t.file){ toast('That song has no audio file to clean up.'); return; }
+    bump('studio'); markFeature('studio');
+    toast('Cleaning up "' + (t.name || 'this song') + '"\u2026');
+    editedCopy(t, { silent: true, fades: false, reverse: false, normalize: true, gainDb: 0 }, 192, 'clean').then(function(r){
+      toast(r && r.saved ? ('Cleaned up \u00b7 ' + r.fname) : ('Clean copy ready \u00b7 ' + ((r && r.fname) || 'the copy')), 4800);
+    }).catch(function(e){
+      toast('The clean-up failed: ' + ((e && e.message) || 'could not finish'), 5200);
+    });
+  }
+  // 72.2 - the batch. One song at a time, in the order they were ticked, with a
+  // line naming the one it is on. A song that cannot finish is recorded and the
+  // run carries on, so one bad file cannot strand the rest of the selection.
+  var batchRun = { mode: '', busy: false, i: 0, n: 0, fails: [], saved: 0, log: '' };
+  function batchProgressHtml(){
+    if(batchRun.busy) return '<div class="sc-layer-hint" id="scBatchLine">' + esc(batchRun.log || 'Working\u2026') + '</div>';
+    if(batchRun.n && batchRun.i >= batchRun.n){
+      var doneN = batchRun.n - batchRun.fails.length;
+      return '<div class="sc-note" id="scBatchDone">Finished: ' + doneN + ' of ' + batchRun.n + (batchRun.mode === 'reen' ? ' re-encoded' : ' edited') + (batchRun.saved ? ' \u00b7 ' + fmtBytes(batchRun.saved) + ' smaller' : '') + (batchRun.fails.length ? ' \u00b7 ' + batchRun.fails.length + ' could not finish' : '') + '.</div>';
+    }
+    return '';
+  }
+  function runBatch(mode){
+    var ids = (call('__scSelectedIds') || []).slice();
+    var songs = ids.map(trackById).filter(function(t){ return t && t.file; });
+    if(!songs.length){ toast('Tick the songs you want in Library first.'); return; }
+    if(batchRun.busy) return;
+    batchRun = { mode: mode, busy: true, i: 0, n: songs.length, fails: [], saved: 0, log: '' };
+    renderStudio();
+    var cfg = { silent: edit.silent, fades: edit.fades, fadeIn: edit.fadeIn, fadeOut: edit.fadeOut, reverse: edit.reverse, normalize: edit.normalize, gainDb: edit.gainDb };
+    var kbps = reenKbps;
+    var step = function(){
+      if(batchRun.i >= batchRun.n){
+        batchRun.busy = false;
+        renderStudio();
+        var doneN = batchRun.n - batchRun.fails.length;
+        toast((mode === 'reen' ? 'Re-encoded ' : 'Edited ') + doneN + ' of ' + batchRun.n + (batchRun.saved ? ' \u00b7 ' + fmtBytes(batchRun.saved) + ' back' : '') + (batchRun.fails.length ? ' \u00b7 ' + batchRun.fails.length + ' could not finish' : ''), 5200);
+        return;
+      }
+      var t = songs[batchRun.i];
+      batchRun.log = (mode === 'reen' ? 'Re-encoding ' : 'Editing ') + (batchRun.i + 1) + ' of ' + batchRun.n + ' \u00b7 ' + (t.name || 'song');
+      renderStudio();
+      var work = (mode === 'reen')
+        ? reencodeOne(t, kbps).then(function(saved){ batchRun.saved += saved; })
+        : editedCopy(t, cfg, kbps, 'edit').then(function(){ });
+      work.catch(function(){ batchRun.fails.push(t.id); }).then(function(){ batchRun.i++; step(); });
+    };
+    step();
+  }
+  var editSrcNode = null;
+  function editPreview(){
+    var t = workTrack();
+    if(!t){ toast('Choose a song first.'); return; }
+    if(!ctx()){ toast('This device has no audio engine to preview with.'); return; }
+    decoded(t).then(function(b){
+      var out = editRender(b);
+      if(!out){ toast('Could not build the edit.'); return; }
+      try{ if(editSrcNode) editSrcNode.stop(); }catch(_eStop){}
+      try{
+        var node = ctx().createBufferSource();
+        node.buffer = out;
+        node.connect(ctx().destination);
+        node.start(0);
+        editSrcNode = node;
+        toast('Previewing ' + secToClock(out.duration) + ' of the edit\u2026');
+      }catch(e){ toast('Could not preview: ' + ((e && e.message) || 'no audio output')); }
+    }, function(e){ toast('Could not read that song: ' + ((e && e.message) || 'decode failed')); });
+  }
+  function editExport(){
+    var t = workTrack();
+    if(!t){ toast('Choose a song first.'); return; }
+    if(!t.file){ toast('That song has no audio file to edit.'); return; }
+    if(edit.busy) return;
+    edit.busy = true;
+    var btn = $('scEditSave');
+    if(btn){ btn.disabled = true; btn.textContent = 'Working\u2026'; }
+    var done = function(msg, ms){
+      edit.busy = false;
+      if(btn){ btn.disabled = false; btn.textContent = 'Save a copy'; }
+      if(msg) toast(msg, ms || 4400);
+    };
+    var base = (t.file && t.file.name ? t.file.name.replace(/\.[^/.]+$/, '') : (t.name || 'edit'));
+    var fname = base + ' (edit).mp3';
+    decoded(t).then(function(b){
+      var out = editRender(b);
+      if(!out) throw new Error('the edit produced no audio');
+      return tagMetaFor(t, (t.name || 'Edit') + ' (edit)').then(function(meta){
+        return window.__scEncodeMp3(out, edit.kbps, meta).then(function(blob){
+          if(!blob) throw new Error('the encoder produced no output');
+          return window.__scSaveClip(blob, fname).then(function(saved){
+            closeSheet();
+            bump('studio'); markFeature('studio');
+            done(saved ? 'Edit saved \u00b7 ' + fname : 'Edit ready \u00b7 ' + fname, 4800);
+          });
+        });
+      });
+    }).catch(function(e){ done('The edit failed: ' + ((e && e.message) || 'could not finish'), 5200); });
+  }
+  function editSheetHtml(){
+    var t = workTrack();
+    var dur = (t && t.duration) ? secToClock(t.duration) : '';
+    var chip = function(on, act, label){
+      return '<button class="sc-chip' + (on ? ' on' : '') + '" data-edit="' + act + '">' + label + '</button>';
+    };
+    var fader = function(id, label, val){
+      return '<div class="sc-slider"><label>' + label + ' <span id="' + id + 'V">' + Number(val).toFixed(1) + 's</span></label>' +
+        '<input type="range" id="' + id + '" min="0" max="6" step="0.5" value="' + val + '"></div>';
+    };
+    return '<div class="sc-songline"><div class="sc-art" style="' + (t && t.artUrl ? 'background-image:url(' + esc(t.artUrl) + ')' : '') + '"></div>' +
+      '<div><div class="sc-songname">' + esc(t ? (t.name || 'Untitled') : 'No song') + '</div>' +
+      '<div class="sc-songsub">' + esc(t ? (t.artist || 'Unknown artist') : '') + (dur ? ' \u00b7 ' + dur : '') + '</div></div></div>' +
+      '<div class="sc-note">Every change is made on a copy. Your song in the library is never overwritten \u2014 the edit saves as its own tagged file.</div>' +
+      '<div class="sc-chips">' +
+        chip(edit.silent, 'silent', 'Trim silence') +
+        chip(edit.fades, 'fades', 'Fades') +
+        chip(edit.reverse, 'reverse', 'Reverse') +
+        chip(edit.normalize, 'normalize', 'Level match') +
+      '</div>' +
+      (edit.fades ? (fader('scEditFadeIn', 'Fade in', edit.fadeIn) + fader('scEditFadeOut', 'Fade out', edit.fadeOut)) : '') +
+      '<div class="sc-chips"><span class="sc-chip-label">Level</span>' +
+        [['-6', '\u22126 dB'], ['-3', '\u22123 dB'], ['0', '0 dB'], ['3', '+3 dB'], ['6', '+6 dB'], ['9', '+9 dB']].map(function(pair){
+          return '<button class="sc-chip' + (String(edit.gainDb) === pair[0] ? ' on' : '') + '" data-editgain="' + pair[0] + '">' + pair[1] + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div class="sc-chips"><span class="sc-chip-label">Save at</span>' +
+        [128, 192, 256, 320].map(function(k){
+          return '<button class="sc-chip' + (edit.kbps === k ? ' on' : '') + '" data-editkbps="' + k + '">' + k + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div class="sc-layer-hint">' + esc(editSummary()) + '</div>' +
+      '<div class="sc-actions"><button class="sc-btn" id="scEditPreview">Preview</button><button class="sc-btn primary" id="scEditSave">Save a copy</button></div>';
+  }
+  function openEditSheet(){
+    var t = workTrack();
+    if(!t){ toast('Add a song to your library first, then open the edit rack.'); return; }
+    bump('studio');
+    markFeature('studio');
+    openSheet('Edit rack', editSheetHtml());
+    var chipWire = function(sel, fn){
+      Array.prototype.slice.call(document.querySelectorAll('#scSheetBody ' + sel)).forEach(function(b){
+        b.addEventListener('click', function(){ fn(b); openEditSheet(); });
+      });
+    };
+    chipWire('[data-edit]', function(b){
+      var what = b.getAttribute('data-edit');
+      if(what === 'silent') edit.silent = !edit.silent;
+      else if(what === 'reverse') edit.reverse = !edit.reverse;
+      else if(what === 'fades') edit.fades = !edit.fades;
+      else if(what === 'normalize') edit.normalize = !edit.normalize;
+    });
+    chipWire('[data-editgain]', function(b){ edit.gainDb = parseFloat(b.getAttribute('data-editgain')) || 0; });
+    chipWire('[data-editkbps]', function(b){ edit.kbps = parseInt(b.getAttribute('data-editkbps'), 10) || 256; });
+    var fi = $('scEditFadeIn');
+    if(fi) fi.addEventListener('input', function(){
+      edit.fadeIn = parseFloat(fi.value) || 0;
+      var v = $('scEditFadeInV'); if(v) v.textContent = edit.fadeIn.toFixed(1) + 's';
+    });
+    var fo = $('scEditFadeOut');
+    if(fo) fo.addEventListener('input', function(){
+      edit.fadeOut = parseFloat(fo.value) || 0;
+      var v = $('scEditFadeOutV'); if(v) v.textContent = edit.fadeOut.toFixed(1) + 's';
+    });
+    var pv = $('scEditPreview');
+    if(pv) pv.addEventListener('click', editPreview);
+    var sv = $('scEditSave');
+    if(sv) sv.addEventListener('click', editExport);
+  }
+
   function buildStudioView(){
     if($('studioView')) return;
     var host = document.createElement('div');
@@ -2710,6 +3135,17 @@
     closeSheet: closeSheet,
     renderStudio: renderStudio,
     openTool: openTool,
+    // 71.4 - the working song and the edit rack.
+    workTrack: workTrack,
+    pickSong: pickSong,
+    openSongPickerSheet: openSongPickerSheet,
+    playWorkTrack: playWorkTrack,
+    openEditSheet: openEditSheet,
+    editRender: editRender,
+    editExport: editExport,
+    editPreview: editPreview,
+    editOps: function(){ return edit; },
+    editSummary: editSummary,
     stats: stats,
     setTarget: function(k){ reenKbps = k; renderStudio(); },
     target: function(){ return reenKbps; }

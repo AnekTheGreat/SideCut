@@ -204,9 +204,26 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
      win.document.getElementById('lyricsNotFound').style.display);
 
   console.log('\n— manual search offers candidates —');
+  const t1 = win.__scGetAllTracks().find((t) => t.id === 't1');
+  const savedLyrics = t1 && t1.lyrics;
+  ok('the resolved lyrics are saved on the track before manual refetch', !!savedLyrics && /line one/.test(savedLyrics));
   win.document.getElementById('lyricsRefetchBtn').click();
   await wait(400);
   ok('the search form opens', !!win.document.getElementById('lrSearch'));
+  win.document.getElementById('lrArtist').value = 'Diljit Dosanjh';
+  win.document.getElementById('lrTitle').value = 'No Such Local Track';
+  win.document.getElementById('lrSearch').click();
+  await wait(1400);
+  ok('a failed manual refetch keeps the saved lyrics intact', t1 && t1.lyrics === savedLyrics, t1 && t1.lyrics);
+  ok('the saved lyrics return to the sheet after no candidate is found',
+     /line one/.test(win.document.getElementById('lyricsText').textContent || '') &&
+       win.document.getElementById('lyricsText').style.display !== 'none',
+     win.document.getElementById('lyricsText').textContent.slice(0, 60));
+  ok('the failure explains that the saved lyrics were unchanged',
+     /saved lyrics are unchanged/i.test(win.document.getElementById('toast').textContent || ''),
+     win.document.getElementById('toast').textContent);
+  win.document.getElementById('lyricsRefetchBtn').click();
+  await wait(400);
   win.document.getElementById('lrArtist').value = 'Diljit Dosanjh';
   win.document.getElementById('lrTitle').value = 'Waliyan';
   win.document.getElementById('lrSearch').click();
@@ -227,6 +244,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     await wait(600);
     ok('picking a candidate saves its lyrics', /right song words/.test(win.document.getElementById('lyricsText').textContent || ''),
        JSON.stringify((win.document.getElementById('lyricsText').textContent || '').slice(0, 40)));
+    ok('the chosen result replaces the old saved words on the track', t1 && /right song words/.test(t1.lyrics) && !/line one/.test(t1.lyrics), t1 && t1.lyrics);
+    ok('the chosen search terms are retained with the replacement',
+       t1 && t1._lyricsSearchArtist === 'Diljit Dosanjh' && t1._lyricsSearchTitle === 'Waliyan',
+       t1 && t1._lyricsSearchArtist + ' / ' + t1._lyricsSearchTitle);
     ok('the picker closes after choosing', !win.document.getElementById('lyricsCandidatePicker'));
   }
   // Reopening a different song must not leave the old picker floating over it.

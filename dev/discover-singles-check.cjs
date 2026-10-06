@@ -77,10 +77,16 @@ function okJson(payload) {
   return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(payload), text: () => Promise.resolve(JSON.stringify(payload)) });
 }
 function makeApi() {
-  const api = { dead: false, calls: [] };
+  const api = { dead: false, oldSongsMode: false, holdArtistLookups: false, holdSpotifyMeta: false, pending: [], calls: [] };
   api.fetch = (url) => {
     const u = String(url);
     api.calls.push(u);
+    if (api.holdSpotifyMeta && /open\.spotify\.com\/oembed/.test(u)) {
+      return new Promise((resolve) => api.pending.push(() => resolve(okJson({}))));
+    }
+    if (api.holdArtistLookups && /entity=musicArtist/.test(u)) {
+      return new Promise((resolve) => api.pending.push(() => resolve(okJson({ results: [] }))));
+    }
     if (api.dead) return Promise.resolve({ ok: false, status: 429, json: () => Promise.resolve({}) });
     let m = /lookup\?id=(\d+)&entity=song/.exec(u);
     if (m) {
@@ -98,6 +104,12 @@ function makeApi() {
     if (/entity=musicArtist/.test(u)) {
       const term = decodeURIComponent((/term=([^&]*)/.exec(u) || [])[1] || '');
       return okJson({ results: ARTISTS.filter((a) => term.indexOf(a.name) !== -1).map((a) => ({ artistId: a.artistId, artistName: a.name })) });
+    }
+    if (api.oldSongsMode && /entity=(song|album|musicVideo)/.test(u)) {
+      return okJson({ results: [
+        { trackName: 'Archive Song', artistName: 'Test Artist', releaseDate: '2024-11-03T07:00:00Z', trackId: 501, trackViewUrl: 'https://music/archive' },
+        { trackName: 'Nightcore Archive', artistName: 'Test Artist', releaseDate: '2024-11-03T07:00:00Z', trackId: 502 },
+      ] });
     }
     if (/entity=song/.test(u)) {
       const term = decodeURIComponent((/term=([^&]*)/.exec(u) || [])[1] || '');
@@ -233,16 +245,63 @@ async function refetchSingles(win) {
   }
 
   // ---------------------------------------------------------------------
+  console.log('\n\u2014 opening Singles is cache-only; the explicit button does the search \u2014');
+  {
+    const { win, api } = await boot();
+    const before = api.calls.filter((u) => /entity=song/.test(u)).length;
+    await openSingles(win);
+    const afterOpen = api.calls.filter((u) => /entity=song/.test(u)).length;
+    ok('an empty cache opens without contacting the song API', afterOpen === before, before + ' -> ' + afterOpen);
+    ok('the empty state explains how to fetch once', /Tap Refetch singles to search online/.test(popupBody(win)));
+    const refetchBtn = doc(win).getElementById('singlesRefetchBtn');
+    ok('the empty state gives an explicit refetch control', !!refetchBtn);
+    if (refetchBtn) refetchBtn.click();
+    await wait(2500);
+    ok('that explicit tap fetches and displays Singles', /Naina/.test(popupBody(win)), popupBody(win).slice(0, 100));
+    ok('and saves the fetched list', /Naina/.test(cacheBody(win)));
+    win.close();
+  }
+
+  // ---------------------------------------------------------------------
+  console.log('\n\u2014 legacy cached junk is removed when the saved Singles list opens \u2014');
+  {
+    const { win, api } = await boot();
+    await refetchSingles(win);
+    const saved = JSON.parse(cacheRaw(win));
+    const tmp = doc(win).createElement('div');
+    tmp.innerHTML = saved.body;
+    const group = tmp.querySelector('.dp-ah-artist');
+    const junk = tmp.querySelector('.dp-track[data-si]').cloneNode(true);
+    junk.dataset.tname = 'Nightcore Moon';
+    const title = junk.querySelector('div[style*="flex:1"] > div:first-child');
+    if (title) title.textContent = 'Nightcore Moon';
+    group.appendChild(junk);
+    saved.body = tmp.innerHTML;
+    win.localStorage.setItem(SINGLES_KEY, JSON.stringify(saved));
+    api.calls.length = 0;
+    await openSingles(win);
+    const songRequests = api.calls.filter((u) => /entity=song/.test(u));
+    ok('the normal open does not refetch while cleaning the snapshot', songRequests.length === 0, songRequests.length + ' song requests');
+    ok('the valid saved single remains', /Naina/.test(popupBody(win)));
+    ok('the lo-fi/nightcore catalog noise is stripped from the rendered cache', !/Nightcore Moon/.test(popupBody(win)));
+    win.close();
+  }
+
+  // ---------------------------------------------------------------------
   console.log('\n\u2014 refetch, leave the popup, come back: the songs are still there \u2014');
   {
     const { win, api } = await boot();
+    await refetchSingles(win);
     await openSingles(win);
     ok('the list opened with the song in it', /Naina/.test(popupBody(win)));
     const refetchBtn = doc(win).getElementById('singlesRefetchBtn');
     ok('the popup offers a refetch button', !!refetchBtn);
+    const beforeButtonTap = api.calls.filter((u) => /entity=song/.test(u)).length;
     if (refetchBtn) refetchBtn.click();
     await wait(2500);
-    // The API now goes quiet, exactly like a rate-limited iTunes while the user
+    ok('tapping the visible cached-list button starts the song lookup',
+       api.calls.filter((u) => /entity=song/.test(u)).length > beforeButtonTap);
+          // The API now goes quiet, exactly like a rate-limited iTunes while the user
     // closes the popup and opens it again.
     api.dead = true;
     win.closeDiscoverPopup();
@@ -254,6 +313,85 @@ async function refetchSingles(win) {
     ok('nothing was swapped for an empty popup', !/No singles found/.test(popupBody(win)));
     ok('no refetch was needed to show them', api.calls.filter((u) => /entity=song|entity=musicArtist/.test(u)).length < 8,
        api.calls.length + ' api calls');
+    win.close();
+  }
+
+  // ---------------------------------------------------------------------
+  console.log('\n\u2014 Old songs opens saved rows first; only Refresh searches online \u2014');
+  {
+    const { win, api } = await boot();
+    const oldKey = 'discPopupCache_📅 Old songs';
+    const pinSig = 'test artist';
+    const savedBody = '<div class="dp-track" data-lyrow="1" data-trackname="Saved Archive" data-search="&quot;Saved Archive&quot; Test Artist"><div style="flex:1"><div>Saved Archive</div></div></div>';
+    win.localStorage.setItem(oldKey, JSON.stringify({ title: '📅 Old songs', body: savedBody, subtitle: '1 saved song', ts: Date.now(), pins: pinSig }));
+    const oldButton = doc(win).getElementById('discoverLastYear');
+    win.navigate('discover');
+    await wait(100);
+    api.calls.length = 0; // ignore unrelated requests triggered while Discover renders
+    if (oldButton) oldButton.click();
+    await wait(100);
+    ok('opening Old songs immediately serves the saved snapshot', /Saved Archive/.test(popupBody(win)), popupTitle(win) + ': ' + popupBody(win).slice(0, 100));
+    const oldSongSearches = api.calls.filter((u) => /itunes\.apple\.com\/search\?term=Test%20Artist&media=music&entity=(song|album|musicVideo)/.test(u));
+    ok('the cache-first open does not search iTunes for the pinned artist\'s Old songs', oldSongSearches.length === 0, oldSongSearches.join(' | '));
+    const refresh = doc(win).getElementById('oldSongsRefreshBtn');
+    ok('the popup offers an explicit refresh', !!refresh);
+    api.oldSongsMode = true;
+    if (refresh) refresh.click();
+    await wait(700);
+    ok('refresh fetches and displays the qualifying old song', /Archive Song/.test(popupBody(win)));
+    ok('refresh excludes lo-fi/nightcore catalog noise', !/Nightcore Archive/.test(popupBody(win)));
+    ok('the refresh action returns to its ready label', /Refresh Old songs/.test((doc(win).getElementById('oldSongsRefreshBtn') || {}).textContent || ''));
+    win.close();
+  }
+
+  // ---------------------------------------------------------------------
+  console.log('\n\u2014 Album History Cancel stops the current worker queue \u2014');
+  {
+    const { win, api } = await boot({ pinned: ['Test Artist', 'Second Artist'] });
+    try { win.__scTogglePinArtist('Third Artist', ''); } catch (_) {}
+    api.calls.length = 0;
+    api.pending.length = 0;
+    api.holdArtistLookups = true;
+    win.navigate('discover');
+    await wait(350);
+    api.calls.length = 0;
+    const run = win.__refetchAlbums(true);
+    await wait(100);
+    const cancel = doc(win).getElementById('ahCancelBtn');
+    ok('the active Album History popup exposes Cancel', !!cancel);
+    if (cancel) cancel.click();
+    ok('Cancel marks the fetch and visibly enters cancelling state',
+       win.__ahCancelled === true && /cancelling/i.test(cancel && cancel.textContent || ''));
+    api.pending.splice(0).forEach((release) => release());
+    await run;
+    const artistLookups = api.calls.filter((u) => /entity=musicArtist/.test(u));
+    const followupLookups = api.calls.filter((u) => /entity=(album|song|musicVideo)|api\.deezer\.com\/(?:search\/artist|artist\/)|musicbrainz\.org/.test(u));
+    ok('cancel lets only already-started artist lookups finish', artistLookups.length === 3, artistLookups.length + ' started');
+    ok('cancel stops every follow-up catalog lookup', followupLookups.length === 0, followupLookups.join(' | '));
+    win.close();
+  }
+
+  // ---------------------------------------------------------------------
+  console.log('\n\u2014 converter X clears, cancels, and immediately enables a fresh conversion \u2014');
+  {
+    const { win } = await boot();
+    const d = doc(win);
+    const input = d.getElementById('spMp3Input');
+    const convert = d.getElementById('spMp3Btn');
+    const result = d.getElementById('spMp3Result');
+    input.value = 'https://open.spotify.com/track/abc123';
+    win.fetch = (url) => /open\.spotify\.com\/oembed/.test(String(url))
+      ? new Promise(() => {})
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ results: [] }) });
+    convert.click();
+    ok('a Spotify conversion enters its running state', convert.disabled);
+    d.getElementById('spMp3Clear').click();
+    ok('Spotify X clears input and result immediately', input.value === '' && result.innerHTML === '' && result.style.display === 'none');
+    ok('Spotify X cancels the active run and reenables Convert', win.__scCancelDl === true && !convert.disabled);
+    input.value = 'https://open.spotify.com/track/next123';
+    convert.click();
+    ok('a different conversion can start straight away', convert.disabled && win.__scCancelDl === false);
+    d.getElementById('spMp3Clear').click();
     win.close();
   }
 
@@ -285,6 +423,7 @@ async function refetchSingles(win) {
   console.log('\n\u2014 a per-artist refresh keeps the other artists \u2014');
   {
     const { win, api } = await boot({ pinned: ['Test Artist', 'Second Artist'] });
+    await refetchSingles(win);
     await openSingles(win);
     const groups = doc(win).querySelectorAll('#discPopupBody .dp-ah-artist');
     ok('both artists are listed', groups.length === 2, String(groups.length));
