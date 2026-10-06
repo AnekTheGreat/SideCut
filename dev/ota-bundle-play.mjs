@@ -65,6 +65,8 @@ if (CHECK) {
     const zipped = execFileSync('unzip', ['-p', path.join(OUT, 'update.zip'), 'index.html'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     if (!zipped.includes(MARK)) problems.push('index.html inside ota-play/update.zip has NO Play flag');
     if (String(readVersion(zipped)) !== String(version)) problems.push('index.html inside ota-play/update.zip has the wrong version');
+    const embeddedManifest = JSON.parse(execFileSync('unzip', ['-p', path.join(OUT, 'update.zip'), 'manifest.json'], { encoding: 'utf8' }));
+    if (String(embeddedManifest.version) !== String(version)) problems.push('manifest.json inside ota-play/update.zip has the wrong version');
   } catch (e) { problems.push('could not read ota-play/update.zip: ' + (e && e.message)); }
   if (problems.length) {
     console.error('ota-bundle-play --check FAILED:');
@@ -90,7 +92,18 @@ for (const f of OTA_FILES) {
 fs.mkdirSync(OUT, { recursive: true });
 const zipPath = path.join(OUT, 'update.zip');
 fs.rmSync(zipPath, { force: true });
-execFileSync('zip', ['-q', '-r', '-X', zipPath, ...OTA_FILES], { cwd: stage, stdio: 'inherit' });
+const manifestIndex = OTA_FILES.indexOf('manifest.json');
+const beforeManifest = OTA_FILES.slice(0, manifestIndex);
+const afterManifest = OTA_FILES.slice(manifestIndex + 1);
+if (beforeManifest.length) {
+  execFileSync('zip', ['-q', '-r', '-X', zipPath, ...beforeManifest], { cwd: stage, stdio: 'inherit' });
+}
+// Store the embedded root manifest without compression so its size field can
+// describe this ZIP exactly without a compression-length fixed-point loop.
+execFileSync('zip', ['-q', '-X', '-0', zipPath, 'manifest.json'], { cwd: stage, stdio: 'inherit' });
+if (afterManifest.length) {
+  execFileSync('zip', ['-q', '-r', '-X', zipPath, ...afterManifest], { cwd: stage, stdio: 'inherit' });
+}
 fs.rmSync(stage, { recursive: true, force: true });
 
 const size = fs.statSync(zipPath).size;

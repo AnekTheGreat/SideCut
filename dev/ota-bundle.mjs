@@ -79,6 +79,15 @@ if (CHECK) {
     if (String(zipVersion) !== String(version)) {
       problems.push(`the index.html inside ota/update.zip is v${zipVersion} but index.html is v${version}`);
     }
+    const embeddedManifest = JSON.parse(execFileSync('unzip', ['-p', path.join(ROOT, 'ota/update.zip'), 'manifest.json'], { encoding: 'utf8' }));
+    const zipSize = fs.statSync(path.join(ROOT, 'ota/update.zip')).size;
+    if (embeddedManifest.size !== zipSize) {
+      problems.push(`manifest.json inside ota/update.zip says ${embeddedManifest.size} bytes but the zip is ${zipSize} bytes`);
+    }
+    if (String(embeddedManifest.version) !== String(version)) {
+      problems.push(`manifest.json inside ota/update.zip is v${embeddedManifest.version} but index.html is v${version}`);
+    }
+
   } catch (e) {
     problems.push('could not read ota/update.zip: ' + (e && e.message));
   }
@@ -112,7 +121,18 @@ for (const f of OTA_FILES) {
 fs.mkdirSync(path.join(ROOT, 'ota'), { recursive: true });
 const zipPath = path.join(ROOT, 'ota/update.zip');
 fs.rmSync(zipPath, { force: true });
-execFileSync('zip', ['-q', '-r', '-X', zipPath, ...OTA_FILES], { cwd: stage, stdio: 'inherit' });
+const manifestIndex = OTA_FILES.indexOf('manifest.json');
+const beforeManifest = OTA_FILES.slice(0, manifestIndex);
+const afterManifest = OTA_FILES.slice(manifestIndex + 1);
+if (beforeManifest.length) {
+  execFileSync('zip', ['-q', '-r', '-X', zipPath, ...beforeManifest], { cwd: stage, stdio: 'inherit' });
+}
+// Store the self-describing manifest without compression: its numeric size field
+// then cannot change the ZIP size and create a one-byte fixed-point oscillation.
+execFileSync('zip', ['-q', '-X', '-0', zipPath, 'manifest.json'], { cwd: stage, stdio: 'inherit' });
+if (afterManifest.length) {
+  execFileSync('zip', ['-q', '-r', '-X', zipPath, ...afterManifest], { cwd: stage, stdio: 'inherit' });
+}
 fs.rmSync(stage, { recursive: true, force: true });
 
 const size = fs.statSync(zipPath).size;
