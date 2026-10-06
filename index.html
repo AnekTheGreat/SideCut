@@ -10656,28 +10656,27 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // track's own energy - the moment something actually starts. No key, no
   // network, and the same answer every time.
   var SC_ONSET_HOP = 0.02;      // 20ms frames
-  var SC_ONSET_PULL = 1.1;      // how far a line may be pulled, in seconds    // Syllable/beat count. CJK, kana, Hangul and Thai (and other abugidas)
-    // carry one sound per written character - every character is its own beat,
-    // so they must score 1.0, not the 0.6 they had, which made them flash past
-    // the voice in letter-by-letter mode. Latin uses 0.6 per vowel, 0.15 per
-    // consonant. Numbers score 0.5. Whitespace counts 0.1 (only inside
-    // word-by-word so it is never paced)." +
-    ": The pacer's line rates only; an instrumental gap in the middle of a
-    // line is no excuse for the highlight to crawl to a standstill. A line
-    // that crosses a BPM change gets per-word pacing instead.
-    function scSyllableCount(text){
-      var t = String(text || '');
-      var units = 0;
-      for(var i = 0; i < t.length; i++){
-        var c = t.charAt(i);
-        if(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(c)){ units += 1; continue; }
-        if(/\s/.test(c)){ units += 0.1; continue; }
-        if(/[A-Za-z]/.test(c)){ units += /[aeiouyAEIOUY]/.test(c) ? 0.6 : 0.15; continue; }
-        if(/[0-9]/.test(c)){ units += 0.5; continue; }
-        units += 0.35;
-      }
-      return Math.max(1, units);
+  var SC_ONSET_PULL = 1.1;      // how far a line may be pulled, in seconds
+
+  // Syllable/beat count. CJK, kana, Hangul and Thai (and other abugidas)
+  // carry one sound per written character - every character is its own beat,
+  // so they must score 1.0, not the 0.6 they had, which made them flash past
+  // the voice in letter-by-letter mode. Latin uses 0.6 per vowel, 0.15 per
+  // consonant. Numbers score 0.5. Whitespace counts 0.1 (only inside
+  // word-by-word so it is never paced).
+  function scSyllableCount(text){
+    var t = String(text || '');
+    var units = 0;
+    for(var i = 0; i < t.length; i++){
+      var c = t.charAt(i);
+      if(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(c)){ units += 1; continue; }
+      if(/\s/.test(c)){ units += 0.1; continue; }
+      if(/[A-Za-z]/.test(c)){ units += /[aeiouyAEIOUY]/.test(c) ? 0.6 : 0.15; continue; }
+      if(/[0-9]/.test(c)){ units += 0.5; continue; }
+      units += 0.35;
     }
+    return Math.max(1, units);
+  }
 
   // How sharply the energy rises at each frame of a decoded track, smoothed so a
   // single noisy frame cannot out-vote a real word start. Pure over anything
@@ -11781,7 +11780,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // three letters were never lit because the window closed before the singer
     // reached them. Weight each CJK char at 1.0 so the sweep and the voice stay
     // locked together for every script.
-    return 1.0;
+    if(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(c)) return 1;
+    return 0.6;
   }
   function scEnsureWordSpans(lineEl){
     if(!lineEl) return [];
@@ -11912,23 +11912,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     const natural = Math.max(0.4, totalWeight / rate + 0.2);
     const pace = Math.min(gap, natural);
-    let acc = 0, litIdx = -1, litFrom = 0, litTo = 0;
+    let litIdx = -1, litFrom = 0, litTo = 0;
     words.forEach(function(w, wi){
       const dur = wordDurs[wi] - (wi ? wordDurs[wi - 1] : 0);
       const wFrom = fromSec + (wi ? wordDurs[wi - 1] : 0);
       const wTo = Math.min(fromSec + pace, wFrom + dur);
-      const s = wFrom;
-      const e = wTo;
-      if(nowSec >= s && nowSec < e){ litIdx = wi; litFrom = s; litTo = e; }
-    });
-    let acc = 0, litIdx = -1, litFrom = 0, litTo = 0;
-    words.forEach(function(w, wi){
-      const dur = wordDurs[wi] - (wi ? wordDurs[wi - 1] : 0);
-      const wFrom = fromSec + (wi ? wordDurs[wi - 1] : 0);
-      const wTo = Math.min(fromSec + pace, wFrom + dur);
-      const s = wFrom;
-      const e = wTo;
-      if(nowSec >= s && nowSec < e){ litIdx = wi; litFrom = s; litTo = e; }
+      if(nowSec >= wFrom && nowSec < wTo){ litIdx = wi; litFrom = wFrom; litTo = wTo; }
     }); // A line that spans a BPM switch now paces each word at its own share of
     // the window, so a fast verse and a slow chorus do not fight over one
     // constant rate. A long instrumental gap inside the line no longer stalls
