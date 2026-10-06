@@ -10656,21 +10656,28 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // track's own energy - the moment something actually starts. No key, no
   // network, and the same answer every time.
   var SC_ONSET_HOP = 0.02;      // 20ms frames
-  var SC_ONSET_PULL = 1.1;      // how far a line may be pulled, in seconds
-
-  function scSyllableCount(text){
-    var t = String(text || '');
-    var units = 0;
-    for(var i = 0; i < t.length; i++){
-      var c = t.charAt(i);
-      if(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(c)){ units += 1; continue; }
-      if(/\s/.test(c)){ units += 0.1; continue; }
-      if(/[A-Za-z]/.test(c)){ units += /[aeiouyAEIOUY]/.test(c) ? 0.6 : 0.15; continue; }
-      if(/[0-9]/.test(c)){ units += 0.5; continue; }
-      units += 0.35;
+  var SC_ONSET_PULL = 1.1;      // how far a line may be pulled, in seconds    // Syllable/beat count. CJK, kana, Hangul and Thai (and other abugidas)
+    // carry one sound per written character - every character is its own beat,
+    // so they must score 1.0, not the 0.6 they had, which made them flash past
+    // the voice in letter-by-letter mode. Latin uses 0.6 per vowel, 0.15 per
+    // consonant. Numbers score 0.5. Whitespace counts 0.1 (only inside
+    // word-by-word so it is never paced)." +
+    ": The pacer's line rates only; an instrumental gap in the middle of a
+    // line is no excuse for the highlight to crawl to a standstill. A line
+    // that crosses a BPM change gets per-word pacing instead.
+    function scSyllableCount(text){
+      var t = String(text || '');
+      var units = 0;
+      for(var i = 0; i < t.length; i++){
+        var c = t.charAt(i);
+        if(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(c)){ units += 1; continue; }
+        if(/\s/.test(c)){ units += 0.1; continue; }
+        if(/[A-Za-z]/.test(c)){ units += /[aeiouyAEIOUY]/.test(c) ? 0.6 : 0.15; continue; }
+        if(/[0-9]/.test(c)){ units += 0.5; continue; }
+        units += 0.35;
+      }
+      return Math.max(1, units);
     }
-    return Math.max(1, units);
-  }
 
   // How sharply the energy rises at each frame of a decoded track, smoothed so a
   // single noisy frame cannot out-vote a real word start. Pure over anything
@@ -10749,13 +10756,25 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           if(wCount >= wNeed){ voiceStart = f0 * hop; break; }
         }
       }
-      // Past a third of the song a cluster of rises is not an entrance any more,
-      // so nothing drags the words with it.
-      if(!(voiceStart > 0) || voiceStart > dur * 0.35) voiceStart = 0;
+      // Long intros: allow voiceStart to be nearly the whole track (only cap it
+      // if the song is actually short). A 45s intro on a 3m track must not push
+      // every line behind the voice. The hard 0.35 cap is the single biggest
+      // cause of "lyrics sit behind the voice on long intros".
+      if(!(voiceStart > 0) || voiceStart > dur * 0.85) voiceStart = 0;
     }
-    var lead = Math.min(6, Math.max(0.5, dur * 0.03));
+    // Lead-in before the first sung line: for a short track the lead can be
+    // meaningful, for a long track it must stay small so a long intro does not
+    // drag the first line's landing point backward. The old 0.03* dur guess is
+    // a guess that breaks a 180s song with a 30s intro (0.03*180 = 5.4s is too
+    // much, it pins the first line too far back). Prefer a measured min(3s, 0.08%*dur).
+    var lead = Math.min(3, Math.max(0.4, dur * 0.0008));
     var start = voiceStart > 0 ? voiceStart : lead;
-    var span = Math.max(1, dur - start - Math.min(4, dur * 0.05));
+    // Span from first sung line to last line PLUS room for the last line's own
+    // duration AND a final tail so the outro is not crushed into the end: the
+    // old span = dur - start - min(4, 5% of dur) eats the final 1-4s of the
+    // song, and an outro that lands on the last timestamp is expected.
+    var endPad = Math.max(1.5, dur * 0.02);
+    var span = Math.max(1, dur - start - Math.min(4, dur * 0.05) - endPad);
     var t = [], acc = 0;
     for(var j = 0; j < kept.length; j++){
       t.push(start + (acc / total) * span);
@@ -10773,12 +10792,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         // estimate can sit well before the entrance, and the entrance is the one
         // rise that has to win.
         var lo = Math.max(0, centre - win);
-        var hi = Math.min(env.length - 1, centre + (q === 0 ? win * 3 : win));
+        var hi = Math.min(env.length - 1, centre + (q === 0 ? win * 3 : win * 4));
         var bi = -1, bv = floor;
         for(var s = lo; s <= hi; s++){ if(env[s] > bv){ bv = env[s]; bi = s; } }
         if(bi >= 0) t[q] = bi * hop;
         // The search may not park a line on top of the one before it.
-        if(q > 0 && t[q] < t[q - 1] + 0.35) t[q] = t[q - 1] + 0.35;
+        if(q > 0 && t[q] < t[q - 1] + 0.5) t[q] = t[q - 1] + 0.5;
       }
     }
     function stamp(sec){
@@ -11718,6 +11737,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // scripts that use it; a run of Han/Kana/Hangul is broken into pieces instead
   // of standing as one giant token, so word-by-word has something to pace. Thai
   // and Lao run without spaces too and are handled the same way.
+  //
+  // The step is 2 characters per piece for CJK/kana/Hangul/Thai runs. Two is
+  // small enough that a 3-4 character line still moves as a few distinct words
+  // (a 4-char Han line becomes 2 pacing units), but large enough that very
+  // long lines (50+ chars) do not get thousands of units that stall the
+  // poller. If a run is longer than 6 the step is 3 instead, so a 60-char line
+  // yields 20 units not 30, and each unit gets a wider window to pace across.
   function scPaceSegments(text){
     var out = [], re = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]+|[^\s]+|\s+/g;
     var m;
@@ -11726,7 +11752,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(!chunk) continue;
       if(/^\s+$/.test(chunk)){ out.push(chunk); continue; }
       if(chunk.length >= 3 && /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7A3\u0E00-\u0E7F\u0E80-\u0EFF\u1100-\u11FF\u3130-\u318F]/.test(chunk)){
-        for(var i = 0; i < chunk.length; i += 2) out.push(chunk.slice(i, i + 2));
+        var step = chunk.length > 6 ? 3 : 2;
+        for(var i = 0; i < chunk.length; i += step) out.push(chunk.slice(i, i + step));
       } else {
         out.push(chunk);
       }
@@ -11747,7 +11774,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(/[iljtfIr!.,:;'|]/.test(c)) return 0.45;
     if(/[mwMW]/.test(c)) return 1.35;
     if(/[A-Za-z0-9]/.test(c)) return 1;
-    return 0.6;
+    // CJK, kana, Hangul, Thai and other abugidas: every written character is one
+    // sound/beat, so they deserve the same weight as an average Latin letter.
+    // The old 0.6 made each CJK letter 40% lighter, so the letter wave swept
+    // through a CJK word far faster than the voice sang it, and the last two or
+    // three letters were never lit because the window closed before the singer
+    // reached them. Weight each CJK char at 1.0 so the sweep and the voice stay
+    // locked together for every script.
+    return 1.0;
   }
   function scEnsureWordSpans(lineEl){
     if(!lineEl) return [];
@@ -11862,15 +11896,44 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // ballad runs near 2, a fast verse near 6.
     const lineRate = totalWeight / gap;
     const rate = Math.max(1.6, Math.min(7, lineRate * 1.12));
+    // per-word duration: the natural length of this word's own singing, not the
+    // whole line's. A 3-syllable English word at 4 syllables/sec is 0.75s; a
+    // 4-character Han line with 1.0 per char at 3 Chinese beats/s is 1.33s.
+    // These become the weight shares below, so a fast section and a slow one
+    // each word lands where it is actually sung — the fix for BPM switches and
+    // for a line that starts over an instrumental gap: the gap's words are
+    // spread over the same window, but syllable weight keeps the sweep sounding
+    // spoken instead of crawling to a standstill.
+    const wordDurs = [];
+    let acc = 0;
+    for(let i = 0; i < weights.length; i++){
+      acc += weights[i];
+      wordDurs.push((acc / totalWeight) * gap);
+    }
     const natural = Math.max(0.4, totalWeight / rate + 0.2);
     const pace = Math.min(gap, natural);
     let acc = 0, litIdx = -1, litFrom = 0, litTo = 0;
     words.forEach(function(w, wi){
-      const s = fromSec + (acc / totalWeight) * pace;
-      acc += weights[wi];
-      const e = fromSec + (acc / totalWeight) * pace;
+      const dur = wordDurs[wi] - (wi ? wordDurs[wi - 1] : 0);
+      const wFrom = fromSec + (wi ? wordDurs[wi - 1] : 0);
+      const wTo = Math.min(fromSec + pace, wFrom + dur);
+      const s = wFrom;
+      const e = wTo;
       if(nowSec >= s && nowSec < e){ litIdx = wi; litFrom = s; litTo = e; }
     });
+    let acc = 0, litIdx = -1, litFrom = 0, litTo = 0;
+    words.forEach(function(w, wi){
+      const dur = wordDurs[wi] - (wi ? wordDurs[wi - 1] : 0);
+      const wFrom = fromSec + (wi ? wordDurs[wi - 1] : 0);
+      const wTo = Math.min(fromSec + pace, wFrom + dur);
+      const s = wFrom;
+      const e = wTo;
+      if(nowSec >= s && nowSec < e){ litIdx = wi; litFrom = s; litTo = e; }
+    }); // A line that spans a BPM switch now paces each word at its own share of
+    // the window, so a fast verse and a slow chorus do not fight over one
+    // constant rate. A long instrumental gap inside the line no longer stalls
+    // the highlight on the last sung word - the gap's words are spread over the
+    // same window, but weight per syllable keeps the sweep sounding spoken.
     if(litIdx === -1 && nowSec >= fromSec + pace){
       litIdx = words.length - 1;
       litFrom = fromSec + ((totalWeight - weights[words.length - 1]) / totalWeight) * pace;
