@@ -19090,17 +19090,31 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // loader bails out on its first check when the library is empty, so a fresh
     // install never read the setting at all, and it runs again on every reload,
     // which would snap the view back after you had chosen Albums yourself.
-    playlists = metaMap.playlists || {
-        'All Songs': allTracks.map(t => t.id)
-    };
-    // A settings sweep must return the keyed playlist row too. Keep a direct
-    // fallback for stores that do not implement key-range reads correctly; an
-    // empty sweep should never make existing user playlists disappear.
-    if(!metaMap.playlists){
+    // The stored row first, then a direct read of the key on its own (a settings
+    // sweep that somehow misses it must not reset the library), and only then the
+    // on-device backup. A missing row is not permission to invent a fresh sheet:
+    // if neither the store nor the sweep has it, ask sidecut-snapshot.json before
+    // giving up, and write back what it carries so the next boot finds it again.
+    playlists = metaMap.playlists || null;
+    if(!playlists){
       try{
         var _plRow = await dbGet('meta', 'playlists');
         if(_plRow && _plRow.value && typeof _plRow.value === 'object') playlists = _plRow.value;
       }catch(_ePlaylistsRead){}
+    }
+    if(!playlists){
+      try{
+        if(window.__scSnapMeta){
+          var _snapMeta = await window.__scSnapMeta();
+          if(_snapMeta && _snapMeta.playlists && typeof _snapMeta.playlists === 'object'){
+            playlists = _snapMeta.playlists;
+            try{ dbPut('meta', { key: 'playlists', value: playlists }); }catch(_eRestorePl){}
+          }
+        }
+      }catch(_eSnapPl){}
+    }
+    if(!playlists){
+      playlists = { 'All Songs': allTracks.map(t => t.id) };
     }
 
 
