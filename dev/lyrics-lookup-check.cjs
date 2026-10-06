@@ -103,8 +103,8 @@ function route(url) {
 const errors = [];
 const vc = new VirtualConsole();
 vc.on('jsdomError', (e) => { const m = '' + (e && e.message); if (!/Not implemented/.test(m)) errors.push(m); });
-
 const idb = fakeIndexedDB();
+
 const dom = new JSDOM(html, {
   runScripts: 'dangerously',
   pretendToBeVisual: true,
@@ -127,10 +127,39 @@ const dom = new JSDOM(html, {
 });
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+function stubAudio(win) {
+  const states = {};
+  ['audioEl', 'audioEl2'].forEach((id) => {
+    const el = win.document.getElementById(id);
+    const state = states[id] = { paused: true, currentTime: 0, duration: 152 };
+    Object.defineProperty(el, 'paused', { get: () => state.paused, configurable: true });
+    Object.defineProperty(el, 'currentTime', { get: () => state.currentTime, set: (v) => { state.currentTime = v; }, configurable: true });
+    Object.defineProperty(el, 'duration', { get: () => state.duration, configurable: true });
+    Object.defineProperty(el, 'src', { get: () => el.__src || '', set: (v) => { el.__src = v; }, configurable: true });
+    el.load = () => {};
+    el.play = () => { state.paused = false; return Promise.resolve(); };
+    el.pause = () => { state.paused = true; };
+  });
+  return states;
+}
 
 (async () => {
   const win = dom.window;
   await wait(3000);
+  const audioStates = stubAudio(win);
+  win.__scGetAllTracks().forEach((t) => {
+    t.file = { name: (t.name || 'song') + '.mp3', type: 'audio/mpeg', size: 1, arrayBuffer: () => Promise.resolve(new ArrayBuffer(1)) };
+    t.url = 'blob:lyrics-test-' + t.id;
+  });
+  const lyricsContent = win.document.getElementById('lyricsContent');
+  Object.defineProperty(lyricsContent, 'clientHeight', { get: () => 100, configurable: true });
+  Object.defineProperty(lyricsContent, 'scrollHeight', { get: () => 1000, configurable: true });
+  lyricsContent.getBoundingClientRect = () => ({ top: 0, left: 0, right: 300, bottom: 100, width: 300, height: 100 });
+  win.__scCancelScroll = () => {};
+  win.__scAnimateScroll = (container, top, _duration, done) => { container.scrollTop = top; if (done) done(); };
+  const lyricLayout = () => win.document.querySelectorAll('#lyricsText .lyric-line').forEach((line, i) => {
+    line.getBoundingClientRect = () => ({ top: i * 80 - lyricsContent.scrollTop, left: 0, right: 300, bottom: i * 80 + 40 - lyricsContent.scrollTop, width: 300, height: 40 });
+  });
   const lookup = win.__scLookupLyrics;
   const batch = win.__scFetchSingleLyrics;
   ok('shared resolver is booted', typeof lookup === 'function');
@@ -195,13 +224,52 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log('\n— the lyrics sheet, end to end —');
   try { win.playFromList(['t1'], 't1'); } catch (e) {}
   await wait(400);
+  win.playFromList(['t1'], 't1');
+  await wait(100);
   win.document.getElementById('lyricsBtn').click();
   await wait(4000);
+  lyricLayout();
+  audioStates.audioEl.currentTime = 5.25;
+  await wait(150);
   const sheetText = win.document.getElementById('lyricsText').textContent || '';
   ok('holding-open the sheet resolves the multi-artist new release', /line one/.test(sheetText), JSON.stringify(sheetText.slice(0, 60)));
   ok('no "no lyrics found" message on a song that does have lyrics',
      win.document.getElementById('lyricsNotFound').style.display !== 'block',
      win.document.getElementById('lyricsNotFound').style.display);
+
+  console.log('\n— tapping lyrics hands control back to playback —');
+  const lyricLines = win.document.querySelectorAll('#lyricsText .lyric-line[data-time]');
+  ok('the synced fixture has two timed lines', lyricLines.length === 2, 'lines=' + lyricLines.length);
+  if (lyricLines.length === 2) {
+    lyricLines[1].click();
+    ok('a line tap highlights the requested line immediately', lyricLines[1].classList.contains('current'));
+    ok('a line tap does not seek the audio', audioStates.audioEl.currentTime === 5.25, String(audioStates.audioEl.currentTime));
+    await wait(500);
+    ok('the tapped highlight is only a brief hold', !win.__scLyricsTapHoldActive());
+    ok('playback takes the highlight back to the actual timed line', lyricLines[0].classList.contains('current'));
+    ok('auto-scroll follows playback back to that line', lyricsContent.scrollTop < 3, 'scrollTop=' + lyricsContent.scrollTop);
+
+    win.document.getElementById('lyricsWordBtn').click();
+    await wait(150);
+    ok('word-by-word marks a word on the active timed line', !!win.document.querySelector('#lyricsText .lyric-line.current .lyric-word.current'));
+    win.document.getElementById('lyricsLetterBtn').click();
+    await wait(150);
+    ok('letter-by-letter lights letters in the active word', win.document.querySelectorAll('#lyricsText .lyric-line.current .lyric-word.current .lyric-letter.lit').length > 0);
+
+    lyricLayout();
+    audioStates.audioEl.currentTime = 9.25;
+    await wait(150);
+    lyricLayout();
+    const nextLine = win.document.querySelectorAll('#lyricsText .lyric-line[data-time]')[1];
+    ok('playback advances line highlight and scroll together', nextLine.classList.contains('current') && lyricsContent.scrollTop > 3, 'scrollTop=' + lyricsContent.scrollTop);
+    nextLine.click();
+    audioStates.audioEl.currentTime = 9.35;
+    await wait(500);
+    const activeAgain = win.document.querySelector('#lyricsText .lyric-line.current');
+    ok('word pacing resumes after tapping during playback', !!activeAgain && !!activeAgain.querySelector('.lyric-word.current'));
+    ok('letter pacing resumes after tapping during playback', win.document.querySelectorAll('#lyricsText .lyric-line.current .lyric-word.current .lyric-letter.lit').length > 0);
+    ok('auto-scroll remains enabled and the lyrics sheet remains open', lyricsContent.scrollTop > 3 && win.document.getElementById('lyricsBackdrop').style.display === 'flex');
+  }
 
   console.log('\n— manual search offers candidates —');
   const t1 = win.__scGetAllTracks().find((t) => t.id === 't1');

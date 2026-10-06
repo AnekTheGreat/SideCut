@@ -68,7 +68,9 @@ function fakeIndexedDB() {
     t.objectStore = () => ({
       put(v) { const k = v && v.key !== undefined ? v.key : v.id; data[store].set(k, v); fire(); return {}; },
       get(k) { const q = {}; setTimeout(() => { q.result = data[store].get(k); q.onsuccess && q.onsuccess(); }, 0); return q; },
-      getAll() { const q = {}; setTimeout(() => { q.result = Array.from(data[store].values()); q.onsuccess && q.onsuccess(); }, 0); return q; },
+      // Simulate a faulty settings sweep that omits the keyed playlists row;
+      // direct IDB get(key) must still restore the user's saved playlists.
+      getAll() { const q = {}; setTimeout(() => { const rows = Array.from(data[store].values()); q.result = store === 'meta' ? rows.filter((r) => r.key !== 'playlists') : rows; q.onsuccess && q.onsuccess(); }, 0); return q; },
       delete(k) { data[store].delete(k); fire(); return {}; },
     });
     return t;
@@ -165,6 +167,10 @@ let toasts = [];
   // hand-made one — and the header counts both albums' songs, not the library.
   ok('the header counts only the albums’ songs (5, not more than the albums hold)', /\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
   ok('the tag-only songs are not smuggled into the count beyond the albums', !/\b7 tracks\b/.test(paneHeader(win)), paneHeader(win));
+
+  console.log('\n— playlists survive a missing settings-sweep row —');
+  ok('a direct keyed read restores the playlist omitted by the meta sweep',
+     eq((win.__scGetPlaylists() || {})['Moon Faves'], ['t1', 't2']), JSON.stringify(win.__scGetPlaylists()));
 
   console.log('\n— rendering the Albums tab must not rewrite playlists —');
   ok('playlist backed by only album songs is untouched', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));

@@ -10606,7 +10606,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       btn.textContent = 'Show original';
       btn.style.borderColor = 'var(--coral)';
       btn.style.color = 'var(--coral)';
-      showLyrics(merged, currentLyricsSynced);
+      showLyrics(merged, currentLyricsSynced, true);
       suppressTranslateReset = false;
     }catch(e){
       toast('Translation failed — try again in a moment');
@@ -11046,7 +11046,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     if(t){ t.lyrics = next; t.lyricsSynced = true; t.lyricsAligned = true; }
     currentLyricsText = next;
     currentLyricsSynced = true;
-    showLyrics(next, true);
+    showLyrics(next, true, true);
     return true;
   }
   function updateLyricsLineUpBtn(){
@@ -11117,20 +11117,22 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(!lrc) return false;
       // The song may have moved on while the audio decoded.
       var stillId = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
-      if(String(stillId) !== String(tid)) return false;
+      if(String(stillId) !== String(tid) || lyricsCurrentTrack !== tid) return false;
       t.lyrics = lrc;
       t.lyricsSynced = true;
       saveMeta();
       currentLyricsText = lrc;
       currentLyricsSynced = true;
-      showLyrics(lrc, true);
+      showLyrics(lrc, true, true);
       toast('Lyrics timed to this song', 2200);
       return true;
     }catch(_eAutoTime){ return false; }
   }
 
-  function showLyrics(lyrics, isSynced) {
+  function showLyrics(lyrics, isSynced, keepPosition) {
     scLyricsOffPanelHide();
+    const scrollContainer = $('lyricsContent');
+    const preservedScrollTop = keepPosition && scrollContainer ? scrollContainer.scrollTop : 0;
     $('lyricsLoading').style.display = 'none';
     $('lyricsText').style.display = 'block';
     $('lyricsNotFound').style.display = 'none';
@@ -11163,6 +11165,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
 
     $('lyricsText').style.fontSize = lyricsFontSize + 'px';
+    if(keepPosition && scrollContainer){
+      isProgrammaticScroll = true;
+      scrollContainer.scrollTop = preservedScrollTop;
+      setTimeout(function(){ isProgrammaticScroll = false; }, 100);
+    }
 
     // Only offer "Translate to English" when the lyrics aren't already English.
     if(tBtn && !lyricsTranslated && looksNonEnglish(currentLyricsText)) tBtn.style.display = '';
@@ -11206,8 +11213,14 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       lyricsScrollInterval = null;
     }
 
+    // Re-timing or translating this same song must not jump the reader back to
+    // line one. Keep that position, but make the poller re-pick the live line.
+    lastLyricsIdx = -1;
+    lastLyricsScrollTarget = -1;
+    if(lyricsTapReleaseTimer){ clearTimeout(lyricsTapReleaseTimer); lyricsTapReleaseTimer = null; }
+    lyricsTapHoldUntil = 0;
     // Always start interval for highlight tracking (scroll is controlled by flag)
-    startLyricsAutoScroll();
+    startLyricsAutoScroll(!!keepPosition, !!keepPosition);
 
     // Wire up tap-to-seek on lyrics lines and words (delegated)
     if (!$('lyricsText')._seekWired) {
@@ -11259,9 +11272,22 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // This used to be a tap-to-seek: the playhead jumped to whatever line was
   // pressed, so looking at a line changed what you were hearing. The press now
   // only lights the line and scrolls it into view, and the playhead is left
-  // exactly where it was. The highlight is held for a few seconds so the
-  // playback tracker cannot steal it straight back before the reader sees it.
+  // exactly where it was. Hold the reader's choice briefly, then hand the
+  // highlight and word pacing back to playback so tapping cannot stall lyrics.
   var lyricsTapHoldUntil = 0;
+  var lyricsTapReleaseTimer = null;
+  function scReleaseLyricsTapHold(){
+    lyricsTapHoldUntil = 0;
+    lyricsTapReleaseTimer = null;
+    lastLyricsIdx = -1;
+    lastLyricsScrollTarget = -1;
+  }
+  function scHoldLyricsTapBriefly(){
+    lyricsTapHoldUntil = Date.now() + 350;
+    if(lyricsTapReleaseTimer) clearTimeout(lyricsTapReleaseTimer);
+    lyricsTapReleaseTimer = setTimeout(scReleaseLyricsTapHold, 360);
+  }
+  window.__scLyricsTapHoldActive = function(){ return Date.now() < lyricsTapHoldUntil; };
   function scHighlightTapLine(el){
     if(!el) return;
     var textEl = $('lyricsText');
@@ -11275,7 +11301,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     el.classList.add('current');
     var syncedLines = textEl.querySelectorAll('.lyric-line[data-time]');
     lastLyricsIdx = Array.prototype.indexOf.call(syncedLines, el);
-    lyricsTapHoldUntil = Date.now() + 5000;
+    scHoldLyricsTapBriefly();
     lastLyricsScrollTarget = -1;
     manualScrollGrace = 0;
     var container = $('lyricsContent');
@@ -11434,12 +11460,14 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         var _snap = scSnapRowsToOnsets(_cleared, _aiEnv, SC_ONSET_HOP, 0.9, _gaps);
         if(scRowsLookSane(_snap, duration)) text = scFormatLrcRows(_snap);
       }
+      var stillId = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
+      if(String(stillId) !== String(t.id) || lyricsCurrentTrack !== t.id) return false;
       t.lyrics = text;
       t.lyricsSynced = true;
       saveMeta();
       currentLyricsText = text;
       currentLyricsSynced = true;
-      showLyrics(text, true);
+      showLyrics(text, true, true);
       if(!silent) toast("AI Sync complete! Lyrics are now time-aligned.");
       return true;
     } catch (e) {
@@ -11475,7 +11503,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // Cancel any glide still running first (its onDone clears the flag, so it has
     // to happen BEFORE we raise it), otherwise the jump trips the user-scroll grace
     // window and auto-scroll sits still for 1.5s after every lyrics open.
-    if(!keepPos){
+    if(!keepPos && !noReset){
       // A fresh open starts at the top; re-arming after the app comes back must
       // not yank the reader back up to line one.
       if(typeof window.__scCancelScroll === 'function') window.__scCancelScroll(container);
@@ -11546,8 +11574,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // Remove any playing indicator from previous cycle
           var playingInd = lyricsText.querySelector('.lyric-playing-indicator');
           if (playingInd) playingInd.remove();
-          // Always update highlight - unless the reader just tapped a line and
-          // the highlight is being held where they put it. 73.1.4
+          // A tapped line is shown briefly; then playback retakes the highlight
+          // and keeps the scroll and word pacing following the playhead.
           var _tapHeld = lyricsTapHoldUntil && Date.now() < lyricsTapHoldUntil;
           if (!_tapHeld && currentIdx !== lastLyricsIdx) {
             allLines.forEach(l => {
@@ -11556,6 +11584,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
             });
             currentLine.classList.add('current');
             lastLyricsIdx = currentIdx;
+            scrollLyricsToLine(container, currentLine);
+          } else if(!_tapHeld && currentLine.classList.contains('current')) {
+            // The line can stay the same while the playhead crosses several
+            // word/letter spans; keep the current row's auto-scroll alive too.
             scrollLyricsToLine(container, currentLine);
           }
           // Word-by-word highlighting within the current line -
@@ -11603,6 +11635,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
               l.querySelectorAll('.lyric-word').forEach(w => w.classList.remove('current'));
             });
             allLines[targetIdx].classList.add('current');
+            scrollLyricsToLine(container, allLines[targetIdx]);
+          } else if(!_tapHeld2 && allLines[targetIdx].classList.contains('current')) {
             scrollLyricsToLine(container, allLines[targetIdx]);
           }
           // Word-by-word on unsynced lyrics: pace the current line's words
@@ -11657,7 +11691,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     const desired = lineTopInContainer - viewH * 0.3;
     const clamped = Math.max(0, Math.min(maxScroll, desired));
     // Tiny dead-zone so a line that's already parked doesn't micro-jitter.
-    if (Math.abs(clamped - lastLyricsScrollTarget) < 3) return;
+    // -1 is the "no target yet" sentinel; target 0 is the first line and must
+    // still be allowed to move the reader back to the top.
+    if (lastLyricsScrollTarget >= 0 && Math.abs(clamped - lastLyricsScrollTarget) < 3) return;
     lastLyricsScrollTarget = clamped;
     // The WebView ignores scrollTo({behavior:'smooth'}) on a scrollable element, so
     // lyric lines snapped instantly instead of gliding. Drive it through the shared
@@ -12019,6 +12055,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     else { $('lyricsText').innerHTML = currentLyricsText.split('\n').map(line => '<div class="lyric-line">' + escapeHtml(line) + '</div>').join(''); }
     if(container) container.scrollTop = scrollTop;
     lastLyricsIdx = -1;
+    lastLyricsScrollTarget = -1;
+    lyricsTapHoldUntil = 0;
+    if(lyricsTapReleaseTimer){ clearTimeout(lyricsTapReleaseTimer); lyricsTapReleaseTimer = null; }
   }
   $('lyricsLetterBtn').addEventListener('click', () => {
     lyricsLetterByLetter = !lyricsLetterByLetter;
@@ -18996,6 +19035,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     playlists = metaMap.playlists || {
         'All Songs': allTracks.map(t => t.id)
     };
+    // A settings sweep must return the keyed playlist row too. Keep a direct
+    // fallback for stores that do not implement key-range reads correctly; an
+    // empty sweep should never make existing user playlists disappear.
+    if(!metaMap.playlists){
+      try{
+        var _plRow = await dbGet('meta', 'playlists');
+        if(_plRow && _plRow.value && typeof _plRow.value === 'object') playlists = _plRow.value;
+      }catch(_ePlaylistsRead){}
+    }
 
 
     if(!playlists['All Songs']){
@@ -20373,7 +20421,7 @@ function _fallbackCopy(text){
       tabs.appendChild(back);
       const pl = document.createElement('div');
       pl.className = 'tab';
-      pl.textContent = '◀ Library';
+      pl.textContent = '◀ Playlists';
       pl.dataset.playlistName = '__playlists__';
       pl.addEventListener('click', () => { activePlaylist = scPlaylistVisible(lastUsedPlaylist) ? lastUsedPlaylist : scFirstVisiblePlaylist(); rememberPlaylist(activePlaylist); navigate('playlists'); });
       tabs.appendChild(pl);
