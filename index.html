@@ -13012,7 +13012,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.3.3';
+  const APP_VERSION = '73.3.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13448,7 +13448,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // deadline, and only afterwards discover that nothing was missing.
         // The wipe check below runs first and the file is opened only when a
         // store really does look empty (see the read further down).
-        var lsWiped = false, metaWiped = false, readOk = false;
+        var lsWiped = false, metaWiped = false, plMissing = false, readOk = false;
         try{ lsWiped = localStorage.getItem(SNAP_MARKER) === null; }catch(e){ lsWiped = true; }
         try{
           var idc = await dbGet('meta', 'idCounter');
@@ -13458,7 +13458,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // reloaded the app on top of them.
           readOk = !!(window.__scStorageOk && window.__scStorageOk());
           metaWiped = readOk && !idc;
-        }catch(e){ readOk = false; metaWiped = false; }
+          // The playlists row on its own is a loss worth recovering. It is the row
+          // whose absence the user sees first, and if nothing consumes the mirror
+          // now the next meta write re-mirrors this store over the backup that
+          // still holds them.
+          if(readOk && !metaWiped){
+            var _plCheck = await dbGet('meta', 'playlists');
+            plMissing = !_plCheck;
+          }
+        }catch(e){ readOk = false; metaWiped = false; plMissing = false; }
         // Cannot prove the stores are empty? Then do not touch anything. A
         // snapshot that never gets restored costs nothing; one restored over
         // healthy data silently reverts the user's library settings.
@@ -13466,7 +13474,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
           try{ console.warn('[SideCut] snapshot restore skipped — storage could not be read, so nothing is known to be missing'); }catch(e){}
           return false;
         }
-        if(!lsWiped && !metaWiped){
+        if(!lsWiped && !metaWiped && !plMissing){
           // The stores are healthy — forget the attempt count so a future wipe
           // (a reinstall, a phone transfer) is still allowed to restore once.
           try{ localStorage.removeItem(RESTORE_TRIES); }catch(e){}
@@ -13478,6 +13486,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
         var snap = null;
         try{ snap = JSON.parse(res.data || ''); }catch(e){ return false; }
         if(!snap || snap.v !== 1) return false;
+        // Only the playlists row is gone (everything else healthy): put just that
+        // row back, and only if the mirror actually carries it. No reload and no
+        // attempt counter, because loadFromDB below reads the restored row in this
+        // same boot; say nothing and change nothing when the mirror has no copy.
+        if(!lsWiped && !metaWiped && plMissing){
+          var _snapPl = snap.meta && snap.meta.playlists;
+          if(!_snapPl || typeof _snapPl !== 'object') return false;
+          try{ await dbPut('meta', { key: 'playlists', value: _snapPl }); }catch(_ePlOnly){ return false; }
+          try{ if(typeof window.toast === 'function') window.toast('Restored your playlists from the on-device backup.', 7000); }catch(_eToastPl){}
+          return true;
+        }
         var _tries = 0;
         try{ _tries = parseInt(localStorage.getItem(RESTORE_TRIES) || '0', 10) || 0; }catch(e){}
         // A restore already ran and the stores are STILL empty. Hydrate in place
@@ -13614,6 +13633,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.3.4', date: 'October 6, 2026 · 8:45 PM EDT', title: 'Lost playlists come back before the backup can be overwritten', items: [
+    'A launch that finds the playlist list missing now restores it from the copy SideCut keeps on your device before anything else is written, so the backup can no longer be overwritten by the very launch that needed it.',
+    'When only the playlist list is gone, with songs, albums and settings intact, just that list is put back and nothing else you have is changed.',
+    'If the backup holds no copy of the list, the app now changes nothing and says nothing, instead of reporting a recovery it did not make.',
+    'Your songs, playlists and saved lyrics stay on your device \u2014 nothing in your library is removed by this release.',
+  ]},
   { version: '73.3.3', date: 'October 6, 2026 · 8:20 PM EDT', title: 'Playlists come back even when the saved list was cut down to the defaults', items: [
     'If your playlists went missing they are put back from the copy SideCut keeps on your device, including the case where the saved list had been reduced to just Library and Favorites.',
     'The recovery now runs on a launch where the whole playlist row is gone as well, and what it restores is written straight back so the lists stay for good.',
