@@ -10986,6 +10986,18 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // the model cannot guess is where the singing actually stops and starts, so the
   // quiet stretches are read off the recording's own energy and used twice - once
   // to brief the model, once to keep the model's own answer out of them.
+  // 73.4.1 - QUIET IS NOT THE SAME AS EMPTY, and this is the difference that had
+  // the highlight fall behind the voice. A run of frames under the quiet floor can
+  // be a soft verse over near-silent backing rather than a break; reading it as
+  // "nobody sings here" cut it straight out of the timeline, so the lines that
+  // belong inside it were pushed to the moment it ended and every line after them
+  // arrived late by its whole length. A gap now has to be (near) EMPTY as well:
+  // nothing in it may rise above a tenth of the quiet floor, and no more than a
+  // fiftieth of its frames may even reach that. A break with music still playing in
+  // it never fell below the floor to begin with, so nothing that used to work
+  // changes - see scFindQuietGaps.
+  var SC_BREAK_SILENCE = 0.1;   // a break rises no higher than a tenth of the quiet floor
+  var SC_BREAK_NOISE = 0.02;    // and a couple of stray frames, no more, are above that
   function scQuietFloor(env){
     if(!env || !env.length) return 0;
     var max = 0;
@@ -10998,16 +11010,22 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     var hop = hopSec > 0 ? hopSec : 0.02;
     var floor = scQuietFloor(env);
     if(!(floor > 0)) return gaps;
+    // 73.4.1 - the floor says a stretch got quiet; this says it stopped. Every
+    // frame of the run is already under the floor, so what is counted here is how
+    // many of them are above the much deeper line that separates a break from a
+    // verse sung softly: a sung verse carries a stream of small rises and is
+    // refused, a stretch the recording has actually stopped passes.
+    var quietTop = floor * SC_BREAK_SILENCE;
     var minRun = Math.max(1, Math.round(1.2 / hop));
-    var run = 0;
+    var run = 0, live = 0;
     for(var i = 0; i <= env.length; i++){
       var quiet = (i < env.length) && env[i] <= floor;
-      if(quiet){ run++; continue; }
+      if(quiet){ run++; if(env[i] > quietTop) live++; continue; }
       if(run >= minRun){
         var s = (i - run) * hop, e = i * hop;
-        if(!(duration > 0) || e <= duration + 1) gaps.push({ s: s, e: e });
+        if(live <= run * SC_BREAK_NOISE && (!(duration > 0) || e <= duration + 1)) gaps.push({ s: s, e: e });
       }
-      run = 0;
+      run = 0; live = 0;
     }
     return gaps;
   }
@@ -13287,7 +13305,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.4';
+  const APP_VERSION = '73.4.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13908,6 +13926,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.4.1', date: 'October 7, 2026 · 4:15 PM EDT', title: 'The words stay with the voice when the middle of a song is sung softly', items: [
+    'A quiet stretch is not a break any more. The middle of a song is often sung softer than its chorus, and the timing read that as an instrumental: it cut the stretch out, so the lines inside it were pushed to the moment it ended and the lines after came late.',
+    'That is what put the highlight behind the voice. A sheet the app timed to the song had several lines sitting later than the singing, so the light stayed on a line the voice had already left.',
+    'A stretch has to be empty to count as a break now - nothing rising inside it, and almost nothing under the floor either - so a verse sung quietly keeps its own place in the timeline instead of the words skipping over it.',
+    'A stretch the recording really has stopped in is still skipped the way it was: the words hold the last line before it and pick up again where the voice returns.',
+    'Nothing else moved. The letter wave, the player, a timing you pinned by hand with Line up and the timings already saved on your songs are exactly as they were.',
+    'Your home-screen widget and the lyrics you have saved are untouched by this release.',
+    'Your songs and playlists stay on your device - nothing in your library is changed, moved or removed by this release.',
+  ]},
   { version: '73.4', date: 'October 7, 2026 · 3:11 PM EDT', title: 'The lyric light travels as a wave, and the words skip the instrumental instead of drifting through it', items: [
     'Letter-by-letter is a wave now: the word being sung is full gold, the word just sung holds its letters at half strength and the one before it at a whisper, so a run of light travels along the line and is gone two words behind it.',
     'The wave no longer stops at a line: the word that was still lit when the sheet moved on keeps its letters for the same two-word trail, so the light travels from line to line instead of starting again at each one.',

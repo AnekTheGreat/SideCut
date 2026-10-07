@@ -368,7 +368,7 @@ console.log('[7] words with no timings are timed from the song itself');
   const block = src.slice(at, end);
   let T = null;
   try {
-    T = new Function(block + '\nreturn { syl: scSyllableCount, env: scOnsetEnvelope, time: scTimeLyricsFromOnsets, even: scLyricsLookEvenlySpaced, strip: scStripLrcStamps };')();
+    T = new Function(block + '\nreturn { syl: scSyllableCount, env: scOnsetEnvelope, time: scTimeLyricsFromOnsets, even: scLyricsLookEvenlySpaced, strip: scStripLrcStamps, gaps: scFindQuietGaps };')();
   } catch (e){ ok(false, 'and it evaluates: ' + e.message); }
   ok(T && typeof T.time === 'function' && typeof T.env === 'function' && typeof T.even === 'function', 'the shipped timing code evaluates');
 
@@ -517,10 +517,50 @@ console.log('[7] words with no timings are timed from the song itself');
       'no line is laid out inside a measured break (' + bT.map((t) => t.toFixed(1)).join(', ') + ')');
     ok(bT[3] > 40, 'the lines that belong after the break come after it (' + bT[3].toFixed(1) + 's)');
     ok(bT[0] > 1 && bT[0] < 5, 'and the first line still lands where the singing starts');
+
+    // 73.4.1 - A QUIET VERSE IS NOT A BREAK. The owner's words: "The lyrics were
+    // fine for song but then it auto did lyrics timed to this song and it like
+    // skipped back 5 lines it's not supposed do that dawg". The middle of that song
+    // is sung, only softer than its chorus. Reading it as "nobody sings here" cut it
+    // out of the timeline, which pushed the lines that belong inside it to the end
+    // of the stretch and every line after them late by its whole length - the
+    // highlight fell behind the voice the moment the timing applied. RUN it: a soft
+    // stretch carries a stream of small rises, so it is refused as a break and the
+    // words stay where a song with no break at all puts them.
+    const softEnv = (level) => {
+      const e = new Float32Array(Math.round(dur2 / hop2));
+      for (let t = 2; t < 58; t += 0.25) e[Math.round(t / hop2)] = 1;
+      for (let t = 20; t < 40; t += 0.25) e[Math.round(t / hop2)] = 0;    // the soft verse
+      for (let t = 20; t < 40; t += 0.4) e[Math.round(t / hop2)] = level;  // ...still sung
+      return e;
+    };
+    const solid = new Float32Array(Math.round(dur2 / hop2));
+    for (let t = 2; t < 58; t += 0.25) solid[Math.round(t / hop2)] = 1;
+    const soft = softEnv(0.03);
+    const w4 = ['one two three four five', 'six seven eight nine ten', 'eleven twelve thirteen fourteen', 'fifteen sixteen seventeen'];
+    const softGaps = T.gaps(soft, hop2, dur2);
+    ok(!softGaps.some((g) => g.s < 40 && g.e > 20),
+      'a verse sung softly is not read as a break (' + (softGaps.map((g) => g.s.toFixed(1) + '-' + g.e.toFixed(1)).join(', ') || 'no gaps') + ')');
+    ok(T.gaps(bEnv, hop2, dur2).some((g) => Math.abs(g.s - 20) < 0.5 && Math.abs(g.e - 40) < 0.5),
+      'while a stretch the recording really has stopped in is still measured as one');
+    const softT = parseLrc(T.time(w4, dur2, soft, hop2));
+    const solidT = parseLrc(T.time(w4, dur2, solid, hop2));
+    const worstGap = Math.max(...softT.map((t, i) => Math.abs(t - solidT[i])));
+    ok(worstGap < 1.5,
+      'so the words land where a song with no break puts them, not seconds late (worst ' + worstGap.toFixed(2) + 's, it was 11.26s before the fix)');
+    ok(solidT.some((t) => t > 20 && t < 40), 'and a line does belong inside that soft verse - it is being sung');
+    ok(softT.every((t, i) => i === 0 || t > softT[i - 1]), 'with the lines still taking over in order');
   }
   ok(src.indexOf('function scSingingWindow(gaps, start, end){') !== -1 &&
      src.indexOf('if(quiet > (end - start) * 0.5) return null;') !== -1,
     'a mostly-empty envelope is not mistaken for breaks');
+  // 73.4.1 - quiet is not the same as empty: the deep line that separates a break
+  // from a verse sung softly is counted per frame, so a stream of small rises keeps
+  // the stretch out of the timeline the words are spread over.
+  ok(src.indexOf('var SC_BREAK_SILENCE = 0.1;') !== -1 && src.indexOf('var SC_BREAK_NOISE = 0.02;') !== -1,
+    'a break has to be quieter than the quiet floor, by a tenth, over almost all of it');
+  ok(src.indexOf('if(env[i] > quietTop) live++;') !== -1 && src.indexOf('if(live <= run * SC_BREAK_NOISE &&') !== -1,
+    'and what is counted is how much of the stretch rises even that far');
 }
 
 console.log('[8] every converter card leads with MP3 and AIFF is a real output');
@@ -839,7 +879,10 @@ console.log('[16] the tricky songs are timed from the shape of the recording');
   ok(src.indexOf('if(skip && skip[f]) continue;') !== -1, 'the snap never targets an instrumental frame');
   ok(src.indexOf('scSnapRowsToOnsets(_cleared, _aiEnv, SC_ONSET_HOP, 0.9, _gaps)') !== -1, 'on a shorter window');
 
-  const gAt = src.indexOf('  function scQuietFloor(env){');
+  // 73.4.1 - the lift starts at the deep line the quiet floor is measured against
+  // now, which sits with the floor rather than up at the onset constants, so the
+  // shipped code keeps its own numbers.
+  const gAt = src.indexOf('  var SC_BREAK_SILENCE = 0.1;');
   const gEnd = src.indexOf('\n  // Rebuild the timings around the taps.', gAt);
   ok(gAt !== -1 && gEnd > gAt, 'the gap measuring code can be lifted out of the page');
   let G = null;

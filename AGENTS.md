@@ -1,6 +1,54 @@
 # SideCut — repository memory
 
 
+## 73.4.1 (Oct 7, 2026 · 4:15 PM EDT): a quiet verse is not a break, so the highlight stops falling behind the voice
+- **The owner's words, verbatim**: "The lyrics were fine for song but then it auto did lyrics timed to this
+  song and it like skipped back 5 lines it's not supposed do that dawg". The automatic timing toast is
+  `Lyrics timed to this song` (`scAutoTimeCurrentLyrics`), which is the MEASURED layout; the gap finder that
+  went wrong is also what briefs the model and pulls its rows clear of a gap, so BOTH automatic paths carried
+  the same mistake.
+- **THE CAUSE.** `73.4` added the break cut to `scTimeLyricsFromOnsets`: `scFindQuietGaps` called any run of
+  frames under the quiet floor (5% of the peak rise) a gap, and `scSingingWindow` cut those runs out of the
+  timeline the lines are spread over. A verse sung softer than its chorus is exactly such a run, so it was cut:
+  the lines that belong inside it were pushed to the moment it ended, and every line after them arrived late by
+  its whole length - the highlight fell behind the voice the moment the timing applied. Reproduced by RUNNING
+  the shipped layout on a synthetic envelope (a loud song with one soft 15s verse): the lines after the false
+  break landed up to **11.26s late** and the ones before it up to 4.24s early.
+- **THE FIX (index.html, 2 edits).** `SC_BREAK_SILENCE = 0.1` / `SC_BREAK_NOISE = 0.02` sit with `scQuietFloor`,
+  and `scFindQuietGaps` counts per run how many of its frames rise above a TENTH of the quiet floor, refusing
+  the run as a gap if more than a fiftieth of them do. Quiet is not the same as empty: a sung verse carries a
+  stream of small rises and is refused, a stretch the recording has actually stopped passes. The test lives in
+  `scFindQuietGaps` on purpose, so all four consumers get it - the model brief ("no singing at these times"),
+  `scPullRowsClearOfGaps`, the snap's skip mask and the timeline cut.
+- **Nothing else moved**: no signature changed, so no gate pin was retargeted - `scSingingWindow(gaps, start,
+  end)` and its `if(quiet > (end - start) * 0.5) return null;` bail are untouched.
+- **THE GATE (dev/test-7316.mjs, [7]).** The soft-verse envelope is RUN: not read as a break, the words land
+  within **0.87s** of where a song with no break puts them (it was 11.26s), a line is proven to belong inside
+  the verse, and a stretch that really is silent is still measured as a break - the 73.4 feature is not switched
+  off. The [16] lift now starts at `SC_BREAK_SILENCE` (the constants moved down to the quiet floor), which is
+  the whole of that one-line change.
+- **THE RELEASE**: `APP_VERSION 73.4 -> 73.4.1` (a fix inside a release takes a FOURTH number), a 7-note head
+  entry at `October 7, 2026 · 4:15 PM EDT`, `sw.js` cache `sidecut-shell-v73.4.1`, and both bundles regenerated
+  to a fixed point at pass 2 - root + `ota/` **923900**, `ota-play/` **923908**, all five entries OK, both
+  `--check`s OK.
+- **Gates, old tree vs new tree** (a clean `git worktree` of `b22acea`): **no new red anywhere, and ten checks
+  that were red are green** - test-7316 277/7 -> **285/6**, test-7251 103/6 -> 104/5, test-728 56/7 -> 57/6,
+  test-7281 87/7 -> 88/6, test-7252 51/6 -> 52/5, test-726 68/6 -> 69/5, test-727 53/6 -> 54/5,
+  test-7271 53/6 -> 54/5, test-6643 89/1 -> 90/0, test-70 3 reds -> 2 (the head-notes word list and the
+  stamp-order check are satisfied by the new head entry). IDENTICAL on both trees: test-713 45/5,
+  test-714 138/5, test-715 67/5, test-716 77/6, test-717 89/5, test-718 38/8, test-719 65/5, test-720 61/5,
+  test-721 49/5, test-722 74/5, test-723 81/6, test-724 74/5, test-725 98/5, test-7317 32/7, test-662 75/75,
+  test-play-copy 28/28, the seven album suites, `audit-calls`, `check-dom` (0 DOM failures) and the OTA trio.
+- **STILL RED, and pre-existing** (the same on the old tree): the stale version pins in the gates, which assert
+  `73.2.1` / `73.2` / `sidecut-shell-v73.2.1` - two releases behind, because the 73.4 release never ran a
+  repin. Also `the page ends with the two-newline OTA tail` in test-7316: `index.html` ends with a SINGLE
+  newline, in `b22acea` too, and the live OTA verified at 73.4 (both bundles fixed-point, the downloads matching
+  the manifests), so that is a stale gate rather than a delivery fault. **No patch/repin script was added this
+  release** - the two index.html edits, the version/cache/changelog move, the gate checks and this note are all
+  of it.
+- **NOT VERIFIED HERE**: no device and no audio in this sandbox, so the fix is proven on the shipped layout
+  functions and the gate battery, not by ear on the phone.
+
 ## 73 (Oct 3, 2026 · 8:57 PM EDT): lyrics follow the voice by syllable, saves can be stopped, new releases stop repeating, and the widget plays without opening the app
 - **WHY 73 AND NOT 72.10.** The third number stops at nine, so a `72.9` line is closed - 71.9 is the last 71 and the
   release after it is 72.0, so the release after 72.9 is **73**. This work was prepared as `72.9` and ships as `73`; only
