@@ -363,12 +363,12 @@ console.log('[6] the guide is a map, and the lyrics bar gained a Copy');
 console.log('[7] words with no timings are timed from the song itself');
 {
   const at = src.indexOf('  var SC_ONSET_HOP = 0.02;');
-  const end = src.indexOf('\n  function showLyrics(lyrics, isSynced) {', at);
+  const end = src.indexOf('\n  function showLyrics(', at);
   ok(at !== -1 && end > at, 'the measuring code can be lifted out of the page');
   const block = src.slice(at, end);
   let T = null;
   try {
-    T = new Function(block + '\nreturn { syl: scSyllableCount, env: scOnsetEnvelope, time: scTimeLyricsFromOnsets, even: scLyricsLookEvenlySpaced };')();
+    T = new Function(block + '\nreturn { syl: scSyllableCount, env: scOnsetEnvelope, time: scTimeLyricsFromOnsets, even: scLyricsLookEvenlySpaced, strip: scStripLrcStamps };')();
   } catch (e){ ok(false, 'and it evaluates: ' + e.message); }
   ok(T && typeof T.time === 'function' && typeof T.env === 'function' && typeof T.even === 'function', 'the shipped timing code evaluates');
 
@@ -460,8 +460,67 @@ console.log('[7] words with no timings are timed from the song itself');
     'the fade is bounded at both ends, so a fast word still sweeps instead of lighting as a block');
   ok(src.indexOf('if(frac < acc2){ upto = li + 1; break; }') !== -1,
     'and WHEN a letter lights is still the pacer weighted clock');
-  ok(src.indexOf("words.forEach(function(w, wi){\n        if(wi !== litIdx){ clearLetters(w); return; }") !== -1,
-    'with every other word wiped back so no half-lit trail is left behind');
+  // 73.3.9 - the wave is no longer word-by-word with a fade on it: the sweep travels
+  // along the line, the two words behind the light keep their letters and dim out, and
+  // it carries across a line boundary. Pinned by source, then RUN below.
+  ok(count('if(wi !== litIdx){ clearLetters(w); return; }') === 0,
+    'every other word is no longer wiped on the same frame - that is what made it word-by-word with a fade');
+  ok(src.indexOf('var SC_WAVE_TRAIL_WORDS = 2;') !== -1, 'the trail is two words long');
+  ok(src.indexOf('const back = (litIdx >= 0 && wi < litIdx) ? (litIdx - wi) : -1;') !== -1,
+    'the words behind the light are the ones that keep their letters');
+  ok(src.indexOf('if(back >= 1 && back <= SC_WAVE_TRAIL_WORDS){') !== -1,
+    'and nothing older than the trail holds a lit letter');
+  ok(src.indexOf('function scWaveCarryFrom(prevLine){') !== -1 &&
+     src.indexOf("scWaveCarryFrom(lyricsText.querySelector('.lyric-line.current'))") !== -1,
+    'the wave crosses a line boundary instead of being cut off at it');
+  ok(src.indexOf('.lyric-word.wave-1 .lyric-letter.lit') !== -1 &&
+     src.indexOf('.lyric-word.wave-2 .lyric-letter.lit') !== -1,
+    'and both trailing steps have their own dimmed gold, scoped so they can glow while the word is no longer current');
+
+  // 73.3.9 - a sheet with no timings of its own is laid out by the words, not by the
+  // line count. RUN the shipped schedule: a long line must own a longer window than a
+  // short one, and the result must not be an even split.
+  const pAt = src.indexOf('  var SC_WAVE_TRAIL_WORDS = 2;');
+  const pEnd = src.indexOf('\n  function scPaceWords(', pAt);
+  ok(pAt !== -1 && pEnd > pAt, 'the plain-sheet schedule can be lifted out of the page');
+  let P = null;
+  try {
+    P = new Function('var scSyllableCount = arguments[0]; var scStripLrcStamps = arguments[1];' + src.slice(pAt, pEnd) +
+      '\nreturn scPlainSheetStarts;')(T ? T.syl : null, T ? T.strip : null);
+  } catch (e) { ok(false, 'and it evaluates: ' + e.message); }
+  if (P && T && T.syl && T.strip) {
+    const rows = ['short', 'this is a much longer line with a lot of syllables in it', 'tiny', 'another fairly long line here'];
+    const st = P(rows.join('\n'), 100);
+    ok(st.length === rows.length && st[0] === 0, 'a plain sheet starts at the top of the song');
+    ok(st[2] - st[1] > st[1] - st[0],
+      'a long line owns a longer window than a short one (' + (st[1] - st[0]).toFixed(1) + 's vs ' + (st[2] - st[1]).toFixed(1) + 's)');
+    ok(Math.abs(st[1] - 100 / 4) > 0.5,
+      'and an even split by line count is NOT what it does (' + st[1].toFixed(2) + 's, an even split would be 25s)');
+    ok(st.every((t, i) => i === 0 || t > st[i - 1]), 'the lines still take over in order');
+    ok(P(rows.join('\n'), 100) === st, 'and the schedule is built once per sheet, not on every tick');
+    ok(P(rows.join('\n') + '\nand a fifth line', 100) !== st,
+      'a different sheet (one more line) is never served the schedule of the one before it');
+    ok(new Set(P(rows.join('\n'), 100)).size === rows.length, 'and one line never shares another line start');
+
+    // A song with an instrumental break: the recording says nobody sings from 20s to
+    // 40s, so no line may be laid out inside it and the lines after it come after it.
+    const hop2 = 0.02, dur2 = 60;
+    const bEnv = new Float32Array(Math.round(dur2 / hop2));
+    for (let t = 2; t < 20; t += 0.25) bEnv[Math.round(t / hop2)] = 1;
+    for (let t = 40; t < 58; t += 0.25) bEnv[Math.round(t / hop2)] = 1;
+    const parseLrc = (lrc) => String(lrc).split('\n').map((l) => {
+      const m = l.match(/^\[(\d{1,2}):(\d{1,2}(?:\.\d+)?)\]/);
+      return m ? parseInt(m[1], 10) * 60 + parseFloat(m[2]) : NaN;
+    });
+    const bT = parseLrc(T.time(['one two three four five', 'six seven eight nine ten', 'eleven twelve thirteen fourteen', 'fifteen sixteen seventeen'], dur2, bEnv, hop2));
+    ok(bT.every((t) => t < 20 || t > 40),
+      'no line is laid out inside a measured break (' + bT.map((t) => t.toFixed(1)).join(', ') + ')');
+    ok(bT[3] > 40, 'the lines that belong after the break come after it (' + bT[3].toFixed(1) + 's)');
+    ok(bT[0] > 1 && bT[0] < 5, 'and the first line still lands where the singing starts');
+  }
+  ok(src.indexOf('function scSingingWindow(gaps, start, end){') !== -1 &&
+     src.indexOf('if(quiet > (end - start) * 0.5) return null;') !== -1,
+    'a mostly-empty envelope is not mistaken for breaks');
 }
 
 console.log('[8] every converter card leads with MP3 and AIFF is a real output');

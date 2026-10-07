@@ -209,7 +209,16 @@ console.log('\n[5] letter by letter, and a highlight that works on every song');
     'and the light stops on the letter that window has reached');
   ok(src.indexOf('acc2 += wts[li] / wTotal2;') !== -1, 'counted by weight, not by an even step per letter');
   ok(/for\(let li = 0; li < ls\.length; li\+\+\) ls\[li\]\.classList\.toggle\('lit', li < upto\);/.test(src), 'turning them on in order');
-  ok(/if\(wi !== litIdx\)\{ clearLetters\(w\); return; \}/.test(src), 'while every other word is wiped back');
+  // 73.3.9 - the word behind the light is not wiped on the same frame any more: it
+  // keeps its letters and dims (the two-word trail), and only what is older than the
+  // trail is wiped. The owner asked for the sweep to travel as a wave, so this is the
+  // check moving with the behaviour, not the assertion being loosened: the wipe itself
+  // is still pinned below.
+  ok(/const back = \(litIdx >= 0 && wi < litIdx\) \? \(litIdx - wi\) : -1;/.test(src),
+    'the word behind the light is the one that keeps its letters');
+  ok(/if\(back >= 1 && back <= SC_WAVE_TRAIL_WORDS\)\{/.test(src) &&
+     /w\.classList\.remove\('wave-1', 'wave-2'\);\n            clearLetters\(w\);/.test(src),
+    'while every word older than the trail is wiped back');
   ok(src.indexOf("words.forEach(clearLetters);") !== -1, 'and switching letter mode off clears the run');
   // The styles that make it read as a wave.
   ok(count(src, '#lyricsText .lyric-word .lyric-letter{') === 1, 'the letters have a transition');

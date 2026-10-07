@@ -4250,6 +4250,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
   #lyricsText .lyric-word .lyric-letter{
     display: inline;
     transition: color 0.3s cubic-bezier(0.22,0.61,0.36,1),
+                opacity 0.28s cubic-bezier(0.22,0.61,0.36,1),
                 text-shadow 0.3s cubic-bezier(0.22,0.61,0.36,1),
                 transform 0.3s cubic-bezier(0.22,0.61,0.36,1);
     transform: translateZ(0);
@@ -4258,6 +4259,23 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
     color: var(--gold);
     text-shadow: 0 0 8px color-mix(in srgb, var(--glow-a) 80%, transparent),
                  0 0 18px color-mix(in srgb, var(--glow-b) 55%, transparent);
+  }
+  /* 73.3.9 - THE WAVE TRAILS. The gold used to be scoped to .current alone, so the
+     moment the light reached the next word the one behind it went back to the
+     trough in a single frame: it read as a switch being thrown word by word, not
+     as a wave moving through the line. The word just sung (.wave-1) and the one
+     before it (.wave-2) keep the letters they were given and dim down, so a run of
+     gold travels along the line and is gone two words behind the light. It also
+     crosses a line boundary now - see scWaveCarryFrom. */
+  #lyricsText.ll-on .lyric-word.wave-1 .lyric-letter.lit{
+    color: color-mix(in srgb, var(--gold) 62%, var(--ink-dim));
+    text-shadow: none;
+    opacity: 0.55;
+  }
+  #lyricsText.ll-on .lyric-word.wave-2 .lyric-letter.lit{
+    color: color-mix(in srgb, var(--gold) 26%, var(--ink-dim));
+    text-shadow: none;
+    opacity: 0.28;
   }
   #lyricsText.ll-on .lyric-word.current .lyric-letter{
     font-weight: 700;
@@ -10767,10 +10785,27 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     }
     var lead = Math.min(6, Math.max(0.5, dur * 0.03));
     var start = voiceStart > 0 ? voiceStart : lead;
-    var span = Math.max(1, dur - start - Math.min(4, dur * 0.05));
+    var end = Math.max(start + 1, dur - Math.min(4, dur * 0.05));
+    // 73.3.9 - A BREAK IS NOT PART OF THE SONG. The layout spread the lines across
+    // the whole file by weight, so a track with a long instrumental in it put the
+    // lines that belong after the break in the middle of it: they were snapped onto
+    // whatever hit was nearest, and every line after them arrived early or late in
+    // proportion to a stretch nobody sings. The measured quiet stretches are now cut
+    // out of the timeline the lines are spread over - the words skip the break the
+    // way the voice does, and the snap may not park a line inside one either. See
+    // scSingingWindow for when a quiet stretch is a break and when it is just a
+    // sparse measurement, so a mostly-empty envelope changes nothing.
+    var gaps = null, breaks = null;
+    if(env && env.length){
+      gaps = scFindQuietGaps(env, hop, dur);
+      breaks = scSingingWindow(gaps, start, end);
+    }
+    var span = Math.max(1, end - start);
     var t = [], acc = 0;
     for(var j = 0; j < kept.length; j++){
-      t.push(start + (acc / total) * span);
+      var at = start + (acc / total) * span;
+      if(breaks) at = scSingingPoint(breaks, acc / total);
+      t.push(at);
       acc += weights[j];
     }
     if(env && env.length){
@@ -10787,7 +10822,16 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         var lo = Math.max(0, centre - win);
         var hi = Math.min(env.length - 1, centre + (q === 0 ? win * 3 : win));
         var bi = -1, bv = floor;
-        for(var s = lo; s <= hi; s++){ if(env[s] > bv){ bv = env[s]; bi = s; } }
+        for(var s = lo; s <= hi; s++){
+          // 73.3.9 - a frame inside a measured quiet stretch is a drum in an
+          // instrumental, not a voice, so it is never a snap target.
+          if(gaps){
+            var sec2 = s * hop, quiet2 = false;
+            for(var gi = 0; gi < gaps.length; gi++){ if(sec2 >= gaps[gi].s && sec2 <= gaps[gi].e){ quiet2 = true; break; } }
+            if(quiet2) continue;
+          }
+          if(env[s] > bv){ bv = env[s]; bi = s; }
+        }
         if(bi >= 0) t[q] = bi * hop;
         // The search may not park a line on top of the one before it.
         if(q > 0 && t[q] < t[q - 1] + 0.35) t[q] = t[q - 1] + 0.35;
@@ -10966,6 +11010,50 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       run = 0;
     }
     return gaps;
+  }
+  // 73.3.9 - the stretches of a track that carry singing, with the measured quiet
+  // runs between them cut out. A break is a quiet stretch BETWEEN two loud ones: a
+  // quiet opening is covered by the lead-in the layout already has, a quiet ending
+  // has nothing to resume after it, and if the quiet is most of the file then the
+  // envelope is describing a sparse or half-silent measurement rather than breaks -
+  // returning null there means the plain word-weighted layout is left exactly as it
+  // was, so nothing that used to work changes.
+  function scSingingWindow(gaps, start, end){
+    if(!gaps || !gaps.length || !(end > start)) return null;
+    var quiet = 0, list = [];
+    for(var i = 0; i < gaps.length; i++){
+      var s = Math.max(start, gaps[i].s), e = Math.min(end, gaps[i].e);
+      if(e - s < 0.5) continue;              // a breath, not a break
+      if(s <= start + 0.4) continue;         // the opening: the lead-in covers it
+      if(e >= end - 0.4) continue;           // the outro: nothing resumes after it
+      list.push({ s: s, e: e });
+      quiet += (e - s);
+    }
+    if(!list.length) return null;
+    if(quiet > (end - start) * 0.5) return null;
+    var out = [], at = start;
+    for(var j = 0; j < list.length; j++){
+      if(list[j].s > at) out.push({ s: at, e: list[j].s });
+      at = list[j].e;
+    }
+    if(end > at) out.push({ s: at, e: end });
+    return out.length ? out : null;
+  }
+  // Where a fraction of the singing falls, treating the singing stretches as one
+  // continuous timeline: the weight a line holds is the share of the SINGING it gets,
+  // never a share of the instrumentals around it.
+  function scSingingPoint(regions, frac){
+    if(!regions || !regions.length) return 0;
+    var total = 0, i;
+    for(i = 0; i < regions.length; i++) total += (regions[i].e - regions[i].s);
+    if(!(total > 0)) return regions[0].s;
+    var want = Math.max(0, Math.min(1, frac)) * total;
+    for(i = 0; i < regions.length; i++){
+      var len = regions[i].e - regions[i].s;
+      if(want <= len || i === regions.length - 1) return regions[i].s + Math.min(len, want);
+      want -= len;
+    }
+    return regions[regions.length - 1].e;
   }
   // A line the model dropped inside a purely instrumental stretch cannot be
   // right - nobody sings there. Move it to where the singing resumes, keep the
@@ -11632,6 +11720,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       
       const allLines = lyricsText.querySelectorAll('.lyric-line');
       if (!allLines.length) return;
+      // The word the sheet moved away from fades on its own clock.
+      scWaveTrailTick();
       
       const syncedLines = lyricsText.querySelectorAll('.lyric-line[data-time]');
       
@@ -11656,6 +11746,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // and keeps the scroll and word pacing following the playhead.
           var _tapHeld = lyricsTapHoldUntil && Date.now() < lyricsTapHoldUntil;
           if (!_tapHeld && currentIdx !== lastLyricsIdx) {
+            // 73.3.9 - the wave crosses the boundary: whichever word was still lit
+            // when the sheet moved on keeps its letters for the same two-word trail,
+            // so the light keeps travelling from line to line instead of being cut
+            // off at each one.
+            try{ scWaveCarryFrom(lyricsText.querySelector('.lyric-line.current')); }catch(_eWaveCarry){}
             allLines.forEach(l => {
               l.classList.remove('current');
               l.querySelectorAll('.lyric-word').forEach(w => w.classList.remove('current'));
@@ -11721,7 +11816,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if (_sheetDur > 0) {
           const progress = Math.min(1, Math.max(0, currentTime / _sheetDur));
           const lineHeight = allLines[0].offsetHeight || 24;
-          const targetIdx = Math.min(allLines.length - 1, Math.floor(progress * allLines.length));
+          // 73.3.9 - the line the playhead is on is read off the syllable-weighted
+          // schedule (scPlainSheetStarts), not off progress * lineCount. See the
+          // comment on that helper: the even split is what made a plain sheet run
+          // slow through one part and fast through the next. It is handed the sheet
+          // text the rows were rendered from, so the rows and the schedule line up
+          // one-for-one and nothing is read back out of the DOM on every tick.
+          const starts = scPlainSheetStarts(currentLyricsText, _sheetDur);
+          let targetIdx = 0;
+          for(let si = 0; si < starts.length; si++){ if(starts[si] <= currentTime) targetIdx = si; }
+          targetIdx = Math.max(0, Math.min(allLines.length - 1, targetIdx));
           var _tapHeld2 = lyricsTapHoldUntil && Date.now() < lyricsTapHoldUntil;
           if (!_tapHeld2 && targetIdx !== lastLyricsIdx) {
             lastLyricsIdx = targetIdx;
@@ -11739,8 +11843,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // gap-capped pacing as synced lyrics, so the feature works on EVERY
           // song instead of only the ones that carry timestamps.
           if (lyricsWordByWord && audio.duration > 0 && allLines[targetIdx] && !allLines[targetIdx].dataset.inst) {
-            const lineFrom = (targetIdx / allLines.length) * _sheetDur;
-            const lineTo = ((targetIdx + 1) / allLines.length) * _sheetDur;
+            const lineFrom = starts[targetIdx];
+            const lineTo = (targetIdx + 1 < starts.length) ? starts[targetIdx + 1] : _sheetDur;
             scPaceWords(allLines[targetIdx], lineFrom, lineTo, currentTime);
           }
           // At end of song: show playing indicator after last line
@@ -11937,6 +12041,81 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // the last one stayed lit for the rest of it. Clamped to [6,14] so a fast
   // line keeps its snap and a long instrumental gap still cannot make the
   // words crawl.
+  // 73.3.9 - how many words behind the light keep their gold while it dims out. Two
+  // is what the owner asked for ("a smooth wave that disappears after 2 words"), and
+  // it is also what a line of singing can carry without the trail reading as a
+  // second highlight: the word being sung is full, the one just sung is half, the one
+  // before it is a whisper, and everything older is wiped.
+  var SC_WAVE_TRAIL_WORDS = 2;
+  // The last line the sheet moved away from, and when its trail should be gone. The
+  // trail of the CURRENT line is handled by scPaceWords on the same 50ms tick; this
+  // pair only exists so the wave does not stop dead at a line boundary.
+  var scWaveTrailEl = null;
+  var scWaveTrailUntil = 0;
+  function scWaveCarryFrom(prevLine){
+    if(!prevLine || !prevLine.querySelectorAll) return;
+    var ws = prevLine.querySelectorAll('.lyric-word');
+    if(!ws.length) return;
+    // The words it was on when the line changed: the last two that carry text.
+    var last = null, before = null;
+    for(var i = 0; i < ws.length; i++){
+      if(!((ws[i].textContent || '').trim())) continue;
+      before = last; last = ws[i];
+    }
+    for(var j = 0; j < ws.length; j++){
+      if(ws[j] === last){ ws[j].classList.add('wave-1'); ws[j].classList.remove('wave-2'); continue; }
+      if(ws[j] === before){ ws[j].classList.add('wave-2'); ws[j].classList.remove('wave-1'); continue; }
+      ws[j].classList.remove('wave-1', 'wave-2');
+      clearLetters(ws[j]);
+    }
+    scWaveTrailEl = prevLine;
+    scWaveTrailUntil = Date.now() + 700;
+  }
+  function scWaveTrailTick(){
+    if(!scWaveTrailEl || Date.now() < scWaveTrailUntil) return;
+    var ws = scWaveTrailEl.querySelectorAll ? scWaveTrailEl.querySelectorAll('.lyric-word') : [];
+    for(var i = 0; i < ws.length; i++){ ws[i].classList.remove('wave-1', 'wave-2'); clearLetters(ws[i]); }
+    scWaveTrailEl = null;
+  }
+  // 73.3.9 - a sheet with no timings of its own used to be spaced EVENLY: the current
+  // line was picked by floor(progress * lineCount) and its words paced inside
+  // (idx/N)..((idx+1)/N) of the whole song. That follows the line COUNT, not the
+  // singing - a short intro, a line the sheet split in two or a repeated chorus moves
+  // every line after it, which is exactly "way too slow on some parts and way too fast
+  // on others". The layout below follows the words instead: a line owns the share of
+  // the song its own syllables take up, the same shape the measured timing uses, so a
+  // plain sheet moves like a timed one even while the recording is still being
+  // measured. It takes the SHEET TEXT (the same string the sheet was rendered from,
+  // so the lines and the rendered rows are one-for-one) and is built once per sheet:
+  // the key is cheap - the length, the duration and the two ends of the text - so the
+  // 50ms poll does no more than compare it, and a different song can never be served
+  // the schedule of the one before it.
+  var scPlainSchedKey = '';
+  var scPlainSchedStarts = null;
+  function scPlainSheetStarts(sheetText, dur){
+    var d = Number(dur) || 0;
+    var text = String(sheetText == null ? '' : sheetText);
+    var key = text.length + '|' + Math.round(d * 10) + '|' + text.slice(0, 40) + '|' + text.slice(-24);
+    if(key === scPlainSchedKey && scPlainSchedStarts) return scPlainSchedStarts;
+    var arr = text.split('\n');
+    var weights = [], total = 0, i;
+    for(i = 0; i < arr.length; i++){
+      var txt = scStripLrcStamps(arr[i]).trim();
+      // A blank line is the pause between verses, so it is worth half a short line
+      // rather than nothing at all.
+      var w = txt ? scSyllableCount(txt) : 0.5;
+      weights.push(w);
+      total += w;
+    }
+    var out = [], acc = 0;
+    for(i = 0; i < arr.length; i++){
+      out.push(total > 0 ? (acc / total) * d : (arr.length ? (i / arr.length) * d : 0));
+      acc += weights[i];
+    }
+    scPlainSchedKey = key;
+    scPlainSchedStarts = out;
+    return out;
+  }
   function scPaceWords(lineEl, fromSec, toSec, nowSec){
     if(!lineEl) return;
     const words = scEnsureWordSpans(lineEl);
@@ -12013,7 +12192,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // does not leave a trail of half-lit letters behind it.
     if(lettersOn()){
       words.forEach(function(w, wi){
-        if(wi !== litIdx){ clearLetters(w); return; }
+        // 73.3.9 - THE WAVE TRAILS. Only the word being sung used to be allowed to
+        // show gold, and every other word was wiped on the same frame, so the light
+        // jumped from word to word instead of travelling: word-by-word with a fade
+        // on it. Now the word just sung keeps its lit letters at half strength and the
+        // one before it at a whisper (CSS: .wave-1 / .wave-2), and only the words past
+        // that trail are wiped - a run of gold that moves along the line and is gone
+        // two words behind the light. The trail is BEHIND the light by construction, so
+        // it cannot make the current word late.
+        const back = (litIdx >= 0 && wi < litIdx) ? (litIdx - wi) : -1;
+        if(wi !== litIdx){
+          if(back >= 1 && back <= SC_WAVE_TRAIL_WORDS){
+            w.classList.remove(back === 1 ? 'wave-2' : 'wave-1');
+            w.classList.add(back === 1 ? 'wave-1' : 'wave-2');
+          } else {
+            w.classList.remove('wave-1', 'wave-2');
+            clearLetters(w);
+          }
+          return;
+        }
+        w.classList.remove('wave-1', 'wave-2');
         const span = Math.max(0.05, litTo - litFrom);
         const frac = Math.max(0, Math.min(1, (nowSec - litFrom) / span));
         // 72.8.1 - the letters are PACED, not counted. The old wave cut the
@@ -13089,7 +13287,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.3.8';
+  const APP_VERSION = '73.3.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13710,6 +13908,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.3.9', date: 'October 7, 2026 · 7:22 AM EDT', title: 'The lyric light travels as a wave, and the words skip the instrumental instead of drifting through it', items: [
+    'Letter-by-letter is a wave now: the word being sung is full gold, the word just sung holds its letters at half strength and the one before it at a whisper, so a run of light travels along the line and is gone two words behind it.',
+    'The wave no longer stops at a line: the word that was still lit when the sheet moved on keeps its letters for the same two-word trail, so the light travels from line to line instead of starting again at each one.',
+    'A sheet with no timings used to be spaced evenly, line count against the clock, so a short intro or a repeated chorus moved every line after it - slow through one part and fast through the next. The lines are laid out by their own words now.',
+    'A song with an instrumental in it stops drifting: the measured quiet stretches are cut out of the timeline the lines are spread over, so the words skip the break the way the voice does instead of drifting through it.',
+    'The player still says where each line starts, and now it also says where one may not: a snap can no longer park a line on a drum hit inside a measured instrumental, the same rule the AI timing already followed.',
+    'A timing you pinned by hand with Line up still outranks every measurement, and a song whose words are unchanged keeps the highlight it had. Nothing here touches the words themselves.',
+    'Your songs, playlists and saved lyrics stay on your device - nothing in your library is touched, changed or removed by this release.'
+  ]},
   { version: '73.3.8', date: 'October 7, 2026 · 6:56 AM EDT', title: 'The wall is 150 badges that each mean something, and the dev mode panel leaves Studio', items: [
     'The badge wall is 150 badges now, each one written by hand with its own name and its own goal, instead of the two hundred the threshold tables generated - where most tiles differed from the tile beside them only by a number.',
     'The table that generated those tiles is gone from the app, along with the helper that named them, so no release can grow the wall back by listing one more number.',
