@@ -13012,7 +13012,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.3.2';
+  const APP_VERSION = '73.3.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13614,6 +13614,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.3.3', date: 'October 6, 2026 · 8:20 PM EDT', title: 'Playlists come back even when the saved list was cut down to the defaults', items: [
+    'If your playlists went missing they are put back from the copy SideCut keeps on your device, including the case where the saved list had been reduced to just Library and Favorites.',
+    'The recovery now runs on a launch where the whole playlist row is gone as well, and what it restores is written straight back so the lists stay for good.',
+    'Everything from 73.3.2 stays: the repaired lyrics sheet, the multi-language and tempo auto-scroll fixes, and the on-device backup recovery.',
+    'Your songs, playlists and saved lyrics stay on your device \u2014 nothing in your library is removed by this release.',
+  ]},
   { version: '73.3.2', date: 'October 6, 2026 · 7:55 PM EDT', title: 'Playlists return from your on-device backup, and the lyrics sheet is whole again', items: [
     'Playlists are recovered from SideCut\u2019s own on-device backup when the saved list goes missing, instead of being quietly reset to a single list.',
     'The fault that could stop the whole page from running is repaired, so the app opens normally on every launch.',
@@ -19096,11 +19102,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // loader bails out on its first check when the library is empty, so a fresh
     // install never read the setting at all, and it runs again on every reload,
     // which would snap the view back after you had chosen Albums yourself.
-    // The stored row first, then a direct read of the key on its own (a settings
-    // sweep that somehow misses it must not reset the library), and only then the
-    // on-device backup. A missing row is not permission to invent a fresh sheet:
-    // if neither the store nor the sweep has it, ask sidecut-snapshot.json before
-    // giving up, and write back what it carries so the next boot finds it again.
+    // The stored row first, then a direct read of the key on its own — a settings
+    // sweep that somehow misses it must not reset the library.
     playlists = metaMap.playlists || null;
     if(!playlists){
       try{
@@ -19108,13 +19111,34 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(_plRow && _plRow.value && typeof _plRow.value === 'object') playlists = _plRow.value;
       }catch(_ePlaylistsRead){}
     }
-    if(!playlists){
+    // Only the built-in tabs left (or no row at all) is the shape a LOST library
+    // has. Ask the on-device mirror (sidecut-snapshot.json, written ~1.5s after
+    // every meta change) before inventing a fresh sheet. A named playlist it still
+    // remembers is one that went missing with the store, because a real delete
+    // reaches that same file too — so put back what it holds and write the merged
+    // row, and the list survives this boot. A library that still has its own
+    // custom lists never pays for the read.
+    var _hasCustomList = false;
+    if(playlists && typeof playlists === 'object'){
+      for(var _pn in playlists){
+        if(_pn !== 'All Songs' && _pn !== 'Favorites' && _pn !== 'Unsorted'){ _hasCustomList = true; break; }
+      }
+    }
+    if(!_hasCustomList && window.__scSnapMeta){
       try{
-        if(window.__scSnapMeta){
-          var _snapMeta = await window.__scSnapMeta();
-          if(_snapMeta && _snapMeta.playlists && typeof _snapMeta.playlists === 'object'){
-            playlists = _snapMeta.playlists;
+        var _snapMeta = await window.__scSnapMeta();
+        var _snapPl = _snapMeta && _snapMeta.playlists;
+        if(_snapPl && typeof _snapPl === 'object'){
+          var _merge = (playlists && typeof playlists === 'object') ? playlists : {};
+          var _putBack = [];
+          Object.keys(_snapPl).forEach(function(_nm){
+            if(_nm === 'All Songs' || _nm === 'Favorites' || _nm === 'Unsorted') return;
+            if(!Object.prototype.hasOwnProperty.call(_merge, _nm)){ _merge[_nm] = _snapPl[_nm]; _putBack.push(_nm); }
+          });
+          if(_putBack.length){
+            playlists = _merge;
             try{ dbPut('meta', { key: 'playlists', value: playlists }); }catch(_eRestorePl){}
+            try{ if(typeof window.toast === 'function') window.toast('Restored ' + _putBack.length + ' playlist' + (_putBack.length === 1 ? '' : 's') + ' from your on-device backup.', 7000); }catch(_eToastPl){}
           }
         }
       }catch(_eSnapPl){}
