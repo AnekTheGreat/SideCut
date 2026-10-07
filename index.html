@@ -10755,25 +10755,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
           if(wCount >= wNeed){ voiceStart = f0 * hop; break; }
         }
       }
-      // Long intros: allow voiceStart to be nearly the whole track (only cap it
-      // if the song is actually short). A 45s intro on a 3m track must not push
-      // every line behind the voice. The hard 0.35 cap is the single biggest
-      // cause of "lyrics sit behind the voice on long intros".
-      if(!(voiceStart > 0) || voiceStart > dur * 0.85) voiceStart = 0;
+      // Past a third of the song a cluster of rises is not an entrance any more,
+      // so nothing drags the words with it.
+      if(!(voiceStart > 0) || voiceStart > dur * 0.35) voiceStart = 0;
     }
-    // Lead-in before the first sung line: for a short track the lead can be
-    // meaningful, for a long track it must stay small so a long intro does not
-    // drag the first line's landing point backward. The old 0.03* dur guess is
-    // a guess that breaks a 180s song with a 30s intro (0.03*180 = 5.4s is too
-    // much, it pins the first line too far back). Prefer a measured min(3s, 0.08%*dur).
-    var lead = Math.min(3, Math.max(0.4, dur * 0.0008));
+    var lead = Math.min(6, Math.max(0.5, dur * 0.03));
     var start = voiceStart > 0 ? voiceStart : lead;
-    // Span from first sung line to last line PLUS room for the last line's own
-    // duration AND a final tail so the outro is not crushed into the end: the
-    // old span = dur - start - min(4, 5% of dur) eats the final 1-4s of the
-    // song, and an outro that lands on the last timestamp is expected.
-    var endPad = Math.max(1.5, dur * 0.02);
-    var span = Math.max(1, dur - start - Math.min(4, dur * 0.05) - endPad);
+    var span = Math.max(1, dur - start - Math.min(4, dur * 0.05));
     var t = [], acc = 0;
     for(var j = 0; j < kept.length; j++){
       t.push(start + (acc / total) * span);
@@ -10791,12 +10779,12 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         // estimate can sit well before the entrance, and the entrance is the one
         // rise that has to win.
         var lo = Math.max(0, centre - win);
-        var hi = Math.min(env.length - 1, centre + (q === 0 ? win * 3 : win * 4));
+        var hi = Math.min(env.length - 1, centre + (q === 0 ? win * 3 : win));
         var bi = -1, bv = floor;
         for(var s = lo; s <= hi; s++){ if(env[s] > bv){ bv = env[s]; bi = s; } }
         if(bi >= 0) t[q] = bi * hop;
         // The search may not park a line on top of the one before it.
-        if(q > 0 && t[q] < t[q - 1] + 0.5) t[q] = t[q - 1] + 0.5;
+        if(q > 0 && t[q] < t[q - 1] + 0.35) t[q] = t[q - 1] + 0.35;
       }
     }
     function stamp(sec){
@@ -13012,7 +13000,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.3.4';
+  const APP_VERSION = '73.3.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13633,6 +13621,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.3.5', date: 'October 6, 2026 · 9:10 PM EDT', title: 'Lyrics auto-scroll stops racing ahead of the voice', items: [
+    'Undid a line-timing change that pulled each lyric line forward onto a later, louder beat and then packed the lines together. On fast, beat-driven songs that made the sheet run ahead of the singing.',
+    'For a song with no timed lyrics file, each line is placed where the voices are again, instead of several seconds early and hurrying.',
+    'The sheet still opens on the playing line, re-timing still keeps your place, and nothing else about playback changed.',
+    'Your songs, playlists and saved lyrics stay on your device \u2014 nothing in your library is removed by this release.',
+  ]},
   { version: '73.3.4', date: 'October 6, 2026 · 8:45 PM EDT', title: 'Lost playlists come back before the backup can be overwritten', items: [
     'A launch that finds the playlist list missing now restores it from the copy SideCut keeps on your device before anything else is written, so the backup can no longer be overwritten by the very launch that needed it.',
     'When only the playlist list is gone, with songs, albums and settings intact, just that list is put back and nothing else you have is changed.',
