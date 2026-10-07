@@ -160,7 +160,16 @@ console.log('[4] the widget hands each press to SideCut\'s own media session');
   ok(/if \(!sent \|\| !music\) \{/.test(java), 'the system-wide key is also sent whenever nothing is audibly playing yet, so a paused app resumes instead of opening');
   ok(/if \(!sent && !music\) \{/.test(java), 'and with nothing playing and no session to move, the app is opened');
   ok(java.indexOf('isMusicActive()') !== -1, 'which is decided by whether music is really playing');
-  ok(java.indexOf('FLAG_ACTIVITY_NEW_TASK') !== -1, 'opening it from a broadcast needs the new-task flag');
+  // 73.4.2 - the transport block no longer builds its own launch intent: a tap now
+  // has to leave the resume request first, so every open goes through one helper.
+  // The flag is still required, and still set BEFORE the launch - the pin moved to
+  // where it now lives instead of matching text that moved out of this slice.
+  const launcher = sliceOf(widgetPy, '    static void openApp(Context ctx) {', '    private static PendingIntent pi(');
+  ok(launcher.indexOf('addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)') !== -1
+     && launcher.indexOf('addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)') < launcher.indexOf('ctx.startActivity('),
+    'opening it from a broadcast needs the new-task flag, set before the launch');
+  ok(java.indexOf('openApp(context);') !== -1 && java.indexOf('getLaunchIntentForPackage') === -1,
+    'and the transport block launches through that helper, never its own copy');
   ok(count(java, 'dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code))') === 1,
     'and the old press is not sent twice');
 }

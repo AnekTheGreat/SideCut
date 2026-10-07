@@ -139,6 +139,22 @@ public class SideCutWidgetPlugin extends Plugin {
         call.resolve(out);
     }
 
+    // 73.4.2 - a tap on the widget asks for the last song back. The widget cannot
+    // play anything itself (the sound comes out of the WebView), so it leaves this
+    // request and opens the app; the web layer reads it and presses play on the
+    // song the restore already put on the deck. Consumed once, like the playlist.
+    @PluginMethod
+    public void getPendingResume(PluginCall call) {
+        Context ctx = getContext();
+        android.content.SharedPreferences sp =
+                ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
+        boolean resume = sp.getBoolean("pendingResume", false);
+        if (resume) sp.edit().remove("pendingResume").apply();
+        JSObject out = new JSObject();
+        try { out.put("resume", resume); } catch (Exception ignored) {}
+        call.resolve(out);
+    }
+
     // Live job progress in the Android shade (conversions and exports). One id
     // for both states, so a finished run REPLACES its progress row with the
     // result instead of stacking a second notification. Without
@@ -474,6 +490,38 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
         }
     }
 
+    // ---- 73.4.2: the tap that resumes the last song --------------------------
+    // Is SideCut making sound right now? The stored state can be stale (the
+    // watchdog rewrites it, the app can die mid-song), so the phone's own audio
+    // state is asked as well - it is the one answer a tap cannot argue with.
+    static boolean musicActive(Context ctx) {
+        try {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            return am != null && am.isMusicActive();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static void askResume(Context ctx) {
+        try {
+            ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
+                    .edit().putBoolean("pendingResume", true).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    static void openApp(Context ctx) {
+        try {
+            Intent i = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+            if (i != null) {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(i);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     private static PendingIntent pi(Context ctx, String action, String extra) {
         Intent i = new Intent(ctx, SideCutWidgetProvider.class)
                 .setAction("com.SideCut.myapp.WIDGET_" + action);
@@ -541,8 +589,11 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
             if (action.endsWith("MY_PACKAGE_REPLACED") || action.endsWith("APPWIDGET_OPTIONS_CHANGED")) return;
         }
         if (action.endsWith("_open")) {
-            Intent i = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-            if (i != null) context.startActivity(i);
+            // 73.4.2 - a tap on the widget means "put the song back on", not just
+            // "open the app". With music already playing it only opens (the request
+            // is not left), so a tap can never restart a song that is running.
+            if (!musicActive(context)) askResume(context);
+            openApp(context);
             return;
         }
         int code = 0;
@@ -621,15 +672,10 @@ public class SideCutWidgetProvider extends AppWidgetProvider {
                 // Only for a play - a prev/next with nothing playing has nothing
                 // to move on to, so it stays silent.
                 if (code == KeyEvent.KEYCODE_MEDIA_PLAY || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
-                    try {
-                        Intent open = context.getPackageManager()
-                                .getLaunchIntentForPackage(context.getPackageName());
-                        if (open != null) {
-                            open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            context.startActivity(open);
-                        }
-                    } catch (Exception ignored) {
-                    }
+                    // 73.4.2 - and it is asked to RESUME, not just to appear: the
+                    // press that opens the app is the press that starts the song.
+                    askResume(context);
+                    openApp(context);
                 }
             }
         }

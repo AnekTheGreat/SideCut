@@ -1,6 +1,62 @@
 # SideCut — repository memory
 
 
+## 73.4.2 (Oct 7, 2026 · 5:01 PM EDT): a tap on the widget picks the last song back up
+- **The owner's ask, verbatim**: "Also the widgit If I'm not in the app I should be able to click on it to resume
+  a song that was previously playing. And from other places like the media player in control center dynamic
+  island now bar ect... Outside of the app".
+- **WHAT THE WIDGET COULD NOT DO.** The widget has no player in it - the sound comes out of the WebView. Its body
+  tap was `pi(ctx, "open")` (just `startActivity`) and its play button dispatched a media key that, with the app
+  closed, reached no session at all; the fallback opened the app and left it there. The boot restore
+  (`restorePlaybackState`) had always put the last song and its position back on the deck, but deliberately
+  paused - "Tap play to pick back up" - so a tap outside the app produced a paused app.
+- **THE FIX, NATIVE (.github/workflows/patch-widget.py).** `SideCutWidgetPlugin.getPendingResume` hands a request
+  over once (the same shape `getPendingPlaylist` already used). The provider gained `musicActive`,
+  `askResume` and `openApp`: the body tap leaves the request when `!musicActive(context)` and then launches; the
+  play button's "nothing is playing" fallback asks for the resume too. With music already playing a tap only
+  opens the app, so a tap can never restart a song that is running. `openApp` carries `FLAG_ACTIVITY_NEW_TASK` -
+  which is why `test-7251`'s new-task pin moved with it (its old text pin matched a block that no longer builds
+  its own intent; the requirement itself is unchanged and now asserted where it lives).
+- **THE FIX, WEB (index.html).** `scWidgetResumeCheck` / `scResumeRestoredSong` read the request and press play on
+  what the restore put on the deck, at the saved position, through the ordinary `updateNowPlayingUI` path - so the
+  now bar, the widget's own state push and the media session all follow. Read only while `activeAudio().paused`,
+  from three places: 700ms after the boot restore (a cold start), on `visibilitychange` to visible (a warm app
+  never re-runs boot), and the existing 10s widget poll. A song parked at its end starts over; `userPaused`
+  is cleared because the press IS the request to hear it.
+- **OLD APK, NEW SHELL IS SAFE**: a phone running the previous APK calls a plugin method that is not there. Both
+  bridge shapes are guarded (`typeof P.getPendingResume === 'function'`, else `nativePromise(...).catch`) so the
+  worst case is no resume - never an exception at boot.
+- **THE GATE: `dev/widget-resume-check.cjs` (33 checks, all green)** - new, standalone (the battery lives in the
+  untracked `dev/gates.sh`). Pins the native contract in patch-widget.py, renders both Java templates through
+  python, and then RUNS the shipped web path in jsdom: a real boot, a real restore from a seeded `playback` meta
+  row, a request waiting, and the assertions that `play()` was called once, at 42.00s (the saved position), that a
+  second poll cannot resume twice, that the media session is told `playing`, and - the other boot - that without a
+  request nothing plays and the old cue is untouched.
+- **THE RELEASE**: `APP_VERSION 73.4.1 -> 73.4.2`, the 7-note head entry at `October 7, 2026 · 5:01 PM EDT`,
+  `sw.js` cache `sidecut-shell-v73.4.2`, both bundles regenerated to a fixed point at pass 2 - root + `ota/`
+  **925688**, `ota-play/` **925695**, all five entries OK.
+- **Gates, old tree vs new tree** (a clean `git worktree` of `b72d822`): identical everywhere and one better -
+  test-7251 **104/5 -> 105/5**, test-6643 89/1 -> **90/0** (the new stamp), test-7316 285/6, test-713 45/5,
+  test-714 138/5, test-715 67/5, test-716 77/6, test-717 89/5, test-718 38/8, test-719..724, test-725 98/5,
+  test-7252 52/5, test-726 69/5, test-727 54/5, test-7271 54/5, test-728 57/6, test-7281 88/6, test-7317 32/7,
+  test-612/6136-6139/619/651/662, test-play-copy 28/28, the seven album suites, `audit-calls`, `check-dom`
+  (0 DOM failures), `test-widget-anim`/`test-widget-dim` (the widget patcher still renders), and the OTA trio
+  (guard 20/0, update 52/0, bootapply 24/0). **Run those three one at a time** - under a shared 60s batch
+  timeout they are killed mid-run and print partial counts.
+- **THE SECOND HALF OF THE ASK - "from other places ... outside of the app".** Android's outside surfaces (lock
+  screen, quick-settings media player, the shade notification) all read the media session, which has existed all
+  along and is audited by `dev/media-controls-check.cjs` (18/1, the one red pre-existing: "and it no longer fires
+  every half hour"). What was missing was that a *closed* app had nothing to press - that is the widget resume
+  above.
+  The session itself is still opt-in ("Enable notification player", welcome screen or Settings) because the plugin
+  once killed the process on some phones; that policy was NOT changed here. **Control Center and the Dynamic
+  Island are iOS** - this repository builds Android only (no `ios/` target, `android-build.yml` for AAB/APK), so
+  those two surfaces cannot exist here.
+- **NOT VERIFIED HERE**: no Android device and no emulator, so the widget's own Java is proven by its injection
+  contract + the python template render, and the resume is proven by the jsdom run of the shipped web path against
+  a stubbed bridge. The APK that carries the native half is built in CI (`apk-73.4.2-*`); the OTA bundle carries
+  only the web half (see the note under 73.4.1).
+
 ## 73.4.1 (Oct 7, 2026 · 4:15 PM EDT): a quiet verse is not a break, so the highlight stops falling behind the voice
 - **The owner's words, verbatim**: "The lyrics were fine for song but then it auto did lyrics timed to this
   song and it like skipped back 5 lines it's not supposed do that dawg". The automatic timing toast is

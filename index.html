@@ -3389,7 +3389,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
           <div style="margin-bottom:3px;">• <b>Jump to the playing song:</b> tap the record on the now bar — it scrolls the list to that song.</div>
           <div style="margin-bottom:3px;">• <b>Seek style, crossfade, gapless, auto-volume:</b> Settings → <b>Playback</b>. <b>8-band EQ + bass boost:</b> Settings → <b>Equalizer</b>.</div>
           <div style="margin-bottom:3px;">• <b>Sleep timer:</b> the ⋮ menu on the now bar. <b>DJ mode / Auto-DJ beat blending:</b> Settings → Playback.</div>
-          <div style="margin-bottom:10px;">• <b>Background:</b> playback keeps going when you leave the app; the notification shade and the home-screen widget carry prev / play-pause / next.</div>
+          <div style="margin-bottom:10px;">• <b>Background:</b> playback keeps going when you leave the app; the notification shade and the home-screen widget carry prev / play-pause / next, and a tap on the widget picks the song you were last playing back up where you left it.</div>
           <div style="margin-bottom:6px; color:var(--ink);"><b>Lyrics</b></div>
           <div style="margin-bottom:3px;">• Open the lyrics button on the now bar. <b>Auto-scroll</b>, <b>Highlight</b>, <b>Word-by-word</b> and <b>Letter-by-letter</b> are the chips along the top.</div>
           <div style="margin-bottom:3px;">• <b>Running late or early?</b> −0.5s / +0.5s fixes it and is remembered per song. <b>Translate</b> turns non-English lyrics into English.</div>
@@ -3424,7 +3424,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
     </div>
 
     <div id="settingsPaneWidget" style="display:none;">
-      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget. Changes apply to every widget you have placed; re-adding one also picks these up.</div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget. Changes apply to every widget you have placed; re-adding one also picks these up. Tapping the widget - or its play button - picks the song you were last playing back up where you left it.</div>
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">Note: if the app is closed or swiped away from recents, the widget will not play the right audio — open SideCut again to get the widget back in sync.</div>
       <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
       <div id="widgetBarsRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
@@ -13305,7 +13305,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.4.1';
+  const APP_VERSION = '73.4.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13926,6 +13926,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.4.2', date: 'October 7, 2026 · 5:01 PM EDT', title: 'The widget picks your last song back up where you left it', items: [
+    'Tapping the home-screen widget now resumes the song you were last playing, from the position you left it at, and it starts playing instead of opening the app paused and waiting for a second press.',
+    'The press that opens the app is the press that starts the song, so there is nothing new to find in it: one tap on the widget, and the music comes back on.',
+    'A tap on a widget whose song is already playing only opens the app. The request for a resume is left only when nothing is playing, so a tap can never restart a song that is running.',
+    'The widget play button behaves the same way when nothing is playing: it asks for the last song back rather than pressing play into a player that is no longer there.',
+    'The phone player follows the resume too. A song brought back this way shows up on the lock screen and in the shade player the moment it starts, exactly as it does when you press play yourself.',
+    'Your lyrics, the letter wave, the player screen and the timings saved on your songs are untouched by this release.',
+    'Your songs and playlists stay on your device - nothing in your library is changed, moved or removed by this release.',
+  ]},
   { version: '73.4.1', date: 'October 7, 2026 · 4:15 PM EDT', title: 'The words stay with the voice when the middle of a song is sung softly', items: [
     'A quiet stretch is not a break any more. The middle of a song is often sung softer than its chorus, and the timing read that as an instrumental: it cut the stretch out, so the lines inside it were pushed to the moment it ended and the lines after came late.',
     'That is what put the highlight behind the voice. A sheet the app timed to the song had several lines sitting later than the singing, so the light stayed on a line the voice had already left.',
@@ -27932,6 +27941,88 @@ function _fallbackCopy(text){
       renderList();
     }catch(e){}
   };
+  // ── 73.4.2 - TAPPING THE WIDGET PUTS THE SONG BACK ON ──────────────────────
+  // The widget cannot play anything by itself: the sound comes out of this
+  // WebView. So a tap on the widget (or on its play button) while nothing is
+  // audibly playing leaves a resume request in the widget's own prefs and opens
+  // the app; this reads that request and picks the song back up where it stopped
+  // - the same press that opened the app, with no second tap. The request is only
+  // ever left when nothing was playing, so a tap on a widget whose song is
+  // already running just opens the app and leaves the music alone.
+  //
+  // Why a request and not a media key: a key goes to whichever player the system
+  // thinks is active, and with the app closed there is no session for it to reach
+  // - which is why pressing play on the widget used to open the app and then sit
+  // there paused. The restore already knows the song and the position (it is the
+  // same state the boot cue uses); this only has to press play.
+  var scWidgetResumeBusy = false;
+  var scWidgetResumeSeen = false;
+  function scWidgetBridge(){
+    try{
+      var P = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget) || null;
+      var nat = (window.Capacitor && typeof window.Capacitor.nativePromise === 'function') ? window.Capacitor : null;
+      if(P && typeof P.getPendingResume === 'function'){
+        return Promise.resolve(P.getPendingResume({})).catch(function(){ return null; });
+      }
+      if(nat) return nat.nativePromise('SideCutWidget', 'getPendingResume', {}).catch(function(){ return null; });
+    }catch(e){}
+    return Promise.resolve(null);
+  }
+  // Press play on whatever the restore put on the deck, at the position it was
+  // left at. Returns true when a song was actually startable.
+  function scResumeRestoredSong(){
+    try{
+      if(queueIndex < 0 || queueIndex >= queue.length) return false;
+      var t = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; });
+      if(!t || !t.file || !t.url) return false;
+      var a = activeAudio();
+      // A song that had already finished is started over, not left at its end:
+      // play() on an element parked at duration ends on the first tick.
+      if(a.duration && a.currentTime >= a.duration - 0.5) a.currentTime = 0;
+      // This press is a request to hear the song, so a manual pause from earlier
+      // is over.
+      userPaused = false;
+      if(audioCtx && audioCtx.state === 'suspended'){ audioCtx.resume().catch(function(){}); }
+      if(window.__scMark){ __scMark('resuming from the widget'); setTimeout(function(){ if(window.__scMarkDone) __scMarkDone(); }, 4000); }
+      $('playPauseBtn').classList.remove('pulse-cue');
+      a.play().catch(function(){ recoverAudio(a, 'widget resume rejected'); });
+      // Everything a normal play does to the screen and to the phone: the now bar,
+      // the widget's own state push, and the notification / lock-screen player -
+      // which only exists while the app is PLAYING, so the resume has to say so.
+      try{ updateNowPlayingUI(t); }catch(_eUi){}
+      try{ mediaSetPlaybackState('playing'); }catch(_eMs){}
+      toast('Picked back up on "' + t.name + '"', 2600);
+      if(window.__scWidgetResumed === undefined) window.__scWidgetResumed = 0;
+      window.__scWidgetResumed++;
+      return true;
+    }catch(_eRes){ return false; }
+  }
+  // One bridge call, only when it can matter: while nothing is playing. Called
+  // after the boot restore, when the app comes back to the foreground (a warm app
+  // never re-runs boot), and by the widget poll below.
+  function scWidgetResumeCheck(){
+    try{
+      if(scWidgetResumeBusy) return;
+      if(!(window.Capacitor && (typeof window.Capacitor.nativePromise === 'function'
+          || (window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget)))) return;
+      if(!activeAudio().paused) return;
+      scWidgetResumeBusy = true;
+      scWidgetBridge().then(function(res){
+        scWidgetResumeBusy = false;
+        if(!res || !res.resume) return;
+        if(!scResumeRestoredSong()) toast('Nothing to pick back up yet - play a song first.', 3000);
+      }).catch(function(){ scWidgetResumeBusy = false; });
+    }catch(_eChk){ scWidgetResumeBusy = false; }
+  }
+  window.__scWidgetResumeCheck = scWidgetResumeCheck;
+  window.__scWidgetResumeRestored = scResumeRestoredSong;
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState !== 'visible') return;
+    // Debounced like the other resume paths: a phone being folded and unfolded
+    // does not get to fire a bridge call per flicker.
+    setTimeout(function(){ scWidgetResumeCheck(); }, 1200);
+  });
+
   // Poll for a playlist the user picked from the home widget and switch to it.
   (function(){
     window.__scWidgetPollTimer = setInterval(function(){ if(document.hidden) return;
@@ -27943,6 +28034,10 @@ function _fallbackCopy(text){
           var name = res && res.playlist ? res.playlist : '';
           if(name && window.scWidgetSwitchPlaylist) window.scWidgetSwitchPlaylist(name);
         }).catch(function(){});
+        // 73.4.2 - a tap on the widget leaves a resume request instead of a
+        // playlist name. Same poll, same bridge, and only while paused: a song
+        // that is already playing has nothing to resume.
+        scWidgetResumeCheck();
       }catch(e){}
     }, 10000);  // was 5s (and before that 2s): a native bridge call for as long as the app was open
   })();
@@ -32222,6 +32317,12 @@ function _fallbackCopy(text){
         // library clean on every load was churning the DB + toasts every reload.
         toast(`Welcome back — ${allTracks.length} track${allTracks.length===1?'':'s'} loaded`);
         restorePlaybackState();
+        // 73.4.2 - and if the app was opened BY the widget, press play on what the
+        // restore just put on the deck (the request is only there when nothing was
+        // playing). Delayed a moment so the native bridge is up and the restored
+        // source has had time to resolve; with no request this does nothing and the
+        // "Tap play to pick back up" cue stays exactly as it was.
+        setTimeout(function(){ try{ scWidgetResumeCheck(); }catch(_eWr){} }, 700);
       }
       // Small delay so the "what's new" popup reads as a deliberate moment
       // once the library/UI has settled, rather than flashing in instantly
