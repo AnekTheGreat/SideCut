@@ -10827,6 +10827,31 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // in the audio in a way an energy envelope can read. Two taps fix it exactly:
   // the user plays the track, taps the line being sung, and the timing is rebuilt
   // around those taps. Their taps then outrank every guess the app can make.
+  // 73.3.6 - a lyric sheet can carry its own timestamps inside its text. Only the
+  // words ever belong on screen: a timed sheet is rendered by formatSyncedLyrics,
+  // which strips the [mm:ss.xx] tags itself. A sheet whose timing flag was lost
+  // (or was never written - a saved lyric from an older build, an import, a restore)
+  // fell into the PLAIN path instead, which printed the tags as part of the line AND
+  // left the highlight with nothing to follow, so it fell back to an even split of
+  // the whole song. Both halves of the report - "what are these stupid time stamps"
+  // and "lyrics is all over the place" - are that one case.
+  //
+  // One tag pattern, shared: it accepts every bracket and colon form seen in the
+  // wild (square or angle, half- or full-width) and keeps the three capture groups
+  // the timestamp maths needs. The stripping helpers read the same source and
+  // simply ignore the groups.
+  var SC_LRC_TAG_SRC = '[\\[<\\uFF3B\\u3010]\\s*(\\d{1,3})\\s*[:\\uFF1A]\\s*(\\d{1,2})(?:\\s*[.:\\uFF0E]\\s*(\\d{1,3}))?\\s*[\\]>\\uFF3D\\u3011]';
+  function scLrcTagRe(){ return new RegExp(SC_LRC_TAG_SRC, 'g'); }
+  // Only the words. Used by the plain-text render paths so no tag can ever be
+  // printed, whatever the saved flag claims.
+  function scStripLrcStamps(text){
+    return String(text == null ? '' : text).replace(scLrcTagRe(), ' ').replace(/^\s+/, '');
+  }
+  // Two stamps is a timing; one stray bracket pair in a lyric is not.
+  function scHasLrcStamps(text){
+    var m = String(text == null ? '' : text).match(scLrcTagRe());
+    return !!(m && m.length >= 2);
+  }
   function scParseLrcLines(lrc){
     var out = [];
     var rows = String(lrc || '').split('\n');
@@ -11143,6 +11168,22 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     $('lyricsText').style.display = 'block';
     $('lyricsNotFound').style.display = 'none';
 
+    // 73.3.6 - a sheet that carries its own timestamps IS a timed sheet, whatever
+    // the saved flag says. It is routed to the timed renderer here (which strips
+    // the tags and gives the highlight real times to follow), and the flag is
+    // healed on the song so the next reload does not fall back again. This runs
+    // BEFORE the state reset below, so the reset picks up the healed value.
+    if(!isSynced && scHasLrcStamps(lyrics)){
+      isSynced = true;
+      try{
+        var _stamped = scLyricTrack();
+        if(_stamped && !_stamped.lyricsSynced && String(_stamped.lyrics || '').trim() === String(lyrics || '').trim()){
+          _stamped.lyricsSynced = true;
+          persistTrackMeta(_stamped);
+        }
+      }catch(_eStampHeal){}
+    }
+
     // Reset translation state for a freshly fetched track — but skip the reset
     // when we're re-rendering with the translated text from the toggle itself.
     const tBtn = $('lyricsTranslateBtn');
@@ -11166,7 +11207,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       $('lyricsText').innerHTML = formatSyncedLyrics(lyrics);
     } else {
       $('lyricsText').innerHTML = lyrics.split('\n').map(line =>
-        `<div class="lyric-line">${escapeHtml(line)}</div>`
+        `<div class="lyric-line">${escapeHtml(scStripLrcStamps(line).trim())}</div>`
       ).join('');
     }
 
@@ -11958,7 +11999,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // chorus again" renders once per timestamp so repeated lines repeat), and
     // turns music-only / instrumental markers (no words, "Music", "♪", "(music)")
     // into a music-icon line that stays highlighted across the instrumental gap.
-    const TAG = /\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
+    const TAG = scLrcTagRe();
     const nodes = [];
     const srcLines = String(lrc || '').split('\n');
     for(let li = 0; li < srcLines.length; li++){
@@ -12092,7 +12133,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     const container = $('lyricsContent');
     const scrollTop = container ? container.scrollTop : 0;
     if(currentLyricsSynced){ $('lyricsText').innerHTML = formatSyncedLyrics(currentLyricsText); }
-    else { $('lyricsText').innerHTML = currentLyricsText.split('\n').map(line => '<div class="lyric-line">' + escapeHtml(line) + '</div>').join(''); }
+    else { $('lyricsText').innerHTML = currentLyricsText.split('\n').map(line => '<div class="lyric-line">' + escapeHtml(scStripLrcStamps(line).trim()) + '</div>').join(''); }
     if(container) container.scrollTop = scrollTop;
     lastLyricsIdx = -1;
     lastLyricsScrollTarget = -1;
@@ -13000,7 +13041,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.3.5';
+  const APP_VERSION = '73.3.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13621,6 +13662,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.3.6', date: 'October 6, 2026 · 9:45 PM EDT', title: 'The timestamps come off the lyrics sheet, and only you can delete a playlist', items: [
+    'A lyrics sheet that arrived with its own timestamps printed the tags as part of the words and then scrolled on an even split of the whole song - the "all over the place" report. The tags are never shown now and the sheet follows its own times.',
+    'Every way a timing is written is read now: [mm:ss], [mm:ss.xx], [mm:ss:xx], angle brackets and full-width brackets. A saved sheet whose timing flag was lost is repaired on the spot, so it stays timed after a restart.',
+    'Every save of your playlists and your albums now passes one guard: a write that would drop an entry still in the store has it put back before the row is stored, so a boot rebuild, a failed read, a heal pass or a restore cannot delete one.',
+    'Only the two things you do yourself - deleting a playlist or an album, and renaming either one - are allowed to remove an entry, and each announces itself first.',
+    'The guard covers albums as well as playlists, so nothing else in the app can quietly make an album or a list disappear.',
+    'Your songs, playlists and saved lyrics stay on your device \u2014 nothing in your library is removed by this release.',
+  ]},
   { version: '73.3.5', date: 'October 6, 2026 · 9:10 PM EDT', title: 'Lyrics auto-scroll stops racing ahead of the voice', items: [
     'Undid a line-timing change that pulled each lyric line forward onto a later, louder beat and then packed the lines together. On fast, beat-driven songs that made the sheet run ahead of the singing.',
     'For a song with no timed lyrics file, each line is placed where the voices are again, instead of several seconds early and hurrying.',
@@ -18338,8 +18387,52 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // earlier boot code reach it safely.
   scStorageBooted = true;
 
+  // ---- Nothing in this app may silently delete a playlist or an album --------
+  // A NAME leaving the playlists or userAlbums row IS a delete, and only the
+  // user's own delete or rename may do it. Every other writer - a boot rebuild,
+  // a fallback after a failed read, a heal pass, an import merge, a snapshot
+  // restore - that would drop a name has it put straight back here, at the one
+  // place every write goes through. The deliberate paths announce themselves
+  // first with scAllowRowDrop(), so deleting and renaming keep working.
+  var scRowDropOK = { playlists: {}, userAlbums: {} };
+  function scAllowRowDrop(key, name){
+    try{ (scRowDropOK[key] || (scRowDropOK[key] = {}))[String(name)] = Date.now(); }catch(e){}
+  }
+  function scRowDropAllowed(key, name){
+    try{
+      var m = scRowDropOK[key];
+      var at = m && m[String(name)];
+      if(!at) return false;
+      return (Date.now() - at) < 5000;   // a delete/rename is allowed for 5s
+    }catch(e){ return false; }
+  }
+  async function scProtectUserRow(storeName, value){
+    try{
+      if(storeName !== 'meta' || !value || typeof value !== 'object') return value;
+      var key = value.key;
+      if(key !== 'playlists' && key !== 'userAlbums') return value;
+      var incoming = value.value;
+      if(!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return value;
+      var row = null;
+      try{ row = await dbGet('meta', key); }catch(e){ row = null; }
+      var prev = row && row.value;
+      if(!prev || typeof prev !== 'object' || Array.isArray(prev)) return value;
+      var merged = null, kept = [];
+      Object.keys(prev).forEach(function(n){
+        if(Object.prototype.hasOwnProperty.call(incoming, n)) return;
+        if(scRowDropAllowed(key, n)) return;
+        if(!merged) merged = Object.assign({}, incoming);
+        merged[n] = prev[n];
+        kept.push(n);
+      });
+      if(!merged) return value;
+      try{ console.warn('[SideCut] ' + key + ': kept ' + kept.length + ' entr' + (kept.length === 1 ? 'y' : 'ies') + ' a write would have deleted - ' + kept.join(', ')); }catch(e){}
+      return { key: key, value: merged };
+    }catch(e){ return value; }
+  }
   async function dbPut(storeName, value){
     try{
+      value = await scProtectUserRow(storeName, value);
       const db = await openDB();
       return new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
@@ -20915,6 +21008,7 @@ function _fallbackCopy(text){
     if(playlists[newName]){ toast('A playlist with that name already exists.'); return; }
     // Rebuild the playlists object preserving key order, so the tab it renders as
     // doesn't jump position in the list.
+    try{ if(typeof scAllowRowDrop === 'function') scAllowRowDrop('playlists', oldName); }catch(_eRn){}
     const rebuilt = {};
     Object.keys(playlists).forEach(k => { rebuilt[k === oldName ? newName : k] = playlists[k]; });
     playlists = rebuilt;
@@ -22741,6 +22835,8 @@ function _fallbackCopy(text){
       movedEntry.manual = true; delete movedEntry.auto; // renamed/edited by hand
       // Rebuild the map so the renamed album keeps its position in album order.
       var rebuilt = {};
+      // A rename moves the entry to its new name: the old key leaving is deliberate.
+      try{ if(typeof scAllowRowDrop === 'function') scAllowRowDrop('userAlbums', oldName); }catch(_eRd){}
       Object.keys(userAlbums).forEach(function(k){
         if(k === oldName) rebuilt[nn] = movedEntry; else rebuilt[k] = userAlbums[k];
       });
@@ -22788,6 +22884,7 @@ function _fallbackCopy(text){
       _ud[String(name).toLowerCase()] = Date.now();
       localStorage.setItem('sidecut_albumsUserDeleted', JSON.stringify(_ud));
     }catch(_eTomb){}
+    scAllowRowDrop('userAlbums', name);
     delete userAlbums[name];
     try{
       var _di = albumOrder.indexOf(name);
@@ -23128,6 +23225,7 @@ function _fallbackCopy(text){
         _udR[String(target).toLowerCase()] = Date.now();
         localStorage.setItem('sidecut_albumsUserDeleted', JSON.stringify(_udR));
       }catch(_eTombR){}
+      scAllowRowDrop('userAlbums', target);
       delete userAlbums[target];
       try{
         var _diR = albumOrder.indexOf(target);
@@ -23849,6 +23947,7 @@ function _fallbackCopy(text){
         var e = userAlbums[n];
         if(!e || typeof e !== 'object' || !Array.isArray(e.trackIds)) return;
         if(e.trackIds.length) return;
+        scAllowRowDrop('userAlbums', n);
         delete userAlbums[n];
         _emptTomb[String(n).toLowerCase()] = Date.now();
         var _ei = albumOrder.indexOf(n);
@@ -24222,6 +24321,7 @@ function _fallbackCopy(text){
         if(userAlbums[name] && Array.isArray(userAlbums[name].trackIds) && userAlbums[name].trackIds.length){
           try{ scAlbumsArchivePut(name, userAlbums[name]); }catch(_eArc2){}
         }
+        scAllowRowDrop('userAlbums', name);
         delete userAlbums[name];
         try{
           var i = albumOrder.indexOf(name);
@@ -24725,6 +24825,7 @@ function _fallbackCopy(text){
       'Delete "' + target + '"? The ' + n + ' song' + (n === 1 ? '' : 's') + ' in it stay in your library - only the playlist goes.',
       'Delete');
     if(!sure) return false;
+    scAllowRowDrop('playlists', target);
     delete playlists[target];
     try{
       if(hiddenPlaylists.has(target)){ hiddenPlaylists.delete(target); dbPut('meta', { key: 'hiddenPlaylists', value: Array.from(hiddenPlaylists) }); }
