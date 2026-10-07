@@ -460,7 +460,7 @@ console.log('[7] words with no timings are timed from the song itself');
     'the fade is bounded at both ends, so a fast word still sweeps instead of lighting as a block');
   ok(src.indexOf('if(frac < acc2){ upto = li + 1; break; }') !== -1,
     'and WHEN a letter lights is still the pacer weighted clock');
-  // 73.3.9 - the wave is no longer word-by-word with a fade on it: the sweep travels
+  // 73.4 - the wave is no longer word-by-word with a fade on it: the sweep travels
   // along the line, the two words behind the light keep their letters and dim out, and
   // it carries across a line boundary. Pinned by source, then RUN below.
   ok(count('if(wi !== litIdx){ clearLetters(w); return; }') === 0,
@@ -477,7 +477,7 @@ console.log('[7] words with no timings are timed from the song itself');
      src.indexOf('.lyric-word.wave-2 .lyric-letter.lit') !== -1,
     'and both trailing steps have their own dimmed gold, scoped so they can glow while the word is no longer current');
 
-  // 73.3.9 - a sheet with no timings of its own is laid out by the words, not by the
+  // 73.4 - a sheet with no timings of its own is laid out by the words, not by the
   // line count. RUN the shipped schedule: a long line must own a longer window than a
   // short one, and the result must not be an even split.
   const pAt = src.indexOf('  var SC_WAVE_TRAIL_WORDS = 2;');

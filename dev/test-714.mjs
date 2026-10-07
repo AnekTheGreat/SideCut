@@ -209,7 +209,7 @@ console.log('\n[5] letter by letter, and a highlight that works on every song');
     'and the light stops on the letter that window has reached');
   ok(src.indexOf('acc2 += wts[li] / wTotal2;') !== -1, 'counted by weight, not by an even step per letter');
   ok(/for\(let li = 0; li < ls\.length; li\+\+\) ls\[li\]\.classList\.toggle\('lit', li < upto\);/.test(src), 'turning them on in order');
-  // 73.3.9 - the word behind the light is not wiped on the same frame any more: it
+  // 73.4 - the word behind the light is not wiped on the same frame any more: it
   // keeps its letters and dims (the two-word trail), and only what is older than the
   // trail is wiped. The owner asked for the sweep to travel as a wave, so this is the
   // check moving with the behaviour, not the assertion being loosened: the wipe itself
