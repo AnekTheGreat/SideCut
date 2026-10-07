@@ -7621,7 +7621,11 @@ function getApiHeaders() {
     $('settingsTabWidget').classList.toggle('active', tab === 'widget');
     $('settingsTabSandbox').classList.toggle('active', tab === 'sandbox');
     if(tab === 'more'){ renderVersionSnapshots(); renderDjPerPlaylistList(); try{ renderStoragePanel(); }catch(_eSp){ } }
-    if(tab === 'support') initAIAssistant();
+    // 73.3.7 - the key field lives in the Important tab, and this is what loads it
+    // into the field and keeps the assistant's state in step. It only ran for the
+    // Support tab, so a key pasted in Important was saved but the assistant panel
+    // never showed it as connected.
+    if(tab === 'support' || tab === 'important') initAIAssistant();
     if(tab === 'sandbox') updateSandboxToggles();
     if(tab === 'donate') initDonateTab();
   }
@@ -10634,11 +10638,25 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // and never advances (which is why auto-scroll "didn't work").
   let manualScrollGrace = 0;
   let isProgrammaticScroll = false;
+  // 73.3.7 - a scroll EVENT cannot say who scrolled, and treating every one as the
+  // user's is what made auto-scroll sit still: the app's own glide, its start-at-top
+  // reset, and the inertial tail of a flick all arrive as scroll events, so the
+  // grace window was re-armed over and over and every auto-scroll call was refused.
+  // A real gesture is what holds the reader's place now - a finger on the sheet
+  // (touch/pointer/wheel) or a key. Anything else is treated as the app's own
+  // movement and never blocks auto-scroll.
+  var scLyricsUserInputAt = 0;
+  function scMarkLyricsUserInput(){ scLyricsUserInputAt = Date.now(); }
   (function(){
     const c = $('lyricsContent');
     if(!c) return;
+    ['touchstart', 'touchmove', 'pointerdown', 'pointermove', 'wheel', 'keydown'].forEach(function(ev){
+      try{ c.addEventListener(ev, scMarkLyricsUserInput, { passive: true }); }catch(_eGesture){}
+    });
     c.addEventListener('scroll', () => {
-      if (!isProgrammaticScroll) manualScrollGrace = Date.now();
+      if (isProgrammaticScroll) return;
+      if ((Date.now() - scLyricsUserInputAt) >= 700) return;
+      manualScrollGrace = Date.now();
     }, { passive: true });
   })();
 
@@ -11106,6 +11124,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // evenly spaced (every line the same length measured the same way), and the
   // re-measure it would trigger would decode the same file to the same answer.
   var scAutoTimedKey = '';
+  // 73.3.7 - a failed measurement must not be the last word. The one-shot key used
+  // to be burnt BEFORE the work, so one undecodable audio file (or a song whose
+  // bytes had not been restored yet) left the sheet untimed for the whole session
+  // with no way back - which is what "the highlight does not work" looked like.
+  // A failure now remembers itself for a short while instead, and the next open or
+  // seek may try again.
+  var scAutoTimeFailedKey = '';
+  var scAutoTimeFailedAt = 0;
+  var SC_AUTOTIME_RETRY_MS = 20000;
   async function scSyncLyricsFromAudio(track, plain){
     if(!track || !track.file || !plain || !String(plain).trim()) return null;
     if(scAutoSyncBusy[track.id]) return null;
@@ -11134,7 +11161,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(!t || !currentLyricsText || !currentLyricsText.trim()) return false;
       var _atKey = String(tid) + '|' + currentLyricsText.length + '|' + currentLyricsText.slice(0, 32);
       if(scAutoTimedKey === _atKey) return false;
-      scAutoTimedKey = _atKey;
+      // A failed attempt is remembered briefly, not forever - see the note above.
+      if(scAutoTimeFailedKey === _atKey && (Date.now() - scAutoTimeFailedAt) < SC_AUTOTIME_RETRY_MS) return false;
       // 73.1.4 - when a key is set and the song's own bytes are here, the model
       // does the timing. It hears the tempo, the beat, the intro and the chorus
       // returns, which is exactly the part a length count can never know. The
@@ -11142,16 +11170,30 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // cannot hear, so the words no longer ride on how long a line is.
       if(_aiGeminiKey && t.file && !scAiTimedTracks[String(tid)]){
         var _aiOk = await aiSyncLyrics(true);
+        // (aiSyncLyrics has already written the timed sheet onto the song and shown
+        // it; the one-shot key below is derived from the TEXT, so the new timed text
+        // is a new key and the guard passes on its own.)
         if(_aiOk){ toast('Lyrics timed to this song by AI', 2200); return true; }
       }
       var lrc = await scSyncLyricsFromAudio(t, currentLyricsText);
-      if(!lrc) return false;
+      if(!lrc){
+        scAutoTimeFailedKey = _atKey;
+        scAutoTimeFailedAt = Date.now();
+        return false;
+      }
       // The song may have moved on while the audio decoded.
       var stillId = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
       if(String(stillId) !== String(tid) || lyricsCurrentTrack !== tid) return false;
       t.lyrics = lrc;
       t.lyricsSynced = true;
-      saveMeta();
+      // 73.3.7 - the timing has to SURVIVE the app being closed. saveMeta() only
+      // writes the playlists, the id counter and the albums; the words and their
+      // timestamps live on the song, so nothing was stored and the next launch
+      // measured the same song again (and showed the old guess until it did).
+      // The song record is what carries them.
+      try{ persistTrackMeta(t); }catch(_ePersistTiming){}
+      scAutoTimedKey = _atKey;
+      scAutoTimeFailedKey = '';
       currentLyricsText = lrc;
       currentLyricsSynced = true;
       showLyrics(lrc, true, true);
@@ -11511,7 +11553,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(String(stillId) !== String(t.id) || lyricsCurrentTrack !== t.id) return false;
       t.lyrics = text;
       t.lyricsSynced = true;
-      saveMeta();
+      // Same as the measured path above: the song record is what stores a timing.
+      try{ persistTrackMeta(t); }catch(_ePersistAiTiming){}
       currentLyricsText = text;
       currentLyricsSynced = true;
       showLyrics(text, true, true);
@@ -11670,8 +11713,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // auto-scroll off silenced the line and word highlight with it. The
         // scroll half guards itself inside scrollLyricsToLine, so only the
         // tracking has to be here for the highlight to work on every song.
+        // 73.3.7 - the sheet's own length, when the element has not published one
+        // yet (a fresh seek, a restored blob, a stream still opening): without this
+        // the whole plain-lyrics block was skipped and NOTHING was lit or moved, on
+        // every song. The stored length is the same number the rest of the app uses.
+        var _sheetDur = 0;
         if (audio.duration > 0) {
-          const progress = Math.min(1, Math.max(0, currentTime / audio.duration));
+          if(isFinite(audio.duration)) _sheetDur = audio.duration;
+        }
+        if(!_sheetDur){
+          try{
+            var _qid = (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null;
+            var _qt = _qid != null ? allTracks.find(function(tr){ return tr.id === _qid; }) : null;
+            var _qd = _qt ? Number(_qt.duration) : 0;
+            if(_qd > 0 && isFinite(_qd)) _sheetDur = _qd;
+            else if(audio.currentTime > 0) _sheetDur = Math.max(audio.currentTime * 1.05, 0);
+          }catch(_eSheetDur){}
+        }
+        if (_sheetDur > 0) {
+          const progress = Math.min(1, Math.max(0, currentTime / _sheetDur));
           const lineHeight = allLines[0].offsetHeight || 24;
           const targetIdx = Math.min(allLines.length - 1, Math.floor(progress * allLines.length));
           var _tapHeld2 = lyricsTapHoldUntil && Date.now() < lyricsTapHoldUntil;
@@ -11691,8 +11751,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // gap-capped pacing as synced lyrics, so the feature works on EVERY
           // song instead of only the ones that carry timestamps.
           if (lyricsWordByWord && audio.duration > 0 && allLines[targetIdx] && !allLines[targetIdx].dataset.inst) {
-            const lineFrom = (targetIdx / allLines.length) * audio.duration;
-            const lineTo = ((targetIdx + 1) / allLines.length) * audio.duration;
+            const lineFrom = (targetIdx / allLines.length) * _sheetDur;
+            const lineTo = ((targetIdx + 1) / allLines.length) * _sheetDur;
             scPaceWords(allLines[targetIdx], lineFrom, lineTo, currentTime);
           }
           // At end of song: show playing indicator after last line
@@ -13041,7 +13101,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.3.6';
+  const APP_VERSION = '73.3.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13662,6 +13722,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.3.7', date: 'October 7, 2026 · 3:05 AM EDT', title: 'The sheet follows the song, the release list comes back, and your AI key answers', items: [
+    'Auto-scroll no longer sits still. Only your own touch, wheel or key holds your place now; the sheet movement itself - its glide and its scroll-back - used to re-arm that hold, which is why it looked dead on some songs.',
+    'The highlight works on a song whose length the player has not published yet: the saved length is used, so a plain-lyrics sheet lights up and scrolls instead of doing nothing.',
+    'A timing measured from the audio is saved onto the song now. It was written to a settings row that carries no words, so the next launch measured the same song again from scratch.',
+    'A measurement that failed is retried instead of being remembered as done, so one file that could not be decoded no longer leaves a song without timings for the whole session.',
+    'New releases come back to the Home bubble, its count and Discover: the shared list read the pinned releases from outside the scope that owns them, so it quietly returned nothing and those rows were never painted.',
+    'Tapping an upcoming drop opens its page every time, and with a Gemini key connected the assistant answers your question with it instead of from the built-in notes.',
+    'Your songs, playlists and saved lyrics stay on your device \u2014 nothing in your library is removed by this release.',
+  ]},
   { version: '73.3.6', date: 'October 6, 2026 · 9:45 PM EDT', title: 'The timestamps come off the lyrics sheet, and only you can delete a playlist', items: [
     'A lyrics sheet that arrived with its own timestamps printed the tags as part of the words and then scrolled on an even split of the whole song - the "all over the place" report. The tags are never shown now and the sheet follows its own times.',
     'Every way a timing is written is read now: [mm:ss], [mm:ss.xx], [mm:ss:xx], angle brackets and full-width brackets. A saved sheet whose timing flag was lost is repaired on the spot, so it stays timed after a restart.',
@@ -17116,7 +17185,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // Straight to the next drop's own page — cover, countdown, tracklist.
       const _next = _upcoming[0];
       navigate('home');
-      if(_next && typeof openReleasePage === 'function') openReleasePage(_next.artist, _next.title);
+      if(_next && typeof openReleasePage === 'function') openReleasePage(_next.artist, _next.title, { date: _next.date, title: _next.title, artist: _next.artist });
       else openHomeBubble('newreleases');
     
     });
@@ -32386,7 +32455,7 @@ function _fallbackCopy(text){
             var _dd = this.dataset || {};
             if(_dd.date && _dd.artist && _dd.title && _dd.date > new Date().toISOString().slice(0, 10)){
               closeDiscoverPopup();
-              if(typeof openReleasePage === 'function'){ openReleasePage(_dd.artist, _dd.title); return; }
+              if(typeof openReleasePage === 'function'){ openReleasePage(_dd.artist, _dd.title, { date: _dd.date, title: _dd.title, artist: _dd.artist }); return; }
             }
             if(this.dataset && this.dataset.kind === 'album'){ if(typeof window.__openReleaseAlbum === 'function') window.__openReleaseAlbum(this); return; }
             $('discoverSearch').value = this.dataset.search||''; runDiscoverSearch(this.dataset.search||''); closeDiscoverPopup();
@@ -35104,7 +35173,11 @@ function _renderAhFromData(artistAlbums){
       if(row._hbRelWired) return;
       row._hbRelWired = true;
       row.addEventListener('click', function(){
-        openReleasePage(row.dataset.releaseArtist || '', row.dataset.releaseTitle || '');
+        openReleasePage(row.dataset.releaseArtist || '', row.dataset.releaseTitle || '', {
+          date: row.getAttribute('data-date') || '',
+          title: row.getAttribute('data-release-title') || '',
+          artist: row.getAttribute('data-release-artist') || '',
+        });
       });
     };
     all.forEach(function(r){
@@ -36262,18 +36335,48 @@ function _renderAhFromData(artistAlbums){
   // and the tracklist once iTunes can name it. It only reads the snapshot the
   // release check already saved, so both builds get it.
   var _relPageTimer = null;
+  function scNormRelTitle(v){
+    return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
   function findPinnedRelease(artist, title){
     var arr = pinnedReleases[artist] || [];
-    for(var i = 0; i < arr.length; i++){ if(arr[i].title === title) return arr[i]; }
-    return null;
+    var i;
+    for(i = 0; i < arr.length; i++){ if(arr[i] && arr[i].title === title) return arr[i]; }
+    // 73.3.7 - the row the user tapped IS the release. The same drop is stored under
+    // more than one spelling of an artist and under a second key, and the row shows
+    // the title it was painted from - so the title is looked for across every key
+    // before a tap is refused, instead of an exact (artist, title) pair being the
+    // only way in.
+    var want = scNormRelTitle(title);
+    if(!want) return null;
+    var keys = Object.keys(pinnedReleases || {}), loose = null;
+    for(var k = 0; k < keys.length; k++){
+      var list = pinnedReleases[keys[k]] || [];
+      for(i = 0; i < list.length; i++){
+        var rel = list[i];
+        if(!rel || scNormRelTitle(rel.title) !== want) continue;
+        if(keys[k] === artist) return rel;
+        if(!loose) loose = rel;
+      }
+    }
+    return loose;
   }
   function closeReleasePage(){
     if(_relPageTimer){ clearInterval(_relPageTimer); _relPageTimer = null; }
     var old = document.getElementById('scReleasePage');
     if(old && old.parentNode) old.parentNode.removeChild(old);
   }
-  function openReleasePage(artist, title){
+  function openReleasePage(artist, title, fallback){
     var rel = findPinnedRelease(artist, title);
+    if(!rel && fallback && (fallback.title || fallback.date)){
+      // 73.3.7 - and if it has left the stored list between the paint and the tap
+      // (a repaint mid-tap, a pruned row), the page still opens from what the row
+      // itself carried. A toast saying "no longer listed" on a row the user can see
+      // is exactly what "it will not let me tap it" was.
+      rel = Object.assign({ kind: 'single' }, fallback || {});
+      rel.title = rel.title || title || '';
+      rel.date = rel.date || '';
+    }
     if(!rel){ try{ toast('That release is no longer listed.', 2500); }catch(_e0){ } return; }
     closeReleasePage();
     // Opening it is seeing it — clear the NEW badge on this row while we're here.
@@ -37386,6 +37489,37 @@ function _renderAhFromData(artistAlbums){
   function scUpcomingUnseen(){
     return scUpcomingReleases().filter(function(x){ return !(x.rel && x.rel.upSeen); });
   }
+
+  // 73.3.7 - the flattened release list is REBUILT HERE, in the scope that owns the
+  // pins. window.__scReleaseList was declared at the top of the page, outside this
+  // scope, so its `typeof pinnedReleases !== 'undefined'` guard failed and its
+  // try/catch turned that into an empty array - silently, with no error anywhere.
+  // Every New-releases surface reads it: the Home bubble, its count, the Discover
+  // popup, the releases panel. They all showed nothing, and a row that never
+  // reached the screen cannot be tapped. This binding replaces it with the same
+  // flattening over the list this scope can actually see.
+  window.__scReleaseList = function(maxDays){
+    var out = [], seen = {};
+    try{
+      var map = pinnedReleases || {};
+      Object.keys(map).forEach(function(artist){
+        (map[artist] || []).forEach(function(rel){
+          if(!rel || window.__scJunkTitle(rel.title)) return;
+          var day = window.__scDay10(rel.date);
+          var key = String(rel.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '') + '\u0002' + day;
+          if(seen[key]) return;
+          seen[key] = 1;
+          if(maxDays){
+            var t = day ? Date.parse(day + 'T00:00:00Z') : NaN;
+            if(!isNaN(t) && (Date.now() - t) > maxDays * 86400000) return;
+          }
+          out.push(Object.assign({}, rel, { artist: rel.artist || artist }));
+        });
+      });
+    }catch(_eRel){}
+    out.sort(function(a, b){ return String(b.date || '').localeCompare(String(a.date || '')); });
+    return out;
+  };
   async function scPinnedAutoCheck(){
     try{
       if(!pinnedArtists || !pinnedArtists.length) return;
@@ -43317,17 +43451,20 @@ async function _aiSendMessage() {
   // A question the app has a real answer for is answered from the app itself,
   // without asking a model at all. A model cannot deny a feature that is in
   // front of it, and this is the only answer guaranteed to describe THIS build.
+  // 73.3.7 - THE KEY YOU PASTE IN SETTINGS IS WHAT ANSWERS YOUR QUESTIONS.
+  //
+  // The order used to be: the built-in answer first, and the model only when
+  // nothing in the knowledge base matched. So with a Gemini key connected the
+  // assistant still replied "Answered from the built-in knowledge base" to almost
+  // everything, and the key looked ignored - which is exactly how it was reported.
+  // A question is asked of the model first now (a greeting, a thank-you and a
+  // request the app can carry out are still answered here, above), with the app's
+  // entry for the question attached as ground truth it is told not to contradict.
+  // The knowledge base is the fallback: no key at all, or the service busy or
+  // unreachable. The status line under the chat says which one answered.
   var _kbStrong = _aiFuzzyMatch(msg, 80);
-  if (_kbStrong) {
-    _aiTyping = false;
-    _aiAddMessage('assistant', _kbStrong.a);
-    _aiChatHistory.push({ role: 'assistant', text: _kbStrong.a });
-    if (statusEl) statusEl.textContent = 'Answered from the built-in knowledge base';
-    return;
-  }
-  // Everything else goes to the model, with the app entry for the question (if
-  // there is one) attached as ground truth it is told not to contradict.
-  var _aiGroundForModel = (_aiFuzzyMatch(msg) || {}).a || '';
+  // Everything the app knows about this question, attached to the model's prompt.
+  var _aiGroundForModel = (_aiFuzzyMatch(msg) || {}).a || (_kbStrong ? _kbStrong.a : '');
 
   // Use Gemini first when configured so the assistant can maintain a real conversation.
   if (_aiGeminiKey) {
@@ -43346,7 +43483,17 @@ async function _aiSendMessage() {
     _aiBusyFallback = true;
   }
 
-  // Try offline KB first
+  // No key, or the model could not answer: the app's own entry for this question,
+  // which is the answer guaranteed to describe THIS build.
+  if (_kbStrong) {
+    _aiTyping = false;
+    _aiAddMessage('assistant', _kbStrong.a);
+    _aiChatHistory.push({ role: 'assistant', text: _kbStrong.a });
+    if (statusEl) statusEl.textContent = _aiBusyFallback ? 'Answered from the built-in knowledge base (the assistant service was busy)' : 'Answered from the built-in knowledge base';
+    return;
+  }
+
+  // Try offline KB next
   var kbMatch = _aiFuzzyMatch(msg);
   if (kbMatch) {
     _aiTyping = false;
@@ -43494,6 +43641,9 @@ window.showSettingsTab = showSettingsTab;
   window.navigate = navigate;
   window.normalizeHomeOrder = normalizeHomeOrder;
   window.openNotif = openNotif;
+  // 73.3.7 - the release page is opened from rows painted in this scope AND from
+  // paths that only see globals, so it is exported like the rest of the hooks here.
+  window.openReleasePage = openReleasePage;
   window.openSettingsTo = openSettingsTo;
   window.playFromList = playFromList;
   window.recoverAudio = recoverAudio;
