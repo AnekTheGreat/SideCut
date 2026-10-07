@@ -224,15 +224,21 @@ console.log('[4] the five tools, wired into the app');
 console.log('[5] achievements, streaks and the storage cleaner');
 {
   ok(mod.indexOf('function ACHIEVEMENTS(){') !== -1, 'the badges are defined in one place');
-  const ids = (mod.match(/id: '[a-z0-9_]+'/g) || []).map((s) => s.slice(5, -1));
+  // 73.3.8 - the wall is a hand-written catalogue now (the generated threshold
+  // tables are gone), so it is read back out of the module and the ids are
+  // derived exactly the way the wall derives them.
+  const wallFrom70 = mod.indexOf('var WALL = [');
+  const wall70 = new Function('return ' + mod.slice(wallFrom70 + 'var WALL = '.length, mod.indexOf('];', wallFrom70) + 1))();
+  const slug70 = (n) => String(n).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const ids = wall70.map((e) => slug70(e.n));
   ok(ids.length >= 30, 'there are ' + ids.length + ' badges');
   ok(ids.length === new Set(ids).size, 'and no id appears twice');
-  ['streak_7', 'hour_100', 'studio_first', 'clip_1'].forEach((id) =>
+  ['seven_day_streak', 'century_of_sound', 'into_the_studio', 'clip_artist'].forEach((id) =>
     ok(ids.indexOf(id) !== -1, 'including ' + id));
-  // 70.0.6 took the two editing badges off the wall (test-705 owns that release);
-  // this gate keeps its six checks by asking about them the other way round.
-  ['retag_1', 'reencode_1'].forEach((id) =>
-    ok(ids.indexOf(id) === -1, 'and no longer including ' + id));
+  // 70.0.6 took the editing badges off the wall (test-705 owns that release);
+  // this gate keeps its checks by asking about them the other way round.
+  ok(wall70.every((e) => !/retag|re-encode|reencode|crops?\b/i.test(e.n + ' ' + e.d)),
+    'and nothing on it asks anyone to alter a song');
   ok(mod.indexOf('var s = call(\'__scStats\') || {};') !== -1 || mod.indexOf("call('__scStats')") !== -1,
     'and every one of them is measured against the app\u2019s own stats, not a new counter');
   ok(src.indexOf('streak: computeStreak()') !== -1, 'the streak comes from the app\u2019s own streak');

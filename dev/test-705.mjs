@@ -12,6 +12,12 @@
  *    and 150 badges and at 201 with the secret one you can get a free SideCut
  *    premium"
  *
+ * 73.3.8 retarget, the owner's words: "just make it 150 meaningful badges plus
+ * secret badge instead of 201 random badges". The threshold tables that generated
+ * 171 of the tiles are gone, and [8] now reads the wall itself out of the module
+ * rather than trusting a count in a comment. The release this gate DESCRIBES is
+ * still 70.0.5; this is the wall it has become.
+ *
  * A two-control move is exactly the kind of change that looks fine in the diff and
  * is wrong on the phone, so this gate is written against what can be broken:
  *
@@ -30,10 +36,10 @@
  *       --sc-dock-h, and the .menu-open lift still present;
  *   [7] the Studio header: it names the build on the page instead of the release
  *       the module was written in;
- *   [8] the badge wall: 201 of them, one secret, gated on dev mode, and the five
- *       rewards - three themes at 50/100/150, the dynamic Vortex at 200, and
- *       Premium at 201 - with the gate the Theme tab asks and the backdrop the
- *       finger turns;
+ *   [8] the badge wall as 73.3.8 leaves it: 150 hand-written badges plus the one
+ *       behind the door, and the five rewards - three themes at 40/80/110, the
+ *       dynamic Vortex at 140 and the finished wall at 151 - with the gate the
+ *       Theme tab asks and the backdrop the finger turns;
  *   [9]-[11] the same release driven on the real app, the earlier releases still
  *       standing, and the page still parsing as one document.
  *
@@ -296,9 +302,9 @@ console.log('\n[6] the styles');
   // same five rewards. New tools are tools, not badges.
   ok(countMod("var FEATURE_KEYS = ['studio', 'slow', 'karaoke', 'sampler', 'looper', 'clip', 'assistant', 'autodj', 'gestures'];") === 1,
      'the feature list the capstone badge counts was changed');
-  // 73.3 retarget: the Discovery badges left the wall, so the wall and its
-  // reward thresholds shrank with them (201 -> 159; 50/100/150/200/201 -> 40/80/119/158/159).
-  ok(countMod("at: 159, kind: 'complete'") === 1 && countMod('function myPresetsHtml(){') === 1,
+  // 73.3.8 retarget: the wall is 150 hand-written badges plus the door, and its
+  // five rewards moved with it (201 -> 150; 50/100/150/200/201 -> 40/80/110/140/151).
+  ok(countMod("at: 151, kind: 'complete'") === 1 && countMod('function myPresetsHtml(){') === 1,
      'the rewards moved, or the presets are not in the sheet');
   // 70.1.1. The tab you are on says so, and the wall is never a picture of an
   // earlier moment than the badges it describes.
@@ -416,12 +422,12 @@ console.log('\n[7] the Studio header names the real build');
   ok(count('id="sc-studio-70"') === 1, 'the Studio block is still spliced in once');
 }
 
-console.log('\n[8] 201 badges, dev mode, five rewards');
+console.log('\n[8] 150 badges, the door, five rewards');
 {
   // ---- the wall ----
-  ok(count(mod, 'THE BADGE WALL, ONE SECRET, AND FIVE REWARDS') === 1,
+  ok(count(mod, 'THE WALL - 150 BADGES, EACH ONE A THING') === 1,
     'the module states the size of the wall in its own words');
-  ok(count(mod, "id: 'secret_devmode'") === 1, 'and there is exactly one secret badge');
+  ok(count(mod, "id: 'secret_door'") === 1, 'and there is exactly one secret badge');
   ok(count(mod, 'secret: true') === 1, 'marked as secret rather than left to the name');
   ok(/GROUP_TITLES = \[\s*\n\s*\['streak'/.test(mod), 'the grid is grouped');
   // 73.3 retarget: the explore/Discovery group is gone from the wall.
@@ -429,27 +435,69 @@ console.log('\n[8] 201 badges, dev mode, five rewards');
     ok(mod.indexOf(`['${g}', `) !== -1, 'including a ' + g + ' section'));
   ok(mod.indexOf("['explore', ") === -1, 'and there is no Discovery section');
   ok(mod.indexOf('g.have ? g.items.filter(isUnlocked).map(badgeTile).join(\'\') : secretTile()') !== -1,
-    'and the secret section still renders before dev mode, as one blank tile');
+    'and the secret section still renders before the door, as one blank tile');
 
-  // ---- dev mode ----
-  ok(count(mod, 'function wireDevGesture()') === 1, 'dev mode is opened by a gesture');
-  ok(/el\.__scDevTaps >= 7/.test(mod), 'seven taps, exactly');
-  ok(mod.indexOf("localStorage.setItem('sidecut_testMode', '1')") !== -1,
-    'and it sets the app\u2019s own test flag, so the app\u2019s dev affordances come with it');
-  ok(mod.indexOf("localStorage.removeItem('sidecut_testMode')") !== -1, 'and clears it on the way out');
-  ok(count(mod, "data-act=\"devreset\"") === 1, 'dev mode can reset its own state');
-  // 70.1.3: the reset note used to say Premium was not its to take back. There
-  // is no Premium, so what it must not take back is the wall’s own reward.
-  ok(/never takes a reward back/.test(mod), 'and the reset says out loud that a reward is not its to take back');
+  // ---- every tile is a hand-written badge, and there are 150 of them ----
+  // 73.3.8, the owner's words: "just make it 150 meaningful badges plus secret
+  // badge instead of 201 random badges". The threshold tables - the reason 171 of
+  // the old tiles differed from the tile beside them by a number alone - are gone,
+  // so the wall is read back out of the module and counted here.
+  ok(countMod('var BADGE_TIERS = [') === 0 && countMod('var BADGE_COUNTS = [') === 0,
+    'the generated threshold tables are off the module');
+  ok(countMod('function tierBadges(') === 0 && countMod('function fmtNum(') === 0 &&
+     countMod('function BASE_ACHIEVEMENTS(') === 0 && countMod('function EXTRA_ACHIEVEMENTS(') === 0,
+    'and so is every helper that generated a tile');
+  const wallFrom = mod.indexOf('var WALL = [');
+  const wallSrc = mod.slice(wallFrom + 'var WALL = '.length, mod.indexOf('];', wallFrom) + 1);
+  const wall = new Function('return ' + wallSrc)();
+  ok(wall.length === 150, 'the wall is 150 hand-written badges (' + wall.length + ')');
+  ok(new Set(wall.map((e) => e.n)).size === 150, 'every one of them has a name of its own');
+  ok(new Set(wall.map((e) => e.d)).size === 150, 'and a sentence of its own');
+  ok(wall.every((e) => e.g && e.k && e.w > 0 && e.i), 'and a group, a signal, an icon and a target');
+  // The signals the wall reads are named once, so no tile can count something that
+  // does not exist. Every key a tile names has to resolve to a number-producing
+  // entry, and no entry may sit on the list that no tile reads.
+  const counterFrom = mod.indexOf('var COUNTER_SIGNALS = [');
+  const counters = new Function('return ' + mod.slice(counterFrom + 'var COUNTER_SIGNALS = '.length, mod.indexOf('];', counterFrom) + 1))();
+  const flagFrom = mod.indexOf('var FLAG_SIGNALS = [');
+  const flags = new Function('return ' + mod.slice(flagFrom + 'var FLAG_SIGNALS = '.length, mod.indexOf('];', flagFrom) + 1))();
+  const base = ['plays', 'minutes', 'hours', 'streak', 'longest', 'library', 'albums', 'albumsMade', 'playlists', 'favorites', 'artists', 'genres', 'playedTracks', 'playedShare', 'maxPlays', 'pads', 'dyn', 'themeRGB', 'themeVortex', 'toolsFive', 'featuresNine', 'groupsLit'];
+  const known = base.concat(counters, flags.map((k) => 'used_' + k));
+  const unknown = [...new Set(wall.map((e) => e.k))].filter((k) => !known.includes(k));
+  ok(unknown.length === 0, 'and every signal a tile reads really exists' +
+    (unknown.length ? ' (missing: ' + unknown.join(', ') + ')' : ''));
+  const unused = known.filter((k) => !wall.some((e) => e.k === k));
+  ok(unused.length === 0, 'with no signal on the list that no tile reads' +
+    (unused.length ? ' (unread: ' + unused.join(', ') + ')' : ''));
+  ok(counters.every((k) => mod.indexOf(`'${k}'`) !== -1), 'and every counter it names is one the module writes');
+  ok(flags.every((k) => mod.indexOf(`markFeature('${k}')`) !== -1), 'as is every flag');
 
+  // ---- the door ----
+  // 73.3.8 removed the dev-mode section from Studio at the owner's word. What is
+  // left of it is the one hidden badge: seven taps on the version line open the
+  // door, and nothing else happens.
+  ok(countMod('function wireDoorGesture()') === 1, 'the door is opened by a gesture');
+  ok(/el\.__scDoorTaps >= 7/.test(mod), 'seven taps, exactly');
+  ok(countMod('function devPanelHtml(') === 0 && countMod('data-act="dev') === 0,
+    'and there is no dev-mode panel behind it any more');
+  ok(countMod('simAll') === 0 && countMod('lsSet(LS.sim') === 0,
+    'nor the dev switch that pretended every badge was earned');
+  ok(countMod('sc-dev-on') === 0 && count('.sc-dev{') === 0,
+    'nor the class and the styles that drew it');
+  ok(mod.indexOf("localStorage.setItem('sidecut_testMode'") === -1,
+    'and the door no longer touches the app\u2019s own test flag');
+  ok(mod.indexOf('lsGet(LS.door, null) || lsGet(LS.dev, null)') !== -1,
+    'while a door that was already opened stays open across the release');
+  ok(countMod('Dev mode') === 0 && countMod('Enter dev mode') === 0,
+    'and the words are gone from the Studio block entirely');
 
   // ---- the five rewards ----
   const ats = [...mod.matchAll(/\{ at: (\d+),\s*kind: '([a-z]+)',\s*key: '([a-z]+)'/g)].map((m) => ({ at: Number(m[1]), kind: m[2], key: m[3] }));
   ok(ats.length === 5, 'five rewards are declared (' + ats.length + ')');
-  ok(ats.map((r) => r.at).join(',') === '40,80,119,158,159', 'at 40, 80, 119, 158 and 159');
-  ok(ats[3].key === 'vortex', 'the 158 one is Vortex');
-  ok(ats[4].kind === 'complete' && ats[4].at === 159,
-     'and the 159 one finishes the wall, behind the secret badge');
+  ok(ats.map((r) => r.at).join(',') === '40,80,110,140,151', 'at 40, 80, 110, 140 and 151');
+  ok(ats[3].key === 'vortex', 'the 140 one is Vortex');
+  ok(ats[4].kind === 'complete' && ats[4].at === 151,
+     'and the last one is the finished wall, every tile including the secret one');
 
   ok(ats.slice(0, 4).every((r) => r.kind === 'theme'), 'the other four are themes');
 
@@ -486,55 +534,52 @@ console.log('\n[8] 201 badges, dev mode, five rewards');
   // ---- every tile on the wall is reachable, and none of them needs a share ----
   // Three tiles used to be unearnable (a stat the app always reported as zero, a
   // flag nothing ever set) and two counted the export buttons, which on a phone
-  // open the share sheet. Premium needs ALL 201, so one impossible tile blocks the
-  // reward - these are the assertions that keep that from coming back.
+  // open the share sheet. The trophy needs EVERY tile, so one impossible tile
+  // blocks the reward - these are the assertions that keep that from coming back.
   ok(countMod('albums: 0,') === 0, 'no stat the badges read is a hard-coded zero');
   ok(countMod('albums: Object.keys(albums).length') === 1, 'the album count is computed from the library');
   ok(countMod("call('__scUserAlbums')") === 1 && count('window.__scUserAlbums = function(){') === 1,
     'and the app hands its own album map over for it');
   ok(countMod('albumsMade: made') === 1, 'with the hand-built albums counted as well');
   ok(countMod("markFeature('autodj')") === 1, 'the one flag nothing used to set is set now');
-  ok(countMod("return ctr('exportAll')") === 0 && countMod("return ctr('exportSongs')") === 0,
+  ok(!counters.includes('exportAll') && !counters.includes('exportSongs'),
     'and no badge counts an export any more');
   // 70.0.6, the user's words: "The badges shouldny do with altering your songs".
   // The three in-place editors are tools, not achievements - and neither is the
   // space one of them wins back.
   ok(countMod("'crop', 'retag', 'reencode'") === 0, 'the feature list no longer wants an edit');
-  ok(countMod("return ctr('savedBytes')") === 0 && countMod("return ctr('crops')") === 0 &&
-     countMod("return ctr('batch')") === 0 && countMod("return ctr('tagged')") === 0,
-     'and no tile counts a re-encode, a batch tag run or the space it won back');
+  ok(['crops', 'batch', 'tagged', 'savedBytes', 'reencode'].every((k) => !counters.includes(k)),
+    'and no tile counts a re-encode, a batch tag run or the space it won back');
   ok(countMod('d.reencoded') === 0 && countMod('reencoded: reencoded') === 0,
-     'nor reads the re-encoded stat the cleaner keeps');
-  ok(countMod("id: 'crop_1'") === 0 && countMod("id: 'retag_1'") === 0 && countMod("id: 'reencode_1'") === 0,
-     'and the three hand-written editing badges are off the wall');
-  ok(countMod("bump('queue', 1)") === 1 && countMod("bump('search', 1)") === 1,
-    'the two local replacements are wired: a queued song and a library search');
-  ok(countMod("return ctr('search')") === 1 && countMod("return ctr('queue')") === 1,
-    'and the tiles are the ones that read them');
-  ok(countMod('plays_5000') === 0 && countMod('plays_3000') === 2,
-    'the 5,000-play target is off the wall in both places (id and its group)');
+    'nor reads the re-encoded stat the cleaner keeps');
+  ok(wall.every((e) => !/re-encod|retagg|batch tag|crop|reencode/i.test(e.n + ' ' + e.d)),
+    'and no tile on the wall names one of them');
+  ok(wall.some((e) => e.k === 'queue') && wall.some((e) => e.k === 'search'),
+    'the two local replacements are on the wall: a queued song and a library search');
+  ok(mod.indexOf("bump('queue', 1)") !== -1 && mod.indexOf("bump('search', 1)") !== -1,
+    'and both are wired to the app');
+  ok(!counters.includes('nightPlays') && wall.every((e) => e.k !== 'nightPlays'),
+    'and nothing on the wall scores how late you stay up');
   ok(countMod('var FEATURE_KEYS = [') === 1, 'the feature list is named once');
   ok(countMod('featuresUsed: FEATURE_KEYS.filter(') === 1,
     'and "used every feature" counts that list instead of any one flag');
 
-  // The generated tables carry the reachable ceilings. Read them back and assert
-  // the maxima, so a future edit cannot quietly reintroduce a 2,000-song shelf.
-  // 73.3 retarget: the explore rows (one song, different songs, late-night,
-  // artists, genres) left the table with the Discovery group.
-  const caps = [
-    ['plays', 3, 2000], ['hours', 0.1, 150],
-    ['streak', 2, 180],
-    ['streak', 7, 60], ['songs shelved', 1, 1000], ['albums', 1, 12], ['playlists', 1, 12],
-    ['favorites', 1, 100],
-  ];
-  const tableBlock = mod.slice(mod.indexOf('var BADGE_TIERS = ['), mod.indexOf('// The counting tiers'));
-  const vals = [...tableBlock.matchAll(/vals: \[([^\]]+)\]/g)].map((m) => m[1].split(',').map((n) => Number(n.trim())));
-  ok(vals.length === 8, 'the eight threshold rows are all present (' + vals.length + ')');
-  const maxima = vals.map((v) => Math.max(...v));
-  ok(maxima.every((m, i) => m <= (caps[i] ? caps[i][2] : Infinity)),
-    'and none reaches past its ceiling (' + maxima.join(', ') + ')');
-  ok(vals.every((v) => v.every((n, i) => i === 0 || n > v[i - 1])),
-    'every table still climbs in one direction');
+  // The targets a year of real listening reaches. Read off the wall itself, so a
+  // future edit cannot quietly reintroduce a shelf nobody can fill.
+  const CEILING = {
+    plays: 3000, minutes: 10, hours: 200, streak: 180, longest: 30, library: 2000,
+    albums: 20, playlists: 12, favorites: 100, artists: 100, genres: 20,
+    maxPlays: 100, playedTracks: 500, playedShare: 0.8
+  };
+  const over = wall.filter((e) => CEILING[e.k] != null && e.w > CEILING[e.k]);
+  ok(over.length === 0, 'and no tile asks for more than a year of listening reaches' +
+    (over.length ? ' (' + over.map((e) => e.n + '=' + e.w).join(', ') + ')' : ''));
+  ok(wall.every((e) => e.w > 0), 'every target is a real goal above zero');
+  // No stale count is left anywhere in the Studio block: the wall it describes is
+  // the wall it ships.
+  ok(countMod('201 badges') === 0 && countMod('159 badges') === 0 &&
+     countMod('two hundred badges') === 0,
+    'and the module describes the wall it actually ships');
 }
 
 console.log('\n[9] the same release, driven on the real app');

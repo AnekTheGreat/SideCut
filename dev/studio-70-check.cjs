@@ -392,10 +392,11 @@ const realErrors = (errors) => errors.filter((e) =>
     ['crop', 'clip', 'edit', 'cleanup', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
     // 70.0.5: the wall was 201 badges; 73.3 removed the Discovery group at the
-    // owner's word, so the wall is 159 tiles here, 158 real and one blank. Section
-    // [11] walks the rest.
+    // owner's word, and 73.3.8 replaced the generated thresholds with 150
+    // hand-written badges, so the wall is 151 tiles here, the last one blank.
+    // Section [11] walks the rest.
     const badges = doc.querySelectorAll('#studioView .sc-badge');
-    ok(badges.length === 159, 'the badge grid has 159 tiles, the last one blank (' + badges.length + ')');
+    ok(badges.length === 151, 'the badge grid has 151 tiles, the last one blank (' + badges.length + ')');
     ok(doc.querySelectorAll('#studioView .sc-badge-bar').length === badges.length,
       'every badge carries its own progress bar');
     ok(doc.querySelectorAll('#studioView [data-act="autodj"], #studioView [data-act="shake"], #studioView [data-act="swipe"]').length === 3,
@@ -465,9 +466,9 @@ const realErrors = (errors) => errors.filter((e) =>
     var before11 = before;
     ok(before > 0, 'badges already earned from the real stats: ' + before);
     const all = win.SC70.achievements();
-    const hundred = all.filter((a) => a.id === 'hour_100')[0];
-    ok(!!hundred, 'there is a 100-hour badge');
-    ok(hundred.need.got >= hundred.need.want, 'and 100 hours of real listening meets it');
+    const century = all.filter((a) => a.id === 'century_of_sound')[0];
+    ok(!!century, 'there is a 100-hour badge');
+    ok(century.need.got >= century.need.want, 'and 100 hours of real listening meets it');
     const lists = all.map((a) => a.id);
     ok(lists.length === new Set(lists).size, 'no badge id appears twice');
     ok(all.every((a) => a.need.want > 0), 'every badge has a target above zero');
@@ -475,10 +476,10 @@ const realErrors = (errors) => errors.filter((e) =>
 
     win.SC70.markFeature('clip');
     const fresh = win.SC70.checkAchievements(true);
-    ok(fresh.some((a) => a.id === 'clip_1'), 'exporting a clip unlocks the clip badge');
+    ok(fresh.some((a) => a.id === 'clip_artist'), 'exporting a clip unlocks the clip badge');
     const after = win.SC70.unlockedCount();
-    // Not "exactly one": a feature flag also feeds the "N features used" tier, so
-    // marking one can legitimately cross a threshold on the generated badges too.
+    // Not "exactly one": a feature flag also feeds the "used every feature" tile, so
+    // marking one can legitimately cross a threshold on the counters as well.
     // What matters is that clip_1 is in the fresh list and the count went up.
     ok(after > before, 'and the count moves up (' + before + ' -> ' + after + ')');
     const again = win.SC70.checkAchievements(true);
@@ -727,16 +728,26 @@ const realErrors = (errors) => errors.filter((e) =>
     win.SC70.gestures.shake = false;
   }
 
-  console.log('[11] 159 badges, one secret, five rewards');
+  console.log('[11] 150 badges, one secret, five rewards');
   {
     const all = win.SC70.achievements();
-    ok(all.length === 159, 'the wall is 159 badges (' + all.length + ')');
+    // 73.3.8, the owner's words: "just make it 150 meaningful badges plus secret
+    // badge instead of 201 random badges". The tables that generated 171 of the old
+    // tiles are gone, so the wall is 150 hand-written badges and the one that is
+    // deliberately not on the grid.
+    ok(all.length === 151, 'the wall is 150 badges plus the secret one (' + all.length + ')');
     ok(all.filter((a) => a.secret).length === 1, 'exactly one of them is secret');
-    ok(all.filter((a) => a.secret)[0].id === 'secret_devmode', 'and it is the dev-mode door');
-    ok(all.filter((a) => !a.secret).length === 158, 'the other 158 are on the grid from the start');
-    ok(new Set(all.map((a) => a.id)).size === 159, 'no two of the 159 share an id');
+    ok(all.filter((a) => a.secret)[0].id === 'secret_door', 'and it is the door behind the version line');
+    ok(all.filter((a) => !a.secret).length === 150, 'the other 150 are on the grid from the start');
+    ok(new Set(all.map((a) => a.id)).size === 151, 'no two of the 151 share an id');
     ok(all.every((a) => Number.isFinite(a.need.got) && a.need.want > 0),
       'and every one of them has a target and a countable progress');
+    // Every tile was hand-written this time, so every tile has a name of its own
+    // and a sentence of its own. A wall whose tiles differ only by a number is
+    // exactly what this release took away, and these two checks are what keep it
+    // from coming back.
+    ok(new Set(all.map((a) => a.name)).size === 151, 'every badge has a name of its own');
+    ok(new Set(all.map((a) => a.sub)).size === 151, 'and a sentence of its own');
 
     // 70.0.6, the user's words: "The badges shouldny do with altering your songs".
     // Crop, the batch tag editor and the re-encoder are tools, not achievements -
@@ -749,78 +760,86 @@ const realErrors = (errors) => errors.filter((e) =>
     const heads = Array.from(doc.querySelectorAll('#studioView .sc-ach-group-head'));
     const titles = heads.map((h) => h.firstElementChild.textContent);
     ok(titles.length === 8, 'they are grouped into eight sections (' + titles.join(' / ') + ')');
-    ok(titles.join('|') === 'Streaks|Listening|Library|Studio & editing|Assistant & gestures|Themes|Milestones|Secret',
+    ok(titles.join('|') === 'Streaks|Listening|Library|Studio & the deck|Assistant & gestures|Themes|Milestones|Secret',
        'and the sections are the app\u2019s own areas of the app');
     const counted = heads.reduce((n, h) => {
       const m = /\/(\d+)/.exec(h.lastElementChild.textContent);
       return n + (m ? Number(m[1]) : 0);
     }, 0);
-    ok(counted === 159, 'the eight group counts add up to 159 (' + counted + ')');
+    ok(counted === 151, 'the eight group counts add up to 151 (' + counted + ')');
 
-    // ---- before dev mode: the secret one is a blank tile, not a spoiler ----
-    ok(win.SC70.devMode() === false, 'dev mode starts off');
+    // ---- before the door is found: the secret one is a blank tile, not a spoiler
+    ok(win.SC70.doorOpen() === false, 'the door starts closed');
     ok(doc.querySelectorAll('#studioView .sc-badge-secret').length === 1,
       'so the wall shows one blank tile where the secret badge would be');
-    ok(!doc.querySelector('#studioView .sc-dev'), 'and no dev panel');
+    ok(doc.querySelectorAll('#studioView .sc-dev').length === 0, 'and there is no dev panel on it');
     ok(win.SC70.achievements().filter((a) => a.secret)[0].need.got === 0,
       'the secret badge is not met');
-    ok(win.SC70.unlockedCount() < 159, 'and it is not part of the count');
+    ok(win.SC70.unlockedCount() < 151, 'and it is not part of the count');
     // The gate is live, so it has to agree with the COUNT, not with a stored flag -
     // and it does, whatever the count happens to be on this device.
-    const rewardAt = { cinder: 40, quartz: 80, lumen: 119, vortex: 158 };
+    const rewardAt = { cinder: 40, quartz: 80, lumen: 110, vortex: 140 };
     const n11 = win.SC70.unlockedCount();
     Object.keys(rewardAt).forEach((k) =>
       ok(win.SC70.themeUnlocked(k) === (n11 >= rewardAt[k]),
          k + ' unlocks exactly when the count reaches ' + rewardAt[k] + ' (at ' + n11 + ')'));
     ok(win.SC70.themeUnlocked('vortex') === false, 'and Vortex is still out of reach at ' + n11 + ' badges');
 
-    // ---- the gesture the user asked for: dev mode is what opens the door ----
+    // ---- the gesture the user asked for: seven taps open the door -------------
     const label = doc.getElementById('currentVersionLabel');
     ok(!!label, 'the version line is on the Settings page');
     for (let i = 0; i < 6; i++) { label.click(); await wait(4); }
-    ok(win.SC70.devMode() === false, 'six taps are not enough');
+    ok(win.SC70.doorOpen() === false, 'six taps are not enough');
     label.click();
     await wait(40);
-    ok(win.SC70.devMode() === true, 'the seventh opens dev mode');
-    ok(win.localStorage.getItem('sidecut_testMode') === '1',
-      'and it sets the app\u2019s own test flag, so the app\u2019s dev affordances come with it');
+    ok(win.SC70.doorOpen() === true, 'the seventh opens the door');
+    ok(win.localStorage.getItem('sidecut_door') !== null, 'and an open door is remembered on the device');
+    // The door writes its own key and nothing else: the dev-mode key the release
+    // before this one wrote is neither read nor written any more.
+    ok(win.localStorage.getItem('sidecut_devmode') === null,
+      'while the old dev-mode key is never written');
 
     win.SC70.renderStudio();
-    ok(!!doc.querySelector('#studioView .sc-dev'), 'the dev panel is on the wall');
+    ok(doc.querySelectorAll('#studioView .sc-dev').length === 0, 'the wall still has no dev panel');
     ok(doc.querySelectorAll('#studioView .sc-badge-secret').length === 0,
       'the blank tile is replaced by the real badge');
     const secret = win.SC70.achievements().filter((a) => a.secret)[0];
-    ok(secret.need.got === 1, 'and the secret badge is met by having entered');
+    ok(secret.need.got === 1, 'and the secret badge is met by having opened the door');
     ok(win.SC70.unlockedCount() > before11, 'so the count moves up by it');
 
     // ---- the five rewards ----
     const rw = win.SC70.rewards();
     ok(rw.length === 5, 'there are five rewards');
-    ok(rw.map((r) => r.at).join(',') === '40,80,119,158,159',
-       'at 40, 80, 119, 158 and 159 (' + rw.map((r) => r.at).join(',') + ')');
+    ok(rw.map((r) => r.at).join(',') === '40,80,110,140,151',
+       'at 40, 80, 110, 140 and 151 (' + rw.map((r) => r.at).join(',') + ')');
     ok(rw.slice(0, 4).every((r) => r.kind === 'theme'), 'the first four are themes');
-    ok(rw[3].key === 'vortex' && rw[3].dynamic === true, 'the 158 one is the dynamic Vortex');
-    ok(rw[4].kind === 'complete', 'and 159 is the finished wall');
+    ok(rw[3].key === 'vortex' && rw[3].dynamic === true, 'the 140 one is the dynamic Vortex');
+    ok(rw[4].kind === 'complete', 'and the last one is the finished wall');
+    // The one number that must never drift: the trophy's count IS the wall's length.
+    ok(rw[4].at === win.SC70.achievements().length,
+      'and it sits on the wall it counts (' + rw[4].at + ' of ' + win.SC70.achievements().length + ')');
 
-    // ---- every reward lands when the wall fills ----
-    const sim = doc.querySelector('#studioView [data-act="devsim"]');
-    ok(!!sim, 'the dev panel can pretend the whole wall is earned');
-    sim.click();
-    await wait(120);
-    ok(win.SC70.unlockedCount() === 159, 'with it on, all 159 read as earned');
-    ok(win.SC70.rewards().every((r) => r.earned), 'every reward row is earned');
+    // ---- nothing on the wall can be pretended any more ----
+    // 73.3.8 took the dev-mode panel and its "pretend all earned" switch out of
+    // Studio, so there is no way to walk the reward path without earning it. What
+    // is left to prove is that the gate is arithmetic and not a stored flag.
+    ['devsim', 'devreset', 'devoff', 'devself'].forEach((a) =>
+      ok(doc.querySelectorAll('#studioView [data-act="' + a + '"]').length === 0,
+        'no ' + a + ' control survives on the wall'));
     ['cinder', 'quartz', 'lumen', 'vortex'].forEach((k) =>
-      ok(win.SC70.themeUnlocked(k) === true, k + ' unlocks with the badges'));
+      ok(win.SC70.themeUnlocked(k) === (win.SC70.unlockedCount() >= rewardAt[k]),
+         k + ' answers off the live count, not a switch'));
     ok(typeof win.isPremiumActive === 'undefined', 'and there is no entitlement for it to mint');
     ok(win.localStorage.getItem('sidecut_premium') === null,
       'and nothing is recorded, because there is nothing to lock');
 
     // ---- the app's Theme tab asks the wall, live ----
     ok(typeof win.__scRewardThemeUnlocked === 'function', 'the Theme tab has a gate to ask');
-    ok(['cinder', 'quartz', 'lumen', 'vortex'].every((k) => win.__scRewardThemeUnlocked(k) === true),
-      'and it agrees all four are unlocked now');
+    ok(['cinder', 'quartz', 'lumen', 'vortex'].every((k) =>
+      win.__scRewardThemeUnlocked(k) === (win.SC70.unlockedCount() >= rewardAt[k])),
+      'and the tab agrees with the wall, tile for tile');
     const prog = win.__scRewardThemeProgress('vortex');
-    ok(!!prog && prog.at === 158, 'it knows Vortex unlocks at 158 badges');
+    ok(!!prog && prog.at === 140, 'it knows Vortex unlocks at 140 badges');
     const themeCss = html.indexOf('body.theme-dyn-vortex::before') !== -1;
     ok(themeCss, 'and the Vortex backdrop is in the stylesheet');
 
@@ -849,22 +868,19 @@ const realErrors = (errors) => errors.filter((e) =>
     await wait(30);
     ok(!doc.body.classList.contains('theme-dyn-vortex'), 'leaving Vortex clears its class and its layer');
 
-    // ---- a dev-mode reset clears badges, never the reward ----
-    const reset = doc.querySelector('#studioView [data-act="devreset"]');
-    ok(!!reset, 'dev mode can reset its own state');
-    reset.click();
-    await wait(80);
+    // ---- the door can be closed again, and the reward is not a switch ----
     ok(win.SC70.rewards().length === 5 && win.localStorage.getItem('sidecut_premium') === null,
-      'and a badge reset has no entitlement left to take back');
-    ok(win.localStorage.getItem('sidecut_achievements') !== null || win.SC70.unlockedCount() >= 1,
-      'but the badges and counters really are cleared');
-
-    const off = doc.querySelector('#studioView [data-act="devoff"]');
-    ok(!!off, 'and dev mode can be left');
-    off.click();
+      'the trophy has no entitlement behind it to take back');
+    win.SC70.setDoorOpen(false);
     await wait(60);
-    ok(win.SC70.devMode() === false, 'leaving it turns it off');
-    ok(win.localStorage.getItem('sidecut_testMode') === null, 'and clears the app\u2019s test flag with it');
+    ok(win.SC70.doorOpen() === false, 'and the door can be closed again');
+    ok(doc.querySelectorAll('#studioView .sc-badge-secret').length === 1,
+      'so its tile goes back to being a blank one');
+    ok(win.localStorage.getItem('sidecut_achievements') !== null || win.SC70.unlockedCount() >= 1,
+      'while the badges earned from real use are still there');
+    win.SC70.setDoorOpen(true);
+    await wait(40);
+    ok(win.SC70.doorOpen() === true, 'and opening it again puts the badge back');
   }
 
   console.log('[11b] the player is lifted by the dock that is really there');
