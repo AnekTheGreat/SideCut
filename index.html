@@ -10681,6 +10681,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // network, and the same answer every time.
   var SC_ONSET_HOP = 0.02;      // 20ms frames
   var SC_ONSET_PULL = 1.1;      // how far a line may be pulled, in seconds
+  var SC_ENTRANCE_STREAM = 4;   // articulations in the second that make an attack part of the voice
 
   // Syllable/beat count. CJK, kana, Hangul and Thai (and other abugidas)
   // carry one sound per written character - every character is its own beat,
@@ -10769,14 +10770,50 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         var bar = peak0 * 0.2;
         var wSpan = Math.max(1, Math.round(3 / hop));
         var wNeed = Math.max(4, Math.round(wSpan * 0.05));
+        // 74 - AN ARTICULATION IS AN ATTACK, NOT A FRAME. Counting frames above
+        // the bar counts how LONG each hit lasted, and a punchy drum kit holds a
+        // hit across two or three frames while a voice is one - so on a track that
+        // opens on a beat the drum intro reached the count a voice does and the
+        // anchor stayed on the music, which is why the first lines lit during the
+        // opening. Counting RISING EDGES counts attacks instead: what is measured
+        // is how often something is started, which a beat every half second cannot
+        // do as often as a voice at several syllables a second. The window and the
+        // count are unchanged - only what is counted in them changed.
+        var edge = new Uint8Array(env.length);
+        for(var e0 = 0; e0 < env.length; e0++){
+          if(env[e0] >= bar && (e0 === 0 || env[e0 - 1] < bar)) edge[e0] = 1;
+        }
         var wCount = 0;
-        for(var w0 = 0; w0 < wSpan && w0 < env.length; w0++){ if(env[w0] >= bar) wCount++; }
+        for(var w0 = 0; w0 < wSpan && w0 < env.length; w0++){ if(edge[w0]) wCount++; }
         for(var f0 = 0; f0 + wSpan <= env.length; f0++){
           if(f0 > 0){
-            if(env[f0 - 1] >= bar) wCount--;
-            if(env[f0 + wSpan - 1] >= bar) wCount++;
+            if(edge[f0 - 1]) wCount--;
+            if(edge[f0 + wSpan - 1]) wCount++;
           }
-          if(wCount >= wNeed){ voiceStart = f0 * hop; break; }
+          if(wCount >= wNeed){
+            // WHERE INSIDE THE WINDOW. The window that reaches the count still had
+            // to fill up over its own length, and its first attack is whatever the
+            // backing was doing before the voice - measured on a synthetic song
+            // whose entrance is exactly 24.00s, taking the window's start said
+            // 21.98s, and dragged the whole sheet forward with it. The entrance is
+            // the first attack that is part of a STREAM: an edge with several more
+            // right behind it. A voice keeps articulating several times a second, a
+            // beat does not, so the backing's own hits can never pass this test -
+            // and a song too slow for it keeps the window's first attack, which is
+            // what the count alone has always picked.
+            var _firstEdge = f0;
+            for(var f1 = f0; f1 < f0 + wSpan && f1 < env.length; f1++){ if(edge[f1]){ _firstEdge = f1; break; } }
+            var _stream = Math.max(1, Math.round(1 / hop));
+            var _found = -1;
+            for(var s1 = _firstEdge; s1 < f0 + wSpan && s1 < env.length; s1++){
+              if(!edge[s1]) continue;
+              var _c = 0;
+              for(var s2 = s1; s2 < s1 + _stream && s2 < env.length; s2++){ if(edge[s2]) _c++; }
+              if(_c >= SC_ENTRANCE_STREAM){ _found = s1; break; }
+            }
+            voiceStart = (_found >= 0 ? _found : _firstEdge) * hop;
+            break;
+          }
         }
       }
       // Past a third of the song a cluster of rises is not an entrance any more,
@@ -13305,7 +13342,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.4.2';
+  const APP_VERSION = '73.4.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13926,6 +13963,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.4.3', date: 'October 7, 2026 · 7:34 PM EDT', title: 'A song that opens on music is timed from the moment the voice enters', items: [
+    'A track that opens with music was being timed from the wrong place, so its words sat seconds away from the voice from the very first line.',
+    'The entrance was found by counting every frame a rise stayed above the bar instead of every attack. A drum kit holds a hit across two or three frames and a voice is one, so the opening beat alone reached the count a voice does.',
+    'On a song with a long musical opening that put the entrance at 0:00 and dragged the whole sheet forward with it.',
+    'An articulation is counted as an attack now, and the entrance is the first attack with more right behind it - a voice keeps articulating several times a second, which a beat cannot do.',
+    'Measured against a recording with a known entrance, the first line now lands on the voice, and on a song with a long intro the average error across the sheet fell from about 14 seconds to about 3.',
+    'A backing that only ever beats and never sings is left exactly as it was: the detector never invents an entrance, so those songs keep the lead-in they always had.',
+    'Your lyrics, the letter wave, the player screen, the home-screen widget, a timing you pinned by hand with Line up and the timings saved on your songs are untouched by this release.',
+    'Your songs and playlists stay on your device - nothing in your library is changed, moved or removed by this release.',
+  ]},
   { version: '73.4.2', date: 'October 7, 2026 · 5:01 PM EDT', title: 'The widget picks your last song back up where you left it', items: [
     'Tapping the home-screen widget now resumes the song you were last playing, from the position you left it at, and it starts playing instead of opening the app paused and waiting for a second press.',
     'The press that opens the app is the press that starts the song, so there is nothing new to find in it: one tap on the widget, and the music comes back on.',

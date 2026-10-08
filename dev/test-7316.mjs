@@ -933,6 +933,69 @@ console.log('[17] the how-to steps put the songs in the library by themselves');
     'no how-to box still teaches the old save-or-import step');
 }
 
+console.log('[18] a track that opens on a beat is timed from where the VOICE enters');
+{
+  // 74 - the entrance detector counted FRAMES above the bar, so what it measured was
+  // how LONG each hit lasted. A punchy drum kit holds a hit across two or three
+  // frames while a voice is one, so a drum intro on its own reached the count a voice
+  // does: measured on the synthetic recording below (24s of drums, then the voice),
+  // the shipped code put the entrance at 0.00s and the whole sheet 14 seconds from
+  // the voice. This RUNS the shipped measuring code on that recording.
+  const at = src.indexOf('  var SC_ONSET_HOP = 0.02;');
+  const end = src.indexOf('\n  function showLyrics(', at);
+  ok(at !== -1 && end > at, 'the measuring code can be lifted out of the page');
+  let E = null;
+  try { E = new Function(src.slice(at, end) + '\nreturn { env: scOnsetEnvelope, time: scTimeLyricsFromOnsets };')(); }
+  catch (e) { ok(false, 'and it evaluates: ' + e.message); }
+  ok(E && typeof E.env === 'function', 'and the shipped measuring code evaluates');
+
+  if (E) {
+    const SR = 8000, HOP2 = 0.02, DUR = 90;
+    // A beat every `beats` seconds across the file, plus a voice with four
+    // articulations a second from `enterSec` on. The energy envelope comes out of
+    // the shipped scOnsetEnvelope, not out of a hand-made array.
+    function recording(enterSec, beats){
+      const n = Math.round(DUR * SR), data = new Float32Array(n);
+      for (let t = 0; t < DUR; t += beats){
+        const a = Math.round(t * SR), b = Math.min(n, Math.round((t + 0.12) * SR));
+        for (let i = a; i < b; i++) data[i] += 0.9 * Math.exp(-(i / SR - t) * 45) * Math.sin(2 * Math.PI * 90 * (i / SR - t));
+      }
+      for (let i = Math.round(enterSec * SR); i < n; i++){
+        const t = i / SR, ph = ((t - enterSec) * 4) % 1;
+        const e2 = ph < 0.06 ? ph / 0.06 : Math.exp(-(ph - 0.06) * 9);
+        data[i] += 0.5 * (0.35 + 0.65 * e2) * Math.sin(2 * Math.PI * 220 * t);
+      }
+      return { sampleRate: SR, length: n, numberOfChannels: 1, getChannelData: () => data };
+    }
+    const parse = (lrc) => String(lrc).split('\n').map((l) => {
+      const m = l.match(/^\[(\d{1,2}):(\d{2}(?:\.\d+)?)\]/);
+      return m ? parseInt(m[1], 10) * 60 + parseFloat(m[2]) : NaN;
+    });
+    const lines = Array.from({ length: 7 }, (_, i) => 'line number ' + (i + 1) + ' sung here');
+
+    const first = parse(E.time(lines, DUR, E.env(recording(24, 0.5)), HOP2))[0];
+    ok(Math.abs(first - 24) < 0.6,
+      'the first line lands on the voice, not on the opening beat (' + first.toFixed(2) + 's, the voice enters at 24s and it used to sit at 4.8s)');
+    ok(src.indexOf('if(env[e0] >= bar && (e0 === 0 || env[e0 - 1] < bar)) edge[e0] = 1;') !== -1,
+      'an articulation is counted as a RISING EDGE, not as every frame it stays above the bar');
+    ok(src.indexOf('if(_c >= SC_ENTRANCE_STREAM){ _found = s1; break; }') !== -1 && src.indexOf('var SC_ENTRANCE_STREAM = 4;') !== -1,
+      'and the entrance is the first attack with more right behind it - a stream, which a beat cannot be');
+
+    // A backing that only ever beats and never sings: there is no entrance to find,
+    // so the lead-in stands - the detector must not invent one.
+    const drumsOnly = parse(E.time(lines, DUR, E.env(recording(1e9, 0.5)), HOP2))[0];
+    ok(drumsOnly < 6.5, 'a track with no voice at all keeps the lead-in rather than naming a beat (' + drumsOnly.toFixed(2) + 's)');
+
+    // The shape the older checks pin: a beat every half second for 24s, then a voice
+    // twice as dense. That entrance still has to be found.
+    const introEnv = new Float32Array(Math.round(180 / HOP2));
+    for (let t = 0.5; t < 24; t += 0.5) introEnv[Math.round(t / HOP2)] = 0.6;
+    for (let t = 24; t < 150; t += 0.25) introEnv[Math.round(t / HOP2)] = 1.0;
+    const iT = parse(E.time(lines, 180, introEnv, HOP2));
+    ok(iT[0] > 18 && iT[0] < 28, 'and the long-intro shape the older checks pin still anchors to the voice (' + iT[0].toFixed(2) + 's)');
+  }
+}
+
 console.log('');
 console.log(fail ? pass + ' passed, ' + fail + ' FAILED' : 'All ' + pass + ' checks passed');
 process.exit(fail ? 1 : 0);

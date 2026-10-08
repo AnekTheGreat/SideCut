@@ -1,6 +1,72 @@
 # SideCut — repository memory
 
 
+## 73.4.3 (Oct 7, 2026 · 7:34 PM EDT): a song that opens on music is timed from where the voice enters
+- **The owner's ask, verbatim**: "THIS LYRICS IS SO FRIKEN INNACURWTE MAKE IT ONE SHOT PERMANINR FIX" — and, asked
+  which symptom of inaccurate lyrics they were hitting, they answered "Everything".
+- **MEASURED FIRST, THEN FIXED.** The lyric stack is a guess for any song whose words arrive without timings, so a
+  probe was written (`dev/_lyric-probe.mjs`, a scratch harness under the `_`-prefix convention of `_boottest.js` /
+  `_flactest.js`, removed once its work became a gate) that RUNS the shipped `scOnsetEnvelope` +
+  `scTimeLyricsFromOnsets` on synthetic RECORDINGS with a known ground truth: a backing of drums and a pad across
+  the whole file, a voice of four syllable bursts a second laid on top, an entrance at a known second, and in one
+  case a real 20s break. The layout was judged on its own (a second build of the same shipped block with the snap
+  phase disabled) as well as end to end.
+- **THE CAUSE — THE ENTRANCE WAS COUNTED IN FRAMES.** `scTimeLyricsFromOnsets` finds where the singing starts by
+  counting, in a three second window, the frames whose rise is above a fifth of the peak rise, and taking the first
+  window that reaches `wNeed` (5% of the window). A FRAME COUNT measures how long each hit LASTED, and a drum kit
+  holds a hit across two or three frames while a voice is one: on the probe's 24s drum intro the opening alone put
+  **18 frames** in the window against a need of 8, so `voiceStart` came back **0.00s** on EVERY probe song, the
+  layout began at the lead-in, and the whole sheet was dragged forward with it. Measured: mean line error **14.00s**
+  (max 20.02s) on the long intro, and every other song also anchored at 0.
+- **THE FIX (index.html, one function, three edits).** (1) An articulation is a RISING EDGE above the bar, not every
+  frame that stays there, so what is counted is how often something is STARTED — a beat every half second yields 6
+  edges per three second window (the probe: 7) against a need of 8, while a voice at four syllables a second yields
+  12. (2) The entrance is the FIRST attack in the window that is followed by a STREAM — at least
+  `SC_ENTRANCE_STREAM` (4) more edges inside the next second — because the qualifying window still had to fill up
+  over its own length, which on a known 24.00s entrance read **21.98s**; taking the first attack *in a stream* reads
+  it at 23.98s. A song too slow for the stream test keeps the window's first attack, which is what the count alone
+  always picked. (3) `SC_ONSET_PULL` is now documented as the reach it is, with `SC_ENTRANCE_STREAM` beside it.
+  **No snap, layout, gap, weight or pacer behaviour was changed** — a wider snap reach and a distance-weighted snap
+  score were both built and measured first and both made the end-to-end error worse (see below), so they were
+  reverted rather than shipped. Windows and `wNeed` are untouched, which is why no older pin had to move.
+- **THE RESULT, RUN.** Entrance 0.00s -> 23.98s / 7.98s / 5.98s / 5.98s / 3.98s against truths of 24 / 8 / 6 / 6 / 4.
+  Mean |line error|: long intro **14.00 -> 3.18** (max 20.02 -> 5.32), held-note song 4.19 -> 2.62, breath song
+  2.18 -> **1.32**, real-break song 2.21 -> 2.46 (max identical), plain song 2.93 -> 3.06. Net better everywhere that
+  matters and never worse than a quarter of a second.
+- **REVERTED, AND WHY IT IS WORTH RECORDING.** (a) Making the snap reach half the local line spacing: identical
+  results, because attacks are dense — the nearest rise is always within a beat, so a wider window cannot correct a
+  systematic stretch. (b) Weighting onset strength by distance squared so the nearest rise wins: **worse** (plain
+  song 2.93 -> 4.02 mean), because the nearest rise is usually the backing, not the word. A local snap cannot fix a
+  systematic layout error, so neither was kept.
+- **THE GATE (dev/test-7316.mjs, [18]).** New, and it RUNS the shipped code: the synthetic recording is built as
+  audio and pushed through `scOnsetEnvelope`, then `scTimeLyricsFromOnsets` — the first line must land within 0.6s
+  of a 24s voice (it lands at 23.98s, and the check states it used to sit at 4.8s); a file whose backing only ever
+  beats and never sings must keep the lead-in rather than name a beat (1.98s); and the long-intro envelope the older
+  checks pin must still anchor to the voice (24.00s). The rising-edge and stream pins are source pins beside them.
+  test-7316 is **292/6** (was 285/6; 290/8 while the head notes were being written).
+- **THE RELEASE**: `APP_VERSION 73.4.2 -> 73.4.3` (a fix inside a release takes a FOURTH number), the 8-note head
+  entry at `October 7, 2026 · 7:34 PM EDT`, `sw.js` cache `sidecut-shell-v73.4.3`, bundles put to a fixed point
+  by `dev/ota-fixpoint.mjs` (pass 3) — root + `ota/` **926918**, `ota-play/` **926926**, all five entries OK, both
+  `--check`s OK.
+- **Gates**: no new red and no moved pin. test-7251 105/5, test-728 57/6, test-7281 88/6, test-713 45/5,
+  test-714 138/5, test-662 75/75, test-play-copy 28/28 — the same counts as 73.4.2. test-7316 **285/6 -> 292/6**,
+  test-6643 **90/0**, test-70 **179/2** (was 3 - the nested test-6643 red is gone; the two left are its version
+  pins). A first attempt stamped the head entry `11:24 PM EDT`, which was four hours in the FUTURE on this host's
+  clock and tripped test-6643's "not one of them in the future"; the stamp is `7:34 PM EDT`.
+- **THE FIVE DELIVERY ENTRIES AGREE**: `manifest.json`, `updates.json`, `ota/manifest.json`, `ota/updates.json` at
+  v73.4.3 size 926918, `ota-play/updates.json` at 926926 — and `index.html` inside BOTH zips carries the fix
+  (`edge[e0] = 1;`, `SC_ENTRANCE_STREAM`) and `APP_VERSION = '73.4.3'`. OTA trio: guard 20/0, update 52/0,
+  bootapply 24/0.
+- **STILL RED, and pre-existing** (identical on the 73.4.2 tree): test-7316's stale version/cache pins, which
+  assert `73.2.1` / `73.2` / `sidecut-shell-v73.2.1`, the `two-newline OTA tail` (index.html ends with a single
+  newline, in `80303b8` too), and `and holds it so the tracker cannot steal it straight back` (the source holds a
+  tapped line for 350ms, the pin says 5000 - the requirement is the tap hold, not its length).
+- **NOT VERIFIED HERE**: no device and no audio, so the fix is proven on synthetic recordings with a known ground
+  truth and on the gate battery, not by ear on a phone. And the honest limit this measurement exposes: a song whose
+  words have NO timings is still laid out by how much singing each line holds, which leaves seconds of error on any
+  real track — the two paths that actually fix that are the model timing (Settings -> Important, a Gemini key,
+  which hears the recording) and Line up (tap the line being sung).
+
 ## 73.4.2 (Oct 7, 2026 · 5:01 PM EDT): a tap on the widget picks the last song back up
 - **The owner's ask, verbatim**: "Also the widgit If I'm not in the app I should be able to click on it to resume
   a song that was previously playing. And from other places like the media player in control center dynamic
