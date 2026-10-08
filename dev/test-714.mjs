@@ -209,16 +209,19 @@ console.log('\n[5] letter by letter, and a highlight that works on every song');
     'and the light stops on the letter that window has reached');
   ok(src.indexOf('acc2 += wts[li] / wTotal2;') !== -1, 'counted by weight, not by an even step per letter');
   ok(/for\(let li = 0; li < ls\.length; li\+\+\) ls\[li\]\.classList\.toggle\('lit', li < upto\);/.test(src), 'turning them on in order');
-  // 73.4 - the word behind the light is not wiped on the same frame any more: it
-  // keeps its letters and dims (the two-word trail), and only what is older than the
-  // trail is wiped. The owner asked for the sweep to travel as a wave, so this is the
-  // check moving with the behaviour, not the assertion being loosened: the wipe itself
-  // is still pinned below.
-  ok(/const back = \(litIdx >= 0 && wi < litIdx\) \? \(litIdx - wi\) : -1;/.test(src),
-    'the word behind the light is the one that keeps its letters');
-  ok(/if\(back >= 1 && back <= SC_WAVE_TRAIL_WORDS\)\{/.test(src) &&
-     /w\.classList\.remove\('wave-1', 'wave-2'\);\n            clearLetters\(w\);/.test(src),
-    'while every word older than the trail is wiped back');
+  // 73.4.4 - the two-word wave trail is gone. Letter-by-letter is letters only now:
+  // every word that is not the one being sung is wiped on the same frame, and the
+  // trail that carried dimmed gold from word to word (and across a line boundary)
+  // no longer exists anywhere. The owner asked for the wave out and just the letters
+  // in, so these checks move with the behaviour rather than being loosened.
+  ok(count(src, 'if(wi !== litIdx){') === 1 &&
+     /if\(wi !== litIdx\)\{\n          clearLetters\(w\);\n          return;\n        \}/.test(src),
+    'every word but the one being sung is wiped on the same frame');
+  ok(src.indexOf('function scWaveCarryFrom(') === -1 && src.indexOf('function scWaveTrailTick(') === -1 &&
+     src.indexOf('SC_WAVE_TRAIL_WORDS') === -1,
+    'and the wave trail state and its carry across a line boundary are gone');
+  ok(src.indexOf('.wave-1') === -1 && src.indexOf('.wave-2') === -1,
+    'with neither dimmed step left in the stylesheet');
   ok(src.indexOf("words.forEach(clearLetters);") !== -1, 'and switching letter mode off clears the run');
   // The styles that make it read as a wave.
   ok(count(src, '#lyricsText .lyric-word .lyric-letter{') === 1, 'the letters have a transition');

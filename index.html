@@ -4238,11 +4238,12 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
     0%, 100% { filter: brightness(1); }
     50% { filter: brightness(1.28); }
   }
-  /* 71.4 - Letter by letter. Each letter owns a transition and a transition-delay
-     that grows with its position in the word, so a lit run reads as a sweep
-     across the word rather than a block of gold appearing at once. Scoped to
-     .ll-on so the effect belongs to letter mode specifically; the word keeps its
-     own lit frame underneath, which is what the eye follows. */
+  /* 71.4 - Letter by letter. Each letter owns its own transition, so a lit run
+     reads as a sweep across the word rather than a block of gold appearing at
+     once. Scoped to .ll-on so the effect belongs to letter mode specifically.
+     73.4.4 - AND ONLY THE LETTERS. The 73.4 wave kept the two words behind the
+     light dimmed gold so a run of gold travelled along the line; that trail is
+     gone, so the word being sung is the only lit word in the sheet. */
   /* 72.8.1 - the letters glide. A linear fade made the sweep read as a switch
      being flipped. The eased curve starts quickly and settles, so the light
      arrives with the letter instead of after it, and the delay is set per word
@@ -4259,23 +4260,6 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
     color: var(--gold);
     text-shadow: 0 0 8px color-mix(in srgb, var(--glow-a) 80%, transparent),
                  0 0 18px color-mix(in srgb, var(--glow-b) 55%, transparent);
-  }
-  /* 73.4 - THE WAVE TRAILS. The gold used to be scoped to .current alone, so the
-     moment the light reached the next word the one behind it went back to the
-     trough in a single frame: it read as a switch being thrown word by word, not
-     as a wave moving through the line. The word just sung (.wave-1) and the one
-     before it (.wave-2) keep the letters they were given and dim down, so a run of
-     gold travels along the line and is gone two words behind the light. It also
-     crosses a line boundary now - see scWaveCarryFrom. */
-  #lyricsText.ll-on .lyric-word.wave-1 .lyric-letter.lit{
-    color: color-mix(in srgb, var(--gold) 62%, var(--ink-dim));
-    text-shadow: none;
-    opacity: 0.55;
-  }
-  #lyricsText.ll-on .lyric-word.wave-2 .lyric-letter.lit{
-    color: color-mix(in srgb, var(--gold) 26%, var(--ink-dim));
-    text-shadow: none;
-    opacity: 0.28;
   }
   #lyricsText.ll-on .lyric-word.current .lyric-letter{
     font-weight: 700;
@@ -4566,7 +4550,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
     <div id="lyricsContent" style="flex:1; overflow-y:auto; line-height:1.7; white-space:pre-wrap; word-wrap:break-word; min-height:150px; padding:0;">
       <details id="lyricsWwInfo" style="display:none; margin-bottom:8px; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:8px; font-size:11px; color:var(--ink-dim); line-height:1.5;">
         <summary style="cursor:pointer; font-weight:600; color:var(--coral);">Word-by-word and letter-by-letter lyrics</summary>
-        <p style="margin:6px 0 0;">Word-by-word lights each word as the music plays. Letter-by-letter goes finer: the letters of the word being sung light in turn, with a running delay between them, so the light flows through the word like a wave. Both follow the line's own timing, and each word is weighed by how many syllables it really holds - so an English line and a Hindi, Korean or Japanese one move at the same speed, and a song that speeds up or slows down is followed rather than guessed. If a whole line still feels early or late, use the -0.5s / +0.5s buttons beside Auto-scroll: the nudge is saved for that song. Both modes work on every song, timed or not, and both stay on when auto-scroll is off.</p>
+        <p style="margin:6px 0 0;">Word-by-word lights each word as the music plays. Letter-by-letter goes finer: the letters of the word being sung light in turn, one after the other, and no other word in the sheet is lit at the same time. Both follow the line's own timing, and each word is weighed by how many syllables it really holds - so an English line and a Hindi, Korean or Japanese one move at the same speed, and a song that speeds up or slows down is followed rather than guessed. If a whole line still feels early or late, use the -0.5s / +0.5s buttons beside Auto-scroll: the nudge is saved for that song. Both modes work on every song, timed or not, and both stay on when auto-scroll is off.</p>
       </details>
       <div id="lyricsLoading" style="text-align:center; color:var(--ink-dim); padding:20px 0;">Searching for lyrics…</div>
       <div id="lyricsText" style="display:none;"></div>
@@ -11775,8 +11759,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
       
       const allLines = lyricsText.querySelectorAll('.lyric-line');
       if (!allLines.length) return;
-      // The word the sheet moved away from fades on its own clock.
-      scWaveTrailTick();
       
       const syncedLines = lyricsText.querySelectorAll('.lyric-line[data-time]');
       
@@ -11801,11 +11783,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
           // and keeps the scroll and word pacing following the playhead.
           var _tapHeld = lyricsTapHoldUntil && Date.now() < lyricsTapHoldUntil;
           if (!_tapHeld && currentIdx !== lastLyricsIdx) {
-            // 73.4 - the wave crosses the boundary: whichever word was still lit
-            // when the sheet moved on keeps its letters for the same two-word trail,
-            // so the light keeps travelling from line to line instead of being cut
-            // off at each one.
-            try{ scWaveCarryFrom(lyricsText.querySelector('.lyric-line.current')); }catch(_eWaveCarry){}
             allLines.forEach(l => {
               l.classList.remove('current');
               l.querySelectorAll('.lyric-word').forEach(w => w.classList.remove('current'));
@@ -12096,42 +12073,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // the last one stayed lit for the rest of it. Clamped to [6,14] so a fast
   // line keeps its snap and a long instrumental gap still cannot make the
   // words crawl.
-  // 73.4 - how many words behind the light keep their gold while it dims out. Two
-  // is what the owner asked for ("a smooth wave that disappears after 2 words"), and
-  // it is also what a line of singing can carry without the trail reading as a
-  // second highlight: the word being sung is full, the one just sung is half, the one
-  // before it is a whisper, and everything older is wiped.
-  var SC_WAVE_TRAIL_WORDS = 2;
-  // The last line the sheet moved away from, and when its trail should be gone. The
-  // trail of the CURRENT line is handled by scPaceWords on the same 50ms tick; this
-  // pair only exists so the wave does not stop dead at a line boundary.
-  var scWaveTrailEl = null;
-  var scWaveTrailUntil = 0;
-  function scWaveCarryFrom(prevLine){
-    if(!prevLine || !prevLine.querySelectorAll) return;
-    var ws = prevLine.querySelectorAll('.lyric-word');
-    if(!ws.length) return;
-    // The words it was on when the line changed: the last two that carry text.
-    var last = null, before = null;
-    for(var i = 0; i < ws.length; i++){
-      if(!((ws[i].textContent || '').trim())) continue;
-      before = last; last = ws[i];
-    }
-    for(var j = 0; j < ws.length; j++){
-      if(ws[j] === last){ ws[j].classList.add('wave-1'); ws[j].classList.remove('wave-2'); continue; }
-      if(ws[j] === before){ ws[j].classList.add('wave-2'); ws[j].classList.remove('wave-1'); continue; }
-      ws[j].classList.remove('wave-1', 'wave-2');
-      clearLetters(ws[j]);
-    }
-    scWaveTrailEl = prevLine;
-    scWaveTrailUntil = Date.now() + 700;
-  }
-  function scWaveTrailTick(){
-    if(!scWaveTrailEl || Date.now() < scWaveTrailUntil) return;
-    var ws = scWaveTrailEl.querySelectorAll ? scWaveTrailEl.querySelectorAll('.lyric-word') : [];
-    for(var i = 0; i < ws.length; i++){ ws[i].classList.remove('wave-1', 'wave-2'); clearLetters(ws[i]); }
-    scWaveTrailEl = null;
-  }
+  // 73.4.4 - the wave trail that used to live here is gone: the two-word trail
+  // state, its carry across a line boundary and its fade tick were removed with the
+  // CSS steps they drove. It kept the two words behind the light dimmed gold and
+  // carried that trail over a line break, so a run of gold travelled along the
+  // sheet. Letter-by-letter is letters only now - see the scPaceWords letter
+  // branch below.
   // 73.4 - a sheet with no timings of its own used to be spaced EVENLY: the current
   // line was picked by floor(progress * lineCount) and its words paced inside
   // (idx/N)..((idx+1)/N) of the whole song. That follows the line COUNT, not the
@@ -12247,26 +12194,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // does not leave a trail of half-lit letters behind it.
     if(lettersOn()){
       words.forEach(function(w, wi){
-        // 73.4 - THE WAVE TRAILS. Only the word being sung used to be allowed to
-        // show gold, and every other word was wiped on the same frame, so the light
-        // jumped from word to word instead of travelling: word-by-word with a fade
-        // on it. Now the word just sung keeps its lit letters at half strength and the
-        // one before it at a whisper (CSS: .wave-1 / .wave-2), and only the words past
-        // that trail are wiped - a run of gold that moves along the line and is gone
-        // two words behind the light. The trail is BEHIND the light by construction, so
-        // it cannot make the current word late.
-        const back = (litIdx >= 0 && wi < litIdx) ? (litIdx - wi) : -1;
+        // 73.4.4 - LETTER BY LETTER, AND NOTHING ELSE. The 73.4 wave kept the two
+        // words behind the light lit and dimming, so a run of gold travelled along
+        // the line. That trail is gone: every word that is not the one being sung is
+        // wiped back to the trough on the same frame, and only the current word's
+        // letters light, in turn, as its own window is reached.
         if(wi !== litIdx){
-          if(back >= 1 && back <= SC_WAVE_TRAIL_WORDS){
-            w.classList.remove(back === 1 ? 'wave-2' : 'wave-1');
-            w.classList.add(back === 1 ? 'wave-1' : 'wave-2');
-          } else {
-            w.classList.remove('wave-1', 'wave-2');
-            clearLetters(w);
-          }
+          clearLetters(w);
           return;
         }
-        w.classList.remove('wave-1', 'wave-2');
         const span = Math.max(0.05, litTo - litFrom);
         const frac = Math.max(0, Math.min(1, (nowSec - litFrom) / span));
         // 72.8.1 - the letters are PACED, not counted. The old wave cut the
@@ -13342,7 +13278,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.4.3';
+  const APP_VERSION = '73.4.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13963,6 +13899,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.4.4', date: 'October 7, 2026 · 8:54 PM EDT', title: 'Letter-by-letter lyrics light only the words being sung', items: [
+    'The wave that trailed behind the lyric light is gone. Letter-by-letter lyrics light only the word being sung now: the letters of that word come up in turn as the voice reaches them.',
+    'Before this, the word just sung kept its letters at half strength and the one before it at a whisper, so a run of gold travelled along the line and was still fading two words later.',
+    'That trail was the wave. It also carried across a line, so the end of a line left dimmed gold behind it, and the sheet could show two highlights moving at once instead of one light on the voice.',
+    'Every word but the one being sung goes back to the plain lyric tint on the same frame now, so there is exactly one lit word and it sits on what you are hearing.',
+    'Word-by-word and letter-by-letter are unchanged in every other way: both still follow the line timing, both still work on every song, timed or not, and both stay on when auto-scroll is off.',
+    'The nudge buttons beside Auto-scroll still shift a line that feels early or late, and the corrections you saved on your songs are untouched by this release.',
+    'Your lyrics, the player screen and the home-screen widget are untouched by this release, and the widget still picks your last song back up where you left it.',
+    'Your songs and playlists stay on your device - nothing in your library is changed, moved or removed by this release.',
+  ]},
   { version: '73.4.3', date: 'October 7, 2026 · 7:34 PM EDT', title: 'A song that opens on music is timed from the moment the voice enters', items: [
     'A track that opens with music was being timed from the wrong place, so its words sat seconds away from the voice from the very first line.',
     'The entrance was found by counting every frame a rise stayed above the bar instead of every attack. A drum kit holds a hit across two or three frames and a voice is one, so the opening beat alone reached the count a voice does.',

@@ -1,6 +1,53 @@
 # SideCut — repository memory
 
 
+## 73.4.4 (Oct 7, 2026 · 8:54 PM EDT): letter-by-letter lyrics light just the words being sung
+- **The owner's ask, verbatim**: "Remove the wave thing just letter by letter thing nicely".
+- **WHAT THE WAVE WAS.** 73.4 turned letter-by-letter into a travelling run of gold: the pacer kept the
+  word just sung and the one before it lit and dimming (CSS `.wave-1` / `.wave-2`, driven by
+  `SC_WAVE_TRAIL_WORDS = 2` and the `back = litIdx - wi` branch inside `scPaceWords`), and a line change
+  carried that trail over the boundary through `scWaveCarryFrom` / `scWaveTrailTick` (fired from the 50ms
+  lyrics tick). The result was a sheet that could show two or three lit words at once, with dimmed gold left
+  behind at the end of every line.
+- **REMOVED, ALL OF IT (index.html).** The two `.wave-1` / `.wave-2` rules and their comment; the whole
+  `SC_WAVE_TRAIL_WORDS` / `scWaveTrailEl` / `scWaveTrailUntil` / `scWaveCarryFrom` / `scWaveTrailTick` block
+  (replaced by a comment that records the removal); the `scWaveCarryFrom(...)` call on a line change and the
+  `scWaveTrailTick()` call in the lyrics poller; and the pacer's trail branch. The letter branch is now three
+  lines - `if(wi !== litIdx){ clearLetters(w); return; }` - so every word but the one being sung goes back to
+  the trough on the same frame and only the current word's letters light, in turn, as its own window is
+  reached. **Nothing else moved**: the letter weights, the fade sizing, the word/syllable weighting and the
+  plain-sheet schedule are untouched. The how-to copy under the lyrics sheet no longer calls it a wave.
+- **RUN, NOT JUST PINNED - AND THE OLD TREE FAILS THE SAME CHECK.** A scratch harness (`dev/_wavecheck.mjs`,
+  under the `_`-prefix convention, removed once its work was done) lifted the SHIPPED `scPaceSegments` ..
+  `scPaceWords` region into a ~60-line mini DOM and swept a three-word line across its four-second window.
+  Old tree (`git show HEAD:index.html`): **up to 3 words lit at once**, lit letters surviving on words the
+  light had left (11.40s, and on the move to word 1), and `wave-1` / `wave-2` classes added. New tree: **max 1
+  word lit**, no stale lit letter, no wave class ever added, the light advances forward and reaches the last
+  word, and letter-by-letter still walks the letters (**1/7 -> 7/7** as the word is sung). The old tree failing
+  the same harness is what says the check is not vacuous.
+- **GATES MOVED WITH THE BEHAVIOUR, NOT LOOSENED.** `dev/test-714.mjs` [5] and `dev/test-7316.mjs` [7] pinned the
+  wave by source (`SC_WAVE_TRAIL_WORDS`, the `back` expression, `scWaveCarryFrom`, the two CSS steps); those
+  pins are replaced by "every word but the one being sung is wiped on the same frame" plus "the trail state,
+  its carry and both dimmed steps are gone". test-714 **138/5 -> 139/5** (two pins -> three), test-7316
+  **292/6 -> 289/6** (six pins -> three), and no other pin in either file moved. test-7316's plain-sheet RUN
+  lifted from the removed `SC_WAVE_TRAIL_WORDS` line; its anchor is now `var scPlainSchedKey` and the block
+  still evaluates and passes.
+- **THE RELEASE**: `APP_VERSION 73.4.3 -> 73.4.4`, the 8-note head entry (6 ride to the store channel) at
+  `October 7, 2026 · 8:54 PM EDT`, `sw.js` cache `sidecut-shell-v73.4.4`, bundles put to a fixed point by
+  `dev/ota-fixpoint.mjs` (pass 1) - root + `ota/` **926240**, `ota-play/` **926249**, all five entries OK, both
+  `--check`s OK, and `index.html` inside BOTH zips carries `APP_VERSION = '73.4.4'` with zero wave residue.
+- **Gates**: test-662 75/75, test-play-copy 28/28, test-6643 90/0, audit-calls OK, check-dom 0 failures, OTA trio
+  guard 20/0, update 52/0, bootapply 24/0, all four inline scripts parse. Unchanged pre-existing reds: test-725
+  98/5, test-7251 105/5, test-728 57/6, test-7281 88/6, test-713 45/5, test-651 34/1, test-7317 32/7, and the
+  stale version/cache pins in test-612/6136/6137/6138/6139/619/714/7316 (they still assert 73.2.1 / v61.5).
+- **STILL RED, and pre-existing** (identical on the 73.4.3 tree): test-7316's two-newline OTA tail, the
+  350ms-vs-5000ms tap-hold pin, and the stale version pins above. Left alone on purpose - repinning them is a
+  separate housekeeping change.
+- **DELIBERATELY NOT PINNED as a permanent gate**: the run-based harness is recorded here and was removed; the
+  removal is pinned by source in test-714 / test-7316. A future release that wants the pacer RUN every time
+  should fold the mini DOM into test-714 [5] rather than re-adding a scratch file.
+
+
 ## 73.4.3 (Oct 7, 2026 · 7:34 PM EDT): a song that opens on music is timed from where the voice enters
 - **The owner's ask, verbatim**: "THIS LYRICS IS SO FRIKEN INNACURWTE MAKE IT ONE SHOT PERMANINR FIX" — and, asked
   which symptom of inaccurate lyrics they were hitting, they answered "Everything".

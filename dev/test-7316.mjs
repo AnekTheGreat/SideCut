@@ -460,27 +460,23 @@ console.log('[7] words with no timings are timed from the song itself');
     'the fade is bounded at both ends, so a fast word still sweeps instead of lighting as a block');
   ok(src.indexOf('if(frac < acc2){ upto = li + 1; break; }') !== -1,
     'and WHEN a letter lights is still the pacer weighted clock');
-  // 73.4 - the wave is no longer word-by-word with a fade on it: the sweep travels
-  // along the line, the two words behind the light keep their letters and dim out, and
-  // it carries across a line boundary. Pinned by source, then RUN below.
-  ok(count('if(wi !== litIdx){ clearLetters(w); return; }') === 0,
-    'every other word is no longer wiped on the same frame - that is what made it word-by-word with a fade');
-  ok(src.indexOf('var SC_WAVE_TRAIL_WORDS = 2;') !== -1, 'the trail is two words long');
-  ok(src.indexOf('const back = (litIdx >= 0 && wi < litIdx) ? (litIdx - wi) : -1;') !== -1,
-    'the words behind the light are the ones that keep their letters');
-  ok(src.indexOf('if(back >= 1 && back <= SC_WAVE_TRAIL_WORDS){') !== -1,
-    'and nothing older than the trail holds a lit letter');
-  ok(src.indexOf('function scWaveCarryFrom(prevLine){') !== -1 &&
-     src.indexOf("scWaveCarryFrom(lyricsText.querySelector('.lyric-line.current'))") !== -1,
-    'the wave crosses a line boundary instead of being cut off at it');
-  ok(src.indexOf('.lyric-word.wave-1 .lyric-letter.lit') !== -1 &&
-     src.indexOf('.lyric-word.wave-2 .lyric-letter.lit') !== -1,
-    'and both trailing steps have their own dimmed gold, scoped so they can glow while the word is no longer current');
+  // 73.4.4 - the wave is out and letter-by-letter is letters only. The trail that kept
+  // the two words behind the light dimmed gold, and carried that trail across a line
+  // boundary, is removed: every word but the one being sung is wiped on the same frame,
+  // and no dimmed step is left in the stylesheet. Pinned by source, then RUN below.
+  ok(count('if(wi !== litIdx){') === 1 &&
+     src.indexOf('if(wi !== litIdx){\n          clearLetters(w);\n          return;') !== -1,
+    'every word but the one being sung is wiped on the same frame');
+  ok(src.indexOf('function scWaveCarryFrom(') === -1 && src.indexOf('function scWaveTrailTick(') === -1 &&
+     src.indexOf('SC_WAVE_TRAIL_WORDS') === -1,
+    'and the wave trail state and its carry across a line boundary are gone');
+  ok(src.indexOf('.wave-1') === -1 && src.indexOf('.wave-2') === -1,
+    'with neither dimmed step left in the stylesheet');
 
   // 73.4 - a sheet with no timings of its own is laid out by the words, not by the
   // line count. RUN the shipped schedule: a long line must own a longer window than a
   // short one, and the result must not be an even split.
-  const pAt = src.indexOf('  var SC_WAVE_TRAIL_WORDS = 2;');
+  const pAt = src.indexOf('  var scPlainSchedKey');
   const pEnd = src.indexOf('\n  function scPaceWords(', pAt);
   ok(pAt !== -1 && pEnd > pAt, 'the plain-sheet schedule can be lifted out of the page');
   let P = null;
