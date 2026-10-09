@@ -30,6 +30,12 @@
 //     and the wake lock are still given back), and with nothing on the deck it is
 //     still released outright. Both are RUN below, as is the press from outside that
 //     starts the parked song while the app stays in the background.
+//
+//  4. 73.4.8 - "Put it before the replay tutorial and make stuff like this collapsible
+//     menus." The Settings \u2192 More entries are collapsible menus now (the notification
+//     player above Replay tutorial, and the two descriptive cards below the tutorial
+//     summary). The audit clicks each header open and shut, so a menu that refuses to
+//     open is a failure rather than a source pin that happens to match.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole, requestInterceptor } = require('/tmp/h/node_modules/jsdom');
@@ -425,6 +431,82 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
        /else \{\s*service\.setPlaybackState\(PlaybackStateCompat\.STATE_NONE\);/.test(plug));
   } else {
     console.log('  (note) node_modules media plugin is not installed here - the native pins could not run');
+  }
+
+  console.log('\n— the notification player is ON by default —');
+  // 73.4.7 - the owner found the phone player (the status-bar bar, the
+  // quick-settings player, the lock screen) missing and had to go and switch it
+  // on. Two things have to hold: the switch defaults to ON, and nothing but the
+  // owner's own tap can leave it off. The crash recorder used to write a
+  // one-strike 'off' - and could not read APP_VERSION from where it runs, so
+  // every one of those writes threw and was swallowed. It takes two deaths in a
+  // row now, and a clean armed session forgets the count, so the player is
+  // always on unless somebody chose to turn it off.
+  const AV = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1];
+  const notifOff = (raw) => (typeof win.__scMediaNotifOff === 'function' ? win.__scMediaNotifOff(raw) : null);
+  ok('the opt-out reader is on the page', typeof win.__scMediaNotifOff === 'function');
+  ok('nothing stored means the player is ON - that is the default',
+     notifOff(null) === false && notifOff(undefined) === false);
+  ok('legacy values from old broken builds cannot turn it off',
+     notifOff('0') === false && notifOff('1') === false);
+  ok('the owner\u2019s own switch still turns it off',
+     notifOff(JSON.stringify({ off: true, v: AV })) === true);
+  ok('one death recorded while arming the player does not',
+     notifOff(JSON.stringify({ off: true, auto: true, v: AV, strikes: 1 })) === false);
+  ok('two in a row do',
+     notifOff(JSON.stringify({ off: true, auto: true, v: AV, strikes: 2 })) === true);
+  ok('and a marker left by an older release is ignored (a new release re-attempts)',
+     notifOff(JSON.stringify({ off: true, auto: true, v: '0.0.0', strikes: 9 })) === false);
+  ok('the recorder counts strikes instead of switching off on the first death',
+     html.indexOf('auto: true, v: _mpVer, strikes: _mpStrikes') !== -1);
+  ok('and stamps the release the player was armed on, not the const it cannot read',
+     html.indexOf("localStorage.setItem('sidecut_media_arm_v', APP_VERSION)") !== -1
+     && html.indexOf("getItem('sidecut_media_arm_v')") !== -1);
+  ok('a clean armed session forgets the count, so two deaths far apart cannot switch it off',
+     /if\(_mj && _mj\.auto === true\) localStorage\.removeItem\('sidecut_native_media'\)/.test(html));
+
+  console.log('\n\u2014 the More pane reads as collapsible menus \u2014');
+  // 73.4.8 - the owner asked for the settings entries in Settings \u2192 More to be
+  // collapsible menus of the kind Check for updates already is, with the
+  // notification player sitting above the Replay tutorial. The menus are DRIVEN
+  // here, not only pinned: a header that does not open would be a menu in name
+  // only.
+  {
+    const moreAt = html.indexOf('id="mediaNotifSettingsBlock"');
+    const replayAt = html.indexOf('id="howToUseBtn"');
+    ok('the notification player menu sits above Replay tutorial',
+       moreAt !== -1 && replayAt !== -1 && moreAt < replayAt);
+    const menus = [
+      ['collapsibleMediaNotif', 'collapsibleMediaNotifContent', 'collapseMediaNotifIcon'],
+      ['collapsibleWorksOffline', 'collapsibleWorksOfflineContent', 'collapseWorksOfflineIcon'],
+      ['collapsibleAcceptedTypes', 'collapsibleAcceptedTypesContent', 'collapseAcceptedTypesIcon'],
+    ];
+    const block = win.document.getElementById('mediaNotifSettingsBlock');
+    ok('on a phone the notification player menu is shown', !!block && block.style.display !== 'none');
+    menus.forEach(([id, contentId, iconId]) => {
+      const head = win.document.getElementById(id);
+      const body = win.document.getElementById(contentId);
+      const icon = win.document.getElementById(iconId);
+      ok(id + ' is a menu with a header, a body and a marker', !!head && !!body && !!icon);
+      if (!head || !body || !icon) return;
+      ok(id + ' starts closed', body.style.display === 'none');
+      head.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+      const opened = body.style.display === 'block' && icon.textContent === '\u25b4';
+      head.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+      const closed = body.style.display === 'none' && icon.textContent === '\u25be';
+      ok(id + ' opens on a tap and closes on the next one', opened && closed,
+         body.style.display + ' / ' + icon.textContent);
+    });
+    const chip = win.document.getElementById('mediaNotifStateChip');
+    ok('the notification player header carries its state', !!chip && chip.textContent === 'On',
+       chip ? chip.textContent : 'missing');
+    ok('and that state is the one the app really is in',
+       !!chip && typeof win.__scNotificationPlayerOn === 'function'
+       && (win.__scNotificationPlayerOn() === true) === (chip.textContent === 'On'));
+    ok('the switch inside the menu is still wired to the setting',
+       html.indexOf("$('mediaNotifToggleBtn').addEventListener('click', scToggleNotificationPlayer)") !== -1);
+    ok('and one helper keeps the header, the label and the empty-library button in step',
+       html.indexOf("chip.textContent = on ? 'On' : 'Off'") !== -1);
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

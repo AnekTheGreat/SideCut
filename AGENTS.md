@@ -1,5 +1,86 @@
 # SideCut — repository memory
 
+## 73.4.8 (Oct 9, 2026 · 7:56 AM EDT): the More pane reads as menus you open
+- **The owner's ask, verbatim**: "Put it before the replay tuturiol and make stuff like this collapsible
+  menus" - with a screenshot of Settings → More where the notification player card sits as a wall of
+  copy between Check for updates and Replay tutorial.
+- **WHAT IT WAS.** Settings → More mixed the two idioms. `Check for updates` (`collapsibleOta`) and the
+  tutorial summary were already collapsible menus - header, marker, `setupCollapsible` - but the
+  notification player card, `Works offline` and `Accepted file types` were fully-expanded prose cards,
+  so the pane was a long scroll of paragraphs with three buttons hidden inside it. The owner had to
+  read everything to find the one switch.
+- **THE CHANGE (index.html, three blocks + the wiring).** (1) `#mediaNotifSettingsBlock` is a collapsible
+  menu now: `#collapsibleMediaNotif` / `#collapsibleMediaNotifContent` / `#collapseMediaNotifIcon`, with
+  the state reading in the HEADER row (`#mediaNotifStateChip`) so whether the phone player is On or Off
+  is legible with the menu shut. (2) `Works offline` and `Accepted file types` became menus of the same
+  shape (`collapsibleWorksOffline*`, `collapsibleAcceptedTypes*`). (3) Their bodies are untouched copy -
+  the descriptions, the accepted audio/archive types and the offline list all sit behind their headers.
+  The notification player already sat above Replay tutorial (73.4.6 put it there); this release keeps
+  that order and only folds the card. `setupCollapsible` is called for all three beside the existing
+  nine, so a menu that is missing its nodes is a no-op rather than a crash.
+- **THE STATE CHIP IS THE REAL STATE.** The chip is written by `scSyncNotificationPlayerLabels` (the one
+  helper the empty-library button and the in-menu switch already share), so it reads what
+  `__scMediaNotifOff` says at boot and after every toggle - it is not a second copy that can drift.
+  No setting changed: the same switch (`#mediaNotifToggleBtn`) does the same thing.
+- **THE GATE (dev/media-controls-check.cjs, +15 checks, 51/1 -> 66/1).** A new section DRIVES each header
+  - it clicks every menu open and shut and asserts the body really toggles and the marker flips - plus
+  pins: the notification player menu sits above Replay tutorial, all three are shown on a phone, each is
+  header + body + marker, the state chip is present and equals the state the app is really in, and the
+  switch inside the menu is still wired to the setting. The single red is the pre-existing "and it no
+  longer fires every half hour".
+- **THE RELEASE**: `APP_VERSION 73.4.7 -> 73.4.8`, the 7-note head entry at `October 9, 2026 · 7:56 AM
+  EDT` (6 ride to the store channel), `sw.js` cache `sidecut-shell-v73.4.8`, bundles to a fixed point
+  (root/ota 933010, ota-play 933020), all five manifests agree, `ota-bundle --check` and
+  `ota-bundle-play --check` both OK.
+- **VERIFICATION**: media-controls-check 66/1, widget-resume-check 33/33, background-playback-check 21/0,
+  check-dom 0 DOM-integrity failures, OTA trio 20/0, 52/0, 24/0. The version-pinned suites
+  (test-612/651/713/714/725/7251/728/7281/7316/7317) still drift on a version move by design; the head's
+  last note keeps carrying /widget/, /player/, /letter/, /lyrics/, /album/ for the suites that read it.
+  No gate reads AGENTS.md (its references are comments).
+- **A NOTE ON THE OTA TRIO UNDER LOAD**: `ota-guard-check` boots the app in jsdom with real waits, so it
+  is timing-sensitive when several suites run in one tight loop - a looped run showed 17/3 and one
+  timed out, while standalone runs are 20/0. The guard paths it covers were not touched by this release.
+
+## 73.4.7 (Oct 9, 2026 · 7:10 AM EDT): the phone player stays on unless you turn it off
+- **The owner's ask, verbatim**: "That little bar on the top or media controls in the quick settings and
+  lock screen doesn't show up anymore like it did before ... Oh never mind it works now make sure that
+  setting is turned on by default".
+- **WHAT WAS REALLY WRONG.** The notification player has always been an OPT-OUT (`__scMediaNotifOff`
+  returns false for a missing flag), so the default was already ON. What could leave it off was the
+  crash recorder: a boot that found the previous process had died during `'the media player
+  notification'` wrote `{off:true, v:APP_VERSION}` - and that write CANNOT work. The recorder runs in an
+  IIFE that executes at parse time (index.html ~5450-5610) while `const APP_VERSION` is declared at
+  ~13330 in the same script, so `APP_VERSION` is in the temporal dead zone and every such write threw a
+  ReferenceError that the surrounding `try{}catch(e){}` swallowed. `sidecut_native_media` (and
+  `sidecut_audiofocus_off` beside it) were therefore NEVER written by the recorder - the protection was
+  dead code, and the copy promising that the player "switches itself off and tells you" described
+  something that could not happen.
+- **THE FIX (index.html, three edits).** (1) `__scMediaNotifOff` now distinguishes the owner's own
+  switch (`{off:true, v}`) from the recorder's (`{off:true, auto:true, v, strikes:n}`): the owner's is
+  honoured exactly as before, the recorder's only once `strikes >= 2`. (2) The recorder counts strikes
+  instead of switching off on the first death, stamps the marker with `sidecut_media_arm_v` - the
+  release the arming code last armed this device on, written where `APP_VERSION` IS in scope - and only
+  says anything when it actually switches the player off. (3) The arming success path writes
+  `sidecut_media_arm_v` and, 15s later, clears a RECORDER marker (`auto` only - never the owner's), so a
+  clean armed session forgets the count. Net effect: a single swipe-away or WebView refresh while the
+  player arms can no longer take it away, two deaths in a burst still switch it off (the marker stays
+  version-stamped, so a new release re-attempts), and the default is ON with the owner's switch the only
+  thing that can keep it off.
+- **THE GATE (dev/media-controls-check.cjs, +10 checks, 41/1 -> 51/1).** A new section drives the reader
+  in the jsdom window: nothing stored is ON, legacy `'0'`/`'1'` cannot turn it off, the owner's marker
+  still does, one recorded death does not, two do, and a marker from another release is ignored - plus
+  three source pins (strikes rather than single-strike, the armed-release stamp instead of the
+  unreadable const, the clean-session clear). The single red is the pre-existing "and it no longer fires
+  every half hour".
+- **THE RELEASE**: `APP_VERSION 73.4.6 -> 73.4.7`, the 7-note head entry at `October 9, 2026 · 7:10 AM
+  EDT` (6 ride to the store channel), `sw.js` cache `sidecut-shell-v73.4.7`, bundles to a fixed point
+  (root/ota 932136, ota-play 932146), all five manifests agree, `ota-bundle --check` OK.
+- **VERIFICATION**: the core battery is identical to a pristine 73.4.6 tree once version numbers are
+  normalised - the version-pinned suites drift by design, and test-728/7281/7316/7317 read the HEAD for
+  /widget/, /player/, /letter/, /lyrics/, /album/, so the head's last note keeps carrying those words.
+  media-controls-check 51/1, widget-resume-check 33/33, background-playback-check 21/0, check-dom 0, OTA
+  trio 20/0, 52/0, 24/0.
+
 ## 73.4.6 (Oct 9, 2026 · 1:19 AM EDT): the player comes back from outside the app, and every feature is a bullet
 - **The owner's ask, verbatim**: "After a period of time If I go to another app that has audio but I want to play SideCut audio again from the widgit dynamic island now bar control center ect... I should be able to seamlessly without going into the app and fix up any other bugs and make it more new user friendly and user friendly in general like explain features in bullets and stuff because nobody's reading the tutorial".
 - **WHAT STOOD IN THE WAY.** The paused-in-background policy ended the grace period by
