@@ -23,6 +23,13 @@ and before the Gradle build.
         shipping it to the notification, also during playback start. Downsample
         to ~512px exactly like the home-screen widget provider already does.
 
+  4. An untagged playback card (73.4.6): the notification was built with
+        MediaStyle but with no category, no "alert once" and no foreground-service
+        behaviour, so the system could treat it as an ordinary alert - re-alerting
+        on every metadata push, and showing a card started from outside the app
+        late. The category is what the shade player, the lock screen, the
+        quick-settings player and the OEM now-bar surfaces key off.
+
 Every patch is try/catch-safe and idempotent (safe to re-run on a fresh AND an
 already-patched project).
 """
@@ -172,10 +179,72 @@ def patch_bounded_artwork_decode():
     print('patched urlToBitmap bounded decode in MediaSessionPlugin.java')
 
 
+def patch_transport_notification():
+    """Tag the playback card as the MEDIA/TRANSPORT notification it is.
+
+    The library builds the card with MediaStyle but never sets a category, so
+    Android is free to file it as an ordinary alert: the app re-asserts the card
+    while a song plays (metadata, position, state), and without
+    setOnlyAlertOnce every one of those refreshes could alert again. A card that
+    starts from OUTSIDE the app - a press on the lock screen, in the
+    quick-settings player, in the shade player or on the widget, which is exactly
+    where 73.4.6 makes a paused SideCut startable again - also wants to appear the
+    moment playback begins rather than waiting behind the service start.
+
+    So the builder gets the three notification-level facts the system uses:
+
+      * setCategory(CATEGORY_TRANSPORT) - the platform word for "this is media",
+        which is what the shade/quick-settings player, the lock screen and the
+        OEM now-bar surfaces use to place it;
+      * setOnlyAlertOnce(true) - one alert per song, not one per refresh; and
+      * setForegroundServiceBehavior(FOREGROUND_SERVICE_IMMEDIATE) - the card is
+        shown immediately when the playback service starts, including a start
+        that arrived from outside the app.
+
+    All three are androidx.core NotificationCompat APIs, so they compile against
+    every SDK this project builds with (compileSdk 36 via patch-sdk.py).
+
+    NOTE ON "LIVE UPDATES": Android 16's promoted ongoing notifications (the
+    status-bar chip / live alert) are NOT available to media, by platform rule -
+    the docs list the eligible styles as Standard, BigText, CallStyle,
+    ProgressStyle and MetricStyle, and MediaStyle is not among them. The media
+    surfaces (lock screen, shade player, quick-settings player, OEM now bar) are
+    the system's answer for playback, so that is what this patch serves.
+    """
+    if not os.path.exists(SERVICE):
+        sys.exit('FATAL: %s missing - run `npm install` first.' % SERVICE)
+    s = open(SERVICE).read()
+    old = ('        notificationBuilder = new NotificationCompat.Builder(this, "playback")\n'
+           '                .setStyle(notificationStyle)\n'
+           '                .setSmallIcon(R.drawable.ic_baseline_volume_up_24)\n'
+           '                .setContentIntent(PendingIntent.getActivity(getApplicationContext(), 0, intent, PendingIntent.FLAG_IMMUTABLE))\n'
+           '                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);')
+    new = ('        notificationBuilder = new NotificationCompat.Builder(this, "playback")\n'
+           '                .setStyle(notificationStyle)\n'
+           '                .setSmallIcon(R.drawable.ic_baseline_volume_up_24)\n'
+           '                .setContentIntent(PendingIntent.getActivity(getApplicationContext(), 0, intent, PendingIntent.FLAG_IMMUTABLE))\n'
+           '                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)\n'
+           '                // SideCut (73.4.6): file this as a MEDIA notification, alert once\n'
+           '                // per song instead of once per refresh, and show the card the\n'
+           '                // moment playback starts even if the start came from outside\n'
+           '                // the app (lock screen / shade player / quick settings / widget).\n'
+           '                .setCategory(NotificationCompat.CATEGORY_TRANSPORT)\n'
+           '                .setOnlyAlertOnce(true)\n'
+           '                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE);')
+    if new in s:
+        print('already patched: media notification category/alert/foreground behaviour')
+        return
+    if old not in s:
+        sys.exit('FATAL: notificationBuilder pattern not found in %s' % SERVICE)
+    open(SERVICE, 'w').write(s.replace(old, new))
+    print('patched the media notification category, alert and foreground behaviour in MediaSessionService.java')
+
+
 def main():
     patch_on_start_command()
     patch_start_media_service()
     patch_bounded_artwork_decode()
+    patch_transport_notification()
     print('patch-mediaplugin: OK')
 
 

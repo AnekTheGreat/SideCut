@@ -1,5 +1,115 @@
 # SideCut — repository memory
 
+## 73.4.6 (Oct 9, 2026 · 1:19 AM EDT): the player comes back from outside the app, and every feature is a bullet
+- **The owner's ask, verbatim**: "After a period of time If I go to another app that has audio but I want to play SideCut audio again from the widgit dynamic island now bar control center ect... I should be able to seamlessly without going into the app and fix up any other bugs and make it more new user friendly and user friendly in general like explain features in bullets and stuff because nobody's reading the tutorial".
+- **WHAT STOOD IN THE WAY.** The paused-in-background policy ended the grace period by
+  RELEASING the session outright (`mediaSetPlaybackState('none')` - which unbinds the media service
+  and takes the notification down). That was a deliberate battery fix ("it drains my phone even when
+  the app isn't open"), but it took SideCut off the lock screen, out of the shade player and out of
+  the now bar entirely: a song paused before a phone call could only be started again by opening the
+  app and pressing play in it. The widget's tap-to-resume (73.4.2) also runs THROUGH the app - the
+  native tap leaves a request and starts the activity - so "without going into the app" was not true
+  of any outside surface.
+- **THE FIX, WEB (index.html, three edits).** (1) `armMediaRelease` decides with
+  `mediaResumableTrack()` (the song on the deck, if its file is still here): with something to come
+  back to the session is PARKED - `mediaParkedInBackground = true`, the entry, its metadata and every
+  control stay, the state says the truth (`paused`) - and only with nothing on the deck is it released
+  to `'none'` as before. The heartbeat and the wake lock are given back BEFORE either branch, so the
+  park costs no timer and no wake lock, exactly the release did. (2) `rearmMediaSession` clears the
+  parked flag and re-asserts every control on return. (3) The lock-screen/notification `play` handler
+  repairs an empty deck: `if(!_pa.src)` it runs `scResumeRestoredSong()` instead of `play()`-ing an
+  element with nothing on it (a reload, or audio the OS reclaimed) - the press from the lock screen,
+  the now bar or the widget is the request to hear the song.
+- **THE FIX, NEW-USER BULLETS (index.html).** The guide now OPENS on a `#howToStartHere`
+  "Start here - everything SideCut does, in bullets" block (music in, play, the player outside the
+  app, jump-to-playing, lyrics, playlists/albums, edit a song, sound, backups, look, help) - someone
+  who scrolls straight past still passes the bullets on the way. The empty-library screen
+  (`#emptyState`) carries the same bullets in a capped, scrollable `.empty-features` card, and its
+  notification-player button lost the "(experimental)" label.
+- **BUG FIXED ON THE WAY: THE NOTIFICATION PLAYER COULD ONLY BE SWITCHED ON BEFORE YOU HAD SONGS.**
+  The one control lived on the empty-library screen, so once there were songs in the library there was
+  no way to turn on the very thing that puts SideCut in the now bar. It is a real setting now:
+  `#mediaNotifSettingsBlock` in Settings → More (native builds only, unhidden at boot), driven by
+  `scNotificationPlayerOn` / `scSyncNotificationPlayerLabels` / `scToggleNotificationPlayer`, with the
+  empty-screen button kept as the shortcut. Both labels come from one helper. **The switch is an
+  OPT-OUT, and the copy now says so**: `__scMediaNotifOff` returns false for a missing/null flag (and
+  the JSON flag it does honour is version-stamped, so a new release re-arms the player by itself) -
+  which means the player has been ON by default all along and the old "Enable notification player"
+  button was really a disable control. The earlier release note here that called it "opt-in" was
+  wrong about the default, and the panel now reads "It is on by default ... this is where you turn it
+  back on".
+- **TWO COPY BUGS FIXED.** The Settings → More tutorial summary said the shade player "plays/pauses
+  but tapping it won't open SideCut - open the app manually"; it now describes the real behaviour
+  (per-surface controls, and a paused song starting again from right there). The roll-back warning
+  rendered a literal `\'` ("that won\'t open") in the panel - both are plain text now.
+- **THE GATE MOVED WITH THE BEHAVIOUR, NOT LOOSENED (dev/media-controls-check.cjs, 32 checks).** The
+  old section asserted `'none'` was pushed once a paused song had been away long enough; that
+  requirement CHANGED, so the section was replaced by the new contract - and both halves are RUN, not
+  read: with nothing on the deck the session is STILL released (so the battery rule is still tested),
+  and with a paused song on the deck the entry, the `paused` state and the metadata are kept. The
+  fixture gained a real audio file (`TRACK_FILE`/`getAll` maps `blob`) because `mediaResumableTrack`
+  refuses a song whose file is gone and the park branch would otherwise be unreachable. New sections:
+  the press from outside on an EMPTY deck must go through `scResumeRestoredSong` (observed via
+  `__scWidgetResumed`) while the app stays hidden, plus five source pins (heartbeat + wake lock before
+  the decision, `'none'` only after it, `paused` kept, the empty-deck repair). **OLD TREE: 24/8 - the
+  new tree: 31/1**, and the one red is the pre-existing "and it no longer fires every half hour"
+  (dev/native-updates.js legitimately uses `30 * 60 * 1000` as the FOREGROUND resume debounce, which
+  the gate's bare-literal test reads as a background poll). The fixture gaining a file also made the
+  "previous" rules genuinely run: "deep into a song" is now asserted to be the SAME song restarted,
+  and "a second in" to have MOVED to the previous one (the old pin asserted a playhead that only
+  stayed put because the advance could not happen in the harness).
+- **THE RELEASE**: `APP_VERSION 73.4.5 -> 73.4.6`, the 8-note head entry (6 ride to the store channel)
+  at `October 9, 2026 · 1:19 AM EDT`, `sw.js` cache `sidecut-shell-v73.4.6`, bundles to a fixed point
+  by `dev/ota-fixpoint.mjs` (pass 3) - root + `ota/` **930987**, `ota-play/` **930997**, all five
+  entries OK, `ota-bundle --check` OK (v73.4.6, 6 notes).
+- **Gates**: album battery all green (albums-manual 58/0, isolation 45/0, menu-isolation 25/0, rename
+  40/0, hold 34/0, ah-edit 42/0, ah-reorder 34/0, play-order 22/0), widget-resume 33/33, background
+  playback 21/0, audio-focus 35/3 (**identical on the 73.4.4 tree** - the auto-revive budget checks),
+  OTA trio guard 20/0 + update 52/0 + bootapply 24/0, audit-calls OK, check-dom 0 failures,
+  test-play-copy 28/28, test-662 75/75, test-6643 89/1 (the same pre-existing future stamp - the
+  73.4.5 entry already sat ~3.3h ahead of this host's clock and the new stamp carries the same shape),
+  test-714 139/5 and test-7316 289/6 (unchanged; 73.4.6's notes name "letter", so test-7316's stale
+  "including the letter wave" pin passes again).
+- **STILL RED, and pre-existing**: every stale version pin in test-612/6136-6139/619/651/713/725/
+  7251/7252/726/727/7271/728/7281/7317/714/7316 - diffed failure-by-failure against a pristine
+  73.4.4 checkout, and the ONLY differences are the version numbers printed inside those pins.
+- **THE ANDROID SURFACES, NAMED (the owner clarified they meant the Android ones - "the android
+  versions of control center and dynamic island like live alerts now bar and quick settings").**
+  *Control centre* = the quick-settings media player, *dynamic island* = the live chip / Samsung's
+  Now Bar, *live alerts* = Android 16 promoted ongoing notifications, *now bar* = Samsung's Now Bar.
+  What each needs:
+  - **Quick-settings media player, lock screen, shade player, Samsung Now Bar**: all read the
+    MediaSession plus a MediaStyle notification bound to its token, so they are served by the same two
+    facts - a session that is not dropped when paused (the park above) and a notification the system
+    files as media (the native patch below). The library already built MediaStyle + the session token
+    + a content intent (tapping the card opens the app) + `setShowActionsInCompactView`, so the
+    compact/lock-screen row already carries the actions the app registers.
+  - **Android 16 Live Updates (the status-bar chip / "live alert") CANNOT be used by a media player.**
+    It is a platform rule, not a bug here: the docs list the eligible styles as Standard, BigText,
+    CallStyle, ProgressStyle and MetricStyle - MediaStyle is not among them - and media is excluded
+    from promotion. That is why the patch below serves the media surfaces instead, and the gate pins
+    the rule beside the patch so nobody re-discovers it as a bug.
+- **THE NATIVE PATCH (73.4.6): `.github/workflows/patch-mediaplugin.py` gained a fourth patch,
+  `patch_transport_notification`.** The card was built with MediaStyle but with no category, so Android
+  could file it as an ordinary alert. It now also sets `setCategory(CATEGORY_TRANSPORT)` (the platform
+  word for "this is media", which is what the shade/quick-settings/lock-screen/now-bar surfaces key
+  off), `setOnlyAlertOnce(true)` (the app re-asserts the card while a song plays - one alert per song,
+  not per refresh) and `setForegroundServiceBehavior(FOREGROUND_SERVICE_IMMEDIATE)` (show the card the
+  moment playback starts, including a start that arrived from outside the app). All three are
+  androidx.core NotificationCompat APIs, so they compile with compileSdk 36 as set by patch-sdk.py. The
+  patch is idempotent and fails loudly if its anchor moves. **Run here: `python3
+  .github/workflows/patch-mediaplugin.py` applied all four patches cleanly, and a second run reported
+  all four as already in place** - the CI step (\.github/workflows/android-build.yml, before Gradle)
+  does the same thing on a fresh `npm install`.
+- **NOT VERIFIED HERE**: no Android device and no emulator. The park is proven by the jsdom run of the
+  shipped web path against a stubbed bridge, the native card by the patcher actually running plus the
+  gate's pins on the library source it lands on - not by looking at a real quick-settings player. What
+  the platform still decides: how long a *notification* survives a frozen WebView (if Android has
+  already killed the process, no web-layer change can bring the song back - the widget tap remains the
+  one path that launches, and it opens the app before resuming, 73.4.2), and whether an OEM's now-bar
+  surface chooses to show a media session at all. The app also has no `ios/` target at all, so nothing
+  iOS is touched or claimed.
+
 
 ## 73.4.4 (Oct 7, 2026 · 8:54 PM EDT): letter-by-letter lyrics light just the words being sung
 - **The owner's ask, verbatim**: "Remove the wave thing just letter by letter thing nicely".
