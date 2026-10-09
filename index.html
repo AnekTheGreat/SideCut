@@ -13278,7 +13278,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.4.4';
+  const APP_VERSION = '73.4.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13899,6 +13899,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.4.5', date: 'October 9, 2026 · 12:40 AM EDT', title: 'The albums play in the order you see them', items: [
+    'Playing straight through the Albums tab walked the albums in a different order from the cards on screen: the queue sorted them by year and then by name, while the cards sit in the order you dragged them into.',
+    'An album you moved to the top of your list could therefore be heard last, and one whose name sorts late came before albums you had ranked above it.',
+    'The Albums play queue now reads the very same order the cards are rendered from - the album order you built, then the albums left over in the library\u2019s own order.',
+    'Nothing about an album\u2019s own songs changed: tapping a song inside a card still plays that album from top to bottom, in the order the card shows it, exactly as before.',
+    'Your albums, their order, the songs inside them and your playlists are untouched by this release - it only changes the order the albums themselves are played in.',
+    'Your songs, lyrics, player screen and home-screen widget are untouched by this release.',
+    'The order no longer depends on what an album is called either: an album named like a number stays exactly where you put it instead of being pulled to the front of the list.',
+  ]},
   { version: '73.4.4', date: 'October 7, 2026 · 8:54 PM EDT', title: 'Letter-by-letter lyrics light only the words being sung', items: [
     'The wave that trailed behind the lyric light is gone. Letter-by-letter lyrics light only the word being sung now: the letters of that word come up in turn as the voice reaches them.',
     'Before this, the word just sung kept its letters at half strength and the one before it at a whisper, so a run of gold travelled along the line and was still fading two words later.',
@@ -22227,26 +22236,10 @@ function _fallbackCopy(text){
       // library auto-grouping dressed up as their albums. A tag-only album is
       // still reachable on purpose: the kebab -> "Reorder songs in this album"
       // picker takes it in, and once it is saved it shows here like any album.
-      _albumOrder.sort(function(a,b){
-        // With sort on "default" this is YOUR order — the list a card drag writes.
-        // It used to read the key order of userAlbums, which the language cannot
-        // keep once a name looks like a number: an album called "2003" is hoisted
-        // to the front of every Object.keys, so that card could never be moved and
-        // any drag past it looked like it snapped back. An explicit list has no
-        // such rule; a name that is in neither list falls back below.
-        var _uaKeys = Object.keys(userAlbums);
-        if(_uaKeys.length && (typeof currentSort === 'undefined' || currentSort === 'default')){
-          var _ord = (typeof albumOrder !== 'undefined' && Array.isArray(albumOrder)) ? albumOrder : [];
-          var ia = _ord.indexOf(a), ib = _ord.indexOf(b);
-          if(ia === -1) ia = _ord.length + _uaKeys.indexOf(a);
-          if(ib === -1) ib = _ord.length + _uaKeys.indexOf(b);
-          if(ia !== ib) return ia - ib;
-        }
-        var ea = _albumMap[a], eb = _albumMap[b];
-        var cmp = String(a).toLowerCase().localeCompare(String(b).toLowerCase());
-        if(ea.artist && eb.artist && ea.artist !== eb.artist) return ea.artist.toLowerCase().localeCompare(eb.artist.toLowerCase()) || cmp;
-        return cmp;
-      });
+      // The cards read their order out of the one album-order function, so the
+      // queue an Albums-mode play builds (buildAlbumsIds) walks the albums in the
+      // same top-to-bottom order the cards are in.
+      _albumOrder = scAlbumCardOrder(_albumOrder, function(_n){ return _albumMap[_n] ? _albumMap[_n].artist : ''; });
       _albumOrder.forEach(function(aName, aIdx){
         var alb = _albumMap[aName];
         if(!alb || !alb.tracks.length) return;
@@ -23989,19 +23982,52 @@ function _fallbackCopy(text){
   }
 
 
+  // The order the Albums tab shows its cards in - the one answer to "which album
+  // comes first". Used by the cards AND by the Albums-mode play queue
+  // (buildAlbumsIds) so a play straight through the tab can never walk the albums
+  // in an order other than the one on screen. With sort on "default" this is YOUR
+  // order, the list a card drag writes: it reads albumOrder rather than the key
+  // order of userAlbums, which the language cannot keep once a name looks like a
+  // number (an album called "2003" is hoisted to the front of every Object.keys,
+  // so that card could never be moved and a drag past it looked like a snap back).
+  // A name missing from albumOrder sits after every ranked one, in the library's
+  // own order, and a tie between two unranked albums is broken on the artist the
+  // caller reports and then on the name.
+  function scAlbumCardOrder(names, artistOf){
+    var list = (names || []).slice();
+    var uaKeys = Object.keys(userAlbums || {});
+    list.sort(function(a, b){
+      if(uaKeys.length && (typeof currentSort === 'undefined' || currentSort === 'default')){
+        var ord = (typeof albumOrder !== 'undefined' && Array.isArray(albumOrder)) ? albumOrder : [];
+        var ia = ord.indexOf(a), ib = ord.indexOf(b);
+        if(ia === -1) ia = ord.length + uaKeys.indexOf(a);
+        if(ib === -1) ib = ord.length + uaKeys.indexOf(b);
+        if(ia !== ib) return ia - ib;
+      }
+      var cmp = String(a).toLowerCase().localeCompare(String(b).toLowerCase());
+      var ea = String((typeof artistOf === 'function' ? artistOf(a) : '') || '');
+      var eb = String((typeof artistOf === 'function' ? artistOf(b) : '') || '');
+      if(ea && eb && ea !== eb) return ea.toLowerCase().localeCompare(eb.toLowerCase()) || cmp;
+      return cmp;
+    });
+    return list;
+  }
+  window.__scAlbumCardOrder = scAlbumCardOrder;
+
   function buildAlbumsIds(){
     // Albums mode shows the tracks that belong to your saved albums (created via
     // Select songs -> Create album, or the song ⋮ menu -> Add to albums).
     // Entries the app created on its own are skipped.
     // Albums are listed in album order (year, then name), and each album's
     // tracks keep their order (track-number when known, else added order).
-    const albumNames = Object.keys(userAlbums || {});
-    const albKeys = albumNames.slice().sort(function(a,b){
-      const ea = userAlbums[a]; const eb = userAlbums[b];
-      const ya = (ea && String(ea.year || '')); const yb = (eb && String(eb.year || ''));
-      const cmp = String(a).toLowerCase().localeCompare(String(b).toLowerCase());
-      if(ya && yb && ya !== yb) return ya.localeCompare(yb);
-      return cmp;
+    // The albums come in the order the CARDS are in. Sorting them by year and
+    // then by name here put the play queue in a different order from the list on
+    // screen: an album you dragged to the top was heard last (or first, purely
+    // because of its name). scAlbumCardOrder is the one answer to that order, and
+    // the cards read the very same function.
+    const albKeys = scAlbumCardOrder(visibleAlbumNames(), function(n){
+      const e = userAlbums[n];
+      return (e && e.artist) || 'Unknown artist';
     });
     const out = [];
     const seen = {};

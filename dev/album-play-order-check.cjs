@@ -44,14 +44,19 @@ const TRACKS = [
   { id: 't1', name: 'Aurora', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 186 },
   { id: 't2', name: 'Born To Shine', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 155 },
   { id: 't3', name: 'Champagne', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 182 },
+  { id: 't4', name: 'Clash', artist: 'Diljit Dosanjh', album: 'Aurora Sessions', duration: 171 },
+  { id: 't5', name: 'Do You Know', artist: 'Diljit Dosanjh', album: 'Aurora Sessions', duration: 199 },
 ];
 // Mixtape is listed FIRST so a library-scan answer would name it, not the
 // album the play actually came from.
+// 'Aurora Sessions' sorts FIRST by name but is ranked LAST in albumOrder, so
+// anything that answers "which album comes first" by the name gets E. wrong.
 const ALBUMS_START = {
   'Mixtape': { artist: 'Diljit Dosanjh', trackIds: ['t2', 't1'], createdAt: 5, manual: true },
   'MoonChild Era': { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 11, manual: true },
+  'Aurora Sessions': { artist: 'Diljit Dosanjh', trackIds: ['t4', 't5'], createdAt: 3, manual: true },
 };
-const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3'], Favorites: [] };
+const PLAYLISTS_START = { 'All Songs': ['t1', 't2', 't3', 't4', 't5'], Favorites: [] };
 
 function fakeIndexedDB() {
   const data = {
@@ -59,7 +64,7 @@ function fakeIndexedDB() {
     meta: new Map([
       ['playlists', { key: 'playlists', value: JSON.parse(JSON.stringify(PLAYLISTS_START)) }],
       ['userAlbums', { key: 'userAlbums', value: JSON.parse(JSON.stringify(ALBUMS_START)) }],
-      ['albumOrder', { key: 'albumOrder', value: ['Mixtape', 'MoonChild Era'] }],
+      ['albumOrder', { key: 'albumOrder', value: ['Mixtape', 'MoonChild Era', 'Aurora Sessions'] }],
     ]),
   };
   function tx(store) {
@@ -193,6 +198,38 @@ const dom = new JSDOM(html, {
   const card3 = pane.querySelector('[data-album-name="MoonChild Era"]');
   const body3 = card3 && card3.querySelector('[id^="alb_card_"]');
   ok('the open card is really expanded on screen', !!body3 && body3.style.display === 'block');
+
+  // E. The albums themselves. A play straight through the tab must walk the
+  // albums in the order the CARDS are in. The cards sit in albumOrder (Mixtape,
+  // MoonChild Era, Aurora Sessions), while sorting by name would put Aurora
+  // Sessions first - so a queue built from a year/name sort plays the tab in a
+  // different order from the one on screen, which is the reported bug.
+  win.navigate('albums');
+  await wait(800);
+  const cardNames = Array.prototype.map.call(
+    pane.querySelectorAll('[data-album-name]'), (c) => c.dataset.albumName);
+  ok('cards are in your album order, not by name', eq(cardNames, ['Mixtape', 'MoonChild Era', 'Aurora Sessions']), cardNames);
+  // Play through the tab the way a user does it: the search box drops Albums
+  // mode to its flat list, and a tap there queues the whole tab (fullIds).
+  const si = win.document.getElementById('searchInput');
+  si.value = 'diljit';
+  si.dispatchEvent(new win.Event('input'));
+  await wait(700);
+  const flatRows = pane.querySelectorAll('.track[data-id]');
+  ok('the flat list shows every song in the albums', flatRows.length === 5, flatRows.length);
+  ok('and it is listed in the card order',
+    Array.prototype.map.call(flatRows, (r) => r.dataset.id).join(',') === 't2,t1,t3,t4,t5',
+    Array.prototype.map.call(flatRows, (r) => r.dataset.id).join(','));
+  flatRows[0].click();
+  await wait(400);
+  s = snap();
+  ok('playing the tab walks the albums in card order', eq(s.queue, ['t2', 't1', 't3', 't4', 't5']), s.queue);
+  // The order the cards are in IS albumOrder, so this pairing is the whole
+  // claim: same albums, same order, on screen and in the queue.
+  ok('the queue order is not a name sort', !eq(s.queue, ['t4', 't5', 't2', 't1', 't3']), s.queue);
+  si.value = '';
+  si.dispatchEvent(new win.Event('input'));
+  await wait(400);
 
   // D. A start id that is not in the queue must not push the index out of it.
   win.playFromList(['t1', 't2', 't3'], 'ghost-id', 'MoonChild Era');
