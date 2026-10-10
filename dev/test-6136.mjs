@@ -62,7 +62,7 @@ ok(count('await scSpotifyInteractiveToken()') === 1, 'the only window left belon
 console.log('[4] release metadata');
 const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73.6.2';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73.8';"), 'sw.js cache = sidecut-shell-v61.5');
 ok(src.indexOf("version: '61.5'") < src.indexOf("version: '61.3.5'"), '61.5 heads the changelog');
 
 if (failures) { console.log('\n' + failures + ' failure(s)'); process.exit(1); }

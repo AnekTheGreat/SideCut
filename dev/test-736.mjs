@@ -163,11 +163,11 @@ const count = (s) => src.split(s).length - 1;
 console.log('[1] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '73.6.2', 'the app runs 73.6.2 (' + ver + ')'); /* repinned by dev/repin-7362.mjs */
+  ok(ver === '73.8', 'the app runs 73.8 (' + ver + ')'); /* repinned by dev/repin-7362.mjs */
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'changelog evaluates: ' + e.message); }
-  ok(!!entries && entries[0].version === '73.6.2', 'and its newest entry is this release (' + (entries && entries[0].version) + ')');
+  ok(!!entries && entries[0].version === '73.8', 'and its newest entry is this release (' + (entries && entries[0].version) + ')');
   if (entries) {
     const items = entries[0].items || [];
     ok(items.length >= 6, 'with at least six notes (' + items.length + ')');
@@ -178,7 +178,7 @@ console.log('[1] release metadata');
       'and no note names a downloader or converter');
     ok(/EDT$/.test(String(entries[0].date)), 'the ship stamp is Eastern (' + entries[0].date + ')');
   }
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73.6.2'"), 'the shell cache is this release name');
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73.8'"), 'the shell cache is this release name');
 }
 
 console.log('\n[2] the source of the fix is present, and nothing was re-enabled');

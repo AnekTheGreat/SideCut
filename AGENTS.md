@@ -1,5 +1,75 @@
 # SideCut — repository memory
 
+## 73.8 (Oct 10, 2026 · 10:20 AM EDT): DJ Mode always works in Albums, because an album is not a playlist that opted out
+- **The owner's ask, verbatim**: "If your in albums dj mode should always be enabled". The report is exact and the cause is one line of context: `playFromList`
+  (line ~27800) stores `queueSourcePlaylist = activePlaylist`, and an ALBUM is not a playlist - on the Albums tab that variable is whatever playlist was
+  last open. So an album played from Albums while `activePlaylist` happened to be **Paath** inherited Paath's block: `enterDjMode()` refused to open and
+  toasted "DJ Mode is disabled for \"Paath\"", the **DJ MODE** chip under the player went dim with the red ✕ (`renderList`/`renderTabs` path, ~line 21150,
+  which read `isDjModeDisabledPlaylist(activePlaylist)`), and the Studio's DJ Mode card said "Switched off for ..." for a playlist nobody was listening to.
+- **THE RULE, STATED ONCE (`index.html`).** `djContextName()` answers what the deck would actually play: `queueAlbumName` set means the play came from an
+  album, so it answers `''` (no playlist, nothing to block); otherwise it is `queueSourcePlaylist` with the old `'All Songs'` fallback. `djBlockedName()`
+  turns that into `''` or the playlist name, via the untouched `isDjModeDisabledPlaylist` (built-in list + the per-playlist opt-out). All THREE surfaces now
+  read it - `enterDjMode()`, the DJ MODE chip, and `window.__scDjModeState()` - so the chip, the deck and the Studio card cannot disagree, and no surface
+  reads `activePlaylist` for this question any more (`isDjModeDisabledPlaylist(activePlaylist)` is gone from the file). `__scDjModeState()` additionally
+  reports `album: queueAlbumName || null`.
+- **REMOVING THE BLOCK WAS ONLY HALF OF IT.** `djSourcePlaylist` (which playlist the deck BROWSES: the track strip, the prev/next buttons and the
+  crossfade handover all read `playlists[djSourcePlaylist]`) would still have been Paath - so a deck opened on an album would have mixed devotional songs
+  the album was played over. Added `let djSourceIds = null` behind one reader, `djBrowseIds()`, and every one of those reads (5 sites: `djCrossfadeToNext`,
+  `renderDjTrackStrip`, `djStepTrack`, `refreshDjMode`'s handover and `djCrossfadeToNext`'s guard) now goes through it - one raw `playlists[djSourcePlaylist]`
+  read is left, inside `djBrowseIds` itself. `enterDjMode()` sets `djSourceIds = scAlbumQueueIds(queueAlbumName, null)` (null when the album has no live
+  ids) so the deck walks the record in its own saved order, and the deck's playlist switcher clears it (`djSourceIds = null`) the moment a playlist is picked
+  by hand - that button is how you leave the album. The switcher still refuses a protected playlist, and the built-in list and the Settings opt-out are
+  otherwise untouched.
+- **NOTES**: seven items, none with an apostrophe, longest 253, and the last one names widget / player / letter / lyrics / album (the convention test-728,
+  test-7281, test-7316, test-735 and test-7362 all hold the head entry to). `dev/repin-738.mjs` (new, from repin-737) does A/B/D/E: VER 73.7 → **73.8**,
+  changelog head literal, PREV 73.6.2 → **73.7**, cache `sidecut-shell-v73.8`.
+- **VERIFIED**: `dev/test-738.mjs` (new, 49 checks) drives the real tab: open **Paath**, then go to **Albums**, open the MoonChild Era card and tap a row -
+  `__scDjModeState()` reports `album: 'MoonChild Era'`, `playlist: 'All Songs'`, `blocked: false`; the chip is lit with no ✕; the Studio card offers the rig
+  and opens the deck; and the deck STRIP is the album's three songs in album order, not Paath's two. [4] drives the regression the other way - play FROM
+  Paath and it is still blocked, the card still names Paath, and tapping it still refuses with a toast. `dev/gates.sh` now lists test-738.
+
+## 73.7 (Oct 10, 2026 · 9:05 AM EDT): every Studio section folds, and the APK download counts leave the Studio without a line in the notes
+- **The owner's ask, verbatim**: "Make all studio options like badges and stuff collapsible, then why is the apk downloads thing here remove that
+  don't mention that in patch notes" - with a screenshot of the Studio scrolled past the tool rack into a wall of `SideCut-5.0.53-release.apk 0
+  downloads apk-73.5-release` rows, the player bar and the dock cut off underneath it. Two asks in one sentence: fold the Studio, and take the
+  count section out - and, explicitly, do NOT write the removal up in the patch notes.
+- **THE FOLD (`index.html`, the Studio block).** Every Studio section is now a fold and its header is the button: `foldHead(k, title, sub)` builds
+  `<button class="sc-sec-head sc-fold-head" data-fold="k" aria-expanded>` and `foldSec(domId, k, title, sub, body)` wraps a body in
+  `.sc-sec.sc-fold > .sc-fold-body`. Seven of them, in order: `scFoldTools` (the rack), `scFoldBadges` (the hero, the rewards, the filter and the
+  eight badge groups), `scFoldStorage` (on `#scStudioStorage`, the id `scrollStudioTo` and the assistant still scroll to), `scFoldAutodj`,
+  `scFoldGestures`, `scFoldBatchTags`, `scFoldBatchSel`. Nothing is folded on its own: `isFolded` is only ever true because `setFolded` wrote it,
+  and the state lives under its own key, `LS.folds` = `sidecut_studio_folds`, one boolean per section - a repaint keeps it and so does the next
+  visit, which is the whole point: `renderStudio()` rebuilds the DOM after every tool, so on-screen state would have been lost instantly.
+- **WHY THE HEAD STILL LOOKS LIKE A HEAD.** The button carries the section head's own class, so the existing `.sc-sec-head` flex row, the
+  `.sc-sec-head span:first-child` title type and the `.sc-sec-sub` mono detail all still apply with no rule duplicated; the only additions are
+  `.sc-fold-head` (a button reset), `.sc-fold-ico` (the chevron) and `.sc-fold.folded > .sc-fold-body{ display: none; }` plus a -90deg turn on
+  the chevron, so a folded section reads as the same object, folded. `toggleFold(btn)` opens and closes in place - no repaint, so nothing below
+  jumps - and `unfoldSection(el)` is called by `scrollStudioTo` first, because the assistant's "open the storage cleaner" navigates to Studio and
+  then scrolls to `#scStudioStorage`: reaching INTO a section has to open it, or that intent lands on a closed header and looks like it did
+  nothing. The four helpers and `unfoldSection` are published on the SC70 surface (`folds`, `fold`, `toggleFold`, `unfoldSection`) so the gates
+  can drive them.
+- **WHAT LEFT WITH THE COUNT SECTION.** Deleted from `index.html`: `apkSectionHtml()`, `apkBodyHtml()`, `apkTotal()`, `loadApkDownloads()`, the
+  `GH_REPO` const and the `apk` state object, the `else if(act === 'apkread')` branch in the `data-act` switch, `apkSectionHtml()` out of
+  `renderStudio()`, the `/* ---------- APK downloads ---------- */` CSS block (`.sc-apks`, `.sc-apk-row`, `.sc-apk-name`, `.sc-apk-count`,
+  `.sc-apk-when`) and the `SC70` surface entries `loadApkDownloads` / `apkRows` - the last of which is the one that would have thrown at publish
+  time, since a name referring to a function that no longer exists is a ReferenceError the moment the surface object is built. The section had
+  shipped in 70.1 (GitHub counts release ASSETS; a workflow artifact keeps no counter at all) behind a button, and the owner wants it gone.
+  `dev/sc70-module.js` and `dev/sc70-styles.css` keep the 70.0 text verbatim - they are the record of what 70.0 spliced, and 73.6.2 already left
+  them behind (they have no `djmode` card either).
+- **THE NOTES SAY NOTHING ABOUT THE REMOVAL**, exactly as asked. The 73.7 head entry describes the fold and its behaviour only; `dev/test-737.mjs`
+  asserts that - the head items may not match `/\bapk\b|\bgithub\b|release asset/i` - so a later edit cannot quietly reintroduce it.
+- **TWO GATES DESCRIBED THE THING THAT WAS REMOVED, SO BOTH WERE RETARGETED BY HAND** (the only gate edits this release that are not a version
+  pin): `dev/test-705.mjs` [4] asserted the GitHub API string, `/releases?per_page=30`, `a.download_count` and exactly one `data-act="apkread"`
+  button in the shipped file - it now asserts all four are ABSENT from `index.html`, and still reads the 70.0 module text for its own wall; and
+  `dev/studio-70-check.cjs` drove that button and checked the failure card, which is now three checks that `#scStudioApks` and the button are
+  gone from the built page while `SC70.openClipSheet` still exists (i.e. the surface built). `dev/repin-737.mjs` (new, from repin-7362) does the
+  usual A/B/D/E moves: VER pin 73.6.2 → **73.7**, changelog head literal, adjacent-entry pin PREV 73.6.1 → **73.6.2**, shell cache
+  `sidecut-shell-v73.7`. test-705 and test-70 keep their own build pin, as always.
+- **VERIFIED**: `dev/test-737.mjs` (new, 61 checks) drives the fold on the real Studio - seven headers, all open to start, one folds and writes the
+  choice, the choice survives leaving and re-entering the tab, two sections fold independently, and the assistant's storage intent opens the folded
+  section to receive it - and asserts the removal is complete (no section, no action, no fetch, no `download_count`, no dead functions, no CSS, no
+  published name). The full battery plus both OTA bundles were run; `dev/gates.sh` (untracked, local) now lists test-737.
+
 ## 73.6.2 (Oct 10, 2026 · 7:40 AM EDT): DJ Mode joins Studio, the assistant stops answering the wrong question, and the gates catch up three skipped repins
 - **The owner's ask, verbatim**: "This AI is just complete wrong and the dj mode should also be like shown in studio because that makes sense
   update old things not updates v73.6.2" - with a screenshot of Settings → Support: the question "Can I compact my library" answered by the

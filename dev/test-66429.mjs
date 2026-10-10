@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const ota = fs.readFileSync(path.join(ROOT, 'dev/native-updates.js'), 'utf8');
-const VER = '73.6.2'; /* repinned by dev/repin-7362.mjs */
+const VER = '73.8'; /* repinned by dev/repin-738.mjs */
 const PREV = '64.2.8';
 
 let pass = 0, fail = 0;
@@ -100,7 +100,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v73.6.2', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v73.8', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache === 'sidecut-shell-v' + VER, 'the shell cache is the release number (' + swCache + ')');
 }
 

@@ -67,7 +67,7 @@ function mustStillReserve(page, selector){
 }
 
 const PREV = '70.0';
-const SHELL_CACHE = 'sidecut-shell-v73.6.2';
+const SHELL_CACHE = 'sidecut-shell-v73.8';
 
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -252,10 +252,15 @@ console.log('\n[6] the styles');
      'the switch and the panel it opens are both in the sheet');
   ok(count("$('lyricsOffBack').addEventListener('click'") === 1, 'and off can be undone from inside it');
   ok(has("t.lyricsOff ? 'Lyrics (off for this song)' : 'Lyrics'"), 'the song menu says when they are off');
-  // [4] the count: a real, public API that carries a real download count.
-  ok(count("'https://api.github.com/repos/'") === 1, 'Studio reads the counts from the GitHub API');
-  ok(has('/releases?per_page=30') && has('a.download_count'), 'and it is the release asset count, which is the one GitHub keeps');
-  ok(countMod('data-act="apkread"') === 1, 'with one button that asks for it');
+  // [4] the count that used to be here. 73.7 took the section out of the app, so
+  // what stood here - the API call, the release-asset count and the one button
+  // that asked for it - is now the record that it is really gone. These read the
+  // SHIPPED file (src) and not the 70.0 module text, which is the history of what
+  // 70.0 spliced and is left as it was.
+  ok(count("'https://api.github.com/repos/'") === 0, 'the GitHub API call that read the counts is gone from the app');
+  ok(!has('/releases?per_page=30') && !has('a.download_count'), 'and so is the release asset count it asked for');
+  ok(count('data-act="apkread"') === 0 && count('apkSectionHtml') === 0, 'with no section and no action left behind');
+  ok(count('apkRows') === 0 && count('loadApkDownloads') === 0, 'and nothing of it left published for another block to call');
   // 70.0.7, the user's words: "why is their a huge gap between the media player and
   // tabs". The player is the MIDDLE surface now - the dock touches the screen edge,
   // and the bar's own `bottom` already counts the inset - so the bar's padding must

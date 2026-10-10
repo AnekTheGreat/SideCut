@@ -161,7 +161,7 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 
 console.log('[11] release metadata');
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73.6.2';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73.8';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');
@@ -193,11 +193,15 @@ console.log('[12] inline script syntax');
 console.log('[13] no remixes, nothing off the pinned artists');
 {
   const check2 = slice('async function fetchArtistReleases(artist){', 'async function checkPinnedArtistReleases');
-  // One shared test, applied by EVERY source and by BOTH lists. 10 hits = the
-  // definition, the pruning pass, the release-list builder, and seven call
-  // sites: the three surfaces that used to each re-check a row now delegate to
-  // window.__scReleaseList, which does it once.
-  ok(count('__scJunkTitle') === 10, 'one junk test, applied everywhere, with the three surface copies folded into the shared list (' + count('__scJunkTitle') + ')');
+  // One shared test, applied by EVERY source and by BOTH lists. The count is
+  // pinned exactly so that a SECOND junk test - a hand-rolled remix regex beside
+  // the shared one - is noticed the moment it appears. It stood at 10 when 61.3.9
+  // wrote it (the definition, the pruning pass, the release-list builder and
+  // seven call sites); the releases since then have added call sites to the same
+  // one function and never a second test, which is what 21 call sites around 1
+  // definition says. 73.7 repinned the number to the truth; it did not change any
+  // of this code.
+  ok(count('__scJunkTitle') === 22, 'one junk test, applied everywhere, with the three surface copies folded into the shared list (' + count('__scJunkTitle') + ')');
   ok(check2 && check2.includes('!window.__scJunkTitle(r.trackName)'), 'the iTunes song pass refuses a remix title');
   ok(check2 && check2.includes('if(window.__scJunkTitle(r.collectionName)) return;'), 'so does the album pass');
   const idFn2 = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");

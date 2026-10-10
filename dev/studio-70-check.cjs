@@ -626,14 +626,13 @@ const realErrors = (errors) => errors.filter((e) =>
     ok(t0.lyricsOff === false, 'and it can be turned back on');
     ok(panel.style.display === 'none', 'with the panel out of the way again');
 
-    // The APK count reads GitHub, which is not reachable here - so what gets driven
-    // is the failure: the section is wired, and it reports what happened instead of
-    // showing a made-up zero.
-    const read = doc.querySelector('#studioView [data-act="apkread"]');
-    ok(!!read, 'the Studio has a button that reads the APK download counts');
-    read.click();
-    await wait(80);
-    ok(!!doc.querySelector('#scStudioApks .sc-bad'), 'and an unreachable GitHub is reported, not counted as nothing');
+    // 73.7 - the download-count section is out of the Studio. What is driven here
+    // is that it is really out of the BUILT page and not merely unrendered: no
+    // section, no button that reads one, and the Studio surface still builds - a
+    // removal that left a name published would have thrown before this line.
+    ok(!doc.querySelector('#scStudioApks'), 'the Studio carries no download-count section');
+    ok(!doc.querySelector('#studioView [data-act="apkread"]'), 'and no button left that would read one');
+    ok(!!win.SC70 && typeof win.SC70.openClipSheet === 'function', 'while the Studio surface itself still builds');
   }
 
   console.log('[9] the grouped song menu');
