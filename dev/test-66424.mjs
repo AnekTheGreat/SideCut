@@ -269,7 +269,9 @@ console.log('[7] what 64.2.2 and 64.2.3 shipped is still standing');
   ok(has("' of the ' + scFmtBytes(estimate.quota) + ' this phone allows the app'"), 'Storage still names whose allowance it shows');
   ok(has('  let watermarkEnabled = true;'), 'Watermark Remover still starts on');
   ok(has("if(watermarkEnabledRow) watermarkEnabled = !!watermarkEnabledRow.value;"), 'and a saved choice still wins');
-  ok(count('background:var(--coral); color:var(--on-coral,#fff)') >= 14,
+  // 73.5 - four of them were the Settings-side converter buttons and left with
+  // the Get Songs tab, so the floor is 11 now; the rule is unchanged.
+  ok(count('background:var(--coral); color:var(--on-coral,#fff)') >= 11,
     'every accent fill still picks its own text colour: ' + count('background:var(--coral); color:var(--on-coral,#fff)'));
   const kbSrc = src.slice(src.indexOf('var _aiKB = ['), src.indexOf('];', src.indexOf('var _aiKB = [')) + 2);
   let play = null;

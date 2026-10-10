@@ -204,13 +204,14 @@ console.log('[5] the pinned-artist rail cannot come back empty');
 
 console.log('[6] Settings is back in the order and the shape it had');
 {
-  // 70.1.3 removed the Premium tab, so the strip is eight tabs and the names
-  // that follow it each moved one place to the left.
-  const order = ['settingsTabExpand', 'settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
+  // 70.1.3 removed the Premium tab; 73.5 removed the Get Songs tab (its cards
+  // live in Discover). The seven this file tracks run Theme .. More.
+  const order = ['settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
     'settingsTabSandbox', 'settingsTabSupport', 'settingsTabWidget', 'settingsTabMore']
     .map((id) => src.indexOf('id="' + id + '"'));
-  ok(order.every((i) => i !== -1), 'all eight tabs are present');
-  ok(order.every((v, i) => i === 0 || order[i - 1] < v), 'and the strip runs Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, More (More last)');
+  ok(order.every((i) => i !== -1), 'all seven tracked tabs are present');
+  ok(order.every((v, i) => i === 0 || order[i - 1] < v), 'and the strip runs Theme, Donate, Glow, Sandbox, Support, Widget, More (More last)');
+  ok(src.indexOf('id="settingsTabExpand"') === -1, 'and the Get Songs tab itself is gone');
   const heads = ['This build and help', 'Playback', 'History and extras'].map((t) => src.indexOf('>' + t + '</div>'));
   ok(heads.every((i) => i === -1), 'the group headings 64.1 added inside More are gone');
   const card = src.indexOf('<!-- Diagonal / Single button toggle -->');

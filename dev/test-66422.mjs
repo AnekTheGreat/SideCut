@@ -187,7 +187,10 @@ console.log('[7] text on an accent fill is readable in every theme');
   ok(has("    root.setProperty('--on-coral', scOnAccent(col1));"), 'and the RGB sweep re-decides it as the hue moves');
   ok(has('background:var(--coral); color:var(--on-coral,#fff)'), 'the chat bubble and the accent buttons ask for it');
   ok(!has('background:var(--coral); color:#fff'), 'and none is left on a hard white');
-  ok(count('background:var(--coral); color:var(--on-coral,#fff)') >= 14,
+  // 73.5 - four of them were the Settings-side converter buttons and left with
+  // the Get Songs tab, so the floor is 11 now. The rule itself is unchanged:
+  // nothing on an accent fill falls back to a hard white.
+  ok(count('background:var(--coral); color:var(--on-coral,#fff)') >= 11,
     'all of them do: ' + count('background:var(--coral); color:var(--on-coral,#fff)'));
   const at = src.indexOf('  function scOnAccent(color){');
   const end = src.indexOf('\n  }', at);

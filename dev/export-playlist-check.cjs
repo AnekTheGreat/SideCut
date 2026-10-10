@@ -62,7 +62,17 @@ const JSZIP_STUB_SRC = `
     return this;
   };
   function Z(){}
-  Z.prototype.file = function(){ return this; };
+  // 73.4.9 - record what goes into the archive (the gate reads manifest.json back
+  // out of here). The existing byte-count checks are unaffected.
+  Z.prototype.file = function(p, d){
+    try{
+      window.__ZIP_FILES = window.__ZIP_FILES || [];
+      window.__ZIP_FILES.push(p);
+      window.__ZIP_DATA = window.__ZIP_DATA || {};
+      window.__ZIP_DATA[p] = d;
+    }catch(e){}
+    return this;
+  };
   Z.prototype.generateInternalStream = function(){ return new S(); };
   window.JSZip = Z;
 })();
@@ -343,6 +353,119 @@ async function boot({ native, fsOpts }) {
       ok('a broken native write rejects instead of resolving true', false, 'no probe');
       ok('no 0-byte file is shared with the user', false, 'no probe');
     }
+  }
+
+  // ------------------------------------------------------------------
+  // 73.4.9 - EXPORT ONE THING, NOT THE WHOLE TAB.
+  // "Export playlist" only ever exported the playlist that happened to be open and
+  // "Export albums" zipped every album at once. A single playlist and a single
+  // album can now be exported on their own, with the audio, the tags and the
+  // covers plus the grouping itself, so the zip imports back as exactly that
+  // playlist or that album.
+  console.log('\n\u2014 one playlist exports on its own, with its own grouping \u2014');
+  {
+    const { win, FS } = await boot({ native: true, fsOpts: {} });
+    const doc = win.document;
+    const probe = win.__scExportProbe;
+    ok('the per-playlist export is reachable', !!probe && typeof probe.exportOnePlaylist === 'function');
+    if (probe && typeof probe.exportOnePlaylist === 'function') {
+      win.__ZIP_FILES = [];
+      win.__ZIP_DATA = {};
+      win.localStorage.removeItem('sidecut_playback_stops');
+      await probe.exportOnePlaylist('Late night');
+      await wait(120);
+      const backdrop = doc.getElementById('exportConfirmBackdrop');
+      ok('it asks before writing anything', !!backdrop && backdrop.style.display === 'flex');
+      ok('the question names the playlist and how many songs',
+         /Late night/.test(doc.getElementById('exportConfirmBody').innerHTML) &&
+         /1 song/.test(doc.getElementById('exportConfirmBody').innerHTML),
+         doc.getElementById('exportConfirmBody').innerHTML.slice(0, 160));
+      doc.getElementById('exportConfirmOk').click();
+      await wait(1200);
+      const names = Array.from(FS._files.keys());
+      ok('a zip named for that playlist lands in the cache',
+         names.some((n) => /Late_night\.zip$/.test(n)), names.join(','));
+      let man = null;
+      try { man = JSON.parse(win.__ZIP_DATA['manifest.json']); } catch (e) {}
+      ok('and it holds the playlist\u2019s own songs, not the whole library',
+         !!man && Array.isArray(man.tracks) &&
+         JSON.stringify(man.tracks.map((t) => t.id)) === JSON.stringify(['t2']),
+         man && man.tracks ? JSON.stringify(man.tracks.map((t) => t.id)) : 'no manifest');
+      ok('the manifest carries that playlist grouping for the import',
+         !!man && !!man.playlists && JSON.stringify(man.playlists['Late night']) === JSON.stringify(['t2']),
+         man ? JSON.stringify(man.playlists) : 'no manifest');
+
+      // Cancelling must write nothing at all.
+      win.__ZIP_FILES = [];
+      const before = FS.shares.length;
+      await probe.exportOnePlaylist('Late night');
+      await wait(80);
+      doc.getElementById('exportConfirmCancel').click();
+      await wait(400);
+      ok('cancelling exports nothing', FS.shares.length === before && !win.__ZIP_FILES.length,
+         'shares=' + FS.shares.length + ' files=' + JSON.stringify(win.__ZIP_FILES));
+    } else {
+      ['it asks before writing anything', 'the question names the playlist and how many songs',
+       'a zip named for that playlist lands in the cache', 'and it holds the playlist\u2019s own songs, not the whole library',
+       'the manifest carries that playlist grouping for the import', 'cancelling exports nothing']
+        .forEach((n) => ok(n, false, 'no probe'));
+    }
+  }
+
+  console.log('\n\u2014 one album exports on its own, as an ALBUM \u2014');
+  {
+    const { win, FS } = await boot({ native: true, fsOpts: {} });
+    const doc = win.document;
+    const probe = win.__scExportProbe;
+    ok('the per-album export is reachable', !!probe && typeof probe.exportOneAlbum === 'function');
+    if (probe && typeof probe.exportOneAlbum === 'function') {
+      const ua = win.__scUserAlbums();
+      ua['My Album'] = { artist: 'Someone', trackIds: ['t1', 't3'], createdAt: Date.now(), manual: true };
+      win.__ZIP_FILES = [];
+      win.__ZIP_DATA = {};
+      await probe.exportOneAlbum('My Album');
+      await wait(120);
+      ok('it asks before writing anything',
+         doc.getElementById('exportConfirmBackdrop').style.display === 'flex');
+      doc.getElementById('exportConfirmOk').click();
+      await wait(1200);
+      const names = Array.from(FS._files.keys());
+      ok('a zip named for that album lands in the cache',
+         names.some((n) => /sidecut-album-My_Album\.zip$/.test(n)), names.join(','));
+      let man = null;
+      try { man = JSON.parse(win.__ZIP_DATA['manifest.json']); } catch (e) {}
+      ok('it holds only that album\u2019s songs',
+         !!man && Array.isArray(man.tracks) &&
+         JSON.stringify(man.tracks.map((t) => t.id)) === JSON.stringify(['t1', 't3']),
+         man && man.tracks ? JSON.stringify(man.tracks.map((t) => t.id)) : 'no manifest');
+      ok('it is an ALBUM zip, not a playlist one', !!man && man.kind === 'albums', man ? String(man.kind) : 'no manifest');
+      ok('the manifest carries that one album for the import',
+         !!man && !!man.settings && JSON.stringify(man.settings.userAlbums['My Album'].trackIds) === JSON.stringify(['t1', 't3']),
+         man ? JSON.stringify(man.settings && man.settings.userAlbums) : 'no manifest');
+      ok('and it carries no playlist at all',
+         !!man && man.playlists && Object.keys(man.playlists).length === 0,
+         man ? JSON.stringify(man.playlists) : 'no manifest');
+    } else {
+      ['it asks before writing anything', 'a zip named for that album lands in the cache',
+       'it holds only that album\u2019s songs', 'it is an ALBUM zip, not a playlist one',
+       'the manifest carries that one album for the import', 'and it carries no playlist at all']
+        .forEach((n) => ok(n, false, 'no probe'));
+    }
+  }
+
+  console.log('\n\u2014 the per-item exports are really in the UI \u2014');
+  {
+    const src = html;
+    ok('each album card carries its own export button',
+       /_albExpBtn/.test(src) && /exportOneAlbum\(aName\)/.test(src));
+    ok('each playlist row in Manage playlists carries its own export button',
+       /expBtn/.test(src) && /exportOnePlaylist\(name\)/.test(src));
+    ok('the album card button sets its own title so it is findable',
+       /Export this album \u2014 audio, tags and covers/.test(src));
+    ok('and the playlist row button likewise',
+       /Export this playlist \u2014 audio, tags and covers/.test(src));
+    ok('the path that opens the picker only ever exports the OPEN playlist through the shared helper',
+       /async function exportPlaylist\(\)\{\s*await exportOnePlaylist\(activePlaylist\);/.test(src));
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

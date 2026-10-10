@@ -31,6 +31,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
 const VER = '73.2.1'; /* repinned by dev/repin-7321.mjs */
+// 73.5 - the notes-shape checks below read THIS release's entry, not whatever
+// happens to head the changelog now (the same OWN split test-725 uses).
+const OWN = '73.1.7';
 const PREV = '73.2'; /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */
 const SHELL_CACHE = 'sidecut-shell-v73.2.1';
 
@@ -60,13 +63,16 @@ console.log('[1] release metadata');
     ok(items.length >= 6, 'with at least six notes (' + items.length + ')');
     ok(items.length > 6, 'and a note past the six that ride to the store channel (' + items.length + ')');
     const notes = items.join('\n');
-    ok(/album/i.test(notes), 'the notes name the Albums work this release confirms');
+    const ownEntry = entries.find((e) => String(e.version) === OWN) || head;
+    const ownNotes = (ownEntry.items || []).join('\n');
+    ok(/album/i.test(ownNotes), 'the notes name the Albums work this release confirms');
     // 73.1.9 retarget: this release exists because the 73.1.8 recovery left
     // some albums missing and some short, so the notes have to say that plainly
     // (73.1.8 said "wipe").
     // 73.2 - the head notes now say why THIS release exists: the albums obey
     // your edits and the speed slider is a regular slider again.
-    ok(/regular slider|fighting your edits|zero songs/i.test(notes), 'and say plainly why this release exists (albums obey your edits)');
+    // 73.5 - read from its own entry (OWN), because the head is this release.
+    ok(/regular slider|fighting your edits|zero songs/i.test(ownNotes), 'and say plainly why this release exists (albums obey your edits)');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     ok(!/\bpass\b/i.test(String(head.title)), 'the title never uses the word the store gate refuses');
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the head notes');

@@ -30,6 +30,13 @@
 //     further down still looks up in place, so no screen can break. [2c] checks
 //     each of those ids is still in the file and still inside the hidden
 //     section.
+//
+// 73.5 - THE SETTINGS-SIDE SURFACE IS GONE. The owner asked to "remove get
+// songs tab from settings because we have discover for free", so the Get Songs
+// tab, its how-to box and the whole Conversion Tools section under it left with
+// it; Discover carries the same cards and is the only surface the Play build
+// rewrites now. The Settings ids this file used to require are asserted ABSENT
+// instead, so a partial removal cannot pass.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -121,7 +128,7 @@ const playEnd = src.indexOf('}catch(_ePlayUI){}');
 ok(playEnd !== -1 && stepsAt < playEnd, 'and inside the branch\u2019s own try, not after it');
 
 console.log('[2a] the steps themselves (the shipped string, run)');
-const stepsSrc = sliceBetween('var _getSongsSteps =', "['getSongsHowToDisc','getSongsHowToSettings'].forEach");
+const stepsSrc = sliceBetween('var _getSongsSteps =', "['getSongsHowToDisc'].forEach");
 let stepsHtml = null;
 try { stepsHtml = new Function(stepsSrc + '\nreturn _getSongsSteps;')(); } catch (e) {}
 ok(typeof stepsHtml === 'string' && stepsHtml.length > 0, 'the shipped concatenation evaluates to a string');
@@ -145,29 +152,38 @@ ok(/(MP3s)/.test(stepsText), 'it does say MP3s — that is the format, not a too
 console.log('[2c] the tool section is put away by position');
 const hideLine = '_el.nextElementSibling.style.display = \'none\'';
 ok(src.includes(hideLine), 'the section right after the box is hidden');
-const foreach = sliceBetween("['getSongsHowToDisc','getSongsHowToSettings'].forEach", '});');
-ok(foreach.includes('_el.innerHTML = _getSongsSteps;'), 'both tabs get the walkthrough');
+const foreach = sliceBetween("['getSongsHowToDisc'].forEach", '});');
+ok(foreach.includes('_el.innerHTML = _getSongsSteps;'), 'the Discover box gets the walkthrough');
 ok(foreach.includes(hideLine), 'and the hiding happens in the same pass, per tab');
-// Hidden, never removed: everything the converter wiring looks up must survive,
-// or a screen that no longer shows a tool could break the screen that does.
+// The Discover tools are still in the file, whole: the converter wiring further
+// down still looks them up, and the Play build hides rather than removes them.
 const KEPT = [
-  'mp4ToMp3File', 'mp4ToMp3FileSettings', 'mp4ToMp3Convert', 'mp4ToMp3ConvertSettings',
-  'mp4FmtDisc', 'mp4FmtSettings',
-  'expandUrlInput', 'expandUrlInputSettings', 'expandUrlBtn', 'expandUrlBtnSettings',
-  'spMp3Input', 'spMp3InputSettings', 'spCardDisc', 'spCardSettings',
-  'ytMp3Input', 'ytMp3InputSettings', 'ytCardDisc', 'ytCardSettings',
-  'getSongsHowToDisc', 'getSongsHowToSettings'
+  'mp4ToMp3File', 'mp4ToMp3Convert', 'mp4FmtDisc',
+  'expandUrlInput', 'expandUrlBtn',
+  'spMp3Input', 'spCardDisc',
+  'ytMp3Input', 'ytCardDisc',
+  'getSongsHowToDisc'
 ];
 let keptMissing = 0;
 for (const id of KEPT) if (!src.includes('id="' + id + '"')) { keptMissing++; console.log('  missing: ' + id); }
 ok(keptMissing === 0, 'every element the tool wiring looks up is still present (' + KEPT.length + ' ids)');
+// 73.5 - and the Settings-side copies are gone, not merely unreachable: the tab
+// they lived in does not exist, so leaving the markup behind would be dead code.
+const GONE = [
+  'settingsTabExpand', 'settingsPaneExpand', 'spCardSettings', 'ytCardSettings',
+  'getSongsHowToSettings', 'mp4ToMp3FileSettings', 'mp4ToMp3ConvertSettings', 'mp4FmtSettings',
+  'expandUrlInputSettings', 'expandUrlBtnSettings', 'spMp3InputSettings', 'ytMp3InputSettings'
+];
+const leftOver = GONE.filter((id) => src.includes('id="' + id + '"'));
+ok(leftOver.length === 0, 'the Settings-side surface is gone with its tab' + (leftOver.length ? ': ' + leftOver.join(', ') : ''));
 
 console.log('[2d] the other build is untouched');
 // The static markup both builds start from must still teach the converter: only
 // the branch above rewrites it, and the other build never enters that branch.
-const TEACHES = 'Paste the link into the built-in';
-const teachesCount = src.split(TEACHES).length - 1;
-ok(teachesCount === 1, 'the Settings how-to still teaches the converter in the shared markup (' + teachesCount + ')');
+// 73.5 - that teaching line lived in the Settings how-to box and left with it.
+// Discover's line is the only one left, and it is the one the Play build wipes.
+const teachesCount = src.split('Paste the link into the built-in').length - 1;
+ok(teachesCount === 0, 'the Settings teaching line went with its box (' + teachesCount + ')');
 const discTeach = 'Open the built-in converter below';
 ok(src.split(discTeach).length - 1 === 1, 'so does the Discover one');
 ok(src.includes('🎛️ Conversion Tools'), 'the tool section itself is still in the markup, whole');
@@ -179,8 +195,9 @@ console.log('[3] the markup really puts the tool section right after each box');
 // element after it. Both are measured here with a tag-depth walk.
 const TOOL_MARKUP = '🎛️ Conversion Tools <span';
 for (const [label, boxId, ownId, toolId] of [
-  ['Discover', 'getSongsHowToDisc', 'expandUrlInput', 'expandUrlInput'],
-  ['Settings', 'getSongsHowToSettings', 'expandUrlInputSettings', 'expandUrlInputSettings']
+  // 73.5 - Discover only; the Settings box that used to sit second here left
+  // with its tab, and [2c] asserts it is gone.
+  ['Discover', 'getSongsHowToDisc', 'expandUrlInput', 'expandUrlInput']
 ]) {
   const { self, next } = elementAndNext(openAt(boxId));
   // The section's own markup signature, not the bare phrase: the box may (and
@@ -192,8 +209,11 @@ for (const [label, boxId, ownId, toolId] of [
   ok(next.includes('id="' + toolId + '"'), label + ': it contains the Expand URL card');
   ok(next.includes('mp4ToMp3' + (label === 'Settings' ? 'FileSettings' : 'File')), label + ': it contains the MP4 card');
   ok(next.includes('spCard' + (label === 'Settings' ? 'Settings' : 'Disc')), label + ': it contains the Spotify card');
-  ok(next.includes('ytCard' + (label === 'Settings' ? 'Settings' : 'Disc')), label + ': it contains the YouTube card');
-  ok(/Audio formats explained/.test(next), label + ': it contains the format explainer');
+  ok(next.includes('ytCard' + (label === 'Settings' ? 'Settings' : 'Disc')), label + ': it contains the YouTube card');    // The guide sits inside the how-to BOX (73.3 moved it above the converter
+    // backup), not in the section under it. This pinned the wrong element and
+    // had been red on that one line since; measured now against the element it
+    // really lives in.
+    ok(/Audio formats explained/.test(self), label + ': the how-to box carries the format explainer');
   // The outside-site links live in the box being REPLACED, not in the section
   // being hidden — so rewriting the box is what takes them off the screen, and
   // the walkthrough that replaces them points at no site at all.

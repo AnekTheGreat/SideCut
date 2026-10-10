@@ -278,6 +278,10 @@ console.log('[3] new releases are de-duplicated and the bubble stops at a month'
   const W = {
     __scJunkTitle: (t) => /remix|karaoke|tribute/i.test(String(t)),
     __scDay10: (d) => String(d || '').slice(0, 10),
+    // 73.5 - the list builder asks this one too now (a stored "release" that is
+    // really an old song the library already has). Stubbed out here: the lift is
+    // of the builder alone, and this test is about the de-duplication.
+    __scNotNew: () => false,
   };
   const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
   const recent = day(3), older = day(40);
@@ -565,19 +569,21 @@ console.log('[8] every converter card leads with MP3 and AIFF is a real output')
   ok(count('MP4 to WAV / FLAC / MP3 Converter') === 0, 'and the old MP4 one with it');
   ok(count('Spotify to MP3') >= 2, 'the Spotify card reads Spotify to MP3 (' + count('Spotify to MP3') + ')');
   ok(count('YouTube to MP3') >= 2, 'the YouTube card already did');
-  ok(count('MP4 to MP3 Converter') === 2, 'and the MP4 card now matches them');
+  // 73.5 - the Settings copies of these cards left with the Get Songs tab, so
+  // one card each is what is left, not two.
+  ok(count('MP4 to MP3 Converter') === 1, 'and the MP4 card now matches them');
 
   const opts = (id) => {
     const m = src.match(new RegExp('id="' + id + '"[^>]*>([\\s\\S]*?)</select>'));
     return m ? m[1] : '';
   };
-  const ids = ['spFmtDisc', 'ytFmtDisc', 'spFmtSettings', 'ytFmtSettings', 'mp4FmtDisc', 'mp4FmtSettings'];
+  const ids = ['spFmtDisc', 'ytFmtDisc', 'mp4FmtDisc'];   // 73.5 - the Settings three are gone
   for (const id of ids) {
     const body = opts(id);
     ok(/^<option value="mp3" selected>MP3<\/option>/.test(body), id + ' opens on MP3');
     ok(body.indexOf('<option value="aiff">AIFF') !== -1, id + ' offers AIFF behind it');
   }
-  ok(count('value="aiff"') === 8, 'all eight format menus carry it, the batch and playlist pickers too (' + count('value="aiff"') + ')');
+  ok(count('value="aiff"') === 5, 'all five format menus carry it, the batch and playlist pickers too (' + count('value="aiff"') + ')');
 
   ok(count('async function scEncodeAiffCooperative(buf, meta, onSlice){') === 1, 'there is one AIFF writer');
   ok(src.indexOf("if(fmt === 'aiff') return await scEncodeAiffCooperative(buf, meta, onSlice);") !== -1,
@@ -912,10 +918,11 @@ console.log('[17] the how-to steps put the songs in the library by themselves');
     const b = src.indexOf(to, a);
     return a === -1 || b === -1 ? '' : src.slice(a, b);
   };
+  // 73.5 - the Settings-side Get Songs box left with its tab, so Discover's is
+  // the only how-to box left to slice out.
   const disc = slice('id="getSongsHowToDisc"', '<!-- Expand URL card -->');
-  const settings = slice('id="getSongsHowToSettings"', '<!-- Expand URL card -->');
-  ok(disc !== '' && settings !== '', 'both how-to boxes can be sliced out');
-  for (const [label, box] of [['Discover', disc], ['Settings', settings]]) {
+  ok(disc !== '', 'the Discover how-to box can be sliced out');
+  for (const [label, box] of [['Discover', disc]]) {
     ok(box.indexOf('already in your library') !== -1, label + ': the last step says the song is already in the library');
     ok(box.indexOf('Nothing to import') !== -1, label + ': and that there is nothing to import');
     ok(box.indexOf('Import to Library') === -1, label + ': the stale Import to Library step is gone');

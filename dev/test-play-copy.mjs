@@ -53,8 +53,15 @@ console.log('[1] the Play build cannot reach a converter');
 {
   // The header block is the whole hiding story for the UI.
   const header = sliceBetween('if(SC_IS_PLAY){', '// ---- Frame-rate independent drag auto-scroll');
-  for (const id of ['ytCardDisc', 'ytCardSettings', 'spCardDisc', 'spCardSettings']) {
+  // 73.5 - the Settings copies left with the Get Songs tab, so only Discover's
+  // cards are there to hide.
+  for (const id of ['ytCardDisc', 'spCardDisc']) {
     ok(header.includes("'" + id + "'"), 'the Play header hides the ' + id + ' card');
+  }
+  // 73.5 - and it no longer names the Settings copies, because they are gone
+  // rather than hidden. The removal is proven in dev/test-619.mjs.
+  for (const id of ['ytCardSettings', 'spCardSettings']) {
+    ok(!header.includes("'" + id + "'"), 'the Play header has no ' + id + ' left to hide');
   }
   ok(header.includes("classList.add('sc-play-build')"), 'the sc-play-build class cuts render-only buttons');
   ok(/howToGetMusicHead[\s\S]*?does not stream or fetch anything itself/.test(header),
@@ -69,11 +76,11 @@ console.log('[1] the Play build cannot reach a converter');
     'the Get Songs how-to is rewritten into a walkthrough');
   ok(header.includes("nextElementSibling.style.display = 'none'"),
     'and the whole tool section below it is put away on Play');
-  ok(header.includes("['getSongsHowToDisc','getSongsHowToSettings']"),
-    'both Get Songs surfaces are the ones rewritten (Discover and Settings)');
+  ok(header.includes("['getSongsHowToDisc']"),
+    'the Discover Get Songs surface is the one rewritten (the Settings tab is gone)');
   {
     const from = header.indexOf('var _getSongsSteps =');
-    const to = header.indexOf("['getSongsHowToDisc','getSongsHowToSettings']");
+    const to = header.indexOf("['getSongsHowToDisc']");
     const steps = new Function(header.slice(from, to) + '\nreturn _getSongsSteps;')();
     const text = steps.replace(/<[^>]*>/g, ' ');
     ok(!/converter|spotify|spotisaver|spotmate|youtube|to mp3|download|expand url/i.test(text),
@@ -95,7 +102,7 @@ console.log('[1] the Play build cannot reach a converter');
   //     header rewrites (so the links are wiped, not merely hidden);
   //   * the full build's in-app fallback -> reached only after the Play branch
   //     has already returned.
-  const WIPED = ['getSongsHowToDisc', 'getSongsHowToSettings'];
+  const WIPED = ['getSongsHowToDisc'];   // 73.5 - Settings' box is gone
   const playRefusal = src.indexOf('Not in the openly-licensed catalogs');
   ok(playRefusal !== -1, 'the Play branch has its own licensed-catalog return');
   const siteRe = /https:\/\/(?:spotisaver\.net|spotmate\.online)/g;
@@ -107,7 +114,7 @@ console.log('[1] the Play build cannot reach a converter');
     if (playRefusal !== -1 && m.index > playRefusal) afterRefusal++;
     else stray.push((id || '(no container)') + ' @ ' + m.index);
   }
-  ok(inWiped >= 4, 'the how-to boxes carry the outside-site links, inside the two containers Play wipes: ' + inWiped);
+  ok(inWiped >= 2, 'the how-to box carries the outside-site links, inside the container Play wipes: ' + inWiped);
   ok(afterRefusal >= 2, 'the only other links are the in-app fallback, after the Play branch returns: ' + afterRefusal);
   ok(stray.length === 0, 'no outside-site link sits anywhere else' + (stray.length ? ': ' + stray.join(', ') : ''));
   ok(src.includes('licensed sources'), 'the version line names the build');

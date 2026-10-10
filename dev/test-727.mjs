@@ -79,21 +79,23 @@ console.log('[1] release metadata');
 
 console.log('[2] the tools bar reads as a control you tap');
 {
-  // The identical summary line is in both lists, so the count is exactly two.
-  ok(count(src, '🎛️ Conversion Tools') >= 2, 'the tool sections are still in the markup');
+  // 73.5 - the Settings list went with the Get Songs tab, so one summary line
+  // is left and the count is exactly one.
+  ok(count(src, '🎛️ Conversion Tools') >= 1, 'the surviving tool section is still in the markup');
   const hint = 'Spotify \u00b7 YouTube \u00b7 MP4 \u00b7 Expand URL \u2014 tap to open \u25be';
-  ok(count(src, hint) === 2, 'both tool bars end with the tap hint (' + count(src, hint) + ')');
+  ok(count(src, hint) === 1, 'the tool bar ends with the tap hint (' + count(src, hint) + ')');
   // And the old, non-actionable hint is gone.
   ok(count(src, 'Spotify \u00b7 YouTube \u00b7 MP4 \u00b7 Expand URL</span></summary>') === 0,
     'the old heading-only hint is gone');
-  ok(count(src, 'tap to open') >= 2, 'and the words a reader needs are there in both lists');
+  ok(count(src, 'tap to open') >= 2, 'and the words a reader needs are still there (the bar, plus the note about it)');
 }
 
 console.log('[3] every step names the tap and the drop-down');
 {
+  // 73.5 - the Settings box left with the Get Songs tab; Discover's is the one
+  // that remains.
   const disc = sliceOf(src, 'id="getSongsHowToDisc"', '<!-- Expand URL card -->');
-  const settings = sliceOf(src, 'id="getSongsHowToSettings"', '<!-- Expand URL card -->');
-  for (const [label, box] of [['Discover', disc], ['Settings', settings]]) {
+  for (const [label, box] of [['Discover', disc]]) {
     ok(box.indexOf('a drop-down opens') !== -1, label + ': the step says a drop-down opens');
     ok(/Tap <b style="color:var\(--ink\);">🎛️ Conversion Tools<\/b>/.test(box),
       label + ': and names the bar to tap, with its own glyph');
@@ -103,7 +105,7 @@ console.log('[3] every step names the tap and the drop-down');
   }
   // The teaching lines the older gates pin survive verbatim inside the new text.
   ok(count(src, 'Open the built-in converter below') === 1, 'the Discover teaching line is still exactly once');
-  ok(count(src, 'Paste the link into the built-in') === 1, 'and so is the Settings one');
+  ok(count(src, 'Paste the link into the built-in') === 0, 'the Settings teaching line went with its box');
   ok(count(src, '<b>Getting music in:</b> paste a Spotify link') === 1, 'and so is the tutorial summary opener');
   ok(count(src, 'tap <b>Convert</b>. SideCut tags it, gives it its cover art and files it into your library') === 1,
     'and the scenario still teaches the tag-and-file outcome');
@@ -115,8 +117,8 @@ console.log('[3] every step names the tap and the drop-down');
   // Nothing that was there before was taken away.
   ok(disc.indexOf('spotisaver.net') !== -1 && disc.indexOf('spotmate.online') !== -1,
     'the Discover box keeps its outside-site fallback links');
-  ok(settings.indexOf('spotisaver.net') !== -1 && settings.indexOf('spotmate.online') !== -1,
-    'and so does the Settings box');
+  ok(src.indexOf('id="getSongsHowToSettings"') === -1,
+    'and the Settings box that carried its own copy of those links is gone with its tab');
 }
 
 console.log('[4] the Play-only build was given no converter language');

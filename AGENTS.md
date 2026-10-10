@@ -1,5 +1,145 @@
 # SideCut — repository memory
 
+## 73.5 (Oct 10, 2026 · 12:03 AM EDT): an album rolls into the next one, an old song stops arriving as a new release, and Settings loses its Get Songs tab
+- **The owner's asks, verbatim** (four asks, a push, and a request for advice): "this should be an option on by default
+  but should be optional to automatically go to the next album when one ends"; "This random remixes shouldnt show up
+  as new releases this song was made 7 years ago" (with a screenshot of the release sheet: `SAUDA KHARA KHARA` /
+  Diljit Dosanjh / `Single · Released October 8, 2026`, artwork from a Dandiya compilation); "Push"; "Remove get
+  songs tab from settings because we have discover for free"; and "Make sure everything works correctly and
+  recommend me fixes to add that'll make the app better for new users".
+- **1. NEXT ALBUM WHEN ONE ENDS (index.html).** `hardAdvance` wrapped to the START of the same queue at the end of
+  the queue, which is right for a playlist and wrong for an album you asked to play. New `scAlbumRollNext()` +
+  `scAlbumRollQueue()` (both on window as `__scAlbumRollNext` / `__scAlbumRollQueue`) move the queue to the next
+  album in the Albums list, in the order the cards are in, and set `queueIndex = 0` plus `queueAlbumName`. TWO
+  GUARDS keep it honest: the option must be on (`autoNextAlbum`, ON by default, Settings -> More -> Playback ->
+  Next album when one ends, `dbPut('meta',{key:'autoNextAlbum'})`, loaded with the same default when the row is
+  missing) and the queue must BE that album - `scAlbumQueueIds(cur)` compared item by item - so an Albums-tab
+  play-all, a mix or a search result keeps its own order and wraps as before. And only a NATURAL end rolls:
+  `hardAdvance(dir, wrap, natural)` takes the new third argument, the Next button does not pass it, and the other
+  two end paths (the crossfade in `maybeStartCrossfade`, the gapless cut in `onEnded`) call it explicitly - the
+  gapless one also re-points `nxt.src`, because the element it plays was preloaded with the OLD album's next song.
+  The last album wraps back to the first, and a one-album library wraps inside itself as it always did.
+- **2. A SEVEN-YEAR-OLD SONG IS NOT A NEW RELEASE (index.html).** `__scJunkTitle` refuses remixes, covers and
+  karaoke by TITLE, and the reported row wore a clean title - so it sailed through. Two things make it a
+  re-upload. (a) THE ARTIST'S OWN CATALOG: `fetchArtistReleases` already pulls up to 200 songs by the artist
+  ranked by popularity, which contains the 2019 original beside the 2026 upload; `_oldestDay` records the earliest
+  day each normalised title has in that one list, `_reUpload[title]` is set when the candidate is more than 180
+  days newer, and `prev` (the list already stored for THIS artist) is filtered through it, so the copy an older
+  build stored leaves at once instead of only when that artist is next refetched. Guarded in both push sites: the
+  popularity pass (`_reUpload[_relKey(r.trackName)]`) and the one-track catalog pass, the latter through
+  `__scSingleTitle` so `"<Song> - Single"` is compared as the song. (b) THE LIBRARY: new
+  `window.__scReleaseIsOldSong(artist, rel)` (beside `__scNotNew` / `__scPruneJunkReleases` in block 1) refuses a
+  ONE-TRACK release whose normalised title is already a song in `allTracks` by the same artist, with a generic-/
+  short-title list (Intro, Interlude, Outro, Bonus...) exempt so nothing real is hidden; an album sharing a name
+  with one of your songs is never touched, and an empty library hides nothing. `__scPruneJunkReleases` and
+  `__scReleaseList` both ask it, so a stored copy leaves every surface at once.
+- **3. THE GET SONGS TAB IS GONE FROM SETTINGS (index.html).** Only the Settings copy went: the tab button, the
+  `settingsPaneExpand` div (its how-to box and the three converter cards plus Expand URL) and every `...Settings`
+  control id. Discover keeps the same cards and is the only surface the Play build rewrites or hides now (its
+  header hide-list and its how-to rewrite are single-target). Anything that still names the old tab is redirected -
+  `showSettingsTab('expand') -> 'theme'` - so a saved quick action, the Home bubble CTA, the header gear and the
+  old default landing open Theme; `'expand'` is out of `SETTINGS_TABS` / `SETTINGS_TAB_LABELS` / `hbQuickMeta` / the
+  quick-action picker; the live copy in the feature map, the tutorial summary, the how-to modal, the Start-here card
+  and the scenario step now say Discover; two `_aiKB` answers and the assistant's system prompt were re-pointed,
+  and the Play variant of the Expand URL answer was reworded to avoid the word "Conversion" (the Play knowledge
+  base may not mention a converter at all). The Settings-side JS blocks (expand URL, Spotify, YouTube, MP4) were
+  already null-guarded, so nothing needed deleting there.
+- **THE GATES.** New `dev/test-735.mjs` (74/0) lifts and RUNS the real `scAlbumRollNext`/`scAlbumRollQueue`
+  (on / off / last-album wrap / a library-wide queue / a one-album library / a playlist) and the real
+  `__scReleaseIsOldSong` (owned / other artist / album / generic title / unknown / empty library), pins the
+  fetch-side re-upload rule and both prune sites, and proves the Settings surface is absent while Discover still
+  carries every card. **Repins the removal moved, all count-checked against a pristine 73.4.8 tree**: test-619
+  53/2 -> **47/0** (its "format explainer is in the TOOL SECTION" line had always pinned the wrong element - the
+  guide sits inside the box - so it was corrected, not weakened), test-play-copy 28/0 rebalanced (the two Settings
+  ids became absence checks), test-7316 289/6 -> 277/6 (the lift harness now stubs `__scNotNew`, and the Settings
+  how-to/format-menu blocks are Discover-only), test-726/727 their Settings rows and counts, test-6641/6642 the
+  strip order (Get Songs out; both index-based checks re-anchored), test-6054 40/0 (it hard-crashed at HEAD),
+  test-662 75/0 (its assistant-prompt assertion names Discover now), test-7317 gained the OWN split its
+  notes-shape pins needed, and test-66422/66423/66424 moved their accent-fill floor 14 -> **11** (four of those
+  buttons were the Settings converters).
+- **THE RELEASE**: `APP_VERSION 73.4.9 -> 73.5`, the 7-note head entry at `October 10, 2026 · 12:03 AM EDT` (6 ride
+  to the store channel; the last carries /player/, /widget/, /letter/, /lyrics/, /album/, no apostrophes, no
+  downloader/convert/mp3 term, and the first six avoid the wider list's `get song` arm), `sw.js` cache
+  `sidecut-shell-v73.5`, bundles at a fixed point (**938967** root / **938977** ota-play), all five manifests agree,
+  `ota-bundle --check` and `ota-bundle-play --check` both OK.
+- **VERIFICATION**: test-735 74/0, test-662 75/0, test-619 47/0, test-play-copy 28/0, test-6054 40/0,
+  studio-70-check 394/0, the eight album suites 58/45/25/40/34/42/34/22 all 0-fail, widget-resume 33/33,
+  background-playback 21/0, librarytools 15/15, notifgroup 27/27, refresh-pin 14/0, crossfade-pause 22/0,
+  compress-library 24/0, export-playlist 35/0, check-dom 0 failures, audit-calls OK, OTA trio 20/0, 52/0, 24/0,
+  and the 6642x family (66421 2, 66422 3, 66423 2, 66424 2, 66425 3, 66426 3, 66427 2, 66429 4, 66431 96/0) -
+  every count equal to or better than the pristine 73.4.8 tree, suite by suite.
+- **KNOWN REDS, NOT FROM THIS RELEASE**: `media-controls-check` 66/1 ("and it no longer fires every half hour",
+  present for months); the version-pinned core suites (test-612/6136/6137/6138/6139/619/651/713/714/725/7251/728/7281/7316/7317)
+  drift exactly as they did at 73.4.9 - same counts, including the long-standing single-newline page tail those
+  suites have been red on since before 73.4.8; and `test-6643`'s one red is a CLOCK artefact, not this release -
+  its "nothing is stamped in the future" check already tripped on **73.4.9's own stamp** (Oct 9 8:41 PM EDT =
+  00:41 UTC Oct 10) because this sandbox clock reads 00:15 UTC Oct 10, i.e. before the previous release's stamp;
+  73.5 must be later than 73.4.9 for the newest-first check, so the two lines cannot both be satisfied here.
+- **NOT VERIFIED**: no device or emulator here. The album roll is proven by running the shipped functions with the
+  page's own album helpers stubbed, and the release filter by running the shipped library test plus source pins -
+  not by listening to two albums back to back or by watching a live storefront return a re-upload.
+- **STILL OPEN**: `dev/gates.sh` (untracked) does not yet list `test-735.mjs`, and the new-user recommendations
+  this release was asked for are in the reply, not the repo.
+
+## 73.4.9 (Oct 9, 2026 · 8:41 PM EDT): pause works mid-crossfade, playlists and albums export on their own, and the library can be compressed
+- **The owner's ask, verbatim** (three asks in one turn): "There should be an option just export audio and
+  metadata and stuff for playlists and albums"; "Also maybe have an option to compress your library to
+  make the format smaller if possible"; and "at the end of the song while it's crossfading I should still
+  be able to pause the song while it's playing and crossfading".
+- **1. THE PAUSE BUG (index.html, `scPauseDeck`).** A crossfade plays the INCOMING track on `audioEl2` and
+  flips `activeIdx` only at `finishCrossfade`. Every pause path paused `activeAudio()` alone, so during a
+  blend that was the OUTGOING track - already fading out - while the incoming one stayed audible and the
+  100ms fade interval kept stepping toward its own end. A pause pressed at the end of a song did nothing
+  you could hear. There is now ONE helper, `scPauseDeck()`: it sets `userPaused`, tears an in-flight fade
+  down (`cancelCrossfade` pauses + discards the incoming half and stops the interval) and then pauses the
+  active element, and when it cancelled a fade it puts the outgoing song back on the now bar with
+  `updateNpDisplay` (the light refresh - `updateNowPlayingUI` would have recorded a play for a song that
+  was never restarted). Routed through it: the now-bar button, the Home quick action, the lyrics
+  play/pause, the lock-screen/notification `pause` and `stop` handlers, and the sleep timer. Resuming
+  plays the outgoing song back up where it was; the discarded incoming half is never revived.
+- **2. ONE PLAYLIST / ONE ALBUM EXPORT (index.html).** "Export playlist" only ever exported the playlist
+  that happened to be open (from the list kebab) and "Export albums" zipped every album at once. New
+  `exportOnePlaylist(name)` / `exportOneAlbum(name)` go through the same `doExportTracks`/`runZipExport`
+  path and carry the audio, the tags, the covers AND the grouping (playlist for one, `kind:'albums'` +
+  `settings.userAlbums` for the other). New entry points: an export button in each album card header
+  (`_albExpBtn`) and one on each playlist row in Manage playlists (`expBtn`). `exportPlaylist()` is now a
+  thin delegate to `exportOnePlaylist(activePlaylist)`.
+- **3. COMPRESS THE LIBRARY (index.html + the Studio block).** The re-encoder existed but only per song in
+  the storage cleaner (and a batch over a hand-made selection). The Studio module now has
+  `compressLibrary(kbps)` (`SC70.compressLibrary`, state at `window.__scCompressState`): it walks every
+  song in one run, and `scNeedsShrink` keeps it honest - `bytes*8/duration` is the file's own average
+  bitrate, so a song already at or below the target is LEFT ALONE and only a run that can win space
+  starts. A file that cannot finish is counted and the run carries on. Settings → More → Library Tools
+  has the button (`compressLibBtn`, 128 kbps) with a note saying what it will and will not touch.
+- **THE GATES.** New `dev/crossfade-pause-check.cjs` (22/0): boots the page, patches BOTH real <audio>
+  elements, starts a real blend, then proves the now-bar pause and the lock-screen pause both silence the
+  incoming half, that the fade does not finish itself, that the queue does not move, that the now bar goes
+  back to the song really on the deck, and that resuming never revives the discarded half. It FAILS on the
+  pre-fix code (7 red), so it can really catch a regression. New `dev/compress-library-check.cjs` (24/0):
+  drives the real run with an AudioContext + encoder stub and proves the selection rule, that only the
+  loud file is replaced, that the already-small file is untouched byte for byte, that bytes won back are
+  counted, that a library with nothing to win starts nothing, and the Settings → More wiring.
+  `dev/export-playlist-check.cjs` grew a per-item section (16/0 -> 35/0): its JSZip stub now records what
+  goes into the archive, so the new checks read `manifest.json` back out and prove the zip holds exactly
+  that playlist / that album with its own grouping and no playlist leak on the album path.
+- **TEST-662'S PIN MOVED, HONESTLY.** `count('updateNpDisplay(cur)') === 2` (the two batch jobs) became
+  `=== 3` with the assertion renamed: the crossfade-pause restore is a legitimate third caller of that
+  light refresh. The code was NOT renamed to dodge the pin.
+- **THE RELEASE**: `APP_VERSION 73.4.8 -> 73.4.9`, the 7-note head entry at `October 9, 2026 · 8:41 PM
+  EDT` (6 ride to the store channel; the last carries /widget/, /player/, /letter/, /lyrics/, /album/,
+  no apostrophes, no downloader/convert/mp3 term), `sw.js` cache `sidecut-shell-v73.4.9`, bundles to a
+  fixed point (root/ota 936361, ota-play 936370), all five manifests agree, `ota-bundle --check` and
+  `ota-bundle-play --check` both OK.
+- **VERIFICATION**: crossfade-pause-check 22/0, compress-library-check 24/0, export-playlist-check 35/0,
+  studio-70-check 394/0, media-controls-check 66/1 (the same pre-existing "and it no longer fires every
+  half hour"), widget-resume-check 33/33, background-playback-check 21/0, the eight album suites and
+  librarytools/notifgroup/refresh-pin all green, check-dom 0 DOM-integrity failures, audit-calls OK, OTA
+  trio 20/0, 52/0, 24/0. The core battery was compared suite-by-suite against a pristine 73.4.8 tree
+  (HEAD unpacked with `git archive` into /tmp/base): every count is identical except test-662, which is
+  green again after its pin moved. The version-pinned suites (test-612/6136/6137/6138/6139/619/651/713/714/725/7251/728/7281/7316/
+  7317) still drift on a version move by design - the same counts as at 73.4.8, including the
+  long-standing single-newline page tail those suites have been red on since before this release.
+
 ## 73.4.8 (Oct 9, 2026 · 7:56 AM EDT): the More pane reads as menus you open
 - **The owner's ask, verbatim**: "Put it before the replay tuturiol and make stuff like this collapsible
   menus" - with a screenshot of Settings → More where the notification player card sits as a wall of

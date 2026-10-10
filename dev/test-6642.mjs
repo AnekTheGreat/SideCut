@@ -109,17 +109,18 @@ console.log('[2] the entry names state the changes');
 
 console.log('[3] the settings tabs are back in the order they had');
 {
-  // 70.1.3 took the Premium tab out of the strip, so there are eight now and
-  // every position after it moved one to the left.
-  const order = ['settingsTabExpand', 'settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
+  // 70.1.3 took the Premium tab out of the strip; 73.5 took Get Songs out of it
+  // too (its cards live in Discover). The seven this file tracks run Theme .. More.
+  const order = ['settingsTabTheme', 'settingsTabDonate', 'settingsTabGlow',
     'settingsTabSandbox', 'settingsTabSupport', 'settingsTabWidget', 'settingsTabMore']
     .map((id) => src.indexOf('id="' + id + '"'));
-  ok(order.every((i) => i !== -1), 'all eight tabs are present');
+  ok(order.every((i) => i !== -1), 'all seven tracked tabs are present');
   ok(order.every((v, i) => i === 0 || order[i - 1] < v),
-    'and the strip runs Get Songs, Theme, Donate, Glow, Sandbox, Support, Widget, More');
-  ok(order[7] > order[6] && order[7] > order[5], 'More is the last tab');
-  ok(order[2] < order[3], 'Donate is where it was (third now, not fourth)');
-  ok(order[5] < order[6], 'and Support is sixth, before Widget');
+    'and the strip runs Theme, Donate, Glow, Sandbox, Support, Widget, More');
+  ok(order[6] > order[5] && order[6] > order[4], 'More is the last tab');
+  ok(order[1] < order[2], 'Donate is where it was (second now, not third)');
+  ok(order[4] < order[5], 'and Support is fifth, before Widget');
+  ok(src.indexOf('id="settingsTabExpand"') === -1, 'and the Get Songs tab itself is gone');
   ok(src.indexOf('id="settingsTabPremium"') === -1, 'and the tab that was first is still in the strip');
   // The labels must still be the ones a reader expects against those ids.
   ok(has('id="settingsTabMore" style="min-width:100px; padding:12px 18px; text-align:center; white-space:nowrap; font-size:13px;">More</button>'),
@@ -158,12 +159,12 @@ console.log('[5] only the pane scrolls, and every tab opens at its own top');
   ok(/scroll-behavior: auto;/.test(scrollBlock) && !/scroll-behavior: smooth;/.test(scrollBlock),
     'the pane still follows the wheel one to one');
   ok(/overscroll-behavior: contain;/.test(scrollBlock), 'and contains its own ends');
-  const fn = src.slice(src.indexOf('function showSettingsTab(tab){'), src.indexOf("$('settingsTabExpand').addEventListener"));
+  const fn = src.slice(src.indexOf('function showSettingsTab(tab){'), src.indexOf("$('settingsTabTheme').addEventListener"));
   ok(/var _panes = \$\('settingsPanesWrap'\); if\(_panes\) _panes\.scrollTop = 0;/.test(fn),
     'switching tab resets the shared pane scroll');
   ok(/var _sheet = _tbd \? _tbd\.querySelector\('\.modal'\) : null;\n\s*if\(_sheet\) _sheet\.scrollTop = 0;/.test(fn),
     'and the sheet itself, so nothing can start half-way down');
-  ok(fn.indexOf('_panes') < fn.indexOf("$('settingsPaneExpand')"),
+  ok(fn.indexOf('_panes') < fn.indexOf("$('settingsPaneTheme')"),
     'both resets run before any pane is shown');
 }
 

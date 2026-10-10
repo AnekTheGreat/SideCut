@@ -61,7 +61,10 @@ ok(src.indexOf("Answered from the built-in knowledge base") !== -1, 'and the sta
 const prompt = sliceBetween('var _aiSystemPrompt = ', ';\n');
 ok(prompt.length > 100, 'the assistant is still given a system prompt');
 ok(prompt.indexOf('never claim a SideCut feature does not exist') !== -1, 'that forbids denying a real feature');
-ok(prompt.indexOf('Get Songs') !== -1, 'and names where the built-in tools are');
+// 73.5 - the Get Songs tab is gone from Settings, so the prompt names Discover
+// instead; the point of the assertion (it says where the built-in tools live)
+// is unchanged.
+ok(prompt.indexOf('Discover') !== -1, 'and names where the built-in tools are');
 ok(prompt.indexOf('SC_IS_PLAY') !== -1, 'per build');
 
 console.log('\n[3] the pinned artists strip is a rounded card');
@@ -135,7 +138,11 @@ ok((wf.match(/patch-dualinstall\.py/g) || []).length === 1, 'exactly once');
 console.log('\n[8] the missing refresh exists, and a refused Blob cannot escape');
 ok(src.indexOf('function updateNpDisplay(t){') !== -1, 'updateNpDisplay() is defined');
 ok(count('function updateNpDisplay(t){') === 1, 'once');
-ok(count('updateNpDisplay(cur)') === 2, 'and both batch jobs still call it');
+// 73.4.9 - a third caller joined the two batch jobs (the watermark clean and
+// Refetch missing covers): pausing mid-crossfade puts the song that is really on
+// the deck back on the now bar, and that is exactly this light refresh. The pin
+// moves with the code rather than the code being renamed to dodge the pin.
+ok(count('updateNpDisplay(cur)') === 3, 'and both batch jobs still call it, plus the crossfade-pause restore');
 ok(src.indexOf('window.updateNpDisplay = updateNpDisplay;') !== -1, 'it is exposed with the other hooks');
 const np = sliceBetween('  function updateNpDisplay(t){', '\n  }\n');
 ok(np.indexOf('recordPlay') === -1, 'and it does not count as a play');

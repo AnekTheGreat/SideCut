@@ -36,19 +36,21 @@ const count = (s) => src.split(s).length - 1;
 
 console.log('[1] Play build: downloads removed from the source');
 ok(count('id="spCardDisc"') === 1, 'Discover Spotify card has an id');
-ok(count('id="spCardSettings"') === 1, 'Settings Spotify card has an id');
 ok(count('id="getSongsHowToDisc"') === 1, 'Discover how-to box has an id');
-ok(count('id="getSongsHowToSettings"') === 1, 'Settings how-to box has an id');
+// 73.5 - the Settings copies left with the Get Songs tab, so what this file used
+// to require is asserted ABSENT instead.
+ok(count('id="spCardSettings"') === 0 && count('id="getSongsHowToSettings"') === 0,
+   'the Settings card and how-to box are gone with the tab');
 ok(src.includes('.sc-play-build .discover-dl-btn,') &&
    src.includes('.sc-play-build .ah-dl-album-btn,') &&
    src.includes('.sc-play-build .ah-dl-track{ display:none !important; }'),
    'CSS cuts the three buttons only a render path creates');
 ok(count("document.documentElement.classList.add('sc-play-build')") === 1,
    'only the block-1 header sets that class');
-ok(/if\(SC_IS_PLAY\)\{\s*try\{\s*\['ytCardDisc','ytCardSettings'\]/.test(src),
+ok(/if\(SC_IS_PLAY\)\{\s*try\{\s*\['ytCardDisc'\]/.test(src),
    'the YouTube-card line is still the first statement (a test pins this)');
-ok(count("['spCardDisc','spCardSettings'].forEach") === 1,
-   'Spotify cards are hidden with them');
+ok(count("['spCardDisc'].forEach") === 1,
+   'the Discover Spotify card is hidden with it (the Settings copy is gone, 73.5)');
 const spGate = src.indexOf('function convertSpToAudio(');
 const spGateIf = src.indexOf('if(SC_IS_PLAY){', spGate);
 ok(spGate !== -1 && spGateIf !== -1 && spGateIf - spGate < 400,
@@ -81,18 +83,18 @@ console.log('[2] Play build: the removal actually runs (block-1 executed)');
   try {
     new Function('SC_IS_PLAY', 'document', body)(true, document);
     ok(classes.includes('sc-play-build'), 'html carries the class that cuts the buttons');
-    ok(els.spCardDisc.style.display === 'none' && els.spCardSettings.style.display === 'none',
-       'both Spotify converter cards are hidden');
-    ok(els.ytCardDisc.style.display === 'none' && els.ytCardSettings.style.display === 'none',
-       'both YouTube converter cards are hidden');
-    ok(String(els.getSongsHowToDisc.innerHTML).includes('+ Add songs') &&
-       String(els.getSongsHowToSettings.innerHTML).includes('+ Add songs'),
-       'both how-to boxes become an + Add songs note (ripper links gone with them)');
+    ok(els.spCardDisc.style.display === 'none', 'the Discover Spotify converter card is hidden');
+    ok(els.ytCardDisc.style.display === 'none', 'the Discover YouTube converter card is hidden');
+    ok(String(els.getSongsHowToDisc.innerHTML).includes('+ Add songs'),
+       'the Discover how-to box becomes an + Add songs note (ripper links gone with it)');
+    ok(els.spCardSettings === undefined && els.ytCardSettings === undefined &&
+       els.getSongsHowToSettings === undefined,
+       'and the Settings copies the block used to reach are gone, not looked up (73.5)');
     ok(summaries[0].textContent === 'MP4 \u00b7 Expand URL',
        'summary reads: ' + summaries[0].textContent);
     ok(!String(els.getSongsHowToDisc.innerHTML).includes('spotisaver') &&
-       !String(els.getSongsHowToSettings.innerHTML).includes('spotmate'),
-       'no outside converter link survives in either box');
+       !String(els.getSongsHowToDisc.innerHTML).includes('spotmate'),
+       'no outside converter link survives in the box');
   } catch (e) {
     ok(false, 'block-1 threw: ' + e.message);
   }

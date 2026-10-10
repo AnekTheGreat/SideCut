@@ -97,9 +97,10 @@ console.log('[2] the Expand URL card sits at the bottom of both tool lists');
   // still hold every card (dev/test-619.mjs proves the nesting tag by tag) and the
   // Expand URL card must now come AFTER the MP4 card and the format explainer.
   const EXPL = 'Audio formats explained';
+  // 73.5 - the Settings list left with the Get Songs tab; Discover's is the one
+  // that remains (dev/test-619.mjs asserts the Settings ids are gone).
   for (const [label, box, expand, mp4] of [
     ['Discover', 'id="getSongsHowToDisc"', 'id="expandUrlInput"', 'id="mp4ToMp3File"'],
-    ['Settings', 'id="getSongsHowToSettings"', 'id="expandUrlInputSettings"', 'id="mp4ToMp3FileSettings"'],
   ]) {
     const eAt = src.indexOf(expand);
     const mAt = src.indexOf(mp4);
@@ -110,11 +111,11 @@ console.log('[2] the Expand URL card sits at the bottom of both tool lists');
     ok(mAt < eAt, label + ': the MP4 card comes before the Expand URL one now');
     ok(xAt !== -1 && xAt < eAt, label + ': and the format explainer is above it too');
   }
-  ok(count(src, '<!-- 72.6: the Expand URL card sits at the bottom of this list now -->') === 2,
-    'both lists say the card was moved there deliberately');
-  ok(count(src, '<!-- Expand URL card -->') === 2, 'and both cards are still in the markup, whole');
+  ok(count(src, '<!-- 72.6: the Expand URL card sits at the bottom of this list now -->') === 1,
+    'the surviving list says the card was moved there deliberately');
+  ok(count(src, '<!-- Expand URL card -->') === 1, 'and the card is still in the markup, whole');
   // The section still contains everything it did before the move.
-  for (const id of ['spCardDisc', 'ytCardDisc', 'mp4ToMp3File', 'spCardSettings', 'ytCardSettings', 'mp4ToMp3FileSettings']) {
+  for (const id of ['spCardDisc', 'ytCardDisc', 'mp4ToMp3File']) {
     ok(src.indexOf('id="' + id + '"') !== -1, 'the ' + id + ' card is still in its section');
   }
 }
@@ -122,22 +123,21 @@ console.log('[2] the Expand URL card sits at the bottom of both tool lists');
 console.log('[3] the how-to text opens with the two ways in');
 {
   const disc = sliceOf(src, 'id="getSongsHowToDisc"', '<!-- Expand URL card -->');
-  const settings = sliceOf(src, 'id="getSongsHowToSettings"', '<!-- Expand URL card -->');
   ok(/New here\? There are two ways in/.test(disc), 'the Discover box says there are two ways in');
   ok(disc.indexOf('+ Add songs') !== -1 && disc.indexOf('Library') !== -1,
     'and names + Add songs and where the songs land');
-  ok(/New here\? There are two ways in/.test(settings), 'the Settings box says it too');
-  ok(settings.indexOf('+ Add songs') !== -1 && settings.indexOf('Library') !== -1,
-    'and names + Add songs and where they land');
+  // 73.5 - the Settings box went with its tab, so there is nothing left to read
+  // there at all.
+  ok(src.indexOf('id="getSongsHowToSettings"') === -1, 'and the Settings box is gone with its tab');
   ok(src.indexOf('Two ways in: let the app make the file from a Spotify or YouTube link (steps 1-4), or bring files you already have (the last step).') !== -1,
     'and the first-run walkthrough opens with the same plain line');
   // The teaching lines the Play-build gates pin are untouched.
   ok(count(src, 'Open the built-in converter below') === 1, 'the Discover teaching line is still exactly once');
-  ok(count(src, 'Paste the link into the built-in') === 1, 'and so is the Settings one');
+  ok(count(src, 'Paste the link into the built-in') === 0, 'the Settings teaching line went with its box');
   ok(disc.indexOf('spotisaver.net') !== -1 && disc.indexOf('spotmate.online') !== -1,
     'the Discover box keeps its outside-site fallback links (the Play build wipes them)');
-  ok(settings.indexOf('spotisaver.net') !== -1 && settings.indexOf('spotmate.online') !== -1,
-    'and so does the Settings box');
+  ok(src.indexOf('id="getSongsHowToSettings"') === -1,
+    'and the Settings box that carried its own copy of those links is gone');
 }
 
 console.log('[4] a hidden playlist is never the one the Library opens on');
