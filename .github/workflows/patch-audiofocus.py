@@ -18,6 +18,18 @@ abandons it on a deliberate pause, so:
   • the system asks us (instead of talking over us) when a call comes in, and
     the focus listener below reports the interruption to JS.
 
+73.6 - ONLY A REAL CALL IS AN INTERRUPTION. Every messaging app takes audio focus
+to play its own short sound (the blip when you send a message, an incoming
+notification, a voice note), and a transient focus request makes Chromium pause the
+WebView's <audio> element over it. The web layer therefore stopped the music the
+same way a phone call would, and could not tell the two apart. A real call is a
+fact Android publishes: AudioManager reports MODE_IN_CALL / MODE_IN_COMMUNICATION
+while a call is up and MODE_RINGTONE while one is ringing (the Android audio-input
+guide defines a voice call as exactly that test), and reading the mode needs no
+permission. So the plugin grows `callState()`, which reports inCall / ringing, and
+the focus event carries the same fact - the web layer obeys an interruption only
+when a call is really behind it, and keeps playing through everything else.
+
 Idempotent and safe to re-run on a fresh or already-patched project.
 """
 import os
@@ -96,8 +108,19 @@ public class SideCutAudioFocusPlugin extends Plugin {
                                 || "gainTransientMayDuck".equals(event);
                         JSObject data = new JSObject();
                         data.put("event", event);
-                        // Delivered to the web layer, which pauses on a real
-                        // interruption and puts the song back when focus returns.
+                        // 73.6 - the web layer decides whether an interruption is
+                        // obeyed, and only a real call is, so the fact rides on the
+                        // event: inCall is true for a call that is up OR ringing.
+                        try {
+                            int m = mode();
+                            data.put("mode", m);
+                            data.put("ringing", m == AudioManager.MODE_RINGTONE);
+                            data.put("inCall", inCall());
+                        } catch (Exception ignored) {
+                            // Still report the focus change itself.
+                        }
+                        // Delivered to the web layer, which pauses for a call and
+                        // puts the song back when focus returns.
                         // Not retained: a stale event replayed into a listener that
                         // registers later would pause a song nobody interrupted.
                         notifyListeners("focusChange", data, false);
@@ -108,6 +131,77 @@ public class SideCutAudioFocusPlugin extends Plugin {
             };
         }
         return focusListener;
+    }
+
+    /**
+     * The device audio mode, or MODE_NORMAL when it cannot be read. Media players,
+     * the car and the telephony stack all set this while they own the audio, and no
+     * permission is needed to read it.
+     */
+    private int mode() {
+        try {
+            AudioManager am = manager();
+            return am == null ? AudioManager.MODE_NORMAL : am.getMode();
+        } catch (Exception e) {
+            return AudioManager.MODE_NORMAL;
+        }
+    }
+
+    /**
+     * Is the phone in a call - or ringing? This is the question that decides whether
+     * a focus interruption is obeyed, because another app playing a message blip
+     * looks exactly like a call from inside the WebView otherwise.
+     *
+     * MODE_IN_CALL / MODE_IN_COMMUNICATION (a cellular or VoIP call) and
+     * MODE_RINGTONE (an incoming call) are the Android audio-input guide's own test
+     * for "a voice call is active", and the audio mode is readable by any app. The
+     * sharper answer would be TelephonyManager's call state, but that needs
+     * READ_PHONE_STATE, which this app does not ask for, so it is only consulted when
+     * that permission happens to be granted already.
+     */
+    private boolean inCall() {
+        try {
+            int m = mode();
+            if (m == AudioManager.MODE_IN_CALL || m == AudioManager.MODE_IN_COMMUNICATION) return true;
+            if (m == AudioManager.MODE_RINGTONE) return true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                    && (m == AudioManager.MODE_IN_CALL_SCREENING || m == AudioManager.MODE_CALL_SCREENING)) return true;
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                        && getContext().checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE)
+                            == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    android.telephony.TelephonyManager tm =
+                            (android.telephony.TelephonyManager) getContext().getSystemService(Context.TELEPHONY_SERVICE);
+                    if (tm != null && tm.getCallState() != android.telephony.TelephonyManager.CALL_STATE_IDLE) return true;
+                }
+            } catch (Exception ignored) {
+                // No telephony answer available - the audio mode above stands.
+            }
+        } catch (Exception e) {
+            // Never fail a call check into a crash; "no call" keeps the music playing.
+        }
+        return false;
+    }
+
+    /**
+     * 73.6 - the web layer asks this before it obeys any interruption, so that a
+     * messaging app's own sound cannot stop the music the way a phone call does.
+     * Answers are plain facts: inCall is true while a call is up or ringing.
+     */
+    @PluginMethod
+    public void callState(PluginCall call) {
+        JSObject out = new JSObject();
+        try {
+            int m = mode();
+            out.put("mode", m);
+            out.put("ringing", m == AudioManager.MODE_RINGTONE);
+            out.put("inCall", inCall());
+        } catch (Exception e) {
+            // Unknown is reported as "no call": the song keeps playing.
+            out.put("inCall", false);
+            out.put("ringing", false);
+        }
+        call.resolve(out);
     }
 
     @PluginMethod

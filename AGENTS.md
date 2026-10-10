@@ -1,5 +1,91 @@
 # SideCut — repository memory
 
+## 73.6 (Oct 10, 2026 · 1:35 AM EDT): the music keeps playing while you text, and only a real call pauses it
+- **The owner's ask, verbatim**: "Whenever using Whatsapp or corresponding adjacent apps, it keeps thinking there's a
+  call when one is texting please fix this and music should keep playing unless there's an actual phone call".
+- **WHAT IT REALLY WAS (and this must not be re-litigated from memory).** This app's sound lives in a WebView, and
+  CHROMIUM holds the audio focus for its `<audio>` element. Chromium's `content::AudioFocusDelegateAndroid` maps
+  `AUDIOFOCUS_LOSS_TRANSIENT` to `MediaSessionImpl::Suspend(kSystem)`, i.e. IT PAUSES THE ELEMENT (and to
+  `onStartDucking`/volume for `LOSS_TRANSIENT_CAN_DUCK`; `GAIN` resumes it). Every messaging app asks for TRANSIENT
+  focus to play its own short sound - the blip when a message is sent, an incoming notification, a voice note - so a
+  message tone stopped SideCut exactly the way a phone call does, and the app had no way to tell the two apart: the
+  focus listener's "any loss after six seconds pauses" rule obeyed it, the pause path parked the song, and nothing
+  ever handed it back (a one-second blip never sends a focus GAIN). Sources read for this release: Chromium
+  `content/browser/media/session/audio_focus_delegate_android.{h,cc}` and `AudioFocusDelegate.java`,
+  `media_session_browsertest.cc`, the Android audio-focus guide, the audio-input-sharing guide (its definition of an
+  active voice call is `getMode() == MODE_IN_CALL || MODE_IN_COMMUNICATION`), and AOSP `NotificationPlayer.java`
+  (the system notification player asks for TRANSIENT_MAY_DUCK). Two further reasons it never recovered: the
+  platform-pause undo only ran inside the first EIGHT SECONDS of a song (`msSincePlayStarted() < 8000`, added for
+  the "stops a second after play" bug) and only while `!document.hidden` - so a blip while the app was in the
+  background (which is where you are when you are in WhatsApp) ended the music for good. `isMusicActive` and
+  "did another app take permanent focus" cannot separate the cases: this app's own audio is on the music stream too.
+- **THE ONE QUESTION THE PLAYER NOW ASKS: IS A CALL REALLY UP? (index.html + patch-audiofocus.py).** A real call is a
+  fact Android publishes and reading it needs no permission, so the app asks it before obeying anything:
+  `AudioManager.getMode()` is `MODE_IN_CALL` or `MODE_IN_COMMUNICATION` for a cellular or internet call and
+  `MODE_RINGTONE` while one rings. Web half: `scInCall()` (a 5 s cache), `scAskCallState()` (native
+  `SideCutAudioFocus.callState()`; a missing method - a browser, or an APK older than 73.6 - means NO EVIDENCE OF A
+  CALL, i.e. keep playing), `scNoteCallState()`, `scStandDownForCall()` (a call is up: latch `audioFocusInterrupted`
+  + `audioFocusCallPause` and pause, and put the song back when the answer turns back to no call), `scStartCallWatch()`
+  (a 4 s ask that only runs while a song is on the deck and either the app is hidden or the app is already standing
+  down for something - and it clears itself when there is nothing to protect). Exposed for the gate as
+  `window.__scInCall` / `__scAskCallState` / `__scNoteCallState`. Requests stay OFF (`AUDIO_FOCUS_REQUESTS_OFF`), for
+  the 58.8.4 reason: asking for focus on the app's behalf is what made Chromium pause its own element.
+- **THE PAUSE PATH IS NOW CALL-AWARE, AND NO LONGER TIME- OR SCREEN-BOUND.** `scUndoPlatformPause(why, force)` is the
+  one undo (the body used to be inlined in `onPauseEvt`): it refuses only for a user pause, a song that ended, an
+  interruption the app is already standing down for (`audioFocusInterrupted`), a call up or ringing (`scInCall()`), DJ
+  Mode, an empty queue, a spent budget, or a revive already in flight — and the last of those is not believed either:
+  `scSecondLook()` looks again ~2.6 s later (max two looks per attempt, one pending at a time) so a platform pausing
+  twice in the same breath cannot leave a paused player behind. `scAutoReviveBudget()` keeps the three-per-attempt
+  cap but REFILLS it after a minute of undisturbed playback, so the fourth message blip of a long listen no longer
+  kills the song for the rest of it. The 30 s heartbeat's revive also lost its `!document.hidden` gate (and gained
+  `!scInCall()`), so a platform pause in the background is undone there as well. In the focus listener, a
+  `lossTransient` with NO call is ignored and recorded (`focus-loss-transient ignored — no call in progress`) and the
+  element is put back if Chromium already paused it; a permanent `loss` (another player kept the speakers) is still
+  obeyed, and a `gain` still resumes. The event's own `inCall`/`ringing` (73.6 plugin) is trusted when present.
+- **THE NATIVE HALF (.github/workflows/patch-audiofocus.py).** New `callState(PluginCall)` plus `mode()` and
+  `inCall()` in `SideCutAudioFocusPlugin`, and the `focusChange` payload now carries `mode`, `ringing` and `inCall`.
+  No permission is added: `READ_PHONE_STATE` (and its `TelephonyManager.getCallState()`) is consulted ONLY when it
+  happens to be granted already, so the audio mode carries the answer. The listener body still cannot throw (a
+  main-thread focus callback that throws kills the process). Verified by running the patcher in a scratch tree:
+  it registers in `MainActivity`, is idempotent on a second run, and the emitted Java balances its braces.
+- **THE GATES.** New `dev/test-736.mjs` (**75/0**) BOOTS the shipped page in jsdom against a native stub whose
+  `callState()` the test drives, and proves: the call question reaches the plugin, a message blip (a platform pause)
+  minutes into a song AND while the app is hidden is undone and never reaches the paused screen, the fourth in a row
+  is believed and a quiet minute brings the budget back, a real call stands the song down and it comes back by itself
+  when the call ends (`call ended — putting the song back`), a transient focus loss with no call keeps playing while
+  the same loss during a call pauses and resumes, a user pause and a finished song are still believed, and a double
+  pause is answered once (plus the inline blocks parse with acorn and the page throws nothing).
+  **`dev/audio-focus-check.cjs` 35/3 -> 44/0**, and this is a STRENGTHENING, not a weakening: two of its three reds
+  were this very bug (its "a second/third platform pause is undone" assertions fired 80 ms after the pause, before
+  the second look exists to undo it) and its "a call later in the song still pauses it" section drove a bare
+  `lossTransient` as if it were a call - it now drives the phone's answer (`callState`) through the real code path,
+  asserts a no-call transient loss is IGNORED and recorded, and keeps the call-pauses/call-resumes half. No
+  assertion was deleted or loosened. **`media-controls-check.cjs` 66/1** (the same long-standing "and it no longer
+  fires every half hour"), background-playback 21/0, crossfade-pause 22/0, widget-resume 33/33,
+  librarytools 15/15, notifgroup 27/27, refresh-pin 14/0.
+- **THE RELEASE**: `APP_VERSION 73.5 -> 73.6`, the 7-note head entry at `October 10, 2026 · 1:35 AM EDT` (6 ride to
+  the store channel; the last carries /widget/, /player/, /letter/, /lyrics/, /album/, no apostrophes, no
+  downloader/convert/mp3 term; two notes were TRIMMED to fit the 260-char rule test-7251 enforces - 268 -> 250 and
+  286 -> 229), `sw.js` cache `sidecut-shell-v73.6`, bundles at a fixed point (**942568** root / **942577** ota-play),
+  all five manifests agree, `ota-bundle --check` and `ota-bundle-play --check` both OK.
+- **VERIFICATION**: test-736 75/0, audio-focus 44/0, media-controls 66/1, background-playback 21/0, crossfade-pause
+  22/0, widget-resume 33/33, librarytools 15/15, notifgroup 27/27, refresh-pin 14/0, studio-70 394/0,
+  compress-library 24/0, export-playlist 35/0, the eight album suites 58/45/25/40/34/42/34/22 all 0-fail,
+  check-dom 0 failures, audit-calls OK (5704 names, 8345 line comments), OTA trio 20/0, 52/0, 26 checks rc=0,
+  ota-bootapply 24/0, and every suite compared SUITE BY SUITE against a pristine 73.5 tree (`git archive HEAD` into
+  /tmp/base735, with node_modules symlinked so the ESM gates resolve acorn): test-705 235/7 both trees, test-612 1,
+  6136 1, 6137 2, 6138 2, 6139 2, 651 1, 713 5, 714 5, 725 5, 7251 5 (after the note trim), 728 6, 7281 6, 7316 6,
+  7317 6, 6641 2, 6642 2, 66421 2, 66422 3, 66423 2, 66424 2, 66425 3, 735 74/0, 619 47/0, 662 75/0, play-copy 28/0,
+  6054 40/0 - identical counts, and test-7252 crashes identically on BOTH trees (pre-existing, not this release).
+- **NOT VERIFIED, AND ONE DELIVERY SPLIT TO BE HONEST ABOUT**: no device or emulator here. The call question is
+  proven by driving the shipped page against a stubbed native plugin, not by texting on WhatsApp next to a
+  playing song or by taking a real call. The native half is injected only during the Android CI build, so it needs
+  the NEXT APK: on an APK older than 73.6 there is no `callState()`, which the web half deliberately reads as "no
+  call" - the music therefore keeps playing through a real call until that APK ships (the owner's stated
+  preference over the false positives that stopped it while texting). A VoIP app that sets MODE_IN_COMMUNICATION for
+  its own voice-note playback would be read as a call for as long as it holds that mode; that is the documented
+  limit of a permission-free answer.
+
 ## 73.5 (Oct 10, 2026 · 12:03 AM EDT): an album rolls into the next one, an old song stops arriving as a new release, and Settings loses its Get Songs tab
 - **The owner's asks, verbatim** (four asks, a push, and a request for advice): "this should be an option on by default
   but should be optional to automatically go to the next album when one ends"; "This random remixes shouldnt show up

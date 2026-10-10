@@ -61,6 +61,9 @@ function fakeIndexedDB() {
 
 const calls = { request: 0, abandon: 0, isHolding: 0 };
 let focusListener = null;
+// 73.6 - the phone's own answer to "is a call really up?". The app obeys an
+// interruption only when this says a call is behind it, so the audit drives it.
+let callAnswer = { inCall: false, ringing: false, mode: 0 };
 // Handlers the app registers on the phone's media session (lock screen /
 // notification player). Captured so the test can drive a pause the way the
 // native bridge would.
@@ -110,6 +113,9 @@ const dom = new JSDOM(html, {
           request: () => { calls.request++; return Promise.resolve({ granted: true }); },
           abandon: () => { calls.abandon++; return Promise.resolve(); },
           isHolding: () => { calls.isHolding++; return Promise.resolve({ holding: true }); },
+          // 73.6 - AUDIOFOCUS_LOSS_TRANSIENT with no call behind it is another app
+          // playing its own short sound, and the song has to survive that.
+          callState: () => Promise.resolve(callAnswer),
           addListener: (evt, cb) => { if (evt === 'focusChange') focusListener = cb; return { remove() {} }; },
         },
       },
@@ -125,6 +131,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await wait(3000);
   const el = win.document.getElementById('audioEl');
   const playPause = win.document.getElementById('playPauseBtn');
+  const playIcon = win.document.getElementById('playIcon');
   const played = { count: 0, pausedCount: 0 };
   // jsdom cannot actually play media, and `paused` is a read-only prototype
   // getter — own properties let the test drive both directions deterministically.
@@ -135,6 +142,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   el.pause = () => { played.pausedCount++; el.paused = true; el.dispatchEvent(new win.Event('pause')); };
   const setPlaying = () => { el.paused = false; el.dispatchEvent(new win.Event('play')); };
   const emit = (event) => { if (focusListener) focusListener({ event }); };
+  // Tell the page what the phone would answer, then let it ask (the real path).
+  const setCall = (on) => { callAnswer = { inCall: !!on, ringing: false, mode: on ? 2 : 0 }; win.__scAskCallState(); };
 
   console.log('\n— the native plugin is wired up —');
   ok('the focus plugin was detected and its listener registered', !!focusListener);
@@ -226,20 +235,26 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
      String(win.localStorage.getItem('sidecut_playback_stops') || '').slice(0, 120));
   ok('a waiting update is NOT applied off that pause (no reload mid-song)',
      win.__pendingSWReload === true);
-  // A second one is still tolerated; a third is not (never fight forever).
+  // 73.6 - a pause that lands while a revive is still in flight (the platform
+  // pausing twice in the same breath) must not leave a paused player behind. The
+  // app does not believe it and never shows the paused screen for it; it takes a
+  // second look once the revive lock is up (~2.5 s) and undoes it there.
   el.paused = true; el.dispatchEvent(new win.Event('pause'));
   await wait(80);
-  await wait(800);                                            // the revive rate limit
+  ok('a pause on top of a revive does not show the paused screen',
+     /M6 5h4v14H6zm8 0h4v14h-4z/.test(playIcon.innerHTML), playIcon.innerHTML.slice(0, 40));
+  await wait(2900);
+  ok('and it is undone on the second look', el.paused === false, 'paused=' + el.paused);
+  // A pause a full breath later is undone at once (the revive lock is up again).
+  await wait(3000);
   el.paused = true; el.dispatchEvent(new win.Event('pause'));
-  await wait(80);
-  ok('a second platform pause is also undone', el.paused === false, 'paused=' + el.paused);
-  await wait(800);
+  await wait(120);
+  ok('a later platform pause is undone straight away', el.paused === false, 'paused=' + el.paused);
+  // That is the attempt's budget of three: the next one is believed instead of
+  // fought, so a platform that pauses in a loop is never answered for ever.
+  await wait(3000);
   el.paused = true; el.dispatchEvent(new win.Event('pause'));
-  await wait(80);
-  ok('a third is undone too (that is the budget)', el.paused === false, 'paused=' + el.paused);
-  await wait(800);
-  el.paused = true; el.dispatchEvent(new win.Event('pause'));
-  await wait(80);
+  await wait(120);
   ok('a fourth is left alone rather than fought forever', el.paused === true, 'paused=' + el.paused);
   win.__pendingSWReload = false;
   el.paused = false;
@@ -260,17 +275,35 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('the refusal is recorded too',
      /refused-auto-pause/.test(String(win.localStorage.getItem('sidecut_playback_stops') || '')));
 
-  console.log('\n— a call later in the song still pauses it —');
-  // Real interruptions are the whole point of holding focus: unbroken playback
-  // for the first seconds of a song must not make the app deaf to a call.
+  console.log('\n— a message blip later in the song does not stop it, and a call does —');
+  // 73.6 - THE OWNER'S REPORT. Another app taking the audio for a moment to play
+  // its own short sound (the blip when a message is sent, an incoming notification,
+  // a voice note) reaches this app as a TRANSIENT loss, exactly like a phone call
+  // does - so the app asks the phone which one it is, and only a call may stop the
+  // song. Unbroken playback for the first seconds of a song must not make the app
+  // deaf to a real call either, which is the rest of this section.
   played.pausedCount = 0; played.count = 0; calls.abandon = 0;
   el.paused = false;
   // The opening-seconds guard is six seconds long, so the song has to be genuinely
   // underway before an interruption counts.
   await wait(6200);
+  setCall(false);
+  await wait(60);
+  emit('lossTransient');
+  await wait(140);
+  ok('a transient loss with no call behind it does NOT pause the song',
+     played.pausedCount === 0, 'pauses=' + played.pausedCount);
+  ok('the song is still playing', el.paused === false, 'paused=' + el.paused);
+  ok('and the ignored loss is recorded on the device',
+     /focus-loss-transient ignored/.test(String(win.localStorage.getItem('sidecut_playback_stops') || '')),
+     String(win.localStorage.getItem('sidecut_playback_stops') || '').slice(0, 150));
+  ok('no focus is taken for it either', calls.request === 0, 'requests=' + calls.request);
+  // The same event, with the phone saying a call is up, is a real interruption.
+  setCall(true);
+  await wait(60);
   emit('lossTransient');
   await wait(50);
-  ok('the song is paused for the interruption', played.pausedCount === 1, 'pauses=' + played.pausedCount);
+  ok('the same loss during a call pauses the song', played.pausedCount === 1, 'pauses=' + played.pausedCount);
   ok('focus is NOT released — the system must hand it back to us', calls.abandon === 0, 'abandons=' + calls.abandon);
 
   console.log('\n— when the call ends the song comes back —');
@@ -279,6 +312,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok('playback resumes by itself', played.count === 1, 'plays=' + played.count);
   ok('the app is playing again', playingNow(), 'paused=' + el.paused);
   ok('focus was never abandoned through the whole interruption', calls.abandon === 0, 'abandons=' + calls.abandon);
+  setCall(false);
+  await wait(60);
+  ok('and the phone is back to no call', win.__scInCall() === false, String(win.__scInCall()));
 
   console.log('\n— an interruption the system does send us still pauses and resumes —');
   played.pausedCount = 0;

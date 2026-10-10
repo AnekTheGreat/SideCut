@@ -13366,7 +13366,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.5';
+  const APP_VERSION = '73.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13987,6 +13987,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '73.6', date: 'October 10, 2026 · 1:35 AM EDT', title: 'Music keeps playing while you text, and only a real call pauses it', items: [
+    'Music no longer stops while you text. Every messaging app takes the audio for a moment to play its own short sound, and the app used to obey that exactly as it obeyed a phone call - so a one-second blip parked the song and nothing brought it back.',
+    'The app asks the phone one question before it obeys any interruption now: is a call really up? That is a fact Android publishes while a call is active or ringing, so a message tone, a notification sound or a voice note is no longer counted as a call.',
+    'A pause the system applies on its own is undone at any point in the song, not only in the opening seconds, and it works while the app is in the background. Only a pause you asked for, a song that ended or a real call is believed.',
+    'A real call still owns the speakers: a cellular or internet call pauses the song, the app stands down for it, and the song comes back where it was once the call is over. Nothing here fights a call for the audio.',
+    'The phone is only asked while it matters - a song on the deck, or a pause the app is already standing down for - and the asking stops the moment there is nothing left to protect, so no battery is spent on it for nothing.',
+    'A song that then plays untouched for a minute earns its protection back. Three refused stops in a row was the limit that kept the app from fighting a platform pause for ever, and it now resets after a quiet stretch instead of lasting the whole song.',
+    'Nothing else moved: the widget, the phone player and its lock screen controls, the letter-by-letter lyrics, the album list and every saved setting are exactly where they were.',
+  ]},
   { version: '73.5', date: 'October 10, 2026 · 12:03 AM EDT', title: 'An album rolls into the next one, old songs stop arriving as new releases, and Settings loses its Get Songs tab', items: [
     'An album that reaches its end rolls straight into the next album in your Albums list, in the order the cards are in, so a run of albums keeps going instead of looping the one you started.',
     'It is on by default and optional: Settings - More - Playback - Next album when one ends turns it off, and a finished album then wraps inside itself exactly as it always did.',
@@ -29116,9 +29125,110 @@ function _fallbackCopy(text){
   let scReviveLockUntil = 0;
   function scReviveAllowed(){ return Date.now() >= scReviveLockUntil; }
   function scNoteRevive(){ scReviveLockUntil = Date.now() + 2500; }
-  // Set while WE were paused by a focus loss (a call, another app taking over) —
-  // not by the user. Only then do we put the song back when focus returns.
+  // Set while WE were paused by a focus loss — not by the user. Only then do we put
+  // the song back when the interruption is over.
   let audioFocusInterrupted = false;
+  // --------------------------------------------------------------------------
+  // IS THE PHONE REALLY IN A CALL?
+  //
+  // The question this player used to get wrong. Every messaging app takes audio
+  // focus to play its own short sound - the blip when you send a message, an
+  // incoming notification, a voice note - and another app's TRANSIENT focus
+  // request makes Chromium suspend the <audio> element it owns here on the app's
+  // behalf (content/AudioFocusDelegate: LOSS_TRANSIENT pauses the element, GAIN
+  // plays it again). Texting on WhatsApp therefore stopped the song exactly the way
+  // a phone call does, and nothing told the two apart: the app obeyed the loss,
+  // parked the song on the paused screen and waited for a hand-back that a
+  // half-second blip never sends. That is the "it thinks there is a call".
+  //
+  // A real call is a fact Android publishes: AudioManager reports MODE_IN_CALL or
+  // MODE_IN_COMMUNICATION while a call is up and MODE_RINGTONE while one is
+  // ringing (the Android audio-input guide defines a voice call as exactly that
+  // test), and reading the mode needs no permission. So the app asks, and only a
+  // call is obeyed. The native half is SideCutAudioFocus.callState()
+  // (.github/workflows/patch-audiofocus.py); in a browser, or on an APK older than
+  // 73.6, there is no evidence of a call, so the music keeps playing.
+  const SC_CALL_TTL_MS = 5000;  // an answer is good for this long
+  let scCallKnownAt = 0;        // when the last answer was taken
+  let scCallKnown = false;      // ...and what it was
+  let audioFocusCallPause = false; // the latch above was set by a CALL
+  function scNoteCallState(inCall){
+    scCallKnownAt = Date.now();
+    const wasKnown = scCallKnown;
+    scCallKnown = !!inCall;
+    if(scCallKnown){ scStandDownForCall(); return; }
+    // The call is over (or there never was one). A song WE stood down for a call
+    // comes back where it was, without waiting for a focus hand-back that this app
+    // never registers for - the same promise the gain path makes.
+    if(audioFocusCallPause){
+      audioFocusCallPause = false;
+      if(userPaused) return;
+      audioFocusInterrupted = false;
+      const a = activeAudio();
+      if(wasKnown && a && a.paused && queueIndex >= 0 && queueIndex < queue.length
+         && $('djModeBackdrop').style.display !== 'flex'){
+        recordPlaybackStop('call ended — putting the song back');
+        try{ a.play().catch(function(){}); }catch(e){}
+      }
+    }
+  }
+  // The synchronous answer, from the last one taken. False means "no call": with no
+  // call on the line there is nothing worth a stopped song, so playback wins.
+  function scInCall(){
+    return scCallKnown && (Date.now() - scCallKnownAt) < SC_CALL_TTL_MS;
+  }
+  function scAskCallState(){
+    try{
+      const P = capAudioFocus;
+      if(!P || typeof P.callState !== 'function'){ scNoteCallState(false); return; }
+      const p = P.callState({});
+      if(p && typeof p.then === 'function'){
+        p.then(function(r){ scNoteCallState(!!(r && (r.inCall || r.ringing))); },
+               function(){ scNoteCallState(false); });
+      } else {
+        scNoteCallState(false);
+      }
+    }catch(e){ scNoteCallState(false); }
+  }
+  // The phone says a call is up (or ringing): the speakers belong to it. This pause
+  // is not the user asking and it is not an app playing a blip - it is a call - so
+  // the song is remembered as interrupted and comes back once the call ends. Nothing
+  // in this app fights a call for the audio.
+  function scStandDownForCall(){
+    try{
+      audioFocusInterrupted = true;
+      audioFocusCallPause = true;
+      const a = activeAudio();
+      if(a && !a.paused && !userPaused){
+        recordPlaybackStop('a call is in progress — pausing until it ends');
+        try{ a.pause(); }catch(e){}
+      }
+    }catch(e){}
+  }
+  // Asked while a song is on the deck: a call can start while the app is in the
+  // background, and the decision to obey an interruption has to be made in the
+  // moment it arrives. Four seconds, and only while it can matter (playing, or
+  // paused under an interruption), so the phone is never asked for nothing.
+  let scCallWatch = null;
+  function scStartCallWatch(){
+    if(scCallWatch) return;
+    scCallWatch = setInterval(function(){
+      try{
+        const a = activeAudio();
+        if(!a || (a.paused && !audioFocusInterrupted)){
+          clearInterval(scCallWatch); scCallWatch = null;   // nothing to protect
+          return;
+        }
+        // In the app and playing, the pause event asks in the moment; this watch is
+        // for the background, and for a call the app already stood down for.
+        if(!document.hidden && !audioFocusInterrupted) return;
+        scAskCallState();
+      }catch(e){}
+    }, 4000);
+  }
+  window.__scInCall = scInCall;
+  window.__scAskCallState = scAskCallState;
+  window.__scNoteCallState = scNoteCallState;   // the gates drive the fact directly
   function audioFocusCall(method, body){
     try{
       if(capAudioFocus && typeof capAudioFocus[method] === 'function'){
@@ -29185,7 +29295,23 @@ function _fallbackCopy(text){
     try{
       capAudioFocus.addListener('focusChange', function(d){
         const ev = String((d && d.event) || '');
+        // A 73.6 plugin asks the phone before it reports, so the answer can ride on
+        // the event itself. Trust it when it is there, ask when it is not.
+        if(d && (typeof d.inCall === 'boolean' || typeof d.ringing === 'boolean')){
+          scNoteCallState(!!(d.inCall || d.ringing));
+        }
         if(ev === 'loss' || ev === 'lossTransient'){
+          // A TRANSIENT loss with no call behind it is another app playing its own
+          // short sound: a sent-message blip, a notification, a voice note. It is
+          // not a call and it is not worth a stopped song, so the app keeps playing -
+          // and if Chromium already paused the element over it, that pause is undone
+          // straight away. Every one of these used to stop the music like a call.
+          if(ev === 'lossTransient' && !scInCall()){
+            recordPlaybackStop('focus-loss-transient ignored — no call in progress');
+            scAskCallState();   // a call that started this instant re-pauses below
+            try{ scUndoPlatformPause('another app took focus'); }catch(e){}
+            return;
+          }
           // A loss in the first moments of a song is the focus handover itself,
           // not an interruption: we asked for focus and another app grabbed it
           // back before a note played. Pausing here is the "song dies a
@@ -29207,11 +29333,14 @@ function _fallbackCopy(text){
             focusFights++;
             return;
           }
-          // A call answered, or another app took over. Pause WITHOUT setting
-          // userPaused — this is an interruption, not the user's choice — so the
-          // song is put back when focus returns.
-          recordPlaybackStop('focus-' + ev);
+          // A real interruption, or another app taking the speakers for good. Pause
+          // WITHOUT setting userPaused — this is an interruption, not the user's
+          // choice — so the song is put back when it is over.
+          recordPlaybackStop('focus-' + ev + (scInCall() ? ' — a call is in progress' : ''));
           audioFocusInterrupted = true;
+          if(scInCall()) audioFocusCallPause = true;
+          // Keep the answer fresh for the moment this loss ends.
+          scAskCallState();
           // A permanent loss means the system has taken focus away for good: ask
           // for it again the next time playback starts. A transient loss (a call)
           // is handed back to us by the 'gain' event, so the flag stays set.
@@ -29255,6 +29384,81 @@ function _fallbackCopy(text){
   function msSincePlayStarted(){
     return audioFocusPlayAt ? (Date.now() - audioFocusPlayAt) : 1e9;
   }
+  // Keep the call watch alive without starting a second one. Started when a song
+  // starts, and it parks itself whenever nothing is on the deck.
+  // The revive budget, with a refill: three refused stops in a row is "never fight
+  // forever", but a song that then plays undisturbed for a minute has earned them
+  // back — otherwise the fourth message blip of a long listen kills the music for
+  // the rest of the song.
+  function scAutoReviveBudget(){
+    if(lastAutoReviveAt && (Date.now() - lastAutoReviveAt) > 60000) autoRevives = 0;
+    return autoRevives < 3;
+  }
+  // A pause the platform applied on its own. Chromium suspends the <audio> element
+  // the moment ANY other app takes audio focus — including a messaging app playing a
+  // half-second tone — so this is where the music is put straight back. It refuses
+  // only where refusing is right: a pause the user asked for, a song that ended, a
+  // real phone call (up or ringing), DJ Mode, which owns the sound through its own
+  // engine, an interruption the app is already standing down for, and the end of the
+  // attempt's budget. Bounded exactly like the opening-seconds revive, so a platform
+  // that pauses in a loop is answered a few times and then believed. Returns true
+  // when the interruption is being handled (the song is back, or a revive already
+  // in flight is doing exactly that), false when the pause is one to believe.
+  function scUndoPlatformPause(why, force){
+    try{
+      const a = activeAudio();
+      if(!a || !a.paused) return false;
+      if(userPaused || a.ended) return false;
+      if(audioFocusInterrupted) return false;
+      if(scInCall()) return false;
+      if($('djModeBackdrop').style.display === 'flex') return false;
+      if(queueIndex < 0 || queueIndex >= queue.length) return false;
+      if(!scAutoReviveBudget()) return false;
+      if(!force && ((Date.now() - lastAutoReviveAt) <= 700 || !scReviveAllowed())){
+        // A revive is already in flight, or just went through — the platform paused
+        // us twice in the same breath, or another reviver got there first. That IS
+        // this interruption being answered, so the paused screen is not shown for
+        // it; the pause is looked at again once the lock is up, and only then is it
+        // either undone or believed.
+        scSecondLook(why);
+        return true;
+      }
+      autoRevives++;
+      lastAutoReviveAt = Date.now();
+      scNoteRevive();
+      recordPlaybackStop('platform-pause after ' + Math.round(msSincePlayStarted()) + 'ms — replayed (' + why + ')');
+      // Ask for the truth in this moment rather than trusting a five-second-old
+      // answer: a call that really did just start re-pauses the song below, and the
+      // song comes back when it ends.
+      scAskCallState();
+      revivingAudio = true;
+      try{ a.play().catch(function(){}); }catch(e){}
+      setTimeout(function(){ revivingAudio = false; }, 1500);
+      return true;
+    }catch(e){ return false; }
+  }
+  // A second look at a platform pause that arrived while another revive was saving
+  // the song: the platform pausing twice in the same breath must not leave a paused
+  // player behind just because the first pause was still being undone. At most two
+  // looks per play attempt, one pending at a time, so this can never become a loop —
+  // and the same guards apply, so a call, a user pause or a spent budget still wins.
+  let scSecondLookTimer = null, scSecondLooks = 0;
+  function scSecondLook(why){
+    if(scSecondLookTimer || scSecondLooks >= 2) return;
+    scSecondLookTimer = setTimeout(function(){
+      scSecondLookTimer = null;
+      scSecondLooks++;
+      try{
+        const a = activeAudio();
+        if(!a || !a.paused || userPaused || a.ended) return;
+        if(audioFocusInterrupted || scInCall()) return;
+        if($('djModeBackdrop').style.display === 'flex') return;
+        if(queueIndex < 0 || queueIndex >= queue.length) return;
+        if(!scAutoReviveBudget()) return;
+        scUndoPlatformPause(why + ', second look', true);
+      }catch(e){}
+    }, 2600);
+  }
   // True when an automatic stop arrived too early in the attempt to be believed:
   // no audio has played yet, so nobody has anything to interrupt. Used by the
   // lock-screen / notification pause handlers, which a stale media-button event
@@ -29276,12 +29480,13 @@ function _fallbackCopy(text){
   function onPlayEvt(e){
     if(e.target !== activeAudio()) return;
     userPaused = false; // playback is (re)starting — clear any prior deliberate-stop marker
+    scStartCallWatch();
     audioFocusPlayAt = Date.now();
     focusFights = 0;
     spuriousStopsBlocked = 0;
     // A resume we performed ourselves must not refill the auto-revive budget, or a
     // platform that pauses us in a loop would be answered in a loop.
-    if(!revivingAudio) autoRevives = 0;
+    if(!revivingAudio){ autoRevives = 0; scSecondLooks = 0; }
     audioFocusFirstAskDone = false;
     // Only now does the system know this app owns the speakers: it will hand focus
     // back to SideCut after a call instead of resuming another music app, and a
@@ -29317,31 +29522,15 @@ function _fallbackCopy(text){
   }
   function onPauseEvt(e){
     if(e.target !== activeAudio()) return;
-    const _pa = e.target;
-    // A pause nobody asked for, in the opening seconds of a song, is not an
-    // interruption and must not be obeyed — nothing has had time to interrupt it,
-    // so there is nothing to respect. The usual source is the platform: the WebView
-    // pauses its own media element when the audio-focus request is superseded
-    // (including by this app's native focus helper). Obeying that was the "the song
-    // keeps stopping about a second after I press play" report — so put it straight
-    // back and never let it reach the UI: to anything watching, the song never
-    // stopped. A real interruption (audioFocusInterrupted), a background pause, DJ
-    // Mode, or a song that genuinely ended is left alone.
-    if(!userPaused && !audioFocusInterrupted && !_pa.ended && autoRevives < 3
-       && (Date.now() - lastAutoReviveAt) > 700
-       && scReviveAllowed()
-       && !document.hidden && msSincePlayStarted() < 8000
-       && queueIndex >= 0 && queueIndex < queue.length
-       && $('djModeBackdrop').style.display !== 'flex'){
-      autoRevives++;
-      lastAutoReviveAt = Date.now();
-      scNoteRevive();
-      recordPlaybackStop('platform-pause after ' + Math.round(msSincePlayStarted()) + 'ms — replayed');
-      revivingAudio = true;
-      try{ _pa.play().catch(function(){}); }catch(_e){}
-      setTimeout(function(){ revivingAudio = false; }, 1500);
-      return;
-    }
+    // A pause nobody asked for is not an interruption and must not be obeyed — so
+    // put the song straight back and never let it reach the UI: to anything watching,
+    // the song never stopped. This used to apply only to the opening eight seconds
+    // of a song and only while the app was on screen, which is why a message blip in
+    // another app killed the music for good once you had been listening a while, or
+    // whenever the app was in the background. What is left alone is what should be:
+    // a pause the user asked for, a song that genuinely ended, a real phone call, DJ
+    // Mode and the end of this attempt's revive budget.
+    if(scUndoPlatformPause('unrequested')) return;
     $('npDisc').classList.remove('spinning');
     $('npPlayerBody').classList.remove('playing'); $('npTt3d').classList.remove('playing');
     $('playIcon').innerHTML = '<path d="M8 5v14l11-7z"/>';
@@ -29398,7 +29587,7 @@ function _fallbackCopy(text){
       // case where Android reclaimed memory and the old URL went dead while suspended.
       // Skip while DJ Mode is open: it owns sound via the deck engine and the main
       // <audio> element is intentionally idle there, so reviving it would double up.
-      if(a.paused && !userPaused && !document.hidden && scReviveAllowed()
+      if(a.paused && !userPaused && !audioFocusInterrupted && !scInCall() && scReviveAllowed()
          && $('djModeBackdrop').style.display !== 'flex'
          && queueIndex >= 0 && queueIndex < queue.length){
         scNoteRevive();
