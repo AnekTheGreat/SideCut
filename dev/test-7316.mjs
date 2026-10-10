@@ -131,9 +131,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '73.2.1'; /* repinned by dev/repin-7321.mjs */
-const PREV = '73.2'; /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */ /* repinned by dev/repin-7317.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.2.1';
+const VER = '73.6.2'; /* repinned by dev/repin-7362.mjs */
+const PREV = '73.6.1'; /* repinned by dev/repin-7362.mjs */ /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */ /* repinned by dev/repin-7317.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.6.2';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
@@ -773,7 +773,17 @@ console.log('[13] the model does the timing and a tap only lights the line');
   ok(src.indexOf('if (line) { ev.stopPropagation(); scHighlightTapLine(line); }') !== -1,
     'a tap on a line calls the highlight helper');
   ok(src.indexOf('function scHighlightTapLine(el){') !== -1, 'which lights the line and scrolls it into view');
-  ok(src.indexOf('lyricsTapHoldUntil = Date.now() + 5000;') !== -1, 'and holds it so the tracker cannot steal it straight back');
+  // 73.6.2 repin. This pinned a five-second hold ("Date.now() + 5000") from the
+  // release that wrote it. The hold is BRIEF now - 350ms with a timer that hands
+  // the highlight and the word pacing back to playback - which is the same
+  // promise (a tap cannot be stolen straight back by the tracker) kept for a
+  // shorter time, deliberately: "Hold the reader's choice briefly, then hand the
+  // highlight and word pacing back to playback so tapping cannot stall lyrics".
+  // The pin follows the shipped code, and the release timer is pinned with it.
+  ok(src.indexOf('lyricsTapHoldUntil = Date.now() + 350;') !== -1,
+    'and holds it briefly so the tracker cannot steal it straight back');
+  ok(src.indexOf('lyricsTapReleaseTimer = setTimeout(scReleaseLyricsTapHold, 360);') !== -1,
+    'with the hold released on its own timer, so tapping can never stall the lyrics');
   ok(src.indexOf('if (!_tapHeld && currentIdx !== lastLyricsIdx) {') !== -1 &&
      src.indexOf('if (!_tapHeld2 && targetIdx !== lastLyricsIdx) {') !== -1,
     'the playback tracker respects the hold on both the synced and the plain paths');

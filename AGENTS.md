@@ -1,5 +1,72 @@
 # SideCut — repository memory
 
+## 73.6.2 (Oct 10, 2026 · 7:40 AM EDT): DJ Mode joins Studio, the assistant stops answering the wrong question, and the gates catch up three skipped repins
+- **The owner's ask, verbatim**: "This AI is just complete wrong and the dj mode should also be like shown in studio because that makes sense
+  update old things not updates v73.6.2" - with a screenshot of Settings → Support: the question "Can I compact my library" answered by the
+  PLAYLIST SHARE-CODE paragraph, status line "Answered from the built-in knowledge base (the assistant service was busy)". Asked which of two
+  readings of the DJ half was meant, the answer was "Add DJ Mode to Studio as a tool card" and "73.6.2, but describe it however reads best".
+- **WHY THE ASSISTANT WAS WRONG (two causes, both fixed in `index.html`).** (1) There was NO knowledge-base entry for compressing the library:
+  it shipped in 73.4.9 as **Settings → More → Library Tools and Fetching → Compress library (smaller files)** (the button is `compressLibBtn`,
+  the work is `SC70.compressLibrary(128)`) and nothing in `_aiKB` mentioned it. (2) The matcher's word-overlap step searched for a pattern word
+  INSIDE a query word and the other way round with no length gate, so an entry's own "a" counted as a hit for "can" and for "compact" - three
+  of three query words matched the share-code entry and it answered, confidently, a question about storage. Reproduced exactly before touching
+  anything: `_aiFuzzyMatch('Can I compact my library')` returned `q[0] === 'share code'`.
+- **THE FIX.** `_aiFuzzyMatch` now requires the SHORTER of the two strings to be a real word in both halves: the whole-query substring test needs
+  the shorter side ≥4 chars (so a two-letter entry like "eq" cannot sit inside any sentence), and the word-overlap test needs the shorter side
+  ≥4 too (exact word equality is untouched, which is the case short connective words are for). Every score, threshold and call site is
+  unchanged. New KB entries: the compression answer (its keys include the owner's own words "compact my library"), and a rewritten DJ Mode
+  answer. The old DJ Mode entry - "**DJ Mode** automatically plays related songs after your queue ends. Enable it in the Now Playing screen or
+  **Settings → More → Playback**" - described an autoplay the app has NEVER had and a pane that holds nothing of the kind; it is deleted, with a
+  comment saying where the real answer lives. The new one describes the deck: open from the DJ MODE chip or **Studio → DJ Mode**, the platter and
+  scratch, pitch/speed, EQ with kill switches, hot cues, beat-repeat pads, FX pads, DUCK, the crossfader, loop controls, SAVE COPY, the devotional
+  playlists it steps aside for (Paath, Gurbani, Kirtaan, Dhadi Jhatta, Gurmukhi, Religious, Prayer) and **Settings → More → DJ Mode per playlist**.
+- **DJ MODE IN STUDIO.** The Studio rack (`renderStudio`, tools built with `toolCard(...)`) gains `toolCard('djmode', 💿, 'DJ Mode', djCardSub(),
+  djCardState())` as its FIRST card - eleven tools, nothing traded away - and `openTool('djmode')` reaches the app's own deck. The Studio block is
+  a second script and cannot call `enterDjMode()` itself, so block 1 now publishes `window.__scOpenDjMode` and `window.__scDjModeState`. The state
+  hook reports whether the rig is open and whether DJ Mode is switched off for the playlist THE QUEUE CAME FROM - the same `queueSourcePlaylist`
+  rule `enterDjMode()` itself checks, so the card can only promise what a tap will really do - and the card renders that: ON while the deck holds the
+  sound, and "Switched off for \"Paath\" - a playlist meant to be listened to as-is" when it is. (The DJ MODE chip under the player dims for the tab you
+  are LOOKING at, a different question; it is untouched.) The deck itself is byte-for-byte unchanged.
+- **OLD THINGS PUT RIGHT.** (a) `index.html` had lost the two-newline OTA tail (`/\n\n$/`) that test-728/7281/7316/7317 assert - restored.
+  (b) Two tutorial bullets sent people to a **Settings → Playback** tab for DJ Mode and Auto-DJ; the deck is the DJ MODE chip / Studio and Auto-DJ's
+  blend switch is in Studio, so both lines now say that (test-663's "no answer sends anyone to a Settings Playback tab" reaches 0).
+- **THE CATCH-UP REPIN.** `dev/repin-7362.mjs` (new, derived from repin-7321) does the usual A/B/D/E moves - VER pin, changelog head literal,
+  adjacent-entry pin (PREV 73.2 → **73.6.1**), shell cache - and, because 73.5, 73.6 and 73.6.1 published WITHOUT running one, it moves BOTH stale
+  values in the same pass: the build this release renumbers (73.6.1) and the one every gate was still sitting on (73.2.1). 43 test gates +
+  `studio-70-check.cjs` moved; the sweep proves it ("no stale pin left in any gate"), including test-705's SHELL_CACHE, which was still at v73.3
+  (that is the one pin test-718 counts as "does not name this release"). Two gates were repinned by hand because a LATER release really changed the
+  behaviour they pinned, each with the reason in the file: test-7316 pinned a five-second lyrics tap hold (the shipped code holds 350ms and releases
+  on a 360ms timer - the same promise kept briefly, and the release timer is now pinned with it), and test-7317's "say plainly why this release
+  exists" still expected 73.2's words while reading 73.1.7's own entry (it now matches that entry's own text).
+- **THE GATE.** New `dev/test-7362.mjs` (**55/0**), all of it driven: it opens Settings → Support the way a user does and types the questions into
+  the real box, so the reported question is answered about Compress library (and never about share codes) and the DJ Mode question is answered about
+  the deck; it lifts the shipped `_aiFuzzyMatch` + `_aiKB` out of the page and asks the matcher the reported question directly (plus "hi" → nothing,
+  album history/crop/free-up-space still their own answers); and it drives the Studio card - first in the rack, opening the app's own rig onto the
+  song that is playing, closing and handing the song back, and a devotional playlist where the card says why and the deck really does not open.
+  `dev/studio-70-check.cjs` repinned 10 → **11** tool cards (+ the deck leading the rack) with the reason in the comment; **396/0**.
+- **THE RELEASE**: `APP_VERSION 73.6.1 -> 73.6.2`, the 7-note head entry at `October 10, 2026 · 7:40 AM EDT` (6 ride to the store channel; the
+  last names /widget/, /player/, /letter/, /lyrics/ and /album/, no apostrophes, no downloader/convert/mp3 term, every note ≤260 chars),
+  `sw.js` cache `sidecut-shell-v73.6.2`, bundles at a fixed point (**945786** root / **945801** ota-play), all five manifests agree,
+  `ota-bundle --check` and `ota-bundle-play --check` both OK.
+- **VERIFICATION** (each suite run against this tree, and any non-zero compared with the same suite run in a worktree of HEAD = 73.6.1):
+  test-7362 55/0, studio-70 396/0, test-736 75/0, test-7361 29/0, test-735 74/0, test-7316 **284/0** (was 277/6), test-7317 **39/0** (was 33/6),
+  test-725 103/0, test-7251 110/0, test-728 63/0, test-7281 94/0, test-713 50/0, test-714 144/0, test-715 72/0, test-717 94/0, test-720 66/0,
+  test-721 54/0, test-722 79/0, test-724 79/0, test-726 67/0, test-727 54/0, test-7271 59/0, test-718 46/0, test-619 47/0, test-651 35/0,
+  test-662 75/0, test-6641 129/0, test-6642 76/0, test-6643 90/0, test-66431 96/0, test-66429 83/0, test-66421/66423/66424/66427 all 0-fail,
+  test-6054 **40/0** (it CRASHED at HEAD), test-play-copy 28/0, crossfade-pause 22/0, compress-library 24/0, export-playlist 36/0 (the 73.6.1
+  repin held), refresh-pin 14/0, background-playback 21/0, audio-focus 44/0, widget-resume 33/0, librarytools 15/15, notifgroup 27/27, the album
+  suites (58, 45, 25, 40, 34, 42, 34, 22 all 0-fail), check-dom 0, audit-calls OK, ota-guard 20/0, ota-update 52/0, ota-bootapply 24/0, ota-loop
+  26/0 (run alone - it exceeds the host's 180s cap in a battery).
+- **STILL RED, ALL PRE-EXISTING AND IDENTICAL AT HEAD** (nothing here is caused by this release): test-705 237/5 (its own 70.0 badge-wall/secret-badge
+  and theme pins - its shell-cache pin is one of the five this release fixed), test-716 82/1, test-719 68/2, test-723 **86/1** (was 81/6),
+  test-66422/66425/66426 1 each (was 4 each), test-66428 1 (was 4), test-663 **49/0** (was 45/4), test-6139 1 (was 2), test-658 7, test-652 4,
+  test-655 1, test-617 1, test-6052 2, test-60510 1, test-6057 5, test-6058 1, test-play 57/2, test-6044 1, media-controls 66/1 (the months-old
+  "fires every half hour" red). Gates that THROW at HEAD and still throw, unchanged: test-7252 (`scPauseDeck is not defined` inside its own eval),
+  test-656, test-706-712, test-614, test-6047.
+- **NOT VERIFIED**: no device. The deck is driven in jsdom with a fake Web Audio graph - the card really opens `djModeBackdrop`, the deck really
+  takes the playing song and the refusal really fires for a devotional playlist - but no real audio was played and no APK was built.
+
+
 ## 73.6.1 (Oct 10, 2026 · 2:10 AM EDT): export one album from Manage albums, not from every album card
 - **The owner's ask, verbatim**: "Remove the little button to export a singular album from here and add it to manage
   albums. V73.6.1" (with a screenshot of the Albums tab: an upload-arrow button on every album card).

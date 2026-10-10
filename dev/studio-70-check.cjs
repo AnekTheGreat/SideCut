@@ -388,9 +388,16 @@ const realErrors = (errors) => errors.filter((e) =>
     // for it.
     // 72.2: ten. The clean-up joined the row - the rack's silence trim and level
     // match with the knobs already set - and again nothing was traded away for it.
-    ok(tools.length === 10, 'ten tool cards (' + tools.join(',') + ')');
-    ['crop', 'clip', 'edit', 'cleanup', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
+    // 73.6.2: eleven. DJ Mode joined the row, first, because the deck is the one
+    // creative tool the Studio was missing entirely - it lived only on the DJ MODE
+    // chip under the player - and again nothing was traded away for it. The card
+    // opens the app's own deck through window.__scOpenDjMode. The count here is
+    // the rack's shape; dev/test-7362.mjs drives the card itself, the deck it
+    // opens and the playlist that switches it off.
+    ok(tools.length === 11, 'eleven tool cards (' + tools.join(',') + ')');
+    ['djmode', 'crop', 'clip', 'edit', 'cleanup', 'fx', 'karaoke', 'sampler', 'looper', 'sleep', 'practice'].forEach((k) =>
       ok(tools.indexOf(k) !== -1, 'including ' + k));
+    ok(tools[0] === 'djmode', 'and the deck leads the rack (' + tools[0] + ')');
     // 70.0.5: the wall was 201 badges; 73.3 removed the Discovery group at the
     // owner's word, and 73.3.8 replaced the generated thresholds with 150
     // hand-written badges, so the wall is 151 tiles here, the last one blank.

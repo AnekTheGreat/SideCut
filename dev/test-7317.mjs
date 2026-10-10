@@ -30,12 +30,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '73.2.1'; /* repinned by dev/repin-7321.mjs */
+const VER = '73.6.2'; /* repinned by dev/repin-7362.mjs */
 // 73.5 - the notes-shape checks below read THIS release's entry, not whatever
 // happens to head the changelog now (the same OWN split test-725 uses).
 const OWN = '73.1.7';
-const PREV = '73.2'; /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */
-const SHELL_CACHE = 'sidecut-shell-v73.2.1';
+const PREV = '73.6.1'; /* repinned by dev/repin-7362.mjs */ /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */
+const SHELL_CACHE = 'sidecut-shell-v73.6.2';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -72,7 +72,14 @@ console.log('[1] release metadata');
     // 73.2 - the head notes now say why THIS release exists: the albums obey
     // your edits and the speed slider is a regular slider again.
     // 73.5 - read from its own entry (OWN), because the head is this release.
-    ok(/regular slider|fighting your edits|zero songs/i.test(ownNotes), 'and say plainly why this release exists (albums obey your edits)');
+    // 73.6.2 repin. The words below used to be THIS entry's, from when 73.2 was
+    // the head and it said why 73.2 existed. The gate reads its OWN entry now
+    // (73.1.7), and 73.1.7 says why it exists in its own words: an update check
+    // could answer with the number it already had, and a phone does not install
+    // an update that is not a new number, so this release IS that newer number.
+    // The assertion asks the entry that question; it does not ask it to be 73.2.
+    ok(/newer number|number it already had/i.test(ownNotes),
+      'and say plainly why this release exists (the update that was missing)');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
     ok(!/\bpass\b/i.test(String(head.title)), 'the title never uses the word the store gate refuses');
     ok(!/\bdownload|converter|convert\b/i.test(notes), 'no downloader term anywhere in the head notes');
