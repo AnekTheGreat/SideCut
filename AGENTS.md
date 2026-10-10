@@ -1,5 +1,45 @@
 # SideCut — repository memory
 
+## 73.6.1 (Oct 10, 2026 · 2:10 AM EDT): export one album from Manage albums, not from every album card
+- **The owner's ask, verbatim**: "Remove the little button to export a singular album from here and add it to manage
+  albums. V73.6.1" (with a screenshot of the Albums tab: an upload-arrow button on every album card).
+- **WHAT MOVED (index.html).** 73.4.9 put an export button on EVERY album card - `_albExpBtn`, built in the Albums
+  tab's card loop and appended to the card header with `exportOneAlbum(aName)`. It crowded each card and was easy to
+  hit by mistake when all you wanted was to open an album. That builder is GONE from the card loop (the header now
+  ends at its track-count span and only `card.appendChild(hdr)` follows). The button MOVED to Manage albums: each
+  `.mgr-alb-row` is now built with a `.mgr-alb-export` button before its cover button, carrying the same upload-arrow
+  SVG and the same title ("Export this album — audio, tags and covers"), and `wireManageAlbums()` wires it exactly
+  like the cover/rename/delete buttons - by `data-i` position into `names` - calling the existing
+  `exportOneAlbum(name)`. NOTHING about the export itself changed: `exportOneAlbum` still writes the audio, tags and
+  covers plus the album grouping, still asks first through `showExportConfirm`, and cancelling still writes nothing.
+- **THE GATE.** New `dev/test-7361.mjs` (**29/0**): pins the release metadata (73.6.1 head, Eastern stamp, 7 notes,
+  no apostrophe, no downloader term), proves statically that the card builder is really gone (`_albExpBtn`,
+  `exportOneAlbum(aName)` and the `hdr.appendChild` are all absent) while `.mgr-alb-export` is present, wired and
+  keeps its title, and then DRIVES the shipped page in jsdom: it opens the Albums tab, proves the card carries no
+  export button, opens Manage albums the way a user does (Albums ⋮ → Manage albums), finds the album's row, and
+  clicks `.mgr-alb-export` - the real `exportConfirmBackdrop` opens naming that album with its song count, and
+  cancelling closes it with nothing written. `dev/export-playlist-check.cjs` **35/0 → 36/0**: its "each album card
+  carries its own export button" check (`_albExpBtn` + `exportOneAlbum(aName)`) became two checks for the new home
+  (`.mgr-alb-export` + `exportOneAlbum(name)`) plus the card button being gone - a repin the move required, not a
+  weakening. `dev/test-736.mjs` repinned 73.6 → 73.6.1 (VER, head entry, shell cache); back at **75/0**.
+- **THE RELEASE**: `APP_VERSION 73.6 -> 73.6.1`, the 7-note head entry at `October 10, 2026 · 2:10 AM EDT` (6 ride
+  to the store channel; the last carries /widget/, /player/, /letter/, /lyrics/, /album/, no apostrophes, no
+  downloader/convert/mp3 term), `sw.js` cache `sidecut-shell-v73.6.1`, bundles at a fixed point (**942617** root /
+  **942626** ota-play), all five manifests agree, `ota-bundle --check` and `ota-bundle-play --check` both OK.
+- **VERIFICATION**: test-7361 29/0, test-736 75/0, export-playlist 36/0, test-735 74/0, studio-70 394/0, the album
+  suites (albums-manual 58/0, album-isolation 45/0, albums-menu-isolation 25/0, album-rename 40/0, album-play-order
+  22/0, ah-album-edit 42/0, ah-album-reorder 34/0, album-hold 34/0, ah-edit-persist 17/0, dur-bubble 17/0),
+  libhalf 18/0, compress-library 24/0, test-662 75/0, test-619 47/0, test-play-copy 28/0, test-6054 40/0,
+  test-6643 90/0, test-66431 96/0, check-dom 0 failures, audit-calls OK (5703 names, 8347 line comments), media-
+  controls 66/1 (the same long-standing red), background-playback 21/0, crossfade-pause 22/0, widget-resume 33/33,
+  librarytools 15/15, notifgroup 27/27, refresh-pin 14/0, ota-guard 20/0, ota-update 52/0, ota-loop 26/0,
+  ota-bootapply 24/0. Known version-pinned drift, unchanged from 73.6: test-705 236/6 (its own stale shell-cache pin
+  at v73.3, plus the secret-badge/theme pins), test-716 6, test-658 7, test-7316 277/6, test-7317 33/6 - same
+  checks failing as before this release; test-6643's clock red did not fire on this box.
+- **NOT VERIFIED**: the driven check opens the export question against the page's own DOM, not by watching a real zip
+  land in an app cache from the Manage albums button (that path is already covered by export-playlist-check's
+  `exportOneAlbum` drive).
+
 ## 73.6 (Oct 10, 2026 · 1:35 AM EDT): the music keeps playing while you text, and only a real call pauses it
 - **The owner's ask, verbatim**: "Whenever using Whatsapp or corresponding adjacent apps, it keeps thinking there's a
   call when one is texting please fix this and music should keep playing unless there's an actual phone call".

@@ -456,8 +456,13 @@ async function boot({ native, fsOpts }) {
   console.log('\n\u2014 the per-item exports are really in the UI \u2014');
   {
     const src = html;
-    ok('each album card carries its own export button',
-       /_albExpBtn/.test(src) && /exportOneAlbum\(aName\)/.test(src));
+    // 73.6.1 - the per-album export button moved OFF the Albums tab's cards and
+    // INTO Manage albums, so this pins the new home (and that the card button is
+    // really gone).
+    ok('each album row in Manage albums carries its own export button',
+       /class="mgr-alb-export"/.test(src) && /exportOneAlbum\(name\)/.test(src));
+    ok('and the album cards no longer carry a button of their own',
+       !/_albExpBtn/.test(src) && !/exportOneAlbum\(aName\)/.test(src));
     ok('each playlist row in Manage playlists carries its own export button',
        /expBtn/.test(src) && /exportOnePlaylist\(name\)/.test(src));
     ok('the album card button sets its own title so it is findable',
