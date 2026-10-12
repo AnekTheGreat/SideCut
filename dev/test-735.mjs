@@ -149,10 +149,14 @@ console.log('[2] the next album when one ends');
     ok(S.queueIndex === 1 && S.queueAlbumName === null, 'a playlist or a mix is never rolled into an album');
   }
 
-  // The three places a song can reach its own end all ask, and only a natural
-  // end rolls: the Next button stays inside the album you are in.
-  ok(src.indexOf('hardAdvance(1, true, true); // the album ends') !== -1, 'a natural end (no crossfade, no gapless) rolls');
-  ok(/if\(natural && dir > 0 && scAlbumRollQueue\(\) >= 0\)/.test(src), 'and hardAdvance only rolls when it was a natural end');
+  // The places a song can leave this one all ask. 74.0 RETARGETED these two
+  // lines: 73.5 pinned the roll to a natural end and kept the Next button inside
+  // the album you were in ("only a natural end rolls: the Next button stays
+  // inside the album you are in"), and the owner then asked for the skip button
+  // to roll too - so the shipped code has no natural-end argument left and rolls
+  // on any forward step. Same two claims, read off the code that ships now.
+  ok(src.indexOf('hardAdvance(1, true); // the album ends (or Next is pressed)') !== -1, 'the end of an album rolls (no crossfade, no gapless), and so does Next');
+  ok(/if\(dir > 0 && scAlbumRollQueue\(\) >= 0\)/.test(src), 'and hardAdvance rolls on any forward step, not only a natural end');
   ok(/if\(nextIndex >= queue\.length\)\{ scAlbumRollQueue\(\); nextIndex = 0; \}/.test(src), 'a crossfade into the end rolls into the next album');
   ok(/let _rolledGapless = -1;/.test(src) && /_rolledGapless = scAlbumRollQueue\(\);/.test(src),
     'and so does the gapless cut');

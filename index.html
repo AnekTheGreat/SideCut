@@ -3729,7 +3729,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
             <span style="font-size:13px; color:var(--ink-dim);">Next album when one ends</span>
             <button class="tab" id="autoNextAlbumToggle" style="padding:5px 12px; font-size:12px;">On</button>
           </div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">An album that finishes rolls straight into the next album in your Albums list, in the order the cards are in. Turn this off to stop at the end of the album you started.</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">An album that finishes rolls straight into the next album in your Albums list, in the order the cards are in, and the skip button does the same on the last song. Turn this off to stay in the album you started.</div>
 
           <div style="margin-top:16px; display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:13px; color:var(--ink-dim);">Remember sort per playlist</span>
@@ -7905,6 +7905,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // default and one tap away to stop at the end of the album you started. Only an
   // album uses it: a playlist, a mix, a search result or an Albums-tab play-all
   // keeps its own order and wraps to its own start exactly as it always has.
+  // 74.0 - as of this release both forward steps use it, the song that ends and
+  // the skip button (hardAdvance lost its natural-only condition).
   let autoNextAlbum = true;
   function setAutoNextAlbum(on){
     autoNextAlbum = !!on;
@@ -13369,7 +13371,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '73.8';
+  const APP_VERSION = '74.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13990,6 +13992,24 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '74.0', date: 'October 12, 2026 · 6:05 PM EDT', title: 'The skip button rolls into the next album too, not only the song that ends', items: [
+    'The skip button now goes to the next album. Pressing Next on the last song of an album lands on the first song of the next album in your Albums list, in the order the cards are in, which is exactly what the end of the album already did on its own.',
+    'It is the same handover, driven by you. The album you skipped away from and the one that takes over are read from the same list and the same order, so a run of albums keeps going whichever way it is moved on.',
+    'The option covers both now. Settings - More - Playback - Next album when one ends turns the roll off, and the skip button then wraps inside the album you started, exactly as a finished album does.',
+    'A playlist, a mix, a search result or a play-all of the whole library is untouched: Next on the last song wraps inside that list as it always did, because only a queue that is exactly one album rolls at all.',
+    'Skipping in the middle of an album is unchanged as well. Next walks to the next song of the album you are in, and Previous still wraps inside that album rather than jumping backwards into another one.',
+    'Nothing about the handover itself moved: an album still rolls on when its last song reaches its end, and the last album still comes back round to the first, so the music never just stops.',
+    'Nothing else moved either. The player, the home-screen widget, the letter-by-letter lyrics, the dock, the albums and every saved song and setting are where the last release left them.',
+  ]},
+  { version: '73.9', date: 'October 10, 2026 · 1:05 PM EDT', title: 'A refresh adds the new ones and never puts back the ones you removed', items: [
+    'Refetch singles and Refetch albums only add now. A refresh keeps every row the list already has and walks the reply for the songs that are not in it yet, instead of rebuilding the whole list from one reply.',
+    'A removed single cannot ride back in on a refresh. Every list opened from its saved copy is checked against your removals first, and the refetch fallback that served that saved copy as it found it goes through the same check now.',
+    'A short reply no longer deletes what you had. When a store answers with less than it did the last time, the rows already on the list stay where they are and only the genuinely new ones are added.',
+    'The per-artist refresh beside an artist name works the same way. It keeps the songs that group already shows and appends what is new, instead of replacing the group with whatever one reply returned.',
+    'An artist with no answer keeps its songs. A refresh that reaches nothing at all reports it and leaves the list standing, which is what the saved list is for.',
+    'Your removals stay removals. A single or an album you removed is still held out of every list it could enter, and Recently Deleted is still the one place that puts one back, for thirty days.',
+    'Nothing else moves. The player, the home-screen widget, the letter-by-letter lyrics, the dock, the albums and every saved song are where the last release left them.',
+  ]},
   { version: '73.8', date: 'October 10, 2026 · 10:20 AM EDT', title: 'DJ Mode always works in Albums, where an album is not a playlist that opted out', items: [
     'DJ Mode opens from an album again. An album played from the Albums tab inherits nothing from the playlist that happened to be open at the time, so the deck no longer refuses to open on a record with a sentence about a playlist you were not listening to.',
     'The rule is stated once, where the deck reads it: if the queue came from an album, DJ Mode is enabled. An album is a list you asked for by name, and a tab that never opted out cannot have opted out.',
@@ -27766,6 +27786,10 @@ function _fallbackCopy(text){
   // queue (an Albums-tab play-all) or a mix is somebody else's order and keeps
   // wrapping as before. And "next" wraps around the list, so the last album
   // returns to the first and music never stops on its own.
+  //
+  // 74.0 - the SKIP button asks this too. It used to be the one way forward that
+  // stayed inside the album, which read as the app refusing to do what it does
+  // on its own a second later; both forward steps now go through this answer.
   function scAlbumRollNext(){
     try{
       if(typeof autoNextAlbum !== 'undefined' && !autoNextAlbum) return null;
@@ -29075,15 +29099,26 @@ function _fallbackCopy(text){
     }, 100);
   }
 
-  function hardAdvance(dir, wrap, natural){
+  function hardAdvance(dir, wrap){
     cancelCrossfade();
     let next = queueIndex + dir;
     if(next < 0) next = wrap ? queue.length - 1 : 0;
     if(next >= queue.length){
       // 73.5 - the end of an album rolls into the next album (Playback -
-      // "Next album when one ends", on by default). Only a song that reaches its
-      // own end does that; the Next button stays inside the album you are in.
-      if(natural && dir > 0 && scAlbumRollQueue() >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }
+      // "Next album when one ends", on by default).
+      // 74.0 - THE SKIP BUTTON ASKS THE SAME QUESTION NOW. 73.5 gave the roll to
+      // a song that reached its own end and deliberately kept the Next button
+      // inside the album you were in, so the one control a listener reaches for
+      // at the end of a record did the opposite of what happens by itself. The
+      // `natural` flag is gone: any FORWARD step off the last song of an album
+      // rolls, which covers the player's Next, the lock screen / headset skip
+      // and the end of the song alike. Everything the roll refuses it still
+      // refuses - scAlbumRollNext answers for a queue that IS one album and
+      // nothing else, so a playlist, a mix, a search result or an Albums-tab
+      // play-all keeps its own order, and with the option off it answers null
+      // and this wraps inside the album exactly as it always did. Previous is
+      // untouched: it still wraps inside the album you are in.
+      if(dir > 0 && scAlbumRollQueue() >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }
       if(wrap) next = 0; else { $('npDisc').classList.remove('spinning'); return; }
     }
     queueIndex = next;
@@ -29973,7 +30008,7 @@ function _fallbackCopy(text){
       return;
     }
     if(repeatMode === 'one'){ a.currentTime = 0; a.play(); return; }
-    hardAdvance(1, true, true); // the album ends: roll into the next album, or wrap when that option is off
+    hardAdvance(1, true); // the album ends (or Next is pressed): roll into the next album, or wrap when that option is off
   }
 
   [audio, audio2].forEach(a => {
@@ -35254,21 +35289,57 @@ function _renderAhFromData(artistAlbums){
   // Groups from the saved snapshot, keyed by artist name. A pinned artist that
   // comes back empty keeps the group it already had, so a partial or blocked
   // fetch can never delete singles the user already had.
-  function cleanCachedSinglesBody(body){
+  // 73.9 - ONE cleaner for any saved popup body that is about to be shown again.
+  //
+  // A saved body is not a screen. The row a user removed is still inside it,
+  // because the remove hides the row where it stands and the snapshot is copied
+  // off what is on screen - so every saved list keeps drawing it until something
+  // strips it. The Discover button cleaned what it opened, but the refetch
+  // fallback (see __refetchSingles) served the saved body exactly as it found it,
+  // and that is how a removed single was drawn again after a refetch came back
+  // with nothing. Every reader of a saved body goes through this one now, so
+  // there is no path left that can hand a removed row back.
+  //
+  // It removes ONLY what is on a removed list - a single by the track id it was
+  // removed under or by its name, an album by the collection id or by its name -
+  // plus the junk titles the lists themselves refuse, and then any artist group
+  // left with nothing to show. Everything else is handed back untouched, in the
+  // order it was saved.
+  function scCleanRemovedRows(bodyHTML){
     var tmp = document.createElement('div');
-    tmp.innerHTML = body || '';
+    tmp.innerHTML = bodyHTML || '';
     Array.prototype.forEach.call(tmp.querySelectorAll('.dp-track[data-si]'), function(row){
-      var title = row.getAttribute('data-tname') || row.getAttribute('data-trackname') || '';
+      var x = row.querySelector('.dp-ah-x');
+      var tid = (x && x.getAttribute('data-tid')) || row.getAttribute('data-tid') || '';
+      var title = (x && x.getAttribute('data-tname')) || row.getAttribute('data-tname') || row.getAttribute('data-trackname') || '';
       if(!title){
         var nameEl = row.querySelector('div[style*="flex:1"] > div:first-child');
         title = nameEl ? nameEl.textContent : '';
       }
-      if(window.__scJunkTitle(title) || isSingleHidden(row.getAttribute('data-tid') || '', title)) row.remove();
+      // typeof-guarded on purpose: the release gates pull this function out of
+      // the file and run it on its own (dev/v609-check.cjs, dev/report-634-check.cjs),
+      // where the app's own helpers are not in scope.
+      var _junk = (typeof window.__scJunkTitle === 'function') ? window.__scJunkTitle(title) : false;
+      var _gone = (typeof isSingleHidden === 'function') ? isSingleHidden(tid, title) : false;
+      if(_junk || _gone) row.remove();
+    });
+    Array.prototype.forEach.call(tmp.querySelectorAll('.dp-ah-album'), function(row){
+      var hdr = row.querySelector('.dp-ah-album-hdr') || row;
+      var cid = row.getAttribute('data-collection-id') || hdr.getAttribute('data-collection-id') || '';
+      var cname = hdr.getAttribute('data-album') || row.getAttribute('data-cname') || '';
+      if(!cid && !cname) return;
+      var _hAl = (typeof isAlbumHidden === 'function') ? isAlbumHidden(cid, cname) : false;
+      if(_hAl) row.remove();
     });
     Array.prototype.forEach.call(tmp.querySelectorAll('.dp-ah-artist'), function(group){
-      if(!group.querySelector('.dp-track[data-si]')) group.remove();
+      if(!group.querySelector('.dp-track[data-si]') && !group.querySelector('.dp-ah-album')) group.remove();
     });
     return tmp.innerHTML;
+  }
+  window.__scCleanRemovedRows = scCleanRemovedRows;
+  // The name the Singles popup has always read its saved bodies through.
+  function cleanCachedSinglesBody(body){
+    return scCleanRemovedRows(body);
   }
   function cachedArtistGroups(title){
     var map = {};
@@ -45480,21 +45551,76 @@ window.__refetchSingles = async function(){
   }
   if(kept.rows) window.toast('Kept ' + kept.rows + ' saved single' + (kept.rows===1?'':'s') + ' for ' + kept.artists.length + ' artist' + (kept.artists.length===1?'':'s') + ' iTunes did not return.', 3500);
   var html = '';
+  // 73.9 - ONLY THE NEW ONES.
+  //
+  // A refresh used to rebuild every group from this one reply, which meant a
+  // reply that came back short (one storefront having a bad minute, a single
+  // filed under a different store id) silently deleted songs the list already
+  // had. The rows an artist already has are kept exactly as they are now and the
+  // reply is walked for the songs that are NOT among them yet, so a refresh can
+  // only add. A removed single cannot arrive through this door either: it is
+  // filtered out where the search happens, and the saved rows are handed over
+  // through the one cleaner that drops removed ones.
+  //
+  // The keys are the track id the store filed it under and the name itself, so
+  // the same single coming back from another storefront is not added twice.
+  function _scSingleKeysOf(name, id){
+    var out = {};
+    if(id) out['id:' + String(id)] = 1;
+    var t = String(name || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+    if(t) out['t:' + t] = 1;
+    return out;
+  }
+  var _scSavedRows = {};
+  function _scSavedRowsFor(artist){
+    var key = String(artist || '').toLowerCase();
+    if(_scSavedRows[key]) return _scSavedRows[key];
+    var out = { html: '', rows: 0, have: {} };
+    try{
+      var saved = (typeof window.__scCachedArtistGroups === 'function') ? window.__scCachedArtistGroups('\ud83c\udfb5 Singles') : {};
+      var g = saved[key] || saved[String(primaryArtistName(artist) || '').toLowerCase()] || null;
+      if(g && g.html){
+        var t = document.createElement('div');
+        t.innerHTML = g.html;
+        var b = t.querySelector('.dp-ah-albums');
+        out.html = b ? b.innerHTML : '';
+        out.rows = g.rows || 0;
+        Array.prototype.forEach.call(t.querySelectorAll('.dp-ah-x'), function(x){
+          var ks = _scSingleKeysOf(x.getAttribute('data-tname') || '', x.getAttribute('data-tid') || '');
+          Object.keys(ks).forEach(function(kk){ out.have[kk] = 1; });
+        });
+      }
+    }catch(_eSaved){}
+    _scSavedRows[key] = out;
+    return out;
+  }
+  var _scShownRows = 0;
   var artistKeys = (typeof window.orderArtistKeys==='function' ? window.orderArtistKeys(Object.keys(artistSingles), 'sidecut_singlesArtistOrder') : Object.keys(artistSingles).sort());
   for(var ki=0; ki<artistKeys.length; ki++){
     var artist = artistKeys[ki];
     var singles = artistSingles[artist];
+    // What this artist already has, and the part of the reply that is new.
+    var _scSaved = _scSavedRowsFor(artist);
+    var _scNewSingles = [];
+    for(var _sn=0; _sn<singles.length; _sn++){
+      var _sKeys = _scSingleKeysOf(singles[_sn].trackName, singles[_sn].trackId || singles[_sn].collectionId);
+      var _sHave = false;
+      for(var _sk in _sKeys){ if(_scSaved.have[_sk]){ _sHave = true; break; } }
+      if(!_sHave) _scNewSingles.push(singles[_sn]);
+    }
+    var _scTotal = _scSaved.rows + _scNewSingles.length;
+    _scShownRows += _scTotal;
     var sid = 'dps_r_' + ki;
     html += '<div class="dp-ah-artist">';
     html += '<div class="dp-ah-artist-hdr" data-target="' + sid + '">';
     html += '<span class="dp-ah-chevron" style="transition:transform 0.2s;">▸</span>';
     html += '<span style="font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + window.escapeHtml(artist) + '</span>';
-    html += '<span class="dp-si-count" style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + singles.length + ' single' + (singles.length!==1?'s':'') + '</span>';
+    html += '<span class="dp-si-count" style="font-size:11px;color:var(--ink-dim);flex-shrink:0;">' + _scTotal + ' single' + (_scTotal!==1?'s':'') + '</span>';
     html += '<span class="dp-si-refetch" data-artist="' + window.escapeHtml(artist) + '" title="Refresh this artist\'s singles" role="button" tabindex="0" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--coral);font-size:12px;cursor:pointer;flex-shrink:0;margin-left:2px;">↻</span>';
     html += '</div>';
     html += '<div id="' + sid + '" class="dp-ah-albums" style="display:none;padding:2px 0 4px 0;">';
-    for(var sri=0; sri<singles.length; sri++){
-      var sr = singles[sri];
+    for(var sri=0; sri<_scNewSingles.length; sri++){
+      var sr = _scNewSingles[sri];
       var srelDate = sr.releaseDate ? sr.releaseDate.slice(0,10) : '';
       var sdaysAgo = sr.releaseDate ? Math.floor((Date.now() - new Date(sr.releaseDate).getTime())/86400000) : null;
       var swhen = sdaysAgo == null ? '' : sdaysAgo <= 0 ? 'today' : sdaysAgo === 1 ? 'yesterday' : sdaysAgo + 'd ago';
@@ -45510,10 +45636,14 @@ window.__refetchSingles = async function(){
       html += '<span class="dp-ah-x" data-si="' + ki + '-' + sri + '" data-tid="' + escapeHtml(String(sr.trackId || sr.collectionId || '')) + '" data-tname="' + escapeHtml(sr.trackName) + '" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,0.05);color:var(--ink-dim);font-size:14px;cursor:pointer;flex-shrink:0;">\u00d7</span>';
       html += '</div>';
     }
+    // Then the rows this artist already had, in the order they were saved: a
+    // saved row keeps its own place, its own artwork, its own date and its own
+    // preview, so a refresh never rewrites what is already on the list.
+    html += _scSaved.html;
     html += '</div></div>';
   }
   html = '<div style="text-align:center;padding:4px 0 6px;display:flex;gap:6px;justify-content:center;"><button id="singlesRefetchBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--coral);font-size:11px;font-weight:600;cursor:pointer;">\u21bb Refetch singles</button><button id="singlesRecentlyDeletedBtn" style="padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink-dim);font-size:11px;font-weight:600;cursor:pointer;">\u{1f5d1}\ufe0f Recently Deleted</button></div>' + html;
-  openDiscoverPopup('🎵 Singles', kept.html + html, (totalFound + kept.rows) + ' single' + ((totalFound + kept.rows)!==1?'s':'') + ' from ' + pinnedList.length + ' artist' + (pinnedList.length!==1?'s':''));
+  openDiscoverPopup('🎵 Singles', kept.html + html, (kept.rows + _scShownRows) + ' single' + ((kept.rows + _scShownRows)!==1?'s':'') + ' from ' + pinnedList.length + ' artist' + (pinnedList.length!==1?'s':''));
 
   // ▶ buttons play the 30s preview inline; whole-row taps go to the song via
   // the global .dp-track[data-si] delegate (matching album-track behaviour).
@@ -45740,14 +45870,44 @@ window.__singlesRefreshArtistGroup = async function(groupEl){
       var pk = parseInt(String(frow.dataset.si).split('-')[0], 10);
       if(!isNaN(pk)) ki = pk;
     }
+    // 73.9 - a refresh adds what is new and keeps what the group already shows.
+    // Swapping the whole group for this one reply made the ↻ a delete for every
+    // song the reply did not carry (a storefront having a bad minute was enough)
+    // and left an empty state over a group that had songs, which is the opposite
+    // of what a refresh is for. The rows already there are cleaned of removed
+    // ones and kept; only the singles that are not among them are added.
+    var _keptRows = 0, _keptHTML = '', _haveKeys = {};
     if(bodyEl){
-      bodyEl.innerHTML = matched.length
-        ? window.__singlesRowsHTML(artist, matched, ki)
-        : '<div class="dp-empty" style="padding:8px 12px;">No singles found for this artist right now.</div>';
+      _keptHTML = (typeof window.__scCleanRemovedRows === 'function')
+        ? window.__scCleanRemovedRows(bodyEl.innerHTML)
+        : bodyEl.innerHTML;
+      var _keptDoc = document.createElement('div');
+      _keptDoc.innerHTML = _keptHTML;
+      Array.prototype.forEach.call(_keptDoc.querySelectorAll('.dp-ah-x'), function(x){
+        var _kid = x.getAttribute('data-tid') || '';
+        if(_kid) _haveKeys['id:' + _kid] = 1;
+        var _ktn = String(x.getAttribute('data-tname') || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+        if(_ktn) _haveKeys['t:' + _ktn] = 1;
+      });
+      _keptRows = _keptDoc.querySelectorAll('.dp-track[data-si]').length;
+      _keptHTML = _keptDoc.innerHTML;
+    }
+    var _newRows = [];
+    for(var _mri=0; _mri<matched.length; _mri++){
+      var _mrid = matched[_mri].trackId || matched[_mri].collectionId;
+      var _mrtn = String(matched[_mri].trackName || '').toLowerCase().replace(/[^a-z0-9]/g,'').trim();
+      if((_mrid && _haveKeys['id:' + _mrid]) || (_mrtn && _haveKeys['t:' + _mrtn])) continue;
+      _newRows.push(matched[_mri]);
+    }
+    if(bodyEl){
+      bodyEl.innerHTML = _newRows.length
+        ? _keptHTML + window.__singlesRowsHTML(artist, _newRows, ki + 100)
+        : (_keptHTML || '<div class="dp-empty" style="padding:8px 12px;">No singles found for this artist right now.</div>');
       // Show the updated group so the change is visible immediately.
       bodyEl.style.display = 'block';
     }
-    if(cntEl) cntEl.textContent = matched.length + ' single' + (matched.length !== 1 ? 's' : '');
+    var _groupRows = _keptRows + _newRows.length;
+    if(cntEl) cntEl.textContent = _groupRows + ' single' + (_groupRows !== 1 ? 's' : '');
     var chv = hdr ? hdr.querySelector('.dp-ah-chevron') : null;
     if(chv) chv.style.transform = 'rotate(90deg)';
     // ▶ preview buttons for the freshly-rendered rows (whole-row taps and the
@@ -45767,7 +45927,7 @@ window.__singlesRefreshArtistGroup = async function(groupEl){
     // next time the popup is opened.
     if(typeof window.__scSnapshotDiscoverPopup === 'function') window.__scSnapshotDiscoverPopup();
     ok = true;
-    window.toast('\u21bb ' + artist + ': ' + matched.length + ' single' + (matched.length !== 1 ? 's' : '') + ' refreshed.', 2500);
+    window.toast('\u21bb ' + artist + ': ' + _groupRows + ' single' + (_groupRows !== 1 ? 's' : '') + (_newRows.length ? ' (' + _newRows.length + ' new)' : '') + '.', 2500);
   }catch(_err){
     window.toast('Couldn\'t refresh ' + artist + ' \u2014 check your connection.', 3000);
   }finally{
@@ -45819,63 +45979,16 @@ document.addEventListener('click', function(e){
   btns[1].addEventListener('click', function(){ confirmEl.remove(); });
 }, true);
 
-// Deep refetch function — same as normal refetch but skips hidden-list filtering
+// The deep-refetch chip's old handler. That chip refetched with the removed-list
+// filter switched off - "all, including removed" - which is the opposite of what
+// a refresh is for, and it swapped the whole group for one reply on top of it.
+// The chip has not been rendered since 72.1, but a saved popup from an older
+// build can still carry one, so the handler is kept and is now the ordinary
+// per-artist refresh: one implementation, and nothing it does can put a removed
+// single back or delete a row a short reply did not carry.
 window.__singlesDeepRefreshArtistGroup = async function(groupEl){
-  if(!groupEl || groupEl._siRefreshing) return;
-  var hdr = groupEl.querySelector('.dp-ah-artist-hdr');
-  var chip = hdr ? hdr.querySelector('.dp-si-deep-refetch') : null;
-  var artist = chip ? (chip.getAttribute('data-artist') || '') : '';
-  if(!artist && hdr){
-    var nmEl = hdr.querySelector('span[style*="flex:1"]');
-    artist = nmEl ? (nmEl.textContent || '').trim() : '';
-  }
-  if(!artist) return;
-  groupEl._siRefreshing = true;
-  var chipOld = chip ? chip.innerHTML : '';
-  if(chip){ chip.innerHTML = '...'; chip.style.opacity = '0.55'; chip.style.cursor = 'wait'; }
-  var cntEl = hdr ? hdr.querySelector('.dp-si-count') : null;
-  var cntOld = cntEl ? cntEl.textContent : '';
-  if(cntEl) cntEl.textContent = '…';
-  var ok = false;
-  try{
-    // Deep refetch keeps removed singles out of the filter on purpose.
-    var matched = (typeof window.__scFetchArtistSingles === 'function') ? await window.__scFetchArtistSingles(artist, { includeHidden: true }) : [];
-    var bodyEl = groupEl.querySelector('.dp-ah-albums');
-    var ki = 0;
-    var frow = groupEl.querySelector('.dp-track[data-si]');
-    if(frow && frow.dataset.si && String(frow.dataset.si).indexOf('-') !== -1){
-      var pk = parseInt(String(frow.dataset.si).split('-')[0], 10);
-      if(!isNaN(pk)) ki = pk;
-    }
-    if(bodyEl){
-      bodyEl.innerHTML = matched.length
-        ? window.__singlesRowsHTML(artist, matched, ki)
-        : '<div class="dp-empty" style="padding:8px 12px;">No singles found for this artist right now.</div>';
-      bodyEl.style.display = 'block';
-    }
-    if(cntEl) cntEl.textContent = matched.length + ' single' + (matched.length !== 1 ? 's' : '');
-    var chv = hdr ? hdr.querySelector('.dp-ah-chevron') : null;
-    if(chv) chv.style.transform = 'rotate(90deg)';
-    if(bodyEl){
-      bodyEl.querySelectorAll('.dp-track-play').forEach(function(pb){
-        pb.addEventListener('click', function(e){
-          e.stopPropagation();
-          e.preventDefault();
-          var _r = pb.closest('.dp-track');
-          if(_r && _r.dataset.preview && typeof window.playDiscoverTrack === 'function') window.playDiscoverTrack(_r.dataset.preview, _r, { trackName: _r.dataset.trackname || '', artistName: _r.dataset.artist || '', art: _r.dataset.art || '' });
-        });
-      });
-    }
-    if(typeof window.__scSnapshotDiscoverPopup === 'function') window.__scSnapshotDiscoverPopup();
-    ok = true;
-    window.toast('\u21bb ' + artist + ': ' + matched.length + ' single' + (matched.length !== 1 ? 's' : '') + ' refetched (all, including removed).', 3000);
-  }catch(_err){
-    window.toast('Couldn\'t refetch ' + artist + ' \u2014 check your connection.', 3000);
-  }finally{
-    groupEl._siRefreshing = false;
-    if(chip){ chip.innerHTML = chipOld; chip.style.opacity = ''; chip.style.cursor = ''; }
-    if(cntEl && !ok) cntEl.textContent = cntOld;
-  }
+  if(typeof window.__singlesRefreshArtistGroup === 'function') return window.__singlesRefreshArtistGroup(groupEl);
+  return undefined;
 };
 
 // Remove button on Old-songs rows — persists the deletion (hideSingle) so the
@@ -45921,6 +46034,11 @@ function loadCachedDiscoverPopup(key){
       // Through the shared helper, not a second copy of the regex, so the two readings
       // can never drift apart again.
       d.body = window.__scStripPopupPlayButtons(d.body) || d.body;
+      // 73.9 - and the rows the user removed. This loader is the refetch
+      // fallback below, and the saved body it opens still holds them (the remove
+      // hides a row, the snapshot copies the screen). A saved list may keep every
+      // single it was saved with; it may not keep one that was removed.
+      if(typeof window.__scCleanRemovedRows === 'function') d.body = window.__scCleanRemovedRows(d.body) || d.body;
       openDiscoverPopup(d.title, d.body, d.subtitle);
       return true;
     }

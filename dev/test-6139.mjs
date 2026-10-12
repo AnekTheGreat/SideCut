@@ -161,7 +161,7 @@ console.log('[10] the YouTube title leg rides the shared fetch');
 
 console.log('[11] release metadata');
 ok(/^\d+(\.\d+)*$/.test(String(ver)), 'APP_VERSION = ' + ver);
-ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v73.8';"), 'sw.js cache = sidecut-shell-v61.5');
+ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v74.0';"), 'sw.js cache = sidecut-shell-v61.5');
 {
   const head = entries.find((e) => String(e.version) === '61.5');
   ok(!!head, 'CHANGELOG head entry is 61.5');
@@ -200,8 +200,10 @@ console.log('[13] no remixes, nothing off the pinned artists');
   // seven call sites); the releases since then have added call sites to the same
   // one function and never a second test, which is what 21 call sites around 1
   // definition says. 73.7 repinned the number to the truth; it did not change any
-  // of this code.
-  ok(count('__scJunkTitle') === 22, 'one junk test, applied everywhere, with the three surface copies folded into the shared list (' + count('__scJunkTitle') + ')');
+  // of this code. 73.9 added the 23rd: the one cleaner every saved popup body
+  // goes through (scCleanRemovedRows) refuses a junk title as well as a removed
+  // one, so a saved list cannot hand one back either.
+  ok(count('__scJunkTitle') === 23, 'one junk test, applied everywhere, with the three surface copies folded into the shared list (' + count('__scJunkTitle') + ')');
   ok(check2 && check2.includes('!window.__scJunkTitle(r.trackName)'), 'the iTunes song pass refuses a remix title');
   ok(check2 && check2.includes('if(window.__scJunkTitle(r.collectionName)) return;'), 'so does the album pass');
   const idFn2 = slice('async function scItunesArtistAlbums(artist){', "  // Query iTunes for an artist's recent tracks");

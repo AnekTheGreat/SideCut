@@ -1,5 +1,96 @@
 # SideCut — repository memory
 
+## 74.0 (Oct 12, 2026 · 6:05 PM EDT): the skip button rolls into the next album too, because a record ending and a record being skipped are the same question
+- **The owner's ask, verbatim**: "The albums should go to the next album with the skip button too not just airing in to the next one". 73.5 had shipped the roll
+  for a song that reached its own end and had SAID SO in its own notes - "Only a song that really ends rolls on. The Next button stays inside the album you are
+  in" - so at the end of a record the one control a listener reaches for did the opposite of what the app was about to do by itself a second later.
+- **THE FIX IS ONE CONDITION, IN ONE PLACE.** `hardAdvance(dir, wrap)` (index.html ~:29102) has lost its third argument: 73.5's `if(natural && dir > 0 && ...)`
+  is `if(dir > 0 && scAlbumRollQueue() >= 0)` now. Every forward step off the last song of an album goes through that line - the player's **Next** (`#nextBtn`),
+  the lock screen / headset skip (`mediaSetActionHandler('nexttrack')`), the Next button in the lyrics panel, and the end of the song (`onEnded` now calls
+  `hardAdvance(1, true)` with no third argument) - so a skip and a handover cannot disagree again. The crossfade handover (`maybeStartCrossfade`) and the
+  gapless cut in `onEnded` were already natural-end paths and are untouched.
+- **WHAT THE ROLL STILL REFUSES, IT STILL REFUSES**, and the guards were deliberately left alone: `scAlbumRollNext` answers only for a queue that IS one album
+  (its ids, in its order, all live), so a playlist, a mix, a search result, an Albums-tab play-all, or a queue that merely CARRIES an album name keeps its own
+  order and wraps inside itself; `autoNextAlbum` is still ON by default and still answers null when off, so Next then wraps inside the album you started; and
+  **Previous is untouched** - it still wraps inside the album you are in rather than jumping backwards into another one. The Playback description now says the
+  skip button does the same on the last song.
+- **TWO GATES PINNED THE OLD RULE, AND BOTH WERE RETARGETED BY HAND** (the only gate edits this release that are not a version pin). `dev/test-735.mjs` [2]
+  asserted `hardAdvance(1, true, true); // the album ends` and `if(natural && dir > 0 ...)` - exactly the rule the owner asked to have changed; both lines read
+  the shipped code now (no third argument, `dir > 0` alone), with 73.5's own words quoted beside the reason. `dev/test-739.mjs` [1] quoted 73.9's note words
+  (`refetch`, `single`, `album`) off `entries[0]` - true only while 73.9 was the head, so the next release made a gate that describes 73.9 fail for saying
+  nothing about refetching; it finds its own entry by a frozen `const OWN = '73.9'` and reads that, the same fix 73.6.2 gave test-7317 and 71.8 gave
+  test-716/717. Any gate whose VER moves while its content pins quote its OWN release needs this shape.
+- **THE DATE STAMP IS A GATE, AND IT CAUGHT THIS RELEASE.** The first stamp written here (8:20 PM EDT) is 00:20 UTC on the 13th, and `dev/test-6643.mjs`
+  fails "and not one of them in the future" against a clock at 22:27 UTC. The stamp is **6:05 PM EDT** (22:05 UTC, 22 minutes before the tree was verified) -
+  the same character length, so the bundle bytes did not move. Recorded because the check is right and the temptation was to read it as a stale gate.
+- **VERIFIED**: NEW `dev/test-740.mjs` (**53 checks**): [1] release metadata; [2] the rules read out of the file; [3] DRIVEN on the real page in jsdom - three
+  albums listed in their own order, an album played from its LAST row, `#nextBtn` landing on the NEXT card's first song (queue `t4,t5`, index 0, album
+  `Aurora Sessions`, now bar `Clash`, the focus rule following the album that took over), a fresh mid-album Next walking the same album, Previous still wrapping
+  inside it, the LAST album coming back round to the first, the option turned OFF through **Settings - More - Playback** making Next wrap inside the album (and
+  back ON making it roll, with no restart), and a playlist and a library-wide queue keeping their own order. **The gate fails 12 of its 53 checks on the 73.9
+  tree** - every roll claim, source and driven - while the mid-album, Previous, playlist and library claims pass on both trees, which is what they are for.
+  `dev/repin-740.mjs` (new, from repin-739) does A/B/D/E/F1/F1b/F2/F3: VER 73.9 -> **74.0**, the head literal, PREV 73.8 -> **73.9**, cache
+  `sidecut-shell-v74.0`, the two regex-literal head pins in test-6137/6138, test-705's own cache pin, test-736's three inline literals, and the release-FAMILY
+  clause in test-70 (`/^74\.\d+/` now). 105 edits across 75 gates, `--check` proves no stale pin survives. `dev/gates.sh` now lists test-740.
+- **VERIFIED, THE REST**: test-735 74/0, test-736 75/0, test-7362 55/0, test-737 68/0, test-738 49/0, test-739 62/0, test-740 53/0, test-7316 284/0,
+  test-713 50/0, test-714 144/0, test-725 103/0, test-7251 110/0, test-728 63/0, test-7281 94/0, test-7317 39/0, test-play-copy 28/0, test-619 47/0,
+  test-651 35/0, test-662 75/0, test-6643 90/0, test-6136/6137/6138/6139 0-fail, studio-70 397/0, the eight album suites (58, 45, 25, 40, 34, 42, 34, 22 all
+  0-fail), crossfade-pause 22/0, compress-library 24/0, export-playlist 36/0, refresh-pin 14/0, widget-resume 33/0, background-playback 21/0, audio-focus 44/0,
+  librarytools 15/0, notifgroup 27/0, audit-calls OK (5753 names), check-dom 0 failures, and the OTA trio 20/0, 52/0, 24/0. OTA at a true fixed point:
+  **951505** (`ota/` + the root manifests) / **951515** (`ota-play/`), all five manifests agree, both `--check`s OK (6 notes each).
+- **NOT RUN AS ONE COMMAND**: `sh dev/gates.sh` exceeds this host's 180 s cap, so every suite the script lists was run in slices instead.
+- **STILL RED, ALL PRE-EXISTING AND UNCHANGED BY THIS RELEASE** (each re-run this turn): test-705 238/5 (its five `count(mod, needle)` calls - the 70.0 module
+  text pins, identical at HEAD), test-716 82/1, test-719 68/2, test-723 86/1, test-66422 86/1, test-66428 72/1, test-6052 27/2 (its ancient September date
+  pin), test-play 57/2, and media-controls-check 66/1 (the months-old "fires every half hour" red, reading `dev/native-updates.js`, byte-identical at HEAD -
+  and it is FLAKY: one run of it reported 61/6, and the pre-fix tree reported the same 61/6). None of these is in `dev/gates.sh`.
+- **NOT VERIFIED**: no device and no APK. The roll is driven in jsdom with a stubbed `<audio>` - the queue, the index, the album tag, the now bar and the focus
+  rule really move, and sound really is asked for - but nothing was heard, and the lock-screen / headset path is pinned by source rather than driven, because
+  its handler is a one-line call jsdom cannot press.
+- **NEXT RELEASE**: `74.1` for a fix inside 74.0 (the third number stops at nine), or **74.2**/**75.0** for a feature. Shell cache `sidecut-shell-v74.0` ->
+  `sidecut-shell-v74.1` (still derived in the sweep). Add `test-740.mjs` to `PREV_GATES`.
+
+## 73.9 (Oct 10, 2026 · 1:05 PM EDT): a refresh only adds the new ones, and a removed single cannot ride back in
+- **The owner's ask, verbatim**: "Why do singles refresh and albums refresh refetch every single one that even I deleted it should only refetch new ones
+  not delete ones". It is the same sentence 72.1 answered ("Refetching albums or singles shouldnt refetch every single or album that was deleted too"), and
+  72.1 only closed the RESURRECTION half. Driven against the shipped 73.8 tree, two defects survived, both from the same shape: a refresh rebuilt a list
+  from the ONE reply it had just fetched.
+- **1. A SHORT REPLY DELETED ROWS THE LIST ALREADY HAD.** `__refetchSingles` (`window.__refetchSingles`, ~:45782) rebuilt every artist group from that
+  reply, and `__singlesRefreshArtistGroup` (the per-artist ↻, ~:45800) swapped a group's rows for it. One storefront having a bad minute - or a single
+  filed under another store id - was enough for a song that was on the list to vanish, and a reply that carried nothing left an empty state over a group
+  that had songs. Measured on a stub: a reply without `Luna` took Luna off the list, and the ↻ did the same to its own group.
+- **2. THE REFETCH FALLBACK HANDED BACK A REMOVED SINGLE.** When a reply carries nothing (`!totalFound && !kept.rows`), the refetch falls back to the
+  SAVED list: `loadCachedDiscoverPopup('🎵 Singles')`. A remove HIDES the row where it stands (`row.style.display = 'none'`) and `__scSnapshotDiscoverPopup`
+  copies what is on screen, so the saved body still contains it - the Discover button cleaned what it opened, that loader did not. Measured: remove all
+  three singles, refetch, and the popup drew a removed one (Echo) again.
+- **THE FIX, IN TWO PARTS.** (a) ONE cleaner, `scCleanRemovedRows(bodyHTML)`, exported as `window.__scCleanRemovedRows`: it strips the play buttons, drops
+  a singles row by the id it was removed under OR by its name, drops an album row by its collection id OR its name, drops the junk titles the lists already
+  refuse, and then drops an artist group left with nothing to show. `cleanCachedSinglesBody` is now that function (same name, same callers) and
+  `loadCachedDiscoverPopup` runs it on every saved body before opening it - so no reader of a saved list can hand back a removed row. Its app helpers are
+  `typeof`-guarded because dev/v609-check.cjs and dev/report-634-check.cjs extract this source and run it on its own. (b) A refresh MERGES: the rows an
+  artist already has (read back out of the saved snapshot through the same cleaner, keyed by track id AND normalized title so another storefront's copy of
+  the same single is not added twice) are kept, then only the reply's genuinely new songs are added - `_scSavedRowsFor` / `_scNewSingles` / `_scTotal`, the
+  subtitle now counting `kept.rows + _scShownRows` instead of the raw reply. `__singlesRefreshArtistGroup` does the same with the group's live rows
+  (`_keptRows` + `_newRows`), so a refresh can only add. `__singlesDeepRefreshArtistGroup` (the retired ⚡ chip's handler, still wired for a saved popup
+  from an older build) is now a one-line delegation to that refresh - its `includeHidden: true` fetch and its "all, including removed" toast are gone, and
+  `includeHidden` no longer appears anywhere.
+- **WHAT DID NOT MOVE.** 72.1's rule is intact: `var skipHidden = true;` and `isSingleHidden(sr.trackId || sr.collectionId, sr.trackName)` in
+  `fetchArtistSingles`. `hideSingle`/`hideAlbum` still write id + `t:`-name, Recently Deleted still holds a removal for thirty days, and the ALBUM side was
+  verified unchanged (a removed album stays gone across `Refetch albums`).
+- **VERIFIED**: `dev/test-739.mjs` (new, **62 checks**). [1] release metadata; [2] the rules read out of the file (one cleaner, the loader uses it, the
+  fetch still filters, the merge marks, the old `bodyEl.innerHTML = matched.length` swap gone from EVERY renderer, the deep handler delegating); [3] the
+  Singles list DRIVEN on a stub iTunes: refetch -> add a new single (the list is one row longer, not rebuilt) -> starve the reply of Luna (Luna stays) ->
+  per-artist ↻ with the same short reply (the group keeps its songs) -> remove ALL four rows and refetch (the popup draws none of them back and no removed
+  name is in the body at all); [4] an album DRIVEN: remove it, `Refetch albums`, it does not come back. **The gate fails 30 of its 62 checks on the 73.8
+  tree** - among them "a reply without Luna keeps Luna" (old: `Jaan,Naina,Echo`), "the per-artist refresh keeps the songs the group already shows" (old:
+  the same), "a refetch after that draws none of them back" (old: drew `Echo`). `dev/repin-739.mjs` (new, from repin-738) does A/B/D/E/F3: VER 73.8 ->
+  **73.9**, changelog head literal, PREV 73.7 -> **73.8**, cache `sidecut-shell-v73.9`, and F3 - the release-FAMILY pin in test-70.mjs grows to the series
+  this release ships in (`/^72\.\d+/` alone refused 73.9). That clause is the one gate pin that is not about a build number, and it had been left at 72.x
+  since the 73 series began, so **test-70.mjs was failing its version check (180/1) on a tree where every battery gate was green**; it is 181/0 now, and
+  repin-739's stale sweep refuses a missing series clause. 102 edits across 72 gates, `--check` proves no stale pin survives.
+  `dev/gates.sh` now lists test-739. OTA settled to a true fixed point: **950549** (`ota/`) / **950561** (`ota-play/`); both `--check`s OK (6 notes each).
+- **NEXT RELEASE**: `74.0` (the second number has no ceiling; a third number stops at nine). Shell cache `sidecut-shell-v73.9` -> `sidecut-shell-v74.0`
+  (still derived in the sweep). Add `test-739.mjs` to `PREV_MOVES`.
+
 ## 73.8 (Oct 10, 2026 · 10:20 AM EDT): DJ Mode always works in Albums, because an album is not a playlist that opted out
 - **The owner's ask, verbatim**: "If your in albums dj mode should always be enabled". The report is exact and the cause is one line of context: `playFromList`
   (line ~27800) stores `queueSourcePlaylist = activePlaylist`, and an ALBUM is not a playlist - on the Albums tab that variable is whatever playlist was
