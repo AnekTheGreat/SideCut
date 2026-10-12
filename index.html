@@ -3729,7 +3729,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
             <span style="font-size:13px; color:var(--ink-dim);">Next album when one ends</span>
             <button class="tab" id="autoNextAlbumToggle" style="padding:5px 12px; font-size:12px;">On</button>
           </div>
-          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">An album that finishes rolls straight into the next album in your Albums list, in the order the cards are in, and the skip button does the same on the last song. Turn this off to stay in the album you started.</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">An album that finishes rolls straight into the next album in your Albums list, in the order the cards are in, and the skip button does the same on the last song. Back does it the other way: on the first song it goes to the last song of the album before it. Turn this off to stay in the album you started.</div>
 
           <div style="margin-top:16px; display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:13px; color:var(--ink-dim);">Remember sort per playlist</span>
@@ -13371,7 +13371,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '74.0';
+  const APP_VERSION = '74.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13992,6 +13992,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '74.1', date: 'October 12, 2026 · 6:20 PM EDT', title: 'Both buttons walk the albums now, and they know which record is playing', items: [
+    'Back goes to the previous album now, the mirror of the skip button. Pressing back on the first song of an album lands on the last song of the album before it, in the same order the skip button walks forward in.',
+    'Both directions read the album off the songs themselves. A play restored after the app was reopened - or an update reload, or a widget resume - came back with its queue and not the album, which is why the buttons still wrapped inside the record.',
+    'An album played from the grouped album header in All Songs rolls now too. That header hands its songs over without saying they are an album, so both buttons wrapped inside the record there as well.',
+    'The album a play belongs to is saved with the play and restored with it, so a queue picked back up on a new launch still knows which record it is.',
+    'What the roll refuses it still refuses: a playlist, a mix, a search result or a play-all of the whole library keeps its own order and wraps inside itself, and a queue that two of your albums both claim is left alone rather than guessed at.',
+    'Settings - More - Playback - Next album when one ends switches both directions off, and a finished album then wraps inside itself exactly as it always did, with nothing rolling forward or back.',
+    'Nothing else moved: the player, the home-screen widget, the letter-by-letter lyrics, the dock, the albums and every saved song and setting are where the last release left them.',
+  ]},
   { version: '74.0', date: 'October 12, 2026 · 6:05 PM EDT', title: 'The skip button rolls into the next album too, not only the song that ends', items: [
     'The skip button now goes to the next album. Pressing Next on the last song of an album lands on the first song of the next album in your Albums list, in the order the cards are in, which is exactly what the end of the album already did on its own.',
     'It is the same handover, driven by you. The album you skipped away from and the one that takes over are read from the same list and the same order, so a run of albums keeps going whichever way it is moved on.',
@@ -19656,6 +19665,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
         queue, queueIndex, trackId, isMixMode, shuffle, repeatMode,
         currentTime: activeAudio().currentTime || 0,
         sourcePlaylist: queueSourcePlaylist,
+        // 74.1 - WHICH ALBUM this play belongs to is saved with it. It was not
+        // saved before, so a queue restored after a relaunch (or an OTA reload,
+        // or a widget resume) came back with its songs and no idea that they were
+        // a record - and the skip and back buttons could not roll on, because the
+        // album they ask about was gone.
+        album: queueAlbumName || null,
       }
     });
   }
@@ -22454,7 +22469,14 @@ function _fallbackCopy(text){
           sum.querySelector('.track-ga-play').addEventListener('click', function(ev){
             if(ev.target.closest('.track-ga-chev')) return;
             const albumIds = g.rows.map(function(ri4){ return ids[ri4]; }).filter(Boolean);
-            if(albumIds.length) playFromList(albumIds, albumIds[0]);
+            // 74.1 - an album header in this list IS an album play, so it says so
+            // when the tag names one of your albums. Before this it handed the
+            // songs over with no album behind them, which is why the skip and back
+            // buttons wrapped inside the record here as well. A tag that names no
+            // album of yours is left alone - nothing is claimed about it - and the
+            // roll works it out from the songs if it really is one.
+            const _gaAlbum = (g.album && typeof userAlbums !== 'undefined' && userAlbums[g.album]) ? g.album : null;
+            if(albumIds.length) playFromList(albumIds, albumIds[0], _gaAlbum);
           });
           if(!g.open) g.rows.forEach(function(ri3){
             const _row = pane.querySelector('.track[data-id="' + ids[ri3] + '"]');
@@ -27790,43 +27812,108 @@ function _fallbackCopy(text){
   // 74.0 - the SKIP button asks this too. It used to be the one way forward that
   // stayed inside the album, which read as the app refusing to do what it does
   // on its own a second later; both forward steps now go through this answer.
-  function scAlbumRollNext(){
+  //
+  // 74.1 - AND BACK ASKS IT IN THE OTHER DIRECTION, which is what two reports of
+  // "the next buttons and back buttons still dont bring you to the next album or
+  // previous album" came to. Two things had defeated the roll in the field, and
+  // neither of them was the condition 74.0 changed:
+  //   1. WHICH ALBUM IS THIS? The roll trusted queueAlbumName and then demanded
+  //      the queue be that album ids in that exact order. A play RESTORED after
+  //      the app was reopened (or an OTA reload, or a widget resume) had its
+  //      queue back but not the album it came from - nothing ever saved it - and
+  //      the grouped album header in All Songs plays an album without saying it
+  //      is one. So the album is read off the queue now, most certain first:
+  //      the tag when it names a real album whose songs ARE this queue; else the
+  //      playing song own album tag, when that names one and its songs fit; else
+  //      the ONE album whose songs are exactly this queue, and null when two of
+  //      them carry the same songs (an ambiguous queue is not guessed at).
+  //   2. BACK HAD NO ROLL AT ALL - it wrapped inside the album, so the button
+  //      could only ever walk the record you were already in.
+  // The comparison is by SONG, not by order: an album whose songs are shuffled,
+  // or listed in the library own order by that grouped header, is still that
+  // album. What 73.5 was guarding is untouched - a library-wide queue, a mix or
+  // a search result is only ever taken for an album when its songs are exactly
+  // one album and nothing else.
+  function scAlbumForQueue(){
+    try{
+      if(!userAlbums || !queue || !queue.length) return null;
+      var want = queue.map(String).sort().join('\u0001');
+      var shape = queue.map(String).join('\u0001');
+      // strict = no tag said so, so the queue has to BE the album: same songs in
+      // the same saved order. A tag (the queue own, or the playing song own) is
+      // allowed any order, because an album that is shuffled or listed by a
+      // grouped header is still that album - but nothing is claimed from the
+      // songs alone about an order nobody wrote down.
+      var fits = function(name, strict){
+        var nm = String(name == null ? '' : name).trim();
+        if(!nm || !userAlbums[nm]) return false;
+        var ids = scAlbumQueueIds(nm, null);
+        if(!ids || !ids.length || ids.length !== queue.length) return false;
+        var sameSongs = (ids.map(String).sort().join('\u0001') === want);
+        if(!sameSongs) return false;
+        return !strict || (ids.map(String).join('\u0001') === shape);
+      };
+      if(fits(queueAlbumName, false)) return String(queueAlbumName).trim();
+      var playing = allTracks.find(function(tr){ return tr && tr.id === queue[queueIndex]; });
+      if(playing && fits(playing.album, false)) return String(playing.album).trim();
+      var list = scAlbumRollOrder();
+      var only = null;
+      for(var ai = 0; ai < list.length; ai++){
+        if(!fits(list[ai], true)) continue;
+        if(only !== null) return null;   // two albums carry these exact songs - refuse
+        only = list[ai];
+      }
+      return only;
+    }catch(_eAq){ return null; }
+  }
+  // The albums the roll walks: the cards on the Albums tab, in the order they are
+  // drawn, with the auto entries and the empty ones left out.
+  function scAlbumRollOrder(){
+    return scAlbumCardOrder(visibleAlbumNames(), function(n){
+      var e = userAlbums[n];
+      return (e && e.artist) || 'Unknown artist';
+    }).filter(function(n){
+      var e = userAlbums[n];
+      return !!e && Array.isArray(e.trackIds) && e.trackIds.length && !albumIsAuto(n);
+    });
+  }
+  // One step along that list: dir +1 is the next album, -1 the one before it.
+  // Both wrap, so the last album goes on to the first and the first comes back
+  // round to the last, and the music never just stops.
+  function scAlbumRollStep(dir){
     try{
       if(typeof autoNextAlbum !== 'undefined' && !autoNextAlbum) return null;
-      var cur = String(queueAlbumName || '').trim();
-      if(!cur || !userAlbums || !userAlbums[cur]) return null;
-      var ids = scAlbumQueueIds(cur, null);
-      if(!ids || !ids.length) return null;
-      if(!queue || queue.length !== ids.length) return null;
-      for(var qi = 0; qi < ids.length; qi++){ if(queue[qi] !== ids[qi]) return null; }
-      var list = scAlbumCardOrder(visibleAlbumNames(), function(n){
-        var e = userAlbums[n];
-        return (e && e.artist) || 'Unknown artist';
-      }).filter(function(n){
-        var e = userAlbums[n];
-        return !!e && Array.isArray(e.trackIds) && e.trackIds.length && !albumIsAuto(n);
-      });
+      var cur = scAlbumForQueue();
+      if(!cur) return null;
+      var list = scAlbumRollOrder();
       if(list.length < 2) return null;
       var at = list.indexOf(cur);
       if(at === -1) return null;
-      var nextName = list[(at + 1) % list.length];
+      var nextName = list[(at + (dir < 0 ? -1 : 1) + list.length) % list.length];
       var nextIds = scAlbumQueueIds(nextName, null);
       if(!nextIds || !nextIds.length) return null;
       return { ids: nextIds, name: nextName };
-    }catch(_eRoll){ return null; }
+    }catch(_eStep){ return null; }
   }
-  // The queue itself moves to the next album and the index points at its first
-  // song. Returns 0 on a roll, -1 when the caller should wrap as it used to.
-  function scAlbumRollQueue(){
-    var roll = scAlbumRollNext();
+  function scAlbumRollNext(){ return scAlbumRollStep(1); }
+  function scAlbumRollPrev(){ return scAlbumRollStep(-1); }
+  // The queue itself moves to the album beside this one. Going forward the index
+  // points at that album first song; going back it points at its LAST song, which
+  // is where a back button lands when a record is what it is walking. Returns 0 on
+  // a roll, -1 when the caller should wrap as it used to.
+  function scAlbumRollQueue(dir){
+    var back = (dir < 0);
+    var roll = scAlbumRollStep(back ? -1 : 1);
     if(!roll) return -1;
     queue = roll.ids.slice();
     queueAlbumName = roll.name;
-    queueIndex = 0;
+    queueIndex = back ? (queue.length - 1) : 0;
     gaplessPreloadedFor = null;
     return 0;
   }
+  window.__scAlbumForQueue = scAlbumForQueue;
   window.__scAlbumRollNext = scAlbumRollNext;
+  window.__scAlbumRollPrev = scAlbumRollPrev;
   window.__scAlbumRollQueue = scAlbumRollQueue;
 
   function playFromList(ids, startId, fromAlbumName){
@@ -29102,23 +29189,34 @@ function _fallbackCopy(text){
   function hardAdvance(dir, wrap){
     cancelCrossfade();
     let next = queueIndex + dir;
-    if(next < 0) next = wrap ? queue.length - 1 : 0;
+    if(next < 0){
+      // 74.1 - BACK ROLLS NOW TOO. At the first song of an album the back button
+      // lands on the LAST song of the album before it, in the same card order the
+      // skip button walks forward, which is the half of the report that had no
+      // answer at all until this release. A playlist, a mix, a search result or a
+      // library-wide queue still wraps inside itself, and with the option off
+      // nothing rolls either way.
+      if(dir < 0 && scAlbumRollQueue(-1) >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }
+      next = wrap ? queue.length - 1 : 0;
+    }
     if(next >= queue.length){
       // 73.5 - the end of an album rolls into the next album (Playback -
       // "Next album when one ends", on by default).
-      // 74.0 - THE SKIP BUTTON ASKS THE SAME QUESTION NOW. 73.5 gave the roll to
+      // 74.0 - THE SKIP BUTTON ASKS THE SAME QUESTION NOW: 73.5 gave the roll to
       // a song that reached its own end and deliberately kept the Next button
       // inside the album you were in, so the one control a listener reaches for
       // at the end of a record did the opposite of what happens by itself. The
-      // `natural` flag is gone: any FORWARD step off the last song of an album
-      // rolls, which covers the player's Next, the lock screen / headset skip
-      // and the end of the song alike. Everything the roll refuses it still
-      // refuses - scAlbumRollNext answers for a queue that IS one album and
-      // nothing else, so a playlist, a mix, a search result or an Albums-tab
-      // play-all keeps its own order, and with the option off it answers null
-      // and this wraps inside the album exactly as it always did. Previous is
-      // untouched: it still wraps inside the album you are in.
-      if(dir > 0 && scAlbumRollQueue() >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }
+      // `natural` flag is gone: any forward step off the last song of an album
+      // rolls, the player's Next, the lock screen / headset skip and the end of
+      // the song alike.
+      // 74.1 - ONE ANSWER FOR BOTH ENDS OF THE QUEUE. The roll is asked here for
+      // forward and above for back, and WHICH ALBUM this queue is comes off the
+      // queue itself (scAlbumForQueue) instead of a tag that a restored play does
+      // not carry. Everything the roll refuses it still refuses: a playlist, a
+      // mix, a search result or an Albums-tab play-all keeps its own order, and
+      // with the option off it answers null and this wraps inside the album
+      // exactly as it always did.
+      if(dir > 0 && scAlbumRollQueue(1) >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }
       if(wrap) next = 0; else { $('npDisc').classList.remove('spinning'); return; }
     }
     queueIndex = next;
@@ -33162,6 +33260,10 @@ function _fallbackCopy(text){
     shuffle = !!state.shuffle;
     repeatMode = state.repeatMode || 'off';
     queueSourcePlaylist = (state.sourcePlaylist && playlists[state.sourcePlaylist]) ? state.sourcePlaylist : 'All Songs';
+    // 74.1 - and the album the play came from comes back with it (see
+    // savePlaybackState). A saved name that no longer exists as an album is
+    // dropped rather than trusted; scAlbumForQueue still checks the songs.
+    queueAlbumName = (state.album && userAlbums && userAlbums[state.album]) ? state.album : null;
     $('shuffleBtn').classList.toggle('active', shuffle);
     $('repeatBtn').classList.toggle('active', repeatMode !== 'off');
     if(shuffle){ regenerateShuffleOrder(); renderList(); }

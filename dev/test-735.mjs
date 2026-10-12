@@ -65,9 +65,15 @@ console.log('[1] release metadata');
 
 console.log('[2] the next album when one ends');
 {
-  // The two shipped functions, lifted whole and driven. The only things handed
+  // The shipped roll functions, lifted whole and driven. The only things handed
   // in are the state the page keeps around them and the album helpers they read.
-  const at = src.indexOf('  function scAlbumRollNext(){');
+  // 74.1 moved the lift's own start: "which album is this queue" and the single
+  // step both directions share are their own functions now (scAlbumForQueue,
+  // scAlbumRollOrder, scAlbumRollStep), so the slice starts at the first of them
+  // and every one of them is inside it. `allTracks` joins the list of names the
+  // page keeps around them, because reading the album off the playing song is one
+  // of the ways this release answers that question.
+  const at = src.indexOf('  function scAlbumForQueue(){');
   const anchor = '  window.__scAlbumRollQueue = scAlbumRollQueue;';
   const b = src.indexOf(anchor, at);
   ok(at !== -1 && b > at, 'the album-roll functions can be lifted out of the page');
@@ -78,14 +84,14 @@ console.log('[2] the next album when one ends');
   ok(src.indexOf("$('autoNextAlbumToggle').addEventListener('click'") !== -1, 'wired to flip it');
   ok(count("dbPut('meta', { key: 'autoNextAlbum'") === 1, 'and it is remembered across launches');
 
-  const make = (S, albums, on) => {
+  const make = (S, albums, on, tracks) => {
     const list = Object.keys(albums);
     const fn = new Function(
-      'window', 'S', 'userAlbums', 'visibleAlbumNames', 'albumIsAuto', 'scAlbumCardOrder', 'scAlbumQueueIds', 'autoNextAlbum',
+      'window', 'S', 'userAlbums', 'visibleAlbumNames', 'albumIsAuto', 'scAlbumCardOrder', 'scAlbumQueueIds', 'autoNextAlbum', 'allTracks',
       'let queue = S.queue, queueIndex = S.queueIndex, queueAlbumName = S.queueAlbumName;\n' +
       'let gaplessPreloadedFor = S.gapless;\n' +
       body + '\n' +
-      'return function(){ scAlbumRollQueue(); S.queue = queue; S.queueIndex = queueIndex;' +
+      'return function(dir){ scAlbumRollQueue(dir); S.queue = queue; S.queueIndex = queueIndex;' +
       ' S.queueAlbumName = queueAlbumName; S.gapless = gaplessPreloadedFor; };'
     );
     return fn(
@@ -96,7 +102,8 @@ console.log('[2] the next album when one ends');
       () => false,
       (names) => names.slice(),                       // the card order, as given
       (name) => (albums[name] && albums[name].trackIds ? albums[name].trackIds.slice() : []),
-      on
+      on,
+      tracks || []
     );
   };
   const ALBUMS = {
@@ -113,6 +120,44 @@ console.log('[2] the next album when one ends');
     ok(S.queueIndex === 0, 'and the deck starts at its first song');
     ok(S.queueAlbumName === 'Second', 'the album it now belongs to follows (' + S.queueAlbumName + ')');
     ok(S.gapless === null, 'and the gapless preload of the album that ended is dropped');
+  }
+  // ON, BACKWARDS (74.1): the same list walked the other way, landing on the LAST
+  // song of the album before it - the half of the roll this release added.
+  {
+    const S = { queue: ['b1', 'b2'], queueIndex: 0, queueAlbumName: 'Second', gapless: 0 };
+    make(S, ALBUMS, true)(-1);
+    ok(JSON.stringify(S.queue) === JSON.stringify(['a1', 'a2', 'a3']), 'back goes to the previous album (' + S.queue.join(',') + ')');
+    ok(S.queueIndex === 2, 'and lands on its LAST song, not its first (@' + S.queueIndex + ')');
+    ok(S.queueAlbumName === 'First', 'with the album it now belongs to following (' + S.queueAlbumName + ')');
+  }
+  // 74.1 - THE ALBUM IS READ OFF THE SONGS. A play restored after a relaunch has
+  // its queue back and no album tag on it, which is the shape that kept both
+  // buttons inside the record; the album these songs are is found either way.
+  {
+    const S = { queue: ['b1', 'b2'], queueIndex: 0, queueAlbumName: null, gapless: 0 };
+    make(S, ALBUMS, true)();
+    ok(S.queueAlbumName === 'Third' && S.queueIndex === 0,
+      'a queue with no album named is matched to the album it is (' + S.queueAlbumName + ')');
+  }
+  {
+    // Read off the PLAYING SONG's own album tag, with no album named on the queue
+    // at all - and the index is the album-before-it's LAST song (Second has two).
+    const S = { queue: ['c1'], queueIndex: 0, queueAlbumName: null, gapless: 0 };
+    make(S, ALBUMS, true, [{ id: 'c1', album: 'Third' }])(-1);
+    ok(S.queueAlbumName === 'Second' && S.queueIndex === 1,
+      'and back lands on the LAST song of the album before it (' + S.queueAlbumName + ' @' + S.queueIndex + ')');
+  }
+  {
+    const S = { queue: ['a1', 'a2', 'a3'], queueIndex: 0, queueAlbumName: null, gapless: 0 };
+    make(S, ALBUMS, true)(-1);
+    ok(S.queueAlbumName === 'Third', 'and back from the first album wraps round to the last (' + S.queueAlbumName + ')');
+  }
+  // A queue two albums both claim is not guessed at.
+  {
+    const TWIN = { First: { trackIds: ['a1', 'a2', 'a3'] }, Twin: { trackIds: ['a1', 'a2', 'a3'] } };
+    const S = { queue: ['a1', 'a2', 'a3'], queueIndex: 0, queueAlbumName: null, gapless: 0 };
+    make(S, TWIN, true)();
+    ok(S.queueAlbumName === null && S.queueIndex === 0, 'a queue that two albums both claim is left alone');
   }
   // OFF: nothing moves.
   {
@@ -155,8 +200,13 @@ console.log('[2] the next album when one ends');
   // inside the album you are in"), and the owner then asked for the skip button
   // to roll too - so the shipped code has no natural-end argument left and rolls
   // on any forward step. Same two claims, read off the code that ships now.
+  // 74.1 retargeted the second one again: the roll is one answer asked at BOTH
+  // ends of the queue now, so hardAdvance names the direction it is walking -
+  // scAlbumRollQueue(1) forward, scAlbumRollQueue(-1) back. The claim did not
+  // change; the call it is read off did.
   ok(src.indexOf('hardAdvance(1, true); // the album ends (or Next is pressed)') !== -1, 'the end of an album rolls (no crossfade, no gapless), and so does Next');
-  ok(/if\(dir > 0 && scAlbumRollQueue\(\) >= 0\)/.test(src), 'and hardAdvance rolls on any forward step, not only a natural end');
+  ok(/\(dir > 0 && scAlbumRollQueue\(1\) >= 0\)/.test(src), 'and hardAdvance rolls on any forward step, not only a natural end');
+  ok(/\(dir < 0 && scAlbumRollQueue\(-1\) >= 0\)/.test(src), 'and a back step rolls the other way, which 74.1 added');
   ok(/if\(nextIndex >= queue\.length\)\{ scAlbumRollQueue\(\); nextIndex = 0; \}/.test(src), 'a crossfade into the end rolls into the next album');
   ok(/let _rolledGapless = -1;/.test(src) && /_rolledGapless = scAlbumRollQueue\(\);/.test(src),
     'and so does the gapless cut');

@@ -1,5 +1,57 @@
 # SideCut — repository memory
 
+## 74.1 (Oct 12, 2026 · 6:20 PM EDT): both buttons walk the albums, and a restored play knows which record it is
+- **The owner's ask, verbatim**: "The next buttons and back buttons still dont bring you to the next album or previous album". 74.0 had made the SKIP button roll forward,
+  so this is about what that release left out - and it named two causes, neither of which was the condition 74.0 changed.
+- **1. BACK HAD NO ROLL AT ALL.** `hardAdvance` asked the roll only at the TOP of the queue, so `#prevBtn`, the lock screen / headset back and the lyrics-panel
+  Previous could only ever wrap inside the album you were in. It now asks at BOTH ends: `if(next < 0)` rolls back, `if(next >= queue.length)` rolls forward, and
+  `scAlbumRollQueue(dir)` points the index at that album's FIRST song forward or its LAST song going back. The button's own rule is untouched - a song more than
+  three seconds in is restarted, not stepped past.
+- **2. THE ROLL COULD NOT TELL WHICH ALBUM IT WAS IN.** It trusted `queueAlbumName` and then demanded the queue be that album's ids in that exact order, so two
+  real shapes failed silently. (a) A play RESTORED after a relaunch, an OTA reload or a widget resume: `savePlaybackState` never wrote the album down, so the queue
+  came back with no idea it was a record - which is the shape the report was made from (open the app, tap play, press skip). (b) The grouped album header in All
+  Songs (`renderListInner`'s `.track-ga-play`): it played an album's songs with no album behind them. The album is now read off the queue (`scAlbumForQueue`), most
+  certain first - the queue's own tag, else the playing song's album tag, else the ONE album whose songs are exactly this queue - and a queue two albums both claim
+  answers null rather than a guess. `savePlaybackState` writes `album: queueAlbumName || null` and `restorePlaybackState` reads it back (dropping a name that is no
+  longer an album), and the grouped header passes `g.album` when the tag names one of your albums (and passes nothing when it does not, so DJ Mode's context rule
+  and the focus rule see exactly what they saw before).
+- **THE GUARD IS SHARPER, NOT LOOSER.** Comparison is by SONG, because a shuffled album or a library-order tag group is still that album - but the no-tag case is
+  STRICT: with nothing named anywhere, the queue must be the album's songs in the album's own saved order. So a playlist that happens to hold one album's songs in
+  a different order still wraps inside itself, and 73.5's rule (a library-wide queue, a mix or a search result never rolls) is intact. The option still refuses
+  everything, both directions.
+- **TWO GATES PINNED THE 74.0 SHAPE AND WERE RETARGETED BY HAND**, with the reason in each file. `dev/test-735.mjs` [2] lifted the roll out of the page and its
+  slice started at `scAlbumRollNext` - which is a one-line call now, with `scAlbumForQueue`/`scAlbumRollOrder`/`scAlbumRollStep` above it - so the lift starts at
+  `scAlbumForQueue`, the harness is handed `allTracks` (reading the album off the playing song is one of the answers now) and drives both directions; it also pins
+  the back-roll line and the two derivation claims. `dev/test-740.mjs` [2] pinned the old order-and-length guard and the two-argument call: the guard needle is the
+  same-songs check now, and its old driven claim "at its first song it wraps inside the album, not backwards into another one" is the exact behaviour the owner
+  asked to change, so it is pinned the way it ships (back goes to the previous album's last song).
+- **VERIFIED**: NEW `dev/test-741.mjs` (**85 checks**): [1] release metadata; [2] the rules read out of the file (one reader per question, the set-and-order guard,
+  both directions served by one step, hardAdvance asking at both ends, the save and the restore, the grouped header's tag, the option); [3] DRIVEN across THREE
+  boots that share one store - back lands on the previous album's LAST song (queue, index, album, now bar and the new `__scAlbumForQueue` hook), back mid-album is a
+  song step, a late song still restarts, the first album wraps to the last both ways, the grouped All Songs header (reached through the real sort sheet - Artist +
+  album) rolls both ways, a playlist still wraps inside itself, the option off wraps inside the album in both directions, then a RELAUNCH comes back with the queue,
+  the index AND the album and rolls both ways, and a PRE-74.1 SAVE (the album field deleted, exactly what an older build wrote) rolls anyway because the album is
+  read off the songs. **The gate fails 41 of its 85 checks on the 74.0 tree** - every back, header, saved and derived claim - while the metadata and the 74.0
+  forward-roll claims pass on both. test-740 is 53/0 (**6 of its checks fail on the 74.0 tree**), test-735 82/0.
+  `dev/repin-741.mjs` (new, from repin-740) does A/B/D/E/F1/F1b/F2 and a no-op F3 (74.1 is inside the 74 series the last release already named; the sweep still
+  proves the clause is there): VER 74.0 -> **74.1**, the head literal, PREV 73.9 -> **74.0**, cache `sidecut-shell-v74.1`. 107 edits across 76 gates, `--check`
+  proves no stale pin survives. `dev/gates.sh` now lists test-741.
+- **VERIFIED, THE REST**: test-7316 284/0, test-713 50/0, test-714 144/0, test-725 103/0, test-7251 110/0, test-728 63/0, test-7281 94/0, test-7317 39/0,
+  test-play-copy 28/0, test-619 47/0, test-651 35/0, test-662 75/0, test-736 75/0, test-7361 29/0, test-7362 55/0, test-737 68/0, test-738 49/0, test-739 62/0,
+  test-6643 90/0, test-6136/6137/6138/6139 0-fail, studio-70 397/0, the eight album suites (58, 45, 25, 40, 34, 42, 34, 22 all 0-fail), crossfade-pause 22/0,
+  compress-library 24/0, export-playlist 36/0, refresh-pin 14/0, widget-resume 33/0, background-playback 21/0, audio-focus 44/0, librarytools 15/0,
+  notifgroup 27/0, audit-calls OK (8564 line comments checked), check-dom 0 failures, OTA trio 20/0, 52/0, 24/0. OTA at a true fixed point: **953892**
+  (`ota/` + the root manifests) / **953908** (`ota-play/`), all five manifests agree, both `--check`s OK (6 notes each).
+- **NOT RUN AS ONE COMMAND**: `sh dev/gates.sh` exceeds this host's 180 s cap, so every suite the script lists was run in slices instead.
+- **STILL RED, ALL PRE-EXISTING AND UNCHANGED** (re-run this turn): test-705 238/5, test-66422 86/1, test-716 82/1, test-719 68/2, test-723 86/1, test-66428 72/1,
+  test-6052 27/2, test-play 57/2, media-controls-check 66/1 (the flaky months-old "fires every half hour" red). None of these is in `dev/gates.sh`.
+- **NOT VERIFIED**: no device and no APK. All of it is jsdom with stubbed `<audio>` and a fake IndexedDB shared by three boots - the queue, the index, the album,
+  the now bar and the focus rule really move, and a real relaunch reads the same store back - but no sound was played and the lock-screen back path is pinned by
+  source rather than pressed. Worth knowing for the next report: an installed app only gets this over the air once the OTA bundle it is polling has been published,
+  so "still does not" from a phone can also be a build that has not updated itself yet.
+- **NEXT RELEASE**: `74.2` for another fix inside 74 (the third number stops at nine), or **75.0** for a feature. Shell cache `sidecut-shell-v74.1` ->
+  derived in the sweep. Add `test-741.mjs` to `PREV_GATES`.
+
 ## 74.0 (Oct 12, 2026 · 6:05 PM EDT): the skip button rolls into the next album too, because a record ending and a record being skipped are the same question
 - **The owner's ask, verbatim**: "The albums should go to the next album with the skip button too not just airing in to the next one". 73.5 had shipped the roll
   for a song that reached its own end and had SAID SO in its own notes - "Only a song that really ends rolls on. The Next button stays inside the album you are

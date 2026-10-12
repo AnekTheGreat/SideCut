@@ -38,9 +38,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(process.env.SC_HTML || path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '74.0';
-const PREV = '73.9';
-const SHELL_CACHE = 'sidecut-shell-v74.0';
+const VER = '74.1'; /* repinned by dev/repin-741.mjs */
+const PREV = '74.0'; /* repinned by dev/repin-741.mjs */
+const SHELL_CACHE = 'sidecut-shell-v74.1';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -88,7 +88,11 @@ console.log('[2] the rules, read out of the shipped file');
   ok(!/function hardAdvance\([^)]*natural/.test(src), 'there is no natural parameter left on it');
   ok(count('if(natural && dir > 0 && scAlbumRollQueue() >= 0)') === 0,
     'nor the old condition that only rolled on a natural end');
-  ok(count('if(dir > 0 && scAlbumRollQueue() >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }') === 1,
+  // 74.1 retarget: the roll takes the direction it is walking now, because 74.1
+  // gave the back button the same answer, so the forward line reads
+  // scAlbumRollQueue(1) and a back line reads scAlbumRollQueue(-1). The claim -
+  // a forward step off the last song of the album rolls - is unchanged.
+  ok(count('if(dir > 0 && scAlbumRollQueue(1) >= 0){ gaplessPreloadedFor = null; playCurrent(true); return; }') === 1,
     'a forward step off the last song of the album rolls');
 
   // Every way a listener moves on goes through hardAdvance, and each of them
@@ -101,14 +105,19 @@ console.log('[2] the rules, read out of the shipped file');
     'and the Next button in the lyrics panel');
   ok(src.indexOf('hardAdvance(1, true); // the album ends (or Next is pressed)') !== -1,
     'the end of the song asks the same question, with no separate path');
-  ok(count('scAlbumRollQueue()') >= 3, 'the roll is asked from the end of the song, the crossfade and the gapless cut');
+  ok(count('scAlbumRollQueue(') >= 4, 'the roll is asked from the end of the song, the crossfade and the gapless cut');
 
   // What the roll refuses is untouched: only a queue that IS one album rolls, the
   // option still switches it off, and it is still on by default.
   ok(count('if(typeof autoNextAlbum !== \'undefined\' && !autoNextAlbum) return null;') === 1,
     'the option still answers the roll first');
-  ok(src.indexOf('if(!queue || queue.length !== ids.length) return null;') !== -1,
-    'and only a queue that is exactly one album is rolled');
+  // 74.1 retarget: the old guard demanded the queue be the album ids in that
+  // EXACT ORDER ("if(!queue || queue.length !== ids.length) return null;" plus a
+  // position-by-position loop). 74.1 compares the SONGS instead - a shuffled
+  // album, or a tag group listed in library order, is still that album - so the
+  // guard that ships is the same-songs check below.
+  ok(count("ids.map(String).sort().join('\\u0001') === want") === 1,
+    'and only a queue whose songs are exactly one album is rolled');
   ok(src.indexOf('let autoNextAlbum = true;') !== -1, 'the option is still on by default');
   ok(src.indexOf('and the skip button does the same on the last song') !== -1,
     'Playback says so on its face now, where the toggle is');
@@ -288,8 +297,16 @@ console.log('[3] the skip button, driven on the real page');
   doc.getElementById('prevBtn').click();
   await wait(400);
   s = snap();
-  ok(s.queueIndex === 2 && s.album === 'MoonChild Era',
-    'and at its first song it wraps inside the album, not backwards into another one (@' + s.queueIndex + ')');
+  // 74.1 RETARGETED THIS LINE. 74.0 pinned "at its first song it wraps inside
+  // the album, not backwards into another one" - and the owner then reported that
+  // the back button "still dont bring you to the ... previous album", so 74.1
+  // gave back the same roll forward has, the other way. The claim it used to make
+  // is now the refusal, and the refusal has its own gate (dev/test-741.mjs); what
+  // is pinned here is what the button really does: it lands on the LAST song of
+  // the album before this one, in the same card order.
+  const backName = cardNames[(cardNames.indexOf('MoonChild Era') - 1 + cardNames.length) % cardNames.length];
+  ok(s.album === backName && s.queueIndex === store()[backName].trackIds.length - 1,
+    'and at its first song it goes back to the previous album, on its last song (' + s.album + ' @' + s.queueIndex + ')');
 
   // 4. THE LAST ALBUM COMES BACK ROUND TO THE FIRST - Next does not stop the music.
   await playLastSong(cardNames[cardNames.length - 1]);

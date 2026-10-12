@@ -33,8 +33,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(process.env.SC_HTML || path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '74.0'; /* repinned by dev/repin-740.mjs */
-const SHELL_CACHE = 'sidecut-shell-v74.0';
+const VER = '74.1'; /* repinned by dev/repin-741.mjs */
+const SHELL_CACHE = 'sidecut-shell-v74.1';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
