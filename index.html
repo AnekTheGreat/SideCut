@@ -13992,6 +13992,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '74.1.5', date: 'October 14, 2026 · 6:10 AM EDT', title: 'The Storage cleaner answers a tap with the size and the whole byline', items: [
+    'Tapping a row in the Storage cleaner now shows that song\u2019s exact size and its whole artist list in the same bubble the player uses for the song name. The cleaner squashes the name and the \u201cartists \u00b7 size\u201d line onto one line with an ellipsis when the byline is long, which is exactly where the size and the artist names were being lost.',
+    'The bubble answers whether or not the line actually measures as cut off, so a tap never comes back empty - and a second tap on the same row closes it again, the same contract as the playlist runtime and the album cards.',
+    'The size is written in the same units the row uses (B, KB, MB or GB) and the byline is shown in full - the song first, then every artist - however long the list is.',
+    'Nothing else moved. The cleaner\u2019s list, its order, the Re-encode buttons and the target-bitrate chips are exactly as they were, and the duration bubble on the playlist header and the album cards is unchanged.',
+  ]},
   { version: '74.1', date: 'October 12, 2026 · 6:20 PM EDT', title: 'Both buttons walk the albums now, and they know which record is playing', items: [
     'Back goes to the previous album now, the mirror of the skip button. Pressing back on the first song of an album lands on the last song of the album before it, in the same order the skip button walks forward in.',
     'Both directions read the album off the songs themselves. A play restored after the app was reopened - or an update reload, or a widget resume - came back with its queue and not the album, which is why the buttons still wrapped inside the record.',
@@ -30487,6 +30493,12 @@ function _fallbackCopy(text){
       if(b) b.style.display = 'none';
     }
     function toggle(anchor, totalSec, subText){
+      show(anchor, fmtPrecise(totalSec), subText);
+    }
+    // The same bubble with the big line given as text instead of a duration. The
+    // Storage cleaner uses it: its "name" and "artists - size" lines are cut off
+    // with an ellipsis on a long byline, so a tap reveals the whole thing.
+    function show(anchor, bigText, subText){
       if(!anchor) return;
       var b = document.getElementById('durBubble');
       if(!b){
@@ -30498,7 +30510,7 @@ function _fallbackCopy(text){
       }
       // Second tap on the same line closes it (same contract as the name bubble).
       if(b.style.display === 'block' && b._anchor === anchor){ hide(); return; }
-      b.querySelector('.bt').textContent = fmtPrecise(totalSec);
+      b.querySelector('.bt').textContent = bigText;
       b.querySelector('.ba').textContent = subText || '';
       // Show hidden at the origin so measurement below uses the real width.
       b.style.display = 'block';
@@ -30529,7 +30541,9 @@ function _fallbackCopy(text){
       return !!el && typeof el.scrollWidth === 'number' && el.scrollWidth > el.clientWidth + 1;
     }
     function syncCursor(el){
-      if(el) el.style.cursor = isClamped(el) ? 'pointer' : '';
+      // A Storage row's tappable line is the container; its cut-off text lives in
+      // the children, so isClamped() on it is always false - it stays tappable.
+      if(el) el.style.cursor = (el.getAttribute && el.getAttribute('data-store-size')) ? 'pointer' : (isClamped(el) ? 'pointer' : '');
     }
     function syncAll(){
       var list = document.querySelectorAll('[data-dur-bubble]');
@@ -30547,8 +30561,32 @@ function _fallbackCopy(text){
       if(openedAt && Date.now() - openedAt < 350) return;
       hide();
     }, true);
-    return { toggle: toggle, hide: hide, fmtPrecise: fmtPrecise,
+    return { toggle: toggle, toggleText: show, hide: hide, fmtPrecise: fmtPrecise,
              isClamped: isClamped, syncCursor: syncCursor, syncAll: syncAll };
+  })();
+  // ---------------- Storage cleaner: tap a cut-off row for its size + byline ----------------
+  // The cleaner's name and "artists - size" lines are squashed with an ellipsis on a
+  // long byline, which is exactly where the size and the artist names were lost. A
+  // tap on a row's text pops them in the same bubble the player and the runtime use.
+  (function(){
+    function open(el, ev){
+      if(ev){ try{ ev.stopPropagation(); }catch(_eS){} }
+      var now = Date.now();
+      if(el._durTapAt && now - el._durTapAt < 400) return;   // pointerup + click are one tap
+      el._durTapAt = now;
+      var bytes = Number(el.getAttribute('data-store-size')) || 0;
+      var artist = el.getAttribute('data-store-artist') || '';
+      var name = el.getAttribute('data-store-name') || '';
+      var fmt = window.__scFmtBytes ? window.__scFmtBytes(bytes) : (bytes + ' B');
+      // The whole byline the row was too narrow to show, name first.
+      var byline = (name && name !== 'Untitled') ? (name + ' \u00b7 ' + artist) : artist;
+      window.__scDurBubble.toggleText(el, fmt, byline);
+    }
+    function find(e){
+      return (e.target && e.target.closest) ? e.target.closest('.sc-store-txt[data-store-size]') : null;
+    }
+    document.addEventListener('click', function(e){ var el = find(e); if(el) open(el, e); });
+    document.addEventListener('pointerup', function(e){ var el = find(e); if(el) open(el, e); });
   })();
   // ---------------- Mini player: tap the disc to expand the full now-playing view ----------------
   $('npDisc').addEventListener('click', () => {
@@ -49457,7 +49495,7 @@ window.showAlbumReorderPopup = function(albumName){
       var big = r.size > 8 * 1048576;
       return '<div class="sc-store-row">' +
         '<div class="sc-art sm" style="' + (t.artUrl ? 'background-image:url(' + esc(t.artUrl) + ')' : '') + '"></div>' +
-        '<div class="sc-store-txt"><div class="sc-store-name">' + esc(t.name || 'Untitled') + '</div>' +
+        '<div class="sc-store-txt" data-dur-bubble="1" data-store-size="' + r.size + '" data-store-name="' + esc(t.name || 'Untitled') + '" data-store-artist="' + esc(t.artist || 'Unknown artist') + '" style="cursor:pointer;"><div class="sc-store-name">' + esc(t.name || 'Untitled') + '</div>' +
         '<div class="sc-store-sub">' + esc(t.artist || 'Unknown artist') + ' \u00b7 ' + fmtBytes(r.size) + (t.reencoded ? ' \u00b7 already re-encoded' : '') + '</div></div>' +
         '<button class="sc-btn tiny' + (big ? ' primary' : '') + '" data-reenc="' + esc(t.id) + '">Re-encode</button>' +
         '</div>';
