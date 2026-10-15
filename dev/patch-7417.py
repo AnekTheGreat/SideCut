@@ -116,7 +116,7 @@ if CHECK:
             problems.append('%s: %s missing' % (label, rel))
             print('  ! %s missing in %s' % (label, rel))
         else:
-            print('  \u2713 %s' % label)
+            print('  ✓ %s' % label)
     print('CHECKS: %s' % ('FAILED' if problems else 'OK'))
     sys.exit(1 if problems else 0)
 
