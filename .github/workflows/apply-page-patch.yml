@@ -35,7 +35,16 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 24, not 20. This battery boots ONE 3.24 MB index.html in jsdom and then waits a
+          # fixed number of milliseconds for the page to define its contents. On Node 20 that
+          # boot outruns the guess: document.readyState reaches 'complete' - the moment the
+          # page's globals appear - at 11.2 s, while crossfade-pause-check waits 3.5 s and
+          # media-controls-check reads the page sooner still, so crossfade, compress-library,
+          # refresh-pin, audio-focus, background-playback and the whole OTA trio go red on
+          # state the page has simply not defined yet. On 24 the same boot finishes inside
+          # every settle: the same suites, on the same machine, run one after the other, are
+          # red on 20 and green on 24. The release battery runs on the Node it is verified on.
+          node-version: 24
 
       - name: Is the payload still here?
         id: payload
