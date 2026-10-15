@@ -100,4 +100,35 @@ if [ -n "$bad" ]; then
   fi
   exit 1
 fi
+# A GREEN battery rewrites the report too. The red branch above pushes this file, and
+# dev/gates-report.txt is a committed path, so without this the release would carry the
+# PREVIOUS run's red report into main and the repository would claim a failure that no
+# longer exists.
+jsdom=$(node -p "require('/tmp/h/node_modules/jsdom/package.json').version" 2>/dev/null || echo unknown)
+{
+  echo '# Gates report'
+  echo
+  echo 'Written by dev/release-7415-gates.sh. A red battery writes this file and pushes it,'
+  echo 'because the job log cannot be read back from outside the run - the log download is'
+  echo 'truncated from the top, which is the end the failing step lives at - so the diagnosis'
+  echo 'travels through the repository. A green battery rewrites it, so a release never'
+  echo 'carries an older red report into main.'
+  echo
+  echo "node: $(node -v)"
+  echo "jsdom: $jsdom"
+  echo "date: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  echo
+  echo '## green'
+  echo
+  echo 'Every suite green, except the one red this repository has recorded for months:'
+  echo 'dev/media-controls-check.cjs, "and it no longer fires every half hour", at 66 passed'
+  echo '/ 1 failed. A pristine clone of main reproduces that same single failure, so it is'
+  echo 'not the doing of this release, and this release does not fix it.'
+  echo
+  echo '## every suite, exactly as the battery reported it'
+  echo
+  echo '```'
+  grep -E '^[A-Za-z0-9_-]+: ' /tmp/gates.log || true
+  echo '```'
+} > dev/gates-report.txt
 echo 'Gates: every suite green except the recorded pre-existing media-controls-check red.'

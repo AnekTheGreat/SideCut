@@ -115,13 +115,17 @@ jobs:
           if [ -n "$fail" ]; then echo "::error::$fail"; exit 1; fi
           echo 'retarget: only the two gates moved, and both moved.'
 
-      - name: Gates
-        # Installs what the battery reads, runs dev/gates.sh, and permits the one red this
-        # repo has recorded for months (media-controls-check, 66/1).
-        if: steps.payload.outputs.present == 'yes'
-        run: sh dev/release-7415-gates.sh
-
       - name: Rebuild the OTA bundles to a true fixed point
+        # BEFORE the battery, not after it. dev/ota-update-check.cjs asserts the tree's own
+        # bundle - ota/updates.json and the index.html inside ota/update.zip - is already on
+        # index.html's APP_VERSION, and that a second generation produces the same bytes.
+        # Rebuilding after the battery therefore ran that suite against the PREVIOUS
+        # release's bundle, on purpose-patched 74.1.5 page: every run of this release died
+        # on exactly ota-update-check, "manifest v74.1 vs APP_VERSION v74.1.5", and passed
+        # 52/0 when re-run on its own, because that suite regenerates the bundle itself and
+        # so leaves the tree fixed for the next reader. The battery has to measure the tree
+        # that gets committed, so the bundles exist before it runs.
+        #
         # The zip embeds the root manifest.json, and that manifest records the zip's own
         # size - so each pass publishes the size the last one measured and rebuilds until
         # both --checks pass; the --checks after the loop fail the step if it never does.
@@ -144,6 +148,12 @@ jobs:
           for f in ota/update.zip ota-play/update.zip ota/SideCut-web.zip; do
             printf '%s %s bytes\n' "$f" "$(stat -c%s "$f")"
           done
+
+      - name: Gates
+        # Installs what the battery reads, runs dev/gates.sh, and permits the one red this
+        # repo has recorded for months (media-controls-check, 66/1).
+        if: steps.payload.outputs.present == 'yes'
+        run: sh dev/release-7415-gates.sh
 
       - name: Record the release in AGENTS.md
         if: steps.payload.outputs.present == 'yes'
