@@ -15,6 +15,14 @@
 # with "set: Illegal option -o pipefail" and exit 2, which is how the first run of this
 # release lost its Gates step. Nothing in this file needs pipefail: the one pipeline
 # below that can legitimately find nothing already carries `|| true`.
+#
+# A RED BATTERY NOW LEAVES A REPORT BEHIND. The second run of this release failed here as
+# well, and the only thing anyone could read back was the job log - thousands of lines
+# that the run's own log download returns truncated from the TOP, so the failing step's
+# output is exactly the part that cannot be fetched. The failure branch below writes
+# dev/gates-report.txt, pushes it, and exits 1: the report carries the versions the
+# battery ran on, every suite's own line, and each red suite re-run on its own. A red
+# Gates step must never be un-diagnosable again.
 set -u
 cd "$(dirname "$0")/.."
 
@@ -31,18 +39,53 @@ tail -40 /tmp/gates.log
 bad=$(grep -E '^[A-Za-z0-9_-]+: exit [1-9]' /tmp/gates.log | grep -v '^media-controls-check:' || true)
 if [ -n "$bad" ]; then
   echo "::error::gates failed: $bad"
-  # Re-run each red suite on its own and print its own failing lines. gates.sh keeps only
-  # a suite's LAST line, so a red battery comes back saying "27 passed, 1 failed" and
-  # nothing else - the one thing a reader needs, thrown away by the wrapper. This step
-  # exists so that a red Gates step can never be un-diagnosable again.
-  printf '%s\n' "$bad" | cut -d: -f1 | while read -r name; do
-    [ -n "$name" ] || continue
-    f="dev/$name.mjs"
-    [ -f "$f" ] || f="dev/$name.cjs"
-    [ -f "$f" ] || continue
-    echo "--- $name ---"
-    node "$f" 2>&1 | grep -E '✗|✘|FAIL|Error:' | head -20 || true
-  done
+  jsdom=$(node -p "require('/tmp/h/node_modules/jsdom/package.json').version" 2>/dev/null || echo unknown)
+  {
+    echo '# Gates report'
+    echo
+    echo 'Written by dev/release-7415-gates.sh when the battery comes back red, and pushed'
+    echo 'by that run. The job log cannot be read back from outside the run - it is'
+    echo 'thousands of lines and the log download is truncated from the top, which is the'
+    echo 'end the failing step lives at - so the diagnosis travels through the repository.'
+    echo
+    echo "node: $(node -v)"
+    echo "jsdom: $jsdom"
+    echo "date: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    echo
+    echo '## red'
+    echo
+    echo '```'
+    printf '%s\n' "$bad"
+    echo '```'
+    echo
+    echo '## every suite, exactly as the battery reported it'
+    echo
+    echo '```'
+    grep -E '^[A-Za-z0-9_-]+: ' /tmp/gates.log || true
+    echo '```'
+    echo
+    echo '## each red suite, re-run on its own'
+    printf '%s\n' "$bad" | cut -d: -f1 | while read -r name; do
+      [ -n "$name" ] || continue
+      f="dev/$name.mjs"
+      [ -f "$f" ] || f="dev/$name.cjs"
+      [ -f "$f" ] || continue
+      echo
+      echo "### $name"
+      echo
+      echo '```'
+      node "$f" 2>&1 | tail -80
+      echo '```'
+    done
+  } > dev/gates-report.txt
+  # gates.sh keeps only a suite's LAST line, so the re-run above is where a red suite's
+  # own failing lines come from - the wrapper throws them away otherwise.
+  git config user.name 'SideCut release'
+  git config user.email 'actions@github.com'
+  git add -f dev/gates-report.txt
+  if git commit -q -m 'Diagnose the red Gates battery: the report the log cannot carry'; then
+    git push || echo 'could not push the report'
+  fi
   exit 1
 fi
 echo 'Gates: every suite green except the recorded pre-existing media-controls-check red.'
