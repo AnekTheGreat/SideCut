@@ -138,7 +138,7 @@ bespoke('test-705.mjs', [[
 bespoke('test-736.mjs', [
   ["ok(ver === '74.1.5', 'the app runs 74.1.5 (' + ver + ')');", "ok(ver === '74.1.6', 'the app runs 74.1.6 (' + ver + ')');"],
   ["ok(!!entries && entries[0].version === '74.1.5',", "ok(!!entries && entries[0].version === '74.1.6',"],
-  ['"const CACHE_NAME = \\'sidecut-shell-v74.1.5\\'"', '"const CACHE_NAME = \\'sidecut-shell-v74.1.6\\'"'],
+  ['"const CACHE_NAME = \'sidecut-shell-v74.1.5\'"', '"const CACHE_NAME = \'sidecut-shell-v74.1.6\'"'],
 ]);
 
 // F3. test-70.mjs is the one gate that pins the release FAMILY rather than a
