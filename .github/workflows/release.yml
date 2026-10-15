@@ -1,0 +1,201 @@
+name: Release from a payload
+
+# A release is a payload plus this workflow.
+#
+# index.html is ONE 3.24 MB file, and the machine that prepares a release has no
+# git credentials and cannot push a file that size - the API carries whole files
+# as call arguments, at any encoding. So the page ships by being EDITED inside the
+# repository: the release pushes dev/patch-<version>.py (the page edits, idempotent)
+# and dev/repin-<version>.mjs (the gate repins), this workflow runs them over the
+# checked-out tree, proves the result against dev/release-<version>.sha256 byte for
+# byte, rebuilds the OTA bundles, runs the battery, records the release in
+# AGENTS.md, and only then commits.
+#
+# THIS FILE IS DELIBERATELY THIN. GitHub refuses any commit that touches
+# `.github/workflows/` from an Actions token ("without 'workflows' permission"), so
+# it can only be edited by hand, in one API call that carries every byte of it: the
+# battery lives in dev/release-gates.sh, the AGENTS.md insert in
+# dev/release-record.py, and the prose in dev/release-entry.md. Dispatched by hand
+# with the version it ships; a second dispatch for the same version finds the page
+# already patched and does nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The release this payload ships, e.g. 74.1.6'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Apply the payload, gate it, commit it
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # 24, not 20. This battery boots ONE 3.24 MB index.html in jsdom and then
+          # waits a fixed number of milliseconds for the page to define its
+          # contents. On Node 20 that boot outruns the guess: document.readyState
+          # reaches 'complete' - the moment the page's globals appear - at 11.2 s,
+          # while crossfade-pause-check waits 3.5 s and media-controls-check reads
+          # the page sooner still, so crossfade, compress-library, refresh-pin,
+          # audio-focus, background-playback and the whole OTA trio go red on state
+          # the page has simply not defined yet. On 24 the same boot finishes inside
+          # every settle: the same suites, on the same machine, run one after the
+          # other, are red on 20 and green on 24.
+          node-version: 24
+
+      - name: Is a release pending, and are its tools all here?
+        id: pending
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          # The release's ID as its own files are named: the tools drop the dots.
+          N=$(printf '%s' "$V" | tr -d '.')
+          for f in "dev/patch-$N.py" "dev/repin-$N.mjs" "dev/patch-gate-$N.py" "dev/storeinfo-$N-block.js" "dev/release-$N.proof" "dev/release-proof.sh" "dev/release-entry.md" "dev/release-gates.sh" "dev/release-record.py"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::$f is missing, so $V cannot be released from this tree"
+              exit 1
+            fi
+          done
+          if python3 "dev/patch-$N.py" --check > /dev/null 2>&1; then
+            echo "pending=no" >> "$GITHUB_OUTPUT"
+            echo "::notice::$V is already on the checked-out page - nothing to do."
+          else
+            echo "pending=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply the page patch
+        if: steps.pending.outputs.pending == 'yes'
+        run: |
+          set -euo pipefail
+          N=$(printf '%s' '${{ inputs.version }}' | tr -d '.')
+          python3 "dev/patch-$N.py"
+
+      - name: Repin the gates
+        if: steps.pending.outputs.pending == 'yes'
+        run: |
+          set -euo pipefail
+          N=$(printf '%s' '${{ inputs.version }}' | tr -d '.')
+          node "dev/repin-$N.mjs"
+
+      - name: Put this release's gate block into the gate it belongs to
+        # dev/studio-70-check.cjs is 1700 lines, so the release carries the block
+        # alone (dev/storeinfo-<version>-block.js) and this puts it where it goes -
+        # the same problem as the page, one file down. Before the proof below, which
+        # hashes the patched gate, and before the battery, which runs it.
+        if: steps.pending.outputs.pending == 'yes'
+        run: |
+          set -euo pipefail
+          N=$(printf '%s' '${{ inputs.version }}' | tr -d '.')
+          python3 "dev/patch-gate-$N.py"
+
+      - name: Prove the prepared tree is the rehearsed one, byte for byte
+        # Not "does the diff look right" but "does running it reproduce the tested
+        # tree". dev/release-proof.sh lists every file a release owns; the one line
+        # in dev/release-<version>.proof is that listing's own hash, taken out where
+        # the release was rehearsed. If the two disagree, this is a release that
+        # cannot be verified and it stops here rather than six minutes into a battery.
+        if: steps.pending.outputs.pending == 'yes'
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          N=$(printf '%s' "$V" | tr -d '.')
+          sh dev/release-proof.sh "$V" > /tmp/prepared.sha256
+          want=$(cut -d' ' -f1 "dev/release-$N.proof")
+          got=$(sha256sum /tmp/prepared.sha256 | cut -d' ' -f1)
+          echo "prepared tree: $(wc -l < /tmp/prepared.sha256) files, $got"
+          if [ "$got" != "$want" ]; then
+            echo "::error::the prepared tree is not the rehearsed one (want $want)"
+            head -20 /tmp/prepared.sha256
+            exit 1
+          fi
+          python3 "dev/patch-$N.py" --check
+          node "dev/repin-$N.mjs" --check
+          python3 "dev/patch-gate-$N.py" --check
+
+      - name: Rebuild the OTA bundles to a true fixed point
+        # BEFORE the battery, not after it. dev/ota-update-check.cjs asserts the
+        # tree's OWN bundle - ota/updates.json and the index.html inside
+        # ota/update.zip - is already on index.html's APP_VERSION, and that a second
+        # generation produces the same bytes. Rebuilding after the battery ran that
+        # suite against the PREVIOUS release's bundle while the page was already
+        # patched: every run of 74.1.5 died on exactly ota-update-check ("manifest
+        # v74.1 vs APP_VERSION v74.1.5") and passed 52/0 re-run on its own, because
+        # that suite regenerates the bundle itself. The battery has to measure the
+        # tree that gets committed, so the bundles exist before it runs.
+        #
+        # The zip embeds the root manifest.json, and that manifest records the zip's
+        # own size - so each pass publishes the size the last one measured and
+        # rebuilds until both --checks pass; the --checks after the loop fail the
+        # step if it never does.
+        if: steps.pending.outputs.pending == 'yes'
+        run: |
+          set -euo pipefail
+          for pass in 1 2 3 4 5 6; do
+            cp updates.json manifest.json
+            node dev/ota-bundle.mjs
+            node dev/ota-bundle-play.mjs
+            if node dev/ota-bundle.mjs --check > /dev/null 2>&1 && node dev/ota-bundle-play.mjs --check > /dev/null 2>&1; then
+              echo "OTA: fixed point reached on pass $pass"
+              break
+            fi
+          done
+          cp updates.json manifest.json
+          node dev/ota-bundle.mjs --check
+          node dev/ota-bundle-play.mjs --check
+          node -p "JSON.stringify(require('./ota/updates.json'), null, 1)"
+          for f in ota/update.zip ota-play/update.zip ota/SideCut-web.zip; do
+            printf '%s %s bytes\n' "$f" "$(stat -c%s "$f")"
+          done
+
+      - name: Gates
+        # Installs what the battery reads, runs dev/gates.sh, and permits the one red
+        # this repo has recorded for months (media-controls-check, 66/1). A red
+        # battery pushes dev/gates-report.txt and fails the step.
+        if: steps.pending.outputs.pending == 'yes'
+        run: sh dev/release-gates.sh
+
+      - name: Record the release in AGENTS.md
+        if: steps.pending.outputs.pending == 'yes'
+        run: python3 dev/release-record.py
+
+      - name: Commit and push
+        if: steps.pending.outputs.pending == 'yes'
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          git config user.name 'SideCut release'
+          git config user.email 'actions@github.com'
+          git add -A
+          git status --porcelain
+          # NOT .github/: a workflow file is refused by the Actions token ("without
+          # 'workflows' permission"), so a release that would commit one can only
+          # fail at the last step.
+          stray=$(git status --porcelain | awk '{print $NF}' | grep -vE '^(dev/|ota/|ota-play/|index\.html$|sw\.js$|manifest\.json$|updates\.json$|AGENTS\.md$)' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::unexpected path(s) in the release commit: $stray"
+            exit 1
+          fi
+          # The head changelog entry is this release's own title, and the gates have
+          # already required it to match APP_VERSION.
+          TITLE=$(grep -oE "\{ version: '$V', date: '[^']*', title: '[^']*'" index.html | head -1 | sed -E "s/.*title: '//; s/'$//")
+          [ -n "$TITLE" ] || TITLE="$V"
+          git commit -m "Release $V - $TITLE"
+          git push
+          echo '--- landed ---'
+          git log --oneline -1
