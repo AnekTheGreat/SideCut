@@ -1,0 +1,62 @@
+name: Apply the OTA suite wait fix
+
+# One dispatch, and dev/ota-update-check.cjs stops measuring the runner's speed. The fix -
+# what it changes, how the flake was reproduced and what was measured - is at the top of
+# dev/patch-ota-waits.py. The suite is 20 KB and has to land byte for byte, so it travels
+# as a fixer against the checked-out file, the same way MeasureT's app.js does elsewhere.
+#
+# This is what unblocks the 74.1.5 release: the run before this one failed its Gates step
+# with "ota-update-check: exit 1 (FAILURES: 49 passed, 3 failed)" and passed 52/0 when the
+# same suite was re-run alone. Nothing about the app was wrong; the suite was reading the
+# page before the page had booted.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ota-wait-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply the fix
+        run: |
+          set -euo pipefail
+          python3 dev/patch-ota-waits.py
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- dev/ota-update-check.cjs; then
+            echo 'nothing to commit - the suite already waits for the page'
+            exit 0
+          fi
+          git config user.name 'SideCut release'
+          git config user.email 'actions@github.com'
+          git add dev/ota-update-check.cjs
+          git status --porcelain
+          # This step exists to land one file, and should fail rather than sweep anything
+          # else the runner touched into the commit.
+          stray=$(git diff --cached --name-only | grep -v '^dev/ota-update-check\.cjs$' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::unexpected path(s) in this commit: $stray"
+            exit 1
+          fi
+          git commit -m 'The OTA suite waits for the page instead of a clock, so a busy runner cannot red it'
+          git push
+          echo '--- landed ---'
+          git log --oneline -1
+
+      - name: Prove the pushed tree carries the fix
+        run: |
+          set -euo pipefail
+          python3 dev/patch-ota-waits.py --check
+          grep -c 'waitFor' dev/ota-update-check.cjs
+          node --check dev/ota-update-check.cjs
