@@ -25,6 +25,7 @@ CHANGELOG_ENTRY = """  { version: '74.1.7', date: '%s', title: 'A compressor tha
     'A re-encode carries on when you leave the app. The job holds a Web Lock and works in bigger slices while the page is hidden, so a phone put down mid-compress finishes the song instead of stalling there.',
     'The Studio says where a running compress is: a strip in the storage cleaner names the song, the rate and the percentage, and the row reads Encoding... until it is done.',
     'A compress that the phone killed outright is reported as it is - the song is never half-written, because the stored file is only replaced once the encoder has produced its bytes - and it can be started again at the same rate from that note.',
+    'Playlists can be reordered from Manage playlists: Reorder turns the panel into a list of names with up and down arrows, and the Library tabs follow the order you set, with Library and Favorites staying first.',
     'Nothing else moved: the player, the albums, the home widget, the letter-by-letter lyrics and every saved song and setting are where the last release left them.',
   ]},
 """
