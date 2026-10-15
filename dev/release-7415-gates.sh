@@ -10,7 +10,12 @@
 # hand-carried and belongs in a file the repository can carry instead.
 #
 #   sh dev/release-7415-gates.sh
-set -uo pipefail
+#
+# `sh` here is dash, and dash has no pipefail - asking for it aborts the whole battery
+# with "set: Illegal option -o pipefail" and exit 2, which is how the first run of this
+# release lost its Gates step. Nothing in this file needs pipefail: the one pipeline
+# below that can legitimately find nothing already carries `|| true`.
+set -u
 cd "$(dirname "$0")/.."
 
 npm install --no-package-lock --no-audit --no-fund --loglevel=error
