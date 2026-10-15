@@ -13410,7 +13410,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '74.1.7';
+  const APP_VERSION = '74.1.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -14031,6 +14031,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '74.1.8', date: 'October 15, 2026 · 7:46 PM EDT', title: 'Re-encode works again: the slice helper the encoders call lives with them now', items: [
+    'The Re-encode button failed the moment a rate was tapped - "Re-encode failed: scBackSliceMul is not defined" - on every song and every rate. That was a regression this app shipped in the last release, and this release is the repair.',
+    'The helper that decides how much audio one slice of a compress covers was written into the Studio script while the encoders live in the main app script, and one script cannot call into another. It lives with the encoders now.',
+    'Nothing was lost while it was broken. The encode failed before it produced a single byte, so the stored file was never touched and no song was left half-written or quietly smaller than it should be.',
+    'Re-encode is one tap again: 96, 128, 160, 192, 256 and 320 kbps, each saying what it would do to that song in MB, and a finished run replaces the stored file and can still be undone.',
+    'The background compress works too - the job holds a Web Lock and takes bigger slices while you are away, the cleaner names the song, the rate and the percentage while it runs, and a run the phone killed outright is reported rather than hidden.',
+    'The gates drive the real encoder now instead of a stand-in, which is how the last release shipped green: with the encoder stubbed, the failing line never ran. A stub can no longer hide a broken encoder.',
+    'A new gate reads the whole page as scripts: no block may call a helper that only another block defines. On the last release it named this one, in the exact block that failed - and on this one it finds nothing.',
+    'Nothing else moved: the player, the albums, the home widget, the letter-by-letter lyrics and every saved song and setting are where the last release left them.',
+  ]},
   { version: '74.1.7', date: 'October 15, 2026 · 6:48 PM EDT', title: 'A compressor that carries on in the background, a Re-encode button that asks the rate, and playlists you can reorder', items: [
     'The storage cleaner no longer lets a song name out of its row: the name and the artist clip inside the row they belong to instead of running across the Re-encode button and off the screen.',
     'The Re-encode button opens the rates now - 96, 128, 160, 192, 256 and 320 kbps - and every one of them says what it would do to that song in MB before anything is encoded.',
@@ -41494,6 +41504,16 @@ function _renderAhFromData(artistAlbums){
   // a third of the run spent waiting to be scheduled again. 90ms is ~11 a
   // second, which the screen cannot tell apart, for noticeably less overhead.
   var SC_ENCODE_SLICE_MS = 90;
+  // 74.1.8 - THE MULTIPLIER LIVES HERE, BESIDE THE TWO CALL SITES THAT READ IT.
+  // 74.1.7 defined it in the Studio module's <script> instead, and every re-encode
+  // then died with "scBackSliceMul is not defined": a bare identifier is resolved in
+  // the scope of the function that USES it, never in the scope of whatever published
+  // a reference to it, and both encoders that read this slice budget are in THIS
+  // script block. A helper an encoder calls has to be defined with the encoders.
+  function scBackSliceMul(){ return document.hidden ? 3 : 1; }
+  // Published on the window, the same way __scEncodeMp3 is further down this block,
+  // so the Studio module can reach a function that its own scope cannot see.
+  window.__scBackSliceMul = scBackSliceMul;
   // 74.1.7 - while the page is hidden each slice does three times the work, so a
   // background compress pays a third of the wake-ups for the same wall clock (the
   // job also holds a Web Lock while it runs - see scJobLock - which is what tells
@@ -48439,7 +48459,14 @@ window.showAlbumReorderPopup = function(albumName){
   //     runs, so a job left in the background is something you can see on return.
   var ENCODE_JOB_KEY = 'sidecut_encodeJob';
   var encodeJob = null;
-  function scBackSliceMul(){ return document.hidden ? 3 : 1; }
+  // 74.1.8 - the real one lives in the app's own <script>, beside the two encoders
+  // that call it (see the note there). This is the Studio's way in: it reads the
+  // published function at call time, so the two cannot drift apart, and it stays a
+  // function either way, which is what the panels and the probes expect.
+  function scBackSliceMul(){
+    return (typeof window !== 'undefined' && typeof window.__scBackSliceMul === 'function')
+      ? window.__scBackSliceMul() : 1;
+  }
   function scJobLock(run){
     try{
       if(navigator.locks && navigator.locks.request){
