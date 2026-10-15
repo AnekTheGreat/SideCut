@@ -1,17 +1,16 @@
 name: Apply the page patch
 
-# THE PAGE CAN ONLY SHIP FROM INSIDE THE REPOSITORY. index.html is ONE 3.24 MB file,
-# and a machine that prepares a release has no git credentials and cannot push a file
-# that size - the API carries whole files as call arguments. So a page change ships as
-# a payload plus this workflow: dev/patch-7415.py edits the checked-out page (idempotent,
-# and `--check` says whether the page is behind), dev/repin-7415.mjs moves the gate pins,
-# and everything here is proven against dev/release-7415.sha256 byte for byte before a
-# single line is committed. It is dispatched by hand and does nothing on a second run.
+# Ships 74.1.5 from inside the repository: index.html is one 3.24 MB file that cannot be
+# pushed from a host with no credentials, so the release is a payload plus this workflow.
+# dev/patch-7415.py edits the checked-out page (idempotent; --check says whether it is
+# behind), dev/repin-7415.mjs moves the gate pins, and the result is proven against
+# dev/release-7415.sha256 byte for byte before a line is committed.
 #
-#   node dev/ota-bundle.mjs --check       root OTA channel
-#   node dev/ota-bundle-play.mjs --check  Play channel
-#
-# Both are run below, so the commit that lands is one deploy.yml agrees with.
+# THIS FILE IS DELIBERATELY THIN. GitHub refuses any commit that touches
+# `.github/workflows/` from a workflow, so it can only be edited by hand, in one API call
+# that carries every byte of it: its prose lives in dev/release-7415-entry.md and its
+# battery and AGENTS.md insert live in dev/ scripts. Dispatched by hand; a second run
+# finds no payload and does nothing.
 
 on:
   workflow_dispatch:
@@ -45,22 +44,22 @@ jobs:
             echo "present=yes" >> "$GITHUB_OUTPUT"
           else
             echo "present=no" >> "$GITHUB_OUTPUT"
-            echo '::notice::The 74.1.5 payload has already been consumed and committed. Nothing to apply.'
+            echo '::notice::The 74.1.5 payload has already been consumed and committed.'
           fi
 
       - name: Unpack the release tools and prove the payload is intact
         if: steps.payload.outputs.present == 'yes'
         run: |
           set -euo pipefail
-          # The payload is checked with its line breaks stripped, so the file's own
-          # formatting can never decide whether a release runs.
+          # Checked with its line breaks stripped: the file's own formatting can never
+          # decide whether a release runs.
           tr -d '\n\r' < dev/7415-payload.tar.xz.b64 > /tmp/payload.b64
           echo '8306b07609074b572377cf2dc87a1685a2464ec8cc04db94436892097405db0a  /tmp/payload.b64' > /tmp/payload.sha
           sha256sum -c /tmp/payload.sha
           base64 -d /tmp/payload.b64 > /tmp/payload.tar.xz
           tar -xJf /tmp/payload.tar.xz
           rm -f dev/7415-payload.tar.xz.b64
-          # And the two tools that came out of it are the two that were rehearsed.
+          # The two tools that came out are the two that were rehearsed.
           sha256sum -c - <<'SUMS'
           a0b5b153c5bfd8c0f9388e91fc9ebd171ec034652c1ad3ffacbb673fae4770f2  dev/patch-7415.py
           08faca9d9ff71f170131e4019b6f75140793cfd68ddd477fa1d34161c5ed041a  dev/repin-7415.mjs
@@ -75,8 +74,7 @@ jobs:
         run: node dev/repin-7415.mjs
 
       - name: Prove the tree reproduces the released bytes
-        # The standard this repo holds a patch to: not "does the diff look right" but
-        # "does running it over a checked-out tree reproduce the tree that was tested".
+        # Not "does the diff look right" but "does running it reproduce the tested tree".
         if: steps.payload.outputs.present == 'yes'
         run: |
           set -euo pipefail
@@ -88,51 +86,36 @@ jobs:
         if: steps.payload.outputs.present == 'yes'
         run: |
           set -euo pipefail
+          # Only these two may move, and both must. The tree already carries the page patch
+          # and every repinned gate UNCOMMITTED, so "what moved" cannot be read off `git diff`
+          # against HEAD - it is measured against the state this step started in. The first
+          # run of this release failed here, after steps 1-8 had all passed.
+          rest() { git diff -- . ':(exclude)dev/test-740.mjs' ':(exclude)dev/test-741.mjs' | sha256sum | cut -d' ' -f1; }
+          one() { sha256sum "$1" | cut -d' ' -f1; }
+          rest_before=$(rest); g740_before=$(one dev/test-740.mjs); g741_before=$(one dev/test-741.mjs)
+
           python3 dev/retarget-own-7415.py
           python3 dev/retarget-own-7415.py --check
-          # Only these two files may move at this step.
-          moved=$(git diff --name-only | tr '\n' ' ')
-          echo "retarget moved: $moved"
-          case "$moved" in
-            "dev/test-740.mjs dev/test-741.mjs "|"dev/test-741.mjs dev/test-740.mjs ") ;;
-            *) echo "::error::the retarget touched something unexpected: $moved"; exit 1 ;;
-          esac
 
-      - name: Install what the gates read
-        if: steps.payload.outputs.present == 'yes'
-        run: |
-          set -euo pipefail
-          npm install --no-package-lock --no-audit --no-fund --loglevel=error
-          mkdir -p /tmp/h
-          npm install --prefix /tmp/h --no-package-lock --no-save --no-audit --no-fund --loglevel=error jsdom
-          git checkout -- package.json package-lock.json 2>/dev/null || true
+          rest_after=$(rest); g740_after=$(one dev/test-740.mjs); g741_after=$(one dev/test-741.mjs)
+          fail=''
+          add() { fail="${fail:+$fail; }$1"; }
+          [ "$rest_before" = "$rest_after" ] || add 'the retarget changed a file other than the two gates'
+          [ "$g740_before" != "$g740_after" ] || add 'dev/test-740.mjs did not move'
+          [ "$g741_before" != "$g741_after" ] || add 'dev/test-741.mjs did not move'
+          if [ -n "$fail" ]; then echo "::error::$fail"; exit 1; fi
+          echo 'retarget: only the two gates moved, and both moved.'
 
       - name: Gates
+        # Installs what the battery reads, runs dev/gates.sh, and permits the one red this
+        # repo has recorded for months (media-controls-check, 66/1).
         if: steps.payload.outputs.present == 'yes'
-        run: |
-          set -uo pipefail
-          sh dev/gates.sh > /tmp/gates.log 2>&1
-          echo "gates.sh exit: $?"
-          tail -40 /tmp/gates.log
-          # Every suite in the battery has to be green EXCEPT the one this repo has
-          # recorded as red for months: dev/media-controls-check.cjs, "and it no longer
-          # fires every half hour" - 66 passed / 1 failed, the same number 74.1's entry in
-          # AGENTS.md records ("the flaky months-old ... red"), and the same failure on a
-          # pristine clone of main, so it is not this release's doing and this release does
-          # not fix it (its own notes say nothing else moved). Anything else fails here.
-          bad=$(grep -E '^[A-Za-z0-9_-]+: exit [1-9]' /tmp/gates.log | grep -v '^media-controls-check:' || true)
-          if [ -n "$bad" ]; then
-            echo "::error::gates failed: $bad"
-            exit 1
-          fi
-          echo 'Gates: every suite green except the recorded pre-existing media-controls-check red.'
+        run: sh dev/release-7415-gates.sh
 
       - name: Rebuild the OTA bundles to a true fixed point
-        # The zip EMBEDS the root manifest.json, and that manifest's size field records the
-        # zip's own size - so the two have to agree before --check accepts the bundle. Each
-        # pass publishes the size the last pass measured into the embedded manifest and
-        # rebuilds; the loop stops as soon as both --checks pass, and the --checks after it
-        # fail the step if it never converged.
+        # The zip embeds the root manifest.json, and that manifest records the zip's own
+        # size - so each pass publishes the size the last one measured and rebuilds until
+        # both --checks pass; the --checks after the loop fail the step if it never does.
         if: steps.payload.outputs.present == 'yes'
         run: |
           set -euo pipefail
@@ -148,7 +131,6 @@ jobs:
           cp updates.json manifest.json
           node dev/ota-bundle.mjs --check
           node dev/ota-bundle-play.mjs --check
-          echo "--- the bundle a phone will download ---"
           node -p "JSON.stringify(require('./ota/updates.json'), null, 1)"
           for f in ota/update.zip ota-play/update.zip ota/SideCut-web.zip; do
             printf '%s %s bytes\n' "$f" "$(stat -c%s "$f")"
@@ -156,55 +138,7 @@ jobs:
 
       - name: Record the release in AGENTS.md
         if: steps.payload.outputs.present == 'yes'
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import datetime, json
-
-          p = 'AGENTS.md'
-          src = open(p, encoding='utf-8').read()
-          if '## 74.1.5 (' in src:
-              print('AGENTS.md already carries 74.1.5')
-              raise SystemExit(0)
-
-          now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(hours=4)
-          ampm = 'AM' if now.hour < 12 else 'PM'
-          stamp = '%s %d, %d \u00b7 %d:%02d %s EDT' % (now.strftime('%B'), now.day, now.year, now.hour % 12 or 12, now.minute, ampm)
-          root = json.load(open('ota/updates.json'))
-          play = json.load(open('ota-play/updates.json'))
-
-          entry = (
-              '## 74.1.5 (' + stamp + '): the top-artists bubble opens the artist, and the storage cleaner shows every size in MB\n'
-              '- **The ask, in one line**: an artist in the home Top artists bubble should open when you tap their song, every song should say how big it is in MB, and Studio\'s storage\n'
-              '  cleaner should say it too. The three land together because that bubble\'s rows were the only list on the home screen with NO click handler at all - an artist could be read and\n'
-              '  never opened.\n'
-              '- **THE PAGE SHIPPED FROM INSIDE THE REPOSITORY, AND FROM NOW ON IT CAN ONLY SHIP FROM THERE.** `index.html` is ONE 3.24 MB file, and a machine that prepares a release has no\n'
-              '  git credentials and cannot push a file that size - the API carries whole files as call arguments, at any encoding. So the release is a payload plus a workflow:\n'
-              '  `dev/7415-payload.tar.xz.b64` carries `dev/patch-7415.py` (the page edits; idempotent, and `--check` says whether the page is behind) and `dev/repin-7415.mjs` (the gate\n'
-              '  repins); `.github/workflows/apply-page-patch.yml` unpacks them, applies them over the checked-out tree, proves the result against `dev/release-7415.sha256` byte for byte,\n'
-              '  runs the battery and the bundle --checks, and only then commits. **This is the first release that could be cut from a host with no credentials at all.**\n'
-              '- **TWO GATES WERE ASKING THE HEAD FOR AN OLDER RELEASE\'S WORDS, AND WERE RETARGETED BY HAND.** `dev/test-740.mjs` (74.0) and `dev/test-741.mjs` (74.1) each held the HEAD\n'
-              '  changelog entry to the words of the release they describe. The repin moves the head pin under them every release, so at 74.1.5 they were asking THIS release\'s notes (the\n'
-              '  artist bubble, the storage cleaner) for the last two releases\' words: **test-740 52/1 and test-741 84/1 on the tree as it was prepared.** Each now finds the entry for ITS OWN\n'
-              '  version and asserts against that - the same fix 71.8 gave test-705, and the rule AGENTS.md already carries: **a gate that describes a release must read its own entry by\n'
-              '  version.** Nothing was weakened: 74.0\'s notes still have to name the skip and the album, 74.1\'s still have to name the back roll and the restored play, and each file gained\n'
-              '  one check that its own entry is still in the changelog at all. **The prepared release was red before this; it is green after.**\n'
-              '- **THE OTA BUNDLE IS AT A TRUE FIXED POINT.** The zip embeds the root `manifest.json` and that manifest records the zip\'s own size, so the bundle needs a pass to agree with\n'
-              '  itself: publish the measured size into the embedded manifest, rebuild, repeat. Root `ota/update.zip` **' + str(root['size']) + '** bytes and the Play channel\n'
-              '  `ota-play/update.zip` **' + str(play['size']) + '** bytes, both v74.1.5, both `--check`s OK, and the eight bundle files the last release touched are the eight this one\n'
-              '  touches. `deploy.yml` then finds nothing to publish, which is what a landed release looks like.\n'
-              '- **Gate set**, on the prepared tree: test-740 **54/0** and test-741 **86/0** (one new check each, from the retarget above), test-7251 110, test-7316 284,\n'
-              '  studio-70 397, the eight album suites (58, 45, 25, 40, 34, 42, 34, 22) all 0-fail, crossfade-pause 22, compress-library 24, export-playlist 36, refresh-pin 14,\n'
-              '  widget-resume 33, background-playback 21, audio-focus 44, librarytools 15, notifgroup 27, audit-calls OK, check-dom 0 failures, OTA trio 20/52/24. 46 suites green.\n'
-              '- **STILL RED, PRE-EXISTING AND UNCHANGED**: `media-controls-check` **66/1** - the months-old "fires every half hour" red that 74.1\'s entry already records at 66/1, and the\n'
-              '  same single failure on a pristine clone of `main`. It is the only red in `dev/gates.sh` and this release does not touch it.\n\n'
-          )
-          head = '# SideCut \u2014 repository memory\n'
-          if not src.startswith(head):
-              raise SystemExit('FATAL: AGENTS.md does not start with the expected heading')
-          open(p, 'w', encoding='utf-8').write(head + '\n' + entry + src[len(head):].lstrip('\n'))
-          print('AGENTS.md: wrote the 74.1.5 entry at ' + stamp)
-          PY
+        run: python3 dev/release-7415-record.py
 
       - name: Commit and push
         if: steps.payload.outputs.present == 'yes'
@@ -212,25 +146,16 @@ jobs:
           set -euo pipefail
           git config user.name 'SideCut release'
           git config user.email 'actions@github.com'
-          echo '--- everything this commit will carry ---'
           git add -A
           git status --porcelain
-          stray=$(git status --porcelain | awk '{print $NF}' | grep -vE '^(dev/|ota/|ota-play/|\.github/|index\.html$|sw\.js$|manifest\.json$|updates\.json$|AGENTS\.md$)' || true)
+          # NOT .github/: a workflow file is refused by the Actions token ("without
+          # 'workflows' permission"), so a release that would commit one can only fail.
+          stray=$(git status --porcelain | awk '{print $NF}' | grep -vE '^(dev/|ota/|ota-play/|index\.html$|sw\.js$|manifest\.json$|updates\.json$|AGENTS\.md$)' || true)
           if [ -n "$stray" ]; then
             echo "::error::unexpected path(s) in the release commit: $stray"
             exit 1
           fi
-          git commit -m "$(cat <<'EOF'
-          Release 74.1.5 - an artist's songs open from the home bubble, and the storage cleaner sizes every track in MB
-
-          Applied from inside the repository: dev/patch-7415.py wrote the page and
-          dev/repin-7415.mjs repinned the gates, both over the checked-out tree, proven
-          against dev/release-7415.sha256 (50 files) before the commit. dev/test-740.mjs
-          and dev/test-741.mjs were retargeted to read the changelog entry for their OWN
-          release instead of the head, which is the rule AGENTS.md carries and the fix
-          71.8 gave test-705.
-          EOF
-          )"
+          git commit -m "Release 74.1.5 - an artist's songs open from the home bubble, and the storage cleaner sizes every track in MB"
           git push
-          echo "--- landed ---"
+          echo '--- landed ---'
           git log --oneline -1
