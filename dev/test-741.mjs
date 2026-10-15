@@ -39,9 +39,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(process.env.SC_HTML || path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '74.1';
-const PREV = '74.0';
-const SHELL_CACHE = 'sidecut-shell-v74.1';
+// 74.1: THE RELEASE THIS GATE DESCRIBES, so the ask below reads 74.1's OWN
+// entry by version. It read the head until 74.1.5, which held only while the head was
+// still about the button roll - see the retarget at the ask.
+const OWN = '74.1';
+const VER = '74.1.5'; /* repinned by dev/repin-7415.mjs; the ask below reads OWN */
+const PREV = '74.1'; /* repinned by dev/repin-7415.mjs */
+const SHELL_CACHE = 'sidecut-shell-v74.1.5';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -73,9 +77,16 @@ console.log('[1] release metadata');
       'and no downloader or converter term');
     ok(!/\bapk\b|\bgithub\b|release asset/i.test(notes), 'and nothing about release files');
     ok(String(head.date).endsWith('EDT'), 'the ship stamp is Eastern (' + head.date + ')');
-    // The two halves of the report, named in the head.
-    ok(/back/i.test(notes), 'the notes say back rolls');
-    ok(/restored|reopened/i.test(notes), 'and name the play that came back without its album');
+    // 74.1.5 RETARGETED THESE TWO. They asked the HEAD entry for 74.1's words, which
+    // held only until a later release took the head; at 74.1.5 the head is the artist
+    // bubble and the storage cleaner. They read the entry for the release this gate
+    // describes now - the same fix 71.8 gave test-705. Both bars are unchanged: 74.1's
+    // notes still have to name the back roll and the play that came back.
+    const own = entries.find((e) => String(e.version) === OWN);
+    const ownNotes = ((own && own.items) || []).join('\n');
+    ok(!!own, 'the entry this gate describes is still in the changelog (' + OWN + ')');
+    ok(/back/i.test(ownNotes), 'the notes say back rolls');
+    ok(/restored|reopened/i.test(ownNotes), 'and name the play that came back without its album');
     const last = String((head.items || [])[(head.items || []).length - 1] || '');
     for (const w of ['widget', 'player', 'letter', 'lyrics', 'album']) {
       ok(new RegExp('\\b' + w, 'i').test(last), 'the last note names /' + w + '/');

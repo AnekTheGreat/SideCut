@@ -2045,6 +2045,8 @@ body[class*="theme-dyn-"] .home-bubble .hb-glow,
 .hb-track-sub{ font-size:11px; color:var(--ink-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
 .hb-track-badge{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--gold); flex-shrink:0; }
 .hb-list-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 2px; border-bottom:1px solid var(--line); gap:10px; }
+.hb-artist-row{ cursor:pointer; }
+.hb-artist-row:active{ background:rgba(255,255,255,0.05); }
 .hb-list-row:last-child{ border-bottom:none; }
 .hb-list-name{ font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
 .hb-list-count{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--gold); flex-shrink:0; }
@@ -13371,7 +13373,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '74.1';
+  const APP_VERSION = '74.1.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -13992,6 +13994,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '74.1.5', date: 'October 15, 2026 · 3:12 PM EDT', title: 'The top-artists bubble opens the artist, and the storage cleaner shows every size in MB', items: [
+    'Tapping an artist in the home Top artists bubble opens that artist in the same bubble: every song of theirs you have, most played first, each one carrying its own size in MB.',
+    'Play all sits at the bottom of that list and plays the artist from the top, and a back button returns you to the artist list you came from.',
+    'The storage cleaner writes an exact size in MB on every row now, not only on the files over 8 MB, so the smallest file in the list is as readable as the biggest.',
+    'It also shows what a re-encode at the bitrate you picked would win back, in MB, before you press the button - and it says nothing when a song is already at or under that rate.',
+    'Show all lists the whole library instead of stopping at the 24 biggest, with the same button turning the list back to the 24 biggest again.',
+    'The panel says how many songs it could not measure yet instead of leaving them silently out, and the empty state explains itself rather than reporting nothing.',
+    'Nothing else moved: the player, the albums, the home widget, the letter-by-letter lyrics and every saved song and setting are where the last release left them.',
+  ]},
   { version: '74.1', date: 'October 12, 2026 · 6:20 PM EDT', title: 'Both buttons walk the albums now, and they know which record is playing', items: [
     'Back goes to the previous album now, the mirror of the skip button. Pressing back on the first song of an album lands on the last song of the album before it, in the same order the skip button walks forward in.',
     'Both directions read the album off the songs themselves. A play restored after the app was reopened - or an update reload, or a widget resume - came back with its queue and not the album, which is why the buttons still wrapped inside the record.',
@@ -36453,6 +36464,70 @@ function _renderAhFromData(artistAlbums){
     }catch(_eTab){}
     try{ if(typeof window.__scUpRefreshState === 'function') window.__scUpRefreshState(host); }catch(_eSt){}
   };
+  /* --------------------------------------------------------------------------
+     74.1.5 - AN ARTIST'S SONGS, IN THE BUBBLE
+     -------------------------------------------------------------------------- */
+  // Sizes are written in MB wherever the dashboard lists a song, and a song whose
+  // stored audio cannot be measured says so instead of being drawn as 0 bytes.
+  // The Studio's byte formatter cannot be reached from here: it lives in the
+  // second top-level <script> block, this bubble's block is the first.
+  function hbMb(n){
+    var v = Number(n) || 0;
+    if(!v) return 'no file';
+    if(v < 1048576) return Math.max(1, Math.round(v / 1024)) + ' KB';
+    return (v / 1048576).toFixed(1) + ' MB';
+  }
+  function hbSongSize(t){ return hbMb(t && t.file ? t.file.size : 0); }
+  // Every song this artist has, most played first. Ties fall back to the title so
+  // the list is stable between two opens rather than reordering itself.
+  function hbArtistSongs(name){
+    return allTracks.filter(function(t){ return t.artist === name; })
+      .sort(function(a, b){
+        return (b.playCount || 0) - (a.playCount || 0)
+          || String(a.name || '').localeCompare(String(b.name || ''));
+      });
+  }
+  function openArtistBubble(name){
+    const overlay = $('homeBubbleOverlay');
+    if(!name || !overlay.classList.contains('open')) return;
+    const ico = $('hbPanelIco');
+    const title = $('hbPanelTitle');
+    const body = $('hbPanelBody');
+    const songs = hbArtistSongs(name);
+    ico.className = 'hb-panel-ico';
+    ico.textContent = '🎤';
+    title.textContent = name;
+    if(!songs.length){
+      body.innerHTML = '<div class="hb-empty">No songs by ' + escapeHtml(name) + ' are in your library right now.</div>';
+      return;
+    }
+    let bytes = 0, withAudio = 0;
+    songs.forEach(function(t){ if(t.file && t.file.size){ bytes += t.file.size; } if(t.file && t.url) withAudio++; });
+    body.innerHTML =
+      '<button class="hb-cta" id="hbArtistBack" style="margin-top:0; background:transparent; color:var(--ink-dim); border:1px solid var(--line);">\u2039 All artists</button>' +
+      '<div style="font-size:11.5px; color:var(--ink-dim); margin:0 0 10px;">' + songs.length + ' song' + (songs.length === 1 ? '' : 's') +
+        (bytes ? ' \u00b7 ' + hbMb(bytes) + ' on this phone' : ' \u00b7 sizes not read yet') + '</div>' +
+      songs.map(function(t){ return hbTrackRowHTML(t, hbSongSize(t)); }).join('') +
+      '<button class="hb-cta" id="hbArtistPlayAll">\u25b6 Play all ' + withAudio + '</button>';
+    body.querySelector('#hbArtistBack').addEventListener('click', function(){ openHomeBubble('artists'); });
+    body.querySelector('#hbArtistPlayAll').addEventListener('click', function(){
+      const ids = songs.filter(function(t){ return t.file && t.url; }).map(function(t){ return t.id; });
+      if(!ids.length){ toast('None of that artist\u2019s songs has playable audio on this phone.'); return; }
+      closeHomeBubble();
+      activePlaylist = 'All Songs';
+      try{
+        playFromList(ids.slice(), ids[0]);
+        renderTabs();
+        renderList();
+      }catch(e){
+        // Both playFromList and this fallback live in this block; the fallback is
+        // here so a future build that moves one cannot make the button silent.
+        playTrackInPlaylistContext(ids[0]);
+      }
+    });
+    wireHbTrackRows(body);
+  }
+
   function openHomeBubble(kind){
     const overlay = $('homeBubbleOverlay');
     const ico = $('hbPanelIco');
@@ -36617,8 +36692,15 @@ function _renderAhFromData(artistAlbums){
       allTracks.forEach(t => { if(t.artist && t.playCount) artistCounts[t.artist] = (artistCounts[t.artist]||0) + t.playCount; });
       const topArtists = Object.entries(artistCounts).sort((a,b)=>b[1]-a[1]).slice(0, 12);
       body.innerHTML = topArtists.length
-        ? topArtists.map(([a,c],i) => `<div class="hb-list-row"><span class="hb-list-name">${i+1}. ${escapeHtml(a)}</span><span class="hb-list-count">${c}×</span></div>`).join('')
+        ? topArtists.map(([a,c],i) => `<div class="hb-list-row hb-artist-row" data-artist="${escapeHtml(a)}"><span class="hb-list-name">${i+1}. ${escapeHtml(a)}</span><span class="hb-list-count">${c}×</span></div>`).join('')
+          + `<div style="font-size:11.5px; color:var(--ink-dim); margin-top:10px;">Tap an artist to see their songs and how much space each one takes.</div>`
         : `<div class="hb-empty">Play some songs to see your top artists here.</div>`;
+      // 74.1.5 - an artist opens. The rows in this bubble were the only ones in
+      // the whole dashboard that did nothing when tapped, which reads as a broken
+      // list rather than a list of names.
+      body.querySelectorAll('.hb-artist-row').forEach(row => {
+        row.addEventListener('click', () => openArtistBubble(row.dataset.artist));
+      });
     }
     else if(kind === 'pinnedartists'){
       ico.textContent = '\u{1F4CC}'; title.textContent = 'Your pinned artists';
@@ -49447,21 +49529,60 @@ window.showAlbumReorderPopup = function(albumName){
   function rewardsHtml(){
     return '<div class="sc-rewards">' + rewardState().map(rewardRowHtml).join('') + '</div>';
   }
+  // 74.1.5 - the cleaner answers the two questions it was asked and could not.
+  // HOW BIG is each song: an exact size in MB on every row, not only on the files
+  // over 8 MB. WHAT WOULD I WIN: the space a re-encode at the chosen bitrate
+  // would give back, shown before the button is pressed. It also lists the whole
+  // library on request instead of stopping at the 24 biggest, and it says how
+  // many songs it could not measure instead of leaving them silently out.
+  var scStoreAll = false;
+  function scMb(n){
+    var v = Number(n) || 0;
+    if(v >= 1073741824) return (v / 1073741824).toFixed(2) + ' GB';
+    if(v < 1048576) return Math.max(1, Math.round(v / 1024)) + ' KB';
+    return (v / 1048576).toFixed(1) + ' MB';
+  }
+  // kbps x 1000 / 8 is the bytes a second at that rate; anything already at or
+  // under it wins nothing, and this says so by returning 0 rather than a negative.
+  function scEstSaved(t, kbps){
+    try{
+      if(!t || !t.file || !t.file.size || !t.duration) return 0;
+      var est = Math.round(t.duration * kbps * 125);
+      return Math.max(0, t.file.size - est);
+    }catch(e){ return 0; }
+  }
   function storageHtml(){
-    var rows = biggestSongs(24);
-    if(!rows.length) return '<div class="sc-note">No song has a readable file size yet.</div>';
+    var measured = allTracks().filter(function(t){ return t.file && t.file.size; });
+    var rows = biggestSongs(scStoreAll ? Math.max(24, measured.length) : 24);
     var total = totalAudioBytes();
-    var html = '<div class="sc-note">Your library holds <b>' + fmtBytes(total) + '</b> of audio across ' + allTracks().length + ' songs. These are the biggest files - the fastest space back.</div>';
+    var unmeasured = allTracks().length - measured.length;
+    if(!rows.length){
+      return '<div class="sc-note">No song has a readable file size yet.' +
+        (allTracks().length
+          ? ' Your library holds ' + allTracks().length + ' song' + (allTracks().length === 1 ? '' : 's') + ', but the stored audio could not be measured on this device yet - reopen SideCut and this list is built again from the files on the phone.'
+          : ' Add songs and the biggest ones appear here with their size in MB.') +
+        '</div>';
+    }
+    var html = '<div class="sc-note">Your library holds <b>' + scMb(total) + '</b> of audio across ' + allTracks().length + ' song' + (allTracks().length === 1 ? '' : 's') + '. Showing the ' + rows.length + ' biggest file' + (rows.length === 1 ? '' : 's') + ' - the fastest space back.</div>';
     html += '<div class="sc-store-list">' + rows.map(function(r){
       var t = r.t;
       var big = r.size > 8 * 1048576;
+      var estSaved = scEstSaved(t, reenKbps);
       return '<div class="sc-store-row">' +
         '<div class="sc-art sm" style="' + (t.artUrl ? 'background-image:url(' + esc(t.artUrl) + ')' : '') + '"></div>' +
         '<div class="sc-store-txt"><div class="sc-store-name">' + esc(t.name || 'Untitled') + '</div>' +
-        '<div class="sc-store-sub">' + esc(t.artist || 'Unknown artist') + ' \u00b7 ' + fmtBytes(r.size) + (t.reencoded ? ' \u00b7 already re-encoded' : '') + '</div></div>' +
+        '<div class="sc-store-sub">' + esc(t.artist || 'Unknown artist') + ' \u00b7 ' + scMb(r.size) + (estSaved ? ' \u00b7 re-encode wins ~' + scMb(estSaved) : '') + (t.reencoded ? ' \u00b7 already re-encoded' : '') + '</div></div>' +
         '<button class="sc-btn tiny' + (big ? ' primary' : '') + '" data-reenc="' + esc(t.id) + '">Re-encode</button>' +
         '</div>';
     }).join('') + '</div>';
+    if(measured.length > 24 || scStoreAll){
+      html += '<div class="sc-chips"><button class="sc-btn tiny" data-act="storeall">' +
+        (scStoreAll ? 'Show only the 24 biggest' : 'Show all ' + measured.length + ' songs') +
+        '</button></div>';
+    }
+    if(unmeasured){
+      html += '<div class="sc-note">' + unmeasured + ' song' + (unmeasured === 1 ? '' : 's') + ' in your library could not be measured yet and ' + (unmeasured === 1 ? 'is' : 'are') + ' not listed above.</div>';
+    }
     html += '<div class="sc-chips"><span class="sc-chip-label">Target bitrate</span>' +
       REENCODE_RATES.map(function(k){
         return '<button class="sc-chip' + (reenKbps === k ? ' on' : '') + '" data-reenk="' + k + '">' + k + ' kbps</button>';
@@ -49712,6 +49833,7 @@ window.showAlbumReorderPopup = function(albumName){
         else if(act === 'edit') openEditSheet();
         else if(act === 'choose') openSongPickerSheet();
         else if(act === 'playpick') playWorkTrack();
+        else if(act === 'storeall'){ scStoreAll = !scStoreAll; renderStudio(); }
         }catch(e){ toast('That tool could not answer: ' + ((e && e.message) || 'unknown error')); }
       });
     });
