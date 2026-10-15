@@ -64,7 +64,11 @@ if [ -n "$bad" ]; then
     grep -E '^[A-Za-z0-9_-]+: ' /tmp/gates.log || true
     echo '```'
     echo
-    echo '## each red suite, re-run on its own'
+    echo '## each red suite, re-run on its own (up to 3 attempts)'
+    # A failing suite re-run ON ITS OWN usually passes, and then the report has nothing to
+    # name: the battery's own line says "49 passed, 3 failed" and the re-run prints 52 green
+    # ticks, so the three checks that were red are exactly what is still missing. Attempt
+    # three times and print the failing lines of every attempt that goes red.
     printf '%s\n' "$bad" | cut -d: -f1 | while read -r name; do
       [ -n "$name" ] || continue
       f="dev/$name.mjs"
@@ -72,10 +76,18 @@ if [ -n "$bad" ]; then
       [ -f "$f" ] || continue
       echo
       echo "### $name"
-      echo
-      echo '```'
-      node "$f" 2>&1 | tail -80
-      echo '```'
+      attempt=1
+      while [ "$attempt" -le 3 ]; do
+        out=$(node "$f" 2>&1)
+        rc=$?
+        echo
+        echo "attempt $attempt: exit $rc - $(printf '%s' "$out" | tail -n 1)"
+        echo '```'
+        printf '%s\n' "$out" | grep -E '✗|Error:' | head -20 || echo '(this attempt printed no failing line)'
+        echo '```'
+        if [ "$rc" -eq 0 ]; then break; fi
+        attempt=$((attempt + 1))
+      done
     done
   } > dev/gates-report.txt
   # gates.sh keeps only a suite's LAST line, so the re-run above is where a red suite's
