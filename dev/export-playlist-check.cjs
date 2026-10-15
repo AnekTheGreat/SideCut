@@ -29,6 +29,17 @@ function ok(name, cond, extra) {
   else { fail++; console.log('  \u2717 ' + name + (extra ? '  [' + extra + ']' : '')); }
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Wait for something the page sets up while it boots, rather than guessing at a sleep.
+// It returns as soon as the condition holds, or after ms; the caller's own ok() is what
+// decides pass or fail, so this can only ever give the page more time, never less credit.
+async function waitFor(pred, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (pred()) return true;
+    await wait(25);
+  }
+  return !!pred();
+}
 function makeCtx() {
   return new Proxy({}, {
     get(t, p) {
@@ -228,6 +239,18 @@ async function boot({ native, fsOpts }) {
       };
     },
   });
+  // index.html is ONE 3.24 MB document and its boot ends when it ends. A flat sleep raced
+  // it: on the loaded release runner the FIRST boot - by far the coldest, and the one the
+  // section above runs on - had not yet defined window.__scEnterSelectMode when the suite's
+  // very first guard read it. The guard failed, the eight checks underneath it never ran,
+  // and the 74.1.5 battery came back 27/1 on a suite that is 36/0 on a warm machine. Every
+  // later section boots again, warms up, and passed - which is exactly why the red looked
+  // like one broken check instead of a slow first parse. Wait for the two globals this
+  // suite drives, then keep the original settle so nothing downstream is hurried.
+  await waitFor(
+    () => typeof dom.window.__scEnterSelectMode === 'function' && !!dom.window.__scExportProbe,
+    30000
+  );
   await wait(3000);
   return { win: dom.window, FS, errors, dom };
 }
