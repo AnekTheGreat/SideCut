@@ -31,6 +31,18 @@ tail -40 /tmp/gates.log
 bad=$(grep -E '^[A-Za-z0-9_-]+: exit [1-9]' /tmp/gates.log | grep -v '^media-controls-check:' || true)
 if [ -n "$bad" ]; then
   echo "::error::gates failed: $bad"
+  # Re-run each red suite on its own and print its own failing lines. gates.sh keeps only
+  # a suite's LAST line, so a red battery comes back saying "27 passed, 1 failed" and
+  # nothing else - the one thing a reader needs, thrown away by the wrapper. This step
+  # exists so that a red Gates step can never be un-diagnosable again.
+  printf '%s\n' "$bad" | cut -d: -f1 | while read -r name; do
+    [ -n "$name" ] || continue
+    f="dev/$name.mjs"
+    [ -f "$f" ] || f="dev/$name.cjs"
+    [ -f "$f" ] || continue
+    echo "--- $name ---"
+    node "$f" 2>&1 | grep -E '✗|✘|FAIL|Error:' | head -20 || true
+  done
   exit 1
 fi
 echo 'Gates: every suite green except the recorded pre-existing media-controls-check red.'
