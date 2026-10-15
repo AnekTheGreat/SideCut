@@ -1,43 +1,38 @@
-## 74.1.7 ({{STAMP}}): a compress that carries on, a Re-encode button that asks the rate, and playlists you can reorder
+## 74.1.8 ({{STAMP}}): Re-encode works again - the slice helper the encoders call lives with them now
 
-- **The asks, in the owner's words** (from a screenshot of Studio on the phone, then two more messages): *"it should be able to re encode in the background and it looks really weird fix it why are their
-  protruding lines"*, *"have an option to re encode to a higher quality various options should appear"*, *"you should be able to reorder playlists in manage playlists"*. Four things, one release.
-- **THE PROTRUDING LINES WERE THIS REPOSITORY'S OWN REGRESSION, AND IT IS WORTH RECORDING WHY.** 74.1.6 turned the left of a cleaner row into a `<button>` so the tap that aims at a song name lands on
-  the song - and a button may only hold phrasing content, so the name and the artist became `<span>`s. A span lays out **inline**, and an inline box ignores `overflow: hidden` and
-  `text-overflow: ellipsis` *completely*: the nowrap text painted straight across the Re-encode button and off the right of the screen, which is exactly what the screenshot shows. The two lines are
-  `display: block` again, the text column clips, and the row itself clips as a last resort, so nothing a song is called can leave the row.
-- **THE GATE THAT CATCHES IT READS COMPUTED DISPLAY, NOT TEXT.** jsdom has no layout engine, so a screenshot cannot be taken in it - but `getComputedStyle` does resolve the page's own stylesheet, and
-  "this line is an inline box" is the fault itself. Block [6c] of `dev/studio-70-check.cjs` walks every row's three text boxes and fails if any of them is inline. **Proven both ways in rehearsal**:
-  500/0 on the prepared tree, and 497/3 with only those two `display: block` declarations removed - and the three that go red are precisely the three that name the fault
-  (`.sc-store-name:inline, .sc-store-sub:inline`).
-- **THE RE-ENCODE BUTTON ASKS WHICH RATE NOW, 96 TO 320 KBPS.** `REENCODE_RATES` is `[96, 128, 160, 192, 256, 320]`, and the button opens a sheet under its own row: each rate says what it would do to
-  **that** song in MB, worked out from its own length (`scEstDelta`), with the rate set at the bottom of the cleaner marked as such. A rate **above** what the file already reads is offered and named for
-  what it is - `grows the file by 2.0 MB`, in coral, with the reason on the row - because re-encoding a 128 kbps file at 320 cannot put back detail the first encode threw away. The sheet says that once,
-  plainly, rather than dressing it up as an upgrade.
-- **A COMPRESS CARRIES ON WHEN YOU LEAVE THE APP.** The job holds a **Web Lock** (`sidecut-reencode`, exclusive) for its whole life - a page holding a lock is exempt from the browser's background
-  freeze and intensive timer throttling, which is the difference between a compress that finishes in your pocket and one that stalls when the screen goes off - and the **slice budget triples while the
-  page is hidden** (`scBackSliceMul`: a hidden page is woken less often, so each wake-up does three slices of work for the same wall clock).
-- **IT SAYS WHERE IT IS, AND IT NEVER HALF-WRITES A SONG.** The cleaner carries a strip with the song, the rate and the percentage the encoder reported, and the row's own button reads `Encoding…` until it
-  is done. The run is written to `sidecut_encodeJob` **before its first byte** and cleared when it ends; if the phone kills the app outright, the next render of the cleaner says so, names the song, says the
-  song itself was never touched (the stored file is only replaced after the encoder has produced its bytes) and offers the same rate again - said once, not as a banner.
-- **WHAT THE BACKGROUND FIX DOES *NOT* CLAIM.** The Web Lock is what the platform honours; an Android WebView with no foreground service can still be killed outright by the OS, and a killed run is not
-  restarted automatically (it is reported, with the file untouched). Nothing here was tested on a device - the job, its lock and its record are driven in jsdom, and the shipped bytes are proven by the
-  bundle; how it feels under a thumb on the phone is unconfirmed.
-- **PLAYLISTS CAN BE REORDERED FROM MANAGE PLAYLISTS.** A `Reorder` control turns the panel into a list of names with `▲`/`▼` arrows - the panel's rows already carry up to five buttons, and a sixth and
-  seventh would leave no room for the name. The move writes the **same order the tab strip's own drag writes** (`playlists` + the `meta` row), the Library tabs follow it, and Library and Favorites stay
-  first: they are pinned by every path in the app, so their arrows are honestly disabled (`always first`) rather than silently doing nothing.
-- **REGRESSION COVERAGE**: the release's own blocks `[6c]`–`[6f]` in `dev/studio-70-check.cjs`, 75 new checks, **500/0** for the file. `[6f]` stubs `navigator.locks` and proves the lock is taken *before*
-  the encode and **held while it runs**, that the run is written down, that a killed run is reported once - the parts a machine without a phone can hold the app to.
-- **ONE BEHAVIOUR PIN MOVED, AND IT IS RECORDED**: 74.1.6's block [6b] tapped the Re-encode button and expected an encode at once. That door is one tap longer now (the sheet opens, the sheet's rate runs),
-  so `dev/repin-7417.mjs` walks it through - what that block exists to prove, that the tap which opens the bubble never swallows the button beside it, is unchanged.
-- **THE RELEASE ORDER BUG THAT COST 74.1.5 SEVERAL RUNS IS FIXED AND RECORDED.** `dev/ota-update-check.cjs` asserts the tree's OWN bundle is already on `index.html`'s `APP_VERSION`, and the release
-  rebuilt the bundles AFTER the battery - so every run died on that one suite ("manifest v74.1 vs APP_VERSION v74.1.5") and passed 52/0 re-run alone, because that suite regenerates the bundle itself and
-  leaves the tree fixed for the next reader. The rebuild now runs BEFORE the battery, because the battery has to measure the tree that gets committed. It was never a flake.
-- **THE RELEASE MACHINERY IS GENERIC NOW.** `dev/release-gates.sh` (the battery and its report), `dev/release-record.py` (the AGENTS.md insert, idempotent, version read from the page) and
-  `.github/workflows/release.yml` are shared by every release; a release supplies its own `dev/patch-<ver>.py`, `dev/repin-<ver>.mjs`, `dev/release-<ver>.proof` (the proof of the prepared tree, byte for
-  byte) and this entry.
-- **BOTH CHANNELS SHIP TOGETHER**: `ota/update.zip` and `ota-play/update.zip` are rebuilt from this page to a true fixed point (the zip embeds the root `manifest.json`, which records the zip's own size), at
-  {{ROOT}} bytes for the sideload channel and {{PLAY}} for the Play one, and the page inside each carries `APP_VERSION` and, for Play, `__PLAY_BUILD__`.
-- **ONE RED IS RECORDED AND NOT FIXED**: `dev/media-controls-check.cjs`, "and it no longer fires every half hour", 66 passed / 1 failed - the same single failure a pristine clone of main reproduces. Every
-  other suite is green, and the release's own report is committed at `dev/gates-report.txt`.
-- **Nothing else moved**: the player, the albums, the home widget, the letter-by-letter lyrics and every saved song and setting are where 74.1.6 left them.
+- **The report, in the owner's words** (a screenshot of the phone): *"Re-encode failed: scBackSliceMul is not defined"*. Every song, every rate. 74.1.7 shipped a storage
+  cleaner whose Re-encode button could not compress anything at all.
+- **THE CAUSE, BECAUSE THE CAUSE IS THE RELEASE.** The page is four inline `<script>` blocks and each one is its own program with its own scope. 74.1.7 added
+  `scBackSliceMul` - the hidden-slice multiplier that makes a background compress do three slices of work per wake-up - to the **last** block, the Studio module, beside
+  the rest of the background job. The two encoders that read the slice budget (`scEncodeMp3Cooperative`'s block loop and `scEncodeWavCooperative`'s sample loop) live in the
+  **first**, the app's own 2.5 MB script. A bare identifier is resolved lexically, in the scope of the function that *uses* it, and never in the scope of whichever block
+  published a reference to it - so both encoders threw. **It threw on the FIRST block of the loop, not late**, because the slice test is
+  `Date.now() - sliceStart >= SC_ENCODE_SLICE_MS * scBackSliceMul()` and `>=` evaluates both of its sides: the multiplier is called whether or not a slice is due. That is
+  why every re-encode failed instantly and uniformly, rather than a long one failing after a while. Nothing was damaged - the throw came before a single byte - but the button
+  did nothing, on the whole library.
+- **WHY THE GATES SAW NOTHING, AND THIS IS THE PART WORTH KEEPING.** 74.1.7's own block `[6f]` drove the job with `win.__scEncodeMp3` **stubbed**, so the real encoder never ran;
+  and its question about the multiplier went through `SC70.backSliceMul()` - the *module's* own copy, which was defined, and answered 1 and 3 correctly. **The gate asked the
+  module about itself, and the module passed.** The feature every check pointed at was never executed. A stub in the place of the thing under test is not coverage of it.
+- **THE FIX IS ONE FUNCTION MOVING HOUSE.** The real `scBackSliceMul` is defined in the app's own block, beside both call sites, and published as `window.__scBackSliceMul`
+  the same way `__scEncodeMp3` already was; the Studio's copy becomes a six-line alias that reads the published function **at call time**, so there is one implementation and
+  no second copy to drift. Nothing else on the page changed: not the rates, not the sheet, not the job, not the lock, not the record, not the reorder.
+- **THE NEW GATE `[6g]` ASKS THE PAGE THREE QUESTIONS, in order of how general they are**, and the first is the one that would have caught this without knowing anything
+  about it: **no inline script block may call an `sc`-prefixed helper that only another block defines.** It needs no list of names to keep up to date, and on 74.1.7 it named
+  `scBackSliceMul` **and nothing else in the whole 3.2 MB page**. Then it proves the published function is *live* (it overwrites `window.__scBackSliceMul` and requires
+  `SC70.backSliceMul()` to go through the overwrite - a copy cannot pass that), and finally it **runs a real re-encode with only `lamejs` stood in for** - the CDN script jsdom
+  never loads, which is the same stand-in the app's own engine is - through the app's decoder, its cooperative block loop, its slice boundary, its job record and its file swap.
+- **PROVEN BOTH WAYS IN REHEARSAL, like the layout gate 74.1.7 added.** With the 74.1.7 page and only this gate added: **506 passed, 9 FAILED**, and one of the nine is the
+  phone's own message reproduced word for word - `a re-encode through the real encoder does not report a failure (Re-encode failed: scBackSliceMul is not defined)`. On the
+  prepared tree: **515 passed, 0 failed**, `[6g]`'s fifteen checks included. The gate also had to be made crash-proof to earn this: its first draft called the published
+  function directly, and on 74.1.7 that `TypeError` killed the suite and cost the reader the eleven blocks after it - a red must be a report, not an exception.
+- **THE RELEASE BATTERY**: 51 suites, every one green except the single red this repository has carried for months - `studio-70-check` **515/0** (fifteen of those checks are `[6g]`),
+  `ota-update-check` 52/0, `check-dom` 0 failures, `ota-guard-check` 20/0, `ota-bootapply-check` 24/0 - and the release's own report is committed at `dev/gates-report.txt`.
+- **WHAT THIS FIX DOES *NOT* CLAIM.** Nothing here ran on a phone. That the re-encode works is proven in jsdom through the real encoder *and* in the shipped bytes; how it
+  feels under a thumb is unconfirmed. The background caveat 74.1.7 recorded still stands untouched: a WebView with no foreground service can be killed outright by Android,
+  and a killed run is reported rather than resumed automatically.
+- **BOTH CHANNELS SHIP TOGETHER**: `ota/update.zip` and `ota-play/update.zip` are rebuilt from this page to a true fixed point (the zip embeds the root `manifest.json`, which
+  records the zip's own size), at {{ROOT}} bytes for the sideload channel and {{PLAY}} for the Play one, and the page inside each carries `APP_VERSION` and, for Play,
+  `__PLAY_BUILD__`.
+- **ONE RED IS RECORDED AND NOT FIXED**: `dev/media-controls-check.cjs`, "and it no longer fires every half hour", 66 passed / 1 failed - the same single failure a pristine
+  clone of main reproduces.
+- **Nothing else moved**: the player, the albums, the home widget, the letter-by-letter lyrics and every saved song and setting are where 74.1.7 left them.
