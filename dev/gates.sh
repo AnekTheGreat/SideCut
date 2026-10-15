@@ -18,7 +18,19 @@ run() { # run <name> <file...>
   for file in "$@"; do [ -f "$file" ] && break; done
   if [ ! -f "$file" ]; then echo "$name: MISSING ($*)"; return 2; fi
   out=$(node "$file" 2>&1); rc=$?
-  echo "$name: exit $rc ($(printf '%s' "$out" | tail -n 1 | head -c 90))"
+  line=$(printf '%s' "$out" | tail -n 1 | head -c 90)
+  if [ "$rc" -ne 0 ]; then
+    # A RED SUITE HAS TO COME BACK SAYING WHICH CHECKS WERE RED. The suite's own output is
+    # the only place its failing checks are named, and this function is the only place that
+    # output exists: it is captured and then dropped, so the line below used to say
+    # "49 passed, 3 failed" and nothing else. The release report can only read this line
+    # back (dev/release-7415-gates.sh greps it out of the log), so it kept arriving with the
+    # count and not the names - twice, on the 74.1.5 release. Carry the first few failing
+    # checks on the same line, which is the line the report already keeps.
+    reds=$(printf '%s\n' "$out" | grep -E '✗' | head -3 | tr '\n' ';' | cut -c1-400)
+    [ -n "$reds" ] && line="$line >> $reds"
+  fi
+  echo "$name: exit $rc ($line)"
   return $rc
 }
 
