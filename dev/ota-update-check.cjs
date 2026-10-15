@@ -153,6 +153,22 @@ const dom = new JSDOM(html, {
 });
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// WAIT FOR THE PAGE, NOT FOR A CLOCK. The release battery runs the suites back to back and
+// this one boots the whole 3.24 MB page, so on a busy machine the page has not finished
+// booting when a fixed settle expires. That is exactly how the 74.1.5 release failed its
+// Gates step on CI with "ota-update-check: exit 1 (FAILURES: 49 passed, 3 failed)" and then
+// passed 52/0 when the same suite was re-run on its own, with nothing changed: the three
+// checks that read the page (the OTA client existing, the boot check having fetched, the
+// bundle having been staged) were reading it too early. Polling for the thing each check
+// actually needs removes the race instead of tuning a number that a slower runner wins.
+async function waitFor(fn, ms = 60000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    try { if (fn()) return true; } catch (e) {}
+    await wait(100);
+  }
+  return false;
+}
 function sheet() { return dom.window.document.getElementById('scOtaSheet'); }
 function sheetVisible() { const s = sheet(); return !!s && s.style.display === 'block'; }
 function sheetText() { const s = sheet(); return s ? s.textContent.replace(/\s+/g, ' ').trim() : ''; }
@@ -162,7 +178,7 @@ holdDownload = true;
 
 (async () => {
   const win = dom.window;
-  await wait(2000);
+  await waitFor(() => win.__SideCutOTA && win.__SideCutOTA.IS_NATIVE === true);
   console.log('\n— the baked-in version the OTA compares against —');
   ok('APP_VERSION is readable in the page', /^\d+(\.\d+)*$/.test(String(APP_VERSION)), String(APP_VERSION));
   ok('the OTA script sees the native platform', !!win.__SideCutOTA && win.__SideCutOTA.IS_NATIVE === true);
@@ -178,7 +194,10 @@ holdDownload = true;
   // (see holdDownload) so that the state a user actually watches while it runs can
   // be read off the page instead of inferred from what is on screen afterwards.
   console.log('\n— boot: the update installs itself, no tap —');
-  await wait(3300);
+  // The page fires its own boot check ~2.5s after load. Waiting for that check to have
+  // started (the download is held open below, so length 1 means "mid-flight") is what the
+  // assertions under it are about - and it is the same state a fixed 3.3s was reaching for.
+  await waitFor(() => calls.notifyAppReady >= 1 && calls.downloads.length === 1);
   ok('the bundle confirms it booted (notifyAppReady), so Capgo cannot roll it back',
      calls.notifyAppReady >= 1, 'calls=' + calls.notifyAppReady);
   ok('the boot check fetches the new version with no tap', calls.downloads.length === 1,
@@ -193,7 +212,7 @@ holdDownload = true;
      String(first.url || '').indexOf('raw.githubusercontent.com') !== -1, String(first.url || ''));
   ok('it requested the new version', String(first.version) === NEXT_VERSION, JSON.stringify(first));
   releaseDownload();
-  await wait(2500);
+  await waitFor(() => calls.set.length === 1);
   ok('the fetched bundle was staged with next()', calls.next.length === 1, JSON.stringify(calls.next));
   ok('and hands the app over to it with no tap', calls.set.length === 1, JSON.stringify(calls.set));
   ok('the sheet says it is installing instead of going silent',
