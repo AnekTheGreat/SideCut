@@ -1,0 +1,155 @@
+# Gates report
+
+Written by dev/release-7415-gates.sh when the battery comes back red, and pushed
+by that run. The job log cannot be read back from outside the run - it is
+thousands of lines and the log download is truncated from the top, which is the
+end the failing step lives at - so the diagnosis travels through the repository.
+
+node: v24.21.0
+jsdom: 30.1.3
+date: 2026-10-15T11:52:15Z
+
+## red
+
+```
+ota-update-check: exit 1 (FAILURES: 49 passed, 3 failed)
+```
+
+## every suite, exactly as the battery reported it
+
+```
+test-612: exit 0 (all passed)
+test-6136: exit 0 (all passed)
+test-6137: exit 0 (0 failure(s))
+test-6138: exit 0 (ALL PASS)
+test-6139: exit 0 (ALL PASS)
+test-619: exit 0 (All 47 checks passed)
+test-651: exit 0 (All 35 checks passed)
+test-662: exit 0 (All 75 checks passed)
+test-713: exit 0 (All 50 checks passed)
+test-714: exit 0 (All 144 checks passed)
+test-725: exit 0 (All 103 checks passed)
+test-7251: exit 0 (All 110 checks passed)
+test-728: exit 0 (All 63 checks passed)
+test-7281: exit 0 (All 94 checks passed)
+test-7316: exit 0 (All 284 checks passed)
+test-7317: exit 0 (All 39 checks passed)
+test-play-copy: exit 0 (All 28 checks passed)
+test-735: exit 0 (All 82 checks passed)
+test-736: exit 0 (ALL PASS: 75 passed, 0 failed)
+test-7361: exit 0 (All 29 checks passed)
+test-7362: exit 0 (All 55 checks passed)
+test-737: exit 0 (All 68 checks passed)
+test-738: exit 0 (All 49 checks passed)
+test-739: exit 0 (All 62 checks passed)
+test-740: exit 0 (All 54 checks passed)
+test-741: exit 0 (All 86 checks passed)
+albums-manual-check: exit 0 (58 passed, 0 failed)
+album-isolation-check: exit 0 (45 passed, 0 failed)
+albums-menu-isolation-check: exit 0 (25 passed, 0 failed)
+album-rename-check: exit 0 (ALL PASS: 40 passed, 0 failed)
+album-hold-check: exit 0 (34 passed, 0 failed)
+ah-album-edit-check: exit 0 (42 passed, 0 failed)
+ah-album-reorder-check: exit 0 (34 passed, 0 failed)
+album-play-order-check: exit 0 (22 passed, 0 failed)
+crossfade-pause-check: exit 0 (ALL PASS: 22 passed, 0 failed)
+compress-library-check: exit 0 (ALL PASS: 24 passed, 0 failed)
+export-playlist-check: exit 0 (36 passed, 0 failed)
+refresh-pin-check: exit 0 (14 passed, 0 failed)
+studio-70-check: exit 0 (All 397 checks passed)
+media-controls-check: exit 1 (66 passed, 1 failed)
+widget-resume-check: exit 0 (All 33 checks passed)
+background-playback-check: exit 0 (ALL PASS: 21 passed, 0 failed)
+audio-focus-check: exit 0 (ALL PASS: 44 passed, 0 failed)
+librarytools-6424-check: exit 0 (All 15 checks passed)
+notifgroup-6424-check: exit 0 (All 27 checks passed)
+audit-calls: exit 0 (  and no line comment has swallowed code (8583 line comments checked))
+check-dom: exit 0 (DOM INTEGRITY FAILURES: 0)
+ota-guard-check: exit 0 (20 passed, 0 failed)
+ota-update-check: exit 1 (FAILURES: 49 passed, 3 failed)
+ota-bootapply-check: exit 0 (24 passed, 0 failed)
+GATES: FAILURES ABOVE
+```
+
+## each red suite, re-run on its own
+
+### ota-update-check
+
+```
+
+— the baked-in version the OTA compares against —
+  ✓ APP_VERSION is readable in the page
+  ✓ the OTA script sees the native platform
+  ✓ the running version resolves (not null — a null version silently skips every check)
+
+— boot: the update installs itself, no tap —
+  ✓ the bundle confirms it booted (notifyAppReady), so Capgo cannot roll it back
+  ✓ the boot check fetches the new version with no tap
+  ✓ the sheet is on screen while it fetches
+  ✓ it carries the real patch notes
+  ✓ and names the new version
+  ✓ with no Install button to press
+  ✓ it fetched from raw.githubusercontent (no CDN cache) first
+  ✓ it requested the new version
+  ✓ the fetched bundle was staged with next()
+  ✓ and hands the app over to it with no tap
+  ✓ the sheet says it is installing instead of going silent
+  ✓ the launch hand-over leaves the bundle it already installed alone
+  ✓ and that bundle is not marked as a failure
+
+— a download failure falls back to the hosted copy —
+  ✓ a download failure is reported in the sheet instead of dying silently
+  ✓ the check still returns the manifest when the download fails
+  ✓ both download URLs were attempted (raw, then Pages)
+
+— an up-to-date app is left alone —
+  ✓ no update is offered when the manifest matches the running version
+  ✓ and nothing is downloaded
+
+— a stale published bundle can never be installed as a downgrade —
+  ✓ an older manifest is reported as nothing to install
+  ✓ an older manifest offers nothing on screen
+  ✓ and downloads nothing
+
+— versions are ordered numerically, not as strings —
+  ✓ the comparator is present in the shipped client
+  ✓ 58.10 is newer than 58.9 (a string compare would install a downgrade here)
+  ✓ 57.5 is older than 58.4
+  ✓ the same version compares equal
+  ✓ an extra segment only moves forward
+
+— the committed bundle is what gets published (Pages is legacy-branch) —
+  ✓ ota/updates.json is on the current version
+  ✓ it carries real patch notes
+  ✓ ota/update.zip contains index.html
+  ✓ ota/update.zip contains sw.js
+  ✓ ota/update.zip contains manifest.json
+  ✓ ota/update.zip contains icon-192.png
+  ✓ ota/update.zip contains icon-512.png
+  ✓ ota/update.zip contains dev/native-updates.js
+  ✓ the index.html inside the zip is the current version
+  ✓ the service worker cache name is the release number
+  ✓ the zip carries the fixed OTA client (sheet shown + ordered versions)
+
+— the published bundle contains every local file the page needs —
+  ✓ every local asset is included by the bundle generator
+
+— regenerating the bundle is byte-identical (so CI never re-publishes noise) —
+  ✓ a second generation produces the same bytes
+
+— the publish path matches what the client expects —
+  ✓ the generator writes ota/updates.json
+  ✓ the generator writes ota/update.zip
+  ✓ deploy.yml runs the generator
+  ✓ deploy.yml fails the build when the bundle is stale
+  ✓ deploy.yml commits the bundle (Pages is legacy-branch, so committed files are what ships)
+  ✓ the manifest version comes from APP_VERSION in index.html
+  ✓ the generator re-reads the version out of the bundled index.html when verifying
+  ✓ the client reads the same version field
+  ✓ the manifest url field points at a file the client can resolve
+
+— no runtime errors —
+  ✓ no page errors
+
+ALL PASS: 52 passed, 0 failed
+```
