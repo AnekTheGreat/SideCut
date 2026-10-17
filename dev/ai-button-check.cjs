@@ -140,6 +140,31 @@ const pls = () => meta('playlists') || {};
     click(win, doc.getElementById('scAiClose'));
     await wait(120);
     ok(!doc.getElementById('scAiBackdrop').classList.contains('in'), 'the close button closes it');
+    // THE BAR'S BUTTON HAS TO BE PRESSED, NOT JUST FOUND. The bar is rebuilt from
+    // innerHTML whenever the selection changes, so a listener attached to the button
+    // that existed at startup is gone by the first redraw - which is exactly how the
+    // 74.5 bundle shipped a sparkle on the bar that did nothing. Driven here, twice,
+    // either side of a redraw: the second tap is the one a per-element listener can
+    // never pass.
+    click(win, doc.getElementById('selectAskBtn'));
+    await wait(150);
+    ok(doc.getElementById('scAiBackdrop').classList.contains('in'), 'tapping the bar\'s button opens the drawer');
+    ok(/2 songs selected/.test(doc.getElementById('scAiCtx').textContent), 'with the two ticked songs as its context');
+    click(win, doc.getElementById('scAiClose'));
+    await wait(120);
+    click(win, doc.getElementById('selectCancelBtn'));
+    await wait(150);
+    win.__scEnterSelect(['t1', 't2', 't3']);
+    await wait(200);
+    ok(!!doc.getElementById('selectAskBtn'), 'a redrawn bar has its Ask button again');
+    click(win, doc.getElementById('selectAskBtn'));
+    await wait(150);
+    ok(doc.getElementById('scAiBackdrop').classList.contains('in'), 'and that one opens the drawer too, after the redraw');
+    ok(/3 songs selected/.test(doc.getElementById('scAiCtx').textContent), 'counting the new selection');
+    click(win, doc.getElementById('scAiClose'));
+    await wait(120);
+    win.__scEnterSelect(['t1', 't2']);
+    await wait(200);
     click(win, doc.getElementById('homeAiBtn'));
     await wait(120);
     const ctx = doc.getElementById('scAiCtx').textContent;

@@ -13716,7 +13716,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '74.5';
+  const APP_VERSION = '74.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -14365,6 +14365,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '74.6', date: 'October 17, 2026 · 3:58 PM EDT', title: 'Ask SideCut opens from the multi-select bar again - the rest of 74.5 is exactly where it was', items: [
+    'The sparkle on the multi-select bar opens Ask SideCut again. It was the one button on that bar with no listener left: the bar is redrawn every time the selection changes, and the handler was attached to the copy that got thrown away.',
+    'It is found on the page now instead of attached to one button, so the bar can be redrawn as often as you tick a song and Ask still opens with what is ticked.',
+    'The Home header sparkle was never broken and is unchanged: it still opens the drawer on your whole library, and the plan still shows before anything runs.',
+    'Do it and Undo work as they did: the playlist, the crossfade and the DJ switch change together and go back together from the message bar.',
+    'Clear playlist, Delete all songs and the per-song delete still ask in the app and still restore the file, its plays and its place in every playlist from one Undo.',
+    'Medium is still the Home bubble size between automatic and tall, and the half-step heights, the expand chip and the Reset that clears them are untouched.',
+    'The pill dock, the split Library tab and the 1/8 pad latch are unchanged - the same routes were walked before this build was cut.',
+    'Nothing about the music moved: the player, the home widget, the letter-by-letter lyrics and the albums are where 74.5 left them, and no saved song or setting changed.',
+  ]},
   { version: '74.5', date: 'October 17, 2026 · 11:05 AM EDT', title: 'Ask SideCut turns a sentence into a plan you approve, the delete buttons delete with an Undo, Home bubbles get the middle size, and the pill dock and its beat pads behave like the controls they look like', items: [
     'Ask SideCut is a button in the Home header and on the multi-select bar. Say what you want - make a playlist from these songs, crossfade 6 seconds, DJ mode on - and it shows the plan before anything changes.',
     'The plan has an Undo: a playlist it built, the crossfade it changed and the DJ switch it flipped all go back to what they were, in one tap from the message bar.',
@@ -51244,10 +51254,24 @@ window.showAlbumReorderPopup = function(albumName){
 
     // The two ways in, wired here because this block is the one that owns the drawer.
     try{
-      var hb = document.getElementById('homeAiBtn');
-      if(hb) hb.addEventListener('click', open);
-      var sb = document.getElementById('selectAskBtn');
-      if(sb) sb.addEventListener('click', open);
+      // ONE delegated listener, not one per button: the multi-select bar is rebuilt
+      // from innerHTML on every selection change (renderPane), so a listener put on
+      // the #selectAskBtn that existed at startup died with that element and the
+      // sparkle on the bar did nothing at all. The document cannot be re-rendered.
+      var askHit = function(el){
+        while(el && el !== document){
+          if(el.id === 'homeAiBtn' || el.id === 'selectAskBtn') return el;
+          el = el.parentNode;
+        }
+        return null;
+      };
+      document.addEventListener('click', function(e){
+        var hit = askHit(e.target);
+        if(!hit || hit.disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        open();
+      }, true);
     }catch(_eWire){}
 
     return {

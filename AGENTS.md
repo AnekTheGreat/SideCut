@@ -1,5 +1,31 @@
 # SideCut — repository memory
 
+## 74.6 (October 17, 2026 · 3:58 PM EDT): The Ask button on the multi-select bar - the one button on that bar with no listener
+
+- **THE OWNER'S REPORT, VERBATIM**: "the ai button doesn't do anything". Two sparkles open Ask SideCut: `#homeAiBtn` in the Home header and `#selectAskBtn` on the
+  bar that appears once songs are ticked. Driven on the **shipped 74.5 bundle** in jsdom: the header one opens the drawer; the bar's one does not - with two songs
+  ticked, and again with three after a redraw. On a phone that is a button that does nothing, and the bar's is the one that knows what "these songs" means.
+- **WHY IT WAS DEAD.** The drawer wired BOTH buttons once, at startup, with `getElementById(...).addEventListener`. The header is static, so its listener lived.
+  The multi-select bar is rebuilt from `innerHTML` by `renderPane()` on **every selection change**, so the element the bar's listener was attached to was thrown
+  away the first time the bar was drawn. The 33/0 gate missed it because it only asked that the button **existed** (`ok(!!doc.getElementById('selectAskBtn'))`) and
+  never pressed it: presence is not a handler.
+- **THE FIX.** One delegated listener on `document` (capture phase, and the click stops there so the drawer opens on the tap that asked for it), matching either id
+  on the way up. A re-render can no longer strand it, and the header goes through the same path so the two cannot drift. `dev/patch-746-ask.py` is the edit
+  (`--check` probes the shipped page).
+- **THE GATE THAT DRIVES IT.** `dev/ai-button-check.cjs` now **presses** the bar's button: once with two songs ticked, once after cancelling the bar and redrawing
+  with three, and reads the context chip both times. **38/0** here; **5 named reds** on the shipped 74.5 page (bar button opens it, its context, the redrawn one,
+  its context, and the count) while the header check stays green - the control that proves the red is this bug and not the harness.
+- **THE RELEASE.** `dev/patch-746.py` (74.6, `sidecut-shell-v74.6`, eight head notes) and `dev/repin-746.mjs` (110 edits across 78 gates, then one more:
+  `dev/album-follow-dock-check.cjs`). That probe pins the release as a `^74.5$` regex, which no sweep needle saw in 74.5 - it was moved by hand and the miss was
+  written down. This repin teaches the sweep that shape (F1d) and makes a surviving old regex a stale-pin failure.
+- **VERIFIED ON THE SHIPPED TREE**: the full battery, 51 suites green, plus four that crashed only because `acorn` was not installed in this restored workspace
+  (`test-735`, `test-736`, `test-7361`, `audit-calls` - all green when re-run with it, audit 5960 names / 9016 comments). `album-follow-dock-check` 105/0 after
+  its pin. The **only** red left is `media-controls-check` 60/1, the months-old "fires every half hour" failure, untouched here. OTA at a fixed point:
+  **991168** (`ota/` + root manifests) / **991179** (`ota-play/`), both `--check`s OK with 6 notes each.
+- **NOT VERIFIED**: nothing ran on a phone. The fix is proven by the gate that presses the button, not by a thumb, and the installed app sees it only once the
+  published bundle it polls has moved, which is this commit.
+- **NEXT RELEASE**: `74.7` for another fix inside 74.6, or `75.0` for the next feature. Shell cache `sidecut-shell-v74.6`.
+
 ## 74.5 (October 17, 2026 · 11:05 AM EDT): Ask SideCut, deletes that delete with an Undo, the middle bubble size, and a pill dock that behaves like a control
 
 - **THE OWNER'S ASK, VERBATIM**: "can we make an ai button that I can ask anything with like my songs and it'll do it like create a new playlist
