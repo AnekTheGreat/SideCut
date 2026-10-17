@@ -1,0 +1,51 @@
+name: Land 74.8
+on:
+  workflow_dispatch:
+    inputs:
+      bundle: {description: 'bundle URL', required: true, type: string}
+      sha: {description: 'bundle sha256', required: true, type: string}
+      page: {description: 'index.html sha256', required: true, type: string}
+      tree: {description: 'expected tree', required: true, type: string}
+permissions:
+  contents: write
+concurrency: {group: land-748, cancel-in-progress: false}
+jobs:
+  land:
+    name: Prove the rehearsed bundle, then put it on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Fetch the bundle and prove it
+        env:
+          BUNDLE: ${{ inputs.bundle }}
+          SHA: ${{ inputs.sha }}
+          PAGE: ${{ inputs.page }}
+        run: >
+          set -euo pipefail
+          && curl -fsSL "$BUNDLE" -o /tmp/r.bundle
+          && echo "$SHA  /tmp/r.bundle" | sha256sum -c -
+          && git fetch /tmp/r.bundle main:release
+          && git checkout -q release
+          && echo "$PAGE  index.html" | sha256sum -c -
+          && grep -m1 -o "APP_VERSION = '[0-9.]*'" index.html
+          && python3 dev/patch-748.py --check
+          && python3 dev/patch-748-listen.py --check
+          && node dev/repin-748.mjs --check
+          && node dev/ota-bundle.mjs --check
+          && node dev/ota-bundle-play.mjs --check
+      - name: Put the release on main
+        env:
+          TREE: ${{ inputs.tree }}
+        run: >
+          set -euo pipefail
+          && git config user.name AnekTheGreat
+          && git config user.email 166177289+AnekTheGreat@users.noreply.github.com
+          && git checkout -q --detach origin/main
+          && git checkout release -- .
+          && git rm -q --ignore-unmatch .github/workflows/land-748.yml
+          && git add -A
+          && git commit -q -m "Release 74.8 - listening time counts with the screen off"
+          && test "$(git rev-parse HEAD^{tree})" = "$TREE"
+          && git push origin HEAD:main
+          && echo "main is now $(git rev-parse HEAD)"
