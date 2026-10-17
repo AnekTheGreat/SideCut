@@ -41,9 +41,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(process.env.SC_HTML || path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '74.1.8'; /* repinned by dev/repin-7418.mjs */
-const PREV = '74.1.7'; /* repinned by dev/repin-7418.mjs */
-const SHELL_CACHE = 'sidecut-shell-v74.1.8';
+const VER = '74.1.9'; /* repinned by dev/repin-7419.mjs */
+const PREV = '74.1.8'; /* repinned by dev/repin-7419.mjs */
+const SHELL_CACHE = 'sidecut-shell-v74.1.9';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
@@ -343,7 +343,7 @@ console.log('[3] the fold, driven on the real Studio');
   await wait(80);
   ok(gestures.parentNode.classList.contains('folded'), 'a second section folds on its own');
   const switches = Array.from(gestures.parentNode.querySelectorAll('.sc-switch'));
-  ok(switches.length === 2, 'and it is the one with the two switches in it');
+  ok(switches.length === 3, 'and it is the one with the three switches in it - shake, swipe and the pill dock');
   ok(switches.every((s) => s.parentNode.parentNode.classList.contains('sc-fold-body')),
      'both of which are inside the body that folded away');
   ok(!again.parentNode.classList.contains('folded'), 'while the badges stayed open');

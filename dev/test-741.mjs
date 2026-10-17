@@ -43,9 +43,9 @@ const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 // entry by version. It read the head until 74.1.5, which held only while the head was
 // still about the button roll - see the retarget at the ask.
 const OWN = '74.1';
-const VER = '74.1.8'; /* repinned by dev/repin-7418.mjs; the ask below reads OWN */
-const PREV = '74.1.7'; /* repinned by dev/repin-7418.mjs */
-const SHELL_CACHE = 'sidecut-shell-v74.1.8';
+const VER = '74.1.9'; /* repinned by dev/repin-7419.mjs; the ask below reads OWN */
+const PREV = '74.1.8'; /* repinned by dev/repin-7419.mjs */
+const SHELL_CACHE = 'sidecut-shell-v74.1.9';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };

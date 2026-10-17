@@ -1,5 +1,60 @@
 # SideCut — repository memory
 
+## 74.1.9 (October 16, 2026): The album follows the song, the views arrive, the dock can be one pill - and two repairs the same owner asked for
+
+- **Two messages, one release.** The first asked for three things (the album to follow the song, the views to arrive smoothly, a pill dock under Studio -> Gestures); they
+  are section 1-3 of `dev/release-entry.md`, pinned by the gate block `[11s]` and driven by `dev/album-follow-dock-check.cjs`. The second message arrived from the phone
+  while the release was being prepared: *"frequent lag spikes inside the app while doing multiple things simultaneously"*, and *"the Spotify to mp3 converter will
+  frequently confuse songs by the same artist while downloading a song and often duplicate the same song in different metadata, this often happens when downloading albums
+  ... it should download the correct audio"*. Both are in 74.1.9, and both are their own section of `dev/patch-7419-page.py`.
+- **THE CONVERTER'S IDENTITY WAS A SUBSTRING TEST, AND AN ALBUM IS WHERE IT SHOWS.** One album is one artist's whole run, so `scArtistMatch` cannot separate its tracks, and
+  the length gate is +-60s - two tracks of one record routinely sit seconds apart. That leaves the title gate as the only thing between them, and **both** title gates
+  (`scTitleMatch`, and `scTitleStrong`, which is what lets a 15-60s-off decode stand in as the closest cut) asked `vt.indexOf(want) !== -1`: `"Yaar"` is contained in
+  `"Yaarian"`, `"Pind"` in `"Pind Waliyan"`. Track A therefore accepted B's upload, and 72.5's own run guard then refused B *its own source* as already claimed by a
+  sibling - one audio file filed twice under two sets of tags. **The guard was not the bug; the gate that let the wrong upload in was, and the guard is what turned one
+  mis-attribution into the duplicate the owner sees about once an album.** Containment is now a **run of whole words** (space-padded, in both gates) and the word-overlap
+  fallback counts words rather than substrings. A **shared whole word** is deliberately still accepted by the title gate - `"Pind"` IS a word of `"Pind Waliyan"` - and
+  what takes that upload away from the short track is the run's claim, which is the second guard of the pair.
+- **THE SLICE THE UI GETS BACK.** The cooperative encoders hold the main thread for `SC_ENCODE_SLICE_MS` (90ms) at a time, which is about five dropped frames, and every
+  file this app makes goes through them: the app stuttered for as long as a file was being made. While the page is **visible** the budget is now one frame
+  (`SC_ENCODE_FRAME_MS = 12`, read at both call sites as `document.hidden ? SC_ENCODE_SLICE_MS * scBackSliceMul() : SC_ENCODE_FRAME_MS`); while it is **hidden** the budget
+  is exactly what it was - a hidden page has no frames to drop, and the long slice is what makes background work finish soonest, which is the reasoning 66.0 recorded when it
+  moved 55 -> 90. `test-662`'s 90ms pin is therefore **not** moved. Since a smaller slice pays the wake-up more often, `scYieldToUI()` is a `MessageChannel` macrotask now
+  (a browser clamps nested timers to 4ms and may paint between macrotasks) with the `setTimeout(0)` fallback kept underneath.
+- **MEASURED, NOT ASSERTED.** `dev/converter-identity-check.cjs` slices the three deciding functions out of the shipped page and runs them for real: **37/0** on the prepared
+  tree, **26/11** on the same page with the four edits undone (the bug cases red, the pins that predate 74.1.9 green). The same file drives the page's own slice logic and
+  its own `scYieldToUI()` over calibrated synthetic work: the longest unbroken block of main thread fell from **106ms to 19ms**, the number of wake-ups rose from 16 to 100,
+  and the wall clock for the same work moved by a few percent. `studio-70-check` is **570/0**, 55 of its checks in `[11s]`.
+- **A STAMPED LYRIC SHEET WAS TRUSTED, AND THE NUDGE COULD NOT REACH THE ERROR.** The third report against this release: *"the lyrics for multi language songs is crazy it like
+  doesn't play for 50 seconds while the audio is already playing and then starts really late and the lyrics needs to be accurate"*. `showLyrics()` re-timed a sheet only when it had
+  NO stamps (or looked like the old even split), so a sheet that carried its own timings - LRCLIB's synced entry, or one the model timed - went on screen unmeasured, and the only
+  correction on offer was the per-song nudge, **clamped to +-15s**, which is narrower than the error it exists to fix. Both halves are fixed: `scLyricsSheetOffset` measures a
+  stamped sheet against the recording (`scAutoAlignLyricsToAudio`, called from that same branch, skipped entirely for a sheet the owner pinned by hand with Line up), and the
+  ceiling is `SC_LYRICS_OFF_MAX = 120`.
+- **THE MEASUREMENT THAT DID NOT WORK, AND WHY THE PROBE IS THE POINT.** The first cut matched every stamp to its NEAREST onset and took the median difference. A sheet fifty
+  seconds late is late into a different part of the singing, where every line still has an onset a second away, so every per-line difference came back ~0 and the sheet measured as
+  PERFECT - `dev/lyrics-timing-check.cjs` came back red on the case it was written for, on its first run. What a uniform offset does move is the SHAPE of the song, so that is what
+  is measured now: where the singing runs (the same envelope and quiet floor the layout already uses, `scFindQuietGaps`), against where the words begin. The recording's own length
+  cannot be the second half of the question either, because a late sheet's tail is past the end of THIS file by exactly the amount it is late - so what is checked instead is that
+  the shifted words stay inside the song. A miss smaller than 8s is left alone (that is the nudge's job), a sheet whose words would land in a measured break, run past the singing,
+  or leave the singing uncovered is refused rather than forced, and a song with a long instrumental opening is not touched at all: its own singing starts late too, so the difference
+  is zero.
+- **THE CARD THAT APPEARS WHEN A SONG IS SAVED now leads with the ACTION.** *"the in tab thing that shows up after you download a song should be replaced with open library"*.
+  `scConvertPillDone` had the run's sentence as the pill's TITLE and the way into the library as small print under it, so the one thing anyone wants at the end of a save read as a
+  report. The title is `Open library` now, the run's sentence sits underneath it with `· tap to open`, and the tap-through - `scOpenLibraryAfterDownload()` - is unchanged. The flag
+  (`_opened` - *did this run fill the library?*) is worked out BEFORE the label is written, which is the one ordering a later edit could get wrong.
+- **THE HALF OF THAT CARD THAT WAS ALREADY WRONG, AND ONLY SHOWED UP ONCE THE LABEL WAS THE ACTION.** `_opened` was a SUBSTRING test on the run's own sentence -
+  `/library|added/` - so `"Cancelled - nothing was added"` counted as a filled library (it contains "added"), and so did the batch line for a run where every track failed,
+  `"0 songs added to your library - 3 failed"`. On 74.1.8 that misreading was small print under a report; with the action as the title it would have been the pill's whole face, and
+  the note above ("a run that saved nothing keeps its own text") would have been false, so it is fixed here rather than described. The test refuses the count as well as the words
+  (`!/could not|nothing was added|(\D|^)0 songs/` - the `\D` so that "10 songs added" still counts), a run stopped part-way with songs saved still leads with `Open library`, and
+  `[11s]` section (8) DRIVES the real function - `scConvertPillDone` is sliced out of the shipped bytes and run over a synthetic pill - for all four shapes: the label, the small
+  print and what a tap actually does are read from the code that ships, not from bytes that describe it. **Proven both ways**: with only this guard undone, `studio-70-check` is
+  **567 passed / 3 failed** - the byte pin and both of the driven shapes that should be red - while the filled run and the run stopped part-way stay green (that page is the
+  shipped page with one `_opened` line put back, and nothing else).
+- **WHAT IS NOT CLAIMED.** Nothing here ran on a phone. The converter fix is proven at the level of the gates that decide, not by converting a real album end to end, and the
+  stall figures are this harness's, not a phone's - the felt difference while scrolling during a conversion is still the owner's to judge.
+
 ## 74.1.8 (October 15, 2026 · 7:56 PM EDT): Re-encode works again - the slice helper the encoders call lives with them now
 
 - **The report, in the owner's words** (a screenshot of the phone): *"Re-encode failed: scBackSliceMul is not defined"*. Every song, every rate. 74.1.7 shipped a storage
@@ -33,7 +88,7 @@
   feels under a thumb is unconfirmed. The background caveat 74.1.7 recorded still stands untouched: a WebView with no foreground service can be killed outright by Android,
   and a killed run is reported rather than resumed automatically.
 - **BOTH CHANNELS SHIP TOGETHER**: `ota/update.zip` and `ota-play/update.zip` are rebuilt from this page to a true fixed point (the zip embeds the root `manifest.json`, which
-  records the zip's own size), at 965011 bytes for the sideload channel and 965021 for the Play one, and the page inside each carries `APP_VERSION` and, for Play,
+  records the zip's own size), at 976033 bytes for the sideload channel and 976045 for the Play one, and the page inside each carries `APP_VERSION` and, for Play,
   `__PLAY_BUILD__`.
 - **ONE RED IS RECORDED AND NOT FIXED**: `dev/media-controls-check.cjs`, "and it no longer fires every half hour", 66 passed / 1 failed - the same single failure a pristine
   clone of main reproduces.

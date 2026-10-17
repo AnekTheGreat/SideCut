@@ -38,13 +38,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(process.env.SC_HTML || path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '74.1.8'; /* repinned by dev/repin-7418.mjs */
-const PREV = '74.1.7'; /* repinned by dev/repin-7418.mjs */
+const VER = '74.1.9'; /* repinned by dev/repin-7419.mjs */
+const PREV = '74.1.8'; /* repinned by dev/repin-7419.mjs */
 // The release this gate DESCRIBES. VER moves with every repin (the gate runs on
 // whatever the app is now); OWN does not move, because the entry it reads is the
 // one this file was written about and it stays in the changelog for ever.
 const OWN = '73.9';
-const SHELL_CACHE = 'sidecut-shell-v74.1.8';
+const SHELL_CACHE = 'sidecut-shell-v74.1.9';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
