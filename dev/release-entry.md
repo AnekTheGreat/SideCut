@@ -115,3 +115,82 @@ audio is already playing and then starts really late and the lyrics needs to be 
   across the joined dock are proven in jsdom on the real page; **how the slide feels under a real thumb is unconfirmed**, and the halo of the highlight, the width of the
   capsule and the half-second of the slide are the parts a phone would judge.
 - **Nothing else moved**: the player, the home widget, the letter-by-letter lyrics, the storage cleaner and every saved song and setting are where 74.1.8 left them.
+- **8. THE BUTTONS THAT SAID "DELETED" AND DELETED NOTHING, THE SYSTEM DIALOG, AND NO WAY BACK.** The ask was one sentence - *"make the app nicer to use"* - and the
+  three faults below were found by following what a thumb actually presses, not by looking at a screenshot. They are one change because they are one moment: the
+  moment something is removed.
+  **8a. Two destructive buttons did nothing.** "Clear playlist" and "Delete all songs" are drawn only in the playlist / All Songs view, and both call
+  `deleteAllInView(ids, isAllSongs)`, whose entire body answered the **Albums** tab: `if(libraryMode === 'albums'){ ... }` and then `toast('Deleted')`. In the two
+  places the buttons exist, the branch was false, so nothing was removed and the app said "Deleted". **Driven, with `window.confirm` stubbed to return true - the most
+  generous reading of the old page:** Clear playlist on a three-song playlist left `["t1","t2","t3"]` in storage, left the three rows on screen, and showed the toast
+  `"Deleted"`. That is the release's worst kind of bug: a confirmation, a success message, and no change.
+  **8b. Every song delete asked in a system dialog.** `deleteTrack`, the multi-select delete, the duplicates run and the album-side removes all used `window.confirm()`.
+  This page already carries the note, written for `deletePlaylist` in 71.9, that **the Android WebView swallows `confirm()` and returns false** - so the honest reading
+  of a swallowed confirm is "the app did nothing", and the other reading is a system sheet in the middle of a fully themed app. `modalConfirm()` existed for exactly
+  this reason and the songs never got it. The covers reset, the "album already exists - merge?" prompt on both album paths, and the update-reload prompt were the last
+  four; the page now contains **no `confirm(` call at all**, only the comments that explain why.
+  **8c. A delete was final.** One thumb on the wrong row took the file, its plays, its lyric sheet, its queue slot and its place in every playlist, for good.
+- **ONE DELETE PATH, AND WHAT UNDO ACTUALLY PUTS BACK.** `scDeleteSongs(ids, opts)` is the one path now; `deleteTrack()` and `deleteAllInView()` route through it.
+  Before anything is removed it takes a snapshot: the track object and the index it sat at in `allTracks`, its index in **every** playlist (not just the open one, so
+  Favorites and a hidden list come back too), its slot in the queue, and the full IndexedDB record read with `dbGet('tracks', id)` - read first, because
+  `URL.revokeObjectURL` and the store delete happen a few lines later. The removal is the same code the old path ran. `toastWithUndo()` carries the way back, and
+  `scUndoSongDelete()` puts all of it where it was: the song at its old index, a **fresh** object URL from the file it still holds, each playlist membership spliced
+  back at its old index rather than pushed on the end, the record written back to the store (so the song survives a restart, not only this session), its queue slot,
+  and - if the song that was playing was the one deleted - the now bar back on screen with that song loaded and paused, rather than a hidden bar and no explanation.
+  A single delete and a delete of many are the same code; the duplicates review is one delete with one undo rather than N deletes with N toasts.
+- **THE THREE LIST-LEVEL CASES ARE THREE DIFFERENT PROMISES.** `deleteAllInView` now keeps each one: **Clear playlist** takes the songs out of that playlist and
+  leaves the library alone; **Delete all songs** deletes them from the library and every playlist, through the same snapshot; **Remove from albums** (the Albums tab)
+  removes them from their albums, keeping per-id album positions so Undo puts each row back where it was, instead of restoring a whole `userAlbums` object and quietly
+  undoing anything else that changed in the same six seconds. Multi-select's playlist-remove and album-remove now carry their own `toastWithUndo` for the same reason.
+- **THE MESSAGE BAR.** It is a real status region now (`role="status" aria-live="polite"`), so a delete, a restore or a failed run is announced rather than only drawn.
+  It can be **flicked up** out of the way - 24px, over a fingertip's wobble and under a deliberate flick - and the click that follows that flick does not count as a tap
+  on the message, so pushing a toast away can never open the song list behind it. A press that starts on the Undo button is left alone: that is the action, not a gesture.
+- **VERIFIED BOTH WAYS, THROUGH THE BUTTONS.** `dev/undo-delete-check.cjs` drives the shipped page: the row's own kebab -> "Delete from library" -> the app's confirm
+  sheet (which names the song and says what it takes) -> Cancel keeps every song and the store untouched -> Delete removes it from the list, the store, All Songs, Chill and
+  Favorites -> Undo restores the row at its old index, the record, and all three memberships in order; then Clear playlist on Chill (playlist empty, library whole, no
+  audio deleted, Undo restores it in order); then Delete all songs (library empty, store empty, Undo restores all five in their order); then the toast's ARIA and its
+  swipe. **56 passed / 0 failed** on this tree, and **17 named reds** on the page before the change (14 passed), including the missing confirm sheet and the flick.
+  `studio-70-check` **570 / 0**, `album-follow-dock-check` **105 / 0**, `beat-repeat-check` **35 / 0**, the OTA trio **20 / 52 / 24** after both bundles were rebuilt to a
+  true fixed point (983 769 bytes sideload, 983 781 Play at that stage - the section 9 bubble-size change moved the final bundle to 984 576 / 984 586), `test-738`-`741` **49 / 62 / 54 / 86** (their release-note rules - under 260 characters, no apostrophe, no
+  converter word - are what the four new notes were written to), `check-dom` **0 failures**, `audit-calls` OK.
+- **THE FULL BATTERY, AND WHAT IT CANNOT SAY HERE.** `sh dev/gates.sh` on this machine runs the whole list. It is green except **`media-controls-check`** (60 passed,
+  1 failed - *"and it no longer fires every half hour"*), which is the carried failure this repo records: run against a pristine `git show HEAD:index.html` it fails the
+  same one check. **`ota-update-check` was red before the bundles were rebuilt** (*"a second generation produces the same bytes"*) and green after the fixed point,
+  which is what that check exists to say. The harness needed **jsdom 30** in this workspace for `requestInterceptor` and for the page's modern CSS; with jsdom 26
+  installed the suites that boot the page report `Could not parse CSS stylesheet` on a stylesheet this tree did not touch, and `acorn` had to be linked for
+  `test-735`/`736`/`7361`. None of those reds was in the page.
+- **WHAT THIS DOES NOT CLAIM.** Nothing here ran on a phone. The confirm sheet, the undo, the restore order, the album positions and the toast flick are proven in jsdom
+  on the real page; **the feel of the flick and of the in-app sheet under a real thumb is unconfirmed**, and no store submission was made.
+- **9. THE BUBBLE SIZE THAT WAS MISSING.** *"there should be like an inbetween settings for the bubble size like in the middle but without all that gap but not too little"*. Home had
+  four sizes through the expand chip - mini **60**, small **84**, automatic **118**, tall **158** - and then wide/full/xl, with **nothing between automatic and tall**; and Sandbox's
+  per-bubble height stepper moved in **whole steps of 118px**, so the choice there was 118 or **236**, which is precisely the card-with-a-hole-in-it the owner is describing.
+  Three changes, one size: a **Medium** preset at **146px**, which is a real step between automatic and tall; **half steps** on the height stepper (`HB_EXACT_STEP = 0.5`), so 1.5× =
+  **177px** exists and is stored as `1.5` rather than a float artefact; and Medium **shares its extra height above and below the words** (`justify-content:center`) instead of leaving
+  the label pinned to the floor under an icon with a gap between them. The chip's walk is now mini -> small -> **medium** -> automatic -> tall -> wide -> full -> xl; the first tap on an
+  untouched bubble still goes to tall exactly as before, so nothing anyone has learned moves.
+- **AND THE RESET BUTTON THAT DID NOT RESET.** `Reset to automatic` in Sandbox claimed *"every bubble is back to its automatic size"* and cleared only `homeBubbleExact` - the **presets
+  the expand chip writes live in `homeBubbleSizes`**, so a chip-sized bubble stayed sized while the toast said otherwise. It clears both now, and both rows are written back to storage.
+  Found by the new gate on the page before the change, not by inspection: `✗ and no bubble is left wearing a size ["stats"]`.
+- **DRIVEN, BOTH WAYS.** `dev/home-bubble-size-check.cjs` (wired into `dev/gates.sh`) proves the CSS is a real middle (`118 < 146 < 158`), the chip walks to Medium through the real
+  handler (7 taps from automatic), the choice is persisted, one H tap lands on **1.5 / 177px** (not 2 / 236), the stepper clamps at 1×, and Reset leaves no bubble wearing a size:
+  **23 / 0** on this tree, **10 named reds** on the page before it. `patch-74110-bubble-medium.py` is the record of the six edits (`--check` passes). OTA after the page change:
+  **984 576** sideload and **984 586** Play, fixed point in two passes; the OTA trio **20 / 52 / 24**.
+- **WHAT THIS DOES NOT CLAIM.** No screenshot was taken here and nothing ran on a phone: **146px is chosen from the two numbers either side of it and from the owner's words, not from
+  looking at it**, so the exact pixel is the one thing a thumb (or the preview) should settle. Nothing else about Home moved.
+- **10. ASK SIDECUT - THE AI BUTTON, WITH A PLAN YOU APPROVE.** *"can we make an ai button that I can ask anything with like my songs and it'll do it like create a new playlist
+  containing these songs that Crossfade with specific DJ mode settings"*. The app already had an assistant (Settings -> Support) and an acting layer (`window.SCACT`), but it was
+  three taps from the music, it had no idea what "these songs" meant, it ran a sentence as soon as it was typed, and nothing it did could be undone. This release puts a **sparkle
+  button in the Home header and another on the multi-select bar**, both opening one drawer whose first line is what it is looking at ("2 songs selected - Aurora, Born To Shine").
+  A sentence becomes a **PLAN**: typed steps against the app's own functions (`__scSetPlaylist`, `__scSetCrossfade`, `__scSetDjDisabled`), shown before anything changes, with
+  **Do it** and **Cancel**. **Nothing is executed while it is only a plan** - the one thing the old layer could not promise. `Do it` runs the plan and leaves a **single Undo**
+  that restores the playlist bodies, removes a playlist it created, and returns the crossfade and the DJ switch to their previous values.
+- **Two failures the gate caught in the first cut, both real.** The DJ bridge was written as "disabled on/off" while the plan speaks "DJ mode on/off", so *"dj mode on"* wrote the
+  playlist into the **opt-out** set - the exact opposite of the request, and the gate's `[]` was the tell. And the crossfade grammar only understood *"crossfade 9"*, not the way
+  the sentence is actually said: *"with a 9 second crossfade"*. Both are fixed, and both directions of the DJ switch are now driven (off -> on -> Undo -> off).
+- **A question is not an execution.** With no plan to match, the drawer answers from the knowledge base the Support chat already ships (`__scAiLookup` -> `_aiFuzzyMatch`), shows
+  no plan card and offers nothing to run; a sentence it cannot match is offered as ONE step for the existing acting layer, which only runs after Do it.
+- **VERIFIED.** `dev/ai-button-check.cjs` (in `dev/gates.sh`): the button on Home and on the selection bar, the context chip naming the selection, three plan steps with **no**
+  playlist, **no** crossfade change while it is a plan, Cancel changing nothing, Do it creating the playlist with exactly `t1,t2`, setting 9s and turning DJ mode on, and Undo
+  taking all three back - **33 / 0** on this tree, **5 named reds** on the page before the change. OTA rebuilt to a true fixed point at **990 119** bytes sideload and **990 128**
+  Play. `AI_ASSISTANT_PLAN.md` is no longer a wish: it now leads with what shipped and what is still open.
+- **WHAT THIS DOES NOT CLAIM.** The planner is a small declared grammar, not a language model: it understands playlist / crossfade / DJ mode phrasings and hands anything else
+  to the acting layer or the knowledge base. Nothing ran on a phone, and no live Gemini call is exercised by the gate - the key path is unchanged and untested here.

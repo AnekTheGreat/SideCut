@@ -1925,6 +1925,15 @@ body.theme-dyn-orchid::before{
 .home-bubble.hb-size-mini .hb-label{ font-size:calc(10px * var(--hb-s, 1)); }
 .home-bubble.hb-size-xl{ grid-column:1 / -1; min-height:calc(260px * var(--hb-s, 1)); }
 .home-bubble.hb-size-small{ min-height:calc(84px * var(--hb-s, 1)); }
+/* THE MIDDLE SIZE. Automatic is 118 and tall is 158, and 158 is a card with a
+   stretch of empty middle between its icon and its label - the owner's "all that
+   gap". 146 is the size between them: still a card you can read at a glance, with
+   the least empty height that keeps the icon and the two lines apart. */
+.home-bubble.hb-size-medium{ min-height:calc(146px * var(--hb-s, 1)); justify-content:center; }
+/* The extra height of the middle size is shared above and below the words instead of
+   becoming one hole between the icon and the label - which is the whole reason a
+   middle size was asked for. */
+.home-bubble.hb-size-medium .hb-value{ font-size:calc(20px * var(--hb-s, 1)); }
 .home-bubble.hb-size-tall{ min-height:calc(158px * var(--hb-s, 1)); }
 .home-bubble.hb-size-wide{ grid-column:1 / -1; min-height:calc(96px * var(--hb-s, 1)); }
 .home-bubble.hb-size-full{ grid-column:1 / -1; min-height:calc(200px * var(--hb-s, 1)); }
@@ -2346,7 +2355,7 @@ body.sandbox-large-touch .action-pill.dock-add{ padding: 0 !important; }
    the highlight are built by the dock's own code rather than written into the
    markup, and both sit BEHIND the labels (a negative z-index inside the dock's own
    stacking context), so no name is ever covered by them. */
-#scDockPillTrack, #scDockPillThumb{ display: none; position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; box-sizing: border-box; }
+#scDockPillTrack, #scDockPillThumb, #scDockSeam{ display: none; position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; box-sizing: border-box; }
 #scDockPillTrack{ background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid var(--line); border-radius: 999px; }
 #scDockPillThumb{
   width: 0; height: 0;
@@ -2355,6 +2364,28 @@ body.sandbox-large-touch .action-pill.dock-add{ padding: 0 !important; }
   box-shadow: 0 2px 10px rgba(0,0,0,0.30);
   border-radius: 999px;
   transition: transform 0.24s cubic-bezier(0.22,1,0.36,1), width 0.24s cubic-bezier(0.22,1,0.36,1), height 0.2s ease, top 0.2s ease;
+  will-change: transform, width;
+}
+/* WHILE A FINGER IS SLIDING, THE HIGHLIGHT IS THE FINGER'S. The spring above is for a
+   hover preview and for the settle after a release. Run under a live drag it is what
+   made the highlight set off after the thumb and arrive a quarter of a second later,
+   which is the lag the slide was criticised for. The class goes on for the length of a
+   slide and comes off on release, so the settle that follows is the spring again. */
+body.sc-dock-pill.sc-dock-dragging #scDockPillThumb{
+  transition: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.42);
+}
+/* THE DIVIDER, DRAWN. The split Library tab is two triangles and the highlight
+   wears whichever one the finger is in, so without a line the diagonal exists only
+   for the instant it changes sides - which reads as a flicker, not a slant. This is
+   the same line the hit test uses, placed from the pill's own box by the dock's
+   code (its centre, one pixel long enough to reach both corners), so the slant that
+   is drawn and the region that is lit cannot disagree. */
+body.sc-dock-pill #scDockSeam{
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 30%, transparent) 18%, color-mix(in srgb, var(--ink) 30%, transparent) 82%, transparent);
+  transform-origin: 50% 50%;
 }
 body.sc-dock-pill #scDockPillTrack, body.sc-dock-pill #scDockPillThumb{ display: block; }
 /* Joined: the pills give up the shapes that made them separate - no fill, no
@@ -2674,6 +2705,28 @@ body.sandbox-compact-nowbar #nowPlaying{ padding-bottom: 6px; }
 .sc-sheet-grip{ width: 40px; height: 4px; border-radius: 3px; background: var(--line); margin: 8px auto 2px; flex-shrink: 0; }
 .sc-sheet-head{ display: flex; align-items: center; gap: 10px; padding: 8px 16px 10px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .sc-sheet-head h3{ flex: 1; font-size: 15px; }
+/* 74.1.9 - ASK SIDECUT. A bottom drawer that knows what is selected, turns a
+   sentence into a PLAN, and does nothing until Do it is tapped. */
+#scAiBackdrop{ display:none; position:fixed; inset:0; z-index:260; align-items:flex-end; justify-content:center; background:rgba(6,10,28,0.6); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+#scAiBackdrop.in{ display:flex; }
+#scAiBody{ padding:10px 16px calc(14px + env(safe-area-inset-bottom)); overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; flex-direction:column; gap:10px; }
+.scai-ctx{ font-size:11.5px; color:var(--ink-dim); border:1px solid var(--line); border-radius:999px; padding:5px 10px; align-self:flex-start; }
+.scai-log{ display:flex; flex-direction:column; gap:8px; max-height:34vh; overflow-y:auto; }
+.scai-msg{ font-size:13px; line-height:1.5; padding:9px 11px; border-radius:12px; background:color-mix(in srgb, var(--bg) 70%, transparent); border:1px solid var(--line); }
+.scai-msg.me{ align-self:flex-end; background:color-mix(in srgb, var(--coral) 16%, transparent); border-color:color-mix(in srgb, var(--coral) 40%, transparent); }
+.scai-plan{ display:none; border:1px solid color-mix(in srgb, var(--coral) 45%, transparent); border-radius:14px; padding:10px 12px; background:color-mix(in srgb, var(--coral) 8%, transparent); }
+.scai-plan.on{ display:block; }
+.scai-step{ display:flex; gap:8px; font-size:12.5px; padding:4px 0; color:var(--ink); }
+.scai-step b{ color:var(--coral); }
+.scai-acts{ display:flex; gap:8px; margin-top:10px; }
+.scai-acts button{ flex:1; padding:10px; border-radius:10px; font-size:13px; font-weight:600; border:none; }
+#scAiDoBtn{ background:var(--coral); color:var(--on-coral, #fff); }
+#scAiCancelBtn{ background:var(--bg-raised); color:var(--ink-dim); border:1px solid var(--line); }
+.scai-chips{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; }
+.scai-chips button{ flex-shrink:0; font-size:11.5px; padding:6px 10px; border-radius:999px; border:1px solid var(--line); background:none; color:var(--ink-dim); }
+.scai-row{ display:flex; gap:8px; }
+#scAiInput{ flex:1; min-width:0; padding:11px 12px; border-radius:12px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:13.5px; }
+#scAiPlanBtn{ padding:0 16px; border-radius:12px; border:none; background:var(--coral); color:var(--on-coral, #fff); font-weight:700; font-size:13px; }
 .sc-sheet-head button{ background: none; border: none; color: var(--ink-dim); font-size: 16px; cursor: pointer; padding: 6px 8px; }
 .sc-sheet-body{ padding: 14px 16px calc(20px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
@@ -2799,6 +2852,9 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
       <span id="notifBadge" style="display:none; position:absolute; top:2px; right:2px; width:9px; height:9px; border-radius:50%; background:var(--coral); box-shadow:0 0 0 2px var(--bg);"></span>
     </button>
+    <button class="icon-btn" id="homeAiBtn" title="Ask SideCut about your music" aria-label="Ask SideCut">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6 5.6 1.9-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2zm6 11l.95 2.8 2.8.95-2.8.95L18 20.5l-.95-2.8-2.8-.95 2.8-.95L18 13z"/></svg>
+    </button>
     <button class="icon-btn" id="refreshBtn" title="Refresh app" style="flex-shrink:0;">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
     </button>
@@ -2870,7 +2926,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
 <input type="file" id="importIntoPlaylistInput">
 <input type="file" id="addFilesToPlaylistInput" multiple>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- Home: immersive bubble dashboard -->
 <div id="homeView">
@@ -3985,7 +4041,7 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
 
       <div style="margin-bottom:16px;">
         <div style="font-size:13px; font-weight:600; margin-bottom:4px;">Home bubble sizes</div>
-        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.5;">Set each bubble to exactly the size you want — <b>W</b> is how many columns it takes (1 or 2, 2 = full width) and <b>H</b> is how tall it is (1–4×). Also available: tap the ⤢ chip on any bubble to cycle through the presets.</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.5;">Set each bubble to exactly the size you want — <b>W</b> is how many columns it takes (1 or 2, 2 = full width) and <b>H</b> is how tall it is (1–4×, in half steps, so 1.5 is a real size). Also available: tap the ⤢ chip on any bubble to cycle through the presets — mini, small, <b>medium</b>, automatic, tall, wide, full and XL.</div>
         <div id="sandboxBubbleSizes"></div>
         <button class="tab" id="sandboxBubbleSizesReset" style="margin-top:8px; padding:6px 12px; font-size:12px;">↺ Reset to automatic</button>
       </div>
@@ -5759,15 +5815,41 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
     clearTimeout(toastEl._t);
     toastEl._t = setTimeout(()=> toastEl.style.display='none', ms);
     // Tap once: open the detail if there is one, otherwise dismiss as before.
+    // A swipe ends with a click too, and that click is not a tap on the message -
+    // opening the song list because a thumb pushed the toast out of the way would
+    // be the opposite of the gesture.
     if(!toastEl._tapDismissed){
       toastEl._tapDismissed = true;
       toastEl.addEventListener('click', function(){
+        if(Date.now() - (toastEl._swipedAt || 0) < 450) return;
         clearTimeout(toastEl._t);
         toastEl.style.display='none';
         var _fn = toastEl._onTap;
         toastEl._onTap = null;
         if(typeof _fn === 'function'){ try{ _fn(); }catch(_eToastTap){ console.error('toast tap failed', _eToastTap); } }
       });
+    }
+    // PUSH IT OUT OF THE WAY. A message that is covering something is dismissed by
+    // flicking it up, the way every other transient bar on the phone works; the
+    // Undo button inside it is not a swipe, so a press that starts on it is left
+    // alone. 24px is over a fingertip's wobble and under a deliberate flick.
+    if(!toastEl._swipeWired){
+      toastEl._swipeWired = true;
+      var _toastDownY = null;
+      toastEl.addEventListener('pointerdown', function(ev){
+        if(ev.target && ev.target.closest && ev.target.closest('button')){ _toastDownY = null; return; }
+        _toastDownY = ev.clientY;
+      });
+      toastEl.addEventListener('pointerup', function(ev){
+        if(_toastDownY == null) return;
+        var up = _toastDownY - ev.clientY;      // up is positive
+        _toastDownY = null;
+        if(up < 24) return;
+        toastEl._swipedAt = Date.now();
+        clearTimeout(toastEl._t);
+        toastEl.style.display = 'none';
+      });
+      toastEl.addEventListener('pointercancel', function(){ _toastDownY = null; });
     }
   }
 
@@ -5899,6 +5981,21 @@ if(isOpen){ dd.style.display = 'none'; if(chev) chev.textContent = '\u25be'; }
   let lastUsedPlaylist = '';
   let hiddenPlaylists = new Set();
   let djDisabledPlaylists = new Set(); // playlists the user has manually opted out of DJ Mode for
+  // 74.1.9 - the Ask drawer runs in the Studio block, which is a later <script> and
+  // cannot see this Set, so the two switches it needs are published here beside it.
+  // Both return what the value was BEFORE, which is what Undo puts back.
+  window.__scSetDjDisabled = function(name, on){
+    try{
+      var key = String(name || '').trim();
+      if(!key) return null;
+      // `on` is DJ MODE ON. The Set stores the opt-outs, so enabling removes the name.
+      var before = !djDisabledPlaylists.has(key);
+      if(on) djDisabledPlaylists.delete(key); else djDisabledPlaylists.add(key);
+      dbPut('meta', { key: 'djDisabledPlaylists', value: Array.from(djDisabledPlaylists) });
+      renderTabs();
+      return before;
+    }catch(_e){ return null; }
+  };
   let hiddenUnsorted = false; // whether the Unsorted tab is hidden
   let currentSort = 'default'; // default | alpha | artist | genre | recent
   let libraryMode = 'playlists'; // 'playlists' | 'albums'
@@ -8054,9 +8151,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // multiplier of the bubble's own base height, so a bubble can be built to the
   // exact size you want instead of only the presets below.
   let homeBubbleExact = {};
-  const HB_SIZE_CLASSES = ['hb-size-mini', 'hb-size-small', 'hb-size-tall', 'hb-size-wide', 'hb-size-full', 'hb-size-xl'];
-  const HB_SIZE_CYCLE = ['mini', 'small', null, 'tall', 'wide', 'full', 'xl']; // null = back to automatic
+  const HB_SIZE_CLASSES = ['hb-size-mini', 'hb-size-small', 'hb-size-medium', 'hb-size-tall', 'hb-size-wide', 'hb-size-full', 'hb-size-xl'];
+  // The chip walks up from mini through the middle to full width. `null` is the
+  // automatic template size, and it stays in the walk because that is where a bubble
+  // starts: the first tap on an untouched bubble goes to tall, as it always did.
+  const HB_SIZE_CYCLE = ['mini', 'small', 'medium', null, 'tall', 'wide', 'full', 'xl']; // null = back to automatic
   const HB_EXACT_MIN = 1, HB_EXACT_MAX = 4;
+  // Half a step of 118px. Whole steps only ever offered 118 or 236, and the size the
+  // owner asked for - the middle, without a cardful of empty space - sits between them.
+  const HB_EXACT_STEP = 0.5;
   function applyHomeBubbleSizes(){
     const wrap = $('homeBubbles');
     if(!wrap) return;
@@ -8081,7 +8184,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   function setHomeBubbleExact(kind, axis, delta){
     const cur = homeBubbleExact[kind] || { w: 1, h: 1 };
     const next = { w: Number(cur.w) || 1, h: Number(cur.h) || 1 };
-    next[axis] = Math.max(HB_EXACT_MIN, Math.min(HB_EXACT_MAX, next[axis] + delta));
+    // Height moves in halves; width is a column count and can only be whole.
+    const step = axis === 'h' ? HB_EXACT_STEP : 1;
+    next[axis] = Math.max(HB_EXACT_MIN, Math.min(HB_EXACT_MAX, next[axis] + delta * step));
+    next[axis] = Math.round(next[axis] * 10) / 10;   // 1.5, not 1.5000000000000002
     homeBubbleExact[kind] = next;
     dbPut('meta', { key: 'homeBubbleExact', value: homeBubbleExact });
     applyHomeBubbleSizes();
@@ -8132,8 +8238,14 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const btn = $('sandboxBubbleSizesReset');
     if(!btn) return;
     btn.addEventListener('click', () => {
+      // BOTH ways a bubble can be sized, or the button breaks its own promise. The
+      // presets the expand chip sets live in homeBubbleSizes, and this used to clear
+      // only the exact sizes - so after tapping the chip, "Reset to automatic" left
+      // the bubble at the preset size while saying every bubble was back to automatic.
       homeBubbleExact = {};
+      homeBubbleSizes = {};
       dbPut('meta', { key: 'homeBubbleExact', value: {} });
+      dbPut('meta', { key: 'homeBubbleSizes', value: {} });
       applyHomeBubbleSizes();
       renderSandboxBubbleSizes();
       toast('Bubble sizes reset — every bubble is back to its automatic size');
@@ -14253,7 +14365,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  { version: '74.1.9', date: 'October 16, 2026 · 7:22 PM EDT', title: 'The album follows the song, the views arrive smoothly, the tabs can be one sliding pill dock, and two repairs from the phone: an album stops mixing its own tracks, and the app stops stuttering while it works', items: [
+  { version: '74.1.9', date: 'October 16, 2026 · 7:22 PM EDT', title: 'The album follows the song, the views arrive smoothly, the tabs can be one sliding pill dock, and the buttons that said Deleted now delete - with an Undo - plus two repairs from the phone', items: [
+    'Clear playlist and Delete all songs work now. Both used to remove nothing and still say Deleted, because they answered the Albums tab while drawn in the playlist one. Undo is one tap away.',
+    'Deleting songs asks in the app instead of a system dialog the phone can swallow, and Undo brings the song back with its file, its plays and its place in every playlist.',
+    'The message bar can be flicked up out of the way, and it is announced to a screen reader.',
+    'Ask SideCut sits in the Home header and on the multi-select bar. Say what you want in your own words - make a playlist from these songs, crossfade 6 seconds, DJ mode on - and it shows the plan before anything changes, then does it with one tap and an Undo.',
+    'Home bubbles have the size that was missing: Medium sits between automatic and tall, and the height steppers move in half steps now, so the middle size exists instead of a cardful of empty space or a card that is too small.',
+    'Resetting covers, merging into an existing album and the update prompt all ask in the app, so no system dialog is left anywhere.',
     'Skipping into another album closes the album you were in and opens the new one, so the song that is playing is never the one you cannot see. A card still holding the playing song stays open, and albums you opened by hand are left alone.',
     'The Studio has a new switch under Gestures: Pill dock. It joins the tabs into one rounded capsule with a highlight that slides to the tab you are pressing, hovering or sliding over, the way an iOS segmented control behaves.',
     'With a mouse, moving over the dock says which tab a click would take before you take it. With a thumb, press anywhere on the dock and slide across it: releasing picks the tab the finger finished on, and the tab it started on never fires as well.',
@@ -17439,7 +17557,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     catch(_eCompress){ toast('Could not start the compression.'); }
   });
   $('resetCoversBtn').addEventListener('click', async () => {
-    if(!confirm('This will remove all saved covers. Original embedded covers from audio files will be shown instead. Continue?')) return;
+    if(!(await modalConfirm('Reset covers?', 'Remove all saved covers? The covers embedded in the audio files are shown instead.', 'Reset covers'))) return;
     let count = 0;
     for(const t of allTracks){
       if(t.artUrl || t.artBlob){
@@ -18847,6 +18965,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
   let isMixMode = false;
   let lastPlaybackState = null;
   let crossfadeSeconds = 6;
+  // The crossfade slider is bound to this number, so the drawer changes the same one
+  // the slider does - label, stored row and playback all follow.
+  window.__scSetCrossfade = function(sec){
+    var n = Math.max(0, Math.min(12, Math.round(Number(sec) || 0)));
+    var before = crossfadeSeconds;
+    crossfadeSeconds = n;
+    try{ var sl = $('crossfadeSlider'); if(sl) sl.value = String(n); }catch(_eSl){}
+    try{ var lb = $('crossfadeValue'); if(lb) lb.textContent = n + 's'; }catch(_eLb){}
+    try{ dbPut('meta', { key: 'crossfadeSeconds', value: n }); }catch(_eDb){}
+    return before;
+  };
   let seekStyle = 'line'; // 'line' | 'waveform'
   let crossfadeTriggered = false;
   let crossfadeFinishing = false;
@@ -21175,11 +21304,11 @@ function _fallbackCopy(text){
     if(!dupReviewSelections) return;
     const idsToDelete = Array.from(dupReviewSelections.entries()).filter(([,checked]) => checked).map(([id]) => id);
     if(!idsToDelete.length){ toast('Nothing selected to delete.'); $('dupReviewBackdrop').style.display = 'none'; dupReviewSelections = null; return; }
-    idsToDelete.forEach(id => deleteTrack(id, true));
     $('dupReviewBackdrop').style.display = 'none';
     dupReviewSelections = null;
-    toast(`Deleted ${idsToDelete.length} song${idsToDelete.length>1?'s':''}`);
-    updateNotifBadge();
+    // The review sheet already showed exactly what is about to go, so this path
+    // does not ask a second time - but it is one delete, with one undo.
+    scDeleteSongs(idsToDelete, { silent: true }).then(function(){ updateNotifBadge(); });
   });
 
   $('fileInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value=''; });
@@ -21349,7 +21478,12 @@ function _fallbackCopy(text){
       return 'up-to-date';
     }
     toast('A newer version (v' + String(man.version) + ') is available — reload the app to update.', 6000);
-    setTimeout(function(){ try{ if(confirm('Reload SideCut now to get v' + String(man.version) + '?')) location.reload(); }catch(_e){} }, 1400);
+    setTimeout(async function(){
+      try{
+        var go = await modalConfirm('Update ready', 'Reload SideCut now to get v' + String(man.version) + '?', 'Reload');
+        if(go) location.reload();
+      }catch(_e){}
+    }, 1400);
     return 'newer';
   }catch(e){
     toast('Update check failed — could not reach the update server. Check your connection and try again.', 4500);
@@ -22677,6 +22811,9 @@ function _fallbackCopy(text){
           <button class="icon-btn" id="selectAlbumBtn" title="Create album from selected songs"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-4H8v-2h2V9h2v2h2v2h-2v4z"/></svg></button>
           <button class="icon-btn" id="selectTagBtn" title="Edit the tags of the selected songs"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
           <button class="icon-btn" id="selectExportBtn" title="Export selected to .zip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zm7-18L5.33 9h4.17v6h4V9h4.17L12 2z"/></svg></button>
+          <button class="icon-btn" id="selectAskBtn" title="Ask SideCut about these songs" aria-label="Ask SideCut about these songs">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6 5.6 1.9-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z"/></svg>
+          </button>
           <button class="icon-btn" id="selectDeleteBtn" title="Delete selected" style="color:var(--coral); border-color:var(--coral);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
         </div>
       `;
@@ -25443,7 +25580,7 @@ function _fallbackCopy(text){
       albumName = albumName.trim();
     }
     if(userAlbums[albumName]){
-      if(!confirm('An album named "' + albumName + '" already exists — merge these songs into it?')) return;
+      if(!(await modalConfirm('Album already exists', 'An album named "' + albumName + '" already exists - merge these songs into it?', 'Merge'))) return;
     }
     const artistSet = new Set();
     ids.forEach(id => {
@@ -25502,7 +25639,7 @@ function _fallbackCopy(text){
     if(!name || !name.trim()) return;
     const albumName = name.trim();
     if(userAlbums[albumName]){
-      if(!confirm(`An album named "${albumName}" already exists — merge these songs into it?`)) return;
+      if(!(await modalConfirm('Album already exists', 'An album named "' + albumName + '" already exists - merge these songs into it?', 'Merge'))) return;
     }
     const artistSet = new Set();
     ids.forEach(id => {
@@ -25530,38 +25667,96 @@ function _fallbackCopy(text){
     }
   }
 
-  function deleteSelected(){
+  async function deleteSelected(){
     const isAllSongs = activePlaylist === 'All Songs' || activePlaylist === UNSORTED_VIEW;
     const isAlbums = libraryMode === 'albums';
-    const count = selectedIds.size;
+    const ids = Array.from(selectedIds);
+    const count = ids.length;
     if(!count) return;
     if(isAlbums){
-      if(!confirm(`Remove ${count} song${count===1?'':'s'} from albums? (Songs stay in your library.)`)) return;
+      const sure = await modalConfirm('Remove from albums?',
+        'Remove ' + count + ' song' + (count === 1 ? '' : 's') + ' from ' + (count === 1 ? 'its album' : 'their albums') +
+        '? They stay in your library, and Undo puts them back where they were.',
+        'Remove');
+      if(!sure) return;
+      const where = scAlbumPlaces(ids);
       Object.keys(userAlbums).forEach(name => {
         const ua = userAlbums[name];
         if(ua && Array.isArray(ua.trackIds)){
-          ua.trackIds = ua.trackIds.filter(id => !selectedIds.has(id));
+          ua.trackIds = ua.trackIds.filter(id => !ids.includes(id));
         }
       });
       saveMeta();
-    } else {
-      const scopeText = isAllSongs ? 'from your library' : 'from this playlist';
-      if(!confirm(`Delete ${count} song${count===1?'':'s'} ${scopeText}? ${isAllSongs ? 'This removes them from every playlist too.' : ''}`)) return;
-      if(isAllSongs){
-        Array.from(selectedIds).forEach(id => deleteTrack(id, true));
-      } else {
-        if(libraryMode === 'albums'){ toast('Use album remove instead.'); exitSelectMode(); return; }
-        playlists[activePlaylist] = playlists[activePlaylist].filter(x => !selectedIds.has(x));
+      exitSelectMode();
+      renderList();
+      toastWithUndo('Removed ' + count + ' song' + (count === 1 ? '' : 's') + ' from albums', function(){
+        scAlbumPlacesRestore(where);
         saveMeta();
-      }
+        renderList();
+      });
+      return;
     }
+    if(isAllSongs){
+      // One ask, one undo, and the same path the row's own menu takes.
+      exitSelectMode();
+      await scDeleteSongs(ids);
+      return;
+    }
+    if(libraryMode === 'albums'){ toast('Use album remove instead.'); exitSelectMode(); return; }
+    const target = activePlaylist;
+    const before = (playlists[target] || []).slice();
+    const sure = await modalConfirm('Remove from "' + target + '"?',
+      'Take ' + count + ' song' + (count === 1 ? '' : 's') + ' out of this playlist? They stay in your library, and Undo puts them back.',
+      'Remove');
+    if(!sure) return;
+    playlists[target] = (playlists[target] || []).filter(x => !ids.includes(x));
+    saveMeta();
     exitSelectMode();
+    renderTabs();
+    renderList();
+    toastWithUndo('Removed ' + count + ' song' + (count === 1 ? '' : 's') + ' from "' + target + '"', function(){
+      playlists[target] = before;
+      saveMeta();
+      renderTabs();
+      renderList();
+    });
   }
 
-  function deleteAllInView(ids, isAllSongs){
+  // Where each id sat inside its albums, so "Remove from albums" can be undone.
+  // Restoring the whole userAlbums object would quietly undo anything else that
+  // changed in the same six seconds, which is not what Undo promises.
+  function scAlbumPlaces(ids){
+    const where = {};
+    Object.keys(userAlbums).forEach(name => {
+      const ua = userAlbums[name];
+      if(!ua || !Array.isArray(ua.trackIds)) return;
+      ua.trackIds.forEach((id, at) => { if(ids.includes(id) && !where[id]) where[id] = { name: name, at: at }; });
+    });
+    return where;
+  }
+  function scAlbumPlacesRestore(where){
+    Object.keys(where || {}).forEach(id => {
+      const w = where[id], ua = userAlbums[w.name];
+      if(!ua || !Array.isArray(ua.trackIds)) return;
+      if(ua.trackIds.indexOf(id) !== -1) return;
+      ua.trackIds.splice(Math.min(w.at, ua.trackIds.length), 0, id);
+    });
+  }
+  window.__scAlbumPlaces = scAlbumPlaces;
+
+  // "Clear playlist" and "Delete all songs" were drawn in the playlist view and
+  // answered only the Albums tab: both removed nothing there, and both still said
+  // "Deleted". The three cases are three different promises now, and each one is
+  // kept - and can be taken back.
+  async function deleteAllInView(ids, isAllSongs){
+    ids = (ids || []).filter(Boolean);
     if(!ids.length){ toast('Nothing here to delete.'); return; }
     if(libraryMode === 'albums'){
-      if(!confirm(`Remove all ${ids.length} songs from albums? (Songs stay in your library.)`)) return;
+      const sureAlbums = await modalConfirm('Remove from albums?',
+        'Remove all ' + ids.length + ' songs on this screen from their albums? They stay in your library, and Undo puts them back.',
+        'Remove');
+      if(!sureAlbums) return;
+      const where = scAlbumPlaces(ids);
       Object.keys(userAlbums).forEach(name => {
         const ua = userAlbums[name];
         if(ua && Array.isArray(ua.trackIds)){
@@ -25570,9 +25765,35 @@ function _fallbackCopy(text){
       });
       saveMeta();
       renderList();
+      toastWithUndo('Removed ' + ids.length + ' song' + (ids.length === 1 ? '' : 's') + ' from albums', function(){
+        scAlbumPlacesRestore(where);
+        saveMeta();
+        renderList();
+      });
+      return;
     }
-    toast('Deleted');
+    if(isAllSongs){
+      await scDeleteSongs(ids);
+      return;
+    }
+    const target = activePlaylist;
+    const sure = await modalConfirm('Clear "' + target + '"?',
+      'Take all ' + ids.length + ' song' + (ids.length === 1 ? '' : 's') + ' in this playlist out of it? They stay in your library, and Undo puts them back.',
+      'Clear playlist');
+    if(!sure) return;
+    const before = (playlists[target] || []).slice();
+    playlists[target] = (playlists[target] || []).filter(id => !ids.includes(id));
+    saveMeta();
+    renderTabs();
+    renderList();
+    toastWithUndo('Cleared "' + target + '"', function(){
+      playlists[target] = before;
+      saveMeta();
+      renderTabs();
+      renderList();
+    });
   }
+  window.__scDeleteAllInView = deleteAllInView;
 
   function toggleFavorite(id){
     const favs = playlists['Favorites'];
@@ -25591,30 +25812,135 @@ function _fallbackCopy(text){
     toast('Playing next');
   }
 
-  function deleteTrack(id, skipConfirm){
-    const t = allTracks.find(tr => tr.id === id);
-    if(!t) return;
-    if(!skipConfirm && !confirm(`Delete "${t.name}" from your library? This removes it from every playlist too.`)) return;
+  /* --------------------------------------------------------------------------
+     One delete path. THE ASK IS IN THE APP, AND THE SONG COMES BACK.
+     --------------------------------------------------------------------------
+     window.confirm() is swallowed by the Android WebView - this file says so where
+     modalConfirm() was added for playlist delete in 71.9 - so a song delete could
+     report nothing, or ask in a system sheet that is the only unthemed surface left.
+     And a delete was final. scDeleteSongs() asks in the app's own sheet, takes a
+     snapshot of everything the removal touches, and toastWithUndo() puts every part
+     of it back: the track object in the order it sat in, the file in IndexedDB, its
+     index in each playlist, its place in the queue, and the now bar.
+     -------------------------------------------------------------------------- */
+  let scTrashPile = null;   // the last delete the toast can still undo
 
-    // If it's currently playing, stop playback cleanly
-    if(queue[queueIndex] === id){
+  function scDeleteSnapshot(ids){
+    const snap = { tracks: [], ids: [], at: {}, where: {}, queueAt: {}, recs: [], playing: (queue[queueIndex] || null) };
+    ids.forEach(id => {
+      const t = allTracks.find(tr => tr.id === id);
+      if(!t) return;
+      snap.tracks.push(t);
+      snap.ids.push(id);
+      snap.at[id] = allTracks.indexOf(t);
+      const w = {};
+      Object.keys(playlists).forEach(name => {
+        const k = (playlists[name] || []).indexOf(id);
+        if(k !== -1) w[name] = k;
+      });
+      snap.where[id] = w;
+      const q = queue.indexOf(id);
+      if(q !== -1) snap.queueAt[id] = q;
+    });
+    return snap;
+  }
+
+  async function scDeleteSongs(ids, opts){
+    opts = opts || {};
+    const snap = scDeleteSnapshot((ids || []).filter(Boolean));
+    if(!snap.tracks.length){ toast('Nothing here to delete.'); return 0; }
+    if(!opts.silent){
+      const many = snap.tracks.length > 1;
+      const sure = await modalConfirm(
+        many ? ('Delete ' + snap.tracks.length + ' songs?') : 'Delete this song?',
+        (many ? ('These ' + snap.tracks.length + ' songs') : ('"' + snap.tracks[0].name + '"')) +
+        ' will be removed from your library and from every playlist. Undo brings ' + (many ? 'them' : 'it') + ' straight back.',
+        many ? ('Delete ' + snap.tracks.length) : 'Delete');
+      if(!sure) return 0;
+    }
+    // The audio goes back into the store only if the undo asks for it, so the
+    // record is read BEFORE anything is removed.
+    for(const t of snap.tracks){
+      try{ snap.recs.push({ id: t.id, rec: await dbGet('tracks', t.id) }); }
+      catch(_eRec){ snap.recs.push({ id: t.id, rec: null }); }
+    }
+    // The bar goes first: a song about to be deleted must not be left pointing at a
+    // url that is revoked a line later.
+    if(snap.playing && snap.ids.indexOf(snap.playing) !== -1){
       userPaused = true;
       audios.forEach(function(_a){ try{ _a.pause(); _a.removeAttribute('src'); }catch(_){} });
       $('nowPlaying').style.display = 'none';
     }
-    queue = queue.filter(x => x !== id);
-
-    Object.keys(playlists).forEach(name => {
-      playlists[name] = playlists[name].filter(x => x !== id);
-    });
-    allTracks = allTracks.filter(tr => tr.id !== id);
-    URL.revokeObjectURL(t.url);
-    dbDelete('tracks', id);
+    for(const t of snap.tracks){
+      const id = t.id;
+      queue = queue.filter(x => x !== id);
+      Object.keys(playlists).forEach(name => {
+        playlists[name] = playlists[name].filter(x => x !== id);
+      });
+      allTracks = allTracks.filter(tr => tr.id !== id);
+      try{ if(t.url && String(t.url).indexOf('blob:') === 0) URL.revokeObjectURL(t.url); }catch(_eUrl){}
+      try{ dbDelete('tracks', id); }catch(_eDb){}
+    }
     saveMeta();
-
-    toast(`Deleted "${t.name}"`);
+    scTrashPile = snap;
+    toastWithUndo(
+      snap.tracks.length === 1 ? ('Deleted "' + snap.tracks[0].name + '"') : ('Deleted ' + snap.tracks.length + ' songs'),
+      function(){ scUndoSongDelete(); });
     renderTabs();
     renderList();
+    return snap.tracks.length;
+  }
+
+  async function scUndoSongDelete(){
+    const snap = scTrashPile;
+    scTrashPile = null;
+    if(!snap || !snap.tracks.length) return;
+    let back = 0;
+    for(const t of snap.tracks){
+      const id = t.id;
+      if(!allTracks.some(x => x.id === id)){
+        const at = Math.min(snap.at[id] == null ? allTracks.length : snap.at[id], allTracks.length);
+        allTracks.splice(at, 0, t);
+      }
+      // The old url was revoked on the way out; the file it came from is still here.
+      try{
+        const f = t.file || t._originalFile;
+        if(f) t.url = URL.createObjectURL(f);
+      }catch(_eUrl){}
+      const w = snap.where[id] || {};
+      Object.keys(w).forEach(name => {
+        if(!playlists[name]) playlists[name] = [];
+        if(playlists[name].indexOf(id) !== -1) return;
+        playlists[name].splice(Math.min(w[name], playlists[name].length), 0, id);
+      });
+      const rec = (snap.recs.find(r => r.id === id) || {}).rec;
+      if(rec){ try{ await dbPut('tracks', rec); }catch(_ePut){} }
+      const q = snap.queueAt[id];
+      if(q != null && queue.indexOf(id) === -1) queue.splice(Math.min(q, queue.length), 0, id);
+      back++;
+    }
+    saveMeta();
+    // A song that was playing when it was deleted gets its place back, paused and
+    // visible, rather than leaving the bar hidden with nothing to explain it.
+    try{
+      if(snap.playing && snap.ids.indexOf(snap.playing) !== -1){
+        const p = allTracks.find(x => x.id === snap.playing);
+        const a = activeAudio();
+        if(p && a && p.url){ a.src = p.url; a.load(); a.pause(); }
+        queueIndex = queue.indexOf(snap.playing);
+        $('nowPlaying').style.display = 'flex';
+        if(p && $('npTitle')) $('npTitle').textContent = p.name;
+      }
+    }catch(_eBar){}
+    renderTabs();
+    renderList();
+    toast('Restored ' + (back === 1 ? '1 song' : (back + ' songs')) + ' - nothing was lost.', 2600);
+  }
+  window.__scDeleteSongs = scDeleteSongs;
+  window.__scUndoSongDelete = scUndoSongDelete;
+
+  function deleteTrack(id, skipConfirm){
+    return scDeleteSongs([id], { silent: !!skipConfirm });
   }
 
   // Playlist picker for one song (kebab menu) or many (multi-select bar).
@@ -31205,11 +31531,19 @@ function _fallbackCopy(text){
   // not a loop button. Near the end of a track the window is pulled BACK so it
   // still fits, the way a CDJ sets a loop, instead of clamping to a few
   // milliseconds of audio and sounding like a click.
-  function armDeckLoop(len){
+  function armDeckLoop(len, beats){
     const dur = (deckEngine.buffer && deckEngine.buffer.duration) || 0;
     if(!dur || !(len > 0)) return false;
     const span = Math.min(len, dur);
-    const start = Math.max(0, Math.min(deckNow(), dur - span));
+    // A PAD'S SLICE IS MEASURED IN BEATS, so it is placed on the grid rather than at
+    // whatever instant the playhead happened to be sitting on. A 1/8 slice armed at
+    // an arbitrary point is a buzz against nothing; the same slice starting on the
+    // eighth note it belongs to is a stutter you can play with. Floored, never
+    // rounded up: a repeat must never jump forward, and at most it starts one slice
+    // early - 62ms, for the 1/8 pad.
+    let at = deckNow();
+    if(beats > 0) at = Math.floor(at / len) * len;
+    const start = Math.max(0, Math.min(at, dur - span));
     const end = Math.min(dur, start + span);
     if(!(end - start > 0.01)) return false;
     deckEngine.loop = { start: start, end: end };
@@ -31901,6 +32235,11 @@ function _fallbackCopy(text){
   // the playlist you are looking at, which is a different question from the one
   // the deck answers, and that chip is left exactly as it was.)
   window.__scOpenDjMode = function(){ return enterDjMode(); };
+  // The deck's own state, by name: what is loaded, where the playhead is and which
+  // loop window is armed - the object the deck itself reads, not a copy of it. The
+  // loop controls cannot be driven without a sound card, so the gate drives them
+  // through this, the way __scPlaybackSnapshot is used for the player.
+  window.__scDjDeck = function(){ return deckEngine; };
   window.__scDjModeState = function(){
     try{
       var _bd = $('djModeBackdrop');
@@ -32336,6 +32675,15 @@ function _fallbackCopy(text){
   // re-triggering playback, we just point the SAME running node's loop window
   // at the desired slice — zero restarts, zero glitching.
   let beatRepeatActive = false;
+  // A TAP LATCHES, A HOLD DOES NOT. Pressing a pad armed a slice and the release
+  // disarmed it in the same gesture, so a tap - which is how a pad is pressed on a
+  // phone - held it for about 50ms: a buzz, or nothing at all. Tapping now leaves the
+  // slice repeating and the pad lit; tapping the lit pad stops it. Holding still
+  // loops for as long as the finger is down, which is the gesture the pad's own text
+  // describes.
+  let beatRepeatLatched = false;
+  let beatRepeatLatchedBeats = null;
+  const SC_BEAT_TAP_MS = 220;   // under this is a tap, over it is a hold
   function beatLenToSeconds(beats){
     const bpm = liveBpm || (allTracks.find(tr => tr.id === djCurrentTrackId)?.bpm) || 120;
     return (60 / bpm) * beats;
@@ -32347,11 +32695,13 @@ function _fallbackCopy(text){
   // nothing at all - a slice armed now starts repeating the moment you press PLAY.
   function startBeatRepeat(beats){
     if(!deckEngine.buffer) return false;
-    if(!armDeckLoop(beatLenToSeconds(beats))) return false;
+    if(!armDeckLoop(beatLenToSeconds(beats), beats)) return false;
     beatRepeatActive = true;
     return true;
   }
   function stopBeatRepeat(){
+    beatRepeatLatched = false;
+    beatRepeatLatchedBeats = null;
     if(!beatRepeatActive) return;
     beatRepeatActive = false;
     // Releasing the pad ends the SLICE. If the LOOP button is still on, its own
@@ -32359,6 +32709,20 @@ function _fallbackCopy(text){
     // The native loop played inside the window the whole time, so letting go
     // needs no restart - the audio simply carries on from where it is.
     if(loopActive) armDeckLoop(loopLen); else clearDeckLoop();
+  }
+  // THE BADGE THE PAD EARNS. "Beat repeat" says "Hold a beat repeat", and the only
+  // thing that can hold one is a pad - yet the badge was credited by turning LOOP
+  // LOCK on, so holding a pad could never earn the badge that describes holding a
+  // pad. The wall is scored by the Studio's own script block, so it is asked by the
+  // name it publishes rather than reached across blocks.
+  function scBeatRepeatCredit(){
+    try{ if(window.SC70 && typeof SC70.bump === 'function') SC70.bump('beatRepeat', 1); }catch(_eBR){}
+  }
+  // A pad over an empty deck used to do nothing at all and say nothing, which reads
+  // as a dead pad. It says which of the two it is.
+  function scBeatPadSaysNothing(){
+    toast(deckEngine.buffer ? 'That slice did not arm \u00b7 try a shorter one'
+                            : 'Nothing on the deck \u00b7 load a song in DJ Mode first');
   }
   let beatRepeatLocked = false;
   let beatRepeatLockedBeats = 0.5;
@@ -32385,6 +32749,7 @@ function _fallbackCopy(text){
     }
   });
   document.querySelectorAll('.beat-pad').forEach(btn => {
+    let downAt = 0;
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       // 70.1.7. Capture the pointer for the whole hold. Without it a finger that
@@ -32393,17 +32758,53 @@ function _fallbackCopy(text){
       // died. With capture the pad keeps receiving the move and the release even
       // if the thumb slides right off it.
       try{ if(btn.setPointerCapture) btn.setPointerCapture(e.pointerId); }catch(_eCap){ }
+      const beats = parseFloat(btn.dataset.beats);
+      // THE LIT PAD IS THE WAY OUT OF ITSELF: pressing it stops the slice now rather
+      // than re-arming it for the length of a press, which is what made a latched
+      // repeat impossible to switch off with the pad that started it.
+      if(beatRepeatLatched && beatRepeatLatchedBeats === beats){
+        beatRepeatLatched = false;
+        beatRepeatLatchedBeats = null;
+        downAt = 0;
+        document.querySelectorAll('.beat-pad').forEach(b => b.classList.remove('active'));
+        stopBeatRepeat();
+        toast('Beat repeat off');
+        return;
+      }
       document.querySelectorAll('.beat-pad').forEach(b => b.classList.remove('active'));
-      beatRepeatLockedBeats = parseFloat(btn.dataset.beats);
+      // A different pad takes the latch over: one repeat at a time, and the one it
+      // replaces is no longer the lit pad anyone can switch off.
+      beatRepeatLatched = false;
+      beatRepeatLatchedBeats = null;
+      beatRepeatLockedBeats = beats;
+      downAt = Date.now();
       // Light the pad only if a slice was actually armed - the old order lit it
       // first and asked questions later.
-      if(startBeatRepeat(beatRepeatLockedBeats)) btn.classList.add('active');
+      if(startBeatRepeat(beatRepeatLockedBeats)){
+        btn.classList.add('active');
+        scBeatRepeatCredit();
+      } else {
+        downAt = 0;
+        scBeatPadSaysNothing();
+      }
     });
     // pointerup / pointercancel only, never pointerleave: this app already refuses
     // to cancel a hold on pointerleave for exactly this reason (a drifting cursor
     // or thumb fires it constantly on desktop and on Android WebView alike).
     ['pointerup','pointercancel'].forEach(ev => btn.addEventListener(ev, () => {
       if(beatRepeatLocked) return; // stays looping until Loop Lock is switched off
+      const held = downAt ? Date.now() - downAt : -1;
+      downAt = 0;
+      const beats = parseFloat(btn.dataset.beats);
+      // A TAP over a slice that really armed KEEPS it, and says so - otherwise the
+      // most natural press in the app was the one that made no sound. A hold is the
+      // gesture that loops only while it lasts, so its release is the end of it.
+      if(ev === 'pointerup' && held >= 0 && held < SC_BEAT_TAP_MS && beatRepeatActive){
+        beatRepeatLatched = true;
+        beatRepeatLatchedBeats = beats;
+        toast(btn.textContent.trim() + ' repeating \u00b7 tap it again to stop', 1800);
+        return;
+      }
       btn.classList.remove('active');
       stopBeatRepeat();
     }));
@@ -36116,7 +36517,17 @@ function _renderAhFromData(artistAlbums){
   var scDockPillSwallow = false;  // the next click belongs to a slide, not a tab
   var scDockPillSegs = [];        // the pills a slide can land on, in dock order
   var scDockPillRects = [];       // where those pills are, measured while they are still
+  var scDockPillSlide = false;    // this press has become a real slide
+  var scDockPillDownX = 0;        // where that press began
+  var scDockPillDownY = 0;
   try{ scDockPillOn = localStorage.getItem('sidecut_dockPill') === '1'; }catch(_eDockP0){}
+  // THE DEAD ZONE, and it is what the split Library tab needed. A press used to be a
+  // choice the moment it landed, so a thumb that came down on Playlists and wobbled a
+  // few pixels across the divider lit the other half - and releasing there opened the
+  // tab nobody picked. Nothing is chosen until the finger has travelled this far, and
+  // a press that never gets there answers the half it was pressed on. Eight pixels is
+  // under a fingertip's own wobble and well over a deliberate nudge.
+  var SC_DOCK_SLIDE_MIN = 8;
 
   // The pills that share the capsule: the four tabs, plus any quick action that was
   // pinned to the dock. The add-songs plus is not one of them.
@@ -36148,7 +36559,7 @@ function _renderAhFromData(artistAlbums){
   function scDockPillEls(){
     var strip = $('actionStrip');
     if(!strip) return null;
-    var track = $('scDockPillTrack'), thumb = $('scDockPillThumb');
+    var track = $('scDockPillTrack'), thumb = $('scDockPillThumb'), seam = $('scDockSeam');
     if(!track){
       track = document.createElement('div');
       track.id = 'scDockPillTrack';
@@ -36157,7 +36568,14 @@ function _renderAhFromData(artistAlbums){
       strip.insertBefore(thumb, strip.firstChild);
       strip.insertBefore(track, strip.firstChild);
     }
-    return { strip: strip, track: track, thumb: thumb };
+    // After the highlight in the markup, so the divider sits ON the lit region
+    // rather than behind it: a cut you cannot see is not a cut.
+    if(!seam){
+      seam = document.createElement('div');
+      seam.id = 'scDockSeam';
+      strip.insertBefore(seam, thumb.nextSibling);
+    }
+    return { strip: strip, track: track, thumb: thumb, seam: seam };
   }
   // Which half of the split Library tab a point is over. The halves are the two
   // triangles of a diagonal cut, so this is the test the clip-path draws: the
@@ -36172,6 +36590,30 @@ function _renderAhFromData(artistAlbums){
       return (((x - r.left) / r.width) + ((y - r.top) / r.height)) < 1 ? pl : al;
     }catch(e){ return seg; }
   }
+  // A POINT IN A SEAM BELONGS TO THE NEARER PILL. The tabs sit a few pixels apart,
+  // so a finger dragged across the dock passes over six pixels of nothing several
+  // times a second - and "nothing" threw the highlight back to the lit tab and
+  // forward again on every seam, a flicker at exactly the moment the dock was being
+  // slid. A seam is inside the capsule, so it answers for the pill beside it; only
+  // BETWEEN two pills, never past the first or the last, because past the last one
+  // is the plus and the plus is not a landing place. The slack up and down is the
+  // same idea for a release that drifts a few pixels off the dock's edge.
+  var SC_DOCK_SEAM_SLACK = 10;
+  function scDockPillSeam(x, y){
+    var rects = scDockPillRects.length ? scDockPillRects : scDockPillMeasure();
+    for(var i = 0; i + 1 < rects.length; i++){
+      var a = rects[i], b = rects[i + 1];
+      if(!a.width || !b.width) continue;
+      if(x <= a.right || x >= b.left) continue;
+      var top = Math.min(a.top, b.top), bottom = Math.max(a.bottom, b.bottom);
+      if(y < top - SC_DOCK_SEAM_SLACK || y > bottom + SC_DOCK_SEAM_SLACK) continue;
+      var seg = (x - a.right) < (b.left - x) ? a : b;
+      var cx = Math.max(seg.left, Math.min(seg.right, x));
+      var cy = Math.max(seg.top, Math.min(seg.bottom, y));
+      return scDockPillHalf(seg.el, cx, cy);
+    }
+    return null;
+  }
   function scDockPillAt(x, y){
     var rects = scDockPillRects.length ? scDockPillRects : scDockPillMeasure();
     for(var i = 0; i < rects.length; i++){
@@ -36180,7 +36622,16 @@ function _renderAhFromData(artistAlbums){
         return scDockPillHalf(r.el, x, y);
       }
     }
-    return null;
+    // ...and the same slack up and down: a finger that comes up four pixels below
+    // the bar is still on the tab the highlight was showing, not in nowhere.
+    for(var j = 0; j < rects.length; j++){
+      var q = rects[j];
+      if(!q.width || !q.height) continue;
+      if(x < q.left || x > q.right) continue;
+      if(y < q.top - SC_DOCK_SEAM_SLACK || y > q.bottom + SC_DOCK_SEAM_SLACK) continue;
+      return scDockPillHalf(q.el, x, Math.max(q.top, Math.min(q.bottom, y)));
+    }
+    return scDockPillSeam(x, y);
   }
   // Where the highlight sits when nothing is being pressed or hovered: the lit tab,
   // or the half of the split Library tab the library is really showing.
@@ -36202,14 +36653,56 @@ function _renderAhFromData(artistAlbums){
     var sr = strip.getBoundingClientRect();
     var r = target.getBoundingClientRect();
     var left = r.left, width = r.width, top = r.top, height = r.height;
+    var half = null, pill = null;
     if(target.id === 'albumsHalf' || target.id === 'playlistsHalf'){
       var pr = target.parentNode.getBoundingClientRect();
+      half = target.id === 'albumsHalf' ? 'al' : 'pl';
+      pill = pr;
       left = pr.left + (target.id === 'albumsHalf' ? pr.width / 2 : 0);
       width = pr.width / 2;
       top = pr.top;
       height = pr.height;
     }
-    return { left: left - sr.left, top: top - sr.top, width: width, height: height };
+    // The viewport box as well as the dock-relative one: the shape of a half is
+    // measured against the divider, which lives in the pill's own coordinates, and
+    // the clip-path is written in the percentages of the highlight's own box.
+    return { left: left - sr.left, top: top - sr.top, width: width, height: height,
+             vleft: left, vtop: top, vright: left + width, vbottom: top + height,
+             half: half, pill: pill };
+  }
+  // THE SHAPE OF A HALF. The divider runs the pill's full width: from its top-right
+  // corner to its bottom-left one, which is the line `scDockPillHalf` tests a point
+  // against. The highlight is the region of the box on that half's side of it, found
+  // by clipping the box against the line itself - so the shape is derived from the
+  // same expression the hit test uses and the two cannot drift apart.
+  function scDockDividerPoly(b){
+    try{
+      var pr = b.pill;
+      if(!b.half || !pr || !pr.width || !pr.height) return '';
+      // The highlight sits 4px inside the half, the same inset the capsule gives it.
+      var box = { left: b.vleft + 4, top: b.vtop + 4, right: b.vright - 4, bottom: b.vbottom - 4 };
+      if(!(box.right > box.left) || !(box.bottom > box.top)) return '';
+      // Negative on the top-left (Playlists) side of the divider, positive below it.
+      function f(x, y){ return ((x - pr.left) / pr.width) + ((y - pr.top) / pr.height) - 1; }
+      var keep = b.half === 'pl' ? -1 : 1;
+      var poly = [[box.left, box.top], [box.right, box.top], [box.right, box.bottom], [box.left, box.bottom]];
+      var out = [];
+      for(var i = 0; i < poly.length; i++){
+        var p = poly[i], q = poly[(i + 1) % poly.length];
+        var fp = f(p[0], p[1]) * keep, fq = f(q[0], q[1]) * keep;
+        if(fp >= 0) out.push(p);
+        if((fp >= 0) !== (fq >= 0)){
+          var t = fp / (fp - fq);
+          out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+        }
+      }
+      if(out.length < 3) return '';
+      var w = Math.max(1, box.right - box.left), h = Math.max(1, box.bottom - box.top);
+      return 'polygon(' + out.map(function(pt){
+        return (((pt[0] - box.left) / w) * 100).toFixed(1) + '% ' +
+               (((pt[1] - box.top) / h) * 100).toFixed(1) + '%';
+      }).join(', ') + ')';
+    }catch(e){ return ''; }
   }
   function scDockPillMark(el){
     try{
@@ -36237,12 +36730,37 @@ function _renderAhFromData(artistAlbums){
       e.track.style.width = (last.right - first.left + 8) + 'px';
       e.track.style.height = (first.height + 8) + 'px';
       var t = scDockPillHotEl || scDockPillRest();
-      if(!t){ e.thumb.style.width = '0px'; return; }
+      if(!t){ e.thumb.style.width = '0px'; e.thumb.style.clipPath = ''; return; }
       var b = scDockPillBox(t, e.strip);
       e.thumb.style.width = Math.max(0, b.width - 8) + 'px';
       e.thumb.style.height = Math.max(0, b.height - 8) + 'px';
       e.thumb.style.top = Math.max(0, b.top + 4) + 'px';
       e.thumb.style.transform = 'translateX(' + (b.left + 4) + 'px)';
+      // A half of the split Library tab wears the diagonal; every other pill is its
+      // own rounded box and needs no clip at all.
+      e.thumb.style.clipPath = b.half ? scDockDividerPoly(b) : '';
+      // The divider, on the split tab's own box: corner to corner, so its length is
+      // that box's diagonal and its angle is that diagonal's. Five pixels are taken
+      // off each end so the line sits inside the capsule's curve.
+      if(e.seam){
+        var lib = $('libraryBtn');
+        if(lib && lib.parentNode === e.strip){
+          var lr = lib.getBoundingClientRect();
+          if(lr.width && lr.height){
+            var len = Math.sqrt(lr.width * lr.width + lr.height * lr.height);
+            var ang = Math.atan2(lr.height, lr.width) * 180 / Math.PI;
+            e.seam.style.display = '';
+            e.seam.style.width = Math.max(0, len - 10) + 'px';
+            e.seam.style.left = (lr.left - sr.left + lr.width / 2) + 'px';
+            e.seam.style.top = (lr.top - sr.top + lr.height / 2) + 'px';
+            e.seam.style.transform = 'translate(-50%, -50%) rotate(' + (180 - ang).toFixed(2) + 'deg)';
+          } else {
+            e.seam.style.display = 'none';
+          }
+        } else if(e.seam) {
+          e.seam.style.display = 'none';
+        }
+      }
     }catch(e){}
   }
   function scDockPillApply(on){
@@ -36264,17 +36782,43 @@ function _renderAhFromData(artistAlbums){
     var strip = $('actionStrip');
     if(!strip || window.__scDockPillWired) return;
     window.__scDockPillWired = true;
+    function endSlide(){
+      scDockPillSlide = false;
+      try{ document.body.classList.remove('sc-dock-dragging'); }catch(_eDockEnd){}
+    }
     function offDrag(){
       try{
         window.removeEventListener('pointermove', onDrag, true);
         window.removeEventListener('pointerup', onDrop, true);
         window.removeEventListener('pointercancel', onDrop, true);
       }catch(e){}
+      endSlide();
     }
     function onDrag(ev){
       if(!scDockPillOn || !scDockPillDown) return;
+      // The dead zone. Until the finger has travelled SC_DOCK_SLIDE_MIN this is still
+      // the press it started as, and the highlight stays where the press put it - so a
+      // thumb that wobbles across the divider of the split tab does not light a half
+      // it did not mean, and the release that follows it answers the half it landed on.
+      if(!scDockPillSlide){
+        if(Math.abs(ev.clientX - scDockPillDownX) < SC_DOCK_SLIDE_MIN &&
+           Math.abs(ev.clientY - scDockPillDownY) < SC_DOCK_SLIDE_MIN) return;
+        scDockPillSlide = true;
+        // From here the finger owns the highlight: the spring is for the settle.
+        try{ document.body.classList.add('sc-dock-dragging'); }catch(_eDockDr){}
+      }
+      // Nothing under the finger - off the dock, or over the plus - is a drag that is
+      // going to open nothing, so the highlight goes back to the lit tab and says so
+      // while there is still time to change your mind. It is null, not the pill the
+      // press came from: sync falls back to the rest position and the mark is cleared.
       var t = scDockPillAt(ev.clientX, ev.clientY);
-      if(t && t !== scDockPillHotEl){
+      if(t !== scDockPillHotEl){
+        // One tick per CROSSING, not one per pointermove: the finger has moved from
+        // one tab to the next, and the phone says so the way the rest of this app
+        // marks a boundary. A mouse does not buzz - it is already previewing.
+        if(t && scDockPillHotEl && ev.pointerType && ev.pointerType !== 'mouse'){
+          try{ if(navigator.vibrate) navigator.vibrate(5); }catch(_eDockTick){}
+        }
         scDockPillHotEl = t;
         scDockPillMark(t);
         scDockPillSync();
@@ -36282,10 +36826,22 @@ function _renderAhFromData(artistAlbums){
     }
     function onDrop(ev){
       var down = scDockPillDown;
+      var slid = scDockPillSlide;
       scDockPillDown = null;
       offDrag();
       if(!scDockPillOn || !down) return;
-      var up = scDockPillAt(ev.clientX, ev.clientY) || down;
+      // A press that never became a slide is the press's own target, whatever the
+      // finger's last pixel was doing - that is the dead zone answering a tap, and it
+      // is also the half of the split tab the thumb came down on. A real slide is a
+      // choice; a slide that ended off the dock (or on the plus) is a cancel, and the
+      // press's own tab - whose click is still on its way - is what answers it.
+      var landed = scDockPillAt(ev.clientX, ev.clientY);
+      // THE HIGHLIGHT IS THE PROMISE. A slide that ended a few pixels below the dock
+      // used to open nothing at all, while the highlight was still sitting on the
+      // tab it looked like it was going to take. Whatever the highlight shows when
+      // the finger comes up is what the slide takes; a drag that really left the
+      // dock already put the highlight back on the lit tab, so that still cancels.
+      var up = slid ? (landed || scDockPillHotEl || down) : down;
       if(up !== down){
         // A slide is a choice: the tab the finger finished on is activated first -
         // while the swallow below is still off, so this click is not the one it
@@ -36309,6 +36865,9 @@ function _renderAhFromData(artistAlbums){
       if(!scDockPillOn) return;
       scDockPillSwallow = false;      // a new press is never the old press's business
       scDockPillMeasure();
+      scDockPillSlide = false;
+      scDockPillDownX = ev.clientX;
+      scDockPillDownY = ev.clientY;
       var t = scDockPillAt(ev.clientX, ev.clientY);
       if(!t) return;                 // the plus and the menu are their own thing
       scDockPillDown = t;
@@ -45194,6 +45753,15 @@ var _aiTyping = false;
 // built into the app, so the status line can say which one answered.
 var _aiBusyFallback = false;
 
+// 74.1.9 - the Ask drawer asks the same knowledge base the Support chat does, so
+// a question typed next to the music is answered from the app itself.
+window.__scAiLookup = function(q){
+  try{
+    if(typeof _aiFuzzyMatch !== 'function') return '';
+    var entry = _aiFuzzyMatch(String(q || ''));
+    return (entry && entry.a) ? String(entry.a) : '';
+  }catch(_e){ return ''; }
+};
 // Knowledge base: question → answer pairs
 var _aiKB = [
   // ═══ GETTING STARTED ═══
@@ -45882,6 +46450,20 @@ window.showSettingsTab = showSettingsTab;
   window.__scAudios = function(){ return audios; };
   window.__scPlaybackSpeed = function(){ return playbackSpeed; };
   window.__scSelectedIds = function(){ return Array.from(selectedIds); };
+  window.__scActivePlaylist = function(){ return String(activePlaylist || ''); };
+  // Undo for a playlist the drawer created: the same cleanup deletePlaylist() does,
+  // without the confirm - the drawer has already asked.
+  window.__scDropPlaylist = function(name){
+    if(!name || !playlists[name]) return false;
+    delete playlists[name];
+    try{
+      if(hiddenPlaylists.has(name)){ hiddenPlaylists.delete(name); dbPut('meta', { key: 'hiddenPlaylists', value: Array.from(hiddenPlaylists) }); }
+      if(djDisabledPlaylists.has(name)){ djDisabledPlaylists.delete(name); dbPut('meta', { key: 'djDisabledPlaylists', value: Array.from(djDisabledPlaylists) }); }
+    }catch(_eClean){}
+    if(activePlaylist === name) activePlaylist = 'All Songs';
+    saveMeta(); renderTabs(); renderList();
+    return true;
+  };
   window.__scEnterSelect = function(ids){ selectMode = true; selectedIds = new Set(ids || []); renderList(); };
   window.__scPersistTrack = function(t){ return persistTrackMeta(t); };
   window.__scRenderList = function(){ renderList(); };
@@ -50378,6 +50960,291 @@ window.showAlbumReorderPopup = function(albumName){
   window.SCACT = SCACT;
 
   /* --------------------------------------------------------------------------
+     74.1.9 - ASK SIDECUT
+     --------------------------------------------------------------------------
+     One button, where the music is, opening a drawer that knows what is selected.
+     A sentence becomes a PLAN - a list of typed steps against the app's own
+     functions - and NOTHING runs until Do it is tapped. The old acting layer
+     (window.SCACT) ran the sentence as it was typed; this one shows the same kind
+     of work as steps first, and leaves an Undo behind.
+     -------------------------------------------------------------------------- */
+  var SCAI = (function(){
+    var built = false, sheet, backdrop, input, logEl, planEl, ctxEl, doBtn, cancelBtn, sendBtn;
+    var lastPlan = null;
+
+    function tracks(){ return call('__scAllTracks') || []; }
+    function playlists(){ return call('__scPlaylists') || {}; }
+    function selection(){ return call('__scSelectedIds') || []; }
+    function esc(s){
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+      });
+    }
+    function trackName(id){
+      var t = tracks().filter(function(x){ return x.id === id; })[0];
+      return t ? String(t.name || 'a song') : 'a song';
+    }
+
+    // ---- THE PLAN -------------------------------------------------------------
+    // A tiny, declared grammar. It is deliberately not a free-text interpreter: every
+    // thing the drawer can do is a step kind listed here, and anything outside it is
+    // answered, or offered as one sentence for the existing acting layer to run.
+    function planFor(text){
+      var raw = String(text || '').trim();
+      var low = raw.toLowerCase();
+      var sel = selection();
+      var steps = [];
+      if(!low) return { reply: 'Ask me to make a playlist, set a crossfade, or turn DJ mode on.', steps: steps };
+
+      // 1. A playlist, optionally named.
+      // Matched against the RAW sentence, not the lowercased one: the name the owner
+      // typed keeps its capitals, so "Night Drive" stays "Night Drive".
+      var pm = raw.match(/(?:make|create|build|start|new)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:new\s+)?playlist(?:\s+(?:called|named|for)\s+["\u201c']?([^"\u201d'.,;]+)["\u201d']?)?/i);
+      if(!pm) pm = raw.match(/playlist\s+(?:called|named)\s+["\u201c']?([^"\u201d'.,;]+)["\u201d']?/i);
+      var plName = '';
+      if(pm){
+        plName = pm[1] ? String(pm[1]).trim() : '';
+        // "called Night Drive from these songs with a 6 second crossfade" - the name
+        // ends where the next instruction begins.
+        plName = plName.replace(/\s+(?:with|and|from|that|using|then|cross\s*-?\s*fade|dj\b|crossfade\b).*$/i, '').trim();
+        if(!plName) plName = 'New playlist';
+        if(/^(them|these|those|this|the)$/i.test(plName)) plName = 'New playlist';
+      }
+      var wantsThese = /(these songs|this selection|these tracks|selected|selection|them|these)\b/.test(low);
+      if(plName){
+        var existing = playlists()[plName];
+        if(!sel.length){
+          steps.push({ kind: 'note', text: 'Pick the songs first - tick them in the library, then ask me again.', bad: true });
+        } else if(existing && existing.length){
+          steps.push({ kind: 'playlist',
+            label: 'Add ' + sel.length + ' selected song' + (sel.length === 1 ? '' : 's') + ' to the existing playlist "' + plName + '"',
+            name: plName, ids: sel.slice(), add: true });
+        } else {
+          steps.push({ kind: 'playlist',
+            label: 'Create the playlist "' + plName + '" with ' + sel.length + ' selected song' + (sel.length === 1 ? '' : 's'),
+            name: plName, ids: sel.slice(), add: false });
+        }
+      } else if(wantsThese && !/(crossfade|dj mode)/.test(low) && sel.length) {
+        steps.push({ kind: 'note', text: 'Tell me the playlist name - "make a playlist called Late Night from these songs".', bad: true });
+      }
+
+      // 2. Crossfade.
+      // Both ways people say it: "crossfade 9" and "a 9 second crossfade".
+      var cm = low.match(/cross\s*-?\s*fade(?:\s*(?:of|to|at|for))?\s*(\d+(?:\.\d+)?)/);
+      if(!cm) cm = low.match(/(\d+(?:\.\d+)?)\s*(?:s\b|sec\b|secs\b|second[s]?\b)\s*(?:long\s+)?cross\s*-?\s*fade/);
+      if(cm) steps.push({ kind: 'crossfade', label: 'Set the crossfade to ' + Math.max(0, Math.min(12, Math.round(Number(cm[1])))) + 's', sec: Number(cm[1]) });
+
+      // 3. DJ mode for the playlist being made, or the one on screen.
+      var dm = low.match(/\bdj(?:\s*mode)?\s*(on|off)\b/);
+      if(dm){
+        var djName = plName || call('__scActivePlaylist') || '';
+        if(djName) steps.push({ kind: 'dj', label: 'Turn DJ mode ' + dm[1] + ' for "' + djName + '"', name: djName, on: dm[1] === 'on' });
+      }
+
+      if(steps.length){
+        var good = steps.filter(function(s){ return !s.bad; });
+        var reply = good.length
+          ? 'Here is the plan - nothing has changed yet.'
+          : steps[0].text;
+        return { reply: reply, steps: steps, summary: good.map(function(s){ return s.label; }).join('; ') };
+      }
+
+      // 4. Nothing in the grammar: let the existing acting layer carry one sentence,
+      //    but only after the owner taps Do it.
+      var action = { kind: 'action', label: 'Carry out: "' + raw + '"', text: raw };
+      var kb = '';
+      try{ kb = (typeof window.__scAiLookup === 'function') ? window.__scAiLookup(raw) : ''; }catch(_eKb){}
+      if(kb){
+        return { reply: kb.replace(/\*\*/g, ''), steps: [], fromKB: true };
+      }
+      return { reply: 'I can do that one if you tap Do it - or ask it in Settings \u2192 Support for a full answer.', steps: [action], summary: raw };
+    }
+
+    // ---- RUNNING IT ------------------------------------------------------------
+    function runPlan(p){
+      var before = JSON.parse(JSON.stringify(playlists() || {}));
+      var done = [], undo = [];
+      p.steps.forEach(function(st){
+        try{
+          if(st.bad) return;
+          if(st.kind === 'playlist'){
+            var ids = st.add ? ((before[st.name] || []).slice()) : st.ids.slice();
+            if(st.add) st.ids.forEach(function(id){ if(ids.indexOf(id) === -1) ids.push(id); });
+            call('__scSetPlaylist', st.name, ids);
+            done.push(st.label);
+          }
+          if(st.kind === 'crossfade'){
+            st.prev = call('__scSetCrossfade', st.sec);
+            done.push(st.label);
+          }
+          if(st.kind === 'dj'){
+            st.prev = call('__scSetDjDisabled', st.name, st.on);
+            done.push(st.label);
+          }
+          if(st.kind === 'action'){
+            var r = (window.SCACT && window.SCACT.tryRun) ? window.SCACT.tryRun(st.text) : null;
+            st.result = r;
+            if(r) done.push(r);
+          }
+        }catch(e){ st.failed = true; }
+      });
+      // Undo is the whole bookkeeping: playlist bodies go back exactly, a playlist the
+      // drawer created is taken away, and the two switches return to their old values.
+      var crossfadeStep = p.steps.filter(function(s){ return s.kind === 'crossfade'; })[0];
+      var djStep = p.steps.filter(function(s){ return s.kind === 'dj'; })[0];
+      toastWithUndo('Done - ' + (done[0] || 'that is set'), function(){
+        Object.keys(playlists()).forEach(function(n){ if(!(n in before)) call('__scDropPlaylist', n); });
+        Object.keys(before).forEach(function(n){
+          var now = (playlists()[n] || []).join(',');
+          if(now !== before[n].join(',')) call('__scSetPlaylist', n, before[n]);
+        });
+        if(crossfadeStep && crossfadeStep.prev != null) call('__scSetCrossfade', crossfadeStep.prev);
+        if(djStep && djStep.prev != null) call('__scSetDjDisabled', djStep.name, djStep.prev);
+      });
+      return done;
+    }
+
+    // ---- THE DRAWER ------------------------------------------------------------
+    function build(){
+      if(built) return;
+      built = true;
+      backdrop = document.createElement('div');
+      backdrop.id = 'scAiBackdrop';
+      backdrop.innerHTML =
+        '<div class="sc-sheet" id="scAiSheet" role="dialog" aria-modal="true" aria-label="Ask SideCut">' +
+          '<div class="sc-sheet-grip"></div>' +
+          '<div class="sc-sheet-head"><h3>Ask SideCut</h3>' +
+            '<button class="icon-btn" id="scAiClose" title="Close" style="width:32px;height:32px;">\u2715</button></div>' +
+          '<div id="scAiBody">' +
+            '<div class="scai-ctx" id="scAiCtx"></div>' +
+            '<div class="scai-log" id="scAiLog"></div>' +
+            '<div class="scai-plan" id="scAiPlan"></div>' +
+            '<div class="scai-chips">' +
+              '<button data-scai-chip="crossfade 6">crossfade 6s</button>' +
+              '<button data-scai-chip="dj mode on">DJ mode on</button>' +
+              '<button data-scai-chip="make a playlist called Late Night from these songs">playlist from these</button>' +
+            '</div>' +
+            '<div class="scai-row"><input id="scAiInput" type="text" autocomplete="off" placeholder="Ask anything - or tell me what to do">' +
+              '<button id="scAiPlanBtn">Plan</button></div>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(backdrop);
+      sheet = backdrop.querySelector('#scAiSheet');
+      input = backdrop.querySelector('#scAiInput');
+      logEl = backdrop.querySelector('#scAiLog');
+      planEl = backdrop.querySelector('#scAiPlan');
+      ctxEl = backdrop.querySelector('#scAiCtx');
+      sendBtn = backdrop.querySelector('#scAiPlanBtn');
+      doBtn = null; cancelBtn = null;
+      backdrop.addEventListener('click', function(e){ if(e.target === backdrop) close(); });
+      backdrop.querySelector('#scAiClose').addEventListener('click', close);
+      sendBtn.addEventListener('click', ask);
+      input.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); ask(); } });
+      Array.prototype.forEach.call(backdrop.querySelectorAll('[data-scai-chip]'), function(b){
+        b.addEventListener('click', function(){ input.value = b.dataset.scaiChip; ask(); });
+      });
+    }
+
+    function message(text, who){
+      var el = document.createElement('div');
+      el.className = 'scai-msg' + (who === 'me' ? ' me' : '');
+      el.textContent = String(text || '').replace(/\*\*/g, '');
+      logEl.appendChild(el);
+      logEl.scrollTop = logEl.scrollHeight;
+      return el;
+    }
+
+    function renderPlan(p){
+      lastPlan = (p && p.steps && p.steps.filter(function(s){ return !s.bad; }).length) ? p : null;
+      planEl.innerHTML = '';
+      if(!lastPlan){ planEl.classList.remove('on'); return; }
+      planEl.classList.add('on');
+      var head = document.createElement('div');
+      head.style.cssText = 'font-size:11px;letter-spacing:0.4px;text-transform:uppercase;color:var(--coral);margin-bottom:4px;';
+      head.textContent = 'Plan - nothing has changed yet';
+      planEl.appendChild(head);
+      lastPlan.steps.forEach(function(st, i){
+        var row = document.createElement('div');
+        row.className = 'scai-step';
+        row.innerHTML = '<b>' + (i + 1) + '.</b><span>' + esc(st.label) + '</span>';
+        planEl.appendChild(row);
+      });
+      var acts = document.createElement('div');
+      acts.className = 'scai-acts';
+      doBtn = document.createElement('button');
+      doBtn.id = 'scAiDoBtn';
+      doBtn.textContent = 'Do it';
+      cancelBtn = document.createElement('button');
+      cancelBtn.id = 'scAiCancelBtn';
+      cancelBtn.textContent = 'Cancel';
+      acts.appendChild(cancelBtn);
+      acts.appendChild(doBtn);
+      planEl.appendChild(acts);
+      cancelBtn.addEventListener('click', function(){
+        planEl.classList.remove('on');
+        planEl.innerHTML = '';
+        lastPlan = null;
+        message('Cancelled - nothing was changed.');
+      });
+      doBtn.addEventListener('click', function(){
+        var p2 = lastPlan;
+        lastPlan = null;
+        planEl.classList.remove('on');
+        planEl.innerHTML = '';
+        if(!p2) return;
+        var done = runPlan(p2);
+        close();
+        if(!done.length) toast('Nothing was changed.');
+      });
+    }
+
+    function ask(){
+      var text = String(input.value || '').trim();
+      if(!text) return;
+      build();
+      message(text, 'me');
+      input.value = '';
+      var p = planFor(text);
+      message(p.reply);
+      renderPlan(p);
+      updateCtx();
+      try{ if(window.__scMarkAiUsed) window.__scMarkAiUsed(); }catch(_e){}
+    }
+
+    function updateCtx(){
+      var sel = selection();
+      var n = sel.length;
+      ctxEl.textContent = n
+        ? (n + ' song' + (n === 1 ? '' : 's') + ' selected' + (n <= 3 ? ' \u00b7 ' + sel.map(trackName).join(', ') : ''))
+        : ('Your library \u00b7 ' + tracks().length + ' songs');
+    }
+
+    function open(){
+      build();
+      updateCtx();
+      backdrop.classList.add('in');
+      setTimeout(function(){ try{ input.focus(); }catch(_e){ } }, 60);
+    }
+    function close(){
+      if(backdrop) backdrop.classList.remove('in');
+    }
+
+    // The two ways in, wired here because this block is the one that owns the drawer.
+    try{
+      var hb = document.getElementById('homeAiBtn');
+      if(hb) hb.addEventListener('click', open);
+      var sb = document.getElementById('selectAskBtn');
+      if(sb) sb.addEventListener('click', open);
+    }catch(_eWire){}
+
+    return {
+      open: open, close: close, plan: planFor, run: runPlan,
+      isOpen: function(){ return !!(backdrop && backdrop.classList.contains('in')); }
+    };
+  })();
+  window.SCAI = SCAI;
+
+  /* --------------------------------------------------------------------------
      11. THE STUDIO VIEW
      -------------------------------------------------------------------------- */
   function navigate(view){
@@ -51638,7 +52505,11 @@ window.showAlbumReorderPopup = function(albumName){
     ['#djSyncBtn', 'djSync'],
     ['#djLoopBtn', 'djLoop'],
     ['#djRecordBtn', 'djRecord'],
-    ['#beatRepeatLockBtn', 'beatRepeat'],
+    // '#beatRepeatLockBtn' used to be here, and it credited "Beat repeat" - "Hold a
+    // beat repeat" - by turning Loop Lock ON: a switch over whatever is loaded, not
+    // a hold on a pad. The pad credits it itself (scBeatRepeatCredit, in the deck's
+    // block), so it is deliberately NOT in this table: a click table would count the
+    // same gesture twice.
     ['#tapeStopBtn', 'tapeStop'],
     ['#spinbackBtn', 'spinback'],
     ['#customThemeSave', 'customTheme'],

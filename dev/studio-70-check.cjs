@@ -2275,8 +2275,8 @@ const realErrors = (errors) => errors.filter((e) =>
       'the dock markup still holds the four tabs');
     ok(dockMarkup.indexOf('scDockPillTrack') === -1 && dockMarkup.indexOf('scDockPillThumb') === -1,
       'and no capsule or highlight is written into it');
-    ok(cnt('#scDockPillTrack, #scDockPillThumb{') === 1,
-      'the capsule and the highlight are styled once');
+    ok(cnt('#scDockPillTrack, #scDockPillThumb, #scDockSeam{') === 1,
+      'the capsule, the highlight and the divider are styled once');
     ok(/z-index: -1; pointer-events: none;/.test(html) &&
        /body\.sc-dock-pill #scDockPillTrack, body\.sc-dock-pill #scDockPillThumb\{ display: block; \}/.test(html),
       'and drawn behind the labels, shown only when the dock is joined');

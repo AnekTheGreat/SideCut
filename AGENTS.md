@@ -2,6 +2,43 @@
 
 ## 74.1.9 (October 16, 2026): The album follows the song, the views arrive, the dock can be one pill - and two repairs the same owner asked for
 
+- **THE SECOND ROUND OF 74.1.9: "make the app nicer to use", and three faults on the destructive paths.** Found by following what a thumb presses, then proven on
+  the page before the change. (1) **"Clear playlist" and "Delete all songs" removed nothing and said "Deleted"**: both are drawn only in the playlist / All Songs view
+  and both call `deleteAllInView()`, whose whole body is an `if(libraryMode === 'albums')` branch followed by `toast('Deleted')` - so in the two places they exist the
+  branch was false. Driven on the old page with `window.confirm` stubbed to **true**, Clear playlist on a three-song list left the list unchanged and the toast read
+  `"Deleted"`. (2) **every song delete asked through `window.confirm()`**, which this file documents the Android WebView as swallowing (it returns false) - the exact
+  reason `modalConfirm()` was added for playlist delete in 71.9; the covers reset, both "album already exists - merge?" paths and the update-reload prompt were the last
+  four, and the page now has **no `confirm(` call at all**. (3) **a delete was final.** `scDeleteSongs()` is the one path now (deleteTrack and deleteAllInView both
+  route through it): it asks in the app, snapshots the track at its index, its index in **every** playlist, its queue slot and its IndexedDB record (`dbGet` before
+  `dbDelete`), and `scUndoSongDelete()` puts all of it back - a fresh object URL, memberships spliced at their old indexes, the record written back so it survives a
+  restart, and the now bar back with the song paused if it was the one playing. `deleteAllInView`'s three cases now keep three different promises (clear the playlist /
+  delete from the library / remove from albums with per-id album positions restored by Undo), and the duplicates review is one delete with one undo.
+- **THE GATE THAT DRIVES IT:** `dev/undo-delete-check.cjs` (wired into `dev/gates.sh`) presses the row kebab, the confirm sheet and the toast's Undo: **56/0** on this
+  tree, **17 named reds** on the pre-change page. The old-page control above is the bug in one line: unchanged storage, rows still on screen, toast `"Deleted"`.
+  `dev/patch-74110-destructive.py` is the record of the 11 edits (`--check` probes the shipped tree). The toast is a `role="status" aria-live="polite"` region and can
+  be flicked up (24px) without the click that follows opening the song list behind it.
+- **HARNESS NOTE FOR THIS WORKSPACE.** The full battery needs **jsdom 30** (for `requestInterceptor` and for this page's modern CSS - jsdom 26 reports
+  `Could not parse CSS stylesheet` on a stylesheet this tree did not touch) and `acorn` resolvable from the repo. With both, `sh dev/gates.sh` is green except the
+  carried `media-controls-check` failure, which a pristine `git show HEAD:index.html` reproduces. OTA after the whole release: **984 576** bytes sideload, **984 586** Play,
+  fixed point reached in two passes.
+- **THE BUBBLE SIZE THAT WAS MISSING, AND THE RESET THAT DID NOT RESET.** *"there should be like an inbetween settings for the bubble size like in the middle but without all that
+  gap but not too little"*. Home jumped automatic **118px** -> tall **158px** with nothing between, and Sandbox's height stepper moved in whole 118px steps (118 or 236 - the
+  card-with-a-hole). Now: a **Medium** preset at **146px** (`hb-size-medium`, in the expand chip's cycle between small and automatic, with `justify-content:center` so its extra
+  height is shared above and below the words), and **half steps** on H (`HB_EXACT_STEP = 0.5`, so 1.5x = 177px, stored as a clean 1.5). The chip's walk gained Medium and the
+  first tap on an untouched bubble still goes to tall. While driving it, the gate found that **`Reset to automatic` cleared only `homeBubbleExact`** - the chip's presets live in
+  `homeBubbleSizes`, so a chip-sized bubble stayed sized while the toast promised otherwise; it clears both now. `dev/home-bubble-size-check.cjs` (in `dev/gates.sh`): **23/0** here,
+  **10 named reds** on the pre-change page. OTA **984 576** / **984 586**, trio **20 / 52 / 24**. The 146px itself is chosen from its two neighbours, not from a screenshot.
+- **THE AI BUTTON, BUILT: ASK SIDECUT.** *"do the ai thig push that"*. The drawer lives in the Studio block beside `window.SCACT`: a sparkle in the **Home header**
+  (`#homeAiBtn`) and one on the **multi-select bar** (`#selectAskBtn`) open `#scAiBackdrop`, whose context chip names the selection. A sentence becomes a **PLAN** of typed
+  steps (playlist create/append, crossfade, DJ-mode switch, or one delegated SCACT sentence) and **nothing runs until Do it**; Cancel leaves the library untouched; Undo
+  restores playlist bodies, drops a playlist it created and returns the crossfade and DJ flag. Two real bugs were caught by its gate in the first cut: the DJ bridge was
+  written as *disabled* on/off so "dj mode on" wrote the playlist into the **opt-out** set (the opposite), and the crossfade grammar only understood "crossfade 9", not
+  "a 9 second crossfade". `dev/ai-button-check.cjs` (in `dev/gates.sh`): **33/0**, **5 named reds** on the pre-change page. OTA **990 119** / **990 128**. The planner is a
+  declared grammar, not a model; a question falls through to the shipped knowledge base (`__scAiLookup`).
+- **THE AI BUTTON IS SAVED, NOT BUILT.** The owner's *"ai button that I can ask anything with like my songs and it'll do it ... save that idea for later"* is written up
+  in `AI_ASSISTANT_PLAN.md`: what already exists (the Settings -> Support assistant, the 70.0 acting commands), what is missing (a way in from the music, the library as
+  context, a typed tool surface, a preview + undo for bulk plans), and the gates it would need. Nothing in this release touches the assistant.
+
 - **Two messages, one release.** The first asked for three things (the album to follow the song, the views to arrive smoothly, a pill dock under Studio -> Gestures); they
   are section 1-3 of `dev/release-entry.md`, pinned by the gate block `[11s]` and driven by `dev/album-follow-dock-check.cjs`. The second message arrived from the phone
   while the release was being prepared: *"frequent lag spikes inside the app while doing multiple things simultaneously"*, and *"the Spotify to mp3 converter will

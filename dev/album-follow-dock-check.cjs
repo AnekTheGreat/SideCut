@@ -174,9 +174,11 @@ function click(win, el) {
     const strip = html.slice(html.indexOf('<div class="action-strip" id="actionStrip">'), html.indexOf('<div id="addSongsBackdrop"'));
     ok((strip.match(/<button id="[A-Za-z0-9_]+" class="action-pill"/g) || []).length === 4,
       'the dock markup still holds the four tabs and nothing else');
-    ok(strip.indexOf('scDockPillTrack') === -1 && strip.indexOf('scDockPillThumb') === -1,
-      'the capsule is built by the code, not written into the markup');
-    ok(html.indexOf('#scDockPillTrack, #scDockPillThumb{') !== -1, 'the capsule and the highlight are styled');
+    ok(strip.indexOf('scDockPillTrack') === -1 && strip.indexOf('scDockPillThumb') === -1 &&
+       strip.indexOf('scDockSeam') === -1,
+      'the capsule, the highlight and the divider are built by the code, not written into the markup');
+    ok(html.indexOf('#scDockPillTrack, #scDockPillThumb, #scDockSeam{') !== -1,
+      'the capsule, the highlight and the divider are styled');
     ok(html.indexOf('z-index: -1; pointer-events: none;') !== -1,
       'and drawn behind the labels, so no name is covered by them');
     ok(html.indexOf('.sc-view-in{ animation: scViewIn') !== -1, 'the view entrance is a real keyframe animation');
@@ -392,6 +394,134 @@ function click(win, el) {
     await wait(40);
     ok(anc === 1, 'while a plain tap on the split tab still reaches its own handler');
 
+    // ---- THE FEEL THE OWNER ASKED FOR, DRIVEN ---------------------------------
+    // After a day with the joined dock: "make the pill like drag and move nicer it
+    // should feel really smooth and nice and easy to use especially the diagonal
+    // slant that especially and when I'm dragging it and releasing the pill it should
+    // be nice". Three of those are answered below, and each one is driven with real
+    // pointer events over the same geometry rather than read off the file.
+
+    // (1) THE HIGHLIGHT IS THE FINGER'S while the finger is down. The thumb's spring
+    // is what makes a hover preview and a settle feel like something, and it ran under
+    // a live drag as well - so the highlight set off after the thumb and arrived a
+    // quarter of a second later, which is the lag a slide was felt to have. The class
+    // that takes it off is on for the length of a slide and off again on release.
+    win.navigate('home');
+    await wait(80);
+    homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
+    await wait(20);
+    ok(!doc.body.classList.contains('sc-dock-dragging'),
+      'a press on its own takes nothing off the highlight');
+    win.dispatchEvent(pev(win, 'pointermove', 90, 729));
+    await wait(20);
+    ok(doc.body.classList.contains('sc-dock-dragging'),
+      'while it is sliding the highlight has no transition, so it tracks the thumb');
+    ok(th('transform') === 'translateX(14px)', 'and it is still the pill the press was made on', th('transform'));
+    win.dispatchEvent(pev(win, 'pointerup', 90, 729));
+    await wait(120);
+    ok(!doc.body.classList.contains('sc-dock-dragging'),
+      'and the spring is back for the settle the moment the finger is off');
+
+    // (2) THE DEAD ZONE, which is what the diagonal slant needed. A press used to be
+    // a choice the moment it landed: down on Playlists, a thumb that wobbled a few
+    // pixels across the divider lit Albums, and releasing there opened Albums. Nothing
+    // is chosen until the finger has travelled SC_DOCK_SLIDE_MIN, and a press that
+    // never gets there answers the half it landed on.
+    let plClicks = 0, alClicks = 0;
+    plHalf.addEventListener('click', () => { plClicks++; });
+    alHalf.addEventListener('click', () => { alClicks++; });
+    // On the library tab, with Albums on screen, so the half the library is really
+    // showing is a HALF the highlight has to come back to - not the tab of a view
+    // this press never opened.
+    win.navigate('library');
+    await wait(120);
+    ok(libraryBtn.classList.contains('active') && alHalf.classList.contains('active-half'),
+      'the library tab is lit and the library is showing Albums');
+    plHalf.dispatchEvent(pev(win, 'pointerdown', 150, 725));   // Playlists, just above the divider
+    await wait(20);
+    ok(th('transform') === 'translateX(108px)', 'a press lights the half of the split tab it landed on', th('transform'));
+    ok(th('width') === '40px', 'with that half\'s own width', th('width'));
+    win.dispatchEvent(pev(win, 'pointermove', 156, 731));      // 6px, and across the divider
+    await wait(20);
+    ok(th('transform') === 'translateX(108px)',
+      'a wobble of a few pixels over the divider does not move the highlight', th('transform'));
+    win.dispatchEvent(pev(win, 'pointerup', 156, 731));
+    await wait(120);
+    ok(plClicks === 0 && alClicks === 0,
+      'and releasing there chooses neither half: the press answers the one it was made on',
+      { pl: plClicks, al: alClicks });
+    ok(th('transform') === 'translateX(156px)',
+      'while the highlight goes back to the half the library is really showing', th('transform'));
+
+    // (3) A REAL SLIDE STILL LANDS, and the highlight wears the DIVIDER rather than
+    // half of a rounded rectangle. The polygon is read back off the page and a point
+    // each side of the drawn line is tested against it, so "the diagonal slant" is
+    // answered by geometry and not by a picture of it.
+    const polyOf = (s) => {
+      const m = /^polygon\(([^)]*)\)$/.exec(String(s || ''));
+      if (!m) return null;
+      return m[1].split(',').map((p) => p.trim().split(/\s+/).map((v) => parseFloat(v)));
+    };
+    const inPoly = (pts, x, y) => {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+        if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) inside = !inside;
+      }
+      return inside;
+    };
+    // The highlight's own box, the half inset 4px the way the capsule insets it.
+    const AL_BOX = { left: 156, top: 712, right: 196, bottom: 746 };
+    const PL_BOX = { left: 108, top: 712, right: 148, bottom: 746 };
+    const pct = (b, x, y) => [((x - b.left) / (b.right - b.left)) * 100, ((y - b.top) / (b.bottom - b.top)) * 100];
+    plHalf.dispatchEvent(pev(win, 'pointerdown', 110, 715));   // Playlists
+    win.dispatchEvent(pev(win, 'pointermove', 190, 745));      // a real slide: Albums
+    await wait(20);
+    const apoly = polyOf(ty(thumb, 'clipPath') || thumb.style.getPropertyValue('clip-path'));
+    ok(!!apoly && apoly.length >= 3,
+      'the highlight over the Albums half is clipped to the region that half owns', ty(thumb, 'clipPath'));
+    ok(!!apoly && !inPoly(apoly, ...pct(AL_BOX, 160, 716)),
+      'so the corner above the divider is not in it');
+    ok(!!apoly && inPoly(apoly, ...pct(AL_BOX, 170, 730)),
+      'while the region below it is');
+    win.dispatchEvent(pev(win, 'pointerup', 190, 745));
+    await wait(150);
+    ok(alClicks === 1, 'a real slide over the divider still lands on the half it finished in', alClicks);
+    ok(alHalf.classList.contains('active-half'), 'and the library follows it');
+    // It is the same line from the other side: a press on the Playlists half wears the
+    // half that half owns, with the corner the divider cuts away left out.
+    plHalf.dispatchEvent(pev(win, 'pointerdown', 120, 720));
+    await wait(20);
+    const ppoly = polyOf(ty(thumb, 'clipPath') || thumb.style.getPropertyValue('clip-path'));
+    ok(!!ppoly && inPoly(ppoly, ...pct(PL_BOX, 145, 725)),
+      'the Playlists half wears its own side of the same line', ty(thumb, 'clipPath'));
+    ok(!!ppoly && !inPoly(ppoly, ...pct(PL_BOX, 145, 738)),
+      'and the corner the divider cuts away is not in it');
+    win.dispatchEvent(pev(win, 'pointercancel', 120, 720));
+    await wait(80);
+    win.navigate('home');
+    await wait(80);
+    ok((ty(thumb, 'clipPath') || '') === '', 'and a whole pill carries no clip at all', ty(thumb, 'clipPath'));
+
+    // (4) A DRAG THAT OPENS NOTHING SAYS SO. Off the dock, or over the plus, there is
+    // nothing to choose: the highlight goes back to the lit tab while the finger is
+    // still down, the release opens nothing, and the dragging class is never left on
+    // the page for the next press to inherit.
+    win.navigate('home');
+    await wait(80);
+    homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
+    win.dispatchEvent(pev(win, 'pointermove', 60, 400));
+    await wait(20);
+    ok(th('transform') === 'translateX(14px)',
+      'dragged off the dock, the highlight goes back to the tab that is lit', th('transform'));
+    ok(doc.body.classList.contains('sc-dock-dragging'), 'with the slide still live');
+    win.dispatchEvent(pev(win, 'pointerup', 60, 400));
+    await wait(150);
+    ok(homeView.classList.contains('active') && !studioView.classList.contains('active'),
+      'and releasing there opens nothing');
+    ok(!doc.body.classList.contains('sc-dock-dragging'), 'and leaves no dragging class behind');
+    ok(th('clipPath') === '' , 'with the highlight back to a whole pill: no clip', th('clipPath'));
+
     // The plus is never a landing place.
     win.navigate('home');
     await wait(80);
@@ -401,6 +531,84 @@ function click(win, el) {
     await wait(120);
     ok(!studioView.classList.contains('active'), 'a press that starts on the add-songs plus never slides into a tab');
     ok(th('transform') === 'translateX(14px)', 'and the highlight stays where it was', th('transform'));
+
+    // (5) THE SEAMS BETWEEN THE PILLS ARE PART OF THE CAPSULE. The tabs sit six
+    // pixels apart, so a finger dragged across the dock passes over six pixels of
+    // nothing several times a second - and "nothing" used to throw the highlight
+    // back to the lit tab and forward again on every seam, a flicker at exactly the
+    // moment the dock was being slid. A point in a seam answers for the nearer pill.
+    win.navigate('home');
+    await wait(80);
+    ok(R.homeBtn.left + R.homeBtn.width === 100 && R.libraryBtn.left === 104,
+      'the probe\'s own geometry has a four-pixel seam between Home and Library');
+    homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
+    win.dispatchEvent(pev(win, 'pointermove', 101, 729));
+    await wait(20);
+    ok(th('transform') === 'translateX(14px)',
+      'a point in the seam nearer Home keeps the highlight on Home', th('transform'));
+    win.dispatchEvent(pev(win, 'pointermove', 103, 729));
+    await wait(20);
+    ok(th('transform') === 'translateX(108px)',
+      'and the same seam, nearer Library, carries it across without going blank', th('transform'));
+    ok(th('width') === '40px', 'on the half of the split tab the finger is in', th('width'));
+    win.dispatchEvent(pev(win, 'pointerup', 103, 729));
+    await wait(150);
+    ok(libraryBtn.classList.contains('active') && plHalf.classList.contains('active-half'),
+      'and releasing in it opens the tab the seam was nearer to');
+
+    // (6) THE RELEASE TAKES WHAT THE HIGHLIGHT IS SHOWING. A slide that ends a few
+    // pixels below the dock used to open nothing, while the highlight was still
+    // sitting on the tab it looked like it was going to take.
+    win.navigate('home');
+    await wait(80);
+    homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
+    win.dispatchEvent(pev(win, 'pointermove', 340, 754));   // 4px past the dock's edge
+    await wait(20);
+    ok(th('transform') === 'translateX(302px)',
+      'a slide that drifts just past the edge still points at Studio', th('transform'));
+    win.dispatchEvent(pev(win, 'pointerup', 340, 754));
+    await wait(150);
+    ok(studioView.classList.contains('active'), 'and releasing there takes it');
+    ok(!homeView.classList.contains('active'), 'without Home answering too');
+
+    // (7) A TICK PER CROSSING. One short buzz when the finger moves into another
+    // tab - not one per pointermove, and not a burst per seam crossing.
+    win.navigate('home');
+    await wait(80);
+    let ticks = 0;
+    try { Object.defineProperty(win.navigator, 'vibrate', { configurable: true, value: () => { ticks++; return true; } }); } catch (e) {}
+    homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
+    win.dispatchEvent(pev(win, 'pointermove', 110, 729));   // Home -> Library
+    await wait(15);
+    win.dispatchEvent(pev(win, 'pointermove', 112, 729));   // still Library
+    win.dispatchEvent(pev(win, 'pointermove', 240, 729));   // Library -> Discover
+    await wait(15);
+    win.dispatchEvent(pev(win, 'pointerup', 240, 729));
+    await wait(120);
+    ok(ticks === 2, 'two crossings, two ticks - three moves do not make three', ticks);
+    ok(!!doc.querySelector('#scDockSeam'), 'and the divider is a drawn piece of the dock');
+
+    // (8) THE DIVIDER IS THE LINE THE HIT TEST USES. The split tab's box is 96x42,
+    // so its cut runs corner to corner: a line 104.8px long at 156.4 degrees, centred
+    // on the pill. The seam is placed from that same box, so the slant that is drawn
+    // and the region that is lit cannot drift apart.
+    win.navigate('library');
+    await wait(150);
+    const seam = doc.getElementById('scDockSeam');
+    const seamStyle = (p) => (seam && seam.style ? seam.style[p] : '(missing)');
+    const wantW = Math.sqrt(96 * 96 + 42 * 42) - 10;
+    const wantA = 180 - Math.atan2(42, 96) * 180 / Math.PI;
+    const gotAngle = parseFloat((/rotate\(([-0-9.]+)deg\)/.exec(seamStyle('transform')) || [])[1]);
+    ok(Math.abs(parseFloat(seamStyle('width')) - wantW) < 0.2,
+      'the divider spans the split tab corner to corner', seamStyle('width'));
+    ok(Math.abs(gotAngle - wantA) < 0.2,
+      'at the angle of that box\'s diagonal (' + wantA.toFixed(2) + ' vs ' + gotAngle + ')', seamStyle('transform'));
+    // The strip is at (0,700) in this geometry, so the pill's centre - (152,729) on
+    // the page - is (152,29) in the dock's own coordinates.
+    ok(seamStyle('left') === '152px' && seamStyle('top') === '29px',
+      'and it is centred on the pill itself', seamStyle('left') + ' / ' + seamStyle('top'));
+    ok(/translate\(-50%, -50%\)/.test(seamStyle('transform')),
+      'anchored by its centre, so the rotation cannot walk it off the pill');
 
     // The Studio's own switch, end to end, through the published name.
     win.navigate('studio');
@@ -421,7 +629,10 @@ function click(win, el) {
 
   const realErrors = errors.filter((e) =>
     e.indexOf('dbPromise') === -1 && e.indexOf('Not implemented') === -1 &&
-    e.indexOf('Could not parse CSS') === -1 && e.indexOf('offline') === -1);
+    e.indexOf('Could not parse CSS') === -1 && e.indexOf('offline') === -1 &&
+    // The chart fetch is the same offline network as 'offline', reported by the
+    // Discover loader under its own wording. This page has no chart to fetch.
+    e.indexOf('chart unreachable') === -1);
   ok(realErrors.length === 0, 'no unexpected page errors', realErrors.slice(0, 3));
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
