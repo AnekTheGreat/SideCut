@@ -1,5 +1,27 @@
 # SideCut — repository memory
 
+## 74.7 (October 17, 2026 · 4:52 PM EDT): The Ask drawer was invisible - the button worked, and only the keyboard showed
+
+- **THE OWNER, THE SAME WORDS TWICE**: "the ai button literally doesn't do anything ... only the keyboard randomly open[s] up". 74.6's fix - the multi-select bar's
+  sparkle had lost its listener to a redraw - was a real bug and is still right, but it was **not** what he was describing. This is: the drawer opened on both
+  sparkles, focused its input, and painted nothing.
+- **WHY.** The drawer is built from the studio's sheet component, `.sc-sheet`, which ships **hidden** (`opacity: 0; transform: translateY(14px)`) and is revealed only
+  by `.sc-sheet-backdrop.in .sc-sheet`. Ask SideCut's backdrop is `#scAiBackdrop`, not `.sc-sheet-backdrop`, so that reveal never matched. `open()` appended the
+  drawer, added `in` to the backdrop, and focused the input 60 ms later (the keyboard), while the sheet itself stayed a fully transparent layer over most of the
+  screen. A thumb sees nothing; the keyboard is the only evidence anything happened.
+- **PROVEN ON THE SHIPPED 74.6 BUNDLE** before the change: jsdom resolves the cascade, and `getComputedStyle(#scAiSheet).opacity` was **"0"** with the backdrop
+  `in`; after the one rule it is **"1"** (`transform` goes from `translateY(14px)` to `translateY(0)`). `dev/patch-747-ask-visible.py` is the edit.
+- **WHY 74.6 DID NOT CATCH IT.** `dev/ai-button-check.cjs` asked for the class `in`, the input, and a plan - all true of an invisible drawer. It now reads the
+  **computed opacity** at both ways in (Home header and the bar): **40/0** here, **2 named reds** on the shipped 74.6 page (`[0]` both times). Presence, class and
+  focus are not visibility; the cascade is.
+- **THE RELEASE.** `dev/patch-747.py` (74.7, `sidecut-shell-v74.7`, eight head notes) and `dev/repin-747.mjs` (111 edits across 79 gates). OTA at a fixed point:
+  **991544** (`ota/` + root manifests) / **991555** (`ota-play/`), both `--check`s OK with 6 notes each.
+- **VERIFIED ON THE SHIPPED TREE**: `ai-button-check` 40/0, `album-follow-dock-check` 105/0, the rest of the battery green - 56 suites exit 0. The **only** red is
+  the carried `media-controls-check` 66/1 ("fires every half hour"), months old and untouched here.
+- **NOT VERIFIED**: nothing ran on a phone. The proof is the cascade in jsdom plus the gate that reads it; the felt result of the drawer appearing under a thumb is
+  the owner's to confirm once the published bundle he polls has moved, which is this commit.
+- **NEXT RELEASE**: `74.8` for another fix inside 74.7, or `75.0` for the next feature. Shell cache `sidecut-shell-v74.7`.
+
 ## 74.6 (October 17, 2026 · 3:58 PM EDT): The Ask button on the multi-select bar - the one button on that bar with no listener
 
 - **THE OWNER'S REPORT, VERBATIM**: "the ai button doesn't do anything". Two sparkles open Ask SideCut: `#homeAiBtn` in the Home header and `#selectAskBtn` on the

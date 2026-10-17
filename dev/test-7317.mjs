@@ -30,12 +30,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 
-const VER = '74.6'; /* repinned by dev/repin-746.mjs */
+const VER = '74.7'; /* repinned by dev/repin-747.mjs */
 // 73.5 - the notes-shape checks below read THIS release's entry, not whatever
 // happens to head the changelog now (the same OWN split test-725 uses).
 const OWN = '73.1.7';
-const PREV = '74.5'; /* repinned by dev/repin-746.mjs */ /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */
-const SHELL_CACHE = 'sidecut-shell-v74.6';
+const PREV = '74.6'; /* repinned by dev/repin-747.mjs */ /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */
+const SHELL_CACHE = 'sidecut-shell-v74.7';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };

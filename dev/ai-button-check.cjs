@@ -111,6 +111,11 @@ const pls = () => meta('playlists') || {};
   const win = dom.window;
   await wait(7000);
   const doc = win.document;
+  // What a thumb sees is the CASCADE, not a class name. The sheet is a `.sc-sheet`, which
+  // starts at opacity 0; 74.6 gave the backdrop its `in` class and the class check passed
+  // while the drawer was a fully transparent layer with a focused input - the button looked
+  // dead and only the keyboard came up. jsdom resolves opacity and transform, so read them.
+  const sheetOpacity = () => Number(win.getComputedStyle(doc.getElementById('scAiSheet')).opacity);
 
   console.log('[1] one button, where the music is');
   {
@@ -122,6 +127,7 @@ const pls = () => meta('playlists') || {};
     const bd = doc.getElementById('scAiBackdrop');
     ok(!!bd && bd.classList.contains('in'), 'tapping it opens the drawer');
     ok(!!doc.getElementById('scAiInput'), 'with an input to ask in');
+    ok(sheetOpacity() === 1, 'and the sheet is actually visible, not a transparent layer', sheetOpacity());
   }
 
   // The rest of the gate drives the drawer. On a page without the button there is
@@ -150,6 +156,7 @@ const pls = () => meta('playlists') || {};
     await wait(150);
     ok(doc.getElementById('scAiBackdrop').classList.contains('in'), 'tapping the bar\'s button opens the drawer');
     ok(/2 songs selected/.test(doc.getElementById('scAiCtx').textContent), 'with the two ticked songs as its context');
+    ok(sheetOpacity() === 1, 'and the bar opens something you can see', sheetOpacity());
     click(win, doc.getElementById('scAiClose'));
     await wait(120);
     click(win, doc.getElementById('selectCancelBtn'));
