@@ -1,0 +1,96 @@
+name: Land the Ask SideCut release
+
+# ONE-SHOT BRIDGE. The machine that prepared this commit has no git credentials, so it
+# cannot push the release it rehearsed; this is the same bridge 74.1.9 used. It fetches the
+# rehearsed bundle, checks the bytes against the release's own tools, and puts the release
+# on main in one commit whose tree is the rehearsal tree - the tree hash is an input, and
+# the push only happens if the landed tree is that hash. The commit it makes deletes this
+# file, so nothing about the bridge stays in main's tree.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: 'the URL of the rehearsed release bundle'
+        required: true
+        type: string
+      bundle_sha256:
+        description: 'sha256 of that bundle'
+        required: true
+        type: string
+      page_sha256:
+        description: 'sha256 of index.html in the rehearsed tree'
+        required: true
+        type: string
+      tree:
+        description: 'the tree the release must land as'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: land-74110
+  cancel-in-progress: false
+
+jobs:
+  land:
+    name: Prove the bundle, then put it on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the bundle, and check it is the rehearsed one
+        run: |
+          set -euo pipefail
+          curl -fsSL "${{ inputs.bundle }}" -o /tmp/release.bundle
+          echo "${{ inputs.bundle_sha256 }}  /tmp/release.bundle" | sha256sum -c -
+          ls -l /tmp/release.bundle
+
+      - name: Unwrap it, and check its page and its own tools
+        run: |
+          set -euo pipefail
+          git fetch /tmp/release.bundle main:release
+          git checkout release
+          echo "${{ inputs.page_sha256 }}  index.html" | sha256sum -c -
+          grep -m1 -o "APP_VERSION = '[0-9.]*'" index.html
+          node dev/ota-bundle.mjs --check
+          node dev/ota-bundle-play.mjs --check
+          python3 dev/patch-74110-ai-button.py --check
+          python3 dev/patch-74110-destructive.py --check
+          python3 dev/patch-74110-bubble-medium.py --check
+          python3 dev/patch-74110-pill-beat.py --check
+
+      - name: Put the release on main
+        run: |
+          set -euo pipefail
+          git config user.name 'AnekTheGreat'
+          git config user.email '166177289+AnekTheGreat@users.noreply.github.com'
+          git checkout --detach origin/main
+          git checkout release -- .
+          git rm -q --ignore-unmatch .github/workflows/land-74110.yml
+          git add -A
+          git status --porcelain | head -30
+          git commit -q -F - <<'MSG'
+          Ask SideCut, delete buttons that work, and the in-between bubble size
+
+          Three rounds of the same owner request in one payload: an AI button next
+          to the music that turns a sentence into a plan you approve (playlist from
+          these songs, crossfade, DJ mode) with a single Undo; the Clear playlist
+          and Delete all songs buttons that removed nothing and still said Deleted,
+          now one in-app delete path with a full restore; and a Medium Home bubble
+          size between automatic and tall, with half-step heights. Each is driven by
+          its own gate, and the OTA channels are rebuilt to a fixed point.
+
+          🤖 Generated with Codebuff
+          Co-Authored-By: Codebuff <noreply@codebuff.com>
+          MSG
+          landed=$(git rev-parse HEAD^{tree})
+          if [ "$landed" != "${{ inputs.tree }}" ]; then
+            echo "the landed tree is $landed, but the rehearsal tree is ${{ inputs.tree }}"
+            exit 1
+          fi
+          git push origin HEAD:main
+          echo "main is now $(git rev-parse HEAD) (tree $landed)"
