@@ -1,5 +1,30 @@
 # SideCut — repository memory
 
+## 74.8 (October 17, 2026 · 5:20 PM EDT): Listening time follows the song, not the app window
+
+- **THE OWNER'S REPORT**: "the listening stats aren't working in SideCut like it doesn't go up in time when I'm listening outside of the app or with headphones
+  like it should". Two independent blockages, both in the page: the counter itself began `if(document.hidden) return;` ("Don't count time when app is
+  backgrounded" - exactly backwards for a player), **and** the battery saver at the top clears every interval over 500 ms while hidden, listing the listening
+  counter among the timers it stops. Either one alone was enough; with the screen off, neither the guard nor the timer let a second through.
+- **THE CLOCK NOW.** It is the playhead against the wall clock, not a count of ticks: each tick banks `min(position moved, real time passed + 0.5s)` with a
+  fractional carry, so a tick the OS throttled to once a minute still banks the whole minute, and a span the WebView was frozen through is recovered by the next
+  tick instead of lost. A seek forward is not listening and a seek back is not a debt (the wall-clock bound), pausing adds nothing, and no source adds nothing.
+  The timer asks the saver to keep it alive (`window.__scKeepAliveTimer`), the partial second is banked on `visibilitychange`, `pagehide`, `pause` and `ended`,
+  and the total is persisted every 30 counted seconds instead of every 60 ticks. `checkPendingPlay()` runs in the same tick, so plays from the lock screen count.
+- **THE GATE.** `dev/listen-time-check.cjs` (wired into `dev/gates.sh`) drives the shipped clock through a fake `Date.now` and a stubbed media element:
+  ten backgrounded seconds add ten, a **ten-minute freeze** is recovered by one tick, pause/seek/no-source add nothing, and `window.__scStats().listenSeconds`
+  is the number the stats screen reads. **12/0** here, **6 named reds** on the shipped 74.7 page (no drivable clock, the guard still there, no keep-alive, and
+  the rest cannot run).
+- **PROVEN BY THE REDS, NOT BY READING.** The first draft of the gate asserted ten seconds while advancing the playhead a second per 6 ms of wall clock - the
+  clock correctly paid 5.06 and the gate was wrong; the harness now moves both clocks together, which is what "playing" means.
+- **VERIFIED ON THE SHIPPED TREE**: the full battery, **56 suites green** (ai-button 40/0, listen-time 12/0, album-follow 105/0, check-dom 0, audit-calls 9016
+  comments). Two reds, both carried or environmental: `media-controls-check` 66/1 (the months-old half-hour failure) and `ota-guard-check` once under load
+  (17/3, then **4 consecutive runs at 20/0**, including three in a row after the battery) - timing-sensitive, not version-sensitive. OTA at a fixed point:
+  **992776** (`ota/` + root manifests) / **992788** (`ota-play/`), both `--check`s OK with 6 notes each.
+- **NOT VERIFIED**: nothing ran on a phone. Background counting is proven with a fake clock in jsdom, not with the screen actually off; the real test is one
+  song played with the phone locked, then looking at Total listening time.
+- **NEXT RELEASE**: `74.9` for another fix inside 74.8, or `75.0` for the next feature. Shell cache `sidecut-shell-v74.8`.
+
 ## 74.7 (October 17, 2026 · 4:52 PM EDT): The Ask drawer was invisible - the button worked, and only the keyboard showed
 
 - **THE OWNER, THE SAME WORDS TWICE**: "the ai button literally doesn't do anything ... only the keyboard randomly open[s] up". 74.6's fix - the multi-select bar's

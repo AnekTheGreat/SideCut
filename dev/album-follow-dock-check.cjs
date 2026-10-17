@@ -159,7 +159,7 @@ function click(win, el) {
 
   console.log('[1] release metadata');
   {
-    ok(/^74\.7$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
+    ok(/^74\.8$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
     ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v" + VER + "'") !== -1,
       'the shell cache moved with it');
     const head = (html.match(/const CHANGELOG = \[\n  \{ version: '([^']+)'/) || [])[1];
