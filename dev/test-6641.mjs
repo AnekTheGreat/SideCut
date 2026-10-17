@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = process.env.SC_HTML ? path.resolve(process.env.SC_HTML) : path.join(ROOT, 'index.html');
 const src = fs.readFileSync(HTML, 'utf8');
-const VER = '74.1.9'; /* repinned by dev/repin-7419.mjs */
+const VER = '74.5'; /* repinned by dev/repin-745.mjs */
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };

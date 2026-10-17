@@ -1,5 +1,34 @@
 # SideCut — repository memory
 
+## 74.5 (October 17, 2026 · 11:05 AM EDT): Ask SideCut, deletes that delete with an Undo, the middle bubble size, and a pill dock that behaves like a control
+
+- **THE OWNER'S ASK, VERBATIM**: "can we make an ai button that I can ask anything with like my songs and it'll do it like create a new playlist
+  containing these songs that Crossfade with specific DJ mode settings" - then, for the same build, "make the pill like drag and move nicer ... and
+  make the badges actually rechable and the loops 1/8 and stuff actually need to work".
+- **WHAT 74.5 CARRIES.** The feature set was rehearsed and proven on 74.1.9; this release is the number, the notes and the channel rebuild on top of it.
+  Ask SideCut (`#homeAiBtn`, `#selectAskBtn`, `window.SCAI`) turns a sentence into a typed plan the drawer shows before it runs, executes it through the
+  app's own functions and offers one Undo. Clear playlist and Delete all songs go through `scDeleteSongs`, which asks in the app and restores the file,
+  the plays and every playlist slot. Home bubbles gain **Medium** (146px) with half-step heights. The pill dock keeps the highlight under the finger,
+  the seam between two pills answers for the nearer one, and the Library split is clipped to the same line the hit test uses. The 1/8 pad latches on a
+  tap and is placed on the grid; the Beat repeat badge is credited by holding a pad.
+- **THE RELEASE ITSELF** is `dev/patch-745.py` (version, `sidecut-shell-v74.5`, the head entry) and `dev/repin-745.mjs` (110 edits across 78 gates).
+  `dev/album-follow-dock-check.cjs` pinned the release number as a regex, which neither the `VER =` sweep nor the head sweep can see, so its pin was
+  moved by hand - the same class of miss the F1 needles exist for.
+- **VERIFIED ON THE SHIPPED TREE**: core 26 suites green (test-728 63/0, test-7281 94/0, test-7316 284/0, test-736 75/0, test-737 68/0, test-740 54/0,
+  test-741 86/0); all eight album suites 58/45/25/40/34/42/34/22, 0 fail; extras green - studio-70 570/0, album-follow-dock 105/0, beat-repeat 35/0,
+  undo-delete 56/0, home-bubble-size 23/0, ai-button 33/0, lyrics-timing 30/0, converter 37/0, crossfade 22/0, compress 24/0, export 36/0,
+  refresh-pin 14/0, widget 33/0, background 21/0, audio-focus 44/0, librarytools 15/0, notifgroup 27/0; audit-calls OK (5960 names, 9012 comments);
+  check-dom 0 failures; OTA trio 20/0, 52/0, 24/0. OTA at a fixed point: **990638** (`ota/` + root manifests) / **990649** (`ota-play/`), both
+  `--check`s OK with 6 notes each.
+- **THE HEAD NOTES WERE SHORTENED TWICE**: the first draft tripped `test-728`'s 260-character limit (278), and the second - a splice that joined the
+  items without commas - made the array un-evaluable in nine suites at once. Both were found by the gates, not by reading the diff.
+- **ONE RED, AND IT IS NOISE**: `ota-bootapply-check` failed once (23/1, "delays=0") immediately after the rebuild and then passed 4 runs in a row,
+  including the base commit. It is timing-sensitive, not version-sensitive: the same page under `SC_HTML` passed, and three consecutive runs were 24/0.
+- **STILL RED, PRE-EXISTING**: `media-controls-check` 60/1 - the months-old "fires every half hour" red, unchanged and untouched here.
+- **NOT VERIFIED**: nothing ran on a phone. The dock's feel, the pads and the Ask drawer are proven by their gates (jsdom, stubbed audio, fake
+  IndexedDB), not by thumb. The installed app sees this only once the published bundle it polls has moved, which is this commit.
+- **NEXT RELEASE**: `74.6` for a fix inside 74.5, or `75.0` for the next feature. Shell cache `sidecut-shell-v74.5`.
+
 ## 74.1.9 (October 16, 2026): The album follows the song, the views arrive, the dock can be one pill - and two repairs the same owner asked for
 
 - **THE SECOND ROUND OF 74.1.9: "make the app nicer to use", and three faults on the destructive paths.** Found by following what a thumb presses, then proven on
