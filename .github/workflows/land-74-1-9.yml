@@ -1,0 +1,73 @@
+name: Land 74.1.9
+
+# ONE-SHOT. The machine that prepared 74.1.9 has no git credentials, so it could not push
+# the release it had just rehearsed; this is the bridge. It fetches the rehearsed bundle
+# from a URL, checks the bytes and the release's own tools against it, and then puts the
+# release on main - in one commit whose tree is the rehearsal tree, which is why the file
+# you are reading is deleted by the very commit it makes. Nothing about the bridge stays
+# in main's tree, and the push only happens if every check above it passed.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle:
+        description: 'the URL of the rehearsed release bundle'
+        required: true
+        type: string
+      bundle_sha256:
+        description: 'sha256 of that bundle'
+        required: true
+        type: string
+      tree:
+        description: 'the tree the release must land as'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: land-74-1-9
+  cancel-in-progress: false
+
+jobs:
+  land:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: fetch the bundle, and check it is the rehearsed one
+        run: |
+          set -euo pipefail
+          curl -fsSL "${{ inputs.bundle }}" -o /tmp/release.bundle
+          echo "${{ inputs.bundle_sha256 }}  /tmp/release.bundle" | sha256sum -c -
+          ls -l /tmp/release.bundle
+
+      - name: unwrap it, and run the release's own checks on it
+        run: |
+          set -euo pipefail
+          git fetch /tmp/release.bundle main:release
+          git checkout release
+          grep -m1 -o "APP_VERSION = '[0-9.]*'" index.html
+          python3 dev/patch-7419.py --check
+          node dev/ota-bundle.mjs --check
+          node dev/ota-bundle-play.mjs --check
+
+      - name: put the release on main
+        run: |
+          set -euo pipefail
+          git config user.name 'AnekTheGreat'
+          git config user.email '166177289+AnekTheGreat@users.noreply.github.com'
+          git checkout --detach origin/main
+          git checkout release -- .
+          git rm -q --ignore-unmatch .github/workflows/land-74-1-9.yml
+          git add -A
+          git status --porcelain | head -20
+          git commit -q -m 'Release 74.1.9 - The album follows the song, the views arrive smoothly, the tabs can be one sliding pill dock, plus the repairs from the phone'
+          landed=$(git rev-parse HEAD^{tree})
+          if [ "$landed" != "${{ inputs.tree }}" ]; then
+            echo "the landed tree is $landed, but the rehearsal tree is ${{ inputs.tree }}"; exit 1
+          fi
+          git push origin HEAD:main
+          echo "main is now $(git rev-parse HEAD) (tree $landed)"
