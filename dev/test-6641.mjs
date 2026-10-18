@@ -5,10 +5,10 @@
 //   [1] the release itself: v64.1 is what runs, the head entry says so, and the
 //       notes obey both channels' rules (six shared notes, no downloader term,
 //       nothing that names the store build) while still describing the release;
-//   [2] the crop sheet's listen-through control: the slider and its button are
-//       in the markup, the playback runs through the live path the selection
-//       preview already uses, a DRAG only moves the line (it never starts a
-//       sound) and letting go starts the sound from where it was dropped;
+//   [2] the crop sheet crops by dragging alone: the listen-through bar that
+//       used to sit under the waveform was removed on request, so what is
+//       checked is that no trace of it remains and that the direct drag —
+//       handles, slide, audition — is still fully wired;
 //   [3] the premium split: RGB, RGB +, Ember, Galaxy and Glacier are free, every
 //       other animated theme carries the flag, and the three places that
 //       describe the split agree;
@@ -70,34 +70,25 @@ console.log('[1] release metadata');
   ok(swCache === 'sidecut-shell-v' + VER, 'the shell cache is the release number (' + swCache + ')');
 }
 
-console.log('[2] the crop sheet can be listened through');
+console.log('[2] the crop sheet crops by dragging alone — the extra bar is gone');
 {
-  ok(has('id="cropSongScrub"'), 'the listen-through slider is in the sheet');
-  ok(has('id="cropSongScrubPlay"'), 'with a play/pause button beside it');
-  ok(has('aria-label="Listen through the song"'), 'and it is labelled for what it is');
-  ok(has('function cropScrubSeek(sec, play){'), 'the playback behind it is defined');
-  ok(has('function cropScrubSetUI(sec){'), 'and so is the line and the clock it moves');
-  ok(has("(cropPlayMode === 'song' ? 'Listening ' : 'Previewing ')"), 'the status line says which one is playing');
-  // A drag must not make a sound; letting go must.
-  const inputH = src.slice(src.indexOf("$('cropSongScrub').addEventListener('input'"), src.indexOf("$('cropSongScrub').addEventListener('change'"));
-  const changeH = src.slice(src.indexOf("$('cropSongScrub').addEventListener('change'"), src.indexOf("$('cropSongScrubPlay').addEventListener('click'"));
-  ok(/cropScrubSeek\(cropScrubSec\(\), false\)/.test(inputH), 'dragging the thumb only moves the line');
-  ok(/cropScrubSeek\(cropScrubSec\(\), true\)/.test(changeH), 'and letting go plays the song from there');
-  ok(has("if(cropPreviewAudio){ cropStopPreview(); return; }"), 'the button stops anything already sounding');
-  ok(count('if(cropPreviewAudio && cropPreviewAudio.pause === stopLive) cropPreviewAudio = null;') === 2,
-    'and a preview that reaches the end disarms itself, so the next tap plays instead of stopping nothing');
-  // It plays through the same live context as the selection preview, so there is
-  // one path to stop — and it starts the source at the dropped position.
-  const seek = src.slice(src.indexOf('function cropScrubSeek(sec, play){'), src.indexOf("$('cropSongScrub').addEventListener('input'"));
-  ok(seek.indexOf('src.start(0, at);') !== -1, 'the sound starts at the dropped position');
-  ok(seek.indexOf('cropPreviewLive = src;') !== -1, 'through the live AudioContext path');
-  ok(seek.indexOf('cropCleanupPreview();') !== -1, 'after stopping whatever ran before');
-  ok(has('cropPreviewLenSec = Math.max(0.05, total - at);'), 'and it runs to the end of the song');
-  ok(has("      cropPlayMode = 'sel';\n      cropScrubSetUI(0);"), 'a fresh sheet resets it to the top of the song');
-  ok(has("    const sb = $('cropSongScrubPlay');\n    if(sb) sb.textContent = "), 'and stopping clears the button');
-  ok(count('cropScrubSetUI(') >= 3, 'the clock and the playhead are kept in step in one place');
+  // Retargeted: the listen-through slider this gate was written for was removed
+  // on request ("not extra bar thing"). Cropping now has one gesture — drag the
+  // selection on the waveform — plus "Preview selection" to hear it. What must
+  // never come back is a second control the reader has to learn.
+  ok(!has('id="cropSongScrub"'), 'the listen-through slider is gone from the sheet');
+  ok(!has('id="cropSongScrubPlay"'), 'and its play button with it');
+  ok(!has('aria-label="Listen through the song"'), 'no label for a control that no longer exists');
+  ok(count('cropScrubSeek(') === 0 && count('cropScrubSetUI(') === 0, 'and no scrub playback path is left behind');
+  ok(!has('cropPlayMode'), 'nor a mode for a second way to play');
+  ok(has('function wireCropDrag()'), 'the waveform keeps its direct drag');
+  ok(has('id="cropSongSelEdgeL"') && has('id="cropSongSelEdgeR"'), 'with a grab handle riding each selection edge');
+  ok(has('cropSelStart = Math.max(0, Math.min(sec, cropSelEnd - 0.5));'), 'dragging the left edge sets where keeping starts');
+  ok(has('cropSelEnd = Math.min(total, Math.max(sec, cropSelStart + 0.5));'), 'and the right edge how much is kept in all');
+  ok(has("active = 'move';"), 'pressing inside the selection slides it whole');
+  ok(has('id="cropSongPreviewPlay"'), 'and the kept slice can still be auditioned');
+  ok(has('id="cropSongPlayhead"'), 'with the playhead riding the waveform while it plays');
 }
-
 console.log('[3] every animated theme is free now');
 {
   // 70.1.3 - "Remove premium make everything free keep donations". v64.1 drew a

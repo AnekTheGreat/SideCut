@@ -4553,16 +4553,6 @@ body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
             <span style="position:absolute; top:-3px; left:50%; transform:translateX(-50%); width:9px; height:9px; border-radius:50%; background:#fff; box-shadow:0 0 8px rgba(255,255,255,0.9);"></span>
           </div>
         </div>
-        <!-- Listen through the whole song. The two handles above move the
-             selection; this is the control that lets you HEAR the song, so a
-             crop can be judged by ear instead of by eye. Drag the thumb to
-             drop in anywhere and the sound follows it; the line on the
-             waveform rides along so you can see where you are. -->
-        <div style="display:flex; align-items:center; gap:10px; margin:2px 0 10px;">
-          <button id="cropSongScrubPlay" title="Play or pause the whole song" style="width:34px; height:34px; flex:0 0 auto; border-radius:50%; border:1px solid var(--line); background:rgba(255,255,255,0.06); color:var(--ink); font-size:12px; cursor:pointer; padding:0; line-height:1;">▶</button>
-          <input type="range" id="cropSongScrub" min="0" max="1000" step="1" value="0" aria-label="Listen through the song" style="flex:1; min-width:0;">
-          <span id="cropSongScrubTime" style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-dim); min-width:76px; text-align:right;">0:00 / 0:00</span>
-        </div>
         <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--ink-dim); margin-bottom:4px;">
           <span id="cropSongStartLbl"></span>
           <span id="cropSongLenLbl"></span>
@@ -9316,7 +9306,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       const st = $('cropSongPreviewStatus');
       if(st){
         const rel = Math.max(0, Math.min(cropPreviewLenSec, pos - cropPreviewStartSec));
-        st.textContent = (cropPlayMode === 'song' ? 'Listening ' : 'Previewing ') + cropFmtTime(rel) + ' / ' + cropFmtTime(cropPreviewLenSec);
+        st.textContent = 'Previewing ' + cropFmtTime(rel) + ' / ' + cropFmtTime(cropPreviewLenSec);
       }
       if(pos >= cropPreviewStartSec + cropPreviewLenSec){ cropStopPlayhead(); return; }
       cropPlayheadRAF = requestAnimationFrame(tick);
@@ -9443,12 +9433,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       $('cropSongControls').style.display = '';
       cropBuildWaveform();
       cropUpdateFrame();
-      // A freshly decoded song arms the selection preview and puts the
-      // listen-through slider at the top.
-      cropPlayMode = 'sel';
-      cropScrubSetUI(0);
-      const _scrubBtnNew = $('cropSongScrubPlay');
-      if(_scrubBtnNew) _scrubBtnNew.textContent = '▶';
+      // A freshly decoded song arms the selection preview: the whole song is
+      // selected, so cropping starts as a drag in from either end.
     }catch(err){
       console.warn('Crop decode failed:', err);
       cropBuf = null;
@@ -9575,11 +9561,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
 
   function cropStopPreview(){
     cropCleanupPreview();
-    cropPlayMode = 'sel';
     const btn = $('cropSongPreviewPlay');
     if(btn) btn.innerHTML = '▶ Preview selection';
-    const sb = $('cropSongScrubPlay');
-    if(sb) sb.textContent = '▶';
     const st = $('cropSongPreviewStatus');
     if(st) st.textContent = '';
   }
@@ -9589,100 +9572,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     else { cropStartPreview(); }
   });
 
-  // ---- Listen through the whole song ----
-  // "Preview selection" can only ever play the slice already chosen, and the two
-  // handles only move the selection, so judging a crop meant cutting it,
-  // listening, undoing and cutting again. This is the control that lets the song
-  // be heard: a slider over the WHOLE song with a play/pause button beside it.
-  // Dragging it moves the white playhead line (and nothing else, so nothing is
-  // ever committed by a drag); letting go plays the song from there, and the
-  // button keeps it going or stops it. It runs through the same live
-  // AudioContext path the selection preview uses, so there is one playback path
-  // to stop and one playhead to keep in step.
-  let cropPlayMode = 'sel';   // 'sel' = the selection preview, 'song' = listening through
-  function cropScrubSec(){
-    const total = (cropBuf && cropBuf.duration) || 0;
-    const sl = $('cropSongScrub');
-    return (sl ? (parseFloat(sl.value) || 0) / 1000 : 0) * total;
-  }
-  function cropScrubSetUI(sec){
-    const total = (cropBuf && cropBuf.duration) || 0;
-    const sl = $('cropSongScrub');
-    if(sl && total > 0) sl.value = String(Math.max(0, Math.min(1000, Math.round((sec / total) * 1000))));
-    const t = $('cropSongScrubTime');
-    if(t) t.textContent = cropFmtTime(sec) + ' / ' + cropFmtTime(total);
-    const ph = $('cropSongPlayhead');
-    if(ph && total > 0){
-      ph.style.display = 'block';
-      ph.style.left = ((Math.max(0, Math.min(total, sec)) / total) * 100) + '%';
-    }
-  }
-  function cropScrubSeek(sec, play){
-    if(!cropBuf) return;
-    const total = cropBuf.duration || 0;
-    if(!(total > 0)) return;
-    const at = Math.max(0, Math.min(Math.max(0, total - 0.05), sec));
-    cropScrubSetUI(at);
-    const sb = $('cropSongScrubPlay');
-    cropCleanupPreview();
-    if(!play){
-      cropPlayMode = 'sel';
-      if(sb) sb.textContent = '▶';
-      return;
-    }
-    cropPlayMode = 'song';
-    try{
-      const ctx = (typeof audioCtx === 'object' && audioCtx) ? audioCtx : (cropPreviewLiveCtx = new (window.AudioContext || window.webkitAudioContext)());
-      if(ctx && typeof ctx.resume === 'function') ctx.resume().catch(() => {});
-      if(ctx && ctx.state === 'running'){
-        const src = ctx.createBufferSource();
-        src.buffer = cropBuf;
-        src.connect(ctx.destination);
-        src.start(0, at);
-        cropPreviewLive = src;
-        const stopLive = () => {
-          try{ src.stop(); }catch(_e){}
-          if(cropPreviewLive === src) cropPreviewLive = null;
-          // Ended is not the same as armed: the wrapper below is what the
-          // button reads to decide play-vs-stop, so a finished listen-through
-          // has to let go of it or the next tap only stops nothing.
-          if(cropPreviewAudio && cropPreviewAudio.pause === stopLive) cropPreviewAudio = null;
-          const b = $('cropSongScrubPlay');
-          if(b) b.textContent = '▶';
-          if(cropPlayMode === 'song') cropStopPlayhead();
-        };
-        src.onended = stopLive;
-        cropPreviewAudio = { _live: true, pause: stopLive, src: '' };
-        cropPreviewCtx = ctx;
-        cropPreviewT0 = ctx.currentTime;
-        cropPreviewStartSec = at;
-        cropPreviewLenSec = Math.max(0.05, total - at);
-        if(sb) sb.textContent = '❚❚';
-        cropStartPlayhead();
-        return;
-      }
-    }catch(e){
-      console.warn('Listen-through preview unavailable:', e);
-    }
-    const st = $('cropSongPreviewStatus');
-    if(st) st.textContent = 'Preview unavailable for this format.';
-  }
-  // Moving the thumb is visual only: it moves the line and the clock, and it
-  // never starts a sound, so scrubbing around cannot surprise anyone.
-  $('cropSongScrub').addEventListener('input', function(){
-    if(!cropBuf || !(cropBuf.duration > 0)) return;
-    cropScrubSeek(cropScrubSec(), false);
-  });
-  // Letting go plays the song from where it was dropped.
-  $('cropSongScrub').addEventListener('change', function(){
-    if(!cropBuf || !(cropBuf.duration > 0)) return;
-    cropScrubSeek(cropScrubSec(), true);
-  });
-  $('cropSongScrubPlay').addEventListener('click', function(){
-    if(!cropBuf || !(cropBuf.duration > 0)) return;
-    if(cropPreviewAudio){ cropStopPreview(); return; }   // anything sounding: this stops it
-    cropScrubSeek(cropScrubSec(), true);
-  });
+  // The listen-through slider that used to sit under the waveform is gone:
+  // cropping is judged by dragging the selection and hearing exactly that
+  // selection ("Preview selection" below), so the sheet keeps one direct
+  // gesture on the waveform and no second bar to learn.
 
   // Selection drag handles (pointer events; no external libs).
   //
