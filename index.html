@@ -17938,7 +17938,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     const hasEnrichAlert = enrichState.active || (enrichState.finishedAt && !enrichState.seen);
     const hasExportAlert = exportState.active || (exportState.finishedAt && !exportState.seen);
     const hasUpcomingAlert = typeof scUpcomingUnseen === 'function' && scUpcomingUnseen().length > 0;
-    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || hasUpcomingAlert || updateIsNewer() || !!window.__scNotifConv) ? 'block' : 'none';
+    const hasNewReleaseAlert = typeof hasLandedUnseenReleases === 'function' && hasLandedUnseenReleases();
+    badge.style.display = (notifLastReadVersion !== APP_VERSION || hasDupAlert || hasEnrichAlert || hasExportAlert || hasUpcomingAlert || hasNewReleaseAlert || updateIsNewer() || !!window.__scNotifConv) ? 'block' : 'none';
   }
   function bootProfileNotifHtml(){
     const p = scBootRead();
@@ -18024,6 +18025,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
       summaryHtml += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
           <div style="font-weight:600; font-size:13.5px; color:var(--coral);">⚠ ${dupGroups.length} duplicate song${dupGroups.length>1?'s':''} found</div>
+        </div>
+      `;
+    }
+    // LANDED releases from pinned artists — the drop that is OUT now. Its own
+    // entry so it never hides behind the version notes, with the same tap-to-read
+    // the upcoming entry has.
+    const _landedRel = (typeof hasLandedUnseenReleases === 'function' && hasLandedUnseenReleases() && typeof window.__scReleaseList === 'function')
+      ? window.__scReleaseList(31).filter(function(r){ return !r.seen && !(r.date && window.__scUpcomingDay(r.date)); })
+      : [];
+    if(_landedRel.length){
+      const l0 = _landedRel[0];
+      html += `
+        <div id="notifNewRelEntry" style="border-bottom:1px solid var(--line); padding-bottom:10px; cursor:pointer;">
+          <div style="font-weight:600; font-size:13.5px; margin-bottom:6px; color:var(--coral);">🎉 New release${_landedRel.length > 1 ? 's' : ''}</div>
+          <div style="font-size:12px; color:var(--ink-dim);">${_landedRel.length} from your pinned artists — latest: ${escapeHtml(l0.artist)} · ${escapeHtml(l0.title)}. Tap to see them all.</div>
+        </div>
+      `;
+      summaryHtml += `
+        <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
+          <div style="font-weight:600; font-size:13.5px; color:var(--coral);">🎉 ${_landedRel.length} new release${_landedRel.length > 1 ? 's' : ''} from pinned artists</div>
         </div>
       `;
     }
@@ -18132,6 +18153,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     });
     const dupEntry = document.getElementById('notifDupEntry');
     if(dupEntry) dupEntry.addEventListener('click', () => { $('notifBackdrop').style.display = 'none'; findDuplicates(); });
+    const newRelEntry = document.getElementById('notifNewRelEntry');
+    if(newRelEntry) newRelEntry.addEventListener('click', () => {
+      $('notifBackdrop').style.display = 'none';
+      // Read by being opened — the same rule the upcoming entry follows — and
+      // straight into the New releases list.
+      if(typeof markReleasesSeen === 'function'){ try{ markReleasesSeen(); }catch(_eMs){} }
+      openHomeBubble('newreleases');
+    });
     const upEntry = document.getElementById('notifUpcomingEntry');
     if(upEntry) upEntry.addEventListener('click', () => {
       $('notifBackdrop').style.display = 'none';
@@ -39999,6 +40028,67 @@ function _renderAhFromData(artistAlbums){
     }catch(e){ return []; }
   }
 
+  // ---- The alert when a pinned artist's drop is OUT -------------------------
+  // hasUnseenReleases() never had a caller: the comment says it drives the badge,
+  // and the badge never asked it, so a release that had landed announced itself
+  // only through the Discover section's little count — if you happened to open
+  // Discover. This is the landed-and-unseen test (future drops are Dropping soon's
+  // own entry, not this one), plus the alert that a find earns.
+  function hasLandedUnseenReleases(){
+    try{
+      if(!pinnedReleases) return false;
+      return Object.keys(pinnedReleases).some(function(artist){
+        return (pinnedReleases[artist] || []).some(function(r){
+          if(!r || r.seen) return false;                             // already read
+          if(!r.title || !r.date) return false;                      // nothing to announce
+          if(r.date && window.__scUpcomingDay(r.date)) return false; // still on the way
+          if(window.__scJunkTitle && window.__scJunkTitle(r.title)) return false; // remixes
+          return true;
+        });
+      });
+    }catch(_eLand){ return false; }
+  }
+  // Three places hear about it, in the order a reader meets them: a toast in the
+  // app, the bell (the badge + entry read the same state), and the phone's own
+  // notification shade — the one still there when SideCut is backgrounded. The
+  // shade goes through the SAME native bridge the convert progress uses
+  // (SideCutWidget), so it works on the installed app; the web build uses the
+  // Notification API, whose permission is asked ONCE, the first time there is an
+  // actual release to announce — never on boot, never on pin, never on a miss.
+  function scReleaseAlert(found){
+    if(!found || !found.length) return;
+    const first = found[0];
+    const more = found.length > 1 ? ' (+' + (found.length - 1) + ' more)' : '';
+    const head = 'New release — ' + first.artist;
+    const line = '"' + (first.title || 'New release') + '" is out' + more + '.';
+    try{ toast('🎉 New release: ' + (first.title || '') + ' — ' + first.artist + more, 6000); }catch(_eTo){}
+    // Android shade — the widget plugin's one-shot (done) notification.
+    try{
+      const C = window.Capacitor;
+      const W = (C && C.Plugins && C.Plugins.SideCutWidget) || null;
+      if(W && typeof W.notifyProgress === 'function'){
+        if(typeof W.requestPermissions === 'function'){ try{ W.requestPermissions(); }catch(_eRp){} }
+        const p = W.notifyProgress({ title: head, body: line, pct: 100, done: true });
+        if(p && typeof p.catch === 'function') p.catch(function(){});
+      }
+    }catch(_eW){}
+    // Web / installed browser.
+    try{
+      if(typeof Notification === 'undefined') return;
+      const fire = function(){ try{ new Notification(head, { body: line, tag: 'sidecut-new-release' }); }catch(_eNot){} };
+      if(Notification.permission === 'granted'){ fire(); }
+      else if(Notification.permission === 'default'){
+        let asked = false;
+        try{ asked = localStorage.getItem('sidecut_releasePermAsked') === '1'; }catch(_eLq){}
+        if(!asked){
+          try{ localStorage.setItem('sidecut_releasePermAsked', '1'); }catch(_eLs){}
+          const rp = Notification.requestPermission();
+          if(rp && typeof rp.then === 'function') rp.then(function(perm){ if(perm === 'granted') fire(); }).catch(function(){});
+        }
+      }
+    }catch(_eNotif){}
+  }
+
   // Check every pinned artist for new releases. Runs on boot, on focus, and on
   // the "Check now" button. Surfaces a toast for any genuinely new finds.
   // A running check is shared, never re-entered: a second tap awaits the run
@@ -40011,6 +40101,7 @@ function _renderAhFromData(artistAlbums){
     pinnedCheckPromise = (async function(){
     pinnedCheckState = { active:true, total:pinnedArtists.length, done:0, newCount:0, finishedAt:0, seen:false };
     let totalNew = 0;
+    const found = [];   // { artist, title } for the drops this run actually found
     try{
     renderHomeExportPopup();
     // A few artists at a time: the catalogs are independent, so one stalled
@@ -40033,6 +40124,12 @@ function _renderAhFromData(artistAlbums){
           new Promise(function(res){ setTimeout(function(){ res(null); }, 25000); })  // 25s per artist
         ]).catch(function(){ return null; });                                        // never wedges the run
         totalNew += (fresh ? fresh.length : 0);
+        if(fresh && fresh.length){
+          for(let _fi = 0; _fi < fresh.length && found.length < 5; _fi++){
+            const _one = fresh[_fi];
+            if(_one) found.push({ artist: a.name, title: String(_one.title || '') });
+          }
+        }
         pinnedCheckState.done++;
         // Persist and repaint as each artist lands, so the list fills in while
         // the rest are still being read instead of appearing all at once —
@@ -40059,6 +40156,8 @@ function _renderAhFromData(artistAlbums){
     renderNewReleases();
     if(totalNew > 0){
       renderHome(); // Updates the new releases bubble count
+      // …and SAY so: a drop that landed is announced, not merely counted somewhere.
+      try{ scReleaseAlert(found); }catch(_eAlert){ console.warn('release alert skipped', _eAlert); }
     }
     renderHomeExportPopup();
     updateNotifBadge();
@@ -40198,6 +40297,13 @@ function _renderAhFromData(artistAlbums){
   }
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) scPinnedAutoCheck(); });
   setTimeout(function(){ scPinnedAutoCheck(); }, 75000);
+  // BOOT RUN. The check waited 75 seconds after launch, so an open shorter than
+  // that — a quick launch to skip one track — meant NO check at all that session,
+  // and "it never looks on its own" is what that sounds like. It now fires shortly
+  // after boot as well; every path shares the same guards (pins loaded, online, no
+  // run in flight, six hours since the last one), so whichever timer fires first
+  // does the work and the others no-op.
+  setTimeout(function(){ scPinnedAutoCheck(); }, 7000);
 
 
   function renderDiscoverChips(){
