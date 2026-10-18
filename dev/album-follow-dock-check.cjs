@@ -159,7 +159,7 @@ function click(win, el) {
 
   console.log('[1] release metadata');
   {
-    ok(/^74\.8$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
+    ok(/^74\.9$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
     ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v" + VER + "'") !== -1,
       'the shell cache moved with it');
     const head = (html.match(/const CHANGELOG = \[\n  \{ version: '([^']+)'/) || [])[1];
@@ -326,8 +326,13 @@ function click(win, el) {
     const ty = (el, p) => (el && el.style ? el.style[p] : '(missing)');
     const th = (p) => ty(thumb, p);
 
-    ok(!doc.body.classList.contains('sc-dock-pill'), 'the dock starts as four separate pills');
-    ok(!doc.getElementById('scDockPillTrack'), 'and there is no capsule on the page until it is asked for');
+    // 74.9 — THE PILL IS ON BY DEFAULT. These two used to pin the old opt-in
+    // world (dock starts separate, capsule appears only when asked). The owner
+    // made the capsule the standard, so boot now arrives joined and the switch
+    // is what takes it apart; the checks below follow the new truth and the
+    // rest of the flow (toggle off / on, the writes, the geometry) is unchanged.
+    ok(doc.body.classList.contains('sc-dock-pill'), 'the dock arrives joined — the pill is the standard now');
+    ok(!!doc.getElementById('scDockPillTrack'), 'the capsule is built at boot, not on request');
     ok(typeof win.__scSetDockPill === 'function', 'the app publishes the way to join it');
     if (typeof win.__scSetDockPill === 'function') win.__scSetDockPill(true);
     await wait(60);

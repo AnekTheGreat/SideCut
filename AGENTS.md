@@ -1,5 +1,33 @@
 # SideCut — repository memory
 
+## 74.9 (October 17, 2026 · 11:49 PM EDT): Cropping needs no network to write a file, tagged WAVs play, the pill is the standard, Ask SideCut floats
+
+- **THE OWNER'S REPORT, VERBATIM**: "after cropping a song it just doesn't play the song anymore fix that this is stupid it should be able to fuffil this
+  simple ahh request it should be able to do everything", plus "The pill shape should be the standard for tabs on by default, pill should be smooth moving
+  between tabs smoothly, and I wanna move this ask SideCut button somewhere else maybe I change up bubble and add overlaying bubbles and stuff".
+- **THREE DEFECTS UNDER THE FIRST COMPLAINT, ALL PROVEN IN A REAL BROWSER** (`harness/crop-play-check.mjs`: import → play → drag the selection → save → it
+  must keep playing → re-tap → reload → still plays; encoder reachable (stereo and mono) and BLOCKED - 42/42): (1) the save called the plain
+  `scEncodeAudio`, which returns null when lamejs (a CDN script) has not arrived - offline it died with "encoder produced no output" and nothing was
+  cropped; it now runs `scEncodeAudioCooperative` (loads the encoder itself, yields between slices) and falls back to WAV when MP3 is ungettable. (2)
+  **THE TAGGED-WAV SIZE FIELD WAS WRONG TWICE**: the RIFF writers padded an odd ID3 chunk but recorded the UNPADDED length, BIG-endian - a 41-byte tag read
+  as 0x29000000 (687 MB), the chunk ran off the end of the file, and Chromium refused the WAV wholesale (error 4). Both WAV writers now store little-endian
+  padded sizes (AIFF keeps big-endian - FORM is big-endian - and gains the pad byte). This had made EVERY tagged WAV the app wrote unplayable: crops,
+  conversions, clips. (3) the resume-after-crop swallowed `play()` rejections and seeked before metadata existed; it now runs `recoverAudio` and waits for
+  `loadedmetadata`.
+- **THE PILL IS THE DEFAULT.** `sidecut_dockPill` reads on unless explicitly '0', so fresh installs arrive joined; the Gestures switch still takes the dock
+  apart and writes '0'. The glide is proven by sampling the thumb MID-transition (110ms into the 0.24s spring it sits strictly between the two tabs) -
+  `harness/v749-ui-check.mjs`, **13/13**.
+- **ASK SIDECUT MOVES TO BUBBLES.** The Home-header sparkle is gone; the same button (same id, so the delegated drawer listener and `ai-button-check` 40/0
+  keep working) floats bottom-right above dock+player (`#scAskBubbles`, fixed, `--sc-dock-h` stack), with two smaller overlaying bubbles peeking behind it
+  that fan apart on press and settle on release - decorative (pointer-events:none), one tap target, no new features.
+- **GATES RETARGETED, NOT WEAKENED** (`dev/patch-749-gates.mjs`): `studio-70-check` and `album-follow-dock-check` pinned the old opt-in dock world;
+  both now drive the new truth (arrives joined, switch takes it apart and writes '0', joins again and writes '1') - **570/570** and **105/0**. Release pins
+  move with `dev/repin-749.mjs`, same chain as every release.
+- **VERIFIED**: crop 42/42 across all three worlds; UI 13/13; ai-button 40/0; check-dom 0; studio-70 570/570; album-follow 105/0; test-705's failures
+  byte-identical to pristine; test-6641 123 + its one pre-existing env red. **NOT VERIFIED**: no phone - the harness proves desktop Chromium; the CI APK is
+  the real test, and the offline crop (WAV fallback) is the specific path to try on device.
+- **NEXT RELEASE**: `74.10` for a fix inside this one, `75.0` for the next feature. Shell cache `sidecut-shell-v74.9`.
+
 ## 74.8 (October 17, 2026 · 5:20 PM EDT): Listening time follows the song, not the app window
 
 - **THE OWNER'S REPORT**: "the listening stats aren't working in SideCut like it doesn't go up in time when I'm listening outside of the app or with headphones

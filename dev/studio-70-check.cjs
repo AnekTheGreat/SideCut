@@ -2318,20 +2318,24 @@ const realErrors = (errors) => errors.filter((e) =>
     await wait(400);
     const sw = doc.querySelector('#studioView [data-act="dockpill"]');
     ok(!!sw, 'the Studio renders the Pill dock switch');
-    ok(!doc.body.classList.contains('sc-dock-pill') && typeof win.__scSetDockPill === 'function',
-      'and the dock starts apart, with a way to join it');
+    // 74.9 — THE PILL IS THE STANDARD. This used to pin the opt-in world: the
+    // dock started apart and the switch joined it. The owner made the capsule
+    // the default, so the dock ARRIVES joined and both directions of the
+    // switch are still driven, written down and reversible.
+    ok(doc.body.classList.contains('sc-dock-pill') && typeof win.__scSetDockPill === 'function',
+      'and the dock arrives joined — the pill is the standard now');
     if (sw) sw.click();
     await wait(120);
-    ok(doc.body.classList.contains('sc-dock-pill'), 'tapping it joins the dock');
-    ok(!!doc.getElementById('scDockPillTrack') && !!doc.getElementById('scDockPillThumb'),
-      'and builds the capsule and the highlight');
-    ok(String(win.localStorage.getItem('sidecut_dockPill')) === '1',
-      'the choice is written down, so the next boot comes back joined');
+    ok(!doc.body.classList.contains('sc-dock-pill'), 'tapping it takes the dock apart');
+    ok(String(win.localStorage.getItem('sidecut_dockPill')) === '0',
+      'the choice is written down, so the next boot stays apart');
     const sw2 = doc.querySelector('#studioView [data-act="dockpill"]');
     if (sw2) sw2.click();
     await wait(120);
-    ok(!doc.body.classList.contains('sc-dock-pill'), 'tapping it again takes the dock apart');
-    ok(String(win.localStorage.getItem('sidecut_dockPill')) === '0', 'and writes that down too');
+    ok(doc.body.classList.contains('sc-dock-pill'), 'tapping it again joins the dock');
+    ok(!!doc.getElementById('scDockPillTrack') && !!doc.getElementById('scDockPillThumb'),
+      'and the capsule and the highlight are still there');
+    ok(String(win.localStorage.getItem('sidecut_dockPill')) === '1', 'and writes that down too');
 
     // (6) THE CONVERTER'S IDENTITY, AND THE SLICE THE UI GETS BACK. Both came off the
     // phone with this release already prepared, and each is one rule: a title is a RUN
