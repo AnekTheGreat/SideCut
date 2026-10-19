@@ -7,8 +7,8 @@
 // wala's MooseTape songs in there" to the browse lecture "Songs are organized by
 // artist and album automatically."
 //
-//   [1] the trigger is a labelled button in the header, under the icon row, taller
-//       than the Settings gear, one of it on the page, and the bubbles are gone;
+//   [1] the trigger is a 26px overlay button on the listening-stats bubble, right
+//       before the resize chip, one of it on the page, and the bubbles are gone;
 //   [2] the owner's sentence becomes ONE album step and creates nothing yet;
 //   [3] Do it files the album under its one artist with exactly those songs, through
 //       the app's own maker - no dialog, no keyboard;
@@ -123,28 +123,34 @@ const albums = (win) => (win.__scGetUserAlbums ? win.__scGetUserAlbums() : {});
   await wait(7000);
   const doc = win.document;
 
-  console.log('[1] a regular button in the header, under the icons, bigger than Settings');
+  console.log('[1] a small overlay button on the listening-stats bubble, before the resize chip');
   {
     const all = doc.querySelectorAll('#homeAiBtn');
     ok(all.length === 1, 'exactly one Ask SideCut button on the page', all.length);
     const hb = all[0];
-    ok(!!hb, 'the header has its Ask button');
-    ok(!!hb.closest('header'), 'and it lives inside the header');
-    ok(hb.classList.contains('sc-ask-btn'), 'as a labelled .sc-ask-btn', hb.className);
-    ok(hb.textContent.replace(/\s+/g, ' ').trim() === 'Ask SideCut', 'whose words are Ask SideCut', hb.textContent);
-    const gear = doc.getElementById('themeBtn');
-    ok(!!hb.previousElementSibling && !!hb.previousElementSibling.contains(gear), 'it sits directly under the row that holds Settings');
+    const bubble = hb && hb.closest('.home-bubble');
+    ok(!!bubble && bubble.dataset.bubble === 'stats', 'and it lives inside the listening-stats bubble', bubble && bubble.dataset.bubble);
+    ok(hb.classList.contains('hb-ask'), 'as a .hb-ask overlay', hb.className);
+    ok(hb.getAttribute('aria-label') === 'Ask SideCut about your music', 'labelled for anyone who cannot see the sparkle', hb.getAttribute('aria-label'));
+    ok(hb.textContent.trim() === '', 'icon only - the wordy pill is gone', hb.textContent);
+    ok(!doc.querySelector('header #homeAiBtn'), 'the header pill is gone');
+    const expand = bubble && bubble.querySelector('.hb-expand');
+    ok(!!expand, 'the bubble has its resize chip');
+    ok(hb.nextElementSibling === expand, 'and the Ask button sits right before it', hb.nextElementSibling && hb.nextElementSibling.className);
+    const askR = parseInt(win.getComputedStyle(hb).right, 10);
+    const expR = parseInt(win.getComputedStyle(expand).right, 10);
+    ok(isFinite(askR) && isFinite(expR) && askR > expR, 'top right, further from the edge than the resize - before it', askR + ' vs ' + expR);
+    const askW = win.getComputedStyle(hb).width;
+    ok(askW === win.getComputedStyle(expand).width, 'the same size as the bubble button it sits with', askW + ' vs ' + win.getComputedStyle(expand).width);
     ok(!doc.getElementById('scAskBubbles'), 'the floating bubble cluster is gone');
     ok(doc.querySelectorAll('.sc-ask-main, .sc-ask-pop').length === 0, 'and no bubble styling is left anywhere');
-    // jsdom has no layout, but min-height is a cascaded value the cascade resolves.
-    const hbMin = parseInt(win.getComputedStyle(hb).minHeight, 10);
-    const gearH = parseInt(win.getComputedStyle(gear).height, 10) || parseInt(win.getComputedStyle(gear).minHeight, 10) || 32;
-    ok(hbMin >= 46, 'the button declares itself at least 46px tall', win.getComputedStyle(hb).minHeight);
-    ok(hbMin > gearH, 'taller than the Settings gear', hbMin + ' vs ' + gearH);
     click(win, hb);
     await wait(150);
     const bd = doc.getElementById('scAiBackdrop');
     ok(!!bd && bd.classList.contains('in'), 'pressing it opens the Ask drawer');
+    const panel = doc.getElementById('homeBubbleOverlay');
+    const panelShown = panel && panel.style.display && panel.style.display !== 'none';
+    ok(!panelShown, 'and the stats panel stays closed - the tap belongs to the button', panel && panel.style.display);
     ok(!!doc.querySelector('[data-scai-chip*="album"]'), 'and the drawer offers the make-an-album chip');
   }
 
