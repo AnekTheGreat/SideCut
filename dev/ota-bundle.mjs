@@ -143,7 +143,9 @@ fs.copyFileSync(zipPath, path.join(ROOT, 'ota/SideCut-web.zip'));
 fs.writeFileSync(path.join(ROOT, 'ota/manifest.json'), JSON.stringify({ version, url: 'SideCut-web.zip', size, notes, date }));
 // The copy at the repo root was the very first manifest location; keep it current
 // so no client left pointing at it is ever told about an older version.
-fs.writeFileSync(path.join(ROOT, 'updates.json'), JSON.stringify(manifest));
+// The root copy must point at the real bundle: an older client resolves
+// update.zip relative to the repository root, where no zip is published.
+fs.writeFileSync(path.join(ROOT, 'updates.json'), JSON.stringify({ ...manifest, url: 'ota/update.zip' }));
 
 console.log(`ota-bundle: v${version} · ${size} bytes · ${notes.length} notes`);
 console.log('  ota/update.zip  (index.html, sw.js, manifest.json, icons, dev/native-updates.js)');
