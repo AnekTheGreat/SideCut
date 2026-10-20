@@ -1,39 +1,61 @@
-## 75.1.1 ({{STAMP}}): 75.1 re-cut as 75.1.1, and the legacy root update path points at the real bundle
+## 75.1.2 ({{STAMP}}): four pinned artists at a time, and Ask SideCut reads the whole sentence
 
-- **THE OWNER ASKED FOR THIS RELEASE AS 75.1.1.** The app already states the
-  rule: `72.5.1` adds a fourth number for a fix shipped inside a release,
-  because the updater compares the numbers one at a time. `75.1.1` is that
-  shape for 75.1, not a new series.
-- **THE VERSION AND THE SHELL MOVE.** `APP_VERSION` is `75.1.1` and the service
-  worker cache is `sidecut-shell-v75.1.1`, so an install that already has the
-  75.1 page cached sees a build newer than itself and cannot keep serving the
-  old page from its offline copy. `dev/repin-7511.mjs` moved every gate pin that
-  names the live build; the historical release literals in `test-70` (70.0),
-  `test-736` and the older suites were left alone, and the series pin already
-  accepts `/^75\.\d+(\.\d+)?$/`.
-- **THE ONE REPAIR: THE ROOT MANIFEST NAMED A FILE THAT DOES NOT EXIST.** The
-  repository root carries `updates.json` and `manifest.json` for older clients.
-  Both said `url: "update.zip"`, which a client resolves to `/update.zip` - and
-  the repository has never published a root zip (Pages answered 404; the real
-  bundle is `ota/update.zip`). `dev/ota-bundle.mjs` now writes the root copy
-  with `url: "ota/update.zip"`, so the legacy location and the published bundle
-  cannot drift apart again. The OTA copies in `ota/` and `ota-play/` keep their
-  sibling `update.zip` URLs; those resolve inside their own directories and were
-  already correct.
-- **THE GATE.** `dev/legacy-update-check.cjs` reads the shipped root manifests,
-  resolves the URL the way a client does, and requires a real zip of the size the
-  manifest promises; it also proves `ota/updates.json` still names its sibling.
-  It is wired into the OTA arm of `dev/gates.sh` by `dev/patch-gate-7511.py`.
-- **THE CARRIED 6139 RED IS REPINNED, NOT WEAKENED.** `test-6139` pins the
-  number of `__scJunkTitle` references so a second hand-rolled junk test cannot
-  appear beside the shared one. The tree has 25 references (one definition and
-  24 call sites); the gate still expected 23 from 73.9. It now expects 25 and
-  says why; the exact-count rule and its purpose are unchanged.
-- **NO APP BEHAVIOUR CHANGED.** The Ask SideCut overlay on the listening-stats
-  bubble, the album planner, Undo, the player, the home widget, the lyrics, the
-  albums, the playlists and every stored setting are exactly 75.1. The release
-  exists to move the version and repair the legacy update path.
+- **THE OWNER ASKED FOR TWO THINGS.** "ask SideCut should be smarter, pinned
+  artists plateu should have 4 displayed at one time with scrolling potential
+  unlimited". The rail is `dev/patch-7512-rail.py`; the drawer is
+  `dev/patch-7512-ask.py`.
+- **THE RAIL IS FOUR-UP, NOT FIXED-WIDTH.** The chips were 72px in a card that
+  is about 316px wide on a phone, so the fourth artist was cut in half and the
+  rail read as if it ended there. A chip is now
+  `calc((100% - 3 * var(--pa-gap)) / 4)` of the rail itself, so exactly four sit
+  inside the card and the fifth starts at the edge. Nothing is capped: the width
+  comes from the container, not from how many pins there are, so two pins and
+  twenty scroll the same way. `proximity` scroll snapping settles a swipe on a
+  chip edge without fighting a fast flick. The header now carries the pin count,
+  because "there is a fifth artist" used to be discoverable only by swiping.
+- **THE DRAWER LEARNS THE REST OF A SENTENCE.** 75.1 could plan a playlist, a
+  crossfade, DJ mode and an album. Anything else fell through to a single
+  "Carry out: ..." step that the acting layer usually could not carry out, so Do
+  it closed the drawer and said "Nothing was changed". Now: "play <song |
+  artist | playlist>", shuffle and repeat, next/back/pause/resume, questions
+  answered from the library's own numbers (songs, hours, playlists, pinned
+  artists, albums, what is playing, most played), and the sentence AFTER a plan
+  ("add these too", "take these out", "undo that", "make it 8").
+  `lastRun`/`lastUndo` are what those follow-ups point at.
+- **PLAY GOES THROUGH THE APP'S OWN PATHS.** `__scPlayPlaylist` opens a playlist
+  as itself so the next song is the next song in it, and `__scPlayTrack` is the
+  same tap-a-song path the Home bubbles use. Shuffle and repeat are written
+  through `__scSetShuffle`/`__scSetRepeat`, which move the state the player's own
+  buttons move - including the queue resync the shuffle button does - and report
+  the old value so Undo can put it back.
+- **IT STOPS PRETENDING.** A sentence it cannot carry out gets no Do it button:
+  it says it cannot do that one and lists what it can. The knowledge base is only
+  consulted for a real match now (`_aiFuzzyMatch` at 60, not its floor of 35,
+  where one shared word scored 40 and "flibbertigibbet the garden hose" came back
+  as a confident answer about the converter).
+- **TOLERANCE, NOT GUESSING.** One edit is accepted on the long command words
+  ("palylist", "shufle"), the crossfade takes a written number ("crossfade six
+  seconds"), and a title more than one song answers to is handed back as a
+  question instead of picked for the owner.
+- **THE GATE.** `dev/ask-rail-check.cjs` boots the page in jsdom: ten pins all
+  render with the quarter-width rule present, "play Aurora" / "play Diljit
+  Dosanjh" / "play Night Drive" each plan and then really start, shuffle and
+  repeat move and undo, the library questions answer with the real numbers, the
+  honest reply has no Do it, "add these to X" and "undo that" run off the
+  selection, and no page error is raised. `dev/patch-gate-7512.py` puts it in the
+  extra arm beside the other drawer gates.
+- **THE OTA TOOLING HAD TO LEARN THE ROOT MANIFEST.** `--check` compared the
+  bundle against `manifest.json` at the repository root, which nothing ever
+  rewrote, so it could only ever compare against an older release.
+  `dev/ota-bundle.mjs` now writes that legacy descriptor alongside `updates.json`
+  and reaches the same fixed point in two passes.
 - **OTA.** The root bundle is `{{ROOT}}` bytes and the Play channel is
   `{{PLAY}}` bytes, both rebuilt to a fixed point before the battery ran.
-- **NOT VERIFIED ON A PHONE.** The gates drive the shipped page in jsdom; the
-  real test is one Check for updates on an install that still has 75.1.
+- **ONE CARRIED RED, NOT CAUSED HERE.** `media-controls-check` fails "and it no
+  longer fires every half hour" on `dev/native-updates.js`, which still holds a
+  `30 * 60 * 1000` gate at HEAD before this release; it is unchanged by 75.1.2.
+- **NOT VERIFIED ON A PHONE.** The gates drive the page in jsdom, which has no
+  layout engine: the quarter-width rule is proven as a computed CSS rule and ten
+  chips proven to render, not photographed on a device. The real test is one
+  swipe on the rail and one sentence typed into the drawer.
+- **NEXT RELEASE**: `75.1.3` for a fix inside this one, `76.0` for the next feature. Shell cache `sidecut-shell-v75.1.2`.

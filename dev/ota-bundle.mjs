@@ -146,6 +146,11 @@ fs.writeFileSync(path.join(ROOT, 'ota/manifest.json'), JSON.stringify({ version,
 // The root copy must point at the real bundle: an older client resolves
 // update.zip relative to the repository root, where no zip is published.
 fs.writeFileSync(path.join(ROOT, 'updates.json'), JSON.stringify({ ...manifest, url: 'ota/update.zip' }));
+// The root manifest.json is the same legacy descriptor under its older name - the
+// one an install that has never updated looks for, and the copy the bundle carries
+// inside itself. Writing it here is what keeps `--check` from comparing the bundle
+// against the manifest of a release two versions back.
+fs.writeFileSync(path.join(ROOT, 'manifest.json'), JSON.stringify({ ...manifest, url: 'ota/update.zip' }));
 
 console.log(`ota-bundle: v${version} · ${size} bytes · ${notes.length} notes`);
 console.log('  ota/update.zip  (index.html, sw.js, manifest.json, icons, dev/native-updates.js)');
