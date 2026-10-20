@@ -43,7 +43,7 @@ for (const file of ['updates.json', 'manifest.json']) {
 }
 
 const ota = readJson('ota/updates.json');
-kok(String(ota.version) === String(version), 'ota/updates.json is on this release (' + ota.version + ')');
+ok(String(ota.version) === String(version), 'ota/updates.json is on this release (' + ota.version + ')');
 ok(ota.url === 'update.zip', 'ota/updates.json still names its sibling bundle (' + ota.url + ')');
 const otaTarget = path.join(ROOT, 'ota', ota.url || '');
 ok(fs.existsSync(otaTarget) && fs.statSync(otaTarget).isFile(), 'ota/' + ota.url + ' exists');
