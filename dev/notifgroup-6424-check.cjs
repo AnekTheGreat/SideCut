@@ -185,8 +185,15 @@ const appVersion = (html.match(/const APP_VERSION = '([^']+)'/) || [])[1] || '';
   {
     ok('the group toggles are wired once, not once per render', /body\._scClWired/.test(html));
     ok('opening one never re-renders the panel', /scApplyChangelogGroup\(v, !wasOpen\)/.test(html));
+    // 80.0 split the reader in two: changelogRich() pairs each note with its
+    // longer detail, and changelogItems() is the string-only view of the same
+    // list. The property this check protects is that the panels draw the
+    // STORE-FILTERED notes and never entry.items directly, so it counts both
+    // readers and then proves the filter is inside the one that now feeds them -
+    // a name test alone would have passed on a reader with no filter at all.
+    const noteMaps = (html.match(/changelog(?:Items|Rich)\(entry\)\.map/g) || []).length;
     ok('the notes are still the store-filtered ones',
-      /changelogItems\(entry\)\.map/.test(html) && (html.match(/changelogItems\(entry\)\.map/g) || []).length >= 3);
+      noteMaps >= 3 && /function changelogRich\(entry\)\{[\s\S]{0,1200}?scHidesOnPlay\(brief\)/.test(html));
     ok('no raw entry.items was introduced', (html.match(/entry\.items/g) || []).length === 1);
     const errs = realErrors(errors);
     ok('no error was raised while all of that ran', errs.length === 0, errs.slice(0, 2).join(' | '));

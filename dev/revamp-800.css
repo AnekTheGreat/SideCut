@@ -1,0 +1,433 @@
+/* ==========================================================================
+   SideCut 80.0 - "Massive Revamp". Everything here is additive: every rule is
+   scoped to a body class this block puts there (sc80-cloud, sc80-pa-grid) or to
+   an element this block creates (sc80-*), so with both switches off the app is
+   pixel-for-pixel the 75.1.2 layout. That is the requirement: the old way is
+   always one tap away, and it is the default.
+   ========================================================================== */
+
+/* ---------- 1. Smooth rails and tabs ---------- */
+/* The pinned-artists rail: momentum scrolling plus a snap that only settles a
+   flick that was already slowing down. `scroll-behavior:smooth` is what makes a
+   programmatic nudge (a snap, a "show me the fifth" tap) glide instead of jump. */
+#pinnedArtistsList{
+  scroll-behavior: smooth;
+  scroll-padding-left: 2px;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* 8 smaller squares in a 2 x 4 window, scrolled. The rail keeps every pin; the
+   window is what the two rows show. Width comes from the container, so eight
+   tiles fill it and a ninth scrolls up - nothing is capped. */
+body.sc80-pa-grid #pinnedArtistsList{
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: min-content;
+  gap: 10px !important;
+  align-content: start;
+  max-height: 236px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-snap-type: none;
+  padding: 0 2px 6px;
+  scroll-behavior: smooth;
+}
+body.sc80-pa-grid #pinnedArtistsList > .pinned-artist-chip{
+  flex: none !important;
+  width: auto !important;
+  max-width: none !important;
+  scroll-snap-align: none;
+  padding: 0;
+}
+body.sc80-pa-grid #pinnedArtistsList .pa-tile{
+  width: 100%;
+  max-width: none;
+  border-radius: 12px;
+}
+body.sc80-pa-grid #pinnedArtistsList .pa-name{ font-size: 10px; }
+body.sc80-pa-grid #pinnedArtistsList .pa-photo{ font-size: 8.5px; }
+
+/* Tabs switch instead of blink: the pill and the tab both move their colour
+   through a transition, and the active one lifts a hair so the change reads as
+   a movement rather than a repaint. */
+.action-pill{
+  transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1),
+              background 0.3s ease, color 0.3s ease,
+              border-color 0.3s ease, box-shadow 0.3s ease !important;
+}
+.action-pill.primary, .action-pill.active{
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--coral) 26%, transparent);
+}
+.tab{
+  transition: background 0.28s ease, color 0.28s ease, border-color 0.28s ease,
+              transform 0.18s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.28s ease !important;
+}
+.tab.active{ transform: translateY(-1px); }
+/* The gliding highlight behind the dock. It is a sibling of the pills, moved by
+   transform only, so it is one compositor layer instead of four repaints. */
+#sc80DockGlide{
+  position: absolute;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--coral) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--coral) 46%, var(--line));
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+  transition: transform 0.34s cubic-bezier(0.22,0.61,0.36,1),
+              width 0.34s cubic-bezier(0.22,0.61,0.36,1),
+              height 0.34s cubic-bezier(0.22,0.61,0.36,1),
+              opacity 0.24s ease;
+}
+.action-strip > .action-pill, .action-strip > .dock-add{ position: relative; z-index: 1; }
+body.sc80-cloud #sc80DockGlide{ display: none; }
+
+/* ---------- 2. Studio: the diagonal Studio / Tools split ---------- */
+.sc80-tabs{
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 58px;
+  margin: 2px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
+}
+.sc80-tab{
+  position: relative;
+  border: none;
+  background: none;
+  color: var(--ink-dim);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  transition: color 0.26s ease, background 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.sc80-tab .sc80-tab-sub{ font-size: 9.5px; font-weight: 500; opacity: 0.72; }
+.sc80-tab.right{ align-items: flex-end; justify-content: flex-end; text-align: right; }
+.sc80-tab.active{ color: var(--ink); background: color-mix(in srgb, var(--coral) 16%, transparent); }
+.sc80-tab:active{ transform: scale(0.985); }
+.sc80-tabs > svg{ position: absolute; inset: 0; pointer-events: none; }
+.sc80-pane{ display: none; flex-direction: column; }
+.sc80-pane.active{ display: flex; }
+.sc80-pane .sc-sec:first-child{ margin-top: 0; }
+
+/* The milestones card and the look card are the same card the rest of Studio
+   uses, so nothing here invents a new visual language. */
+.sc80-ms-row{
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--line);
+}
+.sc80-ms-row:first-of-type{ border-top: none; }
+.sc80-ms-days{
+  flex: 0 0 auto; min-width: 54px; font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; font-weight: 700; color: var(--gold);
+}
+.sc80-ms-days.locked{ color: var(--ink-dim); opacity: 0.55; }
+.sc80-ms-txt{ flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--ink-dim); line-height: 1.4; }
+.sc80-ms-txt b{ color: var(--ink); font-weight: 600; }
+.sc80-ms-row .sc-btn{ flex: 0 0 auto; }
+.sc80-opt-row{ display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 2px; }
+.sc80-opt{
+  flex: 1 1 140px; text-align: left; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.03);
+  color: var(--ink); font-family: var(--font-ui); font-size: 12px; cursor: pointer;
+  transition: border-color 0.24s ease, background 0.24s ease, transform 0.14s ease;
+}
+.sc80-opt:active{ transform: scale(0.98); }
+.sc80-opt.on{
+  border-color: var(--coral);
+  background: color-mix(in srgb, var(--coral) 14%, transparent);
+}
+.sc80-opt small{ display: block; font-size: 10.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 400; }
+
+/* ---------- 3. Milestones: the replayable celebration ---------- */
+#sc80Milestone{
+  position: fixed; inset: 0; z-index: 9000; display: none;
+  align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 42%, rgba(0,0,0,0.62), rgba(0,0,0,0.9));
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  padding: 22px;
+}
+#sc80Milestone.show{ display: flex; animation: sc80-ms-in 0.32s ease both; }
+@keyframes sc80-ms-in{ from{ opacity: 0 } to{ opacity: 1 } }
+.sc80-ms-card{
+  position: relative; width: min(420px, 100%); text-align: center;
+  padding: 30px 22px 22px; border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line));
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--gold) 18%, transparent), transparent 62%),
+    linear-gradient(160deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 74%, #000));
+  box-shadow: 0 26px 70px rgba(0,0,0,0.55);
+  overflow: hidden;
+  animation: sc80-ms-pop 0.5s cubic-bezier(0.2,0.9,0.2,1) both;
+}
+@keyframes sc80-ms-pop{ from{ transform: scale(0.9) translateY(14px); opacity: 0 } to{ transform: none; opacity: 1 } }
+.sc80-ms-kicker{
+  font-size: 10.5px; letter-spacing: 2.4px; text-transform: uppercase;
+  color: var(--gold); font-weight: 700;
+}
+.sc80-ms-num{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(58px, 19vw, 92px); line-height: 0.98; font-weight: 700;
+  color: var(--ink); margin: 8px 0 0;
+  text-shadow: 0 0 34px color-mix(in srgb, var(--gold) 45%, transparent);
+  animation: sc80-ms-beat 1.5s ease-in-out 2;
+}
+@keyframes sc80-ms-beat{
+  0%,100%{ transform: scale(1) }
+  22%{ transform: scale(1.08) }
+  46%{ transform: scale(0.99) }
+  70%{ transform: scale(1.04) }
+}
+.sc80-ms-unit{ font-size: 15px; font-weight: 700; letter-spacing: 1px; color: var(--gold); margin-top: 2px; }
+.sc80-ms-sub{ font-size: 12.5px; color: var(--ink-dim); line-height: 1.55; margin: 12px auto 0; max-width: 320px; }
+.sc80-ms-rings{ position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.sc80-ms-rings i{
+  position: absolute; left: 50%; top: 46%; width: 90px; height: 90px; margin: -45px 0 0 -45px;
+  border-radius: 50%; border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  opacity: 0; animation: sc80-ring 2.8s ease-out infinite;
+}
+.sc80-ms-rings i:nth-child(2){ animation-delay: 0.7s; }
+.sc80-ms-rings i:nth-child(3){ animation-delay: 1.4s; }
+@keyframes sc80-ring{
+  0%{ transform: scale(0.35); opacity: 0.85 }
+  100%{ transform: scale(3.4); opacity: 0 }
+}
+.sc80-ms-bits{ position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.sc80-ms-bits i{
+  position: absolute; top: -12px; width: 7px; height: 11px; border-radius: 2px;
+  opacity: 0; animation: sc80-bit 2.4s linear infinite;
+}
+@keyframes sc80-bit{
+  0%{ transform: translateY(-10px) rotate(0deg); opacity: 0 }
+  12%{ opacity: 0.95 }
+  100%{ transform: translateY(360px) rotate(320deg); opacity: 0 }
+}
+.sc80-ms-btns{ display: flex; gap: 8px; margin-top: 18px; }
+.sc80-ms-btns button{
+  flex: 1; padding: 11px 12px; border-radius: 12px; cursor: pointer;
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 700;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.04); color: var(--ink);
+  transition: transform 0.14s ease, background 0.24s ease, border-color 0.24s ease;
+}
+.sc80-ms-btns button:active{ transform: scale(0.97); }
+.sc80-ms-btns button.primary{ background: var(--coral); border-color: var(--coral); color: #161616; }
+.sc80-ms-hint{ font-size: 10.5px; color: var(--ink-dim); margin-top: 10px; opacity: 0.8; }
+@media (prefers-reduced-motion: reduce){
+  #sc80Milestone.show, .sc80-ms-card, .sc80-ms-num{ animation: none !important; }
+  .sc80-ms-rings i, .sc80-ms-bits i{ animation: none !important; display: none; }
+}
+
+/* ---------- 4. Cloud layout: floating bubbles, dock on the right ---------- */
+body.sc80-cloud{ --sc80-dock: 76px; }
+/* The four tabs leave the bottom edge and float down the right side. */
+body.sc80-cloud .action-strip{
+  position: fixed;
+  left: auto; right: 10px; top: 50%; bottom: auto;
+  transform: translateY(-50%);
+  flex-direction: column;
+  width: var(--sc80-dock);
+  max-width: var(--sc80-dock);
+  gap: 8px;
+  padding: 9px 8px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--bg-raised) 80%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(14px) saturate(1.15);
+  box-shadow: 0 18px 44px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+  z-index: 40;
+}
+body.sc80-cloud .action-strip > *{ flex: 0 0 auto; width: 100%; }
+body.sc80-cloud .action-pill{
+  border-radius: 18px;
+  font-size: 10px;
+  line-height: 1.18;
+  padding: 10px 2px;
+  min-height: 44px;
+  white-space: normal;
+  background: transparent;
+  border-color: transparent;
+}
+body.sc80-cloud .action-pill.primary,
+body.sc80-cloud #homeBtn.active,
+body.sc80-cloud #discoverBtn.active,
+body.sc80-cloud #studioBtn.active{
+  background: color-mix(in srgb, var(--coral) 82%, transparent);
+  border-color: color-mix(in srgb, var(--coral) 60%, transparent);
+  color: #161616;
+}
+body.sc80-cloud #addSongsMenu{
+  right: calc(var(--sc80-dock) + 16px); left: auto; top: 50%; transform: translateY(-50%);
+}
+/* The player keeps the bottom (it is the one thing that must stay thumb-reach
+   sized) but stops under the dock instead of behind it. */
+body.sc80-cloud #nowPlaying{ padding-right: calc(var(--sc80-dock) + 18px); }
+body.sc80-cloud .brand span{ display: none; }
+/* The header's three buttons become bubbles on the stats card, so the bar has
+   nothing left to hold on the right and the mini now-bar takes that corner. */
+body.sc80-cloud header > div:last-child{ display: none; }
+body.sc80-cloud header{ padding-right: 12px; }
+body.sc80-cloud #homeView{ padding-top: 6px; }
+/* Bubbles are bubbles: round, floating, and arranged in a cloud instead of two
+   columns of cards. Sizes stay driven by the same --hb-s the resize chip sets. */
+body.sc80-cloud #homeBubbles{
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center;
+  gap: 14px; padding: 4px 0 0;
+}
+body.sc80-cloud .home-bubble{
+  border-radius: 50%;
+  width: calc(50% - 14px);
+  aspect-ratio: 1 / 1;
+  min-height: 0 !important;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  contain: layout paint;
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in srgb, var(--coral) 18%, transparent), transparent 58%),
+    linear-gradient(158deg, color-mix(in srgb, var(--bg-raised) 96%, transparent), color-mix(in srgb, var(--bg-raised) 74%, #000));
+  box-shadow: 0 14px 32px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.06);
+  animation: sc80-float 7.5s ease-in-out infinite;
+}
+body.sc80-cloud .home-bubble.gold-bubble{
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in srgb, var(--gold) 20%, transparent), transparent 58%),
+    linear-gradient(158deg, color-mix(in srgb, var(--bg-raised) 96%, transparent), color-mix(in srgb, var(--bg-raised) 74%, #000));
+}
+body.sc80-cloud .home-bubble:nth-child(2n){ animation-delay: -2.1s; }
+body.sc80-cloud .home-bubble:nth-child(3n){ animation-delay: -4.3s; }
+body.sc80-cloud .home-bubble:nth-child(4n){ animation-delay: -1.2s; }
+body.sc80-cloud .home-bubble.wide{ width: calc(50% - 14px); }
+body.sc80-cloud .home-bubble .hb-value{ font-size: calc(21px * var(--hb-s, 1)); }
+body.sc80-cloud .home-bubble .hb-label{ font-size: calc(10.5px * var(--hb-s, 1)); }
+body.sc80-cloud .home-bubble .hb-ico{
+  top: 50%; left: 50%; transform: translate(-50%, -128%);
+  width: calc(26px * var(--hb-s, 1)); height: calc(26px * var(--hb-s, 1));
+}
+body.sc80-cloud .home-bubble .hb-hint{ bottom: 12px; right: 50%; transform: translateX(50%); }
+@keyframes sc80-float{
+  0%, 100%{ transform: translateY(0) }
+  50%{ transform: translateY(-7px) }
+}
+@media (prefers-reduced-motion: reduce){
+  body.sc80-cloud .home-bubble{ animation: none; }
+}
+
+/* The small now bar that floats in the top right in cloud layout. */
+#sc80Now{
+  position: fixed;
+  top: 10px;
+  right: calc(var(--sc80-dock, 76px) + 14px);
+  z-index: 41;
+  display: none;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px 5px 5px;
+  max-width: min(300px, 60vw);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-raised) 84%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.3);
+  cursor: pointer;
+}
+body.sc80-cloud #sc80Now{ display: flex; }
+#sc80Now .art{
+  width: 24px; height: 24px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--bg); background-size: cover; background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14);
+}
+#sc80Now .txt{ min-width: 0; font-size: 10.5px; line-height: 1.16; }
+#sc80Now .t{ font-weight: 600; color: var(--ink); max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sc80Now .a{ color: var(--ink-dim); max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sc80Now .pp{
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.05);
+  color: var(--ink); display: flex; align-items: center; justify-content: center;
+  font-size: 11px; cursor: pointer; padding: 0;
+}
+#sc80Now .pp:active{ transform: scale(0.9); }
+
+/* The three header buttons, as bubbles on the listening-stats card. */
+#sc80CloudCtl{ position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 3; }
+#sc80CloudCtl button{
+  width: 24px; height: 24px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,0.08); color: var(--ink);
+  display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+  transition: transform 0.14s ease, background 0.2s ease;
+}
+#sc80CloudCtl button:active{ transform: scale(0.88); }
+#sc80CloudCtl button svg{ width: 12px; height: 12px; }
+#sc80CloudCtl button .sc80-dot{
+  position: absolute; top: 1px; right: 1px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--coral); box-shadow: 0 0 0 2px var(--bg-raised);
+}
+/* The three moved buttons sit at the bottom right of a round bubble, where a
+   circle still has room; the Ask SideCut sparkle keeps the top right it has had
+   since 75.1. */
+body.sc80-cloud #sc80CloudCtl{ top: auto; bottom: 6px; right: 6px; }
+/* The floating dock sits over the right edge of every view, so the views give it
+   that strip back instead of running their cards underneath it. */
+body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #discoverView,
+body.sc80-cloud #studioView{ padding-right: calc(var(--sc80-dock) + 12px); }
+body:not(.sc80-cloud) #sc80CloudCtl{ display: none; }
+
+/* ---------- 5. Bigger screens, foldables, landscape ---------- */
+@media (min-width: 760px){
+  body.sc80-cloud .home-bubble{ width: calc(25% - 14px); }
+  .sc80-tabs{ max-width: 560px; }
+}
+@media (min-width: 600px) and (max-width: 900px){
+  /* Foldable inner screens and small tablets: the bubble cloud gets three
+     across instead of two, and every pane keeps a readable measure. */
+  body.sc80-cloud .home-bubble{ width: calc(33.333% - 14px); }
+  #homeView, #library, #discoverView, #studioView{ max-width: 880px; margin-left: auto; margin-right: auto; }
+}
+@media (min-width: 1000px){
+  body.sc80-cloud .action-strip{ right: 22px; }
+  body.sc80-cloud #homeBubbles{ max-width: 1120px; margin-left: auto; margin-right: auto; }
+  #studioView .sc80-tabs{ max-width: 620px; }
+}
+@media (orientation: landscape) and (max-height: 480px){
+  body.sc80-cloud{ --sc80-dock: 64px; }
+  body.sc80-cloud .action-pill{ font-size: 9px; padding: 7px 2px; min-height: 38px; }
+  body.sc80-cloud .home-bubble{ width: calc(33.333% - 14px); }
+  #sc80Now{ top: 6px; }
+}
+
+/* ---------- 6. Patch notes: one sentence, then the detail under it ---------- */
+.sc-cl-item{ display: block; }
+.sc-cl-item > summary{
+  display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
+  list-style: none; padding: 1px 0; border-radius: 8px;
+  transition: color 0.2s ease;
+}
+.sc-cl-item > summary::-webkit-details-marker{ display: none; }
+.sc-cl-item > summary:hover{ color: var(--ink); }
+.sc-cl-item .sc-cl-bullet{ color: var(--coral); flex-shrink: 0; }
+.sc-cl-item .sc-cl-chev{
+  margin-left: auto; flex-shrink: 0; font-size: 9px; opacity: 0.6;
+  transition: transform 0.24s ease; transform: rotate(0deg);
+}
+.sc-cl-item[open] .sc-cl-chev{ transform: rotate(180deg); }
+.sc-cl-item .sc-cl-detail{
+  margin: 4px 0 6px 16px; padding: 8px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--coral) 40%, transparent);
+  background: rgba(255,255,255,0.03); border-radius: 0 8px 8px 0;
+  font-size: 11.5px; line-height: 1.55; color: var(--ink-dim);
+  animation: sc80-cl-in 0.22s ease both;
+}
+@keyframes sc80-cl-in{ from{ opacity: 0; transform: translateY(-3px) } to{ opacity: 1; transform: none } }

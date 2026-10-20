@@ -33,7 +33,7 @@ done
 LC_ALL=C sha256sum \
   $(LC_ALL=C ls dev/test-*.mjs | LC_ALL=C sort) \
   $(LC_ALL=C ls dev/*-check.cjs | LC_ALL=C sort) \
-  $(LC_ALL=C ls dev/patch-$N-*.py | LC_ALL=C sort) \
+  $(LC_ALL=C ls dev/patch-$N-*.py 2>/dev/null | LC_ALL=C sort) \
   "dev/patch-$N.py" \
   "dev/repin-$N.mjs" \
   "dev/patch-gate-$N.py" \

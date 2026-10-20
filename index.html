@@ -2904,6 +2904,442 @@ body.theme-dyn-vortex::before{
 body.theme-dyn-vortex .home-bubble .hb-glow{ animation: sd-glow-pulse 6s ease-in-out infinite; }
 body.sandbox-reduce-motion.theme-dyn-vortex::before{ transform: none; }
 </style>
+<style id="sc80Css">
+/* ==========================================================================
+   SideCut 80.0 - "Massive Revamp". Everything here is additive: every rule is
+   scoped to a body class this block puts there (sc80-cloud, sc80-pa-grid) or to
+   an element this block creates (sc80-*), so with both switches off the app is
+   pixel-for-pixel the 75.1.2 layout. That is the requirement: the old way is
+   always one tap away, and it is the default.
+   ========================================================================== */
+
+/* ---------- 1. Smooth rails and tabs ---------- */
+/* The pinned-artists rail: momentum scrolling plus a snap that only settles a
+   flick that was already slowing down. `scroll-behavior:smooth` is what makes a
+   programmatic nudge (a snap, a "show me the fifth" tap) glide instead of jump. */
+#pinnedArtistsList{
+  scroll-behavior: smooth;
+  scroll-padding-left: 2px;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* 8 smaller squares in a 2 x 4 window, scrolled. The rail keeps every pin; the
+   window is what the two rows show. Width comes from the container, so eight
+   tiles fill it and a ninth scrolls up - nothing is capped. */
+body.sc80-pa-grid #pinnedArtistsList{
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: min-content;
+  gap: 10px !important;
+  align-content: start;
+  max-height: 236px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-snap-type: none;
+  padding: 0 2px 6px;
+  scroll-behavior: smooth;
+}
+body.sc80-pa-grid #pinnedArtistsList > .pinned-artist-chip{
+  flex: none !important;
+  width: auto !important;
+  max-width: none !important;
+  scroll-snap-align: none;
+  padding: 0;
+}
+body.sc80-pa-grid #pinnedArtistsList .pa-tile{
+  width: 100%;
+  max-width: none;
+  border-radius: 12px;
+}
+body.sc80-pa-grid #pinnedArtistsList .pa-name{ font-size: 10px; }
+body.sc80-pa-grid #pinnedArtistsList .pa-photo{ font-size: 8.5px; }
+
+/* Tabs switch instead of blink: the pill and the tab both move their colour
+   through a transition, and the active one lifts a hair so the change reads as
+   a movement rather than a repaint. */
+.action-pill{
+  transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1),
+              background 0.3s ease, color 0.3s ease,
+              border-color 0.3s ease, box-shadow 0.3s ease !important;
+}
+.action-pill.primary, .action-pill.active{
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--coral) 26%, transparent);
+}
+.tab{
+  transition: background 0.28s ease, color 0.28s ease, border-color 0.28s ease,
+              transform 0.18s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.28s ease !important;
+}
+.tab.active{ transform: translateY(-1px); }
+/* The gliding highlight behind the dock. It is a sibling of the pills, moved by
+   transform only, so it is one compositor layer instead of four repaints. */
+#sc80DockGlide{
+  position: absolute;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--coral) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--coral) 46%, var(--line));
+  pointer-events: none;
+  opacity: 0;
+  z-index: 0;
+  transition: transform 0.34s cubic-bezier(0.22,0.61,0.36,1),
+              width 0.34s cubic-bezier(0.22,0.61,0.36,1),
+              height 0.34s cubic-bezier(0.22,0.61,0.36,1),
+              opacity 0.24s ease;
+}
+.action-strip > .action-pill, .action-strip > .dock-add{ position: relative; z-index: 1; }
+body.sc80-cloud #sc80DockGlide{ display: none; }
+
+/* ---------- 2. Studio: the diagonal Studio / Tools split ---------- */
+.sc80-tabs{
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 58px;
+  margin: 2px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
+}
+.sc80-tab{
+  position: relative;
+  border: none;
+  background: none;
+  color: var(--ink-dim);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  transition: color 0.26s ease, background 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.sc80-tab .sc80-tab-sub{ font-size: 9.5px; font-weight: 500; opacity: 0.72; }
+.sc80-tab.right{ align-items: flex-end; justify-content: flex-end; text-align: right; }
+.sc80-tab.active{ color: var(--ink); background: color-mix(in srgb, var(--coral) 16%, transparent); }
+.sc80-tab:active{ transform: scale(0.985); }
+.sc80-tabs > svg{ position: absolute; inset: 0; pointer-events: none; }
+.sc80-pane{ display: none; flex-direction: column; }
+.sc80-pane.active{ display: flex; }
+.sc80-pane .sc-sec:first-child{ margin-top: 0; }
+
+/* The milestones card and the look card are the same card the rest of Studio
+   uses, so nothing here invents a new visual language. */
+.sc80-ms-row{
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-top: 1px solid var(--line);
+}
+.sc80-ms-row:first-of-type{ border-top: none; }
+.sc80-ms-days{
+  flex: 0 0 auto; min-width: 54px; font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; font-weight: 700; color: var(--gold);
+}
+.sc80-ms-days.locked{ color: var(--ink-dim); opacity: 0.55; }
+.sc80-ms-txt{ flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--ink-dim); line-height: 1.4; }
+.sc80-ms-txt b{ color: var(--ink); font-weight: 600; }
+.sc80-ms-row .sc-btn{ flex: 0 0 auto; }
+.sc80-opt-row{ display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 2px; }
+.sc80-opt{
+  flex: 1 1 140px; text-align: left; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.03);
+  color: var(--ink); font-family: var(--font-ui); font-size: 12px; cursor: pointer;
+  transition: border-color 0.24s ease, background 0.24s ease, transform 0.14s ease;
+}
+.sc80-opt:active{ transform: scale(0.98); }
+.sc80-opt.on{
+  border-color: var(--coral);
+  background: color-mix(in srgb, var(--coral) 14%, transparent);
+}
+.sc80-opt small{ display: block; font-size: 10.5px; color: var(--ink-dim); margin-top: 3px; font-weight: 400; }
+
+/* ---------- 3. Milestones: the replayable celebration ---------- */
+#sc80Milestone{
+  position: fixed; inset: 0; z-index: 9000; display: none;
+  align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 42%, rgba(0,0,0,0.62), rgba(0,0,0,0.9));
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  padding: 22px;
+}
+#sc80Milestone.show{ display: flex; animation: sc80-ms-in 0.32s ease both; }
+@keyframes sc80-ms-in{ from{ opacity: 0 } to{ opacity: 1 } }
+.sc80-ms-card{
+  position: relative; width: min(420px, 100%); text-align: center;
+  padding: 30px 22px 22px; border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line));
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--gold) 18%, transparent), transparent 62%),
+    linear-gradient(160deg, var(--bg-raised), color-mix(in srgb, var(--bg-raised) 74%, #000));
+  box-shadow: 0 26px 70px rgba(0,0,0,0.55);
+  overflow: hidden;
+  animation: sc80-ms-pop 0.5s cubic-bezier(0.2,0.9,0.2,1) both;
+}
+@keyframes sc80-ms-pop{ from{ transform: scale(0.9) translateY(14px); opacity: 0 } to{ transform: none; opacity: 1 } }
+.sc80-ms-kicker{
+  font-size: 10.5px; letter-spacing: 2.4px; text-transform: uppercase;
+  color: var(--gold); font-weight: 700;
+}
+.sc80-ms-num{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(58px, 19vw, 92px); line-height: 0.98; font-weight: 700;
+  color: var(--ink); margin: 8px 0 0;
+  text-shadow: 0 0 34px color-mix(in srgb, var(--gold) 45%, transparent);
+  animation: sc80-ms-beat 1.5s ease-in-out 2;
+}
+@keyframes sc80-ms-beat{
+  0%,100%{ transform: scale(1) }
+  22%{ transform: scale(1.08) }
+  46%{ transform: scale(0.99) }
+  70%{ transform: scale(1.04) }
+}
+.sc80-ms-unit{ font-size: 15px; font-weight: 700; letter-spacing: 1px; color: var(--gold); margin-top: 2px; }
+.sc80-ms-sub{ font-size: 12.5px; color: var(--ink-dim); line-height: 1.55; margin: 12px auto 0; max-width: 320px; }
+.sc80-ms-rings{ position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.sc80-ms-rings i{
+  position: absolute; left: 50%; top: 46%; width: 90px; height: 90px; margin: -45px 0 0 -45px;
+  border-radius: 50%; border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  opacity: 0; animation: sc80-ring 2.8s ease-out infinite;
+}
+.sc80-ms-rings i:nth-child(2){ animation-delay: 0.7s; }
+.sc80-ms-rings i:nth-child(3){ animation-delay: 1.4s; }
+@keyframes sc80-ring{
+  0%{ transform: scale(0.35); opacity: 0.85 }
+  100%{ transform: scale(3.4); opacity: 0 }
+}
+.sc80-ms-bits{ position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.sc80-ms-bits i{
+  position: absolute; top: -12px; width: 7px; height: 11px; border-radius: 2px;
+  opacity: 0; animation: sc80-bit 2.4s linear infinite;
+}
+@keyframes sc80-bit{
+  0%{ transform: translateY(-10px) rotate(0deg); opacity: 0 }
+  12%{ opacity: 0.95 }
+  100%{ transform: translateY(360px) rotate(320deg); opacity: 0 }
+}
+.sc80-ms-btns{ display: flex; gap: 8px; margin-top: 18px; }
+.sc80-ms-btns button{
+  flex: 1; padding: 11px 12px; border-radius: 12px; cursor: pointer;
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 700;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.04); color: var(--ink);
+  transition: transform 0.14s ease, background 0.24s ease, border-color 0.24s ease;
+}
+.sc80-ms-btns button:active{ transform: scale(0.97); }
+.sc80-ms-btns button.primary{ background: var(--coral); border-color: var(--coral); color: #161616; }
+.sc80-ms-hint{ font-size: 10.5px; color: var(--ink-dim); margin-top: 10px; opacity: 0.8; }
+@media (prefers-reduced-motion: reduce){
+  #sc80Milestone.show, .sc80-ms-card, .sc80-ms-num{ animation: none !important; }
+  .sc80-ms-rings i, .sc80-ms-bits i{ animation: none !important; display: none; }
+}
+
+/* ---------- 4. Cloud layout: floating bubbles, dock on the right ---------- */
+body.sc80-cloud{ --sc80-dock: 76px; }
+/* The four tabs leave the bottom edge and float down the right side. */
+body.sc80-cloud .action-strip{
+  position: fixed;
+  left: auto; right: 10px; top: 50%; bottom: auto;
+  transform: translateY(-50%);
+  flex-direction: column;
+  width: var(--sc80-dock);
+  max-width: var(--sc80-dock);
+  gap: 8px;
+  padding: 9px 8px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--bg-raised) 80%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(14px) saturate(1.15);
+  box-shadow: 0 18px 44px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+  z-index: 40;
+}
+body.sc80-cloud .action-strip > *{ flex: 0 0 auto; width: 100%; }
+body.sc80-cloud .action-pill{
+  border-radius: 18px;
+  font-size: 10px;
+  line-height: 1.18;
+  padding: 10px 2px;
+  min-height: 44px;
+  white-space: normal;
+  background: transparent;
+  border-color: transparent;
+}
+body.sc80-cloud .action-pill.primary,
+body.sc80-cloud #homeBtn.active,
+body.sc80-cloud #discoverBtn.active,
+body.sc80-cloud #studioBtn.active{
+  background: color-mix(in srgb, var(--coral) 82%, transparent);
+  border-color: color-mix(in srgb, var(--coral) 60%, transparent);
+  color: #161616;
+}
+body.sc80-cloud #addSongsMenu{
+  right: calc(var(--sc80-dock) + 16px); left: auto; top: 50%; transform: translateY(-50%);
+}
+/* The player keeps the bottom (it is the one thing that must stay thumb-reach
+   sized) but stops under the dock instead of behind it. */
+body.sc80-cloud #nowPlaying{ padding-right: calc(var(--sc80-dock) + 18px); }
+body.sc80-cloud .brand span{ display: none; }
+/* The header's three buttons become bubbles on the stats card, so the bar has
+   nothing left to hold on the right and the mini now-bar takes that corner. */
+body.sc80-cloud header > div:last-child{ display: none; }
+body.sc80-cloud header{ padding-right: 12px; }
+body.sc80-cloud #homeView{ padding-top: 6px; }
+/* Bubbles are bubbles: round, floating, and arranged in a cloud instead of two
+   columns of cards. Sizes stay driven by the same --hb-s the resize chip sets. */
+body.sc80-cloud #homeBubbles{
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center;
+  gap: 14px; padding: 4px 0 0;
+}
+body.sc80-cloud .home-bubble{
+  border-radius: 50%;
+  width: calc(50% - 14px);
+  aspect-ratio: 1 / 1;
+  min-height: 0 !important;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  contain: layout paint;
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in srgb, var(--coral) 18%, transparent), transparent 58%),
+    linear-gradient(158deg, color-mix(in srgb, var(--bg-raised) 96%, transparent), color-mix(in srgb, var(--bg-raised) 74%, #000));
+  box-shadow: 0 14px 32px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.06);
+  animation: sc80-float 7.5s ease-in-out infinite;
+}
+body.sc80-cloud .home-bubble.gold-bubble{
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in srgb, var(--gold) 20%, transparent), transparent 58%),
+    linear-gradient(158deg, color-mix(in srgb, var(--bg-raised) 96%, transparent), color-mix(in srgb, var(--bg-raised) 74%, #000));
+}
+body.sc80-cloud .home-bubble:nth-child(2n){ animation-delay: -2.1s; }
+body.sc80-cloud .home-bubble:nth-child(3n){ animation-delay: -4.3s; }
+body.sc80-cloud .home-bubble:nth-child(4n){ animation-delay: -1.2s; }
+body.sc80-cloud .home-bubble.wide{ width: calc(50% - 14px); }
+body.sc80-cloud .home-bubble .hb-value{ font-size: calc(21px * var(--hb-s, 1)); }
+body.sc80-cloud .home-bubble .hb-label{ font-size: calc(10.5px * var(--hb-s, 1)); }
+body.sc80-cloud .home-bubble .hb-ico{
+  top: 50%; left: 50%; transform: translate(-50%, -128%);
+  width: calc(26px * var(--hb-s, 1)); height: calc(26px * var(--hb-s, 1));
+}
+body.sc80-cloud .home-bubble .hb-hint{ bottom: 12px; right: 50%; transform: translateX(50%); }
+@keyframes sc80-float{
+  0%, 100%{ transform: translateY(0) }
+  50%{ transform: translateY(-7px) }
+}
+@media (prefers-reduced-motion: reduce){
+  body.sc80-cloud .home-bubble{ animation: none; }
+}
+
+/* The small now bar that floats in the top right in cloud layout. */
+#sc80Now{
+  position: fixed;
+  top: 10px;
+  right: calc(var(--sc80-dock, 76px) + 14px);
+  z-index: 41;
+  display: none;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px 5px 5px;
+  max-width: min(300px, 60vw);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-raised) 84%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 26px rgba(0,0,0,0.3);
+  cursor: pointer;
+}
+body.sc80-cloud #sc80Now{ display: flex; }
+#sc80Now .art{
+  width: 24px; height: 24px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--bg); background-size: cover; background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14);
+}
+#sc80Now .txt{ min-width: 0; font-size: 10.5px; line-height: 1.16; }
+#sc80Now .t{ font-weight: 600; color: var(--ink); max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sc80Now .a{ color: var(--ink-dim); max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sc80Now .pp{
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.05);
+  color: var(--ink); display: flex; align-items: center; justify-content: center;
+  font-size: 11px; cursor: pointer; padding: 0;
+}
+#sc80Now .pp:active{ transform: scale(0.9); }
+
+/* The three header buttons, as bubbles on the listening-stats card. */
+#sc80CloudCtl{ position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 3; }
+#sc80CloudCtl button{
+  width: 24px; height: 24px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,0.08); color: var(--ink);
+  display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+  transition: transform 0.14s ease, background 0.2s ease;
+}
+#sc80CloudCtl button:active{ transform: scale(0.88); }
+#sc80CloudCtl button svg{ width: 12px; height: 12px; }
+#sc80CloudCtl button .sc80-dot{
+  position: absolute; top: 1px; right: 1px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--coral); box-shadow: 0 0 0 2px var(--bg-raised);
+}
+/* The three moved buttons sit at the bottom right of a round bubble, where a
+   circle still has room; the Ask SideCut sparkle keeps the top right it has had
+   since 75.1. */
+body.sc80-cloud #sc80CloudCtl{ top: auto; bottom: 6px; right: 6px; }
+/* The floating dock sits over the right edge of every view, so the views give it
+   that strip back instead of running their cards underneath it. */
+body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #discoverView,
+body.sc80-cloud #studioView{ padding-right: calc(var(--sc80-dock) + 12px); }
+body:not(.sc80-cloud) #sc80CloudCtl{ display: none; }
+
+/* ---------- 5. Bigger screens, foldables, landscape ---------- */
+@media (min-width: 760px){
+  body.sc80-cloud .home-bubble{ width: calc(25% - 14px); }
+  .sc80-tabs{ max-width: 560px; }
+}
+@media (min-width: 600px) and (max-width: 900px){
+  /* Foldable inner screens and small tablets: the bubble cloud gets three
+     across instead of two, and every pane keeps a readable measure. */
+  body.sc80-cloud .home-bubble{ width: calc(33.333% - 14px); }
+  #homeView, #library, #discoverView, #studioView{ max-width: 880px; margin-left: auto; margin-right: auto; }
+}
+@media (min-width: 1000px){
+  body.sc80-cloud .action-strip{ right: 22px; }
+  body.sc80-cloud #homeBubbles{ max-width: 1120px; margin-left: auto; margin-right: auto; }
+  #studioView .sc80-tabs{ max-width: 620px; }
+}
+@media (orientation: landscape) and (max-height: 480px){
+  body.sc80-cloud{ --sc80-dock: 64px; }
+  body.sc80-cloud .action-pill{ font-size: 9px; padding: 7px 2px; min-height: 38px; }
+  body.sc80-cloud .home-bubble{ width: calc(33.333% - 14px); }
+  #sc80Now{ top: 6px; }
+}
+
+/* ---------- 6. Patch notes: one sentence, then the detail under it ---------- */
+.sc-cl-item{ display: block; }
+.sc-cl-item > summary{
+  display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
+  list-style: none; padding: 1px 0; border-radius: 8px;
+  transition: color 0.2s ease;
+}
+.sc-cl-item > summary::-webkit-details-marker{ display: none; }
+.sc-cl-item > summary:hover{ color: var(--ink); }
+.sc-cl-item .sc-cl-bullet{ color: var(--coral); flex-shrink: 0; }
+.sc-cl-item .sc-cl-chev{
+  margin-left: auto; flex-shrink: 0; font-size: 9px; opacity: 0.6;
+  transition: transform 0.24s ease; transform: rotate(0deg);
+}
+.sc-cl-item[open] .sc-cl-chev{ transform: rotate(180deg); }
+.sc-cl-item .sc-cl-detail{
+  margin: 4px 0 6px 16px; padding: 8px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--coral) 40%, transparent);
+  background: rgba(255,255,255,0.03); border-radius: 0 8px 8px 0;
+  font-size: 11.5px; line-height: 1.55; color: var(--ink-dim);
+  animation: sc80-cl-in 0.22s ease both;
+}
+@keyframes sc80-cl-in{ from{ opacity: 0; transform: translateY(-3px) } to{ opacity: 1; transform: none } }
+
+</style>
 </head>
 <body>
 
@@ -13721,7 +14157,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '75.1.2';
+  const APP_VERSION = '80.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -14370,6 +14806,35 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.0', date: 'October 20, 2026 \u00b7 4:45 PM EDT', title: 'Massive Revamp Update', items: [
+    'Hitting a streak milestone now opens the app with a celebration made for that number - 3, 7, 30, 50, 100 and up.',
+    'Every milestone you have reached is saved in Studio with its date, and any of them can be replayed from there.',
+    'Studio is split down a diagonal into Studio and Tools, so creative work and everything else stop sharing one list.',
+    'Tools holds badges and rewards, the storage cleaner, Auto-DJ, gestures, the batch tag editor and batch on selected.',
+    'The pinned artists rail glides now - a slow swipe settles on a chip edge and a fast flick is left alone.',
+    'Pinned artists can be eight smaller squares in a 2 x 4 window instead of four in a row, and either one is a setting.',
+    'Switching tabs glides: the pill dock highlight slides between the pills and the active library tab scrolls itself into the middle.',
+    'A second layout, Cloud bubbles: round floating bubbles, the dock down the right side, and a small now bar in the top right.',
+    'In Cloud the notifications, refresh and Settings buttons move onto the listening-stats bubble, and the your files no ads line is gone.',
+    'The original layout is the default and is always one tap away, from Settings, More or from Studio, Tools.',
+    'Unsorted no longer appears twice in the library tab strip.',
+    'Computers, tablets and foldables get the room they have, and every pane keeps a readable measure.',
+    'Nothing else moved: the home-screen widget, the player, the letter-by-letter lyrics and the albums are exactly where 75.1.2 left them.',
+  ], details: [
+    'The first start after the milestone plays a full-screen card: the number, the rings, the confetti and a line that says what the streak is. It plays once per milestone, so it is a moment rather than a nag, and the ones that matter most - 50, 100, 365 - are the ones that fill the screen.',
+    'Studio, Tools, Milestones lists all sixteen milestones from 3 days to 1000, marks the ones reached, shows your best streak and puts a Replay button on every one. A preview button plays the 100-day animation before you have earned it, so you can see what is coming.',
+    'The tab bar is one pill cut corner to corner from the bottom right to the top left, the same diagonal the Library pill has used since 70.0. Studio keeps DJ Mode, Crop, Edit rack, Ringtone and clip, Clean up, Slowed and reverb, Karaoke, Sampler pads, Loop recorder, Sleep timer and Practice loop. Tools takes the rest. Nothing about songs, playlists or albums changes here - this is the same Studio in two halves.',
+    'Nothing was removed and nothing lost a feature: each section moved with its contents, its saved fold state and its wiring intact, and the tab you were last on is remembered on the next launch. The Look and feel switches live there too, next to the milestones.',
+    'The rail had snap proximity with no scroll behaviour, so a nudge jumped instead of gliding and the snap fought a flick that crossed three artists. It scrolls smoothly, a mouse wheel over it moves the rail instead of the page, and the snap only engages once the scroll is already slowing down.',
+    'Eight squares fills the width with four columns and shows two rows, scrolling for a ninth pin and beyond - nothing is capped. Four in a row is the default and is exactly what 75.1.2 shipped. The switch is in Settings, More, The new look, and again in Studio, Tools, Look and feel.',
+    'The dock has one highlight layer that moves by transform, so a tab change is a single composited movement instead of four repaints, and the pill and tab colours cross-fade over 280 ms instead of cutting. On the library strip the selected tab is scrolled into view whenever the strip changes.',
+    'Home bubbles become circles that drift a few pixels on a slow loop, the four tabs leave the bottom edge and float as a vertical glass dock on the right, and the player keeps the bottom while a small now bar sits in the top right with the track, the artist and play/pause.',
+    'The three header buttons become small round bubbles on the stats card, in the same row as the Ask SideCut sparkle, and they forward the real clicks, so notifications, a refresh and Settings behave exactly as before. If the stats bubble is hidden they land on the greeting row instead, so Settings can never be unreachable.',
+    'Classic tabs is what a fresh install gets and what an update keeps unless you choose otherwise. Both switches are live: the page changes where you stand, no restart, and every saved song, playlist and setting is untouched.',
+    'The strip drew the virtual Unsorted tab and then walked the playlists object, which holds a real Unsorted entry created the first time a song had no playlist - two tabs with the same name over the same view. The stored entry is skipped by name now, so the virtual tab is the only one that renders.',
+    'Breakpoints at 600, 760 and 1000 pixels put the bubble cloud three or four across and centre the panes, a landscape phone rule shrinks the right-hand dock so it does not eat the screen, and patch notes hang their detail under the sentence instead of widening the line.',
+    'Studio is the same tools in two tabs, the pill dock still glides, the player, the widget, the letter-by-letter lyrics and the albums are untouched, and every saved song, playlist, setting and backup is exactly where it was. If the revamp is not for you, Classic tabs in Settings, More puts the whole app back the way 75.1.2 had it.',
+  ]},
   { version: '75.1.2', date: 'October 20, 2026 · 5:30 AM EDT', title: 'Four pinned artists at a time with the rail scrolling on, and Ask SideCut reads the whole sentence', items: [
     'Pinned artists shows exactly four at a time now: each chip is a quarter of the width of the rail, so the fourth is never sliced in half and the fifth starts right at the edge.',
     'Nothing is capped. The rail is still one sideways-scrolling row, so two pins and twenty behave the same way, and a slow swipe settles on a chip edge instead of mid-artist.',
@@ -17397,20 +17862,48 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(/\bdownload/i.test(t) && !/(zip|crossfad|to phone|artwork|megabytes|csv|re-?download)/i.test(t)) return true;
     return false;
   }
-  function changelogItems(entry){
+  // 80.0 - a note can be one sentence plus a longer explanation. The sentence is
+  // the bullet; the explanation opens under it. A bare string still works, so
+  // every entry before 80.0 renders exactly as it did.
+  function scClBrief(it){
+    if(it && typeof it === 'object') return String(it.brief || '');
+    return String(it == null ? '' : it);
+  }
+  function changelogRich(entry){
+    // items stays an array of STRINGS, one sentence each, because every gate and
+    // every older panel reads it as strings. The longer explanation rides in a
+    // parallel `details` array, index for index, so nothing that reads a note has
+    // to know a drop-down exists.
     var list = (entry && entry.items) || [];
+    var more = (entry && entry.details) || [];
     var out = [];
     var _isPlay = scIsPlayBuild();
     for(var _ci = 0; _ci < list.length; _ci++){
       var it = list[_ci];
-      if(typeof it === 'string' && it.indexOf('[FULL] ') === 0){
+      var brief = scClBrief(it);
+      var detail = String(more[_ci] || '');
+      if(brief.indexOf('[FULL] ') === 0){
         if(_isPlay) continue;
-        it = it.slice(7);
+        brief = brief.slice(7);
       }
-      if(_isPlay && scHidesOnPlay(it)) continue;
-      out.push(it);
+      if(_isPlay && scHidesOnPlay(brief)) continue;
+      out.push(detail ? { brief: brief, detail: detail } : brief);
     }
     return out;
+  }
+  function changelogItems(entry){
+    return changelogRich(entry).map(scClBrief);
+  }
+  // One bullet. With a detail the bullet is the summary of a <details>, so the
+  // notes stay one line each until somebody asks for more.
+  function scClItemHtml(it){
+    var brief = scClBrief(it);
+    var detail = (it && typeof it === 'object') ? String(it.detail || '') : '';
+    if(!detail){
+      return '<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">\u2022</span><span>' + escapeHtml(brief) + '</span></div>';
+    }
+    return '<details class="sc-cl-item"><summary><span class="sc-cl-bullet">\u2022</span><span>' + escapeHtml(brief) +
+      '</span><span class="sc-cl-chev">\u25be</span></summary><div class="sc-cl-detail">' + escapeHtml(detail) + '</div></details>';
   }
   // Titles get the same treatment — a filtered entry must not announce itself
   // through its headline.
@@ -17420,11 +17913,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return t;
   }
   function renderWhatsNewBody(entry){
-    return changelogItems(entry).map(i => `
-      <div style="display:flex; gap:8px; align-items:flex-start;">
-        <span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span>
-      </div>
-    `).join('');
+    return changelogRich(entry).map(scClItemHtml).join('');
   }
   let updateLogSummaryMode = true;
   function renderUpdateLog(){
@@ -17452,7 +17941,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         <div>
           <div style="font-weight:600; font-size:14px; margin-bottom:6px;">v${entry.version}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''} — ${escapeHtml(changelogTitle(entry))}</div>
           <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
-            ${changelogItems(entry).map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
+            ${changelogRich(entry).map(scClItemHtml).join('')}
           </div>
         </div>
       `).join('');
@@ -18141,7 +18630,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
           <span class="cl-chev" style="flex-shrink:0; color:var(--ink-dim); font-size:12px; line-height:1.35; transform:rotate(${open ? '0deg' : '-90deg'}); transition:transform 0.2s ease;">▾</span>
         </button>
         <div data-cl-body="${escapeHtml(v)}" style="display:${open ? 'flex' : 'none'}; flex-direction:column; gap:5px; font-size:12px; color:var(--ink-dim); padding:0 0 12px 2px;">
-          ${changelogItems(entry).map(i => `<div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">•</span><span>${escapeHtml(i)}</span></div>`).join('')}
+          ${changelogRich(entry).map(scClItemHtml).join('')}
         </div>
       </div>
     `;
@@ -21795,6 +22284,12 @@ function _fallbackCopy(text){
       return;
     }
     Object.keys(playlists).forEach(name => {
+      // 80.0 - "Unsorted" is a real key in playlists (the bucket a song with no
+      // playlist lands in) AND a virtual tab drawn below, right after All Songs.
+      // Walking the object drew the stored one as well, so the strip showed two
+      // tabs called Unsorted over the same view. The stored key is storage, not
+      // a tab: skip it here and let the virtual one be the only one.
+      if(name === 'Unsorted') return;
       if(hiddenPlaylists.has(name) && name !== activePlaylist) return;
       const el = document.createElement('div');
       el.className = 'tab' + (name === activePlaylist ? ' active' : '');
@@ -53773,6 +54268,664 @@ window.showAlbumReorderPopup = function(albumName){
     encodeJob: function(){ return encodeJob; }
   };
 })();
+</script>
+<script id="sc80Module">
+/* ============================================================================
+   SideCut 80.0 - "Massive Revamp": milestones you can replay, a Studio split
+   down a diagonal into Studio and Tools, a pinned-artists window you can have
+   as one row or eight squares, tabs that glide, and a whole second layout
+   (floating bubbles, dock on the right) that is one tap from the original.
+
+   This is a fourth top-level block with its own closure, appended after the
+   Studio block, for the same reason that one was: nothing in the app's IIFE is
+   visible by name here, so every reach is a guarded window.__sc* hook or a DOM
+   query. A hook that is missing degrades one feature, never the app.
+
+   The one hard rule of the revamp: the ORIGINAL layout is the default and it is
+   always one tap away. Every new arrangement hangs off a body class this block
+   adds, so with the switches off the page is exactly 75.1.2.
+   ========================================================================== */
+(function(){
+  'use strict';
+
+  var VERSION = (typeof window !== 'undefined' && window.APP_VERSION) || '80.0';
+  var LS = {
+    layout: 'sc80Layout',      // 'classic' (default) | 'cloud'
+    pinned: 'sc80PinnedLayout',// 'row' (default, four up) | 'grid' (2 x 4)
+    studioTab: 'sc80StudioTab',// 'studio' (default) | 'tools'
+    milestones: 'sc80Milestones' // { "50": <ms celebrated> }
+  };
+  // The days that are worth a whole screen. 3 is the first one that reads as a
+  // habit rather than a coincidence; the rest are round numbers people say out
+  // loud. 100, 365 and 1000 are the ones this was asked for.
+  var MILESTONES = [3, 7, 14, 21, 30, 50, 75, 100, 150, 200, 250, 300, 365, 500, 730, 1000];
+  var TOOL_FOLDS = {
+    scFoldBadges: 1,    // badges, rewards and streaks
+    scFoldStorage: 1,   // storage cleaner
+    scFoldAutodj: 1,    // auto-DJ
+    scFoldGestures: 1,  // gestures
+    scFoldBatchTags: 1, // batch tag editor
+    scFoldBatchSel: 1   // batch on selected
+  };
+
+  function $(id){ return document.getElementById(id); }
+  function lsGet(k, d){
+    try{ var v = localStorage.getItem(k); if(v == null) return d; return JSON.parse(v); }
+    catch(e){ return d; }
+  }
+  function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function call(name){
+    try{ return (typeof window[name] === 'function') ? window[name]() : null; }
+    catch(e){ return null; }
+  }
+  function stats(){
+    var s = call('__scStats');
+    return (s && typeof s === 'object') ? s : null;
+  }
+  function streakNow(){ var s = stats(); return s ? (Number(s.streak) || 0) : 0; }
+  function streakBest(){ var s = stats(); return s ? Math.max(Number(s.streak) || 0, Number(s.longest) || 0) : 0; }
+  function reachedMilestone(){
+    var n = streakNow(), hit = 0;
+    for(var i = 0; i < MILESTONES.length; i++){ if(n >= MILESTONES[i]) hit = MILESTONES[i]; }
+    return hit;
+  }
+  function celebrated(){ var m = lsGet(LS.milestones, null); return (m && typeof m === 'object') ? m : {}; }
+  function markCelebrated(days){
+    var m = celebrated();
+    if(!m[String(days)]){ m[String(days)] = Date.now(); lsSet(LS.milestones, m); }
+    return m;
+  }
+
+  /* ------------------------------------------------------------------------
+     1. LAYOUT - classic (the original, default) or cloud (the floating one)
+     ------------------------------------------------------------------------ */
+  function layout(){ return lsGet(LS.layout, 'classic') === 'cloud' ? 'cloud' : 'classic'; }
+  function isCloud(){ return layout() === 'cloud'; }
+  function pinnedLayout(){ return lsGet(LS.pinned, 'row') === 'grid' ? 'grid' : 'row'; }
+
+  function applyLayout(){
+    var cloud = isCloud();
+    document.body.classList.toggle('sc80-cloud', cloud);
+    document.body.classList.toggle('sc80-pa-grid', pinnedLayout() === 'grid');
+    if(cloud){ ensureNowChip(); updateNowChip(); }
+    syncCloudControls();
+    paintOptions();
+    requestAnimationFrame(function(){ try{ glide(); }catch(e){} });
+  }
+  function setLayout(mode){
+    lsSet(LS.layout, mode === 'cloud' ? 'cloud' : 'classic');
+    applyLayout();
+    toast(mode === 'cloud'
+      ? 'Cloud layout - bubbles, the dock on the right, the small now bar up top'
+      : 'Classic layout - the original bottom tabs are back');
+  }
+  function setPinnedLayout(mode){
+    lsSet(LS.pinned, mode === 'grid' ? 'grid' : 'row');
+    applyLayout();
+    toast(mode === 'grid'
+      ? 'Pinned artists: eight squares in a 2 x 4 window'
+      : 'Pinned artists: four in a row, scrolling on');
+  }
+
+  /* The header's bell / refresh / gear, moved onto the listening-stats card the
+     way the Ask SideCut sparkle already is. They are the real buttons: the click
+     is forwarded, so notifications, a refresh and Settings all behave exactly
+     as the header does. */
+  var ICON_BELL = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>';
+  var ICON_REFRESH = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>';
+  var ICON_GEAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 00.12-.61l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 00-.6.22L2.66 8.87a.5.5 0 00.12.61l2.03 1.58c-.05.3-.08.61-.08.94s.02.64.07.94l-2.03 1.58a.5.5 0 00-.12.61l1.92 3.32c.12.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.05.24.26.42.5.42h3.84c.24 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.61l-2.03-1.58zM12 15.6a3.6 3.6 0 110-7.2 3.6 3.6 0 010 7.2z"/></svg>';
+
+  function syncCloudControls(){
+    var existing = $('sc80CloudCtl');
+    if(!isCloud()){
+      if(existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      return;
+    }
+    var host = null;
+    var bubbles = $('homeBubbles');
+    if(bubbles){
+      var cards = bubbles.querySelectorAll('.home-bubble');
+      for(var i = 0; i < cards.length; i++){
+        if(cards[i].querySelector('#homeAiBtn')){ host = cards[i]; break; }
+      }
+      // A stats bubble that has been hidden would otherwise leave Settings
+      // unreachable once the header buttons are gone, so the greeting row takes
+      // them instead. Two places, one set of buttons.
+      if(!host){
+        var row = document.querySelector('.home-head-row');
+        if(row) host = row;
+      }
+    }
+    if(!host){
+      if(existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      return;
+    }
+    if(existing && existing.parentNode === host) return;
+    if(existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var wrap = document.createElement('div');
+    wrap.id = 'sc80CloudCtl';
+    wrap.innerHTML =
+      '<button data-sc80-go="notifBtn" title="Notifications" aria-label="Notifications">' + ICON_BELL + '<span class="sc80-dot" style="display:none"></span></button>' +
+      '<button data-sc80-go="refreshBtn" title="Refresh app" aria-label="Refresh app">' + ICON_REFRESH + '</button>' +
+      '<button data-sc80-go="themeBtn" title="Settings" aria-label="Settings">' + ICON_GEAR + '</button>';
+    wrap.addEventListener('click', function(ev){
+      var b = ev.target && ev.target.closest ? ev.target.closest('[data-sc80-go]') : null;
+      if(!b) return;
+      ev.stopPropagation();
+      var real = $(b.getAttribute('data-sc80-go'));
+      if(real) real.click();
+    });
+    host.appendChild(wrap);
+  }
+  // The red dot is the app's own; this mirrors it without owning it.
+  function syncNotifDot(){
+    var badge = $('notifBadge');
+    var mine = document.querySelector('#sc80CloudCtl .sc80-dot');
+    if(!badge || !mine) return;
+    mine.style.display = (badge.style.display && badge.style.display !== 'none') ? 'block' : 'none';
+  }
+
+  /* The small now bar in the top right. It reads the player that is already on
+     the page rather than keeping a second copy of the state. */
+  function ensureNowChip(){
+    if($('sc80Now')) return;
+    var chip = document.createElement('div');
+    chip.id = 'sc80Now';
+    chip.setAttribute('role', 'button');
+    chip.setAttribute('aria-label', 'Now playing - open the player');
+    chip.innerHTML =
+      '<div class="art"></div>' +
+      '<div class="txt"><div class="t">—</div><div class="a">—</div></div>' +
+      '<button class="pp" title="Play / pause" aria-label="Play or pause">▶</button>';
+    chip.addEventListener('click', function(ev){
+      if(ev.target && ev.target.classList && ev.target.classList.contains('pp')) return;
+      var np = $('nowPlaying');
+      if(np && np.classList.contains('mini')){
+        var exp = document.querySelector('[data-act="expand"], #expandNowBtn');
+        if(exp){ exp.click(); return; }
+      }
+      if(np && np.scrollIntoView) np.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+    chip.querySelector('.pp').addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var b = $('playPauseBtn');
+      if(b) b.click();
+      updateNowChip();
+    });
+    document.body.appendChild(chip);
+  }
+  function nowArtUrl(){
+    var el = document.querySelector('#npArt, #npCover, #npAlbumArt, .np-art');
+    if(el){
+      if(el.style && el.style.backgroundImage) return el.style.backgroundImage.replace(/^url\(["']?/, '').replace(/["']?\)$/, '');
+      if(el.src) return el.src;
+    }
+    var disc = $('npDisc');
+    if(disc){
+      var lb = $('npDiscLabel');
+      var bg = lb && lb.style && lb.style.backgroundImage;
+      if(bg) return bg.replace(/^url\(["']?/, '').replace(/["']?\)$/, '');
+    }
+    return '';
+  }
+  function updateNowChip(){
+    var chip = $('sc80Now');
+    if(!chip) return;
+    var t = $('npTitle'), a = $('npArtist');
+    var title = (t && t.textContent || '').trim() || 'Nothing playing';
+    var artist = (a && a.textContent || '').trim() || '—';
+    var art = nowArtUrl();
+    chip.querySelector('.t').textContent = title;
+    chip.querySelector('.a').textContent = artist;
+    chip.querySelector('.art').style.backgroundImage = art ? 'url("' + art + '")' : 'none';
+    var pp = chip.querySelector('.pp');
+    // The disc spins only while something is actually playing, which is the
+    // app's own statement of the same fact - no second copy of the state here.
+    var disc = $('npDisc');
+    var playing = !!(disc && disc.classList.contains('spinning'));
+    if(!disc){
+      try{ var aud = document.querySelector('audio'); playing = !!(aud && !aud.paused); }catch(e){}
+    }
+    pp.textContent = playing ? '❚❚' : '▶';
+  }
+
+  /* ------------------------------------------------------------------------
+     2. STUDIO - the diagonal split. Everything that is not studio work moves
+     to Tools, and the milestone replays live with it.
+     ------------------------------------------------------------------------ */
+  function studioTab(){ return lsGet(LS.studioTab, 'studio') === 'tools' ? 'tools' : 'studio'; }
+  function setStudioTab(name){
+    lsSet(LS.studioTab, name === 'tools' ? 'tools' : 'studio');
+    paintStudioTab();
+  }
+  function paintStudioTab(){
+    var host = $('studioView');
+    if(!host) return;
+    var want = studioTab();
+    var tabs = host.querySelectorAll('.sc80-tab');
+    for(var i = 0; i < tabs.length; i++){
+      var on = tabs[i].getAttribute('data-tab') === want;
+      tabs[i].classList.toggle('active', on);
+      tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    var panes = host.querySelectorAll('.sc80-pane');
+    for(var j = 0; j < panes.length; j++){
+      panes[j].classList.toggle('active', panes[j].getAttribute('data-pane') === want);
+    }
+  }
+  function milestonesCard(){
+    var best = streakBest(), now = streakNow(), seen = celebrated();
+    var rows = MILESTONES.map(function(d){
+      var got = best >= d;
+      var at = seen[String(d)];
+      var when = at ? new Date(at) : null;
+      var stamp = when ? (when.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })) : '';
+      var txt;
+      if(got && at) txt = 'Celebrated ' + esc(stamp) + ' · ' + (best === d ? 'your best streak' : 'already in the books');
+      else if(got) txt = 'Reached' + (now >= d ? ' — not played back yet' : ' on a previous run') + ' · tap Replay';
+      else txt = (d - now) + ' day' + ((d - now) === 1 ? '' : 's') + ' to go';
+      return '<div class="sc80-ms-row">' +
+        '<div class="sc80-ms-days' + (got ? '' : ' locked') + '">' + d + 'd</div>' +
+        '<div class="sc80-ms-txt">' + txt + '</div>' +
+        (got ? '<button class="sc-btn tiny" data-sc80-ms="' + d + '">Replay</button>' : '') +
+      '</div>';
+    }).join('');
+    return '<div class="sc-sec" id="sc80Milestones">' +
+      '<div class="sc-sec-head" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+        '<div style="flex:1;font-size:13.5px;font-weight:700;">Milestones</div>' +
+        '<span style="font-size:11px;color:var(--ink-dim);">best ' + best + ' day' + (best === 1 ? '' : 's') + '</span>' +
+      '</div>' +
+      '<div class="sc-note">Hit a streak milestone and the app plays it back on the next start, once. Every one you have reached can be replayed here, forever.</div>' +
+      rows +
+      '<div class="sc-actions" style="margin-top:10px;">' +
+        '<button class="sc-btn primary" data-sc80-ms="' + (reachedMilestone() || 7) + '">Play the ' + (reachedMilestone() || 7) + '-day celebration</button>' +
+        '<button class="sc-btn" data-sc80-ms="100">Preview 100 days</button>' +
+      '</div>' +
+    '</div>';
+  }
+  function lookCard(){
+    var cloud = isCloud(), grid = pinnedLayout() === 'grid';
+    return '<div class="sc-sec" id="sc80Look">' +
+      '<div style="font-size:13.5px;font-weight:700;margin-bottom:2px;">Look and feel</div>' +
+      '<div class="sc-note">Two layouts, both live. The original is the default and stays one tap away.</div>' +
+      '<div style="font-size:11.5px;font-weight:600;margin-top:10px;">Tabs and home</div>' +
+      '<div class="sc80-opt-row">' +
+        '<button class="sc80-opt' + (cloud ? '' : ' on') + '" data-sc80-layout="classic">Classic tabs<small>The original: four pills along the bottom, cards on Home.</small></button>' +
+        '<button class="sc80-opt' + (cloud ? ' on' : '') + '" data-sc80-layout="cloud">Cloud bubbles<small>Floating round bubbles, the dock down the right, a small now bar up top.</small></button>' +
+      '</div>' +
+      '<div style="font-size:11.5px;font-weight:600;margin-top:12px;">Pinned artists</div>' +
+      '<div class="sc80-opt-row">' +
+        '<button class="sc80-opt' + (grid ? '' : ' on') + '" data-sc80-pinned="row">Four in a row<small>One sideways-scrolling row, four artists on screen.</small></button>' +
+        '<button class="sc80-opt' + (grid ? ' on' : '') + '" data-sc80-pinned="grid">Eight squares<small>A 2 x 4 window of smaller squares - eight at a time, scrolling for the rest.</small></button>' +
+      '</div>' +
+    '</div>';
+  }
+  function paintOptions(){
+    var btns = document.querySelectorAll('[data-sc80-layout]');
+    for(var i = 0; i < btns.length; i++){
+      btns[i].classList.toggle('on', btns[i].getAttribute('data-sc80-layout') === layout());
+    }
+    var pins = document.querySelectorAll('[data-sc80-pinned]');
+    for(var j = 0; j < pins.length; j++){
+      pins[j].classList.toggle('on', pins[j].getAttribute('data-sc80-pinned') === pinnedLayout());
+    }
+  }
+  function wireLookCard(root){
+    if(!root || root._sc80Wired) return;
+    root._sc80Wired = true;
+    root.addEventListener('click', function(ev){
+      var t = ev.target && ev.target.closest ? ev.target.closest('[data-sc80-layout],[data-sc80-pinned],[data-sc80-ms]') : null;
+      if(!t) return;
+      if(t.hasAttribute('data-sc80-layout')) setLayout(t.getAttribute('data-sc80-layout'));
+      else if(t.hasAttribute('data-sc80-pinned')) setPinnedLayout(t.getAttribute('data-sc80-pinned'));
+      else if(t.hasAttribute('data-sc80-ms')) celebrate(Number(t.getAttribute('data-sc80-ms')), { manual: true });
+    });
+  }
+  function decorateStudio(){
+    var host = $('studioView');
+    if(!host) return;
+    if(host.querySelector('.sc80-tabs')) return; // already split
+    var kids = [];
+    for(var i = 0; i < host.childNodes.length; i++){
+      if(host.childNodes[i].nodeType === 1) kids.push(host.childNodes[i]);
+    }
+    if(!kids.length) return;
+    var paneStudio = document.createElement('div');
+    paneStudio.className = 'sc80-pane';
+    paneStudio.setAttribute('data-pane', 'studio');
+    var paneTools = document.createElement('div');
+    paneTools.className = 'sc80-pane';
+    paneTools.setAttribute('data-pane', 'tools');
+    kids.forEach(function(el){
+      var fold = el.querySelector ? el.querySelector('[data-fold]') : null;
+      var key = fold ? fold.getAttribute('data-fold') : '';
+      (TOOL_FOLDS[key] ? paneTools : paneStudio).appendChild(el);
+    });
+    paneTools.insertAdjacentHTML('beforeend', milestonesCard() + lookCard());
+    var bar = document.createElement('div');
+    bar.className = 'sc80-tabs';
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', 'Studio sections');
+    bar.innerHTML =
+      '<button class="sc80-tab left" data-tab="studio" role="tab">Studio<span class="sc80-tab-sub">the work: DJ, crop, edit, FX</span></button>' +
+      '<button class="sc80-tab right" data-tab="tools" role="tab">Tools<span class="sc80-tab-sub">badges, milestones, layout</span></button>' +
+      '<svg width="100%" height="100%" aria-hidden="true"><line x1="100%" y1="100%" x2="0" y2="0" stroke="var(--line)" stroke-width="1"/></svg>';
+    bar.addEventListener('click', function(ev){
+      var b = ev.target && ev.target.closest ? ev.target.closest('[data-tab]') : null;
+      if(!b) return;
+      setStudioTab(b.getAttribute('data-tab'));
+    });
+    host.appendChild(paneStudio);
+    host.appendChild(paneTools);
+    host.insertBefore(bar, paneStudio);
+    wireLookCard(paneTools);
+    paintStudioTab();
+  }
+  function watchStudio(){
+    var host = $('studioView');
+    if(!host) return;
+    var t = null;
+    var run = function(){ clearTimeout(t); t = setTimeout(function(){ try{ decorateStudio(); }catch(e){} }, 0); };
+    if(window.MutationObserver) new MutationObserver(run).observe(host, { childList: true });
+    // The export is wrapped too so the split is there on the same frame the
+    // Studio paints, not one observer tick later.
+    try{
+      var S = window.SC70;
+      if(S && typeof S.renderStudio === 'function' && !S.renderStudio.__sc80){
+        var orig = S.renderStudio;
+        var wrapped = function(){ var r = orig.apply(this, arguments); try{ decorateStudio(); }catch(e){} return r; };
+        wrapped.__sc80 = true;
+        S.renderStudio = wrapped;
+      }
+    }catch(e){}
+    run();
+  }
+
+  /* ------------------------------------------------------------------------
+     3. MILESTONES - the celebration, and the record it leaves in Studio
+     ------------------------------------------------------------------------ */
+  function bitsHtml(){
+    var out = '', colors = ['var(--gold)', 'var(--coral)', '#7ae0c0', '#9b8cff', '#ffd166'];
+    for(var i = 0; i < 26; i++){
+      var left = (i * 37 + 11) % 100;
+      var delay = ((i * 173) % 2100) / 1000;
+      var dur = 1.9 + ((i * 7) % 12) / 10;
+      out += '<i style="left:' + left + '%;background:' + colors[i % colors.length] +
+        ';animation-delay:' + delay.toFixed(2) + 's;animation-duration:' + dur.toFixed(2) + 's;"></i>';
+    }
+    return out;
+  }
+  function ensureCelebration(){
+    var host = $('sc80Milestone');
+    if(host) return host;
+    host = document.createElement('div');
+    host.id = 'sc80Milestone';
+    host.setAttribute('role', 'dialog');
+    host.setAttribute('aria-modal', 'true');
+    host.innerHTML =
+      '<div class="sc80-ms-card">' +
+        '<div class="sc80-ms-bits">' + bitsHtml() + '</div>' +
+        '<div class="sc80-ms-rings"><i></i><i></i><i></i></div>' +
+        '<div class="sc80-ms-kicker">Milestone</div>' +
+        '<div class="sc80-ms-num">50</div>' +
+        '<div class="sc80-ms-unit">DAY STREAK</div>' +
+        '<div class="sc80-ms-sub"></div>' +
+        '<div class="sc80-ms-btns">' +
+          '<button class="primary" data-sc80-close="1">Keep it going</button>' +
+          '<button data-sc80-close="1" data-sc80-replay="1">Watch again</button>' +
+        '</div>' +
+        '<div class="sc80-ms-hint">Replay this any time in Studio → Tools → Milestones.</div>' +
+      '</div>';
+    host.addEventListener('click', function(ev){
+      var t = ev.target && ev.target.closest ? ev.target.closest('[data-sc80-close]') : null;
+      if(t){
+        if(t.hasAttribute('data-sc80-replay')){ replayAnim(host); return; }
+        hideCelebration();
+        return;
+      }
+      if(ev.target === host) hideCelebration();
+    });
+    document.body.appendChild(host);
+    return host;
+  }
+  function replayAnim(host){
+    var card = host.querySelector('.sc80-ms-card');
+    if(!card) return;
+    card.style.animation = 'none';
+    void card.offsetWidth;
+    card.style.animation = '';
+    var num = host.querySelector('.sc80-ms-num');
+    if(num){ num.style.animation = 'none'; void num.offsetWidth; num.style.animation = ''; }
+  }
+  function hideCelebration(){
+    var host = $('sc80Milestone');
+    if(host) host.classList.remove('show');
+    document.documentElement.style.overflow = '';
+  }
+  function celebrate(days, opts){
+    opts = opts || {};
+    days = Number(days) || 0;
+    if(!days) return false;
+    var host = ensureCelebration();
+    host.querySelector('.sc80-ms-num').textContent = String(days);
+    host.querySelector('.sc80-ms-unit').textContent = 'DAY STREAK';
+    host.querySelector('.sc80-ms-sub').textContent = opts.manual
+      ? 'This is what ' + days + ' days of listening looks like. Your best so far is ' + streakBest() + ' — every day counts.'
+      : days + ' days in a row of listening. That is not luck any more, that is a habit. Best streak: ' + streakBest() + '.';
+    host.classList.remove('show');
+    void host.offsetWidth;
+    host.classList.add('show');
+    document.documentElement.style.overflow = 'hidden';
+    if(!opts.manual) markCelebrated(days);
+    return true;
+  }
+  function bootMilestones(){
+    var tries = 0;
+    (function attempt(){
+      tries++;
+      var s = stats();
+      var hit = reachedMilestone();
+      if(hit && !celebrated()[String(hit)]){
+        setTimeout(function(){ celebrate(hit); }, 1600);
+        return;
+      }
+      // The library and the streak load out of IndexedDB, so an early read can
+      // legitimately be zero. Give it a few seconds before calling it a miss.
+      if(tries < 10 && (!s || (!s.library && !s.streak))) setTimeout(attempt, 1500);
+    })();
+  }
+
+  /* ------------------------------------------------------------------------
+     4. TAB FEEL - the dock highlight glides, the tab strip keeps its tab in view
+     ------------------------------------------------------------------------ */
+  function glide(){
+    var strip = $('actionStrip');
+    if(!strip) return;
+    var g = $('sc80DockGlide');
+    if(!g){
+      g = document.createElement('div');
+      g.id = 'sc80DockGlide';
+      g.style.left = '0'; g.style.top = '0';
+      strip.insertBefore(g, strip.firstChild);
+    }
+    if(isCloud()){ g.style.opacity = '0'; return; }
+    var active = strip.querySelector('.action-pill.active');
+    if(!active){
+      var st = $('studioView');
+      if(st && st.classList.contains('active')) active = $('studioBtn');
+    }
+    if(!active){ g.style.opacity = '0'; return; }
+    var sr = strip.getBoundingClientRect();
+    var r = active.getBoundingClientRect();
+    g.style.width = r.width + 'px';
+    g.style.height = r.height + 'px';
+    g.style.transform = 'translate(' + Math.round(r.left - sr.left) + 'px,' + Math.round(r.top - sr.top) + 'px)';
+    g.style.opacity = '1';
+  }
+  function watchDock(){
+    var strip = $('actionStrip');
+    if(!strip) return;
+    if(window.MutationObserver){
+      new MutationObserver(function(){ requestAnimationFrame(glide); })
+        .observe(strip, { subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+    window.addEventListener('resize', function(){ requestAnimationFrame(glide); });
+    strip.addEventListener('click', function(){ setTimeout(glide, 0); setTimeout(glide, 320); });
+    requestAnimationFrame(glide);
+  }
+  function watchTabStrip(){
+    var tabs = $('tabs');
+    if(!tabs) return;
+    var move = function(){
+      var a = tabs.querySelector('.tab.active');
+      if(!a || !tabs.clientWidth) return;
+      var left = a.offsetLeft - (tabs.clientWidth - a.offsetWidth) / 2;
+      try{ tabs.scrollTo({ left: Math.max(0, left), behavior: 'smooth' }); }
+      catch(e){ tabs.scrollLeft = Math.max(0, left); }
+    };
+    if(window.MutationObserver){
+      new MutationObserver(move).observe(tabs, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+    document.addEventListener('click', function(ev){
+      var t = ev.target && ev.target.closest ? ev.target.closest('#tabs .tab') : null;
+      if(t) setTimeout(move, 0);
+    });
+  }
+  function watchPinnedRail(){
+    var list = $('pinnedArtistsList');
+    if(!list) return;
+    // A mouse wheel over a one-row rail should move the rail, not the page.
+    list.addEventListener('wheel', function(ev){
+      if(pinnedLayout() === 'grid') return;
+      if(Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
+      ev.preventDefault();
+      try{ list.scrollBy({ left: ev.deltaY, behavior: 'smooth' }); }
+      catch(e){ list.scrollLeft += ev.deltaY; }
+    }, { passive: false });
+    // A slow swipe settles on a chip edge; a fast one is left alone, because a
+    // snap that fights a fling is what "not smooth" meant.
+    var t = null;
+    list.addEventListener('scroll', function(){
+      clearTimeout(t);
+      t = setTimeout(function(){
+        if(pinnedLayout() === 'grid') return;
+        var chip = list.querySelector('.pinned-artist-chip');
+        if(!chip) return;
+        var w = chip.getBoundingClientRect().width + 10;
+        if(!w) return;
+        var target = Math.round(list.scrollLeft / w) * w;
+        if(Math.abs(target - list.scrollLeft) < 2) return;
+        try{ list.scrollTo({ left: target, behavior: 'smooth' }); }catch(e){ list.scrollLeft = target; }
+      }, 180);
+    }, { passive: true });
+  }
+
+  /* ------------------------------------------------------------------------
+     5. SETTINGS & MORE - the two switches, in the place people look for them
+     ------------------------------------------------------------------------ */
+  function mountSettings(){
+    var pane = $('settingsPaneMore');
+    if(!pane || $('sc80Look')) return;
+    var card = document.createElement('div');
+    card.className = 'sc80-settings-card';
+    card.style.cssText = 'margin:0 0 14px; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,0.03);';
+    card.innerHTML = '<div style="font-size:12.5px; font-weight:700;">The new look · ' + esc(VERSION) + '</div>' +
+      '<div style="font-size:11px; color:var(--ink-dim); margin-top:3px; line-height:1.45;">A second layout, and a choice of pinned-artists window. The original is the default and never goes away.</div>' +
+      '<div class="sc80-opt-row">' +
+        '<button class="sc80-opt' + (isCloud() ? '' : ' on') + '" data-sc80-layout="classic">Classic tabs<small>Bottom tabs, card bubbles - the original.</small></button>' +
+        '<button class="sc80-opt' + (isCloud() ? ' on' : '') + '" data-sc80-layout="cloud">Cloud bubbles<small>Round floating bubbles, dock on the right, small now bar up top.</small></button>' +
+      '</div>' +
+      '<div class="sc80-opt-row">' +
+        '<button class="sc80-opt' + (pinnedLayout() === 'grid' ? '' : ' on') + '" data-sc80-pinned="row">Pinned: four in a row<small>Sideways scroll, four on screen.</small></button>' +
+        '<button class="sc80-opt' + (pinnedLayout() === 'grid' ? ' on' : '') + '" data-sc80-pinned="grid">Pinned: eight squares<small>2 x 4 window of smaller squares.</small></button>' +
+      '</div>';
+    card.id = 'sc80Look';
+    pane.insertBefore(card, pane.firstChild);
+    wireLookCard(card);
+    paintOptions();
+  }
+
+  /* ------------------------------------------------------------------------
+     6. WIRING
+     ------------------------------------------------------------------------ */
+  var toastEl = null;
+  function toast(msg){
+    if(!toastEl){
+      toastEl = document.createElement('div');
+      toastEl.id = 'sc80Toast';
+      toastEl.style.cssText = 'position:fixed; left:50%; bottom:96px; transform:translateX(-50%) translateY(10px);' +
+        'background:rgba(20,20,22,0.94); color:#fff; border:1px solid var(--line); border-radius:12px;' +
+        'padding:9px 14px; font-size:12px; z-index:9500; opacity:0; transition:opacity .22s ease, transform .22s ease;' +
+        'pointer-events:none; max-width:86vw; text-align:center;';
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    toastEl.style.opacity = '1';
+    toastEl.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(function(){
+      if(!toastEl) return;
+      toastEl.style.opacity = '0';
+      toastEl.style.transform = 'translateX(-50%) translateY(10px)';
+    }, 2400);
+  }
+
+  function start(){
+    try{ applyLayout(); }catch(e){}
+    try{ mountSettings(); }catch(e){}
+    try{ watchStudio(); }catch(e){}
+    try{ watchDock(); }catch(e){}
+    try{ watchTabStrip(); }catch(e){}
+    try{ watchPinnedRail(); }catch(e){}
+    try{ bootMilestones(); }catch(e){}
+    // The player is painted by the app; the chip follows it rather than owning it.
+    setInterval(function(){
+      if(!isCloud()) return;
+      try{ updateNowChip(); syncNotifDot(); }catch(e){}
+    }, 1500);
+    // Home is repainted whenever a bubble changes size or order, which throws the
+    // cloud controls away with it; put them back.
+    var bubbles = $('homeBubbles');
+    if(bubbles && window.MutationObserver){
+      var t = null;
+      new MutationObserver(function(){
+        clearTimeout(t);
+        t = setTimeout(function(){ try{ syncCloudControls(); }catch(e){} }, 30);
+      }).observe(bubbles, { childList: true });
+    }
+    var npTitle = $('npTitle');
+    if(npTitle && window.MutationObserver){
+      new MutationObserver(function(){ try{ updateNowChip(); }catch(e){} }).observe(npTitle, { childList: true, characterData: true, subtree: true });
+    }
+  }
+
+  // The one public door: everything the revamp can do, so a future release (or a
+  // gate) can reach it without guessing at internals.
+  window.SC80 = {
+    version: VERSION,
+    layout: layout,
+    setLayout: setLayout,
+    pinnedLayout: pinnedLayout,
+    setPinnedLayout: setPinnedLayout,
+    studioTab: studioTab,
+    setStudioTab: setStudioTab,
+    milestones: MILESTONES,
+    celebrate: celebrate,
+    reached: reachedMilestone,
+    celebrated: celebrated,
+    isCloud: isCloud,
+    decorateStudio: decorateStudio
+  };
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+
 </script>
 </body>
 </html>
