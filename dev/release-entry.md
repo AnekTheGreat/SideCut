@@ -1,81 +1,69 @@
-## 80.0 ({{STAMP}}): the Massive Revamp - replayable milestones, Studio split down a diagonal, and a second layout that is always one tap from the original
+## 80.0.2 ({{STAMP}}): the assistant duck, to your taste - choose how far the music steps back
 
-- **THE OWNER ASKED FOR ALL OF IT IN ONE RELEASE, WITH ONE RULE.** "one shot
-  done", and "REMEMBER YOU SHOULD ALWAYS HAVE THE OPTION TO REVERT BACK TO THE OG
-  WAY WITH TABS ON THE BOTTOM". So every new arrangement hangs off a body class
-  the new block adds (`sc80-cloud`, `sc80-pa-grid`) and the ORIGINAL is the
-  default: with both switches off the page is 75.1.2. Everything is in
-  `dev/patch-800.py` + `dev/revamp-800.css` + `dev/revamp-800.js`.
-- **MILESTONES.** A streak that reaches 3, 7, 14, 21, 30, 50, 75, 100, 150, 200,
-  250, 300, 365, 500, 730 or 1000 days now opens the app with a celebration made
-  for that number: the number, the unit, three expanding rings and confetti, a
-  line that says what the streak is. It plays once per milestone (the record is
-  `localStorage.sc80Milestones`, days -> timestamp) so it stays a moment instead
-  of a nag, and every milestone that has been reached is listed in Studio with
-  its date and a Replay button. The boot check reads `__scStats()` and retries for
-  ten seconds, because the streak loads out of IndexedDB and an early read is
-  legitimately zero.
-- **STUDIO IS TWO TABS, CUT ON THE DIAGONAL.** One pill, split corner to corner
-  from the bottom right to the top left - the same diagonal the Library pill has
-  carried since 70.0 - with Studio (the work: DJ, Crop, Edit rack, clip, cleanup,
-  FX, karaoke, sampler, looper, sleep, practice) on one side and Tools on the
-  other. Tools takes the badges wall, the storage cleaner, Auto-DJ, gestures, the
-  batch tag editor, batch on selected, the milestones and the layout switches.
-  `renderStudio` is wrapped AND watched by a MutationObserver, because the Studio
-  block repaints itself from several places inside its own closure; the split is
-  rebuilt on whichever of the two arrives first and the chosen tab is remembered.
-- **PINNED ARTISTS, TWO WINDOWS.** Four in a row is still the default and still
-  exactly 75.1.2. The new option is eight smaller squares in a 2 x 4 window with
-  the rest scrolling. The rail also glides now: `scroll-behavior: smooth`, a mouse
-  wheel that moves the rail instead of the page, and a snap that only engages
-  once the scroll is already slowing down (a snap that fights a flick is what
-  "not smooth" meant).
-- **TABS THAT MOVE.** The dock carries one highlight layer that slides between
-  pills by transform instead of four pills repainting their backgrounds, the pill
-  and tab colours cross-fade over 280 ms, and the active library tab scrolls
-  itself to the middle of the strip when the strip changes.
-- **THE CLOUD LAYOUT.** Round floating bubbles on Home, the four tabs as a
-  vertical glass dock down the right, the player keeping the bottom, and a small
-  now bar in the top right with the track, the artist and play/pause. The header
-  bell, refresh and gear move onto the listening-stats bubble beside the Ask
-  SideCut sparkle and forward the real clicks; if the stats bubble is hidden they
-  land on the greeting row, so Settings can never be unreachable. The "your files
-  / no ads, ever" line is gone in this layout, which is what was asked for.
-- **BACK TO THE ORIGINAL.** Both switches live in Settings -> More -> The new
-  look, and again in Studio -> Tools -> Look and feel. They are live (no restart)
-  and remembered in `sc80Layout` / `sc80PinnedLayout`.
-- **PATCH NOTES HAVE A SECOND LAYER.** `items` stays an array of plain strings -
-  one sentence each, which is what every gate and every older panel reads - and a
-  parallel `details` array carries the explanation. `changelogRich()` pairs them
-  and `scClItemHtml()` draws a `<details>` whose summary is the sentence. A note
-  with no detail is still a plain bullet, so every release before 80.0 renders
-  exactly as it did.
-- **THE DUPLICATE UNSORTED TAB IS GONE.** The strip drew the virtual Unsorted tab
-  and then walked the playlists object, which holds a real `Unsorted` key created
-  the first time a song had no playlist. The stored key is storage, not a tab, so
-  it is skipped by name and the virtual one is the only one that renders.
-- **BIGGER SCREENS.** Breakpoints at 600, 760 and 1000 px: the bubble cloud goes
-  three or four across, the panes keep a readable measure and centre, and a
-  landscape phone shrinks the right-hand dock.
-- **THE GATE.** `dev/revamp-check.cjs` boots the page in jsdom (87 checks): the
-  80.0 notes are sentences with details long enough to be worth opening; one
-  Unsorted tab with a real Unsorted key in playlists; the row is the default and
-  the grid is a switch that is remembered and caps nothing; the cloud layout adds
-  the now bar and the three bubbles on the stats card and classic takes every one
-  of them away; the celebration opens with the number, records itself, closes,
-  and a manual replay does not mark an unearned milestone; the Studio pill is
-  split on the bottom-right-to-top-left diagonal with the six non-studio sections
-  moved and the tab remembered; the dock highlight and the tab scroll exist; both
-  Settings switches work in both directions; nothing threw. `dev/patch-gate-800.py`
-  puts it in the extra arm.
-- **OTA.** The root bundle is `{{ROOT}}` bytes and the Play channel is
-  `{{PLAY}}` bytes, both rebuilt to a fixed point before the battery ran.
-- **ONE CARRIED RED, NOT CAUSED HERE.** `media-controls-check` fails "and it no
-  longer fires every half hour" on `dev/native-updates.js`, which is untouched by
-  this release and reproduces on a pristine 75.1.2 checkout.
-- **NOT VERIFIED ON A DEVICE.** jsdom has no layout engine: the diagonal, the
-  circles and the floating dock are proven as computed CSS rules and as rendered
-  elements, not photographed on a phone. The real test is one swipe on the rail,
-  one tab switch in Studio and one boot on a streak day.
-- **NEXT RELEASE**: `80.1` for a fix inside this one, `81.0` for the next feature.
-  Shell cache `sidecut-shell-v80.0`.
+- **THE OWNER'S REQUEST WAS ALREADY SHIPPED, AND THIS IS THE SECOND HALF OF IT.**
+  80.0.1 answers "step the music back when I hold the power button and talk to
+  Gemini" - it ducks, and it comes back when the phone says the request is over.
+  What it could not do was say HOW FAR: one fixed 20% and no way to ask for less or
+  more. `dev/patch-8002.py` is the whole change, and it is deliberately thin - the
+  engine 80.0.1 built (master gain after the limiters, `duckState()` on the plugin,
+  the tap, the eight-second wait, the one-minute cap) is not touched.
+- **THE LADDER STARTS ON THE OLD VALUE, ON PURPOSE.** `SC_DUCK_LEVELS =
+  [0.2, 0.15, 0.25, 0.4]` and `assistantDuckLevel` boots to the first rung, which is
+  exactly what 80.0.1 stepped to. A listener who never touches the button hears no
+  difference at all after updating, and the gate pins that as a check of its own.
+- **THE ENGINE READS A VARIABLE, NOT A CONSTANT.** The only line changed inside the
+  duck is `scDuckSetLevel(SC_DUCK_LEVEL, true)` -> `scDuckSetLevel(assistantDuckLevel,
+  true)`. Everything downstream - the ramp, the fallback to element volume on a build
+  with no graph, the recording tap staying above the node - is 80.0.1's, unchanged.
+- **A MID-DUCK CHANGE DOES NOT DROP THE DUCK.** Changing the depth while the music is
+  stepped back calls the same `scDuckForAssistant` that applies a duck, so the new
+  level is ramped in over the same short ramp - not released and re-applied, which
+  would put the music at full volume for a breath in the middle of a sentence.
+- **THE CHOICE IS A ROW, NOT A HIDDEN NUMBER.** Settings - More - Playback and sound
+  gains "Step down to" under the Assistant duck switch, cycling 20 / 15 / 25 / 40 and
+  written to its own meta row beside `assistantDuck`, so it also rides a library
+  backup. A meta value off the ladder (a hand-edited row, an older file) falls back to
+  the first rung instead of a level the engine would have to guess at.
+- **THE NEW GATE MEASURES THE LAYER, NOT THE ENGINE.**
+  `dev/assistant-duck-depth-check.cjs` (wired into the extra arm by
+  `dev/patch-gate-8002.py`): **36/0** on this tree and **19 of its 36 checks FAIL on
+  the pristine 80.0.1 page**, which is what makes it a measurement rather than a
+  description. It boots the page three times - a fresh library, one stored at 15%, and
+  one stored off the ladder at 33% - because a restore that is never exercised is not
+  a restore. `assistant-duck-check` is untouched and still describes 80.0.1 exactly.
+- **THE REPIN.** `dev/repin-8002.mjs`: the live pin moves 80.0.1 -> **80.0.2**, the
+  adjacency `PREV` moves 80.0 -> **80.0.1**, and the quoted sweep runs after `PREV`
+  and `OWN` are normalized, so a gate that describes its own release keeps describing
+  it. 127 edits across 52 gate files, `--check` clean in 0.
+- **THE OTA BUILD IS ONE PASS BEHIND BY DESIGN - WATCH THE SIZES.** The zip embeds a
+  copy of root `manifest.json` that records the size of the zip it lives inside, so
+  the first build after a page edit is stale by construction. Both channels are built
+  until `--check` reports a fixed point, and the numbers in this entry are read from
+  `ota/updates.json` and `ota-play/updates.json` after that point (root {{ROOT}} bytes,
+  Play {{PLAY}}).
+- **AND THE COMMITTED BUNDLE IS NOW BYTE-STABLE, WHICH IT WAS NOT ON 80.0.1.**
+  `dev/ota-update-check.cjs` regenerates the bundle and compares the zip's bytes;
+  that check is RED on a pristine `git archive origin/main` (54 passed / 1 failed,
+  `c8463c5e64 -> 7e45147cb9`), and the cause was in `dev/ota-fixpoint.mjs`: it
+  seeded root `manifest.json` from `ota/updates.json` (`url: 'update.zip'`, relative
+  to `ota/`) while `dev/ota-bundle.mjs` writes it back as `url: 'ota/update.zip'` -
+  two forms of the same byte count, so every generation embedded the other one, the
+  zip's size never moved, and a size-only fixed point declared victory while
+  `deploy.yml` re-committed the bundle after every push. The fixpoint now seeds the
+  form the build writes back: it settles on the first pass, two regenerations are
+  byte-identical (root `871e94cb05`, Play `2798ca9045`), and the check is green at
+  **55/0** on the bundle this release commits.
+- **TWO PRE-EXISTING REDS, BOTH PROVEN NOT THIS RELEASE'S** (identical counts on a
+  pristine `git archive origin/main`): `media-controls-check` **60 passed / 1
+  failed**, "and it no longer fires every half hour"; `album-follow-dock-check` **104
+  / 1**, "and its notes name what the release does" - a gate that requires the HEAD
+  changelog entry to name the album pill dock, which is red on 80.0.1 for the same
+  reason. Everything else in `dev/gates.sh` is green: 62 of 64 suites, plus
+  `audit-calls` 0 unresolved and `check-dom` 0 integrity failures.
+- **WHAT THIS RELEASE DOES NOT DO.** It does not change the four ways a duck ends, the
+  cap, the call path, the native plugin, or the tap-to-release. It does not add a
+  second duck engine: the deck-volume design built in this chat's 80.2 branch was
+  deliberately dropped rather than shipped beside 80.0.1's master gain, because two
+  things stepping the same music is how a volume bug starts. The Ask SideCut drawer
+  and microphone work (80.1) is still not on this lineage and is not part of this
+  release.
