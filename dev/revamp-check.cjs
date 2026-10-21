@@ -11,14 +11,18 @@
 //       called Unsorted (which it does as soon as a song has no playlist);
 //   [3] pinned artists: the row is the default, the grid is a switch, both are
 //       remembered, and neither caps the number of pins;
-//   [4] cloud layout: circles, the dock on the right, the small now bar, the three
-//       header buttons on the stats bubble - and classic puts every one back;
+//   [4] cloud layout: circles, the tabs as a bar ACROSS the top (80.0.3: not a
+//       rail down the right), the views clearing it, the player on the bottom
+//       edge, the small now bar, the three header buttons on the stats bubble -
+//       and classic puts every one back;
 //   [5] the celebration: number, unit, once-per-milestone record, replay from
 //       Studio, and the manual replay that does not mark anything;
-//   [6] Studio is one pill split down the diagonal into Studio and Tools, with the
-//       non-studio sections moved and the chosen tab remembered;
+//   [6] the Studio TAB is the diagonal split - Studio on one half, Tools on the
+//       other, in the dock - with the non-studio sections moved, no tab bar left
+//       inside the view, and the chosen half remembered;
 //   [7] the dock highlight exists and the tab strip keeps the active tab in view;
-//   [8] Settings -> More carries both switches;
+//   [8] the look switches live in Studio, Tools only - Settings, More carries no
+//       second copy of them;
 //   [9] no uncaught page errors while any of this ran.
 const fs = require('fs');
 const path = require('path');
@@ -34,7 +38,7 @@ function ok(cond, name, extra) {
   else { fail++; console.log('  \u2717 ' + name + (extra !== undefined ? '  [' + JSON.stringify(extra) + ']' : '')); }
 }
 
-const VER = '80.0.2';
+const VER = '80.0.3';
 // The release the 80.0 revamp REPLACED. This gate asserts adjacency against the
 // revamp's own entry (found by version), not against the head, so this pin stays
 // on the release 80.0 itself replaced.
@@ -245,8 +249,20 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     ok(!!doc.getElementById('notifBtn') && !!doc.getElementById('refreshBtn') && !!doc.getElementById('themeBtn'),
       'the real header buttons are still on the page (hidden, not deleted)');
     const css = html.replace(/\s+/g, ' ');
-    ok(/body\.sc80-cloud \.action-strip\{[^}]*right: 10px/.test(css), 'the dock floats on the right');
-    ok(/body\.sc80-cloud \.action-strip\{[^}]*flex-direction: column/.test(css), 'as a column');
+    ok(/body\.sc80-cloud \.action-strip\{[^}]*left: 10px; right: 10px/.test(css), 'the dock is a bar across the top');
+    ok(/body\.sc80-cloud \.action-strip\{[^}]*flex-direction: row/.test(css), 'laid out in a row, not a column');
+    ok(/body\.sc80-cloud \.action-strip\{[^}]*top: calc\(env\(safe-area-inset-top\) \+ var\(--sc80-head\) \+ 6px\)/.test(css),
+      'floating under the header, over the content');
+    ok(/body\.sc80-cloud #homeView, body\.sc80-cloud #library[^{]*\{[^}]*padding-top: calc\(var\(--sc80-bar\) \+ 12px\)/.test(css),
+      'and the views give its band back as padding so the wall scrolls under it');
+    // Two rules, on purpose: dev/studio-70-check counts every `#nowPlaying` rule that
+    // reserves the bottom inset as a padding rule, so the bottom edge is its own
+    // declaration. Asserted as the pair, so either half going missing is red.
+    ok(/body\.sc80-cloud #nowPlaying\{ padding-right: 0; \}/.test(css) &&
+       /body\.sc80-cloud #nowPlaying\{ bottom: env\(safe-area-inset-bottom\); \}/.test(css),
+      'the player sits on the bottom edge again, not above a rail');
+    ok(/body\.sc80-cloud header > div:last-child\{ display: none !important/.test(css),
+      'the header row really hides (its wrapper carries an inline display:flex)');
     ok(/body\.sc80-cloud \.home-bubble\{[^}]*border-radius: 50%/.test(css), 'and the bubbles are round');
     ok(/body\.sc80-cloud \.brand span\{ display: none/.test(css), 'the your files no ads line is gone in this layout');
     ok(win.localStorage.getItem('sc80Layout') === '"cloud"', 'the layout choice is remembered');
@@ -290,25 +306,45 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     click(win, doc.getElementById('sc80Milestone').querySelector('[data-sc80-close]:not([data-sc80-replay])'));
   }
 
-  console.log('[6] Studio: one pill, split down the diagonal');
+  console.log('[6] Studio: the diagonal split is the dock tab, not a bar in the view');
   {
-    click(win, doc.getElementById('studioBtn'));
-    await wait(600);
     const host = doc.getElementById('studioView');
-    const bar = host.querySelector('.sc80-tabs');
-    ok(!!bar, 'the Studio tab bar is on the page');
-    ok(bar && bar.querySelectorAll('.sc80-tab').length === 2, 'two halves');
-    const names = bar ? Array.from(bar.querySelectorAll('.sc80-tab')).map((b) => b.getAttribute('data-tab')) : [];
-    ok(names.join('|') === 'studio|tools', 'called Studio and Tools (' + names.join('|') + ')');
-    const labels = bar ? Array.from(bar.querySelectorAll('.sc80-tab')).map((b) => (b.firstChild && b.firstChild.textContent || '').trim()) : [];
-    ok(labels.join('|') === 'Studio|Tools', 'and both halves are labelled (' + labels.join('|') + ')');
-    const line = bar && bar.querySelector('line');
-    ok(!!line && line.getAttribute('x1') === '100%' && line.getAttribute('y1') === '100%' &&
-       line.getAttribute('x2') === '0' && line.getAttribute('y2') === '0',
-       'the diagonal runs bottom right to top left (' + (line && [line.getAttribute('x1'), line.getAttribute('y1'), line.getAttribute('x2'), line.getAttribute('y2')].join(' ')) + ')');
+    ok(!host.querySelector('.sc80-tabs') && !host.querySelector('.sc80-tab'),
+      'there is no tab bar inside the Studio view any more');
+    const btn = doc.getElementById('studioBtn');
+    const sh = doc.getElementById('studioHalf');
+    const th = doc.getElementById('toolsHalf');
+    ok(!!btn && !!sh && !!th, 'the Studio pill in the dock has two halves');
+    ok(sh && sh.getAttribute('data-studio-tab') === 'studio' && th && th.getAttribute('data-studio-tab') === 'tools',
+      'called Studio and Tools');
+    ok(sh && /Studio/.test(sh.textContent) && th && /Tools/.test(th.textContent),
+      'and both halves are labelled');
+    const line = btn && btn.querySelector('line');
+    ok(!!line && line.getAttribute('x1') === '60%' && line.getAttribute('y1') === '0' &&
+       line.getAttribute('x2') === '40%' && line.getAttribute('y2') === '100%',
+       'the seam between them is a diagonal, not a straight divider (' +
+       (line && [line.getAttribute('x1'), line.getAttribute('y1'), line.getAttribute('x2'), line.getAttribute('y2')].join(' ')) + ')');
+    // Which half owns which SIDE is answered by the clip paths, not by the order the
+    // two divs happen to sit in the markup: Studio keeps the left of the pill and
+    // Tools the right of it.
+    // The cut is written in the two halves' own style attributes, so it is read from
+    // there - whitespace normalised, because the attribute is authored by hand.
+    const cutOf = (el) => ((/clip-path:\s*([^;]+)/i.exec((el && el.getAttribute('style')) || '') || [])[1] || '')
+      .replace(/\s+/g, '');
+    const shPoly = cutOf(sh);
+    const thPoly = cutOf(th);
+    ok(shPoly === 'polygon(00,60%0,40%100%,0100%)', 'Studio owns the left of the pill (' + shPoly + ')');
+    ok(thPoly === 'polygon(60%0,100%0,100%100%,40%100%)', 'and Tools the right of it (' + thPoly + ')');
+    // Both names on the pill's centre line, so Tools sits BESIDE Studio rather than
+    // under it - the shape a two-row split took in the first cut of this tab.
+    ok(sh && /align-items:\s*center/.test(sh.getAttribute('style') || '') &&
+       th && /align-items:\s*center/.test(th.getAttribute('style') || ''),
+       'and both names sit on the same line, either side of the seam');
     const paneStudio = host.querySelector('.sc80-pane[data-pane="studio"]');
     const paneTools = host.querySelector('.sc80-pane[data-pane="tools"]');
     ok(!!paneStudio && !!paneTools, 'both panes exist');
+    ok(host.querySelectorAll('.sc80-pane').length === 2, 'and there are exactly two, not panes inside panes (' +
+      host.querySelectorAll('.sc80-pane').length + ')');
     ok(paneStudio && !!paneStudio.querySelector('.sc-tools'), 'Studio keeps the creative tool cards');
     const folds = paneTools ? Array.from(paneTools.querySelectorAll('[data-fold]')).map((b) => b.getAttribute('data-fold')) : [];
     ['scFoldBadges', 'scFoldStorage', 'scFoldAutodj', 'scFoldGestures', 'scFoldBatchTags', 'scFoldBatchSel']
@@ -318,14 +354,28 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     const replayBtns = paneTools ? paneTools.querySelectorAll('[data-sc80-ms]') : [];
     ok(replayBtns.length >= 2, 'with replay buttons on it (' + replayBtns.length + ')');
     ok(!!paneTools.querySelector('#sc80Look'), 'and the Look and feel switches');
-    ok(paneTools.classList.contains('active') === false, 'Studio is the tab it opens on');
-    click(win, bar.querySelector('[data-tab="tools"]'));
-    await wait(80);
-    ok(paneTools.classList.contains('active') && !paneStudio.classList.contains('active'), 'tapping Tools switches the pane');
+    // The live pane, read fresh every time: decorateStudio may legitimately
+    // re-wrap the view on a render, and a reference captured before a click can
+    // point at a node that is no longer the one on screen.
+    const paneOn = (name) => {
+      const el = host.querySelector('.sc80-pane[data-pane="' + name + '"]');
+      return !!(el && el.classList.contains('active'));
+    };
+    // The half IS the control: tapping it is what opens Studio, the same way the
+    // Library pill opens its two halves.
+    click(win, th);
+    await wait(400);
+    ok(host.classList.contains('active'), 'tapping the Tools half opens Studio');
+    ok(paneOn('tools') && !paneOn('studio'), 'on the Tools pane');
     ok(win.localStorage.getItem('sc80StudioTab') === '"tools"', 'and the choice is remembered');
-    click(win, bar.querySelector('[data-tab="studio"]'));
-    await wait(80);
-    ok(paneStudio.classList.contains('active'), 'and back to Studio');
+    ok(th.classList.contains('active-half') && !sh.classList.contains('active-half'),
+      'the half you are in is the one lit');
+    click(win, sh);
+    await wait(400);
+    ok(paneOn('studio') && !paneOn('tools'),
+      'and the Studio half takes you back to the work');
+    ok(sh.classList.contains('active-half') && !th.classList.contains('active-half'),
+      'with the light moved to that half');
   }
 
   console.log('[7] the tabs glide');
@@ -339,14 +389,19 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     ok(/scrollTo\(\{ left: Math\.max\(0, left\), behavior: 'smooth' \}\)/.test(html), 'the active tab is scrolled into the middle');
   }
 
-  console.log('[8] Settings -> More carries the switches');
+  console.log('[8] the look switches live in Tools, not in Settings -> More');
   {
     const pane = doc.getElementById('settingsPaneMore');
+    ok(!!pane, 'the More pane is still on the page');
+    const cards = doc.querySelectorAll('#sc80Look');
+    ok(cards.length === 1, 'there is exactly one look card in the document (' + cards.length + ')');
     const card = doc.getElementById('sc80Look');
-    ok(!!pane && !!card, 'the new-look card is in the More pane');
-    ok(card && !!card.querySelector('[data-sc80-layout="classic"]') && !!card.querySelector('[data-sc80-layout="cloud"]'),
+    ok(!!card && !pane.contains(card), 'and it is not the one in Settings, More');
+    const tools = doc.querySelector('.sc80-pane[data-pane="tools"]');
+    ok(!!tools && !!card && tools.contains(card), 'it lives in Studio, Tools');
+    ok(!!card && !!card.querySelector('[data-sc80-layout="classic"]') && !!card.querySelector('[data-sc80-layout="cloud"]'),
       'both layouts are offered');
-    ok(card && !!card.querySelector('[data-sc80-pinned="row"]') && !!card.querySelector('[data-sc80-pinned="grid"]'),
+    ok(!!card && !!card.querySelector('[data-sc80-pinned="row"]') && !!card.querySelector('[data-sc80-pinned="grid"]'),
       'both pinned windows are offered');
     click(win, card.querySelector('[data-sc80-layout="cloud"]'));
     await wait(80);
@@ -354,6 +409,8 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     click(win, card.querySelector('[data-sc80-layout="classic"]'));
     await wait(80);
     ok(!win.SC80.isCloud(), 'and switches it back');
+    ok(doc.querySelectorAll('[data-sc80-layout]').length === 2,
+      'and those two buttons are the only copy on the page (' + doc.querySelectorAll('[data-sc80-layout]').length + ')');
   }
 
   console.log('[9] no page errors');

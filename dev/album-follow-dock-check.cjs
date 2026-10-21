@@ -159,7 +159,7 @@ function click(win, el) {
 
   console.log('[1] release metadata');
   {
-    ok(/^80\.0\.2$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
+    ok(/^80\.0\.3$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
     ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v" + VER + "'") !== -1,
       'the shell cache moved with it');
     const head = (html.match(/const CHANGELOG = \[\n  \{ version: '([^']+)'/) || [])[1];
@@ -569,11 +569,21 @@ function click(win, el) {
     homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
     win.dispatchEvent(pev(win, 'pointermove', 340, 754));   // 4px past the dock's edge
     await wait(20);
-    ok(th('transform') === 'translateX(302px)',
-      'a slide that drifts just past the edge still points at Studio', th('transform'));
+    // The Studio tab is cut in two: 340px is over its Tools half (the cut runs from
+    // 60% of the pill at the top to 40% at the bottom, so the right of the pill is
+    // Tools), and the highlight has to say which half the finger is really over.
+    const toolsLeft = R.studioBtn.left + R.studioBtn.width * 0.40 + 4;
+    // The style round-trips through a string, so the number is what is compared, not
+    // its spelling: 338px and 338.0px are the same place on the dock.
+    const movedTo = parseFloat(String(th('transform')).replace(/[^0-9.]/g, ''));
+    ok(Math.abs(movedTo - toolsLeft) < 0.6,
+      'a slide that drifts just past the edge still points at Studio - at its Tools half',
+      th('transform') + ' vs ' + toolsLeft.toFixed(1));
     win.dispatchEvent(pev(win, 'pointerup', 340, 754));
     await wait(150);
     ok(studioView.classList.contains('active'), 'and releasing there takes it');
+    ok(doc.getElementById('toolsHalf').classList.contains('active-half'),
+      'onto the half the finger was over');
     ok(!homeView.classList.contains('active'), 'without Home answering too');
 
     // (7) A TICK PER CROSSING. One short buzz when the finger moves into another
