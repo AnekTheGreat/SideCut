@@ -35,10 +35,22 @@ const MAN = path.join(ROOT, 'manifest.json');
 const read = () => JSON.parse(fs.readFileSync(UPDS, 'utf8'));
 const run = (script) => execFileSync(process.execPath, [path.join(ROOT, 'dev', script)], { cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'] });
 
+// THE SEED HAS TO BE THE FORM THE BUILD WRITES BACK, or the bundle never settles
+// byte for byte - only by size, which is the wrong test. root manifest.json is
+// written in two shapes: dev/ota-bundle.mjs finishes by writing it as
+// `{...manifest, url: 'ota/update.zip'}` (the real bundle path), while ota/updates.json
+// carries `url: 'update.zip'` (relative to ota/). Seeding from ota/updates.json
+// therefore embedded one shape and wrote back the other on every pass: the zip's
+// size never moved, so the size-only fixed point below declared victory while
+// `dev/ota-update-check.cjs`'s "a second generation produces the same bytes" stayed
+// red - and the deploy workflow re-committed the bundle after every push. Seed the
+// shape the build leaves behind and a second generation is identical.
+const seed = () => JSON.stringify({ ...read(), url: 'ota/update.zip' });
+
 let settled = false;
 for (let i = 1; i <= 8; i++) {
   const seeded = read().size;
-  fs.writeFileSync(MAN, JSON.stringify(read()));
+  fs.writeFileSync(MAN, seed());
   run('ota-bundle.mjs');
   run('ota-bundle-play.mjs');
   const now = read().size;
