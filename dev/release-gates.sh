@@ -4,14 +4,13 @@
 # check, each one reproduced at the same count by a pristine `git archive` of main,
 # so neither is any one release's doing and no release here fixes either:
 #
-#   media-controls-check      "and it no longer fires every half hour"       60/1
-#   album-follow-dock-check   "and its notes name what the release does"    104/1
+#   media-controls-check      "and it no longer fires every half hour"       66/1
 #
-# The second is a gate that requires the HEAD changelog entry to name the album
-# pill dock, which only the release that shipped the pill dock does - so it is red
-# on every release after 80.0, including the published 80.0.1. Tolerating it is not
-# skipping it: it still runs, and its line still appears in every report below.
-# Fixing the gate's own assumption is a separate change, not this release's.
+# album-follow-dock-check used to be the second: it requires the HEAD changelog
+# entry to name the album pill dock, which only the release that shipped the pill
+# dock did, so it was red on every release after 80.0. 80.0.3's last note names the
+# album pill dock, so that gate is 106/0 and its allowance is gone. It still runs,
+# and its line still appears in every report.
 #
 # It lives here for the same reason dev/release-record.py does: the workflow that
 # runs a release cannot be pushed by a workflow (GitHub refuses any commit that
@@ -50,7 +49,7 @@ sh dev/gates.sh > /tmp/gates.log 2>&1
 echo "gates.sh exit: $?"
 tail -40 /tmp/gates.log
 
-bad=$(grep -E '^[A-Za-z0-9_-]+: exit [1-9]' /tmp/gates.log | grep -vE '^(media-controls-check|album-follow-dock-check):' || true)
+bad=$(grep -E '^[A-Za-z0-9_-]+: exit [1-9]' /tmp/gates.log | grep -vE '^(media-controls-check):' || true)
 if [ -n "$bad" ]; then
   echo "::error::gates failed: $bad"
   {
@@ -132,11 +131,10 @@ fi
   echo
   echo '## green'
   echo
-  echo 'Every suite green, except the two reds this repository already carries:'
-  echo 'dev/media-controls-check.cjs, "and it no longer fires every half hour" (60/1),'
-  echo 'and dev/album-follow-dock-check.cjs, "and its notes name what the release does"'
-  echo '(104/1). A pristine clone of main reproduces both at the same counts, so'
-  echo 'neither is the doing of this release, and this release does not fix either.'
+  echo 'Every suite green, except the one red this repository already carries:'
+  echo 'dev/media-controls-check.cjs, "and it no longer fires every half hour" (66/1).'
+  echo 'A pristine clone of main reproduces it at the same count, so it is not this'
+  echo "release's doing, and this release does not fix it."
   echo
   echo '## every suite, exactly as the battery reported it'
   echo
@@ -144,4 +142,4 @@ fi
   grep -E '^[A-Za-z0-9_-]+: ' /tmp/gates.log || true
   echo '```'
 } > dev/gates-report.txt
-echo "Gates: every suite green except the two recorded pre-existing reds (media-controls-check, album-follow-dock-check)."
+echo "Gates: every suite green except the one recorded pre-existing red (media-controls-check)."
