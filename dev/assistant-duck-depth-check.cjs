@@ -240,7 +240,7 @@ async function boot(seedMeta) {
 
 (async () => {
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [1] a fresh library is exactly where 80.0.1 left it \u2014');
+  console.log('\n— [1] a fresh library is exactly where 80.0.1 left it —');
   const a = await boot();
   ok('the Step down to row is in the pane', !!a.button());
   ok('it reads 20% out of the box, the level 80.0.1 shipped', a.label() === '20%', 'label=' + a.label());
@@ -260,7 +260,7 @@ async function boot(seedMeta) {
   ok('the hand-back returns the music to full', near(a.gain(), 1), 'gain=' + a.gain());
 
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [2] the button walks the ladder, and the readout follows \u2014');
+  console.log('\n— [2] the button walks the ladder, and the readout follows —');
   await a.clickDepth(1);
   ok('one touch: 15%', a.label() === '15%' && near(a.level(), 0.15), 'label=' + a.label() + ' level=' + a.level());
   await a.clickDepth(1);
@@ -272,7 +272,7 @@ async function boot(seedMeta) {
      a.label() === '20%' && near(a.level(), 0.2), 'label=' + a.label() + ' level=' + a.level());
 
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [3] the chosen depth is the depth a duck actually uses \u2014');
+  console.log('\n— [3] the chosen depth is the depth a duck actually uses —');
   await a.clickDepth(3);          // 20 -> 15 -> 25 -> 40
   ok('40% chosen', a.label() === '40%');
   a.emit('duck');
@@ -281,7 +281,7 @@ async function boot(seedMeta) {
   ok('and it is held', a.ducked() === true);
 
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [4] changing the depth mid-duck is heard without dropping the duck \u2014');
+  console.log('\n— [4] changing the depth mid-duck is heard without dropping the duck —');
   const holdsBefore = typeof a.win.__scDuckHeld === 'function' && a.ducked();
   await a.clickDepth(1);          // 40 -> 20, while still ducked
   ok('the duck was held going in', holdsBefore === true);
@@ -294,7 +294,7 @@ async function boot(seedMeta) {
   ok('and the hand-back still restores full volume', near(a.gain(), 1));
 
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [5] the choice is its own row in the store \u2014');
+  console.log('\n— [5] the choice is its own row in the store —');
   await a.clickDepth(2);          // 20 -> 15 -> 25
   const stored = (() => {
     for (const v of a.idb._data.meta.values()) {
@@ -312,7 +312,7 @@ async function boot(seedMeta) {
   ok('and the 80.0.1 switch row is still written beside it', storedSwitch !== 'missing', 'stored=' + storedSwitch);
 
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [6] the depth survives a restart, and a bad value cannot \u2014');
+  console.log('\n— [6] the depth survives a restart, and a bad value cannot —');
   const b = await boot({ assistantDuckLevel: 0.15 });
   ok('a page that boots with 15% stored reads 15%', b.label() === '15%', 'label=' + b.label());
   ok('and the setting it holds is 0.15', near(b.level(), 0.15), 'level=' + b.level());
@@ -334,7 +334,7 @@ async function boot(seedMeta) {
   c.win.close();
 
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [7] the switch still says WHETHER, the row says HOW FAR \u2014');
+  console.log('\n— [7] the switch still says WHETHER, the row says HOW FAR —');
   await a.clickDepth(1);          // 25 -> 40, so the depth is not the default
   const sw = a.doc.getElementById('assistantDuckToggle');
   ok('the 80.0.1 switch is still there', !!sw);
@@ -355,7 +355,7 @@ async function boot(seedMeta) {
   await wait(40);
 
   // ---------------------------------------------------------------------------
-  console.log('\n\u2014 [8] no runtime errors \u2014');
+  console.log('\n— [8] no runtime errors —');
   ok('the first page threw nothing', a.errors.length === 0, a.errors.slice(0, 3).join(' | '));
   ok('the restored page threw nothing', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
   ok('the off-ladder page threw nothing', c.errors.length === 0, c.errors.slice(0, 3).join(' | '));
