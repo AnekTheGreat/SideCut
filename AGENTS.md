@@ -86,12 +86,19 @@
   verify before it commits, and it must run the same convergence the repo already has.**
 - **THE BYTE COUNTS ARE TOOLCHAIN-SPECIFIC, SO TRUST CI'S.** This sandbox has no `zip`
   (see the shim note below), and the shim's output differs from the runner's real `zip`:
-  locally the settled bundle is **1028909** sideload / **1028924** Play, while CI's real
-  `zip` produces **1028404** / **1028415**. Both are self-consistent (the embedded manifest
+  locally the settled bundle is **1028909** sideload / **1028924** Play, while the
+  PUBLISHED bundle - built by the runner's real `zip` and what actually ships - is
+  **1028400** sideload / **1028415** Play. Both are self-consistent (the embedded manifest
   matches the zip), and what an installed app fetches is `ota/updates.json`, which is
   written from the real built size either way. **The committed bundle should be CI's** -
   do not fight it with a locally built one. A local `ota-update-check` byte-identity
   failure is this difference and not a defect.
+- **THE DEPLOY IS GREEN AFTER THE FIX.** Run 39544845134: every step succeeded - the
+  publish, the verify (now above the commit), the commit, the upload and the Pages deploy.
+  The live `ota/updates.json` reads v80.0.1, and the live `ota/update.zip` is 1028400 bytes
+  with an embedded manifest that agrees and an `index.html` carrying both `APP_VERSION
+  = '80.0.1'` and `scDuckForAssistant`. The 80.0.1 fix reaches an installed app on the next
+  poll.
 - **ONE TRAP WORTH RECORDING**: `dev/test-66429.mjs` execs `ota-update-check`, which
   regenerates the bundle as its byte-identity test, so a run of it can leave the tree
   mid-cycle with the embedded manifest one pass behind - run the bundler after the
