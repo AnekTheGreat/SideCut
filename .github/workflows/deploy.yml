@@ -31,8 +31,24 @@ jobs:
           # app downloads: zip + manifest, both derived from index.html.
           node dev/ota-bundle.mjs
           node dev/ota-bundle-play.mjs
+          # SETTLE IT, and this step is why the deploy used to fail. The zip carries a
+          # copy of root manifest.json, and that manifest records the size of the zip
+          # it lives inside - so one build is ALWAYS one pass behind: it seeds the
+          # embedded manifest from the previous bundle's size. `--check` compares the
+          # two and fails, which failed this job and skipped both the upload and the
+          # deploy, so the site silently stopped shipping. ota-fixpoint.mjs is the
+          # repo's own answer: seed from the built size, rebuild, repeat until a
+          # rebuild produces the size it was seeded with. Run it BEFORE the commit
+          # below, so the bundle that gets committed is the settled one.
+          node dev/ota-fixpoint.mjs
           echo '--- ota/ contents ---' && ls -la ota/ ota-play/
           echo '--- ota/updates.json ---' && cat ota/updates.json
+
+      - name: Verify the published bundle is current
+        # Fails the build instead of quietly shipping an app that can never update.
+        # It runs BEFORE the commit now: a bundle that cannot pass this must never be
+        # pushed to main by the step below.
+        run: node dev/ota-bundle.mjs --check && node dev/ota-bundle-play.mjs --check
 
       - name: Commit the published bundle
         # This repo's Pages site is in LEGACY mode (source: branch main, path /),
@@ -51,10 +67,6 @@ jobs:
           git add ota ota-play updates.json
           git commit -m "Publish OTA bundle $(node -p "require('./ota/updates.json').version")"
           git push
-
-      - name: Verify the published bundle is current
-        # Fails the build instead of quietly shipping an app that can never update.
-        run: node dev/ota-bundle.mjs --check && node dev/ota-bundle-play.mjs --check
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

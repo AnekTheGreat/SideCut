@@ -1,5 +1,124 @@
 # SideCut — repository memory
 
+## 80.0.1 (October 20, 2026 · 11:35 PM EDT): the assistant duck - the music steps back for an assistant and comes back on its own
+
+- **THE OWNER ASKED FOR THIS, VERBATIM**: "when you like are talking to an ai such as
+  holding down your power button to talk to gemeni or any ai, SideCut should let you talk
+  to the ai while playing the music at a lower volume letting you talk to the ai and then
+  at full volume when your done talking to the ai." The page half is `dev/patch-8001.py`;
+  the native half is in `.github/workflows/patch-audiofocus.py`.
+- **WHAT WAS ACTUALLY HAPPENING, AND WHY IT WAS NOT JUST "TOO LOUD".** An assistant takes
+  the audio the same way a call does, so Android sends the same `AUDIOFOCUS_LOSS_TRANSIENT`
+  that a messaging blip sends (the 73.6 note explains why this app cannot tell them apart
+  from the event alone). 73.6 answered that loss by ignoring it and putting the element
+  back - correct for a blip, wrong for an assistant: the song came back at FULL volume over
+  the person you were talking to. The duck is the missing third answer, and the system's
+  own `AUDIOFOCUS_GAIN` when the assistant stops is what ends it.
+- **THE MASTER GAIN, WHICH IS THE WHOLE DESIGN.** `scDuckMaster` is one gain node between
+  the limiters and `audioCtx.destination`; the limiters no longer land on the speakers
+  directly. That is deliberate and it is the reason a single number can step the WHOLE mix
+  back at once - both decks, the DJ Mode engine and the Studio chain all land on a limiter,
+  and every one of them is above this node. **The element volume is NOT used when a graph
+  exists**: the crossfade owns it, and writing it there would fight the blend. It is used
+  only as a fallback on a build whose AudioContext never came up, and the original value is
+  captured once and restored exactly. The recording tap stays on the limiter, so a
+  recording or a SAVE COPY captures the UNDUCKED signal - a duck must never end up baked
+  into a file.
+- **THE FOUR WAYS A DUCK ENDS, AND THE CEILING.** The phone's own answer (the plugin's
+  `duckState()`, polled only while a duck is held); eight seconds after the last signal;
+  a tap anywhere (`pointerdown` in the capture phase, which never steals the press from a
+  button under the finger); and - the one that matters - a hard ceiling of **60 seconds**
+  from the first signal, however many arrive (`scDuckUntil = Math.min(now + HOLD,
+  startedAt + MAX)`). Without that ceiling a stream of duck requests could hold the music
+  quiet indefinitely. `scDuckApplied` is set BEFORE the level write, so the app's own gain
+  change cannot be read back as a fresh signal and start a loop.
+- **A CALL IS NOT AN ASSISTANT, AND THE STALE DUCK IS THE TRAP.** `scDuckForAssistant`
+  refuses while a call is up, and `scStandDownForCall` now UNDUCKS as it pauses - without
+  that, a duck held when a call starts would leave the resume-after-call path playing at
+  20%. A permanent focus loss (another player keeping the speakers) unducks too, since the
+  music is not coming back to be ducked. Both were found by the new gate, not by reading.
+- **THE NATIVE HALF SAYS ONLY WHAT IT KNOWS.** `duckState()` answers "is the duck over?"
+  from the last focus event it was sent plus the audio mode, and returns "over" only on
+  POSITIVE evidence (a gain, or no call and no transient loss on record). A duck Android
+  applied without telling anyone therefore leaves the web layer's own bounded wait in
+  charge rather than being cancelled early. `holdingFocus` is tracked beside it.
+- **THE GATE.** `dev/assistant-duck-check.cjs` (new, wired into the extra arm by
+  `dev/patch-gate-8001.py`): **41/0** here and **19 of its checks FAIL on the pristine 80.0
+  page** (the API is undefined, the master node is absent, the limiter lands on the
+  destination), which is what makes it a measurement of the feature rather than a
+  description of it. It drives the real page against a fake Web Audio graph, and it needed
+  a real one - `audio-focus-check` had to be retargeted for the same reason, because with
+  no graph the duck rides the element volume and the audit would have measured the
+  fallback.
+- **FOUR GATES PINNED WHAT THIS RELEASE CHANGES, AND ALL FOUR ARE RETARGETED, NOT
+  WEAKENED** (owned by `dev/patch-gate-8001.py` so the release reproduces): `audio-focus`
+  (the duck is obeyed now, through the master gain, with the song still playing and the
+  element volume untouched), `test-70` (the limiter still reaches the speakers, through the
+  master gain, and nothing bypasses it), `revamp-check` (it DESCRIBES 80.0, which is no
+  longer the head, so it reads its own entry by version - the OWN split), and `test-736`
+  (its transient-loss check read the log's LAST line and the duck now records its own line
+  after it, so the log is scanned and both halves are pinned).
+- **THE REPIN.** `dev/repin-8001.mjs`: `PREV_RELEASE` 80.0 -> **80.0.1**, the 29 adjacency
+  gates move 75.1.2 -> **80.0**, and the historical gates stay put. Two lessons are in it.
+  (1) **Adjacency is keyed on HOW a gate derives its neighbour, not on the text it
+  contains**: `revamp-check` compares its OWN entry's neighbour, so it is not an adjacency
+  gate and its `PREV` must not move - the set is `entries[1]` AND not `ownIdx`. (2) **`OWN`
+  is a release name like `PREV`, not a stale pin**, so the quoted sweep must hold it out
+  and the stale check must exempt it, or a gate that describes 80.0 gets rewritten to
+  describe itself.
+- **THE RELEASE REPRODUCES FROM THE 80.0 TIP.** `patch-8001.py` + `patch-gate-8001.py` +
+  `repin-8001.mjs` + the OTA rebuild over a clean `git archive HEAD` checkout produce a
+  tree that is **byte-for-byte identical, bundles included** (`diff -rq` clean). The
+  native plugin file is owned by `patch-gate-8001.py` for exactly this reason - it is a
+  hand-edited file that the release must be able to rebuild.
+- **OTA, AND THE DEPLOY BUG THIS RELEASE UNCOVERED - READ THIS ONE.** The zip carries a
+  copy of root `manifest.json`, and that manifest records the size of the zip it lives
+  inside, so **one build is always one pass behind**: it seeds the embedded manifest from
+  the PREVIOUS bundle's size. `--check` compares the two and fails. `deploy.yml` built the
+  bundle once, **committed it**, and only THEN ran `--check` - so the publish step pushed a
+  bundle that could not pass its own verification, the verify step failed, and both the
+  Pages upload and the deploy were SKIPPED. That is why 80.0.1's first Deploy run is red
+  (run 39543091189, step "Verify the published bundle is current") and why the site kept
+  serving 80.0. **Fixed here**: `deploy.yml` now runs the repo's own `dev/ota-fixpoint.mjs`
+  (seed from the built size, rebuild, repeat until a rebuild produces the size it was
+  seeded with) BEFORE the commit, and the `--check` moved ABOVE the commit so a bundle
+  that cannot pass is never pushed to main. The lesson generalises: **a publish step must
+  verify before it commits, and it must run the same convergence the repo already has.**
+- **THE BYTE COUNTS ARE TOOLCHAIN-SPECIFIC, SO TRUST CI'S.** This sandbox has no `zip`
+  (see the shim note below), and the shim's output differs from the runner's real `zip`:
+  locally the settled bundle is **1028909** sideload / **1028924** Play, while CI's real
+  `zip` produces **1028404** / **1028415**. Both are self-consistent (the embedded manifest
+  matches the zip), and what an installed app fetches is `ota/updates.json`, which is
+  written from the real built size either way. **The committed bundle should be CI's** -
+  do not fight it with a locally built one. A local `ota-update-check` byte-identity
+  failure is this difference and not a defect.
+- **ONE TRAP WORTH RECORDING**: `dev/test-66429.mjs` execs `ota-update-check`, which
+  regenerates the bundle as its byte-identity test, so a run of it can leave the tree
+  mid-cycle with the embedded manifest one pass behind - run the bundler after the
+  battery, not only before.
+- **THE SANDWICH NOTE**: this sandbox has no `zip`/`unzip` and no root, so `.shim/zip` and
+  `.shim/unzip` (Python `zipfile`, gitignored) stand in. **The zip shim must APPEND**: the
+  bundler builds the archive in three passes that accumulate, and a shim opening 'w' on
+  every call produced a 52 KB bundle that was missing index.html entirely.
+- **PRE-EXISTING REDS, ALL PROVEN NOT THIS RELEASE'S** (identical counts on a pristine
+  80.0 checkout in /tmp/base800): `media-controls-check` 66/1 (the months-old "fires every
+  half hour"), test-658 8, test-705 5, test-716 1, test-719 2, test-720/721/722/723 1 each,
+  test-6641/6642/66422/66424/66425/66426 1-2 each, test-66428 1, test-6052 2, test-6058 1,
+  test-60510 1, test-play 2, and test-7252's crash (`scPauseDeck is not defined` inside its
+  own eval). `test-718` was red here and GREEN on pristine - a real regression - and it was
+  the OTA manifests still naming 80.0; the rebuilt bundles fixed it (46/0).
+- **VERIFIED GREEN HERE**: assistant-duck-check 41/0, audio-focus-check 47/0, revamp-check
+  92/0, test-736 76/0, test-70 182/0, test-6643 90/0, studio-70-check 570/0, the whole
+  extra arm, the OTA trio (guard 20/0, update 52/0, bootapply 24/0, loop 26/0),
+  audit-calls OK (6161 declared names across 5 blocks), check-dom 0 integrity failures.
+- **NOT VERIFIED ON A DEVICE.** jsdom has no real audio and no Android focus callbacks, so
+  the duck is proven as a gain-node contract and as a driven page, not heard on a phone.
+  The real test is holding the power button and talking to Gemini over a playing song, then
+  taking a call mid-duck. The native half reaches a phone only in an APK built after this
+  commit; the web half rides the OTA.
+- **NEXT RELEASE**: `80.1` for the next feature, or `80.0.2` for a fix inside this one.
+  Shell cache `sidecut-shell-v80.0.1`.
+
 ## 80.0 (October 20, 2026 · 6:06 PM EDT): the Massive Revamp - replayable milestones, Studio split down a diagonal, and a second layout that is always one tap from the original
 
 - **THE OWNER ASKED FOR ALL OF IT IN ONE RELEASE, WITH ONE RULE.** "one shot

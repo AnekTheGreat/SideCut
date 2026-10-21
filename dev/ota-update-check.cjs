@@ -336,6 +336,23 @@ holdDownload = true;
   ok('deploy.yml fails the build when the bundle is stale', /ota-bundle\.mjs --check/.test(workflow));
   ok('deploy.yml commits the bundle (Pages is legacy-branch, so committed files are what ships)',
      /git push/.test(workflow) && /contents: write/.test(workflow), 'no auto-publish');
+  // 80.0.1 - THE ORDER, WHICH IS WHAT BROKE THE DEPLOY. The zip embeds a copy of root
+  // manifest.json and that manifest records the zip's own size, so a single build is
+  // always one pass behind and `--check` refuses it. deploy.yml used to build, COMMIT,
+  // and only then check - so the publish step pushed a bundle that could not pass, the
+  // check failed, and the upload and the deploy were skipped. Two things are asserted
+  // now: the convergence runs, and it runs BEFORE the commit.
+  ok('deploy.yml settles the bundle with the repo own fixpoint', /ota-fixpoint\.mjs/.test(workflow));
+  {
+    const settleAt = workflow.indexOf('ota-fixpoint.mjs');
+    const checkAt = workflow.indexOf('ota-bundle.mjs --check');
+    const commitAt = workflow.indexOf('git commit -m "Publish OTA bundle');
+    ok('the fixpoint runs before the commit', settleAt !== -1 && commitAt !== -1 && settleAt < commitAt,
+       'settle ' + settleAt + ' commit ' + commitAt);
+    ok('and the bundle is verified before it is committed, not after',
+       checkAt !== -1 && commitAt !== -1 && checkAt < commitAt,
+       'check ' + checkAt + ' commit ' + commitAt);
+  }
   ok('the manifest version comes from APP_VERSION in index.html', /APP_VERSION/.test(bundleSrc));
   ok('the generator re-reads the version out of the bundled index.html when verifying',
      /--check/.test(bundleSrc) && /const APP_VERSION/.test(bundleSrc));
