@@ -34,7 +34,10 @@ function ok(cond, name, extra) {
   else { fail++; console.log('  \u2717 ' + name + (extra !== undefined ? '  [' + JSON.stringify(extra) + ']' : '')); }
 }
 
-const VER = '80.0';
+const VER = '80.0.1';
+// The release the 80.0 revamp REPLACED. This gate asserts adjacency against the
+// revamp's own entry (found by version), not against the head, so this pin stays
+// on the release 80.0 itself replaced.
 const PREV = '75.1.2';
 
 const TRACKS = [
@@ -144,7 +147,13 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     let entries = null;
     try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'the changelog evaluates: ' + e.message); }
     ok(!!entries && String(entries[0].version) === VER, 'the newest changelog entry is ' + VER + ' (' + (entries && entries[0].version) + ')');
-    const head = entries && entries[0];
+    // 80.0.1 - the release this gate DESCRIBES is 80.0, which is no longer the head
+    // of the changelog. The notes below are about the revamp's own entry, so they read
+    // it BY VERSION (the same OWN split test-725 and test-7317 use); everything about
+    // the changelog's shape stays on the head, which is what it is for.
+    const OWN = '80.0';
+    const head = (entries && entries.find((e) => String(e.version) === OWN)) || (entries && entries[0]);
+    ok(!!head && String(head.version) === OWN, 'the revamp entry is still in the changelog (' + (head && head.version) + ')');
     ok(!!head && /Massive Revamp Update/.test(head.title), 'and it is called Massive Revamp Update (' + (head && head.title) + ')');
     const items = (head && head.items) || [];
     ok(items.length >= 10, 'with the revamp listed (' + items.length + ' notes)');
@@ -158,7 +167,11 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     ok(detailsLonger, 'and the detail is the longer half');
     ok(details.every((d) => /[.]$/.test(String(d))), 'every detail is written as prose');
     ok(/EDT$/.test(String(head.date)), 'the ship stamp is Eastern (' + head.date + ')');
-    ok(String((entries[1] || {}).version) === PREV, 'the release before it is still listed next (' + (entries[1] || {}).version + ')');
+    // The entry under the revamp's own is the release the revamp replaced (75.1.2),
+    // which is what PREV names - not the release under the HEAD.
+    const ownIdx = (entries || []).findIndex((e) => String(e.version) === OWN);
+    const next = ownIdx >= 0 ? (entries[ownIdx + 1] || {}) : (entries[1] || {});
+    ok(String(next.version) === PREV, 'the release the revamp replaced is still listed next (' + next.version + ')');
     const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
     const cache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1];
     ok(cache === 'sidecut-shell-v' + VER, 'the shell cache moved with the release (' + cache + ')');

@@ -18,6 +18,64 @@ function ok(name, cond, extra) {
   else { fail++; console.log('  ✗ ' + name + (extra ? '  [' + extra + ']' : '')); }
 }
 
+// 80.0.1 - the assistant duck rides a gain node, so this audit needs a real audio
+// graph: without one the app falls back to the element volume and the gate would be
+// measuring the fallback rather than the feature.
+function anode() {
+  const n = {
+    connect() { return n; }, disconnect() {}, start() {}, stop() {},
+    gain: {
+      value: 1,
+      setValueAtTime(v) { this.value = v; },
+      linearRampToValueAtTime(v) { this.value = v; },
+      exponentialRampToValueAtTime(v) { this.value = v; },
+      cancelScheduledValues() {},
+    },
+    frequency: { value: 0 }, Q: { value: 0 },
+    threshold: { value: 0 }, knee: { value: 0 }, ratio: { value: 0 }, attack: { value: 0 }, release: { value: 0 },
+    delayTime: { value: 0 }, pan: { value: 0 }, offset: { value: 0 }, playbackRate: { value: 1 },
+    type: '', value: 0, buffer: null, loop: false, stream: {}, fftSize: 1024, frequencyBinCount: 512,
+    getByteFrequencyData() {}, getByteTimeDomainData() {}, getFloatFrequencyData() {},
+    createPeriodicWave() { return {}; }, setPeriodicWave() {}, curve: null, oversample: 'none',
+    reduction: 0, normalRange: {}, getFrequencyResponse() {},
+  };
+  return n;
+}
+class FakeAudioContext {
+  constructor() { this.sampleRate = 44100; this.currentTime = 0; this.state = 'running'; this.destination = anode(); }
+  resume() { this.state = 'running'; return Promise.resolve(); }
+  close() { this.state = 'closed'; return Promise.resolve(); }
+  createGain() { return anode(); }
+  createConvolver() { return anode(); }
+  createChannelSplitter() { return anode(); }
+  createChannelMerger() { return anode(); }
+  createBiquadFilter() { return anode(); }
+  createDynamicsCompressor() { return anode(); }
+  createAnalyser() { return anode(); }
+  createOscillator() { return anode(); }
+  createBufferSource() { return anode(); }
+  createMediaElementSource() { return anode(); }
+  createMediaStreamSource() { return anode(); }
+  createMediaStreamDestination() { return anode(); }
+  createDelay() { return anode(); }
+  createWaveShaper() { return anode(); }
+  createStereoPanner() { return anode(); }
+  createPanner() { return anode(); }
+  createConstantSource() { return anode(); }
+  createIIRFilter() { return anode(); }
+  createScriptProcessor() { return anode(); }
+  createBuffer(ch, len, sr) {
+    const data = [];
+    for (let i = 0; i < Math.max(1, ch); i++) data.push(new Float32Array(len));
+    return { numberOfChannels: Math.max(1, ch), length: len, sampleRate: sr, duration: len / sr,
+             getChannelData: (i) => data[Math.min(i, data.length - 1)] };
+  }
+  decodeAudioData(ab, okCb) {
+    const b = this.createBuffer(2, 8000 * 60, 8000);
+    setTimeout(() => { try { okCb && okCb(b); } catch (e) {} }, 0);
+    return Promise.resolve(b);
+  }
+}
 function makeCtx() {
   return new Proxy({}, {
     get(t, p) {
@@ -94,6 +152,8 @@ const dom = new JSDOM(html, {
     win.HTMLCanvasElement.prototype.getContext = function () { return makeCtx(); };
     win.HTMLCanvasElement.prototype.toDataURL = function () { return 'data:image/png;base64,'; };
     win.indexedDB = idb;
+    win.AudioContext = FakeAudioContext;
+    win.webkitAudioContext = FakeAudioContext;
     // The bridge the app uses for native plugins that have no JS module: the
     // media session (lock screen controls) goes through these two.
     win.CapacitorNativeCalls = [];
@@ -344,15 +404,31 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await wait(80);
   ok('an interruption after a user pause does not start playback again', played.count === 0, 'plays=' + played.count);
 
-  console.log('\n— duck requests are ignored on purpose —');
+  // 80.0.1 - THE DUCK IS OBEYED NOW. It used to be ignored on purpose ("this player
+  // has its own volume handling"), and the transient loss that rides along with it
+  // was answered by replaying the song at FULL volume over whatever had asked to be
+  // heard. An assistant listening makes exactly that request, so the music steps back
+  // for it instead - through SideCut's own master gain, which is why the element
+  // volume the crossfade owns is still untouched. What has NOT changed is that a duck
+  // is not a pause: the song keeps playing and nothing is handed back.
+  console.log('\n— a duck request steps the music back instead of stopping it —');
   const abandonBefore = calls.abandon;
   setPlaying();
   const volumeBefore = el.volume;
   emit('duck');
-  await wait(50);
-  ok('a duck request does not pause or abandon (this player has its own volume handling)',
+  await wait(60);
+  ok('a duck request does not pause the song and does not abandon the audio',
      el.paused === false && calls.abandon === abandonBefore, 'paused=' + el.paused + ' abandons=' + calls.abandon);
-  ok('and it does not touch the element volume the crossfade owns', el.volume === volumeBefore, 'volume=' + el.volume);
+  ok('the music is stepped back for it', typeof win.__scDuckHeld === 'function' && win.__scDuckHeld() === true);
+  ok('through the master gain, not the element volume the crossfade owns',
+     !!win.__scDuckMaster && Math.abs(win.__scDuckMaster.gain.value - 0.2) < 0.001,
+     'master=' + (win.__scDuckMaster && win.__scDuckMaster.gain.value));
+  ok('and the element volume is exactly as it was', el.volume === volumeBefore, 'volume=' + el.volume);
+  emit('gain');
+  await wait(60);
+  ok('handing the audio back brings the music up again',
+     win.__scDuckHeld() === false && Math.abs(win.__scDuckMaster.gain.value - 1) < 0.001,
+     'gain=' + win.__scDuckMaster.gain.value);
 
   console.log('\n— no runtime errors —');
   ok('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

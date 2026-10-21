@@ -30,6 +30,14 @@ permission. So the plugin grows `callState()`, which reports inCall / ringing, a
 the focus event carries the same fact - the web layer obeys an interruption only
 when a call is really behind it, and keeps playing through everything else.
 
+80.0.1 - THE ASSISTANT DUCK. An assistant listening asks the system to duck us
+(AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK), the same request a navigation prompt or a
+message blip makes. The web layer steps the music back for it and needs to know
+when to bring it back up, so the plugin remembers the last focus event and grows
+`duckState()`, which answers "is the duck over?" from that event and the audio
+mode. It says "over" only on positive evidence, so a duck Android applied without
+telling anyone leaves the web layer's own bounded wait in charge.
+
 Idempotent and safe to re-run on a fresh or already-patched project.
 """
 import os
@@ -70,6 +78,12 @@ public class SideCutAudioFocusPlugin extends Plugin {
     private AudioFocusRequest focusRequest;
     private AudioManager.OnAudioFocusChangeListener focusListener;
     private boolean holdingFocus = false;
+    // 80.0.1 - the assistant duck. The plugin remembers the last focus event it was
+    // sent and whether that event was a duck request, because the web layer asks
+    // "is the duck over yet?" while it is holding the music down. Only the event
+    // and the audio mode are read; neither needs a permission.
+    private boolean ducking = false;
+    private String lastFocus = "none";
 
     private AudioManager manager() {
         if (audioManager == null) {
@@ -106,6 +120,9 @@ public class SideCutAudioFocusPlugin extends Plugin {
                         }
                         holdingFocus = "gain".equals(event) || "gainTransient".equals(event)
                                 || "gainTransientMayDuck".equals(event);
+                        // 80.0.1 - remember it, so duckState() can answer the web layer.
+                        lastFocus = event;
+                        ducking = "duck".equals(event);
                         JSObject data = new JSObject();
                         data.put("event", event);
                         // 73.6 - the web layer decides whether an interruption is
@@ -200,6 +217,34 @@ public class SideCutAudioFocusPlugin extends Plugin {
             // Unknown is reported as "no call": the song keeps playing.
             out.put("inCall", false);
             out.put("ringing", false);
+        }
+        call.resolve(out);
+    }
+
+    /**
+     * 80.0.1 - is the duck over? The web layer holds the music down while an
+     * assistant is listening and asks this to find out when to bring it back up.
+     *
+     * The answer is deliberately conservative: the plugin only says "over" when it
+     * has positive evidence. A duck it never saw (Android 8 and later can duck a
+     * stream without invoking any callback) answers over=false, which leaves the
+     * web layer's own bounded wait in charge rather than cutting a real duck short.
+     */
+    @PluginMethod
+    public void duckState(PluginCall call) {
+        JSObject out = new JSObject();
+        try {
+            int m = mode();
+            out.put("mode", m);
+            out.put("holding", holdingFocus);
+            out.put("lastEvent", lastFocus);
+            out.put("ducking", ducking);
+            // Ducked, and the audio mode has come back to normal: the app that asked
+            // for the duck has let go.
+            out.put("over", ducking && m == AudioManager.MODE_NORMAL);
+        } catch (Exception e) {
+            // No opinion: the web layer keeps its own clock.
+            out.put("over", false);
         }
         call.resolve(out);
     }

@@ -163,11 +163,11 @@ const count = (s) => src.split(s).length - 1;
 console.log('[1] release metadata');
 {
   const ver = (src.match(/const APP_VERSION = '([^']+)'/) || [])[1];
-  ok(ver === '80.0', 'the app runs 75.1 (' + ver + ')'); /* repinned by dev/repin-800.mjs */
+  ok(ver === '80.0.1', 'the app runs 75.1 (' + ver + ')'); /* repinned by dev/repin-8001.mjs */
   const block = src.match(/const CHANGELOG = \[([\s\S]*?)\n  \];/);
   let entries = null;
   try { entries = eval('[' + block[1] + ']'); } catch (e) { ok(false, 'changelog evaluates: ' + e.message); }
-  ok(!!entries && entries[0].version === '80.0', 'and its newest entry is this release (' + (entries && entries[0].version) + ')');
+  ok(!!entries && entries[0].version === '80.0.1', 'and its newest entry is this release (' + (entries && entries[0].version) + ')');
   if (entries) {
     const items = entries[0].items || [];
     ok(items.length >= 6, 'with at least six notes (' + items.length + ')');
@@ -178,7 +178,7 @@ console.log('[1] release metadata');
       'and no note names a downloader or converter');
     ok(/EDT$/.test(String(entries[0].date)), 'the ship stamp is Eastern (' + entries[0].date + ')');
   }
-  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v80.0'"), 'the shell cache is this release name');
+  ok(sw.includes("const CACHE_NAME = 'sidecut-shell-v80.0.1'"), 'the shell cache is this release name');
 }
 
 console.log('\n[2] the source of the fix is present, and nothing was re-enabled');
@@ -377,7 +377,16 @@ console.log('\n[3] the call question is really answered by the phone');
     emitFocus('lossTransient');
     await wait(120);
     ok(paused === false, 'a transient focus loss with no call does not stop the song');
-    ok(/focus-loss-transient ignored/.test(lastStop()), 'and says so in the log (' + lastStop() + ')');
+    // 80.0.1 - the log is scanned rather than read from its last line: the assistant
+    // duck this release added records its own line AFTER this one, because the loss
+    // is what tells the player to step the music back. The claim being made is that
+    // the loss is still recorded as ignored - which it is - and the duck is recorded
+    // beside it, so both halves of the new behaviour are pinned here.
+    const stopReasons = () => { try { const a = JSON.parse(stopLog()); return Array.isArray(a) ? a.map((r) => String(r.why)) : []; } catch (e) { return []; } };
+    ok(stopReasons().some((w) => /focus-loss-transient ignored/.test(w)),
+       'and says so in the log (' + lastStop() + ')');
+    ok(stopReasons().some((w) => /assistant duck/.test(w)),
+       'and the music was stepped back for it (' + lastStop() + ')');
 
     // The event can carry the phone's own answer (the 73.6 plugin asks before it
     // reports), and then a transient loss IS obeyed.

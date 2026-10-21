@@ -117,7 +117,7 @@ console.log('[1] release metadata');
   }
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const swCache = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1] || '';
-  ok(swCache === 'sidecut-shell-v80.0', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
+  ok(swCache === 'sidecut-shell-v80.0.1', 'the service worker cache moves on for the shell that shipped (' + swCache + ')');
   ok(swCache === 'sidecut-shell-v' + (src.match(/const APP_VERSION = '([^']+)'/) || [])[1], 'the shell cache is the release number (' + swCache + ')');
 }
 
@@ -186,7 +186,15 @@ console.log('[4] the five tools, wired into the app');
     'the deck lands in the Studio chain, inside ensureAudioGraph');
   ok(graph.indexOf('if(!scStudioFx) deckGain.connect(limiter);') !== -1,
     'and is wired straight to the limiter when the chain is not there');
-  ok(graph.indexOf('limiter.connect(audioCtx.destination);') !== -1, 'the limiter still reaches the speakers');
+  // 80.0.1 - the limiter no longer lands on the speakers DIRECTLY: the assistant
+  // duck put a master gain between the two, so one number can step the whole mix
+  // back without touching the element volume the crossfade owns. What this check is
+  // about is unchanged - the limiter still reaches the speakers - and the route is
+  // now limiter -> master -> destination.
+  ok(graph.indexOf('limiter.connect(scDuckMaster);') !== -1,
+    'the limiter still reaches the speakers, through the master gain the duck rides');
+  ok(graph.indexOf('limiter.connect(audioCtx.destination);') === -1,
+    'and nothing bypasses that master gain');
   ok(mod.indexOf('function makeIR(c, seconds, decay)') !== -1, 'the reverb is generated on the device, with no asset to fetch');
   ok(mod.indexOf('function karaokeNode(c)') !== -1, 'and the vocal cancel is L minus R, which is what removes a lead vocal');
   ok(mod.indexOf("split.connect(gR, 1);") !== -1 && mod.indexOf('gR.gain.value = -1;') !== -1, 'the right channel is subtracted');
