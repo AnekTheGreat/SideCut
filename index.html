@@ -4329,6 +4329,11 @@ body:not(.sc80-cloud) #sc80CloudCtl{ display: none; }
         <button class="tab" id="assistantDuckToggle" style="padding:5px 12px; font-size:12px;">On</button>
       </div>
       <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">While an assistant is listening - the power-button one, or any app that takes the audio for a moment - the music drops to a low level instead of stopping, and comes back up when it is done. A phone call still pauses the song. Off keeps the old behaviour: the music holds its full level through everything but a call.</div>
+      <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:13px; color:var(--ink-dim);">Step down to</span>
+        <button class="tab" id="assistantDuckLevel" style="padding:5px 12px; font-size:12px;">20%</button>
+      </div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-top:4px;">How far the music steps back while it ducks. 20% is where 80.0.1 stepped to; the button walks 20, 15, 25 and 40 percent.</div>
     </div>
 
       <div id="settingsPaneEQ" style="display:block;">
@@ -8542,6 +8547,28 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     // missing row means on, so an update keeps the feature and a fresh install gets
     // it.
     let assistantDuckOn = true;
+    // 80.0.2 - HOW FAR it steps back. The ladder starts at 20 percent, which is
+    // exactly the level 80.0.1 shipped, so an update sounds identical until the
+    // button is touched. Declared here rather than beside the engine because the
+    // switch, the boot restore and the backup all reach for it by name.
+    const SC_DUCK_LEVELS = [0.2, 0.15, 0.25, 0.4];
+    let assistantDuckLevel = SC_DUCK_LEVELS[0];
+    function setAssistantDuckLevel(level){
+      // Anything off the ladder (a hand-edited meta row, an old backup) falls back
+      // to the first rung rather than a level the engine would have to guess at.
+      assistantDuckLevel = SC_DUCK_LEVELS.indexOf(level) === -1 ? SC_DUCK_LEVELS[0] : level;
+      const b = $('assistantDuckLevel');
+      if(b) b.textContent = Math.round(assistantDuckLevel * 100) + '%';
+      dbPut('meta', { key: 'assistantDuckLevel', value: assistantDuckLevel });
+    }
+    function cycleAssistantDuckLevel(){
+      const i = SC_DUCK_LEVELS.indexOf(assistantDuckLevel);
+      setAssistantDuckLevel(SC_DUCK_LEVELS[(i + 1) % SC_DUCK_LEVELS.length]);
+      // Already ducked: take the new depth now, through the same call that applies
+      // a duck, so the change is heard in the same breath and the music is never
+      // briefly loud in the middle of a sentence.
+      try{ if(scDuckHeld()) scDuckForAssistant('you changed the depth'); }catch(_e){}
+    }
     function setAssistantDuck(on){
       assistantDuckOn = !!on;
       const b = $('assistantDuckToggle');
@@ -8550,6 +8577,9 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       if(!assistantDuckOn && typeof scUnduckForAssistant === 'function') scUnduckForAssistant('switched off');
     }
     $('assistantDuckToggle').addEventListener('click', () => setAssistantDuck(!assistantDuckOn));
+    // 80.0.2 - the depth button. Guarded, so a page from an older shell that has
+    // the switch but not this row cannot throw on boot.
+    if($('assistantDuckLevel')) $('assistantDuckLevel').addEventListener('click', cycleAssistantDuckLevel);
 
     // A tap anywhere brings the music straight back up: if you want it loud while an
     // assistant is still open, touching anything says so. Registered once, and it
@@ -14022,6 +14052,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // rows around it use.
       const assistantDuckRow = metaRows.find(r => r.key === 'assistantDuck');
       setAssistantDuck(assistantDuckRow ? !!assistantDuckRow.value : true);
+      // 80.0.2 - and how far it steps back. An untouched library gets the first
+      // rung, which is the level 80.0.1 used.
+      const assistantDuckLevelRow = metaRows.find(r => r.key === 'assistantDuckLevel');
+      setAssistantDuckLevel(assistantDuckLevelRow && typeof assistantDuckLevelRow.value === 'number' ? assistantDuckLevelRow.value : SC_DUCK_LEVELS[0]);
       const gaplessRow = metaRows.find(r => r.key === 'gaplessMode');
       setGaplessMode(gaplessRow ? !!gaplessRow.value : false);
       // 73.5 - an untouched library gets the default (on), and the toggle reads
@@ -14189,7 +14223,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.0.1';
+  const APP_VERSION = '80.0.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -14838,6 +14872,24 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.0.2', date: 'October 21, 2026 \u00b7 6:30 AM EDT', title: 'Assistant duck depth: choose how far the music steps back', items: [
+    'How far the music steps back for an assistant is yours to choose now, from a nudge to a whisper.',
+    'It starts at 20% - exactly where 80.0.1 left it - so an update sounds the same until you touch the button.',
+    'The choice is remembered on the phone and travels in a backup, so a new phone ducks the way the old one did.',
+    'Changing the depth while an assistant is still talking is heard straight away, without dropping the duck.',
+    'The duck itself is unchanged: the music never pauses, and the phone still decides when the conversation is over.',
+    'A tap still brings the music straight back, and a real phone call still pauses the song as it always has.',
+    'The home-screen widget, the player, the letter-by-letter lyrics and the albums are exactly where 80.0.1 left them.',
+  ],
+    details: [
+      'The Assistant duck switch says WHETHER the music steps back; this row says HOW FAR. It walks 20, 15, 25 and 40 percent, so a quiet room and a loud car can both be right, and the music is never made so quiet that the song is lost.',
+      'Twenty percent is what 80.0.1 always used, so it is the first rung of the ladder and the default: updating changes nothing you can hear. Only touching the button moves the number, and it moves in the direction of the next rung, never off the ladder.',
+      'It rides the same meta row the switch does and it is written into a library backup, so a phone restored from a backup arrives with the depth you had chosen rather than the default.',
+      'If you change the depth while an assistant already has the music stepped back, the new level is ramped in through the same call that applies a duck - immediately, over the same short ramp, without releasing the duck first, so the music is never briefly loud in the middle of a sentence.',
+      'A duck still ends the way 80.0.1 ends one: the phone says it is over, or eight seconds pass with no further signal, or you touch the screen - and never longer than a minute from the first request. A phone call is still a call and still pauses.',
+      'A tap anywhere on the screen still releases the duck at once, so a conversation that ended without the phone saying so is one touch away from full volume. A phone call is still a call: the song pauses while it is up and resumes where it was when it ends, at full volume, because the duck is released with the call rather than waiting it out.',
+      'The number rides the master gain that 80.0.1 put between the limiters and the speakers, which is why both decks, DJ Mode and the Studio chain all move together and the element volume the crossfade owns is untouched. A recording still captures the unducked signal, and the widget, the player, the lyrics and the albums are where 80.0.1 left them.',
+    ]},
   { version: '80.0.1', date: 'October 20, 2026 \u00b7 11:35 PM EDT', title: 'Assistant duck: the music steps back for an assistant and comes back on its own', items: [
     'The music drops to a low level the moment an assistant starts listening, so you can talk to it without stopping the song.',
     'When the assistant is done the music comes back up to full volume on its own - nothing to tap and nothing to restart.',
@@ -28195,6 +28247,7 @@ function _fallbackCopy(text){
             playbackSpeed: playbackSpeed,
             autoVolumeEnabled: autoVolumeEnabled,
             assistantDuck: assistantDuckOn,
+            assistantDuckLevel: assistantDuckLevel,
             seekStyle: seekStyle,
             liquidGlassEnabled: document.body.classList.contains('liquid-glass-on'),
 
@@ -28713,6 +28766,10 @@ function _fallbackCopy(text){
         // 80.0.1 - the assistant duck rides a backup like every other playback switch.
         if(manifest.settings.assistantDuck !== undefined){
           setAssistantDuck(manifest.settings.assistantDuck);
+        }
+        // 80.0.2 - the depth rides the backup beside the switch.
+        if(typeof manifest.settings.assistantDuckLevel === 'number'){
+          setAssistantDuckLevel(manifest.settings.assistantDuckLevel);
         }
         // Restore seek style
         if(manifest.settings.seekStyle){
@@ -31029,7 +31086,9 @@ function _fallbackCopy(text){
   // The wait is refreshed by every fresh signal, so a long answer that keeps the
   // audio does not get cut off, and it is capped so the music can never stay
   // quiet for long. Touching the screen ends it at once.
-  const SC_DUCK_LEVEL = 0.2;      // how far the music steps back (about -14 dB)
+  // 80.0.2 - the level is no longer a constant here: assistantDuckLevel and its
+  // ladder are declared with the switch above, so the settings row, the backup and
+  // the engine all read the same number.
   const SC_DUCK_RAMP_S = 0.4;     // the ramp down and back up, so nothing clicks
   const SC_DUCK_HOLD_MS = 8000;   // held this long after the last signal, at most
   const SC_DUCK_MAX_MS = 60000;   // ...and never longer than this from the start
@@ -31104,7 +31163,7 @@ function _fallbackCopy(text){
       scDuckApplied = true;
       recordPlaybackStop('assistant duck — the music steps back (' + scDuckWhy + ')');
     }
-    const ok = scDuckSetLevel(SC_DUCK_LEVEL, true);
+    const ok = scDuckSetLevel(assistantDuckLevel, true);
     if(!ok) scDuckApplied = false;
     if(scDuckTimer) clearTimeout(scDuckTimer);
     scDuckTimer = setTimeout(function(){
@@ -31139,6 +31198,10 @@ function _fallbackCopy(text){
   window.__scUnduckForAssistant = scUnduckForAssistant;
   window.__scDuckHeld = scDuckHeld;
   window.__scAssistantDuckOn = function(){ return assistantDuckOn; };
+  // 80.0.2 - the depth, and the ladder it walks, so a gate can read the real
+  // setting instead of assuming which number the ramp used.
+  window.__scAssistantDuckLevel = function(){ return assistantDuckLevel; };
+  window.__scDuckLadder = function(){ return SC_DUCK_LEVELS.slice(); };
   // The node the duck rides. Published so a gate can read the node the app really
   // ducks through instead of assuming which gain it is.
   Object.defineProperty(window, '__scDuckMaster', { get: function(){ return scDuckMaster; } });

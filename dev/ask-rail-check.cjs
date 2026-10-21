@@ -29,8 +29,8 @@ function ok(cond, name, extra) {
   else { fail++; console.log('  \u2717 ' + name + (extra !== undefined ? '  [' + JSON.stringify(extra) + ']' : '')); }
 }
 
-const VER = '80.0.1';
-const PREV = '80.0';
+const VER = '80.0.2';
+const PREV = '80.0.1';
 
 const TRACKS = [
   { id: 't1', name: 'Aurora', artist: 'Diljit Dosanjh', album: 'MoonChild Era', duration: 186 },
