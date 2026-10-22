@@ -42,9 +42,9 @@ const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 // entry by version. It read the head until 74.1.5, which held only while the head was
 // still about the player - see the retarget at the ask.
 const OWN = '74.0';
-const VER = '80.0.4'; /* repinned by dev/repin-8004.mjs */
-const PREV = '80.0.3'; /* repinned by dev/repin-8004.mjs */
-const SHELL_CACHE = 'sidecut-shell-v80.0.4';
+const VER = '80.0.5'; /* repinned by dev/repin-8005.mjs */
+const PREV = '80.0.4'; /* repinned by dev/repin-8005.mjs */
+const SHELL_CACHE = 'sidecut-shell-v80.0.5';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log('  PASS ' + m)) : (fail++, console.log('  FAIL ' + m)); };
