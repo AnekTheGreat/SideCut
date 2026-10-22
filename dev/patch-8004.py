@@ -290,7 +290,15 @@ def main():
     if r.returncode != 0:
         sys.exit('patch-8004: the diff did not apply (%d)\n%s%s' % (r.returncode, r.stdout, r.stderr))
     print('  applied: the Studio cut is the Library cut mirrored, the version and the notes')
-    print('patch-8004%s: 1 step(s) applied' % (' --check' if CHECK else ''))
+    if CHECK:
+        # A DRY RUN THAT SUCCEEDS MEANS THIS RELEASE IS STILL PENDING, and the exit
+        # status has to say so: the workflow's "is a release pending" step reads it,
+        # and a check that returns 0 on a clean tree turns a dispatch into a silent
+        # no-op. 80.0.4's first dispatch did exactly that - fifteen seconds, every
+        # step after that one skipped, no commit, nothing to read in the log.
+        print('patch-8004 --check: the release is pending, 1 step to apply')
+        return 1
+    print('patch-8004: 1 step(s) applied')
     return 0
 
 
