@@ -20,9 +20,17 @@ cannot describe a release other than the one the page is on.
 
 Idempotent: if AGENTS.md already carries the entry, nothing is written.
 
+THE SHIPPING NOTE GOES IN WITH THE SAME EDIT. dev/agents-shipping-note.py carries
+how a release actually reaches GitHub (there is no git write credential in the
+sandbox; the connected GitHub app is the credential), and this step is the only
+thing that ever writes AGENTS.md - so it runs the note first, and a session that
+reads the top of the memory finds the answer before it goes hunting for a token.
+An import failure is reported and skipped: a note is never worth a failed release.
+
   python3 dev/release-record.py
 """
 import datetime
+import importlib.util
 import json
 import os
 import re
@@ -42,7 +50,31 @@ def version():
     return m.group(1)
 
 
+def shipping_note():
+    """Put the how-a-release-ships note under the title, once."""
+    path = os.path.join(ROOT, 'dev', 'agents-shipping-note.py')
+    if not os.path.exists(path):
+        print('release-record: no dev/agents-shipping-note.py to run')
+        return
+    spec = importlib.util.spec_from_file_location('sc_shipping_note', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.main()
+
+
 def main():
+    # The ENTRY first, the NOTE second: the note splits the file at its first '## '
+    # heading, so running it after the entry puts it above the entry, under the title,
+    # where a session that reads a screenful of memory cannot miss it.
+    rc = write_entry()
+    try:
+        shipping_note()
+    except Exception as exc:  # noqa: BLE001 - a note must never fail a release
+        print('release-record: shipping note skipped (%s)' % exc)
+    return rc
+
+
+def write_entry():
     ver = version()
     mark = '## %s (' % ver
     src = open(AGENTS, encoding='utf-8').read()

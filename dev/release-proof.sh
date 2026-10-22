@@ -41,6 +41,7 @@ LC_ALL=C sha256sum \
   dev/release-entry.md \
   dev/release-gates.sh \
   dev/release-record.py \
+  dev/agents-shipping-note.py \
   dev/release-proof.sh \
   sw.js \
   .github/workflows/release.yml
