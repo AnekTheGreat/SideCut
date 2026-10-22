@@ -149,6 +149,26 @@ console.log('[9] the cloud layout has one now bar, and nothing was dropped with 
     'and the bar does not reserve the bottom inset a second time');
 }
 
+console.log('[10] the dock is one panel, and its offset is kept true');
+{
+  const from = src.indexOf('8. 80.0.8: the staircase is one dock');
+  const to = src.indexOf('/* ---------- 5. Bigger screens', from);
+  const panel = from > 0 && to > from ? src.slice(from, to) : '';
+  ok(from > 0, 'the 80.0.8 dock block is in the page');
+  ok(panel.indexOf('border-radius: 24px;') > 0 && panel.indexOf('box-shadow: 0 18px 40px') > 0,
+    'the strip is one rounded panel, not a pile of capsules');
+  ok(panel.indexOf('backdrop-filter: blur(20px)') > 0,
+    'with its own glass');
+  ok(panel.indexOf('.action-strip > button') > 0 && panel.indexOf('background: transparent;') > 0,
+    'and the pills inside are unpainted until one is active');
+  ok(panel.indexOf('.action-strip > button.active') > 0,
+    'which is what paints the active tab');
+  ok(src.indexOf('new ResizeObserver(writePlayerHeight).observe(np)') > 0,
+    'the bar measured height is observed, not guessed once');
+  ok(src.indexOf('orientationchange') > 0 && src.indexOf('__sc80PlayerRO') > 0,
+    'and it is refreshed on rotation, once per page');
+}
+
 console.log('');
 console.log((fail ? fail + ' FAILED, ' : 'ALL PASS: ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
