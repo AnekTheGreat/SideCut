@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""80.0.9 - one staircase across the width, in icons, over a mini player.
+"""80.0.9 - one flight of stairs across the width, in icons, over a mini player.
 
 THE OWNER'S WORDS: "WHY IS A CHUNK IT SHOULD SPREAD OUT LIKE A NICE STAIRCASE,
 AND I TOLD YOU TO REMOVE THE NOW BAR FROM CLOUD MODE AND REPLACE IT WITH A
 SIMPLER VERSION ... YOU CAN MAKE THE TABS IN CLOUD MODE ICONS."
 
-So: the four tabs stop being a column of pills in the right-hand corner and
-become five evenly spread tiles in one row across the whole width, each one a
-step higher than the one on its left, every one of them an icon. The bar under
-them stops being a console with two rows and a seek row and becomes a mini
-player: record, two lines, prev, play, next, menu, and a hairline to scrub.
+So: the tabs stop being a column of pills in the right-hand corner and become a
+FLIGHT - five treads side by side across the whole width, each one a riser taller
+than the one on its left, all standing on the top of the bar, so the top edge of
+the row climbs from the bottom left corner to the top right one and the plus
+closes it. Every tread is an icon. The bar under them stops being a console with
+two rows and a seek row and becomes a mini player: the record, the two lines,
+previous, play, next, the menu, and a hairline to scrub.
 
 Nothing is deleted: Shuffle, Repeat and DJ Mode move into the ... menu (Lyrics
 and Song info were already there), and the hairline is the compact bar's own
@@ -26,123 +28,131 @@ import sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 CHECK = '--check' in sys.argv
 VERSION = '80.0.9'
-MARKER = '9. 80.0.9: one staircase, across the width'
+MARKER = '9. 80.0.9: the flight, built across the whole width'
 NL = chr(10)
 
-CSS = '''/* ---------- 9. 80.0.9: one staircase, across the width, in icons ---------- */
+CSS = '''/* ---------- 9. 80.0.9: the flight, built across the whole width ------------- */
 /* "WHY IS A CHUNK IT SHOULD SPREAD OUT LIKE A NICE STAIRCASE ... MAKE THE TABS IN
-   CLOUD MODE ICONS." 80.0.5 to 80.0.8 stacked the four tabs in one column in the
-   right-hand corner and nudged each one sideways: four pills in a heap is a chunk,
-   not a staircase.
+   CLOUD MODE ICONS." 80.0.5-80.0.8 stacked four pills in the corner, and the first
+   cut of 80.0.9 floated five tiles in a row nine pixels apart in height: a row
+   with a wobble is still a row.
 
-   They are ONE ROW ACROSS THE WHOLE WIDTH now - five tiles, spread evenly by the
-   rail itself, every tile one step higher than the tile on its left, so the plus
-   closes the flight in the top right - and every tab is an icon instead of a word.
-
-   THE RAIL PAINTS NOTHING. No panel, no border, no shadow: each tile is its own
-   piece of glass, which is what makes five steps read as a staircase rather than
-   one block. The rail takes no taps of its own (pointer-events: none), so the wall
-   under the gaps between tiles is still the wall - only the tiles, the menu and
-   its backdrop are touchable. */
+   THIS IS A FLIGHT. Five treads, edge to edge, across the whole width. Each tread
+   is the same width and one riser TALLER than the tread on its left, and every
+   tread stands on the top of the bar - so the bottoms are one line and the tops
+   climb from the bottom left corner to the top right one. The top edge of the row
+   is the staircase; the plus closes it as the tallest step. A tab and an icon per
+   tread; the words stay in the page for a screen reader, they are just not painted. */
 body.sc80-cloud{
-  --sc89-step: 9px;    /* one step up, tile on tile */
-  --sc89-tile: 56px;   /* the tile, square */
-  --sc89-rail: 104px;  /* tile + four steps + padding: what the views reserve */
-  /* THE BAR HAS ONE HEIGHT NOW, SO NOTHING HAS TO BE MEASURED. 80.0.5 to 80.0.8
-     positioned the rail off --sc80-player, a number written by JS on the first
-     frame after a layout change; in a browser that never ran that write it stayed
-     at its 112px fallback and the rail floated 52px above the bar. The bar is a
-     fixed sixty pixels in this layout, so the rail, the bar and the views all read
-     the same constant. The phone's own inset is folded into it here, once, so no
-     `#nowPlaying` rule carries both a padding and an env() - dev/test-705.mjs counts
-     those, and there are exactly four of them in this page. */
+  --sc89-step: 15px;   /* one riser: how much taller a tread is than the one before */
+  --sc89-tread: 56px;  /* the first tread, at the left */
+  /* The tallest tread is the plus: four risers above the first step. That is the
+     number the views reserve and the number the rail is. */
+  --sc89-rail: calc(var(--sc89-tread) + var(--sc89-step) * 4);
+  /* THE BAR HAS ONE HEIGHT, SO NOTHING HAS TO BE MEASURED. 80.0.5-80.0.8 read
+     --sc80-player, a number JS wrote on the first frame after a layout change; in
+     a browser that never ran that write it stayed at its 112px fallback and the
+     rail floated 52px above the bar. Sixty pixels here, plus the phone's own
+     inset, once - so no `#nowPlaying` rule carries a padding and an env() together
+     (dev/test-705.mjs counts those, and there are exactly four in this page). */
   --sc89-bar: calc(60px + env(safe-area-inset-bottom));
 }
+/* THE RAIL IS THE FLOOR THE FLIGHT IS BUILT ON, AND IT PAINTS NOTHING: no panel,
+   no border, no shadow - the treads are the surface. It takes no taps of its own,
+   so the only touchable things on the band are the treads and the menu. */
 body.sc80-cloud .action-strip{
-  left: 0; right: 0;
-  top: auto;
+  position: fixed;
+  left: 0; right: 0; top: auto;
   bottom: var(--sc89-bar);
-  flex-direction: row;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%; max-width: 560px; height: auto;
-  margin: 0 auto; padding: 8px 14px 10px;
+  width: 100%; max-width: 760px; height: var(--sc89-rail);
+  margin: 0 auto; padding: 0;
+  display: flex; flex-direction: row;
+  align-items: flex-end; justify-content: flex-start;
+  gap: 0;
   border: none; border-radius: 0;
   background: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
   box-shadow: none;
   pointer-events: none;
+  z-index: 45;
 }
-body.sc80-cloud .action-strip > button{ pointer-events: auto; }
-/* The joined-dock capsule belongs to the classic row of worded pills (74.1.9): a
-   sliding highlight around labels this layout does not have. Hidden here, or it
-   draws a giant outline across the staircase. */
+/* The joined-dock capsule belongs to the classic row of worded pills: a sliding
+   highlight around labels this layout does not have. */
 body.sc80-cloud #scDockPillTrack,
 body.sc80-cloud #scDockPillThumb{ display: none !important; }
 body.sc80-cloud .action-strip > #addSongsMenu,
 body.sc80-cloud .action-strip > #addSongsBackdrop{ pointer-events: auto; }
-/* THE FLIGHT ITSELF. Home is the bottom step and the plus the top one, and the
-   rise is the same for all five, so the row reads as one staircase instead of
-   five things that happen to be at different heights. The old column's sideways
-   nudges are cancelled here, one ID at a time, because those rules carry IDs. */
-body.sc80-cloud .action-strip > #homeBtn{ margin-bottom: 0; margin-right: 0; }
-body.sc80-cloud .action-strip > #libraryBtn{ margin-bottom: var(--sc89-step); margin-right: 0; }
-body.sc80-cloud .action-strip > #discoverBtn{ margin-bottom: calc(var(--sc89-step) * 2); margin-right: 0; }
-body.sc80-cloud .action-strip > #studioBtn{ margin-bottom: calc(var(--sc89-step) * 3); margin-right: 0; }
-body.sc80-cloud .action-strip > #dockAddBtn{ margin-bottom: calc(var(--sc89-step) * 4); margin-right: 0; }
-/* ONE TILE, ONE SIZE, WHATEVER THE TAB HOLDS - and no word in it. The labels stay
-   in the DOM, so a screen reader still reads Home, Library, Albums, Discover,
-   Studio and Tools; they are zero point, so the tile is the icon. */
+/* ONE TREAD, whatever tab it holds: a step of the flight, open at the bottom so
+   it stands on the bar rather than floating over it, with its icon just under the
+   step. Every tread's top is one riser above its neighbour's, so the icons climb
+   with the steps - the diagonal is the point. */
 body.sc80-cloud .action-strip > #homeBtn,
 body.sc80-cloud .action-strip > #libraryBtn,
 body.sc80-cloud .action-strip > #discoverBtn,
 body.sc80-cloud .action-strip > #studioBtn,
 body.sc80-cloud .action-strip > #dockAddBtn{
-  flex: 0 0 auto;
-  width: var(--sc89-tile); height: var(--sc89-tile); min-height: 0;
-  padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 18px;
+  pointer-events: auto;
+  flex: 1 1 0;
+  width: auto; min-width: 0;
+  align-self: flex-end;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 15px 0 0;
+  border-radius: 16px 16px 0 0;
   border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  backdrop-filter: blur(18px) saturate(1.2);
-  box-shadow: 0 10px 22px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.05);
+  border-bottom: 0;
+  /* The step itself is lit: a brighter hairline along each top edge is what makes
+     five treads read as one flight instead of five panes of glass. */
+  border-top-color: color-mix(in srgb, var(--ink) 26%, transparent);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bg-raised) 98%, transparent),
+    color-mix(in srgb, var(--bg-raised) 84%, #000));
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 22px 26px -26px rgba(255,255,255,0.14);
   color: var(--ink-dim);
   font-size: 0;
-  transition: transform var(--sc-ease-mid) var(--sc-ease), background var(--sc-ease-mid) var(--sc-ease);
+  transition: background var(--sc-ease-mid) var(--sc-ease), color var(--sc-ease-mid) var(--sc-ease);
 }
+/* THE HEIGHTS, ONE RISER APART. Written with the IDs because the old bar's own
+   rules carry IDs too, and a tread must not inherit a flat height from them. */
+body.sc80-cloud .action-strip > #homeBtn{ height: var(--sc89-tread); margin: 0; }
+body.sc80-cloud .action-strip > #libraryBtn{ height: calc(var(--sc89-tread) + var(--sc89-step)); margin: 0; }
+body.sc80-cloud .action-strip > #discoverBtn{ height: calc(var(--sc89-tread) + var(--sc89-step) * 2); margin: 0; }
+body.sc80-cloud .action-strip > #studioBtn{ height: calc(var(--sc89-tread) + var(--sc89-step) * 3); margin: 0; }
+body.sc80-cloud .action-strip > #dockAddBtn{ height: calc(var(--sc89-tread) + var(--sc89-step) * 4); margin: 0; }
+/* Zero point, so the icon is the tread - and still in the DOM, so a screen reader
+   still says Home, Library, Albums, Discover, Studio, Tools and Add songs. */
 body.sc80-cloud .action-strip > button span{ font-size: 0 !important; }
-/* THE TAB YOU ARE ON IS THE LOUD ONE. Written with the IDs because the tile rule
-   above carries one too, and an active tab that stayed glass grey would be a tab
-   you cannot find. */
+/* THE TAB YOU ARE ON IS THE LOUD ONE, written with the IDs because the tread rule
+   carries one too. An active tab that stayed glass grey would be a tab you cannot
+   find on the flight. */
 body.sc80-cloud .action-strip > #homeBtn.active,
 body.sc80-cloud .action-strip > #libraryBtn.active,
 body.sc80-cloud .action-strip > #discoverBtn.active,
 body.sc80-cloud .action-strip > #studioBtn.active{
   background: var(--coral);
-  border-color: var(--coral);
+  border-color: color-mix(in srgb, var(--coral) 62%, #000);
   color: #161616;
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--coral) 32%, transparent);
+  box-shadow: 0 -10px 30px color-mix(in srgb, var(--coral) 26%, transparent), inset 0 1px 0 rgba(255,255,255,0.28);
 }
-body.sc80-cloud .action-strip > button:active{ transform: scale(0.95); }
-/* THE ICONS. A mask, so one glyph is painted in currentColor and takes the tile's
-   own colour - glass grey while the tab is asleep, dark on coral when it is the
-   tab you are on. */
+body.sc80-cloud .action-strip > button:active{ transform: none; filter: brightness(1.08); }
+/* THE ICONS. A mask, so one glyph is painted in currentColor and takes the tread's
+   own colour - glass grey asleep, the page's ink on coral when you are on it. */
 body.sc80-cloud .action-strip > #homeBtn::before,
 body.sc80-cloud .action-strip > #discoverBtn::before{
   content: '';
   display: block;
-  width: 24px; height: 24px;
+  flex: 0 0 auto;
+  width: 23px; height: 23px;
+  margin-top: 4px;
   background-color: currentColor;
   -webkit-mask-image: var(--sc89-icon);
   -webkit-mask-position: center;
-  -webkit-mask-size: 24px 24px;
+  -webkit-mask-size: 23px 23px;
   -webkit-mask-repeat: no-repeat;
   mask-image: var(--sc89-icon);
   mask-position: center;
-  mask-size: 24px 24px;
+  mask-size: 23px 23px;
   mask-repeat: no-repeat;
 }
 body.sc80-cloud #homeBtn{
@@ -151,30 +161,32 @@ body.sc80-cloud #homeBtn{
 body.sc80-cloud #discoverBtn{
   --sc89-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19zM12 10.9a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2z'/%3E%3C/svg%3E");
 }
-body.sc80-cloud #dockAddBtn svg{ width: 24px; height: 24px; }
-/* THE TWO SPLIT TILES ARE STILL TWO TABS. Library/Albums and Studio/Tools keep
-   the diagonal cut 70.0 gave them, and each half carries its own small icon in
-   its own corner, so an icon-only tile still says which half you are tapping.
-   Their own half-highlights (active-half) keep working, in coral. */
+body.sc80-cloud #dockAddBtn svg{ width: 23px; height: 23px; margin-top: 4px; }
+/* THE TWO SPLIT TREADS ARE STILL TWO TABS. Library/Albums and Studio/Tools keep
+   the corner-to-corner cut 70.0 gave them, and each half carries its own small
+   icon in its own end of the cut, so an icon-only tread still says which half you
+   are tapping. Their own half-highlights (active-half) keep working, in coral. */
 body.sc80-cloud .action-strip > #libraryBtn::before,
 body.sc80-cloud .action-strip > #studioBtn::before{ display: none; }
-body.sc80-cloud .action-strip > #libraryBtn > div,
-body.sc80-cloud .action-strip > #studioBtn > div{ padding: 7px !important; }
+body.sc80-cloud #playlistsHalf{ padding: 15px 0 0 13px !important; align-items: flex-start; justify-content: flex-start; }
+body.sc80-cloud #albumsHalf{ padding: 0 13px 13px 0 !important; align-items: flex-end; justify-content: flex-end; }
+body.sc80-cloud #studioHalf{ padding: 0 0 13px 13px !important; align-items: flex-end; justify-content: flex-start; }
+body.sc80-cloud #toolsHalf{ padding: 15px 13px 0 0 !important; align-items: flex-start; justify-content: flex-end; }
 body.sc80-cloud #playlistsHalf::before,
 body.sc80-cloud #albumsHalf::before,
 body.sc80-cloud #studioHalf::before,
 body.sc80-cloud #toolsHalf::before{
   content: '';
   flex: 0 0 auto;
-  width: 16px; height: 16px;
+  width: 17px; height: 17px;
   background-color: currentColor;
   -webkit-mask-image: var(--sc89-icon);
   -webkit-mask-position: center;
-  -webkit-mask-size: 16px 16px;
+  -webkit-mask-size: 17px 17px;
   -webkit-mask-repeat: no-repeat;
   mask-image: var(--sc89-icon);
   mask-position: center;
-  mask-size: 16px 16px;
+  mask-size: 17px 17px;
   mask-repeat: no-repeat;
 }
 body.sc80-cloud #playlistsHalf{
@@ -193,22 +205,29 @@ body.sc80-cloud #playlistsHalf.active-half,
 body.sc80-cloud #albumsHalf.active-half,
 body.sc80-cloud #studioHalf.active-half,
 body.sc80-cloud #toolsHalf.active-half{ color: var(--coral); }
-/* The rail floats over the bottom of every view, so the views reserve it and the
-   bar under it - the rail's own height, not the old heap's 240px. */
+/* The flight stands on the bar, so the views reserve the bar and the flight above
+   it - one number, the same one the rail is. */
 body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #discoverView,
 body.sc80-cloud #studioView{
   padding-bottom: calc(var(--sc89-bar) + var(--sc89-rail));
 }
+/* A computer gets the same flight one size up - a taller riser, a taller first
+   tread - in the same 760px band the bar keeps, so it is built on the bar. */
 @media (min-width: 900px){
-  body.sc80-cloud{ --sc89-step: 10px; --sc89-tile: 60px; --sc89-rail: 112px; }
+  body.sc80-cloud{ --sc89-step: 18px; --sc89-tread: 60px; }
+  body.sc80-cloud .action-strip > #homeBtn,
+  body.sc80-cloud .action-strip > #libraryBtn,
+  body.sc80-cloud .action-strip > #discoverBtn,
+  body.sc80-cloud .action-strip > #studioBtn,
+  body.sc80-cloud .action-strip > #dockAddBtn{ padding-top: 17px; }
 }
 
 /* ---------- 10. 80.0.9: the cloud bar is one slim row, not a console -------- */
 /* "REMOVE THE NOW BAR FROM CLOUD MODE AND REPLACE IT WITH A SIMPLER VERSION."
    80.0.7 shrank every control and kept them all - a console made smaller is still
    a console. This layout gets a MINI PLAYER: one row, sixty pixels, the record,
-   the two lines, previous, play, next and the menu, with a hairline across the
-   top you can drag to scrub.
+   the two lines, previous, play, next and the menu, with a hairline across the top
+   you can drag to scrub.
 
    NOTHING LEFT WITH THE CONSOLE. Shuffle, Repeat and DJ Mode are items in the ...
    menu now (the JS half of this patch adds them, wired to the very buttons that
@@ -217,15 +236,18 @@ body.sc80-cloud #studioView{
 body.sc80-cloud #nowPlaying{
   height: var(--sc89-bar);
   min-height: var(--sc89-bar);
-  padding: 0 12px;
+  /* the same 760px band the flight is built on: one stack, not two widths */
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 14px;
   gap: 0;
   justify-content: center;
   border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
   -webkit-backdrop-filter: blur(22px) saturate(1.3);
   backdrop-filter: blur(22px) saturate(1.3);
 }
-body.sc80-cloud #nowPlaying .np-row{ gap: 8px; margin: 0; }
+body.sc80-cloud #nowPlaying .np-row{ gap: 10px; margin: 0; width: 100%; }
 /* The second row was DJ MODE and LYRICS; the seek row was two times, a slider and
    a waveform under the transport. Neither is in this layout any more. */
 body.sc80-cloud #nowPlaying .np-row + .np-row{ display: none; }
@@ -246,7 +268,7 @@ body.sc80-cloud #nowPlaying #miniBar .fill{ top: 0; height: 3px; border-radius: 
 /* THE RECORD, NOT THE DECK. At forty pixels the turntable's plinth, lid and tonearm
    are a smudge around a record, so this bar shows the record itself - a clean disc
    with its label, the one part of the deck that still reads at this size. */
-body.sc80-cloud #npPlayerStage{ width: 38px; height: 38px; perspective: none; overflow: visible; }
+body.sc80-cloud #npPlayerStage{ width: 40px; height: 40px; perspective: none; overflow: visible; display: flex; align-items: center; justify-content: center; }
 body.sc80-cloud #npPlayerStage .np-tt-3d{ transform: none; }
 body.sc80-cloud #npPlayerStage .np-plinth,
 body.sc80-cloud #npPlayerStage .np-base,
@@ -254,12 +276,13 @@ body.sc80-cloud #npPlayerStage .np-lid,
 body.sc80-cloud #npPlayerStage .np-tonearm,
 body.sc80-cloud #npPlayerStage .np-tonearm-base,
 body.sc80-cloud #npPlayerStage .np-platter-mat{ display: none; }
-body.sc80-cloud #npPlayerBody{ right: 0; bottom: 0; width: 38px; height: 38px; transform: none; }
+body.sc80-cloud #npPlayerBody{ position: static; width: 38px; height: 38px; transform: none; }
 body.sc80-cloud #nowPlaying .disc{ width: 38px; height: 38px; }
-body.sc80-cloud #npInfo{ min-width: 0; }
+body.sc80-cloud #discProgressRing{ display: none; }
+body.sc80-cloud #npInfo{ min-width: 0; flex: 1 1 auto; margin-right: 4px; }
 body.sc80-cloud #npInfo .t{ font-size: 12.5px; line-height: 1.25; }
 body.sc80-cloud #npInfo .a{ font-size: 10.5px; line-height: 1.25; }
-body.sc80-cloud #npControls{ gap: 2px; margin-left: auto; }
+body.sc80-cloud #npControls{ gap: 2px; margin-left: 0; flex: 0 0 auto; }
 body.sc80-cloud #npControls button{ width: 32px; height: 32px; }
 body.sc80-cloud #npControls svg{ width: 17px; height: 17px; }
 body.sc80-cloud #playPauseBtn{ width: 38px; height: 38px; }
@@ -269,20 +292,18 @@ body.sc80-cloud #npControls #repeatBtn{ display: none; }
 
 '''
 
-NOTE = """  { version: '80.0.9', date: 'October 22, 2026 · 7:40 AM EDT', title: 'A staircase across the width, and a mini player', items: [
-    'The tabs are one row across the whole width now - Home, Library, Discover, Studio and the plus, spread evenly, each one a step higher than the one on its left, so the plus closes the flight.',
-    'Every tab is an icon: a house, a stack, a compass, a mixer and the plus. The words are still in the page for a screen reader, they are just not in the tile.',
-    'Library/Albums and Studio/Tools keep their diagonal cut, and each half carries its own small icon, so an icon-only tile still says which half you are tapping.',
+NOTE = """  { version: '80.0.9', date: 'October 22, 2026 \u00b7 8:05 PM EDT', title: 'A staircase across the width, and a mini player', items: [
+    'The tabs are a staircase across the whole width now: five treads side by side, each one a riser taller than the one on its left, and all of them standing on the top of the bar - so the bottom of the row is one line and the top of it climbs from the bottom left corner to the plus in the top right.',
+    'Every tab is an icon: a house, a stack, a compass, a mixer and the plus. The words are still in the page for a screen reader, they are just not painted on the tread.',
+    'Library/Albums and Studio/Tools keep their diagonal cut, and each half carries its own small icon in its own end of the cut, so an icon-only tread still says which half you are tapping.',
     'The cloud bar is a mini player now: one row, the record, the two lines, previous, play, next and the menu, with a hairline across the top you can drag to scrub.',
     'Nothing was dropped with the console: Shuffle, Repeat and DJ Mode are in the ... menu, Lyrics and Song info were already there, and the scrub line is the one the compact bar has always had.',
-    'The stairs sit on the bar itself - one height, the same number in the rail, the bar and every view - so the last step rests on the bar instead of over the bubbles.',
     'The album pill dock, the letter covers and the lyrics view are where they were, and the classic layout keeps its own tabs and its full player.',
-    'Nothing else moved: the widget, the player, the letter covers and the lyrics view are where they were, and every album, playlist and setting is exactly as 80.0.8 left it.',
   ],
     details: [
       '80.0.5 to 80.0.8 drew the four tabs as a column in the bottom right corner, each pill nudged 14px sideways. Four pills in a heap reads as a chunk, not a staircase, and it sat over the bubble wall.',
-      'The rail paints nothing now - no panel, no border, no shadow. Each tile is its own piece of glass, the five are spread by the rail itself, and each one is one step higher than the tile on its left, so the plus closes the flight in the top right.',
-      'The tiles are icons painted with a mask in currentColor, so an asleep tab is glass grey and the tab you are on is dark on coral. The split tiles keep their cut and put a small icon in each half corner.',
+      'The rail paints nothing now - no panel, no border, no shadow; the treads are the surface. They share one width, they climb one riser at a time, and they stand on the bar, so the row is a flight of stairs with a tab on every step.',
+      'The treads are icons painted with a mask in currentColor, so an asleep tab is glass grey and the tab you are on is dark on coral. The split treads keep their cut and put a small icon in each half corner.',
       'The cloud bar lost its second row and its seek row. What is left is the record, the two lines, previous, play, next and the menu, and a 3px line across the top that is drag-to-seek.',
       'Shuffle, Repeat and DJ Mode are new items in the ... menu, wired to the same buttons that used to sit on the bar - the menu is the same switch, not a second one.',
       'Nothing else moved: the album pill dock, the bubbles, the letter covers and the lyrics view are where they were, and the classic layout keeps its own tabs and its full player.',
@@ -307,7 +328,7 @@ CHANGELOG_ANCHOR = '  const CHANGELOG = ['
 def main():
     page = open(os.path.join(ROOT, 'index.html'), encoding='utf-8').read()
     if MARKER in page and ("const APP_VERSION = '%s';" % VERSION) in page:
-        print('  present: one staircase across the width, and the page runs as ' + VERSION)
+        print('  present: the flight across the width, and the page runs as ' + VERSION)
         print('patch-8009%s: 0 step(s) applied' % (' --check' if CHECK else ''))
         return 0
     sw_path = os.path.join(ROOT, 'sw.js')
@@ -337,7 +358,7 @@ def main():
     open(os.path.join(ROOT, 'index.html'), 'w', encoding='utf-8').write(page)
     sw = sw.replace("'sidecut-shell-v80.0.8'", "'sidecut-shell-v80.0.9'", 1)
     open(sw_path, 'w', encoding='utf-8').write(sw)
-    print('  applied: the rail, the icons, the mini bar, the menu, the version and the notes')
+    print('  applied: the flight, the icons, the mini bar, the menu, the version and the notes')
     print('patch-8009: 4 step(s) applied')
     return 0
 
