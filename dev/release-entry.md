@@ -1,38 +1,30 @@
-## 80.0.7 ({{STAMP}}): the cloud layout has one now bar, and it is simple
+## 80.0.8 ({{STAMP}}): the staircase is one dock, and it hugs the bar
 
-- **THE OWNER'S WORDS.** "For the cloud version, I want a simpler now bar." That
-  is the whole brief, and it settles the question 80.0.6 left open: one bar, in the
-  cloud layout, smaller than the full player - not a second chip above it.
-- **TWO PLAYERS BECAME ONE.** The cloud layout carried the docked player *and* a
-  small now chip in the top right mirroring it. The chip is `display: none` in this
-  layout now. Classic layout still has the docked player at full size: nothing in
-  this release reaches it.
-- **SIMPLER, MEASURED IN THE FOUR PLACES THAT MAKE IT SIMPLER.** `#npPlayerStage`
-  62x52 -> **38x34** (with the 3D deck scaled 0.62), `#npControls button` 36 -> **30**,
-  the title **13.5 -> 12px** and the artist **11.5 -> 10px**, and the three rows
-  closed to a **2px** gap with 6px side padding. The bar keeps its glass, its top
-  border and its blur.
-- **NOTHING WAS DROPPED.** Shuffle, prev, play, next, repeat, the menu, DJ MODE,
-  LYRICS, the ONLINE badge, the seek line and both times are all still there - a
-  simpler bar that loses a feature is not simpler, it is less. The gate says so in
-  as many words: the chip's is the **only** `display: none` in the whole block.
-- **THE STAIRCASE FOLLOWS IT.** It is positioned from this bar's measured height
-  (`--sc80-player`, written by `applyLayout`), so a shorter bar moves the staircase
-  down with it instead of leaving a hole above the transport.
-- **THE INSET IS STILL RESERVED ONCE.** The bar does not re-reserve
-  `env(safe-area-inset-bottom)`: in this layout the element is already lifted by
-  `bottom`, and `studio-70-check` owns the rule that the player never counts that
-  inset twice. My first cut of this rule did, and the gate caught it - 568/2.
-- **THE GATE GREW A SECTION.** `dev/patch-gate-8007.py` adds **[9]** to
-  `dev/staircase-check.cjs`: the block exists, the chip is hidden, the four things
-  that make the bar smaller are there, nothing else is hidden, and the inset is not
-  reserved twice. 49 checks, **49/0**.
-- **THE REPIN.** `dev/repin-8007.mjs`: the live pin moves 80.0.6 -> **80.0.7**,
-  adjacency `PREV` moves 80.0.5 -> **80.0.6**, both spellings of the release regex
-  swept, `--check` clean in 0. 127 edits across 52 gate files.
+- **THE OWNER'S SCREENSHOT.** The staircase floating in the middle of the bubble
+  wall, five glass capsules over a wall of glass bubbles, the plus over a bubble's
+  text. "MAKE IT BETTER BRO WHAT THE HELL IS THIS."
+- **IT FLOATED BECAUSE THE NUMBER WAS OLD.** The dock's `bottom` is
+  `var(--sc80-player) + 10px`, and `--sc80-player` was measured **once**, on the
+  first frame after a layout change, before the bar had settled - then cached. On a
+  phone that left the dock ~90px too high, across the bubbles. It is now written by
+  a `ResizeObserver` on `#nowPlaying`, plus a `resize` and an `orientationchange`
+  listener, plus two delayed passes at boot. The dock follows the bar.
+- **FIVE CAPSULES BECAME ONE PANEL.** The steps stay - each tab is still one notch
+  right of the one above, 14px a step - but they sit on one rounded glass panel
+  (24px radius, border, shadow, 20px blur), and the pills inside are unpainted
+  until one is active. The plus is the panel's own button, not a bubble of its own.
+- **WHAT A RELEASE LIKE THIS NEEDS IS A GATE THAT CAN SEE IT.** `patch-gate-8008.py`
+  adds **[10]**: the panel exists with its own glass, the pills are transparent
+  until active, the active rule exists, and the observer is in the page (with the
+  rotation listener and the once-per-page guard). `staircase-check` is **56/0**.
+- **NOTHING ELSE MOVED.** The bar from 80.0.7 (smaller turntable, smaller controls,
+  every control kept), the staircase's steps and placement, the bubbles, the album
+  pill dock, the letter covers and the lyrics view are untouched. Classic layout
+  keeps its own tabs and its full player.
+- **THE REPIN.** `dev/repin-8008.mjs`: live pin 80.0.7 -> **80.0.8**, adjacency
+  `PREV` 80.0.6 -> **80.0.7**, both regex spellings swept, `--check` clean in 0.
+  127 edits across 52 gate files.
 - **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point
   in the runner and both `--check`s green on the tree that ships.
-- **THE ONE RED LEFT** is `media-controls-check` **66/1** ("and it no longer fires
-  every half hour"), the recorded pre-existing red this repository has carried for
-  months. Everything else is green; `dev/gates-report.txt` in the release commit is
-  the full list.
+- **THE ONE RED LEFT** is `media-controls-check` **66/1**, the recorded pre-existing
+  red this repository has carried for months.
