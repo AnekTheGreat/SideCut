@@ -103,6 +103,31 @@ console.log('[7] the split tabs kept their cut');
   ok(/<line x1="0" y1="0" x2="100%" y2="100%"/.test(src), 'and the seam still runs top left to bottom right');
 }
 
+console.log('[8] every pill is sized by the staircase, not by the old bar');
+{
+  // 80.0.5 shipped two of these pills at 0px tall, and nothing in [2] could see
+  // it: a pill with no height still has its margin. The rules that did it are
+  // 80.0.3's, written with IDs, so they outranked the staircase's `> button` and
+  // gave the two split pills a HEIGHT with a basis of zero. This answers for the
+  // bug itself, because it is a bug that looks like nothing at all.
+  const banner = src.indexOf('6. 80.0.6: the staircase pills are sized by the staircase');
+  ok(banner > 0, 'the 80.0.6 sizing block is in the page');
+  const sized = src.indexOf('body.sc80-cloud .action-strip > #homeBtn,\n' +
+    'body.sc80-cloud .action-strip > #libraryBtn,\n' +
+    'body.sc80-cloud .action-strip > #discoverBtn,\n' +
+    'body.sc80-cloud .action-strip > #studioBtn,\n' +
+    'body.sc80-cloud .action-strip > #dockAddBtn{');
+  ok(sized > banner, 'and it restates the size of all five pills');
+  const rule = sized > 0 ? src.slice(sized, src.indexOf('}', sized)) : '';
+  ok(/flex: 0 0 auto;/.test(rule), 'with flex 0 0 auto, so no basis-zero height');
+  ok(/width: var\(--sc80-pill-w\); height: var\(--sc80-pill-h\);/.test(rule),
+    'and the staircase variables, not the old bar flex');
+  const oldFlex = src.indexOf('body.sc80-cloud .action-strip > #libraryBtn{ flex: 1.18 1 0; }');
+  ok(oldFlex > 0 && oldFlex < sized, 'the bar rule is still in the sheet, and the staircase overrides it after it');
+  ok(/body\.sc80-cloud \.action-strip > #libraryBtn,\nbody\.sc80-cloud \.action-strip > #studioBtn\{ width: calc\(var\(--sc80-pill-w\) \+ 16px\); \}/.test(src),
+    'and the two split pills carry sixteen pixels more width, for their two names');
+}
+
 console.log('');
 console.log((fail ? fail + ' FAILED, ' : 'ALL PASS: ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
