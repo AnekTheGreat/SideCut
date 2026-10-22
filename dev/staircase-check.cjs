@@ -128,6 +128,27 @@ console.log('[8] every pill is sized by the staircase, not by the old bar');
     'and the two split pills carry sixteen pixels more width, for their two names');
 }
 
+console.log('[9] the cloud layout has one now bar, and nothing was dropped with it');
+{
+  const from = src.indexOf('7. 80.0.7: the cloud layout has one now bar');
+  const to = src.indexOf('/* ---------- 5. Bigger screens', from);
+  const bar = from > 0 && to > from ? src.slice(from, to) : '';
+  ok(from > 0, 'the 80.0.7 now-bar block is in the page');
+  ok(/body\.sc80-cloud #sc80Now\{ display: none; \}/.test(bar),
+    'the duplicate chip is hidden in this layout - one bar, not two');
+  ok(/body\.sc80-cloud #npPlayerStage\{ width: 38px; height: 34px;/.test(bar),
+    'the turntable is smaller');
+  ok(/body\.sc80-cloud #npControls button\{ width: 30px; height: 30px; \}/.test(bar),
+    'the control buttons are smaller');
+  ok(/body\.sc80-cloud #npInfo \.t\{ font-size: 12px;/.test(bar),
+    'and the two lines of text are a point smaller');
+  const hidden = (bar.match(/display:\s*none/g) || []).length;
+  ok(hidden === 1,
+    'nothing else is hidden: the chip is the only display:none in the block (' + hidden + ')');
+  ok(!/env\(safe-area-inset-bottom\)/.test(bar),
+    'and the bar does not reserve the bottom inset a second time');
+}
+
 console.log('');
 console.log((fail ? fail + ' FAILED, ' : 'ALL PASS: ') + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
