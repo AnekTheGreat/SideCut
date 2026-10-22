@@ -1,47 +1,38 @@
-## 80.0.6 ({{STAMP}}): the two missing tabs are back on the staircase
+## 80.0.7 ({{STAMP}}): the cloud layout has one now bar, and it is simple
 
-- **WHAT THE OWNER SAW.** Two screenshots of the cloud layout: Home there, Discover
-  there, a plus in the corner, and two empty steps where Library and Studio should
-  be. "I can't even get out of this mode because all of the tabs aren't present."
-  Both symptoms are one bug, and the second is the consequence: Settings lives
-  behind the Studio tab.
-- **THE BUG WAS MINE, AND IT WAS A HEIGHT.** 80.0.3 sized the pills from the old
-  bar, with ID selectors:
-  `body.sc80-cloud .action-strip > *{ flex: 1 1 0; width: auto }`,
-  `> #libraryBtn{ flex: 1.18 1 0 }`, `> #studioBtn{ flex: 1.5 1 0 }`. In a row,
-  `flex` is width. 80.0.5 made the strip a COLUMN, where `flex` is HEIGHT, and
-  those three rules are written with IDs, so they outranked the staircase's
-  `body.sc80-cloud .action-strip > button` no matter where the block sat. The two
-  pills that carry their own IDs - Library and Studio, exactly the two split ones -
-  computed to **0px tall**. They were in the DOM the whole time, with their
-  margins, their cut and their click handlers, invisible.
-- **THE FIX IS A RULE WITH THE SAME IDS.** All five pills are restated together
-  (`flex: 0 0 auto; width: var(--sc80-pill-w); height: var(--sc80-pill-h)`), which
-  carries the same weight as the rules it replaces and comes later in the sheet.
-  The two split pills get `calc(var(--sc80-pill-w) + 16px)`, because each still
-  holds two names across the cut, and their halves' padding drops to 3px/7px so a
-  42px pill reads.
-- **THE GATE LEARNED TO SEE IT.** `dev/staircase-check.cjs` was 36/0 while the
-  layout was unusable, because every check in it measured something a 0px pill
-  still has - a margin, a clip-path, a DOM node. `dev/patch-gate-8006.py` adds
-  section **[8]**, six checks that read the sizing block itself: all five pills
-  sized together, `flex: 0 0 auto`, the staircase variables, the old bar rule still
-  present and overridden *after* it, and the extra width on the split pills. Run
-  against the 80.0.5 page it is **6 FAILED / 36 passed**; against this tree,
-  **42/0**.
-- **NOTHING ELSE MOVED.** The staircase's offsets, the wider wall, the 900/1280
-  rows, the motion set and the measured player height are byte-identical to
-  80.0.5. Classic layout untouched. This release is the bug and the pin.
-- **THE REPIN.** `dev/repin-8006.mjs`: the live pin moves 80.0.5 -> **80.0.6**,
-  adjacency `PREV` moves 80.0.4 -> **80.0.5**, both spellings of the release regex
-  swept. 127 edits across 52 gate files, `--check` clean in 0.
+- **THE OWNER'S WORDS.** "For the cloud version, I want a simpler now bar." That
+  is the whole brief, and it settles the question 80.0.6 left open: one bar, in the
+  cloud layout, smaller than the full player - not a second chip above it.
+- **TWO PLAYERS BECAME ONE.** The cloud layout carried the docked player *and* a
+  small now chip in the top right mirroring it. The chip is `display: none` in this
+  layout now. Classic layout still has the docked player at full size: nothing in
+  this release reaches it.
+- **SIMPLER, MEASURED IN THE FOUR PLACES THAT MAKE IT SIMPLER.** `#npPlayerStage`
+  62x52 -> **38x34** (with the 3D deck scaled 0.62), `#npControls button` 36 -> **30**,
+  the title **13.5 -> 12px** and the artist **11.5 -> 10px**, and the three rows
+  closed to a **2px** gap with 6px side padding. The bar keeps its glass, its top
+  border and its blur.
+- **NOTHING WAS DROPPED.** Shuffle, prev, play, next, repeat, the menu, DJ MODE,
+  LYRICS, the ONLINE badge, the seek line and both times are all still there - a
+  simpler bar that loses a feature is not simpler, it is less. The gate says so in
+  as many words: the chip's is the **only** `display: none` in the whole block.
+- **THE STAIRCASE FOLLOWS IT.** It is positioned from this bar's measured height
+  (`--sc80-player`, written by `applyLayout`), so a shorter bar moves the staircase
+  down with it instead of leaving a hole above the transport.
+- **THE INSET IS STILL RESERVED ONCE.** The bar does not re-reserve
+  `env(safe-area-inset-bottom)`: in this layout the element is already lifted by
+  `bottom`, and `studio-70-check` owns the rule that the player never counts that
+  inset twice. My first cut of this rule did, and the gate caught it - 568/2.
+- **THE GATE GREW A SECTION.** `dev/patch-gate-8007.py` adds **[9]** to
+  `dev/staircase-check.cjs`: the block exists, the chip is hidden, the four things
+  that make the bar smaller are there, nothing else is hidden, and the inset is not
+  reserved twice. 49 checks, **49/0**.
+- **THE REPIN.** `dev/repin-8007.mjs`: the live pin moves 80.0.6 -> **80.0.7**,
+  adjacency `PREV` moves 80.0.5 -> **80.0.6**, both spellings of the release regex
+  swept, `--check` clean in 0. 127 edits across 52 gate files.
 - **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point
   in the runner and both `--check`s green on the tree that ships.
 - **THE ONE RED LEFT** is `media-controls-check` **66/1** ("and it no longer fires
   every half hour"), the recorded pre-existing red this repository has carried for
   months. Everything else is green; `dev/gates-report.txt` in the release commit is
   the full list.
-- **STILL OPEN: THE PLAYER IN THIS LAYOUT.** The owner's second note on the
-  screenshots - no now bar, and a simpler player with every feature of the regular
-  one - is not in this release. It needs a decision on where that player sits
-  before it ships, so it is next, not smuggled in behind a bug fix.
