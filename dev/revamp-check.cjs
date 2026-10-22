@@ -38,7 +38,7 @@ function ok(cond, name, extra) {
   else { fail++; console.log('  \u2717 ' + name + (extra !== undefined ? '  [' + JSON.stringify(extra) + ']' : '')); }
 }
 
-const VER = '80.0.3';
+const VER = '80.0.4';
 // The release the 80.0 revamp REPLACED. This gate asserts adjacency against the
 // revamp's own entry (found by version), not against the head, so this pin stays
 // on the release 80.0 itself replaced.
@@ -320,26 +320,28 @@ const click = (win, el) => { if (el) el.dispatchEvent(new win.MouseEvent('click'
     ok(sh && /Studio/.test(sh.textContent) && th && /Tools/.test(th.textContent),
       'and both halves are labelled');
     const line = btn && btn.querySelector('line');
-    ok(!!line && line.getAttribute('x1') === '60%' && line.getAttribute('y1') === '0' &&
-       line.getAttribute('x2') === '40%' && line.getAttribute('y2') === '100%',
-       'the seam between them is a diagonal, not a straight divider (' +
+    ok(!!line && line.getAttribute('x1') === '0' && line.getAttribute('y1') === '0' &&
+       line.getAttribute('x2') === '100%' && line.getAttribute('y2') === '100%',
+       'the seam is the Library cut mirrored - corner to corner, top left to bottom right (' +
        (line && [line.getAttribute('x1'), line.getAttribute('y1'), line.getAttribute('x2'), line.getAttribute('y2')].join(' ')) + ')');
     // Which half owns which SIDE is answered by the clip paths, not by the order the
-    // two divs happen to sit in the markup: Studio keeps the left of the pill and
-    // Tools the right of it.
+    // two divs happen to sit in the markup: the seam runs top left to bottom right,
+    // so Studio keeps the lower triangle and Tools the upper one - the right of the
+    // cut, which is where the owner asked for it.
     // The cut is written in the two halves' own style attributes, so it is read from
     // there - whitespace normalised, because the attribute is authored by hand.
     const cutOf = (el) => ((/clip-path:\s*([^;]+)/i.exec((el && el.getAttribute('style')) || '') || [])[1] || '')
       .replace(/\s+/g, '');
     const shPoly = cutOf(sh);
     const thPoly = cutOf(th);
-    ok(shPoly === 'polygon(00,60%0,40%100%,0100%)', 'Studio owns the left of the pill (' + shPoly + ')');
-    ok(thPoly === 'polygon(60%0,100%0,100%100%,40%100%)', 'and Tools the right of it (' + thPoly + ')');
-    // Both names on the pill's centre line, so Tools sits BESIDE Studio rather than
-    // under it - the shape a two-row split took in the first cut of this tab.
-    ok(sh && /align-items:\s*center/.test(sh.getAttribute('style') || '') &&
-       th && /align-items:\s*center/.test(th.getAttribute('style') || ''),
-       'and both names sit on the same line, either side of the seam');
+    ok(shPoly === 'polygon(00,0100%,100%100%)', 'Studio owns the lower half of the pill (' + shPoly + ')');
+    ok(thPoly === 'polygon(00,100%0,100%100%)', 'and Tools the upper half, on the right of the cut (' + thPoly + ')');
+    // The two triangles put the names in opposite corners, which is exactly what the
+    // Library pill does with Library and Albums: one at the bottom left, one at the
+    // top right, either side of the one seam.
+    ok(sh && /align-items:\s*flex-end/.test(sh.getAttribute('style') || '') &&
+       th && /align-items:\s*flex-start/.test(th.getAttribute('style') || ''),
+       'and the two names sit in opposite corners, the way Library and Albums do');
     const paneStudio = host.querySelector('.sc80-pane[data-pane="studio"]');
     const paneTools = host.querySelector('.sc80-pane[data-pane="tools"]');
     ok(!!paneStudio && !!paneTools, 'both panes exist');

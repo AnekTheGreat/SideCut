@@ -159,7 +159,7 @@ function click(win, el) {
 
   console.log('[1] release metadata');
   {
-    ok(/^80\.0\.3$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
+    ok(/^80\.0\.4$/.test(VER), 'the page is the release this probe is for (' + VER + ')');
     ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v" + VER + "'") !== -1,
       'the shell cache moved with it');
     const head = (html.match(/const CHANGELOG = \[\n  \{ version: '([^']+)'/) || [])[1];
@@ -174,11 +174,10 @@ function click(win, el) {
     const strip = html.slice(html.indexOf('<div class="action-strip" id="actionStrip">'), html.indexOf('<div id="addSongsBackdrop"'));
     ok((strip.match(/<button id="[A-Za-z0-9_]+" class="action-pill"/g) || []).length === 4,
       'the dock markup still holds the four tabs and nothing else');
-    ok(strip.indexOf('scDockPillTrack') === -1 && strip.indexOf('scDockPillThumb') === -1 &&
-       strip.indexOf('scDockSeam') === -1,
-      'the capsule, the highlight and the divider are built by the code, not written into the markup');
-    ok(html.indexOf('#scDockPillTrack, #scDockPillThumb, #scDockSeam{') !== -1,
-      'the capsule, the highlight and the divider are styled');
+    ok(strip.indexOf('scDockPillTrack') === -1 && strip.indexOf('scDockPillThumb') === -1,
+      'the capsule and the highlight are built by the code, not written into the markup');
+    ok(html.indexOf('#scDockPillTrack, #scDockPillThumb{') !== -1,
+      'the capsule and the highlight are styled');
     ok(html.indexOf('z-index: -1; pointer-events: none;') !== -1,
       'and drawn behind the labels, so no name is covered by them');
     ok(html.indexOf('.sc-view-in{ animation: scViewIn') !== -1, 'the view entrance is a real keyframe animation');
@@ -569,22 +568,45 @@ function click(win, el) {
     homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
     win.dispatchEvent(pev(win, 'pointermove', 340, 754));   // 4px past the dock's edge
     await wait(20);
-    // The Studio tab is cut in two: 340px is over its Tools half (the cut runs from
-    // 60% of the pill at the top to 40% at the bottom, so the right of the pill is
-    // Tools), and the highlight has to say which half the finger is really over.
-    const toolsLeft = R.studioBtn.left + R.studioBtn.width * 0.40 + 4;
+    // The Studio tab is cut corner to corner - top LEFT to bottom RIGHT - so the two
+    // halves are the LOWER triangle (Studio) and the UPPER one (Tools). Which half a
+    // point is over is that line and nothing else: below it Studio, above it Tools.
+    const studioBox = (name) => name === 'tools'
+      ? R.studioBtn.left + R.studioBtn.width * 0.5 + 4      // the Tools half's box
+      : R.studioBtn.left + 4;                               // the Studio half's box
+    const over = (x, y) => ((x - R.studioBtn.left) / R.studioBtn.width)
+                         - ((y - R.studioBtn.top) / R.studioBtn.height) > 0;
+    const litName = () => {
+      const sh = doc.getElementById('studioHalf'), tl = doc.getElementById('toolsHalf');
+      return tl && tl.classList.contains('active-half') ? 'tools'
+           : sh && sh.classList.contains('active-half') ? 'studio' : 'none';
+    };
     // The style round-trips through a string, so the number is what is compared, not
     // its spelling: 338px and 338.0px are the same place on the dock.
     const movedTo = parseFloat(String(th('transform')).replace(/[^0-9.]/g, ''));
-    ok(Math.abs(movedTo - toolsLeft) < 0.6,
-      'a slide that drifts just past the edge still points at Studio - at its Tools half',
-      th('transform') + ' vs ' + toolsLeft.toFixed(1));
+    const halfHere = over(340, 754) ? 'tools' : 'studio';
+    ok(Math.abs(movedTo - studioBox(halfHere)) < 0.6,
+      'a slide that drifts just past the edge still points at Studio - at the half the seam puts it in',
+      th('transform') + ' vs ' + studioBox(halfHere).toFixed(1) + ' (' + halfHere + ')');
     win.dispatchEvent(pev(win, 'pointerup', 340, 754));
     await wait(150);
     ok(studioView.classList.contains('active'), 'and releasing there takes it');
-    ok(doc.getElementById('toolsHalf').classList.contains('active-half'),
-      'onto the half the finger was over');
+    ok(litName() === halfHere, 'onto the half the seam put the finger in (' + litName() + ')');
     ok(!homeView.classList.contains('active'), 'without Home answering too');
+
+    // ...and the other side of that same seam is reachable too: a drift over the pill's
+    // top right is above the cut, which is Tools.
+    win.navigate('home');
+    await wait(80);
+    homeBtn.dispatchEvent(pev(win, 'pointerdown', 50, 729));
+    win.dispatchEvent(pev(win, 'pointermove', 370, 712));
+    await wait(20);
+    ok(over(370, 712) && Math.abs(parseFloat(String(th('transform')).replace(/[^0-9.]/g, '')) - studioBox('tools')) < 0.6,
+      'and a drift over the top right of the pill lights the Tools half (' + th('transform') + ')');
+    win.dispatchEvent(pev(win, 'pointerup', 370, 712));
+    await wait(150);
+    ok(litName() === 'tools' && studioView.classList.contains('active'),
+      'which opens Studio on Tools (' + litName() + ')');
 
     // (7) A TICK PER CROSSING. One short buzz when the finger moves into another
     // tab - not one per pointermove, and not a burst per seam crossing.
@@ -601,29 +623,27 @@ function click(win, el) {
     win.dispatchEvent(pev(win, 'pointerup', 240, 729));
     await wait(120);
     ok(ticks === 2, 'two crossings, two ticks - three moves do not make three', ticks);
-    ok(!!doc.querySelector('#scDockSeam'), 'and the divider is a drawn piece of the dock');
+    ok(!doc.querySelector('#scDockSeam'), 'and no second divider is drawn over the tab');
 
-    // (8) THE DIVIDER IS THE LINE THE HIT TEST USES. The split tab's box is 96x42,
-    // so its cut runs corner to corner: a line 104.8px long at 156.4 degrees, centred
-    // on the pill. The seam is placed from that same box, so the slant that is drawn
-    // and the region that is lit cannot drift apart.
+    // (8) THE CUT IS DRAWN BY THE TAB ITSELF, and only by the tab. Each split tab
+    // carries one SVG line inside the button - corner to corner of that button's own
+    // box, which is the box its clip paths are written in - so the slant that is drawn
+    // and the region that is lit are the same line by construction. The dock used to
+    // draw a second, dock-wide divider from a cached rectangle as well; the two drifted
+    // a few pixels and a degree or two apart whenever the pills resized, which is what
+    // two parallel diagonals on one tab looks like.
     win.navigate('library');
     await wait(150);
-    const seam = doc.getElementById('scDockSeam');
-    const seamStyle = (p) => (seam && seam.style ? seam.style[p] : '(missing)');
-    const wantW = Math.sqrt(96 * 96 + 42 * 42) - 10;
-    const wantA = 180 - Math.atan2(42, 96) * 180 / Math.PI;
-    const gotAngle = parseFloat((/rotate\(([-0-9.]+)deg\)/.exec(seamStyle('transform')) || [])[1]);
-    ok(Math.abs(parseFloat(seamStyle('width')) - wantW) < 0.2,
-      'the divider spans the split tab corner to corner', seamStyle('width'));
-    ok(Math.abs(gotAngle - wantA) < 0.2,
-      'at the angle of that box\'s diagonal (' + wantA.toFixed(2) + ' vs ' + gotAngle + ')', seamStyle('transform'));
-    // The strip is at (0,700) in this geometry, so the pill's centre - (152,729) on
-    // the page - is (152,29) in the dock's own coordinates.
-    ok(seamStyle('left') === '152px' && seamStyle('top') === '29px',
-      'and it is centred on the pill itself', seamStyle('left') + ' / ' + seamStyle('top'));
-    ok(/translate\(-50%, -50%\)/.test(seamStyle('transform')),
-      'anchored by its centre, so the rotation cannot walk it off the pill');
+    const cutLine = (btnId) => {
+      const svg = doc.querySelector('#' + btnId + ' > svg line');
+      return svg ? [svg.getAttribute('x1'), svg.getAttribute('y1'),
+                    svg.getAttribute('x2'), svg.getAttribute('y2')].join(' ') : '(missing)';
+    };
+    ok(cutLine('libraryBtn') === '100% 0 0 100%',
+      'the Library tab draws its cut corner to corner, top right to bottom left (' + cutLine('libraryBtn') + ')');
+    ok(cutLine('studioBtn') === '0 0 100% 100%',
+      'and the Studio tab draws the other diagonal (' + cutLine('studioBtn') + ')');
+    ok(!doc.getElementById('scDockSeam'), 'and neither of them has a second line beside it');
 
     // The Studio's own switch, end to end, through the published name.
     win.navigate('studio');
