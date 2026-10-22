@@ -292,13 +292,15 @@ body.sc80-cloud #npControls #repeatBtn{ display: none; }
 
 '''
 
-NOTE = """  { version: '80.0.9', date: 'October 22, 2026 \u00b7 8:05 PM EDT', title: 'A staircase across the width, and a mini player', items: [
-    'The tabs are a staircase across the whole width now: five treads side by side, each one a riser taller than the one on its left, and all of them standing on the top of the bar - so the bottom of the row is one line and the top of it climbs from the bottom left corner to the plus in the top right.',
-    'Every tab is an icon: a house, a stack, a compass, a mixer and the plus. The words are still in the page for a screen reader, they are just not painted on the tread.',
-    'Library/Albums and Studio/Tools keep their diagonal cut, and each half carries its own small icon in its own end of the cut, so an icon-only tread still says which half you are tapping.',
+NOTE = """  { version: '80.0.9', date: 'October 22, 2026 \u00b7 6:30 PM EDT', title: 'A staircase across the width, and a mini player', items: [
+    'The tabs are a staircase across the width now: five treads side by side, each one a riser taller than the one on its left, all standing on the bar, so the row climbs from the bottom left corner to the plus in the top right.',
+    'Every tab is an icon now: a house, a stack, a compass, a mixer and the plus. The words stay in the page for a screen reader, they are just not painted on the tread.',
+    'Library/Albums and Studio/Tools keep their diagonal cut, and each half carries its own small icon at its own end of the cut, so an icon still says which half you are tapping.',
     'The cloud bar is a mini player now: one row, the record, the two lines, previous, play, next and the menu, with a hairline across the top you can drag to scrub.',
-    'Nothing was dropped with the console: Shuffle, Repeat and DJ Mode are in the ... menu, Lyrics and Song info were already there, and the scrub line is the one the compact bar has always had.',
-    'The album pill dock, the letter covers and the lyrics view are where they were, and the classic layout keeps its own tabs and its full player.',
+    'Nothing was dropped with the console: Shuffle, Repeat and DJ Mode are in the ... menu, and Lyrics and Song info were already there.',
+    'The player keeps one height in this layout - the rail, the bar and every view read the same number - so the flight rests on the bar instead of floating over the bubbles.',
+    'The album pill dock, the letter covers, the lyrics view and the widget are where they were, and the classic layout keeps its own tabs and its full player.',
+    'Nothing else moved - the widget, the player, the letter covers and the lyrics view are all where they were, and every album, playlist, song and setting is exactly as 80.0.8 left it.',
   ],
     details: [
       '80.0.5 to 80.0.8 drew the four tabs as a column in the bottom right corner, each pill nudged 14px sideways. Four pills in a heap reads as a chunk, not a staircase, and it sat over the bubble wall.',
