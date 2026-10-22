@@ -56,7 +56,7 @@
 - **THE REPIN.** `dev/repin-8004.mjs`: the live pin moves 80.0.3 -> **80.0.4**, adjacency
   `PREV` moves 80.0.2 -> **80.0.3**, and the release-regex sweep now writes the version
   it is sweeping *to* (80.0.3's copy wrote `.3` on the way out of `.3` and left
-  `/^80\\.0\\.3$/` in the album-follow probe, which its own stale check then caught).
+  `/^80\.0\.3$/` in the album-follow probe, which its own stale check then caught).
   126 edits across 51 gate files, `--check` clean in 0.
 - **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point
   (third pass) and both `--check`s green on the tree that ships.
