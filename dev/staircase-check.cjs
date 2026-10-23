@@ -1,4 +1,4 @@
-// 80.0.10 - A SMALL FLIGHT IN THE CORNER, A BAR THAT COVERS THE BOTTOM, AND THE
+// 80.1 - A SMALL FLIGHT IN THE CORNER, A BAR THAT COVERS THE BOTTOM, AND THE
 // ADD-SONGS SHEET ABOVE THE PLUS.
 //
 // 80.0.9 answered "make the tabs icons" with five treads across the WHOLE width,
@@ -28,8 +28,8 @@ function ok(cond, label) {
 }
 const count = (hay, needle) => hay.split(needle).length - 1;
 
-const start = src.indexOf('9. 80.0.10: a small flight in the corner');
-const sheetStart = src.indexOf('10. 80.0.10: the add-songs sheet');
+const start = src.indexOf('9. 80.1: a small flight in the corner');
+const sheetStart = src.indexOf('10. 80.1: the add-songs sheet');
 const wideStart = src.indexOf('/* ---------- 5. Bigger screens');
 const flight = start > 0 ? src.slice(start, sheetStart > start ? sheetStart : wideStart) : '';
 const sheet = sheetStart > 0 && wideStart > sheetStart ? src.slice(sheetStart, wideStart) : '';
@@ -45,7 +45,7 @@ const icons = (flight.match(/--sc89-icon: url\(/g) || []).length;
 console.log('[1] the flight is a small rail in the bottom right corner');
 {
   ok(start > 0 && sheetStart > start && flight.length > 2500,
-    'the 80.0.10 flight block is in the page (' + flight.length + ' chars)');
+    'the 80.1 flight block is in the page (' + flight.length + ' chars)');
   ok(flight.indexOf('right: 10px;') > 0 && flight.indexOf('left: auto;') > 0,
     'the rail is pinned to the right, not stretched across the width');
   ok(flight.indexOf('bottom: var(--sc10-bar);') > 0,
@@ -170,9 +170,9 @@ console.log('[6] the views make room for the flight, and this is the release');
     'every scrolling view reserves the bar, the flight and a little air');
   ok(flight.indexOf('scroll-padding-bottom: calc(var(--sc10-bar) + var(--sc10-rail) + 16px);') > 0,
     'and a focused row does not land behind it');
-  ok(count(src, "const APP_VERSION = '80.0.10';") === 1, 'APP_VERSION = 80.0.10, once');
-  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.0.10';") !== -1, 'the shell cache is the release number');
-  ok(count(src, "version: '80.0.10'") === 1, 'and the changelog has one 80.0.10 entry');
+  ok(count(src, "const APP_VERSION = '80.1';") === 1, 'APP_VERSION = 80.1, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.1';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.1'") === 1, 'and the changelog has one 80.1 entry');
   ok(src.indexOf("title: 'The plus works, the flight is small, the bar covers the bottom'") > 0,
     'whose title is the release title');
   ok(src.indexOf('the widget, the player, the letter covers, the lyrics view and the album pill dock') > 0,
