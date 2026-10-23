@@ -1,48 +1,48 @@
-## 80.2 ({{STAMP}}): the cloud layout, tidied - round bubbles, a curve of icon tabs, Lyrics back in the bar
+## 80.2.1 ({{STAMP}}): the Lyrics icon stays in the cloud bar, the seam leaves the tiles, the circles get air
 
-- **THE OWNER'S SCREENSHOT, AND FIVE FAULTS IN IT.** "THE CIRCLES NEED TO BE MORE
-  WELL OPTIMIZED THINGS ARE LOOKING WEIRD AND TABS SHOULD LEGIT JUST BE ICONS ...
-  SHOULD KIND OF CURVE UP BUT NICELY, IT'S NOT SMOOTH AT ALL IN THIS MODE LIKE IT
-  SHOULD BE AND IN THE NOW BAR THERE SHOULD BE LYRICS OPTIONS STILL, IN ALBUMS AND
-  PLAYLISTS A WHOLE PART GETS LIKE TURNS THEME MATCHING BLUE AT THE BOTTOM WHICH
-  WASTES SPACE ... JUST MAKE THIS MODE BETTER."
-- **THE ICON WAS ON TOP OF THE NUMBER.** `.hb-ico` was absolutely placed at the
-  bubble's centre, 128% of its own height up, so on a 172px circle the headphone
-  landed on the "0m" and the person on "Top artists". The wall is a two-column grid
-  now and a bubble is a column - icon, value, label - with the label clamped to two
-  lines, `grid-column:auto` so a "wide" bubble is one cell instead of a full-width
-  circle, and the resize chip, the Ask sparkle, the play button and the three header
-  buttons each on the rim clear of the reading.
-- **THE STAIRCASE BECAME A CURVE.** Five joined 46px treads with a hairline each is
-  a staircase of rectangles. It is five equal 44px tiles with an 8px gap, lifted
-  0/6/16/28/42px, so the row rises smoothly to the plus. ONE GLYPH A TAB: the split
-  treads keep both of their tap targets and stop painting two icons inside a tile.
-- **LYRICS IS BACK IN THE BAR,** as an icon in `#npControls` before the `...` menu,
-  clicking the same `#lyricsBtn` - one handler, one lyrics view, same saved-versus-
-  online behaviour.
-- **THE BAND WAS THE RESERVE.** Every view reserved `--sc10-bar + --sc10-rail + 16px`
-  (146px) under its last row, which is a band of theme colour with nothing in it.
-  The views reserve the bar plus 12px now; the flight floats over the corner with a
-  soft scrim, and only the bubble wall keeps its own bottom air, because a 172px
-  circle under the tiles is a whole bubble lost.
-- **AND IT MOVES SMOOTHER.** The six bubbles no longer float on a 7.5s loop (six big
-  circles repainting forever while a list scrolls under them) and the tiles drop
-  their per-tile backdrop blur; the bar keeps 10px of glass instead of 22.
-- **THE GATE.** `dev/staircase-check.cjs` is rewritten whole (**46/0**): the grid and
-  the column, the curve and the one-glyph rule, the lyrics button and its forward,
-  the new reserve, and the changelog and cache pins. `dev/patch-gate-802.py` checks
-  that it arrived that way.
-- **THE REPIN.** `dev/repin-802.mjs`: live pin 80.1 -> **80.2**, adjacency `PREV`
-  80.0.9 -> **80.1**, both regex spellings swept, `--check` clean in 0. 127 edits
-  across 52 gate files.
+- **THE OWNER, ONE RELEASE LATER.** "THE EXTRA LYRICS BUTTON IN THE NOW BAR SHOULD
+  SHOW FOR [THE] CLOUD MODE ... AND EDIT THE CIRCLES SLIGHTLY AND PATCH MINOR BUGS
+  UP IN THAT MODE." Three of the four things in this release were visible on a phone
+  the day after 80.2 landed.
+- **THE ICON WAS IN BOTH BARS, AND THAT WAS A SPECIFICITY BUG.** 80.2 hid it with
+  `#sc11Lyrics{ display:none }`, but the bar's own `#npControls button{ display:flex }`
+  is one id PLUS a type and outranks it - so the icon painted in the original layout
+  too, a second Lyrics sitting beside the LYRICS pill it forwards every tap to. The
+  hide is now `#npControls #sc11Lyrics`, at the weight that beat it, and the cloud
+  rule is unchanged: one button, one handler, one lyrics view, in the cloud bar only.
+- **THE SEAM WAS STILL ON THE TILES.** Library and Studio are cut corner to corner by
+  an `<svg>` inside the button - the diagonal the dock pill wore when the dock was one
+  control. 80.2 set the two label halves to `opacity:0` and left the line painting, so
+  two 44px icon tiles each carried a hairline across them. The svg is
+  `pointer-events:none`, so hiding it takes nothing from the two taps the split halves
+  still take.
+- **THE CIRCLES, A LITTLE.** The icon disc drops 30px -> 28px and 22% -> 15% of the
+  accent; the coral wash 16 -> 11; the padding 15/12% -> 14/11; the gap under the value
+  is 4px; the play button and the three header buttons move 8px down; and a two-line
+  label breaks with `text-wrap:pretty`, so "Listening stats - 0 plays ·" stops leaving
+  `0d streak` alone on its own line.
+- **THE FADE WAS A PATCH, NOT A BAND.** The scrim under the flight reached 18px past
+  the tiles, so the row of a list *beside* them stayed at full contrast while the part
+  *behind* them faded. It now runs from the left edge of the screen to the right one
+  (`left:calc(12px + 100% - 100vw)`), so the whole band fades and only the tiles sit
+  on it.
+- **SEEN, NOT GUESSED.** Headless Chromium at 390x844 with a seeded 40-song library,
+  before and after: the wall, the bottom of the wall at full scroll (the last row
+  clears the plus), the albums list, the studio view, the add-songs sheet, the lyrics
+  toast, and the classic layout re-shot to prove the icon is gone there and nothing
+  else moved. Measured, not eyeballed: `#sc11Lyrics` computes `display:none` in the
+  classic layout and `flex` in the cloud one, both seam svgs compute `display:none`,
+  every bubble is 186x186, and the scrim's pseudo-element is 390px wide at 390px.
+- **THE GATE.** `dev/staircase-check.cjs` gains section **[7]** - the hide at the
+  weight that beats the bar's button rule, the cloud rule still showing it, the seam
+  off both tiles, the circle numbers, the label break and the full-width fade - and is
+  **56/0**. The section travels alone in `dev/patch-gate-8021.py`, which inserts it and
+  then refuses to pass unless every claim of it is in the gate.
+- **THE REPIN.** `dev/repin-8021.mjs`: live pin 80.2 -> **80.2.1**, adjacency `PREV`
+  80.1 -> **80.2**, both regex spellings swept, `--check` clean in 0.
 - **THE CHANGELOG HEAD HAS SEVEN NOTES** on purpose: `test-738` requires at least
-  seven, no apostrophes, and the words widget, player, lyrics and letter - the first
-  draft had six and the battery caught it.
-- **SEEN, NOT GUESSED.** Headless Chromium at 390x844 with a seeded 40-song library:
-  the wall, the flight, the library, the Albums tab, the bar with the lyrics icon
-  (it answers "Play a song first" with nothing loaded, which is the pill's own
-  handler), and the classic layout re-shot to prove it did not move.
-- **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point
-  in the runner and both `--check`s green on the tree that ships.
+  seven, no apostrophes, and the words widget, player, lyrics and letter.
+- **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point in
+  the runner and both `--check`s green on the tree that ships.
 - **THE ONE RED LEFT** is `media-controls-check` **66/1**, the recorded pre-existing
   red this repository has carried for months.
