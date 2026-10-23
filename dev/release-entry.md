@@ -1,53 +1,54 @@
-## 80.0.9 ({{STAMP}}): a staircase across the width, and a mini player
+## 80.0.10 ({{STAMP}}): the plus works, the flight is small, the bar covers the bottom
 
-- **THE OWNER'S WORDS.** "WHY IS A CHUNK IT SHOULD SPREAD OUT LIKE A NICE
-  STAIRCASE ... I TOLD YOU TO REMOVE THE NOW BAR FROM CLOUD MODE AND REPLACE IT
-  WITH A SIMPLER VERSION ... YOU CAN MAKE THE TABS IN CLOUD MODE ICONS."
-- **THE CHUNK WAS THE COLUMN.** 80.0.5 to 80.0.8 stacked four pills in the bottom
-  right corner and nudged each 14px sideways. The first cut of 80.0.9 answered with
-  five square tiles floating in a row nine pixels apart in height - a row with a
-  wobble, not a flight.
-- **THIS IS A FLIGHT.** Five treads, edge to edge, across the whole width, each the
-  same width and one riser (15px) taller than the one on its left, every tread
-  standing on the top of the bar. The bottoms are one line, the tops climb from the
-  bottom left corner to the top right one, and the plus closes the flight as its
-  tallest step. Each tread carries a lit hairline along its top edge, which is what
-  makes the eye read one staircase instead of five panes of glass.
-- **THE TABS ARE ICONS.** A house, a stack, a compass, a mixer, and the plus. Each
-  one is a mask in `currentColor`, so an asleep tab is glass grey and the tab you
-  are on is filled coral. The words stay in the DOM (a screen reader still reads
-  Home, Library, Albums, Discover, Studio, Tools) at `font-size: 0`.
-- **THE SPLIT TREADS KEPT THEIR CUT** - and gained a small icon in each end of the
-  cut (list / grid, mixer / wrench), so an icon-only tread still says which half
-  you are tapping.
-- **THE BAR IS A MINI PLAYER.** Sixty pixels, one row: the record, the two lines,
-  previous, play, next, the menu, and a 3px hairline across the top that is
-  drag-to-seek (`#miniBar`, the compact bar's own control). The DJ/LYRICS row, the
-  seek row and the progress ring around the record are not drawn in this layout.
-  Shuffle, Repeat and DJ Mode were moved into the `...` menu, wired to the same
-  buttons - nothing was dropped with the console. The bar keeps the flight's own
-  760px band, so the two stack instead of drifting apart on a computer.
-- **IT CANNOT DRIFT NOW.** The rail used to sit on `--sc80-player`, a number JS
-  wrote on the first frame after a layout change; in a browser that never ran that
-  write it stayed at its 112px fallback and the rail floated 52px above the bar -
-  the same drift the owner photographed, from the same cause. The bar has one
-  height in this layout (`--sc89-bar`), and the rail, the bar and every view read
-  that one constant.
-- **SEEN, NOT GUESSED.** Checked in a real headless Chromium at 412x915 and at
-  900x1000 - `chrome-headless-shell` with the missing `libnspr4`/`nss`/`atk`
-  objects unpacked locally, and a fontconfig file so text lays out - plus a probe
-  that reads rects and computed styles out of the live page. That is how the nine
-  pixel nudge that still read as a row, the stale `--sc80-player`, the joined-dock
-  capsule drawn across the treads, the clipped ellipse where the record should be,
-  and the record's progress ring at 38px were found and fixed.
-- **THE GATE.** `dev/staircase-check.cjs` is rewritten whole (79/0): the rail, the
-  five heights one riser apart, the treads standing on the bar, the lit top edge,
-  the 760px band, six icon masks, the half corners, the coral active rule, the
-  capsule hidden, the 60px mini bar, the hairline, and the menu carrying the three
-  controls. `dev/patch-gate-8009.py` checks that rewritten gate arrived intact.
-- **THE REPIN.** `dev/repin-8009.mjs`: live pin 80.0.8 -> **80.0.9**, adjacency
-  `PREV` 80.0.7 -> **80.0.8**, both regex spellings swept, `--check` clean in 0.
-  127 edits across 52 gate files.
+- **THE OWNER'S SCREENSHOT, AND THREE FAULTS IN IT.** "THE ADD SONGS POPUP ISNT
+  SHOWING IN CLOUD MODE JUST MAKE IT ICONS ON THE BOTTOM IS A SMALL BOTTOM RIGHT
+  STAIRCASE. THE SIMPLIFIED NOW BAR SHOULD COVER THE BOTTOM NOT PROTRUDE LIKE IT IS
+  NOW." The screenshot showed five tall glass treads standing on the bubble grid,
+  a bar lifted off the bottom edge with a strip of page under it, and a plus that
+  did nothing.
+- **THE SHEET WAS OFF SCREEN, NOT MISSING.** 80.0.9 kept the old dock rule
+  `#addSongsMenu{ bottom: calc(100% + 10px) }`. The menu is `position: fixed` inside
+  the fixed strip, so 100% is the VIEWPORT: the sheet opened a full screen above the
+  top edge, which is exactly what a dead plus looks like. It is a screen-level sheet
+  above the bar now, and its JS moves the sheet and its backdrop to `<body>` so their
+  fixed positions measure the screen and the z-index is not trapped in the strip.
+- **THE FLIGHT IS SMALL AND IN THE CORNER.** Five 46px treads joined edge to edge,
+  each exactly 10px taller than the one on its left, all standing on the bar, the plus
+  closing the flight at the top right. 230px wide instead of the whole width. The
+  icons sit at the middle of a tread, so they climb with the steps; the old corner
+  column's 42/28/14px margins are cancelled, which is why the treads now touch.
+- **THE SPLIT TREADS KEEP THEIR CUT** and their two icons now sit side by side at the
+  middle of the tread (list, grid; mixer, wrench) instead of one at each far corner
+  of a 76px-tall step.
+- **THE BAR COVERS THE BOTTOM.** 80.0.3 lifted the player by the phone's inset and
+  80.0.9 gave it the inset's height on top of that, so it floated one inset above the
+  edge. Bottom zero, full width, `--sc10-bar` = the sixty pixel row plus
+  `env(safe-area-inset-bottom)`, the row at the top of the bar and the inset part of
+  it. No top border (the 3px scrub line is the top edge) and no bottom corner radius.
+  The title and artist truncate with an ellipsis, so a long name cannot shove the
+  transport across the bar.
+- **THE SHEET CLOSES FOUR WAYS** - its own X (an SVG, because the bundled font has no
+  U+2715), the backdrop, Escape, and after you pick a row - and it is styled as rows
+  with surfaces instead of five floating labels, because the cloud layout's
+  `.action-pill` is transparent.
+- **NOTHING WAS DROPPED.** Shuffle, Repeat and DJ Mode are still in the `...` menu
+  wired to the same buttons, Lyrics and Song info are still there, the record's
+  progress ring stays off the 40px disc, and the classic layout keeps its own dock
+  and its full now bar.
+- **SEEN, NOT GUESSED.** Headless Chromium at 412x915 and 900x1000 with the missing
+  `libnspr4`/`nss`/`atk` objects unpacked locally and a fontconfig file so text lays
+  out: rects and computed styles read out of the page, a real mouse click on the plus
+  (the sheet lands in the viewport, `parentElement === BODY`, Escape and the X both
+  close it), a long title measured at 426px of text in a 112px box with
+  `text-overflow: ellipsis`, and the classic layout re-checked with the same probe.
+- **THE GATE.** `dev/staircase-check.cjs` is rewritten whole (**68/0**): the corner
+  rail and the five joined treads one riser apart, the lit top edge, six icon masks,
+  the split halves side by side, the flush full-width bar and its inset accounting,
+  the ellipsis, the screen-level sheet and its four closes, the views' reserve, the
+  version, the shell cache and the changelog head.
+  `dev/patch-gate-80010.py` checks that rewritten gate arrived intact.
+- **THE REPIN.** `dev/repin-80010.mjs`: live pin 80.0.9 -> **80.0.10**, adjacency
+  `PREV` 80.0.8 -> **80.0.9**, both regex spellings swept, `--check` clean in 0.
 - **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point
   in the runner and both `--check`s green on the tree that ships.
 - **THE ONE RED LEFT** is `media-controls-check` **66/1**, the recorded pre-existing
