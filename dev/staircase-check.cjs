@@ -1,6 +1,12 @@
 // 80.2 - ROUND BUBBLES THAT HOLD THEIR WORDS, A CURVE OF ICON TABS, LYRICS IN THE
 // BAR, AND NO BAND OF EMPTY THEME COLOUR UNDER THE LISTS.
 //
+// 80.2.1 - and the four things that release got wrong or left rough: the Lyrics icon
+// painted in BOTH layouts (it is the cloud bar alone now), the diagonal seam of the
+// old dock pill still drawn across the two split tiles, circles that wanted a little
+// air, and a fade under the flight that was a patch behind the tiles rather than the
+// width of the screen. Section [7] answers for those.
+//
 // The owner, on the phone:
 //
 //   "THE CIRCLES NEED TO BE MORE WELL OPTIMIZED THINGS ARE LOOKING WEIRD AND TABS
@@ -144,9 +150,9 @@ console.log('[5] the band of theme colour under the lists is gone');
 
 console.log('[6] the release, the cache and the sheet are where 80.1 left them');
 {
-  ok(count(src, "const APP_VERSION = '80.2';") === 1, 'APP_VERSION = 80.2, once');
-  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2';") !== -1, 'the shell cache is the release number');
-  ok(count(src, "version: '80.2'") === 1, 'and the changelog has one 80.2 entry');
+  ok(count(src, "const APP_VERSION = '80.2.1';") === 1, 'APP_VERSION = 80.2, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.1';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.2.1'") === 1, 'and the changelog has one 80.2 entry');
   ok(src.indexOf("title: 'Round bubbles that hold their words, a curve of icon tabs, and Lyrics back in the bar'") > 0,
     'whose title is the release title');
   ok(src.indexOf('the letter covers, the lyrics view and the album pill dock are where 80.1 left them') > 0,
@@ -155,6 +161,35 @@ console.log('[6] the release, the cache and the sheet are where 80.1 left them')
     'the add-songs sheet from 80.1 is untouched');
   ok(src.indexOf('bottom: calc(var(--sc10-bar) + 10px);') > 0,
     'and still sits above the bar');
+}
+
+console.log('[7] 80.2.1: the icon is the cloud bar alone, the seam is gone, the circles breathe');
+{
+  const block12 = src.indexOf('/* ---------- 12. 80.2.1: the icon stays in the cloud bar');
+  ok(block12 > 0, 'the 80.2.1 block is in the page');
+  // THE HIDE HAS TO OUTRANK #npControls button{ display:flex } - one id plus a type.
+  ok(src.indexOf('#npControls #sc11Lyrics{ display:none;') > 0,
+    'the lyrics icon is hidden at a weight that beats #npControls button');
+  ok(src.indexOf('body.sc80-cloud #npControls #sc11Lyrics{ display:flex; }') > 0,
+    'and the cloud bar still shows it');
+  // THE SEAM: the svg inside each split tile stops painting; the halves already did.
+  ok(src.indexOf('body.sc80-cloud #libraryBtn > svg,') > 0 &&
+     src.indexOf('body.sc80-cloud #studioBtn > svg{ display:none; }') > 0,
+    'the diagonal seam is off both split tiles');
+  ok(count(src, '> svg{ display:none; }') === 1,
+    'and that is the only thing the split tiles stop painting');
+  // THE CIRCLES: more air, a lighter disc, a label that breaks without an orphan.
+  const blockText = src.slice(block12, block12 + 4000);
+  ok(blockText.indexOf('padding:14% 11%;') > 0, 'the circles carry more side padding');
+  ok(blockText.indexOf('width:28px; height:28px;') > 0, 'the icon disc is a shade smaller');
+  ok(blockText.indexOf('text-wrap:pretty;') > 0, 'and a two-line label breaks without an orphan');
+  ok(blockText.indexOf('.hb-miniplay{ margin-top:8px; }') > 0 &&
+     blockText.indexOf('#sc80CloudCtl{ margin-top:8px; gap:6px; }') > 0,
+    'the buttons under the label have room to breathe');
+  // THE FADE: from the left edge of the screen to the right one.
+  ok(blockText.indexOf('left:calc(12px + 100% - 100vw);') > 0 &&
+     blockText.indexOf('right:-12px;') > 0,
+    'the fade under the flight spans the screen');
 }
 
 console.log('');
