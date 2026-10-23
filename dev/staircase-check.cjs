@@ -1,19 +1,19 @@
-// 80.1 - A SMALL FLIGHT IN THE CORNER, A BAR THAT COVERS THE BOTTOM, AND THE
-// ADD-SONGS SHEET ABOVE THE PLUS.
+// 80.2 - ROUND BUBBLES THAT HOLD THEIR WORDS, A CURVE OF ICON TABS, LYRICS IN THE
+// BAR, AND NO BAND OF EMPTY THEME COLOUR UNDER THE LISTS.
 //
-// 80.0.9 answered "make the tabs icons" with five treads across the WHOLE width,
-// each a riser taller than the one before - a band with steps standing on the bubble
-// grid - and it kept the old dock rule that opened the add-songs sheet a full screen
-// above the top edge. The owner's reply was:
+// The owner, on the phone:
 //
-//   "THE ADD SONGS POPUP ISNT SHOWING IN CLOUD MODE JUST MAKE IT ICONS ON THE BOTTOM
-//    IS A SMALL BOTTOM RIGHT STAIRCASE. THE SIMPLIFIED NOW BAR SHOULD COVER THE
-//    BOTTOM NOT PROTRUDE LIKE IT IS NOW."
+//   "THE CIRCLES NEED TO BE MORE WELL OPTIMIZED THINGS ARE LOOKING WEIRD AND TABS
+//    SHOULD LEGIT JUST BE ICONS ... SHOULD KIND OF CURVE UP BUT NICELY, IT'S NOT
+//    SMOOTH AT ALL IN THIS MODE LIKE IT SHOULD BE AND IN THE NOW BAR THERE SHOULD BE
+//    LYRICS OPTIONS STILL, IN ALBUMS AND PLAYLISTS A WHOLE PART GETS LIKE TURNS
+//    THEME MATCHING BLUE AT THE BOTTOM WHICH WASTES SPACE."
 //
-// This file answers for what replaced them, read straight out of index.html: five
-// 46px treads joined edge to edge in the bottom right corner, one riser a step,
-// standing on a bar that is bottom-zero and full width, and a sheet that is a
-// screen-level panel above that bar with its own X, Escape and backdrop.
+// This file answers for what replaced them, read straight out of index.html: the
+// two-column circle grid whose contents are a column (so the icon is never on the
+// value), five equal icon tiles lifted along a curve with one painted glyph each,
+// the lyrics button in #npControls wired to the same #lyricsBtn, and the views that
+// now reserve the bar rather than the bar plus the whole rail.
 //
 //   node dev/staircase-check.cjs
 const fs = require('fs');
@@ -28,162 +28,133 @@ function ok(cond, label) {
 }
 const count = (hay, needle) => hay.split(needle).length - 1;
 
-const start = src.indexOf('9. 80.1: a small flight in the corner');
-const sheetStart = src.indexOf('10. 80.1: the add-songs sheet');
+const start = src.indexOf('/* ---------- 11. 80.2: the cloud layout, tidied');
 const wideStart = src.indexOf('/* ---------- 5. Bigger screens');
-const flight = start > 0 ? src.slice(start, sheetStart > start ? sheetStart : wideStart) : '';
-const sheet = sheetStart > 0 && wideStart > sheetStart ? src.slice(sheetStart, wideStart) : '';
-// The one rule that sizes all five treads, from its first selector to the label rule.
-const groupFrom = flight.indexOf('body.sc80-cloud .action-strip > #homeBtn,\nbody.sc80-cloud .action-strip > #libraryBtn,');
-const groupTo = flight.indexOf('body.sc80-cloud .action-strip > button span');
-const group = groupFrom > 0 && groupTo > groupFrom ? flight.slice(groupFrom, groupTo) : '';
-const barFrom = flight.indexOf('body.sc80-cloud #nowPlaying{');
-const barTo = flight.indexOf('/* THE FLIGHT.');
-const bar = barFrom > 0 && barTo > barFrom ? flight.slice(barFrom, barTo) : '';
-const icons = (flight.match(/--sc89-icon: url\(/g) || []).length;
+const block = start > 0 ? src.slice(start, wideStart > start ? wideStart : start + 30000) : '';
+const flight = (() => {
+  const a = block.indexOf('/* 2. THE FLIGHT.');
+  const b = block.indexOf('/* 3. LYRICS');
+  return a > 0 && b > a ? block.slice(a, b) : '';
+})();
+const wall = (() => {
+  const a = block.indexOf('/* 1. THE WALL.');
+  const b = block.indexOf('/* 2. THE FLIGHT.');
+  return a > 0 && b > a ? block.slice(a, b) : '';
+})();
+const tabbar = (() => {
+  const a = block.indexOf('/* 3. LYRICS');
+  const b = block.indexOf('/* 4. THE BAND');
+  return a > 0 && b > a ? block.slice(a, b) : '';
+})();
+const band = (() => {
+  const a = block.indexOf('/* 4. THE BAND');
+  return a > 0 ? block.slice(a) : '';
+})();
+const icons = (flight.match(/--sc89-icon:url\(/g) || []).length;
 
-console.log('[1] the flight is a small rail in the bottom right corner');
+console.log('[1] the wall is a grid of circles, and a bubble holds its own words');
 {
-  ok(start > 0 && sheetStart > start && flight.length > 2500,
-    'the 80.1 flight block is in the page (' + flight.length + ' chars)');
-  ok(flight.indexOf('right: 10px;') > 0 && flight.indexOf('left: auto;') > 0,
-    'the rail is pinned to the right, not stretched across the width');
-  ok(flight.indexOf('bottom: var(--sc10-bar);') > 0,
-    'and stands on the bar, not over the wall');
-  ok(flight.indexOf('width: auto; max-width: none; height: var(--sc10-rail);') > 0,
-    'it is as wide as its treads and no wider');
-  ok(flight.indexOf('flex-direction: row;') > 0 && flight.indexOf('align-items: flex-end;') > 0,
-    'the treads are a row resting on one floor line');
-  ok(flight.indexOf('justify-content: flex-end;') > 0, 'and the row ends at the right edge');
-  ok(flight.indexOf('gap: 0;') > 0, 'the treads are joined - no gap in the flight');
-  ok(flight.indexOf('background: none;') > 0 && flight.indexOf('box-shadow: none;') > 0 &&
-     flight.indexOf('border: none; border-radius: 0;') > 0,
-    'the rail paints nothing of its own');
-  ok(flight.indexOf('pointer-events: none;') > 0,
-    'and takes no taps itself, so the wall is still the wall');
-  ok(flight.indexOf('--sc10-tread: 46px;') > 0 && flight.indexOf('--sc10-rise: 10px;') > 0,
-    'a tread is 46px wide and a riser 10px');
-  ok(flight.indexOf('--sc10-rail: calc(var(--sc10-tread) + var(--sc10-rise) * 4);') > 0,
-    'and the rail is exactly four risers above the first tread');
+  ok(start > 0 && block.length > 4000, 'the 80.2 block is in the page (' + block.length + ' chars)');
+  ok(wall.indexOf('grid-template-columns:repeat(2, minmax(0, 1fr));') > 0,
+    'the wall is two equal columns');
+  ok(wall.indexOf('aspect-ratio:1 / 1;') > 0, 'and every bubble is a square box turned into a circle');
+  ok(wall.indexOf('grid-column:auto;') > 0,
+    'a "wide" or "tall" bubble in the cloud wall is still ONE cell, not a full-width circle');
+  ok(wall.indexOf('display:flex; flex-direction:column;') > 0,
+    'the bubble content is a column');
+  ok(wall.indexOf('position:static; top:auto; left:auto;') > 0 && wall.indexOf('transform:none;') > 0,
+    'the icon is a flex item, not an absolute layer over the value');
+  ok(wall.indexOf('-webkit-line-clamp:2;') > 0, 'the label is clamped to two lines');
+  ok(wall.indexOf('animation:none;') > 0, 'and the six bubbles stop floating forever');
+  ok(wall.indexOf('.hb-hint{ display:none; }') > 0, 'the second resize hint is gone');
+  ok(wall.indexOf('.hb-miniplay{') > 0 && wall.indexOf('order:9;') > 0,
+    'the play button sits under the label, not on it');
+  ok(wall.indexOf('#sc80CloudCtl{') > 0 && wall.indexOf('position:static;') > 0,
+    'the bell, refresh and gear sit under the label too');
+  ok(wall.indexOf('@media (min-width:600px)') > 0 && wall.indexOf('@media (min-width:900px)') > 0,
+    'a tablet gets three and four to a row');
 }
 
-console.log('[2] five treads, one riser apart, the plus closing the flight');
+console.log('[2] the flight is five icon tiles lifted along a curve');
 {
-  ok(flight.indexOf('body.sc80-cloud .action-strip > #homeBtn{\n  height: var(--sc10-tread);') > 0,
-    'the first tread is one tread tall');
-  ok(flight.indexOf('#libraryBtn{ height: calc(var(--sc10-tread) + var(--sc10-rise)); }') > 0,
-    'the second is one riser above it');
-  ok(flight.indexOf('#discoverBtn{ height: calc(var(--sc10-tread) + var(--sc10-rise) * 2); }') > 0,
-    'the third two');
-  ok(flight.indexOf('#studioBtn{ height: calc(var(--sc10-tread) + var(--sc10-rise) * 3); }') > 0,
-    'the fourth three');
-  ok(flight.indexOf('#dockAddBtn{\n  height: calc(var(--sc10-tread) + var(--sc10-rise) * 4);') > 0,
-    'and the plus closes the flight, four risers up');
-  ok(flight.indexOf('border-radius: 14px 0 0 0;') > 0 && flight.indexOf('border-radius: 0 14px 0 0;') > 0,
-    'the flight is rounded at its own two outer corners, not at every step');
-  ok(group.indexOf('margin: 0;') > 0,
-    'the old corner column\'s sideways margins are cancelled, so the treads touch');
-  ok(group.indexOf('flex: 0 0 var(--sc10-tread);') > 0 &&
-     group.indexOf('width: var(--sc10-tread); min-height: 0;') > 0,
-    'one tread, one size, whatever the tab holds');
-  ok(group.indexOf('font-size: 0;') > 0, 'no word is painted on a tread');
-  ok(flight.indexOf('border-top-color: color-mix(in srgb, var(--ink) 26%, transparent);') > 0,
-    'each tread carries a lit hairline along its top edge');
-  ok(flight.indexOf('filter: brightness(1.08);') > 0, 'and presses with a small lift, not a jump');
+  ok(flight.length > 900, 'the flight block is in the page (' + flight.length + ' chars)');
+  ok(flight.indexOf('--sc11-tile:44px;') > 0 && flight.indexOf('--sc11-gap:8px;') > 0,
+    'one tile is 44px and the gap 8px');
+  ok(flight.indexOf('gap:var(--sc11-gap);') > 0 && flight.indexOf('align-items:flex-end;') > 0,
+    'the tiles stand on one floor line with equal gaps');
+  ok(flight.indexOf('#libraryBtn{ transform:translateY(-6px); }') > 0 &&
+     flight.indexOf('#discoverBtn{ transform:translateY(-16px); }') > 0 &&
+     flight.indexOf('#studioBtn{ transform:translateY(-28px); }') > 0 &&
+     flight.indexOf('#dockAddBtn{ transform:translateY(-42px); }') > 0,
+    'the lift is a curve - 0, 6, 16, 28, 42px - not a set of equal steps');
+  ok(flight.indexOf('border-radius:16px;') > 0, 'a tile is a rounded square');
+  ok(flight.indexOf('background:color-mix(in srgb, var(--bg-raised) 94%, #000);') > 0,
+    'and a solid surface, not a blur');
+  ok(flight.indexOf('backdrop-filter:none;') > 0, 'no per-tile backdrop blur');
+  ok(icons === 2, 'two tab glyphs are declared in this block - library and studio (' + icons + ')');
+  ok(flight.indexOf('position:absolute; left:50%; top:50%;') > 0 &&
+     flight.indexOf('transform:translate(-50%,-50%);') > 0,
+    'each tab paints ONE glyph, centred, over whatever the button holds');
+  ok(flight.indexOf('#libraryBtn > div,') > 0 && flight.indexOf('opacity:0;') > 0,
+    'the split treads keep their taps and stop painting their two icons');
+  ok(flight.indexOf('--sc11-tile:44px') > 0 && flight.indexOf('flex:0 0 var(--sc11-tile);') > 0,
+    'one tile, one size, whatever the tab holds');
+  ok(flight.indexOf('body.sc80-cloud .action-strip::before{') > 0,
+    'a soft scrim sits under the flight so the list fades into it');
+  ok(src.indexOf("body.sc80-cloud #homeBtn{\n  --sc89-icon: url(") > 0 ||
+     src.indexOf('body.sc80-cloud #discoverBtn{') > 0,
+    'the home and discover glyphs are still the ones the tab block declares');
 }
 
-console.log('[3] the tabs are icons, and the split treads keep their cut');
+console.log('[3] the split treads are still two tabs, and the labels are still there');
 {
-  ok(icons === 6, 'six icon masks: home, discover and the four halves (' + icons + ')');
-  ok(flight.indexOf('width: 22px; height: 22px;') > 0, 'a full tread paints its icon at 22px');
-  ok(flight.indexOf('-webkit-mask-size: 16px 16px;') > 0, 'a split half paints its own at 16px');
-  ok(flight.indexOf('mask-image: var(--sc89-icon);') > 0, 'as a mask, so the glyph takes currentColor');
-  ok(flight.indexOf('#homeBtn.active,') > 0 && flight.indexOf('background: var(--coral);') > 0,
-    'the tab you are on is filled coral');
-  ok(flight.indexOf('#playlistsHalf.active-half,') > 0,
-    'and the half you are in is marked inside a split tread');
-  ok(flight.indexOf('#playlistsHalf{ justify-content: flex-start !important; }') > 0 &&
-     flight.indexOf('#albumsHalf{ justify-content: flex-end !important; }') > 0,
-    'the two halves sit side by side at the middle of the tread');
-  ok(flight.indexOf('align-items: center !important;') > 0,
-    'both icons at the same height, not one at each far corner');
-  ok(flight.indexOf('#scDockPillTrack,') > 0 && flight.indexOf('display: none !important;') > 0,
-    'the classic dock\'s sliding capsule is not drawn across the flight');
+  ok(src.indexOf('#playlistsHalf{') > 0 && src.indexOf('#albumsHalf{') > 0,
+    'Library still has its two halves');
+  ok(src.indexOf('#studioHalf{') > 0 && src.indexOf('#toolsHalf{') > 0,
+    'Studio still has its two halves');
+  ok(src.indexOf('body.sc80-cloud .action-strip > button span{ font-size: 0 !important; }') > 0,
+    'no word is painted on a tile');
 }
 
-console.log('[4] the bar covers the bottom');
+console.log('[4] lyrics is back in the bar');
 {
-  ok(bar.length > 400, 'the bar block is in the page (' + bar.length + ' chars)');
-  ok(bar.indexOf('left: 0; right: 0; bottom: 0;') > 0,
-    'the bar is flush with the bottom edge, not lifted above it');
-  ok(bar.indexOf('width: 100%; max-width: none;') > 0, 'and spans the whole width');
-  ok(bar.indexOf('height: var(--sc10-bar); min-height: var(--sc10-bar);') > 0,
-    'its height is the row plus the phone\'s inset');
-  ok(bar.indexOf('border-radius: 0;') > 0, 'no floating corners');
-  ok(bar.indexOf('border: 0;') > 0, 'and no border to sit inside its own height');
-  ok(flight.indexOf('--sc10-bar: calc(var(--sc10-row) + env(safe-area-inset-bottom));') > 0,
-    'the inset is part of the bar, not a strip of page under it');
-  ok(bar.indexOf('padding-bottom: env(') === -1 && bar.indexOf('padding: 0 12px env(') === -1,
-    'and the bar does not reserve that inset a second time in its padding');
-  ok(bar.indexOf('flex: 0 0 var(--sc10-row); height: var(--sc10-row);') > 0,
-    'the row is the top sixty pixels of the bar');
-  ok(bar.indexOf('display: none;'.repeat(1)) > 0 && bar.indexOf('#npControls #shuffleBtn,') > 0,
-    'Shuffle and Repeat are off the bar (they are in the ... menu)');
-  ok(bar.indexOf('text-overflow: ellipsis; white-space: nowrap;') > 0,
-    'a long title ends in an ellipsis instead of shoving the transport');
-  ok(bar.indexOf('height: 3px;') > 0, 'the scrub hairline is thinner than a thumb and part of the bar');
-  ok(src.indexOf("label: 'DJ Mode'") > 0 && src.indexOf("$('djModeBtn').click()") > 0,
-    'DJ Mode is still answered in the ... menu, wired to the same button');
+  ok(src.indexOf("b.id = 'sc11Lyrics';") > 0, 'the page creates the button and names it');
+  ok(src.indexOf("var pill = document.getElementById('lyricsBtn');") > 0,
+    'and it clicks the same LYRICS pill the bar used to show');
+  ok(src.indexOf("menu.parentNode.insertBefore(b, menu);") > 0,
+    'it is placed before the ... menu, inside #npControls');
+  ok(tabbar.indexOf('#sc11Lyrics{') > 0 && tabbar.indexOf('display:none;') > 0,
+    'it is hidden in the classic layout');
+  ok(tabbar.indexOf('body.sc80-cloud #npControls #sc11Lyrics{ display:flex; }') > 0,
+    'and shown in the cloud bar');
+  ok(src.indexOf("if(pill) pill.click();") > 0, 'the click is forwarded, not reimplemented');
 }
 
-console.log('[5] the add-songs sheet is above the bar, and closes four ways');
+console.log('[5] the band of theme colour under the lists is gone');
 {
-  ok(sheet.length > 600, 'the sheet block is in the page (' + sheet.length + ' chars)');
-  ok(sheet.indexOf('position: fixed;') > 0 && sheet.indexOf('bottom: calc(var(--sc10-bar) + 10px);') > 0,
-    'the sheet is fixed above the bar, not a screen above the top edge');
-  ok(sheet.indexOf('z-index: 400;') > 0 && sheet.indexOf('z-index: 399;') > 0,
-    'the sheet and its backdrop are screen-level layers');
-  ok(sheet.indexOf('body.sc80-cloud #addSongsMenu.open{ display: flex; opacity: 1;') > 0,
-    'it opens by becoming visible, and rises into place');
-  ok(sheet.indexOf('overscroll-behavior: contain;') > 0, 'and it does not drag the page behind it');
-  ok(sheet.indexOf('body.sc80-cloud .add-songs-close{') > 0, 'it has a close button of its own');
-  ok(sheet.indexOf('flex-direction: row; align-items: center; justify-content: flex-start;') > 0,
-    'its rows read left to right, as rows');
-  ok(sheet.indexOf('#addSongsMenu .action-pill.primary{') > 0, 'with the first one still coral');
-  ok(src.indexOf('id="addSongsClose"') > 0 && src.indexOf('class="add-songs-head"') > 0,
-    'the close button is in the sheet markup');
-  ok(src.indexOf("['addSongsMenu','addSongsBackdrop'].forEach(function(id){") > 0,
-    'and the script moves the sheet and its backdrop to <body>');
-  ok(src.indexOf("var x = $('addSongsClose');") > 0 && src.indexOf("if(x) x.addEventListener('click', closeAddSongsMenu);") > 0,
-    'the X is wired to the sheet\'s own close');
-  ok(src.indexOf("ev.key === 'Escape' || ev.key === 'Esc'") > 0,
-    'Escape closes it');
-  ok(src.indexOf("ev.target.closest('button')") > 0,
-    'and making a choice closes it once the choice is made');
-  ok(src.indexOf('prefers-reduced-motion: reduce') > 0 && sheet.indexOf('transition: none;') > 0,
-    'with no entrance animation for anyone who asked for less motion');
+  ok(band.indexOf('padding-bottom:calc(var(--sc10-bar) + 12px);') > 0,
+    'the views reserve the bar and 12px, not the bar plus the whole rail');
+  ok(band.indexOf('scroll-padding-bottom:calc(var(--sc10-bar) + 12px);') > 0,
+    'and a focused row still does not land behind the bar');
+  ok(band.indexOf('padding-right:0;') > 0, 'the old dock strip is not reserved either');
+  ok(band.indexOf('--sc10-rail') === -1, 'no view reserves the rail any more');
+  ok(band.indexOf('body.sc80-cloud #nowPlaying{') > 0 && band.indexOf('blur(10px)') > 0,
+    'and the bar carries less blur to recompute while the list scrolls');
 }
 
-console.log('[6] the views make room for the flight, and this is the release');
+console.log('[6] the release, the cache and the sheet are where 80.1 left them');
 {
-  ok(flight.indexOf('padding-bottom: calc(var(--sc10-bar) + var(--sc10-rail) + 16px);') > 0,
-    'every scrolling view reserves the bar, the flight and a little air');
-  ok(flight.indexOf('scroll-padding-bottom: calc(var(--sc10-bar) + var(--sc10-rail) + 16px);') > 0,
-    'and a focused row does not land behind it');
-  ok(count(src, "const APP_VERSION = '80.1';") === 1, 'APP_VERSION = 80.1, once');
-  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.1';") !== -1, 'the shell cache is the release number');
-  ok(count(src, "version: '80.1'") === 1, 'and the changelog has one 80.1 entry');
-  ok(src.indexOf("title: 'The plus works, the flight is small, the bar covers the bottom'") > 0,
+  ok(count(src, "const APP_VERSION = '80.2';") === 1, 'APP_VERSION = 80.2, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.2'") === 1, 'and the changelog has one 80.2 entry');
+  ok(src.indexOf("title: 'Round bubbles that hold their words, a curve of icon tabs, and Lyrics back in the bar'") > 0,
     'whose title is the release title');
-  ok(src.indexOf('the widget, the player, the letter covers, the lyrics view and the album pill dock') > 0,
+  ok(src.indexOf('the letter covers, the lyrics view and the album pill dock are where 80.1 left them') > 0,
     'and whose notes say what did not move');
-  // The sheet's handlers are shared with the classic layout, which must not notice.
-  ok(count(src, "$('addSongsBackdrop').addEventListener('click', closeAddSongsMenu);") === 1,
-    'the classic dock\'s own backdrop handler is still there, once');
-  ok(src.indexOf('body.sc80-cloud #addSongsMenu{') > 0, 'the new sheet is scoped to the cloud layout');
-  const classic = src.indexOf('body.sc80-cloud #addSongsMenu{');
-  ok(classic > 0 && src.slice(0, classic).indexOf('body:not(.sc80-cloud) #addSongsMenu') === -1,
-    'so the classic layout keeps the centred sheet it always had');
+  ok(src.indexOf('body.sc80-cloud #addSongsMenu.open{ display: flex; opacity: 1;') > 0,
+    'the add-songs sheet from 80.1 is untouched');
+  ok(src.indexOf('bottom: calc(var(--sc10-bar) + 10px);') > 0,
+    'and still sits above the bar');
 }
 
 console.log('');
