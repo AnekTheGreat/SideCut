@@ -29,7 +29,7 @@ function ok(cond, name, extra) {
   else { fail++; console.log('  \u2717 ' + name + (extra !== undefined ? '  [' + JSON.stringify(extra) + ']' : '')); }
 }
 
-const VER = '80.0.10';
+const VER = '80.1';
 const PREV = '80.0.9';
 
 const TRACKS = [
