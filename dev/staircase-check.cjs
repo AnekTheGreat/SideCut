@@ -1,236 +1,191 @@
-// 80.0.9 - THE STAIRCASE ACROSS THE WIDTH, AND THE MINI PLAYER UNDER IT.
+// 80.0.10 - A SMALL FLIGHT IN THE CORNER, A BAR THAT COVERS THE BOTTOM, AND THE
+// ADD-SONGS SHEET ABOVE THE PLUS.
 //
-// 80.0.5 to 80.0.8 stacked the four tabs in the bottom right corner and nudged
-// each one sideways: four pills in a heap. The owner's words on that heap were
-// "WHY IS A CHUNK IT SHOULD SPREAD OUT LIKE A NICE STAIRCASE", and the bar under
-// it was "a console made smaller", not a simpler now bar.
+// 80.0.9 answered "make the tabs icons" with five treads across the WHOLE width,
+// each a riser taller than the one before - a band with steps standing on the bubble
+// grid - and it kept the old dock rule that opened the add-songs sheet a full screen
+// above the top edge. The owner's reply was:
+//
+//   "THE ADD SONGS POPUP ISNT SHOWING IN CLOUD MODE JUST MAKE IT ICONS ON THE BOTTOM
+//    IS A SMALL BOTTOM RIGHT STAIRCASE. THE SIMPLIFIED NOW BAR SHOULD COVER THE
+//    BOTTOM NOT PROTRUDE LIKE IT IS NOW."
 //
 // This file answers for what replaced them, read straight out of index.html: five
-// treads, edge to edge, across the whole width, each one a riser taller than the
-// one on its left and all standing on the top of the bar, so the top of the row is
-// a flight climbing to the plus; a tab per tread as an icon; and a sixty-pixel mini
-// player with a drag-to-seek hairline - with Shuffle, Repeat and DJ Mode answered
-// in the menu the bar still shows, not dropped.
+// 46px treads joined edge to edge in the bottom right corner, one riser a step,
+// standing on a bar that is bottom-zero and full width, and a sheet that is a
+// screen-level panel above that bar with its own X, Escape and backdrop.
 //
 //   node dev/staircase-check.cjs
 const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
 let pass = 0, fail = 0;
 function ok(cond, label) {
   if (cond) { pass += 1; console.log('  PASS ' + label); }
   else { fail += 1; console.log('  FAIL ' + label); }
 }
+const count = (hay, needle) => hay.split(needle).length - 1;
 
-const railStart = src.indexOf('9. 80.0.9: the flight, built across the whole width');
-const barStart = src.indexOf('10. 80.0.9: the cloud bar is one slim row');
-const wideStart = src.indexOf('/* ---------- 5. Bigger screens', barStart > 0 ? barStart : 0);
-const rail = railStart > 0 && barStart > railStart ? src.slice(railStart, barStart) : '';
-const bar = barStart > 0 && wideStart > barStart ? src.slice(barStart, wideStart) : '';
-const icons = (rail.match(/--sc89-icon: url\(/g) || []).length;
-// The one rule that sizes all five treads, from its first selector to the heights
-// that follow it.
-const groupFrom = rail.indexOf('body.sc80-cloud .action-strip > #homeBtn,\nbody.sc80-cloud .action-strip > #libraryBtn,');
-const groupTo = rail.indexOf('/* THE HEIGHTS, ONE RISER APART.');
-const group = groupFrom > 0 && groupTo > groupFrom ? rail.slice(groupFrom, groupTo) : '';
+const start = src.indexOf('9. 80.0.10: a small flight in the corner');
+const sheetStart = src.indexOf('10. 80.0.10: the add-songs sheet');
+const wideStart = src.indexOf('/* ---------- 5. Bigger screens');
+const flight = start > 0 ? src.slice(start, sheetStart > start ? sheetStart : wideStart) : '';
+const sheet = sheetStart > 0 && wideStart > sheetStart ? src.slice(sheetStart, wideStart) : '';
+// The one rule that sizes all five treads, from its first selector to the label rule.
+const groupFrom = flight.indexOf('body.sc80-cloud .action-strip > #homeBtn,\nbody.sc80-cloud .action-strip > #libraryBtn,');
+const groupTo = flight.indexOf('body.sc80-cloud .action-strip > button span');
+const group = groupFrom > 0 && groupTo > groupFrom ? flight.slice(groupFrom, groupTo) : '';
+const barFrom = flight.indexOf('body.sc80-cloud #nowPlaying{');
+const barTo = flight.indexOf('/* THE FLIGHT.');
+const bar = barFrom > 0 && barTo > barFrom ? flight.slice(barFrom, barTo) : '';
+const icons = (flight.match(/--sc89-icon: url\(/g) || []).length;
 
-console.log('[1] the rail is one row across the whole width');
+console.log('[1] the flight is a small rail in the bottom right corner');
 {
-  ok(railStart > 0 && barStart > railStart && rail.length > 2000,
-    'the 80.0.9 rail block is in the page (' + rail.length + ' chars)');
-  ok(rail.indexOf('left: 0; right: 0;') > 0, 'it spans the screen edge to edge');
-  ok(rail.indexOf('bottom: var(--sc89-bar);') > 0,
-    'and sits on the bar, not over the wall');
-  ok(rail.indexOf('flex-direction: row;') > 0, 'the tabs are a row, not a column');
-  ok(rail.indexOf('align-items: flex-end;') > 0, 'resting on one floor line');
-  ok(rail.indexOf('justify-content: flex-start;') > 0 && group.indexOf('flex: 1 1 0;') > 0,
-    'the treads fill the width between them, so they are not a heap');
-  ok(rail.indexOf('width: 100%; max-width: 760px;') > 0,
-    'full width on a phone, the bar\u2019s own 760px band on a computer');
-  ok(rail.indexOf('background: none;') > 0 && rail.indexOf('box-shadow: none;') > 0 &&
-     rail.indexOf('border: none; border-radius: 0;') > 0,
-    'the rail paints nothing: no panel, no border, no shadow');
-  ok(rail.indexOf('pointer-events: none;') > 0 && group.indexOf('pointer-events: auto;') > 0,
-    'and it takes no taps itself; the treads do');
-  ok(rail.indexOf('.action-strip > #addSongsMenu,') > 0 &&
-     rail.indexOf('#addSongsBackdrop{ pointer-events: auto; }') > 0,
-    'the menu inside it is still touchable');
-  ok(rail.indexOf('body.sc80-cloud #scDockPillTrack,\nbody.sc80-cloud #scDockPillThumb{ display: none !important; }') > 0,
-    'the joined-dock capsule of the classic row is not drawn across the flight');
+  ok(start > 0 && sheetStart > start && flight.length > 2500,
+    'the 80.0.10 flight block is in the page (' + flight.length + ' chars)');
+  ok(flight.indexOf('right: 10px;') > 0 && flight.indexOf('left: auto;') > 0,
+    'the rail is pinned to the right, not stretched across the width');
+  ok(flight.indexOf('bottom: var(--sc10-bar);') > 0,
+    'and stands on the bar, not over the wall');
+  ok(flight.indexOf('width: auto; max-width: none; height: var(--sc10-rail);') > 0,
+    'it is as wide as its treads and no wider');
+  ok(flight.indexOf('flex-direction: row;') > 0 && flight.indexOf('align-items: flex-end;') > 0,
+    'the treads are a row resting on one floor line');
+  ok(flight.indexOf('justify-content: flex-end;') > 0, 'and the row ends at the right edge');
+  ok(flight.indexOf('gap: 0;') > 0, 'the treads are joined - no gap in the flight');
+  ok(flight.indexOf('background: none;') > 0 && flight.indexOf('box-shadow: none;') > 0 &&
+     flight.indexOf('border: none; border-radius: 0;') > 0,
+    'the rail paints nothing of its own');
+  ok(flight.indexOf('pointer-events: none;') > 0,
+    'and takes no taps itself, so the wall is still the wall');
+  ok(flight.indexOf('--sc10-tread: 46px;') > 0 && flight.indexOf('--sc10-rise: 10px;') > 0,
+    'a tread is 46px wide and a riser 10px');
+  ok(flight.indexOf('--sc10-rail: calc(var(--sc10-tread) + var(--sc10-rise) * 4);') > 0,
+    'and the rail is exactly four risers above the first tread');
 }
 
-console.log('[2] five steps, each one higher than the one on its left');
+console.log('[2] five treads, one riser apart, the plus closing the flight');
 {
-  const steps = [
-    ['#homeBtn', 'height: var(--sc89-tread); margin: 0;'],
-    ['#libraryBtn', 'height: calc(var(--sc89-tread) + var(--sc89-step)); margin: 0;'],
-    ['#discoverBtn', 'height: calc(var(--sc89-tread) + var(--sc89-step) * 2); margin: 0;'],
-    ['#studioBtn', 'height: calc(var(--sc89-tread) + var(--sc89-step) * 3); margin: 0;'],
-    ['#dockAddBtn', 'height: calc(var(--sc89-tread) + var(--sc89-step) * 4); margin: 0;'],
-  ];
-  for (const [id, decl] of steps) {
-    ok(rail.indexOf('.action-strip > ' + id + '{ ' + decl) > 0, id + ' is one riser above the tab on its left');
-  }
-  ok(/--sc89-step: 15px;/.test(rail), 'the riser is one variable, 15px on a phone');
-  ok(/--sc89-rail: calc\(var\(--sc89-tread\) \+ var\(--sc89-step\) \* 4\);/.test(rail),
-    'and the rail is the tallest tread: the first step plus four risers');
-  ok(group.indexOf('align-self: flex-end;') > 0,
-    'every tread stands on the bar, so their bottoms are one line');
-  ok(/--sc89-step: 18px; --sc89-tread: 60px;/.test(rail), 'a computer gets a taller flight, not a shorter one');
-  ok((rail.match(/margin: 0;/g) || []).length >= 5,
-    'the old column\u2019s sideways nudges are cancelled, one ID at a time');
+  ok(flight.indexOf('body.sc80-cloud .action-strip > #homeBtn{\n  height: var(--sc10-tread);') > 0,
+    'the first tread is one tread tall');
+  ok(flight.indexOf('#libraryBtn{ height: calc(var(--sc10-tread) + var(--sc10-rise)); }') > 0,
+    'the second is one riser above it');
+  ok(flight.indexOf('#discoverBtn{ height: calc(var(--sc10-tread) + var(--sc10-rise) * 2); }') > 0,
+    'the third two');
+  ok(flight.indexOf('#studioBtn{ height: calc(var(--sc10-tread) + var(--sc10-rise) * 3); }') > 0,
+    'the fourth three');
+  ok(flight.indexOf('#dockAddBtn{\n  height: calc(var(--sc10-tread) + var(--sc10-rise) * 4);') > 0,
+    'and the plus closes the flight, four risers up');
+  ok(flight.indexOf('border-radius: 14px 0 0 0;') > 0 && flight.indexOf('border-radius: 0 14px 0 0;') > 0,
+    'the flight is rounded at its own two outer corners, not at every step');
+  ok(group.indexOf('margin: 0;') > 0,
+    'the old corner column\'s sideways margins are cancelled, so the treads touch');
+  ok(group.indexOf('flex: 0 0 var(--sc10-tread);') > 0 &&
+     group.indexOf('width: var(--sc10-tread); min-height: 0;') > 0,
+    'one tread, one size, whatever the tab holds');
+  ok(group.indexOf('font-size: 0;') > 0, 'no word is painted on a tread');
+  ok(flight.indexOf('border-top-color: color-mix(in srgb, var(--ink) 26%, transparent);') > 0,
+    'each tread carries a lit hairline along its top edge');
+  ok(flight.indexOf('filter: brightness(1.08);') > 0, 'and presses with a small lift, not a jump');
 }
 
-console.log('[3] the bar has one height, and nothing has to be measured for it');
+console.log('[3] the tabs are icons, and the split treads keep their cut');
 {
-  ok(/--sc89-bar: calc\(60px \+ env\(safe-area-inset-bottom\)\);/.test(rail),
-    'the bar is sixty pixels, plus the phone\u2019s own inset, declared once');
-  ok(rail.indexOf('bottom: var(--sc89-bar);') > 0, 'the rail reads it');
-  ok(bar.indexOf('height: var(--sc89-bar);') > 0 && bar.indexOf('min-height: var(--sc89-bar);') > 0,
-    'and so does the bar it sits on');
-  // 80.0.5 to 80.0.8 positioned the rail off --sc80-player, a number JS wrote on the
-  // first frame after a layout change. In a browser that never ran that write the
-  // number stayed at its fallback and the rail floated 52px above the bar - the same
-  // drift the owner photographed, from the same cause. Nothing in this release reads it.
-  ok(rail.indexOf('var(--sc80-player)') === -1,
-    'and the rail no longer reads the measured variable at all');
-  ok(bar.indexOf('env(safe-area-inset-bottom)') === -1,
-    'no #nowPlaying rule carries a padding and an env() together (dev/test-705 counts those)');
-  ok(src.indexOf('new ResizeObserver(writePlayerHeight).observe(np)') > 0,
-    'the bar is still measured, for the classic layout\u2019s own dock');
+  ok(icons === 6, 'six icon masks: home, discover and the four halves (' + icons + ')');
+  ok(flight.indexOf('width: 22px; height: 22px;') > 0, 'a full tread paints its icon at 22px');
+  ok(flight.indexOf('-webkit-mask-size: 16px 16px;') > 0, 'a split half paints its own at 16px');
+  ok(flight.indexOf('mask-image: var(--sc89-icon);') > 0, 'as a mask, so the glyph takes currentColor');
+  ok(flight.indexOf('#homeBtn.active,') > 0 && flight.indexOf('background: var(--coral);') > 0,
+    'the tab you are on is filled coral');
+  ok(flight.indexOf('#playlistsHalf.active-half,') > 0,
+    'and the half you are in is marked inside a split tread');
+  ok(flight.indexOf('#playlistsHalf{ justify-content: flex-start !important; }') > 0 &&
+     flight.indexOf('#albumsHalf{ justify-content: flex-end !important; }') > 0,
+    'the two halves sit side by side at the middle of the tread');
+  ok(flight.indexOf('align-items: center !important;') > 0,
+    'both icons at the same height, not one at each far corner');
+  ok(flight.indexOf('#scDockPillTrack,') > 0 && flight.indexOf('display: none !important;') > 0,
+    'the classic dock\'s sliding capsule is not drawn across the flight');
 }
 
-console.log('[4] the views and the menu know the flight is there');
+console.log('[4] the bar covers the bottom');
 {
-  ok(rail.indexOf('padding-bottom: calc(var(--sc89-bar) + var(--sc89-rail));') > 0,
-    'every view reserves the bar and the flight above it');
-  ok(rail.indexOf('--sc89-rail: calc(var(--sc89-tread) + var(--sc89-step) * 4);') > 0,
-    'and the flight has one height, not a guess per view');
-  ok(src.indexOf('bottom: calc(100% + 10px);') > 0, 'the add-songs menu still opens above it');
-  ok(src.indexOf('padding-top: 10px; padding-right: 0;') > 0,
-    'the old top bar\u2019s band is still not reserved in this layout');
+  ok(bar.length > 400, 'the bar block is in the page (' + bar.length + ' chars)');
+  ok(bar.indexOf('left: 0; right: 0; bottom: 0;') > 0,
+    'the bar is flush with the bottom edge, not lifted above it');
+  ok(bar.indexOf('width: 100%; max-width: none;') > 0, 'and spans the whole width');
+  ok(bar.indexOf('height: var(--sc10-bar); min-height: var(--sc10-bar);') > 0,
+    'its height is the row plus the phone\'s inset');
+  ok(bar.indexOf('border-radius: 0;') > 0, 'no floating corners');
+  ok(bar.indexOf('border: 0;') > 0, 'and no border to sit inside its own height');
+  ok(flight.indexOf('--sc10-bar: calc(var(--sc10-row) + env(safe-area-inset-bottom));') > 0,
+    'the inset is part of the bar, not a strip of page under it');
+  ok(bar.indexOf('padding-bottom: env(') === -1 && bar.indexOf('padding: 0 12px env(') === -1,
+    'and the bar does not reserve that inset a second time in its padding');
+  ok(bar.indexOf('flex: 0 0 var(--sc10-row); height: var(--sc10-row);') > 0,
+    'the row is the top sixty pixels of the bar');
+  ok(bar.indexOf('display: none;'.repeat(1)) > 0 && bar.indexOf('#npControls #shuffleBtn,') > 0,
+    'Shuffle and Repeat are off the bar (they are in the ... menu)');
+  ok(bar.indexOf('text-overflow: ellipsis; white-space: nowrap;') > 0,
+    'a long title ends in an ellipsis instead of shoving the transport');
+  ok(bar.indexOf('height: 3px;') > 0, 'the scrub hairline is thinner than a thumb and part of the bar');
+  ok(src.indexOf("label: 'DJ Mode'") > 0 && src.indexOf("$('djModeBtn').click()") > 0,
+    'DJ Mode is still answered in the ... menu, wired to the same button');
 }
 
-console.log('[5] bubbles: bigger on a phone, more per row on a computer');
+console.log('[5] the add-songs sheet is above the bar, and closes four ways');
 {
-  ok(src.indexOf('body.sc80-cloud #homeBubbles{ gap: 10px; }') > 0, 'the gap between two bubbles is 10px');
-  ok(src.indexOf('body.sc80-cloud .home-bubble{ width: calc(50% - 5px); padding: 14px; }') > 0,
-    'and two still fit on a phone row');
-  ok(/@media \(min-width: 900px\)/.test(src), 'a 900px window gets its own rules');
-  ok(src.indexOf('width: calc(33.333% - 7px)') > 0, 'three bubbles to a row there');
-  ok(/@media \(min-width: 1280px\)/.test(src), 'and a 1280px one');
-  ok(src.indexOf('width: calc(25% - 8px)') > 0, 'four to a row');
+  ok(sheet.length > 600, 'the sheet block is in the page (' + sheet.length + ' chars)');
+  ok(sheet.indexOf('position: fixed;') > 0 && sheet.indexOf('bottom: calc(var(--sc10-bar) + 10px);') > 0,
+    'the sheet is fixed above the bar, not a screen above the top edge');
+  ok(sheet.indexOf('z-index: 400;') > 0 && sheet.indexOf('z-index: 399;') > 0,
+    'the sheet and its backdrop are screen-level layers');
+  ok(sheet.indexOf('body.sc80-cloud #addSongsMenu.open{ display: flex; opacity: 1;') > 0,
+    'it opens by becoming visible, and rises into place');
+  ok(sheet.indexOf('overscroll-behavior: contain;') > 0, 'and it does not drag the page behind it');
+  ok(sheet.indexOf('body.sc80-cloud .add-songs-close{') > 0, 'it has a close button of its own');
+  ok(sheet.indexOf('flex-direction: row; align-items: center; justify-content: flex-start;') > 0,
+    'its rows read left to right, as rows');
+  ok(sheet.indexOf('#addSongsMenu .action-pill.primary{') > 0, 'with the first one still coral');
+  ok(src.indexOf('id="addSongsClose"') > 0 && src.indexOf('class="add-songs-head"') > 0,
+    'the close button is in the sheet markup');
+  ok(src.indexOf("['addSongsMenu','addSongsBackdrop'].forEach(function(id){") > 0,
+    'and the script moves the sheet and its backdrop to <body>');
+  ok(src.indexOf("var x = $('addSongsClose');") > 0 && src.indexOf("if(x) x.addEventListener('click', closeAddSongsMenu);") > 0,
+    'the X is wired to the sheet\'s own close');
+  ok(src.indexOf("ev.key === 'Escape' || ev.key === 'Esc'") > 0,
+    'Escape closes it');
+  ok(src.indexOf("ev.target.closest('button')") > 0,
+    'and making a choice closes it once the choice is made');
+  ok(src.indexOf('prefers-reduced-motion: reduce') > 0 && sheet.indexOf('transition: none;') > 0,
+    'with no entrance animation for anyone who asked for less motion');
 }
 
-console.log('[6] one motion set, and no layout animated');
+console.log('[6] the views make room for the flight, and this is the release');
 {
-  ok(/--sc-ease: cubic-bezier/.test(src), 'the easing curve is a theme variable');
-  ok(/--sc-ease-mid: 260ms;/.test(src), 'with one mid duration');
-  ok(group.indexOf('transition: background var(--sc-ease-mid) var(--sc-ease), color var(--sc-ease-mid) var(--sc-ease);') > 0,
-    'and the treads read it');
-  ok(!/transition:[^;]*\b(width|height|top|left|padding|margin)\b/.test(rail),
-    'nothing in the flight animates layout');
-}
-
-console.log('[7] the split tabs kept their cut');
-{
-  ok(src.indexOf('clip-path:polygon(0 0, 0 100%, 100% 100%)') > 0, 'Studio still owns the lower triangle');
-  ok(src.indexOf('clip-path:polygon(0 0, 100% 0, 100% 100%)') > 0, 'Tools the upper one');
-  ok(src.indexOf('<line x1="0" y1="0" x2="100%" y2="100%"') > 0,
-    'and the seam still runs top left to bottom right');
-}
-
-console.log('[8] one tread, one width, one piece of glass');
-{
-  ok(group.length > 200 && group.indexOf('#dockAddBtn{\n') > 0, 'one rule names all five treads');
-  ok(group.indexOf('flex: 1 1 0;') > 0, 'with flex 1 1 0, so the five share the width equally');
-  ok(group.indexOf('padding: 15px 0 0;') > 0, 'and one inset for the icon at the top of the step');
-  ok(group.indexOf('border-radius: 16px 16px 0 0;') > 0 && group.indexOf('border-bottom: 0;') > 0,
-    'open at the bottom, so a tread stands on the bar instead of floating over it');
-  ok(group.indexOf('border-top-color: color-mix(in srgb, var(--ink) 26%, transparent);') > 0,
-    'with the lit hairline that makes five treads read as one flight');
-  ok(group.indexOf('backdrop-filter: blur(18px)') > 0,
-    'each tread its own piece of glass');
-  // 80.0.5 shipped two of these tabs at 0px tall, and nothing saw it: a tile with no
-  // height still has its margin. The old bar's flex rules carry IDs, so they outrank
-  // a bare `> button` and gave the split tabs a HEIGHT with a basis of zero. The
-  // heights are written with the IDs for that reason.
-  ok((rail.match(/\.action-strip > #(?:homeBtn|libraryBtn|discoverBtn|studioBtn|dockAddBtn)\{ height:/g) || []).length === 5,
-    'and every height is written with the ID, so no older ID rule can flatten a tread');
-}
-
-console.log('[9] the tabs are icons');
-{
-  ok(rail.indexOf('body.sc80-cloud .action-strip > button span{ font-size: 0 !important; }') > 0,
-    'every label is zero point, so the tread is the icon');
-  ok(group.indexOf('font-size: 0;') > 0, 'the tread itself carries no text size');
-  ok(rail.indexOf('-webkit-mask-image: var(--sc89-icon);') > 0 &&
-     rail.indexOf('mask-image: var(--sc89-icon);') > 0,
-    'each icon is a mask, so one glyph takes the tread\u2019s own colour');
-  ok(icons === 6, 'six icons are declared: home, discover, and one per split half (' + icons + ')');
-  ok(rail.indexOf('--sc89-icon: url("data:image/svg+xml,') > 0, 'they are inline, so the page still loads nothing else');
-  ok(rail.indexOf('body.sc80-cloud #dockAddBtn svg{ width: 23px; height: 23px; margin-top: 4px; }') > 0,
-    'and the plus keeps its own glyph, at the size of the rest');
-  ok(rail.indexOf('#playlistsHalf::before,') > 0 && rail.indexOf('#albumsHalf::before,') > 0 &&
-     rail.indexOf('#studioHalf::before,') > 0 && rail.indexOf('#toolsHalf::before{') > 0,
-    'the two split treads put an icon in each end of the cut, so an icon still says which half');
-  ok(rail.indexOf('body.sc80-cloud #playlistsHalf{ padding: 15px 0 0 13px !important;') > 0 &&
-     rail.indexOf('body.sc80-cloud #albumsHalf{ padding: 0 13px 13px 0 !important;') > 0 &&
-     rail.indexOf('body.sc80-cloud #studioHalf{ padding: 0 0 13px 13px !important;') > 0 &&
-     rail.indexOf('body.sc80-cloud #toolsHalf{ padding: 15px 13px 0 0 !important;') > 0,
-    'each icon in its own half\u2019s corner, not on the seam');
-  ok(rail.indexOf('body.sc80-cloud #playlistsHalf.active-half,') > 0 &&
-     rail.indexOf('#toolsHalf.active-half{ color: var(--coral); }') > 0,
-    'and the half you are in still lights up, in coral');
-  ok(rail.indexOf('body.sc80-cloud .action-strip > #homeBtn.active,') > 0 &&
-     rail.indexOf('body.sc80-cloud .action-strip > #studioBtn.active{') > 0 &&
-     rail.indexOf('background: var(--coral);') > 0,
-    'and the tab you are on is filled coral, written with the IDs so the tread rule cannot keep it glass');
-  ok(rail.indexOf('.action-strip > #libraryBtn::before,\nbody.sc80-cloud .action-strip > #studioBtn::before{ display: none; }') > 0,
-    'the split treads do not also paint a centre icon over their two halves');
-  ok((src.match(/<button id="(homeBtn|libraryBtn|discoverBtn|studioBtn)" class="action-pill"/g) || []).length === 4,
-    'all four tabs are still real buttons in the markup, and the plus is the fifth');
-}
-
-console.log('[10] the cloud bar is a mini player, and nothing left with the console');
-{
-  ok(bar.length > 1200, 'the 80.0.9 bar block is in the page (' + bar.length + ' chars)');
-  ok(bar.indexOf('height: var(--sc89-bar);') > 0 && bar.indexOf('min-height: var(--sc89-bar);') > 0,
-    'the bar is sixty pixels, plus whatever the phone reserves, from one token');
-  ok(bar.indexOf('max-width: 760px;') > 0 && bar.indexOf('margin: 0 auto;') > 0,
-    'and it keeps the flight\u2019s own 760px band, so the two stack');
-  ok(bar.indexOf('body.sc80-cloud #nowPlaying .np-row + .np-row{ display: none; }') > 0,
-    'the DJ / LYRICS row is not in this layout');
-  ok(bar.indexOf('body.sc80-cloud #nowPlaying .seek-row{ display: none; }') > 0,
-    'and neither is the seek row with its two times and its waveform');
-  ok(bar.indexOf('body.sc80-cloud #npControls #shuffleBtn,') > 0 &&
-     bar.indexOf('#npControls #repeatBtn{ display: none; }') > 0,
-    'shuffle and repeat are not on the bar either');
-  ok(bar.indexOf('#miniBar{') > 0 && bar.indexOf('height: 3px;') > 0 && bar.indexOf('top: 0;') > 0,
-    'a 3px hairline across the top is where the progress is');
-  ok(src.indexOf("mb.addEventListener('pointermove'") > 0 && src.indexOf("a.currentTime = pct * a.duration;") > 0,
-    'and it is still drag-to-seek, not a picture of progress');
-  ok(src.indexOf("label: shuffle ? 'Shuffle: on' : 'Shuffle: off'") > 0 &&
-     src.indexOf("label: 'Repeat: ' + (repeatMode === 'one'") > 0 &&
-     src.indexOf("label: 'DJ Mode'") > 0,
-    'shuffle, repeat and DJ mode are items in the player menu');
-  ok(src.indexOf("$('shuffleBtn').click();") > 0 && src.indexOf("$('repeatBtn').click();") > 0 &&
-     src.indexOf("$('djModeBtn').click();") > 0,
-    'wired to the bar\u2019s own buttons, so the menu is the same switch');
-  ok(src.indexOf("label: 'Lyrics'") > 0, 'lyrics was already there, and still is');
-  ok(bar.indexOf('#npPlayerStage{ width: 40px; height: 40px; perspective: none; overflow: visible;') > 0,
-    'the record is the art, not the deck');
-  ok(bar.indexOf('.np-plinth,') > 0 && bar.indexOf('.np-tonearm-base,') > 0 &&
-     bar.indexOf('.np-platter-mat{ display: none; }') > 0,
-    'so the plinth, the lid and the tonearm are not drawn at forty pixels');
-  ok(bar.indexOf('body.sc80-cloud #nowPlaying .disc{ width: 38px; height: 38px; }') > 0,
-    'and the disc is a clean 38px circle instead of an ellipse clipped by its stage');
-  ok(bar.indexOf('#playPauseBtn{ width: 38px; height: 38px; }') > 0, 'play is the loudest control in the row');
-  ok(bar.indexOf('#npControls{ gap: 2px; margin-left: 0; flex: 0 0 auto; }') > 0,
-    'and the controls sit at the end of the row, not spread across it');
+  ok(flight.indexOf('padding-bottom: calc(var(--sc10-bar) + var(--sc10-rail) + 16px);') > 0,
+    'every scrolling view reserves the bar, the flight and a little air');
+  ok(flight.indexOf('scroll-padding-bottom: calc(var(--sc10-bar) + var(--sc10-rail) + 16px);') > 0,
+    'and a focused row does not land behind it');
+  ok(count(src, "const APP_VERSION = '80.0.10';") === 1, 'APP_VERSION = 80.0.10, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.0.10';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.0.10'") === 1, 'and the changelog has one 80.0.10 entry');
+  ok(src.indexOf("title: 'The plus works, the flight is small, the bar covers the bottom'") > 0,
+    'whose title is the release title');
+  ok(src.indexOf('the widget, the player, the letter covers, the lyrics view and the album pill dock') > 0,
+    'and whose notes say what did not move');
+  // The sheet's handlers are shared with the classic layout, which must not notice.
+  ok(count(src, "$('addSongsBackdrop').addEventListener('click', closeAddSongsMenu);") === 1,
+    'the classic dock\'s own backdrop handler is still there, once');
+  ok(src.indexOf('body.sc80-cloud #addSongsMenu{') > 0, 'the new sheet is scoped to the cloud layout');
+  const classic = src.indexOf('body.sc80-cloud #addSongsMenu{');
+  ok(classic > 0 && src.slice(0, classic).indexOf('body:not(.sc80-cloud) #addSongsMenu') === -1,
+    'so the classic layout keeps the centred sheet it always had');
 }
 
 console.log('');
-console.log((fail ? fail + ' FAILED, ' : 'ALL PASS: ') + pass + ' passed, ' + fail + ' failed');
+console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
