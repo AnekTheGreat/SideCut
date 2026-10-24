@@ -6,6 +6,10 @@ This release folds the now bar's own 3-dot menu into the song sheet, so that gat
 gets one more section answering for the fold, the save row and the selection bar's
 save button.
 
+One assertion in dev/test-7316.mjs moves with it: the whole-library save used to
+open the progress chip with a fixed title, and it now opens it with the run's own
+label, so that gate reads the call it actually makes.
+
 Idempotent: the marker is the section's own heading.
 
     python3 dev/patch-gate-8022.py
@@ -69,6 +73,24 @@ CLAIMS = [
 ]
 
 
+CHIP_OLD = "  ok(src.indexOf(\"const chip = scDlChip('Downloading songs');\") !== -1, 'the whole library save uses it');\n"
+CHIP_NEW = ("  ok(src.indexOf(\"const chip = scDlChip(label || (tracks.length === 1 ? 'Downloading song' : 'Downloading songs'));\") !== -1,\n"
+            "    'the whole library save uses it');\n")
+
+
+def retarget_chip():
+    """dev/test-7316.mjs pins the chip's call, and 80.2.2 gives that call a label."""
+    path = os.path.join(ROOT, 'dev', 'test-7316.mjs')
+    src = open(path, encoding='utf-8').read()
+    if CHIP_NEW in src:
+        print('  present: test-7316 reads the labelled chip')
+        return
+    if src.count(CHIP_OLD) != 1:
+        sys.exit('patch-gate-8022: test-7316 does not carry the chip assertion this release retargets')
+    open(path, 'w', encoding='utf-8').write(src.replace(CHIP_OLD, CHIP_NEW, 1))
+    print('  retargeted: test-7316 reads the labelled chip')
+
+
 def main():
     if not os.path.exists(GATE):
         sys.exit('patch-gate-8022: dev/staircase-check.cjs is missing')
@@ -88,6 +110,11 @@ def main():
     if missing:
         sys.exit('patch-gate-8022: the gate is not the 80.2.2 one (%s)' % ', '.join(missing))
     print('  the gate answers for 80.2.2: the fold, the save row, the selection (%d claims)' % len(CLAIMS))
+    if CHECK and CHIP_OLD in open(os.path.join(ROOT, 'dev', 'test-7316.mjs'), encoding='utf-8').read():
+        print('patch-gate-8022 --check: test-7316 still reads the old chip call')
+        return 1
+    if not CHECK:
+        retarget_chip()
     print('patch-gate-8022%s: 0 step(s) applied' % (' --check' if CHECK else ''))
     return 0
 

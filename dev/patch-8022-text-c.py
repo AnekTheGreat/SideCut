@@ -14,7 +14,7 @@ CHANGELOG_HEAD = r'''  { version: '80.2.2', date: 'October 24, 2026 \u00b7 3:44 
     'A run shows its progress in a small chip with a bar you can stop, and it names the song it is writing as it goes.',
     'A song with no stored audio says so plainly instead of reporting a failed save after a full progress bar.',
     'In a plain browser the toast names where the file actually went instead of promising a Documents folder the browser cannot write to.',
-    'The widget, the player, the lyrics view and the letter covers are untouched.',
+    'The widget, the player, the lyrics view, the letter covers and the album pill dock are untouched.',
   ],
     details: [
       'The save row is the writer the playlist sheet already had, handed one id: the audio blob this song plays from, written to Documents under its own file name. The selection bar hands it the ids you ticked instead, so a long press plus one tap saves ten songs as ten files.',
