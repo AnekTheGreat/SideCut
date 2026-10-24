@@ -7,7 +7,7 @@ the way dev/release-record.py loads dev/agents-shipping-note.py.
 """
 
 MENU_COMMENT = r'''<!-- The now bar has no 3-dot menu of its own: it opens the song sheet below, the
-     same one a song row opens. 80.3 removed the second menu that only the bar
+     same one a song row opens. 80.2.2 removed the second menu that only the bar
      had, so the two entry points cannot answer differently. -->
 
 '''
@@ -15,7 +15,7 @@ MENU_COMMENT = r'''<!-- The now bar has no 3-dot menu of its own: it opens the s
 NP_NEW = r'''  // ---------------- The song menu (3-dot) ----------------
   // ONE MENU, TWO WAYS IN. A song row's 3-dot has always opened openSongActions;
   // the now bar's opened a second, shorter menu of its own, which is how the two
-  // drifted apart. 80.3 gives the bar the song's menu, so a song answers the same
+  // drifted apart. 80.2.2 gives the bar the song's menu, so a song answers the same
   // wherever the dots are. The three switches the slim bar no longer paints -
   // Shuffle, Repeat and DJ Mode - are a Playback group inside that sheet, and
   // they still click the very buttons on the bar, so there is one switch each.

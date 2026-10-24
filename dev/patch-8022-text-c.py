@@ -55,7 +55,7 @@ WRITER_DOC_OLD = r'''  // "Download to phone" — save every song in the current
 
 WRITER_DOC_NEW = r'''  // "Download to phone" — save the songs you hand it as their own audio files,
   // straight on the device. It started as the playlist sheet's action (a whole
-  // playlist / All Songs / Unsorted at once); 80.3 gives it one song from its own
+  // playlist / All Songs / Unsorted at once); 80.2.2 gives it one song from its own
   // menu and the multi-select bar's selection too, so it takes any list of ids and
   // a line that says what the run is. Unlike "Export playlist" this skips the
   // .zip entirely: each track's existing audio blob (the same file that plays
@@ -102,3 +102,4 @@ WRITER_TAIL_NEW = r'''    chip.close();
       toast(`✓ Saved ${done} file${done===1?'':'s'}`, 4000);
     }
 '''
+
