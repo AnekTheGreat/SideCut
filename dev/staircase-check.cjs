@@ -150,9 +150,9 @@ console.log('[5] the band of theme colour under the lists is gone');
 
 console.log('[6] the release, the cache and the sheet are where 80.1 left them');
 {
-  ok(count(src, "const APP_VERSION = '80.2.2';") === 1, 'APP_VERSION = 80.2, once');
-  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.2';") !== -1, 'the shell cache is the release number');
-  ok(count(src, "version: '80.2.2'") === 1, 'and the changelog has one 80.2 entry');
+  ok(count(src, "const APP_VERSION = '80.2.3';") === 1, 'APP_VERSION = 80.2, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.3';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.2.3'") === 1, 'and the changelog has one 80.2 entry');
   ok(src.indexOf("title: 'Round bubbles that hold their words, a curve of icon tabs, and Lyrics back in the bar'") > 0,
     'whose title is the release title');
   ok(src.indexOf('the letter covers, the lyrics view and the album pill dock are where 80.1 left them') > 0,
@@ -221,6 +221,49 @@ console.log('[8] 80.2.2: one menu behind both sets of dots, one song or a select
     'and its rows click the bar own switches');
   ok(src.indexOf('has no audio file to download.') > 0,
     'a song with no stored audio says so instead of failing a progress bar');
+}
+
+console.log('[9] 80.2.3: the award card opens for plays, and every rung is a bigger card');
+{
+  // THE LADDER. The rungs the owner named, and the tail that keeps going past them.
+  ok(src.indexOf('var PLAY_MILESTONES = [100, 200, 500, 1000, 2000, 3000, 4000, 5000, 7500, 10000];') > 0,
+    'the plays ladder names every rung asked for');
+  ok(src.indexOf('var PLAY_LADDER_STEP = 5000, PLAY_LADDER_TOP = 100000;') > 0,
+    'and it keeps going in steps of five thousand');
+  ok(src.indexOf('function playRungs(){') > 0, 'the ladder is generated past its last named rung');
+  // THE CARD. The same overlay a streak gets, with a medal and a ceremony per tier.
+  ok(src.indexOf('function celebratePlays(plays, opts){') > 0, 'a plays award has its own celebration');
+  ok(src.indexOf("host.querySelector('.sc80-ms-kicker').textContent = 'Award';") > 0,
+    'it says Award where a streak says Milestone');
+  ok(src.indexOf('medal.textContent = ') > 0 && src.indexOf('+ award.name;') > 0,
+    'and it wears the medal it earned');
+  ok(src.indexOf('function paintCeremony(host, tier){') > 0 &&
+     src.indexOf("rings.appendChild(document.createElement('i'));") > 0,
+    'the rings are painted per tier');
+  ok(src.indexOf('function bitsHtml(n){') > 0 && src.indexOf('n = n || 26;') > 0,
+    'so the bits take a count, and a streak keeps its own twenty-six');
+  ok(src.indexOf('.sc80-ms-medal{') > 0 && src.indexOf('#sc80Milestone[data-tier="5"] .sc80-ms-card{') > 0,
+    'the five medals and their glows have a stylesheet');
+  // THE TRIGGER. The app's own play counter, a start, and a return to the front.
+  ok(src.indexOf("try{ if(window.SC80 && typeof SC80.checkPlays === 'function') SC80.checkPlays(); }catch(_eAward){}") > 0,
+    'the play counter tips the card');
+  ok(src.indexOf('function checkPlays(opts){') > 0 && src.indexOf('markPlaysThrough(hit);') > 0,
+    'and every rung crossed is recorded, so nothing queues behind it');
+  ok(src.indexOf('function bootPlays(){') > 0 && src.indexOf('try{ bootPlays(); }catch(e){}') > 0,
+    'a start checks the ladder');
+  ok(src.indexOf("document.addEventListener('visibilitychange', function(){") > 0,
+    'and so does a return to the front');
+  // THE RECORD. Studio lists the next rung and replays the ones already earned.
+  ok(src.indexOf('function playsCard(){') > 0 && src.indexOf('id="sc80Plays"') > 0,
+    'Studio, Tools has a Plays block');
+  ok(src.indexOf('data-sc80-plays="') > 0, 'with a Replay per rung');
+  ok(src.indexOf("else if(t.hasAttribute('data-sc80-plays')) celebratePlays(Number(t.getAttribute('data-sc80-plays')), { manual: true });") > 0,
+    'and a replay opens the same card');
+  ok(src.indexOf("plays: 'sc80Plays'") > 0, 'the rungs are remembered on the device');
+  // THE STREAK CARD is still the streak card, in what it says and in how it is painted.
+  ok(src.indexOf("host.setAttribute('data-kind', 'streak');") > 0 &&
+     src.indexOf("host.querySelector('.sc80-ms-kicker').textContent = 'Milestone';") > 0,
+    'the streak card resets to its own word and its own rings');
 }
 
 console.log('');
