@@ -150,9 +150,9 @@ console.log('[5] the band of theme colour under the lists is gone');
 
 console.log('[6] the release, the cache and the sheet are where 80.1 left them');
 {
-  ok(count(src, "const APP_VERSION = '80.2.1';") === 1, 'APP_VERSION = 80.2, once');
-  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.1';") !== -1, 'the shell cache is the release number');
-  ok(count(src, "version: '80.2.1'") === 1, 'and the changelog has one 80.2 entry');
+  ok(count(src, "const APP_VERSION = '80.2.2';") === 1, 'APP_VERSION = 80.2, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.2';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.2.2'") === 1, 'and the changelog has one 80.2 entry');
   ok(src.indexOf("title: 'Round bubbles that hold their words, a curve of icon tabs, and Lyrics back in the bar'") > 0,
     'whose title is the release title');
   ok(src.indexOf('the letter covers, the lyrics view and the album pill dock are where 80.1 left them') > 0,
@@ -190,6 +190,37 @@ console.log('[7] 80.2.1: the icon is the cloud bar alone, the seam is gone, the 
   ok(blockText.indexOf('left:calc(12px + 100% - 100vw);') > 0 &&
      blockText.indexOf('right:-12px;') > 0,
     'the fade under the flight spans the screen');
+}
+
+console.log('[8] 80.2.2: one menu behind both sets of dots, one song or a selection saved');
+{
+  // THE FOLD. The now bar's own menu is gone: its modal, its list and its close
+  // button, and showNpMenu hands the playing song to the one sheet a row opens.
+  ok(src.indexOf('id="npMenuBackdrop"') === -1 && src.indexOf('id="npMenuList"') === -1,
+    'the now bar has no menu of its own');
+  const np = src.slice(src.indexOf('function showNpMenu()'));
+  ok(np.slice(0, np.indexOf('\n  }')).indexOf('openSongActions(id);') !== -1,
+    'its 3-dot opens the song sheet');
+  ok(src.indexOf("$('npMenuClose')") === -1, 'and the old menu close button is gone');
+  // ONE SONG. The sheet's save row, handed exactly the song it was opened for.
+  ok(src.indexOf("dlSongBtn.id = 'songActionsDownload'") > 0, 'the song sheet has a save row');
+  ok(src.indexOf("downloadTracksToDevice([id], 'Downloading this song');") > 0,
+    'and it saves the one song it was opened for');
+  // A SELECTION. The selection bar's button, handed the ticked ids.
+  ok(src.indexOf('id="selectDownloadBtn"') > 0, 'the selection bar has a save button');
+  ok(src.indexOf("downloadTracksToDevice(ids, ids.length === 1 ? 'Downloading this song' : 'Downloading ' + ids.length + ' songs');") > 0,
+    'and it saves the rows that are ticked');
+  // ONE WRITER, and the switches the slim bar hides live in the same sheet.
+  ok(src.indexOf('async function downloadTracksToDevice(ids, label)') > 0 &&
+     src.indexOf('function downloadPlaylistToDevice') === -1,
+    'one writer serves the row, the playlist and the selection');
+  ok(src.indexOf('function appendPlaybackGroup(host)') > 0 &&
+     src.indexOf('try{ appendPlaybackGroup(list); }catch(_ePlayback){}') > 0,
+    'the Playback group is appended after the grouping');
+  ok(src.indexOf('const barBtn = $(r.btn);') > 0 && src.indexOf('if(barBtn) barBtn.click();') > 0,
+    'and its rows click the bar own switches');
+  ok(src.indexOf('has no audio file to download.') > 0,
+    'a song with no stored audio says so instead of failing a progress bar');
 }
 
 console.log('');

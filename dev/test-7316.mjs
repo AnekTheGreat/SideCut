@@ -131,9 +131,9 @@ const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 const widgetPy = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'patch-widget.py'), 'utf8');
 
-const VER = '80.2.1'; /* repinned by dev/repin-8021.mjs */
-const PREV = '80.2'; /* repinned by dev/repin-8021.mjs */ /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */ /* repinned by dev/repin-7317.mjs */
-const SHELL_CACHE = 'sidecut-shell-v80.2.1';
+const VER = '80.2.2'; /* repinned by dev/repin-8022.mjs */
+const PREV = '80.2.1'; /* repinned by dev/repin-8022.mjs */ /* repinned by dev/repin-7321.mjs */ /* repinned by dev/repin-732.mjs */ /* repinned by dev/repin-7319.mjs */ /* repinned by dev/repin-7318.mjs */ /* repinned by dev/repin-7317.mjs */
+const SHELL_CACHE = 'sidecut-shell-v80.2.2';
 
 // The gates that carry the adjacent-entry pin. repin-7312 moves all of them.
 const PREV_GATES = [
@@ -322,7 +322,8 @@ console.log('[4] a long save can be stopped');
   ok(src.indexOf('class="sc-dl-x"') !== -1, 'with an X on it');
   ok(src.indexOf('state.cancelled = true;') !== -1, 'the X flips a cancel flag');
   ok(src.indexOf('cancelled: function(){ return state.cancelled; },') !== -1, 'which the job can read');
-  ok(src.indexOf("const chip = scDlChip('Downloading songs');") !== -1, 'the whole library save uses it');
+  ok(src.indexOf("const chip = scDlChip(label || (tracks.length === 1 ? 'Downloading song' : 'Downloading songs'));") !== -1,
+    'the whole library save uses it');
   ok(src.indexOf('if(chip.cancelled()){ skipped = tracks.length - done - failed; break; }') !== -1,
     'and stops between files instead of finishing the queue');
   ok(src.indexOf('chip.close();') !== -1 && src.indexOf('Stopped — saved ${done} of ${tracks.length} songs.') !== -1,
