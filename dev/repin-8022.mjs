@@ -5,8 +5,8 @@
  *
  *   80.2.2 is a patch inside the 80.2 line: one song or a whole selection can be
  *   saved to the phone from the 3-dot menu, and the now bar's 3-dot is the song's
- *   own menu instead of a second one. No gate file is added or removed beyond
- *   dev/download-menu-check.cjs, which this release adds and which pins itself.
+ *   own menu instead of a second one. No gate file is added or removed: what
+ *   answers for it is section [8] of dev/staircase-check.cjs.
  *
  *   VER = '80.2.1'                    -> VER = '80.2.2'
  *   version: '80.2.1'                 -> version: '80.2.2'
