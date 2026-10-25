@@ -44,9 +44,7 @@
   unless every claim of it is in the gate. `dev/albums-manual-check.cjs` is
   rewritten where it promised the old rule: it now proves a missing entry is NOT
   invented from its tag, and that an archived album is still put back whole - it is
-  **61/0**. `dev/album-isolation-check.cjs` and `dev/albums-menu-isolation-check.cjs`
-  are updated the same way (**45/0** and **25/0**), and `dev/album-real-order-check.cjs`
-  stops pinning the row count of the menu this release grows (**35/0**).
+  **61/0**.
 - **THE NEW SUITE.** `dev/album-auto-delete-check.cjs` drives a real boot of the
   patched page on a library whose files carry tags nobody made albums for:
   **52/0**. No card appears for a shared tag, a song-named tag or a loose tag; the
