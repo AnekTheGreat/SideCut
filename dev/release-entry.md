@@ -51,6 +51,9 @@
   390px the ten rungs render 60/84/96/118/146/158/179/200/230/260, strictly ascending,
   with the full rung at its own 200; at 1024px the ladder still ascends
   (60/84/96/140/146/158/179/220/230/260). The page boots with no script error.
+- **THE BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}} bytes, rebuilt to a true fixed point
+  in the runner before this entry is written, and settled again by deploy.yml on the
+  push. Both `--check`s green on the tree that ships.
 - **WHAT ONLY A REAL SONG CAN SHOW.** The decode-and-measure path runs on a local file
   with a timed sheet; the pacer and the reader are verified, and the decode path reuses
   the primitives the auto-alignment has shipped for releases. Open a song with
