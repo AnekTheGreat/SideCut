@@ -38,7 +38,7 @@ function ok(cond, name, extra) {
   else { fail++; console.log('  \u2717 ' + name + (extra !== undefined ? '  [' + JSON.stringify(extra) + ']' : '')); }
 }
 
-const VER = '80.2.5';
+const VER = '80.2.6';
 // The release the 80.0 revamp REPLACED. This gate asserts adjacency against the
 // revamp's own entry (found by version), not against the head, so this pin stays
 // on the release 80.0 itself replaced.

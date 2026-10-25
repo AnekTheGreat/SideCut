@@ -134,7 +134,7 @@ function toastText(win) {
   // row to this same menu, and 80.2.6 will move the number again. The pin is a
   // quoted literal on purpose, because that is what dev/repin-<version>.mjs sweeps
   // - a literal is repinned every release, an escape sequence is not.
-  const VER = '80.2.5'; /* repinned by dev/repin-8025.mjs */
+  const VER = '80.2.6'; /* repinned by dev/repin-8026.mjs */
   ok('the page runs ' + VER, new RegExp("const APP_VERSION = '" + VER.replace(/\./g, '\\.') + "';").test(html));
   if (typeof win.__scSortAlbumRealOrder !== 'function') {
     console.log('album-real-order-check: ' + pass + ' passed, ' + (fail + 1) + ' failed');

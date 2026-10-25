@@ -13,6 +13,8 @@
 //   [2] the chip reaches it, and the bubble wears the class;
 //   [3] the Sandbox H stepper lands on 1.5 and the bubble is 177px (1.5 x 118), persisted;
 //   [4] it cannot go below 1x, and Reset puts every bubble back to automatic.
+//   [5] the full-width stats card is the one bubble that does not centre: its words sit on
+//       the card floor at every size, and its two lines grow where the card has the height.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
@@ -173,6 +175,49 @@ const bubbleFor = (win, kind) => win.document.querySelector('#homeBubbles .home-
     const stillSized = [...doc.querySelectorAll('#homeBubbles .home-bubble')]
       .filter((b) => /hb-size-(mini|small|medium|tall|wide|full|xl)/.test(b.className) || b.style.minHeight);
     ok(stillSized.length === 0, 'and no bubble is left wearing a size', stillSized.map((b) => b.dataset.bubble).join(','));
+  }
+
+  console.log('[5] 80.2.6: the full-width stats card keeps its words on the floor');
+  {
+    // THE RULE, read out of the shipped bytes. The middle size centres its lines so its
+    // extra height is shared above and below them, which is right for a card with an
+    // icon in the middle and wrong for this one: the stats icon is pinned top-left, so
+    // the sharing showed up as a hole under the words.
+    const floor = (html.match(/body:not\([.]sc80-cloud\) #homeBubbles [.]home-bubble\[data-bubble="stats"\]\{[^}]*\}/) || [''])[0];
+    ok(/justify-content:flex-end/.test(floor), 'the stats card anchors its words to the floor', floor);
+    ok(/^body:not\([.]sc80-cloud\)/.test(floor), 'and the circle wall is held out of it', floor);
+    ok((html.match(/body:not\([.]sc80-cloud\) #homeBubbles [.]home-bubble\{/g) || []).length === 0,
+      'no blanket rule floors every other bubble with it');
+    ok(/\.home-bubble\.hb-size-medium\{[^}]*justify-content:center/.test(html),
+      'the middle size itself still centres, so the other cards are unchanged');
+    // THE TYPE. It grows only where the card has the height to hold it.
+    const grown = (html.match(/\[data-bubble="stats"\]:is\(([^)]*)\) [.]hb-value/) || [])[1] || '';
+    ok(/hb-size-medium/.test(grown) && /hb-size-tall/.test(grown) &&
+       /hb-size-full/.test(grown) && /hb-size-xl/.test(grown),
+      'the value grows on the four sizes with room for it', grown);
+    ok(grown.indexOf('hb-size-wide') === -1 && grown.indexOf('hb-size-mini') === -1 &&
+       grown.indexOf('hb-size-small') === -1,
+      'and not on the cards whose words already fill them', grown);
+    const valueRule = (html.match(/\.hb-size-xl\) [.]hb-value\{[^}]*\}/) || [''])[0];
+    ok(/font-size:calc\(26px \* var\(--hb-s, 1\)\)/.test(valueRule), 'the value is 26px, up from 20', valueRule);
+    const labelRule = (html.match(/\.hb-size-xl\) [.]hb-label\{[^}]*\}/) || [''])[0];
+    ok(/font-size:calc\(12\.5px \* var\(--hb-s, 1\)\)/.test(labelRule), 'the label is 12.5px, up from 11.5', labelRule);
+    ok(/padding-right:26px/.test(labelRule), 'and it stops short of the expand hint', labelRule);
+    // DRIVEN. The floor belongs to this one card, not to whatever is wearing the size:
+    // the stats bubble is put at Medium and the card beside it at Medium too.
+    const stats = bubbleFor(win, 'stats');
+    ok(!!stats && stats.dataset.bubble === 'stats', 'the stats bubble is the card the rule names', stats && stats.dataset.bubble);
+    const chip = stats && stats.querySelector('.hb-expand');
+    let reached = false;
+    for (let i = 0; i < 8 && chip; i++) {
+      click(win, chip);
+      if (stats.classList.contains('hb-size-medium')) { reached = true; break; }
+    }
+    ok(reached, 'it can still wear the middle size', stats && stats.className);
+    const other = bubbleFor(win, 'topsong');
+    ok(other && other.dataset.bubble !== 'stats', 'and the card beside it is not covered by the rule', other && other.dataset.bubble);
+    click(win, doc.getElementById('sandboxBubbleSizesReset'));
+    await wait(100);
   }
 
   ok(errors.length === 0, 'no uncaught page errors while any of this ran', errors.slice(0, 3));
