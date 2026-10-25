@@ -120,6 +120,24 @@ jobs:
         run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
       - name: Build release APK
         run: cd android && ./gradlew assembleRelease --no-daemon
+      - name: Verify the built APK targets API 36 (Android 16)
+        # The SDK bump is a patch applied to a template Capacitor regenerates on every
+        # build, so the only proof it took is the manifest INSIDE the APK that gets
+        # published. Play refuses an upload that targets less than 36; failing here says
+        # so in the run's own log instead of in the console a day later.
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          TOOLS=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1)
+          BADGING=$("$TOOLS/aapt2" dump badging "$APK")
+          TARGET=$(printf '%s' "$BADGING" | grep -oE "targetSdkVersion:'[0-9]+'" | grep -oE "[0-9]+" | head -1)
+          COMPILE=$(printf '%s' "$BADGING" | grep -oE "compileSdkVersion='[0-9]+'" | head -1)
+          echo "built APK: targetSdkVersion=${TARGET:-none} $COMPILE (aapt2 $TOOLS)"
+          if [ -z "${TARGET:-}" ] || [ "$TARGET" -lt 36 ]; then
+            echo "::error::the APK targets ${TARGET:-nothing} - Play needs API 36 or higher"
+            exit 1
+          fi
       - name: Compute version and rename AAB
         id: ver
         run: |
