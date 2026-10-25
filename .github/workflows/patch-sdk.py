@@ -11,6 +11,11 @@ builds.
 Compiling against API 36 also needs the Android Gradle Plugin 8.9.1+
 (Capacitor 6 template ships 8.2.1), and AGP 8.9.x needs Gradle 8.11.1+
 (template ships 8.2.1) — so we bump those in the same pass.
+
+minSdk is the app's own floor, and Play has one too: it refused
+SideCut-5.0.53-release.aab with "Play automatic protection requires a minimum
+SDK version of 24 or higher". 24 is therefore the floor the template is
+patched up to before every build.
 """
 import os, re, sys
 
@@ -27,9 +32,14 @@ if not os.path.exists(VARIABLES):
     sys.exit('FATAL: %s missing — run `npx cap add android` first.' % VARIABLES)
 
 # ---- 1) compile/target SDK + minSdk in variables.gradle ----
-# Billing client 8.3 (pulled in by @capgo/native-purchases) declares minSdk 23,
-# so raise the app minSdk from the Capacitor template 22 to 23.
-MIN_SDK =23
+# Two floors, and the higher one wins:
+#   * com.android.billingclient:billing:8.3.0 (pulled in by
+#     @capgo/native-purchases) declares uses-sdk:minSdkVersion 23, so the
+#     Capacitor template's 22 fails the manifest merger.
+#   * Play Console refuses to upload a bundle below 24 at all ("Play automatic
+#     protection requires a minimum SDK version of 24 or higher") — that is what
+#     rejected the 5.0.53 AAB, which carried the old 23.
+MIN_SDK = 24
 src = open(VARIABLES).read()
 new_src, n1 = re.subn(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = %d' % TARGET, src)
 new_src, n2 = re.subn(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = %d' % TARGET, new_src)

@@ -120,24 +120,37 @@ jobs:
         run: cd android && chmod +x gradlew && ./gradlew bundleRelease --no-daemon
       - name: Build release APK
         run: cd android && ./gradlew assembleRelease --no-daemon
-      - name: Verify the built APK targets API 36 (Android 16)
-        # The SDK bump is a patch applied to a template Capacitor regenerates on every
-        # build, so the only proof it took is the manifest INSIDE the APK that gets
-        # published. Play refuses an upload that targets less than 36; failing here says
-        # so in the run's own log instead of in the console a day later.
+      - name: Verify the built artifacts declare target API 36 and minSdk 24
+        # The SDK numbers are a patch applied to a template Capacitor regenerates on
+        # every build, so the only proof they took is the manifest INSIDE the files
+        # that get uploaded. Play has refused this app once for each number: an AAB
+        # targeting less than 36, and SideCut-5.0.53-release.aab below minSdk 24
+        # ("Play automatic protection requires a minimum SDK version of 24 or higher").
+        # Failing here says so in the run's own log instead of in the console a day
+        # later.
         run: |
           set -euo pipefail
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           APK=android/app/build/outputs/apk/release/app-release.apk
+          AAB=android/app/build/outputs/bundle/release/app-release.aab
           TOOLS=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1)
           BADGING=$("$TOOLS/aapt2" dump badging "$APK")
           TARGET=$(printf '%s' "$BADGING" | grep -oE "targetSdkVersion:'[0-9]+'" | grep -oE "[0-9]+" | head -1)
+          MINSDK=$(printf '%s' "$BADGING" | grep -oE "(^| )sdkVersion:'[0-9]+'" | grep -oE "[0-9]+" | head -1)
           COMPILE=$(printf '%s' "$BADGING" | grep -oE "compileSdkVersion='[0-9]+'" | head -1)
-          echo "built APK: targetSdkVersion=${TARGET:-none} $COMPILE (aapt2 $TOOLS)"
+          echo "built APK: minSdkVersion=${MINSDK:-none} targetSdkVersion=${TARGET:-none} $COMPILE (aapt2 $TOOLS)"
+          STATUS=0
           if [ -z "${TARGET:-}" ] || [ "$TARGET" -lt 36 ]; then
             echo "::error::the APK targets ${TARGET:-nothing} - Play needs API 36 or higher"
-            exit 1
+            STATUS=1
           fi
+          if [ -z "${MINSDK:-}" ] || [ "$MINSDK" -lt 24 ]; then
+            echo "::error::the APK has minSdkVersion ${MINSDK:-nothing} - Play needs 24 or higher"
+            STATUS=1
+          fi
+          # The AAB is what Play scans; dev/aab-sdk.py reads its protobuf manifest.
+          python3 dev/aab-sdk.py "$AAB" --min 24 --target 36 || STATUS=1
+          exit $STATUS
       - name: Compute version and rename AAB
         id: ver
         run: |
