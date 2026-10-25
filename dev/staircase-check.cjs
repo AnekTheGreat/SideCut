@@ -150,9 +150,9 @@ console.log('[5] the band of theme colour under the lists is gone');
 
 console.log('[6] the release, the cache and the sheet are where 80.1 left them');
 {
-  ok(count(src, "const APP_VERSION = '80.2.4';") === 1, 'APP_VERSION = 80.2, once');
-  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.4';") !== -1, 'the shell cache is the release number');
-  ok(count(src, "version: '80.2.4'") === 1, 'and the changelog has one 80.2 entry');
+  ok(count(src, "const APP_VERSION = '80.2.5';") === 1, 'APP_VERSION = 80.2, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.5';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.2.5'") === 1, 'and the changelog has one 80.2 entry');
   ok(src.indexOf("title: 'Round bubbles that hold their words, a curve of icon tabs, and Lyrics back in the bar'") > 0,
     'whose title is the release title');
   ok(src.indexOf('the letter covers, the lyrics view and the album pill dock are where 80.1 left them') > 0,
@@ -313,6 +313,66 @@ console.log('[10] 80.2.4: an album card has its own three dots, and an album sor
     'the sort is exported for a suite');
   ok(src.indexOf('window.__scAlbumRealApply = function(name, titles){ return scRealApplyOrder(name, titles); };') > 0,
     'and so is the filing');
+}
+
+console.log('[11] 80.2.5: no album is invented, and a delete asks first');
+{
+  // THE LAUNCH. It restores what the app archived, and nothing else.
+  ok(src.indexOf('// (3) 80.2.5 - NOTHING IS INVENTED FROM A TAG ANY MORE.') > 0,
+    'the boot pass states the new rule');
+  ok(src.indexOf('if(tagIds.length < 2 && !archived) return;') === -1 &&
+     src.indexOf('tagIds.length < 2') === -1,
+    'and no longer makes an album out of a tag');
+  ok(src.indexOf('localStorage.getItem(SC_ALBUMS_ARCHIVE_KEY)') > 0 &&
+     src.indexOf('var e = _arc[name] && _arc[name].entry;') > 0,
+    'it puts back what the archive holds, with the list it holds');
+  ok(src.indexOf('if(userDeleted[String(name).toLowerCase()]) return;') > 0,
+    'and never a name you deleted');
+  ok(src.indexOf('back.manual = true;') > 0, 'what it restores is marked as yours');
+  // THE RECORD TAP. A jump opens an album; it does not make one.
+  ok(src.indexOf('if(tag && userAlbums[tag]){') > 0, 'the record tap opens an album you have');
+  var _jump = src.slice(src.indexOf('function openAlbumForCurrentSong(){'));
+  _jump = _jump.slice(0, _jump.indexOf('function jumpToPlayingSong'));
+  ok(_jump.indexOf('ensureAlbumSaved(') === -1, 'and never makes one out of the tag');
+  ok(src.indexOf('if(ensureAlbumSaved(tag)) added++') > 0,
+    'while the rebuild you ask for in Manage albums still can');
+  // THE MENU'S THREE ROWS.
+  ok(src.indexOf("row('delete', ") > 0, 'the album menu carries a delete row');
+  ok(src.indexOf("if(what === 'delete'){ scAlbumDeleteConfirm(key); return; }") > 0,
+    'which opens the confirmation');
+  ok(src.indexOf("'Removes the album. The songs stay in your library.', true)") > 0,
+    'the row says what it does, in the danger colour');
+  // THE CONFIRMATION.
+  ok(src.indexOf('function scAlbumDeleteConfirm(name){') > 0, 'the confirmation is one function');
+  ok(src.indexOf("openDiscoverPopup('Delete album', html, key);") > 0, 'it opens as its own sheet');
+  ok(src.indexOf('id="scAlbDelCancel"') > 0 && src.indexOf('id="scAlbDelGo"') > 0,
+    'with Keep it and Delete album');
+  var _conf = src.slice(src.indexOf('function scAlbumDeleteConfirm(name){'));
+  _conf = _conf.slice(0, _conf.indexOf('\n  }'));
+  ok(_conf.indexOf('window.confirm(') === -1 && _conf.indexOf('confirm (' ) === -1,
+    'and never window.confirm, which the WebView can swallow');
+  ok(src.indexOf('stay in your library') > 0, 'it says the songs stay in the library');
+  // THE DELETE ITSELF.
+  ok(src.indexOf('function deleteUserAlbum(name, opts){') > 0, 'the delete takes a silent path');
+  ok(src.indexOf('_ud[_goneKey] = Date.now();') > 0, 'the name is tombstoned at the moment of the delete');
+  ok(src.indexOf("toastWithUndo('Deleted \"' + name") > 0, 'the delete carries Undo');
+  ok(src.indexOf('albumOrder.splice(_backAt, 0, name);') > 0, 'Undo puts the album back in its place');
+  ok(src.indexOf('delete _rm[_goneKey];') > 0, 'and takes the tombstone back off');
+  ok(src.indexOf("if(_tEl && _tEl.textContent === 'Manage albums') refreshManageAlbums(true);") > 0,
+    'only the panel on screen is rebuilt, so a card delete cannot open Manage albums');
+  ok(src.indexOf('scAllowRowDrop(\'userAlbums\', name);') > 0, 'the drop is allowed, as every album delete is');
+  // THE DOORS A SUITE KNOCKS ON, and the suite itself.
+  ok(src.indexOf('window.__scAlbumDeletePrompt = function(name){ return scAlbumDeleteConfirm(name); };') > 0,
+    'the confirmation is exported');
+  ok(src.indexOf('window.__scDeleteAlbumQuiet = function(name){ return deleteUserAlbum(name, { silent: true }); };') > 0,
+    'and so is the quiet delete');
+  ok(fs.existsSync(path.join(__dirname, 'album-auto-delete-check.cjs')),
+    'the suite that drives all of it travels with the release');
+  // THE 80.2.4 SORT IS UNTOUCHED by any of this.
+  ok(src.indexOf('function scRealSortAlbum(name){') > 0 && src.indexOf('function scRealAlbumMenu(name){') > 0,
+    'the real-order sort is still there');
+  ok(src.indexOf("row('real', '") > 0 && src.indexOf("row('hand', '") > 0,
+    'with its two rows above the delete');
 }
 
 console.log('');

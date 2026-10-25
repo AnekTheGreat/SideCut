@@ -4,6 +4,12 @@
 //   2. The Albums tab is MANUAL-ONLY: it lists the albums the user created by
 //      hand, and never invents cards for albums that exist only as file tags
 //      (the "why are there 400 songs in my albums" report).
+//
+// 80.2.5 made rule 2 hold at the LAUNCH as well. The boot recovery used to rebuild
+// every multi-song album tag as an entry of its own, which is where the cards
+// nobody made came from; it now restores only what the app archived. So this file
+// expects ONE card here - 'My Mix', the album made by hand - and a tag the picker
+// takes in is still taken in by hand, which the last section proves.
 const fs = require('fs');
 const path = require('path');
 const { JSDOM, VirtualConsole } = require('/tmp/h/node_modules/jsdom');
@@ -147,26 +153,25 @@ let toasts = [];
   console.log('\n— the Albums tab is the albums the user created —');
   win.navigate('albums');
   await wait(800);
-  // 73.1.8: the one-time upgrade recovery rebuilds the sweep victims from their
-  // file tags — 'Other Album' is a real card alongside the hand-made one.
-  // 73.1.9: recovery is every-boot and WHOLE - both multi-song tags rebuild
-  // ('MoonChild Era' 3 songs + the recovered 'Other Album' 2 songs).
-  ok('the hand-made album and every recovered tag album have cards',
-     eq(cardNames(win).slice().sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
-  ok('and each recovered album lists its WHOLE tag (no song left out)',
-     (() => { const v = storedAlbums() || {}; return (!!v['MoonChild Era'] && v['MoonChild Era'].trackIds.length === 3); })(), JSON.stringify(storedAlbums()));
-  ok('and no album outside those three exists as a card', cardNames(win).length === 3, JSON.stringify(cardNames(win)));
-  ok('no album beyond the recovered tag names exists in storage',
-     eq(Object.keys(storedAlbums() || {}).sort(), ['MoonChild Era', 'My Mix', 'Other Album']),
+  // 80.2.5: the launch invents nothing. Both multi-song tags on these files
+  // ('MoonChild Era' 3 songs, 'Other Album' 2) used to become entries of their own
+  // here; the card the user made is the only card there is.
+  ok('the album made by hand is the only card on the Albums tab',
+     eq(cardNames(win).slice().sort(), ['My Mix']), JSON.stringify(cardNames(win)));
+  ok('and no tag album was invented alongside it',
+     (() => { const v = storedAlbums() || {}; return !v['MoonChild Era'] && !v['Other Album'] && !!v['My Mix']; })(),
+     JSON.stringify(Object.keys(storedAlbums() || {})));
+  ok('so no album outside the one you made exists as a card', cardNames(win).length === 1, JSON.stringify(cardNames(win)));
+  ok('and the store holds nothing but the album you made',
+     eq(Object.keys(storedAlbums() || {}).sort(), ['My Mix']),
      JSON.stringify(Object.keys(storedAlbums() || {})));
   const myCard = cardEls(win).find((c) => c.dataset.albumName === 'My Mix');
   ok('the album shows all three of its songs', !!myCard && myCard.querySelectorAll('.track').length === 3,
      myCard ? String(myCard.querySelectorAll('.track').length) : 'no card');
-  // 73.1.8: the one-time upgrade-boot recovery rebuilds tag-named albums the old
-  // sweep deleted whole, so 'Other Album' (2 songs) is a card here alongside the
-  // hand-made one — and the header counts both albums' songs, not the library.
-  ok('the header counts only the albums’ songs (5, not more than the albums hold)', /\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
-  ok('the tag-only songs are not smuggled into the count beyond the albums', !/\b7 tracks\b/.test(paneHeader(win)), paneHeader(win));
+  // The header counts the songs of the albums on screen - one album, three songs -
+  // and never the whole library (five files).
+  ok('the header counts only the albums’ songs (3, not the library’s 5)', /\b3 tracks\b/.test(paneHeader(win)), paneHeader(win));
+  ok('the tag-only songs are not smuggled into the count beyond the albums', !/\b5 tracks\b/.test(paneHeader(win)), paneHeader(win));
 
   console.log('\n— playlists survive a missing settings-sweep row —');
   ok('a direct keyed read restores the playlist omitted by the meta sweep',
@@ -215,9 +220,8 @@ let toasts = [];
   ok('the new order is persisted to userAlbums', eq((albumsAfter['My Mix'] || {}).trackIds, ['t2', 't3', 't1']),
      JSON.stringify((albumsAfter['My Mix'] || {}).trackIds));
   ok('no song was dropped from the album', ((albumsAfter['My Mix'] || {}).trackIds || []).length === 3);
-  // 73.1.8: the reorder itself must still invent NOTHING — the recovery's one
-  // tag-named album is the only extra entry, and it existed before the reorder.
-  ok('reordering invented no album beyond the recovered ones', eq(Object.keys(albumsAfter).sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(Object.keys(albumsAfter)));
+  // A reorder must never invent an album either: one album in, one album out.
+  ok('reordering invented no album', eq(Object.keys(albumsAfter).sort(), ['My Mix']), JSON.stringify(Object.keys(albumsAfter)));
   ok('playlists untouched by the album reorder', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   // Done -> refresh the library view.
@@ -237,7 +241,7 @@ let toasts = [];
      myAfter ? String(myAfter.querySelectorAll('.track').length) : 'no card');
   ok('album card rows reflect the new order', !!myAfter && eq(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id), ['t2', 't3', 't1']),
      myAfter ? JSON.stringify(Array.from(myAfter.querySelectorAll('.track')).map((r) => r.dataset.id)) : 'no card');
-  ok('and no FOURTH album appears out of the reorder', eq(cardNames(win).slice().sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
+  ok('and no second album appears out of the reorder', eq(cardNames(win).slice().sort(), ['My Mix']), JSON.stringify(cardNames(win)));
   ok('playlists still untouched after closing', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
 
   console.log('\n— dragging a card can never invent an album —');
@@ -270,10 +274,11 @@ let toasts = [];
   win.__scOpenAlbumReorderPicker();
   await wait(400);
   const picks = Array.from(win.document.querySelectorAll('.ap-pick'));
-  // 73.1.9: the saved album, plus every recovered tag album. Albums may share
-  // songs now - sharing is what keeps a rebuilt album WHOLE - and the picker
-  // offers each of them.
-  ok('picker offers the saved album and the recovered tag albums', picks.length === 3,
+  // The saved album, plus the tag the library still has songs for that no album
+  // holds ('Other Album', 2 songs). 'MoonChild Era' is not offered because every
+  // song carrying that tag is already inside 'My Mix'. Taking one in here is the
+  // deliberate way a tag becomes an album.
+  ok('picker offers the saved album and the tag no album holds yet', picks.length === 2,
      'picks=' + picks.length + ' ' + picks.map((b) => b.textContent.trim().replace(/\s+/g, ' ')).join(' | '));
   const pickOther = picks.find((b) => b.textContent.indexOf('Other Album') !== -1);
   ok('the tag-only album is offered by the picker', !!pickOther);
@@ -290,7 +295,7 @@ let toasts = [];
   // album the user asked for, and it shows up like any other.
   ok('the album the user explicitly took in now has a card', cardNames(win).indexOf('Other Album') !== -1, JSON.stringify(cardNames(win)));
   ok('and the hand-made album is still there', cardNames(win).indexOf('My Mix') !== -1, JSON.stringify(cardNames(win)));
-  ok('no other album appeared', cardNames(win).length === 3, JSON.stringify(cardNames(win)));
+  ok('no other album appeared', cardNames(win).length === 2, JSON.stringify(cardNames(win)));
 
   console.log('\n— everything still reachable in the normal views —');
   win.navigate('playlists');
@@ -318,7 +323,7 @@ let toasts = [];
      !!myBody && myBody.querySelectorAll('.track').length === 3,
      myBody ? ('display=' + myBody.style.display + ' rows=' + myBody.querySelectorAll('.track').length) : 'no body');
   ok('the playing highlight did not add or remove any album card',
-     eq(cardNames(win).slice().sort(), ['MoonChild Era', 'My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
+     eq(cardNames(win).slice().sort(), ['My Mix', 'Other Album']), JSON.stringify(cardNames(win)));
 
   // jsdom cannot actually play audio ('Not implemented: HTMLMediaElement.play')
   // plus the app's known boot-order race; neither is an app error.

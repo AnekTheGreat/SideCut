@@ -130,7 +130,12 @@ function toastText(win) {
   for (let i = 0; i < 120 && typeof win.__scSortAlbumRealOrder !== 'function'; i++) await wait(250);
 
   ok('the release hook is on the page', typeof win.__scSortAlbumRealOrder === 'function');
-  ok('the page runs 80.2.4', /const APP_VERSION = '80\.2\.4';/.test(html));
+  // The live build, not the release this file was written for: 80.2.5 added a third
+  // row to this same menu, and 80.2.6 will move the number again. The pin is a
+  // quoted literal on purpose, because that is what dev/repin-<version>.mjs sweeps
+  // - a literal is repinned every release, an escape sequence is not.
+  const VER = '80.2.5'; /* repinned by dev/repin-8025.mjs */
+  ok('the page runs ' + VER, new RegExp("const APP_VERSION = '" + VER.replace(/\./g, '\\.') + "';").test(html));
   if (typeof win.__scSortAlbumRealOrder !== 'function') {
     console.log('album-real-order-check: ' + pass + ' passed, ' + (fail + 1) + ' failed');
     process.exit(1);
@@ -161,7 +166,9 @@ function toastText(win) {
   ok('tapping them does not fold the card', cardBody && cardBody.style.display === before, cardBody && cardBody.style.display);
 
   const rows = Array.from(win.document.querySelectorAll('#discPopupBody .sc-alm-row'));
-  ok('they open an album menu', rows.length === 2, String(rows.length));
+  // Two rows here, and the album's own delete joined them in 80.2.5: the count is
+  // not this file's to pin, the two it added are.
+  ok('they open an album menu', rows.length >= 2, String(rows.length));
   ok('whose first row is the real-order sort', rows[0] && /real order/i.test(rows[0].textContent), rows[0] && rows[0].textContent);
   ok('and whose second row is the hand reorder', rows[1] && /by hand/i.test(rows[1].textContent), rows[1] && rows[1].textContent);
 

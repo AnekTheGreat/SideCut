@@ -4,6 +4,10 @@
 // by you" — so the library is polluted exactly the way older builds polluted it,
 // and this file proves what 73.1.8 does with it:
 //
+//   (80.2.5 changed one thing this file covers: the boot no longer rebuilds an
+//    album out of a tag at all. It restores only what it archived, which is what
+//    the second half of the sweep block below now proves.)
+//
 //   1. An entry the app created for itself (an old card-drag auto-save, or a tag
 //      album materialised so a reorder had somewhere to live) is cleared from the
 //      Albums tab by the boot sweep, and the name it had taken is free again —
@@ -301,24 +305,44 @@ async function rename(win, currentName, newName, newArtist) {
     void snapshot;
   }
 
-  console.log('\n— 73.1.9: recovery is every-boot, whole-list, and respects a real delete —');
+  console.log('\n— 80.2.5: a lost entry is not invented from its tag, only restored from the archive —');
   {
-    // A sweep victim whose name no entry holds any more. 73.1.8 rebuilt this
-    // only ONCE and only from the unclaimed songs; 73.1.9 rebuilds it on any
-    // boot and WHOLE - the song My Mix also holds comes back into it.
+    // THE OWNER: "sometimes they're making random albums with singles and stuff idk
+    // why it shouldn't be doing that". 73.1.9 rebuilt any tag-named album on every
+    // boot, and that is what put cards nobody made into the list: the tags on a phone
+    // are whatever the files arrived with. 80.2.5 restores only what the app has a
+    // record of taking (sidecut_albumsArchive), so an entry that goes missing on its
+    // own is NOT re-made out of the album tags on the files.
     const m = idb._data.meta.get('userAlbums');
     delete m.value['MoonChild Era'];
     win.__scAlbumsRecoverDeleted();
     const s2 = storedAlbums() || {};
-    ok('a sweep victim is rebuilt on a later boot too (every-boot, not one-shot)',
-       !!s2['MoonChild Era'], JSON.stringify(Object.keys(s2)));
-    ok('rebuilt WHOLE - the song My Mix also holds is included',
-       s2['MoonChild Era'] && eq(s2['MoonChild Era'].trackIds, ['t1', 't2', 't3']), JSON.stringify(s2['MoonChild Era']));
-    ok('the album that shared the song is untouched (additive only)',
+    ok('an entry that went missing is not invented out of its tag',
+       !s2['MoonChild Era'], JSON.stringify(Object.keys(s2)));
+    ok('the songs and their tags are untouched by that',
+       eq(tags(), { t1: 'MoonChild Era', t2: 'MoonChild Era', t3: 'MoonChild Era', t4: 'G.O.A.T', t5: 'G.O.A.T' }),
+       JSON.stringify(tags()));
+    ok('and the albums that are there are untouched',
        s2['My Mix'] && eq(s2['My Mix'].trackIds, ['t1', 't4']), JSON.stringify(s2['My Mix']));
-    ok('and the rebuilt album is marked yours', s2['MoonChild Era'] && s2['MoonChild Era'].manual === true && !s2['MoonChild Era'].auto,
-       JSON.stringify([s2['MoonChild Era'] && s2['MoonChild Era'].manual, s2['MoonChild Era'] && s2['MoonChild Era'].auto]));
+    // The record the pass DOES honour: the archive the sweep writes when it takes an
+    // entry away. That is the only thing a launch puts back - restored with the song
+    // list it had at the moment it went, never rebuilt from a guess.
+    win.localStorage.setItem('sidecut_albumsArchive', JSON.stringify({
+      'MoonChild Era': { at: 1, entry: { artist: 'Diljit Dosanjh', trackIds: ['t1', 't2', 't3'], createdAt: 11, auto: true } },
+    }));
+    win.__scAlbumsRecoverDeleted();
+    const s3 = storedAlbums() || {};
+    ok('an album the app archived is put back, whole',
+       s3['MoonChild Era'] && eq(s3['MoonChild Era'].trackIds, ['t1', 't2', 't3']), JSON.stringify(s3['MoonChild Era']));
+    ok('marked yours, with the stale flag gone',
+       s3['MoonChild Era'] && s3['MoonChild Era'].manual === true && !s3['MoonChild Era'].auto,
+       JSON.stringify([s3['MoonChild Era'] && s3['MoonChild Era'].manual, s3['MoonChild Era'] && s3['MoonChild Era'].auto]));
+    ok('and it left the archive (restored, not copied)',
+       eq(win.__scAlbumsArchivedNames(), []), JSON.stringify(win.__scAlbumsArchivedNames()));
+    ok('the album that shared its songs is still untouched',
+       s3['My Mix'] && eq(s3['My Mix'].trackIds, ['t1', 't4']), JSON.stringify(s3['My Mix']));
   }
+
 
   console.log('\n— a delete the user makes through the panel STAYS deleted —');
   {

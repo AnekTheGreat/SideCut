@@ -196,31 +196,29 @@ let toasts = [];
     console.log('    confirm: ' + body.slice(0, 160));
     ok('the export confirm is about albums', /album/i.test(body));
     ok('it never names the open playlist', body.indexOf(OPEN_PLAYLIST) === -1, body);
-    // 73.1.9: the junk single-song 'Tag Album' entry is cleared and archived
-    // (name not a file tag); recovery rebuilds 'MoonChild Era' WHOLE and
-    // 'G.O.A.T' whole, so the export is about 4 albums. The song count is the
-    // UNIQUE library songs across them (6 of 6) - the export dedupes by design.
-    ok('it counts the songs of your albums (6 unique songs across 4 albums)',
-       /\b6 songs?\b/.test(body), body.slice(0, 120));
-    ok('it names the albums you have', /\b4 albums?\b/.test(body), body.slice(0, 120));
+    // 80.2.5: the junk single-song 'Tag Album' entry is still cleared and archived
+    // (its name is not a file tag), and the launch no longer invents an album out
+    // of the 'MoonChild Era' / 'G.O.A.T' tags - so the export is about the two
+    // albums you have. Its song count is the UNIQUE library songs across them
+    // (t1, t4, t5, t6 - 4 of 6) because the export dedupes by design.
+    ok('it counts the songs of your albums (4 unique songs across 2 albums)',
+       /\b4 songs?\b/.test(body), body.slice(0, 120));
+    ok('it names the albums you have', /\b2 albums?\b/.test(body), body.slice(0, 120));
   }
   win.document.getElementById('exportConfirmBackdrop').style.display = 'none';
   win.document.getElementById('songActionsBackdrop').style.display = 'none';
 
   console.log('\n— nothing above touched a playlist —');
   ok('playlists are byte-for-byte unchanged', eq(ourPlaylists(), PLAYLISTS_START), JSON.stringify(ourPlaylists()));
-  // 73.1.9: the junk 'Tag Album' (name is NO file tag) is cleared and archived;
-  // recovery rebuilt 'MoonChild Era' WHOLE (t1,t2,t3,t6 — even the t1 that My
-  // Mix shares) and 'G.O.A.T' whole (t4,t5) from the tags on the files.
-  ok('the hand-made album entries are unchanged (rebuilt ones whole and marked yours, junk archived)',
+  // The junk 'Tag Album' (its name is NO file tag) is cleared and archived. 80.2.5:
+  // the 'MoonChild Era' and 'G.O.A.T' tags are NOT turned into albums any more, so
+  // the store holds the two albums made by hand and nothing else.
+  ok('the hand-made album entries are unchanged (junk archived, no tag album invented)',
      (() => {
        const v = idb._data.meta.get('userAlbums').value || {};
        const mine = { 'My Mix': v['My Mix'], 'Late Night': v['Late Night'] };
-       const rec = v['MoonChild Era'];
-       const goat = v['G.O.A.T'];
-       return eq(mine, ALBUMS_AFTER_BOOT) && !!rec && rec.manual === true && !rec.auto &&
-              eq(rec.trackIds, ['t1', 't2', 't3', 't6']) &&
-              !!goat && goat.manual === true && eq(goat.trackIds, ['t4', 't5']) &&
+       return eq(mine, ALBUMS_AFTER_BOOT) &&
+              v['MoonChild Era'] === undefined && v['G.O.A.T'] === undefined &&
               typeof win.__scAlbumsArchivedNames === 'function' &&
               win.__scAlbumsArchivedNames().indexOf('Tag Album') !== -1;
      })(), JSON.stringify(idb._data.meta.get('userAlbums').value));
