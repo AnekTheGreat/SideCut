@@ -129,22 +129,30 @@ jobs:
         # Failing here says so in the run's own log instead of in the console a day
         # later.
         run: |
-          set -euo pipefail
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          # No `set -e`: every value is printed and every check reports itself. A step
+          # that dies on an empty variable leaves a red run with no reason in it, and
+          # the reason is the whole point.
+          set -uo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           APK=android/app/build/outputs/apk/release/app-release.apk
           AAB=android/app/build/outputs/bundle/release/app-release.aab
           TOOLS=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1)
-          BADGING=$("$TOOLS/aapt2" dump badging "$APK")
-          TARGET=$(printf '%s' "$BADGING" | grep -oE "targetSdkVersion:'[0-9]+'" | grep -oE "[0-9]+" | head -1)
-          MINSDK=$(printf '%s' "$BADGING" | grep -oE "(^| )sdkVersion:'[0-9]+'" | grep -oE "[0-9]+" | head -1)
-          COMPILE=$(printf '%s' "$BADGING" | grep -oE "compileSdkVersion='[0-9]+'" | head -1)
-          echo "built APK: minSdkVersion=${MINSDK:-none} targetSdkVersion=${TARGET:-none} $COMPILE (aapt2 $TOOLS)"
           STATUS=0
-          if [ -z "${TARGET:-}" ] || [ "$TARGET" -lt 36 ]; then
+          BADGING=$("${TOOLS:-/nonexistent}/aapt2" dump badging "$APK" 2>&1) || {
+            echo "::error::aapt2 could not read the APK (TOOLS='${TOOLS:-}'): $BADGING"
+            STATUS=1
+          }
+          # Anchored at the line start so `sdkVersion` cannot pick up targetSdkVersion.
+          sdk() { printf '%s\n' "$BADGING" | sed -n "s/^$1:'\([0-9]\{1,3\}\)'.*/\1/p" | head -1; }
+          MINSDK=$(sdk sdkVersion)
+          TARGET=$(sdk targetSdkVersion)
+          COMPILE=$(printf '%s\n' "$BADGING" | sed -n "s/.*compileSdkVersion='\([0-9]\{1,3\}\)'.*/\1/p" | head -1)
+          echo "built APK: minSdkVersion=${MINSDK:-none} targetSdkVersion=${TARGET:-none} compileSdkVersion=${COMPILE:-none} (aapt2 ${TOOLS:-none})"
+          if [ "${TARGET:-0}" -lt 36 ]; then
             echo "::error::the APK targets ${TARGET:-nothing} - Play needs API 36 or higher"
             STATUS=1
           fi
-          if [ -z "${MINSDK:-}" ] || [ "$MINSDK" -lt 24 ]; then
+          if [ "${MINSDK:-0}" -lt 24 ]; then
             echo "::error::the APK has minSdkVersion ${MINSDK:-nothing} - Play needs 24 or higher"
             STATUS=1
           fi
