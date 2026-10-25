@@ -42,7 +42,7 @@ const slice = (from, to) => {
 };
 const sliceBetween = slice;
 
-const VER = '80.2.3'; /* repinned by dev/repin-8023.mjs */
+const VER = '80.2.4'; /* repinned by dev/repin-8024.mjs */
 
 console.log('[1] a check that finishes after you close the popup leaves it closed');
 {
