@@ -38,6 +38,13 @@ when to bring it back up, so the plugin remembers the last focus event and grows
 mode. It says "over" only on positive evidence, so a duck Android applied without
 telling anyone leaves the web layer's own bounded wait in charge.
 
+80.2.9 - MODE_IN_CALL_SCREENING DOES NOT EXIST. The call check compared the audio
+mode against `AudioManager.MODE_IN_CALL_SCREENING`, which is not a constant in the
+SDK at any API level: `MODE_CALL_SCREENING` (API 29) is the only call-screening mode
+there is. A missing symbol is a compile error, so `:app:compileReleaseJavaWithJavac`
+failed on every Android build from the moment this plugin was injected, and the APK
+pipeline stayed red. The check now reads the real constant, still guarded by Q.
+
 Idempotent and safe to re-run on a fresh or already-patched project.
 """
 import os
@@ -169,20 +176,23 @@ public class SideCutAudioFocusPlugin extends Plugin {
      * a focus interruption is obeyed, because another app playing a message blip
      * looks exactly like a call from inside the WebView otherwise.
      *
-     * MODE_IN_CALL / MODE_IN_COMMUNICATION (a cellular or VoIP call) and
-     * MODE_RINGTONE (an incoming call) are the Android audio-input guide's own test
-     * for "a voice call is active", and the audio mode is readable by any app. The
-     * sharper answer would be TelephonyManager's call state, but that needs
-     * READ_PHONE_STATE, which this app does not ask for, so it is only consulted when
-     * that permission happens to be granted already.
+     * MODE_IN_CALL / MODE_IN_COMMUNICATION (a cellular or VoIP call), MODE_RINGTONE
+     * (an incoming call) and MODE_CALL_SCREENING (a call being screened, API 29) are
+     * the audio modes a call is in, and the mode is readable by any app. The sharper
+     * answer would be TelephonyManager's call state, but that needs READ_PHONE_STATE,
+     * which this app does not ask for, so it is only consulted when that permission
+     * happens to be granted already.
      */
     private boolean inCall() {
         try {
             int m = mode();
             if (m == AudioManager.MODE_IN_CALL || m == AudioManager.MODE_IN_COMMUNICATION) return true;
             if (m == AudioManager.MODE_RINGTONE) return true;
+            // MODE_CALL_SCREENING is the Q constant (API 29). There is no
+            // MODE_IN_CALL_SCREENING in AudioManager at all, and naming it here stopped
+            // the app compiling from the moment this plugin was injected.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                    && (m == AudioManager.MODE_IN_CALL_SCREENING || m == AudioManager.MODE_CALL_SCREENING)) return true;
+                    && m == AudioManager.MODE_CALL_SCREENING) return true;
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                         && getContext().checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE)
