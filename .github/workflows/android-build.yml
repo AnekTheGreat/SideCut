@@ -142,18 +142,23 @@ jobs:
             echo "::error::aapt2 could not read the APK (TOOLS='${TOOLS:-}'): $BADGING"
             STATUS=1
           }
-          # Anchored at the line start so `sdkVersion` cannot pick up targetSdkVersion.
+          # Anchored at the line start so the floor cannot pick up targetSdkVersion, and
+          # read under both spellings: aapt2 prints `sdkVersion:'24'` in some build-tools
+          # releases and `minSdkVersion:'24'` in others, and the case differs, so neither
+          # pattern covers the other.
           sdk() { printf '%s\n' "$BADGING" | sed -n "s/^$1:'\([0-9]\{1,3\}\)'.*/\1/p" | head -1; }
           MINSDK=$(sdk sdkVersion)
+          [ -n "$MINSDK" ] || MINSDK=$(sdk minSdkVersion)
           TARGET=$(sdk targetSdkVersion)
           COMPILE=$(printf '%s\n' "$BADGING" | sed -n "s/.*compileSdkVersion='\([0-9]\{1,3\}\)'.*/\1/p" | head -1)
+          SDKLINES=$(printf '%s\n' "$BADGING" | grep -i sdk | paste -sd' ' -)
           echo "built APK: minSdkVersion=${MINSDK:-none} targetSdkVersion=${TARGET:-none} compileSdkVersion=${COMPILE:-none} (aapt2 ${TOOLS:-none})"
           if [ "${TARGET:-0}" -lt 36 ]; then
-            echo "::error::the APK targets ${TARGET:-nothing} - Play needs API 36 or higher"
+            echo "::error::the APK targets ${TARGET:-nothing} - Play needs API 36 or higher (saw: ${SDKLINES:-nothing})"
             STATUS=1
           fi
           if [ "${MINSDK:-0}" -lt 24 ]; then
-            echo "::error::the APK has minSdkVersion ${MINSDK:-nothing} - Play needs 24 or higher"
+            echo "::error::the APK has minSdkVersion ${MINSDK:-nothing} - Play needs 24 or higher (saw: ${SDKLINES:-nothing})"
             STATUS=1
           fi
           # The AAB is what Play scans; dev/aab-sdk.py reads its protobuf manifest.
