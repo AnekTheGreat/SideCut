@@ -1,60 +1,58 @@
-## 80.2.3 ({{STAMP}}): the award card opens for plays too, and every rung is a bigger card
+## 80.2.4 ({{STAMP}}): an album card gets its own three dots, and an album sorts into the order it really plays
 
-- **THE OWNER ASKED FOR THE CARD, NOT THE STREAK.** "make the like awards popup screen
-  show up for hitting records in plays too like 100 and 200, 500, 1000, 2000, 3000,
-  4000, 5000, 7500, 10000 ect... make them better every time". The full-screen
-  celebration already existed: 80.0 built it for streak milestones (`sc80Module`,
-  section 3, `#sc80Milestone`). Nothing about it needed replacing, so this release
-  earns the same card with the app's own play total and leaves the streak's own
-  behaviour where it was.
-- **THE LADDER.** `PLAY_MILESTONES` is exactly the ten rungs asked for - 100, 200, 500,
-  1,000, 2,000, 3,000, 4,000, 5,000, 7,500, 10,000 - and `playRungs()` generates the
-  tail past the last named one: every 5,000 up to 100,000. The "ect..." is real, not
-  copy: a library that keeps growing keeps earning awards, with no second list to
-  remember to extend.
-- **"BETTER EVERY TIME" IS THE MEDAL AND THE CEREMONY.** Five tiers - Bronze at 100,
-  Silver at 500, Gold at 2,000, Platinum at 5,000, Diamond at 10,000 - and the card is
-  repainted for each: 3 to 8 rings, 26 to 80 falling bits, the kicker and the unit
-  taking the tier's colour, and a card glow that warms from bronze to ice. The streak
-  cards keep their own three rings and 26 bits, because `paintCeremony(host, 0)` is
-  what they ask for.
-- **THE TRIGGER IS THE PLAY COUNTER, NOT A TIMER.** `commitPlay` - the one place a play
-  is counted - calls `SC80.checkPlays()` after it writes the count, behind a guard, so
-  a missing hook can never stop a play from counting. A start (`bootPlays`) and a
-  return to the foreground (`visibilitychange`) check the same rung, because a play
-  heard with the screen off lands in the stats with no card on screen. The HIGHEST rung
-  crossed gets the card and every rung below it is recorded at the same time
-  (`markPlaysThrough`), so a library restored with thousands of plays already in it
-  says its piece once instead of queueing nine popups.
-- **THE RECORD LIVES IN STUDIO.** Tools, Milestones gains a Plays block: the next rung
-  and how far along it is, the awards already won with their dates, a Replay on each,
-  and a Preview 10,000 plays button. `data-sc80-plays` is wired through the same
-  delegated handler the streak replays use.
-- **THE STREAK CARD IS UNTOUCHED IN WHAT IT SAYS.** `celebrate()` now resets
-  `data-kind`/`data-tier`, hides the medal, restores the Milestone kicker, the DAY
-  STREAK unit and the Keep it going button, and paints three rings - so the two
-  celebrations share one overlay without either inheriting the other's look. Its own
-  copy, its own record and its own replay are unchanged.
-- **THE GATE.** `dev/staircase-check.cjs` gains section **[9]** - the ladder, the tail,
-  the medal, the ceremony per tier, the medal stylesheet, the trigger, the Studio block
-  and the streak card's reset. **85/0**. The section travels alone in
-  `dev/patch-gate-8023.py`, which inserts it and refuses to pass unless every claim of
-  it is in the gate.
-- **AND IT WAS DRIVEN, NOT JUST READ.** A jsdom boot of the patched page (`SC_HTML`) ran
-  the milestone block for real: 51 checks/0 - the ladder's ten rungs and its 15,000 to
-  100,000 tail, no card at zero plays, 100 plays opening Bronze with 4 rings and 32
-  bits, 3,000 opening Gold with 6 rings and 56 bits and every rung below it recorded, a
-  10,000-play card at Diamond with 8 rings and 80 bits, a manual replay that records
-  nothing, a 30-day streak card still on its own three rings and 26 bits, the Studio
-  button opening a plays card again, and no uncaught page errors.
-- **THE REPIN.** `dev/repin-8023.mjs`: live pin 80.2.2 -> **80.2.3**, adjacency `PREV`
-  80.2.1 -> **80.2.2**, both regex spellings swept, the PREV normalizer widened to carry
-  `80.2.x`, `--check` clean in 0 (129 edits across 53 gate files).
-- **THE CHANGELOG HEAD HAS EIGHT NOTES** on purpose: `test-738` requires at least seven,
-  no apostrophes, the words widget / player / lyrics / letter, and no downloader or
-  converter term. The last note names the album pill dock, which is what
-  `album-follow-dock-check` and `test-735` require of the head.
-- **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point in the
-  runner and both `--check`s green on the tree that ships.
-- **THE ONE RED LEFT** is `media-controls-check` **66/1**, the recorded pre-existing red
-  this repository has carried for months.
+- **THE OWNER ASKED FOR ONE THING, IN TWO PLACES.** "add a way in albums and 3
+  dots to sort an album by if it's an actual album then in that actual order get
+  this from album history". An album's songs have only ever been in the order they
+  were imported, which is almost never the order the record plays in, and Album
+  History already knew the order. This release connects the two.
+- **THE CARD.** Every album card in Albums now carries the same three dots a song
+  row carries. A tap opens an album menu: `Sort into the album's real order` and
+  `Reorder songs by hand` - the sheet a long press already opened, so the menu is
+  not a one-button dead end. The tap stops at the button; the header's own tap
+  folds the card and must not fold it on the way in.
+- **THE SONG.** The same sort is a row in the song's three-dot sheet - `Sort album
+  "<name>" into its real order` - and it is outside the Albums-only block the hand
+  reorder sits in, because a song knows its album in every view. It lands in the
+  sheet's Organize group, not a group of its own.
+- **THE READ.** `scRealFetch` is the pair Album History makes: the iTunes album
+  search, then the collection lookup by id in the storefronts the app already
+  walks (default, US, IN, GB), then Deezer's album search and its own track
+  endpoint. A collection only counts when its NAME agrees with the album, so a
+  similar record is never filed in, and the tracks are sorted by disc then track
+  number rather than trusting the reply's order.
+- **THE FILING.** `scRealApplyOrder` rewrites the album's own `trackIds` - the one
+  store the cards, playback and the queue all read - so nothing else needs to
+  change. Each real track claims one song, in the record's order; a song the
+  album does not name keeps its place at the END, in the order it already had, so
+  a sort never drops a song. A list that names none of the album's songs leaves
+  the album exactly as it was and says so.
+- **THE MATCH.** Titles are compared after the decoration only a file carries is
+  folded away - a remaster year, a deluxe tag, a featuring credit, a trailing
+  live note - and every loose match sits on a word edge, so a one-word title never
+  claims a different song.
+- **THE CACHE.** The list is kept per album in `sidecut_albumRealOrder`, with the
+  artist it was read for, so a different record with the same name is never
+  reused; forty albums deep, oldest out first. A cached list is used before the
+  network is asked, so the second sort is instant and works in flight mode, and it
+  is thrown away only when it names none of the album's songs.
+- **UNDO, AND NO LIES.** Every sort carries Undo, which puts the old order back;
+  an album of one song says there is no order to sort, an album Album History has
+  nothing for says that and moves nothing, and a sort that fails says so rather
+  than reporting a change it did not make.
+- **THE GATES.** `dev/album-real-order-check.cjs` is a boot of the patched page -
+  **35/0**: the card's dots open the menu without folding the card, the menu's
+  first row files the album into the store's order with the unnamed song kept at
+  the end, the cache is written with its artist and source, Undo restores, a
+  second sort reads no network at all, the song sheet carries the row in a
+  non-Albums view and in the Organize group, an album the store knows nothing
+  about is untouched, and a one-song album refuses. `dev/staircase-check.cjs`
+  gains section **[10]** (**108/0** overall).
+- **THE REPIN.** `dev/repin-8024.mjs`: live pin 80.2.3 -> **80.2.4**, adjacency
+  `PREV` 80.2.2 -> **80.2.3**, both regex spellings swept, `--check` clean.
+- **THE CHANGELOG HEAD HAS EIGHT NOTES** on purpose: `test-738` requires at least
+  seven, no apostrophes, the words widget / player / lyrics / letter, and no
+  downloader or converter term.
+- **THE OTA BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}}, rebuilt to a fixed point
+  in the runner and both `--check`s green on the tree that ships.
+- **THE ONE RED LEFT** is `media-controls-check` **66/1**, the recorded pre-existing
+  red this repository has carried for months.
