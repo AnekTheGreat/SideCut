@@ -144,7 +144,7 @@ async function openCardMenu(win) {
   await wait(1200);
 
   ok('the release hook is on the page', typeof win.__scAlbumDeletePrompt === 'function');
-  ok('the page runs 80.2.6', /const APP_VERSION = '80\.2\.6';/.test(html));
+  ok('the page runs 80.2.7', /const APP_VERSION = '80\.2\.7';/.test(html));
   if (typeof win.__scAlbumDeletePrompt !== 'function') {
     console.log('album-auto-delete-check: ' + pass + ' passed, ' + (fail + 1) + ' failed');
     process.exit(1);

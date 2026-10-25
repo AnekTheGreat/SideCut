@@ -2001,6 +2001,17 @@ body.theme-dyn-orchid::before{
 .home-bubble.hb-size-tall{ min-height:calc(158px * var(--hb-s, 1)); }
 .home-bubble.hb-size-wide{ grid-column:1 / -1; min-height:calc(96px * var(--hb-s, 1)); }
 .home-bubble.hb-size-full{ grid-column:1 / -1; min-height:calc(200px * var(--hb-s, 1)); }
+/* 80.2.7 - THE SIZES COME IN ORDER, WITH MORE STEPS BETWEEN THEM. The expand
+   chip walked mini 60, small 84, medium 146, automatic 118, tall 158, wide 96,
+   full 200, XL 260: the card SHRANK twice on the way up (at automatic, then at the
+   wide banner), and small to medium (62px) and full to XL (60px) were single taps
+   with nothing between them. Two rungs close those jumps - Roomy at 179 between
+   tall and full, Grand at 230 between full and XL - so the walk is 60, 84, 96,
+   118 automatic, 146, 158, 179, 200, 230, 260 and no step in it is bigger than
+   30px. Grand spans the row like full and XL do: a 230px card in half of a phone
+   is a column, not a bubble. */
+.home-bubble.hb-size-roomy{ min-height:calc(179px * var(--hb-s, 1)); }
+.home-bubble.hb-size-grand{ grid-column:1 / -1; min-height:calc(230px * var(--hb-s, 1)); }
 /* 80.2.6 - THE WIDE STATS BUBBLE PUTS ITS WORDS ON THE FLOOR. It is the one card
    that is full-width, and on the owner's phone it wears the middle size (146px),
    which centres its two lines so the extra height is shared above and below them.
@@ -2015,9 +2026,9 @@ body.theme-dyn-orchid::before{
    put the icon's foot on the number. body:not(.sc80-cloud) keeps the circle
    wall's own centring out of this. */
 body:not(.sc80-cloud) #homeBubbles .home-bubble[data-bubble="stats"]{ justify-content:flex-end; }
-body:not(.sc80-cloud) #homeBubbles .home-bubble[data-bubble="stats"]:is(.hb-size-medium, .hb-size-tall, .hb-size-full, .hb-size-xl) .hb-value{ font-size:calc(26px * var(--hb-s, 1)); line-height:1.05; }
+body:not(.sc80-cloud) #homeBubbles .home-bubble[data-bubble="stats"]:is(.hb-size-medium, .hb-size-tall, .hb-size-roomy, .hb-size-full, .hb-size-grand, .hb-size-xl) .hb-value{ font-size:calc(26px * var(--hb-s, 1)); line-height:1.05; }
 /* The expand hint owns the bottom-right corner, so the label stops short of it. */
-body:not(.sc80-cloud) #homeBubbles .home-bubble[data-bubble="stats"]:is(.hb-size-medium, .hb-size-tall, .hb-size-full, .hb-size-xl) .hb-label{ font-size:calc(12.5px * var(--hb-s, 1)); margin-top:5px; padding-right:26px; }
+body:not(.sc80-cloud) #homeBubbles .home-bubble[data-bubble="stats"]:is(.hb-size-medium, .hb-size-tall, .hb-size-roomy, .hb-size-full, .hb-size-grand, .hb-size-xl) .hb-label{ font-size:calc(12.5px * var(--hb-s, 1)); margin-top:5px; padding-right:26px; }
 .home-bubble .hb-ico svg{ width:calc(18px * var(--hb-s, 1)); height:calc(18px * var(--hb-s, 1)); }
 .home-bubble .hb-ico svg path{ fill:currentColor; }
 .home-bubble .hb-miniplay{ position:absolute; bottom:10px; right:12px; width:calc(34px * var(--hb-s, 1)); height:calc(34px * var(--hb-s, 1)); border-radius:50%;
@@ -5563,7 +5574,7 @@ body.sc80-cloud .action-strip::before{
 
       <div style="margin-bottom:16px;">
         <div style="font-size:13px; font-weight:600; margin-bottom:4px;">Home bubble sizes</div>
-        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.5;">Set each bubble to exactly the size you want — <b>W</b> is how many columns it takes (1 or 2, 2 = full width) and <b>H</b> is how tall it is (1–4×, in half steps, so 1.5 is a real size). Also available: tap the ⤢ chip on any bubble to cycle through the presets — mini, small, <b>medium</b>, automatic, tall, wide, full and XL.</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-bottom:8px; line-height:1.5;">Set each bubble to exactly the size you want — <b>W</b> is how many columns it takes (1 or 2, 2 = full width) and <b>H</b> is how tall it is (1–4×, in quarter steps, so 1.25 is a real size). Also available: tap the ⤢ chip on any bubble to cycle through the presets — mini, small, wide, automatic, <b>medium</b>, tall, roomy, full, grand and XL.</div>
         <div id="sandboxBubbleSizes"></div>
         <button class="tab" id="sandboxBubbleSizesReset" style="margin-top:8px; padding:6px 12px; font-size:12px;">↺ Reset to automatic</button>
       </div>
@@ -9707,15 +9718,23 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   // multiplier of the bubble's own base height, so a bubble can be built to the
   // exact size you want instead of only the presets below.
   let homeBubbleExact = {};
-  const HB_SIZE_CLASSES = ['hb-size-mini', 'hb-size-small', 'hb-size-medium', 'hb-size-tall', 'hb-size-wide', 'hb-size-full', 'hb-size-xl'];
-  // The chip walks up from mini through the middle to full width. `null` is the
-  // automatic template size, and it stays in the walk because that is where a bubble
-  // starts: the first tap on an untouched bubble goes to tall, as it always did.
-  const HB_SIZE_CYCLE = ['mini', 'small', 'medium', null, 'tall', 'wide', 'full', 'xl']; // null = back to automatic
+  const HB_SIZE_CLASSES = ['hb-size-mini', 'hb-size-small', 'hb-size-wide', 'hb-size-medium', 'hb-size-tall', 'hb-size-roomy', 'hb-size-full', 'hb-size-grand', 'hb-size-xl'];
+  // THE LADDER. Every size a bubble can be put at, smallest first, with the height the
+  // stylesheet draws each one at - the same numbers, so the walk can say where it is
+  // without measuring a card. `null` is automatic, the template's own size: 118 on a
+  // normal card, and it sits at 118 in this line instead of off to one side, because
+  // it is a size like the rest of them and has its own place on the way up.
+  const HB_SIZE_HEIGHTS = { mini: 60, small: 84, wide: 96, medium: 146, tall: 158, roomy: 179, full: 200, grand: 230, xl: 260 };
+  // THE WALK, IN ORDER. Every tap is a taller card than the one before it, and one tap
+  // past XL puts the bubble back to automatic. It read mini, small, medium, automatic,
+  // tall, wide, full, XL before - which made the card shorter at automatic and again at
+  // the wide banner, and left 62px between small and medium with nothing in between.
+  const HB_SIZE_CYCLE = ['mini', 'small', 'wide', null, 'medium', 'tall', 'roomy', 'full', 'grand', 'xl'];
   const HB_EXACT_MIN = 1, HB_EXACT_MAX = 4;
-  // Half a step of 118px. Whole steps only ever offered 118 or 236, and the size the
-  // owner asked for - the middle, without a cardful of empty space - sits between them.
-  const HB_EXACT_STEP = 0.5;
+  // A quarter of a step of 118px. Whole steps offered 118 or 236 and half steps still
+  // jumped 59px, so the Sandbox stepper now lands on 118, 148, 177, 207, 236 ... - a
+  // spot every 30px between the two sizes it used to choose between.
+  const HB_EXACT_STEP = 0.25;
   function applyHomeBubbleSizes(){
     const wrap = $('homeBubbles');
     if(!wrap) return;
@@ -9740,10 +9759,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   function setHomeBubbleExact(kind, axis, delta){
     const cur = homeBubbleExact[kind] || { w: 1, h: 1 };
     const next = { w: Number(cur.w) || 1, h: Number(cur.h) || 1 };
-    // Height moves in halves; width is a column count and can only be whole.
+    // Height moves in quarters; width is a column count and can only be whole.
     const step = axis === 'h' ? HB_EXACT_STEP : 1;
     next[axis] = Math.max(HB_EXACT_MIN, Math.min(HB_EXACT_MAX, next[axis] + delta * step));
-    next[axis] = Math.round(next[axis] * 10) / 10;   // 1.5, not 1.5000000000000002
+    next[axis] = Math.round(next[axis] * 100) / 100;   // 1.25, not 1.2500000000000002
     homeBubbleExact[kind] = next;
     dbPut('meta', { key: 'homeBubbleExact', value: homeBubbleExact });
     applyHomeBubbleSizes();
@@ -9751,7 +9770,11 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   }
   function cycleHomeBubbleSize(kind){
     const cur = homeBubbleSizes[kind] || null;
-    const next = HB_SIZE_CYCLE[(HB_SIZE_CYCLE.indexOf(cur) + 1) % HB_SIZE_CYCLE.length];
+    // The next rung up the ladder, or automatic one tap past the top of it. A stored
+    // size that is not on the ladder at all starts the walk over rather than guessing
+    // a place for it.
+    const at = HB_SIZE_CYCLE.indexOf(cur);
+    const next = HB_SIZE_CYCLE[at < 0 ? 0 : (at + 1) % HB_SIZE_CYCLE.length];
     if(next) homeBubbleSizes[kind] = next; else delete homeBubbleSizes[kind];
     dbPut('meta', { key: 'homeBubbleSizes', value: homeBubbleSizes });
     applyHomeBubbleSizes();
@@ -9777,7 +9800,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         '<button class="tab" data-hbex="' + k + '" data-axis="w" data-dir="1" style="padding:2px 8px;font-size:12px;">+</button>' +
         '<span style="font-size:10px;color:var(--ink-dim);margin-left:4px;">H</span>' +
         '<button class="tab" data-hbex="' + k + '" data-axis="h" data-dir="-1" style="padding:2px 8px;font-size:12px;">−</button>' +
-        '<span style="width:14px;text-align:center;font-size:11.5px;">' + (Number(ex.h) || 1) + '</span>' +
+        '<span style="width:26px;text-align:center;font-size:11.5px;">' + (Number(ex.h) || 1) + '</span>' +
         '<button class="tab" data-hbex="' + k + '" data-axis="h" data-dir="1" style="padding:2px 8px;font-size:12px;">+</button>' +
         '</div>';
     }).join('');
@@ -15188,7 +15211,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.2.6';
+  const APP_VERSION = '80.2.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -15837,6 +15860,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.2.7', date: 'October 25, 2026 \u00b7 1:40 PM EDT', title: 'Every Home bubble size now arrives in order, with more steps between the small ones and the big ones', items: [
+    'The size chip on Home now walks one ladder in order: every tap makes the bubble taller than the last, and one tap past XL puts it back to automatic.',
+    'Two new sizes fill the two long jumps: Roomy at 179 sits between tall and full, and Grand at 230 sits between full and XL.',
+    'The walk used to get shorter twice on the way up, once at automatic and again at the wide banner, so the sizes arrived out of order. It does not any more.',
+    'The Sandbox height stepper moves in quarter steps now, so it lands on 148, 177, 207 and 236 instead of only 118 or 236.',
+    'The listening stats card grows its two lines on Roomy and Grand as well, so the bigger sizes read as filled rather than sparse.',
+    'A bubble that is already a size keeps it, and one wearing the wide banner walks up from where it is instead of starting the ladder over.',
+    'The widget, the player, the lyrics view, the letter covers and the album pill dock are untouched.',
+  ],
+    details: [
+      'The walk read mini, small, medium, automatic, tall, wide, full, XL. That is 84 to 146 in one tap, back down to 118, up to 158, down to a 96px full-width banner, then 200 and 260 - two steps backwards and two jumps of more than 60px.',
+      'The heights are one line now - 60, 84, 96, 118 automatic, 146, 158, 179, 200, 230, 260 - and the largest step between neighbours in the walk is 30px, so a card can be grown one thumb-tap at a time instead of in halves.',
+      'Roomy and Grand are ordinary presets on the same stylesheet rules as the rest, so they scale with the Sandbox bubble size slider like every other size and are saved the same way.',
+      'The Sandbox stepper stores quarters cleanly (1.25, not 1.2500000000000002) and offers twelve stops between 1x and 4x where it used to offer six, which is the same request as the ladder from the other end of the screen.',
+      'Nothing is pinned to a stored size, so a bubble saved at any preset keeps it, and Reset still returns every bubble to automatic.',
+    ],
+  },
   { version: '80.2.6', date: 'October 25, 2026 \u00b7 1:10 AM EDT', title: 'The listening stats bubble keeps its words on the floor, and both lines are bigger', items: [
     'The listening stats bubble no longer leaves a strip of empty card under its words on Home.',
     'Its two lines now sit on the card floor like every other bubble, so the room the card is given goes above them, behind the icon, instead of under them.',

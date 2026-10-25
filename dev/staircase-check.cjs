@@ -150,9 +150,9 @@ console.log('[5] the band of theme colour under the lists is gone');
 
 console.log('[6] the release, the cache and the sheet are where 80.1 left them');
 {
-  ok(count(src, "const APP_VERSION = '80.2.6';") === 1, 'APP_VERSION = 80.2, once');
-  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.6';") !== -1, 'the shell cache is the release number');
-  ok(count(src, "version: '80.2.6'") === 1, 'and the changelog has one 80.2 entry');
+  ok(count(src, "const APP_VERSION = '80.2.7';") === 1, 'APP_VERSION = 80.2, once');
+  ok(sw.indexOf("const CACHE_NAME = 'sidecut-shell-v80.2.7';") !== -1, 'the shell cache is the release number');
+  ok(count(src, "version: '80.2.7'") === 1, 'and the changelog has one 80.2 entry');
   ok(src.indexOf("title: 'Round bubbles that hold their words, a curve of icon tabs, and Lyrics back in the bar'") > 0,
     'whose title is the release title');
   ok(src.indexOf('the letter covers, the lyrics view and the album pill dock are where 80.1 left them') > 0,
