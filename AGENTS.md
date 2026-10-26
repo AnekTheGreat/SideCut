@@ -1,4 +1,28 @@
-# SideCut — repository memory
+## The Android version code (October 26, 2026): the bundle's number comes from the build's run
+
+- **THE OWNER, WITH A SCREENSHOT OF PLAY.** `SideCut-5.0.55-release.aab` refused with *"Version code 512000
+  has already been used. Try another version code."* The ask was one word: *"update"*.
+- **WHY 512000 WAS SPENT TWICE.** The 5.0.55 bundle in the `apk-80.2.8-release` release (built 25 October, run
+  566) carries `versionCode` **512000** *and* `APP_VERSION` **80.2.8** - it was uploaded, so Play owns the
+  number - and the rebuild made after 80.3 / 80.3.1 carried the same 512000 because both took it from
+  `package.json`'s `androidVersionCode` pin, which nothing bumps but a person. The app is built more than once
+  per package.json `"version"` *precisely* because it ships over the air between Play uploads, so a
+  hand-maintained number is the wrong shape for it. (Same failure as 5.0.54's 511722, one layer up.)
+- **THE NUMBER IS NOW THE RUN'S.** `.github/workflows/patch-version.py` computes
+  `versionCode = 512001 + 10 * (GITHUB_RUN_NUMBER - 567) + (GITHUB_RUN_ATTEMPT - 1)`. Run numbers cannot repeat
+  or go backwards, a re-run only changes the attempt, ten attempts are reserved per run and the stride between
+  runs is those ten, so the sequence is monotone by construction: 567/1 -> 512001, 567/2 -> 512002, 568/1 ->
+  512011. **No run number is a hard failure, not a fallback to a pin.** The script exits if the gradle
+  versionCode/versionName replace did not take, prints what it wrote, and `--print-code` prints the same number
+  for anything that wants to check an artifact against it. `androidVersionCode` is gone from package.json.
+- **A REJECTED UPLOAD STILL SPENDS ITS CODE**, so a rebuild is a NEW dispatch - "Re-run all jobs" gets a new
+  number only while the attempts of that run have codes left. `dev/version-code-check.py` drives the script
+  through 58 consecutive builds, both attempts of each, the spent block (566) and the missing-run case: **14/14**.
+- **`workflows` IS NOT A GITHUB_TOKEN SCOPE.** The first attempt to land this from a workflow failed at the
+  push - "refusing to allow a GitHub App to create or update workflow `.github/workflows/android-build.yml`
+  without `workflows` permission" - and `permissions: workflows: write` is not a thing (the run does not even
+  parse). A commit that edits a workflow file needs a token that carries that permission; GITHUB_TOKEN never
+  does, however the `permissions:` block is written.
 
 ## 80.3.1 (October 26, 2026 · 8:14 AM EDT): a song that stops in its first seconds comes back, and the crash banner stops blaming a helper
 
