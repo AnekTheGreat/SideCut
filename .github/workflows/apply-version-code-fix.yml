@@ -1,0 +1,69 @@
+name: Land the version-code fix
+
+# One dispatch. `.github/workflows/patch-version.py` (committed beside this) makes the Android
+# version code the build's workflow run instead of the hand-bumped `androidVersionCode` pin
+# that Play refused for the second time ("Version code 512000 has already been used").
+#
+# The two files that carry the rest of it - android-build.yml (13 KB) and AGENTS.md (950 KB) -
+# are too big to send through the contents API, so they travel as replacements against the
+# checked-out files: dev/patch-android-version-code.py asserts every one matches exactly once
+# and stops before writing anything if it does not.
+#
+# The fixer and this workflow delete themselves in the same commit: neither has anything left
+# to do once the build names the step and AGENTS.md says why the number moved.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-code-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply the edits inside android-build.yml and AGENTS.md
+        run: |
+          set -euo pipefail
+          python3 dev/patch-android-version-code.py
+
+      - name: Read the workflow back before committing it
+        run: |
+          set -euo pipefail
+          python3 -c "import yaml; d = yaml.safe_load(open('.github/workflows/android-build.yml')); s = [x.get('name', '') for x in d['jobs']['build']['steps']]; assert 'Give this build its version code (from the run, not from a file)' in s, s; print('android-build.yml parses,', len(s), 'steps, with the new step named')"
+          grep -n 'Play versionCode for this build' .github/workflows/android-build.yml
+          grep -n '## The Android version code' AGENTS.md | head -1
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name 'SideCut release'
+          git config user.email 'actions@github.com'
+          git rm -q dev/patch-android-version-code.py .github/workflows/apply-version-code-fix.yml
+          git add AGENTS.md .github/workflows/android-build.yml
+          git status --porcelain
+          # This run exists to land two files and delete two; anything else in the commit is a
+          # runner side effect and must fail the run instead of being swept in.
+          stray=$(git diff --cached --name-only | grep -v -E '^(AGENTS\.md|\.github/workflows/android-build\.yml|dev/patch-android-version-code\.py|\.github/workflows/apply-version-code-fix\.yml)$' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::unexpected path(s) in this commit: $stray"
+            exit 1
+          fi
+          git commit -m 'The Play version code is the build run'\''s, so a rebuild cannot spend a number twice' -m 'Play refused SideCut-5.0.55-release.aab with "Version code 512000 has already been used": the bundle uploaded on 25 October and the one rebuilt after 80.3 / 80.3.1 both carried 512000, taken from an androidVersionCode pin nobody bumped. patch-version.py derives the code from GITHUB_RUN_NUMBER and GITHUB_RUN_ATTEMPT, android-build.yml checks the AAB against it and prints it in the run summary, and package.json has no pin left to forget.'
+          git push
+          echo '--- landed ---'
+          git log --oneline -1
+
+      - name: Prove the landed tree says this
+        run: |
+          set -euo pipefail
+          test ! -e dev/patch-android-version-code.py
+          test ! -e .github/workflows/apply-version-code-fix.yml
+          grep -c 'version-code "\$CODE"' .github/workflows/android-build.yml
+          python3 dev/version-code-check.py | tail -2
