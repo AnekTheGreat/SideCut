@@ -7174,6 +7174,20 @@ window.__scDragDelta = function(key, pxPerSec){
       var _scPrevBoot = 0;
       try{ _scPrevBoot = parseInt(localStorage.getItem('scBootAt') || '0', 10) || 0; }catch(e){}
       try{ localStorage.setItem('scBootAt', String(Date.now())); }catch(e){}
+      // 80.3.1 - A RELOAD IS NOT A DEATH. An update hand-over, a refresh, a WebView
+      // restart: the page comes back through the same boot, so the marker the previous
+      // session left is read here as a death that never happened - which is why the
+      // "playback stopped while it was starting" banner kept coming back after an
+      // update. The browser reports the difference itself, so ask it instead of
+      // inferring it from timings: a navigation whose type is `reload` is this app
+      // loading itself again, and nothing died.
+      var _scReload = false;
+      try{
+        var _scNavEntries = (performance.getEntriesByType ? performance.getEntriesByType('navigation') : null);
+        var _scNavEntry = _scNavEntries && _scNavEntries[0];
+        if(_scNavEntry && _scNavEntry.type){ _scReload = _scNavEntry.type === 'reload'; }
+        else if(performance.navigation){ _scReload = performance.navigation.type === 1; }
+      }catch(e){ }
       if(_scLast && _scLast.op){
         var _scAge = Date.now() - (_scLast.at || 0);
         var _scRestart = !!(_scPrevBoot && (Date.now() - _scPrevBoot) < 30000);
@@ -7191,19 +7205,29 @@ window.__scDragDelta = function(key, pxPerSec){
         // the quick ops — long import markers must keep full reporting.
         var _scQuick = _scLast.op === 'starting up' || _scLast.op === 'starting playback' || _scLast.op === 'the media player notification';
         var _scNormalDeath = _scRestart
+          || _scReload
           || (_scLeftAt && _scLeftAt >= (_scLast.at || 0))
           || (_scQuick && _scAlive && _scAlive >= ((_scLast.at || 0) + 15 * 1000))
           || _scAge >= 5 * 60 * 1000;
         if(!_scNormalDeath){
-          setTimeout(function(){ __scShowBootError('The app previously crashed during: ' + _scLast.op + ' — screenshot this message'); }, 1200);
+          // 80.3.1 - THE HELPER IS NOT SWITCHED OFF ANY MORE. This block used to write
+          // `sidecut_audiofocus_off` for the rest of the version whenever a death was
+          // recorded during "starting playback", on the guess that the injected
+          // audio-focus helper was to blame. That guess cannot be right: the helper has
+          // not asked Android for audio focus since 58.8.4 (`AUDIO_FOCUS_REQUESTS_OFF`),
+          // because asking is what made Chromium pause our own element - so there is no
+          // focus call in the play path to blame. What switching it off DID do was take
+          // away `callState()` and `duckState()`, i.e. a real call no longer paused the
+          // song and the assistant could no longer be ducked for. The death is still
+          // reported (that is what the recorder is for), and the helper stays.
           if(_scLast.op === 'starting playback'){
-            // A death in the opening moments of playback is the riskiest point of
-            // the whole play path, and the only NATIVE call in it is the injected
-            // audio-focus helper. Switch it off for THIS build (a newer build is
-            // assumed to have fixed it and re-enables it automatically) so it can
-            // never block playback twice, and say so once.
-            try{ localStorage.setItem('sidecut_audiofocus_off', JSON.stringify({ off: true, v: APP_VERSION })); }catch(e){}
-            setTimeout(function(){ __scShowBootError('Playback stopped while it was starting, so the audio-focus helper has been switched off — songs play normally now. It comes back in the next update.'); }, 2000);
+            // No version in the record: APP_VERSION is a const declared further down
+            // this page, so naming it here throws before anything is written - the same
+            // trap 73.4.7 found in the media-notification recorder.
+            try{ localStorage.setItem('sidecut_playback_stopped_at_start', JSON.stringify({ at: Date.now() })); }catch(e){}
+            setTimeout(function(){ __scShowBootError('The app was closed suddenly while a song was starting — everything still plays. Tap to dismiss.'); }, 1200);
+          } else {
+            setTimeout(function(){ __scShowBootError('The app previously crashed during: ' + _scLast.op + ' — screenshot this message'); }, 1200);
           }
           if(_scLast.op === 'the media player notification'){
             // 73.4.7 - TWO STRIKES, and the version this block writes is the one
@@ -15421,7 +15445,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.3';
+  const APP_VERSION = '80.3.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16070,6 +16094,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.3.1', date: 'October 26, 2026 · 8:20 AM EDT', title: 'A song that stops in its first seconds is put back, and the crash banner stops switching a helper off', items: [
+    'A song that stops a second or two after you press play is put back again. The app remembers an interruption — a call, another app taking the audio — and it never forgot it, so every later stop was believed instead of undone and a song could stay parked at 0:02 waiting for you.',
+    'Pressing play is you asking for sound, whichever way you press it: the app’s own button, the lock screen, the notification, the widget. All of them end that memory now, so the app stops protecting a song that nothing is holding.',
+    'An outside pause in the first seconds of a song is no longer obeyed. The guard that refuses a stale lock-screen pause gave up after 1.2 seconds — shorter than the hand-over with the phone’s media session takes — and covers the first four seconds now, recording what it refused.',
+    'The "playback stopped while it was starting" banner no longer switches the audio-focus helper off. It has not asked for audio focus since 58.8.4, so it is not in the play path, and switching it off only cost the app its call detection and the assistant duck. It stays on.',
+    'That banner also stops appearing for a page that simply reloaded itself, which is what an update hand-over and a refresh are. The app now asks the browser whether this boot is a reload, and a reload is never reported as a crash.',
+    'A death during "starting playback" is still recorded, and still says so once, in plain words, instead of stacking two messages on the screen.',
+  ],
+    details: [
+      'scUndoPlatformPause, the 30-second heartbeat and scSecondLook all refuse to undo a platform pause while `audioFocusInterrupted` is set. That latch was cleared by a focus GAIN, by `scNoteCallState(false)` after a call, and by `scTransportResume()` \u2014 which only the media-session play, previous and next handlers call. The app\u2019s own play/pause button called `a.play()` and nothing else, so `onPlayEvt` ran with the latch still set and every opening-seconds pause after it was believed: the song parked at 0:02, and no revive, second look or heartbeat could touch it. onPlayEvt now clears the latch when the start is not `revivingAudio` and no call is up, and stamps `audioFocusInterruptedAt` wherever it is set.',
+      'The call case is why the guard exists, and it still wins: `scInCall()` is checked before the latch is dropped, and a real call (which publishes its own fact) re-latches it on the next poll, so music still stands down for a call and still comes back when the call ends.',
+      'blockSpuriousStop refused a stale media-session pause only within 1.2 s of the start and 0.5 s of playhead, which is shorter than the notification/session hand-over on the installed app. It now refuses within 4 s and 2.5 s of playhead, up to three per attempt, recording each refusal as `refused-auto-pause-media-session`. A genuine second press is obeyed as it always was.',
+      'The recorder read `_scRestart` only as "the previous boot was less than 30 s ago", so a page that reloaded mid-song (an update hand-over, a refresh, a WebView restart) left its `starting playback` marker behind and the next boot reported a crash. It now reads `PerformanceNavigationTiming.type`, which is `reload` for exactly that case, with `performance.navigation.type === 1` as the fallback, and a reload counts as a normal death.',
+      'The banner used to write `sidecut_audiofocus_off` for the rest of the version, which made `capAudioFocus` null for the session: no focus listener, no `callState()`, no `duckState()`. Since `AUDIO_FOCUS_REQUESTS_OFF` has been true since 58.8.4, there is no focus request in the play path for that helper to be blamed for, so the switch-off bought nothing and cost a real call pausing the song. It is gone; the death is written to `sidecut_playback_stopped_at_start` instead, and the banner no longer stacks a second message on the screen.',
+    ],
+  },
   { version: '80.3', date: 'October 26, 2026 · 7:20 AM EDT', title: 'A new release announces itself once instead of every day, and the count is the list you can see', items: [
     'This release is 80.3, not 80.2.10: the third number stops at nine, so 80.2.9 is followed by 80.3. The page is the same fix either way - the app only moves forward, so the number is how it reaches you.',
     'A drop from a pinned artist says itself once. It was saying so again on every check - every open of the app and every return to it - because a one-track release is stored under the song name while the catalog keeps offering it as "Song - Single", so the app kept reading its own stored row as a brand-new find.',
@@ -32919,9 +32959,18 @@ function _fallbackCopy(text){
   let scReviveLockUntil = 0;
   function scReviveAllowed(){ return Date.now() >= scReviveLockUntil; }
   function scNoteRevive(){ scReviveLockUntil = Date.now() + 2500; }
+  // ─── 80.3.1 - A START THAT IS NOT OUR OWN REPAIR ENDS THE INTERRUPTION
   // Set while WE were paused by a focus loss — not by the user. Only then do we put
   // the song back when the interruption is over.
   let audioFocusInterrupted = false;
+  // 80.3.1 - AND A START OF YOUR OWN ENDS IT. This latch was cleared only by a focus
+  // GAIN, by a call ending, or by `scTransportResume()` (the lock-screen, notification
+  // and widget doors). The app's own play button never cleared it, so after one real
+  // interruption every later pause in that session was BELIEVED and never undone: press
+  // play, something pauses the song two seconds in, and the song stayed parked at 0:02
+  // for the rest of the session. A start that is not our own automatic repair is the
+  // user asking for sound, so it drops the latch - see onPlayEvt.
+  let audioFocusInterruptedAt = 0;   // when it was set (0 = never)
   // --------------------------------------------------------------------------
   // IS THE PHONE REALLY IN A CALL?
   //
@@ -32991,6 +33040,7 @@ function _fallbackCopy(text){
   function scStandDownForCall(){
     try{
       audioFocusInterrupted = true;
+      audioFocusInterruptedAt = Date.now();
       audioFocusCallPause = true;
       // 80.0.1 - a call is not an assistant borrowing the audio for a moment, so a
       // duck that is being held when a call starts is dropped here. Without this the
@@ -33026,6 +33076,10 @@ function _fallbackCopy(text){
     }, 4000);
   }
   window.__scInCall = scInCall;
+  // Published for the harness that drives this release: is the app still standing down
+  // for an interruption? A session that answers `true` after a start of the user's own
+  // is the parked-at-0:02 bug.
+  window.__scFocusLatch = function(){ return audioFocusInterrupted; };
   window.__scAskCallState = scAskCallState;
   window.__scNoteCallState = scNoteCallState;   // the gates drive the fact directly
   function audioFocusCall(method, body){
@@ -33304,6 +33358,7 @@ function _fallbackCopy(text){
           // the next play would come back up at the ducked level.
           try{ scUnduckForAssistant('the audio was lost'); }catch(e){}
           audioFocusInterrupted = true;
+          audioFocusInterruptedAt = Date.now();
           if(scInCall()) audioFocusCallPause = true;
           // Keep the answer fresh for the moment this loss ends.
           scAskCallState();
@@ -33445,9 +33500,16 @@ function _fallbackCopy(text){
       if(userPaused) return false;
       const a = activeAudio();
       if(!a || a.paused) return false;
-      if(msSincePlayStarted() > 1200) return false;
-      if((a.currentTime || 0) > 0.5) return false;   // audio really did play
-      if(spuriousStopsBlocked >= 2) return false;    // never fight forever
+      // 80.3.1 - FOUR SECONDS, NOT ONE. The hand-over with the phone's media session
+      // (the notification is rebuilt, the session is re-registered, the WebView's own
+      // session changes hands) takes longer than 1.2 s, and a stale pause that landed
+      // after this window was obeyed as if a finger had pressed it - the "press play, the
+      // song stops at 0:02" report. A pause in the first four seconds, before 2.5 s of
+      // audio has played, is still the hand-over: refuse it, and a second press is obeyed
+      // (three refusals per attempt at most, so this can never fight a finger for long).
+      if(msSincePlayStarted() > 4000) return false;
+      if((a.currentTime || 0) > 2.5) return false;   // audio really did play
+      if(spuriousStopsBlocked >= 3) return false;    // never fight forever
       spuriousStopsBlocked++;
       recordPlaybackStop('refused-auto-pause-' + why);
       try{ a.play().catch(function(){}); }catch(e){}
@@ -33457,6 +33519,17 @@ function _fallbackCopy(text){
   function onPlayEvt(e){
     if(e.target !== activeAudio()) return;
     userPaused = false; // playback is (re)starting — clear any prior deliberate-stop marker
+    // 80.3.1 - A START THAT IS NOT OUR OWN REPAIR IS THE USER ASKING FOR SOUND, so the
+    // memory of an old interruption must not outlive it. Everything that starts playback
+    // from outside already says this (`scTransportResume`), and the app's own play button
+    // did not - which is the door the owner uses, and why one interruption used to park
+    // every later song. `revivingAudio` is our own automatic repair, and a call that is
+    // really up is a fact that outranks the press, so neither clears it.
+    if(!revivingAudio && !scInCall()){
+      audioFocusInterrupted = false;
+      audioFocusInterruptedAt = 0;
+      audioFocusCallPause = false;
+    }
     scStartCallWatch();
     audioFocusPlayAt = Date.now();
     focusFights = 0;
