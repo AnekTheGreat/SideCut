@@ -54,16 +54,24 @@ jobs:
         run: |
           set -euo pipefail
           if grep -q "scPicCoverFromFile" index.html; then
-            echo "the picture change is still on the page"
+            echo "FAIL: the picture change is still on the page"
             exit 1
           fi
-          test "$(python3 -c 'import json;print(json.load(open("updates.json"))["version"])')" = "80.2.8"
-          if ! git diff --quiet 9a1c87b HEAD; then
-            echo "the tree is not the pre-80.2.9 tree"
-            git diff --stat 9a1c87b HEAD
+          echo "ok: no picture change on the page"
+          v=$(python3 -c 'import json;print(json.load(open("updates.json"))["version"])')
+          if [ "$v" != "80.2.8" ]; then
+            echo "FAIL: updates.json says $v, not 80.2.8"
             exit 1
           fi
-          echo "the tree is 9a1c87b: 80.2.8, no picture change"
+          echo "ok: the feed is 80.2.8"
+          # The only path this run adds is this workflow file, which is deleted as
+          # soon as the run is green; everything else must be the pre-80.2.9 tree.
+          if ! git diff --quiet 9a1c87b HEAD -- . ':(exclude).github/workflows/revert-8029.yml'; then
+            echo "FAIL: the tree is not the pre-80.2.9 tree"
+            git diff --stat 9a1c87b HEAD -- . ':(exclude).github/workflows/revert-8029.yml'
+            exit 1
+          fi
+          echo "ok: the tree is 9a1c87b, apart from this scaffolding"
 
       - name: Push
         run: git push origin HEAD:main
