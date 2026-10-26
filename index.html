@@ -15421,7 +15421,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.2.8';
+  const APP_VERSION = '80.2.10';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16070,6 +16070,24 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.2.10', date: 'October 25, 2026 · 5:40 PM EDT', title: 'A new release announces itself once instead of every day, and the count is the list you can see', items: [
+    'A drop from a pinned artist says itself once. It was saying so again on every check - every open of the app and every return to it - because a one-track release is stored under the song name while the catalog keeps offering it as "Song - Single", so the app kept reading its own stored row as a brand-new find.',
+    'The alert counts the same list the New releases panel shows: one row per drop, a month back. An artist with one release now says one release, instead of "+4 more".',
+    'A drop already in the list is never stored a second time, whichever of the two names it arrives under, so the list stops growing a copy of the same single on every check.',
+    'Nothing announced is announced again, and nothing older than that month or still dated to drop is announced at all: it is in the list, it is not news.',
+    'An artist stored twice under two spellings, or a single stored under both of its names, collapses to the one row it is - and a copy you already read makes the drop read, so it cannot come back wearing a NEW badge.',
+    'The bell counts the same month-long list, so a drop the panel does not show cannot keep the bell lit for ever.',
+    'The player, the albums, the widget and the lyrics are untouched by this release.',
+  ],
+    details: [
+      'The catalog pass in fetchArtistReleases keyed a one-track release on the collection name the catalog reports ("Song - Single"), but stored it under the song name ("Song") - so the key it had just written never matched on the next run. Every check therefore found the same single "fresh", appended another copy of it to pinnedReleases, and said so out loud: this is the once-a-day announcement, and it is also where the copies came from.',
+      'Both spellings are keys now, for the stored row and for the row in the run, so a release an older build stored under either name is recognised as the drop it already is. Measured in the session that wrote this: a first pass stores one row, a second pass over the same catalog stores nothing and returns no finds.',
+      'The announcement no longer reads the raw finds of one run. scReleaseAnnouncements takes the same de-duplicated, month-bounded list every New releases surface paints (window.__scReleaseList(31)), drops what has been read, what has already been announced and what is still on the way, and scReleaseAlert marks what it announces as alerted and saves - so the same drop cannot announce itself twice, on this boot or the next one.',
+      'The count in the alert is the length of that list, so "+N more" now means N other drops from pinned artists that the panel also shows, never the copies of one release that a catalog named twice.',
+      'scCollapseReleaseDuplicates runs on load, beside the junk-release prune: same normalised title and same day is one drop, a read or announced copy makes the survivor read or announced, and the artwork, link, preview and kind a later copy brought are kept. The stored list stops carrying a duplicate per check from earlier builds.',
+      'hasLandedUnseenReleases - what lights the bell - reads that same list instead of scanning every stored row at any age, so a drop older than the month the panel shows can no longer keep the badge up.',
+    ],
+  },
   { version: '80.2.8', date: 'October 25, 2026 · 2:50 PM EDT', title: 'The lyrics follow the voice through tempo changes, language changes and the silence after a line - and every bubble size is bigger than the one before it on a phone', items: [
     'Word-by-word and letter-by-letter highlighting now follows the voice in the recording instead of a fixed rate: a line sung slowly and then quickly, a song that switches language mid-line, and a chorus taken at a different tempo each stay on the word being sung.',
     'A pause after a line no longer drags the highlight through the silence: the last word stays lit until the singing starts again.',
@@ -41299,6 +41317,10 @@ function _renderAhFromData(artistAlbums){
     // A remix or a cover that an older build stored leaves now, not whenever
     // that artist is next refetched.
     try{ window.__scPruneJunkReleases(pinnedReleases); }catch(_ePrJ){}
+    // 80.2.10 - …and the copies earlier builds made of one drop leave with it: same
+    // normalised title and same day is one row, with a read or announced copy making the
+    // survivor read or announced.
+    try{ scCollapseReleaseDuplicates(pinnedReleases); }catch(_eDup){}
     // Empty or missing row, but the on-device snapshot (written ~1.5s after
     // every meta change) can still hold the real list — an older build's
     // failed-read wipe or a crash mid-write drops the row without touching
@@ -42814,7 +42836,17 @@ function _renderAhFromData(artistAlbums){
       });
       const prev = (pinnedReleases[artist] || []).filter(function(pr){ return !(pr && _reUpload[_relKey(pr.title)]); });
       const prevKeys = new Set();
-      prev.forEach(pr => { const pk = (pr.title||'').toLowerCase().trim() + '|' + (pr.date||''); prevKeys.add(pk); prevKeys.add('alb:' + pk); });
+      prev.forEach(pr => {
+        const pk = (pr.title||'').toLowerCase().trim() + '|' + (pr.date||'');
+        prevKeys.add(pk); prevKeys.add('alb:' + pk);
+        // 80.2.10 - AND UNDER THE OTHER NAME THE SAME DROP IS FILED UNDER. A one-track
+        // release is stored as "Song" here and offered as "Song - Single" by every
+        // catalog, so a row written under either name has to answer to both - otherwise
+        // the passes below read their own stored row as a brand-new find, add a copy of
+        // it, and announce it again on the next check.
+        const flat = String(window.__scSingleTitle(pr.title) || '').toLowerCase().trim() + '|' + (pr.date||'');
+        if(flat !== pk){ prevKeys.add(flat); prevKeys.add('alb:' + flat); }
+      });
       const fresh = [];
       // Title+day of everything this run has already listed (any source), so
       // Apple and MusicBrainz naming the same drop yields one row, not two.
@@ -42936,19 +42968,34 @@ function _renderAhFromData(artistAlbums){
         _catCand.sort(function(x, y){ return String(y.releaseDate || '').localeCompare(String(x.releaseDate || '')); });
         _catCand.slice(0, 8).forEach(function(r){
           var _cDate = (r.releaseDate || '').slice(0, 10);
-          var _ck = 'alb:' + r.collectionName.toLowerCase().trim() + '|' + _cDate;
-          if(prevKeys.has(_ck)) return;
-          if(freshTitles.has(r.collectionName.toLowerCase().trim() + '|' + _cDate)) return;
+          // 80.2.10 - THE KEY IS THE NAME THE ROW IS STORED UNDER. A one-track release
+          // is stored under the SONG's name ("Song"), because every catalog files it as
+          // "Song - Single" and the wrapper is dropped from the title. This pass keyed
+          // it on the CATALOG's name, so the row it had just written never matched on
+          // the next run: the same single came back as a brand-new find on every check,
+          // was stored a second time, and announced itself again the next day. Both
+          // spellings are checked, so a row an older build stored under either name is
+          // recognised as the drop it already is.
+          var _cOne = (r.trackCount || 0) === 1;
+          var _cTitle = _cOne ? window.__scSingleTitle(r.collectionName) : r.collectionName;
+          var _cKeyTitle = String(_cTitle || '').toLowerCase().trim();
+          var _cRawTitle = String(r.collectionName || '').toLowerCase().trim();
+          if(prevKeys.has('alb:' + _cKeyTitle + '|' + _cDate)) return;
+          if(_cRawTitle !== _cKeyTitle && prevKeys.has('alb:' + _cRawTitle + '|' + _cDate)) return;
+          if(freshTitles.has(_cKeyTitle + '|' + _cDate)) return;
+          if(freshTitles.has(_cRawTitle + '|' + _cDate)) return;
           for(var _fi = 0; _fi < fresh.length; _fi++){
             var _fe = fresh[_fi];
-            if(_fe && String(_fe.title || '').toLowerCase().trim() === r.collectionName.toLowerCase().trim() && String(_fe.date || '').slice(0, 10) === _cDate) return;
+            if(!_fe || String(_fe.date || '').slice(0, 10) !== _cDate) continue;
+            var _feTitle = String(_fe.title || '').toLowerCase().trim();
+            if(_feTitle === _cKeyTitle || _feTitle === _cRawTitle) return;
           }
           var _oneTrack = (r.trackCount || 0) === 1;
           // 73.5 - a one-track release named after a song the artist released
           // years ago is that song being re-filed, not a new drop.
           if(_oneTrack && _reUpload[_relKey(window.__scSingleTitle(r.collectionName))]) return;
           fresh.push({
-            title: _oneTrack ? window.__scSingleTitle(r.collectionName) : r.collectionName,
+            title: _cTitle,
             date: _cDate,
             art: r.artworkUrl100 ? r.artworkUrl100.replace('/100x100bb.jpg','/600x600bb.jpg') : null,
             url: r.collectionViewUrl || null,
@@ -42957,8 +43004,9 @@ function _renderAhFromData(artistAlbums){
             cid: r.collectionId || null,
             seen: false
           });
-          freshTitles.add(r.collectionName.toLowerCase().trim() + '|' + _cDate);
-          prevKeys.add(_ck);
+          freshTitles.add(_cKeyTitle + '|' + _cDate);
+          if(_cRawTitle !== _cKeyTitle) freshTitles.add(_cRawTitle + '|' + _cDate);
+          prevKeys.add('alb:' + _cKeyTitle + '|' + _cDate);
         });
       }catch(_catE){}
       // ---- Dated drops with nothing to connect -----------------------------
@@ -43040,17 +43088,91 @@ function _renderAhFromData(artistAlbums){
   // only through the Discover section's little count — if you happened to open
   // Discover. This is the landed-and-unseen test (future drops are Dropping soon's
   // own entry, not this one), plus the alert that a find earns.
+  // ─── 80.2.10 - A DROP IS ANNOUNCED ONCE ─────────────────────────────────────
+  // The alert used to fire whenever a catalog pass returned anything "fresh", and count
+  // those raw finds: a drop already in the list that arrived under a second name counted
+  // again, an album from years back that a first pin pulled in counted, and every one of
+  // them counted again on the next check - which is how a phone announced the same
+  // release every day, "+4 more" of the one release the panel showed.
+  //
+  // The announcement is now taken from the SAME de-duplicated, month-bounded list every
+  // New-releases surface paints: one row per drop, nothing already read, nothing already
+  // announced, nothing still on the way. Each announced row is marked `alerted` and
+  // saved, so no boot, check or return to the app can announce it a second time.
+  function scReleaseKey(r){
+    // The wrapper a one-track release wears is not part of the drop: "Song" and
+    // "Song - Single" are one row, or the copies an older build made never meet.
+    var flat = r && r.title;
+    try{ flat = window.__scSingleTitle(flat) || flat; }catch(_eFlat){}
+    return scNormRelTitle(flat) + '|' + (window.__scDay10(r && r.date) || '');
+  }
+  // The drops this check may announce, newest first - the panel's own list, filtered.
+  function scReleaseAnnouncements(){
+    var out = [];
+    try{
+      window.__scReleaseList(31).forEach(function(r){
+        if(!r || !r.title) return;
+        if(r.seen || r.alerted) return;                       // read, or said already
+        if(!r.date) return;                                   // nothing says it is out
+        if(window.__scUpcomingDay(r.date)) return;            // still on the way
+        if(window.__scJunkTitle && window.__scJunkTitle(r.title)) return;
+        out.push(r);
+      });
+    }catch(_eAnn){}
+    return out;
+  }
+  // Mark every stored copy of an announced drop, so the mark survives the next load.
+  function scMarkReleaseAlerted(rel){
+    var want = scReleaseKey(rel);
+    Object.keys(pinnedReleases || {}).forEach(function(artist){
+      (pinnedReleases[artist] || []).forEach(function(r){
+        if(r && scReleaseKey(r) === want) r.alerted = true;
+      });
+    });
+  }
+  // Same normalised title and same day is the same drop. Earlier builds stored a copy of
+  // a single on every check (the key mismatch above), and each copy arrived unseen - so
+  // the list is collapsed here, keeping what a later copy brought and marking the row
+  // read or announced if ANY copy was. Returns how many copies left.
+  function scCollapseReleaseDuplicates(map){
+    if(!map || typeof map !== 'object') return 0;
+    var dropped = 0;
+    Object.keys(map).forEach(function(artist){
+      var list = map[artist];
+      if(!Array.isArray(list) || list.length < 2) return;
+      var byKey = {}, out = [];
+      list.forEach(function(rel){
+        if(!rel || !rel.title){ dropped++; return; }
+        var k = scReleaseKey(rel);
+        var kept = byKey[k];
+        if(!kept){ byKey[k] = rel; out.push(rel); return; }
+        dropped++;
+        if(rel.seen) kept.seen = true;
+        if(rel.alerted) kept.alerted = true;
+        if(rel.upSeen) kept.upSeen = true;
+        if(!kept.art && rel.art) kept.art = rel.art;
+        if(!kept.url && rel.url) kept.url = rel.url;
+        if(!kept.previewUrl && rel.previewUrl) kept.previewUrl = rel.previewUrl;
+        if(!kept.cid && rel.cid) kept.cid = rel.cid;
+        if(!kept.kind && rel.kind) kept.kind = rel.kind;
+        if(!kept.time && rel.time) kept.time = rel.time;
+      });
+      if(out.length !== list.length) map[artist] = out;
+    });
+    return dropped;
+  }
   function hasLandedUnseenReleases(){
     try{
       if(!pinnedReleases) return false;
-      return Object.keys(pinnedReleases).some(function(artist){
-        return (pinnedReleases[artist] || []).some(function(r){
-          if(!r || r.seen) return false;                             // already read
-          if(!r.title || !r.date) return false;                      // nothing to announce
-          if(r.date && window.__scUpcomingDay(r.date)) return false; // still on the way
-          if(window.__scJunkTitle && window.__scJunkTitle(r.title)) return false; // remixes
-          return true;
-        });
+      // 80.2.10 - the SAME list the panel paints: one row per drop, a month deep. It used
+      // to scan every stored row at any age, so a drop too old for the panel to show -
+      // and the copies earlier builds made of it - kept the bell lit for ever.
+      return window.__scReleaseList(31).some(function(r){
+        if(!r || r.seen) return false;                             // already read
+        if(!r.title || !r.date) return false;                      // nothing to announce
+        if(r.date && window.__scUpcomingDay(r.date)) return false; // still on the way
+        if(window.__scJunkTitle && window.__scJunkTitle(r.title)) return false; // remixes
+        return true;
       });
     }catch(_eLand){ return false; }
   }
@@ -43063,8 +43185,16 @@ function _renderAhFromData(artistAlbums){
   // actual release to announce — never on boot, never on pin, never on a miss.
   function scReleaseAlert(found){
     if(!found || !found.length) return;
+    // 80.2.10 - SAID ONCE. Every drop handed in here is marked announced before it is
+    // said, so no later boot, check or return to the app can announce it again - and the
+    // count is the number of DISTINCT drops in the same list the panel paints, never the
+    // copies of one release a catalog named twice.
+    try{ found.forEach(function(r){ scMarkReleaseAlerted(r); }); }catch(_eMk){}
+    try{ const _sv = savePinnedArtists(); if(_sv && _sv.catch) _sv.catch(function(){}); }catch(_eSvp){}
+    try{ renderNewReleases(); }catch(_eRnr){}
+    try{ updateNotifBadge(); }catch(_eUnb){}
     const first = found[0];
-    const more = found.length > 1 ? ' (+' + (found.length - 1) + ' more)' : '';
+    const more = found.length > 1 ? ' (+' + (found.length - 1) + ' more from your pinned artists)' : '';
     const head = 'New release — ' + first.artist;
     const line = '"' + (first.title || 'New release') + '" is out' + more + '.';
     try{ toast('🎉 New release: ' + (first.title || '') + ' — ' + first.artist + more, 6000); }catch(_eTo){}
@@ -43107,7 +43237,6 @@ function _renderAhFromData(artistAlbums){
     pinnedCheckPromise = (async function(){
     pinnedCheckState = { active:true, total:pinnedArtists.length, done:0, newCount:0, finishedAt:0, seen:false };
     let totalNew = 0;
-    const found = [];   // { artist, title } for the drops this run actually found
     try{
     renderHomeExportPopup();
     // A few artists at a time: the catalogs are independent, so one stalled
@@ -43130,12 +43259,6 @@ function _renderAhFromData(artistAlbums){
           new Promise(function(res){ setTimeout(function(){ res(null); }, 25000); })  // 25s per artist
         ]).catch(function(){ return null; });                                        // never wedges the run
         totalNew += (fresh ? fresh.length : 0);
-        if(fresh && fresh.length){
-          for(let _fi = 0; _fi < fresh.length && found.length < 5; _fi++){
-            const _one = fresh[_fi];
-            if(_one) found.push({ artist: a.name, title: String(_one.title || '') });
-          }
-        }
         pinnedCheckState.done++;
         // Persist and repaint as each artist lands, so the list fills in while
         // the rest are still being read instead of appearing all at once —
@@ -43160,10 +43283,15 @@ function _renderAhFromData(artistAlbums){
     pinnedCheckState.newCount = totalNew;
     try{ await savePinnedArtists(); }catch(_eSv2){}
     renderNewReleases();
-    if(totalNew > 0){
+    // 80.2.10 - announce from the LIST, never from what a catalog returned this run: a
+    // drop that is already stored, already read or already announced is not news, however
+    // many checks keep finding it.
+    let _announce = [];
+    try{ _announce = scReleaseAnnouncements(); }catch(_eAnn2){}
+    if(_announce.length || totalNew > 0){
       renderHome(); // Updates the new releases bubble count
       // …and SAY so: a drop that landed is announced, not merely counted somewhere.
-      try{ scReleaseAlert(found); }catch(_eAlert){ console.warn('release alert skipped', _eAlert); }
+      try{ scReleaseAlert(_announce); }catch(_eAlert){ console.warn('release alert skipped', _eAlert); }
     }
     renderHomeExportPopup();
     updateNotifBadge();
