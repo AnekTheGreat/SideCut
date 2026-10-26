@@ -1,60 +1,47 @@
-## 80.2.8 ({{STAMP}}): the lyrics follow the voice through slow-then-fast, a change of language and the silence after a line - and the phone's size ladder stops going backwards
+## 80.2.9 ({{STAMP}}): any picture works as a cover - HEIC from the camera roll included
 
-- **THE OWNER ASKED FOR TWO THINGS IN ONE UPDATE.** *"add to the same update a fix
-  with the lyrics that makes it absolute correct with tempo changes and language
-  changes slow then fast breaks after lines everything fix that"*, and, of the Home
-  bubble sizes that shipped in 80.2.7, *"fix it"*.
-- **THE LYRICS WERE PACED BY ARITHMETIC, NOT BY SINGING.** `scPaceWords` gave every
-  word a share of the line's window by syllable weight, at one rate from this line's
-  timestamp to the next one's. That is exact only if the singer holds one tempo for the
-  whole line. It is wrong for exactly the four cases named: a line sung slow then fast,
-  a song that changes language mid-line (syllables per second change, and no weight
-  table can know which half is which), a stamp seconds away because the singer stopped
-  (the window IS that gap, so the sweep crawled into the silence), and a chorus repeated
-  at a different tempo.
-- **THE WORDS ARE NOW TIMED BY THE RECORDING.** A sung word is an attack, and the app
-  already computes a rising-energy envelope for the track (`scOnsetEnvelope`, 20ms hops,
-  used by the auto-alignment). `scWordStartsForWindow` reads that envelope inside the
-  line's own window: with at least as many rises as words, the words are the strongest
-  attacks in order (two rises closer than 90ms are one word, extras are dropped from the
-  weakest, so a consonant cluster or a drum under the voice cannot split a word); with
-  fewer rises than words, the words are shared out across the rises that are there. It
-  never looks at the words themselves, so it is language-blind, and a rise after a long
-  silence is simply the next word.
-- **FALLBACK IS THE OLD BEHAVIOUR, EXACTLY.** A window with fewer than two rises (a held
-  note, a whisper, a track that is not on the device) returns `null` and the pacer runs
-  the syllable share it has always run. A sheet with no timestamps at all never reaches
-  the measurement, because there are no windows to measure.
-- **MEASURED ONCE, CACHED.** `scWordMeasureKick` decodes the track the first time
-  word-by-word or letter-by-letter is switched on for a song, writes
-  `lyricWords_<track>` to the meta store, and returns immediately on every later tick -
-  including a remembered "no file for this track" record, so a song that cannot be
-  measured is not re-scanned twenty times a second.
-- **THE PACER READS IT FIRST.** `scMeasuredWordStarts` matches the live line by its own
-  timestamp and word count (a sheet edited since the measurement is never paced by the
-  old numbers), and the pacer lights the word whose measured window holds the playhead;
-  before the first rise nothing is lit, and past the last rise the last word holds, so a
-  line cannot walk into the gap behind it. The letter wave rides the same window, so
-  letters and words cannot drift apart.
-- **THE PHONE'S LADDER.** 80.2.7 made the walk one ascending line, but `@media
-  (max-width:480px)` still overrode the full rung to 170px while Roomy stayed 179, so a
-  phone drew 158, 179, **170**, 230, 260 - one step backwards in the middle of the
-  ladder, on the only screen the chip is used on. The override is gone.
-- **VERIFIED, ON THE SHIPPED SOURCE.** Its own harness (not a gate, run in the session
-  that wrote it) extracts `scWordStartsForWindow` and `scPaceWords` from `index.html` and
-  drives them: slow-then-fast lands on 10.2/11.6/13.0/13.4/13.8/14.2 where the rises are;
-  a break (tag 18s away, singing done by 11.2) keeps the last word at 11.2; a held line
-  with 2 rises for 5 words stays ordered inside its window; a window with one rise
-  returns `null`; the pacer lights 0,1,2,3,3 through a measured slow-then-fast line,
-  holds the last word past its rise, lights nothing before the first rise, and still
-  falls back to the syllable path when there is no measurement. In headless Chrome at
-  390px the ten rungs render 60/84/96/118/146/158/179/200/230/260, strictly ascending,
-  with the full rung at its own 200; at 1024px the ladder still ascends
-  (60/84/96/140/146/158/179/220/230/260). The page boots with no script error.
+- **THE OWNER ASKED FOR ONE THING.** *"for HEIC format and all formats should be
+  accepted for pictures"*. Two separate defects were in the way, and both had to go
+  for a HEIC photo to become a cover.
+- **THE ALBUM HISTORY PICKER ASKED THE FILE FOR ITS TYPE.** `_ahFileToDataURL` refused
+  anything whose `file.type` did not start with `image/`, so a picture a cloud app
+  handed over with no type (or with `application/octet-stream`) came back as "Not an
+  image". A phone's own HEIC photo is `image/heic` and got through - into a different
+  bug: the untouched bytes were written into a `localStorage` row, 4-6 MB of base64
+  against a ~5 MB quota, so the write threw and the cover silently never saved.
+- **THE OTHER PICKERS KEPT WHATEVER ARRIVED.** The song cover, the album cover and the
+  Studio batch-cover picker stored the picked file as-is. HEIC bytes only draw on a
+  WebView with the HEVC codec (Android 8+), and HEIC bytes inside an ID3 APIC frame are
+  not a cover another player can read.
+- **ONE DOOR.** `window.scPicCoverFromFile(file, maxPx, quality)` decodes the picture,
+  draws it to a canvas at most `maxPx` on its long edge and re-encodes it as JPEG,
+  resolving `{dataUrl, blob, width, height}` or rejecting `Error('undecodable')`.
+  Nothing in it reads `file.type` or the file name, so the formats accepted are
+  exactly the ones the phone can decode: HEIC/HEIF, AVIF, TIFF, BMP, WebP, GIF, PNG,
+  JPEG, and a MIME-less file. Five call sites go through it - song cover (1024px),
+  album cover (512px), Album History cover (1024px), Studio batch cover (1024px,
+  wrapped back into a `File` so the batch writer's `instanceof File` check and the
+  `.jpg` label still behave), and the helper itself.
+- **WHAT FAILS NOW SAYS SO.** A picture this device cannot open (HEIC on an older
+  Android with no HEVC decoder, an exotic profile) reports "Could not read that
+  picture on this device" instead of doing nothing, which is what the pickers used to
+  do when a decode went wrong.
+- **THE CHOOSER IS UNCHANGED, ON PURPOSE.** `accept="image/*"` stays. It is only the
+  file-chooser filter and already reaches `image/heic` on Android 8+; adding
+  extensions to it hands Android a list of "MIME types" it cannot resolve, which is how
+  a picker ends up showing no files at all.
+- **VERIFIED, ON THE PAGE AS IT SHIPS.** `dev/pictures-any-format-check.cjs` boots
+  index.html in jsdom and drives the real door: a `File` named
+  `IMG_20261026_055912.HEIC` with an EMPTY type resolves to a `data:image/jpeg` data
+  URL and an `image/jpeg` blob (not zero bytes), 4032x3024 is stored as 1024x768, an
+  `application/octet-stream` picture works the same way, and a decoder that fails
+  rejects as `undecodable` - 15 checks, all green. The same run asserts every picker
+  goes through the door and that the old `file.type.startsWith('image/')` gate is
+  gone. The payload was then applied to a clean checkout of this commit and both
+  `index.html` and `dev/sc70-module.js` came out byte-identical to the tree the
+  checks ran on. Every inline script block parses. Not tested: the decode of a real
+  HEIC file on a real phone - jsdom has no HEVC codec, so that is the platform's
+  answer at runtime, which is what the rejection path exists for.
 - **THE BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}} bytes, rebuilt to a true fixed point
   in the runner before this entry is written, and settled again by deploy.yml on the
   push. Both `--check`s green on the tree that ships.
-- **WHAT ONLY A REAL SONG CAN SHOW.** The decode-and-measure path runs on a local file
-  with a timed sheet; the pacer and the reader are verified, and the decode path reuses
-  the primitives the auto-alignment has shipped for releases. Open a song with
-  word-by-word on, and the first play of it is the one that measures.
