@@ -1360,19 +1360,9 @@
     if(cf) cf.addEventListener('change', function(){
       var f = cf.files && cf.files[0];
       if(!f) return;
+      batch.cover = f;
       var l = $('scBatchCoverLbl');
-      // Any picture, any format. The picked file is shrunk to a JPEG before it is
-      // offered, so a HEIC photo works and the APIC frame written into the ID3 tag
-      // is one every other player can read.
-      window.scPicCoverFromFile(f, 1024, 0.85).then(function(pic){
-        try{ f = new File([pic.blob], String(f.name || 'cover').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }); }
-        catch(_eF){ f = pic.blob; }
-        batch.cover = f;
-        var nm = String(f.name || 'cover');
-        if(l) l.textContent = nm.length > 26 ? nm.slice(0, 23) + '\u2026' : nm;
-      }).catch(function(){
-        if(l) l.textContent = 'Could not read that picture';
-      });
+      if(l) l.textContent = f.name.length > 26 ? f.name.slice(0, 23) + '\u2026' : f.name;
     });
     var dc = $('scBatchDropCover');
     if(dc) dc.addEventListener('click', function(){
