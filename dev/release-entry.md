@@ -59,5 +59,6 @@
   **17** on the 80.3.1 tree, including both letter faults. `APP_VERSION 80.3.1 -> 80.3.2`, the
   7-note head entry at `October 27, 2026 · 9:40 AM EDT`, `sw.js` cache
   `sidecut-shell-v80.3.2`, and the OTA bundles are rebuilt to a fixed point by `release.yml` in
-  the same commit. Nothing else moved: the player, the library, the albums, the tabs, the home
+  the same commit - root + `ota/` **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both
+  `--check`s OK. Nothing else moved: the player, the library, the albums, the tabs, the home
   widget and the assistant are where 80.3.1 left them.
