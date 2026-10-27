@@ -1,3 +1,5 @@
+# SideCut — repository memory
+
 ## The Android version code (October 26, 2026): the bundle's number comes from the build's run
 
 - **THE OWNER, WITH A SCREENSHOT OF PLAY.** `SideCut-5.0.55-release.aab` refused with *"Version code 512000
