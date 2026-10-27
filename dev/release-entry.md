@@ -1,104 +1,106 @@
-## 80.3.3 ({{STAMP}}): an album converts in minutes, the run keeps going in the background, and a failed song says why
+## 80.3.4 ({{STAMP}}): the tabs come back where you left them, the downloader keeps the link and finishes an interrupted album, and the store build carries no downloader at all
 
-- **THE OWNER'S ASK, VERBATIM.** *"do the loudness thing with the downloaders a they should run
-  completely in the background, b they should be much faster, a 32 song album shouldn't take an
-  hour to download it should be 5 minutes"*. The opening phrase was read as *the thing you asked
-  for last time, applied here*: nothing about loudness in the saved files changed, the 80.3.2
-  volume boost is untouched, and this release answers (a) and (b).
-- **MEASURED FIRST, BECAUSE "SLOW" IS NOT A DIAGNOSIS.** `sc-8033-measure.cjs` (the session's
-  scratch driver, kept out of the repo with 80.3.2's) runs the page's OWN encoders over 3.5 minutes of stereo 44.1 kHz: **FLAC 7-17 s, MP3 at 192k 12-60 s**
-  of solid CPU on the build machine (the spread is machine load, not noise in the measurement).
-  A 32-song album is about two hours of audio, so it was **minutes to tens of minutes of
-  encoding on the app's own thread** - the thread every tap has to get through - before any
-  network is counted. On top of that, every stream is fetched as bounded 1 MiB ranges
-  (googlevideo refuses anything wider), 4-7 of them for a 3.5-minute track at 128-256 kbps, paid
-  **one after another**; and every song waited for the one before it to be finished entirely.
-  All three of those are the hour.
-- **THE RANGES GO OUT TOGETHER.** `scFetchBytes` plans the stream from the first range's
-  `content-range` and pulls the rest through `scDlLanes()` lanes (4), stitching the bytes back in
-  range order - the file is byte-for-byte what the sequential reader produced. Proven against
-  the reader that shipped: `git show origin/main:index.html`'s own `scFetchBytes` is run beside
-  the new one over **eight scenarios** (plain 3.5 MiB, exactly four ranges, under one range, a
-  player that reported no length, a length under the truth, a server that ignores Range and
-  answers 200, a 403 half way, a 403 past the last range) and every byte is compared. Two real
-  bugs in the first cut of this were caught that way and fixed: the lanes started at range 0 and
-  fetched the first range twice, and a 200 (the whole file) used to be appended to the first
-  range as a corrupt file - it is now taken as the stream itself.
-- **SEVERAL SONGS IN FLIGHT, AND THE LANE COUNT IS A MEMORY NUMBER.** `scRunPool` + the two batch
-  runners: every row goes up front, `scDownloadLanes()` songs convert at once, each song still
-  lands in the library exactly as it did, Cancel still stops the run at the next song boundary
-  and what finished stays. The default is **2 lanes under 3 GB of device memory, 3 normally, 4
-  at 6 GB+** (`navigator.deviceMemory`), because a lane holds one song's decoded audio and a
-  3.5-minute stereo track is ~74 MB of Float32 - memory is what a phone runs out of first.
-  `window.__scDlTracks` overrides it for a test.
-- **THE ENCODERS GET THREADS OF THEIR OWN.** `scEncoderSource()` builds a worker from the PAGE'S
-  OWN ENCODER SOURCE (`Function.prototype.toString`) - `scId3v23Bytes`, `scJoinTaggedChunks`,
-  `scEncodeMp3Cooperative`, `scEncodeWavCooperative`, `scEncodeAiffCooperative`,
-  `encodeAudioBufferToFlac` - so there is still exactly ONE implementation of every format in
-  this repository, and the worker is a place to run it rather than a second copy to keep in step.
-  A worker is a thread the platform schedules on its own cores and does not throttle with the
-  page's timers, which is also what keeps the encoding fast while the app is behind something
-  else. The worker shims only what a worker lacks (`document`, the slice budget, a yield to a UI
-  it does not have). FLAC/WAV/AIFF hand their samples over (transferred, so the page's copy is
-  freed); **MP3 keeps them**, because lamejs is the one encoder that arrives from a CDN and could
-  be out of reach inside a worker - so an mp3 that fails there still encodes on the page, and a
-  format whose samples were handed over reports a failed song instead of writing silence. The
-  crop preview, the crop save and the two Spotify single saves pass `keepSamples` because they
-  re-encode the same buffer from their format menu.
-- **A RUN IS NOT A WINDOW.** `scRunJobStart/Note/End` wraps each batch: a **Web Lock**
-  (`sidecut-download`, shared, held until the run ends - the same mechanism the re-encode job has
-  held since 74.1.7) for the whole run, the progress mirrored into the system notification, and
-  the native hold below on Android. Nested runs (the retry button re-enters the runner) count
-  depth, so an inner run ending never lets go of the outer one.
-- **THE ANDROID HALF: `patch-joblock.py`, A NEW BUILD-TIME PATCH.** With the screen off Android
-  suspends the app and a suspended app does not download; a cached process is also frozen and may
-  be killed. The plugin answers `hold()` with a `PARTIAL_WAKE_LOCK` plus a **dataSync foreground
-  service** carrying the run's own progress (`update()`), and `release()` gives both back.
-  `patch-joblock.py` writes `SideCutJobPlugin.java` + `SideCutJobService.java`, registers the
-  plugin in MainActivity beside the widget and audio-focus plugins, and adds the three exact
-  permissions plus the `<service ... foregroundServiceType="dataSync">` declaration to the
-  manifest. Every call on the web side is a no-op when the plugin is absent (a browser, or an APK
-  older than this release) and every native call is wrapped so a device that refuses the service
-  still gets the wake lock. It runs after `patch-widget.py` and is idempotent; `android-build.yml`
-  gained the step. **This part needs a new app build** - the release itself reaches every install
-  through the OTA page, which uses the Web Lock the browser honours.
-- **ONE SOURCE, ONE SONG, STILL - AND NOW WITH SEVERAL SONGS IN FLIGHT.** The claim on an upload
-  moved to BEFORE the download (`scSourceClaim`): with siblings converting at once, writing the
-  ledger after the decode let two tracks pick the same upload while neither had recorded it yet,
-  which is exactly the failure that writes one song's audio under another's title. Per-song
-  failures moved to a per-song sink (`scFail` + the run's `ctx.reason`) for the same reason -
-  `window.__scSourceFail` is one slot and several songs were overwriting each other's reason.
-- **THE PAYLOAD IS A DRIVER PLUS SIX MODULES BESIDE IT**, as 80.3.2's was (the edits are
-  1-14 KB each instead of one 58 KB file, and a reader can find the part they want):
-  `patch_8033_ranges.py`, `patch_8033_workers.py`, `patch_8033_claims.py`,
-  `patch_8033_hold.py`, `patch_8033_runners.py`, `patch_8033_copy.py`. Splitting it was
-  proven not to change what ships: the page and `sw.js` the modules produce are
-  **byte-identical** to the ones the single-file patch produced (only the changelog's own
-  clock line, which is computed at run time, was normalised out of the comparison).
+- **THE OWNER'S ASK, VERBATIM, IN TWO MESSAGES.** *"discover studio and tools should all autoscroll
+  to where you were last, even if you refresh, the link should save in the downloader and it should
+  automatically resume downloading"*, then *"in play version of app remove any parts even related to
+  downloaders or converter from the app and it's patch notes"*.
+- **DISCOVER WAS PINNED TO THE TOP ON PURPOSE, AND THAT RULE IS NOW REVERSED.** `navigate()` and
+  `showDiscover()` both forced `#discoverView.scrollTop = 0` on every open, with the reason written
+  beside them ("so the pinned-artists + new-releases section, and not the search results below it,
+  is what first shows on screen"). Both lines are gone, and the position now lives in
+  `sidecut_scroll_discover` / `sidecut_scroll_studio` / `sidecut_scroll_tools` (localStorage, because
+  "even if you refresh" is half the ask, and because the app's own snapshot machinery already carries
+  these keys across a storage wipe).
+- **THE MEMORY IS ONE TOP-LEVEL BLOCK, AND IT WATCHES THE DOM RATHER THAN REACHING INTO THREE
+  CLOSURES.** The studio panes and the tab machinery live in blocks the app's own IIFE cannot see by
+  name (the revamp block says as much itself), so the new block uses the one thing the app is
+  guaranteed to paint: the `active` class on `#discoverView` and `#studioView`, plus - inside the
+  studio view - each pane's class. One `MutationObserver` each, and a tab tap, a studio half tap, a
+  view resumed after a reload and the app's own boot all land in the same handler.
+- **THE POSITION IS READ WHILE ITS TAB IS STILL ON SCREEN, NEVER AT THE MOMENT OF A SWITCH.** Hiding
+  a pane re-lays out the container, and a scroll container clamps `scrollTop` to the new content the
+  instant anything reads it - so reading late files the incoming pane's clamped number under the
+  outgoing tab, which is how Tools would open half way down an album nobody asked for. The outgoing
+  number is what the scroll listener last saw; the incoming tab is restored from its own key.
+- **THE RESTORE IS A SHORT SETTLE, AND A HAND ENDS IT.** Discover's results and its pinned rows
+  arrive after the view opens, so a saved 4000px is not reachable on the frame the view turns active:
+  the target is re-applied (every 120 ms, at most ~5 s) until it is reached, and the first real touch
+  - a tap, a drag, a wheel, a key - stops it at once. Nothing remembered means the tab opens at the
+  top exactly as it always did, which is also what clears one tab's position out of the container the
+  other tab shares.
+- **A RUN IS NOW WRITTEN DOWN, BECAUSE 80.3.3's HOLD ENDS WITH THE PAGE.** The Web Lock, the
+  notification and the Android wake lock all survive leaving the app; none of them survives an OTA
+  reload, a storage wipe or Android killing the WebView, and an album is long enough for one of those
+  to land in the middle of it. So a run records itself in `sidecut_dl_job`: the link, the format,
+  where the songs were going, the plan (so a resume needs no network to plan again), the song list it
+  is working through and which of them have landed.
+- **"LANDED" COMES FROM THE LIBRARY WRITE, NOT FROM THE RUN.** `scAddConvertedToLibrary` is the one
+  place a converted song lands, so that is what takes the song off the queue (matched by title, the
+  way the run's own one-source-one-song ledger matches), and both batch runners additionally mark the
+  exact slot they were handed (`scDlJobTake(i)`, index-aligned because `scRunPool` hands the slot
+  number with the item). A song that failed, or one the app died before landing, stays in the queue -
+  which is the whole point of writing it down.
+- **THE YOUTUBE PLAYLIST RUN IS A FUNCTION NOW.** It lived inside the click handler that started it -
+  a closure over `pl`, `chosen`, `fmt`, `box` and `btnEl`, reachable only by tapping Convert - and
+  "automatically resume" needs the same run startable at boot with the songs that never landed. The
+  body was lifted into `scYtRunChosen(pl, chosen, fmt, box, btnEl, url)` **unchanged**: the only edits
+  inside it are the three record lines. That lift is proven, not asserted - the harness takes the old
+  body out of `git archive origin/main` and the new function out of the patched page, normalises both
+  and diffs them, and the diff is exactly the `(async function(){` line, the four record lines and
+  their comments (20 lines, nothing else). The click path also gained the `.catch` the inline version
+  never had, so a throw puts the Convert button back.
+- **RESUME IS BOUNDED: TWO AUTOMATIC TRIES, THEN THE LINK IS THE ANSWER.** A song nobody can source
+  must not start a download on every single launch for ever. After two automatic resumes the link is
+  still in the box and one tap starts the run again by hand. Cancel and the little x beside either
+  Convert button clear the record, so a reload never quietly begins a run the owner stopped, and a
+  one-song run is written down too (resumed through its own single path, because the song's real
+  title is only known while converting).
+- **THE STORE BUILD LOST ITS DOWNLOADER, ITS CONVERTER AND THE NOTES ABOUT THEM.** "Remove any parts"
+  is taken literally: the Conversion Tools section (`#convToolsCard`, now named so the build can say
+  what it removes) and the Settings-side copies are **removed from the document** rather than hidden,
+  the tool section beside the Discover how-to goes the same way, and the summary line that used to be
+  rewritten to name "MP4 · Expand URL" is gone with the card it labelled. Every converter keeps its
+  hard `SC_IS_PLAY` gate, and everything downstream that reaches for those ids was already
+  null-guarded (the wiring has been `if(btn && input)` since the cards existed).
+- **"IT'S PATCH NOTES" TOO: AN ENTRY THIS BUILD CANNOT SHOW IS NOT SHOWN.** The page already hid
+  downloader *items* on the store build; over an entry like 80.3.3 that left a headline ("an album
+  converts in minutes") standing over nothing, and a count reading "0 updates". `scChangelogEntries()`
+  now drops entries with no visible notes, and all five reads of the array go through it (the
+  update-log panel in both modes, the changelog sheet's summary and its list, and the What's New
+  popup). The **published store channel** gets the same rule in `dev/ota-bundle-play.mjs`
+  (`hidesOnPlay`, the page's own regex kept in step by hand, plus one honest line when a release had
+  nothing else to say), and this release's own downloader notes carry `[FULL]`, the marker both
+  channels already understand.
 - **VERIFIED ON THE PAGE THAT SHIPS.** The payload was applied to a scratch tree taken from
-  `origin/main` itself (`git archive origin/main`), so the thing measured is the page this
-  release replaces plus this patch and nothing else: `python3 dev/patch-8033.py` (1 step) then
-  `--check` (0 steps); every inline script block parses (acorn); and **`sc-8033-check.cjs`
-  passes 53/53, exit 0** - against `origin/main`'s OWN `scFetchBytes`, sliced out of
-  `git show origin/main:index.html`, which is the only way "the same file" means anything. The
-  driver runs the page's own bytes (its functions are sliced out of index.html by parsing it),
-  so it cannot pass against a page that does not carry them. It proves: the eight byte-equality
-  scenarios above; real overlap (4 ranges in flight, ~20 ms against ~31 ms sequential for six
-  ranges, 18 ms against ~54 ms for nine songs at three lanes); cancellation stops dispatch;
-  the claim rules (first wins, sibling refused, own re-take allowed, no ledger = no refusals);
-  **a FLAC and an MP3 encoded in a worker are byte-identical to the same file encoded on the
-  page**; FLAC transfers its samples and MP3 keeps them; the run holds one lock, releases once,
-  survives an inner run ending, throttles its progress notes and is a no-op without the plugin;
-  and both runners driven end to end in jsdom - six songs, three at a time, every row reading
-  `✅ added`, and a cancelled run keeping what finished (2 of 6) with the rest reading
-  `— cancelled` and the pill saying so. `APP_VERSION 80.3.2 -> 80.3.3`, the head entry above,
-  `sw.js` cache `sidecut-shell-v80.3.3`, and the OTA bundles are rebuilt to a fixed point by
-  `release.yml` in the same commit - root + `ota/` **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}**
-  bytes, both `--check`s OK.
-- **WHAT IS NOT CLAIMED.** The Java has not been compiled here - there is no Android SDK in the
-  session; it is syntax-checked (java-parser) and rehearsed against a real `npx cap add android`
-  project (registration, manifest, idempotency), and the **Android build workflow is the compile
-  proof**. And no wall clock on a phone is quoted: the speed work was measured in parts (encoder
-  cost, range overlap, lane overlap), not as an end-to-end device number. Nothing else moved -
-  the player, the library, the albums, the lyrics, the boost, the tabs, the widget and the
-  assistant are where 80.3.2 left them.
+  `origin/main` itself (`git archive origin/main`), so the thing measured is the page this release
+  replaces plus this patch and nothing else: `python3 dev/patch-8034.py` (1 step) then `--check`
+  (0 steps); **every inline script block parses** (acorn, 7 blocks, 0 failures); the YouTube lift diff
+  above; and **`sc-8034-check.cjs` passes 894/894, exit 0** (the session's scratch driver, kept out of
+  the repo). It proves, against the release's own source rather than a copy: a scroll in Discover is
+  written down and comes back; **the same position survives a fresh document with the same storage**
+  (which is what "even if you refresh" means); a position the page cannot reach yet is re-applied when
+  the content arrives (clamped 500 -> 3000); Studio and Tools keep separate positions over the one
+  container that holds them, and switching back restores the right one; a tab with nothing remembered
+  opens at the top; a pointerdown ends a settle instead of fighting it; both "start at the top" resets
+  are gone from the page. The record: written with the link, format, mode, plan and all six songs;
+  takes by slot, by title at the library write, an unmatched title takes nothing, a double take
+  changes nothing; the resume drives the Spotify runner with **exactly the four songs that did not
+  land** and their saved format, mode and link; the label reads "6 of 6 still to make"; a record at
+  two attempts starts nothing; a single link resumes through its own path with its own format (both
+  kinds); the link comes back in the Discover box and the Settings copy, leaves the other kind empty,
+  and does not start a run when nothing is left; clearing the record removes it from the device; the
+  store build writes and resumes nothing. And the notes: **no entry the store build shows, and no
+  published store note, mentions a downloader or a converter** (the page's own rule, including its
+  exceptions for "download to phone" and "download crossfaded mix", which are the app's file
+  exports), the store build's newest visible entry always has something to say, the full build keeps
+  all eight notes with the markers stripped, and both OTA channels reach a true fixed point
+  (`ota/` **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.3.4). The store
+  build's own build path is unchanged: `patch-playbuild.py` still injects the flag, and the zip in
+  `ota-play/` still carries it.
+- **WHAT IS NOT CLAIMED.** No phone, no wall clock: the scroll memory was driven in jsdom with the
+  containers' own scroll numbers supplied (jsdom has no layout), so what is proven is the logic and
+  the storage, not a device's touch physics. The store build's removal is proven on the page and on
+  the channel scripts, not on a Play install of the AAB - the Android build remains the compile and
+  packaging proof. Nothing about a conversion itself changed: the same song makes the same tagged
+  file with the same name, cover and format menu. The player, the library, the albums, the lyrics, the
+  equaliser and the widget are where 80.3.3 left them.
