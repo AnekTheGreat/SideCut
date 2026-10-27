@@ -1,63 +1,63 @@
-## 80.3.1 ({{STAMP}}): a song that stops in its first seconds comes back, and the crash banner stops blaming a helper
+## 80.3.2 ({{STAMP}}): the lyrics fill in letter by letter, the boost sits beside the EQ, Settings is grouped, and a download can go into an album
 
-- **THE OWNER, WITH A SCREENSHOT.** A song parked at **0:02** with the play button showing,
-  and the red banner reading *"Playback stopped while it was starting, so the audio-focus
-  helper has been switched off - songs play normally now. It comes back in the next
-  update."* The ask was three words: *"audio issue fix"*.
-- **THE BUG THAT PARKS THE SONG IS THE INTERRUPTION LATCH, AND IT OUTLIVED THE PRESS.**
-  `audioFocusInterrupted` tells `scUndoPlatformPause`, the 30 s heartbeat and
-  `scSecondLook` to BELIEVE an automatic pause instead of undoing it. It was cleared by a
-  focus GAIN, by `scNoteCallState(false)` after a call, and by `scTransportResume()` -
-  which only the media-session play / previous / next handlers call. **The app's own
-  play/pause button called `a.play()` and nothing else**, so `onPlayEvt` ran with the latch
-  still set. After one real interruption (a call, another app keeping the audio) every
-  later pause in that session was obeyed and nothing could touch it: press play, something
-  pauses the song two seconds in, and it stays at 0:02 for the rest of the session.
-  `onPlayEvt` now drops the latch when the start is not `revivingAudio` and no call is up,
-  and `audioFocusInterruptedAt` records when it was set. **Reproduced and fixed with one
-  driver** (`sc831-bug.mjs`): 80.3 parks the song (`focus-loss` is the last recorded stop),
-  80.3.1 puts it back (`platform-pause after 2000ms - replayed (unrequested)`).
-- **THE OUTSIDE PAUSE HAD A 1.2-SECOND WINDOW.** `blockSpuriousStop` refuses a stale
-  lock-screen / notification pause only within 1.2 s of the start and 0.5 s of playhead -
-  shorter than the notification/session hand-over on the installed app - so a stale press
-  that landed at 0:02 was obeyed as if a finger had pressed it. It now refuses within 4 s
-  and 2.5 s of playhead, up to three per attempt, recording `refused-auto-pause-media-session`
-  each time. A genuine second press is obeyed exactly as before (driven in the harness).
-- **THE BANNER SWITCHED A HELPER OFF THAT IS NOT IN THE PLAY PATH.** The recorder wrote
-  `sidecut_audiofocus_off` for the rest of the version on a death during "starting
-  playback", which makes `capAudioFocus` null for the session: no focus listener, no
-  `callState()`, no `duckState()`. Since **58.8.4** `AUDIO_FOCUS_REQUESTS_OFF` is true -
-  asking for focus on the app's behalf is what made Chromium pause its own element - so
-  there is no focus request in the play path for that helper to be blamed for, and the
-  switch-off bought nothing while costing a real call pausing the song and the assistant
-  duck. It is gone; the death is written to `sidecut_playback_stopped_at_start` instead
-  (with no `APP_VERSION` in it - that const is declared further down the page, the same
-  trap 73.4.7 found in the media-notification recorder), and the banner no longer stacks a
-  second message over the first.
-- **A RELOAD IS NOT A CRASH.** The same banner fired for a page that had simply reloaded
-  itself - an update hand-over, a refresh, a WebView restart - because `_scRestart` only
-  forgave a boot less than 30 s after the previous one. The recorder now reads
-  `PerformanceNavigationTiming.type` (with `performance.navigation.type === 1` as the
-  fallback): a boot whose navigation type is `reload` is the app loading itself again, and
-  a reload counts as a normal death.
-- **WHAT DID NOT CHANGE**: requests stay off, a real call still stands the song down and
-  brings it back, a message blip is still undone at any point in a song and in the
-  background, a user pause and a finished song are still believed, DJ Mode still owns its
-  own sound, and the revive budget still bounds all of it. Driven, not grepped: a call is
-  still latched, a press during that call does not clear the stand-down, and the song comes
-  back when the call ends.
-- **VERIFIED** with `sc831-check.mjs` (jsdom, the shipped page, a stub phone) -
-  **51 passed, 0 failed** - covering: the release metadata and the six notes, the four
-  changes being present and nothing re-enabled, the latch ending on the app's own press, a
-  platform pause at 0:02 being undone and recorded, a stale lock-screen pause at 0:02 being
-  refused while a press 40 s in is obeyed, a call stand-down surviving a press and coming
-  back when the call ends, a reloading boot showing no banner and writing no switch-off, a
-  real death still speaking in plain words and recording itself, and no console error from
-  the page. The page was driven **before and after** with `sc831-bug.mjs` to prove the
-  first assertion is a real one.
-- **THE BUNDLES.** Root {{ROOT}} bytes, Play {{PLAY}} bytes, rebuilt to a true fixed point
-  in the runner before this entry is written, and settled again by deploy.yml on the push.
-  Both `--check`s green on the tree that ships.
-- **THE LESSON.** A guard that refuses to undo a pause is only as good as the thing that
-  ends it. Every door that starts playback has to end the memory of an interruption - and
-  the app's own button is the one door a person actually uses.
+- **THE OWNER'S ASK, VERBATIM.** *"lyrics is not working letter by letter fix it, and add a
+  thing in SideCut in settings and more next to eq a decibal increaser up to like 15. fix
+  settings and more to make it more cleaner and organize it better and when downloading song
+  in the full version, add an option to add to a specific album or create a new album"*.
+- **LETTER BY LETTER HAD TWO FAULTS, AND THE HARNESS SHOWS BOTH ON THE 80.3.1 TREE.** A scratch
+  driver (`sc-8032-check.mjs`, lifted out of the session after its work) boots the shipped page
+  in jsdom, opens a timed sheet through the real LYRICS button, turns the real chips on and
+  walks the playhead across a line. On 80.3.1: **64 frames where a word already sung was not
+  fully lit** and **2 frames where the line's total lit-letter count went backwards** - the
+  light was wiped off the words behind it on every tick, and the jump to the last word put
+  light where nothing had been sung yet. On 80.3.2 the same driver reports **0 and 0**, with
+  the current word caught mid-sweep in 56 of 70 frames.
+- **FAULT 1 - THE SWEEP SKIPPED WORDS.** `scPaceWords` spread a line's words over the WHOLE
+  line window (`wordDurs ... * gap`) and then cut them off at `pace`, the line's natural
+  singing length. Every word past that cut had no window at all, and the `litIdx === -1`
+  fallback then lit **the last word, complete**. Measured on a plain sheet whose first line
+  owned thirteen seconds of the song: word 1 swept, word 2 never lit, word 3 arrived finished -
+  which is what "letter by letter is not working" looks like. The words are now spread across
+  `pace` itself, so every word has a window inside the stretch the pacer walks.
+- **FAULT 2 - THE LIGHT DID NOT STAY.** The 73.4.4 rule wiped every word but the current one on
+  every frame, so a line was one word flashing in place with nothing lit between two words.
+  Letter mode now **fills the line left to right**: a word the singer has passed keeps every
+  letter lit, the sung word sweeps, later words stay dark. The 73.4.4 intent survives - nothing
+  is left DIMMED behind the light, no gold travels along the sheet, and the passed words are
+  touched only where a letter is not already lit so a finished word never re-runs a transition
+  and never flickers. `scLettersWipeOthers` runs **once per line change** (not per tick) so the
+  song cannot turn into a wall of gold by the second verse.
+- **VOLUME BOOST, 0 TO +15 dB, UNDER THE EQ.** `scBoostGain` is a GainNode on the master: both
+  decks' limiters land on it, and it feeds `scBoostGuard` and then the assistant duck's
+  `scDuckMaster`, so it multiplies the mixed signal as the last thing before the speakers.
+  +15 dB is 10^(15/20) = **5.62x**. A near-flat DynamicsCompressor after it is the soft ceiling
+  that keeps a loud master loud instead of crackling - and at 0 dB that compressor is a
+  **straight wire** (`ratio 1`, threshold 0), so Off is the same signal the app made before this
+  release rather than "nearly". The slider applies on `input` and writes on `change` (one saved
+  setting per drag), `boostDb` is restored beside `autoVolume` in the boot restore, and
+  `setBoostDb` calls `ensureAudioGraph` first so moving it before anything has played still
+  takes effect.
+- **SETTINGS -> MORE IS SIX NAMED GROUPS.** Good to know, Sound, Playback, Library, App & data,
+  About & updates - every collapsible header carrying `sc-set-head`, every body `sc-set-body`
+  and every card `sc-set-card`, styled once in the page's stylesheet instead of four inline
+  variants. The three loose buttons that floated between the rollback list and the DJ card (the
+  update log, the listening streak and the version guide) are now rows of one **About &
+  updates** card with the version label as its first row. Every id the wiring uses is unchanged,
+  and the sound section's bare header/body pair (it holds three nested panes) is given the
+  card's edges in CSS rather than re-wrapped - the driver asserts the groups are in order, that
+  the three buttons share a card, and that headers and bodies carry the shared classes.
+- **A DOWNLOAD CAN BE FILED.** A converted single landed in All songs and Unsorted and stayed
+  there. `window.__scAlbumPickForTrack(id, label)` opens the **same** `pickUserAlbum` the library
+  uses (an album you have, or a new one you name on the spot), and `scArmAddToAlbum` binds the
+  card's `+ Album` button after the card is in the document, so a click can only ever file the
+  song that was just written. It appears on the two single-song cards (YouTube and Spotify) and
+  only when the song really reached the library; a whole-playlist conversion is untouched and
+  still files its songs as they land. Driven: the door is published, calling it with a library
+  song opens the picker, and calling it with an unknown id says so instead of throwing.
+- **VERIFIED ON THE PAGE THAT SHIPS.** `python3 dev/patch-8032.py` then `--check` (0 steps);
+  all six inline script blocks parse; the driver passes **21/21** on the patched tree and fails
+  **17** on the 80.3.1 tree, including both letter faults. `APP_VERSION 80.3.1 -> 80.3.2`, the
+  7-note head entry at `October 27, 2026 · 9:40 AM EDT`, `sw.js` cache
+  `sidecut-shell-v80.3.2`, and the OTA bundles are rebuilt to a fixed point by `release.yml` in
+  the same commit. Nothing else moved: the player, the library, the albums, the tabs, the home
+  widget and the assistant are where 80.3.1 left them.
