@@ -4640,7 +4640,7 @@ body.sc80-cloud .action-strip::before{
     </div>
   </div>
   <div style="margin-bottom:14px; padding:14px; background:rgba(255,255,255,0.03); border-radius:10px; border:1px solid var(--line);">
-    <details>
+    <details id="convToolsCard">
       <summary style="cursor:pointer; padding:12px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:10px; font-size:12.5px; font-weight:600; color:var(--coral); list-style:none;">🎛️ Conversion Tools <span style="color:var(--ink-dim); font-weight:400; font-size:11px;">Spotify · YouTube · MP4 · Expand URL — tap to open ▾</span></summary>
       <!-- Albums & playlists: each song downloads automatically as its own tagged file -->
 
@@ -6948,7 +6948,16 @@ window.__scTime12 = function(v){
 var SC_IS_PLAY = !!(typeof window !== 'undefined' && window.__PLAY_BUILD__);
 if(SC_IS_PLAY){
   try{
-    ['ytCardDisc'].forEach(function(_id){ var _el = document.getElementById(_id); if(_el) _el.style.display = 'none'; });
+    // 80.3.4 - REMOVED, NOT HIDDEN. This build offers no download, so it no longer
+    // carries one: the whole Conversion Tools section goes, with the Spotify,
+    // YouTube, MP4 and Expand URL cards inside it and their Settings copies.
+    // Everything that used to reach for these ids is null-guarded, and every
+    // converter keeps its hard SC_IS_PLAY gate - so there is nothing left in this
+    // build that could be called a downloader or a converter.
+    ['convToolsCard', 'spCardDisc', 'ytCardDisc', 'spCardSettings', 'ytCardSettings'].forEach(function(_id){
+      var _el = document.getElementById(_id);
+      if(_el && _el.parentNode) _el.parentNode.removeChild(_el);
+    });
     // Downloads are removed from this build end to end: the Spotify converter
     // cards go with the YouTube cards, the how-to boxes that teach the converter
     // (and link outside converter sites) become a plain import walkthrough, the
@@ -6957,9 +6966,8 @@ if(SC_IS_PLAY){
     // and the album-history preview downloads. Nothing here can reach a
     // converter, so this build can never fail a download it never offered.
     document.documentElement.classList.add('sc-play-build');
-    // 73.5 - the Settings-side cards went with their tab, so only Discover's are
-    // left to hide.
-    ['spCardDisc'].forEach(function(_id){ var _el = document.getElementById(_id); if(_el) _el.style.display = 'none'; });
+    // 73.5 - the Settings-side cards went with their tab; 80.3.4 takes the
+    // Discover section itself out above, so there is nothing left to put away.
     // ---- Getting music in is a HOW-TO on this build -------------------------
     // A build that takes only the files you already own has nothing to hand off
     // to a converter, so the Discover how-to is a plain walkthrough instead, and the audio
@@ -6988,14 +6996,15 @@ if(SC_IS_PLAY){
       var _el = document.getElementById(_id);
       if(!_el) return;
       _el.innerHTML = _getSongsSteps;
-      // The tool section is this box’s next element.
-      if(_el.nextElementSibling) _el.nextElementSibling.style.display = 'none';
+      // 80.3.4 - the tool section beside this box (the link expander, the three
+      // converter cards and the format explainer) is REMOVED with the rest of the
+      // conversion tools: a build that offers no download keeps no downloader.
+      if(_el.nextElementSibling && _el.nextElementSibling.parentNode) _el.nextElementSibling.parentNode.removeChild(_el.nextElementSibling);
     });
-    var _sums = document.querySelectorAll('summary span');
-    for(var _si = 0; _si < _sums.length; _si++){
-      var _sumTxt = _sums[_si].textContent || '';
-      if(/Spotify/.test(_sumTxt) && /MP4/.test(_sumTxt)) _sums[_si].textContent = 'MP4 · Expand URL';
-    }
+    // 80.3.4 - the summary line that used to be rewritten here ("Spotify ·
+    // YouTube · MP4 · Expand URL" -> "MP4 · Expand URL") is gone with the
+    // section it labelled, so there is nothing left to rewrite and no tool named on
+    // a card this build no longer has.
     // The first-run / Replay tutorial and the how-to modal teach the converter
     // on the full build; here they only describe bringing your own files in, so
     // this build never points at a downloader.
@@ -15563,7 +15572,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.3.3';
+  const APP_VERSION = '80.3.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16212,6 +16221,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.3.4', date: 'October 27, 2026 · 7:59 AM EDT', title: 'The tabs come back where you left them, the downloader keeps the link and resumes an interrupted album, and the store build carries no downloader', items: [
+    'Discover, Studio and Tools come back where you left them. Scroll down the search results, open a tool, go and play something, come back — each tab is where you left it, and it still is after a refresh, because the position is kept on the device rather than for the session.',
+    'The downloader keeps your link. Paste an album, start it, and the link stays in the box — if the app is reloaded while it runs (an update, a crash, the system closing it), the downloader starts that album again on its own, straight away.',
+    '[FULL] An interrupted run resumes the songs that never landed, not the whole album: the run writes down the song list it is working through and which of them are in your library, so nothing is downloaded twice and nothing is silently dropped.',
+    '[FULL] A song that cannot be found is tried twice on the next starts and then left to you: the link stays in the box and one tap starts it again by hand, so a song nobody can source never begins a download on every single launch.',
+    '[FULL] Cancel means gone: stopping a download clears what was written down, so the next start never quietly begins the run you stopped.',
+    'The build that only takes the files you already own has no downloader and no converter in it at all now — the tools are removed from the app rather than hidden away — and the update notes it shows never mention one.',
+    'Nothing about a conversion itself changed: the same song makes the same tagged file, with the same cover, the same name and the same format menu as the last release.',
+    'Nothing moved in the player, the library, the albums, the lyrics, the equaliser or the widget.',
+  ]},
   { version: '80.3.3', date: 'October 27, 2026 · 6:33 AM EDT', title: 'An album converts in minutes, the run keeps going in the background, and a failed song says why', items: [
     'An album converts in minutes instead of an hour. Three things were slow and all three are fixed: a song’s audio is now pulled four ranges at a time instead of one after another, several songs convert at once instead of one waiting for the last, and the encoders run on their own threads instead of on the one thread every tap has to get through.',
     'The encoders moved off the app’s thread. FLAC and MP3 are seconds of solid arithmetic per song — about two hours of it across a 32-song album — and running that where the interface lives is why a long run felt like the app had stopped. The work now runs in worker threads, by the same encoders: the files are the same files, byte for byte.',
@@ -19710,6 +19729,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(scIsPlayBuild() && scHidesOnPlay(t)) return 'Fixes & improvements';
     return t;
   }
+  // 80.3.4 - AN ENTRY WITH NO NOTES THIS BUILD CAN SHOW IS NOT SHOWN. The filter
+  // above already hides the downloader items on the Play build, which would leave a
+  // headline like "an album converts in minutes" standing over nothing (and a
+  // count reading "0 updates"). Every panel that lists the notes goes through
+  // here, so this build never announces a downloader it does not have.
+  function scChangelogEntries(){
+    var out = [];
+    var play = scIsPlayBuild();
+    for(var i = 0; i < CHANGELOG.length; i++){
+      if(play && !changelogItems(CHANGELOG[i]).length) continue;
+      out.push(CHANGELOG[i]);
+    }
+    return out.length ? out : CHANGELOG.slice(0, 1);
+  }
   function renderWhatsNewBody(entry){
     return changelogRich(entry).map(scClItemHtml).join('');
   }
@@ -19723,7 +19756,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // Summary mode - just show version titles
       summaryBtn.style.display = 'none';
       fullBtn.style.display = 'block';
-      body.innerHTML = CHANGELOG.map(entry => `
+      body.innerHTML = scChangelogEntries().map(entry => `
         <div style="padding:8px 0; border-bottom:1px solid var(--line);">
           <div style="font-weight:600; font-size:14px; color:var(--coral);">v${entry.version}</div>
           <div style="font-size:13px; margin-top:4px;">${escapeHtml(changelogTitle(entry))}</div>
@@ -19735,7 +19768,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // Full mode - show all items
       summaryBtn.style.display = 'block';
       fullBtn.style.display = 'none';
-      body.innerHTML = CHANGELOG.map(entry => `
+      body.innerHTML = scChangelogEntries().map(entry => `
         <div>
           <div style="font-weight:600; font-size:14px; margin-bottom:6px;">v${entry.version}${entry.date ? ' <span style="font-weight:400; font-size:11px; color:var(--ink-dim);">· ' + entry.date + '</span>' : ''} — ${escapeHtml(changelogTitle(entry))}</div>
           <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim);">
@@ -20136,7 +20169,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // boot can no longer eat it — the popup keeps reappearing until a human sees it.
         // The owner pins the changelog version independently of APP_VERSION
         // (currently 53) — always show the newest entry, whatever it's tagged.
-        const entry = CHANGELOG[0];
+        const entry = scChangelogEntries()[0];
         if(entry){
           $('whatsNewVersion').textContent = `What's new in v${entry.version}`;
           // Show summary first
@@ -20399,7 +20432,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       `;
     }
     // Show latest version as summary
-    const latest = CHANGELOG[0];
+    const latest = scChangelogEntries()[0];
     if(latest){
       summaryHtml += `
         <div style="border-bottom:1px solid var(--line); padding-bottom:8px;">
@@ -20409,7 +20442,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         </div>
       `;
     }
-    html += CHANGELOG.map((entry, idx) => {
+    html += scChangelogEntries().map((entry, idx) => {
       const v = String(entry.version);
       const open = changelogGroupsTouched ? openChangelogGroups.has(v) : idx === 0;
       const items = changelogItems(entry);
@@ -37512,7 +37545,9 @@ function _fallbackCopy(text){
   function showDiscover(on){
     $('discoverView').classList.toggle('active', on);
     if(on){
-      var _dv = $('discoverView'); if(_dv) _dv.scrollTop = 0;
+      // 80.3.4 - Discover is put back where the owner left it, not at the top:
+      // the memory below the dock tab block owns this position now (the tests and
+      // the release note both say where it is kept).
       if(!discoverActiveChip && !$('discoverResults').children.length){
         runDiscoverSearch('__tophits__', DISCOVER_CHIPS[0].label, 0);
       }
@@ -37580,9 +37615,15 @@ function _fallbackCopy(text){
     $('libraryBtn').classList.toggle('active', isLibrary);
     // Section side effects
     if(isDiscover){
-      // Start at the top each time so the pinned-artists + new-releases section
-      // (and not the search results below it) is what first shows on screen.
-      var _dv = $('discoverView'); if(_dv) _dv.scrollTop = 0;
+      // 80.3.4 - THIS IS THE REVERSAL OF A DELIBERATE RULE, at the owner's word:
+      // "discover studio and tools should all autoscroll to where you were last,
+      // even if you refresh". Until this release the first screen of Discover was
+      // pinned by the two lines that used to be here, so a scroll down into the
+      // results was thrown away every time the view opened. The position now lives
+      // in the scroll-memory block at the end of the page (sidecut_scroll_discover
+      // and its studio/tools siblings), which restores it when the view becomes
+      // the active one - this branch and that block are the same decision, and
+      // neither of them puts the view back at 0.
       // Auto-search runs once per session (guarded so a slow/failed catalog call
       // can't re-fire on every open and stall the view).
       if(!discoverBootSearched){
@@ -44720,6 +44761,104 @@ function _renderAhFromData(artistAlbums){
     })(data);
     return out;
   }
+  // The playlist run itself. 80.3.4 lifted it out of the Convert button's click
+  // handler unchanged, because the downloader has to be able to start it too: when
+  // an interrupted run is picked up again after a reload, this function is called
+  // with the songs that never landed. Nothing about how a song is made, tagged or
+  // filed moved - the only edits inside are the three lines that write the run
+  // down and take each landed song off its queue.
+  async function scYtRunChosen(pl, chosen, fmt, box, btnEl, url){
+    var okCount = 0, failed = 0, failedNames = [];
+    // 80.3.4 - the run is written down before a byte moves: this song list is what
+    // a reload resumes from.
+    scDlJobItems('youtube', url, fmt, 'library', (pl && pl.title) || 'YouTube playlist', { title: (pl && pl.title) || '' }, chosen);
+    box.innerHTML = '<div class="yt-pl-run" style="padding:10px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03);">' +
+      '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><div style="width:14px;height:14px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>' +
+      '<div style="font-size:12px; font-weight:600; color:var(--ink);">' + scEscapeHtml(pl.title || 'YouTube playlist') + '</div></div>' +
+      '<div class="yt-pl-sub" style="font-size:10.5px; color:var(--ink-dim); margin-bottom:6px;"></div>' +
+      '<div style="height:6px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden;"><div class="yt-pl-bar" style="height:100%; width:0%; background:var(--coral); transition:width 0.3s ease;"></div></div>' +
+      '<div class="yt-pl-rows" style="margin-top:8px; max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;"></div></div>';
+    var run = box.querySelector('.yt-pl-run');
+    var subEl = run.querySelector('.yt-pl-sub');
+    var barEl = run.querySelector('.yt-pl-bar');
+    var rowsEl = run.querySelector('.yt-pl-rows');
+    // 80.3.3 - EVERY ROW GOES UP FIRST, and scDownloadLanes() songs are in
+    // flight at once. A row is a place to report into, not a step in a queue, so
+    // song 2 no longer waits for song 1's file to be finished - which is where an
+    // album's hour went. Each song still lands in the library exactly as it did,
+    // and Cancel still stops the run at the next song boundary.
+    var rows = [], runDone = 0;
+    for(var ri = 0; ri < chosen.length; ri++){
+      var row = document.createElement('div');
+      row.style.cssText = 'font-size:10.5px; color:var(--ink-dim); display:flex; gap:6px; align-items:baseline;';
+      row.innerHTML = '<span style="color:var(--gold); white-space:nowrap;">' + (ri + 1) + '/' + chosen.length + '</span><span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(chosen[ri].title || 'Untitled') + '</span><span class="yt-row-state" style="white-space:nowrap;">\u2026</span>';
+      rowsEl.appendChild(row);
+      rows.push({ state: row.querySelector('.yt-row-state'), done: false, started: false });
+    }
+    function scYtShowProgress(){
+      if(barEl) barEl.style.width = Math.round((runDone / chosen.length) * 100) + '%';
+      // scDlHead() is empty for a run the owner started and says "Resuming - 12 of
+      // 32 still to make" for one the downloader picked back up.
+      if(subEl) subEl.textContent = scDlHead() + runDone + ' of ' + chosen.length + ' finished';
+    }
+    scYtShowProgress();
+    scRunJobStart(pl.title || 'YouTube playlist', 'Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's'));
+    await scRunPool(chosen, scDownloadLanes(), async function(tr, i){
+      var slot = rows[i];
+      if(!slot || window.__scCancelDl) return;
+      slot.started = true;
+      var state = function(txt){ if(slot.state) slot.state.textContent = txt; };
+      state('starting');
+      scConvertPillUpdate('Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + ' \u00b7 ' + (pl.title || 'YouTube playlist'),
+        runDone + ' of ' + chosen.length + ' finished \u2014 ' + (tr.title || 'starting'), Math.round((runDone / chosen.length) * 100));
+      var res = null;
+      try{ res = await scYtOneVideo(tr.videoId, fmt, tr.title, tr.author, function(txt){ state(txt); if(subEl) subEl.textContent = runDone + ' of ' + chosen.length + ' finished \u2014 ' + txt; }); }catch(_re){ res = null; }
+      if(res && res.blob){
+        var m = res.meta || {};
+        var clean = cleanOnImport(m.title || tr.title || 'YouTube audio', m.artist || tr.author || '');
+        var artistPart = scSafeName(clean.artist || '');
+        var namePart = scSafeName(clean.name || 'YouTube audio');
+        var al = String(artistPart).toLowerCase();
+        var artistOk = artistPart && al !== 'unknown artist';
+        var fname = scSafeName((artistOk ? artistPart + ' - ' : '') + namePart) + '.' + fmt;
+        scAddConvertedToLibrary(res.blob, { title: clean.name, artist: clean.artist, album: m.album || '', genre: m.genre || '', artBytes: m.artBytes, artMime: m.artMime }, { fileName: fname, fmt: fmt, source: 'YouTube playlist conversion' });
+        okCount++;
+        // 80.3.4 - this song is made; a reload must not make it again.
+        scDlJobTake(i);
+        slot.done = true;
+        state('\u2705 added');
+        if(slot.state) slot.state.style.color = 'var(--gold)';
+      } else if(window.__scCancelDl){
+        state('\u2014 cancelled');
+      } else {
+        failed++; failedNames.push(tr.title || 'a song');
+        state('\u26a0 could not be made');
+      }
+      runDone++;
+      scYtShowProgress();
+      scConvertPillUpdate('Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + ' \u00b7 ' + (pl.title || 'YouTube playlist'),
+        runDone + ' of ' + chosen.length + ' finished \u00b7 ' + okCount + ' added' + (failed ? ' \u00b7 ' + failed + ' failed' : ''),
+        Math.round((runDone / chosen.length) * 100));
+      scRunJobNote(runDone + ' of ' + chosen.length + ' finished', (runDone / chosen.length) * 100);
+    });
+    // A song the run never reached, or one that stopped mid-flight, reads as
+    // cancelled rather than sitting on an ellipsis for ever.
+    for(var ci = 0; ci < rows.length; ci++){
+      if(!rows[ci].done && rows[ci].state && /^\u2026$/.test(String(rows[ci].state.textContent || '').trim())) rows[ci].state.textContent = '\u2014 cancelled';
+    }
+    scRunJobEnd();
+    var cancelled = !!window.__scCancelDl;
+    var summary = document.createElement('div');
+    summary.style.cssText = 'font-size:10.5px; color:var(--ink-dim); margin-top:8px; line-height:1.5;';
+    summary.innerHTML = (cancelled ? 'Cancelled \u2014 ' : '') + okCount + ' of ' + chosen.length + ' songs are in your library.' + (failed ? ' ' + failed + ' could not be made: ' + scEscapeHtml(failedNames.join(', ')) + '.' : '');
+    run.appendChild(summary);
+    scConvertPillDone((cancelled ? 'Cancelled \u2014 ' : '') + okCount + ' song' + (okCount === 1 ? '' : 's') + ' added to your library' + (failed ? ' \u00b7 ' + failed + ' failed' : ''));
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
+    // 80.3.4 - the queue as it stands (what made it, what did not) is written down
+    // for the next start.
+    scDlJobSave();
+  }
+
   // The playlist card: list the songs, let the user untick what they do not want,
   // then run the lot through the shared per-video worker. The floating pill is the
   // run's only anchor - the window can be closed and it carries on.
@@ -44797,87 +44936,13 @@ function _renderAhFromData(artistAlbums){
           var chosen = idx.map(function(ix){ return pl.tracks[ix]; }).filter(Boolean);
           if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
           window.__scCancelDl = false; scConvertPillResetCancel();
-          (async function(){
-            var okCount = 0, failed = 0, failedNames = [];
-            box.innerHTML = '<div class="yt-pl-run" style="padding:10px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,0.03);">' +
-              '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><div style="width:14px;height:14px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>' +
-              '<div style="font-size:12px; font-weight:600; color:var(--ink);">' + scEscapeHtml(pl.title || 'YouTube playlist') + '</div></div>' +
-              '<div class="yt-pl-sub" style="font-size:10.5px; color:var(--ink-dim); margin-bottom:6px;"></div>' +
-              '<div style="height:6px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden;"><div class="yt-pl-bar" style="height:100%; width:0%; background:var(--coral); transition:width 0.3s ease;"></div></div>' +
-              '<div class="yt-pl-rows" style="margin-top:8px; max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;"></div></div>';
-            var run = box.querySelector('.yt-pl-run');
-            var subEl = run.querySelector('.yt-pl-sub');
-            var barEl = run.querySelector('.yt-pl-bar');
-            var rowsEl = run.querySelector('.yt-pl-rows');
-            // 80.3.3 - EVERY ROW GOES UP FIRST, and scDownloadLanes() songs are in
-            // flight at once. A row is a place to report into, not a step in a queue, so
-            // song 2 no longer waits for song 1's file to be finished - which is where an
-            // album's hour went. Each song still lands in the library exactly as it did,
-            // and Cancel still stops the run at the next song boundary.
-            var rows = [], runDone = 0;
-            for(var ri = 0; ri < chosen.length; ri++){
-              var row = document.createElement('div');
-              row.style.cssText = 'font-size:10.5px; color:var(--ink-dim); display:flex; gap:6px; align-items:baseline;';
-              row.innerHTML = '<span style="color:var(--gold); white-space:nowrap;">' + (ri + 1) + '/' + chosen.length + '</span><span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(chosen[ri].title || 'Untitled') + '</span><span class="yt-row-state" style="white-space:nowrap;">\u2026</span>';
-              rowsEl.appendChild(row);
-              rows.push({ state: row.querySelector('.yt-row-state'), done: false, started: false });
-            }
-            function scYtShowProgress(){
-              if(barEl) barEl.style.width = Math.round((runDone / chosen.length) * 100) + '%';
-              if(subEl) subEl.textContent = runDone + ' of ' + chosen.length + ' finished';
-            }
-            scYtShowProgress();
-            scRunJobStart(pl.title || 'YouTube playlist', 'Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's'));
-            await scRunPool(chosen, scDownloadLanes(), async function(tr, i){
-              var slot = rows[i];
-              if(!slot || window.__scCancelDl) return;
-              slot.started = true;
-              var state = function(txt){ if(slot.state) slot.state.textContent = txt; };
-              state('starting');
-              scConvertPillUpdate('Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + ' \u00b7 ' + (pl.title || 'YouTube playlist'),
-                runDone + ' of ' + chosen.length + ' finished \u2014 ' + (tr.title || 'starting'), Math.round((runDone / chosen.length) * 100));
-              var res = null;
-              try{ res = await scYtOneVideo(tr.videoId, fmt, tr.title, tr.author, function(txt){ state(txt); if(subEl) subEl.textContent = runDone + ' of ' + chosen.length + ' finished \u2014 ' + txt; }); }catch(_re){ res = null; }
-              if(res && res.blob){
-                var m = res.meta || {};
-                var clean = cleanOnImport(m.title || tr.title || 'YouTube audio', m.artist || tr.author || '');
-                var artistPart = scSafeName(clean.artist || '');
-                var namePart = scSafeName(clean.name || 'YouTube audio');
-                var al = String(artistPart).toLowerCase();
-                var artistOk = artistPart && al !== 'unknown artist';
-                var fname = scSafeName((artistOk ? artistPart + ' - ' : '') + namePart) + '.' + fmt;
-                scAddConvertedToLibrary(res.blob, { title: clean.name, artist: clean.artist, album: m.album || '', genre: m.genre || '', artBytes: m.artBytes, artMime: m.artMime }, { fileName: fname, fmt: fmt, source: 'YouTube playlist conversion' });
-                okCount++;
-                slot.done = true;
-                state('\u2705 added');
-                if(slot.state) slot.state.style.color = 'var(--gold)';
-              } else if(window.__scCancelDl){
-                state('\u2014 cancelled');
-              } else {
-                failed++; failedNames.push(tr.title || 'a song');
-                state('\u26a0 could not be made');
-              }
-              runDone++;
-              scYtShowProgress();
-              scConvertPillUpdate('Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + ' \u00b7 ' + (pl.title || 'YouTube playlist'),
-                runDone + ' of ' + chosen.length + ' finished \u00b7 ' + okCount + ' added' + (failed ? ' \u00b7 ' + failed + ' failed' : ''),
-                Math.round((runDone / chosen.length) * 100));
-              scRunJobNote(runDone + ' of ' + chosen.length + ' finished', (runDone / chosen.length) * 100);
-            });
-            // A song the run never reached, or one that stopped mid-flight, reads as
-            // cancelled rather than sitting on an ellipsis for ever.
-            for(var ci = 0; ci < rows.length; ci++){
-              if(!rows[ci].done && rows[ci].state && /^\u2026$/.test(String(rows[ci].state.textContent || '').trim())) rows[ci].state.textContent = '\u2014 cancelled';
-            }
-            scRunJobEnd();
-            var cancelled = !!window.__scCancelDl;
-            var summary = document.createElement('div');
-            summary.style.cssText = 'font-size:10.5px; color:var(--ink-dim); margin-top:8px; line-height:1.5;';
-            summary.innerHTML = (cancelled ? 'Cancelled \u2014 ' : '') + okCount + ' of ' + chosen.length + ' songs are in your library.' + (failed ? ' ' + failed + ' could not be made: ' + scEscapeHtml(failedNames.join(', ')) + '.' : '');
-            run.appendChild(summary);
-            scConvertPillDone((cancelled ? 'Cancelled \u2014 ' : '') + okCount + ' song' + (okCount === 1 ? '' : 's') + ' added to your library' + (failed ? ' \u00b7 ' + failed + ' failed' : ''));
+          // 80.3.4 - the run is a function now (scYtRunChosen, above the playlist
+          // card), so the downloader can start the same run at boot with the songs
+          // that never landed. The button is put back if the run throws, which the
+          // inline version left to chance.
+          scYtRunChosen(pl, chosen, fmt, box, btnEl, url).catch(function(){
             if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Convert'; }
-          })();
+          });
         });
       }catch(e){
         if(resultEl){ resultEl.innerHTML = '<div style="font-size:11px;color:var(--coral);">' + scEscapeHtml((e && e.message) || 'Something went wrong reading that playlist.') + '</div>'; }
@@ -44922,6 +44987,9 @@ function _renderAhFromData(artistAlbums){
     }
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
     window.__scCancelDl = false; scConvertPillResetCancel();
+    // 80.3.4 - the same record for a single video link (see the job block above
+    // the pill): the link survives a reload, and so does the song it was making.
+    try{ scDlJobBegin('youtube', url, (presetFmt && presetFmt !== 'auto') ? presetFmt : 'mp3', 'library', 'YouTube link', null, [{ title: '' }], true); }catch(_yb){}
     if(resultEl) resultEl._scClearOnCancel = false;
     // One honest number for the whole run. The audio lookup, the download, the
     // decode and the encode are the four things that take time here, and each of
@@ -45315,6 +45383,10 @@ function _renderAhFromData(artistAlbums){
     var csMeta = { title: '', artist: '', album: '', thumb: '', year: '', genre: '', track: '', seconds: 0, _aiUsed: false };
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
     window.__scCancelDl = false; scConvertPillResetCancel();
+    // 80.3.4 - one song is a run too, so the link is written down before the work
+    // starts: a reload in the middle of a single leaves the link in the box rather
+    // than an empty one, and the song it never finished is made on the next start.
+    try{ scDlJobBegin('spotify', url, (presetFmt && presetFmt !== 'auto') ? presetFmt : 'mp3', 'library', 'Spotify link', null, [{ title: '' }], true); }catch(_sb){}
     scConvertPillUpdate('Converting · Spotify', 'Fetching track info…', 15);
     function csMetaLine(){
       var parts = [];
@@ -46724,6 +46796,11 @@ function _renderAhFromData(artistAlbums){
       // showed none of them. renderList() sets the pending flag this needs.
       try{ renderList(); }catch(_rl){}
       try{ scRenderListNow(); }catch(_rl2){}
+      // 80.3.4 - THIS IS WHERE A SONG LEAVES THE RUN'S QUEUE. One song landing is
+      // one song that a reload must not download again, and this is the only place
+      // in the app where a converted song lands - so the mark is taken here rather
+      // than from the run's own bookkeeping, which can die with the page.
+      try{ scDlJobTake(-1, title); }catch(_tk){}
       return track;
     }catch(e){
       console.warn('could not add the converted song to the library', e);
@@ -46913,6 +46990,202 @@ function _renderAhFromData(artistAlbums){
     if(release){ try{ release(); }catch(_re){} }
     if(scRunJob.native){ scRunJob.native = false; scJobCall('release', {}); }
   }
+  // ---- THE RUN IS WRITTEN DOWN, SO A RELOAD CAN PICK IT UP --------------------
+  // The owner's ask, verbatim: "the link should save in the downloader and it
+  // should automatically resume downloading". A run already survives leaving the
+  // app (80.3.3). What it could not survive is the PAGE going away - an OTA
+  // update, a storage wipe, Android killing the WebView - and an album is long
+  // enough for one of those to land in the middle of it.
+  //
+  // So the run writes itself down: the link, the format, where the songs were
+  // going, the song list it was working through, and which of them have landed.
+  // The next start puts the link back in the box it was pasted into and converts
+  // the songs that never landed, from that same link, without asking.
+  //
+  // WHERE "LANDED" COMES FROM. The library write, not the run's own bookkeeping:
+  // scAddConvertedToLibrary is the one place a converted song lands, so that is
+  // what marks it off (matched by title, the way the run's own one-source-one-song
+  // ledger matches), and the batch runners mark the exact slot they were handed. A
+  // song that failed, or one the app died before landing, stays in the queue.
+  //
+  // TWO AUTOMATIC RESUMES, THEN THE LINK. A song that simply cannot be sourced must
+  // not start a download on every single launch for ever: after two automatic
+  // attempts the link is still in the box, and one tap starts it by hand.
+  var SC_DL_JOB_KEY = 'sidecut_dl_job';
+  var scDlJobLive = null;    // the record of the run in flight (or being resumed)
+  var scDlAdopt = false;     // true only while a resume is driving a runner
+  var scDlResumeLabel = '';  // "12 of 32" while a resumed run is on screen
+  function scDlJobLoad(){
+    try{
+      var raw = localStorage.getItem(SC_DL_JOB_KEY);
+      if(!raw) return null;
+      var rec = JSON.parse(raw);
+      if(!rec || typeof rec !== 'object' || !rec.url) return null;
+      if(Object.prototype.toString.call(rec.left) !== '[object Array]') rec.left = [];
+      return rec;
+    }catch(_jl){ return null; }
+  }
+  function scDlJobLeft(rec){
+    var out = [];
+    var list = (rec && rec.left) || [];
+    for(var i = 0; i < list.length; i++){ if(list[i] && !list[i].taken) out.push(list[i]); }
+    return out;
+  }
+  function scDlJobSave(){
+    var J = scDlJobLive;
+    if(!J) return;
+    try{
+      J.at = Date.now();
+      J.pending = scDlJobLeft(J).length;
+      localStorage.setItem(SC_DL_JOB_KEY, JSON.stringify(J));
+    }catch(_js){}
+  }
+  // A fresh run of any kind starts here: the record replaces whatever the last one
+  // left behind, and the song list is stored as PLAIN DATA (what comes back from
+  // localStorage after a reload has to be enough to convert from).
+  function scDlJobBegin(kind, url, fmt, mode, title, plan, chosen, single){
+    var items = [];
+    if(!SC_IS_PLAY){
+      for(var i = 0; i < ((chosen && chosen.length) || 0); i++){
+        var t = chosen[i] || {};
+        var copy = {};
+        for(var k in t){ if(Object.prototype.hasOwnProperty.call(t, k)) copy[k] = t[k]; }
+        copy.taken = false;
+        items.push(copy);
+      }
+      scDlResumeLabel = '';
+      scDlJobLive = { v: 1, kind: kind === 'youtube' ? 'youtube' : 'spotify', url: String(url || ''),
+                      fmt: fmt || 'mp3', mode: mode || 'library', title: String(title || ''),
+                      plan: plan || null, left: items, total: items.length, done: 0, single: !!single,
+                      attempts: 0, at: Date.now(), pending: items.length };
+      scDlJobSave();
+    }
+    return items;
+  }
+  // What the two batch runners call. A resume is already holding the record (and
+  // its queue IS the list being converted), so the run adopts it instead of
+  // starting a second record for the same work.
+  function scDlJobItems(kind, url, fmt, mode, title, plan, tracks){
+    if(scDlAdopt && scDlJobLive && scDlJobLive.left && scDlJobLive.left.length){
+      scDlAdopt = false;
+      return scDlJobLive.left;
+    }
+    scDlAdopt = false;
+    return scDlJobBegin(kind, url, fmt, mode, title, plan, tracks);
+  }
+  // One song is off the queue. `idx` is the slot a batch runner was handed (exact);
+  // with no index, the song is matched by title, and a queue with one song left in
+  // it can only be that song (a single link, or the last song of an album).
+  function scDlJobTake(idx, name){
+    var J = scDlJobLive;
+    if(!J || !J.left || !J.left.length) return;
+    var item = null;
+    if(typeof idx === 'number' && idx >= 0 && idx < J.left.length && !J.left[idx].taken) item = J.left[idx];
+    if(!item && name != null){
+      var key = '';
+      try{ key = (typeof scTrackTitleKey === 'function') ? scTrackTitleKey(name) : String(name || '').toLowerCase().trim(); }catch(_kt){ key = ''; }
+      var open = [];
+      for(var i = 0; i < J.left.length; i++){ if(!J.left[i].taken) open.push(J.left[i]); }
+      for(var j = 0; j < open.length && key; j++){
+        var k2 = '';
+        try{ k2 = (typeof scTrackTitleKey === 'function') ? scTrackTitleKey(open[j].title) : ''; }catch(_k2){ k2 = ''; }
+        if(k2 && k2 === key){ item = open[j]; break; }
+      }
+      if(!item && open.length === 1) item = open[0];
+    }
+    if(!item || item.taken) return;
+    item.taken = true;
+    J.done = (J.done || 0) + 1;
+    scDlJobSave();
+  }
+  // Cancel and the x beside the Convert button mean the same thing here: the run is
+  // over, so its record goes with it and a reload does not quietly start the
+  // download the owner just stopped.
+  function scDlJobClear(){
+    scDlJobLive = null;
+    scDlAdopt = false;
+    scDlResumeLabel = '';
+    try{ localStorage.removeItem(SC_DL_JOB_KEY); }catch(_jc){}
+  }
+  // The link, back in the box it was pasted into - in both places the app offers
+  // one for that kind (Discover's card and the Settings copy).
+  function scDlJobFill(rec){
+    if(!rec || !rec.url) return;
+    var ids = rec.kind === 'youtube' ? ['ytMp3Input', 'ytMp3InputSettings'] : ['spMp3Input', 'spMp3InputSettings'];
+    for(var i = 0; i < ids.length; i++){
+      var el = document.getElementById(ids[i]);
+      if(el && !el.value) el.value = rec.url;
+    }
+  }
+  // The opening words of a resumed run, and nothing at all for a normal one; a
+  // fresh run clears it (scDlJobBegin), so it can never label the wrong run.
+  function scDlHead(){
+    return scDlResumeLabel ? ('Resuming \u2014 ' + scDlResumeLabel + ' still to make \u00b7 ') : '';
+  }
+  var scDlResumeKicked = false, scDlResumeBusy = false;
+  function scDlResumeKick(){
+    if(scDlResumeKicked) return;
+    scDlResumeKicked = true;
+    // The link comes back first: that half of the ask does not wait on the library.
+    try{ scDlJobFill(scDlJobLoad()); }catch(_rf){}
+    var waits = 0;
+    var t = setInterval(function(){
+      waits++;
+      var ready = false;
+      // Not on a library that is still being read: a resume adds songs to it.
+      try{ ready = (typeof scLibraryReadOk !== 'undefined' && scLibraryReadOk) || (allTracks && allTracks.length) || waits > 80; }
+      catch(_rw){ ready = waits > 80; }
+      if(!ready) return;
+      clearInterval(t);
+      try{ scDlResume(); }catch(_rs){}
+    }, 250);
+  }
+  async function scDlResume(){
+    if(scDlResumeBusy || SC_IS_PLAY || window.__scCancelDl) return;
+    var rec = scDlJobLoad();
+    if(!rec) return;
+    scDlJobFill(rec);
+    var left = scDlJobLeft(rec);
+    if(!left.length) return;                       // nothing was left unfinished
+    if((rec.attempts || 0) >= 2) return;           // two automatic tries, then the link is the answer
+    var resultEl = document.getElementById(rec.kind === 'youtube' ? 'ytMp3Result' : 'spMp3Result');
+    var btnEl = document.getElementById(rec.kind === 'youtube' ? 'ytMp3Btn' : 'spMp3Btn');
+    if(!resultEl || !btnEl) return;
+    scDlResumeBusy = true;
+    rec.attempts = (rec.attempts || 0) + 1;
+    rec.pending = left.length;
+    scDlResumeLabel = left.length + ' of ' + (rec.total || left.length);
+    scDlJobLive = rec;
+    scDlAdopt = true;
+    try{
+      if(btnEl){ btnEl.disabled = true; btnEl.textContent = '...'; }
+      if(rec.single){
+        // A one-song run is resumed by its own link: the song's own title was
+        // never known here (it is read from the service while converting), so the
+        // single path is asked again from the top, exactly as a tap would.
+        if(rec.kind === 'youtube') convertYtToMp3(rec.url, resultEl, btnEl, rec.fmt || 'mp3');
+        else convertSpToAudio(rec.url, resultEl, btnEl, rec.fmt || 'mp3');
+      } else if(rec.kind === 'youtube'){
+        await scYtRunChosen(rec.plan || { title: rec.title || 'YouTube playlist' }, left, rec.fmt || 'flac', resultEl, btnEl, rec.url);
+      } else {
+        await scRunBatchConvert(rec.plan || { title: rec.title || 'conversion' }, rec.fmt || 'mp3', rec.mode || 'library', resultEl, btnEl, rec.url, left);
+      }
+    }catch(_rr){}
+    scDlJobSave();
+    scDlResumeBusy = false;
+    scDlAdopt = false;
+  }
+  // The x beside either Convert button empties the card - and the card's link is
+  // the record, so it goes with it. One listener, the four buttons it names.
+  try{
+    document.addEventListener('click', function(ev){
+      var id = (ev && ev.target && ev.target.id) || '';
+      if(id === 'spMp3Clear' || id === 'spMp3ClearSettings'){ try{ scDlJobClear(); }catch(_x1){} }
+      else if(id === 'ytMp3Clear' || id === 'ytMp3ClearSettings'){ try{ scDlJobClear(); }catch(_x2){} }
+    }, true);
+  }catch(_xl){}
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scDlResumeKick);
+  else scDlResumeKick();
 
   // ONE cancel path, for every way out of a run: the bubble's Cancel button and
   // the small x beside the button that starts a run do the same thing, so the two
@@ -46920,6 +47193,9 @@ function _renderAhFromData(artistAlbums){
   // and encode step checks __scCancelDl - and the bubble is dismissed on a grace
   // window, so Cancel always means "gone", whatever the job in flight is doing.
   function scCancelConversion(btnEl){
+    // 80.3.4 - Cancel means gone, record and all: a reload must not start the
+    // download the owner just stopped.
+    try{ scDlJobClear(); }catch(_cc){}
     window.__scCancelDl = true;
     window.__scNotifyAt = 0;
     scConvertPillState.cancelRequested = true;
@@ -47095,6 +47371,13 @@ function _renderAhFromData(artistAlbums){
   async function scRunBatchConvert(plan, fmt, saveMode, resultEl, btnEl, originalUrl, chosenTracks){
     var tracks = (chosenTracks && chosenTracks.length) ? chosenTracks.slice() : ((plan && plan.tracks) || []);
     if(!tracks.length) return false;
+    // 80.3.4 - the run is written down before the first request: the song list, the
+    // format, where the files were going and the link that produced it. An album is
+    // long enough for an OTA reload to land in the middle of it, and the downloader
+    // picks the songs that never landed back up from this.
+    scDlJobItems('spotify', originalUrl, fmt, saveMode, (plan && plan.title) || 'conversion',
+      { title: (plan && plan.title) || '', artist: (plan && plan.artist) || '', album: (plan && plan.album) || '',
+        cover: (plan && plan.cover) || '', kind: (plan && plan.kind) || '' }, tracks);
     window.__scCancelDl = false; scConvertPillResetCancel();
     var alsoSaveFiles = (saveMode === 'files');
     var wantZip = (saveMode === 'zip');
@@ -47107,10 +47390,10 @@ function _renderAhFromData(artistAlbums){
         '<div style="width:14px;height:14px;border:2px solid var(--coral);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>' +
         '<div style="font-size:12px; font-weight:600; color:var(--ink);">' + scEscapeHtml(plan.title || 'Spotify ' + (plan.kind || 'album')) + '</div>' +
       '</div>' +
-      '<div class="sp-batch-sub" style="font-size:10.5px; color:var(--ink-dim); margin-bottom:6px;">Starting ' + tracks.length + ' track' + (tracks.length === 1 ? '' : 's') + ' → ' + fmt.toUpperCase() + (wantZip ? ' · library + one ZIP' : (alsoSaveFiles ? ' · library + files' : ' · straight into your library')) + '…</div>' +
+      '<div class="sp-batch-sub" style="font-size:10.5px; color:var(--ink-dim); margin-bottom:6px;">' + scDlHead() + 'Starting ' + tracks.length + ' track' + (tracks.length === 1 ? '' : 's') + ' → ' + fmt.toUpperCase() + (wantZip ? ' · library + one ZIP' : (alsoSaveFiles ? ' · library + files' : ' · straight into your library')) + '…</div>' +
       '<div class="sp-batch-bar" style="height:6px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden;"><div style="height:100%; width:0%; background:var(--coral); transition:width 0.3s ease;"></div></div>' +
       '<div class="sp-batch-list" style="margin-top:8px; max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;"></div>' +
-      '<div style="font-size:10px; color:var(--ink-dim); margin-top:6px;">Converting in the background — close this window if you like, the run carries on and the progress stays on screen.</div>' +
+      '<div style="font-size:10px; color:var(--ink-dim); margin-top:6px;">Converting in the background — close this window if you like, the run carries on and the progress stays on screen, and the link is kept: if the app is reloaded while it runs, the downloader picks it up where it stopped.</div>' +
       '<div class="sp-batch-actions" style="margin-top:8px; display:none; gap:6px; flex-wrap:wrap;"></div>';
     resultEl.style.display = 'block';
     resultEl.innerHTML = '';
@@ -47205,6 +47488,9 @@ function _renderAhFromData(artistAlbums){
         }
         if(addedTrack){
           okCount++;
+          // 80.3.4 - this song is in the library, so it is off the run's queue: a
+          // reload resumes the songs that did NOT make it, never this one again.
+          scDlJobTake(i);
           if(stateEl){ stateEl.textContent = '\u2713 in library' + extra; stateEl.style.color = 'var(--coral)'; }
         } else {
           failCount++;
@@ -58446,6 +58732,170 @@ window.showAlbumReorderPopup = function(albumName){
   else sc11AddLyrics();
   window.addEventListener('load', sc11AddLyrics);
   setTimeout(sc11AddLyrics, 1200);
+})();
+</script>
+<script>
+/* 80.3.4 - THE TABS COME BACK WHERE YOU LEFT THEM.
+   ==========================================================================
+   The ask, verbatim: "discover studio and tools should all autoscroll to where
+   you were last, even if you refresh".
+
+   Three memories, one per tab the owner named: Discover, Studio and Tools.
+   Studio and Tools share one element (#studioView scrolls, and it holds both
+   panes), so which of the two a scroll belongs to is decided by the pane that is
+   showing - the same class toggle the dock tab drives. Discover has its own
+   container (#discoverView), which is also where the app used to force
+   scrollTop = 0 on every open.
+
+   WHERE THE NUMBERS LIVE: localStorage (sidecut_scroll_<tab>), because "even if
+   you refresh" is half of the ask, and because the app's own snapshot machinery
+   already carries these keys across a storage wipe.
+
+   HOW A SWITCH IS SEEN FROM OUT HERE. This block is a separate closure and the
+   app's tab machinery is not reachable by name from it, so it watches the one
+   thing the app is guaranteed to paint: the `active` class on the two views (and
+   on the two studio panes inside the studio view). A tab tap, a studio half tap,
+   a view resumed after a reload and the app's own boot all end in that class
+   being set, so one observer covers every way in.
+
+   WHY THE POSITION IS NOT READ AT THE MOMENT OF A SWITCH. Hiding a pane assigns
+   a new layout, and the scroll container is clamped to the NEW content the
+   instant anything reads scrollTop. Reading late therefore files the incoming
+   pane's clamped position under the outgoing tab - the exact bug that would make
+   Tools open half way down an album nobody asked for. So the outgoing number is
+   the one the scroll listener last saw, taken while its pane was still the one on
+   screen, and the incoming tab is restored from its own key.
+
+   THE RESTORE IS A SHORT SETTLE, NOT ONE ASSIGNMENT. Discover's results and its
+   pinned/new-releases rows arrive after the view opens, so a saved 4000px is not
+   reachable on the frame the view turns active; the target is re-applied until it
+   is reached or ~5s have passed, and the first real touch (a tap, a drag, a wheel,
+   a key) ends the whole thing at once - the memory never fights the hand using
+   the screen. Nothing remembered means the tab opens at the top exactly as it
+   always did. */
+(function(){
+  'use strict';
+  var KEYS = {
+    discover: 'sidecut_scroll_discover',
+    studio: 'sidecut_scroll_studio',
+    tools: 'sidecut_scroll_tools'
+  };
+  var live = 0;            // the last position seen while the tracked tab was on screen
+  var last = null;         // the tab the position in `live` belongs to
+  var pending = null;      // { key, target, tries } while a restore is settling
+  var applying = false;    // true only inside our own scrollTop assignment
+  var writeTimer = 0;
+
+  function $(id){ return document.getElementById(id); }
+  function viewEl(key){
+    return key === 'discover' ? $('discoverView') : (key ? $('studioView') : null);
+  }
+  function paneNow(){
+    var host = $('studioView');
+    if(!host) return 'studio';
+    var pane = host.querySelector('.sc80-pane.active');
+    return (pane && pane.getAttribute('data-pane') === 'tools') ? 'tools' : 'studio';
+  }
+  function keyNow(){
+    var dv = $('discoverView');
+    if(dv && dv.classList.contains('active')) return 'discover';
+    var sv = $('studioView');
+    if(sv && sv.classList.contains('active')) return paneNow();
+    return null;
+  }
+  function read(key){
+    try{
+      var v = parseInt(localStorage.getItem(KEYS[key]) || '0', 10);
+      return (isFinite(v) && v > 0) ? v : 0;
+    }catch(e){ return 0; }
+  }
+  function write(key, val){
+    try{
+      if(key && val > 0) localStorage.setItem(KEYS[key], String(Math.round(val)));
+      else if(key) localStorage.removeItem(KEYS[key]);
+    }catch(e){}
+  }
+  function settle(){
+    if(!pending) return;
+    var el = viewEl(pending.key);
+    if(!el || keyNow() !== pending.key){ pending = null; return; }
+    var reach = Math.max(0, (el.scrollHeight || 0) - (el.clientHeight || 0));
+    applying = true;
+    try{ el.scrollTop = Math.min(pending.target, reach); }catch(e){}
+    var at = el.scrollTop;
+    applying = false;
+    live = at;
+    if(at >= pending.target - 1 || pending.tries++ >= 40){ pending = null; return; }
+    setTimeout(settle, 120);
+  }
+  function enter(key){
+    var el = viewEl(key);
+    if(!el) return;
+    pending = null;
+    var target = read(key);
+    if(target <= 0){
+      // Nothing remembered (or the owner was at the very top): the tab opens at
+      // the top, which is also what clears one tab's position out of a container
+      // the other tab shares.
+      applying = true;
+      try{ el.scrollTop = 0; }catch(e){}
+      applying = false;
+      live = 0;
+      return;
+    }
+    pending = { key: key, target: target, tries: 0 };
+    live = target;
+    settle();
+  }
+  function sync(){
+    var key = keyNow();
+    if(key === last) return;
+    if(last) write(last, live);
+    last = key;
+    live = 0;
+    if(key) enter(key);
+  }
+  function saveNow(){
+    if(last) write(last, live);
+  }
+  function onScroll(ev){
+    if(applying || pending) return;      // our own restore, not the hand
+    var key = last || keyNow();
+    if(!key) return;
+    var el = viewEl(key);
+    if(!el) return;
+    live = el.scrollTop;
+    if(writeTimer) return;
+    writeTimer = setTimeout(function(){ writeTimer = 0; saveNow(); }, 250);
+  }
+  // A touch, a wheel or a key is the owner taking over: the settle stops where it
+  // is rather than pulling the view back under their finger.
+  ['pointerdown', 'touchstart', 'wheel', 'keydown'].forEach(function(ev){
+    try{ window.addEventListener(ev, function(){ pending = null; }, { passive: true, capture: true }); }catch(e){}
+  });
+  ['discoverView', 'studioView'].forEach(function(id){
+    var el = $(id);
+    if(!el) return;
+    el.addEventListener('scroll', onScroll, { passive: true });
+    if(window.MutationObserver){
+      // The view's own class (which tab is on screen) and, inside the studio view,
+      // each pane's class (Studio or Tools) - one observer each, no polling.
+      var opts = { attributes: true, attributeFilter: ['class'] };
+      if(id === 'studioView') opts.subtree = true;
+      try{ new MutationObserver(sync).observe(el, opts); }catch(e){}
+    }
+  });
+  try{
+    window.addEventListener('pagehide', saveNow);
+    document.addEventListener('visibilitychange', function(){ if(document.hidden) saveNow(); });
+  }catch(e){}
+  sync();
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sync);
+  // The studio panes are built (and the first Discover render lands) after this
+  // block runs, so one late look settles a view that is already open.
+  setTimeout(sync, 700);
+  // For a gate or a future release: where the three memories are kept.
+  window.__scScrollKeys = KEYS;
 })();
 </script>
 </body>

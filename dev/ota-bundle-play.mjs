@@ -26,6 +26,19 @@ const OTA_FILES = ['index.html', 'sw.js', 'manifest.json', 'icon-192.png', 'icon
 const MARK = '<script>window.__PLAY_BUILD__=true;</script>\n';
 const ANCHOR = '<script src="dev/native-updates.js"></script>';
 
+// 80.3.4 - THE NOTES THIS CHANNEL PUBLISHES ARE FILTERED THE WAY THE APP SHOWS
+// THEM. This is the build with no downloader and no converter, so a note about one
+// is not a note it can publish. The two rules are the page's own: an item marked
+// [FULL] belongs to the other build, and an item the page hides on this build is
+// hidden here too. This is `scHidesOnPlay` from index.html, kept in step by hand -
+// the notes the channel publishes and the notes the app shows have to agree.
+function hidesOnPlay(t) {
+  if (typeof t !== 'string') return false;
+  if (/(downloader|downloading|converter|converts|converting|conversion|convert\b|spotify to mp3|youtube to mp3|\bto mp3\b|get song\b|spotisaver|spotmate|spotidown|spoticatch|ytmp3|vocal remover|no source found|hand-?off)/i.test(t)) return true;
+  if (/\bdownload/i.test(t) && !/(zip|crossfad|to phone|artwork|megabytes|csv|re-?download)/i.test(t)) return true;
+  return false;
+}
+
 function readVersion(src) {
   const m = src.match(/const APP_VERSION = '([^']+)'/);
   return m ? m[1] : null;
@@ -37,8 +50,13 @@ function readNotes(src, version) {
   try { entries = eval('[' + block[1] + ']'); } catch (err) { return { notes: [], date: '' }; }
   const e = entries.find((x) => String(x.version) === String(version)) || entries[0];
   if (!e) return { notes: [], date: '' };
-  // [FULL]-marked items never belong to this channel.
-  return { notes: (e.items || []).filter((it) => !(typeof it === 'string' && it.startsWith('[FULL] '))).slice(0, 6), date: e.date ? String(e.date) : '' };
+  // [FULL]-marked items never belong to this channel, and neither does anything
+  // this build hides (a downloader, a converter, their copy). A release whose only
+  // notes were about downloads therefore publishes one honest line rather than a
+  // note about a feature the build does not have.
+  const shown = (e.items || []).filter((it) => typeof it !== 'string' || (!it.startsWith('[FULL] ') && !hidesOnPlay(it)));
+  const notes = (shown.length ? shown : ['Fixes and improvements under the hood.']).slice(0, 6);
+  return { notes, date: e.date ? String(e.date) : '' };
 }
 function withFlag(html) {
   if (html.includes(MARK)) return html;
