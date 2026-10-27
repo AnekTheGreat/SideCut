@@ -21,7 +21,7 @@ page's own encoders over a 3.5-minute stereo track):
 
 A 32-song album is about two hours of audio, so it was 220-370 seconds of encoding
 on ONE thread - the app's own thread - before a single byte of network is counted.
-On top of that, every song was fetched as 10-15 bounded 1 MiB ranges (googlevideo
+On top of that, every song was fetched as 4-7 bounded 1 MiB ranges (googlevideo
 refuses a wider request) paid one after another, and every song waited for the one
 before it to finish entirely. That is the hour.
 
