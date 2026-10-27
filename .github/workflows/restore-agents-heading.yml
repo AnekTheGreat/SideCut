@@ -1,0 +1,78 @@
+name: Restore the memory file's heading
+
+# ONE-OFF, and it should not outlive the release it was written for.
+#
+# The version-code note that landed on 26 October came in through a one-off workflow that
+# put its own "## " heading where AGENTS.md's H1 belongs, so the file now starts mid-note
+# with no title at all. dev/release-record.py will not write a release entry into a file
+# that does not start with the heading - correctly, it has no way to know where the entry
+# goes otherwise - so 80.3.2's run 40442171680 died on that step, with the page patch and
+# the OTA rebuild already done and nothing committed.
+#
+# AGENTS.md is ~950 KB, so like every other write to it this one has to happen inside a
+# runner: the sandbox carries files through an API call, and this file cannot travel that
+# way. One line goes on the top and the job pushes it.
+#
+# Idempotent: a second dispatch finds the heading already there and commits nothing.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: restore-agents-heading
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    name: Put the H1 back on AGENTS.md
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Put the heading back on top
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys
+
+          PATH = 'AGENTS.md'
+          # The heading is the one every entry sits under: the em dash is an escape so this
+          # file stays pure ASCII, however it travels.
+          HEAD = '# SideCut \u2014 repository memory\n'
+
+          src = open(PATH, encoding='utf-8').read()
+          if src.startswith(HEAD):
+              print('AGENTS.md: the heading is already there - nothing to do')
+              sys.exit(0)
+          open(PATH, 'w', encoding='utf-8').write(HEAD + '\n' + src.lstrip('\n'))
+          print('AGENTS.md: the heading is back on top')
+          PY
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name 'SideCut release'
+          git config user.email 'actions@github.com'
+          git add AGENTS.md
+          if git diff --cached --quiet; then
+            echo 'AGENTS.md unchanged - nothing to commit'
+            exit 0
+          fi
+          git commit -m "$(cat <<'MSG'
+          Put the memory file's heading back on top
+
+          The version-code note was landed with its own heading where AGENTS.md's H1 belongs,
+          so the file has started mid-note since 26 October and every release since stopped at
+          dev/release-record.py, which will not write an entry into a file that does not start
+          with the heading. One line, nothing else.
+          MSG
+          )"
+          git push
+          echo '--- landed ---'
+          git log --oneline -1
