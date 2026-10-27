@@ -6635,7 +6635,7 @@ body.sc80-cloud .action-strip::before{
         <div style="display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-dim); margin-top:8px;">
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">1.</span><span>In <b>Spotify</b>, tap <b>Share → Copy link</b> on any song, album or playlist.</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">2.</span><span>In SideCut open <b>Discover</b> and tap <b>🎛️ Conversion Tools</b> — a drop-down opens; tap <b>🎵 Spotify to MP3</b>, tap the link box to paste the link, and pick <b>MP3</b> for a small file or <b>WAV / FLAC</b> for lossless.</span></div>
-          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">3.</span><span>Tap <b>Convert</b>. SideCut tags the song, gives it its cover art and adds it to your library when it is done — an album or a playlist link runs through every track, in order.</span></div>
+          <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">3.</span><span>Tap <b>Convert</b>. SideCut tags the song, gives it its cover art and adds it to your library when it is done — an album or a playlist link runs through every track, several at a time.</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">4.</span><span>A <b>YouTube</b> link works the same way, in the card right below it.</span></div>
           <div style="display:flex; gap:8px;"><span style="color:var(--coral); flex-shrink:0;">·</span><span>Already have the files? <b>+ Add songs → + Files</b> takes them one by one, <b>+ Add folder</b> takes a whole folder, and <b>Import library</b> restores a backup .zip.</span></div>
         </div>
@@ -11226,8 +11226,8 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // the save below would fall back to — the button never dies with the
       // encoder merely out of reach.
       try{
-        let blob = await scEncodeAudioCooperative(rendered, cropFmt, null);
-        if(!blob && cropFmt === 'mp3') blob = await scEncodeAudioCooperative(rendered, 'wav', null);
+        let blob = await scEncodeAudioCooperative(rendered, cropFmt, null, null, true);
+        if(!blob && cropFmt === 'mp3') blob = await scEncodeAudioCooperative(rendered, 'wav', null, null, true);
         if(blob){
           const url = URL.createObjectURL(blob);
           cropPreviewAudio = new Audio(url);
@@ -11419,10 +11419,10 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // format every player opens beats a failed crop in a format that needs a
       // download to make.
       let usedFmt = cropFmt;
-      let newBlob = await scEncodeAudioCooperative(slice, cropFmt, meta);
+      let newBlob = await scEncodeAudioCooperative(slice, cropFmt, meta, null, true);
       if(!newBlob && cropFmt === 'mp3'){
         usedFmt = 'wav';
-        newBlob = await scEncodeAudioCooperative(slice, 'wav', meta);
+        newBlob = await scEncodeAudioCooperative(slice, 'wav', meta, null, true);
       }
       if(!newBlob) throw new Error('could not encode the cropped audio');
       const ext = usedFmt === 'mp3' ? '.mp3' : '.wav';
@@ -15563,7 +15563,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.3.2';
+  const APP_VERSION = '80.3.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16212,6 +16212,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.3.3', date: 'October 27, 2026 · 6:33 AM EDT', title: 'An album converts in minutes, the run keeps going in the background, and a failed song says why', items: [
+    'An album converts in minutes instead of an hour. Three things were slow and all three are fixed: a song’s audio is now pulled four ranges at a time instead of one after another, several songs convert at once instead of one waiting for the last, and the encoders run on their own threads instead of on the one thread every tap has to get through.',
+    'The encoders moved off the app’s thread. FLAC and MP3 are seconds of solid arithmetic per song — about two hours of it across a 32-song album — and running that where the interface lives is why a long run felt like the app had stopped. The work now runs in worker threads, by the same encoders: the files are the same files, byte for byte.',
+    '<b>A run keeps going in the background.</b> Start an album, leave the app, put the phone down: the run holds itself open (the same Web Lock the compressor uses), keeps its progress in the notification, and the songs are in your library when you come back.',
+    'On Android the app also keeps the device awake for the length of a run and hands it straight back when the last song lands — a locked screen no longer stops a download. (That part ships with the next app build; the release itself uses the lock the browser honours.)',
+    'The lane count follows the device: two songs at a time on a small phone, three on a normal one, four on a roomy one — a song’s decoded audio is ~74 MB, so this is a memory number, and memory is what a phone runs out of first.',
+    'Two songs of one album can no longer be handed the same upload. The claim on a source is taken before the download rather than after it, which is what a run of several songs at once needs to stay honest.',
+    'A song that fails in a run says why in its own row. The reason used to live in one shared slot, so with several songs in flight one song’s error could be reported against another.',
+  ]},
   { version: '80.3.2', date: 'October 27, 2026 · 9:40 AM EDT', title: 'Lyrics fill in letter by letter, a volume boost sits beside the EQ, Settings is grouped, and a download can go into an album', items: [
     'Letter-by-letter lyrics fill the line now. A word the singer has passed keeps its letters lit, the word being sung sweeps across its own letters, and the words to come stay dark — the line fills in instead of one word flashing in place.',
     'The sweep no longer skips words. On a line whose window was longer than the singing inside it the highlight used to jump from the first word to the last one, fully lit; every word is visited now, in order.',
@@ -44499,16 +44508,20 @@ function _renderAhFromData(artistAlbums){
   // loaded — blocked CDN, flaky network — MP3, the DEFAULT format of both
   // converters, fails AFTER a perfectly good download with no clue why.
   // Retry the usual mirrors once before declaring the encoder gone.
+  var SC_LAME_MIRRORS = [
+    'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js',
+    'https://unpkg.com/lamejs@1.2.1/lame.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js'
+  ];
   window.__scEnsureLamejs = (function(){
     var pending = null;
     return function(){
       try{ if(typeof lamejs !== 'undefined') return Promise.resolve(true); }catch(_e0){}
       if(pending) return pending;
-      var mirrors = [
-        'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js',
-        'https://unpkg.com/lamejs@1.2.1/lame.min.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js'
-      ];
+      // ONE list, read by the page and by the encoder workers (importScripts). A worker
+      // that cannot reach the encoder has to say so, and it has to be looking where the
+      // page looks: 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js'.
+      var mirrors = SC_LAME_MIRRORS;
       pending = new Promise(function(resolve){
         var i = 0;
         (function next(){
@@ -44604,6 +44617,14 @@ function _renderAhFromData(artistAlbums){
       }
     }catch(e){}
     return out;
+  }
+  // A batch runs several songs at once, so the reason a song failed cannot live in one
+  // window-wide slot - three songs overwrite each other's and a run reports the wrong
+  // cause. A run hands this song's own sink down (ctx.fail / ctx.reason); a one-off save
+  // keeps the window slot it always had.
+  function scFail(ctx, msg){
+    if(ctx && typeof ctx === 'object' && typeof ctx.fail === 'function'){ ctx.fail(msg); return; }
+    window.__scSourceFail = msg;
   }
   // One video, end to end: resolve its audio, read its real metadata, decode and
   // re-encode with tags and cover. Returns { blob, meta } or null; the caller owns
@@ -44788,21 +44809,35 @@ function _renderAhFromData(artistAlbums){
             var subEl = run.querySelector('.yt-pl-sub');
             var barEl = run.querySelector('.yt-pl-bar');
             var rowsEl = run.querySelector('.yt-pl-rows');
-            for(var i = 0; i < chosen.length; i++){
-              if(window.__scCancelDl) break;
-              var tr = chosen[i];
+            // 80.3.3 - EVERY ROW GOES UP FIRST, and scDownloadLanes() songs are in
+            // flight at once. A row is a place to report into, not a step in a queue, so
+            // song 2 no longer waits for song 1's file to be finished - which is where an
+            // album's hour went. Each song still lands in the library exactly as it did,
+            // and Cancel still stops the run at the next song boundary.
+            var rows = [], runDone = 0;
+            for(var ri = 0; ri < chosen.length; ri++){
               var row = document.createElement('div');
               row.style.cssText = 'font-size:10.5px; color:var(--ink-dim); display:flex; gap:6px; align-items:baseline;';
-              row.innerHTML = '<span style="color:var(--gold); white-space:nowrap;">' + (i + 1) + '/' + chosen.length + '</span><span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(tr.title || 'Untitled') + '</span><span class="yt-row-state" style="white-space:nowrap;">\u2026</span>';
+              row.innerHTML = '<span style="color:var(--gold); white-space:nowrap;">' + (ri + 1) + '/' + chosen.length + '</span><span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(chosen[ri].title || 'Untitled') + '</span><span class="yt-row-state" style="white-space:nowrap;">\u2026</span>';
               rowsEl.appendChild(row);
-              var stateEl = row.querySelector('.yt-row-state');
-              var state = function(txt){ if(stateEl) stateEl.textContent = txt; };
-              if(subEl) subEl.textContent = 'Song ' + (i + 1) + ' of ' + chosen.length;
-              if(barEl) barEl.style.width = Math.round((i / chosen.length) * 100) + '%';
-              scConvertPillUpdate('Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + ' \u00b7 ' + (pl.title || 'YouTube playlist'), 'Song ' + (i + 1) + ' of ' + chosen.length + ' \u2014 ' + (tr.title || 'starting'), Math.round((i / chosen.length) * 100));
+              rows.push({ state: row.querySelector('.yt-row-state'), done: false, started: false });
+            }
+            function scYtShowProgress(){
+              if(barEl) barEl.style.width = Math.round((runDone / chosen.length) * 100) + '%';
+              if(subEl) subEl.textContent = runDone + ' of ' + chosen.length + ' finished';
+            }
+            scYtShowProgress();
+            scRunJobStart(pl.title || 'YouTube playlist', 'Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's'));
+            await scRunPool(chosen, scDownloadLanes(), async function(tr, i){
+              var slot = rows[i];
+              if(!slot || window.__scCancelDl) return;
+              slot.started = true;
+              var state = function(txt){ if(slot.state) slot.state.textContent = txt; };
               state('starting');
+              scConvertPillUpdate('Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + ' \u00b7 ' + (pl.title || 'YouTube playlist'),
+                runDone + ' of ' + chosen.length + ' finished \u2014 ' + (tr.title || 'starting'), Math.round((runDone / chosen.length) * 100));
               var res = null;
-              try{ res = await scYtOneVideo(tr.videoId, fmt, tr.title, tr.author, function(txt){ state(txt); if(subEl) subEl.textContent = 'Song ' + (i + 1) + ' of ' + chosen.length + ' \u2014 ' + txt; }); }catch(_re){ res = null; }
+              try{ res = await scYtOneVideo(tr.videoId, fmt, tr.title, tr.author, function(txt){ state(txt); if(subEl) subEl.textContent = runDone + ' of ' + chosen.length + ' finished \u2014 ' + txt; }); }catch(_re){ res = null; }
               if(res && res.blob){
                 var m = res.meta || {};
                 var clean = cleanOnImport(m.title || tr.title || 'YouTube audio', m.artist || tr.author || '');
@@ -44813,18 +44848,28 @@ function _renderAhFromData(artistAlbums){
                 var fname = scSafeName((artistOk ? artistPart + ' - ' : '') + namePart) + '.' + fmt;
                 scAddConvertedToLibrary(res.blob, { title: clean.name, artist: clean.artist, album: m.album || '', genre: m.genre || '', artBytes: m.artBytes, artMime: m.artMime }, { fileName: fname, fmt: fmt, source: 'YouTube playlist conversion' });
                 okCount++;
+                slot.done = true;
                 state('\u2705 added');
-                if(stateEl) stateEl.style.color = 'var(--gold)';
+                if(slot.state) slot.state.style.color = 'var(--gold)';
               } else if(window.__scCancelDl){
                 state('\u2014 cancelled');
-                break;
               } else {
                 failed++; failedNames.push(tr.title || 'a song');
                 state('\u26a0 could not be made');
               }
-              if(barEl) barEl.style.width = Math.round(((i + 1) / chosen.length) * 100) + '%';
-              if(!window.__scCancelDl) await new Promise(function(r){ setTimeout(r, 200); });
+              runDone++;
+              scYtShowProgress();
+              scConvertPillUpdate('Converting ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + ' \u00b7 ' + (pl.title || 'YouTube playlist'),
+                runDone + ' of ' + chosen.length + ' finished \u00b7 ' + okCount + ' added' + (failed ? ' \u00b7 ' + failed + ' failed' : ''),
+                Math.round((runDone / chosen.length) * 100));
+              scRunJobNote(runDone + ' of ' + chosen.length + ' finished', (runDone / chosen.length) * 100);
+            });
+            // A song the run never reached, or one that stopped mid-flight, reads as
+            // cancelled rather than sitting on an ellipsis for ever.
+            for(var ci = 0; ci < rows.length; ci++){
+              if(!rows[ci].done && rows[ci].state && /^\u2026$/.test(String(rows[ci].state.textContent || '').trim())) rows[ci].state.textContent = '\u2014 cancelled';
             }
+            scRunJobEnd();
             var cancelled = !!window.__scCancelDl;
             var summary = document.createElement('div');
             summary.style.cssText = 'font-size:10.5px; color:var(--ink-dim); margin-top:8px; line-height:1.5;';
@@ -45407,7 +45452,7 @@ function _renderAhFromData(artistAlbums){
         };
         var blob = await scEncodeAudioCooperative(buf, fmt, tagMeta, function(p){
           if(p > 0 && p < 1) csSetStatus('Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(p * 100) + '%');
-        });
+        }, true);
         if(!isCurrentRun() || window.__scCancelDl) return;
         if(!blob){ csRenderFormats(buf, streamUrl); return; }
         var artistPart = scSafeName(csMeta.artist || '');
@@ -45543,7 +45588,7 @@ function _renderAhFromData(artistAlbums){
       };
       var blob = await scEncodeAudioCooperative(buf, fmt, tagMeta, function(p){
         if(stEl && p > 0 && p < 1) stEl.textContent = 'Encoding ' + fmt.toUpperCase() + ' — ' + Math.round(p * 100) + '%';
-      });
+      }, true);
       if(!blob){ resultEl.innerHTML = '<span style="color:var(--coral);">⚠ Could not encode to ' + fmt.toUpperCase() + ' in this browser. Try another format.</span>'; return; }
       // Name the file "Artist - Title.ext" so SideCut's library importer parses
       // the real artist + title from the name even before tags are read.
@@ -46399,10 +46444,211 @@ function _renderAhFromData(artistAlbums){
     return new Blob([buffer], { type: 'audio/aiff' });
   }
 
-  async function scEncodeAudioCooperative(buf, fmt, meta, onSlice){
+  // ---- THE ENCODERS GET THREADS OF THEIR OWN -------------------------------------
+  // Measured on the page's own encoders (dev/_dl8033-measure.cjs, a 3.5-minute stereo
+  // track): ~7-9 s for FLAC and ~12 s for MP3, and that is ONE thread's whole
+  // attention, per song. A 32-song album is about two hours of audio, which is four
+  // minutes of encoding even on a fast desktop - and the app's thread is the thread
+  // that answers every tap. A worker is a thread the platform schedules on its own
+  // cores and does not throttle with the page's timers, so the album's encoding spreads
+  // across cores AND keeps its speed while the app is behind something else.
+  //
+  // The worker runs THE PAGE'S OWN ENCODER SOURCE (Function.prototype.toString). That
+  // is the point: there is still exactly one implementation of every format in this
+  // repository - the worker is a place to run it, not a second copy of it to keep in
+  // step. What it needs and does not have (a document, the slice budget, a UI to yield
+  // to) is shimmed at the top of the source below.
+  var SC_ENC_WORKERS = 3;
+  var scEncWorkerUrl = null;
+  function scEncoderSource(){
+    return [
+      // A worker has no document, no frames to drop and no reason to yield - which is
+      // exactly why the encode wants to be here.
+      'var document = { hidden: false };',
+      'var SC_ENCODE_SLICE_MS = 90;',
+      'var SC_ENCODE_FRAME_MS = 12;',
+      'function scBackSliceMul(){ return 1; }',
+      'function scYieldToUI(){ return Promise.resolve(); }',
+      'var scLameMirrors = ' + JSON.stringify(SC_LAME_MIRRORS) + ';',
+      "function scLoadLame(){ if(typeof lamejs !== 'undefined') return Promise.resolve(true); var i = 0; return new Promise(function(res){ (function next(){ if(i >= scLameMirrors.length) return res(false); try{ importScripts(scLameMirrors[i++]); }catch(_ie){ return next(); } res(typeof lamejs !== 'undefined'); })(); }); }",
+      scId3v23Bytes.toString(),
+      scJoinTaggedChunks.toString(),
+      scEncodeMp3Cooperative.toString(),
+      scEncodeWavCooperative.toString(),
+      scEncodeAiffCooperative.toString(),
+      encodeAudioBufferToFlac.toString(),
+      [
+        'self.onmessage = function(ev){',
+        '  var msg = ev && ev.data;',
+        "  if(!msg || !msg.id) return;",
+        '  var id = msg.id;',
+        '  function finish(bytes){',
+        '    try{',
+        '      if(bytes && bytes.byteLength){ self.postMessage({ id: id, bytes: bytes }, [bytes.buffer ? bytes.buffer : bytes]); return; }',
+        '    }catch(_pf){}',
+        '    self.postMessage({ id: id, bytes: null });',
+        '  }',
+        '  try{',
+        '    var chans = msg.channels || [];',
+        '    var fake = { numberOfChannels: chans.length, sampleRate: msg.sampleRate, length: msg.length,',
+        '                 getChannelData: function(i){ return chans[i]; } };',
+        '    var onSlice = function(frac){ try{ self.postMessage({ id: id, progress: Math.max(0, Math.min(1, Number(frac) || 0)) }); }catch(_ps){} };',
+        '    (function(){',
+        "      return (async function(){",
+        "        if(msg.fmt === 'mp3' && typeof lamejs === 'undefined') await scLoadLame();",
+        '        var blob = null;',
+        "        if(msg.fmt === 'mp3') blob = await scEncodeMp3Cooperative(fake, msg.meta, onSlice, msg.kbps);",
+        "        else if(msg.fmt === 'wav') blob = await scEncodeWavCooperative(fake, msg.meta, onSlice);",
+        "        else if(msg.fmt === 'aiff') blob = await scEncodeAiffCooperative(fake, msg.meta, onSlice);",
+        "        else if(msg.fmt === 'flac') blob = await encodeAudioBufferToFlac(fake, msg.meta, onSlice);",
+        '        if(!blob) return finish(null);',
+        '        var ab = await blob.arrayBuffer();',
+        '        finish(new Uint8Array(ab));',
+        '      })();',
+        '    })().catch(function(err){',
+        "      self.postMessage({ id: id, failed: String((err && err.message) || err) });",
+        '    });',
+        '  }catch(err){',
+        "    self.postMessage({ id: id, failed: String((err && err.message) || err) });",
+        '  }',
+        '};'
+      ].join('\n')
+    ].join('\n');
+  }
+  var scEncPool = null;
+  function scEncWorkerList(){
+    if(scEncPool) return scEncPool;
+    scEncPool = [];
+    try{
+      if(typeof Worker === 'undefined' || typeof Blob === 'undefined' || !window.URL) return scEncPool;
+      if(!scEncWorkerUrl) scEncWorkerUrl = URL.createObjectURL(new Blob([scEncoderSource()], { type: 'text/javascript' }));
+    }catch(_be){ return scEncPool; }
+    var cores = 4;
+    try{ cores = Number(navigator.hardwareConcurrency) || 4; }catch(_cores){ cores = 4; }
+    var count = Math.max(1, Math.min(SC_ENC_WORKERS, cores - 1));
+    for(var i = 0; i < count; i++){
+      try{
+        var w = new Worker(scEncWorkerUrl);
+        w.__scJobs = {};      // job id -> { resolve, onSlice, mime }
+        w.__scCount = 0;      // jobs handed to it, running or waiting
+        (function(worker){
+          worker.onmessage = function(ev){ scEncWorkerMessage(worker, ev && ev.data); };
+          worker.onerror = function(ev){
+            var why = (ev && (ev.message || ev.filename)) || 'worker error';
+            scEncWorkerFailure(worker, String(why));
+          };
+        })(w);
+        scEncPool.push(w);
+      }catch(_we){}
+    }
+    return scEncPool;
+  }
+  function scEncJobTake(w, msg){
+    if(!w || !w.__scJobs || !msg || !msg.id) return null;
+    var job = w.__scJobs[msg.id];
+    if(!job) return null;
+    if(msg.progress != null){
+      // Progress is not the answer: the job stays in the table.
+      if(job.onSlice){ try{ job.onSlice(msg.progress); }catch(_op){} }
+      return null;
+    }
+    delete w.__scJobs[msg.id];
+    w.__scCount = Math.max(0, w.__scCount - 1);
+    return job;
+  }
+  function scEncWorkerMessage(w, msg){
+    if(!w || !msg || !msg.id) return;
+    if(msg.progress != null){ scEncJobTake(w, msg); return; }
+    var job = scEncJobTake(w, msg);
+    if(!job) return;
+    if(msg.bytes && msg.bytes.byteLength){
+      try{ job.resolve(new Blob([msg.bytes], { type: job.mime })); }
+      catch(_bm){ job.resolve(null); }
+      return;
+    }
+    if(msg.failed) console.warn('encode worker failed', msg.failed);
+    job.resolve(null);
+  }
+  // A worker that dies takes its jobs with it. They resolve null (the song is reported
+  // as failed and the run carries on) rather than leaving a promise that never settles
+  // - which is how a conversion looks when it "hangs for ever" on one song.
+  function scEncWorkerFailure(w, why){
+    console.warn('encode worker died', why);
+    try{
+      var ids = Object.keys(w.__scJobs || {});
+      for(var i = 0; i < ids.length; i++){
+        var job = w.__scJobs[ids[i]];
+        if(job && job.resolve) job.resolve(null);
+      }
+    }catch(_ej){}
+    w.__scJobs = {}; w.__scCount = 0;
+    try{ w.terminate(); }catch(_tw){}
+  }
+  // One encode on a worker. Returns null when there is no pool here at all (the page
+  // encodes it, exactly as it did before this release), and { blob, detached } when the
+  // pool did the work - `detached` saying whether the samples went with it.
+  async function scEncodeInPool(buf, fmt, meta, onSlice, kbps, keepSamples){
+    var list = scEncWorkerList();
+    if(!list.length) return null;
+    var worker = list[0];
+    for(var i = 1; i < list.length; i++){ if(list[i].__scCount < worker.__scCount) worker = list[i]; }
+    var nch = Math.max(1, Math.min(2, buf.numberOfChannels || 1));
+    var chans = [];
+    for(var c = 0; c < nch; c++) chans.push(buf.getChannelData(c));
+    // MP3 never hands its samples over: lamejs is the one encoder that arrives from a
+    // CDN, so a worker that cannot reach it must be able to fall back to encoding here.
+    // The others keep their samples only when the caller asked (a buffer this app
+    // re-reads after a failed attempt - the crop preview and the format menu).
+    var transfer = null;
+    if(!keepSamples && fmt !== 'mp3'){
+      transfer = [];
+      for(var t = 0; t < chans.length; t++){
+        var ab = chans[t] && chans[t].buffer;
+        if(ab && transfer.indexOf(ab) === -1) transfer.push(ab);
+      }
+    }
+    var id = 'sc' + (++scEncJobId) + '-' + Date.now();
+    var mime = fmt === 'mp3' ? 'audio/mpeg' : (fmt === 'wav' ? 'audio/wav' : (fmt === 'aiff' ? 'audio/aiff' : 'audio/flac'));
+    var payload = {
+      id: id, fmt: fmt, kbps: kbps || 192,
+      sampleRate: Math.max(8000, Math.min(48000, Math.round(buf.sampleRate || 44100))),
+      length: Math.round(buf.length || 0),
+      channels: chans, meta: meta || null
+    };
+    var answer = await new Promise(function(res){
+      worker.__scJobs[id] = { resolve: res, onSlice: onSlice, mime: mime };
+      worker.__scCount++;
+      try{
+        if(transfer && transfer.length) worker.postMessage(payload, transfer);
+        else worker.postMessage(payload);
+      }catch(_pe){
+        delete worker.__scJobs[id];
+        worker.__scCount = Math.max(0, worker.__scCount - 1);
+        console.warn('encode worker would not take the job', _pe);
+        res(undefined);        // nothing was handed over: the page can encode it
+      }
+    });
+    if(answer === undefined) return null;
+    return { blob: answer || null, detached: !!(transfer && transfer.length) };
+  }
+  var scEncJobId = 0;
+  // The one the converters call. The pool first (the same encoders, on their own
+  // threads); the page's own encoders when there is no pool, and again for an mp3 the
+  // worker could not make. `keepSamples` is for callers that re-read the buffer after a
+  // failed attempt - the samples are copied to the worker instead of being handed over.
+  async function scEncodeAudioCooperative(buf, fmt, meta, onSlice, keepSamples){
+    try{
+      var pooled = await scEncodeInPool(buf, fmt, meta, onSlice, null, keepSamples);
+      if(pooled){
+        if(pooled.blob) return pooled.blob;
+        // The worker ran it and produced nothing. If the samples were handed over there
+        // is nothing left here to try again with, and a silent file is worse than a
+        // failed song: the run reports it and carries on.
+        if(pooled.detached) return null;
+      }
+    }catch(_pwErr){ console.warn('encode pool unavailable, encoding on this thread', _pwErr); }
     try{
       if(fmt === 'mp3' && typeof lamejs === 'undefined'){ await window.__scEnsureLamejs(); }
-      if(fmt === 'mp3') return await scEncodeMp3Cooperative(buf, meta, onSlice);
       if(fmt === 'wav') return await scEncodeWavCooperative(buf, meta, onSlice);
       if(fmt === 'aiff') return await scEncodeAiffCooperative(buf, meta, onSlice);
       if(fmt === 'flac'){
@@ -46599,6 +46845,75 @@ function _renderAhFromData(artistAlbums){
   var scConvertPillState = { el: null, timer: null, pct: 0, cancelRequested: false };
   // A new run clears the flag; the Cancel handler sets it and dismisses the pill.
   function scConvertPillResetCancel(){ scConvertPillState.cancelRequested = false; }
+  // ---- A RUN IS NOT A WINDOW ------------------------------------------------------
+  // A batch reports into a floating pill, and the pill is not the run: the run has to
+  // outlive the window it was started from, the app going behind something else, and -
+  // on a phone - the screen going off. Three things make that true, and none of them is
+  // the page being visible:
+  //
+  //   * a Web Lock held for the whole run. This is the one signal every platform
+  //     honours about work that must not be frozen or shed while a page is hidden, and
+  //     the re-encode job has held one since 74.1.7 for the same reason.
+  //   * a native hold when the Android build provides one (SideCutJob, injected by
+  //     patch-joblock.py: a partial wake lock plus a dataSync foreground service).
+  //     Android suspends an app whose screen is off unless something holds a wake lock,
+  //     and a suspended app does not read a range. In a browser, and on any APK older
+  //     than this release, the call is a no-op and the run is exactly as it was.
+  //   * the system notification, which the pill already mirrors (scNotifyProgress) - the
+  //     native hold carries the same numbers so the progress is readable with the app
+  //     closed.
+  var scRunJob = { depth: 0, release: null, native: false, title: '', notedAt: 0 };
+  function scJobPlugin(){
+    try{
+      var C = (typeof window !== 'undefined' && window.Capacitor) || null;
+      return (C && C.Plugins && C.Plugins.SideCutJob) || null;
+    }catch(_jp){ return null; }
+  }
+  function scJobCall(method, data){
+    var P = scJobPlugin();
+    if(!P || typeof P[method] !== 'function') return null;
+    try{
+      var out = P[method](data || {});
+      if(out && typeof out.catch === 'function') out.catch(function(){});
+      return out;
+    }catch(_jc){ return null; }
+  }
+  function scRunJobStart(title, sub){
+    scRunJob.depth++;
+    if(scRunJob.depth > 1) return;
+    scRunJob.title = title || 'Conversion';
+    try{
+      if(typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request){
+        scRunJob.release = null;
+        // Held until release() resolves the promise the callback returned: the lock is
+        // the run's own lifetime, not this function's.
+        var held = navigator.locks.request('sidecut-download', { mode: 'shared' }, function(){
+          return new Promise(function(res){ scRunJob.release = res; });
+        });
+        if(held && typeof held.catch === 'function') held.catch(function(){});
+      }
+    }catch(_le){}
+    scRunJob.native = !!scJobCall('hold', { title: scRunJob.title, sub: sub || '' });
+    scRunJob.notedAt = Date.now();
+  }
+  // Throttled: the notification is a shade entry, not a progress bar to repaint 40
+  // times a song, and a bridge call per percent would cost more than it shows.
+  function scRunJobNote(sub, pct){
+    if(scRunJob.depth <= 0 || !scRunJob.native) return;
+    var now = Date.now();
+    if(now - scRunJob.notedAt < 1200) return;
+    scRunJob.notedAt = now;
+    scJobCall('update', { title: scRunJob.title, sub: sub || '', pct: Math.round(pct || 0) });
+  }
+  function scRunJobEnd(){
+    if(scRunJob.depth > 0) scRunJob.depth--;
+    if(scRunJob.depth > 0) return;
+    var release = scRunJob.release;
+    scRunJob.release = null;
+    if(release){ try{ release(); }catch(_re){} }
+    if(scRunJob.native){ scRunJob.native = false; scJobCall('release', {}); }
+  }
+
   // ONE cancel path, for every way out of a run: the bubble's Cancel button and
   // the small x beside the button that starts a run do the same thing, so the two
   // can never drift apart. The run stops at its next step - every fetch, decode
@@ -46733,11 +47048,11 @@ function _renderAhFromData(artistAlbums){
   // track has already taken, plus every title of that run. A one-off save
   // passes nothing and behaves exactly as it always has.
   async function scConvertOneTrack(meta, fmt, onStatus, ctx){
-    window.__scSourceFail = '';
+    if(ctx && typeof ctx === 'object') ctx.reason = ''; else window.__scSourceFail = '';
     if(window.__scCancelDl) return { ok: false, reason: 'cancelled' };
     if(onStatus) onStatus('Searching for "' + meta.title + '"…');
     var res = await scSpToBuffer(meta, function(txt){ if(onStatus) onStatus(txt); }, ctx);
-    if(!res || !res.buffer) return { ok: false, reason: window.__scSourceFail || 'no source found' };
+    if(!res || !res.buffer) return { ok: false, reason: ((ctx && ctx.reason) || window.__scSourceFail || 'no source found') };
     if(onStatus) onStatus('Encoding ' + fmt.toUpperCase() + ' with tags…');
     var artBytes = null, artMime = /\.png/i.test(meta.thumb || '') ? 'image/png' : 'image/jpeg';
     if(meta.thumb){
@@ -46818,8 +47133,28 @@ function _renderAhFromData(artistAlbums){
       if(_tk) runTitles[_tk] = true;
     }
     var runCtx = { used: Object.create(null), titles: runTitles };
-    for(var i = 0; i < tracks.length; i++){
-      var meta = Object.assign({}, tracks[i]);
+    // 80.3.3 - the same pool the YouTube playlist runner uses: every row up front,
+    // scDownloadLanes() songs in flight, each song still landing in the library exactly
+    // as it did. The claim ledger is shared (that is its whole point) while the failure
+    // reason is this song's own - three songs cannot share one window slot.
+    var rows = [], runDone = 0;
+    for(var ri = 0; ri < tracks.length; ri++){
+      var row = document.createElement('div');
+      row.style.cssText = 'font-size:10.5px; color:var(--ink-dim); display:flex; gap:6px; align-items:baseline;';
+      row.innerHTML = '<span style="color:var(--gold); white-space:nowrap;">' + (ri + 1) + '/' + tracks.length + '</span><span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(tracks[ri].title || 'Untitled') + '</span><span class="sp-row-state" style="white-space:nowrap;">\u2026</span>';
+      listEl.appendChild(row);
+      rows.push({ state: row.querySelector('.sp-row-state'), done: false, started: false });
+    }
+    function scSpShowProgress(){
+      var _pct = Math.round((runDone / tracks.length) * 100);
+      if(barEl) barEl.style.width = _pct + '%';
+      if(subEl) subEl.textContent = okCount + ' in your library \u00b7 ' + failCount + ' failed \u00b7 ' + (tracks.length - runDone) + ' left';
+    }
+    scSpShowProgress();
+    scRunJobStart(plan.title || 'conversion', 'Converting ' + tracks.length + ' song' + (tracks.length === 1 ? '' : 's'));
+    await scRunPool(tracks, scDownloadLanes(), async function(track, i){
+      var slot = rows[i];
+      var meta = Object.assign({}, track);
       if(!meta.position) meta.position = i + 1;
       // 72.5 - a playlist is not an album. Every song of a converted playlist
       // used to be stamped with the PLAYLIST's name as its album, which put a
@@ -46828,20 +47163,20 @@ function _renderAhFromData(artistAlbums){
       if(!meta.album && plan.album && plan.kind === 'album') meta.album = plan.album;
       if(!meta.cover && plan.cover) meta.thumb = plan.cover;
       if(meta.cover && !meta.thumb) meta.thumb = meta.cover;
-      var row = document.createElement('div');
-      row.style.cssText = 'font-size:10.5px; color:var(--ink-dim); display:flex; gap:6px; align-items:baseline;';
-      row.innerHTML = '<span style="color:var(--gold); white-space:nowrap;">' + (i + 1) + '/' + tracks.length + '</span><span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + scEscapeHtml(meta.title || 'Untitled') + '</span><span class="sp-row-state" style="white-space:nowrap;">…</span>';
-      listEl.appendChild(row);
-      var stateEl = row.querySelector('.sp-row-state');
+      var stateEl = slot && slot.state;
       function rowStatus(txt){ if(stateEl) stateEl.textContent = txt; }
       if(window.__scCancelDl){
-        if(stateEl){ stateEl.textContent = '— cancelled'; stateEl.style.color = 'var(--ink-dim)'; }
+        if(stateEl){ stateEl.textContent = '\u2014 cancelled'; stateEl.style.color = 'var(--ink-dim)'; }
         tracksDone[i] = false;
-        continue;
+        return;
       }
+      if(slot) slot.started = true;
+      // This song's own context: the run's ledger, and its own place to say why it
+      // failed (see scFail).
+      var ctx = { used: runCtx.used, titles: runCtx.titles, reason: '', fail: function(msg){ ctx.reason = msg; } };
       var out = null;
       try{
-        out = await scConvertOneTrack(meta, fmt, rowStatus, runCtx);
+        out = await scConvertOneTrack(meta, fmt, rowStatus, ctx);
       }catch(e){
         out = { ok: false, reason: (e && e.message) || 'error' };
       }
@@ -46858,42 +47193,40 @@ function _renderAhFromData(artistAlbums){
         }, { fileName: out.fName, fmt: fmt, source: plan.title || 'conversion' });
         var extra = '';
         if(wantZip){
-          try{ zip.file(out.fName, out.blob); extra = ' · in ZIP'; }
-          catch(_ze){ extra = ' · ZIP skipped'; }
+          try{ zip.file(out.fName, out.blob); extra = ' \u00b7 in ZIP'; }
+          catch(_ze){ extra = ' \u00b7 ZIP skipped'; }
         } else if(alsoSaveFiles){
           try{
             var savedOk = false;
             try{ savedOk = await scNativeSaveBlob(out.blob, out.fName); }catch(_se){}
             if(!savedOk) scDownloadBlob(out.blob, out.fName);
-            extra = ' · file saved';
+            extra = ' \u00b7 file saved';
           }catch(_se2){}
         }
         if(addedTrack){
           okCount++;
-          if(stateEl){ stateEl.textContent = '✓ in library' + extra; stateEl.style.color = 'var(--coral)'; }
+          if(stateEl){ stateEl.textContent = '\u2713 in library' + extra; stateEl.style.color = 'var(--coral)'; }
         } else {
           failCount++;
           failedNames.push((meta.title || 'Untitled') + ' (could not add to the library)');
-          if(stateEl){ stateEl.textContent = '✗ could not add'; stateEl.style.color = '#f87171'; }
+          if(stateEl){ stateEl.textContent = '\u2717 could not add'; stateEl.style.color = '#f87171'; }
         }
       } else if(out && out.reason === 'cancelled'){
         tracksDone[i] = false;
-        if(stateEl){ stateEl.textContent = '— cancelled'; stateEl.style.color = 'var(--ink-dim)'; }
+        if(stateEl){ stateEl.textContent = '\u2014 cancelled'; stateEl.style.color = 'var(--ink-dim)'; }
       } else {
         failCount++;
         failedNames.push((meta.title || 'Untitled') + ((out && out.reason) ? ' (' + out.reason + ')' : ''));
-        if(stateEl){ stateEl.textContent = '✗ ' + ((out && out.reason) ? out.reason : 'failed'); stateEl.style.color = '#f87171'; }
+        if(stateEl){ stateEl.textContent = '\u2717 ' + ((out && out.reason) ? out.reason : 'failed'); stateEl.style.color = '#f87171'; }
       }
-      var _pct = Math.round(((i + 1) / tracks.length) * 100);
-      if(barEl) barEl.style.width = _pct + '%';
-      if(subEl) subEl.textContent = okCount + ' in your library · ' + failCount + ' failed · ' + (tracks.length - i - 1) + ' left';
-      scConvertPillUpdate('Converting ' + (i + 1) + '/' + tracks.length + ' · ' + (plan.title || 'conversion'),
-        okCount + ' added to your library' + (failCount ? ' · ' + failCount + ' failed' : ''), _pct);
-      // Pacing so a long run does not hammer the lookup services. 800ms a song
-      // was ten seconds of doing nothing across a twelve-song album; 200ms still
-      // spaces the requests out without the run reading as stalled between songs.
-      if(!window.__scCancelDl) await new Promise(function(r){ setTimeout(r, 200); });
-    }
+      if(slot) slot.done = !!(out && out.ok);
+      runDone++;
+      scSpShowProgress();
+      scConvertPillUpdate('Converting ' + runDone + '/' + tracks.length + ' \u00b7 ' + (plan.title || 'conversion'),
+        okCount + ' added to your library' + (failCount ? ' \u00b7 ' + failCount + ' failed' : ''), Math.round((runDone / tracks.length) * 100));
+      scRunJobNote(runDone + ' of ' + tracks.length + ' finished', (runDone / tracks.length) * 100);
+    });
+    scRunJobEnd();
     var _cancelledRun = !!window.__scCancelDl;
     if(wantZip && zip && okCount > 0){
       if(subEl) subEl.textContent = 'Building ZIP with ' + okCount + ' song' + (okCount === 1 ? '' : 's') + '…';
@@ -47152,32 +47485,152 @@ function _renderAhFromData(artistAlbums){
     // stream; anything else is left to the fetch, which fails fast and moves on.
     return !(probe && probe.status);
   }
+  // 80.3.3 - THE RANGES GO OUT TOGETHER. googlevideo refuses a request wider than one
+  // megabyte, so a 10 MB song is ten round trips, and this reader used to pay them one
+  // after another: a 32-song album spent most of its hour waiting for replies it could
+  // have asked for at the same time. The same bounded ranges are now pulled
+  // SC_DL_LANES at a time and stitched back in order, so the file is byte-for-byte the
+  // one the sequential reader produced - only the waiting overlaps.
+  var SC_DL_LANES = 4;             // bounded ranges asked for at once
+  function scDlLanes(){
+    var want = (typeof window !== 'undefined' && window.__scDlLanes) ? parseInt(window.__scDlLanes, 10) : 0;
+    if(!(want > 0)) want = SC_DL_LANES;
+    return Math.max(1, Math.min(6, want));
+  }
   async function scFetchBytes(url, expectedSize, onProgress){
-    var parts = [], total = 0, off = 0;
-    while(off < SC_AUDIO_MAX){
-      if(window.__scCancelDl) break;
-      var end = Math.min(off + SC_AUDIO_CHUNK, SC_AUDIO_MAX) - 1;
-      var part = await scFetchRange(url, off, end);
-      if(!part || !part.bytes || !part.bytes.length) break;
-      parts.push(part.bytes);
-      total += part.bytes.length;
-      // The first reply tells us the real size even when the player didn't.
-      if(!expectedSize && part.total) expectedSize = part.total;
-      if(onProgress){
-        // 40 MiB is this reader's ceiling, so a long stream is measured against
-        // the ceiling rather than against a length it can never reach.
-        var _want = expectedSize ? Math.min(expectedSize, SC_AUDIO_MAX) : 0;
-        if(_want > 0){ try{ onProgress(Math.min(total, _want), _want); }catch(_op){} }
-      }
-      // A short read ends the file; a full one means ask for the next chunk.
-      if(!part.partial || part.bytes.length < (end - off + 1)) break;
-      off += part.bytes.length;
+    var ordered = [], loaded = 0, size = Number(expectedSize) || 0, more = false;
+    function want(){
+      // 40 MiB is this reader's ceiling, so a long stream is measured against the
+      // ceiling rather than against a length it can never reach.
+      return size ? Math.min(size, SC_AUDIO_MAX) : 0;
     }
+    function report(){
+      if(!onProgress) return;
+      var w = want();
+      if(w > 0){ try{ onProgress(Math.min(loaded, w), w); }catch(_op){} }
+    }
+    function rangeOf(off){
+      return [off, Math.min(off + SC_AUDIO_CHUNK, SC_AUDIO_MAX) - 1];
+    }
+    // The first range goes alone: its reply carries the stream's real length
+    // (content-range) when the player never mentioned one, and everything after it is
+    // planned against that number. A refusal here is the answer the sequential reader
+    // gave too, so the caller moves on to its next candidate.
+    var first = await scFetchRange(url, 0, SC_AUDIO_CHUNK - 1);
+    if(!first || !first.bytes || !first.bytes.length) return null;
+    // A 200 means the server ignored the Range header and sent the whole file: those
+    // bytes ARE the stream. (The sequential reader appended them to the first range and
+    // handed back a corrupt file in this case.)
+    if(!first.partial) return first.bytes.buffer;
+    ordered.push(first.bytes);
+    loaded = first.bytes.length;
+    if(!size && first.total) size = first.total;
+    more = first.bytes.length >= SC_AUDIO_CHUNK;   // a short first read IS the file
+    report();
+    if(more){
+      // Ranges 1..plan-1, planned from the length we now know. A reported length is a
+      // hint and not a promise - the sequential reader never let it cut a stream short,
+      // and this one does not either (whatever the plan does not cover is read one
+      // range at a time below).
+      var plan = size ? Math.max(1, Math.ceil(Math.min(size, SC_AUDIO_MAX) / SC_AUDIO_CHUNK))
+                      : Math.ceil(SC_AUDIO_MAX / SC_AUDIO_CHUNK);
+      if(plan > 1){
+        // Range 0 is already in hand; the lanes start at 1.
+        var slots = [], ended = false, next = 1;
+        async function lane(){
+          while(true){
+            if(ended || window.__scCancelDl) return;
+            var idx = next++;
+            if(idx >= plan) return;
+            var rr = rangeOf(idx * SC_AUDIO_CHUNK);
+            var part = await scFetchRange(url, rr[0], rr[1]);
+            // A full 206 is the only shape that says "more is still there": anything
+            // else - nothing at all, a refusal, or a range that came back short - is
+            // where the stream ends.
+            var whole = !!(part && part.bytes && part.bytes.length === (rr[1] - rr[0] + 1) && part.partial);
+            if(whole){ slots[idx] = part.bytes; loaded += part.bytes.length; report(); }
+            else { slots[idx] = (part && part.bytes && part.bytes.length && part.partial) ? part.bytes : null; ended = true; }
+          }
+        }
+        var lanes = Math.max(1, Math.min(scDlLanes(), plan - 1));
+        var running = [];
+        for(var l = 0; l < lanes; l++) running.push(lane());
+        await Promise.all(running);
+        more = false;
+        for(var i = 1; i <= plan - 1; i++){
+          var got = slots[i];
+          if(!got) break;                            // the stream ended inside this range
+          ordered.push(got);
+          if(got.length < SC_AUDIO_CHUNK) break;     // and this range held its tail
+          more = true;                               // full range: there may be more
+        }
+      }
+    }
+    // Whatever the plan did not cover - an unknown length, or a length the player
+    // under-reported - is read range by range until a short read or a refusal ends the
+    // stream, which is exactly the loop this reader used to run.
+    var off = 0;
+    for(var o = 0; o < ordered.length; o++) off += ordered[o].length;
+    while(more && off < SC_AUDIO_MAX){
+      if(window.__scCancelDl) break;
+      var rr2 = rangeOf(off);
+      var p2 = await scFetchRange(url, rr2[0], rr2[1]);
+      if(!p2 || !p2.bytes || !p2.bytes.length) break;
+      ordered.push(p2.bytes);
+      loaded += p2.bytes.length;
+      report();
+      if(!p2.partial || p2.bytes.length < (rr2[1] - rr2[0] + 1)) break;
+      off += p2.bytes.length;
+    }
+    // The bytes in hand are the file: measured from the ranges themselves, so the
+    // body cannot disagree with what is handed back.
+    var total = 0;
+    for(var a = 0; a < ordered.length; a++) total += ordered[a].length;
     if(!total) return null;
-    if(expectedSize && expectedSize > SC_AUDIO_CHUNK && total + 4096 < expectedSize) return null;
+    if(size && size > SC_AUDIO_CHUNK && total + 4096 < size) return null;
     var out = new Uint8Array(total), pos = 0;
-    for(var i = 0; i < parts.length; i++){ out.set(parts[i], pos); pos += parts[i].length; }
+    for(var b2 = 0; b2 < ordered.length; b2++){ out.set(ordered[b2], pos); pos += ordered[b2].length; }
     return out.buffer;
+  }
+  // ---- One run, several songs at once -------------------------------------------
+  // A batch used to be strictly one song at a time: the next lookup did not start
+  // until the previous file had been looked up, fetched, decoded and encoded. Every
+  // leg of that pipeline waits on something else, so running one song at a time added
+  // those waits up; a small pool overlaps them instead, and each song still produces
+  // exactly the file it did before. The pool changes WHEN the work happens, never what
+  // it does.
+  //
+  // The lane count is a MEMORY budget, not a network one. A lane holds one song's
+  // decoded audio, and a 3.5-minute stereo track is ~74 MB of Float32, so the number
+  // is what the device can hold at once: 2 on a small phone, 3 on a normal one, 4 on a
+  // roomy one. window.__scDlTracks overrides it (the harness does).
+  function scDownloadLanes(){
+    var want = (typeof window !== 'undefined' && window.__scDlTracks) ? parseInt(window.__scDlTracks, 10) : 0;
+    if(want > 0) return Math.max(1, Math.min(4, want));
+    var gb = 0;
+    try{ gb = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? Number(navigator.deviceMemory) : 0; }catch(_gb){ gb = 0; }
+    if(gb && gb < 3) return 2;
+    if(gb && gb >= 6) return 4;
+    return 3;
+  }
+  async function scRunPool(items, lanes, work){
+    var list = items || [];
+    if(!list.length) return;
+    var n = Math.max(1, Math.min(list.length, parseInt(lanes, 10) || 1));
+    var next = 0;
+    async function lane(){
+      // A cancelled run stops at the next song boundary; the song already in flight
+      // unwinds through its own checks (every fetch, decode and encode step watches
+      // __scCancelDl).
+      while(!window.__scCancelDl){
+        var i = next++;
+        if(i >= list.length) return;
+        await work(list[i], i);
+      }
+    }
+    var running = [];
+    for(var l = 0; l < n; l++) running.push(lane());
+    await Promise.all(running);
   }
   // ---- Play build acquisition layer ------------------------------------------
   // Both implementations below run ONLY when SC_IS_PLAY is set. They keep the
@@ -47682,6 +48135,18 @@ function _renderAhFromData(artistAlbums){
       return new Blob([buffer], { type: 'audio/wav' });
     }catch(e){ return null; }
   }
+  // One upload serves one song, and in a batch several songs are in flight at once, so
+  // the ledger is written BEFORE the download rather than after the decode: two
+  // siblings used to be able to pick the same upload while neither had recorded it
+  // yet, and the same audio was filed under two titles. A refusal means another song of
+  // this run already holds that upload and the caller moves to its next candidate.
+  function scSourceClaim(used, videoId, titleKey){
+    if(!used || !videoId || !titleKey) return true;
+    var held = used[videoId];
+    if(held && held !== titleKey) return false;
+    used[videoId] = titleKey;
+    return true;
+  }
   async function scSpToBuffer(meta, onStatus){
     // Read as a trailing argument ON PURPOSE: the verification harnesses slice
     // this function out of the page by its exact declaration line, so the
@@ -47698,7 +48163,7 @@ function _renderAhFromData(artistAlbums){
     // run the title and the album together.
     var query = [title, artist, album].filter(function(p){ return !!String(p || '').trim(); }).join(' ').trim();
     if(!query) return null;
-    if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
+    if(window.__scCancelDl){ scFail(runCtx, 'cancelled'); return null; }
     if(onStatus) onStatus('Searching for "' + title + '" by ' + (artist || 'the artist') + '…');
     window.__scHttpWhy = '';
     var cands = await scYtSearch(query, artist, album);
@@ -47721,11 +48186,11 @@ function _renderAhFromData(artistAlbums){
       // answer and had nothing, and the Play build names itself when it says it
       // (its openly-licensed catalogs simply do not carry most music).
       if(window.__scHttpWhy){
-        window.__scSourceFail = 'search could not reach the source (' + window.__scHttpWhy + ') — tap Convert to retry';
+        scFail(runCtx, 'search could not reach the source (' + window.__scHttpWhy + ') — tap Convert to retry');
       } else if(SC_IS_PLAY){
-        window.__scSourceFail = 'no source found — the Play build only searches openly-licensed catalogs';
+        scFail(runCtx, 'no source found — the Play build only searches openly-licensed catalogs');
       } else {
-        window.__scSourceFail = 'no source matched this track — try Convert again';
+        scFail(runCtx, 'no source matched this track — try Convert again');
       }
       return null;
     }
@@ -47811,7 +48276,7 @@ function _renderAhFromData(artistAlbums){
     var myTitleKey = runSiblings ? scTrackTitleKey(title) : '';
     var tried = 0;
     for(var ci = 0; ci < cands.length && tried < 10; ci++){
-      if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
+      if(window.__scCancelDl){ scFail(runCtx, 'cancelled'); return null; }
       // A sibling track of this run already took this upload: handing the same
       // audio to a second song is exactly what must never happen again.
       if(runUsed && runUsed[cands[ci].videoId] && runUsed[cands[ci].videoId] !== myTitleKey) continue;
@@ -47853,8 +48318,9 @@ function _renderAhFromData(artistAlbums){
     });
     var dec = null, nearCut = null, nearDec = null, durationRejected = false, chosenCand = null;
     for(var vi = 0; vi < verified.length && vi < 4; vi++){
-      if(window.__scCancelDl){ window.__scSourceFail = 'cancelled'; return null; }
+      if(window.__scCancelDl){ scFail(runCtx, 'cancelled'); return null; }
       var entry = verified[vi];
+      if(runUsed && entry.vid && myTitleKey && !scSourceClaim(runUsed, entry.vid, myTitleKey)) continue;
       if(onStatus) onStatus('Downloading the audio on your device (a few seconds)…');
       var decTry = await scFetchDecode(entry.pa, onStatus);
       if(!decTry) continue;
@@ -47885,8 +48351,10 @@ function _renderAhFromData(artistAlbums){
         durationRejected = true;
       } else {
         fallbackUsable = true;
+        // The same rule as the verified loop: the upload is claimed before it is read.
+        var fbClaimed = !(runUsed && fallbackCand && fallbackCand.videoId && myTitleKey) || scSourceClaim(runUsed, fallbackCand.videoId, myTitleKey);
         if(onStatus) onStatus('Downloading the audio on your device (a few seconds)…');
-        var fbDec = await scFetchDecode(fallback, onStatus);
+        var fbDec = fbClaimed ? await scFetchDecode(fallback, onStatus) : null;
         var fbBuf = (fbDec && fbDec.buffer && fbDec.buffer.duration) ? Number(fbDec.buffer.duration) : 0;
         var fbDelta = (expectedSec > 0 && fbBuf > 0) ? Math.abs(expectedSec - fbBuf) : -1;
         if(fbDec && (fbDelta === -1 || fbDelta <= 60)){ audio = fallback; dec = fbDec; chosenCand = fallbackCand; }
@@ -47894,10 +48362,10 @@ function _renderAhFromData(artistAlbums){
       }
     }
     if(!audio || !dec){
-      if(durationRejected) window.__scSourceFail = 'the sources found are a different length than this track — not saving the wrong audio';
-      else if(!fallback && !verified.length) window.__scSourceFail = 'no matching source';
-      else if(fallbackUsable || verified.length) window.__scSourceFail = 'download blocked';
-      else window.__scSourceFail = 'no matching source';
+      if(durationRejected) scFail(runCtx, 'the sources found are a different length than this track — not saving the wrong audio');
+      else if(!fallback && !verified.length) scFail(runCtx, 'no matching source');
+      else if(fallbackUsable || verified.length) scFail(runCtx, 'download blocked');
+      else scFail(runCtx, 'no matching source');
       return null;
     }
     // This upload now belongs to this song for the rest of the run, so no
@@ -49353,7 +49821,7 @@ window.__scAiLookup = function(q){
 var _aiKB = [
   // ═══ GETTING STARTED ═══
   {q:['how do i add songs','how to add music','how to import songs','import music','add files'],a:'To add songs: on the welcome screen tap **+ Choose files** (pick MP3s one by one) — or use **+ Add songs → Choose folder / Choose files**. To restore a backup, tap **Import backup (everything)** and pick your .zip.'},
-  {q:['how to get songs','where to get music','download music','can i download music','download music from the app','can i download songs','does sidecut download music','get mp3s','spotify to mp3','how do i get music'],a: SC_IS_PLAY ? 'No - this build does not download music from anywhere. SideCut stores and plays the music files you already have: tap **+ Add songs → + Files** (or **+ Add folder**) to bring audio in from your device, and **Import backup (everything)** to restore a .zip with playlists, albums, tags and covers. That is what it is for - your files, on your device, with no ads. Audio from external sources works as well: a computer, a cloud drive, an SD card, an email, a chat or another app all end up as a file on the phone, and **+ Add songs** imports it.' : 'SideCut has a built-in **Spotify to MP3 converter** — no external site needed. In **Spotify**, tap **Share → Copy link** on a song, album or playlist, then paste that link into the converter in **Discover → Conversion Tools** and tap **Convert**. Pick MP3 (small) or WAV/FLAC (lossless). A song gives you one tagged file; an album or playlist converts and auto-downloads every song one by one, in order, with title/artist/album/track-number and cover art embedded in each file.'},
+  {q:['how to get songs','where to get music','download music','can i download music','download music from the app','can i download songs','does sidecut download music','get mp3s','spotify to mp3','how do i get music'],a: SC_IS_PLAY ? 'No - this build does not download music from anywhere. SideCut stores and plays the music files you already have: tap **+ Add songs → + Files** (or **+ Add folder**) to bring audio in from your device, and **Import backup (everything)** to restore a .zip with playlists, albums, tags and covers. That is what it is for - your files, on your device, with no ads. Audio from external sources works as well: a computer, a cloud drive, an SD card, an email, a chat or another app all end up as a file on the phone, and **+ Add songs** imports it.' : 'SideCut has a built-in **Spotify to MP3 converter** — no external site needed. In **Spotify**, tap **Share → Copy link** on a song, album or playlist, then paste that link into the converter in **Discover → Conversion Tools** and tap **Convert**. Pick MP3 (small) or WAV/FLAC (lossless). A song gives you one tagged file; an album or playlist converts and saves every song, several at a time, with title/artist/album/track-number and cover art embedded in each file.'},
   {q:['what file types','supported formats','file types','audio formats','what files','can i use flac','can i use wav','can i use ogg'],a:'SideCut supports: **Audio:** .mp3, .m4a, .wav, .flac, .ogg, .aac, .wma, .opus, .aiff, .alac. **Other:** .zip (library/playlist import), .csv (Spotify playlist import).'},
   {q:['expand url','spotify link','paste link','convert url','what is expand url'],a: SC_IS_PLAY ? '**Expand URL** takes a Spotify short link (like open.spotify.com/track/...) and expands it to the full open.spotify.com URL. It is in **Discover**, in the tools bar under the how-to box, which opens with a tap.' : '**Expand URL** takes a Spotify short link (like open.spotify.com/track/...) and expands it to the full open.spotify.com URL. It&apos;s in **Discover → Conversion Tools**. Usually you can paste your Spotify link straight into the built-in **Spotify to MP3** converter without expanding it first — song, album and playlist links (and spotify.link short links) all resolve automatically.'},
   {q:['first time','getting started','new user','how to start','setup'],a: SC_IS_PLAY ? 'Welcome! The quick start: 1) Tap **+ Add songs → + Files** to bring the MP3s already on your device into the app. 2) Tap any song to play it. 3) Use the mini player at the bottom for play/pause, skip, shuffle. 4) Check **Settings → Theme** to customize the look.' : 'Welcome! Here\'s the quick start: 1) Tap **+ Add songs → + Files** to import MP3s from your device. 2) Tap any song to play it. 3) Use the mini player at the bottom for play/pause, skip, shuffle. 4) Check **Settings → Theme** to customize the look. For more music: use the built-in **Spotify to MP3** converter in Discover → Conversion Tools.'},
