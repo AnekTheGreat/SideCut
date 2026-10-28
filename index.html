@@ -1789,6 +1789,23 @@ body.theme-dyn-orchid::before{
   animation: sd-dyn-drift 15s ease-in-out infinite;
 }
 
+/* 80.3.6 - PRISM. Two soft pools of colour over a deep blue-black core, the same
+   four-layer build the v60 themes use, drifting a little slower than Neon Pulse
+   and a little faster than Abyss. The generic sheen that every
+   `[class*="theme-dyn-"]` body already gets lays over this; nothing about it
+   needed a second rule. */
+body.theme-dyn-prism::before{
+  content:''; position:fixed; inset:-20%; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(42% 46% at 26% 28%, rgba(143,227,255,0.40), transparent 62%),
+    radial-gradient(36% 42% at 74% 66%, rgba(198,166,255,0.38), transparent 62%),
+    radial-gradient(30% 34% at 52% 10%, rgba(24,22,70,0.66), transparent 66%),
+    linear-gradient(158deg, #0b0f1f, #1b1440, #0e2b46, #2a1246);
+  animation: sd-dyn-drift 17s ease-in-out infinite;
+}
+body.sandbox-reduce-motion.theme-dyn-prism::before{ animation: none !important; }
+@media (prefers-reduced-motion: reduce){ body.theme-dyn-prism::before{ animation: none !important; } }
+
 
 /* ─────────────── Discover (online Spotify catalog browse) ─────────────── */
 /* Needs its own stacking context, for the same reason #listPane has one: this
@@ -2603,6 +2620,63 @@ body.sc-dock-pill .action-strip > .action-pill.dock-add{
 .sc-view-in{ animation: scViewIn 0.22s cubic-bezier(0.22,1,0.36,1) both; }
 body.sandbox-reduce-motion .sc-view-in{ animation: none; }
 @media (prefers-reduced-motion: reduce){ .sc-view-in{ animation: none; } }
+/* ─── 80.3.6 - ONE MOTION SYSTEM, THE WAY A PHONE SETTLES ───
+   Four curves and three durations, and everything interactive reads them. The
+   app had motion before this; what it did not have was ONE motion - each rule
+   spelled out its own `0.2s ease`, so two surfaces that arrived together did
+   not settle together. These are the only numbers now: an arrival is fast out
+   and long to settle (ease-out on a 0.22/1 curve), a press is quick and comes
+   back on its own (a spring-flavoured bezier), a cross-fade is symmetric. */
+:root{
+  --sc-e-out: cubic-bezier(.22,1,.36,1);
+  --sc-e-press: cubic-bezier(.2,.9,.25,1);
+  --sc-e-inout: cubic-bezier(.65,0,.35,1);
+  --sc-t-press: 110ms;
+  --sc-t-fade: 200ms;
+  --sc-t-view: 260ms;
+}
+/* A TAP ANSWERS. A tap compresses the surface to 98% under the finger and lets
+   it back on release. It is a transform, so it is composited and costs no
+   layout at all.
+   THE DOCK IS NOT IN THIS LIST, on purpose: it has had its own press scale since
+   74.9 (.action-pill:active, 0.95) and its slide gesture measures every pill's
+   rect at pointerdown before driving across them, so a second scale on top would
+   move the rect that gesture has just read. One rule per gesture. */
+.tab, .playlist-pick-btn, .sc-set-head, .settings-pick, .sc-set-card{
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--sc-t-press) var(--sc-e-press),
+              background-color var(--sc-t-fade) var(--sc-e-out),
+              border-color var(--sc-t-fade) var(--sc-e-out),
+              opacity var(--sc-t-fade) var(--sc-e-out);
+}
+.tab:active, .playlist-pick-btn:active, .sc-set-head:active, .settings-pick:active{ transform: scale(.98); }
+/* A SCROLL BELONGS TO ITS PANE. Reaching the end of a list used to start
+   dragging the page behind it, which reads as the app losing the gesture.
+   Containment stops the chain at the pane, and the momentum these panes already
+   had is kept explicit for the WebViews that only honour the prefixed hint. */
+#tabs, #settingsPanesWrap, #studioView{
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+/* THE CROSS-FADE. These four rules are only ever consulted when the platform
+   actually runs a view transition: scNavigateSmooth is what decides that, and it
+   asks Reduce motion first, so a device that has asked for less motion never
+   gets here with an animation to run. */
+::view-transition-old(root){ animation: scVtOut var(--sc-t-press) var(--sc-e-inout) both; }
+::view-transition-new(root){ animation: scVtIn var(--sc-t-view) var(--sc-e-out) both; }
+@keyframes scVtOut{ to{ opacity: .35; } }
+@keyframes scVtIn{ from{ opacity: 0; } }
+/* REDUCE MOTION, answered the same way everywhere: the state still changes and
+   nothing travels. Both switches are honoured - the Sandbox one, which is the
+   app's own, and the device's, which is a media query. */
+body.sandbox-reduce-motion .tab:active,
+body.sandbox-reduce-motion .playlist-pick-btn:active,
+body.sandbox-reduce-motion .sc-set-head:active,
+body.sandbox-reduce-motion .settings-pick:active{ transform: none; }
+@media (prefers-reduced-motion: reduce){
+  .tab:active, .playlist-pick-btn:active, .sc-set-head:active, .settings-pick:active{ transform: none; }
+  ::view-transition-old(root), ::view-transition-new(root){ animation: none; }
+}
 /* The player sits ON the dock, not under it. */
 #nowPlaying{ bottom: calc(var(--sc-dock-h) + env(safe-area-inset-bottom)); }
 /* 70.0.9 - "there is way to much of a gap" on a foldable. 56px is a GUESS at the
@@ -5093,7 +5167,7 @@ body.sc80-cloud .action-strip::before{
           <div style="margin-bottom:10px;">• Record a mix, chop and crop audio, the beat pads, FX pads, hot cues, kill switches, crossfader and loop controls — all in the <b>Studio</b> tab.</div>
           <div style="margin-bottom:6px; color:var(--ink);"><b>Stats and look</b></div>
           <div style="margin-bottom:3px;">• <b>Stats</b> in Settings counts a play only once you pass the halfway point of a song, so skipping does not inflate it.</div>
-          <div style="margin-bottom:10px;">• <b>Make it yours:</b> Settings → Theme (looks), Glow (edge glow), Sandbox (custom quick actions and Home layout), and the Home bubble size slider.</div>
+          <div style="margin-bottom:10px;">• <b>Make it yours:</b> Settings → Theme (looks, and Prism is the newest), Glow (edge glow), Widget (its own palette), Sandbox (custom quick actions, Home layout and <b>Reduce motion</b>), and the Home bubble size slider.</div>
           <div style="margin-bottom:6px; color:var(--ink);"><b>Updates, help and support</b></div>
           <div style="margin-bottom:3px;">• <b>Updates come to you:</b> announced on launch and parked in the 🔔 bell as ⬆ Update available, with Install now.</div>
           <div style="margin-bottom:3px;">• <b>Stuck?</b> Settings → Support has the <b>🤖 AI Assistant</b>, which knows the app and works offline, plus <b>sidecutsupport@gmail.com</b>.</div>
@@ -5106,7 +5180,7 @@ body.sc80-cloud .action-strip::before{
     </div>
 
     <div id="settingsPaneWidget" style="display:none;">
-      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget. Changes apply to every widget you have placed; re-adding one also picks these up. Tapping the widget - or its play button - picks the song you were last playing back up where you left it.</div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget: eight presets, a follow-the-app-theme switch, an idle battery saver and the fine-tune palette. Changes apply to every widget you have placed; re-adding one also picks these up. Tapping the widget - or its play button - picks the song you were last playing back up where you left it.</div>
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">Note: if the app is closed or swiped away from recents, the widget will not play the right audio — open SideCut again to get the widget back in sync.</div>
       <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
       <div id="widgetBarsRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
@@ -5117,6 +5191,28 @@ body.sc80-cloud .action-strip::before{
             <span style="display:block; font-size:11px; color:var(--ink-dim); margin-top:4px; line-height:1.5;">The small equalizer that pulses beside the artist while a song plays. Turn it off for a calmer widget &mdash; the bars are hidden on every widget you have placed and nothing else changes.</span>
           </span>
         </label>
+      </div>
+      <div id="widgetFollowRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
+        <label for="widgetFollowToggle" style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+          <input type="checkbox" id="widgetFollowToggle" style="width:18px; height:18px; margin:1px 0 0; flex:0 0 auto; accent-color:var(--gold);">
+          <span>
+            <span style="font-size:13px; font-weight:600;">Follow the app theme</span>
+            <span style="display:block; font-size:11px; color:var(--ink-dim); margin-top:4px; line-height:1.5;">The widget borrows the background and the accent of whatever theme the app is wearing, and follows along when you change it &mdash; no second palette to keep in step. Fine-tune still wins over both.</span>
+          </span>
+        </label>
+      </div>
+      <div id="widgetIdleRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <div>
+            <div style="font-size:13px; font-weight:600;">Idle battery saver</div>
+            <div style="font-size:11px; color:var(--ink-dim); margin-top:4px; line-height:1.5;">How long a paused widget keeps refreshing before it dims to &ldquo;Tap to show&rdquo;. It wakes on the next song or tap either way.</div>
+          </div>
+          <select id="widgetIdleSelect" style="background:var(--bg-raised); color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:7px 9px; font-size:12px;">
+            <option value="25">25 seconds</option>
+            <option value="60">1 minute</option>
+            <option value="0">Never</option>
+          </select>
+        </div>
       </div>
       <div id="widgetCustomWrap" style="margin-bottom:16px;">
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Fine-tune</div>
@@ -8118,7 +8214,11 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     cinder:      {  name: 'Cinder (reward)',       bg:'#141013', bgRaised:'#1F1A1E', coral:'#FF7A45', gold:'#B9A6A0', reward:true  },
     quartz:      {  name: 'Quartz (reward)',       bg:'#101418', bgRaised:'#1A2027', coral:'#9FD8F5', gold:'#D6E4EC', reward:true  },
     lumen:       {  name: 'Lumen (reward)',        bg:'#0C1710', bgRaised:'#132219', coral:'#5BE49B', gold:'#C8F0A6', reward:true  },
-    vortex:      {  name: 'Vortex (dynamic)',      bg:'#0a0718', bgRaised:'#1a1133', coral:'#9B7BFF', gold:'#63E2FF', reward:true, dynamic:'vortex'  }
+    vortex:      {  name: 'Vortex (dynamic)',      bg:'#0a0718', bgRaised:'#1a1133', coral:'#9B7BFF', gold:'#63E2FF', reward:true, dynamic:'vortex'  },
+    // 80.3.6 - Prism. Cool and glassy at the top of the screen, warm under it,
+    // accents light enough to stay readable on both: the palette is a phone
+    // theme rather than a neon one. Free like every other theme since 70.1.3.
+    prism:       {  name: 'Prism (dynamic)',      bg:'#0b0f1f', bgRaised:'#161c33', coral:'#8FE3FF', gold:'#C6A6FF', dynamic:'prism'  }
   };
   // ---------------- RGB theme: continuously cycles --coral/--gold hue, with
   // customizable cycle speed. This is what actually drives the "customizable glow" —
@@ -8880,6 +8980,31 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         });
       }
     }
+    // 80.3.6 - the two options this release adds, wired the same way.
+    const followTog = $('widgetFollowToggle');
+    if(followTog){
+      followTog.checked = !!widgetFollow;
+      if(!followTog._scWired){
+        followTog._scWired = true;
+        followTog.addEventListener('change', () => {
+          setWidgetFollow(followTog.checked);
+          renderWidgetThemeControls();
+          toast(followTog.checked ? 'Widget follows the app theme' : 'Widget uses its own theme');
+        });
+      }
+    }
+    const idleSel = $('widgetIdleSelect');
+    if(idleSel){
+      idleSel.value = String(widgetIdleSec);
+      if(!idleSel._scWired){
+        idleSel._scWired = true;
+        idleSel.addEventListener('change', () => {
+          setWidgetIdle(idleSel.value);
+          toast(widgetIdleSec === 0 ? 'Widget never sleeps'
+                : 'Widget idles after ' + (widgetIdleSec === 60 ? '1 minute' : widgetIdleSec + ' seconds'));
+        });
+      }
+    }
     renderWidgetCustomColors();
     renderWidgetPreview();
   }
@@ -9539,6 +9664,16 @@ function getApiHeaders() {
     $('settingsTabMore').classList.toggle('active', tab === 'more');
     $('settingsTabWidget').classList.toggle('active', tab === 'widget');
     $('settingsTabSandbox').classList.toggle('active', tab === 'sandbox');
+    // 80.3.6 - the pane that arrived settles in, the way a view does. Its own
+    // switch, not a navigation, so it takes the app's arrival animation rather
+    // than the view transition (which belongs to the frame that replaced another
+    // frame). scViewIn asks Reduce motion itself and does nothing if it is on.
+    try{
+      if(window.__scViewIn){
+        var _scPaneIn = $('settingsPane' + tab.charAt(0).toUpperCase() + tab.slice(1));
+        if(_scPaneIn) window.__scViewIn(_scPaneIn);
+      }
+    }catch(_ePaneIn){ }
     if(tab === 'more'){ renderVersionSnapshots(); renderDjPerPlaylistList(); try{ renderStoragePanel(); }catch(_eSp){ } }
     // 73.3.7 - the key field lives in the Important tab, and this is what loads it
     // into the field and keeps the assistant's state in step. It only ran for the
@@ -15804,7 +15939,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.3.5';
+  const APP_VERSION = '80.3.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16453,6 +16588,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.3.6', date: 'October 27, 2026 · 8:57 PM EDT', title: 'One motion system for the whole app, a new Prism theme, and more options on the widget', items: [
+    'The whole app moves on <b>one</b> set of curves now. Every surface used to spell out its own timing, so two things that arrived together did not settle together; there is one set of durations and three curves, and arrivals, drops, sheets and fades all read them.',
+    'A tap answers. Tabs, playlist rows, settings rows and pick buttons compress a little under your finger and come back on release — it is a transform, so the compositor does it and nothing on the page has to be re-laid-out.',
+    'Switching tabs <b>cross-fades</b> instead of cutting. The page uses the phone’s own view transition: the frame you are leaving fades out over the one you asked for, in a single pass, with the change itself running exactly when it ran before. An older WebView simply switches the way it always did.',
+    'A scroll belongs to the pane it started in. Reaching the end of the tab strip, a settings pane or the Studio list no longer drags the page behind it, and momentum scrolling stays on.',
+    'Settings panes settle in when you switch to them, with the same arrival the main views get — and <b>Reduce motion</b> in Sandbox, or the phone’s own setting, turns all of it off. The state still changes; nothing travels.',
+    'New theme: <b>Prism</b> — cool and glassy at the top of the screen, warm under it, with the accent light enough to read on both. Four layers of colour drift behind the whole app. Free, like every theme has been since the badge wall came down.',
+    'The <b>widget</b> has more options, and every one of them changes what is drawn: <b>Aurora, Sand, Slate, Sakura and Lime</b> join the presets; <b>Follow the app theme</b> borrows the app’s own background and accent and follows it when you change theme; and <b>Idle battery saver</b> lets a paused widget keep refreshing for 25 seconds, a minute, or never.',
+    'Nothing else moved — the player, the library, the albums, the lyrics, the downloader, the Studio and the audio graph are untouched. Only the motion, one theme and the widget options are new.',
+  ]},
   { version: '80.3.5', date: 'October 27, 2026 · 7:26 PM EDT', title: 'Settings is one clean list of rows that open, Playback and Playback & sound are one menu, and an anti-muffler sits beside the volume boost', items: [
     'Settings → More is one list of rows now, the way a phone\'s settings should read: the title on the left, what it is doing on the right, and a marker that turns as the row opens. Tap a row and its controls slide out under it — nothing is on the screen that you did not ask for.',
     'Nothing was left out. Every setting that used to sit loose between two cards is a row of its own: the tutorial, the Playlists / Albums button, auto-scroll to song, keep the playing album open, ask artist when importing, and About — whose version number is now on its row with the update log, the listening streak and the version guide inside it.',
@@ -32341,7 +32486,17 @@ function _fallbackCopy(text){
     black:  { label: 'Pure black',          bg1: '#000000', bg2: '#000000', title: '#FFFFFF', artist: '#9AA0AC', accent: '#E3B23C', accentText: '#1A1305', pill: '#16181C', pillText: '#DDDEE3' },
     warm:   { label: 'Warm amber',          bg1: '#241613', bg2: '#0E0906', title: '#F8EBD8', artist: '#D3B79B', accent: '#E8B23C', accentText: '#1F1304', pill: '#2B1C13', pillText: '#F0E2CC' },
     forest: { label: 'Forest',              bg1: '#152B20', bg2: '#08120D', title: '#EDF8F1', artist: '#9CC0AB', accent: '#4CC38A', accentText: '#06130C', pill: '#1B3227', pillText: '#DCEFE3' },
-    rose:   { label: 'Rosewood',            bg1: '#2A1A21', bg2: '#120A0D', title: '#FCEFF3', artist: '#CFA3B2', accent: '#E36A8A', accentText: '#1F060D', pill: '#36222C', pillText: '#F6E2EA' }
+    rose:   { label: 'Rosewood',            bg1: '#2A1A21', bg2: '#120A0D', title: '#FCEFF3', artist: '#CFA3B2', accent: '#E36A8A', accentText: '#1F060D', pill: '#36222C', pillText: '#F6E2EA' },
+    // 80.3.6 - five more, in the same shape as the seven above: two background
+    // stops the native side renders as one gradient bitmap, a title and an
+    // artist colour it sets with setTextColor, and an accent it paints the
+    // playing bars with. Every one of them is read from the payload that was
+    // already being pushed, so nothing on the native side had to change.
+    aurora: { label: 'Aurora',              bg1: '#0F1B3A', bg2: '#08101F', title: '#F2F7FF', artist: '#9FC0E8', accent: '#8FE3FF', accentText: '#04131F', pill: '#152346', pillText: '#E3EEFF' },
+    sand:   { label: 'Sand',                bg1: '#2B2118', bg2: '#120D09', title: '#FBF3E6', artist: '#CDB79B', accent: '#E8B23C', accentText: '#241703', pill: '#34271B', pillText: '#F4E7D4' },
+    slate:  { label: 'Slate',               bg1: '#1B2027', bg2: '#0B0E12', title: '#F1F4F8', artist: '#A6B0BC', accent: '#7FB2E5', accentText: '#06131F', pill: '#242B34', pillText: '#E2E8F0' },
+    sakura: { label: 'Sakura',              bg1: '#2E1A22', bg2: '#140A0E', title: '#FFF0F4', artist: '#D7A9B8', accent: '#FF9EC4', accentText: '#2A0713', pill: '#3A2029', pillText: '#FFE1EB' },
+    lime:   { label: 'Lime',                bg1: '#162312', bg2: '#080F06', title: '#F3FBE9', artist: '#B4CE96', accent: '#A6E22E', accentText: '#101B03', pill: '#1D2C18', pillText: '#EAF7DA' }
   };
   let widgetThemeKey = 'ocean';
   try{ const _savedWT = localStorage.getItem('sidecut_widgetTheme'); if(_savedWT && WIDGET_THEMES[_savedWT]) widgetThemeKey = _savedWT; }catch(_){ }
@@ -32353,6 +32508,45 @@ function _fallbackCopy(text){
   // anyone who would rather have the calmer widget.
   let widgetBarsOn = true;
   try{ const _savedWB = localStorage.getItem('sidecut_widgetBars'); if(_savedWB === '1') widgetBarsOn = true; else if(_savedWB === '0') widgetBarsOn = false; }catch(_){ }
+  // 80.3.6 - FOLLOW THE APP THEME. One palette, not two: switched on, the widget
+  // borrows the background, the raised tone and the accent of whatever theme the
+  // app is wearing, and picks up a theme change on the very next push (that is
+  // what getWidgetTheme() is called for on every state beat).
+  let widgetFollow = false;
+  try{ widgetFollow = localStorage.getItem('sidecut_widgetFollow') === '1'; }catch(_eWF){ }
+  // 80.3.6 - IDLE BATTERY SAVER. A paused widget used to stop refreshing after
+  // 25 seconds flat, which is a number nobody chose. 25 seconds, 1 minute, or
+  // never - and 25 is the default, so an existing install behaves as it did.
+  let widgetIdleSec = 25;
+  try{ var _scWIdle = parseInt(localStorage.getItem('sidecut_widgetIdle'), 10); if(_scWIdle === 60 || _scWIdle === 0) widgetIdleSec = _scWIdle; }catch(_eWI){ }
+  function widgetThemeFromApp(){
+    // THEMES is the app's own wall. Read through guards: this runs at the first
+    // widget push, which can happen before applyTheme() has been reached.
+    var th = null;
+    try{ th = (typeof THEMES === 'object' && THEMES && THEMES[currentTheme]) ? THEMES[currentTheme] : (THEMES ? THEMES.coral : null); }catch(_eT){ th = null; }
+    if(!th) th = { name: 'Coral', bg: '#0E1B1F', bgRaised: '#16262B', coral: '#FF6F59' };
+    // Title and artist are white and a dimmed white on purpose: every theme's
+    // background is dark (the wall has no light theme), so a theme-driven
+    // foreground is the same foreground, and the accent - the one colour that
+    // actually changes between themes - is the theme's own.
+    return { label: th.name || 'App theme', bg1: th.bg || '#0E1B1F', bg2: th.bgRaised || '#16262B',
+             title: '#FFFFFF', artist: '#B9BDC7', accent: th.coral || '#FF6F59',
+             accentText: '#0A0A0A', pill: th.bgRaised || '#16262B', pillText: '#EDEDED' };
+  }
+  function setWidgetFollow(on){
+    widgetFollow = !!on;
+    try{ localStorage.setItem('sidecut_widgetFollow', widgetFollow ? '1' : '0'); }catch(_eSF){ }
+    try{ renderWidgetPreview(); }catch(_eSFP){ }
+    try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_eSFS){ }
+  }
+  function setWidgetIdle(sec){
+    var n = parseInt(sec, 10);
+    widgetIdleSec = (n === 60 || n === 0) ? n : 25;
+    try{ localStorage.setItem('sidecut_widgetIdle', String(widgetIdleSec)); }catch(_eSI){ }
+    // A widget that was dimmed under the old setting is a beat away from the new
+    // one: push once so the change is visible without waiting for a tap.
+    try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_eSIS){ }
+  }
   function setWidgetBars(on){
     widgetBarsOn = !!on;
     try{ localStorage.setItem('sidecut_widgetBars', widgetBarsOn ? '1' : '0'); }catch(_){ }
@@ -32362,7 +32556,10 @@ function _fallbackCopy(text){
     try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
   }
   function getWidgetTheme(){
-    const _wt = applyWidgetCustom(WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.ocean);
+    // 80.3.6 - the base is either the preset the reader picked, or the app's own
+    // theme. Custom colours still apply on top of both: following the theme is a
+    // starting point, not a lock.
+    const _wt = applyWidgetCustom(widgetFollow ? widgetThemeFromApp() : (WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.ocean));
     // 71.5 - the switch travels with the colours: every push (state, theme
     // change, and the battery-saving dim) already sends this object, so the
     // native widget learns the answer with no extra bridge call.
@@ -32447,7 +32644,10 @@ function _fallbackCopy(text){
         // ('Tap to show', no EQ bars, a play icon that lied) and then stopped
         // pushing entirely, which is what made the widget look frozen while
         // music was playing. A stationary player still dims to save battery.
-        if(!widgetPlaying && Date.now() - _widgetLastInteraction > _widgetTimeoutMs){
+        // 80.3.6 - the timeout is the saved setting now, read on every beat
+        // rather than captured when this block ran, so changing it takes effect
+        // without a relaunch. 0 means never: the widget keeps its song.
+        if(widgetIdleSec > 0 && !widgetPlaying && Date.now() - _widgetLastInteraction > widgetIdleSec * 1000){
           if(!_widgetDimmed){
             _widgetDimmed = true;
             // Push a dimmed/idle state once, then stop
@@ -50941,7 +51141,45 @@ window.showSettingsTab = showSettingsTab;
   window.__scGetTheme = function(){ return currentTheme; };
   window.escapeHtml = escapeHtml;
   window.getSortedIds = getSortedIds;
-  window.navigate = navigate;
+  // 80.3.6 - THE CROSS-FADE AND THE ONE MOTION SYSTEM
+  // 80.3.6 - THE CROSS-FADE. Navigation used to cut: the old view's opacity
+  // dropped to 0 and the new one appeared in the same frame, so a tab change was
+  // a flash of two layouts. The platform's View Transitions API takes a snapshot
+  // of the frame it is leaving, runs the change, then fades the snapshot out over
+  // the new frame - one composited pass, no layout from us.
+  //
+  // WHAT THIS IS NOT. It is not a queue and it is not async: navigate() still
+  // runs synchronously inside the callback, so every caller that reads state
+  // straight after calling it (the dock's slide, a deep link, the Studio) sees
+  // exactly what it saw before. If the API is missing, or Reduce motion is on,
+  // or the transition throws, the original navigate() is called and returned -
+  // the same function, the same frame, no wrapper cost worth measuring.
+  //
+  // The binding is reassigned as well as the global, because the page's own
+  // callers resolve `navigate` in this block's scope rather than reading
+  // window.navigate. A landscape of callers, one door.
+  try{ if(typeof scViewIn === 'function') window.__scViewIn = scViewIn; }catch(_eViewIn){ }
+  (function(){
+    var _scNavInner = navigate;
+    function scMotionOff(){
+      try{
+        if(document.body && document.body.classList.contains('sandbox-reduce-motion')) return true;
+        if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return true;
+      }catch(_eMotionOff){ }
+      return false;
+    }
+    function scNavigateSmooth(view){
+      if(scMotionOff() || typeof document.startViewTransition !== 'function') return _scNavInner(view);
+      try{
+        var vt = document.startViewTransition(function(){ return _scNavInner(view); });
+        if(vt && vt.finished && typeof vt.finished.catch === 'function') vt.finished.catch(function(){});
+        return;
+      }catch(_eVt){ return _scNavInner(view); }
+    }
+    try{ navigate = scNavigateSmooth; }catch(_eAs){ }
+    window.__scNavigateSmooth = scNavigateSmooth;
+    window.navigate = scNavigateSmooth;
+  })();
   window.normalizeHomeOrder = normalizeHomeOrder;
   window.openNotif = openNotif;
   // 73.3.7 - the release page is opened from rows painted in this scope AND from
