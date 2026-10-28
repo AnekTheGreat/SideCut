@@ -1590,6 +1590,37 @@ body.sandbox-invert-colors{
 .theme-group > summary::after{ content:'▾'; transition:transform 0.2s; color:var(--ink-dim); }
 .theme-group[open] > summary::after{ transform:rotate(180deg); }
 .theme-group .theme-group-body{ padding:4px 10px 10px; display:flex; flex-direction:column; gap:8px; }
+/* ─────────────── 80.3.7 - the wall opens, and a theme settles ───────────────
+   Both of these read the 80.3.6 motion tokens rather than inventing numbers, and
+   both are switches on an existing element: no listener, no timer, no rAF. */
+.sc-new-tag{
+  font-size:9px; font-weight:700; letter-spacing:.6px; line-height:1;
+  padding:3px 5px; border-radius:5px; vertical-align:middle;
+  background: color-mix(in srgb, var(--coral) 22%, transparent);
+  color: var(--coral); border:1px solid color-mix(in srgb, var(--coral) 45%, transparent);
+}
+/* A group that opens arrives row by row. The delay is capped at ten rows: past
+   that the wait would be longer than the animation, and nobody counts rows. */
+.theme-group[open] .theme-group-body > *{ animation: scThemeRowIn var(--sc-t-fade) var(--sc-e-out) both; }
+.theme-group[open] .theme-group-body > *:nth-child(1){ animation-delay: 0ms; }
+.theme-group[open] .theme-group-body > *:nth-child(2){ animation-delay: 14ms; }
+.theme-group[open] .theme-group-body > *:nth-child(3){ animation-delay: 28ms; }
+.theme-group[open] .theme-group-body > *:nth-child(4){ animation-delay: 42ms; }
+.theme-group[open] .theme-group-body > *:nth-child(5){ animation-delay: 56ms; }
+.theme-group[open] .theme-group-body > *:nth-child(6){ animation-delay: 70ms; }
+.theme-group[open] .theme-group-body > *:nth-child(7){ animation-delay: 84ms; }
+.theme-group[open] .theme-group-body > *:nth-child(8){ animation-delay: 98ms; }
+.theme-group[open] .theme-group-body > *:nth-child(9){ animation-delay: 112ms; }
+.theme-group[open] .theme-group-body > *:nth-child(n+10){ animation-delay: 126ms; }
+@keyframes scThemeRowIn{ from{ opacity:0; transform: translateY(6px); } to{ opacity:1; transform:none; } }
+/* Picking a theme repaints the sheet; it settles instead of snapping. */
+.sc-theme-settle{ animation: scSheetSettle var(--sc-t-view) var(--sc-e-out); }
+@keyframes scSheetSettle{ from{ opacity:.72; } to{ opacity:1; } }
+body.sandbox-reduce-motion .theme-group[open] .theme-group-body > *,
+body.sandbox-reduce-motion .sc-theme-settle{ animation: none !important; }
+@media (prefers-reduced-motion: reduce){
+  .theme-group[open] .theme-group-body > *, .sc-theme-settle{ animation: none !important; }
+}
 
 body.sandbox-invert-colors img,
 body.sandbox-invert-colors .track-art,
@@ -1789,19 +1820,20 @@ body.theme-dyn-orchid::before{
   animation: sd-dyn-drift 15s ease-in-out infinite;
 }
 
-/* 80.3.6 - PRISM. Two soft pools of colour over a deep blue-black core, the same
-   four-layer build the v60 themes use, drifting a little slower than Neon Pulse
-   and a little faster than Abyss. The generic sheen that every
-   `[class*="theme-dyn-"]` body already gets lays over this; nothing about it
-   needed a second rule. */
+/* 80.3.7 - COLOROS. The curtain behind the app: a mint pool at the top left, an
+   aqua pool at the bottom right, a dark teal core, and a base that runs from the
+   theme's own background into a deeper green-blue. Same four-layer build as the
+   v60 themes and the same `sd-dyn-drift` keyframes, at 20 seconds - calmer than
+   everything except Abyss's 24, which is what a system theme's wallpaper does.
+   The selector still says prism because the key does: see patch_8037_theme.py. */
 body.theme-dyn-prism::before{
   content:''; position:fixed; inset:-20%; z-index:-1; pointer-events:none;
   background:
-    radial-gradient(42% 46% at 26% 28%, rgba(143,227,255,0.40), transparent 62%),
-    radial-gradient(36% 42% at 74% 66%, rgba(198,166,255,0.38), transparent 62%),
-    radial-gradient(30% 34% at 52% 10%, rgba(24,22,70,0.66), transparent 66%),
-    linear-gradient(158deg, #0b0f1f, #1b1440, #0e2b46, #2a1246);
-  animation: sd-dyn-drift 17s ease-in-out infinite;
+    radial-gradient(44% 48% at 28% 24%, rgba(55,230,196,0.34), transparent 62%),
+    radial-gradient(38% 44% at 74% 70%, rgba(127,209,255,0.32), transparent 62%),
+    radial-gradient(32% 36% at 50% 6%, rgba(4,34,36,0.72), transparent 66%),
+    linear-gradient(158deg, #07181a, #0b3436, #103449, #0a2a24);
+  animation: sd-dyn-drift 20s ease-in-out infinite;
 }
 body.sandbox-reduce-motion.theme-dyn-prism::before{ animation: none !important; }
 @media (prefers-reduced-motion: reduce){ body.theme-dyn-prism::before{ animation: none !important; } }
@@ -8215,10 +8247,14 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     quartz:      {  name: 'Quartz (reward)',       bg:'#101418', bgRaised:'#1A2027', coral:'#9FD8F5', gold:'#D6E4EC', reward:true  },
     lumen:       {  name: 'Lumen (reward)',        bg:'#0C1710', bgRaised:'#132219', coral:'#5BE49B', gold:'#C8F0A6', reward:true  },
     vortex:      {  name: 'Vortex (dynamic)',      bg:'#0a0718', bgRaised:'#1a1133', coral:'#9B7BFF', gold:'#63E2FF', reward:true, dynamic:'vortex'  },
-    // 80.3.6 - Prism. Cool and glassy at the top of the screen, warm under it,
-    // accents light enough to stay readable on both: the palette is a phone
-    // theme rather than a neon one. Free like every other theme since 70.1.3.
-    prism:       {  name: 'Prism (dynamic)',      bg:'#0b0f1f', bgRaised:'#161c33', coral:'#8FE3FF', gold:'#C6A6FF', dynamic:'prism'  }
+    // 80.3.7 - COLOROS. 80.3.6 shipped this theme as "Prism", which is not what
+    // anyone would look for, and put it at the bottom of the wall below a badge
+    // reward - so it read as missing. The label is ColorOS now. The key stays
+    // `prism`, and so does the dynamic class: a phone that already picked it keeps
+    // its pick, its prepaint cache and its backdrop, with nothing to migrate.
+    // Palette: deep teal-black, mint accent, aqua second - the light values
+    // ColorOS 17's dark mode is built from, not a neon pair.
+    prism:       {  name: 'ColorOS (dynamic)',    bg:'#07181A', bgRaised:'#0E2A2C', coral:'#37E6C4', gold:'#7FD1FF', dynamic:'prism', fresh:true }
   };
   // ---------------- RGB theme: continuously cycles --coral/--gold hue, with
   // customizable cycle speed. This is what actually drives the "customizable glow" —
@@ -8781,6 +8817,37 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     // loads right after this one, and a theme picked before it is up is one
     // count missed, never an error.
     try{ if(typeof window.__scNoteTheme === 'function') window.__scNoteTheme(key); }catch(_eNote){}
+    // 80.3.7 - THE COLOROS WALL
+  // 80.3.7 - and the sheet you picked it in settles, rather than snapping to a
+    // completely repainted screen.
+    scThemeSettle();
+  }
+  // 80.3.7 - A THEME CHANGE ANSWERS. Everything that reads --bg/--coral repaints
+  // in the same frame, and the settings sheet is where you watch it happen. One
+  // animation class, removed and re-added so a second tap restarts it instead of
+  // being ignored.
+  //
+  // The guards are the point: while the sheet is CLOSED (boot, a deep link, the
+  // prepaint restore) nothing runs at all, and with motion reduced - either the
+  // Sandbox switch or the device's - nothing runs either. This is the same rule
+  // scNavigateSmooth follows, written out here because that one is sealed inside
+  // its own closure around navigate().
+  function scThemeSettle(){
+    try{
+      var bd = $('themeBackdrop');
+      if(!bd || bd.style.display !== 'flex') return;
+      var _rm = false;
+      try{
+        _rm = !!(document.body && document.body.classList.contains('sandbox-reduce-motion')) ||
+              !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      }catch(_eRm){ }
+      if(_rm) return;
+      var sheet = bd.querySelector('.modal');
+      if(!sheet) return;
+      sheet.classList.remove('sc-theme-settle');
+      void sheet.offsetWidth; // forces the restart without a timer
+      sheet.classList.add('sc-theme-settle');
+    }catch(_eSettle){ }
   }
 
   function renderThemeOptions(){
@@ -8790,18 +8857,33 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     const prevOpen = new Set();
     prevDetails.forEach(d => { if(d.open) prevOpen.add(d.querySelector('summary')?.textContent?.trim()); });
     container.innerHTML = '';
-    const groups = { static: [], dynamic: [] };
+    // 80.3.7 - BADGE THEMES LAST. Three groups: a badge reward is earned, so it
+    // belongs after every theme anyone can pick today, not between two of them.
+    // 80.3.6's new theme shipped below Vortex (a 200-badge reward) and read as
+    // missing - this is that, fixed at the ordering rather than at the theme.
+    const groups = { static: [], dynamic: [], reward: [] };
     if(THEMES.custom) groups.static.push('custom'); // user's custom theme first
     Object.keys(THEMES).forEach(key => {
       if(key === 'custom') return;
       const th = THEMES[key];
+      if(th.reward){ groups.reward.push(key); return; }
       (th.rgb || th.dynamic ? groups.dynamic : groups.static).push(key);
+    });
+    // 80.3.7 - the theme this release adds sits at the top of its group instead of
+    // sixteen rows down. `fresh` lives on the theme entry, so it leaves with the
+    // entry when the next release takes the flag off - there is no second list.
+    ['static', 'dynamic'].forEach(function(g){
+      groups[g] = groups[g].filter(function(k){ return THEMES[k] && THEMES[k].fresh; })
+                           .concat(groups[g].filter(function(k){ return !(THEMES[k] && THEMES[k].fresh); }));
     });
     // Both groups start COLLAPSED on every open (per user request — the theme
     // wall shouldn't jump in front of the settings sheet). The open/close state the user
     // picked is still restored across re-renders within the same session (what they
     // collapsed they keep collapsed, but the default for a fresh open is shut).
-    container.innerHTML = themeGroupHTML('Static themes', groups.static, false) + themeGroupHTML('Dynamic themes (animated)', groups.dynamic, false);
+    // 80.3.7 - printed in this order, and the earned group last, always.
+    container.innerHTML = themeGroupHTML('Static themes', groups.static, false) +
+                          themeGroupHTML('Dynamic themes (animated)', groups.dynamic, false) +
+                          themeGroupHTML('Badge rewards (earned)', groups.reward, false);
     // Restore collapsible open/close state
     container.querySelectorAll('details.theme-group').forEach(d => {
       const summaryText = d.querySelector('summary')?.textContent?.trim();
@@ -8915,11 +8997,14 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       '<div class="theme-group-body">' + keys.map(k => themeButtonHTML(k, THEMES[k])).join('') + '</div></details>';
   }
   function themeButtonHTML(key, th){
+    // 80.3.7 - the chip is the theme, not one of its colours: a third of it is the
+    // background the app will be painted with, a third the accent, a third the
+    // second accent. The old dot showed the accent alone, so two themes with the
+    // same accent and different backgrounds looked identical in the wall.
     const swatch = th.rgb
       ? 'background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);'
-      : (th.dynamic || th.liquidGlass)
-        ? 'background: linear-gradient(135deg, ' + th.coral + ', ' + th.gold + ');' + (th.liquidGlass ? ' backdrop-filter: blur(2px);' : '')
-        : 'background:' + th.coral + ';';
+      : 'background: linear-gradient(90deg, ' + (th.bg || '#0E1B1F') + ' 0 33%, ' +
+        (th.coral || '#FF6F59') + ' 33% 66%, ' + (th.gold || '#D4A574') + ' 66% 100%);';
     const reward = !!th.reward;
     const rewardOk = reward ? rewardThemeOK(key) : true;
     const lock = (reward && !rewardOk) ? '🏅 ' : '';
@@ -8928,9 +9013,12 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     const freeTag = reward
       ? ' <span style="color:#E3B23C; font-size:10px; font-weight:700; letter-spacing:.5px;">' + (rewardOk ? 'BADGE REWARD' : rewardThemeNeed(key) + ' BADGES') + '</span>'
       : '';
+    // 80.3.7 - the theme this release adds says so, in the one place a reader is
+    // looking for it. The flag is on the entry, so the tag disappears on its own.
+    const freshTag = th.fresh ? ' <span class="sc-new-tag">NEW</span>' : '';
     return '<button class="playlist-pick-btn' + (key === currentTheme ? ' already' : '') + '" data-theme-key="' + key + '" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left;">' +
-      '<span style="width:18px; height:18px; border-radius:50%; ' + swatch + ' display:inline-block; flex-shrink:0; border:1px solid rgba(255,255,255,' + (th.liquidGlass ? 0.45 : 0.2) + ');"></span>' +
-      lock + (key === currentTheme ? '✓ ' : '') + th.name + freeTag + '</button>';
+      '<span style="width:26px; height:18px; border-radius:5px; ' + swatch + ' display:inline-block; flex-shrink:0; border:1px solid rgba(255,255,255,' + (th.liquidGlass ? 0.45 : 0.2) + ');"></span>' +
+      lock + (key === currentTheme ? '✓ ' : '') + th.name + freeTag + freshTag + '</button>';
   }
   $('rgbSpeedSlider').addEventListener('input', (e) => {
     rgbSpeedSec = parseInt(e.target.value, 10);
@@ -8955,7 +9043,7 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
       const sel = k === cur;
       return '<button class="tab" data-wt="' + k + '" style="padding:10px; text-align:left; border-radius:12px;' + (sel ? ' outline:2px solid ' + t.accent + ';' : '') + '">' +
         '<span style="display:inline-block; width:22px; height:22px; border-radius:7px; vertical-align:middle; margin-right:8px; background:linear-gradient(135deg,' + t.bg1 + ',' + t.bg2 + ');"></span>' +
-        '<span style="font-size:12.5px; font-weight:600; color:' + t.title + '; vertical-align:middle;">' + t.label + '</span></button>';
+        '<span style="font-size:12.5px; font-weight:600; vertical-align:middle;">' + t.label + '</span></button>';
     }).join("");
     grid.querySelectorAll('[data-wt]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -15939,7 +16027,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.3.6';
+  const APP_VERSION = '80.3.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16588,6 +16676,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.3.7', date: 'October 27, 2026 · 10:26 PM EDT', title: 'ColorOS is on the theme wall, the badge themes come last, and the widget gets bright colours', items: [
+    'The theme this app added yesterday is called <b>ColorOS</b> now, and it is the first thing in its group with a NEW tag on it. It was on the wall the whole time, sitting four rows below a badge reward nobody can pick yet — which is exactly what this release fixes.',
+    'Every <b>badge theme</b> has moved to its own group at the bottom of the list, so all the free themes come first, in one line, with nothing locked in between. The rewards still say what they cost and still unlock the same way; they are just out of the way until you have the badges.',
+    'ColorOS is recoloured to what ColorOS actually looks like: deep teal-black, a <b>mint</b> accent, aqua behind it, and a curtain of two soft pools drifting for twenty seconds. Same key underneath, so a phone that already picked it keeps its pick.',
+    'Each row in the wall now shows the theme itself — a chip of its background, its accent and its second accent — instead of a single dot of one colour. Two themes with the same accent no longer look identical.',
+    'Opening a group <b>staggers</b> its rows in, 14ms apart, and picking a theme settles the sheet instead of snapping to a repainted screen. Both read the motion the app already had; both stop dead when Reduce motion is on.',
+    'The widget has <b>six bright presets</b> — Bubblegum, Mint, Sunshine, Sky, Tangerine, Grape — with dark text on light gradients, listed first, and a fresh install starts on Bubblegum. The twelve dark ones are all still there with their colours and their saved picks.',
+    'The widget picker used to write each preset’s name in that preset’s own text colour, which is invisible for a light one on the dark sheet. The name is the app’s ink now and the swatch beside it shows the colours.',
+    'Nothing else moved — the player, the library, the albums, the lyrics, the downloader, the Studio and the audio graph are untouched.',
+  ]},
   { version: '80.3.6', date: 'October 27, 2026 · 8:57 PM EDT', title: 'One motion system for the whole app, a new Prism theme, and more options on the widget', items: [
     'The whole app moves on <b>one</b> set of curves now. Every surface used to spell out its own timing, so two things that arrived together did not settle together; there is one set of durations and three curves, and arrivals, drops, sheets and fades all read them.',
     'A tap answers. Tabs, playlist rows, settings rows and pick buttons compress a little under your finger and come back on release — it is a transform, so the compositor does it and nothing on the page has to be re-laid-out.',
@@ -32480,6 +32578,17 @@ function _fallbackCopy(text){
   // Widget appearance, customized in Settings > Widget. Sent with every
   // state push; the native side persists it so re-added widgets keep the look.
   const WIDGET_THEMES = {
+    // 80.3.7 - SIX BRIGHT ONES, FIRST. Every preset below this block is a dark
+    // palette, which is what the widget shipped with and never grew out of. These
+    // are light gradients with a dark title, a dark artist line and a saturated
+    // accent - the same nine keys the native provider reads, so nothing on the
+    // Android side had to change to draw them.
+    candy:  { label: 'Bubblegum',           bg1: '#FFD3E8', bg2: '#FF97C4', title: '#3A0A22', artist: '#7A2A4E', accent: '#D6196F', accentText: '#FFFFFF', pill: '#FFB3D6', pillText: '#4A0C2A' },
+    mint:   { label: 'Mint',                bg1: '#C9F7E2', bg2: '#8CE7C6', title: '#06291F', artist: '#2C6A57', accent: '#0B8F6C', accentText: '#FFFFFF', pill: '#ADEFD4', pillText: '#0A3A2C' },
+    sunny:  { label: 'Sunshine',            bg1: '#FFEFAE', bg2: '#FFC63A', title: '#3A2600', artist: '#7A5812', accent: '#C77400', accentText: '#FFFFFF', pill: '#FFE39B', pillText: '#3A2600' },
+    sky:    { label: 'Sky',                 bg1: '#CFE7FF', bg2: '#98C8FA', title: '#0A2440', artist: '#2C5A83', accent: '#0F6FCB', accentText: '#FFFFFF', pill: '#B6DAFF', pillText: '#0A2440' },
+    tangerine: { label: 'Tangerine',        bg1: '#FFDCC2', bg2: '#FFAE6E', title: '#371500', artist: '#7A3A12', accent: '#C9541A', accentText: '#FFFFFF', pill: '#FFC9A3', pillText: '#371500' },
+    grape:  { label: 'Grape',               bg1: '#E6DCFF', bg2: '#BFA4FF', title: '#241045', artist: '#4E3480', accent: '#6E3FD6', accentText: '#FFFFFF', pill: '#D3C1FF', pillText: '#241045' },
     coral:  { label: 'Coral',               bg1: '#3A171B', bg2: '#1C0B0D', title: '#FFE9E4', artist: '#E3A99E', accent: '#FF6F61', accentText: '#2A0805', pill: '#46201F', pillText: '#FFD9D2' },
     ocean:  { label: 'Deep Ocean (default)', bg1: '#0E2A47', bg2: '#071322', title: '#FFFFFF', artist: '#A8C6E8', accent: '#3FA9F5', accentText: '#04131F', pill: '#14324F', pillText: '#DBEBFB' },
     dark:   { label: 'Midnight',            bg1: '#161B26', bg2: '#0A0B0E', title: '#FFFFFF', artist: '#B9BDC7', accent: '#E3B23C', accentText: '#1A1305', pill: '#1F2430', pillText: '#DDDEE3' },
@@ -32498,7 +32607,10 @@ function _fallbackCopy(text){
     sakura: { label: 'Sakura',              bg1: '#2E1A22', bg2: '#140A0E', title: '#FFF0F4', artist: '#D7A9B8', accent: '#FF9EC4', accentText: '#2A0713', pill: '#3A2029', pillText: '#FFE1EB' },
     lime:   { label: 'Lime',                bg1: '#162312', bg2: '#080F06', title: '#F3FBE9', artist: '#B4CE96', accent: '#A6E22E', accentText: '#101B03', pill: '#1D2C18', pillText: '#EAF7DA' }
   };
-  let widgetThemeKey = 'ocean';
+  // 80.3.7 - a fresh install starts on Bubblegum rather than Deep Ocean. Only a
+  // phone that has never picked a widget theme is affected: the saved key wins as
+  // it always did, and an unknown key still falls back to ocean below.
+  let widgetThemeKey = 'candy';
   try{ const _savedWT = localStorage.getItem('sidecut_widgetTheme'); if(_savedWT && WIDGET_THEMES[_savedWT]) widgetThemeKey = _savedWT; }catch(_){ }
   // 71.5 - the widget's playing bars (the little "heartbeat" beside the artist)
   // are optional. Settings > Widget owns this flag; it is stored on the device,
