@@ -5240,9 +5240,17 @@ body.sc80-cloud .action-strip::before{
     </div>
 
     <div id="settingsPaneWidget" style="display:none;">
-      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget: eight presets, a follow-the-app-theme switch, an idle battery saver and the fine-tune palette. Changes apply to every widget you have placed; re-adding one also picks these up. Tapping the widget - or its play button - picks the song you were last playing back up where you left it.</div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget: nineteen presets from bright to frosted glass, a Frost dial on the glass one, a follow-the-app-theme switch, an idle battery saver and the fine-tune palette. Changes apply to every widget you have placed; re-adding one also picks these up. Tapping the widget - or its play button - picks the song you were last playing back up where you left it.</div>
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">Note: if the app is closed or swiped away from recents, the widget will not play the right audio — open SideCut again to get the widget back in sync.</div>
       <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
+      <div id="widgetFrostRow" style="display:none; margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px;">
+          <span style="font-size:13px; font-weight:600;">Frost</span>
+          <span id="widgetFrostValue" style="font-size:12px; color:var(--ink-dim);">55%</span>
+        </div>
+        <input type="range" id="widgetFrostSlider" min="0" max="100" step="1" value="55" style="width:100%;">
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; line-height:1.5;">How much milk is in the glass. Left is thin and clear &mdash; the wallpaper shows through and tints the panel; right is a soft, nearly solid pane. Drag it and the preview below moves with your finger; let go and the widget on your home screen takes the same setting.</div>
+      </div>
       <div id="widgetBarsRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
         <label for="widgetBarsToggle" style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
           <input type="checkbox" id="widgetBarsToggle" style="width:18px; height:18px; margin:1px 0 0; flex:0 0 auto; accent-color:var(--gold);">
@@ -7195,6 +7203,7 @@ window.__scTime12 = function(v){
 // mode of this switch has to be the app people already have, never a player that
 // quietly lost its converter.
 // 80.5.2 - ONE BUILD ON THE SCREEN
+// 80.6 - THE FROSTED GLASS AND ITS DIAL
 var SC_IS_WEB = (function(){
   try{
     var _cap = (typeof window !== 'undefined') ? window.Capacitor : null;
@@ -9144,6 +9153,28 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         toast("Widget theme updated");
       });
     });
+    // 80.6 - the Frost dial. Shown only for a glass preset: it is the one preset
+    // with a dial, and hiding (not disabling) it keeps the panel short for the
+    // other eighteen.
+    const frostRow = $('widgetFrostRow');
+    if(frostRow){
+      // Following the app theme replaces the preset with the app's own colours, so
+      // the dial would tune a glass that is not being drawn: hidden then too.
+      const glassy = !widgetFollow && !!(WIDGET_THEMES[widgetThemeKey] && WIDGET_THEMES[widgetThemeKey].glass);
+      frostRow.style.display = glassy ? '' : 'none';
+      const frostSlider = $('widgetFrostSlider');
+      if(frostSlider){
+        frostSlider.value = String(widgetFrost);
+        const frostValue = $('widgetFrostValue');
+        if(frostValue) frostValue.textContent = widgetFrost + '%';
+        if(!frostSlider._scWired){
+          frostSlider._scWired = true;
+          // input = every pixel of the drag, change = the finger lifted.
+          frostSlider.addEventListener('input', () => { setWidgetFrost(frostSlider.value, false); });
+          frostSlider.addEventListener('change', () => { setWidgetFrost(frostSlider.value, true); });
+        }
+      }
+    }
     // 71.5 - the Playing bars switch. Wired once, then only re-synced: this
     // render runs on every Settings > Widget open, and re-adding the listener
     // would push a state update per tick.
@@ -9245,14 +9276,9 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     renderWidgetPreview();
     try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
   }
-  function renderWidgetPreview(){
-    const pv = $('widgetThemePreview');
-    if(!pv) return;
-    const t = getWidgetTheme();
-    pv.style.background = 'linear-gradient(160deg,' + t.bg1 + ',' + t.bg2 + ')';
-    // 71.5 - the three little bars the widget paints while a song plays, in the
-    // theme's own accent. Switched off, the preview shows the same widget with
-    // nothing there - which is the whole point of the row above it.
+  // 80.6 - the tile both preview branches paint: identical in both, so the glass
+  // preview cannot drift from the opaque one when a cover or a row changes.
+  function scWidgetPreviewBody(t){
     const barsHtml = widgetBarsOn
       ? '<span style="display:inline-flex; align-items:flex-end; gap:2px; height:14px; margin-left:8px; vertical-align:middle;">' +
         '<span style="display:inline-block; width:3px; height:8px; border-radius:2px; background:' + t.accent + ';"></span>' +
@@ -9260,10 +9286,33 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         '<span style="display:inline-block; width:3px; height:10px; border-radius:2px; background:' + t.accent + ';"></span>' +
         '</span>'
       : '';
-    pv.innerHTML = '<div style="width:64px; height:64px; border-radius:12px; background:linear-gradient(135deg,#3a3f4b,#22252c); margin-bottom:10px; overflow:hidden;"></div>' +
+    return '<div style="width:64px; height:64px; border-radius:12px; background:linear-gradient(135deg,#3a3f4b,#22252c); margin-bottom:10px; overflow:hidden;"></div>' +
       '<div style="font-size:16px; font-weight:700; color:' + t.title + '; margin-bottom:3px;">Song title</div>' +
       '<div style="font-size:13px; color:' + t.artist + '; margin-bottom:12px;">Artist name' + barsHtml + '</div>' +
       '<div style="display:flex; gap:22px; font-size:18px; color:' + t.title + ';"><span>|&#9664;</span><span>&#9654;</span><span>&#9654;|</span></div>';
+  }
+  function renderWidgetPreview(){
+    const pv = $('widgetThemePreview');
+    if(!pv) return;
+    const t = getWidgetTheme();
+    // 80.6 - a glass widget is shown over a strip of colour, because a
+    // translucent panel on a flat dark pane proves nothing: this is what the
+    // wallpaper does to it, and the blur is the one thing the preview can show
+    // that the home screen cannot.
+    if(t.glass === true){
+      const blur = 6 + Math.round((t.frost || 0) * 0.16);
+      const edge = (0.18 + (t.frost || 0) * 0.0032).toFixed(3);
+      pv.style.background = 'transparent';
+      pv.style.padding = '0';
+      pv.innerHTML = '<div style="position:relative; border-radius:16px; overflow:hidden;">' +
+        '<div style="position:absolute; inset:0; background:linear-gradient(135deg,#FF8FB1 0%,#7AC6FF 42%,#9D7BFF 72%,#FFD166 100%);"></div>' +
+        '<div style="position:relative; padding:14px; border-radius:16px; -webkit-backdrop-filter:blur(' + blur + 'px) saturate(1.1); backdrop-filter:blur(' + blur + 'px) saturate(1.1); background:linear-gradient(160deg,' + t.css1 + ',' + t.css2 + '); border:1px solid rgba(255,255,255,' + edge + ');">' +
+        scWidgetPreviewBody(t) + '</div></div>';
+      return;
+    }
+    pv.style.padding = '14px';
+    pv.style.background = 'linear-gradient(160deg,' + t.bg1 + ',' + t.bg2 + ')';
+    pv.innerHTML = scWidgetPreviewBody(t);
   }
   function renderGlowControls(){    // Glow color swatches — tap to pick instead of the clunky native wheel.
     try{
@@ -16147,7 +16196,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.5.2';
+  const APP_VERSION = '80.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16796,6 +16845,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6', date: 'October 28, 2026 · 6:55 PM EDT', title: 'A frosted-glass widget, and a Frost dial to tune it', items: [
+    'There is a <b>Frosted glass</b> widget now, and it is the first in the list. A translucent panel that lets the wallpaper through, with dark type on it, so it sits on a photo as well as it sits on a plain wall.',
+    'It has a <b>Frost dial</b> &mdash; a slider in Settings &rarr; Widget, 0 to 100, that decides how much milk is in the glass. Left is thin and clear and the wallpaper tints the panel; right is a soft, nearly solid pane. It stays where you leave it.',
+    'The <b>preview</b> in Settings shows the glass over a strip of colour, so the dial has something to act on, and the panel behind it blurs the way real glass does. Drag the slider and the preview moves with your finger; let go and the widget on your home screen takes the same setting.',
+    'The preset carries its own <b>blue accent</b> for the playing bars and the fine-tune swatches still work on top of it &mdash; pick a background there and it keeps its colour, and simply gains the glass.',
+    'Every other preset is untouched: the eighteen that were there draw exactly what they drew in 80.5.2, and the Frost dial is hidden unless you are on the glass one.',
+  ]},
   { version: '80.5.2', date: 'October 28, 2026 · 4:03 PM EDT', title: 'The version line is the version, and nothing on the page points elsewhere', items: [
     'The version line reads <b>SideCut v80.5.2</b> and nothing else — the words that sat after it are gone, so the row is one short line again.',
     'Two cards that talked about other copies are gone with it: <b>Discover</b> and <b>About &amp; updates</b> now describe only what this copy does.',
@@ -32713,6 +32769,13 @@ function _fallbackCopy(text){
   // Widget appearance, customized in Settings > Widget. Sent with every
   // state push; the native side persists it so re-added widgets keep the look.
   const WIDGET_THEMES = {
+    // 80.6 - THE FROSTED GLASS. Its seven colours are a panel, not a wall: the
+    // opacity and the milk are worked out by scFrostGlass() from the Frost dial,
+    // so this stays a plain describing colour and the fine-tune swatches keep
+    // working on top of it. A light panel with dark type, because a veil that
+    // goes from thin to thick is always lighter than a wallpaper - the type
+    // never has to change colour with the dial.
+    frost:  { label: 'Frosted glass', glass: true, bg1: '#F6F9FF', bg2: '#CBD8EF', title: '#111A2B', artist: '#41506B', accent: '#2F6BFF', accentText: '#FFFFFF', pill: '#FFFFFF', pillText: '#111A2B' },
     // 80.3.7 - SIX BRIGHT ONES, FIRST. Every preset below this block is a dark
     // palette, which is what the widget shipped with and never grew out of. These
     // are light gradients with a dark title, a dark artist line and a saturated
@@ -32747,6 +32810,12 @@ function _fallbackCopy(text){
   // it always did, and an unknown key still falls back to ocean below.
   let widgetThemeKey = 'candy';
   try{ const _savedWT = localStorage.getItem('sidecut_widgetTheme'); if(_savedWT && WIDGET_THEMES[_savedWT]) widgetThemeKey = _savedWT; }catch(_){ }
+  // 80.6 - HOW MUCH MILK IS IN THE GLASS, 0-100. Only the frosted presets read
+  // it (see scFrostGlass); every other preset ignores it, so switching away and
+  // back keeps the dial where it was left. Clamped on read: a hand-edited store
+  // cannot put the widget in a state the layout has no colour for.
+  let widgetFrost = 55;
+  try{ var _scWFrost = parseInt(localStorage.getItem('sidecut_widgetFrost'), 10); if(!isNaN(_scWFrost) && _scWFrost >= 0 && _scWFrost <= 100) widgetFrost = _scWFrost; }catch(_eWFR){ }
   // 71.5 - the widget's playing bars (the little "heartbeat" beside the artist)
   // are optional. Settings > Widget owns this flag; it is stored on the device,
   // it rides to the native widget in the theme payload every state push already
@@ -32802,11 +32871,72 @@ function _fallbackCopy(text){
     // for the next beat (this is the same push the theme buttons use).
     try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_){ }
   }
+  // 80.6 - THE GLASS. A frosted preset is a plain colour description; this turns
+  // it into the thing the widget paints: an ARGB panel whose opacity and whose
+  // whiteness both follow widgetFrost, plus the two CSS colours the Settings
+  // preview needs (CSS has no #AARRGGBB - it is #RRGGBBAA - so the preview must
+  // not be handed the string the widget gets).
+  //
+  // The first stop is mixed further toward white than the second on purpose: a
+  // panel that is evenly milky reads as a flat sheet, and the 160deg preview
+  // gradient plus the native 200px diagonal gradient both get a soft lit corner.
+  function scFrostHexToRgb(h){
+    h = String(h || '').replace('#', '');
+    if(h.length === 8) h = h.slice(2);   // #AARRGGBB -> RRGGBB
+    if(h.length !== 6 || !/^[0-9a-fA-F]{6}$/.test(h)) return [255, 255, 255];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function scFrostMixTowardWhite(rgb, amount){
+    return [Math.round(rgb[0] + (255 - rgb[0]) * amount),
+            Math.round(rgb[1] + (255 - rgb[1]) * amount),
+            Math.round(rgb[2] + (255 - rgb[2]) * amount)];
+  }
+  function scFrostArgb(rgb, alpha){
+    var a = Math.max(0, Math.min(255, Math.round(alpha))).toString(16);
+    if(a.length < 2) a = '0' + a;
+    var p = function(n){ var s = n.toString(16); return s.length < 2 ? '0' + s : s; };
+    return '#' + a.toUpperCase() + p(rgb[0]).toUpperCase() + p(rgb[1]).toUpperCase() + p(rgb[2]).toUpperCase();
+  }
+  function scFrostGlass(base){
+    var k = Math.max(0, Math.min(100, parseInt(widgetFrost, 10) || 0)) / 100;
+    // 0.44 of a white-ish panel is already a readable dull glass; 0.88 is a pane
+    // you can barely see through. Both ends keep the wallpaper as a tint.
+    var alpha = (0.44 + 0.44 * k) * 255;
+    var c1 = scFrostMixTowardWhite(scFrostHexToRgb(base.bg1), 0.12 + 0.28 * k);
+    var c2 = scFrostMixTowardWhite(scFrostHexToRgb(base.bg2), 0.04 + 0.14 * k);
+    var out = Object.assign({}, base);
+    out.bg1 = scFrostArgb(c1, alpha);
+    out.bg2 = scFrostArgb(c2, alpha);
+    out.css1 = 'rgba(' + c1[0] + ',' + c1[1] + ',' + c1[2] + ',' + (alpha / 255).toFixed(3) + ')';
+    out.css2 = 'rgba(' + c2[0] + ',' + c2[1] + ',' + c2[2] + ',' + (alpha / 255).toFixed(3) + ')';
+    out.glass = true;
+    out.frost = Math.round(k * 100);
+    return out;
+  }
+  // The dial. `commit` is false while a finger is on the slider (the preview
+  // moves with every pixel) and true when it lifts (the widget itself is pushed,
+  // so a drag costs one bridge call rather than sixty).
+  function setWidgetFrost(v, commit){
+    var n = parseInt(v, 10);
+    if(isNaN(n)) n = 55;
+    widgetFrost = Math.max(0, Math.min(100, n));
+    var fv = $('widgetFrostValue');
+    if(fv) fv.textContent = widgetFrost + '%';
+    try{ renderWidgetPreview(); }catch(_eFP){ }
+    if(commit){
+      try{ localStorage.setItem('sidecut_widgetFrost', String(widgetFrost)); }catch(_eFSt){ }
+      try{ pushWidgetState(widgetTrack, widgetPlaying); }catch(_eFS){ }
+    }
+  }
   function getWidgetTheme(){
     // 80.3.6 - the base is either the preset the reader picked, or the app's own
     // theme. Custom colours still apply on top of both: following the theme is a
     // starting point, not a lock.
-    const _wt = applyWidgetCustom(widgetFollow ? widgetThemeFromApp() : (WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.ocean));
+    let _wt = applyWidgetCustom(widgetFollow ? widgetThemeFromApp() : (WIDGET_THEMES[widgetThemeKey] || WIDGET_THEMES.ocean));
+    // 80.6 - the frosted presets leave this function as ARGB with the dial's
+    // opacity and milk already in them. Everything else leaves untouched, which
+    // is why 80.5.2's widgets look exactly as they did.
+    try{ if(_wt && _wt.glass === true) _wt = scFrostGlass(_wt); }catch(_eGlass){ }
     // 71.5 - the switch travels with the colours: every push (state, theme
     // change, and the battery-saving dim) already sends this object, so the
     // native widget learns the answer with no extra bridge call.
