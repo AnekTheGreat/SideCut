@@ -1408,13 +1408,22 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   overflow-x: auto !important;
-  scroll-behavior: auto;
+  overflow-y: hidden;
+  /* 80.6.2 - SMOOTH, IN THE ONLY PLACE CSS CAN MAKE IT SO. Touch scrolling is the
+     platform's own momentum either way; scroll-behavior is what the tab-centring
+     scroll asks for, so opening a tab glides instead of jumping. */
+  scroll-behavior: smooth;
   overscroll-behavior-x: contain;
-  /* 80.4 - the drag belongs to the strip. pan-x stops the browser turning a
-     sideways drag into a page scroll, proximity snap settles it on a tab instead
-     of between two, and scroll-padding lets a tab sit flush at the ends. */
+  /* 80.4 - the drag belongs to the strip: pan-x stops the browser turning a
+     sideways drag into a page scroll, and scroll-padding lets a tab sit flush at
+     the ends.
+     80.6.2 - THE SNAP IS GONE. Proximity snap with a centred point re-engaged
+     during a slow drag, so the strip kept tugging itself out from under the
+     finger - that is what "not smooth" felt like. A free strip keeps the
+     platform's momentum and stays where the finger leaves it; scTabIntoView()
+     still centres the tab you open, which is the part that was ever wanted. */
   touch-action: pan-x;
-  scroll-snap-type: x proximity;
+  scroll-snap-type: none;
   scroll-padding-inline: 10px;
 }
 #settingsTabStrip > .tab{
@@ -1422,8 +1431,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  scroll-snap-align: center;
-  scroll-margin-inline: 10px;
+  /* 80.6.2 - a drag that starts on a tab belongs to the strip: pan-x lets the
+     gesture scroll the row, and refusing the native drag and the text selection
+     stops a long press from turning the tab into a ghost image mid-swipe. */
+  touch-action: pan-x;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 /* ─── Settings pane scrollbar ─── */
@@ -7205,6 +7218,7 @@ window.__scTime12 = function(v){
 // 80.5.2 - ONE BUILD ON THE SCREEN
 // 80.6 - THE FROSTED GLASS AND ITS DIAL
 // 80.6.1 - THE GLASS IS ICE
+// 80.6.2 - PLAIN NOTES AND A FREE STRIP
 var SC_IS_WEB = (function(){
   try{
     var _cap = (typeof window !== 'undefined') ? window.Capacitor : null;
@@ -16199,7 +16213,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.1';
+  const APP_VERSION = '80.6.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16848,6 +16862,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.2', date: 'October 28, 2026 · 7:18 PM EDT', title: 'Plain notes, and a settings strip that scrolls like paper', items: [
+    'The patch notes are just words again. Some notes carried emphasis, and every panel escaped them before painting &mdash; so the tags turned up on screen as the literal characters instead of the sentence they were wrapped around. The emphatic words stay, the brackets are gone, and that holds for every note in the history, not only the new ones.',
+    'The same pass decodes the handful of named characters the notes use, so a dash is a dash instead of the name of a dash.',
+    'The <b>settings tabs</b> scroll properly now. The strip used to re-snap itself under your finger on a slow drag; it moves with the momentum your phone gives it and stays where you leave it, and the tab you open still glides to the centre.',
+    'Nothing else moved &mdash; the widget, the glass, the dial, the player and the library are exactly as they were.',
+  ]},
   { version: '80.6.1', date: 'October 28, 2026 · 7:06 PM EDT', title: 'The glass is ice: cooler, brighter, with a rim and a sheen', items: [
     'The glass is <b>ice</b> now: pale blue where the light hits it, cool steel at the other end, and a <b>cyan accent</b> on the playing bars instead of a flat blue. Thicker frost reads colder, not chalkier &mdash; the panel lifts its blue as the dial goes up.',
     'The <b>Frost dial</b> still runs 0 to 100. Its ends moved with the palette: the thinnest setting is a touch milkier than it was, so the type stays readable on a busy photo, and the thickest is still see-through.',
@@ -20366,9 +20386,44 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 80.0 - a note can be one sentence plus a longer explanation. The sentence is
   // the bullet; the explanation opens under it. A bare string still works, so
   // every entry before 80.0 renders exactly as it did.
+  // 80.6.2 - A NOTE IS A SENTENCE, NOT MARKUP. Notes are allowed to carry
+  // emphasis, and 171 of them in this page do - but every renderer escapes what it
+  // paints (correctly: notes are data), so the tags arrived on screen as the
+  // literal characters and `&mdash;` arrived as its own name.
+  //
+  // This strips the handful of tags the changelog uses, decodes the handful of
+  // entities it uses, and leaves the escaping to the renderer that was already
+  // doing it. `&amp;` is decoded LAST, so a note that legitimately says "&amp;lt;"
+  // cannot end up as a tag after the pass.
+  function scNoteText(s){
+    var t = String(s == null ? '' : s);
+    t = t.replace(/<\s*br\s*\/?\s*>/gi, ' ');
+    t = t.replace(/<\/?\s*(?:b|strong|i|em|code|small|span)\b[^>]*>/gi, '');
+    // A note may TALK about a tag - "the seam is the <svg> inside the button".
+    // Those keep their name and lose their brackets, so the sentence stays true
+    // and the screen never shows markup. Only names a note is likely to mention
+    // are matched, so an ordinary "5 < 6" is left alone.
+    t = t.replace(/<\/?\s*(?:svg|div|input|audio|video|img|path|style|script)\b[^>]*>/gi, '$1');
+    // Placeholders too: a note may say lyricWords_<track> or "<Song> - Single",
+    // and those brackets look like markup on screen even though the word inside
+    // is the point. The word stays, the brackets go. A bare comparison ("5 < 6")
+    // is left alone because it has no closing bracket to pair with.
+    t = t.replace(/<\/?\s*([A-Za-z][\w .#'-]{0,23})\s*\/?>/g, '$1');
+    var ents = {
+      '&mdash;': '\u2014', '&ndash;': '\u2013', '&rarr;': '\u2192', '&larr;': '\u2190',
+      '&hellip;': '\u2026', '&middot;': '\u00b7', '&nbsp;': ' ', '&quot;': '"',
+      '&#39;': "'", '&apos;': "'", '&lt;': '<', '&gt;': '>'
+    };
+    t = t.replace(/&(?:[a-zA-Z]+|#\d+);/g, function(m){
+      var k = m.toLowerCase();
+      return Object.prototype.hasOwnProperty.call(ents, k) ? ents[k] : m;
+    });
+    t = t.replace(/&amp;/gi, '&');
+    return t;
+  }
   function scClBrief(it){
-    if(it && typeof it === 'object') return String(it.brief || '');
-    return String(it == null ? '' : it);
+    if(it && typeof it === 'object') return scNoteText(it.brief || '');
+    return scNoteText(it == null ? '' : it);
   }
   function changelogRich(entry){
     // items stays an array of STRINGS, one sentence each, because every gate and
