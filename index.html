@@ -7175,6 +7175,56 @@ window.__scTime12 = function(v){
   var h12 = h % 12; if(!h12) h12 = 12;
   return h12 + ':' + (mi < 10 ? '0' + mi : String(mi)) + ' ' + ap;
 };
+// ---- 80.5 - WHICH PAGE THIS IS, AND WHICH BUILD ------------------------------
+// SideCut reaches a phone three ways, and since this release only the installed
+// ones convert:
+//
+//   * THE FULL APK (sideload / OTA): every converter, every source. No flag.
+//   * THE STORE BUILD: patch-playbuild.py injects window.__PLAY_BUILD__, and the
+//     page leaves out the converters, the downloader and every video-host path.
+//   * THE WEB PAGE (this, served from github.io): the same build as the store
+//     one - the files you already have, no tools - unless it was opened with
+//     `?full`. The full web app is the same page with that one word: /full/ is
+//     the short link, and it replaces itself with ../?full=1.
+//
+// THE INSTALLED APP IS NEVER A WEB PAGE. The WebView serves this bundle from
+// https://localhost, which is http(s) as well, so the test cannot be the protocol:
+// it is Capacitor's isNativePlatform() first, then the host. A loopback, an IP
+// literal or a .local name is a machine talking to itself (a local preview), not
+// the site. A context that cannot answer at all keeps the tools - the failure
+// mode of this switch has to be the app people already have, never a player that
+// quietly lost its converter.
+var SC_IS_WEB = (function(){
+  try{
+    var _cap = (typeof window !== 'undefined') ? window.Capacitor : null;
+    if(_cap && typeof _cap.isNativePlatform === 'function' && _cap.isNativePlatform()) return false;
+    if(_cap && typeof _cap.getPlatform === 'function'){
+      var _pf = _cap.getPlatform();
+      if(_pf === 'android' || _pf === 'ios') return false;
+    }
+    var _proto = String((typeof location !== 'undefined' && location.protocol) || '');
+    if(_proto !== 'http:' && _proto !== 'https:') return false;   // file:, capacitor:, blob:
+    var _host = String((typeof location !== 'undefined' && location.hostname) || '').toLowerCase();
+    if(!_host) return false;
+    if(_host === 'localhost' || _host === '127.0.0.1' || _host === '::1' || _host === '[::1]') return false;
+    if(/^\d{1,3}(\.\d{1,3}){3}$/.test(_host)) return false;
+    if(/\.local$/.test(_host)) return false;
+    return true;
+  }catch(_eScWeb){ return false; }
+})();
+// `?full`, `?full=1`, `?build=full`, or a /full/ pathname. The loader page at
+// /full/index.html leaves the app at ../?full=1, but it is accepted by path as
+// well so the door keeps working if it is ever served without its redirect.
+var SC_WEB_FULL = !SC_IS_WEB ? false : (function(){
+  try{
+    var _q = String(location.search || '').toLowerCase();
+    if(/(^|[?&])full(=|&|$)/.test(_q)) return true;
+    if(/(^|[?&])build=full(&|$)/.test(_q)) return true;
+    if(/\/full(\/|$|\.html)/.test(String(location.pathname || '').toLowerCase())) return true;
+  }catch(_eScFull){}
+  return false;
+})();
+
 // ---- Build switch: Play Store build vs sideload/OTA build --------------------
 // CI (patch-playbuild.py) injects window.__PLAY_BUILD__ = true into the Play
 // AAB's www/index.html before this script runs; the sideload/OTA build never
@@ -7182,7 +7232,16 @@ window.__scTime12 = function(v){
 // Play build the acquisition layer reads openly-licensed catalogs (Internet
 // Archive netlabel / Creative Commons collections) instead of extracting
 // video-host streams, and the YouTube converter card is hidden entirely.
-var SC_IS_PLAY = !!(typeof window !== 'undefined' && window.__PLAY_BUILD__);
+// The store build itself, and nothing else: Billing, the store's update channel
+// and the licensed-source layer are Play's own, and a web page has none of them.
+var SC_PLAY_NATIVE = !!(typeof window !== 'undefined' && window.__PLAY_BUILD__);
+// ...and this is the flag every GATE has always read. It means "this build offers
+// no download", which is the store build AND, since 80.5, a plain web page. One
+// definition rather than twenty edits: the removal block below and every hard
+// gate in the page (a converter that is somehow called, a download job, the
+// licensed-source search) key off this, so the web page inherits a behaviour that
+// has been shipping since 60.5 instead of a second, newer, less-tested hider.
+var SC_IS_PLAY = SC_PLAY_NATIVE || (SC_IS_WEB && !SC_WEB_FULL);
 if(SC_IS_PLAY){
   try{
     // 80.3.4 - REMOVED, NOT HIDDEN. This build offers no download, so it no longer
@@ -7238,6 +7297,28 @@ if(SC_IS_PLAY){
       // conversion tools: a build that offers no download keeps no downloader.
       if(_el.nextElementSibling && _el.nextElementSibling.parentNode) _el.nextElementSibling.parentNode.removeChild(_el.nextElementSibling);
     });
+    // 80.5 - THE WEB PAGE SAYS WHERE THE TOOLS WENT. A page that silently drops a
+    // menu reads as broken, so the one thing it adds is the door to the full web
+    // app. ONLY the web page: an installed store build must never point at a
+    // converter, not even with a link, because that is the swap its review was
+    // about. `./full/` is served beside this page.
+    if(SC_IS_WEB){
+      try{
+        var _gsh = document.getElementById('getSongsHowToDisc');
+        if(_gsh && !document.getElementById('scFullWebNote')){
+          var _fullNote = document.createElement('div');
+          _fullNote.id = 'scFullWebNote';
+          _fullNote.style.cssText = 'margin-top:10px; padding:10px 12px; border-radius:10px;'
+            + ' border:1px solid color-mix(in srgb, var(--coral) 42%, var(--line));'
+            + ' background:color-mix(in srgb, var(--coral) 9%, transparent);'
+            + ' font-size:11.5px; line-height:1.55; color:var(--ink-dim);';
+          _fullNote.innerHTML = '<b style="color:var(--coral);">Converters are not part of the web page.</b>'
+            + ' <span>The full web app has them \u2014 Spotify, YouTube, MP4 and Expand URL:'
+            + ' <a href="./full/" style="color:var(--coral); font-weight:600; text-decoration:underline;">open SideCut full \u2197</a>.</span>';
+          _gsh.appendChild(_fullNote);
+        }
+      }catch(_eScFullNote){}
+    }
     // 80.3.4 - the summary line that used to be rewritten here ("Spotify ·
     // YouTube · MP4 · Expand URL" -> "MP4 · Expand URL") is gone with the
     // section it labelled, so there is nothing left to rewrite and no tool named on
@@ -9627,7 +9708,7 @@ function getApiHeaders() {
     // TOUCHED AT ALL: it has Billing, neither sentence changes, and nothing below
     // runs for it.
     const promise = $('donatePromise');
-    if(promise && !SC_IS_PLAY){
+    if(promise && !SC_PLAY_NATIVE){
       const tierList = donateTierList();
       if(tierList){
         const intro = $('donateIntro');
@@ -9679,7 +9760,7 @@ function getApiHeaders() {
       // THE STORE BUILD IS NOT A PART OF THIS AT ALL. A copy installed from
       // Google Play has Billing, so it never looks a card page up and never names
       // one - every sentence below is then exactly what 70.1.3 shipped.
-      const web = SC_IS_PLAY ? '' : donateUrlFor(amt);
+      const web = SC_PLAY_NATIVE ? '' : donateUrlFor(amt);
       if(web){
         msg.style.color = 'var(--coral)';
         msg.textContent = 'Google Play only sells inside the copy it distributed, so this tip is opening a secure card page in your browser for $' +
@@ -9703,7 +9784,7 @@ function getApiHeaders() {
       // that has one never arrives here - the block above returned already.
       const reason = await playBillingUnavailableReason();
       msg.style.color = 'var(--ink-dim)';
-      const tierList = SC_IS_PLAY ? '' : donateTierList();
+      const tierList = SC_PLAY_NATIVE ? '' : donateTierList();
       msg.textContent = (reason || 'Tips are processed through Google Play and only work inside the SideCut app installed from Play.') +
         (tierList ? ' Tip ' + tierList + ' to pay by card here, or open the Play Store so you can install that copy.' : ' Opening the Play Store so you can install that copy.');
       if(PAYMENT_CONFIG.playStoreListing) scOpenExternal(PAYMENT_CONFIG.playStoreListing);
@@ -16087,7 +16168,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.4';
+  const APP_VERSION = '80.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16736,6 +16817,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.5', date: 'October 28, 2026 · 3:39 PM EDT', title: 'The web page is the files-you-own build, and the full web app has a link of its own', items: [
+    'The <b>web page</b> is the build for the files you already have: the tool cards that fetched songs are not part of it, and Discover’s how-to now opens at <b>+ Add songs → + Files</b>.',
+    '[FULL] The <b>full web app</b> is one link away: <b>/full</b> opens this same page with the Spotify, YouTube, MP4 and Expand URL tools back — no install, nothing to set up.',
+    '[FULL] The <b>full APK</b> keeps every tool exactly as it was. The page decides from where it is served, and an installed app is never a web page, so nothing about a sideloaded or over-the-air install changed.',
+    'The version line names the build you are running — <b>Full</b>, <b>Play</b> or <b>Web</b> — so a tool that seems to be missing can be checked against the build actually installed.',
+  ]},
   { version: '80.4', date: 'October 27, 2026 · 10:46 PM EDT', title: 'One dot in the theme list, a rounded widget cover, and taller tabs that drag', items: [
     'The theme list shows <b>one round dot</b> again. The three-band chip that appeared last release read as a strip of random colours on a phone, so it is gone and the dot is back — the accent, or the accent-and-second gradient when the theme moves.',
     'That theme is called <b>Lagoon</b> now, because the palette is a deep teal-black with a mint accent over aqua and a theme should be named after what it looks like. Same theme, same key underneath: if you were wearing it, you still are.',
@@ -24394,7 +24481,7 @@ function _fallbackCopy(text){
       // CapacitorHttp first — native, bypasses CORS entirely
       var _capHttp = null;
       try{ var _cap = window.Capacitor && window.Capacitor.Plugins; _capHttp = _cap && _cap.CapacitorHttp; }catch(_e){}
-      var _scOtaDir = SC_IS_PLAY ? 'ota-play' : 'ota';
+      var _scOtaDir = SC_PLAY_NATIVE ? 'ota-play' : 'ota';
       var _otaBase = 'https://anekthegreat.github.io/SideCut/' + _scOtaDir + '/';
       var rawManifest = scBust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/' + _scOtaDir + '/updates.json');
       var githubPagesManifest = scBust(_otaBase + 'updates.json');
@@ -24449,7 +24536,7 @@ function _fallbackCopy(text){
           return { newVersion: man.version };
         }
         // Direct download via Updater
-        var zipUrl = scBust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/' + (SC_IS_PLAY ? 'ota-play' : 'ota') + '/update.zip');
+        var zipUrl = scBust('https://raw.githubusercontent.com/AnekTheGreat/SideCut/main/' + (SC_PLAY_NATIVE ? 'ota-play' : 'ota') + '/update.zip');
         toast('Downloading SideCut ' + man.version + '…', 3000);
         try{
           var bundle = await Updater.download({ url: zipUrl, version: String(man.version) });
@@ -24522,7 +24609,7 @@ function _fallbackCopy(text){
   // truth: latest, or "new version available — reload to get it" (the PWA's
   // service worker will pick up the new shell automatically on that reload).
   try{
-    var resp = await fetch(scBust('https://anekthegreat.github.io/SideCut/' + (SC_IS_PLAY ? 'ota-play' : 'ota') + '/updates.json'));
+    var resp = await fetch(scBust('https://anekthegreat.github.io/SideCut/' + (SC_PLAY_NATIVE ? 'ota-play' : 'ota') + '/updates.json'));
     if(!resp || !resp.ok) throw new Error('HTTP ' + (resp ? resp.status : 'no response'));
     var man = await resp.json();
     var cur = (typeof APP_VERSION !== 'undefined') ? String(APP_VERSION) : (window.__SC_VERSION || '');
@@ -37883,7 +37970,7 @@ function _fallbackCopy(text){
           return;
         }
       }
-      $('currentVersionLabel').textContent = `SideCut v${APP_VERSION} · ${SC_IS_PLAY ? 'Play build — licensed sources' : 'Full build — all sources'}`;
+      $('currentVersionLabel').textContent = `SideCut v${APP_VERSION} · ${SC_IS_WEB ? (SC_IS_PLAY ? 'Web build — your files only' : 'Web build — full') : (SC_IS_PLAY ? 'Play build — licensed sources' : 'Full build — all sources')}`;
       // Confirm the bundle from the app itself, not only from the OTA client: a
       // bundle whose updater script did not load used to go unconfirmed, and an
       // unconfirmed bundle is rolled back by the native updater even though the
