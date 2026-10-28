@@ -1150,6 +1150,29 @@
     50%{ background-position: -50% 50%; }
     100%{ background-position: 150% 50%; }
   }
+  /* 80.6.3 - THE LIQUID BAND. iOS glass is not a still pane: it carries a specular
+     highlight that travels across it as the thing behind it moves. This is that
+     highlight in the one place this app can draw a filter - the Settings preview.
+     A slow 9s loop, at rest at either end so the restart is not a jump, and switched
+     OFF by both Reduce-motion paths, where it settles mid-pane as a still sheen.
+     (The home-screen widget draws a colour, not a filter, so it cannot carry this.) */
+  .sc-glass-liquid{
+    position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background: linear-gradient(112deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.34) 41%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0) 60%);
+    background-size: 320% 320%;
+    background-position: 128% 50%;
+    mix-blend-mode: screen;
+    animation: scGlassLiquid 9s ease-in-out infinite;
+  }
+  @keyframes scGlassLiquid{
+    0%{ background-position: 128% 50%; }
+    55%{ background-position: -28% 50%; }
+    100%{ background-position: 128% 50%; }
+  }
+  body.sandbox-reduce-motion .sc-glass-liquid{ animation: none; background-position: 60% 50%; }
+  @media (prefers-reduced-motion: reduce){
+    .sc-glass-liquid{ animation: none; background-position: 60% 50%; }
+  }
 
 
   #npInfo{ flex:1; min-width:0; position:relative; cursor:pointer; }
@@ -5262,7 +5285,7 @@ body.sc80-cloud .action-strip::before{
           <span id="widgetFrostValue" style="font-size:12px; color:var(--ink-dim);">55%</span>
         </div>
         <input type="range" id="widgetFrostSlider" min="0" max="100" step="1" value="55" style="width:100%;">
-        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; line-height:1.5;">How much milk is in the glass. Left is thin and clear &mdash; the wallpaper shows through and tints the panel; right is a soft, nearly solid pane. Drag it and the preview below moves with your finger; let go and the widget on your home screen takes the same setting.</div>
+        <div style="font-size:11px; color:var(--ink-dim); margin-top:6px; line-height:1.5;">How much body is in the glass. Left is nearly clear &mdash; the wallpaper shows through and colours the panel; right is a soft pane you can still see through, and its type is easiest to read on a busy or very dark wallpaper. Drag it and the preview below moves with your finger; let go and the widget on your home screen takes the same setting.</div>
       </div>
       <div id="widgetBarsRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
         <label for="widgetBarsToggle" style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
@@ -7219,6 +7242,7 @@ window.__scTime12 = function(v){
 // 80.6 - THE FROSTED GLASS AND ITS DIAL
 // 80.6.1 - THE GLASS IS ICE
 // 80.6.2 - PLAIN NOTES AND A FREE STRIP
+// 80.6.3 - THE GLASS IS LIQUID
 var SC_IS_WEB = (function(){
   try{
     var _cap = (typeof window !== 'undefined') ? window.Capacitor : null;
@@ -9315,15 +9339,18 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
     // wallpaper does to it, and the blur is the one thing the preview can show
     // that the home screen cannot.
     if(t.glass === true){
-      const blur = 8 + Math.round((t.frost || 0) * 0.18);
-      const edge = (0.22 + (t.frost || 0) * 0.0034).toFixed(3);
-      const rim = (0.50 + (t.frost || 0) * 0.0035).toFixed(3);
+      // 80.6.3 - less frost means less blur as well as less white: the blur grows
+      // more slowly with the dial and the backdrop is pushed harder, so the thinner
+      // pane shows saturated colour instead of a grey wash.
+      const blur = 6 + Math.round((t.frost || 0) * 0.12);
+      const edge = (0.20 + (t.frost || 0) * 0.0030).toFixed(3);
+      const rim = (0.55 + (t.frost || 0) * 0.0030).toFixed(3);
       pv.style.background = 'transparent';
       pv.style.padding = '0';
-      pv.innerHTML = '<div style="position:relative; border-radius:16px; overflow:hidden; box-shadow:0 10px 26px rgba(0,0,0,0.38);">' +
+      pv.innerHTML = '<div style="position:relative; border-radius:16px; overflow:hidden; box-shadow:0 12px 30px rgba(0,0,0,0.34);">' +
         '<div style="position:absolute; inset:0; background:linear-gradient(135deg,#FF9BB6 0%,#8FD3FF 36%,#7CE3C0 60%,#A996FF 82%,#FFD98A 100%);"></div>' +
-        '<div style="position:relative; padding:14px; border-radius:16px; -webkit-backdrop-filter:blur(' + blur + 'px) saturate(1.35) brightness(1.06); backdrop-filter:blur(' + blur + 'px) saturate(1.35) brightness(1.06); background:linear-gradient(160deg,' + t.css1 + ',' + t.css2 + '); box-shadow:inset 0 1px 0 rgba(255,255,255,' + rim + '), inset 0 0 0 1px rgba(255,255,255,' + edge + ');">' +
-        '<div style="position:absolute; inset:0; border-radius:16px; pointer-events:none; background:linear-gradient(135deg, rgba(255,255,255,0.58) 0%, rgba(255,255,255,0.12) 30%, rgba(255,255,255,0) 52%);"></div>' +
+        '<div style="position:relative; padding:14px; border-radius:16px; -webkit-backdrop-filter:blur(' + blur + 'px) saturate(1.9) contrast(1.04) brightness(1.04); backdrop-filter:blur(' + blur + 'px) saturate(1.9) contrast(1.04) brightness(1.04); background:linear-gradient(160deg,' + t.css1 + ',' + t.css2 + '); box-shadow:inset 0 1px 0 rgba(255,255,255,' + rim + '), inset 0 -1px 0 rgba(255,255,255,' + edge + '), inset 0 0 0 1px rgba(255,255,255,' + edge + ');">' +
+        '<div class="sc-glass-liquid"></div>' +
         '<div style="position:relative;">' + scWidgetPreviewBody(t) + '</div></div></div>';
       return;
     }
@@ -16213,7 +16240,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.2';
+  const APP_VERSION = '80.6.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16862,6 +16889,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.3', date: 'October 28, 2026 · 7:49 PM EDT', title: 'Liquid glass: thinner, clearer, and it moves', items: [
+    'The glass is <b>thinner</b>: the pane runs from about a third opaque to just over a half, where it used to run from a half to nearly nine tenths. The wallpaper is no longer a tint behind a sheet &mdash; it is what you look through.',
+    'And there is <b>less milk</b> in it. The panel is mixed toward white half as much, so what comes through is colour with a cool cast on top instead of a white haze. Thicker still reads colder, not chalkier.',
+    'The <b>highlight moves</b> now. The fixed corner sheen is a specular band that drifts across the pane on a slow loop, and it sits still for anyone who has Reduce motion on. That is the Settings preview, because the home-screen widget draws a colour and cannot carry a filter &mdash; the see-through part is what reaches your wallpaper.',
+    'The preview is a <b>lens</b>: a bright rim across the top, a soft one under the bottom, and a harder colour push behind it so the thinner glass has something to show. The type is a shade deeper to hold up at the new transparency.',
+    'The <b>dial</b> is untouched and still remembers where you leave it. Its caption is honest about the trade now: the thinner end is clearer, the thicker end is easier to read.',
+    'Nothing else moved &mdash; the eighteen other presets, fine-tune, follow-the-app-theme, the idle saver and the app\'s own Liquid glass mode are exactly as they were.',
+  ]},
   { version: '80.6.2', date: 'October 28, 2026 · 7:18 PM EDT', title: 'Plain notes, and a settings strip that scrolls like paper', items: [
     'The patch notes are just words again. Some notes carried emphasis, and every panel escaped them before painting &mdash; so the tags turned up on screen as the literal characters instead of the sentence they were wrapped around. The emphatic words stay, the brackets are gone, and that holds for every note in the history, not only the new ones.',
     'The same pass decodes the handful of named characters the notes use, so a dash is a dash instead of the name of a dash.',
@@ -32839,7 +32874,7 @@ function _fallbackCopy(text){
     // working on top of it. A light panel with dark type, because a veil that
     // goes from thin to thick is always lighter than a wallpaper - the type
     // never has to change colour with the dial.
-    frost:  { label: 'Frosted glass', glass: true, bg1: '#E4F1FF', bg2: '#A9C6E6', title: '#0A1A2E', artist: '#39557A', accent: '#46C8F5', accentText: '#062033', pill: '#FFFFFF', pillText: '#0A1A2E' },
+    frost:  { label: 'Frosted glass', glass: true, bg1: '#E4F1FF', bg2: '#96BCE2', title: '#07182C', artist: '#2F4A6E', accent: '#46C8F5', accentText: '#062033', pill: '#FFFFFF', pillText: '#07182C' },
     // 80.3.7 - SIX BRIGHT ONES, FIRST. Every preset below this block is a dark
     // palette, which is what the widget shipped with and never grew out of. These
     // are light gradients with a dark title, a dark artist line and a saturated
@@ -32973,11 +33008,15 @@ function _fallbackCopy(text){
   }
   function scFrostGlass(base){
     var k = Math.max(0, Math.min(100, parseInt(widgetFrost, 10) || 0)) / 100;
-    // 0.44 of a white-ish panel is already a readable dull glass; 0.88 is a pane
-    // you can barely see through. Both ends keep the wallpaper as a tint.
-    var alpha = (0.52 + 0.36 * k) * 255;
-    var c1 = scFrostIce(scFrostMixTowardWhite(scFrostHexToRgb(base.bg1), 0.30 + 0.25 * k), k);
-    var c2 = scFrostIce(scFrostMixTowardWhite(scFrostHexToRgb(base.bg2), 0.06 + 0.20 * k), k);
+    // 80.6.3 - A LENS, NOT A SHEET. 80.6.1 ran 0.52 -> 0.88 with up to 0.55 of the
+    // panel mixed toward white, which is a milky pane however cool it is: the
+    // wallpaper was a tint behind it. The range is 0.32 -> 0.62 now and the white
+    // mix is roughly halved, so what you see through it is COLOUR with a cool cast
+    // on top rather than white haze. Both ends are still translucent; the thick end
+    // is no longer nearly solid, which is the point.
+    var alpha = (0.32 + 0.30 * k) * 255;
+    var c1 = scFrostIce(scFrostMixTowardWhite(scFrostHexToRgb(base.bg1), 0.16 + 0.18 * k), k);
+    var c2 = scFrostIce(scFrostMixTowardWhite(scFrostHexToRgb(base.bg2), 0.02 + 0.09 * k), k);
     var out = Object.assign({}, base);
     out.bg1 = scFrostArgb(c1, alpha);
     out.bg2 = scFrostArgb(c2, alpha);
