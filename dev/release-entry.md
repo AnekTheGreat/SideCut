@@ -1,31 +1,37 @@
-## 80.5.1 ({{STAMP}}): the web page points at its own full build from the About row
+## 80.5.2 ({{STAMP}}): nothing on screen names another build
 
-- **WHAT THIS IS.** 80.5 made the plain web page the build without the converters and gave the full web
-  app its own address (`/full/`, which lands on `?full=1`). This is the follow-up the owner said yes to:
-  the page that drops the tools now says where they are, in the place a reader actually goes to find out
-  which build they are running - **Settings → More → About & updates**, the same card whose header reads
-  `SideCut v80.5.1 · Web build — your files only`.
-- **ONE ROW, ONE LINK, NO SCRIPT NAVIGATION.** It is an `<a href="./full/">` appended to that card, not a
-  button that calls `location`: the browser's own affordances keep working - long-press to copy the
-  address, open in a new tab, Back. The door at `/full/` then turns it into `../?full=1`, so the address a
-  reader can copy is either spelling.
-- **GATED ON `SC_IS_WEB && SC_IS_PLAY`** - "a browser, not in full mode". The store AAB and the sideloaded
-  APK are both `SC_IS_WEB` false; a web page opened with `?full` has `SC_IS_PLAY` false because it already
-  has the tools, so the link would only point at the page it is on. That gate is also what keeps it out of
-  an installed build: a store copy that links to a page full of converters is the swap its review was
-  about.
-- **THE NOTE SURVIVES THE FILTER IT HAS TO.** The changelog item is shown by the build it is about, so it
-  names no converter, no download and no source - only a row and a link to "the other build". The existing
-  no-tools filter (`scHidesOnPlay`) therefore leaves it standing on the web page, and the driver asserts
-  that rather than assuming it.
-- **VERIFIED.** `python3 dev/patch-8051.py` on the 80.5 page (1 step), then `--check` (0 steps); every
-  inline script block parses; `sc-8051-check.cjs` passes and fails on the 80.5 page it replaces. It runs
-  the page's own block against a stub DOM in four contexts - the web page without full mode (**one row,
-  `href="./full/"`, naming the song tools**), the web page in full mode (**none**), an installed build
-  (**none**), a store build (**none**), plus a second run that must not add a second row - and checks the
-  changelog filter keeps the note on the no-tools build. OTA: `ota/` **{{ROOT}}** bytes and `ota-play/`
-  **{{PLAY}}** bytes, both `--check`s OK at v80.5.1, and the Play channel's notes still name no converter.
-- **WHAT IS NOT CLAIMED.** No browser was driven and no phone was used: the row's position and look in the
-  About card were not seen on a display, and the 80.5 door was not clicked through - the logic was run in a
-  `vm` and the pages were fetched over HTTP. No Android build was made; the APK, the widget and the native
-  code are untouched.
+- **THE OWNER'S ASK, VERBATIM.** *"don't mention the actual full version web or apk in the app or apk or
+  web, same thing in patch notes don't mention this"*. 80.5 and 80.5.1 had answered "where did the tools
+  go" by pointing at a second build; this release takes every one of those pointers out and leaves the
+  behaviour exactly as it shipped.
+- **THE TWO SIGNPOSTS ARE GONE, NOT HIDDEN.** The Discover card from 80.5 (`scFullWebNote`) and the About
+  & updates row from 80.5.1 (`scFullWebRow`) are removed by putting back the exact text they were inserted
+  into - the payload imports the modules that wrote them, so nothing of either can be left behind. Nothing
+  in the app links to `./full/` any more.
+- **THE VERSION LINE IS THE VERSION.** It read `SideCut v80.5.1 · Web build — your files only`, one of
+  four build names. It reads `SideCut v80.5.2` and stops. The one runtime sentence that named the store
+  build - the licensed-search failure - now says *"this copy"*.
+- **THE NOTES STOP NAMING BUILDS TOO.** 80.5.1's entry is deleted (it asked for a link that no longer
+  exists); 80.5 keeps only the note about the page itself and loses the three that named the full web app
+  and the full APK; and five older clauses lose the mention of "the full build", "the other build" or
+  "the Play build" (two of them in the same sentence pair). The driver runs the changelog filter for both
+  builds and searches every note each build can actually show, rather than trusting a grep of the source.
+- **THE DOOR STOPPED ADVERTISING ITSELF.** `/full/index.html` was a splash titled *"SideCut full — the
+  build with the converters"*. It is now a plain SideCut splash that replaces itself with `../?full=1`.
+  The address works exactly as before; it just no longer introduces itself as a second product, which is
+  what the app stopped doing an hour ago.
+- **WHAT DID NOT MOVE.** The switch, the removal and the door are untouched: the plain web page still
+  carries no converters, the installed builds still carry all of them, and `/full/` still opens the full
+  web app for anyone who knows the address. This release changes words and pointers, not behaviour - the
+  driver asserts that too (`SC_IS_PLAY`, the removal list and full mode are all still in the page).
+- **VERIFIED.** `python3 dev/patch-8052.py` on the 80.5.1 page (1 step), then `--check` (0 steps); every
+  inline script block parses; `sc-8052-check.cjs` passes **25/25** and fails on the 80.5.1 page it
+  replaces. It checks that both signposts are absent, that the version line is `SideCut v${APP_VERSION}`,
+  that the runtime message is neutral, that 80.5.1 is gone from the changelog and 80.5 keeps exactly one
+  note, and that no note either build renders matches `full web|full apk|full build|other build|play
+  build|web build|sidecut full`; plus that the door still redirects, still works with the script off, and
+  names no build. OTA: `ota/` **{{ROOT}}** bytes and `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at
+  v80.5.2, with the Play channel's notes free of any converter note.
+- **WHAT IS NOT CLAIMED.** No browser and no phone: nothing here was seen rendered. Engineering comments
+  in the source still explain the two-build architecture (`SC_IS_PLAY`, the store flag, the Play channel)
+  because a maintainer needs them; what a person using the app can see no longer mentions another copy.
