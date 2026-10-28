@@ -1,77 +1,61 @@
-## 80.3.7 ({{STAMP}}): ColorOS is on the theme wall, the badge themes come last, and the widget gets bright colours
+## 80.4 ({{STAMP}}): one dot in the theme list, a rounded widget cover, and taller tabs that drag
 
-- **THE OWNER'S ASK, VERBATIM.** *"where's the color os theme and all non badge themes should be
-  before the badge themes in line and make it more smooth and why are the widgits colors so dark make
-  them nice and fun, make the app nice and user friendly"*. Four asks; three of them turned out to be
-  one bug.
-- **"WHERE'S THE COLOR OS THEME" WAS AN ORDERING BUG, NOT A MISSING THEME.** 80.3.6 shipped the
-  ColorOS-inspired theme as **Prism**, last in object order, which put it at the bottom of the dynamic
-  group - *below `vortex`, a 200-badge reward*. The owner opened the wall, found a locked theme where
-  the new one should be, and reasonably concluded it was not there. 80.3.7 answers it at both ends:
-  the label is **ColorOS**, and badge rewards are no longer in line with anything.
-- **THE KEY DID NOT CHANGE.** The entry is still `prism`, and so is `dynamic:'prism'` - so a phone
-  that already picked it keeps its pick, its prepaint cache and its backdrop, and no saved theme
-  silently falls back to Coral. Renaming the key would have been the tidier diff and the worse
-  release.
-- **RECOLOURED TO WHAT COLOROS LOOKS LIKE.** `#07181A` / `#0E2A2C` with a mint accent `#37E6C4` and
-  aqua behind it `#7FD1FF`, and a curtain of two soft pools - mint above, aqua below, a dark teal core
-  - drifting on the existing `sd-dyn-drift` keyframes at 20 seconds (calmer than everything except
-  Abyss's 24, which is what a system wallpaper does). The blue-black of 80.3.6 is gone.
-- **THREE GROUPS, REWARDS LAST.** `renderThemeOptions()` used to sort by `rgb`/`dynamic` alone, so the
-  four badge rewards appeared wherever object order put them: Cinder, Quartz and Lumen at the end of
-  the static list, Vortex in the middle of the dynamic one. Now `reward` is its own group, printed
-  **after** both free groups - every theme you can pick today is above every theme you have to earn.
-  The rewards keep their `BADGE REWARD` / `N BADGES` tag and their live badge check; what they unlock
-  and how they unlock did not move.
-- **THE FRESH THEME COMES FIRST, AND LEAVES ON ITS OWN.** `fresh:true` on the entry puts ColorOS at the
-  top of its group and puts a `NEW` tag on its row. The flag lives on the theme, so the next release
-  drops the flag and the theme settles back into object order - there is no hand-maintained list to
-  forget to edit.
-- **THE CHIP SHOWS THE PALETTE.** The row's swatch was one dot of the accent, so two themes sharing an
-  accent and differing in background were indistinguishable. It is a 26x18 chip now: a third
-  background, a third accent, a third second accent - the three things a theme actually decides.
-- **THE WALL OPENS, AND A THEME SETTLES.** A group that opens staggers its rows in 14ms apart (capped
-  at ten rows), which is the difference between a list arriving and a list flashing; picking a theme
-  animates the sheet from 72% opacity to full over the app's existing view duration. Both read the
-  80.3.6 tokens (`--sc-t-fade`, `--sc-t-view`, `--sc-e-out`) rather than inventing numbers, both are
-  pure CSS on an existing element - no listener, no timer, no rAF - and both are switched off under
-  **Reduce motion**, either the Sandbox switch or the device's.
-- **THE WIDGET'S TWELVE DARK PRESETS HAD NO LIGHT SIBLING.** Every preset was two background stops in
-  the same narrow band (`#0E2A47` down to `#000000`); two of them were literally near-black, and the
-  brightest was a mid teal. Nothing was wrong with their colours - there was simply nothing bright to
-  choose. 80.3.7 adds **six**: Bubblegum, Mint, Sunshine, Sky, Tangerine and Grape, each a light-to-mid
-  gradient with a dark title, a dark artist line and a saturated accent. They ride the exact payload
-  the native provider already reads (`bg1`, `bg2`, `title`, `artist`, `accent`, `pill`, `eq`), so
-  **no Android change** was needed: the provider renders the gradient bitmap and sets the text
-  colours, which is what it does for the dark set.
-- **BRIGHT IS FIRST, AND A FRESH INSTALL STARTS THERE.** The six are at the head of the object, so the
-  grid opens on the fun ones. All twelve dark presets keep their keys and their colours - a phone on
-  Rosewood still has Rosewood - and `ocean` remains the fallback for an unknown key. The one saved
-  value this release changes is the **default for a phone that has never picked**: Bubblegum instead of
-  Deep Ocean.
-- **AND THE PICKER LABEL WAS INVISIBLE.** Each row's name was painted in the preset's own `title`
-  colour - white for the dark set, near-black for a new light one - on the dark settings sheet. The
-  name is the app's own ink now; the swatch beside it carries the colours. Without this, the six bright
-  presets would have been six unlabelled buttons.
+- **THE OWNER'S ASK, VERBATIM.** *"make the track art thing on the widgit slightly rounded and nice
+  and you don't need to mention color os anywhere in the app or themes or patch notes dawg and what is
+  this random ahh color palette thing remove that and make that how it was before. rename the color os
+  theme. make the tabs and the bottom smooth bro like buttery smooth to drag my fingers across and make
+  them slightly taller make cloud version better. MAKE THIS NICE v80.4"*.
+- **THE PALETTE CHIP IS GONE; THE DOT IS BACK.** 80.3.7 replaced the round accent dot in the theme wall
+  with a three-band chip (background / accent / second accent) to show a whole palette. On a phone it
+  reads as a strip of random colours, not as a theme, and it replaced a row people had been reading for
+  years. The dot is restored exactly as it was: 18px, round, the accent - a coral-to-gold gradient when
+  the theme moves, the hue wheel for RGB, the plain accent otherwise.
+- **THE THEME IS CALLED LAGOON.** Named after what it looks like - a deep teal-black with a mint accent
+  over aqua - rather than after another company's operating system. The palette, the 20-second curtain
+  and the `prism` key are untouched, so a phone already wearing it keeps its pick, its prepaint cache
+  and its backdrop.
+- **THE NAME IS OUT OF THE APP ENTIRELY.** A rename that leaves the old word in a comment is a rename
+  the owner finds on the next grep, so the scrubbing went past the theme entry: the 80.3.7 changelog
+  title, the two 80.3.7 items that named it, the stylesheet comment above the backdrop, the comment
+  block above the theme entry and 80.3.7's marker in the script. The driver asserts the finished page
+  contains **zero** case-insensitive occurrences. One consequence, named on purpose: 80.3.7's
+  idempotency marker no longer matches, so `dev/patch-8037.py --check` reports "pending" on this page.
+  That is correct - every release from here is measured against 80.4's payload - and nothing released
+  depends on it, because 80.3.7's commit already carries the page it shipped.
+- **THE WIDGET'S COVER IS ROUNDED - BY THE APP.** The widget is a RemoteViews `ImageView` in the APK:
+  it scales a bitmap and cannot clip one, so corner radius is not a setting it has and this release
+  cannot rebuild the APK to give it one. It can draw whatever bitmap it is handed, so the app draws the
+  corners first: `scRoundArtDataUrl()` takes the cover data URL the push was already sending, draws it
+  cover-fit into a 256px square with an 18% radius (46px), and hands back a PNG data URL. Every path
+  through `pushWidgetState` - blob cover, remote cover, cached cover - goes through it, because it wraps
+  `send` rather than the three call sites. Cached per source (twelve entries, oldest dropped); a cover
+  that cannot be decoded falls back to the original URL, which is what the widget drew before. The
+  Settings > Widget preview draws the same 18% radius, so the picture in the app matches the home screen.
+- **THE STRIPS ARE TALLER AND THEY DRAG.** The settings tab strip is the app's one horizontally dragged
+  surface, and it had three things against it: no snap (so a diagonal finger parked it between two tabs,
+  half of each showing), no `touch-action` (so the browser could reinterpret the gesture, and a slightly
+  vertical drag scrolled the pane underneath), and no follow-the-tab scroll (so the open tab could sit
+  half off the right edge). Now: `touch-action: pan-x`, `scroll-snap-type: x proximity` with each tab a
+  centre snap point, 46px minimum height, and `scTabIntoView()` - called from `showSettingsTab` - that
+  scrolls the strip to the tab you just opened, centred and clamped at both ends. It scrolls the strip
+  with `scrollTo({behavior:'smooth'})` rather than `scrollIntoView`, because `scrollIntoView` on a
+  nested scroller also moves the sheet it lives in. Reduce motion (either switch) jumps instead.
+- **AND SO IS THE BOTTOM ROW.** Dock pills go from a 36px to a 44px minimum (48 at the wide-screen step),
+  and the cloud layout - where that row is the entire navigation - gets 48px pills with the same snap,
+  plus a slightly roomier now bar with an 8px-rounded cover.
 - **VERIFIED ON THE PAGE THAT SHIPS.** The payload was applied to a fresh clone of `origin/main` (the
-  page at 80.3.6) and the result copied into this tree: `python3 dev/patch-8037.py` (1 step) then
-  `--check` (0 steps); **every inline script block compiles** (`new Function`, 7 blocks, 0 failures);
-  and `sc-8037-check.cjs` passes **65/65** while the same driver fails **31** on the deployed 80.3.6
-  page it replaces. The OTA bundles reach a true fixed point in the release step - root + `ota/`
-  **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.3.7. It proves, against
-  the release's own source: `THEMES.prism` is labelled ColorOS, keeps `dynamic:'prism'` and carries
-  `fresh`; the wall's own `renderThemeOptions()` - extracted from the page and run with stubs - prints
-  exactly three groups in the order Static / Dynamic / Badge rewards, puts ColorOS **first** in the
-  dynamic group, and puts **no** reward key in either free group; the row's own `themeButtonHTML()`
-  emits the three-band chip for ColorOS and the `NEW` tag with it, and does not tag a reward; every
-  preset in `WIDGET_THEMES` (18 of them) carries all nine keys, the six light ones are the first six,
-  and the title/artist contrast was **computed** for all eighteen against both background stops (light
-  ones in the 10-15:1 range, and no preset - old or new - below 4.5:1); `scThemeSettle()` was run with
-  stubs and adds the animation class only when the sheet is open and motion is allowed, never when it
-  is closed and never under either Reduce-motion switch.
-- **WHAT IS NOT CLAIMED.** No phone and no screenshot: the **look** of the new ColorOS palette, of the
-  staggered open and of the settle was not seen on a display - what is proven is the CSS, the class
-  the function adds and when, and the computed contrast numbers. No Android build was made, so the
-  native widget was not re-run: the presets added are ones the unchanged native code already reads.
-  Nothing moved in the player, the library, the albums, the lyrics, the tabs, the downloader, the
-  Studio or the audio graph.
+  page at 80.3.7): `python3 dev/patch-804.py` (1 step) then `--check` (0 steps); **every inline script
+  block compiles**; and `sc-804-check.cjs` passes **47/47** while the same driver fails on the 80.3.7
+  page it replaces. It runs the page's own code rather than grepping it: `themeButtonHTML()` for the
+  Lagoon row (18px round dot, the two-accent gradient, no three-band chip), a static theme (accent
+  alone) and a reward (BADGE REWARD, no NEW); `scTabIntoView()` with stubs for a centred tab, both
+  clamps and the Reduce-motion jump; `scRoundArtDataUrl()` on its fallback path (an undrawable cover
+  returns the original URL, never nothing); and the widget preset table, still 18 entries led by the
+  bright six. The OTA bundles reach a true fixed point in the release step - root + `ota/`
+  **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.4.
+- **WHAT IS NOT CLAIMED.** No phone and no screenshot: the 46px tabs, the snap feel and the rounded
+  cover as the widget actually draws it were not seen on a display - the cover is rounded by a canvas
+  this release cannot run in a harness, so what is proven is that the draw path is the rounding path and
+  that a failure returns the old cover. No Android build was made: the widget layout, its ImageView and
+  the APK are untouched, which is exactly why the rounding happens in the page. Nothing moved in the
+  player, the library, the albums, the lyrics, the downloader, the Studio or the audio graph.
