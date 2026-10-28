@@ -70,9 +70,9 @@
   **64/64** while the same driver fails **46** on the page it replaces. It proves, against
   the release's own source rather than a copy: the four motion tokens and the press rule exist and the
   dock is not in them; the three panes that own a scroll are contained; both view-transition rules and
-  both Reduce-motion rules are there; the settings panes the sheet switches to are all real elements and
-  this release adds no ninth duplicate id (the page has carried eight since long before it); Prism is in
-  `THEMES` with its dynamic class, its palette and its backdrop; the widget's preset table has twelve
+  both Reduce-motion rules are there; this release adds no ninth duplicate id (the page has carried
+  eight since long before it) and every settings pane the sheet switches to is a real element; Prism is
+  in `THEMES` with its dynamic class, its palette and its backdrop; the widget's preset table has twelve
   entries and every one of them carries all nine keys the native side or the preview reads. Then it
   runs the release's own functions in a `vm` with stubs: `scNavigateSmooth` calls the original once and
   returns, runs the change INSIDE `startViewTransition` when the API exists, and skips the transition
