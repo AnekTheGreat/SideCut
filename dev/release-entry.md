@@ -57,16 +57,18 @@
   page at 80.3.6) and the result copied into this tree: `python3 dev/patch-8037.py` (1 step) then
   `--check` (0 steps); **every inline script block compiles** (`new Function`, 7 blocks, 0 failures);
   and `sc-8037-check.cjs` passes **65/65** while the same driver fails **31** on the deployed 80.3.6
-  page it replaces. It proves, against the release's own source: `THEMES.prism` is labelled ColorOS,
-  keeps `dynamic:'prism'` and carries `fresh`; the wall's own `renderThemeOptions()` - extracted from
-  the page and run with stubs - prints exactly three groups in the order Static / Dynamic / Badge
-  rewards, puts ColorOS **first** in the dynamic group, and puts **no** reward key in either free
-  group; the row's own `themeButtonHTML()` emits the three-band chip for ColorOS and the `NEW` tag with
-  it, and does not tag a reward; every preset in `WIDGET_THEMES` (18 of them) carries all nine keys,
-  the six light ones are the first six, and the title/artist contrast was **computed** for all eighteen
-  against both background stops (light ones in the 10-15:1 range, and no preset - old or new - below
-  4.5:1); `scThemeSettle()` was run with stubs and adds the animation class only when the sheet is open
-  and motion is allowed, never when it is closed and never under either Reduce-motion switch.
+  page it replaces. The OTA bundles reach a true fixed point in the release step - root + `ota/`
+  **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.3.7. It proves, against
+  the release's own source: `THEMES.prism` is labelled ColorOS, keeps `dynamic:'prism'` and carries
+  `fresh`; the wall's own `renderThemeOptions()` - extracted from the page and run with stubs - prints
+  exactly three groups in the order Static / Dynamic / Badge rewards, puts ColorOS **first** in the
+  dynamic group, and puts **no** reward key in either free group; the row's own `themeButtonHTML()`
+  emits the three-band chip for ColorOS and the `NEW` tag with it, and does not tag a reward; every
+  preset in `WIDGET_THEMES` (18 of them) carries all nine keys, the six light ones are the first six,
+  and the title/artist contrast was **computed** for all eighteen against both background stops (light
+  ones in the 10-15:1 range, and no preset - old or new - below 4.5:1); `scThemeSettle()` was run with
+  stubs and adds the animation class only when the sheet is open and motion is allowed, never when it
+  is closed and never under either Reduce-motion switch.
 - **WHAT IS NOT CLAIMED.** No phone and no screenshot: the **look** of the new ColorOS palette, of the
   staggered open and of the settle was not seen on a display - what is proven is the CSS, the class
   the function adds and when, and the computed contrast numbers. No Android build was made, so the
