@@ -40,7 +40,19 @@ function readNotes(src, version) {
   const e = entries.find((x) => String(x.version) === String(version)) || entries[0];
   if (!e) return { notes: [], date: '' };
   // [FULL]-marked items are this channel's own notes: strip the marker.
-  return { notes: (e.items || []).map((it) => (typeof it === 'string' && it.startsWith('[FULL] ')) ? it.slice(7) : it).slice(0, 6), date: e.date ? String(e.date) : '' };
+  //
+  // STREAMING IS NOT ONE OF THEM. The shelf is its own thing inside the app, and
+  // this channel is the one every sideloaded install reads - the build the owner
+  // calls regular, which never asked to be told about it. So a streaming note is
+  // dropped here whether or not it carries the marker (80.6.11's first three did
+  // not, which is exactly how they reached the update card), and a release whose
+  // notes were all about it publishes one honest line instead. This is the update
+  // card only: the app's own what's-new log is untouched.
+  const shown = (e.items || [])
+    .map((it) => (typeof it === 'string' && it.startsWith('[FULL] ')) ? it.slice(7) : it)
+    .filter((it) => typeof it !== 'string' || !/(streaming|streams?\b|from the source|pinned artist)/i.test(it));
+  const notes = (shown.length ? shown : ['Fixes and improvements under the hood.']).slice(0, 6);
+  return { notes, date: e.date ? String(e.date) : '' };
 }
 
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
