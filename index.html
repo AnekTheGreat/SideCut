@@ -7243,6 +7243,7 @@ window.__scTime12 = function(v){
 // 80.6.1 - THE GLASS IS ICE
 // 80.6.2 - PLAIN NOTES AND A FREE STRIP
 // 80.6.3 - THE GLASS IS LIQUID
+// 80.6.4 - THE TRANSITION WAITS FOR A VISIBLE PAGE
 var SC_IS_WEB = (function(){
   try{
     var _cap = (typeof window !== 'undefined') ? window.Capacitor : null;
@@ -16240,7 +16241,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.3';
+  const APP_VERSION = '80.6.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16889,6 +16890,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.4', date: 'October 28, 2026 · 9:11 PM EDT', title: 'Transitions that survive a backgrounded app', items: [
+    'A red error strip no longer appears when you tap a tab as the app is going to the background. The tab animation was being aborted by the system, and the abort was reported as a failure &mdash; it is not one. The animation now waits until the app is actually on screen, and an abort is handled quietly wherever it lands.',
+    'The <b>tap is no longer lost</b> either. If the system cancels the animation before the screen had swapped, the same navigation runs again without it, so the tab you tapped is the tab you get. Once, never twice.',
+    'The tab animation itself is unchanged: same slide, same timing, and it still stands aside for Reduce motion and for the app&rsquo;s own reduce-motion switch.',
+    'Nothing else moved &mdash; the player, the library, the widget, the glass, the lyrics and the audio graph are exactly as they were.',
+  ]},
   { version: '80.6.3', date: 'October 28, 2026 · 7:49 PM EDT', title: 'Liquid glass: thinner, clearer, and it moves', items: [
     'The glass is <b>thinner</b>: the pane runs from about a third opaque to just over a half, where it used to run from a half to nearly nine tenths. The wallpaper is no longer a tint behind a sheet &mdash; it is what you look through.',
     'And there is <b>less milk</b> in it. The panel is mixed toward white half as much, so what comes through is colour with a cool cast on top instead of a white haze. Thicker still reads colder, not chalkier.',
@@ -51710,11 +51717,43 @@ window.showSettingsTab = showSettingsTab;
     }
     function scNavigateSmooth(view){
       if(scMotionOff() || typeof document.startViewTransition !== 'function') return _scNavInner(view);
+      // 80.6.4 - A HIDDEN PAGE DOES NOT TRANSITION. Chrome aborts a view transition
+      // that starts (or runs) while the document is hidden, and it says so by
+      // rejecting the transition's promises. A tab tap that lands as the app is
+      // backgrounded is not an error, and it must not paint one across the screen:
+      // take the plain path instead, the same one reduced motion takes.
+      try{ if(document.visibilityState !== 'visible') return _scNavInner(view); }catch(_eVis){ }
+      var ran = false;
+      var vt;
       try{
-        var vt = document.startViewTransition(function(){ return _scNavInner(view); });
-        if(vt && vt.finished && typeof vt.finished.catch === 'function') vt.finished.catch(function(){});
-        return;
+        vt = document.startViewTransition(function(){ ran = true; return _scNavInner(view); });
       }catch(_eVt){ return _scNavInner(view); }
+      if(!vt) return _scNavInner(view);
+      // EVERY PROMISE GETS AN OWNER. `finished` was the only one caught, and the abort
+      // arrives on `ready` first - which is exactly the rejection that used to escape
+      // into the banner. An abort here is an expected outcome, not a failure.
+      function scVtQuiet(p){
+        try{ if(p && typeof p.catch === 'function') p.catch(function(){}); }catch(_eQuiet){ }
+      }
+      scVtQuiet(vt.ready);
+      scVtQuiet(vt.updateCallbackDone);
+      scVtQuiet(vt.finished);
+      // AND THE TAP SURVIVES IT. If the abort landed before the update callback ran,
+      // the DOM never swapped and the tap goes nowhere. Replay the navigation outside
+      // the transition - guarded by `ran`, so a swap that did happen runs once.
+      try{
+        if(vt.updateCallbackDone && typeof vt.updateCallbackDone.catch === 'function'){
+          vt.updateCallbackDone.catch(function(){
+            if(ran) return;
+            setTimeout(function(){
+              if(ran) return;
+              ran = true;
+              try{ _scNavInner(view); }catch(_eLate){ }
+            }, 0);
+          });
+        }
+      }catch(_eCd){ }
+      return;
     }
     try{ navigate = scNavigateSmooth; }catch(_eAs){ }
     window.__scNavigateSmooth = scNavigateSmooth;
