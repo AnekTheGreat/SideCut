@@ -6175,7 +6175,8 @@ body.sc80-cloud .action-strip::before{
     cursor: pointer;
     padding: 1px 0;
     border-radius: 4px;
-    transition: color 0.15s ease, background 0.15s ease, filter 0.3s ease;
+    /* 80.6.8 - the light GLIDES to the next word instead of snapping onto it. */
+    transition: color 0.22s cubic-bezier(0.22,0.61,0.36,1), background 0.22s cubic-bezier(0.22,0.61,0.36,1), filter 0.3s ease;
   }
   #lyricsText .lyric-word:active {
     background: rgba(255,255,255,0.05);
@@ -6188,7 +6189,7 @@ body.sc80-cloud .action-strip::before{
   }
   #lyricsText .lyric-line .lyric-word {
     display: inline;
-    transition: color 0.15s ease;
+    transition: color 0.22s cubic-bezier(0.22,0.61,0.36,1);
     color: inherit;
   }
   #lyricsText .lyric-line .lyric-word.current {
@@ -7251,6 +7252,7 @@ window.__scTime12 = function(v){
 // 80.6.5 - THE WARM DUSK WIDGET
 // 80.6.6 - AMBER DUSK IS A THEME, AND THE GLASS IS NAMED LIQUID
 // 80.6.7 - AMBER DUSK IS GONE, LAGOON SETTLES, AND THE PASTEL LIQUID IS HERE
+// 80.6.8 - THE LIGHT WALKS WORD TO WORD, AND IT CANNOT SKIP ONE
 var SC_IS_WEB = (function(){
   try{
     var _cap = (typeof window !== 'undefined') ? window.Capacitor : null;
@@ -14972,12 +14974,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
         else starts.push(edges[edges.length - 1]);
       }
     }
-    // In order, inside the window, and never before the word ahead of it.
+    // In order, and inside the window. 80.6.8 - the tail clamp used to pull every word
+    // past the end of the window onto `to` ITSELF, so a line that ran a little long came
+    // out with two, three or six words sharing one instant: those words had no stretch of
+    // their own to be lit in, and the pacer stepped over them. The tail is pulled BACK
+    // from the end with room between the words instead, which keeps the order and gives
+    // every word a window.
     for(i = 0; i < n; i++){
       if(starts[i] == null) starts[i] = i ? starts[i - 1] + span / n : from;
       if(i && starts[i] < starts[i - 1] + 0.04) starts[i] = starts[i - 1] + 0.04;
       if(starts[i] < from) starts[i] = from;
-      if(starts[i] > to) starts[i] = to;
+    }
+    var gapMin = Math.min(0.14, Math.max(0.04, span / (n * 6)));
+    for(i = n - 1; i >= 0; i--){
+      var cap = (i === n - 1) ? to : starts[i + 1] - gapMin;
+      if(starts[i] > cap) starts[i] = cap;
+      if(starts[i] < from) starts[i] = from;
+    }
+    for(i = 1; i < n; i++){
+      if(!(starts[i] > starts[i - 1])) starts[i] = starts[i - 1] + 0.04;
     }
     return starts;
   }
@@ -15033,7 +15048,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
           if(!isFinite(from) || from < 0) continue;
           var to = (i + 1 < rows.length) ? Number(rows[i + 1].t) : (dec.duration || 0);
           if(!(to > from + 0.2)) to = from + Math.max(1, (dec.duration || from + 6) - from);
-          var words = scPaceSegments(String(rows[i].text || '')).filter(function(w){ return !/^\s+$/.test(w); });
+          // 80.6.8 - A STAMP IS NOT A WORD. An enhanced sheet carries a stamp in front of
+          // some of its words, and the row's text arrives here with them still in it, so
+          // each stamp was counted as a word. The count then disagreed with the number of
+          // spans the same row renders, and scMeasuredWordStarts refuses a record whose
+          // count disagrees (it compares them on purpose) - so the very sheet that HAS
+          // word timing was paced by the guess this measurement exists to replace. The
+          // stamps are stripped here, where the words are counted, and NOT in
+          // scParseLrcLines: that hands rows to the line-up writer, which must not lose a
+          // sheet's own stamps when it rebuilds it.
+          var words = scPaceSegments(String(rows[i].text || '').replace(scLrcTagRe(), ' ').replace(/\s+/g, ' ').trim())
+            .filter(function(w){ return !/^\s+$/.test(w); });
           if(!words.length) continue;
           var st = scWordStartsForWindow(words.length, from, to, env, hop);
           if(st) lines.push({ t: from, w: st });
@@ -15067,6 +15092,129 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return null;
   }
 
+  // ─── 80.6.8 - THE SHEET TIMES ITS OWN WORDS ─────────────────────────────────
+  // Enhanced LRC carries a stamp in front of the word it starts:
+  //
+  //     [00:12.00]<00:12.00>Hello <00:12.62>world
+  //
+  // SC_LRC_TAG_SRC has always MATCHED those stamps - the bracket forms include the
+  // angle ones - so formatSyncedLyrics stripped them out of the text and threw the
+  // timing away with them: the row printed correctly and every word after it was paced
+  // by syllable share. Read them instead, and the highlight lands where the singer's
+  // word does. A sheet with no stamps changes in no way at all: every word is simply
+  // unstamped, and the recording (scMeasuredWordStarts) or the syllable share paces it,
+  // in exactly the order and shape they always did.
+  function scDeGlyph(s){
+    return String(s == null ? '' : s).replace(/[\u266A-\u266F\u{1F3B5}\u{1F3B6}]/gu, '');
+  }
+  // The line's own stamps are the repeated-line times and are already parsed; what is
+  // left of the row is the sung text with its inline word stamps still in it.
+  function scLrcBody(raw){
+    var s = String(raw == null ? '' : raw);
+    for(;;){
+      var m = s.match(/^\s*\[\s*\d{1,3}\s*[:\uFF1A]\s*\d{1,2}(?:\s*[.:\uFF0E]\s*\d{1,3})?\s*\]/);
+      if(!m) break;
+      s = s.slice(m[0].length);
+    }
+    return s;
+  }
+  // Split the body into pacing units, each carrying the stamp that introduced it. The
+  // stamp belongs to the FIRST word of the run it precedes; a run scPaceSegments breaks
+  // into pieces (a Han/Kana/Hangul run with no spaces) stamps only its first piece.
+  function scWordParts(body, lineT){
+    var out = [], re = scLrcTagRe(), pending = null, last = 0, m;
+    var txt = String(body == null ? '' : body);
+    var floor = Number(lineT) || 0;
+    function add(seg){
+      if(!seg) return;
+      var units = scPaceSegments(seg), first = true, i;
+      for(i = 0; i < units.length; i++){
+        var u = units[i];
+        if(/^\s+$/.test(u)){ out.push({ w: u, space: true, at: null }); continue; }
+        out.push({ w: u, space: false, at: first ? pending : null });
+        first = false;
+      }
+    }
+    for(;;){
+      re.lastIndex = last;                        // the tag pattern is global; walk it here
+      m = re.exec(txt);
+      if(!m) break;
+      add(txt.slice(last, m.index));
+      pending = parseInt(m[1], 10) * 60 + parseInt(m[2], 10) +
+                (m[3] ? parseInt(m[3], 10) / Math.pow(10, m[3].length) : 0);
+      if(pending < floor) pending = floor;        // a stamp cannot put a word before its line
+      last = re.lastIndex;
+    }
+    add(txt.slice(last));
+    return out;
+  }
+  // Every word's start, when the sheet stamped them - null when it stamped none, which is
+  // what leaves the recording (or the syllable share) the say. A stamp is used as it is;
+  // a word between two stamps takes its own syllable share of the gap, so a sheet that
+  // stamps only the long words still flows evenly between them.
+  function scSheetWordStarts(words, fromSec, toSec){
+    if(!words || !words.length) return null;
+    var n = words.length, at = [], wt = [], i, has = false;
+    for(i = 0; i < n; i++){
+      var raw = '';
+      try{ raw = (words[i].dataset && words[i].dataset.wordAt) || ''; }catch(_eAt){}
+      var v = raw === '' ? NaN : Number(raw);
+      if(isFinite(v)){ has = true; at.push(v); } else at.push(NaN);
+      var txt = '';
+      try{ txt = words[i].textContent || ''; }catch(_eTxt){}
+      wt.push(Math.max(0.5, Number(scSyllableCount(txt)) || 1));
+    }
+    if(!has) return null;
+    var from = Number(fromSec) || 0, to = Number(toSec) || 0;
+    // Order first. The song never goes backwards, so a stamp that lands behind the word
+    // before it - a sheet's own rounding, a stamp shared by an overlap - is pulled
+    // forward rather than allowed to rewind the line.
+    var floorAt = from;
+    for(i = 0; i < n; i++){
+      if(!isFinite(at[i])) continue;
+      if(at[i] < floorAt) at[i] = floorAt;
+      floorAt = Math.max(floorAt, at[i] + 0.03);
+    }
+    // Then the gaps: every unstamped run is shared between the stamps on either side of
+    // it by syllable weight, so a sheet that stamps one word per phrase moves at the
+    // phrase's own pace instead of at one fixed rate for the whole line.
+    i = 0;
+    while(i < n){
+      if(isFinite(at[i])){ i++; continue; }
+      var j = i;
+      while(j < n && !isFinite(at[j])) j++;
+      var before = i > 0 ? at[i - 1] : from;
+      var after = (j < n) ? at[j] : Math.max(before + 0.2, to > before ? to : before + 0.6 * (j - i));
+      var span = after - before;
+      if(!(span > 0.02 * (j - i + 1))) span = 0.02 * (j - i + 1);
+      var wsum = 0, k;
+      for(k = i; k < j; k++) wsum += wt[k];
+      if(!(wsum > 0)) wsum = j - i;
+      var lead = span / (j - i + 1);              // the stretch before the first of them
+      var accw = 0;
+      for(k = i; k < j; k++){
+        accw += wt[k] / wsum;
+        var cand = before + lead + accw * Math.max(0, span - lead);
+        var cap = (j < n) ? after - 0.02 : cand;
+        at[k] = Math.min(cand, Math.max(before + 0.02 * (k - i + 1), cap));
+      }
+      i = j;
+    }
+    for(i = 1; i < n; i++){ if(!(at[i] > at[i - 1])) at[i] = at[i - 1] + 0.03; }
+    return at;
+  }
+  // The word on screen is the LAST start the playhead has passed - not "the word whose
+  // window contains now". A window is only as wide as the gap to the next start, so two
+  // words on one rise or a fast line gave windows of a few hundredths of a second, and a
+  // window that narrow is stepped straight over by the 50 ms poll: that word was never
+  // lit at all, which is what a skipped word is. Walking starts forward cannot skip one.
+  function scPickLitIdx(starts, nowSec){
+    var idx = -1;
+    for(var i = 0; i < starts.length; i++){
+      if(nowSec >= starts[i]) idx = i; else break;
+    }
+    return idx;
+  }
   function scPaceWords(lineEl, fromSec, toSec, nowSec){
     if(!lineEl) return;
     const words = scEnsureWordSpans(lineEl);
@@ -15135,21 +15283,28 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // after the line all land where the recording puts them. `starts` is null unless a
     // measurement exists for this song AND this line still has the word count it was
     // measured with - in which case the syllable share below runs exactly as it did.
-    const starts = scMeasuredWordStarts(lineEl, fromSec, toSec, words.length);
+    // 80.6.8 - WHERE THE STARTS COME FROM, in this order. The sheet's own word stamps,
+    // when it has them, are the only exact timing available and are used as they are.
+    // Then the measurement the recording gave this line (scMeasuredWordStarts). Only if
+    // neither answered does the syllable share below place the words.
+    const starts = scSheetWordStarts(words, fromSec, toSec) ||
+                   scMeasuredWordStarts(lineEl, fromSec, toSec, words.length);
     if(starts){
-      for(let si = 0; si < starts.length; si++){
-        const wFrom = starts[si];
-        const wTo = (si + 1 < starts.length)
-          ? Math.max(wFrom + 0.04, starts[si + 1])
-          : Math.max(wFrom + 0.12, Math.min(toSec, wFrom + SC_WORD_TAIL));
-        if(nowSec >= wFrom && nowSec < wTo){ litIdx = si; litFrom = wFrom; litTo = wTo; break; }
-      }
-      // Past the last rise the line is still the current line, so the last word holds -
-      // and it does not start walking into the gap the singer left behind it.
-      if(litIdx === -1 && nowSec >= starts[starts.length - 1]){
-        litIdx = starts.length - 1;
-        litFrom = starts[starts.length - 1];
-        litTo = litFrom + SC_WORD_TAIL;
+      // The last start the playhead has passed - see scPickLitIdx. Every word the singer
+      // has reached has been lit on the way here, so a narrow window cannot swallow one.
+      const pick = scPickLitIdx(starts, nowSec);
+      if(pick >= 0){
+        litIdx = pick;
+        litFrom = starts[pick];
+        litTo = (pick + 1 < starts.length)
+          ? Math.max(litFrom + 0.04, starts[pick + 1])
+          : litFrom + SC_WORD_TAIL;
+      } else {
+        // The row is current but its first word is sung a beat later: light the first
+        // word for that stretch instead of leaving the whole line unlit.
+        litIdx = 0;
+        litFrom = fromSec;
+        litTo = Math.max(fromSec + 0.04, Math.min(starts[0], toSec));
       }
     } else {
     words.forEach(function(w, wi){
@@ -15253,16 +15408,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
               '<span class="lyric-inst-ico">\u266a</span><span class="lyric-inst-txt">music</span></div>'
           });
         } else if(text){
-          // Synthetic word timestamps evenly distributed across each occurrence
-          // of the line (a repeated chorus gets its own pacing at every repeat).
-          const words = scPaceSegments(text);
+          // 80.6.8 - THE SHEET'S OWN WORD STAMPS SURVIVE. The line's stamps are its
+          // times (a repeated chorus carries one per take); what is left of the row is
+          // the sung text with the inline word stamps still in it, and those are the
+          // one word timing in a sheet that is not an estimate. Each word keeps its
+          // own start in data-word-at and the pacer uses it verbatim; a word without
+          // one stays unstamped and is placed by the syllables between its neighbours.
+          const bodyTxt = scDeGlyph(scLrcBody(raw)).trim();
+          const parts = scWordParts(bodyTxt, t);
           let wTotal = 0;
-          words.forEach(function(w){ if(!/^\s+$/.test(w)) wTotal++; });
+          parts.forEach(function(p){ if(!p.space) wTotal++; });
           let wIdx = 0;
-          const wordSpans = words.map(function(w){
-            if(/^\s+$/.test(w)) return escapeHtml(w);
+          const wordSpans = parts.map(function(p){
+            if(p.space) return escapeHtml(p.w);
             const cur = wIdx; wIdx++;
-            return '<span class="lyric-word" data-word="1" data-word-start="' + t + '" data-word-offset="' + cur + '/' + wTotal + '">' + escapeHtml(w) + '</span>';
+            const atAttr = (p.at == null || !isFinite(p.at)) ? '' : ' data-word-at="' + p.at + '"';
+            return '<span class="lyric-word" data-word="1" data-word-start="' + t + '" data-word-offset="' + cur + '/' + wTotal + '"' + atAttr + '>' + escapeHtml(p.w) + '</span>';
           }).join('');
           nodes.push({
             t: t, kind: 'line', html: '<div class="lyric-line" data-time="' + t + '" data-wordline="1">' + wordSpans + '</div>'
@@ -16259,7 +16420,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.7';
+  const APP_VERSION = '80.6.8';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -16908,6 +17069,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.8', date: 'October 29, 2026 · 7:03 PM EDT', title: 'Every word lands on the voice', items: [
+    '<b>The sheet&rsquo;s own word timing is used now.</b> A timed sheet can stamp each word, and that was being stripped out of the line with the line stamps &mdash; every word after it was paced by a guess. The highlight lands on the stamp, and a word between two stamps is placed by its own syllables.',
+    '<b>The recording&rsquo;s measurement finally applies.</b> The inline stamps were being counted as words, so the measured word count never matched the words on screen and the line fell back to the guess. Counting only the words that are drawn is what lets the voice time the words.',
+    '<b>No word gets skipped.</b> The light now moves to the last word the playhead has reached, instead of looking for a window to be inside &mdash; a fast pair of words, or a line whose words were bunched at its end, used to be stepped over entirely.',
+    '<b>A line never sits dark waiting for its first word.</b> If the singing starts a beat after the line&rsquo;s stamp, the first word is lit for that stretch.',
+    'The light <b>glides</b> from one word to the next now instead of snapping. The sheet&rsquo;s text, the line highlight, the scroll, the sync nudge and letter mode are unchanged.',
+  ]},
   { version: '80.6.7', date: 'October 29, 2026 · 8:15 AM EDT', title: 'Amber dusk leaves, and the widget fits its size', items: [
     '<b>Amber dusk is gone</b> &mdash; from the theme wall and from the widget shelf. Nothing else changed shape: a phone that was wearing it settles on Coral, and a widget that was on it settles on Bubblegum, on the next launch.',
     '<b>Lagoon sits at the bottom of the dynamic themes</b>, where it belongs and where it is declared. It was being lifted to the top of that group by its &ldquo;new&rdquo; flag; the flag is gone, so it closes the group again.',
