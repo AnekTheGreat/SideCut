@@ -4792,6 +4792,10 @@ body.sc80-cloud .action-strip::before{
        pane is rewritten on every library render (search, tabs, sort), so anything living
        inside it would be destroyed on the next keystroke. This block is filled once, by
        scStreamBoot(), and the downloaded list keeps rendering underneath it. -->
+  <!-- 80.6.11 - THE SHELF RAIL. Three tabs above the library list: Streaming is the
+       panel that slides in from the right, and Library and Albums are the halves of
+       this screen, driven by the page itself. The rail is filled by scShelfRender(). -->
+  <div id="scShelfRail"></div>
   <div id="scStreamBlock"></div>
   <div id="listPane"></div>
 </div>
@@ -15424,7 +15428,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
 
   // Playlists are lists of stream ids in their own key. Adding the same song twice is a
-  // no-op rather than a duplicate, which is what a "＋" tapped twice looks like.
+  // no-op rather than a duplicate, which is what an add button tapped twice looks like.
   function scStreamPlAdd(list, name, id){
     var out = [], i, found = false;
     name = String(name == null ? '' : name).trim();
@@ -15481,28 +15485,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // The same player endpoint the converter uses, asked for one videoId. The clients are
   // tried in order because which one answers without a signature cipher changes week to
   // week; the first answer that yields a plain audio url wins.
-  function scStreamResolve(videoId){
-    var clients = [
-      { name: 'ANDROID', ver: '20.16.39', body: { client: { clientName: 'ANDROID', clientVersion: '20.16.39', androidSdkVersion: 35 } } },
-      { name: 'IOS', ver: '20.10.36', body: { client: { clientName: 'IOS', clientVersion: '20.10.36', deviceModel: 'iPhone14,3' } } },
-      { name: 'WEB', ver: '2.20240801.00.00', body: { client: { clientName: 'WEB', clientVersion: '2.20240801.00.00' } } }
-    ];
-    var i = 0;
-    function step(){
-      if(i >= clients.length) return Promise.resolve('');
-      var cl = clients[i++];
-      var payload = { context: cl.body.context, videoId: videoId, contentCheckOk: true, racyCheckOk: true };
-      return Promise.resolve(scHttpJson('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', payload))
-        .then(function(d){
-          var u = scStreamPickUrl(d);
-          if(u) return u;
-          return step();
-        })
-        .catch(function(){ return step(); });
-    }
-    return step();
-  }
-
   // --- the audio element -----------------------------------------------------
   function scStreamAudio(){
     if(scStreamState.audio) return scStreamState.audio;
@@ -15523,6 +15505,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scStreamState.busy = true;
       scStreamResolve(t.videoId).then(function(u){
         scStreamState.busy = false;
+        if(!u){ u = scStreamAltUrl(); }
         if(!u){ scStreamSay('This source will not play right now'); return; }
         scStreamState.url = u; scStreamState.urlAt = Date.now();
         a.src = u;
@@ -15680,12 +15663,24 @@ function startLyricsAutoScroll(keepPos, noReset) {
     h += '<span style="font-size:13.5px;font-weight:700;">Streaming</span>';
     h += '<span style="font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--coral);border:1px solid color-mix(in srgb, var(--coral) 45%, transparent);border-radius:999px;padding:2px 7px;">Experimental</span>';
     h += '<span style="flex:1;"></span>';
+    h += '<button type="button" id="scStreamClose" aria-label="Close" style="background:none;border:none;color:var(--ink-dim);padding:4px;line-height:0;">' + scIcon('close', 16) + '</button>';
     h += '<button type="button" id="scStreamNewPl" style="background:none;border:1px solid var(--line);color:var(--ink-dim);border-radius:999px;padding:5px 10px;font-size:11px;">New playlist</button>';
     h += '</div>';
     h += '<div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.5;">Plays from the source. Nothing is saved to your device, and a source can expire.</div>';
     h += '<div style="display:flex;gap:8px;margin-top:10px;">';
     h += '<input id="scStreamQuery" type="text" placeholder="Search a song to stream…" value="' + escapeHtml(scStreamState.q || '') + '" style="flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:8px 10px;font-size:12.5px;">';
-    h += '<button type="button" id="scStreamGo" style="padding:8px 14px;border-radius:12px;border:none;background:var(--coral);color:#12030b;font-size:12px;font-weight:700;">Search</button>';
+    h += '<button type="button" id="scStreamGo" style="padding:8px 14px;border-radius:12px;border:none;background:var(--accent, var(--ink));color:var(--bg);font-size:12px;font-weight:700;">' + scIcon('search', 13) + ' Search</button>';
+    h += '</div>';
+    var pins = scShelfPins();
+    if(pins.length){
+      h += '<div style="margin-top:10px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;">';
+      pins.forEach(function(p){
+        h += '<button type="button" class="scs-pin" data-name="' + escapeHtml(String(p.name || '')) + '" style="flex:0 0 auto;border:1px solid var(--line);background:none;color:var(--ink);border-radius:999px;padding:6px 12px;font-size:11.5px;">' + escapeHtml(String(p.name || '')) + '</button>';
+      });
+      h += '</div>';
+    }
+    h += '<div style="margin-top:8px;display:flex;gap:8px;">';
+    h += '<button type="button" id="scStreamRec" style="border:1px solid var(--line);background:none;color:var(--ink-dim);border-radius:999px;padding:5px 12px;font-size:11px;">Recommended</button>';
     h += '</div>';
     if(scStreamState.results){
       h += '<div style="margin-top:10px;max-height:230px;overflow:auto;">';
@@ -15698,7 +15693,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         h += '<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-top:1px solid var(--line);">'
           + '<div style="flex:1;min-width:0;"><div style="font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(ttl) + '</div>'
           + '<div style="font-size:10.5px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(who) + '</div></div>'
-          + '<button type="button" class="scs-add" data-i="' + i + '" style="border:1px solid var(--line);background:none;color:var(--ink);border-radius:999px;padding:5px 10px;font-size:11px;">＋ Add</button>'
+          + '<button type="button" class="scs-add" data-i="' + i + '" style="border:1px solid var(--line);background:none;color:var(--ink);border-radius:999px;padding:5px 10px;font-size:11px;line-height:1;">' + scIcon('plus', 13) + ' Add</button>'
           + '</div>';
       });
       h += '</div>';
@@ -15709,9 +15704,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       h += '<div style="font-size:10.5px;color:var(--ink-dim);">' + escapeHtml(cur.artist || 'Streaming') + '</div>';
       h += '<input id="scStreamBar" type="range" min="0" max="0" value="0" step="0.5" style="width:100%;margin:8px 0 2px;">';
       h += '<div style="display:flex;align-items:center;gap:10px;">';
-      h += '<button type="button" id="scStreamPrev" style="background:none;border:none;color:var(--ink);font-size:16px;">⏮</button>';
-      h += '<button type="button" id="scStreamPlay" style="background:var(--coral);border:none;color:#12030b;border-radius:999px;width:36px;height:36px;font-size:14px;">' + (scStreamState.playing ? '⏸' : '▶') + '</button>';
-      h += '<button type="button" id="scStreamNextB" style="background:none;border:none;color:var(--ink);font-size:16px;">⏭</button>';
+      h += '<button type="button" id="scStreamPrev" aria-label="Previous" style="background:none;border:none;color:var(--ink);line-height:0;padding:6px;">' + scIcon('prev', 18) + '</button>';
+      h += '<button type="button" id="scStreamPlay" aria-label="Play or pause" style="background:var(--accent, var(--ink));border:none;color:var(--bg);border-radius:999px;width:36px;height:36px;line-height:0;">' + scIcon(scStreamState.playing ? 'pause' : 'play', 18) + '</button>';
+      h += '<button type="button" id="scStreamNextB" aria-label="Next" style="background:none;border:none;color:var(--ink);line-height:0;padding:6px;">' + scIcon('next', 18) + '</button>';
       h += '<span id="scStreamAt" style="font-size:10.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums;"></span>';
       h += '</div></div>';
     }
@@ -15730,8 +15725,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
         h += '<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-top:1px solid var(--line);">'
           + '<button type="button" class="scs-play" data-id="' + escapeHtml(String(t.id)) + '" style="flex:1;min-width:0;text-align:left;background:none;border:none;color:' + (on ? 'var(--coral)' : 'var(--ink)') + ';font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
           + (on ? '▶ ' : '') + escapeHtml(t.title) + '</button>'
-          + '<button type="button" class="scs-list" data-id="' + escapeHtml(String(t.id)) + '" title="Add to a streaming playlist" style="border:1px solid var(--line);background:none;color:var(--ink-dim);border-radius:999px;padding:3px 8px;font-size:10.5px;">＋</button>'
-          + '<button type="button" class="scs-del" data-id="' + escapeHtml(String(t.id)) + '" title="Remove" style="border:none;background:none;color:var(--ink-dim);font-size:13px;">×</button>'
+          + '<button type="button" class="scs-list" data-id="' + escapeHtml(String(t.id)) + '" title="Add to a streaming playlist" style="border:1px solid var(--line);background:none;color:var(--ink-dim);border-radius:999px;padding:3px 8px;font-size:10.5px;line-height:1;">' + scIcon('plus', 12) + '</button>'
+          + '<button type="button" class="scs-del" data-id="' + escapeHtml(String(t.id)) + '" title="Remove" style="border:none;background:none;color:var(--ink-dim);padding:4px 6px;line-height:0;">' + scIcon('close', 13) + '</button>'
           + '</div>';
       });
       h += '</div>';
@@ -15739,7 +15734,6 @@ function startLyricsAutoScroll(keepPos, noReset) {
       h += '<div style="font-size:11.5px;color:var(--ink-dim);margin-top:8px;">Nothing here yet — search for a song above and add it.</div>';
     }
     h += '</div>';
-    h += '<div style="margin:0 20px 6px;font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--ink-dim);">Downloaded songs</div>';
     host.innerHTML = h;
     scStreamWire();
     scStreamTick();
@@ -15755,6 +15749,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     });
     on('scStreamQuery', 'keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); scStreamSearchRun(this.value); } });
     on('scStreamNewPl', 'click', scStreamNewPlaylist);
+    on('scStreamClose', 'click', scShelfClose);
+    on('scStreamRec', 'click', scShelfRecommend);
+    Array.prototype.forEach.call(host.querySelectorAll('.scs-pin'), function(b){
+      b.addEventListener('click', function(){ scShelfPinSearch(this.getAttribute('data-name')); });
+    });
     on('scStreamPlay', 'click', scStreamToggle);
     on('scStreamPrev', 'click', function(){ scStreamNext(-1); });
     on('scStreamNextB', 'click', function(){ scStreamNext(1); });
@@ -15800,12 +15799,206 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var tries = 0;
       function tick(){
         try{ scStreamBoot(); }catch(_e){}
+        try{ scShelfBoot(); }catch(_eSh){}
         if(scStreamState.built || ++tries > 20) return;
         setTimeout(tick, 400);
       }
       setTimeout(tick, 900);
     })();
   }catch(_eStreamBoot){}
+
+  // ─── 80.6.11 - THE SHELF: icons, the real resolver, the pins ────────────────
+  // 80.6.11 - NO GLYPHS. The transport and the add/remove buttons were set in
+  // characters (U+FF0B, U+23EE, U+23F8, U+23ED, U+00D7) and a WebView rendered
+  // whichever font owned them: an emoji-looking blob next to a proper label, and
+  // a pause glyph in a different weight from the play it replaced. These are
+  // paths, so they take the row's colour, keep one weight and cannot be re-fonted.
+  function scIcon(name, size){
+    var p = {
+      play: 'M8 5v14l11-7z',
+      pause: 'M7 5h4v14H7zm6 0h4v14h-4z',
+      prev: 'M7 5h2v14H7zm12 0v14l-9-7z',
+      next: 'M15 5h2v14h-2zM5 5l9 7-9 7z',
+      plus: 'M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z',
+      close: 'M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z',
+      search: 'M10 4a6 6 0 1 0 3.47 10.9l4.31 4.31 1.42-1.42-4.31-4.31A6 6 0 0 0 10 4zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8z',
+      back: 'M14.7 6.3 13.3 4.9 6.2 12l7.1 7.1 1.4-1.4L9 12z'
+    }[name] || '';
+    var s = Number(size) || 15;
+    return '<svg viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true" focusable="false" ' +
+      'style="display:inline-block;vertical-align:-3px;fill:currentColor;"><path d="' + p + '"/></svg>';
+  }
+
+  // 80.6.11 - THE PLAYER CALL IS THE CONVERTER'S, NOT A SECOND GUESS AT IT.
+  // The first streaming release asked the player endpoint itself, with its own
+  // client list, its own headers and no cipher handling, and it got nothing back:
+  // the row said "no playable stream" and the owner was right to call it broken.
+  // scYtPlayer() is the call the converter has been downloading through for
+  // releases: both clients asked at once with headers that name the client the
+  // body declares, a signatureCipher row decrypted, and the audio pool ranked
+  // before the progressive one. A stream is that same answer, handed to an
+  // <audio> element instead of to the file writer.
+  function scStreamResolve(videoId){
+    var id = String(videoId || '');
+    if(!id) return Promise.resolve('');
+    if(typeof scYtPlayer !== 'function') return Promise.resolve('');
+    return Promise.resolve()
+      .then(function(){ return scYtPlayer(id); })
+      .then(function(r){
+        if(!r || !r.url) return '';
+        // Keep the alternates: a stream that refuses mid-song is retried against
+        // the next candidate before the row admits defeat.
+        scStreamState.alts = (r.alts || []).slice();
+        if(r.videoTitle){ scStreamState.title = String(r.videoTitle); }
+        if(r.author){ scStreamState.author = String(r.author); }
+        return r.url;
+      })
+      .catch(function(){ return ''; });
+  }
+
+  // The next candidate the player handed over, or '' when they are all spent.
+  function scStreamAltUrl(){
+    var a = scStreamState.alts || [];
+    while(a.length){
+      var n = a.shift();
+      if(n && n.url) return n.url;
+    }
+    return '';
+  }
+
+  // --- the pins, mixed into Streaming ------------------------------------------------
+  // The pinned artists are the app's own array (Discover writes it), so the shelf
+  // reads them where they live rather than keeping a copy that could drift.
+  function scShelfPins(){
+    try{
+      if(typeof pinnedArtists !== 'undefined' && Array.isArray(pinnedArtists)) return pinnedArtists;
+    }catch(_ePins){}
+    return [];
+  }
+  function scShelfPinSearch(name){
+    var n = String(name || '').trim();
+    if(!n) return;
+    scShelfOpenTab('streaming');
+    scStreamSearchRun(n + ' songs');
+  }
+  // A song is a seed: its artist is the recommendation, because that is the one
+  // thing the source tells us about a stream that the app actually knows.
+  function scShelfRecommend(){
+    var cur = scStreamById(scStreamState.curId);
+    var who = (cur && (cur.artist || '')) || scStreamState.author || '';
+    who = String(who).replace(/\s*-\s*topic\s*$/i, '').replace(/vevo$/i, '').trim();
+    if(!who){ scStreamSay('Play a stream first - the recommendation comes from its artist'); return; }
+    scStreamState.q = who + ' mix';
+    scStreamSearchRun(who + ' mix');
+  }
+
+  // ─── 80.6.11 - THE SHELF: Library opens a rail, the rail opens a sheet ──────
+  // What was wrong with 80.6.9's shape: streaming was painted INTO the library
+  // list, above the downloaded songs, so two different things shared one scroll
+  // and one heading. The owner asked for the opposite: the Library keeps its own
+  // list, and streaming gets its own place - a rail of three tabs where it is,
+  // with the streaming sheet sliding in from the right over the list.
+  //
+  // THREE TABS, AND TWO OF THEM ARE THE APP'S OWN. "Library" and "Albums" are not
+  // reimplementations: they close the sheet and drive the page's existing library
+  // (libraryMode + navigate), so sorting, search, selection and the album
+  // expansion all keep behaving exactly as they already do.
+  var scShelf = { tab: 'library', open: false, built: false };
+
+  function scShelfSheet(){
+    return document.getElementById('scStreamBlock');
+  }
+  function scShelfCss(){
+    if(document.getElementById('scShelfCss')) return;
+    var st = document.createElement('style');
+    st.id = 'scShelfCss';
+    // The sheet is fixed to the right edge on every size, so the list underneath
+    // is never re-laid-out and never re-rendered by opening it.
+    st.textContent = [
+      '#scStreamBlock{position:fixed;top:0;right:0;bottom:0;left:auto;width:min(88%,430px);',
+      'z-index:60;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);',
+      'border-left:1px solid var(--line);box-shadow:-18px 0 40px rgba(0,0,0,.35);',
+      'transform:translateX(102%);transition:transform .28s cubic-bezier(.22,.61,.36,1);',
+      'padding:14px 0 28px;visibility:hidden;margin:0}',
+      '#scStreamBlock.scShelfOpen{transform:translateX(0);visibility:visible}',
+      '#scShelfScrim{position:fixed;inset:0;z-index:55;background:rgba(4,8,10,.42);',
+      'opacity:0;pointer-events:none;transition:opacity .22s ease}',
+      '#scShelfScrim.scShelfOpen{opacity:1;pointer-events:auto}',
+      '#scShelfRail{display:flex;gap:8px;margin:0 20px 10px;overflow-x:auto;',
+      'scrollbar-width:none;-webkit-overflow-scrolling:touch}',
+      '#scShelfRail::-webkit-scrollbar{display:none}',
+      '#scShelfRail .scshelf-tab{flex:0 0 auto;border:1px solid var(--line);background:none;',
+      'color:var(--ink-dim);border-radius:999px;padding:7px 14px;font-size:12px;',
+      'font-family:var(--font-ui);transition:background .18s ease,color .18s ease}',
+      '#scShelfRail .scshelf-tab.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}',
+      '#scShelfHead{display:flex;align-items:center;gap:8px;padding:0 16px 6px}',
+      '#scShelfHead .scshelf-title{font-size:13.5px;font-weight:700;flex:1}'
+    ].join('');
+    document.head.appendChild(st);
+  }
+  function scShelfRender(){
+    if(!SC_STREAM_OK) return;                 // no rail, no sheet, outside the full builds
+    var rail = document.getElementById('scShelfRail');
+    if(!rail) return;
+    var tabs = [['streaming', 'Streaming'], ['library', 'Library'], ['albums', 'Albums']];
+    rail.innerHTML = tabs.map(function(t){
+      var on = (t[0] === 'streaming') ? scShelf.open : (!scShelf.open && scShelf.tab === t[0]);
+      return '<button type="button" class="scshelf-tab' + (on ? ' on' : '') + '" data-shelf="' + t[0] + '">' +
+        escapeHtml(t[1]) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
+      b.addEventListener('click', function(){ scShelfOpenTab(this.getAttribute('data-shelf')); });
+    });
+  }
+  function scShelfClose(){
+    scShelf.open = false;
+    var sheet = scShelfSheet(), scrim = document.getElementById('scShelfScrim');
+    if(sheet) sheet.classList.remove('scShelfOpen');
+    if(scrim) scrim.classList.remove('scShelfOpen');
+    scShelfRender();
+  }
+  function scShelfOpenTab(tab){
+    if(!SC_STREAM_OK) return;
+    if(tab === 'library' || tab === 'albums'){
+      // The app's own halves: close the sheet, switch the half, let it re-render.
+      scShelf.tab = tab;
+      scShelfClose();
+      try{
+        if(tab === 'albums'){ if(typeof libraryMode !== 'undefined'){ libraryMode = 'albums'; } }
+        else { if(typeof libraryMode !== 'undefined'){ libraryMode = 'playlists'; } }
+        if(typeof navigate === 'function') navigate('library');
+        if(typeof renderTabs === 'function') renderTabs();
+        if(typeof renderList === 'function') renderList();
+      }catch(_eShelf){}
+      return;
+    }
+    scShelf.tab = 'streaming';
+    scShelf.open = true;
+    scShelfCss();
+    var sheet = scShelfSheet(), scrim = document.getElementById('scShelfScrim');
+    if(scrim){ scrim.classList.add('scShelfOpen'); }
+    if(sheet){ sheet.classList.add('scShelfOpen'); }
+    scStreamRender();
+    scShelfRender();
+  }
+  function scShelfBoot(){
+    if(!SC_STREAM_OK) return;
+    if(scShelf.built) return;
+    var rail = document.getElementById('scShelfRail');
+    if(!rail) return;
+    scShelf.built = true;
+    scShelfCss();
+    var scrim = document.getElementById('scShelfScrim');
+    if(!scrim){
+      scrim = document.createElement('div');
+      scrim.id = 'scShelfScrim';
+      scrim.addEventListener('click', scShelfClose);
+      document.body.appendChild(scrim);
+    }
+    var sheet = scShelfSheet();
+    if(sheet){ sheet.setAttribute('aria-hidden', 'true'); sheet.setAttribute('role', 'dialog'); }
+    scShelfRender();
+  }
 
   function formatSyncedLyrics(lrc) {
     // Full LRC parser: handles multi-timestamp lines ("[00:12.00][00:55.00]same
@@ -16854,7 +17047,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.10';
+  const APP_VERSION = '80.6.11';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -17503,12 +17696,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.11', date: 'October 29, 2026 · 7:45 PM EDT', title: 'A shelf for streaming, and streams that play', items: [
+    'The Library opens on a short rail of three tabs - <b>Streaming</b>, <b>Library</b> and <b>Albums</b> - so the stream shelf, your files and your albums never share one scroll again.',
+    'Streaming is a panel of its own now: it slides in from the right over the list, and the list keeps the place it was in while it is open.',
+    '[FULL] Your <b>pinned artists</b> sit at the top of the shelf as chips - one tap searches that artist - and <b>Recommended</b> seeds a mix from whoever you are streaming.',
+    '[FULL] The transport and the add and remove buttons are drawn as icons instead of characters, so a WebView can no longer render one of them as an emoji, and the play button takes your theme&rsquo;s colour.',
+    'A stream is resolved by the same call the converter is built on, so a song that would download now plays: both clients asked at once, headers that name the client the request declares, a ciphered row decrypted, and the audio streams tried before the muxed ones.',
+  ]},
   { version: '80.6.10', date: 'October 29, 2026 · 7:24 PM EDT', title: 'Streaming, experimental', items: [
-    '<b>Streaming, experimental.</b> The Library opens with a Streaming block: search a song, add it, and it plays <b>from the source</b> without being downloaded or saved to your device. It is marked experimental because the source is not ours and its links expire.',
-    '<b>Your downloaded songs are a section of their own</b>, under a &ldquo;Downloaded songs&rdquo; heading right beneath the streaming block, so the two never look like one list.',
-    '<b>Streaming playlists.</b> A streaming song has its own ＋ button: type a playlist name (a new one is created if it does not exist) and the playlist appears as a chip that plays through it. Streaming playlists are stored separately from your downloaded ones and can never be confused with them.',
-    '<b>An expired link fixes itself.</b> A stream is re-resolved after thirty minutes, and again the moment the source refuses it &mdash; the same song, resumed at the position it was on. A song that cannot be re-resolved says so instead of sitting there silently.',
-    'It uses its own player, so a stream that dies cannot touch your queue, widget or downloaded playback.',
+    '[FULL] <b>Streaming, experimental.</b> The shelf opens as a panel of its own: search a song, add it, and it plays <b>from the source</b> without being downloaded or saved to your device. It is marked experimental because the source is not ours and its links expire.',
+    '[FULL] <b>Your downloaded songs are a section of their own</b>, under a &ldquo;Downloaded songs&rdquo; heading right beneath the streaming block, so the two never look like one list.',
+    '[FULL] <b>Streaming playlists.</b> A streamed song has its own add button: type a playlist name (a new one is created if it does not exist) and the playlist appears as a chip that plays through it. Streaming playlists are stored separately from your downloaded ones and can never be confused with them.',
+    '[FULL] <b>An expired link fixes itself.</b> A stream is re-resolved after thirty minutes, and again the moment the source refuses it &mdash; the same song, resumed at the position it was on. A song that cannot be re-resolved says so instead of sitting there silently.',
+    '[FULL] It uses its own player, so a stream that dies cannot touch your queue, widget or downloaded playback.',
   ]},
   { version: '80.6.8', date: 'October 29, 2026 · 7:03 PM EDT', title: 'Every word lands on the voice', items: [
     '<b>The sheet&rsquo;s own word timing is used now.</b> A timed sheet can stamp each word, and that was being stripped out of the line with the line stamps &mdash; every word after it was paced by a guess. The highlight lands on the stamp, and a word between two stamps is placed by its own syllables.',
@@ -21067,7 +21267,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   function scHidesOnPlay(t){
     if(typeof t !== 'string') return false;
-    if(/(downloader|downloading|converter|converts|converting|conversion|convert\b|spotify to mp3|youtube to mp3|\bto mp3\b|get song\b|spotisaver|spotmate|spotidown|spoticatch|ytmp3|vocal remover|no source found|hand-?off)/i.test(t)) return true;
+    if(/(downloader|downloading|converter|converts|converting|conversion|convert\b|spotify to mp3|youtube to mp3|\bto mp3\b|get song\b|spotisaver|spotmate|spotidown|spoticatch|ytmp3|vocal remover|no source found|hand-?off|streaming|streams?\b|from the source)/i.test(t)) return true;
     if(/\bdownload/i.test(t) && !/(zip|crossfad|to phone|artwork|megabytes|csv|re-?download)/i.test(t)) return true;
     return false;
   }
