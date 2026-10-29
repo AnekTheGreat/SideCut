@@ -1,32 +1,33 @@
-## 80.6.5 ({{STAMP}}): a warm dusk preset for the widget
+## 80.6.6 ({{STAMP}}): Amber dusk is a theme, and the glass has its name
 
-- **THE ASK.** *"make another version of the widgit like the Samsung widgit color."* In the screenshot the
-  phone's own weather widget is a rounded pane graded from a **gold-olive** top corner down to near-black,
-  with warm off-white type, a dim sand line beneath it and a **sun-gold** accent. Every dark preset this app
-  shipped is a cold or neutral night (Ocean, Midnight, Slate, Aurora, Forest); every bright one is candy.
-  There was nothing warm and graded, which is the one look the screenshot is actually wearing.
-- **WHAT SHIPPED: ONE PRESET, `Amber dusk`.** `bg1 #7C6A2C` -> `bg2 #171310`, title `#FFF6E6`, artist
-  `#EBD8B4`, accent `#FFC24A`, pill `#332A18`/`#FFF3DC`. It is the same **nine keys** the native provider
-  already reads - two stops it renders as one gradient bitmap, the title/artist colours it sets with
-  `setTextColor`, the accent it paints the playing bars with, the pill pair - so **nothing on the Android
-  side changed**, no new bridge call, no APK rebuild. It sits at the **end of the bright block**, immediately
-  above `coral`: bright ones still lead, this closes them, the dark block is untouched.
-- **IT IS OPAQUE ON PURPOSE.** A `glass: true` preset would be a second claim on the **Frost dial**, and the
-  dial is meant to tune one pane. So Amber dusk behaves like the other plain presets: pick it in
-  Settings > Widget, it applies to every placed widget, and the fine-tune palette still layers on top.
-- **THE COLOURS WERE CHOSEN AGAINST A MEASUREMENT, NOT BY EYE.** The title is painted across the *whole*
-  panel, so the light end of the gradient is the worst case: `#FFF6E6` on `#7C6A2C` is **4.96:1** and the
-  artist line on the same stop is **3.80:1**, both over the WCAG floors. `bg1` is held at that value rather
-  than a brighter gold for exactly this reason.
-- **VERIFIED ON THE PAGE THAT SHIPS.** `python3 dev/patch-8065.py` (1 step) then `--check` (0 steps); every
-  inline script block parses; `dev/check-8065.cjs` passes **23/23**. It slices the real `WIDGET_THEMES`
-  literal out of `index.html` (never a copy), evaluates it, and reads it the way the native provider does:
-  twenty presets, all nineteen earlier keys still present, **all nine fields on every preset**, **every
-  colour a plain `#RRGGBB`**, the contrast ratios above computed from the shipped values, the preset's
-  position in the grid, and **Frost still the only glass preset** so the dial cannot end up governing two.
+- **THE ASK.** *"this being an actual theme would be pretty cool and where is the liquid one"* - two things,
+  and the second one turned out to be a **naming bug**, not a missing feature.
+- **AMBER DUSK IS ON THE THEME WALL.** `THEMES.amberdusk` - `bg #171307`, `bgRaised #271F0E`,
+  `coral #FFC24A`, `gold #C9B86A`. The 80.6.5 widget palette as a wall: near-black olive behind everything,
+  a raised olive panel, the sun gold as the accent. No `rgb`, no `dynamic`, no `reward`, so
+  `renderThemeOptions()` files it under **Static themes**; it carries `fresh:true`, which puts it first in
+  that group and puts a **NEW** tag on its row **for this release only** (the flag lives on the entry and
+  leaves with it - there is no second list to keep in sync). The wall has no light theme, so the background
+  is held dark: white ink on it is **18:1**, the gold on it **11:1**, dark type on the gold **13:1**.
+- **THE LIQUID ONE WAS ALWAYS THERE.** The glass widget has been **first** on the shelf since 80.6 - it was
+  labelled *Frosted glass*, so anyone looking for "liquid" found nothing. It is **Liquid glass** now. The
+  **key stays `frost`**, which is what a phone's saved pick, the fine-tune swatches and every pushed payload
+  actually carry, so nothing migrates and nothing is lost. Same nine colours, same Frost dial, still the only
+  glass preset.
+- **THE PANE READS AS GLASS AGAIN, WITHOUT GETTING THICKER.** 80.6.3 thinned it far enough that the preview
+  stopped looking like a lens - the colour strip behind it came through nearly untouched. The fix is **not
+  more milk** (that would undo what was asked two releases ago): the drifting **specular band** goes from
+  0.34 to **0.52** white and widens, the top rim 0.55 -> **0.72**, the edge 0.20 -> **0.26**, and the backdrop
+  is pushed at **saturate(1.45)** instead of 1.9 so the pane sits *on* the colour rather than vanishing into
+  it. `alpha` is still **0.32 -> 0.62** - the transparency is untouched, and the check asserts that it is.
+- **VERIFIED ON THE PAGE THAT SHIPS.** `python3 dev/patch-8066.py` (1 step) then `--check` (0 steps); every
+  inline script block parses; `dev/check-8066.cjs` passes **37/37**. It slices **both** tables out of
+  `index.html` (never copies) and evaluates them: the theme lands in the Static group by
+  `renderThemeOptions()`'s own rule, it is the only fresh static entry, exactly four themes are still badge
+  rewards, its contrast numbers are computed from the shipped hex, the widget key `frost` survives the
+  rename and still leads the shelf, twenty presets remain, and the sheen moved while `alpha` did not.
   The OTA bundles reach a true fixed point in the release step - root + `ota/` **{{ROOT}}** bytes,
-  `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.6.5.
-- **NOT CLAIMED.** Nobody has looked at the new preset on a phone's home screen - the check proves the data
-  the widget is handed is complete, parseable and readable, not how it renders behind a launcher's own
-  clipping. Nothing moved in the glass, the glass preview, the playing bars, the idle saver, the player, the
-  library, the lyrics or the audio graph.
+  `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.6.6.
+- **NOT CLAIMED.** Nobody has worn the theme on a phone, and the band/rim/blur are **Settings-preview only** -
+  the home-screen widget is a RemoteViews bitmap and draws a colour, not a filter (true since 80.6). No native
+  change, so this rides the OTA bundle; the installed APK needs nothing rebuilt.
