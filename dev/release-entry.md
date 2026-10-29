@@ -1,51 +1,40 @@
-## 80.6.3 ({{STAMP}}): the glass is liquid - thinner, clearer, and the highlight moves
+## 80.6.4 ({{STAMP}}): the tab transition waits for a visible page, and stops leaking its aborts
 
-- **THE OWNER'S ASK, VERBATIM.** *"make it liquidy like ios and less frosted and more transparent"*.
-  Three words, one subject: the frosted widget 80.6 added and 80.6.1 froze. Both earlier passes answered
-  "what colour is the milk" - this one takes the milk out.
-- **THINNER, MEASURED RATHER THAN DESCRIBED.** The panel's alpha ran **0.52 -> 0.88** after 80.6.1;
-  it runs **0.32 -> 0.62** now. At the thinnest setting the wallpaper is what you see, with a cool cast
-  over it; at the thickest the pane is still plainly see-through, which is the half of the ask that
-  0.88 was failing. Only the two stops and the dial's mapping moved - `scFrostGlass()` still returns
-  `#AARRGGBB` for the widget and `rgba()` for CSS, so no native path was touched.
-- **LESS MILK, MORE COLOUR.** The white mix is roughly halved: **0.16 -> 0.34** on the lit stop (was
-  0.30 -> 0.55) and **0.02 -> 0.11** on the other (was 0.06 -> 0.26). The second stop goes a shade
-  deeper (`#A9C6E6` -> `#96BCE2`) so a thinner pane keeps its colour instead of fading into the
-  wallpaper, and the 80.6.1 ice lift is untouched, so thick still reads colder rather than chalkier.
-  The type goes a step deeper with it (`#07182C`, artist `#2F4A6E`).
-- **THE HIGHLIGHT MOVES NOW.** 80.6.1's sheen was a painted corner gradient; it is a `.sc-glass-liquid`
-  layer with a specular band that travels across the pane on a **9s** loop, at rest at both ends so the
-  restart is not a jump. That is the "liquid" half of the ask and it is real motion in the one place
-  this app can draw a filter: **the Settings preview**. The home-screen widget is a RemoteViews bitmap -
-  it draws a colour, cannot blur or refract - so what reaches the wallpaper is the transparency, not the
-  band. Both Reduce-motion paths stop it and settle it mid-pane as a still sheen (the app's
-  `sandbox-reduce-motion` class and the device's `prefers-reduced-motion`), and the check proves both.
-- **THE PREVIEW IS A LENS.** A bright rim across the top **and** a soft one under the bottom (a one-edge
-  rim reads as a sticker, two edges read as thickness), the backdrop pushed to
-  `saturate(1.9) contrast(1.04) brightness(1.04)` with a slower-growing blur (`6 -> 18px`, was
-  `8 -> 26px`) so a thinner pane shows saturated colour rather than a grey wash, and a deeper contact
-  shadow so it sits on the strip of wallpaper instead of floating.
-- **THE CAPTION STOPPED LYING.** The dial's copy promised "a soft, nearly solid pane" at the right end,
-  which is exactly what this release removed. It now says what the two ends do, and names the trade the
-  thinner end makes: type is easiest to read on a busy or very dark wallpaper. The dial itself, its
-  0-100 range, its memory and its wiring are untouched.
-- **VERIFIED ON THE PAGE THAT SHIPS.** `python3 dev/patch-8063.py` (1 step) then `--check` (0 steps);
-  **every inline script block parses** (7 blocks); and `dev/check-8063.cjs` passes **35/35** against the
-  page as it stands. It drives the page's OWN `scFrostGlass()` (sliced out of `index.html`, not copied)
-  at 0 / 55 / 100 and asserts what the release claims: both ends are thinner than 80.6.2's (cold
-  `<= 0x56`, hot `<= 0xA4`, against its `0x85` / `0xE0`), the thick end is still translucent (`>= 0x90`),
-  the white mixing is lower at both ends, the pane stays cool and gets icier with the dial, the type
-  stays navy, CSS still receives `rgba()`, and the frost number still rides with the theme. On the
-  preview it asserts the two-edge rim, the stronger backdrop push, the absence of the painted sheen, the
-  liquid layer and its keyframes, and that **both** Reduce-motion paths switch the animation off. The
-  preset keeps its `frost` key and its label, so a phone already on it keeps its pick and its dial.
-  The OTA bundles reach a true fixed point in the release step - root + `ota/` **{{ROOT}}** bytes,
-  `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.6.3.
-- **WHAT IS NOT CLAIMED.** No phone and no screenshot: the **look** of a 0.32 pane over a photograph,
-  and the rate of the band on a display, were not seen - what is proven is the alpha and colour the
-  widget is handed, the CSS that animates the band and when it does not. The home-screen widget gets
-  the transparency and the colour only; it has no blur, no rim and no band, and this release cannot
-  give it one without a native change. The trade is stated rather than hidden: **the thinner the pane,
-  the less contrast the dark type has over a very dark wallpaper** - the dial is the answer, and the
-  caption says so. Nothing moved in the eighteen other presets, the app chrome's own Liquid glass mode,
-  the player, the library, the lyrics or the audio graph.
+- **THE BUG THE OWNER PHOTOGRAPHED.** A red strip across the top of the app reading
+  `SideCut error: Transition was aborted because of invalid state. Document hidden`. That message is
+  Chrome's, not the app's: `navigate()` runs the view swap inside `document.startViewTransition()`
+  (80.3.6), and Chrome aborts a view transition when the page is hidden as it starts or goes hidden
+  while it runs. It reports the abort by **rejecting the transition's promises** - starting with `ready`.
+- **WHY IT REACHED THE SCREEN.** The wrapper caught `finished` only. So `ready`'s rejection had no owner,
+  became an `unhandledrejection`, and the boot banner (line 7491) prints unhandled rejections in full.
+  A backgrounded app is the normal case on Android, which is why it kept happening: tap a tab as you
+  leave the app and the abort is guaranteed.
+- **THE FIX IS THREE THINGS IN ONE FUNCTION.** (1) **The door**: a page whose `visibilityState` is not
+  `visible` never starts a transition - it takes the plain `navigate()` path, which is the same door
+  reduced motion already used. Nothing to abort. (2) **The leak**: `ready`, `updateCallbackDone` and
+  `finished` each get a `catch`, so an abort is handled however late it lands. (3) **The lost tap**: an
+  abort can land *before* the update callback ran, which means the DOM never swapped and the tap went
+  nowhere - the callback now records that it ran, and a navigation that was swallowed is replayed
+  outside the transition, guarded by the same flag so a swap that did happen is never done twice.
+- **THE ANIMATION IS NOT CHANGED.** Same tokens, same duration and curve, same arrival for a pane's
+  first paint, same two reduce-motion switches. This release only decides *whether* a transition may
+  start and what happens to the promise it hands back.
+- **VERIFIED BY CAUSING THE ABORT, NOT BY GREPPING FOR THE FIX.** `python3 dev/patch-8064.py` (1 step)
+  then `--check` (0 steps); **every inline script block parses** (7 blocks); `dev/check-8064.cjs`
+  passes **22/22**. It slices the page's own navigation IIFE out of `index.html` (not a copy), runs it in
+  a vm against a fake `document`, and drives it with a **process-level `unhandledRejection` counter
+  standing in for the banner**: a hidden page starts no transition and still navigates once; a normal
+  swap starts one and runs it once; an abort on `ready` raises **no** unhandled rejection and does not
+  repeat the swap; an abort **before** the update callback still lands the navigation, exactly once, and
+  leaks nothing; reduce motion still skips the transition. It then asserts the shape - the visibility
+  door, all three owned promises, the guarded replay, the absent lone-`finished` catch - and that the
+  run as a whole left no rejection behind. The same driver run against the **pre-patch page** fails
+  **8/22**, including `the whole run left no unhandled rejection - Transition was aborted because of
+  invalid state. Document hidden`, which is the screenshot's own message: the check is known to fail on
+  the bug and pass on the fix, not merely to pass. The OTA bundles reach a true fixed point in the
+  release step - root + `ota/` **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at
+  v80.6.4.
+- **WHAT IS NOT CLAIMED.** No phone: that the strip is gone on the device it was photographed on. What is
+  proven is that the exact rejection that produced it is now owned and cannot reach the `unhandledrejection`
+  listener, and that the swallowed-navigation case still switches tabs. Nothing moved in the glass, the
+  widget, the player, the library, the lyrics or the audio graph.
