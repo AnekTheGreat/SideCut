@@ -14,9 +14,11 @@ So this is a text release, and only that:
     playback);
   - APP_VERSION and the shell cache move to 80.6.10 so the page is a new build and the OTA
     notes are rebuilt from the corrected changelog;
-  - no new changelog entry is added. A note that says "a note was reworded" is noise in the
-    list the reader actually sees; the entry being corrected is the newest one, which is the
-    one the update sheet shows.
+  - the entry is RE-LABELLED 80.6.10 rather than a second entry being added. A note that says
+    "a note was reworded" is noise in the list the reader actually sees, and a new entry above
+    it would push the streaming notes off the update sheet; the corrected entry is the one
+    that belongs there. It is also what the release step reads its commit subject from, so a
+    release with no entry for its own version cannot commit at all.
 
 Idempotent: the marker is the corrected sentence plus the version.
 
@@ -40,9 +42,14 @@ BUILD_CLAUSE = ('It lives in the <b>full builds only</b> &mdash; the section is 
 PLAIN = ('It uses its own player, so a stream that dies cannot touch your queue, widget or '
          'downloaded playback.')
 
+# The entry keeps its items and its date; only the version it is filed under moves.
+CHANGELOG_OLD = "  { version: '%s', date:" % OLD_VERSION
+CHANGELOG_NEW = "  { version: '%s', date:" % VERSION
+
 CLAIMS = [
     ("const APP_VERSION = '%s';" % VERSION, 'the page runs ' + VERSION),
     (PLAIN, 'the note keeps its point without naming a build'),
+    (CHANGELOG_NEW, 'the changelog entry is the ' + VERSION + ' one'),
 ]
 
 # The note is the only user-visible text that named a build. The module's own comments still say
@@ -51,6 +58,7 @@ CLAIMS = [
 GONE = [
     (BUILD_CLAUSE, 'the build clause in the note'),
     ('<b>full builds only</b>', 'the build named in the note'),
+    (CHANGELOG_OLD, 'the old entry version'),
 ]
 
 
@@ -66,7 +74,8 @@ def main():
     page_path = os.path.join(ROOT, 'index.html')
     page = open(page_path, encoding='utf-8').read()
 
-    if ("const APP_VERSION = '%s';" % VERSION) in page and BUILD_CLAUSE not in page:
+    if (("const APP_VERSION = '%s';" % VERSION) in page and BUILD_CLAUSE not in page
+            and CHANGELOG_NEW in page):
         print('  present: the page runs ' + VERSION + ', and the note names no build')
         print('patch-80610%s: 0 step(s) applied' % (' --check' if CHECK else ''))
         return 0
@@ -78,6 +87,7 @@ def main():
                  % OLD_VERSION)
 
     page = swap(page, BUILD_CLAUSE, PLAIN, 'the build clause in the 80.6.9 note')
+    page = swap(page, CHANGELOG_OLD, CHANGELOG_NEW, 'the version the entry is filed under')
     page = swap(page, "  const APP_VERSION = '%s';" % OLD_VERSION,
                 "  const APP_VERSION = '%s';" % VERSION, 'the version')
 
