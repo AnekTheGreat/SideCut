@@ -7,7 +7,7 @@
 - **WHAT IS POSSIBLE, AND WHY.** The page already reaches YouTube for search (`scYtSearch`) and already
   speaks the InnerTube player endpoint to get signed media URLs (`scHttpJson`, used by the converter).
   A stream is that same signed URL handed straight to an `<audio>` element instead of being fetched,
-  decoded and written as a file - which is why this release is a section and a small module rather than
+  decoded and written as a file — which is why this release is a section and a small module rather than
   a new pipeline.
 - **THE GATE IS `!SC_IS_PLAY`.** `SC_IS_PLAY` is the Play build (native Play APK, or the web page that
   is not the full one), so `SC_STREAM_OK` is true in the **full APK and full web only**. That is not
@@ -23,7 +23,7 @@
 - **THE TWO LIBRARY SECTIONS.** `<div id="scStreamBlock"></div>` is inserted as a **sibling above**
   `#listPane`, not inside it: that pane is rewritten on every library render (search keystroke, tab
   change, sort), so anything inside it would be destroyed on the next keystroke. The block paints the
-  streaming header, its search, its songs and its playlists, then a **"Downloaded songs"** heading -
+  streaming header, its search, its songs and its playlists, then a **"Downloaded songs"** heading —
   the downloaded list keeps rendering underneath, under its own label.
 - **STREAMING PLAYLISTS ARE SEPARATE DATA.** `streamTracks` and `streamPlaylists` are their own meta
   keys; a streaming playlist holds stream ids (`s_<videoId>`), and `scStreamPlAdd` is a no-op for a
@@ -48,6 +48,6 @@
   playlist add/remove/empty cases are right, the seat is above `#listPane` and empty until the module
   fills it, the streaming stores are separate keys and a streaming song is never written into the
   downloaded library, and every inline script on the page still compiles. If the first real tap on a
-  stream fails, the row now says which failure it was - that is the part to read before changing
-  anything in the resolver. The OTA bundles reach a true fixed point in the release step - root +
+  stream fails, the row now says which failure it was — that is the part to read before changing
+  anything in the resolver. The OTA bundles reach a true fixed point in the release step — root +
   `ota/` **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.6.9.
