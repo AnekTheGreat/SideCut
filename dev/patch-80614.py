@@ -362,7 +362,7 @@ swap('the state records how the song arrived',
 swap('the version', "const APP_VERSION = '%s';" % OLD_VERSION,
      "const APP_VERSION = '%s';" % VERSION)
 
-swap('the state keeps the stream's length',
+swap('the state keeps the stream length',
      "        scStreamState.size = Number(r.size) || 0;",
      "        scStreamState.size = Number(r.size) || 0;\n"
      "        scStreamState.via = '';\n"
