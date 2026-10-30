@@ -15397,7 +15397,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     tracks: null, playlists: null, results: null, curId: '', url: '', urlAt: 0,
     busy: false, ready: false, q: '', built: false, audio: null, playing: false,
     mime: '', size: 0, bytes: 0, fixes: 0, pl: '', alts: [], blobUrl: '',
-    via: '', err: '', barOn: false, genre: ''
+    via: '', err: '', barOn: false, genre: '', genres: null
   };
 
   // --- the pure part, which is what dev/check-8069.cjs drives -----------------
@@ -15966,9 +15966,121 @@ function startLyricsAutoScroll(keepPos, noReset) {
     { n: 'Jazz', q: 'jazz standards', a: '#42275a', b: '#734b6d' },
     { n: 'Chill', q: 'chill lofi', a: '#667eea', b: '#764ba2' },
     { n: 'Dance', q: 'dance party', a: '#11998e', b: '#38ef7d' },
-    { n: 'Old School', q: 'old school hits', a: '#b79891', b: '#94716b' },
-    { n: 'Gospel', q: 'gospel worship', a: '#f12711', b: '#f5af19' }
+    { n: 'Old School', q: 'old school hits', a: '#b79891', b: '#94716b' }
   ];
+  // 80.6.18 - THE GENRES ARE YOURS
+  // The rail is a starting point, not a menu: any genre can be added, and the ones
+  // the owner added are the ones the AI is asked about. A custom genre is a search
+  // of its own name, so it works the moment it is typed.
+  function scStreamGenreName(s){
+    var out = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if(out.length > 24) out = out.slice(0, 24).replace(/\s+$/, '');
+    return out;
+  }
+  function scStreamGenres(){
+    var out = SC_STREAM_GENRES.slice();
+    var mine = scStreamState.genres || [];
+    for(var i = 0; i < mine.length; i++){
+      var n = scStreamGenreName(mine[i]);
+      if(!n) continue;
+      if(out.some(function(g){ return g.n.toLowerCase() === n.toLowerCase(); })) continue;
+      out.push({ n: n, q: n + ' hits', a: '#3a2a35', b: '#54404f', custom: true });
+    }
+    return out;
+  }
+  function scStreamGenresSave(){
+    try{ dbPut('meta', { key: 'streamGenres', value: (scStreamState.genres || []).slice() }); }catch(_eGs){}
+  }
+  function scStreamGenreAdd(){
+    var name = '';
+    try{ name = prompt('Add a genre - the AI will recommend songs from it:', ''); }catch(_eGa){ name = ''; }
+    name = scStreamGenreName(name);
+    if(!name) return;
+    var list = (scStreamState.genres || []).slice();
+    var known = scStreamGenres().some(function(g){ return g.n.toLowerCase() === name.toLowerCase(); });
+    if(!known) list.push(name);
+    scStreamState.genres = list;
+    scStreamGenresSave();
+    scStreamGenre(name);
+    scStreamSay(known ? ('\u201c' + name + '\u201d is already on the rail') : ('Added \u201c' + name + '\u201d - tap it any time'));
+  }
+  function scStreamGenreRemove(name){
+    var low = scStreamGenreName(name).toLowerCase();
+    var list = (scStreamState.genres || []).slice();
+    var next = list.filter(function(x){ return scStreamGenreName(x).toLowerCase() !== low; });
+    if(next.length === list.length){
+      scStreamSay('\u201c' + name + '\u201d came with the app - only the genres you added can be removed');
+      return;
+    }
+    var go = true;
+    try{ go = confirm('Remove \u201c' + name + '\u201d from your genres?'); }catch(_eGc){ go = true; }
+    if(!go) return;
+    scStreamState.genres = next;
+    scStreamGenresSave();
+    if(String(scStreamState.genre) === String(name)){ scStreamState.genre = ''; scStreamState.results = null; }
+    scStreamRender();
+    scStreamSay('Removed \u201c' + name + '\u201d');
+  }
+  function scStreamGenresLine(limit){
+    var names = scStreamGenres().map(function(g){ return g.n; });
+    var n = Number(limit) || 0;
+    if(n > 0 && names.length > n) return names.slice(0, n).join(', ') + ' and more';
+    return names.join(', ');
+  }
+  // The AI is asked for songs, not links: the titles it names are searched the same
+  // way a typed search is, so every offer goes through the path that already works.
+  function scStreamAiRecommend(){
+    var names = scStreamGenres().map(function(g){ return g.n; });
+    if(!names.length) return false;
+    var key = (typeof _aiGeminiKey !== 'undefined') ? String(_aiGeminiKey || '') : '';
+    var model = (typeof window.__scGeminiModel === 'function') ? String(window.__scGeminiModel() || '') : '';
+    if(!key || !model) return false;
+    scStreamSay('Asking the AI for songs in ' + scStreamGenresLine(3) + '\u2026');
+    var ask = 'Recommend 6 well-known songs across these music tastes: ' + names.join(', ') + '. '
+      + 'Use real released songs. Reply with ONLY a JSON array of objects with the keys "song", "artist" and "genre".';
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + key, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: ask }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 500 }
+      })
+    }).then(function(r){ return r && r.ok ? r.json() : null; }).then(function(d){
+      var tx = (d && d.candidates && d.candidates[0] && d.candidates[0].content
+        && d.candidates[0].content.parts && d.candidates[0].content.parts[0].text) || '';
+      var body = String(tx).match(/\[[\s\S]*\]/);
+      var arr = [];
+      try{ arr = body ? JSON.parse(body[0]) : []; }catch(_eAj){ arr = []; }
+      if(!Array.isArray(arr) || !arr.length) throw new Error('nothing usable');
+      var picks = [];
+      function step(i){
+        if(i >= arr.length || picks.length >= 4) return Promise.resolve(picks);
+        var it = arr[i] || {};
+        var q = (String(it.song || '') + ' ' + String(it.artist || '')).trim();
+        if(!q) return step(i + 1);
+        return Promise.resolve(scYtSearch(q, '', '')).then(function(items){
+          var hit = (items || [])[0];
+          if(hit){
+            hit.genre = scStreamGenreName(it.genre || '');
+            picks.push(hit);
+          }
+          return step(i + 1);
+        }).catch(function(){ return step(i + 1); });
+      }
+      return step(0);
+    }).then(function(picks){
+      if(!picks || !picks.length) throw new Error('nothing usable');
+      scStreamState.results = picks.slice(0, 4);
+      scStreamState.q = '';
+      scStreamRender();
+      scStreamSay('Chosen for your genres - tap Add on the one you want');
+    }).catch(function(){
+      scStreamSay('The AI had nothing usable just now - the genre tiles still search');
+    });
+    return true;
+  }
+
+  try{ window.__scStreamGenres = function(){ return scStreamGenres().map(function(g){ return g.n; }); }; }catch(_eGx){}
   function scStreamGenreStrip(){
     var h = '<div style="margin-top:10px;">';
     h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">';
@@ -15977,22 +16089,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(scStreamState.genre) h += '<button type="button" id="scStreamGenreClear" style="border:none;background:none;color:var(--ink-dim);font-size:10.5px;padding:2px 0;">' + escapeHtml(scStreamState.genre) + ' \u00d7</button>';
     h += '</div>';
     h += '<div style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:1px 0 3px;">';
-    SC_STREAM_GENRES.forEach(function(g){
+    scStreamGenres().forEach(function(g){
       var on = String(scStreamState.genre) === String(g.n);
-      h += '<button type="button" class="scs-genre" data-g="' + escapeHtml(g.n) + '"'
+      h += '<button type="button" class="scs-genre"' + (g.custom ? ' data-custom="1"' : '') + ' data-g="' + escapeHtml(g.n) + '"'
         + ' style="flex:0 0 auto;width:94px;height:54px;border-radius:12px;padding:8px;text-align:left;'
         + 'display:flex;align-items:flex-end;color:#fff;font-size:11.5px;font-weight:800;line-height:1.1;'
         + 'text-shadow:0 1px 3px rgba(0,0,0,.5);background:linear-gradient(135deg,' + g.a + ' 0%,' + g.b + ' 100%);'
         + 'border:' + (on ? '1.5px solid var(--coral)' : '1px solid rgba(255,255,255,.14)') + ';">'
         + escapeHtml(g.n) + '</button>';
     });
+    h += '<button type="button" id="scStreamGenreAdd" style="flex:0 0 auto;width:94px;height:54px;border-radius:12px;'
+      + 'padding:8px;text-align:left;display:flex;align-items:flex-end;gap:4px;border:1px dashed var(--line);'
+      + 'background:none;color:var(--ink-dim);font-size:11px;font-weight:700;">'
+      + scIcon('plus', 12) + ' Genre</button>';
     h += '</div></div>';
     return h;
   }
   function scStreamGenre(name){
-    var g = null, i;
-    for(i = 0; i < SC_STREAM_GENRES.length; i++){
-      if(String(SC_STREAM_GENRES[i].n) === String(name)){ g = SC_STREAM_GENRES[i]; break; }
+    var g = null, i, all = scStreamGenres();
+    for(i = 0; i < all.length; i++){
+      if(String(all[i].n) === String(name)){ g = all[i]; break; }
     }
     scStreamState.genre = g ? g.n : '';
     if(!g){ scStreamState.results = null; scStreamRender(); return; }
@@ -16257,8 +16373,23 @@ function startLyricsAutoScroll(keepPos, noReset) {
     });
     on('scStreamQuery', 'keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); scStreamSearchRun(this.value); } });
     Array.prototype.forEach.call(host.querySelectorAll('.scs-genre'), function(b){
-      b.addEventListener('click', function(){ scStreamGenre(this.getAttribute('data-g')); });
+      var tmr = null, held = false;
+      function stop(){ if(tmr){ clearTimeout(tmr); tmr = null; } }
+      b.addEventListener('pointerdown', function(){
+        if(b.getAttribute('data-custom') !== '1') return;
+        stop();
+        tmr = setTimeout(function(){
+          tmr = null; held = true;
+          scStreamGenreRemove(b.getAttribute('data-g'));
+        }, 650);
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(ev){ b.addEventListener(ev, stop); });
+      b.addEventListener('click', function(e){
+        if(held){ held = false; if(e && e.preventDefault) e.preventDefault(); return; }
+        scStreamGenre(b.getAttribute('data-g'));
+      });
     });
+    on('scStreamGenreAdd', 'click', scStreamGenreAdd);
     on('scStreamGenreClear', 'click', function(){
       scStreamState.genre = '';
       scStreamState.results = null;
@@ -16314,6 +16445,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!host) return;                         // the library is not in the page yet
     scStreamState.built = true;
     scStreamLoad();
+    try{
+      Promise.resolve(dbGet('meta', 'streamGenres')).then(function(r){
+        if(r && Array.isArray(r.value)) scStreamState.genres = r.value;
+        scStreamRender();
+      }).catch(function(){});
+    }catch(_eGl){}
     scStreamRender();
   }
 
@@ -16420,11 +16557,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
   // A song is a seed: its artist is the recommendation, because that is the one
   // thing the source tells us about a stream that the app actually knows.
+  // 80.6.18 - RECOMMENDED ASKS ABOUT THE GENRES FIRST. The AI is the only thing in
+  // the app that can name songs nobody searched for, so it is asked for songs across
+  // the rail - including the genres the owner added. Without a key there is still a
+  // recommendation: the genre itself, or the artist that is playing.
   function scShelfRecommend(){
+    if(scStreamAiRecommend()) return;
+    if((scStreamState.genres || []).length){
+      var first = scStreamGenres()[0];
+      if(first){ scStreamGenre(first.n); scStreamSay('Connect a Gemini key in Settings and the AI will pick songs from your genres'); return; }
+    }
     var cur = scStreamById(scStreamState.curId);
     var who = (cur && (cur.artist || '')) || scStreamState.author || '';
     who = String(who).replace(/\s*-\s*topic\s*$/i, '').replace(/vevo$/i, '').trim();
-    if(!who){ scStreamSay('Play a stream first - the recommendation comes from its artist'); return; }
+    if(!who){ var any = scStreamGenres()[0]; if(any) scStreamGenre(any.n); return; }
     scStreamState.q = who + ' mix';
     scStreamSearchRun(who + ' mix');
   }
@@ -17622,8 +17768,29 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.17';
+  const APP_VERSION = '80.6.18';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
+  // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
+  // in a browser are told apart by one small tag beside the name, and the tab says
+  // the same. A build with no streaming keeps its plain name.
+  (function scBrandTag(){
+    try{
+      if(typeof SC_IS_WEB === 'undefined' || !SC_IS_WEB) return;
+      if(typeof SC_WEB_FULL !== 'undefined' && !SC_WEB_FULL) return;
+      if(typeof SC_IS_PLAY !== 'undefined' && SC_IS_PLAY) return;
+      document.title = 'SideCut FullDev';
+      var h = document.querySelector('header .brand h1');
+      if(!h || document.getElementById('scBuildTag')) return;
+      var tag = document.createElement('span');
+      tag.id = 'scBuildTag';
+      tag.textContent = 'FullDev';
+      tag.style.cssText = 'display:inline-block;margin-left:7px;font-size:9px;font-weight:800;'
+        + 'letter-spacing:1.1px;text-transform:uppercase;color:var(--coral);'
+        + 'border:1px solid color-mix(in srgb, var(--coral) 45%, transparent);'
+        + 'border-radius:999px;padding:1px 6px;vertical-align:3px;';
+      h.appendChild(tag);
+    }catch(_eBrand){}
+  })();
   window.__bootDone = false;
   // Diagonal split toggle
   var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false'; // default true
@@ -18271,6 +18438,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.18', date: '2026-10-30', title: 'The web page says FullDev, and the genres are yours', items: [
+    '[FULL] The web page carries a small FullDev tag beside the SideCut name, and the browser tab says it too. The app on a phone keeps its plain name.',
+    '[FULL] The genre rail is yours as well as ours: a + Genre tile adds any genre you type, it is remembered, and tapping it searches that genre like any other. A long press on a genre you added asks before taking it away; the ones that came with the app stay.',
+    '[FULL] Recommended now asks the AI for songs across your genres - including the ones you added - and offers what it names as results, with the artist and the length, ready to add. Without a key it recommends from the rail and says so.',
+  ]},
   { version: '80.6.17', date: '2026-10-30', title: 'The stream takes the player bar, and genres to browse', items: [
     '[FULL] A streamed song now owns the player bar at the bottom: its cover on the disc, its title, the artist and the length, a STREAM pill, and a progress line you can drag to seek. Play, pause, next and previous on that bar control the stream instead of the last downloaded song.',
     '[FULL] Genres above the search. Tap a tile (Pop, Hip-Hop, Afrobeats, Punjabi, Latin, Rock and more) and it searches that genre; the genre stays on the songs you add and shows beside the artist and the length.',
