@@ -1,40 +1,41 @@
-## 80.6.11 ({{STAMP}}): A shelf for streaming, and streams that play
+## 80.6.12 ({{STAMP}}): Streaming as a tab, and a stream that plays
 
-- **WHAT THE OWNER ASKED FOR, AND WHY 80.6.9 DID NOT DELIVER IT.** In his words: streaming *"should
-  have like its own thing like its own mini tab like you click on Library and a side panel on the right
-  opens that opens up subtabs, of streaming, library, and albums"*, and *"make the streaming actually
-  work and play songs"*. Both were true of 80.6.9: streaming was painted into the library list, sharing
-  one scroll with the downloaded songs, and it did not play.
-- **WHY IT DID NOT PLAY.** The stream path was a second guess at the player - its own client list, its
-  own headers, no cipher handling - so it came back empty and the row said so. It now calls
-  `scYtPlayer()`, the resolver the converter has been downloading through: both clients asked at once,
-  headers that name the client the request declares, a `signatureCipher` row decrypted, audio-only
-  streams ranked before the muxed ones, and the alternates kept so a stream that dies mid-song is
-  retried against the next candidate before the row admits defeat.
-- **THE RAIL AND THE SHEET.** `#scShelfRail` sits above the list with three tabs. **Streaming** slides a
-  sheet in from the right edge (`position:fixed`, `translateX`), over the list rather than into it, with
-  a scrim behind it and a close button on it; the list underneath is never re-rendered by opening it.
-  **Library** and **Albums** are not reimplementations: they close the sheet and drive the page's own
-  `libraryMode` + `navigate`, so sorting, selection and album expansion behave exactly as before. On a
-  Play build `SC_STREAM_OK` is false, so no rail, no sheet and no tab is built at all.
-- **THE GLYPHS ARE GONE.** The transport and the add/remove buttons were set in characters (U+FF0B,
-  U+23EE, U+23F8, U+23ED, U+00D7) and a WebView chose a font for them - which is why one of them looked
-  like an emoji beside a normal label. They are SVG paths now, in the row's colour, and the play button
-  takes the theme's accent instead of a hardcoded coral.
-- **PINS AND RECOMMENDATIONS.** The sheet paints the app's own `pinnedArtists` array (the one Discover
-  writes) as chips - one tap searches that artist - and **Recommended** seeds a search from the artist
-  of whatever is streaming, which is the only thing the source tells us that the app can act on.
-- **THE PLAY CHANNEL'S NOTES.** The owner's other complaint was that regular SideCut's patch notes
-  talked about streaming at all. The streaming items are marked `[FULL]` and "streaming / streams /
-  from the source" join the words that channel hides - in `scHidesOnPlay()` and in its own copy in
-  `dev/ota-bundle-play.mjs`, which this release writes so the two cannot drift.
-- **WHAT WAS RUN.** The page was built from 80.6.8, 80.6.9 and 80.6.10 in the session that wrote this,
-  then `dev/patch-80611.py`: one step, `--check` green (a second run is a no-op), the rail above the
-  sheet above `#listPane`, no banned character left inside the module, the resolver delegating to
-  `scYtPlayer`, every one of the page's inline scripts compiling (7 scripts, the big one 2.9 MB), and
-  the Play channel's note filter run over the changelog to confirm the streaming items are dropped from
-  what that channel publishes - 80.6.10 and 80.6.11 publish none of them, while 80.6.8's lyric notes
-  still publish. **Not claimed:** the stream was not played end to end - that needs a device and a route
-  to the source. If the first real tap fails, the row names the failure; that is the part to read
-  before touching the resolver again. The release step rebuilds the OTA bundles to a true fixed point -
-  root + `ota/` **{{ROOT}}** bytes, `ota-play/` **{{PLAY}}** bytes, both `--check`s OK at v80.6.11.
+- **WHAT THE OWNER SAID.** *"the streaming should be an actual tab like thing tho and streaming
+  doesn't work"* - two sentences, and both were true of 80.6.11.
+- **WHY IT WAS NOT A TAB.** 80.6.11 opened the shelf as a **drawer**: `position:fixed` on the right
+  edge, `translateX(102%)`, a scrim behind it and a close button on it, sliding over a list that stayed
+  put underneath. That is a sheet with a tab's label on it. The shelf is now the page the **Streaming**
+  tab switches to: `#scStreamBlock` is in flow and `display:none` until its class is set, the
+  downloaded list is hidden with `display:none` (never re-rendered, so returning to it costs nothing
+  and it keeps its scroll), the rail and the header stay where they are, and there is one function -
+  `scShelfPage(on)` - that decides which of the two is up, so no caller can leave the list hidden
+  behind a shelf that was closed. The scrim is `display:none`, and the shelf is no longer announced to
+  a screen reader as `role="dialog"`: a tab is not a dialog.
+- **WHY IT DID NOT PLAY.** A googlevideo URL handed to an `<audio>` element is fetched by the WebView's
+  media stack with **none of the resolver's headers**, so the source answers 403 and the element fails
+  without the page ever learning why - which is exactly what the owner saw: a card at `0:00` and a
+  button that did nothing. The stream is now **read**, not pointed at: `scStreamSource()` pulls the
+  song through `scFetchBytes()` - the four-lane range reader the downloader has used since 80.3.3,
+  whose first short read is accepted as the whole file - turns the bytes into a `Blob` with the
+  resolver's own `mime`, and plays it from an object URL. In the installed app that fetch is the
+  patched one, so CORS is not the limiter; on the web the plain URL is still the **last** try, so a
+  source that allows it plays and nothing that worked before stops working. A song already buffered is
+  played from its object URL rather than fetched twice, the resolver's mime is kept on
+  `scStreamState.mime`, and the load reports *"Loading the song… 42%"* instead of looking dead.
+- **THE CHANGELOG, AND THE REGULAR CHANNEL.** This release's items are all about the shelf, so none of
+  them belongs in front of the build that never asked for it: the root channel's notes now publish
+  **one honest line** rather than a streaming note, which is the rule the Play channel has had since
+  80.6.11 (`dev/ota-bundle.mjs` filters by what a note says, not by whether it carried the marker).
+- **WHAT WAS RUN.** Built on a fresh clone of 80.6.11 and driven by `dev/patch-80612.py`: `--check`
+  pending (exit **1**, which is what `release.yml` reads as "pending"), applied (12 steps), `--check`
+  released (exit **0**, its marker guard). The prose sentence about the shell cache is untouched - an
+  earlier draft renamed that name and mangled the sentence, which is why the patch no longer touches
+  it. Every one of the page's **7 inline scripts compiles** (`node --check` on each), `dev/check-80612.cjs`
+  **30/0** (the shelf is in flow and hidden, no slide transform survives, the list is hidden not
+  rebuilt, the play path never hands the element a bare URL, the fetch comes before the fallback, the
+  buffered path reuses the object URL, and no U+FF0B/U+23EE/U+23F8/U+23ED/U+00D7 inside the shelf),
+  and the OTA pair rebuilt to a true fixed point - root + `ota/` **{{ROOT}}** bytes, `ota-play/`
+  **{{PLAY}}** bytes, both `--check`s OK at v80.6.12, with **both** channels publishing one
+  non-streaming line. **Not claimed:** playback was not heard - that needs a device and a route to the
+  source. What is proven is that nothing is handed to the element before it has bytes, which is the
+  failure the last two releases had.
