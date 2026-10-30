@@ -51,6 +51,7 @@ ok(page.includes('function scStreamNewAlbum(){'), 'and there is a maker for it')
 ok(page.includes("dbGet('meta', 'streamAlbums')"), 'the albums are read back');
 ok(page.includes("key: 'streamAlbums'"), 'and written down');
 ok(page.includes("row('Albums', 'al', scStreamAlbums());"), 'the albums are listed beside the playlists');
+ok(page.includes("scStreamHold(host.querySelectorAll('.scsp-row'), 'list');"), 'and opened as pages');
 ok(page.includes("if(scStreamState.plKind === 'al')"), 'a list knows which kind it is');
 ok(page.includes("String(t.kind || 's') === 'd'"), 'a file and a stream are told apart');
 ok(page.includes('ON DEVICE'), 'and the row says which one it is');
