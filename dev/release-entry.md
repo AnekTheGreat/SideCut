@@ -1,55 +1,52 @@
-## 80.6.19 ({{STAMP}}): a stream that starts sooner, keeps its genre, and a rail that stays put
+## 80.6.20 ({{STAMP}}): the stream shows on the phone
 
-- **WHAT THE OWNER SAID.** *"the streaming like getting the song to play should take much less time"*,
-  *"should auto find a next song in that same genre"*, *"the horizontal scroll through genres should
-  stay on what it was, not go back to the beginning"*, *"add more genres"*. Four fixes, one theme: the
-  streaming page should behave like a player rather than a form.
-- **WHY A STREAM TOOK SO LONG, IN THREE PARTS.** None of it was the source being slow:
-  1. The read that always ends up playing the song started **only after the link had failed**. The link
-     is the path a WebView is usually refused on (a 403 on the open-ended range), so the app paid for a
-     failed request *and then* started reading.
-  2. A link that loads metadata and then never decodes fires **no error at all**, so the app waited a
-     fixed **six seconds** before deciding the link was quiet and reading instead.
-  3. Nothing was kept. The same song played twice read twice, from zero.
-- **WHAT CHANGED.** The read now begins **in the same tap as the link** - `beginRead()` is kicked off
-  before the link is awaited, so when the link is refused the bytes are already moving, and when the
-  link does play the read simply finishes into the cache. The silent-link wait is **2.4s**, not six.
-  And the songs that have been read stay in memory as object URLs: the last **three**, for **twelve
-  minutes**, with the oldest released when a fourth arrives. That makes a replay, a Previous, and a
-  return to the song you just heard cost **no network at all** - it starts in the tap. The resolver's
-  signed URL is also kept per song for its half-hour life, so Next does not pay for a resolution twice.
-  The cache deliberately takes ownership of its URL (`scStreamState.blobUrl = ''` after a put) so the
-  next read cannot revoke the copy a replay is about to use; Restart drops the copy it could not play
-  before it tries again, so "try again" really is a fresh read.
-- **NEXT KEEPS THE GENRE.** `scStreamNext()` now walks the queue for the next song **of the same
-  genre** (the `genre` every row has carried since 80.6.17, or the genre the song was found under) and
-  only falls back to the plain next when the queue holds no other song of that genre. The card shows
-  the answer before it happens: an **Up next** row with the title and artist, one tap away, and when
-  there is nothing else of that genre it shows **More <genre>** instead - one tap to search the genre
-  again rather than pretending a next song exists. Automatic advance at the end of a song goes through
-  the same function, so a genre carries from the first song to the last.
-- **THE RAIL KEEPS ITS PLACE.** Every change rebuilds the streaming block with `innerHTML`, and a fresh
-  row of tiles always landed back on the first tile - which read as the row "resetting". The rail now
-  has an id, its scroll is read **before** the rebuild in `scStreamRender()` and handed back **after**
-  it in `scStreamWire()`, and a `scroll` listener keeps the remembered value current as the owner
-  swipes. It also snaps gently tile by tile (`scroll-snap-type: x proximity`), which is what makes a
-  swipe feel deliberate rather than loose.
-- **TWELVE MORE GENRES.** Amapiano, Reggaeton, Bollywood, Trap, Lo-fi, Soul, Funk, Metal, Blues, Disco,
-  House and Workout join the rail - 27 built-in tiles in all, each with its own gradient and its own
-  search, alongside the same **+ Genre** tile for the owner's own. The one genre that was removed
-  stays removed.
-- **WHAT WAS RUN.** Built on a fresh clone of 80.6.18 and driven by `dev/patch-80619.py`: 15 steps
-  applied, a second run is a no-op, all seven inline scripts compile, and `dev/check-80619.cjs` passes
-  57 checks - statically (the cache read path, the parallel read ordered before the link, the 2.4s
-  wait, the resolver cache, the genre walk, the Up next and More rows and their wiring, the rail's
-  capture and restore and its scroll listener, the twelve new genres, the removed one still absent)
-  and **behaviourally**, by running the cache and the genre walk in a `vm`: a put is remembered and
-  the cache takes ownership of its URL; a fourth song evicts the oldest and **revokes exactly one**
-  URL rather than leaking it; and `scStreamNext(1)` over a queue of Punjabi, Pop, Punjabi **skips the
-  Pop song and takes the Punjabi one**, while a queue with nothing of that genre falls back to the
-  plain next. The OTA pair rebuilt to a true fixed point - root + `ota/` **{{ROOT}}** bytes at
-  v80.6.19 publishing one honest line, and `ota-play/` still held at its published bundle
-  (**{{PLAY}}** bytes). **Not claimed:** no phone and no browser here, so no song was heard and no
-  stopwatch was run on a device. What is verified is the order of the operations (read started before
-  the link is awaited, 2.4s instead of 6s, a cache hit before any network), the genre walk driven with
-  real data, and the rail's scroll being written back after every rebuild.
+- **WHAT THE OWNER SAID.** *"streaming stuff should also show in widget and phone player in android"*.
+  One omission, and it was structural rather than a missing call.
+- **WHY NEITHER THE WIDGET NOR THE LOCK SCREEN EVER KNEW.** A stream is a **second `<audio>`
+  element**. Every surface that feeds the phone - the media session, its MediaStyle notification, the
+  quick-settings player, the lock screen and the home-screen widget - is driven from the app's own deck
+  and its queue: `mediaSetMetadata(pushWidgetState)`, `mediaSetPlaybackState`, `mediaSetPositionState`,
+  and the handlers in `registerMediaSessionHandlers()`. 80.6.17 taught the stream to take over
+  `#nowPlaying`, and 80.6.19 taught it to carry a genre, but nothing ever told the phone. So a streamed
+  song left the card on the last **local** song (or empty), and the widget kept drawing a song that was
+  not playing while the phone actually made the stream's sound.
+- **WHAT CHANGED - THE SAME RULE THE BAR GOT.** `scStreamPhoneOwns()` is the phone's answer to
+  `scStreamBarOwns()`: while the stream owns the bar, it owns the phone. `scStreamPhoneTrack()` hands the
+  phone the shape it already reads from a library track - title, artist and the cover the card draws
+  (`scStreamThumb`, the ytimg thumbnail or the row's own) - so the metadata, the notification's artwork
+  and the widget need no new native path. `scStreamPhoneSync()` pushes that song, its real playback
+  state and its position in one call, and `scStreamPhoneTick()` keeps the clock and the widget's
+  progress strip current from the stream element, throttled to once a second because `timeupdate` fires
+  four times a second.
+- **THE PHONE'S BUTTONS COME BACK INTO THE STREAM.** `scStreamPhoneArm()` registers all eight actions -
+  play, pause, previous, next, stop, both thirty-second jumps and seek - and each one drives the stream
+  element, not the deck: next goes through `scStreamNext()`, so the genre rule from 80.6.19 applies to a
+  press on the lock screen exactly as it does inside the app; previous restarts the song past three
+  seconds, which is the rule the deck already used; play on a stream whose source has gone starts it
+  again rather than doing nothing.
+- **AND THE DECK STANDS DOWN, ON PURPOSE.** Registering handlers once would not have held: the system
+  rebuilds the session (after the service is released, after a WebView reload), and `refreshMediaControls()`
+  re-arms the deck's handlers every minute and pushes the deck's own track. Both now open with a guard -
+  while the stream owns the bar they arm the **stream** instead - which is what stops the buttons from
+  silently flipping back mid-song. The deck's background heartbeat also stopped reviving the local
+  element while a stream is up (`&& !scStreamPhoneOwns()`): two sounds at once behind the screen was the
+  one thing worse than no card at all.
+- **AND IT HANDS THE PHONE BACK.** `scStreamPhoneQuit()` runs when the stream gives the bar up: the deck's
+  track returns to the card, the state reads paused, and the deck's handlers are re-armed - so a press
+  after the stream ended does not aim at a song nobody can hear.
+- **WHAT WAS RUN.** Built on a fresh clone of 80.6.19: 11 steps applied, a second run is a no-op, all
+  seven inline scripts compile, and `dev/check-80620.cjs` passes **56 checks**. Statically: the phone
+  track carries title, artist and cover; every one of the eight actions is registered; both re-arm paths
+  consult the stream **before** the deck; the widget timeline reads the stream element; the heartbeat
+  guard is in place; the hand-back pushes the deck's card and re-arms its buttons. **Driven**, in a `vm`
+  against a stub element: `__sync()` sends the streamed title first, then the state it is actually in,
+  then all eight buttons; a `pause` press from the phone pauses the stream and `play` plays it; previous
+  past three seconds rewinds instead of skipping; next calls `scStreamNext(1)`; the forward jump moves
+  42s to 72s; stop pauses and rewinds; with the element's duration missing the phone is handed the song's
+  real length; and `__quit()` puts the deck's song and handlers back. The OTA pair rebuilt to a true
+  fixed point - root + `ota/` **{{ROOT}}** bytes at v80.6.20, and `ota-play/` still HELD (**{{PLAY}}**
+  bytes). **Not claimed:** there is no phone here, so no APK was built and no notification, lock screen
+  or home-screen widget was seen. The native side needed no change - the plugin and the widget provider
+  already read these exact payloads (`title`, `artist`, `art`, `playing`, `pos`, `dur`), which is why
+  this rides OTA - but whether a given launcher repaints the RemoteViews promptly is the device's
+  business, not something this release can show.
