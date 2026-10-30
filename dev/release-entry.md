@@ -1,47 +1,56 @@
-## 80.6.21 ({{STAMP}}): streaming, made quick - and quiet
+## 80.6.22 ({{STAMP}}): the bar is the bar, and the lists hold both
 
-- **WHAT THE OWNER SAID.** *"streaming is not efficient at all make that better it should be fast and
-  easy to play dawg, and music shouldn't overlap with the downloaded music fix this and make it good,
-  sources should never fail have like 10 backups, playback should be instant like how downloaded songs
-  are"*. Three separate faults, and one of them was a half-fix I shipped myself.
-- **WHY IT FELT SLOW.** Every song was an island: the resolver answered for the one song being tapped,
-  the bytes were read for that song only, and nothing was remembered about the one after it. So Next -
-  the most-used control in the app - paid the whole cost again: a player round trip, then a read. The
-  only thing that made a song feel instant was the object-URL cache, three songs deep and twelve minutes
-  long, which is shorter than one album.
-- **WHAT CHANGED.** `scStreamPrefetch()` reads the **next** song into memory while the current one plays,
-  using `scStreamReadOnly()` - a reader that never touches the element that is playing and never asks the
-  resolver twice. The cache is **six songs, forty-five minutes**. A stream read is **six ranges at a time**
-  instead of four (`scFetchBytes` now takes a lane count; the downloader's default is untouched), and the
-  silent-link wait dropped from 2.4s to 1.1s, because the read already runs alongside the link and the
-  old wait was mostly a pause before the fallback. One read at a time, always: a counter around
-  `scStreamSource` means the read-ahead yields to a real play instead of competing with it.
-- **WHY TWO SONGS COULD PLAY AT ONCE.** 80.6.17 paused the deck's **active** element when a stream took the
-  bar - which is not the same as silencing the deck. The other element is the one a **crossfade** is already
-  playing into; a track that ends can advance into it; `recoverAudio()` restarts whatever it likes. So a
-  streamed song and a downloaded one could be heard together, and the owner heard exactly that.
-  `scStreamQuietDeck()` now puts the deck to bed as a whole - both elements, the crossfade timer, the
-  pending hand-off - on every path into the stream (`scStreamBarOn`, and the stream element's own `play`,
-  so a resume after a pause counts too). And the rule holds from the other side: while the stream owns the
-  bar, any deck element that starts playing is stopped again at once, and `recoverAudio()` returns instead
-  of restarting local playback behind a stream.
-- **WHY A SOURCE COULD STILL FAIL.** `scYtPlayer()` kept **three** audio rows and **two** muxed ones per
-  player answer, and the element gave up after **one** retry - and that retry asked the resolver again
-  before trying anything it already had. It now keeps **ten** audio rows and **four** progressive ones (the
-  same player answer: no extra request, just more of what was already in it), retries up to **twelve**
-  times, and walks the backups **first** - a dead URL costs the next candidate, not a fresh lookup.
-- **WHAT WAS RUN.** Built on a fresh clone of 80.6.20: 16 steps applied, a second run is a no-op, and all
-  seven inline scripts compile. `dev/check-80621.cjs` passes **51 checks**. Statically: six songs and
-  forty-five minutes; six lanes threaded through the reader and the read-ahead; the read counter; the
-  scheduled read-ahead; the whole-deck silence with the old half-silence gone; the deck listener and the
-  recovery guard; ten and four rows; the twelve-retry ceiling and the backups-first order. **Driven**, in a
-  `vm`: `scStreamQuietDeck()` pauses **both** elements, cancels the crossfade interval and drops the pending
-  hand-off while the stream keeps its bar; the deck's own listener stops an element that plays behind the
-  stream and leaves it alone when the stream does not own the bar; `scStreamReadOnly()` labels a muxed read
-  audio and asks for six lanes; and `scStreamPrefetch()` resolves the next song, reads it six lanes wide,
-  keeps the object URL under its video id, refuses to run while a read is in flight, and gives the URL back
-  if that song became current. The OTA pair rebuilt to a true fixed point - root + `ota/` **{{ROOT}}**
-  bytes at v80.6.21, and `ota-play/` still HELD (**{{PLAY}}** bytes). **Not claimed:** there is no phone and
-  no network here, so no song was streamed and no timing was measured on a device. The read-ahead is a
-  scheduling change, not a promise of a number: what it removes is the resolve and the read on every Next
-  after the first, and the honest way to see it is one album played straight through.
+- **WHAT THE OWNER SAID.** *"make the streaming now bar match the one thier, remove the x button for it
+  and make a 2 second hold to have a popup to delete, make it let you make albums like the actual
+  downloaded albums things, and playlists, or in playlists you can have streaming playlists and
+  downloaded playlists and same thing for albums"*. Four asks, and the last one is a data model rather
+  than a control.
+- **THE BAR WAS WEARING A COSTUME.** A streamed song wrote three extra things into the shared player bar:
+  a **STREAM** pill before the artist, the length and genre appended to the artist line, and - from
+  80.6.17's CSS - a coral top edge and a glowing disc. The deck writes `title` and `artist` and stops, so
+  the bar changed shape the moment a song came from the source. It now writes exactly what the deck
+  writes (`who.textContent = t.artist`), and the three `body.sc-stream-now` rules are gone. The class
+  toggles stay (they are inert), so nothing else that tested for them changes.
+- **WHY THE x HAD TO GO.** Every streaming row carried a close glyph at the end of the row, a few pixels
+  from the row's own play target; a thumb reaching for a song deleted it. The glyph is removed from both
+  row shapes (the shelf, and a playlist/album page) and nothing is wired to it any more.
+- **TWO SECONDS, THEN A POPUP.** `scStreamHold()` puts a 2000ms pointer timer on each row and cancels it
+  on pointerup, pointercancel, pointerleave and contextmenu. On fire it opens `scStreamMenu()` - a bottom
+  sheet built from `document.createElement` (title, then Play, Add to a playlist, Add to an album, Add
+  songs from your downloads, and Delete / Remove from this list, then Cancel). The click that follows a
+  hold is swallowed in the capture phase, so a long press never also starts the song it was aimed at.
+- **AN ALBUM IS A PLAYLIST THAT SAYS ALBUM.** Both are `{ name, items }`; playlists live under
+  `streamPlaylists` and albums under a new `streamAlbums` key, restored through the same
+  `scStreamRestore()` on boot (`scStreamLoad` now waits for three answers, not two). The shelf has a
+  **New album** button beside **New playlist**, the two are listed as separate labelled rows of chips, and
+  either opens as a page with how many songs it holds, **Add songs**, **Play all** and a held row per song.
+- **ONE LIST CAN HOLD BOTH KINDS OF SONG.** An entry now carries `kind` - `'s'` for a song from the
+  source, `'d'` for a file already on the device - and `scStreamPlItem()` keeps it. *Add songs* opens a
+  picker over `allTracks`, and what it adds is a real entry (title, artist, length, cover, `kind: 'd'`).
+  A list row for a file says **ON DEVICE**. A file is never deleted from the device by a list action:
+  the shelf's action is *Delete this song*, a list's is *Remove from this album/playlist*.
+- **THE ORDER ACROSS TWO PLAYERS.** This is the part that needed an owner. The stream advances inside
+  `scStreamState.queue`; the deck advances inside `queue`/`queueIndex`; neither knows about the other. So
+  `scMix` owns a mixed list: `scMixPlay(items, id)` sets the entries, `scMixGo(at)` hands each one to the
+  player that can play it - a file goes to `playFromList()` **with the whole run of files in the list** (so
+  the deck walks them itself), a streamed song goes to `scStreamPlay()` as a one-song queue. Two hooks
+  close the loop: `scStreamNext()` asks the mix for the advance first, and `onEnded` does the same when the
+  deck finishes the last file of the run (`pendingPlayId === scMix.lastFile`). An entry whose streamed song
+  has left the shelf is skipped, not played, and the end of the list stops cleanly.
+- **WHAT WAS RUN.** Built on a fresh clone of 80.6.21 in three chained payloads (`dev/patch-80622.py` runs
+  `-b.py` then `-c.py`; the release ships them by being committed, and one 39 KB file does not survive that
+  commit). 33 steps applied, a second run is a no-op, `--check` is 1 before and 0 after, and all seven
+  inline scripts compile. `dev/check-80622.cjs` passes **51 checks**: statically (no pill, no pill string,
+  no `scStreamMeta` on the bar line, no `body.sc-stream-now` rules, no `scs-del`/`scsp-del` markup or wiring,
+  a 2000ms timer, both row shapes held, the popup's actions, the New album button and maker, `streamAlbums`
+  read and written, albums listed beside playlists, `ON DEVICE`, and the two advance hooks) and **driven**,
+  in a `vm`: a streamed song and a file join one list with both kinds marked, adding twice is one song,
+  removing one leaves the other kind, a file survives a restore while an unresolvable stream is dropped,
+  the open list resolves by kind, and the mix plays `stream s_1` -> `quiet` + `deck t_a` with `lastFile t_b`
+  -> `deck t_b` -> `stream s_2` -> stop, skipping a streamed entry that left the shelf; the hold starts one
+  2000ms timer, opens that row, and swallows the following tap. The OTA pair rebuilt to a true fixed point -
+  root + `ota/` **{{ROOT}}** bytes at v80.6.22, and `ota-play/` still HELD (**{{PLAY}}** bytes). **Not
+  claimed:** there is no phone and no browser here, so the bar was not seen, no row was held with a finger,
+  and no mixed list was heard playing. What is verified is that the bar writes what the deck writes, that no
+  row has a close target, that a hold and only a hold opens the popup, that the two stores round-trip, and
+  that the mix hands each entry to the right player in order.
