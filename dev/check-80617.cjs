@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // 80.6.17 - what must be true of the stream's now bar and the genre tiles.
 //
+// The page writes the middle dot as the JS escape \u00b7, so a needle that has to
+// contain it is built from String.fromCharCode(92) rather than typed: a literal
+// in this file would be read as the character and never match the source.
+//
 //   node dev/check-80617.cjs
 const fs = require('node:fs');
 const path = require('node:path');
@@ -11,6 +15,7 @@ const page = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 let pass = 0;
 const bad = [];
 function ok(cond, msg) { if (cond) { pass++; } else { bad.push(msg); } }
+const DOT = String.fromCharCode(92) + 'u00b7';   // how the page spells the middle dot
 
 ok(page.includes("const APP_VERSION = '80.6.17';"), 'the page runs 80.6.17');
 ok(page.includes("version: '80.6.17'"), 'the changelog records 80.6.17');
@@ -24,7 +29,7 @@ function sliceFn(name) {
   return end === -1 ? '' : page.slice(start, end + 4);
 }
 
-/* ── the bar belongs to the stream while a stream plays ──────────────────── */
+/* ── the bar belongs to the stream while a stream plays ────────────────────── */
 ok(page.includes('function scStreamBarOwns()'), 'one answer says who owns the bar');
 const play = sliceFn('scStreamPlay');
 ok(play.includes('scStreamBarOn(t);'), 'starting a stream takes the bar');
@@ -45,7 +50,7 @@ ok(ui.includes('scStreamQuiet();'), 'a local song takes the bar back and stops t
 const tick = sliceFn('scStreamTick');
 ok(tick.includes('scStreamBarSync();'), 'the stream\'s clock feeds the bar');
 
-/* ── the bar's buttons drive the stream ─────────────────────────────────── */
+/* ── the bar's buttons drive the stream ───────────────────────────────────── */
 const pp = page.slice(page.indexOf("$('playPauseBtn').addEventListener('click'"), page.indexOf("$('nextBtn').addEventListener('click'"));
 ok(pp.includes('if(scStreamBarOwns()){ scStreamToggle(); return; }'), 'play/pause on the bar toggles the stream');
 const sk = page.slice(page.indexOf("$('nextBtn').addEventListener('click'"), page.indexOf("$('shuffleBtn').addEventListener('click'"));
@@ -57,7 +62,7 @@ ok(seek.includes('sa.currentTime = p * sd;'), 'and dragging it seeks the stream'
 ok(!page.includes("a.addEventListener('play', function(){ scStreamState.playing = true; scStreamRender(); })"),
   'pausing no longer redraws the page');
 
-/* ── genres ─────────────────────────────────────────────────────────────── */
+/* ── genres ───────────────────────────────────────────────────────────────── */
 ok(page.includes('var SC_STREAM_GENRES = ['), 'there is a genre list');
 const genreBlock = page.slice(page.indexOf('var SC_STREAM_GENRES = ['), page.indexOf('function scStreamGenreStrip('));
 const names = (genreBlock.match(/n: '/g) || []).length;
@@ -75,13 +80,13 @@ ok(wire.includes("on('scStreamGenreClear'"), 'and the genre can be cleared');
 const gfn = sliceFn('scStreamGenre');
 ok(gfn.includes('scStreamSearchRun(g.q);'), 'a genre is a search of the source');
 ok(page.includes("var who = String(it.owner || it.author || it.channel || '');"), 'results read the artist field the search sends');
-ok(page.includes("if(len > 0) who += ' \u00b7 ' + scStreamTime(len);"), 'and show the length');
+ok(page.includes("if(len > 0) who += ' " + DOT + " ' + scStreamTime(len);"), 'and show the length');
 ok(page.includes("genre: String(it.genre || scStreamState.genre || '')"), 'an added song keeps its genre');
 ok(page.includes("if(!it.genre) it.genre = String(t.genre || '');"), 'and an old playlist copy fills it in');
-ok(sliceFn('scStreamRowMeta').includes("if(t.genre) out += ' \u00b7 ' + String(t.genre);"), 'the row line carries the genre');
+ok(sliceFn('scStreamRowMeta').includes("if(t.genre) out += ' " + DOT + " ' + String(t.genre);"), 'the row line carries the genre');
 ok(page.includes("body.sc-stream-now #nowPlaying{ border-top:1px solid"), 'the bar answers in colour while streaming');
 
-/* ── driven: the bar's sync, and the genre lookup ───────────────────────── */
+/* ── driven: the bar's sync, and the row's line ───────────────────────────── */
 function el(store, key) {
   return {
     textContent: '', innerHTML: '', value: 0,
