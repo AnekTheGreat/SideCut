@@ -15485,6 +15485,45 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // The same player endpoint the converter uses, asked for one videoId. The clients are
   // tried in order because which one answers without a signature cipher changes week to
   // week; the first answer that yields a plain audio url wins.
+  // 80.6.12 - A TAB, NOT A DRAWER - THE STREAM IS FETCHED, NOT POINTED AT.
+  // A googlevideo URL handed to an <audio> element is fetched by the media stack
+  // with none of the resolver's headers, so the source answers 403 and the row sits
+  // at 0:00 with an error the page never gets to read. scFetchBytes() is the reader
+  // the downloader has been using for releases - four ranges at a time, a short
+  // first read accepted as the whole file - so the song is read into a Blob and
+  // played from an object URL. On a device that fetch is the patched one, so CORS is
+  // not the limiter; on the web the plain URL is still the last try.
+  function scStreamSource(info){
+    var a = scStreamAudio();
+    var u = (info && info.url) || String(info || '');
+    var mime = String((info && info.mime) || '').split(';')[0].trim() || 'audio/mp4';
+    var size = (info && Number(info.size)) || 0;
+    if(!u) return Promise.resolve('');
+    scStreamSay('Loading the song…');
+    return Promise.resolve()
+      .then(function(){
+        return scFetchBytes(u, size, function(loaded, total){
+          var pct = total ? Math.round((loaded / total) * 100) : 0;
+          scStreamSay(pct > 0 ? 'Loading the song… ' + pct + '%' : 'Loading the song…');
+        });
+      })
+      .then(function(buf){
+        if(!buf) throw new Error('no bytes');
+        var blob = new Blob([buf], { type: mime });
+        if(!blob.size) throw new Error('empty');
+        if(scStreamState.blobUrl){ try{ URL.revokeObjectURL(scStreamState.blobUrl); }catch(_eRev){} }
+        scStreamState.blobUrl = URL.createObjectURL(blob);
+        a.src = scStreamState.blobUrl;
+        scStreamSay('');
+        return scStreamState.blobUrl;
+      })
+      .catch(function(){
+        a.src = u;
+        scStreamSay('');
+        return u;
+      });
+  }
+
   // --- the audio element -----------------------------------------------------
   function scStreamAudio(){
     if(scStreamState.audio) return scStreamState.audio;
@@ -15508,10 +15547,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(!u){ u = scStreamAltUrl(); }
         if(!u){ scStreamSay('This source will not play right now'); return; }
         scStreamState.url = u; scStreamState.urlAt = Date.now();
-        a.src = u;
-        try{ a.currentTime = at; }catch(_e){}
-        Promise.resolve(a.play()).catch(function(){});
-        scStreamSay('');
+        return scStreamSource({ url: u, mime: scStreamState.mime }).then(function(){
+          try{ a.currentTime = at; }catch(_e){}
+          Promise.resolve(a.play()).catch(function(){});
+        });
       });
     });
     scStreamState.audio = a;
@@ -15535,16 +15574,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
         return u;
       });
     }
-    if(scStreamState.curId === String(id) && scStreamState.url && !scStreamStale(scStreamState.urlAt, Date.now())){
-      a.src = scStreamState.url;
+    if(scStreamState.curId === String(id) && scStreamState.blobUrl && !scStreamStale(scStreamState.urlAt, Date.now())){
+      a.src = scStreamState.blobUrl;
       Promise.resolve(a.play()).catch(function(){ scStreamSay('Tap play to start'); });
       scStreamSay('');
       return;
     }
     Promise.resolve(go()).then(function(u){
       if(!u){ scStreamSay('No playable stream for this song right now'); return; }
-      a.src = u;
-      Promise.resolve(a.play()).then(function(){ scStreamSay(''); }).catch(function(){ scStreamSay('Tap play to start'); });
+      return scStreamSource({ url: u, mime: scStreamState.mime }).then(function(){
+        return Promise.resolve(a.play()).then(function(){ scStreamSay(''); }).catch(function(){ scStreamSay('Tap play to start'); });
+      });
     });
   }
   function scStreamToggle(){
@@ -15848,6 +15888,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(!r || !r.url) return '';
         // Keep the alternates: a stream that refuses mid-song is retried against
         // the next candidate before the row admits defeat.
+        scStreamState.mime = String(r.mime || '');
         scStreamState.alts = (r.alts || []).slice();
         if(r.videoTitle){ scStreamState.title = String(r.videoTitle); }
         if(r.author){ scStreamState.author = String(r.author); }
@@ -15915,15 +15956,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // The sheet is fixed to the right edge on every size, so the list underneath
     // is never re-laid-out and never re-rendered by opening it.
     st.textContent = [
-      '#scStreamBlock{position:fixed;top:0;right:0;bottom:0;left:auto;width:min(88%,430px);',
-      'z-index:60;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);',
-      'border-left:1px solid var(--line);box-shadow:-18px 0 40px rgba(0,0,0,.35);',
-      'transform:translateX(102%);transition:transform .28s cubic-bezier(.22,.61,.36,1);',
-      'padding:14px 0 28px;visibility:hidden;margin:0}',
-      '#scStreamBlock.scShelfOpen{transform:translateX(0);visibility:visible}',
-      '#scShelfScrim{position:fixed;inset:0;z-index:55;background:rgba(4,8,10,.42);',
-      'opacity:0;pointer-events:none;transition:opacity .22s ease}',
-      '#scShelfScrim.scShelfOpen{opacity:1;pointer-events:auto}',
+      '#scStreamBlock{position:relative;display:none;width:auto;overflow:visible;',
+      'background:none;border:0;box-shadow:none;transform:none;visibility:visible;',
+      'padding:2px 0 26px;margin:0}',
+      '#scStreamBlock.scShelfOpen{display:block}',
+      '#scShelfScrim{display:none}',
       '#scShelfRail{display:flex;gap:8px;margin:0 20px 10px;overflow-x:auto;',
       'scrollbar-width:none;-webkit-overflow-scrolling:touch}',
       '#scShelfRail::-webkit-scrollbar{display:none}',
@@ -15950,11 +15987,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
       b.addEventListener('click', function(){ scShelfOpenTab(this.getAttribute('data-shelf')); });
     });
   }
+  // 80.6.12 - A TAB, NOT A DRAWER. Streaming is the first of the three pages the rail switches
+  // between: the downloaded list is put AWAY and the shelf takes its place in the
+  // same scroll, with the rail and the header staying put. The list is hidden, not
+  // rebuilt, so returning to it costs nothing and loses nothing.
+  function scShelfPage(on){
+    var sheet = scShelfSheet(), list = document.getElementById('listPane');
+    if(sheet){ if(on) sheet.classList.add('scShelfOpen'); else sheet.classList.remove('scShelfOpen'); }
+    if(list){ list.style.display = on ? 'none' : ''; }
+  }
   function scShelfClose(){
     scShelf.open = false;
-    var sheet = scShelfSheet(), scrim = document.getElementById('scShelfScrim');
-    if(sheet) sheet.classList.remove('scShelfOpen');
-    if(scrim) scrim.classList.remove('scShelfOpen');
+    scShelfPage(false);
     scShelfRender();
   }
   function scShelfOpenTab(tab){
@@ -15975,11 +16019,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scShelf.tab = 'streaming';
     scShelf.open = true;
     scShelfCss();
-    var sheet = scShelfSheet(), scrim = document.getElementById('scShelfScrim');
-    if(scrim){ scrim.classList.add('scShelfOpen'); }
-    if(sheet){ sheet.classList.add('scShelfOpen'); }
     scStreamRender();
+    scShelfPage(true);
     scShelfRender();
+    scStreamBoot();
   }
   function scShelfBoot(){
     if(!SC_STREAM_OK) return;
@@ -15995,8 +16038,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scrim.addEventListener('click', scShelfClose);
       document.body.appendChild(scrim);
     }
-    var sheet = scShelfSheet();
-    if(sheet){ sheet.setAttribute('aria-hidden', 'true'); sheet.setAttribute('role', 'dialog'); }
+    scShelfPage(false);
     scShelfRender();
   }
 
@@ -17047,7 +17089,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.11';
+  const APP_VERSION = '80.6.12';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -17696,6 +17738,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.12', date: '2026-10-30', title: 'Streaming is a tab, and a stream that plays', items: [
+    '[FULL] Streaming is the first of the three tabs above the library: tapping it puts the downloaded list away and the shelf takes its place, and tapping Library brings the list back exactly where it was.',
+    '[FULL] A stream is read through the same reader the rest of the app uses and played from memory, instead of being handed to the audio element as a bare link - which is why the play button used to sit at 0:00.',
+    '[FULL] Streaming shows how much of the song has arrived while it loads, so a slow source reads as loading instead of as nothing happening.',
+  ]},
   { version: '80.6.11', date: 'October 29, 2026 · 7:45 PM EDT', title: 'A shelf for streaming, and streams that play', items: [
     'The Library opens on a short rail of three tabs - <b>Streaming</b>, <b>Library</b> and <b>Albums</b> - so the stream shelf, your files and your albums never share one scroll again.',
     'Streaming is a panel of its own now: it slides in from the right over the list, and the list keeps the place it was in while it is open.',
