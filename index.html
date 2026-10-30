@@ -15392,7 +15392,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
   var scStreamState = {
     tracks: null, playlists: null, results: null, curId: '', url: '', urlAt: 0,
     busy: false, ready: false, q: '', built: false, audio: null, playing: false,
-    mime: '', size: 0, bytes: 0, fixes: 0, pl: '', alts: [], blobUrl: ''
+    mime: '', size: 0, bytes: 0, fixes: 0, pl: '', alts: [], blobUrl: '',
+    via: '', err: ''
   };
 
   // --- the pure part, which is what dev/check-8069.cjs drives -----------------
@@ -15573,15 +15574,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // played from an object URL. On a device that fetch is the patched one, so CORS is
   // not the limiter; on the web the plain URL is still the last try.
   function scStreamSource(info){
-    var a = scStreamAudio();
     var u = (info && info.url) || String(info || '');
     var mime = String((info && info.mime) || '').split(';')[0].trim() || 'audio/mp4';
     var size = (info && Number(info.size)) || 0;
     if(!u) return Promise.resolve('');
-    scStreamSay('Loading the song\u2026');
-    // A STOPPED DOWNLOAD MUST NOT TRUNCATE A STREAM. scFetchBytes()
-    // watches one global for the downloader's Stop button; a stream read while that was
-    // still set came back one range deep and played a fragment of the song.
+    scStreamSay('Reading the song\u2026');
+    scStreamState.via = 'read';
+    // A stopped download must not truncate a stream: scFetchBytes() watches one
+    // global for the downloader's Stop button.
     var wasCancel = !!window.__scCancelDl;
     window.__scCancelDl = false;
     function restore(){ try{ window.__scCancelDl = wasCancel; }catch(_eRestore){} }
@@ -15589,7 +15589,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       .then(function(){
         return scFetchBytes(u, size, function(loaded, total){
           var pct = total ? Math.round((loaded / total) * 100) : 0;
-          scStreamSay(pct > 0 ? 'Loading the song\u2026 ' + pct + '%' : 'Loading the song\u2026');
+          scStreamSay(pct > 0 ? 'Reading the song\u2026 ' + pct + '%' : 'Reading the song\u2026');
         });
       })
       .then(function(buf){
@@ -15599,20 +15599,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(scStreamState.blobUrl){ try{ URL.revokeObjectURL(scStreamState.blobUrl); }catch(_eRev){} }
         scStreamState.blobUrl = URL.createObjectURL(blob);
         scStreamState.bytes = Number(blob.size) || 0;
-        a.src = scStreamState.blobUrl;
         restore();
-        scStreamSay('');
+        scStreamState.err = '';
         return scStreamState.blobUrl;
       })
       .catch(function(){
         restore();
-        // The bytes could not be read here. The link itself is still worth one try -
-        // a media element is not held to CORS - and if that fails too, the next error
-        // names what refused instead of leaving the row at 0:00.
-        window.__scStreamWhy = scStreamReason() || 'the source sent no bytes';
-        a.src = u;
-        scStreamSay(scStreamReason() ? 'Could not read the song (' + scStreamReason() + ') - trying the link itself' : '');
-        return u;
+        scStreamState.err = scStreamReason() || 'the source sent no bytes';
+        scStreamSay('Could not read the song (' + scStreamState.err + ')');
+        scStreamTick();
+        return '';
       });
   }
 
@@ -15648,36 +15644,88 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scStreamRender();
   }
 
+
+  // One line the owner can photograph. Everything a failure needs to be diagnosed,
+  // in the order it happened: what the stream is, which path carried it, what the
+  // element thinks, and what the transport said.
+  function scStreamDiag(){
+    var a = scStreamState.audio;
+    var bits = [];
+    if(scStreamState.mime) bits.push(String(scStreamState.mime).split(';')[0].replace(/^audio\//, ''));
+    if(scStreamState.size) bits.push((Number(scStreamState.size) / 1048576).toFixed(1) + ' MB');
+    if(scStreamState.via) bits.push(scStreamState.via);
+    if(scStreamState.bytes) bits.push(Math.round(Number(scStreamState.bytes) / 1024) + ' KB read');
+    if(a && a.error) bits.push('error ' + a.error.code);
+    if(a && a.readyState) bits.push('ready ' + a.readyState);
+    if(scStreamState.err) bits.push(scStreamState.err);
+    var why = scStreamReason();
+    if(why) bits.push(why);
+    return bits.join(' \u00b7 ');
+  }
+  // The link, in the tap: a media element is not held to CORS, so this is the
+  // shortest path to sound. It is also the path that fails first, because
+  // googlevideo refuses the open-ended range a media element opens with.
+  // 80.6.14 - THE ELEMENT IS IN THE PAGE, THE LINK IS TRIED FIRST
+  function scStreamStart(u, at){
+    var a = scStreamAudio();
+    if(!u) return Promise.resolve(false);
+    scStreamState.url = u;
+    scStreamState.urlAt = Date.now();
+    try{ a.src = u; a.load(); }catch(_eSet){}
+    if(at){ try{ a.currentTime = at; }catch(_eSeek){} }
+    return Promise.resolve(a.play()).then(function(){ scStreamSay(''); return true; }).catch(function(){
+      return false;
+    });
+  }
+  // Restart, from a tap, so the element is started inside a user gesture every time.
+  function scStreamRestart(){
+    var id = scStreamState.curId || ((scStreamState.tracks || [])[0] || {}).id;
+    if(!id){ scStreamSay('Add a song first'); return; }
+    try{ scStreamAudio().pause(); }catch(_ePause){}
+    if(scStreamState.blobUrl){ try{ URL.revokeObjectURL(scStreamState.blobUrl); }catch(_eRev){} }
+    scStreamState.blobUrl = '';
+    scStreamState.url = '';
+    scStreamState.urlAt = 0;
+    scStreamState.err = '';
+    scStreamState.fixes = 0;
+    scStreamPlay(id);
+  }
+
   // --- the audio element -----------------------------------------------------
   function scStreamAudio(){
     if(scStreamState.audio) return scStreamState.audio;
     var a = document.createElement('audio');
     a.id = 'scStreamAudio';
-    a.preload = 'none';
+    a.preload = 'auto';
     a.volume = 1;
+    // This element used to be created and held in a closure, never put in the
+    // document - while the app's own player keeps both of its elements in the page.
+    // A WebView is free to treat a detached element differently for load, autoplay and
+    // decode, and that is not a thing a stream can be asked to survive.
+    a.style.cssText = 'position:absolute;left:-9999px;width:0;height:0;opacity:0;pointer-events:none;';
+    try{ if(!a.parentNode && document.body) document.body.appendChild(a); }catch(_eAttach){}
     a.addEventListener('timeupdate', scStreamTick);
+    a.addEventListener('loadedmetadata', function(){ scStreamState.ready = true; scStreamTick(); });
+    a.addEventListener('canplay', function(){ scStreamTick(); });
     a.addEventListener('play', function(){ scStreamState.playing = true; scStreamRender(); });
     a.addEventListener('pause', function(){ scStreamState.playing = false; scStreamRender(); });
     a.addEventListener('ended', function(){ scStreamNext(1); });
     a.addEventListener('error', function(){
-      // The signed URL died (or the source refused). One re-resolve, resumed where it
-      // was - the same videoId always, so the song does not change under the listener.
+      var e = a.error || null;
+      scStreamState.err = e ? ('error ' + e.code) : 'error';
       var t = scStreamById(scStreamState.curId);
-      if(!t || !t.videoId || scStreamState.busy){ scStreamSay('This stream stopped - tap it again'); return; }
-      // One repair attempt per song. A source that is refusing every candidate used
-      // to send the row round this handler for ever, which reads as a dead button.
+      if(!t || !t.videoId || scStreamState.busy){ scStreamSay('This stream stopped - tap Restart'); return; }
       scStreamState.fixes = (scStreamState.fixes || 0) + 1;
-      if(scStreamState.fixes > 1){ scStreamSay('This source will not play this song - tap play to try again'); window.__scStreamWhy = ''; return; }
+      if(scStreamState.fixes > 1){ scStreamSay('This source will not play this song - tap Restart'); return; }
       var at = a.currentTime || 0;
       scStreamState.busy = true;
       scStreamResolve(t.videoId).then(function(u){
         scStreamState.busy = false;
         if(!u){ u = scStreamAltUrl(); }
         if(!u){ scStreamSay('This source will not play right now'); return; }
-        scStreamState.url = u; scStreamState.urlAt = Date.now();
-        return scStreamSource({ url: u, mime: scStreamState.mime, size: scStreamState.size }).then(function(){
-          try{ a.currentTime = at; }catch(_e){}
-          Promise.resolve(a.play()).catch(function(){});
+        return scStreamSource({ url: u, mime: scStreamState.mime, size: scStreamState.size }).then(function(src){
+          if(!src) return;
+          return scStreamStart(src, at);
         });
       });
     });
@@ -15689,33 +15737,36 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scStreamPlay(id, ctxIds){
     var t = scStreamById(id);
     if(!t){ return; }
-    var a = scStreamAudio();
     scStreamState.curId = String(id);
     scStreamState.fixes = 0;
+    scStreamState.err = '';
+    scStreamState.bytes = 0;
+    scStreamState.ready = false;
     scStreamState.queue = (ctxIds && ctxIds.length) ? ctxIds.slice() : (scStreamState.tracks || []).map(function(x){ return String(x.id); });
     scStreamSay('Loading the stream\u2026');
     scStreamRender();
-    function go(){
-      var need = !scStreamState.url || scStreamStale(scStreamState.urlAt, Date.now());
-      if(!need){ return Promise.resolve(scStreamState.url); }
-      return scStreamResolve(t.videoId).then(function(u){
-        if(u){ scStreamState.url = u; scStreamState.urlAt = Date.now(); }
-        return u;
-      });
-    }
-    if(scStreamState.curId === String(id) && scStreamState.blobUrl && !scStreamStale(scStreamState.urlAt, Date.now())){
-      a.src = scStreamState.blobUrl;
-      Promise.resolve(a.play()).catch(function(){ scStreamSay('Tap play to start'); });
-      scStreamSay('');
-      return;
-    }
-    Promise.resolve(go()).then(function(u){
-      if(!u){ scStreamSay('No playable stream for this song right now'); return; }
-      return scStreamSource({ url: u, mime: scStreamState.mime, size: scStreamState.size }).then(function(){
-        return Promise.resolve(a.play()).then(function(){ scStreamSay(''); }).catch(function(){ scStreamSay('Tap play to start'); });
+    Promise.resolve(scStreamResolve(t.videoId)).then(function(u){
+      if(!u){
+        scStreamSay('No playable stream for this song right now' + (scStreamReason() ? ' (' + scStreamReason() + ')' : ''));
+        scStreamTick();
+        return;
+      }
+      scStreamState.via = 'link';
+      // The link first, in the tap. If the element refuses it - a 403 on the
+      // open-ended range, which is what googlevideo answers - the song is read in
+      // bounded ranges and played from an object URL instead.
+      return scStreamStart(u).then(function(ok){
+        if(ok) return;
+        scStreamState.err = 'the link was refused';
+        return scStreamSource({ url: u, mime: scStreamState.mime, size: scStreamState.size }).then(function(src){
+          if(!src) return;
+          return scStreamStart(src);
+        });
       });
     }).catch(function(){
-      scStreamSay('This source will not play this song - tap play to try again');
+      scStreamState.err = 'the play call failed';
+      scStreamSay('This source will not play this song - tap Restart');
+      scStreamTick();
     });
   }
   function scStreamToggle(){
@@ -15730,7 +15781,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(a.paused){
       window.__scStreamPulling = true;
       Promise.resolve(a.play()).then(function(){ scStreamSay(''); })
-        .catch(function(){ scStreamSay('Tap play again to start'); })
+        .catch(function(){ scStreamRestart(); })
         .then(function(){ window.__scStreamPulling = false; });
     } else {
       a.pause();
@@ -15751,6 +15802,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var a = scStreamState.audio;
       var bar = document.getElementById('scStreamBar');
       var at = document.getElementById('scStreamAt');
+      var dg = document.getElementById('scStreamDiag');
+      if(dg) dg.textContent = scStreamDiag();
       if(!a) return;
       var d = a.duration;
       if(bar){ bar.max = isFinite(d) && d > 0 ? d : 0; bar.value = a.currentTime || 0; }
@@ -15935,6 +15988,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       h += '<button type="button" id="scStreamPlay" aria-label="Play or pause" style="background:var(--accent, var(--ink));border:none;color:var(--bg);border-radius:999px;width:36px;height:36px;line-height:0;">' + scIcon(scStreamState.playing ? 'pause' : 'play', 18) + '</button>';
       h += '<button type="button" id="scStreamNextB" aria-label="Next" style="background:none;border:none;color:var(--ink);line-height:0;padding:6px;">' + scIcon('next', 18) + '</button>';
       h += '<span id="scStreamAt" style="font-size:10.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums;"></span>';
+      h += '</div>';
+      h += '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">';
+      h += '<span id="scStreamDiag" style="flex:1;min-width:0;font-size:9.5px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(scStreamDiag()) + '</span>';
+      h += '<button type="button" id="scStreamFix" style="border:1px solid var(--line);background:none;color:var(--ink-dim);border-radius:999px;padding:4px 9px;font-size:10.5px;">Restart</button>';
       h += '</div></div>';
     }
     h += '<div id="scStreamSay" style="font-size:11px;color:var(--coral);min-height:14px;margin-top:8px;"></div>';
@@ -15988,6 +16045,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     on('scStreamPrev', 'click', function(){ scStreamNext(-1); });
     on('scStreamNextB', 'click', function(){ scStreamNext(1); });
     on('scStreamBar', 'input', function(){ try{ scStreamAudio().currentTime = Number(this.value) || 0; }catch(_e){} });
+    on('scStreamFix', 'click', scStreamRestart);
     Array.prototype.forEach.call(host.querySelectorAll('.scs-add'), function(b){
       b.addEventListener('click', function(){ scStreamAddResult((scStreamState.results || [])[Number(this.getAttribute('data-i'))]); });
     });
@@ -16090,6 +16148,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
         // the next candidate before the row admits defeat.
         scStreamState.mime = String(r.mime || '');
         scStreamState.size = Number(r.size) || 0;
+        scStreamState.via = '';
+        scStreamState.err = '';
         scStreamState.alts = (r.alts || []).slice();
         if(r.videoTitle){ scStreamState.title = String(r.videoTitle); }
         if(r.author){ scStreamState.author = String(r.author); }
@@ -17305,7 +17365,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.13';
+  const APP_VERSION = '80.6.14';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -17954,6 +18014,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.14', date: '2026-10-30', title: 'A stream that starts, and a line that says why it did not', items: [
+    '[FULL] Streaming plays the link itself first, from the tap, and only reads the song in pieces when the source refuses that - so the first second no longer waits for the whole file.',
+    '[FULL] The streaming player is a real audio element in the page now, loaded before it is started, instead of one held off-screen where a WebView can treat it differently.',
+    '[FULL] The streaming card carries a one-line readout - type, size, which path carried it, the player state and what the source said - so a song that will not play says where it stopped. There is a Restart button beside it.',
+  ]},
   { version: '80.6.13', date: '2026-10-30', title: 'Streaming is a tab that scrolls, and playlists that stay', items: [
     '[FULL] Streaming scrolls like a page now: the shelf owns the scroll from the search box to the last song, and a long list of results is part of that page instead of a small box that scrolls by itself inside it.',
     '[FULL] A streaming playlist is a page with its songs - cover, artist and length included - and it is still there after a restart. The songs in it are saved with the playlist instead of being looked up by name, so nothing drops out of a playlist when it leaves the shelf.',
@@ -49847,6 +49912,16 @@ function _renderAhFromData(artistAlbums){
   function scHttpDataToBytes(data){
     if(!data) return null;
     if(typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) return new Uint8Array(data);
+    // The bridge has answered with a typed array, a plain array and a wrapped object
+    // on different versions, and every one of those was read as null - a 206 with no
+    // bytes, which ended the whole read.
+    if(typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(data)){
+      try{ return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength); }catch(_eV){}
+    }
+    if(Array.isArray(data)){
+      try{ return new Uint8Array(data); }catch(_eA){}
+    }
+    if(typeof data === 'object' && data.data != null) return scHttpDataToBytes(data.data);
     if(typeof data !== 'string') return null;
     var b64 = String(data).replace(/^data:[^;]*;base64,/, '');
     if(!b64) return null;
@@ -49868,7 +49943,9 @@ function _renderAhFromData(artistAlbums){
         if(res && (res.status === 206 || res.status === 200)){
           var bytes = scHttpDataToBytes(res.data);
           if(bytes && bytes.length) return { bytes: bytes, partial: res.status === 206, total: scRangeTotal(res.headers), status: res.status };
-          return { bytes: null, partial: false, total: 0, status: res.status };
+          // A success with data this page cannot decode is not an answer: fall through
+          // to the page fetch rather than reporting a 206 that carries nothing.
+          window.__scHttpWhy = 'the native reply carried no readable bytes';
         }
         if(res && res.status) return { bytes: null, partial: false, total: 0, status: res.status };
       }catch(e){}
