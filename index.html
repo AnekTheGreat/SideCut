@@ -15665,6 +15665,34 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // The link, in the tap: a media element is not held to CORS, so this is the
   // shortest path to sound. It is also the path that fails first, because
   // googlevideo refuses the open-ended range a media element opens with.
+
+  // 80.6.15 - THE RAIL IS ICONS ON THE RIGHT, AND A SILENT LINK IS READ
+  // THE LINK HAS SIX SECONDS TO MAKE A SOUND. A WebView is free to resolve
+  // play(), load the metadata and then never decode a byte, firing no error at all -
+  // the row sits at 0:00 and the owner is right that nothing happened. Progress is
+  // the only honest sign of a stream that is playing, so the clock is read time.
+  var scStreamWatchT = null;
+  function scStreamWatch(u){
+    var id = String(scStreamState.curId || '');
+    var a = scStreamAudio();
+    var at0 = 0;
+    try{ at0 = Number(a.currentTime) || 0; }catch(_eAt0){}
+    if(scStreamWatchT){ clearTimeout(scStreamWatchT); scStreamWatchT = null; }
+    scStreamWatchT = setTimeout(function(){
+      scStreamWatchT = null;
+      if(String(scStreamState.curId || '') !== id) return;      // another song took over
+      var now = 0;
+      try{ now = Number(a.currentTime) || 0; }catch(_eAt1){}
+      if(now > at0 + 0.4) return;                                // it is playing
+      if(!a.paused && !a.error) scStreamState.err = 'the link went quiet';
+      if(scStreamState.via === 'read') return;                   // already reading
+      return scStreamSource({ url: u, mime: scStreamState.mime, size: scStreamState.size }).then(function(src){
+        if(!src) return;
+        return scStreamStart(src);
+      });
+    }, 6000);
+  }
+
   // 80.6.14 - THE ELEMENT IS IN THE PAGE, THE LINK IS TRIED FIRST
   function scStreamStart(u, at){
     var a = scStreamAudio();
@@ -15756,7 +15784,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // open-ended range, which is what googlevideo answers - the song is read in
       // bounded ranges and played from an object URL instead.
       return scStreamStart(u).then(function(ok){
-        if(ok) return;
+        if(ok){ scStreamWatch(u); return; }
         scStreamState.err = 'the link was refused';
         return scStreamSource({ url: u, mime: scStreamState.mime, size: scStreamState.size }).then(function(src){
           if(!src) return;
@@ -16120,7 +16148,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
       plus: 'M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z',
       close: 'M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z',
       search: 'M10 4a6 6 0 1 0 3.47 10.9l4.31 4.31 1.42-1.42-4.31-4.31A6 6 0 0 0 10 4zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8z',
-      back: 'M14.7 6.3 13.3 4.9 6.2 12l7.1 7.1 1.4-1.4L9 12z'
+      back: 'M14.7 6.3 13.3 4.9 6.2 12l7.1 7.1 1.4-1.4L9 12z',
+      // 80.6.15 - the rail's three: a waveform for the stream, ruled lines for the
+      // library, a grid for the albums. Paths, like the rest, so they take the tab's
+      // colour and cannot be re-fonted by a WebView.
+      stream: 'M4.5 9h2.6v6H4.5zm4.6-3h2.6v12H9.1zm4.6-3h2.6v18h-2.6zm4.6 5h2.6v8h-2.6z',
+      list: 'M4 6h16v2H4zm0 5h16v2H4zm0 5h10.5v2H4z',
+      grid: 'M4 4h7.2v7.2H4zm8.8 0H20v7.2h-7.2zM4 12.8h7.2V20H4zm8.8 0H20V20h-7.2z'
     }[name] || '';
     var s = Number(size) || 15;
     return '<svg viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true" focusable="false" ' +
@@ -16232,13 +16266,30 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // The library's own filter tabs belong to its own page; while Streaming is the
       // page, the three shelf tabs are the tabs.
       '#library.scShelfOn #tabs{display:none}',
-      '#scShelfRail{display:none}',
-      '#scShelfRail.scShelfRailOn{display:flex;gap:6px;margin:0 14px 12px;position:relative;z-index:21;padding:2px}',
-      '#scShelfRail .scshelf-tab{flex:1 1 0;min-width:0;height:40px;border:1px solid var(--line);',
-      'background:var(--bg-raised);color:var(--ink-dim);border-radius:12px;font-size:12.5px;',
-      'font-family:var(--font-ui);transition:background .2s ease,color .2s ease,transform .12s ease}',
-      '#scShelfRail .scshelf-tab:active{transform:scale(.97)}',
-      '#scShelfRail .scshelf-tab.on{background:var(--accent, var(--ink));color:var(--bg);border-color:transparent;font-weight:600}',
+      '#scShelfRail{display:none;height:0}',
+      // 80.6.15 - THE RAIL IS ICONS, ON THE RIGHT, OVER THE SONGS. Three full-width
+      // pills spent a band of the screen on three words and pushed the list down to
+      // pay for it. The rail is fixed, so it costs the page no room at all: the shelf
+      // and the list keep the scroll and the inset they already had.
+      '#scShelfRail.scShelfRailOn{display:flex;flex-direction:column;gap:6px;height:auto;',
+      'position:fixed;right:8px;top:50%;margin:0;padding:5px;z-index:70;',
+      'transform:translateY(-50%);border-radius:999px;pointer-events:none;',
+      'background:color-mix(in srgb, var(--bg-raised) 84%, transparent);',
+      'border:1px solid var(--line);box-shadow:0 10px 26px rgba(0,0,0,.28);',
+      'backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2)}',
+      // Only the glyphs catch a tap: the gaps between them and the rail's own padding
+      // pass the touch through to the song underneath, which is the row the owner is
+      // reaching for nine times out of ten.
+      '#scShelfRail .scshelf-tab{pointer-events:auto;width:32px;height:32px;flex:0 0 auto;',
+      'display:grid;place-items:center;padding:0;border:0;border-radius:999px;background:none;',
+      'color:var(--ink-dim);line-height:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation;',
+      'transition:background .22s cubic-bezier(.22,.61,.36,1),color .22s cubic-bezier(.22,.61,.36,1),',
+      'transform .14s ease,box-shadow .22s ease}',
+      '#scShelfRail .scshelf-tab:active{transform:scale(.9)}',
+      '#scShelfRail .scshelf-tab.on{background:var(--accent, var(--ink));color:var(--bg);',
+      'box-shadow:0 2px 10px color-mix(in srgb, var(--accent, var(--ink)) 45%, transparent)}',
+      '#scShelfRail .scshelf-tab.on:active{transform:scale(.94)}',
+      '@media (prefers-reduced-motion: reduce){#scShelfRail .scshelf-tab{transition:none}}',
       '#scShelfHead{display:flex;align-items:center;gap:8px;padding:0 16px 6px}',
       '#scShelfHead .scshelf-title{font-size:13.5px;font-weight:700;flex:1}'
     ].join('');
@@ -16248,14 +16299,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!SC_STREAM_OK) return;                 // no rail, no sheet, outside the full builds
     var rail = document.getElementById('scShelfRail');
     if(!rail) return;
-    var tabs = [['streaming', 'Streaming'], ['library', 'Library'], ['albums', 'Albums']];
-    // The rail is a tab bar: three equal tabs, the page you are on filled - and it
-    // only exists where streaming does, so a build without it has no empty strip.
+    // 80.6.15 - ICONS, NOT THREE WORDS. Same three pages, same data-shelf values, so
+    // the wiring below and scShelfOpenTab() are untouched; the label moved into
+    // aria-label and title where it still answers "which is this" on a long press.
+    var tabs = [['streaming', 'Streaming', 'stream'], ['library', 'Library', 'list'], ['albums', 'Albums', 'grid']];
     rail.className = 'scShelfRailOn';
     rail.innerHTML = tabs.map(function(t){
       var on = (t[0] === 'streaming') ? scShelf.open : (!scShelf.open && scShelf.tab === t[0]);
-      return '<button type="button" class="scshelf-tab' + (on ? ' on' : '') + '" data-shelf="' + t[0] + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
-        escapeHtml(t[1]) + '</button>';
+      return '<button type="button" class="scshelf-tab' + (on ? ' on' : '') + '" data-shelf="' + t[0] + '"' +
+        ' aria-pressed="' + (on ? 'true' : 'false') + '" aria-label="' + escapeHtml(t[1]) + '"' +
+        ' title="' + escapeHtml(t[1]) + '">' + scIcon(t[2], 17) + '</button>';
     }).join('');
     Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
       b.addEventListener('click', function(){ scShelfOpenTab(this.getAttribute('data-shelf')); });
@@ -17365,7 +17418,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.14';
+  const APP_VERSION = '80.6.15';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -18014,6 +18067,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.15', date: '2026-10-30', title: 'Three tabs become three icons, and a silent link gets read', items: [
+    '[FULL] Streaming, Library and Albums are one small column of icons on the right edge now, floating over the songs instead of a row of pills above them - so the list keeps the screen it had, and the rail costs the page no room at all.',
+    '[FULL] The rail takes only the taps that land on a glyph: the gaps and its own padding pass through to the song underneath.',
+    '[FULL] A stream link that starts and then makes no sound for six seconds is read instead, and the card says so - some players resolve a play and then decode nothing, with no error to show for it.',
+  ]},
   { version: '80.6.14', date: '2026-10-30', title: 'A stream that starts, and a line that says why it did not', items: [
     '[FULL] Streaming plays the link itself first, from the tap, and only reads the song in pieces when the source refuses that - so the first second no longer waits for the whole file.',
     '[FULL] The streaming player is a real audio element in the page now, loaded before it is started, instead of one held off-screen where a WebView can treat it differently.',
