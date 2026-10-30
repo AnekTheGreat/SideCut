@@ -1,44 +1,50 @@
-## 80.6.16 ({{STAMP}}): a stream that tries every copy, and rows that keep their cover
+## 80.6.17 ({{STAMP}}): the stream takes the player bar, and genres to browse
 
-- **WHAT THE OWNER SAID.** *"the streaming stuff isn't working and keeps giving source errors"*, *"it
-  should have metadata with track covers"*, and a screenshot of the card with the readout on it:
-  `webm · 3.5 MB · read · error 4 · the source sent no bytes`. That line is what turned this release from
-  another guess into a diagnosis - it named the copy that was tried and the step that refused it.
-- **THE READ ONLY EVER TRIED ONE COPY.** `scYtPlayer()` - the resolver the **downloader** also uses -
-  ranks itag 251 (`webm`/opus) first and hands back the m4a rows and the progressive muxed copy behind
-  it as `alts`. The downloader walks that list (`scFetchDecode` → `scStreamUsable` → `scFetchBytes`) and
-  has never had trouble; `scStreamSource()` read `alts` into the state and then called `scFetchBytes`
-  on the first URL only, so a single refused range ended the song. The readout's `webm` is exactly that
-  first rank. The read now walks the same list in the same order, keeps the mime and size of whichever
-  copy answered, labels a muxed copy `audio/mp4`, and still puts the downloader's `__scCancelDl` flag
-  back on every exit.
-- **"THE SOURCE SENT NO BYTES" WAS A FALLBACK, NOT A FINDING.** `scFetchRange()` returned
-  `{bytes:null,status:403}` from both the native and the page branch without writing anything to
-  `window.__scHttpWhy`, so the readout had no step to name and the card printed the fallback. Both
-  branches now record the status (`the source answered 403`, `the page request answered 502`) and a
-  request that never answered says so, so the next screenshot names the refusal itself.
-- **THE ROWS HAD NO METADATA BECAUSE THEY READ THE WRONG FIELDS.** `scYtSearch()` returns
-  `{videoId, title, owner, duration, score}` and now `thumb` as well; `scStreamAddResult()` was reading
-  `it.author || it.channel` and `it.lengthText`, neither of which is in that answer - so every row was
-  saved with an empty artist, `dur` 0 and an empty `thumb`, which is the black square and the word
-  "Streaming" standing in for the artist. It now reads `owner`, a numeric `duration` (seconds, with the
-  text form still accepted) and the cover, and `scStreamThumb()` falls back to
-  `https://i.ytimg.com/vi/<videoId>/mqdefault.jpg`, so rows saved before this release fill in on their
-  own with no request and no migration. The now-playing card shows a 44px cover beside the title with
-  `artist · length` under it (`scStreamMeta()`), and the readout row carries `padding-right:46px` so
-  the floating rail no longer sits on top of Restart.
-- **THE PAGE OPENS AT ITS TOP.** The shelf owns the scroll and keeps it, so coming back to Streaming
-  after reading to the bottom showed a card whose title, badge and New playlist button were already
-  above the fold - which reads as a page that lost its header. `scShelfOpenTab('streaming')` now sets
-  the shelf's `scrollTop` to 0.
-- **WHAT WAS RUN.** Built on a fresh clone of 80.6.15 and driven by `dev/patch-80616.py`: every step
-  applied, a second run is a no-op, all inline scripts compile, and `dev/check-80616.cjs` passes -
-  statically (the walk, the status reasons, the field names, the cover fallback, the rail untouched)
-  and **behaviourally**, by running `scStreamSource()` in a `vm` against a stub reader: a refused first
-  copy is followed by the second and the second one plays, a muxed copy is labelled audio, a total
-  failure names the 403, and `__scCancelDl` is restored on both paths. `scStreamMeta()` is driven the
-  same way for the card line. The OTA pair rebuilt to a true fixed point - root + `ota/` **{{ROOT}}**
-  bytes at v80.6.16 publishing one honest line, and `ota-play/` still held at its published bundle
-  (**{{PLAY}}** bytes). **Not claimed:** no song was heard playing and no cover was seen on a device -
-  there is no phone and no browser here. What is verified is that every candidate is now tried, that a
-  refusal names its status, and that a row carries artist, length and a cover that always resolves.
+- **WHAT THE OWNER ASKED FOR.** *"show in the now bar and stuff if your streaming the song"*, *
+  "make the experience feel amazing Spotify like with a main genre or multiple genre topics"*, and
+  *"make it nice and non glitchy"*. All three are the same complaint underneath: a streamed song was
+  something that happened inside a card halfway up the Library, not something the app was *playing*.
+- **THE STREAM NOW OWNS THE BAR.** When a stream starts, the bar at the bottom stops showing the last
+  downloaded song and shows the stream: the cover on the disc (the same artwork the row carries, with
+  the video-id fallback, so nothing is ever a black square), the title, `artist · length`, and a small
+  **STREAM** pill so there is never a doubt which kind of song is playing. The disc spins while it
+  plays and stops when it pauses.
+- **AND THE BAR'S BUTTONS DRIVE IT.** Play/pause toggles the stream. Next skips to the next song in
+  the queue the stream was started from. Previous restarts the song if it is more than three seconds
+  in and goes back if it is not - the behaviour every player has. Dragging the seek bar seeks the
+  stream, and the drag is held out of the clock's hands exactly as the local player's is, so the thumb
+  no longer jumps back under the finger. The disc's progress ring and the mini bar follow the same
+  clock.
+- **ONE SOUND AT A TIME.** Starting a stream pauses the local player, and starting a local song stops
+  the stream and takes the bar back. Before this, both could be playing at once and the bar showed a
+  song that was not the one you could hear.
+- **THE GLITCH WAS THE PLAY PATH REDRAWING THE PAGE.** `scStreamAudio()` rebuilt the whole streaming
+  block - `innerHTML`, every wiring, the scroll - on every `play` and every `pause` event, because the
+  card's own button was drawn from `scStreamState.playing`. A pause therefore reset the card's
+  position and its own seek line, which is exactly the flicker and the jumping the owner is asking
+  about. Play and pause now update the button, the icon and the clock **in place**; the page is only
+  rebuilt when the list itself changes.
+- **GENRES, AS A RAIL YOU CAN SWIPE.** Above the search there is a **Browse** row of sixteen gradient
+  tiles - Pop, Hip-Hop, R&B, Afrobeats, Punjabi, Latin, Rock, Electronic, K-Pop, Indie, Country, Jazz,
+  Chill, Dance, Old School, Gospel. A tile is a search of the source, not a list bundled into the app:
+  tapping one asks for that genre and shows the answers where search results always appear. The
+  chosen genre is ringed, and one tap on its name clears it. A song added while browsing a genre keeps
+  that genre, and it is shown on the row as `artist · 3:12 · Pop`, so the topics survive the search
+  that found them. Playlist copies keep the genre too, and playlists saved before this release fill it
+  in from the song they point at, with no migration step.
+- **RESULTS SAY WHO AND HOW LONG.** The result rows read the artist field the search actually sends
+  and append its length, so two versions of the same song can be told apart before either is added.
+- **WHAT WAS RUN.** Built on a fresh clone of 80.6.16 and driven by `dev/patch-80617.py`: 19 steps
+  applied, a second run is a no-op, all seven inline scripts compile, and `dev/check-80617.cjs` passes
+  - statically (who owns the bar, the five buttons wired to the stream, the clock feeding the bar,
+  the sixteen genres, the genre kept on a row and filled into old playlist copies, the CSS that marks
+  a streaming bar) and **behaviourally**, by running `scStreamBarSync()` in a `vm` against a stub DOM
+  at 60 seconds of a 240-second song: the clock reads `1:00` and `4:00`, the bar sits at 25% with a
+  matching fill, the disc ring is at the matching offset, the disc spins, the icons are a pause glyph,
+  and after a pause they flip to a play glyph and the disc stops. Switching `barOn` off shows a local
+  song's bar is never written by the stream. `scStreamRowMeta()` is driven the same way and returns
+  `Diljit · 1:35 · Punjabi`. The OTA pair rebuilt to a true fixed point - root + `ota/` **{{ROOT}}**
+  bytes at v80.6.17 publishing one honest line, and `ota-play/` still held at its published bundle
+  (**{{PLAY}}** bytes). **Not claimed:** no song was heard and no bar was seen on a device - there is
+  no phone and no browser here. What is verified is that the stream writes the bar, that the bar's
+  buttons call the stream, and that pausing no longer rebuilds the page.
