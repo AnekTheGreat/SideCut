@@ -1,52 +1,47 @@
-## 80.6.20 ({{STAMP}}): the stream shows on the phone
+## 80.6.21 ({{STAMP}}): streaming, made quick - and quiet
 
-- **WHAT THE OWNER SAID.** *"streaming stuff should also show in widget and phone player in android"*.
-  One omission, and it was structural rather than a missing call.
-- **WHY NEITHER THE WIDGET NOR THE LOCK SCREEN EVER KNEW.** A stream is a **second `<audio>`
-  element**. Every surface that feeds the phone - the media session, its MediaStyle notification, the
-  quick-settings player, the lock screen and the home-screen widget - is driven from the app's own deck
-  and its queue: `mediaSetMetadata(pushWidgetState)`, `mediaSetPlaybackState`, `mediaSetPositionState`,
-  and the handlers in `registerMediaSessionHandlers()`. 80.6.17 taught the stream to take over
-  `#nowPlaying`, and 80.6.19 taught it to carry a genre, but nothing ever told the phone. So a streamed
-  song left the card on the last **local** song (or empty), and the widget kept drawing a song that was
-  not playing while the phone actually made the stream's sound.
-- **WHAT CHANGED - THE SAME RULE THE BAR GOT.** `scStreamPhoneOwns()` is the phone's answer to
-  `scStreamBarOwns()`: while the stream owns the bar, it owns the phone. `scStreamPhoneTrack()` hands the
-  phone the shape it already reads from a library track - title, artist and the cover the card draws
-  (`scStreamThumb`, the ytimg thumbnail or the row's own) - so the metadata, the notification's artwork
-  and the widget need no new native path. `scStreamPhoneSync()` pushes that song, its real playback
-  state and its position in one call, and `scStreamPhoneTick()` keeps the clock and the widget's
-  progress strip current from the stream element, throttled to once a second because `timeupdate` fires
-  four times a second.
-- **THE PHONE'S BUTTONS COME BACK INTO THE STREAM.** `scStreamPhoneArm()` registers all eight actions -
-  play, pause, previous, next, stop, both thirty-second jumps and seek - and each one drives the stream
-  element, not the deck: next goes through `scStreamNext()`, so the genre rule from 80.6.19 applies to a
-  press on the lock screen exactly as it does inside the app; previous restarts the song past three
-  seconds, which is the rule the deck already used; play on a stream whose source has gone starts it
-  again rather than doing nothing.
-- **AND THE DECK STANDS DOWN, ON PURPOSE.** Registering handlers once would not have held: the system
-  rebuilds the session (after the service is released, after a WebView reload), and `refreshMediaControls()`
-  re-arms the deck's handlers every minute and pushes the deck's own track. Both now open with a guard -
-  while the stream owns the bar they arm the **stream** instead - which is what stops the buttons from
-  silently flipping back mid-song. The deck's background heartbeat also stopped reviving the local
-  element while a stream is up (`&& !scStreamPhoneOwns()`): two sounds at once behind the screen was the
-  one thing worse than no card at all.
-- **AND IT HANDS THE PHONE BACK.** `scStreamPhoneQuit()` runs when the stream gives the bar up: the deck's
-  track returns to the card, the state reads paused, and the deck's handlers are re-armed - so a press
-  after the stream ended does not aim at a song nobody can hear.
-- **WHAT WAS RUN.** Built on a fresh clone of 80.6.19: 11 steps applied, a second run is a no-op, all
-  seven inline scripts compile, and `dev/check-80620.cjs` passes **56 checks**. Statically: the phone
-  track carries title, artist and cover; every one of the eight actions is registered; both re-arm paths
-  consult the stream **before** the deck; the widget timeline reads the stream element; the heartbeat
-  guard is in place; the hand-back pushes the deck's card and re-arms its buttons. **Driven**, in a `vm`
-  against a stub element: `__sync()` sends the streamed title first, then the state it is actually in,
-  then all eight buttons; a `pause` press from the phone pauses the stream and `play` plays it; previous
-  past three seconds rewinds instead of skipping; next calls `scStreamNext(1)`; the forward jump moves
-  42s to 72s; stop pauses and rewinds; with the element's duration missing the phone is handed the song's
-  real length; and `__quit()` puts the deck's song and handlers back. The OTA pair rebuilt to a true
-  fixed point - root + `ota/` **{{ROOT}}** bytes at v80.6.20, and `ota-play/` still HELD (**{{PLAY}}**
-  bytes). **Not claimed:** there is no phone here, so no APK was built and no notification, lock screen
-  or home-screen widget was seen. The native side needed no change - the plugin and the widget provider
-  already read these exact payloads (`title`, `artist`, `art`, `playing`, `pos`, `dur`), which is why
-  this rides OTA - but whether a given launcher repaints the RemoteViews promptly is the device's
-  business, not something this release can show.
+- **WHAT THE OWNER SAID.** *"streaming is not efficient at all make that better it should be fast and
+  easy to play dawg, and music shouldn't overlap with the downloaded music fix this and make it good,
+  sources should never fail have like 10 backups, playback should be instant like how downloaded songs
+  are"*. Three separate faults, and one of them was a half-fix I shipped myself.
+- **WHY IT FELT SLOW.** Every song was an island: the resolver answered for the one song being tapped,
+  the bytes were read for that song only, and nothing was remembered about the one after it. So Next -
+  the most-used control in the app - paid the whole cost again: a player round trip, then a read. The
+  only thing that made a song feel instant was the object-URL cache, three songs deep and twelve minutes
+  long, which is shorter than one album.
+- **WHAT CHANGED.** `scStreamPrefetch()` reads the **next** song into memory while the current one plays,
+  using `scStreamReadOnly()` - a reader that never touches the element that is playing and never asks the
+  resolver twice. The cache is **six songs, forty-five minutes**. A stream read is **six ranges at a time**
+  instead of four (`scFetchBytes` now takes a lane count; the downloader's default is untouched), and the
+  silent-link wait dropped from 2.4s to 1.1s, because the read already runs alongside the link and the
+  old wait was mostly a pause before the fallback. One read at a time, always: a counter around
+  `scStreamSource` means the read-ahead yields to a real play instead of competing with it.
+- **WHY TWO SONGS COULD PLAY AT ONCE.** 80.6.17 paused the deck's **active** element when a stream took the
+  bar - which is not the same as silencing the deck. The other element is the one a **crossfade** is already
+  playing into; a track that ends can advance into it; `recoverAudio()` restarts whatever it likes. So a
+  streamed song and a downloaded one could be heard together, and the owner heard exactly that.
+  `scStreamQuietDeck()` now puts the deck to bed as a whole - both elements, the crossfade timer, the
+  pending hand-off - on every path into the stream (`scStreamBarOn`, and the stream element's own `play`,
+  so a resume after a pause counts too). And the rule holds from the other side: while the stream owns the
+  bar, any deck element that starts playing is stopped again at once, and `recoverAudio()` returns instead
+  of restarting local playback behind a stream.
+- **WHY A SOURCE COULD STILL FAIL.** `scYtPlayer()` kept **three** audio rows and **two** muxed ones per
+  player answer, and the element gave up after **one** retry - and that retry asked the resolver again
+  before trying anything it already had. It now keeps **ten** audio rows and **four** progressive ones (the
+  same player answer: no extra request, just more of what was already in it), retries up to **twelve**
+  times, and walks the backups **first** - a dead URL costs the next candidate, not a fresh lookup.
+- **WHAT WAS RUN.** Built on a fresh clone of 80.6.20: 16 steps applied, a second run is a no-op, and all
+  seven inline scripts compile. `dev/check-80621.cjs` passes **51 checks**. Statically: six songs and
+  forty-five minutes; six lanes threaded through the reader and the read-ahead; the read counter; the
+  scheduled read-ahead; the whole-deck silence with the old half-silence gone; the deck listener and the
+  recovery guard; ten and four rows; the twelve-retry ceiling and the backups-first order. **Driven**, in a
+  `vm`: `scStreamQuietDeck()` pauses **both** elements, cancels the crossfade interval and drops the pending
+  hand-off while the stream keeps its bar; the deck's own listener stops an element that plays behind the
+  stream and leaves it alone when the stream does not own the bar; `scStreamReadOnly()` labels a muxed read
+  audio and asks for six lanes; and `scStreamPrefetch()` resolves the next song, reads it six lanes wide,
+  keeps the object URL under its video id, refuses to run while a read is in flight, and gives the URL back
+  if that song became current. The OTA pair rebuilt to a true fixed point - root + `ota/` **{{ROOT}}**
+  bytes at v80.6.21, and `ota-play/` still HELD (**{{PLAY}}** bytes). **Not claimed:** there is no phone and
+  no network here, so no song was streamed and no timing was measured on a device. The read-ahead is a
+  scheduling change, not a promise of a number: what it removes is the resolve and the read on every Next
+  after the first, and the honest way to see it is one album played straight through.
