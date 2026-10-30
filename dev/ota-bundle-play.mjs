@@ -70,6 +70,32 @@ if (!version) { console.error('ota-bundle-play: could not read APP_VERSION'); pr
 const { notes, date } = readNotes(html, version);
 const OUT = path.join(ROOT, 'ota-play');
 
+// 80.6.13 - A CHANNEL CAN BE HELD. dev/channel-hold.json keeps this channel on the
+// bundle a regular install already has, so a release that belongs to the other build
+// cannot reach it until the owner says it can. The hold is data, not a build flag:
+// lifting it is deleting the key, and nothing about the page changes.
+const HOLD_FILE = path.join(ROOT, 'dev/channel-hold.json');
+let held = false;
+let holdWhy = '';
+try {
+  const hold = JSON.parse(fs.readFileSync(HOLD_FILE, 'utf8'));
+  held = !!(hold && hold.play);
+  holdWhy = String((hold && hold.why) || '');
+} catch (e) {
+  held = false;
+}
+if (held) {
+  let published = '';
+  try { published = String(JSON.parse(fs.readFileSync(path.join(OUT, 'updates.json'), 'utf8')).version || ''); } catch (e) { published = ''; }
+  if (CHECK) {
+    console.log(`ota-bundle-play --check OK — the channel is HELD at v${published || 'its published bundle'} (page is v${version}); ota-play/ is untouched.`);
+    process.exit(0);
+  }
+  console.log(`ota-bundle-play: HELD — ota-play/ stays at v${published || 'its published bundle'} (page is v${version}).`);
+  if (holdWhy) console.log('  why: ' + holdWhy);
+  process.exit(0);
+}
+
 if (CHECK) {
   const problems = [];
   let man = null;
