@@ -1,36 +1,31 @@
-## 80.6.14 ({{STAMP}}): the stream is started, and the row says where it stopped
+## 80.6.15 ({{STAMP}}): three icons on the right, and a silent link that gets read
 
-- **WHAT THE OWNER SAID.** *"streaming is not workifn"* - one sentence, after three releases that
-  each answered it with a theory. This one answers with mechanics, and leaves a readout on screen.
-- **THE ELEMENT WAS NEVER IN THE PAGE.** `scStreamAudio()` built an `<audio>`, kept it in a closure and
-  played an object URL on it; the app's own player keeps both of its elements in the document. A
-  WebView is free to treat a detached element differently for load, autoplay and decode, and that is
-  not something a stream can be asked to survive. It is appended when it exists - 0x0, off-screen,
-  `pointer-events:none` - `preload` is `auto` rather than `none`, and its `loadedmetadata` is watched so
-  the card knows when there is something to play.
-- **THE LINK IS TRIED FIRST, IN THE TAP.** A media element is not held to CORS, so the direct URL is
-  the shortest path to sound; the previous release fetched the whole 3.4 MB before it handed anything
-  to the element, which on a phone is indistinguishable from nothing happening. `scStreamStart()` sets
-  the source, calls `load()` and calls `play()` inside the caller's gesture. When the element refuses
-  that link - googlevideo answers 403 to the open-ended range a media element opens with - the song is
-  read in bounded ranges and played from an object URL, which is the order the two mechanisms actually
-  want.
-- **THE READER NO LONGER GIVES UP ON A SHAPE IT DOES NOT KNOW.** `__scCapHttp()` can answer 206 with
-  data this page cannot decode; `scFetchRange()` then returned "206, no bytes", which ended the whole
-  read instead of falling through to the page fetch. That success status now falls through, and
-  `scHttpDataToBytes()` accepts typed arrays, plain arrays and wrapped replies as well as base64.
-- **AND THE CARD SAYS WHERE IT STOPPED.** One dim line under the transport: the stream's type and size,
-  which path carried it (`link` or `read`), how many bytes were read, the element's `error.code` and
-  `readyState`, and the transport's own reason (`window.__scHttpWhy`). A **Restart** button sits beside
-  it and starts the song again from a fresh gesture, clearing the object URL and the resolver's cached
-  link first. A screenshot of that line is a diagnosis instead of a report.
-- **WHAT WAS RUN.** Built on a fresh clone of 80.6.13 and driven by `dev/patch-80614.py`: every step
-  applied, a second run is a no-op, **all 7 inline scripts compile**, and `dev/check-80614.cjs` passes -
-  the element is appended and preloaded, the link is tried before the read, a 206 with unreadable bytes
-  falls through to fetch, the readout reports type, size, path, element state and transport reason, and
-  the pure functions are **executed**: base64, typed array, plain array and wrapped replies all decode,
-  while `null` and an unknown object stay unread rather than guessed at. The OTA pair rebuilt to a true
-  fixed point - root + `ota/` **{{ROOT}}** bytes at v80.6.14 publishing one honest line, and `ota-play/`
-  still held at its published bundle (**{{PLAY}}** bytes). **Not claimed:** playback was not heard. What
-  changed is that the page now starts the element the way the app's own player does, tries the two
-  mechanisms in the order that can work, and prints the reason when neither does.
+- **WHAT THE OWNER SAID.** *"make the 3 streaming, albums and library tabs icons on the right hand side
+  hovering over ... smooth and nice and smallish ... that layout shouldn't get touched"* - and, in the
+  same breath, *"streaming does not work"*.
+- **THE RAIL LEFT THE SONG'S SPACE.** Streaming, Library and Albums were a row of full-width pills, so
+  three words cost a band of the screen and pushed the list down to pay for it. They are one small
+  column of glyphs now - waveform, ruled lines, grid - fixed to the right edge at 32px, floating over
+  the songs with a blurred, hairline edge. The rail is `position:fixed`, so it takes no room in the
+  page: the shelf, the list, the scroll and the bottom inset are exactly as they were, which is what
+  "that layout shouldn't get touched" has to mean in practice.
+- **IT ONLY CATCHES ITS OWN TAPS.** The rail container is `pointer-events:none` and only the glyphs are
+  targets, so a press in the gaps or in the rail's padding goes through to the song underneath it. The
+  active page is a filled circle; the change is eased over .22s, a press scales to .9, and a
+  reduced-motion setting removes the easing. `data-shelf` and `scShelfOpenTab()` are untouched - the
+  three pages switch exactly as they did - and the word each circle hides is still its `aria-label`
+  and its long-press title.
+- **A LINK THAT STARTS AND THEN SAYS NOTHING.** The one failure that produces "nothing happens" with
+  no error anywhere: a player resolves `play()`, loads the metadata, and then decodes no bytes and
+  fires no `error` at all. The row sits at 0:00 and there is nothing to report. Six seconds with no
+  progress on the same song now hands it to the read path - the same bounded-range read the downloader
+  already uses - and the card's line says *the link went quiet* so the next screenshot names it.
+- **WHAT WAS RUN.** Built on a fresh clone of 80.6.14 and driven by `dev/patch-80615.py`: every step
+  applied, a second run is a no-op, all inline scripts compile, and `dev/check-80615.cjs` passes - the
+  rail is fixed at 32px with only its glyphs tappable, the three glyphs are drawn at the requested size
+  and differ from each other, the words survive as `aria-label`/`title`, the `data-shelf` wiring is
+  unchanged, and the watch is armed on the link and reads the song when it goes quiet. The OTA pair
+  rebuilt to a true fixed point - root + `ota/` **{{ROOT}}** bytes at v80.6.15 publishing one honest
+  line, and `ota-play/` still held at its published bundle (**{{PLAY}}** bytes). **Not claimed:**
+  playback was not heard, and the rail was not seen on a device. What is verified is the geometry, the
+  wiring, and that every glyph is a path of the right size.
