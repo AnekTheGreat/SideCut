@@ -49,6 +49,6 @@
   is one song, the id-only shape comes back with its metadata filled in, an orphan keeps its name, an
   emptied playlist disappears, and an unresolvable id is dropped. The OTA pair rebuilt to a true fixed
   point - root + `ota/` **{{ROOT}}** bytes at v80.6.13 publishing one honest line, and `ota-play/` left at
-  its published bundle with `--check` reporting the hold. **Not claimed:** playback was not heard - that
-  needs the device. What is proven is that the source is asked, answered, read with the right length and
-  a cleared stop flag, and that every refusal is now named on screen.
+  its published bundle (**{{PLAY}}** bytes) with `--check` reporting the hold. **Not claimed:** playback
+  was not heard - that needs the device. What is proven is that the source is asked, answered, read with
+  the right length and a cleared stop flag, and that every refusal is now named on screen.
