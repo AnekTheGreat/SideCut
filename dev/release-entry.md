@@ -1,51 +1,35 @@
-## 80.6.23 ({{STAMP}}): streaming moves into the library and the albums
+## 80.6.24 ({{STAMP}}): the patch notes carry their day and their time
 
-- **WHAT THE OWNER SAID.** *"the buttons shouldn't glitch when you through the selections, there should
-  be add to a playlist and add to album option in streaming or wait we can merge the streaming into the
-  actual albums and library, with another side button icon that has streaming albums streaming playlists
-  so you can switch between them, this would replace the side buttons there rn"*. Three asks: the rail
-  stops glitching, the streaming page offers both kinds of list, and streaming stops being a place of its
-  own.
-- **THE FLICKER WAS TWO BUGS.** `scShelfRender()` reassigned `rail.innerHTML` on every render, which
-  throws away the element that was just tapped: its press animation never ran, and a `position:fixed` rail
-  with a backdrop blur settled visibly each time a glyph was chosen. And `scShelfOpenTab()` called
-  `navigate('library')` and then `renderTabs()` and `renderList()` itself - while `navigate()` already
-  paints both (`if(isLibrary){ renderTabs(); renderList(); }`) - so every tab tap drew its page twice in
-  one frame: the strip scrolled, jumped back and scrolled again. The rail is now built once
-  (`data-built`) and `scShelfMark()` only moves the `.on` class and the source glyph; `scShelfApply()` is
-  the single painter, and the hand paint is a fallback for a page with no `navigate()` to ask. Tapping the
-  page that is already up repaints nothing.
-- **STREAMING IS A SOURCE, NOT A PAGE.** The rail's three glyphs (streaming / library / albums) are two
-  pages and a switch: `library`, `albums`, a hairline, then a glyph that flips `scShelf.src` between `'d'`
-  (what is on this device) and `'s'` (what plays from the source). With the switch on streaming, the
-  Albums page draws the streaming albums and the Library page draws the shelf - the search box, the
-  results, the mini player and the streamed songs. The coral dot on the switch is the only thing that
-  changes colour. This replaces the third tab: nothing streaming has a page of its own any more.
-- **A STREAMING ALBUM LOOKS LIKE AN ALBUM.** `scShelfGrid()` draws a two-column grid of square covers -
-  the cover of the list's first song, or the album glyph when there is none - with the name and a song
-  count, and a tile carries `data-name` into the same `scShelfOpenList()` page a downloaded album opens.
-  The Albums page in streaming mode has **New album** in its own header; the shelf no longer repeats the
-  albums as a row of chips, it has one **Streaming albums** row that switches to that page.
-- **THE PLUS ASKS BOTH QUESTIONS.** A row's plus was one action - a playlist, named in a prompt - so no
-  album could be started from the shelf. `scStreamAddTo()` opens the existing sheet with *Add to a
-  playlist…* and *Add to an album…*; each of those opens `scStreamPickList()`, which offers the lists that
-  exist (by name, with how many songs each holds) and, last, a new one that falls through to the same
-  prompting maker as before.
-- **WHAT WAS RUN.** Built on a fresh clone of 80.6.22 in one payload, `dev/patch-80623.py` (15 steps; a
-  second run is a no-op, `--check` is 1 before and 0 after), and all seven inline scripts still compile.
-  `dev/check-80623.cjs` passes **59 checks**: statically (the one rail that is built once and marked
-  after, two pages and no streaming page, the switch with its two sources and one painter, no second
-  `renderTabs()`/`renderList()` in the tab path, the albums-page branch gated on source *and* page, the
-  tile grid, New album on that page, the shelf's way across to it, the plus opening two questions and the
-  lists that exist, and the row title saying both) and **driven** in a `vm`: the grid draws one tile per
-  album with the first song's cover, counts "2 songs" and "1 song", keeps the name, falls back to the
-  glyph with no art, and says so when a kind is empty; the plus opens one sheet with a playlist and an
-  album, the album question lists the albums that exist (`Road · 0 songs`), choosing one files the song in
-  it marked `kind: 's'` and says where it went, the last choice makes a new one, the playlist question
-  does the same for playlists, and a song that has left the shelf is refused. OTA rebuilt to a true fixed
-  point - root + `ota/` **{{ROOT}}** bytes at v80.6.23, `ota-play/` still HELD (**{{PLAY}}** bytes).
-  **Not claimed:** there is no phone and no browser here, so the rail was not tapped, the switch was never
-  flipped with a thumb, and no grid was seen on a screen. What is verified is that the rail is one DOM
-  tree that only changes class, that a page is painted once per tap, that the streaming set is chosen by
-  source and page rather than by a page of its own, and that both kinds of list can be reached from a
-  row's plus.
+- **WHAT THE OWNER SAID.** *"WHAT THE HELL DID YOU SO WOTH THE PACTCH NOTES IT SHOULD BE OCTOBER 30th
+  2026 AND THE TIME IN EST"* - and the notes were wrong: twelve releases were stamped with a bare day.
+- **THE REPAIR.** Every 80.x changelog entry before 80.6.12 carries the day it landed *and* the Eastern
+  time it landed at (`October 29, 2026 · 8:04 PM EDT`): 55 entries from 80.0 on, 230 of the page's
+  entries with a literal `·` and 173 with the escaped `\u00b7` - both render the same. The twelve from
+  80.6.12 through 80.6.23 were stamped with a bare `2026-10-30`: no clock on it at all, and for nine of
+  them the wrong day, because they landed on the *evening of October 29* Eastern and were dated the
+  30th. Each of the twelve now carries the Eastern time of its own release commit: 80.6.12 at 8:04 PM,
+  80.6.13 at 9:14, 80.6.14 at 9:37, 80.6.15 at 9:46, 80.6.16 at 10:24, 80.6.17 at 10:37, 80.6.18 at
+  10:46, 80.6.19 at 10:54, 80.6.20 at 11:10 (all October 29), then 80.6.21 at 7:26 AM, 80.6.22 at
+  5:20 PM and 80.6.23 at 6:25 PM on October 30.
+- **THE CLOCK IS EASTERN, AND THE LABEL IS EDT.** October 30 is still daylight time in New York - the
+  change back to EST is in November - so the label stays `EDT`, the same label as every 80.x entry before
+  these. The time shown is Eastern, which is what was asked for; if the letters themselves are wanted as
+  `EST`, that is one word in the next payload and every release to follow.
+- **NOTHING ELSE MOVED.** No song, list, album, rail or player code is touched: the payload replaces
+  twelve `date:` values that are only ever drawn as text on the changelog screen (`entry.date`, at the
+  release row - nothing parses it), adds this release's entry, and bumps the version. The change is in
+  the notes themselves, which is the point.
+- **WHERE IT WENT WRONG.** The nine payloads from 80.6.12 on each wrote `date: '2026-10-30'` by hand
+  instead of computing the Eastern stamp at apply time - which is what `eastern()` in this payload does,
+  and what `dev/release-record.py` has always done for this file. The verifier now fails a release that
+  writes a bare ISO day again: `check-80624.cjs` asserts that no entry is a `YYYY-MM-DD`, that all 55
+  entries from 80.0 on carry a day and an Eastern clock, that the twelve repaired stamps and this one run
+  forward in time, and that the 361 older entries - written in four other shapes before 57.0 - are not
+  touched by the repair.
+- **WHAT WAS RUN.** `dev/patch-80624.py` over a fresh clone of the released 80.6.23 page: fourteen steps
+  (twelve dates, the version, the entry), a second run a no-op with `--check` 0. `dev/check-80624.cjs`
+  passes **28 checks**, including a compile of all seven inline scripts, so the page whose notes changed
+  is still the page that boots. OTA rebuilt to a true fixed point - root + `ota/` **{{ROOT}}** bytes at
+  v80.6.24, `ota-play/` still HELD (**{{PLAY}}** bytes). **Not claimed:** no browser and no phone here, so
+  the changelog screen was not opened on a device; what is verified is the strings the screen draws and
+  that the page still parses.
