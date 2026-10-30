@@ -15574,37 +15574,56 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // played from an object URL. On a device that fetch is the patched one, so CORS is
   // not the limiter; on the web the plain URL is still the last try.
   function scStreamSource(info){
-    var u = (info && info.url) || String(info || '');
-    var mime = String((info && info.mime) || '').split(';')[0].trim() || 'audio/mp4';
-    var size = (info && Number(info.size)) || 0;
-    if(!u) return Promise.resolve('');
+    // 80.6.16 - THE STREAM WALKS ITS CANDIDATES
+    var u0 = (info && info.url) || String(info || '');
+    if(!u0) return Promise.resolve('');
+    // The resolver ranks itag 251 (webm/opus) first and answers with the m4a rows and
+    // the progressive muxed copy behind it. Reading only the first URL meant a single
+    // refused range ended the song; scFetchDecode() walks this same list and never had
+    // that problem.
+    var list = [{ url: u0, mime: String((info && info.mime) || ''), size: Number(info && info.size) || 0 }]
+      .concat((scStreamState.alts || []).filter(function(a){ return !!(a && a.url); }));
     scStreamSay('Reading the song\u2026');
     scStreamState.via = 'read';
-    // A stopped download must not truncate a stream: scFetchBytes() watches one
-    // global for the downloader's Stop button.
     var wasCancel = !!window.__scCancelDl;
     window.__scCancelDl = false;
     function restore(){ try{ window.__scCancelDl = wasCancel; }catch(_eRestore){} }
-    return Promise.resolve()
-      .then(function(){
-        return scFetchBytes(u, size, function(loaded, total){
-          var pct = total ? Math.round((loaded / total) * 100) : 0;
-          scStreamSay(pct > 0 ? 'Reading the song\u2026 ' + pct + '%' : 'Reading the song\u2026');
-        });
-      })
-      .then(function(buf){
-        if(!buf) throw new Error('no bytes');
-        var blob = new Blob([buf], { type: mime });
-        if(!blob.size) throw new Error('empty');
-        if(scStreamState.blobUrl){ try{ URL.revokeObjectURL(scStreamState.blobUrl); }catch(_eRev){} }
-        scStreamState.blobUrl = URL.createObjectURL(blob);
-        scStreamState.bytes = Number(blob.size) || 0;
+    function readOne(cand, i){
+      // A muxed row is audio in an mp4 video container: the element plays it, but the
+      // blob is labelled audio so the WebView does not route it to a video path.
+      var mime = String((cand && cand.mime) || '').split(';')[0].trim();
+      if(!mime || /^video\//i.test(mime)) mime = 'audio/mp4';
+      scStreamState.size = Number(cand && cand.size) || 0;
+      return Promise.resolve()
+        .then(function(){
+          return scFetchBytes(cand.url, scStreamState.size, function(loaded, total){
+            if(i > 0) return;
+            var pct = total ? Math.round((loaded / total) * 100) : 0;
+            scStreamSay(pct > 0 ? 'Reading the song\u2026 ' + pct + '%' : 'Reading the song\u2026');
+          });
+        })
+        .then(function(buf){
+          if(!buf) return null;
+          var blob = new Blob([buf], { type: mime });
+          if(!blob.size) return null;
+          if(scStreamState.blobUrl){ try{ URL.revokeObjectURL(scStreamState.blobUrl); }catch(_eRev){} }
+          scStreamState.blobUrl = URL.createObjectURL(blob);
+          scStreamState.bytes = Number(blob.size) || 0;
+          scStreamState.mime = mime;
+          return scStreamState.blobUrl;
+        })
+        .catch(function(){ return null; });
+    }
+    return list.reduce(function(p, cand, i){
+      return p.then(function(got){
+        if(got) return got;
+        if(window.__scCancelDl) return '';
+        return readOne(cand, i);
+      });
+    }, Promise.resolve(''))
+      .then(function(src){
         restore();
-        scStreamState.err = '';
-        return scStreamState.blobUrl;
-      })
-      .catch(function(){
-        restore();
+        if(src){ scStreamState.err = ''; return src; }
         scStreamState.err = scStreamReason() || 'the source sent no bytes';
         scStreamSay('Could not read the song (' + scStreamState.err + ')');
         scStreamTick();
@@ -15620,9 +15639,24 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ why = String(window.__scHttpWhy || ''); }catch(_eWhy){}
     return why;
   }
+  // 80.6.16 - EVERY VIDEO ID HAS A COVER. Rows saved before this release carry an
+  // empty thumb; the fixed per-id address costs no request and always exists.
+  function scStreamThumb(t){
+    var th = String((t && t.thumb) || '');
+    if(th) return th;
+    var vid = String((t && t.videoId) || '');
+    if(!vid) return '';
+    return 'https://i.ytimg.com/vi/' + encodeURIComponent(vid) + '/mqdefault.jpg';
+  }
+  function scStreamMeta(t){
+    var out = String((t && t.artist) || '') || 'Streaming';
+    var d = Number(t && t.dur) || 0;
+    if(d > 0) out += ' \u00b7 ' + scStreamTime(d);
+    return out;
+  }
   function scStreamArt(t, size){
     var s = Number(size) || 36;
-    var th = String((t && t.thumb) || '');
+    var th = scStreamThumb(t);
     var box = 'width:' + s + 'px;height:' + s + 'px;border-radius:9px;flex:0 0 auto;object-fit:cover;' +
       'background:var(--bg);border:1px solid var(--line);display:block;';
     if(!th) return '<div style="' + box + '"></div>';
@@ -15865,18 +15899,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!it || !it.videoId) return;
     var id = 's_' + String(it.videoId);
     if(scStreamById(id)){ scStreamSay('That song is already in Streaming'); return; }
+    // 80.6.16 - THE ROW KEEPS WHAT THE SOURCE SAID: `owner`, seconds, a cover.
     var dur = 0;
-    try{
-      var m = String(it.lengthText || it.duration || '').match(/(\d+):(\d+)/);
-      if(m) dur = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-    }catch(_e){}
+    if(typeof it.duration === 'number' && it.duration > 0){
+      dur = Math.round(it.duration);
+    } else {
+      try{
+        var m = String(it.lengthText || it.duration || '').match(/(\d+):(\d+)/);
+        if(m) dur = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      }catch(_e){}
+    }
+    var thumb = String(it.thumb || it.thumbnail || '');
+    if(!thumb && it.videoId) thumb = 'https://i.ytimg.com/vi/' + String(it.videoId) + '/mqdefault.jpg';
     scStreamState.tracks = (scStreamState.tracks || []).concat([{
       id: id,
       videoId: String(it.videoId),
       title: String(it.title || it.videoTitle || 'Untitled'),
-      artist: String(it.author || it.channel || ''),
+      artist: String(it.owner || it.author || it.channel || ''),
       dur: dur,
-      thumb: String(it.thumbnail || it.thumb || '')
+      thumb: thumb
     }]);
     scStreamSave();
     scStreamRender();
@@ -16008,8 +16049,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     if(cur){
       h += '<div style="margin-top:12px;padding:10px;border-radius:12px;background:var(--bg);border:1px solid var(--line);">';
+      h += '<div style="display:flex;align-items:center;gap:10px;">';
+      h += scStreamArt(cur, 44);
+      h += '<div style="flex:1;min-width:0;">';
       h += '<div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(cur.title) + '</div>';
-      h += '<div style="font-size:10.5px;color:var(--ink-dim);">' + escapeHtml(cur.artist || 'Streaming') + '</div>';
+      h += '<div style="font-size:10.5px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(scStreamMeta(cur)) + '</div>';
+      h += '</div></div>';
       h += '<input id="scStreamBar" type="range" min="0" max="0" value="0" step="0.5" style="width:100%;margin:8px 0 2px;">';
       h += '<div style="display:flex;align-items:center;gap:10px;">';
       h += '<button type="button" id="scStreamPrev" aria-label="Previous" style="background:none;border:none;color:var(--ink);line-height:0;padding:6px;">' + scIcon('prev', 18) + '</button>';
@@ -16017,7 +16062,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       h += '<button type="button" id="scStreamNextB" aria-label="Next" style="background:none;border:none;color:var(--ink);line-height:0;padding:6px;">' + scIcon('next', 18) + '</button>';
       h += '<span id="scStreamAt" style="font-size:10.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums;"></span>';
       h += '</div>';
-      h += '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">';
+      h += '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding-right:46px;">';
       h += '<span id="scStreamDiag" style="flex:1;min-width:0;font-size:9.5px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(scStreamDiag()) + '</span>';
       h += '<button type="button" id="scStreamFix" style="border:1px solid var(--line);background:none;color:var(--ink-dim);border-radius:999px;padding:4px 9px;font-size:10.5px;">Restart</button>';
       h += '</div></div>';
@@ -16352,6 +16397,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scShelfPage(true);
     scShelfRender();
     scStreamBoot();
+    // 80.6.16 - the shelf keeps its scroll, so a page reopened after reading to the
+    // bottom showed a card whose title and New playlist button were above the fold.
+    try{ var top = document.getElementById('scStreamBlock'); if(top) top.scrollTop = 0; }catch(_eTop){}
   }
   function scShelfBoot(){
     if(!SC_STREAM_OK) return;
@@ -17418,7 +17466,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.15';
+  const APP_VERSION = '80.6.16';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   window.__bootDone = false;
   // Diagonal split toggle
@@ -18067,6 +18115,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.16', date: '2026-10-30', title: 'A stream that tries every copy, and rows that keep their cover', items: [
+    '[FULL] Streaming walks every copy of the song the resolver answered with - the m4a rows and the progressive copy behind the first one - instead of giving up when the first copy is refused. It is the same list the downloader already walks.',
+    '[FULL] A source that refuses a range now says so on the card (for example "the source answered 403") instead of reporting that it sent no bytes, which was a fallback message.',
+    '[FULL] Every streaming row keeps its artist, its length and its cover, and the card shows the cover beside the title. A cover the source never gave is read from the video id, so rows saved before this release fill in by themselves.',
+    '[FULL] The Streaming page opens at its top, so its title and New playlist button are on screen when you come back to it.',
+  ]},
   { version: '80.6.15', date: '2026-10-30', title: 'Three tabs become three icons, and a silent link gets read', items: [
     '[FULL] Streaming, Library and Albums are one small column of icons on the right edge now, floating over the songs instead of a row of pills above them - so the list keeps the screen it had, and the rail costs the page no room at all.',
     '[FULL] The rail takes only the taps that land on a glyph: the gaps and its own padding pass through to the song underneath.',
@@ -50005,7 +50059,10 @@ function _renderAhFromData(artistAlbums){
           // to the page fetch rather than reporting a 206 that carries nothing.
           window.__scHttpWhy = 'the native reply carried no readable bytes';
         }
-        if(res && res.status) return { bytes: null, partial: false, total: 0, status: res.status };
+        if(res && res.status){
+          window.__scHttpWhy = 'the source answered ' + res.status;
+          return { bytes: null, partial: false, total: 0, status: res.status };
+        }
       }catch(e){}
     }
     try{
@@ -50019,8 +50076,12 @@ function _renderAhFromData(artistAlbums){
         var ab = await r.arrayBuffer();
         if(ab && ab.byteLength) return { bytes: new Uint8Array(ab), partial: r.status === 206, total: scRangeTotal(cr), status: r.status };
       }
-      if(r && r.status) return { bytes: null, partial: false, total: 0, status: r.status };
+      if(r && r.status){
+        window.__scHttpWhy = 'the page request answered ' + r.status;
+        return { bytes: null, partial: false, total: 0, status: r.status };
+      }
     }catch(e){}
+    window.__scHttpWhy = window.__scHttpWhy || 'the range request never answered';
     return null;
   }
   // "bytes 0-1023/2923372" -> 2923372. The server's own idea of the file size,
@@ -50395,7 +50456,9 @@ function _renderAhFromData(artistAlbums){
         // A live/collab performance must NEVER outrank the studio recording.
         // The old -25 was swamped by album (+18) + artist (+16 + 12) bonuses.
         if(/\blive\b|concert|festival|acoustic|unplugged|remix|sped up|speed up|slowed|reverb|instrumental|karaoke|8d audio|nightcore|mashup|cover by|\bmedley\b|\bjam\b|\bon stage\b|\bperformance\b/.test(t)) score -= 60; // live performance
-        cands.push({ videoId: items[k].videoId, title: raw, owner: owner, duration: dur, score: score });
+        var thumbs = items[k].thumbnail && items[k].thumbnail.thumbnails;
+        var thumb = (thumbs && thumbs.length) ? String((thumbs[thumbs.length - 1] || {}).url || '') : '';
+        cands.push({ videoId: items[k].videoId, title: raw, owner: owner, duration: dur, score: score, thumb: thumb });
       }
       if(!cands.length) return null;
       cands.sort(function(x, y){ return y.score - x.score; });
