@@ -1,56 +1,51 @@
-## 80.6.22 ({{STAMP}}): the bar is the bar, and the lists hold both
+## 80.6.23 ({{STAMP}}): streaming moves into the library and the albums
 
-- **WHAT THE OWNER SAID.** *"make the streaming now bar match the one thier, remove the x button for it
-  and make a 2 second hold to have a popup to delete, make it let you make albums like the actual
-  downloaded albums things, and playlists, or in playlists you can have streaming playlists and
-  downloaded playlists and same thing for albums"*. Four asks, and the last one is a data model rather
-  than a control.
-- **THE BAR WAS WEARING A COSTUME.** A streamed song wrote three extra things into the shared player bar:
-  a **STREAM** pill before the artist, the length and genre appended to the artist line, and - from
-  80.6.17's CSS - a coral top edge and a glowing disc. The deck writes `title` and `artist` and stops, so
-  the bar changed shape the moment a song came from the source. It now writes exactly what the deck
-  writes (`who.textContent = t.artist`), and the three `body.sc-stream-now` rules are gone. The class
-  toggles stay (they are inert), so nothing else that tested for them changes.
-- **WHY THE x HAD TO GO.** Every streaming row carried a close glyph at the end of the row, a few pixels
-  from the row's own play target; a thumb reaching for a song deleted it. The glyph is removed from both
-  row shapes (the shelf, and a playlist/album page) and nothing is wired to it any more.
-- **TWO SECONDS, THEN A POPUP.** `scStreamHold()` puts a 2000ms pointer timer on each row and cancels it
-  on pointerup, pointercancel, pointerleave and contextmenu. On fire it opens `scStreamMenu()` - a bottom
-  sheet built from `document.createElement` (title, then Play, Add to a playlist, Add to an album, Add
-  songs from your downloads, and Delete / Remove from this list, then Cancel). The click that follows a
-  hold is swallowed in the capture phase, so a long press never also starts the song it was aimed at.
-- **AN ALBUM IS A PLAYLIST THAT SAYS ALBUM.** Both are `{ name, items }`; playlists live under
-  `streamPlaylists` and albums under a new `streamAlbums` key, restored through the same
-  `scStreamRestore()` on boot (`scStreamLoad` now waits for three answers, not two). The shelf has a
-  **New album** button beside **New playlist**, the two are listed as separate labelled rows of chips, and
-  either opens as a page with how many songs it holds, **Add songs**, **Play all** and a held row per song.
-- **ONE LIST CAN HOLD BOTH KINDS OF SONG.** An entry now carries `kind` - `'s'` for a song from the
-  source, `'d'` for a file already on the device - and `scStreamPlItem()` keeps it. *Add songs* opens a
-  picker over `allTracks`, and what it adds is a real entry (title, artist, length, cover, `kind: 'd'`).
-  A list row for a file says **ON DEVICE**. A file is never deleted from the device by a list action:
-  the shelf's action is *Delete this song*, a list's is *Remove from this album/playlist*.
-- **THE ORDER ACROSS TWO PLAYERS.** This is the part that needed an owner. The stream advances inside
-  `scStreamState.queue`; the deck advances inside `queue`/`queueIndex`; neither knows about the other. So
-  `scMix` owns a mixed list: `scMixPlay(items, id)` sets the entries, `scMixGo(at)` hands each one to the
-  player that can play it - a file goes to `playFromList()` **with the whole run of files in the list** (so
-  the deck walks them itself), a streamed song goes to `scStreamPlay()` as a one-song queue. Two hooks
-  close the loop: `scStreamNext()` asks the mix for the advance first, and `onEnded` does the same when the
-  deck finishes the last file of the run (`pendingPlayId === scMix.lastFile`). An entry whose streamed song
-  has left the shelf is skipped, not played, and the end of the list stops cleanly.
-- **WHAT WAS RUN.** Built on a fresh clone of 80.6.21 in three chained payloads (`dev/patch-80622.py` runs
-  `-b.py` then `-c.py`; the release ships them by being committed, and one 39 KB file does not survive that
-  commit). 33 steps applied, a second run is a no-op, `--check` is 1 before and 0 after, and all seven
-  inline scripts compile. `dev/check-80622.cjs` passes **51 checks**: statically (no pill, no pill string,
-  no `scStreamMeta` on the bar line, no `body.sc-stream-now` rules, no `scs-del`/`scsp-del` markup or wiring,
-  a 2000ms timer, both row shapes held, the popup's actions, the New album button and maker, `streamAlbums`
-  read and written, albums listed beside playlists, `ON DEVICE`, and the two advance hooks) and **driven**,
-  in a `vm`: a streamed song and a file join one list with both kinds marked, adding twice is one song,
-  removing one leaves the other kind, a file survives a restore while an unresolvable stream is dropped,
-  the open list resolves by kind, and the mix plays `stream s_1` -> `quiet` + `deck t_a` with `lastFile t_b`
-  -> `deck t_b` -> `stream s_2` -> stop, skipping a streamed entry that left the shelf; the hold starts one
-  2000ms timer, opens that row, and swallows the following tap. The OTA pair rebuilt to a true fixed point -
-  root + `ota/` **{{ROOT}}** bytes at v80.6.22, and `ota-play/` still HELD (**{{PLAY}}** bytes). **Not
-  claimed:** there is no phone and no browser here, so the bar was not seen, no row was held with a finger,
-  and no mixed list was heard playing. What is verified is that the bar writes what the deck writes, that no
-  row has a close target, that a hold and only a hold opens the popup, that the two stores round-trip, and
-  that the mix hands each entry to the right player in order.
+- **WHAT THE OWNER SAID.** *"the buttons shouldn't glitch when you through the selections, there should
+  be add to a playlist and add to album option in streaming or wait we can merge the streaming into the
+  actual albums and library, with another side button icon that has streaming albums streaming playlists
+  so you can switch between them, this would replace the side buttons there rn"*. Three asks: the rail
+  stops glitching, the streaming page offers both kinds of list, and streaming stops being a place of its
+  own.
+- **THE FLICKER WAS TWO BUGS.** `scShelfRender()` reassigned `rail.innerHTML` on every render, which
+  throws away the element that was just tapped: its press animation never ran, and a `position:fixed` rail
+  with a backdrop blur settled visibly each time a glyph was chosen. And `scShelfOpenTab()` called
+  `navigate('library')` and then `renderTabs()` and `renderList()` itself - while `navigate()` already
+  paints both (`if(isLibrary){ renderTabs(); renderList(); }`) - so every tab tap drew its page twice in
+  one frame: the strip scrolled, jumped back and scrolled again. The rail is now built once
+  (`data-built`) and `scShelfMark()` only moves the `.on` class and the source glyph; `scShelfApply()` is
+  the single painter, and the hand paint is a fallback for a page with no `navigate()` to ask. Tapping the
+  page that is already up repaints nothing.
+- **STREAMING IS A SOURCE, NOT A PAGE.** The rail's three glyphs (streaming / library / albums) are two
+  pages and a switch: `library`, `albums`, a hairline, then a glyph that flips `scShelf.src` between `'d'`
+  (what is on this device) and `'s'` (what plays from the source). With the switch on streaming, the
+  Albums page draws the streaming albums and the Library page draws the shelf - the search box, the
+  results, the mini player and the streamed songs. The coral dot on the switch is the only thing that
+  changes colour. This replaces the third tab: nothing streaming has a page of its own any more.
+- **A STREAMING ALBUM LOOKS LIKE AN ALBUM.** `scShelfGrid()` draws a two-column grid of square covers -
+  the cover of the list's first song, or the album glyph when there is none - with the name and a song
+  count, and a tile carries `data-name` into the same `scShelfOpenList()` page a downloaded album opens.
+  The Albums page in streaming mode has **New album** in its own header; the shelf no longer repeats the
+  albums as a row of chips, it has one **Streaming albums** row that switches to that page.
+- **THE PLUS ASKS BOTH QUESTIONS.** A row's plus was one action - a playlist, named in a prompt - so no
+  album could be started from the shelf. `scStreamAddTo()` opens the existing sheet with *Add to a
+  playlist…* and *Add to an album…*; each of those opens `scStreamPickList()`, which offers the lists that
+  exist (by name, with how many songs each holds) and, last, a new one that falls through to the same
+  prompting maker as before.
+- **WHAT WAS RUN.** Built on a fresh clone of 80.6.22 in one payload, `dev/patch-80623.py` (15 steps; a
+  second run is a no-op, `--check` is 1 before and 0 after), and all seven inline scripts still compile.
+  `dev/check-80623.cjs` passes **59 checks**: statically (the one rail that is built once and marked
+  after, two pages and no streaming page, the switch with its two sources and one painter, no second
+  `renderTabs()`/`renderList()` in the tab path, the albums-page branch gated on source *and* page, the
+  tile grid, New album on that page, the shelf's way across to it, the plus opening two questions and the
+  lists that exist, and the row title saying both) and **driven** in a `vm`: the grid draws one tile per
+  album with the first song's cover, counts "2 songs" and "1 song", keeps the name, falls back to the
+  glyph with no art, and says so when a kind is empty; the plus opens one sheet with a playlist and an
+  album, the album question lists the albums that exist (`Road · 0 songs`), choosing one files the song in
+  it marked `kind: 's'` and says where it went, the last choice makes a new one, the playlist question
+  does the same for playlists, and a song that has left the shelf is refused. OTA rebuilt to a true fixed
+  point - root + `ota/` **{{ROOT}}** bytes at v80.6.23, `ota-play/` still HELD (**{{PLAY}}** bytes).
+  **Not claimed:** there is no phone and no browser here, so the rail was not tapped, the switch was never
+  flipped with a thumb, and no grid was seen on a screen. What is verified is that the rail is one DOM
+  tree that only changes class, that a page is painted once per tap, that the streaming set is chosen by
+  source and page rather than by a page of its own, and that both kinds of list can be reached from a
+  row's plus.
