@@ -15782,8 +15782,8 @@ function startLyricsAutoScroll(keepPos, noReset) {
     a.addEventListener('timeupdate', scStreamTick);
     a.addEventListener('loadedmetadata', function(){ scStreamState.ready = true; scStreamTick(); });
     a.addEventListener('canplay', function(){ scStreamTick(); });
-    a.addEventListener('play', function(){ scStreamState.playing = true; scStreamBarSync(); });
-    a.addEventListener('pause', function(){ scStreamState.playing = false; scStreamBarSync(); });
+    a.addEventListener('play', function(){ scStreamState.playing = true; scStreamBarSync(); scStreamPhoneState(); });
+    a.addEventListener('pause', function(){ scStreamState.playing = false; scStreamBarSync(); scStreamPhoneState(); });
     a.addEventListener('ended', function(){ scStreamNext(1); });
     a.addEventListener('error', function(){
       var e = a.error || null;
@@ -15961,6 +15961,135 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(cardBtn) cardBtn.innerHTML = scIcon(scStreamState.playing ? 'pause' : 'play', 18);
     }catch(_eBar){}
   }
+  // 80.6.20 - THE PHONE SEES THE STREAM.
+  // The stream is a second <audio> element, and everything that feeds the lock
+  // screen, the notification and the home-screen widget is wired to the app's
+  // own deck and its queue - so a streamed song reached none of them. While the
+  // stream owns the bar it owns the phone too: the same song, the same cover and
+  // the same clock go out, and the phone's buttons come back here.
+  function scStreamPhoneOwns(){
+    return !!(scStreamState.barOn && scStreamState.curId);
+  }
+  // The phone wants a title, an artist and a picture, which is exactly the shape
+  // the widget and the media session already read from a library track.
+  function scStreamPhoneTrack(){
+    var t = scStreamById(scStreamState.curId) || {};
+    return {
+      id: 'sc-stream-' + String(scStreamState.curId || ''),
+      name: String(t.title || 'Streaming'),
+      artist: String(t.artist || 'Streaming'),
+      artUrl: scStreamThumb(t),
+      stream: true
+    };
+  }
+  function scStreamPhonePos(){
+    var a = scStreamState.audio;
+    var at = 0, d = 0;
+    try{ at = Number(a && a.currentTime) || 0; }catch(_ePp1){}
+    try{ d = Number(a && a.duration) || 0; }catch(_ePp2){}
+    if(!isFinite(d) || d <= 0){
+      d = Number((scStreamById(scStreamState.curId) || {}).dur) || 0;
+    }
+    return { at: Math.max(0, at), dur: (isFinite(d) && d > 0) ? d : 0 };
+  }
+  function scStreamPhoneState(){
+    try{
+      var a = scStreamState.audio;
+      mediaSetPlaybackState((a && !a.paused) ? 'playing' : 'paused');
+    }catch(_ePs){}
+    scStreamPhoneTick(true);
+  }
+  var scStreamPhoneAt = 0;
+  var scStreamPhoneWdAt = 0;
+  // The timeline and the widget's bar. Throttled - a timeupdate fires four times
+  // a second, and the native bridge does not need that.
+  function scStreamPhoneTick(force){
+    if(!scStreamPhoneOwns()) return;
+    var now = Date.now();
+    if(!force && now - scStreamPhoneAt < 1000) return;
+    scStreamPhoneAt = now;
+    var p = scStreamPhonePos();
+    if(p.dur > 0){
+      try{ mediaSetPositionState(p.dur, 1, Math.min(p.at, p.dur)); }catch(_ePpos){}
+    }
+    if(now - scStreamPhoneWdAt > 3000){
+      scStreamPhoneWdAt = now;
+      try{
+        var a = scStreamState.audio;
+        pushWidgetState(scStreamPhoneTrack(), !!(a && !a.paused));
+      }catch(_ePwd){}
+    }
+  }
+  // Everything the phone needs at the start of a song, and everything it needs
+  // again when the system has rebuilt the session without our buttons.
+  function scStreamPhoneSync(){
+    if(!scStreamPhoneOwns()) return;
+    scStreamPhoneAt = 0;
+    scStreamPhoneWdAt = 0;
+    try{ mediaSetMetadata(scStreamPhoneTrack()); }catch(_ePm){}
+    scStreamPhoneState();
+    scStreamPhoneArm();
+  }
+  // The phone's transport, routed into the stream instead of the deck. Registered
+  // over the deck's handlers - the delegation in registerMediaSessionHandlers()
+  // is what keeps the system from handing them back on its next rebuild.
+  function scStreamPhoneArm(){
+    function el(){ return scStreamState.audio || null; }
+    try{
+      mediaSetActionHandler('play', function(){
+        var a = el();
+        if(!a) return;
+        if(!a.src && scStreamState.curId){ scStreamPlay(scStreamState.curId); return; }
+        if(a.paused){ Promise.resolve(a.play()).catch(function(){}); }
+      });
+      mediaSetActionHandler('pause', function(){
+        var a = el();
+        if(a && !a.paused){ try{ a.pause(); }catch(_ePpa){} }
+      });
+      mediaSetActionHandler('previoustrack', function(){
+        var a = el();
+        if(a && (a.currentTime || 0) > 3){ try{ a.currentTime = 0; }catch(_ePpv){} return; }
+        scStreamNext(-1);
+      });
+      mediaSetActionHandler('nexttrack', function(){ scStreamNext(1); });
+      mediaSetActionHandler('stop', function(){
+        var a = el();
+        if(!a) return;
+        try{ a.pause(); a.currentTime = 0; }catch(_ePst){}
+      });
+      mediaSetActionHandler('seekbackward', function(){
+        var a = el();
+        if(a){ try{ a.currentTime = Math.max(0, (a.currentTime || 0) - 30); }catch(_ePsb){} }
+      });
+      mediaSetActionHandler('seekforward', function(){
+        var a = el();
+        if(!a) return;
+        var p = scStreamPhonePos();
+        try{ a.currentTime = Math.max(0, Math.min((p.dur || 0) - 0.4, (a.currentTime || 0) + 30)); }catch(_ePsf){}
+      });
+      mediaSetActionHandler('seekto', function(d){
+        var a = el();
+        if(a && d && d.seekTime != null){ try{ a.currentTime = Number(d.seekTime) || 0; }catch(_ePse){} }
+      });
+    }catch(_eParm){}
+  }
+  // The stream has given the phone up: the deck's card and the deck's buttons come
+  // back, so a press after the stream ended does not aim at a song nobody hears.
+  function scStreamPhoneQuit(){
+    try{
+      var cur = null;
+      try{
+        if(queueIndex >= 0 && queueIndex < queue.length){
+          cur = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; }) || null;
+        }
+      }catch(_ePcur){ cur = null; }
+      if(cur) mediaSetMetadata(cur);
+      mediaSetPlaybackState('paused');
+      mediaHandlersNeedArm();
+      registerMediaSessionHandlers();
+    }catch(_ePquit){}
+  }
+
   function scStreamBarOn(t){
     if(!t || !t.title) return;
     scStreamState.barOn = true;
@@ -15985,12 +16114,14 @@ function startLyricsAutoScroll(keepPos, noReset) {
       try{ la = activeAudio(); }catch(_eAct){}
       if(la && !la.paused){ try{ la.pause(); }catch(_ePz){} }
       scStreamBarSync();
+      scStreamPhoneSync();
     }catch(_eBarOn){}
   }
   function scStreamBarOff(){
     if(!scStreamState.barOn) return;
     scStreamState.barOn = false;
     try{ document.body.classList.remove('sc-stream-now'); }catch(_eOff){}
+    scStreamPhoneQuit();
   }
   function scStreamQuiet(){
     try{
@@ -16277,6 +16408,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(at) at.textContent = scStreamTime(a.currentTime || 0) + (isFinite(d) && d > 0 ? ' / ' + scStreamTime(d) : '');
     }catch(_e){}
     scStreamBarSync();
+    scStreamPhoneTick();
   }
   function scStreamTime(s){
     s = Math.max(0, Math.floor(Number(s) || 0));
@@ -17958,7 +18090,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.19';
+  const APP_VERSION = '80.6.20';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -18628,6 +18760,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  { version: '80.6.20', date: '2026-10-30', title: 'The stream shows on the phone', items: [
+    '[FULL] A streamed song now shows on your phone, not just in the app. The lock screen, the notification player, the quick-settings player and the home-screen widget all carry the song that is streaming - its title, its artist and its cover - with the same clock and the same progress bar.',
+    '[FULL] Their buttons work on the stream. Play, pause, previous, next, stop and the thirty-second jumps from the lock screen, the shade, the quick settings or the widget all drive the song that is streaming, and next keeps to the genre the stream is in.',
+    '[FULL] When the stream ends, the phone goes back to your own library player instead of leaving a song on the lock screen that is not playing.',
+  ]},
   { version: '80.6.19', date: '2026-10-30', title: 'A stream that starts sooner, keeps its genre, and a rail that stays put', items: [
     '[FULL] A streamed song starts much sooner. The song is read from the source at the same moment the link is tried instead of only after the link fails, a link that makes no sound is no longer given six seconds before the app gives up on it, and the songs you have already played stay in memory for a while - so playing one again, or stepping back to it, starts at once with no network at all.',
     '[FULL] Next keeps the genre. When a song ends or you tap next, the app takes the next song in the same genre from your list, and the card shows what is up next before it happens. When nothing else in that genre is in the list, the same place offers more of the genre in one tap.',
@@ -34968,7 +35105,8 @@ function _fallbackCopy(text){
       // freezes the first time a push is skipped.
       const wdAt = (function(){
         try{
-          const a = (typeof activeAudio === 'function') ? activeAudio() : null;
+          const a = (scStreamPhoneOwns() && scStreamState.audio) ? scStreamState.audio
+                  : ((typeof activeAudio === 'function') ? activeAudio() : null);
           if(!a) return { pos: 0, dur: 0 };
           const p = Math.max(0, Math.round(Number(a.currentTime) || 0));
           const d = (isFinite(a.duration) && a.duration > 0) ? Math.round(a.duration) : 0;
@@ -35294,6 +35432,9 @@ function _fallbackCopy(text){
     audioFocusInterrupted = false;
   }
   function registerMediaSessionHandlers(){
+    // 80.6.20 - a rebuild while a stream is playing must not put the deck's
+    // buttons back on a song nobody is hearing.
+    if(scStreamPhoneOwns()){ try{ scStreamPhoneArm(); }catch(_eRms){ } return; }
     mediaSetActionHandler('play', () => {
       try{ scTransportResume(); }catch(e){}
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
@@ -35372,6 +35513,7 @@ function _fallbackCopy(text){
   let mediaHandlersDirty = true;
   function mediaHandlersNeedArm(){ mediaHandlersDirty = true; }
   function refreshMediaControls(){
+    if(scStreamPhoneOwns()){ try{ scStreamPhoneSync(); }catch(_eRmc){ } return; }
     try{
       if(mediaHandlersDirty || Date.now() - mediaHandlersArmedAt > 60000){
         mediaHandlersDirty = false;
@@ -36689,6 +36831,7 @@ function _fallbackCopy(text){
       // Skip while DJ Mode is open: it owns sound via the deck engine and the main
       // <audio> element is intentionally idle there, so reviving it would double up.
       if(a.paused && !userPaused && !audioFocusInterrupted && !scInCall() && scReviveAllowed()
+         && !scStreamPhoneOwns()
          && $('djModeBackdrop').style.display !== 'flex'
          && queueIndex >= 0 && queueIndex < queue.length){
         scNoteRevive();
