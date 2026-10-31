@@ -8108,6 +8108,13 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
   // names no album of yours falls through to the song jump, which is what the tap
   // was asking for anyway.
   function openAlbumForCurrentSong(){
+    // 80.6.27 - THE RECORD FOLLOWS THE SOUND. While the source is playing, the
+    // downloaded deck queue still holds whatever it played last, so this tap found
+    // a song there that is not the one in your ears. When the stream owns the bar,
+    // the tap is about the stream and the deck is never consulted.
+    try{
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns() && scStreamJumpToPlaying()) return;
+    }catch(_eStreamTap){}
     let tid = null;
     try{
       const djOpen = $('djModeBackdrop') && $('djModeBackdrop').style.display === 'flex';
@@ -16039,6 +16046,81 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!th) return '<div style="' + box + '"></div>';
     return '<img src="' + escapeHtml(th) + '" alt="" loading="lazy" style="' + box + '">';
   }
+  // 80.6.27 - THE SONG THAT IS PLAYING IS THE ONE THE TAP MEANS.
+  // The record player could only answer out of the downloaded deck, and a stream
+  // lives in its own store. This finds the list the streaming song is actually in:
+  // the one already on screen first (that is the one you meant), then the albums,
+  // then the playlists.
+  function scStreamPlayingList(id){
+    var want = String(id || '');
+    if(!want) return null;
+    function holds(p){
+      return ((p && p.items) || []).some(function(x){ return String((x && x.id) || '') === want; });
+    }
+    var open = scStreamListOpen();
+    if(open && holds(open)) return { kind: (scStreamState.plKind === 'al' ? 'al' : 'pl'), name: String(open.name || '') };
+    var al = scStreamAlbums().filter(holds)[0];
+    if(al) return { kind: 'al', name: String(al.name || '') };
+    var pl = (scStreamState.playlists || []).filter(holds)[0];
+    if(pl) return { kind: 'pl', name: String(pl.name || '') };
+    return null;
+  }
+  // The tap itself: the source on, that list open, its row scrolled to and lit for
+  // a moment. It answers whether it took the tap, so the deck path below is only
+  // reached when there is no stream to follow.
+  function scStreamJumpToPlaying(){
+    if(!SC_STREAM_OK) return false;
+    var id = String(scStreamState.curId || '');
+    if(!id) return false;
+    if(typeof scStreamPhoneOwns === 'function' && !scStreamPhoneOwns()) return false;
+    var at = scStreamPlayingList(id);
+    // The shelf is only repainted when it is not already the page that is up, so a
+    // tap on the page you are looking at does not redraw it underneath you.
+    if(!(scShelf.open && scShelf.src === 's' && scShelf.page === 'library')){
+      scShelf.src = 's';
+      scShelf.page = 'library';
+      scShelfApply();
+    }
+    if(at) scStreamOpenList(at.kind, at.name);
+    else scStreamRender();
+    var host = document.getElementById('scStreamBlock');
+    if(!host) return true;
+    function seek(){
+      var rows = [];
+      var row = null;
+      try{ rows = host.querySelectorAll('.scsp-row, .scs-row'); }catch(_eRows){ rows = []; }
+      for(var i = 0; i < rows.length; i++){
+        if(String(rows[i].getAttribute('data-hold') || '') === id){ row = rows[i]; break; }
+      }
+      // A song in no list still got the shelf, which is where the playing song is
+      // drawn. There is nothing to scroll to, and nothing to complain about.
+      if(!row) return;
+      // Scrolled in the shelf own pane, never with scrollIntoView: on Android that
+      // call bubbles out of the pane and lifts the whole app with it.
+      try{
+        if(typeof smoothScrollIn !== 'function') throw new Error('no engine');
+        smoothScrollIn(host, row);
+      }catch(_eScroll){
+        try{
+          var hb = host.getBoundingClientRect(), rb = row.getBoundingClientRect();
+          var to = host.scrollTop + (rb.top - hb.top) - (hb.height / 2) + (rb.height / 2);
+          host.scrollTop = Math.max(0, Math.min(to, Math.max(0, host.scrollHeight - host.clientHeight)));
+        }catch(_eScroll2){}
+      }
+      // Lit for a moment, so it is obvious which row the tap landed on - the same
+      // answer the downloaded jump gives with its own focus class.
+      try{
+        row.style.background = 'color-mix(in srgb, var(--coral) 20%, transparent)';
+        row.style.boxShadow = 'inset 0 0 0 1.5px var(--coral)';
+        row.style.borderRadius = '10px';
+      }catch(_eTint){}
+      setTimeout(function(){
+        try{ row.style.background = ''; row.style.boxShadow = ''; row.style.borderRadius = ''; }catch(_eUntint){}
+      }, 2400);
+    }
+    setTimeout(seek, 60);
+    return true;
+  }
   function scStreamOpenList(kind, name){
     scStreamState.plKind = (kind === 'al') ? 'al' : 'pl';
     scStreamState.pl = String(name || '');
@@ -18743,7 +18825,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.26';
+  const APP_VERSION = '80.6.27';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -19413,6 +19495,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  // 80.6.27 - THE RECORD PLAYER TAKES YOU TO THE SONG THAT IS PLAYING. The owner,
+  // before this release: a tap on the record player while streaming went to some
+  // random song. It did - the tap asked the downloaded deck, which was not the
+  // thing playing.
+  { version: '80.6.27', date: 'October 30, 2026 · 9:37 PM EDT', title: 'The record player takes you to the song that is playing', items: [
+    '[FULL] Tapping the record player while a song streams now opens the album or the playlist that song is in, scrolled to its row and lit for a moment.',
+    '[FULL] The tap follows the sound: it asks the stream before the downloaded deck, so it can no longer land on a song that is not playing.',
+    '[FULL] A streamed song that is in no list opens the streaming shelf, where the song being played is drawn, instead of opening nothing.',
+    '[FULL] On the downloaded side the tap is unchanged: it opens the album of the playing file, and a long press still opens the turntable angle.'
+  ]},
   // 80.6.26 - THE STREAMING ALBUMS ARE A PAGE, AND A LIST IS HELD TO DELETE. The
   // owner, after the rail release: the streaming albums should be easy to see, the
   // glyph should not go to the downloaded ones, and a list should delete on a hold.
