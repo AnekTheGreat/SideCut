@@ -17652,7 +17652,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     document.head.appendChild(st);
   }
   function scShelfRender(){
-    if(!SC_STREAM_OK) return;                 // no rail, no sheet, outside the full builds
+    // 80.6.31 - THE RAIL IS NOT A STREAMING FEATURE. The three page glyphs are the
+    // library's own pages - Songs, Playlists, Albums - and gating them on the source
+    // took the only shortcut to Playlists and Albums away from the version that has
+    // no source switch. The glyphs are built everywhere; the switch below them is
+    // the part that is still gated, inside the markup below.
     var rail = document.getElementById('scShelfRail');
     if(!rail) return;
     // 80.6.29 - THE RAIL CANNOT BE MOVED BY THE PAGE IT SITS ON. Every view that
@@ -17680,12 +17684,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
           ' aria-pressed="false" aria-label="' + escapeHtml(t[1]) + '"' +
           ' title="' + escapeHtml(t[1]) + '">' + scIcon(t[2], 17) + '</button>';
       }).join('');
-      h += '<div class="scshelf-sep"></div>';
-      h += '<button type="button" class="scshelf-tab scshelf-src" data-src="1"' +
-        ' aria-pressed="false" aria-label="On this device" title="On this device">' +
-        '<span class="scshelf-i scshelf-i-str">' + scIcon('stream', 17) + '</span>' +
-        '<span class="scshelf-i scshelf-i-dev on">' + scIcon('device', 17) + '</span>' +
-        '</button>';
+      // 80.6.31 - THE SWITCH NEEDS A SOURCE. The three glyphs above are the library's
+      // pages and every version gets them; a switch that flips between the device and
+      // a source would be a door into a room this build does not have, so it is built
+      // only where there is a source to flip to.
+      if(SC_STREAM_OK){
+        h += '<div class="scshelf-sep"></div>';
+        h += '<button type="button" class="scshelf-tab scshelf-src" data-src="1"' +
+          ' aria-pressed="false" aria-label="On this device" title="On this device">' +
+          '<span class="scshelf-i scshelf-i-str">' + scIcon('stream', 17) + '</span>' +
+          '<span class="scshelf-i scshelf-i-dev on">' + scIcon('device', 17) + '</span>' +
+          '</button>';
+      }
       rail.innerHTML = h;
       rail.setAttribute('data-built', '1');
       Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
@@ -17743,8 +17753,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scShelfApply();
   }
   function scShelfOpenTab(tab){
-    if(!SC_STREAM_OK) return;
-    if(tab === 'streaming'){ scShelf.page = 'library'; scShelf.src = 's'; scShelfApply(); return; }
+    // 80.6.31 - the page glyphs are not gated any more; only the one destination that
+    // needs a source is, because there is nothing on the other side of it without one.
+    if(tab === 'streaming'){
+      if(!SC_STREAM_OK) return;
+      scShelf.page = 'library'; scShelf.src = 's'; scShelfApply(); return;
+    }
     // 80.6.28 - SONGS, PLAYLISTS, ALBUMS. All three stay in the source that is on;
     // the switch is still the only thing that changes it.
     var page = (tab === 'albums') ? 'albums' : (tab === 'playlists') ? 'playlists' : 'library';
@@ -17777,14 +17791,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // the store cannot disagree about what is up. On the device side navigate() owns the
   // renders; it is only painted by hand when there is no navigate() to ask.
   function scShelfApply(){
-    if(!SC_STREAM_OK) return;
     var page = (scShelf.page === 'albums') ? 'albums' : (scShelf.page === 'playlists') ? 'playlists' : 'library';
     scStreamState.pl = '';
     try{
       if(typeof libraryMode !== 'undefined') libraryMode = (page === 'albums') ? 'albums' : 'playlists';
       if(typeof navigate === 'function') navigate('library');
     }catch(_eShelf){}
-    if(scShelf.src === 's'){
+    if(scShelf.src === 's' && SC_STREAM_OK){
       scShelf.open = true;
       scShelfCss();
       scStreamRender();
@@ -17815,7 +17828,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scShelfMark();
   }
   function scShelfBoot(){
-    if(!SC_STREAM_OK) return;
+    // 80.6.31 - the sheet still needs the source; the rail does not. Everything the
+    // boot creates besides the sheet is the rail and its scrim, so it runs wherever
+    // the rail element is.
     if(scShelf.built) return;
     var rail = document.getElementById('scShelfRail');
     if(!rail) return;
@@ -18879,7 +18894,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.30';
+  const APP_VERSION = '80.6.31';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -18924,9 +18939,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(val) val.textContent = railSee + '% see-through';
     var sl = document.getElementById('railGlassSlider');
     if(sl && String(sl.value) !== String(railSee)) sl.value = String(railSee);
-    // The rail is only in the full builds, so the row that sets it is only there too.
-    var card = document.getElementById('scRailGlassCard');
-    if(card && typeof SC_STREAM_OK !== 'undefined' && !SC_STREAM_OK) card.style.display = 'none';
+    // 80.6.31 - the rail is on every version now, so the row that sets it is too.
   }
   try{ scRailSee(railSee); }catch(_eRailSeeInit){}
   (function(){
@@ -19564,16 +19577,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
-  // 80.6.30 - THE PLAY BUILD CATCHES UP. dev/channel-hold.json held the Play side
-  // at 80.6.12 while this page moved ahead; the owner lifted it, so both channels
-  // publish v80.6.30. Nothing on the page itself changed - no layout, no colour, no
-  // behaviour - which is why this entry says what a catch-up is instead of dressing
-  // an unchanged page up as a change.
-  { version: '80.6.30', date: 'October 30, 2026 · 11:15 PM EDT', title: 'The Play build catches up', items: [
-    'Both builds publish the same page from here. The Play build was held at 80.6.12 while the other one moved ahead, and it catches up at this version with every note in this list that belongs to it.',
-    'Nothing on the page itself changed in this release: no layout, no colour, no behaviour, so what is new to a Play install is everything in this list, not something on top of it.',
-    'Each build updates to itself: the Play bundle carries its own flag, so a catch-up can never hand a Play install the other build’s page.',
-    '[FULL] Nothing changed for this build since 80.6.29 either - the dock tab is still one Library pill, and the side rail is still yours to set in Tools.'
+  // 80.6.31 - THE RAIL IS ON EVERY VERSION. The owner: "in the play build it should
+  // have the right side playlists and albums". The three page glyphs were built
+  // inside SC_STREAM_OK with the streaming sheet, so the version without a source
+  // had no rail at all and Playlists and Albums were a scroll back to the strip.
+  // The glyphs are built everywhere now; the switch under them is still gated.
+  { version: '80.6.31', date: 'October 30, 2026 · 11:37 PM EDT', title: 'Playlists and albums on the rail', items: [
+    'The side rail is there on every version now: Songs, Playlists and Albums, fixed at the right edge of the library, with the page you are on lit.',
+    'Playlists opens the playlist strip, Albums opens your albums and Songs opens All Songs - the same pages the strip above the list has, without scrolling back up to reach them.',
+    'The see-through amount in Tools sets that rail too, from solid to glyphs only, and the rail still holds its place while you move between the three pages.'
   ]},
   // 80.6.29 - ONE LIBRARY PILL, A RAIL YOU CAN SEE THROUGH, AND A RAIL THAT HOLDS STILL.
   // The owner: the bottom tab cut between library and albums should be just Library,
