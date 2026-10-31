@@ -1,57 +1,60 @@
-## 80.7 ({{STAMP}}): collabs filed under the other artist, a fake release you can delete, and the reorder sheet in two seconds
+## 80.7.1 ({{STAMP}}): lyrics, DJ Mode and background play for a streaming song
 
-- **WHAT THE OWNER SAID.** *"there's no way to tell if an artist had a collab with another artist and its under the other
-  artists name ... Daddy yankee had a collab with Diljit dosanjh and it didn't show up in new releases like it should have,
-  make that possible and make it possible in new releases to delete fake songs by holding down on them for 2 seconds and
-  hitting delete, make the reordering songs in album delay 2 seconds for the popup instaid of 3 and make that better"*
-  Three asks: a collaboration has to be findable from either artist, a wrong release has to be deletable on purpose, and the
-  album reorder sheet has to open a second sooner - and open better than it did.
-- **WHY THE COLLAB WAS MISSING.** `fetchArtistReleases` compared **the first name of a credit** with the pinned artist:
-  `primaryArtistName(r.artistName)` against `primaryArtistName(artist)` for songs, and the same first-name test
-  (`__scSameArtistName(rArtist, pArtist)`) for albums. `primaryArtistName` splits on `,`, `&`, `feat.`, `ft.`, `vs.` and `x`
-  and keeps only what comes before the separator - it answers "whose name is printed first", not "who is on this record". A
-  collaboration is filed under one artist and credited to both: Apple returns that Daddy Yankee single with
-  `artistName: "Daddy Yankee & Diljit Dosanjh"`. Pinning Diljit Dosanjh, the row was **in the results, credited to him, and
-  thrown away because he was not first** - so the release never reached the list, and no amount of re-checking would find it.
-- **WHAT CHANGED FOR THE COLLAB.** Two helpers next to `primaryArtistName`: `scCreditNames(credit)` splits a credit into
-  every name it carries (comma, `&`, `;`, `/`, `with`, `feat.`, `ft.`, `featuring`, `vs.`, `and`, `x`, `×`), and
-  `scCreditHas(credit, artist)` asks `window.__scSameArtistName` of each name - so any credited artist is enough, while the
-  existing name test still refuses "Karan Aujla Tribute Band" for Karan Aujla and a remix album is still not his drop. Both
-  passes use it now: the `entity=song` search and the `entity=album` search. `primaryArtistName` and
-  `__scSameArtistName` stay where a lead artist is genuinely what is wanted.
-- **WHY THE OLD DELETE WAS WRONG.** The Discover list dropped a row on a **~600ms** hold. That is one accidental press away
-  from a tap, it never asked, and it looked the release up in the single artist key the row was painted from - `pinnedReleases[artist]`
-  - which is exactly the wrong place for a collaboration, because the same drop is stored once per pinned artist that shares
-  it. Deleting one copy would have brought the row straight back on the next paint.
-- **WHAT THE DELETE IS NOW.** A release is deleted on purpose. `scWireReleaseHold()` is one delegated hold - installed once,
-  not once per row per paint - over the three surfaces that draw releases (`.new-release-row` in the Discover list,
-  `.hb-track-row[data-date]` in the Home bubble, `#discPopupBody .dp-track[data-title][data-date]` in the Fetch latest popup),
-  reading the title, day and artist off the attributes every builder already writes. Two seconds, unmoved (a 12px move is a
-  scroll and cancels), then `scRelAskDelete()` names the drop and offers **Delete** and **Keep**. Delete goes through
-  `scRelDelete()`, which finds **every stored copy** through `scReleaseKey` and removes all of them, repaints the list, Home,
-  the open panel and the bell, and offers `toastWithUndo` to put the copies back under the keys they came from. A row that is
-  not in the stored list - a search result, a catalog row - has nothing to delete and the hold does nothing. The click the
-  press ends with is swallowed in the capture phase, because otherwise it opens the release page over the sheet.
-- **WHY THE SHEET FELT BAD, AND WHAT CHANGED.** Two holds open "Reorder Songs" and both were three seconds: the per-row
-  `wireAlbumRowHold` (its own 3000ms timer, plus a 2800ms release gate for a press Android cancels) and the delegated
-  `__albumSongHoldWired` block (`HOLD_MS`/`RELEASE_MIN_MS`). Both are **2000 / 1800** now, and the three help sentences that
-  promised three seconds say two. The "make that better" is the second half: the sheet builds from the top of the album, so
-  holding the twelfth song opened a list that did not show it and the row had to be hunted for. Both holds now pass the held
-  row's id to `showAlbumReorderPopup(albumName, focusTrackId)`, and the sheet scrolls that row into the middle of its own
-  pane (`listEl.scrollTop`, never `scrollIntoView`, which lifts the whole app on Android) and lights it for 900ms.
-- **WHAT WAS RUN.** `dev/patch-807.py` (with the page block it loads from `dev/patch-807-blocks.py`) over the released 80.6.32 page: `--check` **1** before, **23** steps applied (the
-  version, the credit helpers, both passes, the row's day attribute, the delete helpers, the retired 600ms hold, six album
-  hold timings and their comments, the sheet's focus, the comment, the three help sentences, the changelog), a second run a
-  no-op, `--check` **0**. Then the workflow's fixed-point loop (`cp updates.json manifest.json`, `node dev/ota-bundle.mjs`,
-  `node dev/ota-bundle-play.mjs`, both `--check`s) until it settled, `python3 dev/release-record.py`, and
-  `dev/check-807.cjs` - which **runs** the two new behaviours rather than reading them: the credit test against real
-  collaboration strings (`"Daddy Yankee & Diljit Dosanjh"` found from either side, with a comma, `feat.`, `ft.` and `x`, and
-  still refusing a tribute band), and the delete against a drop stored under **two** artist keys (both copies gone, written
-  once, every surface repainted, Undo putting both back in date order, an unknown title deleting nothing). OTA at a true
-  fixed point - root + `ota/` **{{ROOT}}** bytes at v80.7, and `ota-play/` (**{{PLAY}}** bytes) at v80.7.
-- **NOT CLAIMED.** No phone and no browser here: nobody has held a release for two seconds, pressed Delete, or opened the
-  album sheet from the twelfth song. What is proven is the shape and the logic of the two new behaviours, that the CSS and the
-  code are in the page **and** inside the Play zip, that both manifests are v80.7 with these notes, and that all seven
-  inline scripts compile. Whether a real catalog even returns that Daddy Yankee single for a Diljit search is the network's
-  question, not this page's: what changed is that when it does, it is no longer discarded for being credited second.
-  `dev/check-8062{6,7,8,9,30,31,32}.cjs` now fail by design; each pins its own version and they are left as they were.
+- **WHAT THE OWNER SAID.** *"why doesn't streaming work outside of the app like when I close the app, dj mode and lyrics should be
+  for the streaming song"*. Three surfaces stopped at the edge of the deck: the lyrics sheet, DJ Mode, and the background
+  heartbeat. None of them was broken; each asked the wrong player a question only the deck could answer.
+- **WHY LYRICS SAID "PLAY A SONG FIRST" OVER A SONG YOU COULD HEAR.** `#lyricsBtn` opened with
+  `if(queueIndex < 0 || queueIndex >= queue.length){ toast('Play a song first'); return; }` and then looked the song up in
+  `allTracks` - and a stream is deliberately in neither: since 80.6.9 the streaming module keeps its own store, its own
+  queue and its own `<audio>` element. Even on the paths that did open, `startLyricsAutoScroll` read
+  `activeAudio().currentTime` and bailed on `activeAudio().paused`, so the highlight kept time on a deck that was silent by
+  design while the stream played, and the lyrics play button paused the deck.
+- **WHAT THE LYRICS SHEET DOES NOW.** `scStreamSong()` returns the streamed song in the shape the lyrics sheet already reads -
+  id, name, artist, length, cover - and `scListenAudio()` returns the element that is actually making sound that second (the
+  stream while it owns the bar, the deck otherwise). The button, the sheet's previous and next (which now walk the stream's
+  own genre-aware queue and re-fetch for the song that started), the play/pause button and icon, the highlight clock and the
+  plain-sheet duration fallback all read those two. Words found for a stream are saved with `scStreamLyricsSave()` onto the
+  streamed song in the stream's own store - `persistTrackMeta()` writes a *library* record, and a streamed song has none, so
+  its words used to be lost the moment the sheet closed.
+- **WHY DJ MODE REFUSED THE SAME SONG.** `enterDjMode()` opened with the same queue test and looked up `queue[queueIndex]`;
+  every deck lookup (`refreshDjMode`, `loadTrackIntoDeck`, the strip) searched `allTracks` alone. A streamed song is in none of
+  those, so the rig refused to open on music that was playing.
+- **WHAT DJ MODE DOES NOW.** `enterDjMode()` asks `scStreamSong()` first and takes the streamed song. The deck decodes the
+  bytes the stream already has: its playing object URL, the read-ahead cache entry for that video id, or - when both are gone -
+  a fresh `scStreamReadOnly()` of the same source. `djTrackById()` is the one lookup the deck uses for the loaded song, so the
+  platter, the per-track reset (hot cues, kill switches, loop, tap tempo) and the title all work on a stream. `djStreamUrl()`
+  answers where the bytes are. Leaving the rig hands the sound back: `exitDjMode()` seeks the stream element to the second the
+  platter stopped on and starts it again, instead of silently handing the playhead to a deck element that was never playing.
+- **WHY IT DIED IN THE BACKGROUND.** `startMediaSessionHeartbeat` opened with
+  `if(document.hidden && (!activeAudio() || activeAudio().paused)) return;` - the deck's element. A backgrounded stream is
+  therefore "nothing playing" to the one loop that keeps a page alive out there: no metadata re-assert, no position state, no
+  revival, and `playbackSurvivedBackground()` (which reads the deck's playhead) would have marked the notification paused while
+  the stream was still running. The heartbeat now opens on `scListenAudio()`, and a stream that is paused without ever being
+  asked to pause - the OS reclaiming a backgrounded page - is started again from the second it stopped on, up to twenty
+  attempts, with the position and the widget timeline pushed each tick. A pause the owner made is marked with
+  `scStreamState.userPaused` at every place it can happen (the app's own toggle, the phone's pause and stop, the lyrics
+  button, giving the bar up) and is never revoked.
+- **AND CLOSING THE APP LEAVES A WAY BACK.** `scStreamRemember()` writes `{id, at, savedAt}` to the stream's own store at most
+  every four seconds, at once on `pagehide` and when the page is hidden. On the next launch `scStreamRestoreLast()` puts that
+  song back on the bar, paused, at that second - and `scStreamPlay()` carries the second in `scStreamState.pendingAt`, which
+  `scStreamStart()` seeks to, so play continues where the song stopped instead of starting it again. Older than twelve hours,
+  or a song no longer on the shelf, and nothing is restored.
+- **WHAT WAS RUN.** `dev/patch-8071.py` (with `dev/patch-8071-blocks.py` and three step files) over the released 80.7 page:
+  `--check` **1** before, 32 steps applied, a second run a no-op, `--check` **0**, every inline script compiles. Then the
+  workflow's fixed-point loop, `python3 dev/release-record.py`, and `dev/check-8071.cjs`, which **runs** the new behaviour
+  rather than reading it: the streamed song is mapped to a track (title, artist, length, cover, its own store id), the listening
+  element is the stream while it owns the bar and the deck when it does not, lyrics are written to the stream's store and to a
+  library record on a device song, the deck finds a streamed song by id and prefers the playing URL over the link, and a
+  remembered second is carried into `scStreamPlay()`. OTA at a true fixed point on the full channel - root + `ota/` **{{ROOT}}**
+  bytes at v80.7.1. **The Play channel is held at v80.7** (`dev/channel-hold.json`, **{{PLAY}}** bytes): this release is
+  entirely streaming, the Play build has no streaming, and its update card drops any note that names it by rule - so the
+  full channel publishes the one honest line the card allows ("Fixes and improvements under the hood.") rather than a note
+  about a feature that build does not have.
+- **NOT CLAIMED.** No phone and no browser here: nobody has streamed a song, opened its words, mixed it on the platter, or
+  closed the app mid-stream. What is proven is the logic and its wiring on the page **and** inside the full channel's zip, that
+  the full manifest is v80.7.1 and the Play manifest still reads 80.7, and that every inline script compiles. Whether a
+  streaming song's words exist
+  online at all is the database's question; whether the phone keeps a WebView alive for an hour in the background is the
+  launcher's - this release makes the page ask for it and recover when it is taken, which is everything the page owns.
+  `dev/check-8062{6,7,8,9,30,31,32}.cjs` and `dev/check-807.cjs` now fail by design; each pins its own version and they are
+  left as they were.
