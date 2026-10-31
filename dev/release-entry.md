@@ -1,39 +1,57 @@
-## 80.6.32 ({{STAMP}}): pills that stop where you aimed, and a rail you can arrange
+## 80.7 ({{STAMP}}): collabs filed under the other artist, a fake release you can delete, and the reorder sheet in two seconds
 
-- **WHAT THE OWNER SAID.** *"make the pills easy to navigate / the dragging for the tabs at the bottom and add the drag and
-  hold thing nice to the right sub tabs as well"* Two asks: the pill strip should be easier to move through, and the hold-and-drag
-  the bottom tabs have should reach the rail on the right.
-- **WHY THE PILL STRIP WAS HARD TO NAVIGATE.** It scrolled freely. A flick stopped wherever the momentum ran out, which is
-  usually between two pills, so both names sat cut off by the edges and the one you wanted was another small swipe away. Each
-  pill was also 7px of padding around 12.5px text - a target you had to aim at rather than one you could hit.
-- **WHAT CHANGED IN THE STRIP.** `#tabs` is a scroll-snap container (`x proximity`) and every `#tabs .tab` is a snap target
-  (`scroll-snap-align: center`), so a flick finishes on a pill with its name whole. The pills are `min-height: 38px` with
-  `padding: 9px 16px` and an inline-flex box, so the label sits in the middle of a taller target. Snapping would fight a finger
-  that is rearranging the strip, so `wireTabReorder` adds `body.sc-tab-drag` on the 380ms hold and `endDrag` takes it off -
-  including a release that never became a drag - and `body.sc-tab-drag #tabs` turns `scroll-snap-type` back to `none`.
-- **WHAT THE RAIL COULD NOT DO.** Its three glyphs were baked in one order: `var pages = [['library', ...], ...]` in
-  `scShelfRender()`, rebuilt only when the rail was built, and a long press did nothing. There was no way to put Playlists above
-  Songs, and no memory of an order to keep.
-- **WHAT CHANGED ON THE RAIL.** Three functions and a constant: `SC_RAIL_PAGES` (`library`, `playlists`, `albums`),
-  `scShelfOrder()` (reads `sidecut_railOrder`, filters it against those three, appends anything missing, falls back to the
-  default), `scShelfSaveOrder()` (writes the DOM order back) and `scRailDrag(b)`. The glyphs are built from `scShelfOrder()`, so
-  the page dragged to the top is at the top next launch. `scRailDrag()` is the pill strip's gesture applied vertically: 380ms
-  hold, `setPointerCapture`, a `lift` class, then a glyph that rides the finger (`translateY(...) scale(1.14)`) and swaps with a
-  neighbour once its own middle passes that neighbour's middle, restarting the drag from the finger so the distance is not
-  counted twice. It is wired **before** the tap handler, because the guard that swallows the click at the end of a drag must be
-  the first listener on the glyph or the page opens anyway; that guard uses `stopImmediatePropagation` and clears itself on a
-  400ms timer so the glyph is tappable again at once. `touch-action: none` on the glyphs is what lets a vertical drag move the
-  glyph instead of scrolling the song list underneath - the rail is fixed over that list - and it costs nothing else, because
-  the gaps between glyphs still pass the finger through.
-- **WHAT WAS RUN.** `dev/patch-80632.py` over the released 80.6.31 page: `--check` **1** before, ten steps applied (version,
-  the strip's CSS, the two `sc-tab-drag` class changes, the lift CSS, the ordered glyph list, the helper block, the drag wired
-  before the tap, the changelog), a second run a no-op, `--check` **0**. Then the workflow's own fixed-point loop
-  (`cp updates.json manifest.json`, `node dev/ota-bundle.mjs`, `node dev/ota-bundle-play.mjs`, both `--check`s) until it settled,
-  `python3 dev/release-record.py`, and `dev/check-80632.cjs`. OTA at a true fixed point - root + `ota/` **{{ROOT}}** bytes at
-  v80.6.32, and `ota-play/` (**{{PLAY}}** bytes) at v80.6.32.
-- **NOT CLAIMED.** No phone and no browser here, so nobody has flicked the strip or carried a glyph. What the checks prove is
-  the shape: the CSS rules that make a pill a snap target and a taller target are in the page and in the Play zip, the snapping
-  is added on hold and removed on release, the order is read from and written to storage, the glyph list is built from that
-  order, the drag is wired ahead of the tap, and all seven inline scripts compile. Whether 38ms of scale and a 380ms hold feel
-  right under a thumb is the part only the owner can judge. `dev/check-8062{6,7,8,9,30,31}.cjs` now fail by design; each pins
-  its own version and they are left as they were.
+- **WHAT THE OWNER SAID.** *"there's no way to tell if an artist had a collab with another artist and its under the other
+  artists name ... Daddy yankee had a collab with Diljit dosanjh and it didn't show up in new releases like it should have,
+  make that possible and make it possible in new releases to delete fake songs by holding down on them for 2 seconds and
+  hitting delete, make the reordering songs in album delay 2 seconds for the popup instaid of 3 and make that better"*
+  Three asks: a collaboration has to be findable from either artist, a wrong release has to be deletable on purpose, and the
+  album reorder sheet has to open a second sooner - and open better than it did.
+- **WHY THE COLLAB WAS MISSING.** `fetchArtistReleases` compared **the first name of a credit** with the pinned artist:
+  `primaryArtistName(r.artistName)` against `primaryArtistName(artist)` for songs, and the same first-name test
+  (`__scSameArtistName(rArtist, pArtist)`) for albums. `primaryArtistName` splits on `,`, `&`, `feat.`, `ft.`, `vs.` and `x`
+  and keeps only what comes before the separator - it answers "whose name is printed first", not "who is on this record". A
+  collaboration is filed under one artist and credited to both: Apple returns that Daddy Yankee single with
+  `artistName: "Daddy Yankee & Diljit Dosanjh"`. Pinning Diljit Dosanjh, the row was **in the results, credited to him, and
+  thrown away because he was not first** - so the release never reached the list, and no amount of re-checking would find it.
+- **WHAT CHANGED FOR THE COLLAB.** Two helpers next to `primaryArtistName`: `scCreditNames(credit)` splits a credit into
+  every name it carries (comma, `&`, `;`, `/`, `with`, `feat.`, `ft.`, `featuring`, `vs.`, `and`, `x`, `×`), and
+  `scCreditHas(credit, artist)` asks `window.__scSameArtistName` of each name - so any credited artist is enough, while the
+  existing name test still refuses "Karan Aujla Tribute Band" for Karan Aujla and a remix album is still not his drop. Both
+  passes use it now: the `entity=song` search and the `entity=album` search. `primaryArtistName` and
+  `__scSameArtistName` stay where a lead artist is genuinely what is wanted.
+- **WHY THE OLD DELETE WAS WRONG.** The Discover list dropped a row on a **~600ms** hold. That is one accidental press away
+  from a tap, it never asked, and it looked the release up in the single artist key the row was painted from - `pinnedReleases[artist]`
+  - which is exactly the wrong place for a collaboration, because the same drop is stored once per pinned artist that shares
+  it. Deleting one copy would have brought the row straight back on the next paint.
+- **WHAT THE DELETE IS NOW.** A release is deleted on purpose. `scWireReleaseHold()` is one delegated hold - installed once,
+  not once per row per paint - over the three surfaces that draw releases (`.new-release-row` in the Discover list,
+  `.hb-track-row[data-date]` in the Home bubble, `#discPopupBody .dp-track[data-title][data-date]` in the Fetch latest popup),
+  reading the title, day and artist off the attributes every builder already writes. Two seconds, unmoved (a 12px move is a
+  scroll and cancels), then `scRelAskDelete()` names the drop and offers **Delete** and **Keep**. Delete goes through
+  `scRelDelete()`, which finds **every stored copy** through `scReleaseKey` and removes all of them, repaints the list, Home,
+  the open panel and the bell, and offers `toastWithUndo` to put the copies back under the keys they came from. A row that is
+  not in the stored list - a search result, a catalog row - has nothing to delete and the hold does nothing. The click the
+  press ends with is swallowed in the capture phase, because otherwise it opens the release page over the sheet.
+- **WHY THE SHEET FELT BAD, AND WHAT CHANGED.** Two holds open "Reorder Songs" and both were three seconds: the per-row
+  `wireAlbumRowHold` (its own 3000ms timer, plus a 2800ms release gate for a press Android cancels) and the delegated
+  `__albumSongHoldWired` block (`HOLD_MS`/`RELEASE_MIN_MS`). Both are **2000 / 1800** now, and the three help sentences that
+  promised three seconds say two. The "make that better" is the second half: the sheet builds from the top of the album, so
+  holding the twelfth song opened a list that did not show it and the row had to be hunted for. Both holds now pass the held
+  row's id to `showAlbumReorderPopup(albumName, focusTrackId)`, and the sheet scrolls that row into the middle of its own
+  pane (`listEl.scrollTop`, never `scrollIntoView`, which lifts the whole app on Android) and lights it for 900ms.
+- **WHAT WAS RUN.** `dev/patch-807.py` (with the page block it loads from `dev/patch-807-blocks.py`) over the released 80.6.32 page: `--check` **1** before, **23** steps applied (the
+  version, the credit helpers, both passes, the row's day attribute, the delete helpers, the retired 600ms hold, six album
+  hold timings and their comments, the sheet's focus, the comment, the three help sentences, the changelog), a second run a
+  no-op, `--check` **0**. Then the workflow's fixed-point loop (`cp updates.json manifest.json`, `node dev/ota-bundle.mjs`,
+  `node dev/ota-bundle-play.mjs`, both `--check`s) until it settled, `python3 dev/release-record.py`, and
+  `dev/check-807.cjs` - which **runs** the two new behaviours rather than reading them: the credit test against real
+  collaboration strings (`"Daddy Yankee & Diljit Dosanjh"` found from either side, with a comma, `feat.`, `ft.` and `x`, and
+  still refusing a tribute band), and the delete against a drop stored under **two** artist keys (both copies gone, written
+  once, every surface repainted, Undo putting both back in date order, an unknown title deleting nothing). OTA at a true
+  fixed point - root + `ota/` **{{ROOT}}** bytes at v80.7, and `ota-play/` (**{{PLAY}}** bytes) at v80.7.
+- **NOT CLAIMED.** No phone and no browser here: nobody has held a release for two seconds, pressed Delete, or opened the
+  album sheet from the twelfth song. What is proven is the shape and the logic of the two new behaviours, that the CSS and the
+  code are in the page **and** inside the Play zip, that both manifests are v80.7 with these notes, and that all seven
+  inline scripts compile. Whether a real catalog even returns that Daddy Yankee single for a Diljit search is the network's
+  question, not this page's: what changed is that when it does, it is no longer discarded for being credited second.
+  `dev/check-8062{6,7,8,9,30,31,32}.cjs` now fail by design; each pins its own version and they are left as they were.
