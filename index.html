@@ -12920,6 +12920,18 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     return variants;
   }
 
+  // 80.7.1 - WORDS FOR A STREAM. fetchLyrics() writes what it finds with
+  // persistTrackMeta(), which writes a LIBRARY record - and a streamed song has
+  // none, so its words were lost the moment the sheet closed. A streamed song
+  // keeps its words in the stream's own store, which is the store it came from.
+  function scLyricsPersist(track){
+    try{
+      if(track && track.stream && typeof scStreamLyricsSave === 'function'){
+        return scStreamLyricsSave(track.streamId || track.id, track.lyrics, track.lyricsSynced);
+      }
+      return persistTrackMeta(track);
+    }catch(_eLp){ return false; }
+  }
   async function fetchLyrics(track) {
     const title = track.name || '';
     let artist = track.artist || 'Unknown';
@@ -12983,7 +12995,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
         track.lyrics = _found.lyrics;
         track.lyricsSynced = _found.isSynced;
         track.lyricsCheckedAt = Date.now();   // asked and answered
-        persistTrackMeta(track);
+        scLyricsPersist(track);
         showLyrics(_found.lyrics, _found.isSynced);
         return;
       }
@@ -12991,7 +13003,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       // re-check reads this stamp so it never re-asks on every launch. The song
       // the user just looked at is not the one to spend a request on.
       track.lyricsCheckedAt = Date.now();
-      try{ persistTrackMeta(track); }catch(_eMissStamp){}
+      try{ scLyricsPersist(track); }catch(_eMissStamp){}
       scLyricsSayNotFound(cleanArtist, cleanTitle, track);
     } catch(e) {
       console.error('Lyrics fetch error:', e);
@@ -14529,7 +14541,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // the highlight stayed dead until the lyrics were closed and reopened.
       if (document.hidden) return;
       
-      const audio = activeAudio();
+      const audio = (typeof scListenAudio === 'function') ? scListenAudio() : activeAudio();
       if (!audio) return;
       // Paused means the clock has stopped, so the highlight and the
       // auto-scroll stop with it and pick up exactly where they left off,
@@ -14625,6 +14637,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
         var _sheetDur = 0;
         if (audio.duration > 0) {
           if(isFinite(audio.duration)) _sheetDur = audio.duration;
+        }
+        // 80.7.1 - a streamed song knows its own length, which is what a plain
+        // sheet is paced against before the element has published one.
+        if(!_sheetDur){
+          try{
+            var _stSong = (typeof scStreamSong === 'function') ? scStreamSong() : null;
+            var _stDur = _stSong ? Number(_stSong.duration) : 0;
+            if(_stDur > 0 && isFinite(_stDur)) _sheetDur = _stDur;
+          }catch(_eStDur){}
         }
         if(!_sheetDur){
           try{
@@ -15924,6 +15945,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scStreamSave();            // and the id-only shape is retired on the way out
       scStreamRender();
       scShelfRender();
+      if(typeof scStreamRestoreLast === 'function') scStreamRestoreLast();
     }
     try{
       Promise.resolve(dbGet('meta', 'streamTracks')).then(function(r){
@@ -15954,6 +15976,100 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return null;
   }
 
+  // ---- 80.7.1 - THE STREAM IS A SONG, HERE AND OUTSIDE THE APP --------------
+  // The lyrics sheet and DJ Mode could only answer for a downloaded song: both
+  // asked `queue` and `allTracks`, and a stream lives in neither - so on a song
+  // playing from the source, Lyrics said "Play a song first" and DJ Mode said the
+  // same, over a song you could hear. These helpers are the one place that answers
+  // "what is playing" across both players; every surface below asks them once.
+  function scStreamSong(){
+    if(!SC_STREAM_OK) return null;
+    if(typeof scStreamPhoneOwns !== 'function' || !scStreamPhoneOwns()) return null;
+    var t = scStreamById(scStreamState.curId);
+    if(!t) return null;
+    var a = scStreamState.audio;
+    var dur = 0;
+    try{ dur = Number(a && a.duration) || 0; }catch(_eSsd){ dur = 0; }
+    if(!isFinite(dur) || dur <= 0) dur = Number(t.dur) || 0;
+    return {
+      id: 'scstream:' + String(t.id),
+      streamId: String(t.id),
+      videoId: String(t.videoId || ''),
+      name: String(t.title || 'Streaming'),
+      artist: String(t.artist || 'Streaming'),
+      duration: dur,
+      dur: dur,
+      artUrl: scStreamThumb(t),
+      stream: true,
+      lyrics: String(t.lyrics || ''),
+      lyricsSynced: !!t.lyricsSynced,
+      lyricsOff: !!t.lyricsOff
+    };
+  }
+  // Words fetched for a stream are kept on the streamed song, in the stream's own
+  // store: persistTrackMeta() writes a LIBRARY record, and a streamed song has none.
+  function scStreamLyricsSave(id, lyrics, synced){
+    var t = scStreamById(String(id == null ? '' : id).replace(/^scstream:/, ''));
+    if(!t) return false;
+    t.lyrics = String(lyrics || '');
+    t.lyricsSynced = !!synced;
+    t.lyricsCheckedAt = Date.now();
+    scStreamSave();
+    return true;
+  }
+  // The element that is actually making the sound this second. The lyrics clock,
+  // the lyrics play button and the background heartbeat all read this one, so none
+  // of them keeps time on a paused deck while a stream is playing.
+  function scListenAudio(){
+    try{ if(scStreamSong()) return scStreamAudio(); }catch(_eSla){}
+    return activeAudio();
+  }
+  // The second a stream stopped on is remembered, so closing the app does not lose
+  // the song or the place in it. Written at most every four seconds, and at once
+  // when the app is going away.
+  var scStreamRememberAt = 0;
+  function scStreamRemember(force){
+    var id = String(scStreamState.curId || '');
+    if(!id) return;
+    var now = Date.now();
+    if(!force && now - scStreamRememberAt < 4000) return;
+    scStreamRememberAt = now;
+    var a = scStreamState.audio;
+    var at = 0;
+    try{ at = Number(a && a.currentTime) || 0; }catch(_eRem){}
+    try{ dbPut('meta', { key: 'streamLast', value: { id: id, at: at, savedAt: now } }); }catch(_eRem2){}
+  }
+  // After a launch, the last stream comes back on the bar, paused, at the second it
+  // stopped on - and play carries on from there instead of starting the song again.
+  function scStreamRestoreLast(){
+    if(!SC_STREAM_OK) return;
+    try{
+      Promise.resolve(dbGet('meta', 'streamLast')).then(function(r){
+        var v = r && r.value;
+        if(!v || !v.id) return;
+        if(Date.now() - (Number(v.savedAt) || 0) > 12 * 60 * 60 * 1000) return;
+        var t = scStreamById(v.id);
+        if(!t) return;
+        scStreamState.curId = String(v.id);
+        scStreamState.resumeId = String(v.id);
+        scStreamState.resumeAt = Math.max(0, Number(v.at) || 0);
+        scStreamBarOn(t);
+        scStreamBarSync();
+        scStreamSay('Tap play to carry on where you left off');
+        scStreamRender();
+      }).catch(function(){});
+    }catch(_eRestore){}
+  }
+  // The system rebuilds the media session while the page is away, and the stream's
+  // buttons live in this page: re-asserting them on the way back is what keeps the
+  // notification holding the stream instead of the deck.
+  document.addEventListener('visibilitychange', function(){
+    try{
+      if(document.hidden){ scStreamRemember(true); return; }
+      if(scStreamPhoneOwns()){ scStreamPhoneSync(); scStreamPhoneTick(true); }
+    }catch(_eSvis){}
+  });
+  try{ window.addEventListener('pagehide', function(){ try{ scStreamRemember(true); }catch(_ePh){} }); }catch(_ePageHide){}
   // --- resolution ------------------------------------------------------------
   // The same player endpoint the converter uses, asked for one videoId. The clients are
   // tried in order because which one answers without a signature cipher changes week to
@@ -16211,11 +16327,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scStreamStart(u, at){
     var a = scStreamAudio();
     if(!u) return Promise.resolve(false);
+    // 80.7.1 - a stream that came back after a launch starts at the second it
+    // stopped on, and a start of any kind is not a deliberate pause.
+    if(!at && scStreamState.pendingAt){ at = scStreamState.pendingAt; }
+    scStreamState.userPaused = false;
+    scStreamState.revives = 0;
     scStreamState.url = u;
     scStreamState.urlAt = Date.now();
     try{ a.src = u; a.load(); }catch(_eSet){}
     if(at){ try{ a.currentTime = at; }catch(_eSeek){} }
-    return Promise.resolve(a.play()).then(function(){ scStreamSay(''); return true; }).catch(function(){
+    return Promise.resolve(a.play()).then(function(){ scStreamState.pendingAt = 0; scStreamState.userPaused = false; scStreamSay(''); return true; }).catch(function(){
       return false;
     });
   }
@@ -16288,6 +16409,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var t = scStreamById(id);
     if(!t){ return; }
     scStreamState.curId = String(id);
+    // 80.7.1 - the song you were on when the app closed starts where it stopped.
+    if(String(scStreamState.resumeId || '') !== String(id)) scStreamState.pendingAt = 0;
+    else scStreamState.pendingAt = Math.max(0, Number(scStreamState.resumeAt) || 0);
     scStreamState.fixes = 0;
     scStreamState.err = '';
     scStreamState.bytes = 0;
@@ -16365,6 +16489,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
         .catch(function(){ scStreamRestart(); })
         .then(function(){ window.__scStreamPulling = false; });
     } else {
+      // 80.7.1 - the heartbeat revives a stream the phone silenced, never one
+      // you paused yourself.
+      scStreamState.userPaused = true;
       a.pause();
     }
   }
@@ -16522,6 +16649,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       });
       mediaSetActionHandler('pause', function(){
         var a = el();
+        scStreamState.userPaused = true;
         if(a && !a.paused){ try{ a.pause(); }catch(_ePpa){} }
       });
       mediaSetActionHandler('previoustrack', function(){
@@ -16533,6 +16661,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       mediaSetActionHandler('stop', function(){
         var a = el();
         if(!a) return;
+        scStreamState.userPaused = true;
         try{ a.pause(); a.currentTime = 0; }catch(_ePst){}
       });
       mediaSetActionHandler('seekbackward', function(){
@@ -16660,6 +16789,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scStreamQuiet(){
     try{
       var a = scStreamState.audio;
+      scStreamState.userPaused = true;
       if(a && !a.paused) a.pause();
     }catch(_eQ){}
     scStreamBarOff();
@@ -16947,6 +17077,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(bar){ bar.max = isFinite(d) && d > 0 ? d : 0; bar.value = a.currentTime || 0; }
       if(at) at.textContent = scStreamTime(a.currentTime || 0) + (isFinite(d) && d > 0 ? ' / ' + scStreamTime(d) : '');
     }catch(_e){}
+    try{ if(typeof scStreamRemember === 'function') scStreamRemember(); }catch(_eRemTick){}
     scStreamBarSync();
     scStreamPhoneTick();
   }
@@ -18033,6 +18164,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return nodes.map(function(n){ return n.html; }).join('');
   }
   $('lyricsBtn').addEventListener('click', () => {
+    // 80.7.1 - THE STREAM IS A SONG TOO. This asked the deck's queue, so over a
+    // song playing from the source it said "Play a song first". The stream
+    // answers with its own song, its own length and its own cover.
+    const st = (typeof scStreamSong === 'function') ? scStreamSong() : null;
+    if(st){ fetchLyrics(st); return; }
     if(queueIndex < 0 || queueIndex >= queue.length) {
       toast('Play a song first');
       return;
@@ -18344,6 +18480,15 @@ function startLyricsAutoScroll(keepPos, noReset) {
   
   // Lyrics skip buttons - stay in lyrics
   $('lyricsPrevBtn').addEventListener('click', () => {
+    // 80.7.1 - on a stream, the sheet's own previous and next are the stream's,
+    // and the words are re-fetched for the song that actually started.
+    if(typeof scStreamSong === 'function' && scStreamSong()){
+      const _sa = scStreamAudio();
+      if(_sa && (_sa.currentTime || 0) > 3){ try{ _sa.currentTime = 0; }catch(_eLpv){} return; }
+      scStreamNext(-1);
+      setTimeout(function(){ var _st = scStreamSong(); if(_st) fetchLyrics(_st); }, 900);
+      return;
+    }
     const audio = activeAudio();
     if(audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
     hardAdvance(-1, true);
@@ -18355,6 +18500,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   });
   
   $('lyricsNextBtn').addEventListener('click', () => {
+    if(typeof scStreamSong === 'function' && scStreamSong()){
+      scStreamNext(1);
+      setTimeout(function(){ var _st = scStreamSong(); if(_st) fetchLyrics(_st); }, 900);
+      return;
+    }
     hardAdvance(1, true);
     // Re-fetch lyrics for new track after a brief delay
     setTimeout(() => {
@@ -18369,18 +18519,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function syncLyricsPlayPauseIcon(){
     const btn = $('lyricsPlayPauseBtn');
     if(!btn) return;
-    const a = activeAudio();
+    const a = (typeof scListenAudio === 'function') ? scListenAudio() : activeAudio();
     const paused = !a || a.paused;
     const playIcon = $('lyricsPlayIcon'), pauseIcon = $('lyricsPauseIcon');
     if(playIcon) playIcon.style.display = paused ? '' : 'none';
     if(pauseIcon) pauseIcon.style.display = paused ? 'none' : '';
   }
   $('lyricsPlayPauseBtn').addEventListener('click', () => {
-    const a = activeAudio();
+    // 80.7.1 - the button under the words is play and pause for whatever you can
+    // hear, which on a stream is the stream's own element.
+    const _onStream = (typeof scStreamSong === 'function') ? !!scStreamSong() : false;
+    const a = (typeof scListenAudio === 'function') ? scListenAudio() : activeAudio();
     if(!a) return;
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
-    if(a.paused){ a.play().catch(() => recoverAudio(a, 'lyrics play failed')); }
-    else { scPauseDeck(); }
+    if(a.paused){
+      a.play().catch(() => { if(_onStream){ try{ scStreamRestart(); }catch(_eLpr){} } else recoverAudio(a, 'lyrics play failed'); });
+    } else if(_onStream){
+      scStreamState.userPaused = true;
+      try{ a.pause(); }catch(_eLps){}
+    } else { scPauseDeck(); }
     syncLyricsPlayPauseIcon();
   });
 
@@ -19018,7 +19175,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.7';
+  const APP_VERSION = '80.7.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -19701,6 +19858,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  // 80.7.1 - THE STREAM IS A SONG OUTSIDE THE APP. The lyrics sheet and DJ
+  // Mode answered only out of the deck's queue, so on a song playing from the
+  // source both of them said "play a song first" over a song that could be
+  // heard; the background heartbeat watched the deck's element, so a stream in
+  // the background read as silence and nothing kept it alive. The stream answers
+  // for itself now, and the song and the second are remembered.
+  { version: '80.7.1', date: 'October 31, 2026 · 2:06 PM EDT', title: 'Lyrics, DJ Mode and background play for a streaming song', items: [
+    'Lyrics open on a streaming song. The sheet is fed the song that is playing, the highlight and the play button follow the stream element instead of the paused deck, and the words are kept on the streamed song so a second open costs no request.',
+    'DJ Mode takes a streaming song. The deck decodes the same bytes the stream is playing, so the platter, pitch, loops, hot cues and pads all work on it, and leaving DJ Mode hands the sound back to the stream at the second it stopped on.',
+    'A stream keeps playing with the app in the background, and a song the phone silenced out there starts again where it stopped instead of dying. Closing the app remembers the song and the second, so the bar comes back on it and play carries on from there.'
+  ]},
   // 80.7 - A COLLAB IS A DROP, A FAKE RELEASE CAN BE DELETED, AND THE ALBUM
   // SHEET OPENS IN TWO SECONDS. The owner: a Daddy Yankee collab with Diljit
   // Dosanjh "didn't show up in new releases like it should have", a fake release
@@ -37885,7 +38053,12 @@ function _fallbackCopy(text){
     mediaSessionHeartbeat = setInterval(() => {
       // Don't waste battery when truly backgrounded — only run while screen is on
       // or while actively playing (the OS notification keeps the session alive)
-      if(document.hidden && (!activeAudio() || activeAudio().paused)) return;
+      // 80.7.1 - THE HEARTBEAT LISTENS TO WHICHEVER PLAYER IS MAKING SOUND. It
+      // watched the deck's element only, so a backgrounded stream read as "nothing
+      // playing" and the one thing that keeps a page alive out there stopped
+      // running for the song that was actually playing.
+      const listen = (typeof scListenAudio === 'function') ? scListenAudio() : activeAudio();
+      if(document.hidden && (!listen || listen.paused)) return;
       const a = activeAudio();
       if(!a) return;
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
@@ -37928,10 +38101,30 @@ function _fallbackCopy(text){
           });
         }
       }
+      // 80.7.1 - THE STREAM IS REVIVED THE SAME WAY. A backgrounded page is
+      // silenced exactly like any other element; a stream that is paused without
+      // ever being asked to pause is the phone reclaiming it, not the owner, so it
+      // starts again from the second it stopped on. A pause you made is left
+      // alone, and the attempts are counted so a dead source is not hammered.
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+        const sa = scStreamState.audio;
+        if(sa && sa.paused && !scStreamState.userPaused && !audioFocusInterrupted && !scInCall()){
+          scStreamState.revives = (Number(scStreamState.revives) || 0) + 1;
+          if(scStreamState.revives <= 20){
+            Promise.resolve(sa.play()).catch(function(){
+              var hit = null;
+              try{ hit = scStreamCacheGet((scStreamById(scStreamState.curId) || {}).videoId); }catch(_eSrv){}
+              if(hit && hit.url){ try{ scStreamStart(hit.url, Number(sa.currentTime) || 0); }catch(_eSrv2){} }
+            });
+          }
+        }
+        try{ scStreamPhoneTick(true); }catch(_eStTick){}
+      }
       // While we are away the notification must not claim a song is playing that
       // Android has already silenced: the element still says `paused === false`
       // once the WebView is frozen, so the playhead is the only honest witness.
-      const bgDead = !userPaused && !playbackSurvivedBackground();
+      const bgDead = (typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns())
+        ? false : (!userPaused && !playbackSurvivedBackground());
       if(bgDead) mediaSetPlaybackState('paused');
       // 72.5.1 - while a song plays this heartbeat is the one thing still
       // running, so it is what puts the controls back if the session was
@@ -39391,6 +39584,7 @@ function _fallbackCopy(text){
 
   let djLastTrackId = null;
   let djCurrentTrackId = null; // which track is loaded on the deck — independent of the main playback queue
+  let djStreamTrack = null; // 80.7.1 - the streamed song, when the deck is holding one
   let djSourcePlaylist = 'All Songs'; // whichever playlist DJ Mode is browsing/crossfading within — set when DJ Mode opens, changeable via the strip's playlist switcher
   // Playlists whose names (case-insensitive, exact match) should never be mixed —
   // they're meant to be listened to as-is, so DJ Mode steps aside for them.
@@ -39436,6 +39630,29 @@ function _fallbackCopy(text){
   function djBrowseIds(){
     return djSourceIds || playlists[djSourcePlaylist] || [];
   }
+  // 80.7.1 - THE DECK CAN HOLD A STREAMED SONG.
+  // Every deck lookup went to allTracks, and a streamed song is not in it. One
+  // reader answers for both players, so the title, the per-track reset and the
+  // platter cannot disagree about what is loaded.
+  function djTrackById(id){
+    var want = String(id == null ? '' : id);
+    if(!want) return null;
+    var t = allTracks.find(function(tr){ return tr.id === want; });
+    if(t) return t;
+    return (djStreamTrack && String(djStreamTrack.id) === want) ? djStreamTrack : null;
+  }
+  // The bytes the deck needs, from wherever the stream already has them: the read
+  // that is playing, the read-ahead cache, or the link itself.
+  function djStreamUrl(t){
+    try{
+      if(scStreamState.blobUrl) return scStreamState.blobUrl;
+      var hit = scStreamCacheGet((t && t.videoId) || '');
+      if(hit && hit.url) return hit.url;
+      if(scStreamState.url) return scStreamState.url;
+    }catch(_eDsu){}
+    return '';
+  }
+
 
   function renderDjTrackStrip(){
     const strip = $('djTrackStrip');
@@ -39518,7 +39735,9 @@ function _fallbackCopy(text){
   }
 
   function refreshDjMode(){
-    const t = allTracks.find(tr => tr.id === djCurrentTrackId);
+    // 80.7.1 - the deck can hold a streamed song, which is in neither allTracks
+    // nor a playlist; djTrackById() is the one lookup that knows both.
+    const t = djTrackById(djCurrentTrackId);
     if(!t) return;
     if(t.id !== djLastTrackId){
       // New track loaded into the deck — hot cues, kill switches, and the loop
@@ -39558,9 +39777,14 @@ function _fallbackCopy(text){
   }
 
   async function enterDjMode(){
-    if(queueIndex < 0 || queueIndex >= queue.length){ toast('Play a song first to enter DJ Mode'); return; }
-    const t = allTracks.find(tr => tr.id === queue[queueIndex]);
-    if(!t) return;
+    // 80.7.1 - THE DECK TAKES THE STREAM. This asked the deck's queue, so DJ Mode
+    // on a song playing from the source said "play a song first" over that song.
+    // The streamed song is handed over the way a file is: its bytes are already
+    // an object URL (that is what the element is playing), which is exactly what
+    // the deck decodes.
+    const streamSong = (typeof scStreamSong === 'function') ? scStreamSong() : null;
+    const t = streamSong || allTracks.find(tr => tr.id === queue[queueIndex]);
+    if(!t){ toast('Play a song first to enter DJ Mode'); return; }
     // DJ Mode steps aside for playlists meant to be listened to as-is (Paath,
     // Gurbani, Kirtaan, etc.) — there's nothing to mix there, so we block entry
     // and explain why instead of opening the turntable rig.
@@ -39575,9 +39799,12 @@ function _fallbackCopy(text){
     cancelCrossfade(); // a crossfade left running in the background would silently advance
                         // the main queue while DJ Mode is watching a totally separate track.
     const a = activeAudio();
-    const wasPlaying = !a.paused;
-    const startFrom = a.currentTime || 0;
-    a.pause(); // the real <audio> element goes silent — the deck engine owns sound in DJ Mode
+    const _sAudio = (typeof scStreamAudio === 'function') ? scStreamAudio() : null;
+    const wasPlaying = streamSong ? !!(_sAudio && !_sAudio.paused) : !a.paused;
+    const startFrom = streamSong ? ((_sAudio && _sAudio.currentTime) || 0) : (a.currentTime || 0);
+    if(streamSong){
+      if(_sAudio){ try{ _sAudio.pause(); }catch(_eDjSp){} }
+    } else a.pause(); // the real <audio> element goes silent — the deck engine owns sound in DJ Mode
 
     // DJ Mode operates on whichever playlist you're actually in/playing from —
     // not a separate hidden "DJ Set". Defaults to wherever the main player's
@@ -39589,6 +39816,7 @@ function _fallbackCopy(text){
     // switcher drops this again (it is that button's job to leave the album).
     djSourceIds = queueAlbumName ? (scAlbumQueueIds(queueAlbumName, null) || null) : null;
     if(djSourceIds && !djSourceIds.length) djSourceIds = null;
+    djStreamTrack = streamSong || null;
     djCurrentTrackId = t.id;
     djLastTrackId = null; // force the per-track reset path in refreshDjMode
     deckEngine.buffer = null;
@@ -39602,6 +39830,21 @@ function _fallbackCopy(text){
     preloadAllPadSamples(); // start fetching pad/FX samples now, in the background, so pads are ready by the time they're tapped
 
     try{
+      // 80.7.1 - the deck decodes bytes. A streamed song already has them as an
+      // object URL, and falls back to a read of the same source when the URL has
+      // been handed to the read-ahead cache.
+      if(streamSong && !streamSong.url){
+        streamSong.url = djStreamUrl(streamSong);
+        if(!streamSong.url && scStreamState.url){
+          streamSong.url = await scStreamReadOnly(scStreamState.url, scStreamState.mime, scStreamState.size);
+        }
+        if(!streamSong.url){
+          djStreamTrack = null;
+          $('djModeBackdrop').style.display = 'none';
+          toast('The stream is still reading - try DJ Mode again in a second');
+          return;
+        }
+      }
       await ensureDeckBuffer(t);
       deckEngine.startOffset = startFrom;
       if(wasPlaying) deckStart(startFrom, playbackSpeedDJ || 1);
@@ -39621,6 +39864,20 @@ function _fallbackCopy(text){
     const pos = deckNow();
     const wasRunning = deckEngine.running;
     deckStop();
+    // 80.7.1 - THE STREAM GETS ITS SOUND BACK. Leaving the deck used to hand the
+    // playhead to the deck's <audio> and nothing else, so a song the deck had
+    // taken from the source left silence behind it. It goes back to its own
+    // element, at the second the platter stopped on.
+    const _djStreamSong = djStreamTrack;
+    djStreamTrack = null;
+    if(_djStreamSong && _djStreamSong.id === djCurrentTrackId){
+      var _sa = (typeof scStreamAudio === 'function') ? scStreamAudio() : null;
+      if(_sa){
+        try{ _sa.currentTime = Math.max(0, Math.min(Number(_sa.duration) || pos, pos)); }catch(_eDjSeek){}
+        if(wasRunning){ scStreamState.userPaused = false; Promise.resolve(_sa.play()).catch(function(){}); }
+      }
+      return;
+    }
     // Hand playback back to the normal <audio> element at wherever the deck left off,
     // but only if the deck's track is still the one the main player has queued —
     // if you loaded a different song from the DJ Set strip, leave the main player alone.
