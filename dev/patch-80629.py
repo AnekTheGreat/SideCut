@@ -1,1 +1,270 @@
-IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiI4MC42LjI5IC0gb25lIExpYnJhcnkgcGlsbCwgYW5kIGEgcmFpbCB0aGF0IGhvbGRzIHN0aWxsLgoKICAgIHB5dGhvbjMgZGV2L3BhdGNoLTgwNjI5LnB5CiAgICBweXRob24zIGRldi9wYXRjaC04MDYyOS5weSAtLWNoZWNrCgpJZGVtcG90ZW50OiBhIHNlY29uZCBydW4gb3ZlciB0aGUgcGF0Y2hlZCBwYWdlIGlzIGEgbm8tb3AgYW5kIC0tY2hlY2sgc2F5cyBzby4KIiIiCmltcG9ydCBkYXRldGltZQppbXBvcnQgb3MKaW1wb3J0IHN5cwoKSEVSRSA9IG9zLnBhdGguZGlybmFtZShvcy5wYXRoLmFic3BhdGgoX19maWxlX18pKQpJTkRFWCA9IG9zLnBhdGguam9pbihIRVJFLCAnLi4nLCAnaW5kZXguaHRtbCcpCgpDSEVDSyA9ICctLWNoZWNrJyBpbiBzeXMuYXJndgpWRVJTSU9OID0gJzgwLjYuMjknCk9MRCA9ICc4MC42LjI4JwpNQVJLRVIgPSAnODAuNi4yOSAtIE9ORSBMSUJSQVJZIFBJTEwsIEEgUkFJTCBZT1UgQ0FOIFNFRSBUSFJPVUdIJwoKd2l0aCBvcGVuKElOREVYLCBlbmNvZGluZz0ndXRmLTgnKSBhcyBmaDoKICAgIFNSQyA9IGZoLnJlYWQoKQoKaWYgTUFSS0VSIGluIFNSQyBhbmQgKCJjb25zdCBBUFBfVkVSU0lPTiA9ICclcyc7IiAlIFZFUlNJT04pIGluIFNSQzoKICAgIHByaW50KCdwYXRjaC04MDYyOTogYWxyZWFkeSBvbiB0aGUgcGFnZSwgdGhlIHBhZ2UgaXMgJXMnICUgVkVSU0lPTikKICAgIHN5cy5leGl0KDApCgphcHBsaWVkLCBmYWlsZWQgPSBbXSwgW10KCgpkZWYgc3dhcChuYW1lLCBvbGQsIG5ldywgZXhwZWN0PTEpOgogICAgZ2xvYmFsIFNSQwogICAgZ290ID0gU1JDLmNvdW50KG9sZCkKICAgIGlmIGdvdCAhPSBleHBlY3Q6CiAgICAgICAgZmFpbGVkLmFwcGVuZCgnJXM6IGZvdW5kICVkLCBleHBlY3RlZCAlZCcgJSAobmFtZSwgZ290LCBleHBlY3QpKQogICAgICAgIHJldHVybgogICAgU1JDID0gU1JDLnJlcGxhY2Uob2xkLCBuZXcpCiAgICBhcHBsaWVkLmFwcGVuZChuYW1lKQoKCiMgLS0gMS4gdGhlIGRvY2sgdGFiIGlzIG9uZSBMaWJyYXJ5IHBpbGwgLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCnN3YXAoJ3RoZSBkb2NrIHRhYiBpcyBvbmUgTGlicmFyeSBwaWxsJywKICAgICAnJycgIDxidXR0b24gaWQ9ImxpYnJhcnlCdG4iIGNsYXNzPSJhY3Rpb24tcGlsbCIgc3R5bGU9InBvc2l0aW9uOnJlbGF0aXZlO292ZXJmbG93OmhpZGRlbjtwYWRkaW5nOjA7Y3Vyc29yOnBvaW50ZXI7Ij4KICA8ZGl2IGlkPSJwbGF5bGlzdHNIYWxmIiBzdHlsZT0icG9zaXRpb246YWJzb2x1dGU7aW5zZXQ6MDtjbGlwLXBhdGg6cG9seWdvbigwIDAsIDEwMCUgMCwgMCAxMDAlKTtkaXNwbGF5OmZsZXg7YWxpZ24taXRlbXM6ZmxleC1zdGFydDtqdXN0aWZ5LWNvbnRlbnQ6ZmxleC1zdGFydDtwYWRkaW5nOjRweCAwIDAgOHB4O2N1cnNvcjpwb2ludGVyO3otaW5kZXg6Mjt0cmFuc2l0aW9uOmJhY2tncm91bmQgMC4xNXM7Ij4KICAgIDxzcGFuIHN0eWxlPSJmb250LXNpemU6MTBweDtmb250LXdlaWdodDo3MDA7Y29sb3I6dmFyKC0taW5rLWRpbSk7bGV0dGVyLXNwYWNpbmc6MC4zcHg7Ij5MaWJyYXJ5PC9zcGFuPgogIDwvZGl2PgogIDxkaXYgaWQ9ImFsYnVtc0hhbGYiIHN0eWxlPSJwb3NpdGlvbjphYnNvbHV0ZTtpbnNldDowO2NsaXAtcGF0aDpwb2x5Z29uKDEwMCUgMCwgMTAwJSAxMDAlLCAwIDEwMCUpO2Rpc3BsYXk6ZmxleDthbGlnbi1pdGVtczpmbGV4LWVuZDtqdXN0aWZ5LWNvbnRlbnQ6ZmxleC1lbmQ7cGFkZGluZzowIDhweCA0cHggMDtjdXJzb3I6cG9pbnRlcjt6LWluZGV4OjE7dHJhbnNpdGlvbjpiYWNrZ3JvdW5kIDAuMTVzOyI+CiAgICA8c3BhbiBzdHlsZT0iZm9udC1zaXplOjEwcHg7Zm9udC13ZWlnaHQ6NzAwO2NvbG9yOnZhcigtLWluay1kaW0pO2xldHRlci1zcGFjaW5nOjAuM3B4OyI+QWxidW1zPC9zcGFuPgogIDwvZGl2PgogIDxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgc3R5bGU9InBvc2l0aW9uOmFic29sdXRlO2luc2V0OjA7cG9pbnRlci1ldmVudHM6bm9uZTt6LWluZGV4OjM7Ij48bGluZSB4MT0iMTAwJSIgeTE9IjAiIHgyPSIwIiB5Mj0iMTAwJSIgc3Ryb2tlPSJ2YXIoLS1saW5lKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9zdmc+CjwvYnV0dG9uPgonJycsCiAgICAgJycnICA8IS0tIDgwLjYuMjkgLSBPTkUgTElCUkFSWSBQSUxMLiBUaGUgZG9jayB0YWIgd2FzIG9uZSBwaWxsIGN1dCBjb3JuZXIgdG8gY29ybmVyCiAgICAgICBpbnRvIExpYnJhcnkgYW5kIEFsYnVtcyBzaW5jZSA3MC4wLCBhbmQgdGhlIG93bmVyIGFza2VkIGZvciB0aGUgd29yZCBiYWNrOgogICAgICAgIm1ha2UgdGhlIGJvdHRvbSB0YWIgd2l0aCB0aGUgZGlhZ29uYWwgb2YgbGlicmFyeSBhbmQgYWxidW1zIGp1c3QgTGlicmFyeSIuCiAgICAgICBUaGUgcm91dGUgdGhlIEFsYnVtcyBoYWxmIGNhcnJpZWQgaXMgbm90IGxvc3QgLSB0aGUgbGlicmFyeSdzIG93biBBbGJ1bXMgdGFiCiAgICAgICBpcyBzdGlsbCB0aGVyZSwgdGhlIHNpZGUgcmFpbCdzIEFsYnVtcyBwYWdlIGlzIG9uZSB0YXAgYXdheSBvbiB0aGUgZnVsbCBidWlsZCwKICAgICAgIGFuZCB0aGlzIHBpbGwgb3BlbnMgdGhlIHNvdXJjZSdzIHNvbmdzIHBhZ2UgZmlyc3Qgd2hlbiB0aGUgc291cmNlIGlzIG9uLiAtLT4KICA8YnV0dG9uIGlkPSJsaWJyYXJ5QnRuIiBjbGFzcz0iYWN0aW9uLXBpbGwiPkxpYnJhcnk8L2J1dHRvbj4KJycnKQoKc3dhcCgndGhlIHBpbGwgdGFrZXMgdGhlIHBsYWluIHRhYiBzaGFwZScsCiAgICAgJycnI2xpYnJhcnlCdG57IGZsZXg6IDEuMTggMSAwOyBib3JkZXItcmFkaXVzOiAxNHB4OyB9CiNsaWJyYXJ5QnRuICNwbGF5bGlzdHNIYWxmIHNwYW4sICNsaWJyYXJ5QnRuICNhbGJ1bXNIYWxmIHNwYW57IGZvbnQtc2l6ZTogOS41cHg7IH0KJycnLAogICAgICcnJy8qIDgwLjYuMjkgLSB0aGUgTGlicmFyeSB0YWIgc2hhcmVzIHRoZSByb3cgbGlrZSB0aGUgb3RoZXIgdGFicyBkbyBub3cgdGhhdCBpdCBpcwogICBub3QgY2FycnlpbmcgdHdvIG5hbWVzIG9uIG9uZSBwaWxsLiAqLwojbGlicmFyeUJ0bnsgZmxleDogMSAxIDA7IGJvcmRlci1yYWRpdXM6IDEzcHg7IH0KJycnKQoKc3dhcCgnbm90aGluZyBpcyBsZWZ0IHRvIHdpcmUgb24gdGhlIGhhbHZlcycsCiAgICAgJycnICAgIHZhciBwbEhhbGYgPSBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgncGxheWxpc3RzSGFsZicpOwogICAgdmFyIGFsSGFsZiA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdhbGJ1bXNIYWxmJyk7CicnJywKICAgICAnJycgICAgLy8gODAuNi4yOSAtIFRIRSBIQUxWRVMgQVJFIEdPTkUuIFRoZSBkb2NrIHRhYiBpcyBvbmUgTGlicmFyeSBwaWxsLCBzbyB0aGVyZSBpcwogICAgLy8gbm8gI3BsYXlsaXN0c0hhbGYgb3IgI2FsYnVtc0hhbGYgdG8gd2lyZTsgdGhlIHR3byBndWFyZGVkIGJsb2NrcyBiZWxvdyBkbwogICAgLy8gbm90aGluZywgYW5kIHRoZSBib290IGZsYWdzIHRoaXMgYmxvY2sgc2V0cyBhcmUgc3RpbGwgd2hhdCB0aGUgcGFnZSByZWFkcy4KICAgIHZhciBwbEhhbGYgPSBudWxsLCBhbEhhbGYgPSBudWxsOwonJycpCgpzd2FwKCd0aGUgTGlicmFyeSBwaWxsIGZvbGxvd3MgdGhlIHNvdXJjZScsCiAgICAgJycnICAgIC8vIEluIHNpbmdsZS1idXR0b24gbW9kZSwgdG9nZ2xlIGJldHdlZW4gcGxheWxpc3RzL2FsYnVtcyBvbiBjbGljawogICAgaWYoIXVzZURpYWdvbmFsU3BsaXQgJiYgIWUudGFyZ2V0LmNsb3Nlc3QoJyNwbGF5bGlzdHNIYWxmJykgJiYgIWUudGFyZ2V0LmNsb3Nlc3QoJyNhbGJ1bXNIYWxmJykpewogICAgICAvLyA4MC42LjI4IC0gaW4gc2luZ2xlLWJ1dHRvbiBtb2RlIHRoZSBvbmUgcGlsbCBmbGlwcyB0aGUgc291cmNlIHBhZ2VzIHRvbywKICAgICAgLy8gaW5zdGVhZCBvZiBjaGFuZ2luZyB0aGUgZG93bmxvYWRlZCBoYWxmIHVuZGVybmVhdGggdGhlIHNoZWxmLgogICAgICBpZih0eXBlb2Ygc2NTaGVsZiAhPT0gJ3VuZGVmaW5lZCcgJiYgc2NTaGVsZi5zcmMgPT09ICdzJyl7IHNjU2hlbGZPcGVuVGFiKHNjU2hlbGYucGFnZSA9PT0gJ2FsYnVtcycgPyAnbGlicmFyeScgOiAnYWxidW1zJyk7IHJldHVybjsgfQogICAgICAvLyBGbGlwcGluZyBBV0FZIGZyb20gQWxidW1zIGlzIGxlYXZpbmcgdGhlIHRhYiwgc28gdGhlIHN3aXRjaCBhcHBsaWVzIGhlcmUKICAgICAgLy8gdG9vIChmbGlwcGluZyBUTyBBbGJ1bXMgaXMgbm90IGEgbGVhdmUpLgogICAgICB0cnl7IGlmKGxpYnJhcnlNb2RlID09PSAnYWxidW1zJykgc2NBbGJ1bXNSZW1lbWJlck9uTGVhdmUoKTsgfWNhdGNoKF9lQWYyKXt9CiAgICAgIGxpYnJhcnlNb2RlID0gbGlicmFyeU1vZGUgPT09ICdwbGF5bGlzdHMnID8gJ2FsYnVtcycgOiAncGxheWxpc3RzJzsKICAgICAgaWYodHlwZW9mIGRiUHV0ID09PSAnZnVuY3Rpb24nKSBkYlB1dCgnbWV0YScsIHsga2V5OiAnbGlicmFyeU1vZGUnLCB2YWx1ZTogbGlicmFyeU1vZGUgfSk7CiAgICAgIGFjdGl2ZVBsYXlsaXN0ID0gc2NQbGF5bGlzdFZpc2libGUobGFzdFVzZWRQbGF5bGlzdCkgPyBsYXN0VXNlZFBsYXlsaXN0IDogc2NGaXJzdFZpc2libGVQbGF5bGlzdCgpOwogICAgICBpZih0eXBlb2YgYXBwbHlMaWJyYXJ5QnV0dG9uTW9kZSA9PT0gJ2Z1bmN0aW9uJykgYXBwbHlMaWJyYXJ5QnV0dG9uTW9kZSgpOwogICAgICBuYXZpZ2F0ZSgnbGlicmFyeScpOwogICAgICByZXR1cm47CiAgICB9CicnJywKICAgICAnJycgICAgLy8gODAuNi4yOSAtIE9ORSBUQUIsIEFORCBJVCBCRUxPTkdTIFRPIFRIRSBTT1VSQ0UgVEhBVCBJUyBPTi4gVGhlIHBpbGwgdXNlZCB0byBiZQogICAgLy8gY3V0IGluIHR3byBhbmQgZWFjaCBoYWxmIHNldCBhIGRpZmZlcmVudCBkb3dubG9hZGVkIHBhZ2U7IHdpdGggb25lIHBpbGwgdGhlcmUgaXMKICAgIC8vIG5vIGhhbGYgdG8gY2hvb3NlLCBzbyBvbiB0aGUgc291cmNlIGl0IG9wZW5zIHRoZSBzb3VyY2UncyBzb25ncyBwYWdlICh3aGVyZSB0aGUKICAgIC8vIHBsYXlsaXN0cyBhbmQgYWxidW1zIHBhZ2VzIGFyZSBvbmUgZ2x5cGggYXdheSkgYW5kIG9uIHRoZSBkZXZpY2UgaXQgZmFsbHMKICAgIC8vIHRocm91Z2ggdG8gdGhlIGxpYnJhcnkgZXhhY3RseSBhcyBiZWZvcmUuCiAgICBpZih0eXBlb2Ygc2NTaGVsZiAhPT0gJ3VuZGVmaW5lZCcgJiYgc2NTaGVsZi5zcmMgPT09ICdzJyl7IHNjU2hlbGZPcGVuVGFiKCdsaWJyYXJ5Jyk7IHJldHVybjsgfQonJycpCgojIC0tIDIuIHRoZSBzcGxpdCdzIG93biBzd2l0Y2ggcmV0aXJlcyB3aXRoIGl0IC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQpzd2FwKCd0aGUgc3BsaXQgbW9kZSBoYXMgbm90aGluZyB0byBhcHBseScsCiAgICAgJycnICBmdW5jdGlvbiBhcHBseUxpYnJhcnlCdXR0b25Nb2RlKCl7CiAgICB2YXIgbGliQnRuID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ2xpYnJhcnlCdG4nKTsKICAgIGlmKCFsaWJCdG4pIHJldHVybjsKICAgIGlmKHVzZURpYWdvbmFsU3BsaXQpewogICAgICAvLyBFbnN1cmUgZGlhZ29uYWwgc3BsaXQgSFRNTCBpcyBpbiBwbGFjZSAoaXQgYWx3YXlzIGlzIGluIHRoZSBzdGF0aWMgSFRNTCkKICAgICAgbGliQnRuLnN0eWxlLmRpc3BsYXkgPSAnJzsKICAgIH0gZWxzZSB7CiAgICAgIC8vIFNpbmdsZSBidXR0b24gbW9kZTogaGlkZSB0aGUgaGFsdmVzIGFuZCBzaG93IGEgc2ltcGxlICJQbGF5bGlzdHMg4pa+IiBvciAiQWxidW1zIOKWviIgdGV4dAogICAgICB2YXIgcGxIID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3BsYXlsaXN0c0hhbGYnKTsKICAgICAgdmFyIGFsSCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdhbGJ1bXNIYWxmJyk7CiAgICAgIHZhciBzdmcgPSBsaWJCdG4ucXVlcnlTZWxlY3Rvcignc3ZnJyk7CiAgICAgIGlmKHBsSCkgcGxILnN0eWxlLmRpc3BsYXkgPSAnbm9uZSc7CiAgICAgIGlmKGFsSCkgYWxILnN0eWxlLmRpc3BsYXkgPSAnbm9uZSc7CiAgICAgIGlmKHN2Zykgc3ZnLnN0eWxlLmRpc3BsYXkgPSAnbm9uZSc7CiAgICAgIC8vIEFkZCBhIHNpbXBsZSBsYWJlbAogICAgICB2YXIgbGFiZWwgPSBsaWJCdG4ucXVlcnlTZWxlY3RvcignLmxpYi1zaW5nbGUtbGFiZWwnKTsKICAgICAgaWYoIWxhYmVsKXsKICAgICAgICBsYWJlbCA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoJ3NwYW4nKTsKICAgICAgICBsYWJlbC5jbGFzc05hbWUgPSAnbGliLXNpbmdsZS1sYWJlbCc7CiAgICAgICAgbGFiZWwuc3R5bGUuY3NzVGV4dCA9ICdmb250LXNpemU6MTFweDsgZm9udC13ZWlnaHQ6NjAwOyBjb2xvcjp2YXIoLS1pbmstZGltKTsnOwogICAgICAgIGxpYkJ0bi5hcHBlbmRDaGlsZChsYWJlbCk7CiAgICAgIH0KICAgICAgbGFiZWwudGV4dENvbnRlbnQgPSBsaWJyYXJ5TW9kZSA9PT0gJ2FsYnVtcycgPyAn8J+SvyBBbGJ1bXMg4pa+JyA6ICfwn461IFBsYXlsaXN0cyDilr4nOwogICAgICBsYWJlbC5zdHlsZS5kaXNwbGF5ID0gJyc7CiAgICB9CiAgICAvLyBVcGRhdGUgdG9nZ2xlIGJ1dHRvbiB0ZXh0CiAgICB2YXIgdG9nZ2xlQnRuID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ2RpYWdvbmFsU3BsaXRUb2dnbGUnKTsKICAgIGlmKHRvZ2dsZUJ0bikgdG9nZ2xlQnRuLnRleHRDb250ZW50ID0gdXNlRGlhZ29uYWxTcGxpdCA/ICdEaWFnb25hbCDinJMnIDogJ1NpbmdsZSDinJMnOwogIH0KJycnLAogICAgICcnJyAgLy8gODAuNi4yOSAtIFRIRSBET0NLIFRBQiBJUyBPTkUgTElCUkFSWSBQSUxMLCBzbyB0aGlzIGhhcyBub3RoaW5nIGxlZnQgdG8gYXBwbHkuCiAgLy8gSXQgdXNlZCB0byBoaWRlIHRoZSB0d28gaGFsdmVzIGFuZCBhcHBlbmQgYSAi8J+OtSBQbGF5bGlzdHMg4pa+IiBsYWJlbCB3aGVuIHRoZSBzcGxpdAogIC8vIHNldHRpbmcgd2FzIG9mZiAtIGFuZCB0aGF0IGxhYmVsIHdvdWxkIG5vdyB3cml0ZSBvdmVyIHRoZSB3b3JkIHRoZSBwaWxsIGNhcnJpZXMsCiAgLy8gd2hpY2ggaXMgdGhlIG9uZSB0aGluZyB0aGUgb3duZXIgYXNrZWQgZm9yLiBJdCBpcyBrZXB0IGFzIHRoZSBvbmUgcGxhY2UgdGhlIGRvY2sKICAvLyBtb2RlIGlzIGFwcGxpZWQsIGFuZCBpdCBhcHBsaWVzIG5vdGhpbmc7IG5hdmlnYXRlKCkga2VlcHMgY2FsbGluZyBpdCwgYW5kIGFuCiAgLy8gaW5zdGFsbCB3aXRoIHRoZSBvbGQgc2V0dGluZyBzYXZlZCBzaW1wbHkgc2VlcyBubyBkaWZmZXJlbmNlLgogIGZ1bmN0aW9uIGFwcGx5TGlicmFyeUJ1dHRvbk1vZGUoKXt9CicnJykKCiMgLS0gMy4gdGhlIHNldHRpbmcgdGhhdCBkZXNjcmliZWQgdGhlIHNwbGl0IGJlY29tZXMgdGhlIHJhaWwncyBnbGFzcyAtLS0tLS0tLS0tCnN3YXAoJ3RoZSBzcGxpdCBjYXJkIGJlY29tZXMgdGhlIHJhaWwgY2FyZCcsCiAgICAgJycnICAgICAgPGRpdiBjbGFzcz0ic2Mtc2V0LWNhcmQiPgogICAgICAgIDxkaXYgY2xhc3M9InNjLXNldC1oZWFkIiBpZD0iY29sbGFwc2libGVTcGxpdCIgcm9sZT0iYnV0dG9uIiB0YWJpbmRleD0iMCIgYXJpYS1leHBhbmRlZD0iZmFsc2UiPgogICAgICAgICAgPHNwYW4gY2xhc3M9InNjLXNldC10aXRsZSI+UGxheWxpc3RzIC8gQWxidW1zIGJ1dHRvbjwvc3Bhbj4KICAgICAgICAgIDxidXR0b24gaWQ9ImRpYWdvbmFsU3BsaXRUb2dnbGUiIHN0eWxlPSJwYWRkaW5nOjZweCAxMnB4OyBib3JkZXItcmFkaXVzOjhweDsgYm9yZGVyOjFweCBzb2xpZCB2YXIoLS1saW5lKTsgYmFja2dyb3VuZDpub25lOyBjb2xvcjp2YXIoLS1pbmstZGltKTsgZm9udC1zaXplOjExcHg7IGZvbnQtd2VpZ2h0OjYwMDsgY3Vyc29yOnBvaW50ZXI7IHdoaXRlLXNwYWNlOm5vd3JhcDsgZmxleDowIDAgYXV0bzsiPkxvYWRpbmfigKY8L2J1dHRvbj4KICAgICAgICAgIDxzcGFuIGlkPSJjb2xsYXBzZVNwbGl0SWNvbiIgY2xhc3M9InNjLXNldC1jaGV2Ij7ilr48L3NwYW4+CiAgICAgICAgPC9kaXY+CiAgICAgICAgPGRpdiBjbGFzcz0ic2Mtc2V0LWJvZHkiIGlkPSJjb2xsYXBzaWJsZVNwbGl0Q29udGVudCIgc3R5bGU9ImRpc3BsYXk6bm9uZTsiPgogICAgICAgICAgPGRpdiBzdHlsZT0iZm9udC1zaXplOjExLjVweDsgY29sb3I6dmFyKC0taW5rLWRpbSk7IGxpbmUtaGVpZ2h0OjEuNjsiPlR3byBsaWJyYXJpZXMsIG9uZSBidXR0b246IHRoZSBQbGF5bGlzdHMgYW5kIEFsYnVtcyB0YWJzIHNwbGl0IGl0IG9uIGEgZGlhZ29uYWwgc28gYm90aCBhcmUgb25lIHRhcCBhd2F5LCBvciBpdCBiZWNvbWVzIGEgc2luZ2xlIGJ1dHRvbiB5b3UgdGFwIHRvIHN3aXRjaCBiZXR3ZWVuIHRoZW0uIFRoZSBzd2l0Y2ggb24gdGhpcyByb3cgaXMgdGhlIG9uZSBpbiB0aGUgbGlicmFyeSBoZWFkZXIuPC9kaXY+CiAgICAgICAgPC9kaXY+CiAgICAgIDwvZGl2PgonJycsCiAgICAgJycnICAgICAgPCEtLSA4MC42LjI5IC0gVEhFIFNQTElUIENBUkQgSVMgVEhFIFJBSUwnUyBHTEFTUyBOT1cuIEEgc3dpdGNoIHRoYXQgc3BsaXRzIGEKICAgICAgICAgICBkb2NrIHRhYiBoYXMgbm90aGluZyB0byBzcGxpdDogdGhhdCB0YWIgaXMgb25lIExpYnJhcnkgcGlsbC4gVGhlIHJhaWwgaXQKICAgICAgICAgICB3YXMgc2l0dGluZyBiZXNpZGUgZG9lcyBoYXZlIG9uZSB0aGluZyB3b3J0aCBhIHNldHRpbmcgLSBob3cgbXVjaCBvZiB0aGUKICAgICAgICAgICBzb25ncyBiZWhpbmQgaXQgeW91IGNhbiBzZWUgdGhyb3VnaCBpdC4gLS0+CiAgICAgIDxkaXYgY2xhc3M9InNjLXNldC1jYXJkIiBpZD0ic2NSYWlsR2xhc3NDYXJkIj4KICAgICAgICA8ZGl2IGNsYXNzPSJzYy1zZXQtaGVhZCIgaWQ9ImNvbGxhcHNpYmxlUmFpbCIgcm9sZT0iYnV0dG9uIiB0YWJpbmRleD0iMCIgYXJpYS1leHBhbmRlZD0iZmFsc2UiPgogICAgICAgICAgPHNwYW4gY2xhc3M9InNjLXNldC10aXRsZSI+U3RyZWFtaW5nIHJhaWw8L3NwYW4+CiAgICAgICAgICA8c3BhbiBpZD0icmFpbEdsYXNzVmFsIiBzdHlsZT0iZm9udC1zaXplOjExcHg7IGZvbnQtd2VpZ2h0OjYwMDsgY29sb3I6dmFyKC0taW5rLWRpbSk7Ij44NSUgc2VlLXRocm91Z2g8L3NwYW4+CiAgICAgICAgICA8c3BhbiBpZD0iY29sbGFwc2VSYWlsSWNvbiIgY2xhc3M9InNjLXNldC1jaGV2Ij7ilr48L3NwYW4+CiAgICAgICAgPC9kaXY+CiAgICAgICAgPGRpdiBjbGFzcz0ic2Mtc2V0LWJvZHkiIGlkPSJjb2xsYXBzaWJsZVJhaWxDb250ZW50IiBzdHlsZT0iZGlzcGxheTpub25lOyI+CiAgICAgICAgICA8aW5wdXQgdHlwZT0icmFuZ2UiIGlkPSJyYWlsR2xhc3NTbGlkZXIiIG1pbj0iMCIgbWF4PSIxMDAiIHN0ZXA9IjUiIHZhbHVlPSI4NSIgc3R5bGU9IndpZHRoOjEwMCU7IGFjY2VudC1jb2xvcjp2YXIoLS1jb3JhbCk7Ij4KICAgICAgICAgIDxkaXYgc3R5bGU9ImZvbnQtc2l6ZToxMS41cHg7IGNvbG9yOnZhcigtLWluay1kaW0pOyBsaW5lLWhlaWdodDoxLjY7IG1hcmdpbi10b3A6OHB4OyI+SG93IG11Y2ggb2YgdGhlIHNvbmdzIGJlaGluZCB0aGUgc2lkZSByYWlsIHlvdSBjYW4gc2VlIHRocm91Z2ggaXQuIDg1JSBpcyB0aGUgZGVmYXVsdDsgMCBpcyBhIHNvbGlkIHJhaWwgYW5kIDEwMCBsZWF2ZXMgb25seSB0aGUgZ2x5cGhzLCB3aGljaCBzdGF5IHNvbGlkIGVpdGhlciB3YXkuPC9kaXY+CiAgICAgICAgPC9kaXY+CiAgICAgIDwvZGl2PgonJycpCgpzd2FwKCd0aGUgcmFpbCBjYXJkIG9wZW5zIGFuZCBjbG9zZXMnLAogICAgICIgIHNldHVwQ29sbGFwc2libGUoJ2NvbGxhcHNpYmxlU3BsaXQnLCAnY29sbGFwc2libGVTcGxpdENvbnRlbnQnLCAnY29sbGFwc2VTcGxpdEljb24nKTtcbiIsCiAgICAgIiAgc2V0dXBDb2xsYXBzaWJsZSgnY29sbGFwc2libGVSYWlsJywgJ2NvbGxhcHNpYmxlUmFpbENvbnRlbnQnLCAnY29sbGFwc2VSYWlsSWNvbicpO1xuIikKCiMgLS0gNC4gdGhlIHNldHRpbmcgaXRzZWxmIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQpzd2FwKCd0aGUgcmFpbCByZW1lbWJlcnMgaG93IHNlZS10aHJvdWdoIGl0IGlzJywKICAgICAnJycgIC8vIERpYWdvbmFsIHNwbGl0IHRvZ2dsZQogIHZhciB1c2VEaWFnb25hbFNwbGl0ID0gbG9jYWxTdG9yYWdlLmdldEl0ZW0oJ3NpZGVjdXRfZGlhZ29uYWxTcGxpdCcpICE9PSAnZmFsc2UnOyAvLyBkZWZhdWx0IHRydWUKJycnLAogICAgICcnJyAgLy8gODAuNi4yOSAtIFRIRSBSQUlMJ1MgR0xBU1MuIFRoZSByYWlsIGlzIGEgZml4ZWQgcGlsbCBsYWlkIG92ZXIgdGhlIHNvbmdzLCBhbmQgYXQKICAvLyA5NiUgb2YgdGhlIHJhaXNlZCBiYWNrZ3JvdW5kIGl0IHdhcyBhIHNsYWIgb24gdG9wIG9mIHRoZW0uIEl0IGlzIDg1JSBzZWUtdGhyb3VnaCBieQogIC8vIGRlZmF1bHQgYW5kIFRvb2xzIG1vdmVzIGl0OiAwIGlzIHNvbGlkLCAxMDAgbGVhdmVzIG9ubHkgdGhlIGdseXBocy4gVGhlIHdlaWdodCBpcwogIC8vIHdyaXR0ZW4gYXMgT05FIENTUyB2YXJpYWJsZSByYXRoZXIgdGhhbiBhcyBhIHJ1bGUgb24gdGhlIHJhaWwsIHNvIGl0IGhvbGRzIGZvciBhCiAgLy8gcmFpbCB0aGF0IGhhcyBub3QgYmVlbiBidWlsdCB5ZXQsIGFuZCB0aGUgY2hvaWNlIGlzIHJlbWVtYmVyZWQuCiAgdmFyIHJhaWxTZWUgPSA4NTsKICB0cnl7CiAgICB2YXIgX3JhaWxTZWVTYXZlZCA9IHBhcnNlSW50KGxvY2FsU3RvcmFnZS5nZXRJdGVtKCdzaWRlY3V0X3JhaWxTZWUnKSwgMTApOwogICAgaWYoaXNGaW5pdGUoX3JhaWxTZWVTYXZlZCkpIHJhaWxTZWUgPSBNYXRoLm1heCgwLCBNYXRoLm1pbigxMDAsIF9yYWlsU2VlU2F2ZWQpKTsKICB9Y2F0Y2goX2VSYWlsU2VlKXt9CiAgZnVuY3Rpb24gc2NSYWlsU2VlKHYpewogICAgdmFyIG4gPSBOdW1iZXIodik7CiAgICByYWlsU2VlID0gaXNGaW5pdGUobikgPyBNYXRoLm1heCgwLCBNYXRoLm1pbigxMDAsIE1hdGgucm91bmQobikpKSA6IDg1OwogICAgLy8gMTAwIHNlZS10aHJvdWdoIGlzIDAgc29saWQsIGFuZCB0aGUgcmFpbCdzIG93biBDU1MgbWl4ZXMgaXRzIGJhY2tncm91bmQgd2l0aAogICAgLy8gdHJhbnNwYXJlbnQgYXQgdGhhdCB3ZWlnaHQuIE5vdGhpbmcgZWxzZSBhYm91dCB0aGUgcmFpbCBjaGFuZ2VzOiBubyBibHVyIGNvbWVzCiAgICAvLyBiYWNrIHdpdGggaXQgKDgwLjYuMjUgdG9vayB0aGF0IG9mZiBhIGZpeGVkIHBpbGwgZm9yIGp1ZGRlcikuCiAgICB0cnl7IGRvY3VtZW50LmRvY3VtZW50RWxlbWVudC5zdHlsZS5zZXRQcm9wZXJ0eSgnLS1zY3NoZWxmLXNvbGlkJywgKDEwMCAtIHJhaWxTZWUpICsgJyUnKTsgfWNhdGNoKF9lUmFpbFZhcil7fQogICAgdmFyIHZhbCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdyYWlsR2xhc3NWYWwnKTsKICAgIGlmKHZhbCkgdmFsLnRleHRDb250ZW50ID0gcmFpbFNlZSArICclIHNlZS10aHJvdWdoJzsKICAgIHZhciBzbCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdyYWlsR2xhc3NTbGlkZXInKTsKICAgIGlmKHNsICYmIFN0cmluZyhzbC52YWx1ZSkgIT09IFN0cmluZyhyYWlsU2VlKSkgc2wudmFsdWUgPSBTdHJpbmcocmFpbFNlZSk7CiAgICAvLyBUaGUgcmFpbCBpcyBvbmx5IGluIHRoZSBmdWxsIGJ1aWxkcywgc28gdGhlIHJvdyB0aGF0IHNldHMgaXQgaXMgb25seSB0aGVyZSB0b28uCiAgICB2YXIgY2FyZCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdzY1JhaWxHbGFzc0NhcmQnKTsKICAgIGlmKGNhcmQgJiYgdHlwZW9mIFNDX1NUUkVBTV9PSyAhPT0gJ3VuZGVmaW5lZCcgJiYgIVNDX1NUUkVBTV9PSykgY2FyZC5zdHlsZS5kaXNwbGF5ID0gJ25vbmUnOwogIH0KICB0cnl7IHNjUmFpbFNlZShyYWlsU2VlKTsgfWNhdGNoKF9lUmFpbFNlZUluaXQpe30KICAoZnVuY3Rpb24oKXsKICAgIHZhciBzbCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdyYWlsR2xhc3NTbGlkZXInKTsKICAgIGlmKCFzbCkgcmV0dXJuOwogICAgLy8gTGl2ZSB3aGlsZSB0aGUgdGh1bWIgbW92ZXMsIHNhdmVkIHdoZW4gaXQgY29tZXMgb2ZmIC0gYSBzbGlkZXIgdGhhdCBvbmx5IHdyb3RlCiAgICAvLyBsb2NhbFN0b3JhZ2Ugd291bGQgbGVhdmUgdGhlIHJhaWwgbG9va2luZyBzb2xpZCB1bnRpbCB0aGUgYXBwIHdhcyByZW9wZW5lZC4KICAgIHNsLmFkZEV2ZW50TGlzdGVuZXIoJ2lucHV0JywgZnVuY3Rpb24oKXsgdHJ5eyBzY1JhaWxTZWUodGhpcy52YWx1ZSk7IH1jYXRjaChfZVJhaWxNb3ZlKXt9IH0pOwogICAgc2wuYWRkRXZlbnRMaXN0ZW5lcignY2hhbmdlJywgZnVuY3Rpb24oKXsKICAgICAgdHJ5eyBzY1JhaWxTZWUodGhpcy52YWx1ZSk7IGxvY2FsU3RvcmFnZS5zZXRJdGVtKCdzaWRlY3V0X3JhaWxTZWUnLCBTdHJpbmcocmFpbFNlZSkpOyB9Y2F0Y2goX2VSYWlsU2F2ZSl7fQogICAgfSk7CiAgfSkoKTsKICAvLyA4MC42LjI5IC0gVEhFIFNQTElUIFNFVFRJTkcgSVMgUkVUSVJFRCwgTk9UIEZPUkdPVFRFTi4gSXQgaXMgc3RpbGwgcmVhZCBzbyBhbgogIC8vIGluc3RhbGwgdGhhdCBoYXMgaXQgc2F2ZWQga2VlcHMgaXRzIHZhbHVlOyB0aGVyZSBpcyBubyBzcGxpdCBsZWZ0IHRvIGFwcGx5IGl0IHRvLgogIHZhciB1c2VEaWFnb25hbFNwbGl0ID0gbG9jYWxTdG9yYWdlLmdldEl0ZW0oJ3NpZGVjdXRfZGlhZ29uYWxTcGxpdCcpICE9PSAnZmFsc2UnOwonJycpCgojIC0tIDUuIHRoZSByYWlsIGhvbGRzIHN0aWxsIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0Kc3dhcCgndGhlIHJhaWwgYmVsb25ncyB0byB0aGUgcGFnZSwgbm90IHRvIHRoZSBsaWJyYXJ5IGJveCcsCiAgICAgJycnICBmdW5jdGlvbiBzY1NoZWxmUmVuZGVyKCl7CiAgICBpZighU0NfU1RSRUFNX09LKSByZXR1cm47ICAgICAgICAgICAgICAgICAvLyBubyByYWlsLCBubyBzaGVldCwgb3V0c2lkZSB0aGUgZnVsbCBidWlsZHMKICAgIHZhciByYWlsID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3NjU2hlbGZSYWlsJyk7CiAgICBpZighcmFpbCkgcmV0dXJuOwonJycsCiAgICAgJycnICBmdW5jdGlvbiBzY1NoZWxmUmVuZGVyKCl7CiAgICBpZighU0NfU1RSRUFNX09LKSByZXR1cm47ICAgICAgICAgICAgICAgICAvLyBubyByYWlsLCBubyBzaGVldCwgb3V0c2lkZSB0aGUgZnVsbCBidWlsZHMKICAgIHZhciByYWlsID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3NjU2hlbGZSYWlsJyk7CiAgICBpZighcmFpbCkgcmV0dXJuOwogICAgLy8gODAuNi4yOSAtIFRIRSBSQUlMIENBTk5PVCBCRSBNT1ZFRCBCWSBUSEUgUEFHRSBJVCBTSVRTIE9OLiBFdmVyeSB2aWV3IHRoYXQKICAgIC8vIGFycml2ZXMgcGxheXMgLnNjLXZpZXctaW4sIGFuZCB0aGF0IGlzIGFuIGFuaW1hdGlvbiBvbiB0cmFuc2Zvcm0gLSBhbmQgYQogICAgLy8gdHJhbnNmb3JtZWQgYW5jZXN0b3IgYmVjb21lcyB0aGUgY29udGFpbmluZyBibG9jayBmb3IgYSBmaXhlZCBjaGlsZC4gU28gZm9yIHRoZQogICAgLy8gbGVuZ3RoIG9mIGV2ZXJ5IHBhZ2UgY2hhbmdlLCBgдG9wOjUwJWAgbWVhbnQgaGFsZiBvZiB0aGUgbGlicmFyeSdzIFdIT0xFIHNjcm9sbAogICAgLy8gaGVpZ2h0IGluc3RlYWQgb2YgaGFsZiB0aGUgc2NyZWVuOiB0aGUgcmFpbCBkcm9wcGVkIGludG8gdGhlIG1pZGRsZSBvZiB0aGUgbGlzdAogICAgLy8gYW5kIHNsaWQgYmFjaywgb25jZSBwZXIgdGFwIG9mIGEgZ2x5cGguIE9uIHRoZSBib2R5IHRoZXJlIGlzIG5vIHZpZXcgYWJvdmUgaXQgdG8KICAgIC8vIGJvcnJvdyBhIHRyYW5zZm9ybSBmcm9tLCBzbyA1MCUgaXMgdGhlIHNjcmVlbiBhbmQgaXQgc3RheXMgdGhlcmUuCiAgICBpZihyYWlsLnBhcmVudE5vZGUgIT09IGRvY3VtZW50LmJvZHkpeyBkb2N1bWVudC5ib2R5LmFwcGVuZENoaWxkKHJhaWwpOyB9CicnJykKCnN3YXAoJ3RoZSByYWlsIGlzIHNob3duIGFuZCBoaWRkZW4gd2l0aCB0aGUgbGlicmFyeScsCiAgICAgIiAgICAkKCdsaWJyYXJ5Jykuc3R5bGUuZGlzcGxheSA9IGlzTGlicmFyeSA/ICdmbGV4JyA6ICdub25lJztcbiIsCiAgICAgIiAgICAkKCdsaWJyYXJ5Jykuc3R5bGUuZGlzcGxheSA9IGlzTGlicmFyeSA/ICdmbGV4JyA6ICdub25lJztcbiIKICAgICAiICAgIC8vIDgwLjYuMjkgLSB0aGUgcmFpbCBsaXZlcyBvbiB0aGUgYm9keSBub3cgKHNjU2hlbGZSZW5kZXIgcHV0cyBpdCB0aGVyZSksIHNvIGl0XG4iCiAgICAgIiAgICAvLyBpcyBzaG93biBhbmQgaGlkZGVuIHdpdGggdGhlIGxpYnJhcnkgcmF0aGVyIHRoYW4gYmVpbmcgaGlkZGVuIGJ5IGl0LlxuIgogICAgICIgICAgdHJ5eyB2YXIgX3JhaWxFbCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdzY1NoZWxmUmFpbCcpOyBpZihfcmFpbEVsKSBfcmFpbEVsLnN0eWxlLmRpc3BsYXkgPSBpc0xpYnJhcnkgPyAnJyA6ICdub25lJzsgfWNhdGNoKF9lUmFpbEVsKXt9XG4iKQoKc3dhcCgndGhlIHJhaWwgaXMgZ2xhc3MsIG5vdCBhIHNsYWInLAogICAgICcnJyAgICAgIC8vIHRodW1iIHNjcm9sbHMgdGhlIHNvbmdzIHVuZGVyIGl0LiBBdCA5NiUgdGhlIGJhY2tncm91bmQgaXMgdGhlIHBpbGwuCicnJywKICAgICAnJycgICAgICAvLyB0aHVtYiBzY3JvbGxzIHRoZSBzb25ncyB1bmRlciBpdC4gVGhlIGJhY2tncm91bmQgaXMgYSBtaXggbm93LCBhbmQgdGhlIHdlaWdodAogICAgICAvLyBpcyB0aGUgb3duZXIncyAoc2VlIHRoZSByYWlsIHNldHRpbmcgaW4gVG9vbHMpLgonJycpCgpzd2FwKCd0aGUgcmFpbCBiYWNrZ3JvdW5kIGlzIHRoZSBzZXR0aW5nJywKICAgICAiICAgICAgJ2JhY2tncm91bmQ6Y29sb3ItbWl4KGluIHNyZ2IsIHZhcigtLWJnLXJhaXNlZCkgOTYlLCAjMDAwKTsnLFxuIiwKICAgICAiICAgICAgLy8gODAuNi4yOSAtIDg1JSBTRUUtVEhST1VHSCBCWSBERUZBVUxULiA5NiUgb2YgdGhlIHJhaXNlZCBiYWNrZ3JvdW5kIGlzIGEgc2xhYlxuIgogICAgICIgICAgICAvLyBsYWlkIG92ZXIgdGhlIHNvbmdzOyB0aGlzIGlzIHRoZSBzYW1lIGNvbG91ciBtaXhlZCB3aXRoIHRyYW5zcGFyZW50IGF0IHdoYXRldmVyXG4iCiAgICAgIiAgICAgIC8vIHdlaWdodCBUb29scyBpcyBzZXQgdG8sIDE1JSB1bmxlc3MgdGhlIG93bmVyIG1vdmVzIGl0LiBUaGUgYm9yZGVyIHN0YXlzOiBhblxuIgogICAgICIgICAgICAvLyBlZGdlIGlzIHdoYXQgc2F5cyB0aGUgZ2x5cGhzIGFyZSBhIHJhaWwgYW5kIG5vdCBsb29zZSBpY29ucyBvdmVyIHRoZSBjb3ZlciBhcnQuXG4iCiAgICAgIiAgICAgICdiYWNrZ3JvdW5kOmNvbG9yLW1peChpbiBzcmdiLCB2YXIoLS1iZy1yYWlzZWQpIHZhcigtLXNjc2hlbGYtc29saWQsIDE1JSksIHRyYW5zcGFyZW50KTsnLFxuIikKCiMgLS0gNi4gdGhlIHJlbGVhc2UgaXRzZWxmIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0Kc3dhcCgndGhlIHZlcnNpb24gbW92ZXMnLAogICAgICIgIGNvbnN0IEFQUF9WRVJTSU9OID0gJyVzJzsiICUgT0xELAogICAgICIgIGNvbnN0IEFQUF9WRVJTSU9OID0gJyVzJzsiICUgVkVSU0lPTikKCgpkZWYgZWFzdGVybigpOgogICAgbm93ID0gZGF0ZXRpbWUuZGF0ZXRpbWUubm93KGRhdGV0aW1lLnRpbWV6b25lLnV0YykKICAgIHRyeToKICAgICAgICBmcm9tIHpvbmVpbmZvIGltcG9ydCBab25lSW5mbwogICAgICAgIGxvY2FsID0gbm93LmFzdGltZXpvbmUoWm9uZUluZm8oJ0FtZXJpY2EvTmV3X1lvcmsnKSkKICAgICAgICBsYWJlbCA9ICdFRFQnIGlmIGxvY2FsLmRzdCgpIGVsc2UgJ0VTVCcKICAgICAgICByZXR1cm4gbG9jYWwuc3RyZnRpbWUoJyVCICUtZCwgJVkgXHUwMGI3ICUtSTolTSAlcCcpICsgJyAnICsgbGFiZWwKICAgIGV4Y2VwdCBFeGNlcHRpb246ICAjIG5vcWE6IEJMRTAwMSAtIGEgbWlzc2luZyB0eiBkYXRhYmFzZSBtdXN0IG5vdCBmYWlsIGEgcmVsZWFzZQogICAgICAgIHJldHVybiAobm93IC0gZGF0ZXRpbWUudGltZWRlbHRhKGhvdXJzPTQpKS5zdHJmdGltZSgnJUIgJS1kLCAlWSBcdTAwYjcgJS1JOiVNICVwJykgKyAnIEVEVCcKCgpFTlRSWSA9ICgKICAgICIgIC8vIDgwLjYuMjkgLSBPTkUgTElCUkFSWSBQSUxMLCBBIFJBSUwgWU9VIENBTiBTRUUgVEhST1VHSCwgQU5EIEEgUkFJTCBUSEFUIEhPTERTIFNUSUxMLlxuIgogICAgIiAgLy8gVGhlIG93bmVyOiB0aGUgYm90dG9tIHRhYiBjdXQgYmV0d2VlbiBsaWJyYXJ5IGFuZCBhbGJ1bXMgc2hvdWxkIGJlIGp1c3QgTGlicmFyeSxcbiIKICAgICIgIC8vIHRoZSBzaWRlIHJhaWwgc2hvdWxkIGJlIDg1JSBzZWUtdGhyb3VnaCB3aXRoIHRoZSBhbW91bnQgYWRqdXN0YWJsZSBpbiBUb29scywgYW5kIGl0XG4iCiAgICAiICAvLyBzaG91bGQgc3RvcCBtb3ZpbmcgZG93biBldmVyeSB0aW1lIGhlIG1vdmVzIGJldHdlZW4gaXRzIHBhZ2VzLlxuIgogICAgIiAgeyB2ZXJzaW9uOiAnODAuNi4yOScsIGRhdGU6ICd7e1NUQU1QfX0nLCB0aXRsZTogJ09uZSBMaWJyYXJ5IHBpbGwsIGFuZCBhIHJhaWwgdGhhdCBob2xkcyBzdGlsbCcsIGl0ZW1zOiBbXG4iCiAgICAiICAgICdUaGUgZG9jayB0YWIgaXMgb25lIExpYnJhcnkgcGlsbDogdGhlIGRpYWdvbmFsIGl0IHNoYXJlZCB3aXRoIEFsYnVtcyBpcyBnb25lLCBhbmQgdGhlIGxpYnJhcnlcXHUyMDE5cyBvd24gQWxidW1zIHRhYiBzdGlsbCBoYXMgdGhlIGFsYnVtcy4nLFxuIgogICAgIiAgICAnW0ZVTExdIFRoZSBzaWRlIHJhaWwgaXMgODUlIHNlZS10aHJvdWdoIGJ5IGRlZmF1bHQsIGFuZCBUb29scyBoYXMgYSBzbGlkZXIgZm9yIGl0IC0gc29saWQgYXQgb25lIGVuZCwgb25seSB0aGUgZ2x5cGhzIGF0IHRoZSBvdGhlci4nLFxuIgogICAgIiAgICAnW0ZVTExdIFRoZSByYWlsIGhvbGRzIGl0cyBwbGFjZS4gQnJpbmdpbmcgYSB2aWV3IGluIGFuaW1hdGVzIGEgdHJhbnNmb3JtLCBhbmQgYSB0cmFuc2Zvcm1lZCBhbmNlc3RvciBpcyB0aGUgYm94IGEgZml4ZWQgcGlsbCBpcyBtZWFzdXJlZCBmcm9tLCBzbyB0aGUgcmFpbCBkcm9wcGVkIGludG8gdGhlIG1pZGRsZSBvZiB0aGUgbGlzdCBvbiBldmVyeSBwYWdlIGNoYW5nZS4nLFxuIgogICAgIiAgICAnW0ZVTExdIE9uIHRoZSBzb3VyY2UgdGhlIExpYnJhcnkgcGlsbCBvcGVucyB0aGUgc3RyZWFtaW5nIHNvbmdzIHBhZ2UgZmlyc3QsIHRoZSB3YXkgaXRzIHR3byBoYWx2ZXMgdXNlZCB0bzsgb24gdGhlIGRldmljZSBpdCBvcGVucyB0aGUgbGlicmFyeSBhcyBiZWZvcmUuJ1xuIgogICAgIiAgXX0sXG4iCikKRU5UUlkgPSBFTlRSWS5yZXBsYWNlKCd7e1NUQU1QfX0nLCBlYXN0ZXJuKCkpCnN3YXAoJ3RoZSBjaGFuZ2Vsb2cgcmVjb3JkcyB0aGUgcmVsZWFzZScsCiAgICAgIiAgLy8gODAuNi4yOCAtIFRIRSBQQUdFUyBGT0xMT1cgVEhFIFNPVVJDRS4gVGhlIG93bmVyLCBhZnRlciB0aGUgcmVjb3JkIHJlbGVhc2U6IHRoZSIsCiAgICAgRU5UUlkgKyAiICAvLyA4MC42LjI4IC0gVEhFIFBBR0VTIEZPTExPVyBUSEUgU09VUkNFLiBUaGUgb3duZXIsIGFmdGVyIHRoZSByZWNvcmQgcmVsZWFzZTogdGhlIikKCmlmIGZhaWxlZDoKICAgIHByaW50KCdwYXRjaC04MDYyOTogJWQgYXBwbGllZCwgJWQgRkFJTEVEJyAlIChsZW4oYXBwbGllZCksIGxlbihmYWlsZWQpKSkKICAgIGZvciBmIGluIGZhaWxlZDoKICAgICAgICBwcmludCgnICB4ICcgKyBmKQogICAgc3lzLmV4aXQoMSkKCmlmIENIRUNLOgogICAgcHJpbnQoJ3BhdGNoLTgwNjI5OiBwZW5kaW5nIC0gJWQgc3RlcHMgcmVhZHkgdG8gYXBwbHknICUgbGVuKGFwcGxpZWQpKQogICAgc3lzLmV4aXQoMSkKCndpdGggb3BlbihJTkRFWCwgJ3cnLCBlbmNvZGluZz0ndXRmLTgnKSBhcyBmaDoKICAgIGZoLndyaXRlKFNSQykKcHJpbnQoJ3BhdGNoLTgwNjI5OiAlZCBzdGVwcyBhcHBsaWVkLCBwYWdlIGlzICVzJyAlIChsZW4oYXBwbGllZCksIFZFUlNJT04pKQo=
+#!/usr/bin/env python3
+"""80.6.29 - one Library pill, and a rail that holds still.
+
+    python3 dev/patch-80629.py
+    python3 dev/patch-80629.py --check
+
+Idempotent: a second run over the patched page is a no-op and --check says so.
+The blocks being replaced are found by their first and last line rather than
+restated, so this file carries the new text and the reason, not a copy of the old.
+The long-form diagnosis is in dev/release-entry.md.
+"""
+import datetime
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+INDEX = os.path.join(HERE, '..', 'index.html')
+
+CHECK = '--check' in sys.argv
+VERSION = '80.6.29'
+OLD = '80.6.28'
+MARKER = '80.6.29 - ONE LIBRARY PILL, A RAIL YOU CAN SEE THROUGH'
+
+with open(INDEX, encoding='utf-8') as fh:
+    SRC = fh.read()
+
+if MARKER in SRC and ("const APP_VERSION = '%s';" % VERSION) in SRC:
+    print('patch-80629: already on the page, the page is %s' % VERSION)
+    sys.exit(0)
+
+applied, failed = [], []
+
+
+def once(name, old, new, expect=1):
+    global SRC
+    got = SRC.count(old)
+    if got != expect:
+        failed.append('%s: found %d, expected %d' % (name, got, expect))
+        return
+    SRC = SRC.replace(old, new)
+    applied.append(name)
+
+
+def cut(name, start, end, new):
+    """Replace the whole block from `start` through the first `end` after it."""
+    global SRC
+    i = SRC.find(start)
+    if i < 0:
+        failed.append(name + ': start not found')
+        return
+    j = SRC.find(end, i + len(start))
+    if j < 0:
+        failed.append(name + ': end not found')
+        return
+    SRC = SRC[:i] + new + SRC[j + len(end):]
+    applied.append(name)
+
+
+# -- 1. the dock tab is one Library pill ---------------------------------------
+cut('the dock tab is one Library pill',
+    '  <button id="libraryBtn" class="action-pill" style="position:relative;overflow:hidden;padding:0;cursor:pointer;">',
+    '\n</button>\n',
+    '''  <!-- 80.6.29 - ONE LIBRARY PILL. The dock tab was one pill cut corner to corner
+       into Library and Albums since 70.0, and the owner asked for the word back:
+       "make the bottom tab with the diagonal of library and albums just Library".
+       The route the Albums half carried is not lost - the library's own Albums tab
+       is still there, the side rail's Albums page is one tap away on the full build,
+       and this pill opens the source's songs page first when the source is on. -->
+  <button id="libraryBtn" class="action-pill">Library</button>
+''')
+
+cut('the pill takes the plain tab shape',
+    '#libraryBtn{ flex: 1.18 1 0;',
+    '#albumsHalf span{ font-size: 9.5px; }\n',
+    '''/* 80.6.29 - the Library tab shares the row like the other tabs do now that it is
+   not carrying two names on one pill. */
+#libraryBtn{ flex: 1 1 0; border-radius: 13px; }
+''')
+
+cut('nothing is left to wire on the halves',
+    "    var plHalf = document.getElementById('playlistsHalf');",
+    "    var alHalf = document.getElementById('albumsHalf');\n",
+    '''    // 80.6.29 - THE HALVES ARE GONE. The dock tab is one Library pill, so there is
+    // no #playlistsHalf or #albumsHalf to wire; the two guarded blocks below do
+    // nothing, and the boot flags this block sets are still what the page reads.
+    var plHalf = null, alHalf = null;
+''')
+
+cut('the Library pill follows the source',
+    '    // In single-button mode, toggle between playlists/albums on click',
+    '      return;\n    }\n',
+    '''    // 80.6.29 - ONE TAB, AND IT BELONGS TO THE SOURCE THAT IS ON. The pill used to be
+    // cut in two and each half set a different downloaded page; with one pill there is
+    // no half to choose, so on the source it opens the source's songs page (where the
+    // playlists and albums pages are one glyph away) and on the device it falls
+    // through to the library exactly as before.
+    if(typeof scShelf !== 'undefined' && scShelf.src === 's'){ scShelfOpenTab('library'); return; }
+''')
+
+# -- 2. the split's own switch retires with it ---------------------------------
+cut('the split mode has nothing to apply',
+    '  function applyLibraryButtonMode(){',
+    '\n  }\n',
+    '''  // 80.6.29 - THE DOCK TAB IS ONE LIBRARY PILL, so this has nothing left to apply.
+  // It used to hide the two halves and append a "🎵 Playlists ▾" label when the split
+  // setting was off - and that label would now write over the word the pill carries,
+  // which is the one thing the owner asked for. It is kept as the one place the dock
+  // mode is applied, and it applies nothing; navigate() keeps calling it, and an
+  // install with the old setting saved simply sees no difference.
+  function applyLibraryButtonMode(){}
+''')
+
+# -- 3. the setting that described the split becomes the rail's glass ----------
+cut('the split card becomes the rail card',
+    '      <div class="sc-set-card">\n        <div class="sc-set-head" id="collapsibleSplit"',
+    '\n      </div>\n',
+    '''      <!-- 80.6.29 - THE SPLIT CARD IS THE RAIL'S GLASS NOW. A switch that splits a
+           dock tab has nothing to split: that tab is one Library pill. The rail it
+           was sitting beside does have one thing worth a setting - how much of the
+           songs behind it you can see through it. -->
+      <div class="sc-set-card" id="scRailGlassCard">
+        <div class="sc-set-head" id="collapsibleRail" role="button" tabindex="0" aria-expanded="false">
+          <span class="sc-set-title">Streaming rail</span>
+          <span id="railGlassVal" style="font-size:11px; font-weight:600; color:var(--ink-dim);">85% see-through</span>
+          <span id="collapseRailIcon" class="sc-set-chev">▾</span>
+        </div>
+        <div class="sc-set-body" id="collapsibleRailContent" style="display:none;">
+          <input type="range" id="railGlassSlider" min="0" max="100" step="5" value="85" style="width:100%; accent-color:var(--coral);">
+          <div style="font-size:11.5px; color:var(--ink-dim); line-height:1.6; margin-top:8px;">How much of the songs behind the side rail you can see through it. 85% is the default; 0 is a solid rail and 100 leaves only the glyphs, which stay solid either way.</div>
+        </div>
+      </div>
+''')
+
+once('the rail card opens and closes',
+     "  setupCollapsible('collapsibleSplit', 'collapsibleSplitContent', 'collapseSplitIcon');\n",
+     "  setupCollapsible('collapsibleRail', 'collapsibleRailContent', 'collapseRailIcon');\n")
+
+# -- 4. the setting itself ------------------------------------------------------
+once('the rail remembers how see-through it is',
+     '''  // Diagonal split toggle
+  var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false'; // default true
+''',
+     '''  // 80.6.29 - THE RAIL'S GLASS. The rail is a fixed pill laid over the songs, and at
+  // 96% of the raised background it was a slab on top of them. It is 85% see-through by
+  // default and Tools moves it: 0 is solid, 100 leaves only the glyphs. The weight is
+  // written as ONE CSS variable rather than as a rule on the rail, so it holds for a
+  // rail that has not been built yet, and the choice is remembered.
+  var railSee = 85;
+  try{
+    var _railSeeSaved = parseInt(localStorage.getItem('sidecut_railSee'), 10);
+    if(isFinite(_railSeeSaved)) railSee = Math.max(0, Math.min(100, _railSeeSaved));
+  }catch(_eRailSee){}
+  function scRailSee(v){
+    var n = Number(v);
+    railSee = isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 85;
+    // 100 see-through is 0 solid, and the rail's own CSS mixes its background with
+    // transparent at that weight. Nothing else about the rail changes: no blur comes
+    // back with it (80.6.25 took that off a fixed pill for judder).
+    try{ document.documentElement.style.setProperty('--scshelf-solid', (100 - railSee) + '%'); }catch(_eRailVar){}
+    var val = document.getElementById('railGlassVal');
+    if(val) val.textContent = railSee + '% see-through';
+    var sl = document.getElementById('railGlassSlider');
+    if(sl && String(sl.value) !== String(railSee)) sl.value = String(railSee);
+    // The rail is only in the full builds, so the row that sets it is only there too.
+    var card = document.getElementById('scRailGlassCard');
+    if(card && typeof SC_STREAM_OK !== 'undefined' && !SC_STREAM_OK) card.style.display = 'none';
+  }
+  try{ scRailSee(railSee); }catch(_eRailSeeInit){}
+  (function(){
+    var sl = document.getElementById('railGlassSlider');
+    if(!sl) return;
+    // Live while the thumb moves, saved when it comes off - a slider that only wrote
+    // localStorage would leave the rail looking solid until the app was reopened.
+    sl.addEventListener('input', function(){ try{ scRailSee(this.value); }catch(_eRailMove){} });
+    sl.addEventListener('change', function(){
+      try{ scRailSee(this.value); localStorage.setItem('sidecut_railSee', String(railSee)); }catch(_eRailSave){}
+    });
+  })();
+  // 80.6.29 - THE SPLIT SETTING IS RETIRED, NOT FORGOTTEN. It is still read so an
+  // install that has it saved keeps its value; there is no split left to apply it to.
+  var useDiagonalSplit = localStorage.getItem('sidecut_diagonalSplit') !== 'false';
+''')
+
+# -- 5. the rail holds still ----------------------------------------------------
+cut('the rail belongs to the page, not to the library box',
+    '  function scShelfRender(){',
+    "    if(!rail) return;\n",
+    '''  function scShelfRender(){
+    if(!SC_STREAM_OK) return;                 // no rail, no sheet, outside the full builds
+    var rail = document.getElementById('scShelfRail');
+    if(!rail) return;
+    // 80.6.29 - THE RAIL CANNOT BE MOVED BY THE PAGE IT SITS ON. Every view that
+    // arrives plays .sc-view-in, and that is an animation on transform - and a
+    // transformed ancestor becomes the containing block for a fixed child. So for the
+    // length of every page change, `top:50%` meant half of the library's WHOLE scroll
+    // height instead of half the screen: the rail dropped into the middle of the list
+    // and slid back, once per tap of a glyph. On the body there is no view above it to
+    // borrow a transform from, so 50% is the screen and it stays there.
+    if(rail.parentNode !== document.body){ document.body.appendChild(rail); }
+''')
+
+once('the rail is shown and hidden with the library',
+     "    $('library').style.display = isLibrary ? 'flex' : 'none';\n",
+     "    $('library').style.display = isLibrary ? 'flex' : 'none';\n"
+     "    // 80.6.29 - the rail lives on the body now (scShelfRender puts it there), so it\n"
+     "    // is shown and hidden with the library rather than being hidden by it.\n"
+     "    try{ var _railEl = document.getElementById('scShelfRail'); if(_railEl) _railEl.style.display = isLibrary ? '' : 'none'; }catch(_eRailEl){}\n")
+
+once('the rail is glass, not a slab',
+     '''      // thumb scrolls the songs under it. At 96% the background is the pill.
+''',
+     '''      // thumb scrolls the songs under it. The background is a mix now, and the weight
+      // is the owner's (see the rail setting in Tools).
+''')
+
+once('the rail background is the setting',
+     "      'background:color-mix(in srgb, var(--bg-raised) 96%, #000);',\n",
+     "      // 80.6.29 - 85% SEE-THROUGH BY DEFAULT. 96% of the raised background is a slab\n"
+     "      // laid over the songs; this is the same colour mixed with transparent at whatever\n"
+     "      // weight Tools is set to, 15% unless the owner moves it. The border stays: an\n"
+     "      // edge is what says the glyphs are a rail and not loose icons over the cover art.\n"
+     "      'background:color-mix(in srgb, var(--bg-raised) var(--scshelf-solid, 15%), transparent);',\n")
+
+# -- 6. the release itself -------------------------------------------------------
+once('the version moves',
+     "  const APP_VERSION = '%s';" % OLD,
+     "  const APP_VERSION = '%s';" % VERSION)
+
+
+def eastern():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        local = now.astimezone(ZoneInfo('America/New_York'))
+        label = 'EDT' if local.dst() else 'EST'
+        return local.strftime('%B %-d, %Y \u00b7 %-I:%M %p') + ' ' + label
+    except Exception:  # noqa: BLE001 - a missing tz database must not fail a release
+        return (now - datetime.timedelta(hours=4)).strftime('%B %-d, %Y \u00b7 %-I:%M %p') + ' EDT'
+
+
+ENTRY = (
+    "  // 80.6.29 - ONE LIBRARY PILL, A RAIL YOU CAN SEE THROUGH, AND A RAIL THAT HOLDS STILL.\n"
+    "  // The owner: the bottom tab cut between library and albums should be just Library,\n"
+    "  // the side rail should be 85% see-through with the amount adjustable in Tools, and it\n"
+    "  // should stop moving down every time he moves between its pages.\n"
+    "  { version: '80.6.29', date: '{{STAMP}}', title: 'One Library pill, and a rail that holds still', items: [\n"
+    "    'The dock tab is one Library pill: the diagonal it shared with Albums is gone, and the library\u2019s own Albums tab still has the albums.',\n"
+    "    '[FULL] The side rail is 85% see-through by default, and Tools has a slider for it - solid at one end, only the glyphs at the other.',\n"
+    "    '[FULL] The rail holds its place. Bringing a view in animates a transform, and a transformed ancestor is the box a fixed pill is measured from, so the rail dropped into the middle of the list on every page change.',\n"
+    "    '[FULL] On the source the Library pill opens the streaming songs page first, the way its two halves used to; on the device it opens the library as before.'\n"
+    "  ]},\n"
+)
+ENTRY = ENTRY.replace('{{STAMP}}', eastern())
+once('the changelog records the release',
+     "  // 80.6.28 - THE PAGES FOLLOW THE SOURCE. The owner, after the record release: the",
+     ENTRY + "  // 80.6.28 - THE PAGES FOLLOW THE SOURCE. The owner, after the record release: the")
+
+if failed:
+    print('patch-80629: %d applied, %d FAILED' % (len(applied), len(failed)))
+    for f in failed:
+        print('  x ' + f)
+    sys.exit(1)
+
+if CHECK:
+    print('patch-80629: pending - %d steps ready to apply' % len(applied))
+    sys.exit(1)
+
+with open(INDEX, 'w', encoding='utf-8') as fh:
+    fh.write(SRC)
+print('patch-80629: %d steps applied, page is %s' % (len(applied), VERSION))
