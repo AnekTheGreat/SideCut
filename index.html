@@ -11819,11 +11819,15 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     cropCleanupPreview();
     if(cropEndDrag) cropEndDrag();   // never inherit a drag from the previous song
     if(!t) return;
-    if(!t.file){
+    // 80.7.2 - A SONG PLAYED FROM THE CATALOGUE HAS BYTES TOO. It has no File on
+    // the device, and that is the only thing this sheet ever asked for, so the
+    // one feature that edits a song refused every song that was not downloaded.
+    const cropStream = (!t.file && (t.stream || t.streamId)) ? t : null;
+    if(!t.file && !cropStream){
       toast('This song has no audio file to crop.');
       return;
     }
-    const isMp3 = /\.(mp3|mpeg)$/i.test((t.file.name || t.name) + '');
+    const isMp3 = !cropStream && /\.(mp3|mpeg)$/i.test((t.file.name || t.name) + '');
     cropFmt = isMp3 ? 'mp3' : 'wav';
     cropTrack = t;
     $('cropSongTitle').textContent = t.name || '';
@@ -11842,8 +11846,13 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     $('cropSongPreviewStatus').textContent = '';
     $('cropSongBackdrop').style.display = 'flex';
     try{
-      const arrBuf = await blobToArrayBufferFallbackCrop(t.file);
-      if(!arrBuf) throw new Error('could not read audio data');
+      // 80.7.2 - the same File a download has, read out of the stream's own
+      // pieces: the object URL it is playing, the read-ahead copy, or a fresh
+      // read of the source. The sheet never learns the difference.
+      if(cropStream) $('cropSongLoading').textContent = 'Reading the song\u2026';
+      const source = cropStream ? await scStreamCropFile(cropStream) : t.file;
+      $('cropSongLoading').textContent = 'Decoding audio\u2026';
+      const arrBuf = await blobToArrayBufferFallbackCrop(source);
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       try{ cropBuf = await ctx.decodeAudioData(arrBuf); } finally { try{ ctx.close(); }catch(e){} }
       const total = cropBuf.duration;
@@ -12111,6 +12120,17 @@ $('crossfadeSlider').addEventListener('input', (e) => {
   $('cropSongApply').addEventListener('click', async () => {
     if(!cropTrack || !cropBuf || !(cropSelEnd - cropSelStart >= 0.5)) return;
     cropStopPreview();
+    // 80.7.2 - A CLIP OFF A STREAM IS A NEW SONG. The rest of this handler
+    // rewrites the file it was handed, and a streamed row is not a file.
+    if(cropTrack.stream || cropTrack.streamId){
+      $('cropSongApply').disabled = true;
+      $('cropSongApply').textContent = 'Encoding\u2026';
+      try{ await scCropStreamSave(); }
+      catch(_eCsErr){ console.warn('Stream crop failed:', _eCsErr);
+        toast('Crop failed: ' + ((_eCsErr && _eCsErr.message) || 'could not encode the file')); }
+      finally{ $('cropSongApply').disabled = false; $('cropSongApply').textContent = 'Save cropped song'; }
+      return;
+    }
     $('cropSongApply').disabled = true;
     const btn = $('cropSongApply');
     btn.textContent = 'Encoding…';
@@ -12209,6 +12229,51 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       btn2.textContent = 'Save cropped song';
     }
   });
+
+
+  // 80.7.2 - THE CLIP FROM A STREAMED SONG IS A SONG.
+  // The crop sheet rewrites the file it was given, which is right for a download and
+  // wrong for a row that is a source URL and nothing else. A clip taken off a stream
+  // is written into the library instead: its own id, its own blob, its own record -
+  // so it plays, crops again, shares and exports like anything else on the device.
+  async function scCropStreamSave(){
+    var t = cropTrack;
+    if(!t || !cropBuf) return;
+    var slice = cropRenderSlice(cropBuf);
+    var title = String(t.name || 'Clip');
+    var meta = { title: title, artist: String(t.artist || ''), album: t.album || null,
+                 year: null, genre: t.genre || null, track: null };
+    var usedFmt = 'mp3';
+    var newBlob = await scEncodeAudioCooperative(slice, 'mp3', meta, null, true);
+    if(!newBlob){ usedFmt = 'wav'; newBlob = await scEncodeAudioCooperative(slice, 'wav', meta, null, true); }
+    if(!newBlob) throw new Error('could not encode the cropped audio');
+    var name = title + ' (clip)';
+    var file = new File([newBlob], scSafeName(name) + (usedFmt === 'mp3' ? '.mp3' : '.wav'),
+      { type: newBlob.type || (usedFmt === 'mp3' ? 'audio/mpeg' : 'audio/wav') });
+    var id = scNextTrackId();
+    var track = {
+      id: id, file: file, name: name, artist: String(t.artist || ''),
+      album: t.album || null, url: URL.createObjectURL(file), duration: slice.duration,
+      genre: t.genre || null, gain: null, artBlob: null, artUrl: t.artUrl || null,
+      watermarkCleaned: false, dateAdded: Date.now(),
+      croppedFromStream: String(t.streamId || t.id || '')
+    };
+    allTracks.push(track);
+    if(!playlists['All Songs']) playlists['All Songs'] = [];
+    if(playlists['All Songs'].indexOf(id) === -1) playlists['All Songs'].push(id);
+    if(!playlists['Unsorted']) playlists['Unsorted'] = [];
+    if(playlists['Unsorted'].indexOf(id) === -1) playlists['Unsorted'].push(id);
+    persistTrackMeta(track);
+    saveMeta();
+    readLazyMeta(track);
+    try{ renderTabs(); }catch(_eCsTab){}
+    try{ renderList(); }catch(_eCsList){}
+    if(cropEndDrag) cropEndDrag();
+    $('cropSongBackdrop').style.display = 'none';
+    var note = usedFmt === 'mp3' ? '' : ' - saved as WAV, the MP3 encoder could not be fetched';
+    toast('Saved "' + name + '" to your library (' + cropFmtTime(slice.duration) + ')' + note, 3200);
+    cropTrack = null; cropBuf = null;
+  }
 
   $('cropSongCancel').addEventListener('click', () => {
     cropStopPreview();
@@ -15783,6 +15848,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
         else scStreamPlay(id);
       } });
     }
+    // 80.7.2 - the same crop a downloaded song has, on the song that is playing.
+    if(!isFile){
+      acts.push({ label: 'Crop a clip from this song\u2026', run: function(){ scStreamCrop(id); } });
+    }
     acts.push({ label: 'Add to a playlist\u2026', run: function(){ scStreamToPlaylist(id); } });
     acts.push({ label: 'Add to an album\u2026', run: function(){ scStreamToAlbum(id); } });
     if(inList) acts.push({ label: 'Add songs from your downloads\u2026', run: scStreamPickDownloads });
@@ -15794,6 +15863,57 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     scStreamSheet(String(t.title || 'Song'), acts);
   }
+
+
+  // 80.7.2 - A SONG PLAYED FROM THE CATALOGUE HAS BYTES TO CROP.
+  // The crop sheet has always wanted a File. A streamed song has one, in pieces: the
+  // object URL it is playing, the read-ahead copy for its video id, or a fresh read
+  // of the same source when both are gone. This hands the sheet the same File a
+  // download has, so the waveform, the selection and the encoder never have to know
+  // where it came from.
+  async function scStreamCropFile(t){
+    var id = String((t && (t.streamId || t.id)) || '').replace(/^scstream:/, '');
+    var entry = scStreamById(id) || {};
+    var vid = String(entry.videoId || (t && t.videoId) || '');
+    var url = '';
+    var fresh = '';
+    try{ if(String(scStreamState.curId) === id && scStreamState.blobUrl) url = scStreamState.blobUrl; }catch(_eCf1){}
+    if(!url && vid){ try{ var hit = scStreamCacheGet(vid); if(hit && hit.url) url = hit.url; }catch(_eCf2){} }
+    if(!url && vid){
+      var src = await scStreamResolve(vid);
+      if(src) fresh = await scStreamReadOnly(src, scStreamState.mime, 0);
+      url = fresh;
+    }
+    if(!url) throw new Error('the song could not be read from its source');
+    try{
+      var res = await fetch(url);
+      var blob = await res.blob();
+      if(!blob || !blob.size) throw new Error('the song came back empty');
+      var type = String(blob.type || 'audio/mp4');
+      var ext = /webm/i.test(type) ? '.webm' : (/ogg/i.test(type) ? '.ogg' : '.m4a');
+      var base = scSafeName(String(entry.title || (t && t.name) || 'stream'));
+      return new File([blob], base + ext, { type: type });
+    } finally {
+      if(fresh){ try{ URL.revokeObjectURL(fresh); }catch(_eCf3){} }
+    }
+  }
+
+  function scStreamCrop(id){
+    var e = scStreamEntry(id);
+    if(!e) return;
+    var live = (String(scStreamState.curId) === String(id) && typeof scStreamSong === 'function') ? scStreamSong() : null;
+    var row = live || {
+      id: 'scstream:' + String(id), name: String(e.title || 'Streaming'),
+      artist: String(e.artist || ''), album: e.album || null, genre: e.genre || null,
+      duration: Number(e.dur) || 0, dur: Number(e.dur) || 0,
+      videoId: String(e.videoId || ''), artUrl: scStreamThumb(e)
+    };
+    if(!row.artUrl && typeof scStreamThumb === 'function') row.artUrl = scStreamThumb(e);
+    row.stream = true;
+    row.streamId = String(id);
+    openCropSongModal(row);
+  }
+
   function scStreamToAlbum(id){
     var t = scStreamEntry(id);
     if(!t){ scStreamSay('That song is not in Streaming any more'); return; }
@@ -16602,6 +16722,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       var a = scStreamState.audio;
       mediaSetPlaybackState((a && !a.paused) ? 'playing' : 'paused');
     }catch(_ePs){}
+    try{ scStreamWidgetPush(); }catch(_ePsW){}
     scStreamPhoneTick(true);
   }
   var scStreamPhoneAt = 0;
@@ -16619,11 +16740,47 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     if(now - scStreamPhoneWdAt > 3000){
       scStreamPhoneWdAt = now;
-      try{
-        var a = scStreamState.audio;
-        pushWidgetState(scStreamPhoneTrack(), !!(a && !a.paused));
-      }catch(_ePwd){}
+      try{ scStreamWidgetPush(); }catch(_ePwd){}
     }
+  }
+
+  // 80.7.2 - THE WIDGET AND THE CARD ARE THE PLAYING SONG'S, NOT THE DECK'S.
+  // widgetTrackSeq is the native side's high-water mark: a push carrying an older
+  // sequence is dropped as stale. Only a downloaded song ever bumped it, so a
+  // streamed song went out carrying the last download's number - behind the mark
+  // the moment that song had been pushed once - and the widget kept the deck while
+  // the stream played. A streamed song is a new sequence, exactly like a new file.
+  var scWidgetStreamSeen = '';
+  function scStreamWidgetPush(){
+    if(!scStreamPhoneOwns()) return false;
+    var id = String(scStreamState.curId || '');
+    if(String(scWidgetStreamSeen) !== id){
+      scWidgetStreamSeen = id;
+      try{ widgetTrackSeq++; }catch(_eWsq){}
+    }
+    var a = scStreamState.audio;
+    var playing = !!(a && !a.paused);
+    var t = scStreamPhoneTrack();
+    try{ widgetTrack = t; widgetPlaying = playing; }catch(_eWt){}
+    try{ pushWidgetState(t, playing); }catch(_eWp){}
+    return true;
+  }
+  // The press from outside, answered by the song that is playing. A stream paused
+  // out there is started again at the second it stopped on; a stream that was given
+  // up is taken back out of the store instead of being reported as nothing to do.
+  function scStreamResumeFromPhone(){
+    if(!scStreamPhoneOwns()) return false;
+    var a = scStreamState.audio;
+    if(!a || !a.src){
+      if(scStreamState.curId){ try{ scStreamPlay(scStreamState.curId); }catch(_eSrp){ } return true; }
+      return false;
+    }
+    if(!a.paused) return true;
+    scStreamState.userPaused = false;
+    scStreamState.revives = 0;
+    Promise.resolve(a.play()).catch(function(){});
+    try{ scStreamPhoneState(); }catch(_eSrp2){}
+    return true;
   }
   // Everything the phone needs at the start of a song, and everything it needs
   // again when the system has rebuilt the session without our buttons.
@@ -19175,7 +19332,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.7.1';
+  const APP_VERSION = '80.7.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -19858,6 +20015,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  // 80.7.2 - THE PHONE FOLLOWS THE SONG THAT IS PLAYING.
+  // The notification, the lock-screen buttons and the home-screen widget were
+  // fed by the deck, and widgetTrackSeq - the number the native side keeps as its
+  // high-water mark - was only ever bumped by a downloaded song, so a song played
+  // from the catalogue went out behind that mark and the widget kept the deck
+  // while it played. The widget and the card now carry whichever player is
+  // making sound, the press from outside resumes it, and a clip can be cropped
+  // off it into the library.
+  { version: '80.7.2', date: 'October 31, 2026 · 6:53 PM EDT', title: 'The notification, the widget and Crop follow a song played from the catalogue', items: [
+    'The notification, the lock-screen buttons and the home-screen widget follow a song played straight from the catalogue, and every press there - play, pause, next, previous, the 30-second jumps and the seek bar - reaches that song instead of the download player behind it.',
+    'Crop works on a song played straight from the catalogue: hold it in its list, pick Crop a clip, drag the two ends and the part you keep is saved to your library as a song you can play, crop again, share and export.',
+    'A song paused straight from the catalogue is picked back up by the widget at the second it stopped on, that same song comes back on the bar after the app is closed, and leaving the lock screen alone no longer hands the card to a download that is not playing.'
+  ]},
   // 80.7.1 - THE STREAM IS A SONG OUTSIDE THE APP. The lyrics sheet and DJ
   // Mode answered only out of the deck's queue, so on a song playing from the
   // source both of them said "play a song first" over a song that could be
@@ -36403,6 +36573,13 @@ function _fallbackCopy(text){
     document.addEventListener('click', _widgetUserInteracted, {passive:true});
     window.__scWidgetHeartbeat = function(){
       try{
+        // 80.7.2 - a song that was never on the deck left widgetTrack empty, so
+        // the heartbeat returned here and the widget sat on SideCut while a
+        // stream played. The stream is pushed on the same beat as a file.
+        if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+          try{ scStreamWidgetPush(); }catch(_eWhStream){}
+          return;
+        }
         if(!widgetTrack) return;
         // After 25s of no interaction, stop pushing to save battery - BUT ONLY
         // when nothing is playing. Dimming mid-song pushed a fake paused state
@@ -36489,6 +36666,9 @@ function _fallbackCopy(text){
   // left at. Returns true when a song was actually startable.
   function scResumeRestoredSong(){
     try{
+      // 80.7.2 - the press from the widget, the lock screen or the now bar
+      // resumes the song that is actually on the bar, streamed or not.
+      if(typeof scStreamResumeFromPhone === 'function' && scStreamResumeFromPhone()) return true;
       if(queueIndex < 0 || queueIndex >= queue.length) return false;
       var t = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; });
       if(!t || !t.file || !t.url) return false;
@@ -36566,6 +36746,10 @@ function _fallbackCopy(text){
   (function(){
     var armed = false;
     window.__scWidgetArm = function(){
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+        try{ scStreamWidgetPush(); }catch(_eWarm){}
+        return;
+      }
       if(!widgetTrack) return;
       // Reachable via the nativePromise bridge (works even when the generated
       // Plugins.SideCutWidget proxy is absent) — don't pre-block on the proxy.
@@ -36830,10 +37014,17 @@ function _fallbackCopy(text){
         // notification shows without needing a pause/play cycle first.
         setTimeout(function(){
           try{
+            // 80.7.2 - THE CARD BELONGS TO WHAT IS PLAYING. This ran three
+            // seconds after every launch and handed the phone the deck's song -
+            // which is exactly the song that is silent while a stream is up.
+            if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+              try{ scStreamPhoneSync(); }catch(_eArmStream){}
+            } else {
             var _cur = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; });
             if(_cur) mediaSetMetadata(_cur);
             var _a = activeAudio();
             mediaSetPlaybackState(_a && !_a.paused ? 'playing' : 'paused');
+            }
             // Arming succeeded and initial state pushed — clear the crash marker
             // so a LATER unrelated process death is not blamed on the player.
             if(window.__scMarkDone) window.__scMarkDone();
