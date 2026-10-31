@@ -497,6 +497,15 @@
   }
   #albumReorderPopup .ar-grip:active{ background: rgba(255,255,255,0.10); color: var(--ink); }
   .tab.active{ color:var(--bg); background:var(--gold); border-color:var(--gold); font-weight:600; }
+  /* 80.6.32 - A PILL STOPS WHERE YOU THREW IT. The strip scrolled freely, so a
+     flick left it parked between two pills with each name half cut off by an edge,
+     and the one you wanted was a second, smaller swipe away. It snaps now, one pill
+     at a time, and each pill is taller so a thumb can land on it first time. The
+     snapping is off while a pill is being carried - the strip would otherwise fight
+     the finger that is rearranging it - which is what body.sc-tab-drag says. */
+  #tabs{ scroll-snap-type: x proximity; scroll-padding: 0 20px; }
+  #tabs .tab{ scroll-snap-align: center; min-height: 38px; padding: 9px 16px; display: inline-flex; align-items: center; }
+  body.sc-tab-drag #tabs{ scroll-snap-type: none; }
 
   #listPane{ flex:1; overflow-y:auto; overscroll-behavior: contain; padding: 4px 0 calc(var(--list-bottom-inset, 96px) + env(safe-area-inset-bottom)); min-height:0;
     /* Needs its own explicit stacking context: this container was plain static-
@@ -17633,6 +17642,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scShelfRail .scshelf-tab.on{background:var(--accent, var(--ink));color:var(--bg);',
       'box-shadow:0 2px 10px color-mix(in srgb, var(--accent, var(--ink)) 45%, transparent)}',
       '#scShelfRail .scshelf-tab.on:active{transform:scale(.94)}',
+      // 80.6.32 - A GLYPH CAN BE PICKED UP. Holding one for a moment lifts it out
+      // of the rail, and it rides the finger until it is dropped. touch-action:none
+      // is what makes that possible: the rail sits over the song list, and without
+      // it a vertical drag that starts on a glyph scrolls the list instead of moving
+      // the glyph. It costs nothing else - a tap still taps, and the gaps between
+      // the glyphs still pass the finger through to the song underneath.
+      '#scShelfRail .scshelf-tab{pointer-events:auto;touch-action:none}',
+      '#scShelfRail .scshelf-tab.lift{transform:scale(1.14);opacity:.92;z-index:3;',
+      'box-shadow:0 8px 20px rgba(0,0,0,.35)}',
+      'body.sc-rail-drag #scShelfRail .scshelf-tab{cursor:grabbing}',
       '@media (prefers-reduced-motion: reduce){#scShelfRail .scshelf-tab{transition:none}}',
       // 80.6.23 - THE RAIL IS TWO PAGES AND ONE SWITCH. The third glyph is not a
       // page: it is the source, so it sits under a hairline, and its colour is the
@@ -17650,6 +17669,104 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scShelfHead .scshelf-title{font-size:13.5px;font-weight:700;flex:1}'
     ].join('');
     document.head.appendChild(st);
+  }
+  // 80.6.32 - A GLYPH CAN BE PICKED UP AND PUT SOMEWHERE ELSE. The rail's three pages
+  // are the library's pages, and the order they sit in is the order the owner reads
+  // them in. Holding one for a moment lifts it, dragging it past a neighbour swaps
+  // the two, and the order is written down; a drag never opens the page it carried.
+  var SC_RAIL_PAGES = ['library', 'playlists', 'albums'];
+  function scShelfOrder(){
+    // Whatever is stored is filtered against the three pages this build knows about,
+    // so a stale order from an older page - or a page that was renamed - cannot leave
+    // the rail empty or draw a glyph that opens nothing.
+    try{
+      var raw = JSON.parse(localStorage.getItem('sidecut_railOrder') || 'null');
+      if(Array.isArray(raw)){
+        var out = raw.filter(function(id){ return SC_RAIL_PAGES.indexOf(id) !== -1; });
+        SC_RAIL_PAGES.forEach(function(id){ if(out.indexOf(id) === -1) out.push(id); });
+        if(out.length === SC_RAIL_PAGES.length) return out;
+      }
+    }catch(_eRailOrder){}
+    return SC_RAIL_PAGES.slice();
+  }
+  function scShelfSaveOrder(){
+    try{
+      var ids = Array.prototype.map.call(
+        document.querySelectorAll('#scShelfRail .scshelf-tab[data-shelf]'),
+        function(b){ return b.getAttribute('data-shelf'); }
+      ).filter(function(id){ return SC_RAIL_PAGES.indexOf(id) !== -1; });
+      if(ids.length === SC_RAIL_PAGES.length){
+        localStorage.setItem('sidecut_railOrder', JSON.stringify(ids));
+      }
+    }catch(_eRailSave){}
+  }
+  function scRailDrag(b){
+    var rail = b.parentNode, hold = null, dragging = false, moved = false;
+    var startX = 0, startY = 0;
+    function stopHold(){ if(hold){ clearTimeout(hold); hold = null; } }
+    function drop(){
+      stopHold();
+      if(!dragging) return;
+      dragging = false;
+      b.classList.remove('lift');
+      b.style.transform = '';
+      document.body.classList.remove('sc-rail-drag');
+      // The release still lands as a click. data-dragged swallows that one and is
+      // cleared on a timer, so the glyph is tappable again straight afterwards.
+      b.setAttribute('data-dragged', '1');
+      setTimeout(function(){ b.removeAttribute('data-dragged'); }, 400);
+      scShelfSaveOrder();
+    }
+    b.addEventListener('pointerdown', function(e){
+      startX = e.clientX; startY = e.clientY; moved = false;
+      stopHold();
+      hold = setTimeout(function(){
+        if(moved) return;
+        dragging = true;
+        try{ b.setPointerCapture(e.pointerId); }catch(_eCap){}
+        b.classList.add('lift');
+        document.body.classList.add('sc-rail-drag');
+      }, 380);
+    });
+    b.addEventListener('pointermove', function(e){
+      if(!dragging){
+        // Anything past a thumb's jitter is a scroll, not a hold.
+        if(Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8){ moved = true; stopHold(); }
+        return;
+      }
+      b.style.transform = 'translateY(' + (e.clientY - startY) + 'px) scale(1.14)';
+      var r = b.getBoundingClientRect();
+      var mid = r.top + r.height / 2;
+      var sibs = Array.prototype.slice.call(rail.querySelectorAll('.scshelf-tab[data-shelf]'))
+        .filter(function(s){ return s !== b; });
+      for(var i = 0; i < sibs.length; i++){
+        var sr = sibs[i].getBoundingClientRect();
+        if(mid > sr.top && mid < sr.bottom){
+          if(mid < sr.top + sr.height / 2) rail.insertBefore(b, sibs[i]);
+          else rail.insertBefore(b, sibs[i].nextSibling);
+          // The glyph is already where the finger is, so the drag restarts from here
+          // rather than carrying the distance it just travelled a second time.
+          startY = e.clientY;
+          b.style.transform = '';
+          break;
+        }
+      }
+    });
+    function end(e){
+      drop();
+      // Unconditionally, the way the pill strip had to learn to: a capture left on a
+      // node that is no longer under the finger makes everything else ignore taps.
+      if(e && e.pointerId != null){ try{ b.releasePointerCapture(e.pointerId); }catch(_eRel){} }
+    }
+    b.addEventListener('pointerup', end);
+    b.addEventListener('pointercancel', end);
+    b.addEventListener('click', function(ev){
+      if(b.getAttribute('data-dragged') === '1'){
+        b.removeAttribute('data-dragged');
+        ev.stopImmediatePropagation();
+        ev.preventDefault();
+      }
+    }, true);
   }
   function scShelfRender(){
     // 80.6.31 - THE RAIL IS NOT A STREAMING FEATURE. The three page glyphs are the
@@ -17678,7 +17795,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // the source there was no button that showed all of them. Every page now
       // answers in the source that is on - the streaming songs, playlists and
       // albums, or the downloaded ones - and no glyph ever moves the source.
-      var pages = [['library', 'Songs', 'list'], ['playlists', 'Playlists', 'plist'], ['albums', 'Albums', 'grid']];
+      // 80.6.32 - THE ORDER IS THE OWNER'S. The three glyphs used to be baked in this
+      // order with no way to change it; they are read from scShelfOrder() now, so a
+      // page dragged to the top of the rail is at the top of it next launch too.
+      var _pageMeta = { library: ['Songs', 'list'], playlists: ['Playlists', 'plist'], albums: ['Albums', 'grid'] };
+      var pages = scShelfOrder().map(function(id){ return [id, _pageMeta[id][0], _pageMeta[id][1]]; });
       var h = pages.map(function(t){
         return '<button type="button" class="scshelf-tab" data-shelf="' + t[0] + '"' +
           ' aria-pressed="false" aria-label="' + escapeHtml(t[1]) + '"' +
@@ -17699,6 +17820,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       rail.innerHTML = h;
       rail.setAttribute('data-built', '1');
       Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
+        // 80.6.32 - wired first, because the guard that swallows the click at the end of
+        // a drag has to be the first listener on the glyph, or the page opens anyway.
+        if(b.getAttribute('data-shelf')) scRailDrag(b);
         b.addEventListener('click', function(){
           if(this.getAttribute('data-src') === '1'){ scShelfSetSrc(scShelf.src === 's' ? 'd' : 's'); return; }
           scShelfOpenTab(this.getAttribute('data-shelf'));
@@ -18894,7 +19018,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.31';
+  const APP_VERSION = '80.6.32';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -19577,6 +19701,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  // 80.6.32 - THE PILLS SNAP, AND THE RAIL CAN BE ARRANGED. The owner: "make the pills
+  // easy to navigate / the dragging for the tabs at the bottom and add the drag and hold
+  // thing nice to the right sub tabs as well". The strip stops on a pill instead of
+  // between two, the pills are taller to hit, and the rail's three glyphs take the same
+  // hold-and-drag the strip has - with the order kept.
+  { version: '80.6.32', date: 'October 30, 2026 · 11:47 PM EDT', title: 'Pills that stop where you aimed, and a rail you can arrange', items: [
+    'The playlist pills stop one at a time now instead of drifting to a halt between two of them, so the name you were aiming for is the one you get.',
+    'Each pill is a little taller and wider, which makes the strip easier to hit and to read as it moves.',
+    'The rail on the right can be arranged: hold a glyph until it lifts, drag it past its neighbours, and the order you leave it in is the order it comes back in.'
+  ]},
   // 80.6.31 - THE RAIL IS ON EVERY VERSION. The owner: "in the play build it should
   // have the right side playlists and albums". The three page glyphs were built
   // inside SC_STREAM_OK with the streaming sheet, so the version without a source
@@ -27936,6 +28070,8 @@ function _fallbackCopy(text){
         el.setPointerCapture(e.pointerId);
         el.style.opacity = '0.55';
         el.style.zIndex = '5';
+        // 80.6.32 - no snapping under a carried pill.
+        document.body.classList.add('sc-tab-drag');
       }, 380);
     });
     function tabSwapCheck(cx){
@@ -28006,6 +28142,9 @@ function _fallbackCopy(text){
       }
     });
     function endDrag(e){
+      // 80.6.32 - the strip may snap again the moment nothing is being carried, and
+      // that includes a release that never became a drag.
+      document.body.classList.remove('sc-tab-drag');
       clearTimeout(pressTimer);
       if(tabScrollRAF){ cancelAnimationFrame(tabScrollRAF); tabScrollRAF = null; }
       tabScrollDir = 0;
