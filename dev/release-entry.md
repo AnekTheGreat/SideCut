@@ -1,47 +1,38 @@
-## 80.6.29 ({{STAMP}}): one Library pill, and a rail that holds still
+## 80.6.30 ({{STAMP}}): the Play build catches up
 
-- **WHAT THE OWNER SAID.** *"make the bottom tab with the diagonal of library and albums just Library, and make the side tab bar 85
-  percent see through with adjustable stuff in tools, make it stay still every time I move between the tabs they keep moving down,
-  make the changes to regular version as well just without the streaming stuff obviously for that for full do everything make this
-  nice"*. Three changes - the dock tab, the rail's glass, and the rail's place - and he wants them on both channels.
-- **WHY THE RAIL KEPT MOVING DOWN.** It is a `position:fixed` pill, and it was fixed *inside* `#library`. A fixed child is measured
-  from its nearest ancestor that establishes a containing block, and a **transform** does that even for the length of an animation.
-  Every arrival in a view plays `.sc-view-in`, which is `@keyframes scViewIn` with `transform: translateY(6px)` - and
-  `scShelfApply()` calls `navigate('library')` on every page change, so every tap of a rail glyph replayed that animation on
-  `#library`. For those 220ms `top:50%` meant half of the **library's whole scroll height** instead of half the screen: the rail
-  dropped into the middle of the list and slid back, once per tap. That is the "moving down", and it is why nothing about the rail's
-  own CSS was wrong.
-- **WHAT CHANGED.** (1) **The dock tab is one Library pill.** The two clipped halves and the seam `<svg>` are gone from
-  `#libraryBtn`; it is `<button id="libraryBtn" class="action-pill">Library</button>`, one tap, the same shape as Home and
-  Discover, and it shares the dock row evenly (`flex: 1 1 0`). (2) **The split setting retires with the split.** The Tools card that
-  switched a two-half dock tab became the rail card; `applyLibraryButtonMode()` is kept as the one place the dock mode is applied
-  and applies nothing - it must not append its "Playlists ▾" label, which would write over the word the pill carries now. The old
-  `sidecut_diagonalSplit` key is still read, so an existing install keeps its value. (3) **The Library pill follows the source**:
-  with the halves gone, its handler asks the shelf first, so on the source it opens the streaming songs page (Playlists and Albums are
-  a glyph away) and on the device it falls through to the library exactly as before - `pickReal()` is untouched. (4) **The rail is
-  85% see-through, and adjustable in Tools.** Its background is now
-  `color-mix(in srgb, var(--bg-raised) var(--scshelf-solid, 15%), transparent)` - 15% solid is 85% see-through - and the weight is
-  one CSS variable written by `scRailSee()`, so it holds for a rail that has not been built yet. The new **Streaming rail** card sits
-  where the split card was, with a 0-100 slider (0 solid, 100 only the glyphs), a live value on the row, `input` updating the rail
-  while the thumb moves and `change` saving `sidecut_railSee`. Values are clamped and rounded, a non-number falls back to 85, and the
-  card hides itself in the builds that have no rail (`!SC_STREAM_OK`, i.e. the Play channel). (5) **The rail lives on the body.**
-  `scShelfRender()` moves `#scShelfRail` onto `document.body` before it builds it, where no view's transform can reach it, and
-  `navigate()` shows and hides it with the library so it does not float over Home or Discover. `top:50%` + `translateY(-50%)` are
-  unchanged - with the body as its containing block that is the screen, and it stays there.
-- **WHAT WAS DELIBERATELY NOT DONE.** No blur came back with the transparency: 80.6.25 took `backdrop-filter` off a fixed pill
-  because it juddered over a scrolling list, and that stands. The border stays at full strength - an edge is what says the glyphs are
-  a rail and not loose icons over artwork. Nothing about `libraryMode`, the library's own tab strip, the albums, the playlists or the
-  shelf's pages changed; the guarded half-wiring block still sets `window.__bootDone` and `__scLibraryModeWired`, which the rest of
-  the page reads. The Play channel gets the dock pill and the retired split automatically, because it is this page with
-  `__PLAY_BUILD__` set and the rail is gated on `SC_STREAM_OK`.
-- **WHAT WAS RUN.** `dev/patch-80629.py` over the released 80.6.28 page: `--check` **1** before, 14 steps applied, a second run a
-  no-op, `--check` **0**. `dev/check-80629.cjs` passes **50 checks**, and the ones that matter are run, not read: `scRailSee` in a vm
-  (85 -> `--scshelf-solid: 15%`, 0 -> `100%`, 100 -> `0%`, 140 and -20 clamped, `'abc'` falls back to 85, 42.6 rounds to 43 and the
-  weight follows, the slider is written to and the row reads back, and the card is hidden when `SC_STREAM_OK` is false). It also
-  proves the reparent sits inside `scShelfRender` *before* the rail is built, that `navigate()` shows and hides the rail with the
-  library, that the Library handler asks the shelf *before* the downloaded `navigate('library')`, that no `#playlistsHalf`,
-  `#albumsHalf` or `lib-single-label` path survives, and that all seven inline scripts compile. OTA rebuilt to a true fixed point -
-  root + `ota/` **{{ROOT}}** bytes at v80.6.29, the `ota-play/` channel (**{{PLAY}}** bytes) rebuilt from the same page.
-- **NOT CLAIMED.** There is no phone and no browser here. The drift was diagnosed from the code (a fixed pill inside an animated
-  transform), not watched on a screen; nobody has slid the new rail slider, seen the rail at 85% over artwork, or tapped the single
-  Library pill on a device. The logic, the CSS and the markup are proven; the look is not.
+- **WHAT THE OWNER SAID.** *"Lift the channel hold so the Play build publishes everything since 80.6.12, minus the streaming
+  and downloader copy."* One line, and it is a decision only he could make: the hold was his.
+- **WHY THIS IS A RELEASE AND NOT A FILE DELETION.** Both channels version off the same `APP_VERSION` in `index.html`, and
+  `dev/ota-bundle-play.mjs --check` fails unless `ota-play/updates.json` carries that same version. `ota-play/` was at 80.6.12,
+  and 80.6.29 was already published on the other channel - so deleting the hold on its own would either leave the Play bundle on a
+  version nobody released or, worse, republish 80.6.12's bundle as if it were the page. The page moves to a version neither
+  channel has shipped (80.6.30), the hold is deleted in the same commit, and the release step's fixed-point loop rebuilds
+  `ota-play/` from the page at that version. Nothing about the page's behaviour changes.
+- **WHAT CHANGED.** (1) `APP_VERSION` is `80.6.30`, with a changelog entry titled *The Play build catches up* - four notes, three
+  of them true of both builds and one `[FULL]`, and the catch-up note itself published on both channels. (2) **The hold is
+  lifted**: `dev/channel-hold.json` is deleted. The script still reads the file, so a future hold is data again - set `"play": true`
+  with a `why`, and the next release leaves `ota-play/` alone and says so. (3) **`ota-play/` publishes 80.6.30** for the first
+  time since 80.6.12, with the Play flag baked into the zip's page, and with the notes filtered the way the app filters them (the
+  `[FULL]` note and anything about the downloader, the converter or the source are dropped, and the channel publishes three).
+- **THE 80.6.29 ENTRY WAS WRONG ABOUT THIS, AND THIS IS THE CORRECTION.** It said the `ota-play/` channel had been "rebuilt from
+  the same page". It had not: the channel was held, `dev/ota-bundle-play.mjs` left `ota-play/` exactly as it was, and the
+  duplicated 1138844 bytes in that entry were the held 80.6.12 bundle, not a rebuild. The dock pill and the glass rail were always
+  going to reach the Play build through the page - the platform gate is `SC_STREAM_OK`, and the rail card hides itself when it is
+  false - but a Play install could not see any of it until the channel published, which is what this release does.
+- **WHAT THE PLAY BUILD ACTUALLY GETS.** The same page the sideload build has had since 80.6.29, with the Play flag set: one
+  Library pill in the dock, no split setting (that card became the rail's), the rail absent and its Tools card hidden because
+  `SC_STREAM_OK` is false, the library's own Albums tab and playlists untouched, and the changelog showing every entry since
+  80.6.13 with the notes that belong to it. It is a jump of seventeen releases for anyone on that channel - the largest single
+  update it has ever taken - which is worth saying plainly rather than as a small note.
+- **WHAT WAS RUN.** `dev/patch-80630.py` over the released 80.6.29 page: `--check` **1** before, three steps applied (version,
+  changelog entry, hold), a second run a no-op, `--check` **0**. The whole release was then rehearsed in a clean copy of the
+  released tree before shipping: patch, then the workflow's own fixed-point loop (`cp updates.json manifest.json`,
+  `node dev/ota-bundle.mjs`, `node dev/ota-bundle-play.mjs`, both `--check`s) until it settled, then
+  `python3 dev/release-record.py`, then `dev/check-80630.cjs` - which opens `ota-play/update.zip` and proves the page inside it is
+  80.6.30, carries `__PLAY_BUILD__`, still has the one Library pill, and still returns before building the rail. OTA rebuilt to a
+  true fixed point - root + `ota/` **{{ROOT}}** bytes at v80.6.30, and `ota-play/` (**{{PLAY}}** bytes) published at v80.6.30,
+  no longer held.
+- **NOT CLAIMED.** There is no phone and no browser here, so nobody has watched a Play install take this update. The store's own
+  review path is not something a bundle in a git repository can prove: what is proven is that the channel's manifest and the page
+  inside its zip agree at 80.6.30, that the page in it is a Play build, and that its notes are the ones this build publishes.
+  `dev/check-8062{6,7,8,9}.cjs` now fail by design - each pins its own version - and are left as they were.
