@@ -70,7 +70,7 @@ swap('the switch owns both icons from birth',
      "      h += '<button type=\"button\" class=\"scshelf-tab scshelf-src\" data-src=\"1\"' +\n"
      "        ' aria-pressed=\"false\" aria-label=\"On device\" title=\"On this device\">' + scIcon('device', 17) + '</button>';\n",
      "      h += '<button type=\"button\" class=\"scshelf-tab scshelf-src\" data-src=\"1\"' +\n"
-     "        ' aria-pressed=\"false\" aria-label=\"On device\" title=\"On this device\">' +\n"
+     "        ' aria-pressed=\"false\" aria-label=\"On this device\" title=\"On this device\">' +\n"
      "        '<span class=\"scshelf-i scshelf-i-str\">' + scIcon('stream', 17) + '</span>' +\n"
      "        '<span class=\"scshelf-i scshelf-i-dev on\">' + scIcon('device', 17) + '</span>' +\n"
      "        '</button>';\n")
