@@ -1,60 +1,55 @@
-## 80.7.1 ({{STAMP}}): lyrics, DJ Mode and background play for a streaming song
+## 80.7.2 ({{STAMP}}): the notification, the widget and Crop follow a song played from the catalogue
 
-- **WHAT THE OWNER SAID.** *"why doesn't streaming work outside of the app like when I close the app, dj mode and lyrics should be
-  for the streaming song"*. Three surfaces stopped at the edge of the deck: the lyrics sheet, DJ Mode, and the background
-  heartbeat. None of them was broken; each asked the wrong player a question only the deck could answer.
-- **WHY LYRICS SAID "PLAY A SONG FIRST" OVER A SONG YOU COULD HEAR.** `#lyricsBtn` opened with
-  `if(queueIndex < 0 || queueIndex >= queue.length){ toast('Play a song first'); return; }` and then looked the song up in
-  `allTracks` - and a stream is deliberately in neither: since 80.6.9 the streaming module keeps its own store, its own
-  queue and its own `<audio>` element. Even on the paths that did open, `startLyricsAutoScroll` read
-  `activeAudio().currentTime` and bailed on `activeAudio().paused`, so the highlight kept time on a deck that was silent by
-  design while the stream played, and the lyrics play button paused the deck.
-- **WHAT THE LYRICS SHEET DOES NOW.** `scStreamSong()` returns the streamed song in the shape the lyrics sheet already reads -
-  id, name, artist, length, cover - and `scListenAudio()` returns the element that is actually making sound that second (the
-  stream while it owns the bar, the deck otherwise). The button, the sheet's previous and next (which now walk the stream's
-  own genre-aware queue and re-fetch for the song that started), the play/pause button and icon, the highlight clock and the
-  plain-sheet duration fallback all read those two. Words found for a stream are saved with `scStreamLyricsSave()` onto the
-  streamed song in the stream's own store - `persistTrackMeta()` writes a *library* record, and a streamed song has none, so
-  its words used to be lost the moment the sheet closed.
-- **WHY DJ MODE REFUSED THE SAME SONG.** `enterDjMode()` opened with the same queue test and looked up `queue[queueIndex]`;
-  every deck lookup (`refreshDjMode`, `loadTrackIntoDeck`, the strip) searched `allTracks` alone. A streamed song is in none of
-  those, so the rig refused to open on music that was playing.
-- **WHAT DJ MODE DOES NOW.** `enterDjMode()` asks `scStreamSong()` first and takes the streamed song. The deck decodes the
-  bytes the stream already has: its playing object URL, the read-ahead cache entry for that video id, or - when both are gone -
-  a fresh `scStreamReadOnly()` of the same source. `djTrackById()` is the one lookup the deck uses for the loaded song, so the
-  platter, the per-track reset (hot cues, kill switches, loop, tap tempo) and the title all work on a stream. `djStreamUrl()`
-  answers where the bytes are. Leaving the rig hands the sound back: `exitDjMode()` seeks the stream element to the second the
-  platter stopped on and starts it again, instead of silently handing the playhead to a deck element that was never playing.
-- **WHY IT DIED IN THE BACKGROUND.** `startMediaSessionHeartbeat` opened with
-  `if(document.hidden && (!activeAudio() || activeAudio().paused)) return;` - the deck's element. A backgrounded stream is
-  therefore "nothing playing" to the one loop that keeps a page alive out there: no metadata re-assert, no position state, no
-  revival, and `playbackSurvivedBackground()` (which reads the deck's playhead) would have marked the notification paused while
-  the stream was still running. The heartbeat now opens on `scListenAudio()`, and a stream that is paused without ever being
-  asked to pause - the OS reclaiming a backgrounded page - is started again from the second it stopped on, up to twenty
-  attempts, with the position and the widget timeline pushed each tick. A pause the owner made is marked with
-  `scStreamState.userPaused` at every place it can happen (the app's own toggle, the phone's pause and stop, the lyrics
-  button, giving the bar up) and is never revoked.
-- **AND CLOSING THE APP LEAVES A WAY BACK.** `scStreamRemember()` writes `{id, at, savedAt}` to the stream's own store at most
-  every four seconds, at once on `pagehide` and when the page is hidden. On the next launch `scStreamRestoreLast()` puts that
-  song back on the bar, paused, at that second - and `scStreamPlay()` carries the second in `scStreamState.pendingAt`, which
-  `scStreamStart()` seeks to, so play continues where the song stopped instead of starting it again. Older than twelve hours,
-  or a song no longer on the shelf, and nothing is restored.
-- **WHAT WAS RUN.** `dev/patch-8071.py` (with `dev/patch-8071-blocks.py` and three step files) over the released 80.7 page:
-  `--check` **1** before, 32 steps applied, a second run a no-op, `--check` **0**, every inline script compiles. Then the
-  workflow's fixed-point loop, `python3 dev/release-record.py`, and `dev/check-8071.cjs`, which **runs** the new behaviour
-  rather than reading it: the streamed song is mapped to a track (title, artist, length, cover, its own store id), the listening
-  element is the stream while it owns the bar and the deck when it does not, lyrics are written to the stream's store and to a
-  library record on a device song, the deck finds a streamed song by id and prefers the playing URL over the link, and a
-  remembered second is carried into `scStreamPlay()`. OTA at a true fixed point on the full channel - root + `ota/` **{{ROOT}}**
-  bytes at v80.7.1. **The Play channel is held at v80.7** (`dev/channel-hold.json`, **{{PLAY}}** bytes): this release is
-  entirely streaming, the Play build has no streaming, and its update card drops any note that names it by rule - so the
-  full channel publishes the one honest line the card allows ("Fixes and improvements under the hood.") rather than a note
-  about a feature that build does not have.
-- **NOT CLAIMED.** No phone and no browser here: nobody has streamed a song, opened its words, mixed it on the platter, or
-  closed the app mid-stream. What is proven is the logic and its wiring on the page **and** inside the full channel's zip, that
-  the full manifest is v80.7.1 and the Play manifest still reads 80.7, and that every inline script compiles. Whether a
-  streaming song's words exist
-  online at all is the database's question; whether the phone keeps a WebView alive for an hour in the background is the
-  launcher's - this release makes the page ask for it and recover when it is taken, which is everything the page owns.
-  `dev/check-8062{6,7,8,9,30,31,32}.cjs` and `dev/check-807.cjs` now fail by design; each pins its own version and they are
-  left as they were.
+- **WHAT THE OWNER SAID.** *"the android things should be the streaming songs too like media player, same thing with cropping, all
+  features should include the streaming songs"*. Three answers to one question: the phone's own surfaces, the crop sheet, and
+  everything that assumed a song has a file on the device.
+- **WHY THE WIDGET KEPT THE DOWNLOADED SONG.** `pushWidgetState()` sends the native side a `seq`, and the native guard drops
+  any update carrying an older one - that is how a slow cover fetch from the previous song is kept from overwriting the song
+  that is playing. `widgetTrackSeq` was only ever bumped by `window.__scWidgetOnTrack()` and `mediaSetMetadata()`, both of
+  which are deck paths. A streamed song therefore pushed with the last download's number: equal at best, and behind the mark
+  the moment that download had been pushed once, so the widget stayed on the deck while the stream played. `__scWidgetHeartbeat`
+  made it permanent - it opened with `if(!widgetTrack) return;`, and a phone that had never played a downloaded song had no
+  `widgetTrack` at all, so the six-second beat pushed nothing and the widget sat on the SideCut default for the whole stream.
+- **WHAT THE WIDGET DOES NOW.** `scStreamWidgetPush()` is the stream's press: it bumps `widgetTrackSeq` once per streamed song
+  (a new song is a new sequence, exactly like a new file), reads the live element for playing, and pushes
+  `scStreamPhoneTrack()` - the same title/artist/cover shape a library track has. The tick that used to call
+  `pushWidgetState()` directly calls this instead, a play or pause of the stream pushes immediately rather than waiting for the
+  next beat, and the heartbeat and the one-time arm both ask `scStreamPhoneOwns()` before they can return on an empty
+  `widgetTrack`.
+- **WHY THE NOTIFICATION COULD SWAP BACK.** `_scArmNativeMedia()` arms three seconds after launch and then pushes "the song
+  that is playing" as `allTracks.find(tr => tr.id === queue[queueIndex])` with `activeAudio()`'s state - the deck's song, which
+  is precisely the one that is silent while a stream is up. Arming with a restored stream on the bar replaced its card with a
+  paused deck row. It now calls `scStreamPhoneSync()` when the stream owns the bar, and only falls through to the deck push
+  when it does not. The transport handlers were already routed by 80.6.20 (`registerMediaSessionHandlers` delegates to
+  `scStreamPhoneArm`); nothing about them changed.
+- **WHY A PRESS FROM OUTSIDE SAID "NOTHING TO PICK BACK UP".** `scWidgetResumeCheck()` fires while nothing is audibly playing
+  and calls `scResumeRestoredSong()`, which opened with the deck's queue and returned false for a stream - so the widget's
+  play button, the lock-screen press and the notification press on a paused stream produced a toast and no sound.
+  `scStreamResumeFromPhone()` runs first now: it clears the deliberate-pause mark, resets the revive budget, starts the element
+  at the second it stopped on, and takes the song back out of the store when the element has no source yet.
+- **WHY CROP REFUSED A STREAMED SONG.** `openCropSongModal(t)` opened with `if(!t.file){ toast('This song has no audio file to
+  crop.'); return; }`. A streamed row is a source URL and metadata - there is no `File` - so the one feature that edits a song
+  turned away every song that was not downloaded, and the stream's long-press menu never offered it.
+- **WHAT CROP DOES NOW.** The sheet accepts a row with no file when it is a streamed song, and `scStreamCropFile()` hands it the
+  same `File` a download has, read in the order the stream itself uses: the object URL it is playing, the read-ahead copy for
+  its video id, then a fresh `scStreamReadOnly()` of the same source (the temporary URL revoked in a `finally`). Applying
+  branches before the deck hand-off: `scCropStreamSave()` encodes the selection and writes a **new library song** - its own id,
+  its own blob, in All Songs and Unsorted, `persistTrackMeta()` called, `croppedFromStream` recording where it came from -
+  instead of rewriting a row that has no file to rewrite. The streamed song is never mutated. The stream's long-press menu
+  offers "Crop a clip from this song", built through `scStreamCrop()` from the live song when it is playing and from the stored
+  row when it is not.
+- **WHAT WAS RUN.** `dev/patch-8072.py` over the released 80.7.1 page: `--check` **1** before, 15 steps applied, a second run
+  a no-op, `--check` **0**. Then the workflow's own fixed-point loop for both OTA channels, `python3 dev/release-record.py`,
+  and `dev/check-8072.cjs` - which **runs** the new behaviour, not only greps it: the widget push bumps the sequence once for a
+  new streamed song and not for the same one, reports the song and that it plays, and stands down when the deck owns the bar;
+  the resume press actually calls `play()`, clears `userPaused` and resets the revive budget; and the crop reader returns a
+  `File` named for the song with the real container and the bytes it read. The checker also compiles every inline script on the
+  page. OTA at a true fixed point on the full channel - root + `ota/` **{{ROOT}}** bytes at v80.7.2, carrying all three notes.
+  **The Play channel is held at v80.7** (`dev/channel-hold.json`, **{{PLAY}}** bytes): this release is entirely about the
+  streaming module, and the Play build has no streaming module at all.
+- **NOT CLAIMED.** No phone and no browser here. Nobody has streamed a song and looked at the widget, pressed play on the lock
+  screen after closing the app, or cropped a clip off a streamed song. What is proven is the logic and its wiring on the page
+  and inside the full channel's zip, that the page is v80.7.2 and the Play manifest still reads 80.7, and that every inline
+  script compiles. Whether Android keeps the WebView alive to *serve* that widget is the launcher's decision, not the page's -
+  this release makes the page feed the right song to every surface the phone owns, which is the part it can answer for.
+  `dev/check-8071.cjs` now fails by design: it pins 80.7.1, the same way `dev/check-8062*` and `dev/check-807.cjs` pin theirs.
