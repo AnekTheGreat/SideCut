@@ -1,43 +1,47 @@
-## 80.6.28 ({{STAMP}}): the pages follow the source
+## 80.6.29 ({{STAMP}}): one Library pill, and a rail that holds still
 
-- **WHAT THE OWNER SAID.** *"The playlists and Albums should be in here in streaming, THE BUTTONS SHOULD DO
-  WHAT THEY SHOULD IF IM IN STREAMING IT DOES STREAMING ALL, STREAMING PLAYLISTS AND ALBUMS, IF IM IN
-  DOWNLOADS, REGULAR ALBUMS AND REGULAR PLAYLISTS SHOULD SHOW"*. Two things: the streaming lists need a
-  place of their own, and the buttons have to belong to the source that is on.
-- **WHY THE BUTTONS DID NOT.** The side rail had two page glyphs (Library, Albums) and one source switch.
-  The streaming **playlists** had no page at all - they were a row of chips under the shelf - so on the
-  source there was no button that showed every one of them. Worse, the **Library pill**'s two halves
-  (`#playlistsHalf`, `#albumsHalf`) called `navigate('playlists')` / `navigate('albums')`, which set the
-  *downloaded* half and rendered the downloaded list - behind a shelf that stays on top of it. On the
-  source those two halves therefore changed nothing you could see.
-- **WHAT CHANGED.** (1) **The rail is three pages**: Songs, Playlists, Albums, each with its own glyph
-  (`plist` is a new path - ruled lines with a mark, so a playlist is not the library glyph again), and the
-  source switch still sits under a hairline where it was. (2) **All three stay in the source**:
-  `scShelfOpenTab()` maps the third tab and never writes `scShelf.src`; the switch is still the only thing
-  that flips it. (3) **A streaming playlists page** in `scStreamRender()`, drawn with `scShelfGrid('pl',
-  ...)` the way the albums page is drawn with `'al'` - a cover, a name, a count per tile, a **New
-  playlist** button, the *From the source* pill, and the line that says a hold deletes a playlist. The
-  tiles were already wired for open and for the two-second hold, so the page inherits both. (4) **The pill
-  follows the source**: on the source its halves open the source's Songs and Albums pages; on the device
-  they do what they always did. In single-button mode the one pill flips the source's pages instead of the
-  half underneath the shelf. (5) **The device's three pages are the library's three**: Songs lands on All
-  Songs (it used to land on whatever playlist was last used, which is not what the word says), Playlists
-  on the playlist strip, Albums on the albums.
-- **WHAT WAS DELIBERATELY NOT DONE.** The switch still does not move a page; a page glyph still never
-  changes the source. Nothing was removed from the shelf: the chips and the *Streaming albums* row are
-  still on the songs page, so the way that exists keeps working. No downloaded list, album, playlist or
-  setting is written by any of this; the only state touched is `scShelf.page` and, on the device side,
-  which list the library shows.
-- **WHAT WAS RUN.** `dev/patch-80628.py` over the released 80.6.27 page: `--check` **1** before, 10 steps
-  applied, a second run a no-op, `--check` **0**. `dev/check-80628.cjs` passes **39 checks**, and the ones
-  that matter are run, not read: `scShelfOpenTab` in four states (Playlists on the source keeps
-  `src = 's'` and paints once; the page already up only marks; Albums on the device stays on the device;
-  Songs on the source stays on the source), and `scShelfGrid('pl', ...)` against fake lists (one tile per
-  playlist, name and count on it, "1 song" not "1 songs", no album tile on the playlists page, and an
-  empty page that says so). It also proves the songs/albums halves of the pill are decided *before* the
-  downloaded `navigate()` on the source, that the playlists page is decided before any single list page is
-  drawn, and that every inline script still compiles. OTA rebuilt to a true fixed point - root + `ota/`
-  **{{ROOT}}** bytes at v80.6.28, the `ota-play/` channel (**{{PLAY}}** bytes) untouched.
-- **NOT CLAIMED.** There is no phone and no browser here. Nobody has tapped the new third glyph, swiped
-  the rail with three glyphs on it, or watched the pill switch pages on a real screen. The logic, the
-  mapping and the drawn markup are proven; the look of a three-glyph rail is not.
+- **WHAT THE OWNER SAID.** *"make the bottom tab with the diagonal of library and albums just Library, and make the side tab bar 85
+  percent see through with adjustable stuff in tools, make it stay still every time I move between the tabs they keep moving down,
+  make the changes to regular version as well just without the streaming stuff obviously for that for full do everything make this
+  nice"*. Three changes - the dock tab, the rail's glass, and the rail's place - and he wants them on both channels.
+- **WHY THE RAIL KEPT MOVING DOWN.** It is a `position:fixed` pill, and it was fixed *inside* `#library`. A fixed child is measured
+  from its nearest ancestor that establishes a containing block, and a **transform** does that even for the length of an animation.
+  Every arrival in a view plays `.sc-view-in`, which is `@keyframes scViewIn` with `transform: translateY(6px)` - and
+  `scShelfApply()` calls `navigate('library')` on every page change, so every tap of a rail glyph replayed that animation on
+  `#library`. For those 220ms `top:50%` meant half of the **library's whole scroll height** instead of half the screen: the rail
+  dropped into the middle of the list and slid back, once per tap. That is the "moving down", and it is why nothing about the rail's
+  own CSS was wrong.
+- **WHAT CHANGED.** (1) **The dock tab is one Library pill.** The two clipped halves and the seam `<svg>` are gone from
+  `#libraryBtn`; it is `<button id="libraryBtn" class="action-pill">Library</button>`, one tap, the same shape as Home and
+  Discover, and it shares the dock row evenly (`flex: 1 1 0`). (2) **The split setting retires with the split.** The Tools card that
+  switched a two-half dock tab became the rail card; `applyLibraryButtonMode()` is kept as the one place the dock mode is applied
+  and applies nothing - it must not append its "Playlists ▾" label, which would write over the word the pill carries now. The old
+  `sidecut_diagonalSplit` key is still read, so an existing install keeps its value. (3) **The Library pill follows the source**:
+  with the halves gone, its handler asks the shelf first, so on the source it opens the streaming songs page (Playlists and Albums are
+  a glyph away) and on the device it falls through to the library exactly as before - `pickReal()` is untouched. (4) **The rail is
+  85% see-through, and adjustable in Tools.** Its background is now
+  `color-mix(in srgb, var(--bg-raised) var(--scshelf-solid, 15%), transparent)` - 15% solid is 85% see-through - and the weight is
+  one CSS variable written by `scRailSee()`, so it holds for a rail that has not been built yet. The new **Streaming rail** card sits
+  where the split card was, with a 0-100 slider (0 solid, 100 only the glyphs), a live value on the row, `input` updating the rail
+  while the thumb moves and `change` saving `sidecut_railSee`. Values are clamped and rounded, a non-number falls back to 85, and the
+  card hides itself in the builds that have no rail (`!SC_STREAM_OK`, i.e. the Play channel). (5) **The rail lives on the body.**
+  `scShelfRender()` moves `#scShelfRail` onto `document.body` before it builds it, where no view's transform can reach it, and
+  `navigate()` shows and hides it with the library so it does not float over Home or Discover. `top:50%` + `translateY(-50%)` are
+  unchanged - with the body as its containing block that is the screen, and it stays there.
+- **WHAT WAS DELIBERATELY NOT DONE.** No blur came back with the transparency: 80.6.25 took `backdrop-filter` off a fixed pill
+  because it juddered over a scrolling list, and that stands. The border stays at full strength - an edge is what says the glyphs are
+  a rail and not loose icons over artwork. Nothing about `libraryMode`, the library's own tab strip, the albums, the playlists or the
+  shelf's pages changed; the guarded half-wiring block still sets `window.__bootDone` and `__scLibraryModeWired`, which the rest of
+  the page reads. The Play channel gets the dock pill and the retired split automatically, because it is this page with
+  `__PLAY_BUILD__` set and the rail is gated on `SC_STREAM_OK`.
+- **WHAT WAS RUN.** `dev/patch-80629.py` over the released 80.6.28 page: `--check` **1** before, 14 steps applied, a second run a
+  no-op, `--check` **0**. `dev/check-80629.cjs` passes **50 checks**, and the ones that matter are run, not read: `scRailSee` in a vm
+  (85 -> `--scshelf-solid: 15%`, 0 -> `100%`, 100 -> `0%`, 140 and -20 clamped, `'abc'` falls back to 85, 42.6 rounds to 43 and the
+  weight follows, the slider is written to and the row reads back, and the card is hidden when `SC_STREAM_OK` is false). It also
+  proves the reparent sits inside `scShelfRender` *before* the rail is built, that `navigate()` shows and hides the rail with the
+  library, that the Library handler asks the shelf *before* the downloaded `navigate('library')`, that no `#playlistsHalf`,
+  `#albumsHalf` or `lib-single-label` path survives, and that all seven inline scripts compile. OTA rebuilt to a true fixed point -
+  root + `ota/` **{{ROOT}}** bytes at v80.6.29, the `ota-play/` channel (**{{PLAY}}** bytes) rebuilt from the same page.
+- **NOT CLAIMED.** There is no phone and no browser here. The drift was diagnosed from the code (a fixed pill inside an animated
+  transform), not watched on a screen; nobody has slid the new rail slider, seen the rail at 85% over artwork, or tapped the single
+  Library pill on a device. The logic, the CSS and the markup are proven; the look is not.
