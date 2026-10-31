@@ -17426,9 +17426,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scShelfRail.scShelfRailOn{display:flex;flex-direction:column;gap:6px;height:auto;',
       'position:fixed;right:8px;top:50%;margin:0;padding:5px;z-index:70;',
       'transform:translateY(-50%);border-radius:999px;pointer-events:none;',
-      'background:color-mix(in srgb, var(--bg-raised) 84%, transparent);',
-      'border:1px solid var(--line);box-shadow:0 10px 26px rgba(0,0,0,.28);',
-      'backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2)}',
+      // 80.6.25 - NO BLUR BEHIND A FIXED PILL. A fixed layer with a
+      // backdrop-filter over a scrolling list re-samples its backdrop on every
+      // frame the list moves, and on a WebView the pill visibly judders while a
+      // thumb scrolls the songs under it. At 96% the background is the pill.
+      'background:color-mix(in srgb, var(--bg-raised) 96%, #000);',
+      'border:1px solid var(--line);box-shadow:0 10px 26px rgba(0,0,0,.28)}',
       // Only the glyphs catch a tap: the gaps between them and the rail's own padding
       // pass the touch through to the song underneath, which is the row the owner is
       // reaching for nine times out of ten.
@@ -17449,6 +17452,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
       '#scShelfRail .scshelf-src{position:relative}',
       '#scShelfRail .scshelf-src.s-on{color:var(--coral)}',
       '#scShelfRail .scshelf-src.s-on::after{content:"";position:absolute;right:4px;top:4px;width:5px;height:5px;border-radius:999px;background:var(--coral)}',
+      // 80.6.25 - BOTH HALVES OF THE SWITCH ARE BUILT ONCE, and one is shown. The
+      // glyph used to be re-written as innerHTML on every mark, which replaces the
+      // node the thumb is on and repaints a fixed pill from the inside out.
+      '#scShelfRail .scshelf-src > span{display:none;line-height:0}',
+      '#scShelfRail .scshelf-src > span.on{display:block}',
       '#scShelfHead{display:flex;align-items:center;gap:8px;padding:0 16px 6px}',
       '#scShelfHead .scshelf-title{font-size:13.5px;font-weight:700;flex:1}'
     ].join('');
@@ -17472,7 +17480,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       }).join('');
       h += '<div class="scshelf-sep"></div>';
       h += '<button type="button" class="scshelf-tab scshelf-src" data-src="1"' +
-        ' aria-pressed="false" aria-label="On device" title="On this device">' + scIcon('device', 17) + '</button>';
+        ' aria-pressed="false" aria-label="On this device" title="On this device">' +
+        '<span class="scshelf-i scshelf-i-str">' + scIcon('stream', 17) + '</span>' +
+        '<span class="scshelf-i scshelf-i-dev on">' + scIcon('device', 17) + '</span>' +
+        '</button>';
       rail.innerHTML = h;
       rail.setAttribute('data-built', '1');
       Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
@@ -17490,16 +17501,27 @@ function startLyricsAutoScroll(keepPos, noReset) {
     if(!rail) return;
     Array.prototype.forEach.call(rail.querySelectorAll('.scshelf-tab'), function(b){
       if(b.getAttribute('data-src') === '1'){
+        // 80.6.25 - NO GLYPH IS REPLACED. Both icons were built with the rail and
+        // this only chooses which one is drawn, so the node under the thumb keeps
+        // its identity and nothing is written into the pill when it is tapped.
         var s = (scShelf.src === 's');
-        b.className = 'scshelf-tab scshelf-src' + (s ? ' s-on' : '');
-        b.innerHTML = scIcon(s ? 'stream' : 'device', 17);
+        var swcls = 'scshelf-tab scshelf-src' + (s ? ' s-on' : '');
+        if(b.className !== swcls) b.className = swcls;
+        // 80.6.25 - THE ICON IS THE DESTINATION, NOT THE STATE. It used to show where
+        // you already were, so the arrow that means "your downloaded songs" was the
+        // one thing on screen when they were out of reach. On the source the switch
+        // now shows that arrow; on the device it shows the waveform the source is.
+        var dev = b.querySelector('.scshelf-i-dev'), str = b.querySelector('.scshelf-i-str');
+        if(dev){ var dcls = 'scshelf-i scshelf-i-dev' + (s ? ' on' : ''); if(dev.className !== dcls) dev.className = dcls; }
+        if(str){ var scls = 'scshelf-i scshelf-i-str' + (s ? '' : ' on'); if(str.className !== scls) str.className = scls; }
         b.setAttribute('aria-pressed', s ? 'true' : 'false');
-        b.setAttribute('aria-label', s ? 'Streaming' : 'On device');
-        b.setAttribute('title', s ? 'Streaming - tap to show what is on this device' : 'On this device - tap to stream');
+        b.setAttribute('aria-label', s ? 'On this device' : 'Streaming');
+        b.setAttribute('title', s ? 'On this device - your downloaded songs' : 'Streaming - songs from the source');
         return;
       }
       var on = (b.getAttribute('data-shelf') === scShelf.page);
-      b.className = 'scshelf-tab' + (on ? ' on' : '');
+      var markcls = 'scshelf-tab' + (on ? ' on' : '');
+      if(b.className !== markcls) b.className = markcls;
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
@@ -17525,7 +17547,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // 80.6.23 - A PAGE THAT IS ALREADY UP IS NOT DRAWN AGAIN. Tapping the page you are
     // on is not a request for it, and repainting it is the rest of the same flicker.
     if(page === scShelf.page && scShelf.src === 'd' && !scShelf.open){ scShelfMark(); return; }
+    // 80.6.25 - THE PAGE GLYPHS ARE THE DEVICE'S. Library and Albums name what is on
+    // this phone, but with the switch on the source they drew the streaming set
+    // instead - so the downloaded songs could not be reached from the two glyphs that
+    // are named after them. A tap on either one now leaves the source.
     scShelf.page = page;
+    scShelf.src = 'd';
     scShelfApply();
   }
   function scShelfSetSrc(src){
@@ -17533,6 +17560,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
     var want = (src === 's') ? 's' : 'd';
     if(scShelf.src === want){ scShelfMark(); return; }
     scShelf.src = want;
+    // 80.6.25 - THE DEVICE SIDE IS THE SONG LIST. Flipping back kept whichever page
+    // was up, so coming from streaming albums landed on device albums and the
+    // downloaded songs were still two taps away. The source side keeps its page;
+    // the device side comes home to the songs.
+    if(want === 'd') scShelf.page = 'library';
     scShelfApply();
   }
   // 80.6.23 - ONE PAINTER FOR A PAGE AND A SOURCE. Whatever is asked for - a tab, the
@@ -18635,7 +18667,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.24';
+  const APP_VERSION = '80.6.25';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -19305,6 +19337,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  // 80.6.25 - THE RAIL HOLDS STILL, AND THE SONGS ARE ONE TAP AWAY. The owner, after
+  // 80.6.23: the side buttons keep moving, and they will not let him at his downloaded
+  // songs. Both are the rail: a fixed, blurred pill over a scrolling list, and two page
+  // glyphs that drew the streaming set while the switch was on the source.
+  { version: '80.6.25', date: 'October 30, 2026 · 9:04 PM EDT', title: 'The side rail holds still, and your songs are one tap away', items: [
+    '[FULL] Library and Albums on the side rail are your own songs again. A tap on either one leaves the source and lands on what is downloaded, so the two glyphs named after your library open your library.',
+    '[FULL] The switch says where a tap takes you - a device arrow for your downloaded songs, a waveform for the source - instead of showing where you already are.',
+    '[FULL] The rail stopped moving under your thumb: the pill no longer blurs the songs behind it, and tapping a glyph marks it by changing a colour instead of redrawing the pill.',
+    '[FULL] Coming back from streaming always lands on your songs, not on whichever page you left.'
+  ]},
   // 80.6.24 - THE PATCH NOTES CARRY THE DAY AND THE TIME. Twelve entries (80.6.12 through
   // 80.6.23) were stamped with a bare `2026-10-30` - no time, and the wrong day for the
   // nine that landed on the evening of the 29th - while every earlier entry carries
