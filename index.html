@@ -17151,6 +17151,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
       scStreamTick();
       return;
     }
+    // 80.6.28 - THE PLAYLISTS ARE A PAGE, THE WAY THE ALBUMS ARE. They lived as a row
+    // of chips under the shelf, so there was no button that showed every streaming
+    // playlist, and nothing on a page of its own to hold for two seconds.
+    if(!open && scShelf.src === 's' && scShelf.page === 'playlists'){
+      h += '<div style="' + card + '">';
+      h += '<div style="display:flex;align-items:center;gap:8px;">';
+      h += '<span style="font-size:13.5px;font-weight:700;">Streaming playlists</span>';
+      h += '<span style="font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--coral);border:1px solid color-mix(in srgb, var(--coral) 45%, transparent);border-radius:999px;padding:2px 7px;">From the source</span>';
+      h += '<span style="flex:1;"></span>';
+      h += '<button type="button" id="scStreamNewPl" style="background:none;border:1px solid var(--line);color:var(--ink-dim);border-radius:999px;padding:5px 10px;font-size:11px;">New playlist</button>';
+      h += '</div>';
+      h += '<div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.5;">Playlists of songs that play from the source, and of files already on this device. Nothing on this page is downloaded. Hold a playlist for two seconds to delete it.</div>';
+      h += scShelfGrid('pl', scStreamState.playlists || []);
+      h += '<div id="scStreamSay" style="font-size:11px;color:var(--coral);min-height:14px;margin-top:8px;"></div>';
+      h += '</div>';
+      host.innerHTML = h;
+      scStreamWire();
+      scStreamTick();
+      return;
+    }
     // 80.6.13 - A PLAYLIST IS A PAGE. It shows the songs it holds with the cover,
     // the artist and the length each one was saved with, and it survives a restart
     // because it no longer depends on another list to tell it what its ids were.
@@ -17448,6 +17468,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
       // colour and cannot be re-fonted by a WebView.
       stream: 'M4.5 9h2.6v6H4.5zm4.6-3h2.6v12H9.1zm4.6-3h2.6v18h-2.6zm4.6 5h2.6v8h-2.6z',
       list: 'M4 6h16v2H4zm0 5h16v2H4zm0 5h10.5v2H4z',
+      // 80.6.28 - a playlist has its own glyph now that it has its own page: ruled
+      // lines with a mark beside each one, so it is not the library glyph again.
+      plist: 'M3 6h2.2v2.2H3zm4.4 0H21v2.2H7.4zM3 10.9h2.2v2.2H3zm4.4 0H21v2.2H7.4zM3 15.8h2.2v2.2H3zm4.4 0H21v2.2H7.4z',
       grid: 'M4 4h7.2v7.2H4zm8.8 0H20v7.2h-7.2zM4 12.8h7.2V20H4zm8.8 0H20V20h-7.2z',
       // 80.6.23 - the switch's other half: a song coming down onto the device.
       device: 'M11 3h2v8.6l3.3-3.3 1.4 1.4L12 15.4 6.3 9.7l1.4-1.4L11 11.6V3zM5 19h14v2H5z'
@@ -17629,7 +17652,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     // visibly every time one was chosen. The buttons are made here and never again;
     // scShelfMark() only moves the mark from one glyph to the next.
     if(rail.getAttribute('data-built') !== '1'){
-      var pages = [['library', 'Library', 'list'], ['albums', 'Albums', 'grid']];
+      // 80.6.28 - THREE PAGES, AND THE SOURCE SAYS WHOSE THEY ARE. Playlists had no
+      // page at all: the streaming lists were a row of chips under the shelf, so on
+      // the source there was no button that showed all of them. Every page now
+      // answers in the source that is on - the streaming songs, playlists and
+      // albums, or the downloaded ones - and no glyph ever moves the source.
+      var pages = [['library', 'Songs', 'list'], ['playlists', 'Playlists', 'plist'], ['albums', 'Albums', 'grid']];
       var h = pages.map(function(t){
         return '<button type="button" class="scshelf-tab" data-shelf="' + t[0] + '"' +
           ' aria-pressed="false" aria-label="' + escapeHtml(t[1]) + '"' +
@@ -17700,7 +17728,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
   function scShelfOpenTab(tab){
     if(!SC_STREAM_OK) return;
     if(tab === 'streaming'){ scShelf.page = 'library'; scShelf.src = 's'; scShelfApply(); return; }
-    var page = (tab === 'albums') ? 'albums' : 'library';
+    // 80.6.28 - SONGS, PLAYLISTS, ALBUMS. All three stay in the source that is on;
+    // the switch is still the only thing that changes it.
+    var page = (tab === 'albums') ? 'albums' : (tab === 'playlists') ? 'playlists' : 'library';
     // 80.6.26 - A PAGE GLYPH STAYS IN THE SOURCE THAT IS ON. 80.6.25 made both glyphs
     // leave the source, so while the source was on, the Albums glyph opened the
     // downloaded albums and the streaming ones could only be reached as a row inside
@@ -17731,7 +17761,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // renders; it is only painted by hand when there is no navigate() to ask.
   function scShelfApply(){
     if(!SC_STREAM_OK) return;
-    var page = (scShelf.page === 'albums') ? 'albums' : 'library';
+    var page = (scShelf.page === 'albums') ? 'albums' : (scShelf.page === 'playlists') ? 'playlists' : 'library';
     scStreamState.pl = '';
     try{
       if(typeof libraryMode !== 'undefined') libraryMode = (page === 'albums') ? 'albums' : 'playlists';
@@ -17746,6 +17776,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
       try{ var top = document.getElementById('scStreamBlock'); if(top) top.scrollTop = 0; }catch(_eTop){}
       scShelfMark();
       return;
+    }
+    // 80.6.28 - ON THE DEVICE THE THREE PAGES ARE THE LIBRARY THREE. Songs is All
+    // Songs, Playlists is the strip it has always been, Albums is Albums. The Songs
+    // glyph used to land on whatever playlist was last used, which is not what the
+    // word says, so the three glyphs answered with two pages between them.
+    if(page === 'library'){
+      try{ if(typeof activePlaylist !== 'undefined') activePlaylist = 'All Songs'; }catch(_eAllSongs){}
     }
     scShelf.open = false;
     scShelfPage(false);
@@ -18825,7 +18862,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.6.27';
+  const APP_VERSION = '80.6.28';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -19495,6 +19532,16 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }catch(_eSinglesGen){}
   const CHANGELOG = [
+  // 80.6.28 - THE PAGES FOLLOW THE SOURCE. The owner, after the record release: the
+  // playlists and the albums should be in here in streaming, and the buttons should
+  // do what they say - streaming all, streaming playlists and albums, and the
+  // regular ones when the device is the source.
+  { version: '80.6.28', date: 'October 30, 2026 · 9:43 PM EDT', title: 'The pages follow the source', items: [
+    '[FULL] The side rail has three pages now - Songs, Playlists and Albums - and each one answers in the source that is on: the streaming songs, playlists and albums, or the downloaded ones.',
+    '[FULL] Streaming playlists have a page of their own, drawn as tiles with a cover, a name and a count, instead of a row of chips under the shelf.',
+    '[FULL] The Library pill halves follow the source too: on the source they open the source pages rather than changing the downloaded half behind the shelf.',
+    '[FULL] On the downloaded side each glyph lands where its name says - Songs opens All Songs, Playlists the playlist tabs, Albums the albums.'
+  ]},
   // 80.6.27 - THE RECORD PLAYER TAKES YOU TO THE SONG THAT IS PLAYING. The owner,
   // before this release: a tap on the record player while streaming went to some
   // random song. It did - the tap asked the downloaded deck, which was not the
@@ -43277,11 +43324,16 @@ function _renderAhFromData(artistAlbums){
     if(plHalf) plHalf.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
+      // 80.6.28 - THE PILL BELONGS TO THE SOURCE THAT IS ON. These two halves set the
+      // downloaded half and navigated behind the shelf, so while the source was up
+      // they changed nothing you could see: the shelf stayed on the page it was on.
+      if(typeof scShelf !== 'undefined' && scShelf.src === 's'){ scShelfOpenTab('library'); return; }
       navigate('playlists');
     });
     if(alHalf) alHalf.addEventListener('click', function(e){
       e.preventDefault();
       e.stopPropagation();
+      if(typeof scShelf !== 'undefined' && scShelf.src === 's'){ scShelfOpenTab('albums'); return; }
       navigate('albums');
     });
   })();;
@@ -43600,6 +43652,9 @@ function _renderAhFromData(artistAlbums){
   $('libraryBtn').addEventListener('click', (e) => {
     // In single-button mode, toggle between playlists/albums on click
     if(!useDiagonalSplit && !e.target.closest('#playlistsHalf') && !e.target.closest('#albumsHalf')){
+      // 80.6.28 - in single-button mode the one pill flips the source pages too,
+      // instead of changing the downloaded half underneath the shelf.
+      if(typeof scShelf !== 'undefined' && scShelf.src === 's'){ scShelfOpenTab(scShelf.page === 'albums' ? 'library' : 'albums'); return; }
       // Flipping AWAY from Albums is leaving the tab, so the switch applies here
       // too (flipping TO Albums is not a leave).
       try{ if(libraryMode === 'albums') scAlbumsRememberOnLeave(); }catch(_eAf2){}
