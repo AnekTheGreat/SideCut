@@ -16525,6 +16525,67 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
 
   // --- playing ---------------------------------------------------------------
+  // 80.7.4 - A SONG FROM THE CATALOGUE IS THE WHOLE SONG, OR IT SAYS SO.
+  // The source caps the audio-only copy of a music upload at its first megabyte
+  // (a 403 past it), and when the player never reported the stream's length the
+  // reader cannot tell that copy from a whole file: the row said 3:12 and what
+  // came back ended at 1:04. Nothing compared the audio with the length the row
+  // already knows, so a fragment was played, remembered for the next tap and
+  // decoded as the song by a crop. A copy that ends more than fifteen seconds (or
+  // a tenth) before the song does is a fragment: it is never kept in memory, and
+  // the full copy the player handed over behind it is read instead, at the second
+  // the fragment stopped on. When every copy is short, the row says which second
+  // it ends at instead of playing a minute of a three-minute song and falling
+  // silent as if the song had finished.
+  function scStreamWhole(want, got){
+    want = Number(want) || 0;
+    got = Number(got) || 0;
+    if(!(want > 0) || !(got > 0)) return true;        // nothing to judge on yet
+    if(!isFinite(got)) return true;                   // a live copy has no end
+    return (want - got) <= Math.max(15, want * 0.1);  // shorter than the song: a fragment
+  }
+  function scStreamFragCheck(a){
+    if(!a || scStreamState.busy) return;
+    var t = scStreamById(scStreamState.curId);
+    if(!t || !t.videoId) return;
+    var want = Number(t.dur) || 0, got = 0, at = 0;
+    try{ got = Number(a.duration) || 0; }catch(_eFd){ got = 0; }
+    if(scStreamWhole(want, got)) return;
+    try{ at = Number(a.currentTime) || 0; }catch(_eFa){ at = 0; }
+    // A fragment is never carried: not in memory for the next tap, and not the
+    // audio a crop would decode.
+    try{ scStreamCacheDrop(t.videoId); }catch(_eFdrop){}
+    scStreamState.err = 'the source sent a fragment';
+    scStreamState.fixes = (Number(scStreamState.fixes) || 0) + 1;
+    if(scStreamState.fixes > 12){
+      scStreamSay('Every copy of this song stopped short - tap Restart');
+      return;
+    }
+    scStreamState.busy = true;
+    function nextCopy(){
+      var alt = scStreamAltUrl();
+      if(alt) return Promise.resolve(alt);
+      // Every candidate this resolve handed over is spent: ask once more, and take
+      // the answer BEHIND its lead - the lead is the capped copy that just stopped.
+      return Promise.resolve(scStreamResolve(t.videoId)).then(function(){ return scStreamAltUrl(); });
+    }
+    Promise.resolve(nextCopy()).then(function(u){
+      if(!u || String(scStreamState.curId) !== String(t.id)){
+        scStreamState.busy = false;
+        scStreamSay('This copy of the song ends at ' + scStreamTime(got) + ' of ' + scStreamTime(want)
+          + ' - tap Restart to try another copy');
+        return;
+      }
+      scStreamSay('That copy stopped at ' + scStreamTime(got) + ' - reading the whole song\u2026');
+      return scStreamSource({ url: u, mime: '', size: 0 }).then(function(src){
+        scStreamState.busy = false;
+        if(!src || String(scStreamState.curId) !== String(t.id)) return;
+        scStreamState.via = 'read';
+        return scStreamStart(src, at);
+      });
+    }).catch(function(){ scStreamState.busy = false; });
+  }
+
   function scStreamPlay(id, ctxIds){
     var t = scStreamById(id);
     if(!t){ return; }
@@ -17231,6 +17292,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       if(dg) dg.textContent = scStreamDiag();
       if(!a) return;
       var d = a.duration;
+      scStreamFragCheck(a);   // 80.7.4 - a fragment is not the song
       if(bar){ bar.max = isFinite(d) && d > 0 ? d : 0; bar.value = a.currentTime || 0; }
       if(at) at.textContent = scStreamTime(a.currentTime || 0) + (isFinite(d) && d > 0 ? ' / ' + scStreamTime(d) : '');
     }catch(_e){}
@@ -19342,7 +19404,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.7.3';
+  const APP_VERSION = '80.7.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -20031,6 +20093,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // opened the menu of the last downloaded song, the one song that is silent.
   // The dots ask what is on the screen now, and its own sheet comes up with the
   // crop and the lists on it.
+  // 80.7.4 - THE WHOLE SONG, OR A ROW THAT SAYS WHERE IT STOPPED.
+  { version: '80.7.4', date: 'November 1, 2026 · 1:34 PM EST', title: 'The whole song, or a row that says where it stopped', items: [
+    'A song played straight from the catalogue now checks how long the audio that came back actually is: a copy that stops before the song does is swapped for the full copy behind it instead of playing a minute and going quiet.',
+    'A short copy is never kept in memory, so pressing play again, or cropping that song, uses the whole song rather than the piece that happened to arrive first.',
+    'When every copy of a song comes back short, the row says which second it ends at and offers Restart, instead of falling silent as though the song had finished.'
+  ]},
   { version: '80.7.3', date: 'October 31, 2026 · 7:30 PM EDT', title: 'The dots on the player open the menu of the song you are hearing', items: [
     'The more-options menu on the player now opens the actions for the song on the screen instead of the last song in the download queue, so a song played straight from the catalogue offers Crop a clip right where you are already looking at it.',
     'Cropping a song played straight from the catalogue saves the part you keep into your library as its own song, cover and all, and leaves the song it came off exactly as it was.',
