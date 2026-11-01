@@ -16563,11 +16563,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
     scStreamState.busy = true;
     function nextCopy(){
-      var alt = scStreamAltUrl();
+      // 80.7.5 - the muxed copy first: it is the one the cap does not touch.
+      var alt = scStreamAltUrl(true);
       if(alt) return Promise.resolve(alt);
       // Every candidate this resolve handed over is spent: ask once more, and take
       // the answer BEHIND its lead - the lead is the capped copy that just stopped.
-      return Promise.resolve(scStreamResolve(t.videoId)).then(function(){ return scStreamAltUrl(); });
+      return Promise.resolve(scStreamResolve(t.videoId)).then(function(){ return scStreamAltUrl(true) || scStreamAltUrl(); });
     }
     Promise.resolve(nextCopy()).then(function(u){
       if(!u || String(scStreamState.curId) !== String(t.id)){
@@ -16631,13 +16632,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
         .catch(function(){ return ''; });
       return readP;
     }
-    return Promise.resolve(scStreamResolveCached(t.videoId)).then(function(u){
-      if(String(scStreamState.curId) !== wanted) return;
-      if(!u){
-        scStreamSay('No playable stream for this song right now' + (scStreamReason() ? ' (' + scStreamReason() + ')' : ''));
-        scStreamTick();
-        return;
-      }
+    function playUrl(u){
       scStreamState.via = 'link';
       beginRead(u);                       // alongside the link, not after it
       return scStreamStart(u).then(function(ok){
@@ -16648,6 +16643,25 @@ function startLyricsAutoScroll(keepPos, noReset) {
           scStreamState.via = 'read';
           return scStreamStart(src).then(function(ok2){ if(ok2) scStreamWarmNext(); });
         });
+      });
+    }
+    function noneLeft(){
+      scStreamSay('No playable stream for this song right now' + (scStreamReason() ? ' (' + scStreamReason() + ')' : ''));
+      scStreamTick();
+    }
+    return Promise.resolve(scStreamResolveCached(t.videoId)).then(function(u){
+      if(String(scStreamState.curId) !== wanted) return;
+      if(u) return playUrl(u);
+      // 80.7.5 - ONE MORE ASK BEFORE THE OWNER IS TOLD THERE IS NOTHING. Resolving is
+      // one round trip to a host that rate-limits and times out, and a single empty
+      // answer was final: the row said no source was found and stopped. The answer is
+      // asked for a second time; only two refusals in a row is a song that cannot be
+      // played right now, and the line then says so with Restart beside it.
+      return Promise.resolve(scStreamResolve(t.videoId)).then(function(u2){
+        if(String(scStreamState.curId) !== wanted) return;
+        if(!u2){ noneLeft(); return; }
+        if(t.videoId) scStreamResolved[String(t.videoId)] = { url: u2, at: Date.now() };
+        return playUrl(u2);
       });
     }).catch(function(){
       scStreamState.err = 'the play call failed';
@@ -17280,8 +17294,28 @@ function startLyricsAutoScroll(keepPos, noReset) {
     return String(cur.genre || scStreamState.genre || '');
   }
 
+  // 80.7.5 - A LINE THAT SAYS WHAT WENT WRONG CARRIES THE WAY OUT OF IT, AND IT IS
+  // NEVER SILENT WHERE IT HAPPENED. Every list that can show a failure now draws
+  // Restart beside the line - the albums page, the playlists page, an open list and
+  // the shelf all said "tap Restart" while the button existed only on the
+  // now-playing card, so the instruction pointed at something that was not on
+  // screen. And a failure with no line to land in (the library is what is on screen
+  // while a song plays there) says so out loud instead of the song going quiet.
+  function scStreamSayLine(){
+    return '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
+      + '<div id="scStreamSay" style="flex:1;min-width:0;font-size:11px;color:var(--coral);min-height:14px;"></div>'
+      + '<button type="button" class="scs-fix" title="Try this song again" style="flex:0 0 auto;border:1px solid var(--line);background:none;color:var(--ink-dim);border-radius:999px;padding:4px 9px;font-size:10.5px;line-height:1;">Restart</button>'
+      + '</div>';
+  }
   function scStreamSay(msg){
-    try{ var el = document.getElementById('scStreamSay'); if(el) el.textContent = msg || ''; }catch(_e){}
+    var el = null;
+    try{ el = document.getElementById('scStreamSay'); }catch(_eSay){ el = null; }
+    if(el){ el.textContent = msg || ''; return; }
+    // Only what the owner has to act on is said out loud: the progress lines would
+    // otherwise toast once per percent.
+    if(msg && /restart|could not|not play|no playable|ends at|stopped short/i.test(String(msg))){
+      try{ if(typeof toast === 'function') toast(String(msg), 4200); }catch(_eSayToast){}
+    }
   }
   function scStreamTick(){
     try{
@@ -17507,7 +17541,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       h += '</div>';
       h += '<div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.5;">Albums of songs that play from the source, and of files already on this device. Nothing on this page is downloaded. Hold an album for two seconds to delete it.</div>';
       h += scShelfGrid('al', scStreamAlbums());
-      h += '<div id="scStreamSay" style="font-size:11px;color:var(--coral);min-height:14px;margin-top:8px;"></div>';
+      h += scStreamSayLine();
       h += '</div>';
       host.innerHTML = h;
       scStreamWire();
@@ -17527,7 +17561,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       h += '</div>';
       h += '<div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.5;">Playlists of songs that play from the source, and of files already on this device. Nothing on this page is downloaded. Hold a playlist for two seconds to delete it.</div>';
       h += scShelfGrid('pl', scStreamState.playlists || []);
-      h += '<div id="scStreamSay" style="font-size:11px;color:var(--coral);min-height:14px;margin-top:8px;"></div>';
+      h += scStreamSayLine();
       h += '</div>';
       host.innerHTML = h;
       scStreamWire();
@@ -17564,7 +17598,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       });
       if(!(open.items || []).length) h += '<div style="font-size:11.5px;color:var(--ink-dim);padding:8px 0;">Nothing in this playlist yet.</div>';
       h += '</div>';
-      h += '<div id="scStreamSay" style="font-size:11px;color:var(--coral);min-height:14px;margin-top:8px;"></div>';
+      h += scStreamSayLine();
       h += '</div>';
       host.innerHTML = h;
       scStreamWire();
@@ -17655,7 +17689,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       h += '<button type="button" id="scStreamFix" style="border:1px solid var(--line);background:none;color:var(--ink-dim);border-radius:999px;padding:4px 9px;font-size:10.5px;">Restart</button>';
       h += '</div></div>';
     }
-    h += '<div id="scStreamSay" style="font-size:11px;color:var(--coral);min-height:14px;margin-top:8px;"></div>';
+    h += scStreamSayLine();
     h += scStreamListChips();
     if((tracks || []).length){
       h += '<div style="margin-top:10px;">';
@@ -17733,6 +17767,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     on('scStreamNextB', 'click', function(){ scStreamNext(1); });
     on('scStreamBar', 'input', function(){ try{ scStreamAudio().currentTime = Number(this.value) || 0; }catch(_e){} });
     on('scStreamFix', 'click', scStreamRestart);
+    Array.prototype.forEach.call(host.querySelectorAll('.scs-fix'), function(b){ b.addEventListener('click', scStreamRestart); });
     on('scStreamUpNext', 'click', function(){
       var up = scStreamUpNext();
       if(!up){ scStreamSay('Nothing else in this genre yet'); return; }
@@ -17875,8 +17910,19 @@ function startLyricsAutoScroll(keepPos, noReset) {
   }
 
   // The next candidate the player handed over, or '' when they are all spent.
-  function scStreamAltUrl(){
+  // 80.7.5 - THE COPY THAT CAN HOLD THE WHOLE SONG COMES FIRST. The player hands
+  // over one muxed copy behind a row of audio-only ones, and the audio-only ones
+  // are the copies the source caps at its first megabyte. A copy that stopped early
+  // therefore used to walk those capped rows one at a time - a read, a blip and
+  // another failure each - before it reached the one copy that carries the music.
+  // Asked for a whole copy, the muxed candidate is taken first.
+  function scStreamAltUrl(wantWhole){
     var a = scStreamState.alts || [];
+    if(wantWhole){
+      for(var i = 0; i < a.length; i++){
+        if(a[i] && a[i].url && a[i].muxed){ return a.splice(i, 1)[0].url; }
+      }
+    }
     while(a.length){
       var n = a.shift();
       if(n && n.url) return n.url;
@@ -19404,7 +19450,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.7.4';
+  const APP_VERSION = '80.7.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -20094,6 +20140,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // The dots ask what is on the screen now, and its own sheet comes up with the
   // crop and the lists on it.
   // 80.7.4 - THE WHOLE SONG, OR A ROW THAT SAYS WHERE IT STOPPED.
+  // 80.7.5 - THE COVER REACHES EVERY SONG, AND A FAILURE SAYS WHERE TO TAP.
+  { version: '80.7.5', date: 'November 1, 2026 · 5:59 PM EST', title: 'The cover reaches every song, and a failure says where to tap', items: [
+    'Every song in an album now shows that album cover beside it, instead of only the first song having a picture.',
+    '[FULL] The line that says a song could not be played now has Restart beside it on the albums page, the playlists page and every list, instead of naming a button that was not on screen.',
+    '[FULL] A copy that stopped early now goes straight to the copy that can hold the whole song, and a search that came back empty is asked once more before the app reports that nothing could be found.'
+  ]},
   { version: '80.7.4', date: 'November 1, 2026 · 1:34 PM EST', title: 'The whole song, or a row that says where it stopped', items: [
     'A song played straight from the catalogue now checks how long the audio that came back actually is: a copy that stops before the song does is swapped for the full copy behind it instead of playing a minute and going quiet.',
     'A short copy is never kept in memory, so pressing play again, or cropping that song, uses the whole song rather than the piece that happened to arrive first.',
@@ -29324,6 +29376,39 @@ function _fallbackCopy(text){
   // the user was scrolling through it. Rows that are not on screen are skipped:
   // they are built with this data already in them, the next time they are.
   // (64.3.1)
+  // 80.7.5 - AN ALBUM'S COVER REACHES EVERY SONG IN IT.
+  // A downloaded album can carry its cover on the album and on the one song the
+  // cover was read from, with the rest holding no picture of their own - so the
+  // card drew an empty box beside every song but the first. A row with no art of
+  // its own shows its album's cover: the picture the header above it already
+  // draws, which is what the album looks like anyway. The album is found by the
+  // song's own tag first and by the album that holds it second, and the answer is
+  // kept for the length of one render so a big album costs one lookup, not one
+  // per row.
+  var scAlbumArtCache = {};
+  function scAlbumArtDrop(){ scAlbumArtCache = {}; }
+  function scAlbumRowArt(t){
+    function asStyle(u){ return "background-image:url('" + String(u).replace(/'/g, '%27') + "');"; }
+    var art = String((t && t.artUrl) || '');
+    if(art) return asStyle(art);
+    var name = String((t && t.album) || '');
+    if(name && Object.prototype.hasOwnProperty.call(scAlbumArtCache, name)) art = scAlbumArtCache[name];
+    if(!art && name){
+      try{
+        var ua = (typeof userAlbums !== 'undefined' && userAlbums) ? userAlbums[name] : null;
+        art = String((ua && ua.cover) || '');
+        if(!art){
+          var ids = (ua && ua.trackIds) || [];
+          for(var i = 0; i < ids.length && !art; i++){
+            var ft = allTracks.find(function(x){ return x.id === ids[i]; });
+            if(ft && ft.artUrl) art = String(ft.artUrl);
+          }
+        }
+        scAlbumArtCache[name] = art;
+      }catch(_eAlbumArt){ art = ''; }
+    }
+    return art ? asStyle(art) : '';
+  }
   function scPatchListRows(ids){
     var pane = $('listPane');
     if(!pane || !ids || !ids.length) return 0;
@@ -29352,6 +29437,7 @@ function _fallbackCopy(text){
   // Reachable from a probe, like the two jumps and the focus record are.
   window.__scPatchListRows = scPatchListRows;
   function renderList(){
+    scAlbumArtDrop();   // 80.7.5 - a cover that arrived since the last render is used now
     // Debounce: coalesce rapid renderList calls (from metadata loads,
     // playback updates, etc.) into a single rAF to reduce DOM thrashing
     _renderListPending = true;
@@ -29873,7 +29959,7 @@ function _fallbackCopy(text){
               var row = document.createElement('div');
               row.className = 'track' + (tid === _nowPlayingId ? ' playing' : '') + scFocusClassFor(tid);
               row.dataset.id = tid;
-              var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+              var artStyle = scAlbumRowArt(tt);
               row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
                 + '<div class="track-art" style="' + artStyle + '"></div>'
                 + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
@@ -30169,7 +30255,7 @@ function _fallbackCopy(text){
             var row = document.createElement('div');
             row.className = 'track' + (tid === _nowPlayingId ? ' playing' : '') + scFocusClassFor(tid);
             row.dataset.id = tid;
-            var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+            var artStyle = scAlbumRowArt(tt);
             row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
               + '<div class="track-art" style="' + artStyle + '"></div>'
               + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
@@ -37357,7 +37443,7 @@ function _fallbackCopy(text){
               var row = document.createElement('div');
               row.className = 'track' + (tid === id ? ' playing' : '') + scFocusClassFor(tid);
               row.dataset.id = tid;
-              var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+              var artStyle = scAlbumRowArt(tt);
               row.innerHTML = '<div class="idx">' + (ti+1) + '</div>'
                 + '<div class="track-art" style="' + artStyle + '"></div>'
                 + '<div class="track-info"><div class="t">' + escapeHtml(tt.name) + '</div>'
@@ -39232,7 +39318,7 @@ function _fallbackCopy(text){
                 var _row = document.createElement('div');
                 _row.className = 'track' + (_tid === t.id ? ' playing' : '') + scFocusClassFor(_tid);
                 _row.dataset.id = _tid;
-                var _as = _tt.artUrl ? "background-image:url('" + _tt.artUrl + "');" : '';
+                var _as = scAlbumRowArt(_tt);
                 _row.innerHTML = '<div class="idx">' + (_ti+1) + '</div>'
                   + '<div class="track-art" style="' + _as + '"></div>'
                   + '<div class="track-info"><div class="t">' + escapeHtml(_tt.name) + '</div>'
@@ -57614,7 +57700,7 @@ window.showAlbumReorderPopup = function(albumName, focusTrackId){
       var row = document.createElement('div');
       row.dataset.id = tid;
       row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;user-select:none;transition:background 0.15s;border-bottom:1px solid rgba(255,255,255,0.04);';
-      var artStyle = tt.artUrl ? "background-image:url('" + tt.artUrl + "');" : '';
+      var artStyle = scAlbumRowArt(tt);
       var gripDiv = document.createElement('div');
       gripDiv.className = 'ar-grip';
       gripDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--ink-dim);cursor:grab;touch-action:none;';
