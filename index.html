@@ -16159,17 +16159,49 @@ function startLyricsAutoScroll(keepPos, noReset) {
     try{ at = Number(a && a.currentTime) || 0; }catch(_eRem){}
     try{ dbPut('meta', { key: 'streamLast', value: { id: id, at: at, savedAt: now } }); }catch(_eRem2){}
   }
-  // After a launch, the last stream comes back on the bar, paused, at the second it
-  // stopped on - and play carries on from there instead of starting the song again.
+  // 80.7.6 - ONE RECORD OF WHAT PLAYED LAST, WRITTEN BY BOTH PLAYERS.
+  // Two stores remembered two different things: this module remembered the last song
+  // played from the catalogue (streamLast) and the deck remembered its own queue
+  // (playback), and neither knew the other existed. At launch the catalogue restore
+  // ran last and claimed the bar whenever its row was under twelve hours old - so a
+  // song from the morning came back over the download played five minutes ago.
+  // Both players now write this one row at the moment a song starts, and the bar
+  // comes back to the catalogue only when this row says the catalogue was last.
+  function scLastPlayedSet(kind, id){
+    try{
+      dbPut('meta', { key: 'lastPlayed', value: { kind: String(kind || ''), id: String(id || ''), at: Date.now() } });
+    }catch(_eLastPlayed){}
+  }
+  function scLastPlayedWasStream(streamLast, deckState, stamp){
+    if(stamp && stamp.kind) return String(stamp.kind) === 'stream';
+    var deckAt = Number(deckState && deckState.savedAt) || 0;
+    var streamAt = Number(streamLast && streamLast.savedAt) || 0;
+    if(deckAt && streamAt) return streamAt > deckAt;   // both dated: the later one wins
+    // Only one side is dated, so the times cannot order them. A deck session with a
+    // position in it is a song that was really being listened to, and a catalogue row
+    // on its own proves only that a catalogue song was STARTED at some point - which
+    // is the shape every install has the first time it runs this release. The deck
+    // wins there, so a download played after a catalogue song keeps the bar.
+    return !(deckState && Number(deckState.currentTime) > 0);
+  }
+  // After a launch, the last song played from the catalogue comes back on the bar,
+  // paused, at the second it stopped on - but only when it really was the last song
+  // played. A download played after it owns the bar, and the catalogue stays out of
+  // the way, which is what the owner reported it was not doing.
   function scStreamRestoreLast(){
     if(!SC_STREAM_OK) return;
     try{
-      Promise.resolve(dbGet('meta', 'streamLast')).then(function(r){
-        var v = r && r.value;
+      Promise.all([
+        Promise.resolve(dbGet('meta', 'streamLast')).catch(function(){ return null; }),
+        Promise.resolve(dbGet('meta', 'playback')).catch(function(){ return null; }),
+        Promise.resolve(dbGet('meta', 'lastPlayed')).catch(function(){ return null; })
+      ]).then(function(rows){
+        var v = (rows[0] && rows[0].value) || null;
         if(!v || !v.id) return;
         if(Date.now() - (Number(v.savedAt) || 0) > 12 * 60 * 60 * 1000) return;
         var t = scStreamById(v.id);
         if(!t) return;
+        if(!scLastPlayedWasStream(v, (rows[1] && rows[1].value) || null, (rows[2] && rows[2].value) || null)) return;
         scStreamState.curId = String(v.id);
         scStreamState.resumeId = String(v.id);
         scStreamState.resumeAt = Math.max(0, Number(v.at) || 0);
@@ -16603,6 +16635,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
     scStreamSay('Loading the stream\u2026');
     scStreamRender();
     scStreamBarOn(t);
+    scLastPlayedSet('stream', String(id));   // 80.7.6 - this song was played last
     // 80.6.19 - A SONG ALREADY READ PLAYS IN THE TAP.
     var hit = scStreamCacheGet(t.videoId);
     if(hit){
@@ -19450,7 +19483,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.7.5';
+  const APP_VERSION = '80.7.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -20141,6 +20174,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // crop and the lists on it.
   // 80.7.4 - THE WHOLE SONG, OR A ROW THAT SAYS WHERE IT STOPPED.
   // 80.7.5 - THE COVER REACHES EVERY SONG, AND A FAILURE SAYS WHERE TO TAP.
+  // 80.7.6 - THE BAR COMES BACK TO THE SONG PLAYED LAST.
+  { version: '80.7.6', date: 'November 1, 2026 · 6:11 PM EST', title: 'The bar comes back to the song played last', items: [
+    '[FULL] After a restart the player bar and the lock screen come back to the song you played most recently, so a song from the catalogue can no longer come back over a song from your library that you played after it.',
+    '[FULL] Both players now write one shared record of the song that started playing, and the deck writes down when it saved its own place, so the bar follows the last real play instead of each player assuming it was the one that mattered.',
+    '[FULL] A catalogue song is only brought back when it really was the last thing you played, and it still comes back paused at the second it stopped on.'
+  ]},
   { version: '80.7.5', date: 'November 1, 2026 · 5:59 PM EST', title: 'The cover reaches every song, and a failure says where to tap', items: [
     'Every song in an album now shows that album cover beside it, instead of only the first song having a picture.',
     '[FULL] The line that says a song could not be played now has Restart beside it on the albums page, the playlists page and every list, instead of naming a button that was not on screen.',
@@ -26881,6 +26920,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
         queue, queueIndex, trackId, isMixMode, shuffle, repeatMode,
         currentTime: activeAudio().currentTime || 0,
         sourcePlaylist: queueSourcePlaylist,
+        // 80.7.6 - WHEN this play was saved. Without it the bar at the next launch
+        // had no way to compare a download against the catalogue's own row, so the
+        // catalogue won any tie it liked.
+        savedAt: Date.now(),
         // 74.1 - WHICH ALBUM this play belongs to is saved with it. It was not
         // saved before, so a queue restored after a relaunch (or an OTA reload,
         // or a widget resume) came back with its songs and no idea that they were
@@ -36108,6 +36151,7 @@ function _fallbackCopy(text){
     a.play().catch(() => recoverAudio(a, 'play() rejected'));
     crossfadeTriggered = false;
     updateNowPlayingUI(t);
+    scLastPlayedSet('deck', t.id);   // 80.7.6 - what played last, written by both players
     savePlaybackState(true);
   }
 
