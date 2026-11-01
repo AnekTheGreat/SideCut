@@ -1,40 +1,55 @@
-## 80.7.4 ({{STAMP}}): the whole song, or a row that says where it stopped
+## 80.7.5 ({{STAMP}}): the cover reaches every song, and a failure says where to tap
 
-- **WHAT THE OWNER SAID.** *"make sure the streamed songs are correct too like it shouldnt be a fake"*. So the streaming path was
-  audited end to end rather than adjusted. What it does do: every row carries the exact `videoId` it was added from
-  (`scStreamAddResult`), `scStreamResolve()` asks the player endpoint for **that id** and never runs a search, so the app cannot
-  hand you a different song dressed in the row's title. What it did not do is the other half of "correct": check that the audio
-  which came back is the whole song.
-- **THE FAKE, AND IT WAS REAL.** The source caps the audio-only copy of a music upload at its first megabyte (the player's own
-  comment records the 403 past it), and the muxed copy sits behind it as an alternate. `scFetchBytes()` refuses a short read only
-  when the player reported the file's length (`total + 4096 < size`); when it did not, a capped read is indistinguishable from a
-  whole file, and nothing anywhere compared the result with the length the row already carried. So a 3:12 song could arrive as
-  its first 1:04, play, go quiet - and that fragment was then **kept in memory for the next tap** and **decoded as the song by
-  Crop**, which is a fake in the only sense that matters: the app called a minute of audio the whole song. If it reached its end
-  instead of erroring, `ended` fired and the app moved to the next song as though this one had finished.
-- **WHAT LANDED.** `scStreamWhole(want, got)` judges a copy against the row's own length - a copy more than fifteen seconds (or a
-  tenth) short is a fragment, while a copy that carries the music video's intro is longer and is left alone, and a row that never
-  knew its length, or an element that has not reported one, is never judged. `scStreamFragCheck()` runs from `scStreamTick()`
-  on the first metadata the element reports, before a fragment has played a second: the fragment is dropped from the cache, the
-  state records `the source sent a fragment`, and the next source the player handed over is read and started **at the second the
-  fragment stopped on** - so the song continues from 0:00 of the full copy instead of restarting or skipping. When every copy is
-  short the row says `This copy of the song ends at 1:04 of 3:12 - tap Restart to try another copy` rather than falling silent as
-  though the song had finished, and a ceiling of twelve steps says `Every copy of this song stopped short` instead of looping.
-- **WHAT WAS RUN.** `dev/patch-8074.py` over the released 80.7.3 page: `--check` **1** before, **4 steps** applied, a second run
-  a no-op, `--check` **0**. Then the workflow's own fixed-point loop for both OTA channels - honest on pass 3 - and
-  `dev/check-8074.cjs`: **55 passed, 0 failed** (the first run failed one check and only because it pinned the month: the stamp
-  had rolled into November in Eastern time, so the pin is on the format now, not the month). The release's own function is
-  **driven**, not just found: a 3:12 song arriving as 1:04 with a full copy behind it drops the fragment, reads the alternate on
-  its own terms, starts it at 0:00 and leaves the player un-busy; the same fragment with no copy behind it names the second it
-  ends at and asks for a restart; a whole song is untouched; a copy with the video intro is not refused for being longer; twelve
-  spent copies stop reading instead of looping; a row with no video id is not the stream's business; and `scStreamWhole` is run
-  across the boundaries. The routing proof is pinned in source as well: the resolver asks for the row's own id and never
-  searches. 80.7.3's dots-on-the-player menu and 80.7.2's crop pieces are re-checked, and every inline script compiles. OTA at a
-  true fixed point on the full channel - root + `ota/` **{{ROOT}}** bytes at v80.7.4, carrying all three notes. **The Play
-  channel is held at v80.7** (`dev/channel-hold.json`, **{{PLAY}}** bytes).
-- **NOT CLAIMED.** No phone and no browser here, so nobody has heard a capped copy handed over to the full one on a device. What
-  is proven is the rule, the step it takes, the state it leaves, and that the page and the full channel carry it. The deep
-  limits are unchanged and now written down: `scFetchBytes()` reads at most 40 MiB, so a song longer than that is read to the
-  ceiling and its tail is not in the blob; and a row whose search result reported no length cannot be judged at all - it plays
-  whatever the source sends, because there is nothing to judge it against. `dev/check-8071.cjs`, `-8072.cjs` and `-8073.cjs` now
-  fail by design: each pins its own version, the same way every earlier release checker does.
+- **WHAT THE OWNER SAID.** *"for downloaded albums, the track art isn't showing for all of the songs exepg for the first one"*, and
+  *"the streaming songs aren't working, they keep saying restart but when your in albums theirs no restart buttons and streaming
+  isn't finding sources to stream from"*. Three faults, and the second sentence is one sentence for two different problems: a
+  message that points at a button which is not on screen, and a song the app cannot find a copy of.
+- **THE ALBUM ART.** Every row in an album asked only for **its own** `artUrl`. A downloaded album can hold its cover on the
+  album and on the single song the cover was read from, with the rest carrying no picture of their own - and then every row but
+  the first drew an empty 48px box. The art was never missing from the album; it was missing from the rows, because nothing
+  looked one level up. `scAlbumRowArt(t)` now answers in that order: the song's own art, the album's saved cover, the art of the
+  first song in that album that has any - so a row shows the same picture its header shows. It is wired into all five places an
+  album's rows are drawn (the card closed, the card open, the deck's copy of the card, the reorder popup, and the deck's
+  re-listing of a found album), and the answer is kept for the length of one render, cleared at the top of `renderList()`, so a
+  fifty-song album costs one lookup. This part is library code, not the gated catalogue module: **the Play build takes it too.**
+- **THE BUTTON THAT WAS NOT THERE.** `#scStreamSay` - the line that carries `This copy of the song ends at 1:04 of 3:12 - tap
+  Restart` and its siblings - was drawn on four streaming pages, and the Restart control was drawn on **one** of them, the
+  now-playing card. On the albums page, the playlists page and an open list the line named a button that was not on screen, which
+  is exactly what the owner reported. `scStreamSayLine()` now draws the line and its Restart together, in all four places, and
+  `scStreamWire()` binds every `.scs-fix` to `scStreamRestart`. A failure that has no line to land in at all - the library is
+  what is on screen while a song plays there - now says itself through `toast()` instead of leaving a silent bar, and only the
+  lines something can be done about are said that way, so a progress readout cannot toast once per percent.
+- **THE COPIES IT WALKED, AND THE ANSWER IT TRUSTED ONCE.** The player hands over one muxed copy behind a row of audio-only ones,
+  and the audio-only ones are the copies the source caps at a megabyte - so a copy that stopped early walked those capped rows
+  one at a time, each costing a read, a blip and another failure before the one copy that carries the music was reached.
+  `scStreamAltUrl(true)` now takes the muxed candidate first, and the fragment path asks for it by name. Separately, resolving
+  is one round trip to a host that rate-limits and times out, and a single empty answer was final: the row said no source was
+  found and stopped. The answer is now asked a **second** time before that is said (`scStreamPlayFresh` grew `playUrl()` and
+  `noneLeft()` so the first answer, the re-ask and the give-up share one path), and the message keeps its Restart beside it.
+- **WHAT THE SOURCE ACTUALLY SAYS.** Before touching the resolver, the endpoint was asked directly from this sandbox with the
+  app's own request shape - the ANDROID body and the app's exact User-Agent and `X-Youtube-Client-*` headers:
+  `playabilityStatus: OK`, **29 adaptive audio formats and 1 muxed**, every URL already plain (no `signatureCipher`); IOS:
+  **16 adaptive**, OK. A plain WEB body answers `UNPLAYABLE / Video unavailable` and the TV client `ERROR / YouTube is no longer
+  supported in this application or device`, which is why the app's client list is the two that work and not a longer one. So
+  "no source found" is **not** a dead endpoint, and the fix is the first ask being final plus a capped candidate list - not a
+  new client.
+- **WHAT WAS RUN.** `dev/patch-8075.py` over the released 80.7.4 page: `--check` **1** before, **13 steps** applied, a second
+  run a no-op, `--check` **0**; both OTA channels at a true fixed point; `dev/check-8075.cjs` **72 passed, 0 failed**
+  against the landed bytes. The new behaviour is **driven**, not just found: `scAlbumRowArt` answers from the song, then the
+  album's cover, then its first song with art, and escapes a quote in a URL; a track with no art anywhere in its album gets no
+  background rather than a broken one; `scStreamSay` writes into the line when it exists, toasts a failure when it does not, and
+  stays quiet for a progress line; `scStreamSayLine` carries both the line and a working `.scs-fix`; `scStreamAltUrl(true)` hands
+  over the muxed copy first and removes it from the list, while the plain call keeps the player's order; and `scStreamPlayFresh`
+  is run end to end three ways - a first answer plays it, an empty first answer is re-asked and the second answer plays, and two
+  empty answers say so once without ever starting anything. 80.7.4's length check, 80.7.3's dots menu and 80.7.2's crop pieces
+  are re-checked, every inline script compiles, and the notes are checked against **both** channel filters. Full channel:
+  **{{ROOT}}** bytes at v80.7.5 with all three notes. Play channel: **released** at v80.7.5 (**{{PLAY}}** bytes,
+  `dev/channel-hold.json`), carrying only the album-cover note - the other two are `[FULL]`, so the Play card publishes one
+  honest line rather than a note about a module that build does not run.
+- **NOT CLAIMED.** No phone and no browser here, so nobody has seen the cover fill in on a downloaded album, heard a capped
+  copy hand over to the muxed one, or pressed the new Restart. What is proven is each rule, each branch, and the bytes. The
+  device path that cannot be exercised from here is the native transport itself (`scHttpJson` on the patched fetch): the endpoint
+  answers a faithful copy of its request, which rules out the source, but a refusal that only that transport produces would still
+  need a phone to reproduce - the new second ask and the toast are there so that a refusal is at least visible and retryable in
+  one tap instead of silent. The old limits stand: a row whose search result reported no length still cannot be judged, and a
+  copy longer than the reader's 40 MiB ceiling is read to the ceiling.
