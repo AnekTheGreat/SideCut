@@ -1,31 +1,38 @@
-## 80.7.6 ({{STAMP}}): the bar comes back to the song played last
+## 80.7.7 ({{STAMP}}): every screen fits
 
-- **WHAT THE OWNER SAID.** *"why does it default to the streamed songs in the now bar even tho my most recent song is a downloaded soNG IT SHOULD JUST BE
-  THE SONG THAT WAS RECENTLY PLAYED"*. Nothing about that was a preference or a guess: the bar had two memories and no way to tell which was newer, and
-  it resolved the tie in favour of the catalogue every time.
-- **THE FAULT.** The catalogue remembered the last song played from it, in `meta.streamLast` (`{ id, at, savedAt }`). The deck remembered its own queue,
-  in `meta.playback` - with **no time at all**. Neither row knew the other existed. At launch `scStreamRestoreLast()` read its own row, and while that
-  row was under **twelve hours** old it set `curId`, marked the bar as the catalogue's and drew the song - so a song streamed in the morning came back over
-  the download played five minutes ago, on the bar, on the lock screen and in the widget, because everything the phone shows follows the bar. It was not
-  the restore being wrong about *one* song: it was a restore that never asked whether it had been superseded.
-- **WHAT LANDED.** One record of what played last, written at the moment a song starts by **both** players: `scLastPlayedSet('deck' | 'stream', id)`
-  writes `meta.lastPlayed` with the kind, the id and the time. `playCurrent()` - the deck's single start path, so a tap, Next, Previous and an album roll
-  all reach it - and `scStreamPlay()` both call it. `savePlaybackState()` now also records `savedAt`, so the deck's own row can be compared instead of
-  guessed at. `scStreamRestoreLast()` reads all three rows at once (`streamLast`, `playback`, `lastPlayed`), and `scLastPlayedWasStream()` decides:
-  the shared record when it exists; otherwise the two timestamps when **both** rows carry one; otherwise a deck session with a position in it beats a
-  catalogue row, because a catalogue row on its own proves only that a catalogue song was started at some point - which is the shape every install
-  has the first time it runs this release. That last branch is the owner's own case: their catalogue row was dated and their download's was not. When the catalogue really was last, the old behaviour is untouched - the song comes back,
-  paused, at the second it stopped on, with the same "Tap play to carry on where you left off". When it was not, it stays out of the way entirely: no
-  `curId`, no resume point, no message.
-- **WHAT WAS RUN.** `dev/patch-8076.py` over the released 80.7.5 page: `--check` **1** before, **6 steps** applied, a second run a no-op, `--check` **0**;
-  both OTA channels at a true fixed point; `dev/check-8076.cjs` **57 passed, 0 failed** against the landed bytes. The decision and the restore are both
-  **driven**: a shared record saying the deck played stops the catalogue from claiming the bar; one saying the catalogue played lets it claim it and put
-  the resume point back; a record older than twelve hours is ignored either way; a song that has since left the catalogue list is ignored; and with no
-  shared record at all, the newer timestamp wins in both directions and a deck session with a position beats an undated catalogue row. `scLastPlayedSet`
-  is driven to write the row it is supposed to write. 80.7.5's album cover, 80.7.4's length check, 80.7.3's dots and 80.7.2's crop pieces are re-checked,
-  and every inline script compiles. Full channel: **{{ROOT}}** bytes at v80.7.6. The Play channel is **held at v80.7.5** (`dev/channel-hold.json`,
-  **{{PLAY}}** bytes): the bar restore belongs to the catalogue module, which that build does not run, and 80.7.5 already gave it the album-cover fix.
-- **NOT CLAIMED.** No phone here, so nobody has watched the bar come back to a download after a relaunch. What is proven is the record both players
-  write, the decision across every combination the rows can be in, and the state the restore leaves behind. One honest limit: an install whose rows were
-  all written before this release has no shared record and no deck timestamp, so the first launch after updating falls back to the rule above - a deck
-  session with a position wins - and from the next play onwards the shared record decides exactly.
+- **WHAT THE OWNER SAID.** *"WHY DOES SIDECUT LOOK SO BAD ON OTHER DEVICES LIKE A FOLDING PHONE MAKE IT NICE AND ACTUALLY EASY TO
+  USE, FLIP, FOLD, ROLL, TRI-FOLD, COMPUTER, TV"* - and, in the same breath, *"PUSH TO BOTH VERSIONS"*.
+- **THE FAULT.** The page was laid out for exactly one device: a phone in one hand. There were breakpoints up to 1600px, but all
+  they did was move the `max-width` of the four views - the three surfaces that a finger or a remote actually touches were still built
+  out of phone numbers. The dock's five pills carried `flex: 1 1 0`, so on a 27-inch monitor Home and the plus sat at opposite
+  ends of the desk; a television got 11px labels and a 42px dock at the very bottom edge; the player's disc, its title and its
+  controls were phone-sized on every display; and every view's side padding was a fixed number, so the only thing standing between
+  a song title and a fold hinge or a notch was the `max(20px, env(safe-area-inset-...))` block that three surfaces used and the
+  rest ignored.
+- **WHAT LANDED.** One appended stylesheet, `<style id="sc77Fit">`, last in the head so it is the last word on every property it
+  sets, and every rule inside a query - the phone layout below 561px is untouched. Nine rungs: an **outer fold / split window**
+  rung at 380 and below (the brand subtitle and the player's disc give up their room first, because they are decoration); **fluid
+  side padding** from 561 up, written as `max(clamp(...), env(safe-area-inset-...))` so a hinge, a notch and a rounded corner stay
+  edges rather than bezels; an **inner fold** rung (568-1023) that gives the song list a measure instead of the full panel; a
+  **desktop** rung where the dock's five pills become a centred cluster of at most 176px each instead of spreading across the
+  window; a **1440** rung for content and a wider cluster; a **television** rung at 1800x900 (or 2400 wide) where the brand, tabs,
+  search, rows, bubbles, player and focus rings all grow together; a **short-and-wide** rung for a landscape phone, a split window
+  and a car screen; and a **coarse pointer** rung that gives the tabs, the dock and the header icons a 44px target (the player's own
+  buttons only from 420px, where six of them plus the disc and the title still fit). Nothing in it uses `!important` - it wins by
+  position - and nothing in it transforms `#actionStrip`, which holds fixed children that a transform would take with it.
+- **WHY IT IS SAFE WHERE IT MATTERS.** Every player and bubble size is gated `body:not(.sc80-cloud)`, because the cloud theme
+  deliberately scales its own, and the padding rules all keep the display inset as a `max()` floor rather than replacing it.
+- **WHAT WAS RUN.** `dev/patch-8077.py` over the released 80.7.6 page: `--check` **1** before, **3 steps** applied, a second run a
+  no-op, `--check` **0**. Both channels at a true fixed point, and `dev/channel-hold.json` now says `play: false`, so **Play ships
+  this release too** - which also delivers 80.7.6's last-played fix to it, the two releases reaching it in one update. The Play
+  build is the same page with one flag injected and no code stripped, so nothing had to be ported. `dev/check-8077.cjs`
+  **50 passed, 0 failed** against the landed bytes: it audits the sheet as text (every brace closed, all eight rungs present,
+  every side padding measured against the display inset, no `padding-inline` shorthand to dodge that, no `transform`, no
+  `!important`), pins that the sheet comes after `sc80Css` and that no stylesheet follows it in the head, checks that the
+  viewport still asks for `viewport-fit=cover` (without which no inset is delivered at all) and that the sheet takes text sizing
+  back from the platform, re-checks 80.7.6's record and 80.7.5's covers, compiles every inline script, and pins both channels at
+  v80.7.7 with the same three notes. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** There is no browser in this environment, so nobody has looked at the new sheet on a folding phone, a rollable, a
+  tri-fold, a monitor or a television. What is proven is that the stylesheet is present, closed, last in the head, gated off the
+  theme it would fight, measured against the display insets on every side padding it sets, and shipped in both bundles - the
+  layout itself still needs a pair of eyes on the hardware, which is exactly why the rungs are additive and query-scoped.
