@@ -1,38 +1,29 @@
-## 80.7.7 ({{STAMP}}): every screen fits
+## 80.7.8 ({{STAMP}}): phones kept their own
 
-- **WHAT THE OWNER SAID.** *"WHY DOES SIDECUT LOOK SO BAD ON OTHER DEVICES LIKE A FOLDING PHONE MAKE IT NICE AND ACTUALLY EASY TO
-  USE, FLIP, FOLD, ROLL, TRI-FOLD, COMPUTER, TV"* - and, in the same breath, *"PUSH TO BOTH VERSIONS"*.
-- **THE FAULT.** The page was laid out for exactly one device: a phone in one hand. There were breakpoints up to 1600px, but all
-  they did was move the `max-width` of the four views - the three surfaces that a finger or a remote actually touches were still built
-  out of phone numbers. The dock's five pills carried `flex: 1 1 0`, so on a 27-inch monitor Home and the plus sat at opposite
-  ends of the desk; a television got 11px labels and a 42px dock at the very bottom edge; the player's disc, its title and its
-  controls were phone-sized on every display; and every view's side padding was a fixed number, so the only thing standing between
-  a song title and a fold hinge or a notch was the `max(20px, env(safe-area-inset-...))` block that three surfaces used and the
-  rest ignored.
-- **WHAT LANDED.** One appended stylesheet, `<style id="sc77Fit">`, last in the head so it is the last word on every property it
-  sets, and every rule inside a query - the phone layout below 561px is untouched. Nine rungs: an **outer fold / split window**
-  rung at 380 and below (the brand subtitle and the player's disc give up their room first, because they are decoration); **fluid
-  side padding** from 561 up, written as `max(clamp(...), env(safe-area-inset-...))` so a hinge, a notch and a rounded corner stay
-  edges rather than bezels; an **inner fold** rung (568-1023) that gives the song list a measure instead of the full panel; a
-  **desktop** rung where the dock's five pills become a centred cluster of at most 176px each instead of spreading across the
-  window; a **1440** rung for content and a wider cluster; a **television** rung at 1800x900 (or 2400 wide) where the brand, tabs,
-  search, rows, bubbles, player and focus rings all grow together; a **short-and-wide** rung for a landscape phone, a split window
-  and a car screen; and a **coarse pointer** rung that gives the tabs, the dock and the header icons a 44px target (the player's own
-  buttons only from 420px, where six of them plus the disc and the title still fit). Nothing in it uses `!important` - it wins by
-  position - and nothing in it transforms `#actionStrip`, which holds fixed children that a transform would take with it.
-- **WHY IT IS SAFE WHERE IT MATTERS.** Every player and bubble size is gated `body:not(.sc80-cloud)`, because the cloud theme
-  deliberately scales its own, and the padding rules all keep the display inset as a `max()` floor rather than replacing it.
-- **WHAT WAS RUN.** `dev/patch-8077.py` over the released 80.7.6 page: `--check` **1** before, **3 steps** applied, a second run a
-  no-op, `--check` **0**. Both channels at a true fixed point, and `dev/channel-hold.json` now says `play: false`, so **Play ships
-  this release too** - which also delivers 80.7.6's last-played fix to it, the two releases reaching it in one update. The Play
-  build is the same page with one flag injected and no code stripped, so nothing had to be ported. `dev/check-8077.cjs`
-  **50 passed, 0 failed** against the landed bytes: it audits the sheet as text (every brace closed, all eight rungs present,
-  every side padding measured against the display inset, no `padding-inline` shorthand to dodge that, no `transform`, no
-  `!important`), pins that the sheet comes after `sc80Css` and that no stylesheet follows it in the head, checks that the
-  viewport still asks for `viewport-fit=cover` (without which no inset is delivered at all) and that the sheet takes text sizing
-  back from the platform, re-checks 80.7.6's record and 80.7.5's covers, compiles every inline script, and pins both channels at
-  v80.7.7 with the same three notes. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** There is no browser in this environment, so nobody has looked at the new sheet on a folding phone, a rollable, a
-  tri-fold, a monitor or a television. What is proven is that the stylesheet is present, closed, last in the head, gated off the
-  theme it would fight, measured against the display insets on every side padding it sets, and shipped in both bundles - the
-  layout itself still needs a pair of eyes on the hardware, which is exactly why the rungs are additive and query-scoped.
+- **WHAT THE OWNER SAID.** *"why did you change the size of the buttons and remove the your files, no ads ever thing on the bar phones
+  remove that"* - the `Your files, no ads ever` line gone from the bar, and the buttons a different size, on the one device that was
+  never broken.
+- **MY MISTAKE, PLAINLY.** 80.7.7 was written to fit every screen at once and it reached into the phone layout on the way past.
+  Three of its nine rungs touched a phone and never should have: the `max-width:380px` rung (which covers an iPhone SE, a 12 mini
+  and any window narrowed on a desktop) hid `header .brand span` - the `Your files, no ads ever` line - and shrank the dock pills
+  and the player's buttons to 10.5px and 30x34; the `orientation:landscape and (max-height:520px)` rung hid the same line again on
+  any phone held sideways; and `(pointer:coarse)` raised the tabs, the dock and the header icons to a 44px minimum on every phone
+  and tablet. None of that was asked for, and the phone was the one screen that already looked right.
+- **WHAT LANDED.** The sheet is cut from nine rungs to five, and every one of them starts at 561px wide. Deleted outright: the
+  narrow-screen rung, the landscape rung, the coarse-pointer rung, every `.brand span{ display:none }`, and every size change on a
+  tab, a dock pill, a header icon or a player button below a television. The two rungs a sideways phone could still have matched
+  now carry `and (min-height:521px)` as well, so a phone in landscape keeps the phone layout instead of being handed the tablet
+  one. What is left is what the owner actually asked for: fluid side padding measured against the display insets, the inner-fold
+  measure, the centred desktop dock instead of five pills spread across a monitor, the 1440 rung, and the television rung - which
+  is now the only place in the sheet that changes a target size, and cannot match a phone.
+- **WHAT WAS RUN.** `dev/patch-8078.py` over the released 80.7.7 page: `--check` **1** before, **3 steps** applied, a second run a
+  no-op, `--check` **0**. Both channels rebuilt to a true fixed point on pass 3. `dev/check-8078.cjs` **57 passed, 0 failed**
+  against the shipped bytes: it enumerates every `@media` in the sheet and pins the exact five allowed (so a new phone-shaped rung
+  cannot be added quietly), asserts the line under the title is never hidden, that no rule is keyed to `pointer: coarse`, to a
+  phone-width breakpoint or to `max-height`, that the two sideways-phone rungs carry the height floor, that the player buttons and
+  the player stage are resized only inside the television rung, that the dock only clusters from 1024, and it repeats the 80.7.7
+  audit of the insets, of `!important`, of the cloud-theme gating and of every inline script. Full channel **{{ROOT}}** bytes, Play
+  channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** There is still no phone in this environment, so nobody has held this build. What is proven is stronger than
+  before in one specific way: the sheet can no longer match a phone-width viewport at all - not by accident, because the checker
+  pins the complete list of its queries - so the layout a phone gets is the layout it had before 80.7.7.
