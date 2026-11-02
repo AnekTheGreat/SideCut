@@ -15975,6 +15975,154 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }catch(_eUndo){}
     return true;
   }
+  // 80.7.9 - A SONG THAT ONLY EXISTS AS A SOURCE CAN BE KEPT.
+  // scStreamCropFile() already knows how to read a catalogue song's bytes - the copy
+  // that is playing, the read-ahead copy for its video id, then a fresh read of the
+  // same source - and it hands back the WHOLE song as a File, which is what the crop
+  // sheet then slices. This keeps that File instead: it lands in the library the same
+  // way a clip off a stream does (own id, own blob, persisted, in All Songs), and the
+  // menu asks where it should go, because "on this device" and "in this playlist" are
+  // different answers.
+  var scKeepBusy = '';
+
+  function scStreamKeptFrom(id){
+    var want = String(id || '');
+    if(!want) return null;
+    try{
+      for(var i = 0; i < allTracks.length; i++){
+        var t = allTracks[i];
+        if(t && String(t.downloadedFromStream || '') === want) return t;
+      }
+    }catch(_eKeepFind){}
+    return null;
+  }
+
+  function scStreamKeepTrack(id, file){
+    var have = scStreamKeptFrom(id);
+    if(have) return have;
+    var e = scStreamEntry(id) || {};
+    var name = String(e.title || 'Untitled');
+    var tid = scNextTrackId();
+    var track = {
+      id: tid, file: file, name: name, artist: String(e.artist || ''),
+      album: e.album || null, url: '', duration: Number(e.dur) || 0,
+      genre: e.genre || null, gain: null, artBlob: null,
+      artUrl: (typeof scStreamThumb === 'function' ? (scStreamThumb(e) || null) : null),
+      watermarkCleaned: false, dateAdded: Date.now(),
+      downloadedFromStream: String(id)
+    };
+    try{ track.url = URL.createObjectURL(file); }catch(_eKeepUrl){ track.url = ''; }
+    allTracks.push(track);
+    if(!playlists['All Songs']) playlists['All Songs'] = [];
+    if(playlists['All Songs'].indexOf(tid) === -1) playlists['All Songs'].push(tid);
+    if(!playlists['Unsorted']) playlists['Unsorted'] = [];
+    if(playlists['Unsorted'].indexOf(tid) === -1) playlists['Unsorted'].push(tid);
+    try{ persistTrackMeta(track); }catch(_eKeepMeta){}
+    try{ saveMeta(); }catch(_eKeepSave){}
+    try{ readLazyMeta(track); }catch(_eKeepLazy){}
+    try{ renderTabs(); }catch(_eKeepTabs){}
+    try{ renderList(); }catch(_eKeepList){}
+    return track;
+  }
+
+  function scStreamKeepIn(dest, track){
+    if(!track || !dest) return;
+    var name = String(dest.name || '');
+    if(!name) return;
+    if(dest.kind === 'pl'){
+      if(!playlists[name]) playlists[name] = [];
+      if(playlists[name].indexOf(track.id) === -1) playlists[name].push(track.id);
+      try{ saveMeta(); }catch(_eKeepPl){}
+    } else {
+      try{ addTracksToAlbum([track.id], name, 'Streaming'); }catch(_eKeepAl){}
+    }
+    try{ renderList(); }catch(_eKeepRl){}
+    try{ renderTabs(); }catch(_eKeepRt){}
+  }
+
+  // dest: {kind:'lib'} | {kind:'pl', name} | {kind:'al', name} | {kind:'file'}
+  async function scStreamDownload(id, dest){
+    var e = scStreamEntry(id);
+    if(!e){ scStreamSay('That song is not in Streaming any more'); return; }
+    if(scKeepBusy){ scStreamSay('Still keeping the last one - give it a second'); return; }
+    dest = dest || { kind: 'lib' };
+    var title = String(e.title || 'Untitled');
+    var kept = scStreamKeptFrom(id);
+    scKeepBusy = String(id);
+    try{
+      if(dest.kind === 'file'){
+        scStreamSay('Reading the song from its source\u2026');
+        var out = await scStreamCropFile({ streamId: String(id), name: title, artist: String(e.artist || '') });
+        await saveExportFile(out, out.name);
+        scStreamSay('Handed \u201c' + title + '\u201d to your device');
+        return;
+      }
+      var track = kept;
+      if(!track){
+        scStreamSay('Reading the song from its source\u2026');
+        var file = await scStreamCropFile({ streamId: String(id), name: title, artist: String(e.artist || '') });
+        track = scStreamKeepTrack(id, file);
+      }
+      if(dest.kind === 'pl' || dest.kind === 'al') scStreamKeepIn(dest, track);
+      var where = (dest.kind === 'pl' || dest.kind === 'al')
+        ? (' and \u201c' + String(dest.name || '') + '\u201d') : ' to All Songs';
+      scStreamSay(kept ? ('Already on your device - added' + where) : ('Kept \u201c' + title + '\u201d' + where));
+      try{ if(typeof toast === 'function') toast(kept ? ('Added: ' + String(track.name || title) + where) : ('Saved: ' + String(track.name || title) + where), 2800); }catch(_eKeepToast){}
+    }catch(err){
+      console.warn('Keep from source failed:', err);
+      scStreamSay('Could not keep that song: ' + String((err && err.message) || 'the source did not answer'));
+    } finally {
+      scKeepBusy = '';
+    }
+  }
+
+  function scStreamDownloadPick(id, kind){
+    var names = [], seen = {};
+    if(kind === 'pl'){
+      try{
+        Object.keys(playlists || {}).forEach(function(n){
+          if(!n || n === 'All Songs' || n === 'Unsorted' || seen[n]) return;
+          seen[n] = 1; names.push(n);
+        });
+      }catch(_ePickPl){}
+    } else {
+      try{
+        (allTracks || []).forEach(function(t){
+          var a = String((t && t.album) || '').trim();
+          if(!a || seen[a]) return;
+          seen[a] = 1; names.push(a);
+        });
+      }catch(_ePickAl){}
+    }
+    names.sort(function(a, b){ return String(a).toLowerCase() < String(b).toLowerCase() ? -1 : 1; });
+    var acts = [{ label: 'New ' + (kind === 'pl' ? 'playlist' : 'album') + '\u2026', run: function(){
+      var n = '';
+      try{ n = String(prompt('Name the ' + (kind === 'pl' ? 'playlist' : 'album') + ':', '') || '').trim(); }catch(_ePickNew){ n = ''; }
+      if(!n) return;
+      scStreamDownload(id, { kind: kind, name: n });
+    } }];
+    names.slice(0, 40).forEach(function(n){
+      acts.push({ label: n, run: function(){ scStreamDownload(id, { kind: kind, name: n }); } });
+    });
+    scStreamSheet(kind === 'pl' ? 'All Songs and a playlist' : 'All Songs and an album', acts);
+  }
+
+  // 80.7.9 - THE ASK. Four answers, in the app's own words: the library on its own,
+  // the library and a playlist, the library and an album, or the file itself out to
+  // the device (which is saveExportFile: Filesystem, then the system share sheet).
+  function scStreamDownloadSheet(id){
+    var e = scStreamEntry(id);
+    if(!e){ scStreamSay('That song is not in Streaming any more'); return; }
+    var have = scStreamKeptFrom(id);
+    var acts = [
+      { label: 'All Songs', run: function(){ scStreamDownload(id, { kind: 'lib' }); } },
+      { label: 'All Songs and a playlist\u2026', run: function(){ scStreamDownloadPick(id, 'pl'); } },
+      { label: 'All Songs and an album\u2026', run: function(){ scStreamDownloadPick(id, 'al'); } },
+      { label: 'Save the file to this device\u2026', run: function(){ scStreamDownload(id, { kind: 'file' }); } }
+    ];
+    scStreamSheet((have ? 'Already kept: ' : 'Keep \u201c') + String(e.title || 'Song') + (have ? '' : '\u201d'), acts);
+  }
+
   function scStreamMenu(id, where){
     var t = scStreamEntry(id);
     if(!t) return;
@@ -15988,6 +16136,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
         if(isFile && inList) scMixPlay((list && list.items) || [], id);
         else scStreamPlay(id);
       } });
+    }
+    // 80.7.9 - a song that only exists as a source can be kept on the device.
+    if(!isFile){
+      acts.push({ label: 'Download this song\u2026', run: function(){ scStreamDownloadSheet(id); } });
     }
     // 80.7.2 - the same crop a downloaded song has, on the song that is playing.
     if(!isFile){
@@ -19624,7 +19776,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.7.8';
+  const APP_VERSION = '80.7.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -20318,6 +20470,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 80.7.6 - THE BAR COMES BACK TO THE SONG PLAYED LAST.
   // 80.7.7 - EVERY SCREEN HAS A RIGHT SIZE.
   // 80.7.8 - PHONES KEEP THEIR OWN LAYOUT.
+  // 80.7.9 - A SONG THAT ONLY EXISTS AS A SOURCE CAN BE KEPT.
+  { version: '80.7.9', date: 'November 2, 2026 · 4:39 PM EST', title: 'A song you kept', items: [
+    '[FULL] A song you are playing can be kept on this phone now, from the same menu that already crops it.',
+    '[FULL] Keeping it asks where it should go: All Songs, All Songs and a playlist, All Songs and an album, or the file itself out to your device.',
+    '[FULL] The same song is never kept twice, so asking again just points you at the copy you already have.'
+  ]},
   { version: '80.7.8', date: 'November 1, 2026 · 8:27 PM EST', title: 'Phones kept their own', items: [
     'The line under the title is back on every phone, exactly where it was, because nothing about the phone needed changing.',
     'Buttons on phones are the size they were before, so nothing you already knew how to reach has moved or grown.',
