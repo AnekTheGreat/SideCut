@@ -1,29 +1,41 @@
-## 80.7.8 ({{STAMP}}): phones kept their own
+## 80.7.9 ({{STAMP}}): a song you kept
 
-- **WHAT THE OWNER SAID.** *"why did you change the size of the buttons and remove the your files, no ads ever thing on the bar phones
-  remove that"* - the `Your files, no ads ever` line gone from the bar, and the buttons a different size, on the one device that was
-  never broken.
-- **MY MISTAKE, PLAINLY.** 80.7.7 was written to fit every screen at once and it reached into the phone layout on the way past.
-  Three of its nine rungs touched a phone and never should have: the `max-width:380px` rung (which covers an iPhone SE, a 12 mini
-  and any window narrowed on a desktop) hid `header .brand span` - the `Your files, no ads ever` line - and shrank the dock pills
-  and the player's buttons to 10.5px and 30x34; the `orientation:landscape and (max-height:520px)` rung hid the same line again on
-  any phone held sideways; and `(pointer:coarse)` raised the tabs, the dock and the header icons to a 44px minimum on every phone
-  and tablet. None of that was asked for, and the phone was the one screen that already looked right.
-- **WHAT LANDED.** The sheet is cut from nine rungs to five, and every one of them starts at 561px wide. Deleted outright: the
-  narrow-screen rung, the landscape rung, the coarse-pointer rung, every `.brand span{ display:none }`, and every size change on a
-  tab, a dock pill, a header icon or a player button below a television. The two rungs a sideways phone could still have matched
-  now carry `and (min-height:521px)` as well, so a phone in landscape keeps the phone layout instead of being handed the tablet
-  one. What is left is what the owner actually asked for: fluid side padding measured against the display insets, the inner-fold
-  measure, the centred desktop dock instead of five pills spread across a monitor, the 1440 rung, and the television rung - which
-  is now the only place in the sheet that changes a target size, and cannot match a phone.
-- **WHAT WAS RUN.** `dev/patch-8078.py` over the released 80.7.7 page: `--check` **1** before, **3 steps** applied, a second run a
-  no-op, `--check` **0**. Both channels rebuilt to a true fixed point on pass 3. `dev/check-8078.cjs` **57 passed, 0 failed**
-  against the shipped bytes: it enumerates every `@media` in the sheet and pins the exact five allowed (so a new phone-shaped rung
-  cannot be added quietly), asserts the line under the title is never hidden, that no rule is keyed to `pointer: coarse`, to a
-  phone-width breakpoint or to `max-height`, that the two sideways-phone rungs carry the height floor, that the player buttons and
-  the player stage are resized only inside the television rung, that the dock only clusters from 1024, and it repeats the 80.7.7
-  audit of the insets, of `!important`, of the cloud-theme gating and of every inline script. Full channel **{{ROOT}}** bytes, Play
-  channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** There is still no phone in this environment, so nobody has held this build. What is proven is stronger than
-  before in one specific way: the sheet can no longer match a phone-width viewport at all - not by accident, because the checker
-  pins the complete list of its queries - so the layout a phone gets is the layout it had before 80.7.7.
+- **WHAT THE OWNER SAID.** *"STREAMING SHOULD BE ABLE TO WORK OUTSIDE OF SIDECUT APP LIKE IN THE BACKGROUND, IT SHOULD BE FASTER AND I
+  SHOULD BE ABLE TO CROP A STREAMED SONG, ALSO FROM THE APP DIRECTLY I SHOULD BE ABLE TO DOWNLOAD A STREAMED SONG, AND IT SHOULD
+  PROMPT ME TO WHERE I WANT IT - ALL SONGS, ALL SONGS AND A SPECIFIC PLAYLIST, ALL SONGS AND A SPECIFIC ALBUM, OR DOWNLOADED TO
+  DEVICE, OR EXPORTED"*. Four asks, and three of them were already shipped.
+- **WHAT WAS ALREADY THERE, so nothing was rebuilt on a guess.** Background playback: the stream owns the phone through the
+  MediaSession adapter (`updateMediaSession`, the `@jofr/capacitor-media-session` plugin, `registerMediaSessionHandlers`, and the
+  heartbeat that keeps the notification live), which is why a catalogue song keeps playing with the screen off - 80.6.20 and
+  80.7.1 are the releases that fixed exactly that. Crop: 80.7.2 gave a catalogue song a `File` (`scStreamCropFile`) and
+  `scCropStreamSave` writes the clip into the library, and 80.7.3 put it one tap from the player. Speed: the read path already
+  resolves one answer per song and remembers it (`scStreamResolveCached`), reads six lanes wide behind the cover art
+  (`scStreamReadOnly`), and pulls the **next** song into memory while the current one plays (`scStreamPrefetch`, warmed 1.2s after
+  each start).
+- **WHAT WAS GENUINELY MISSING, and what landed.** A catalogue song is a reference - a title, an artist and the id of the copy a
+  source hands back - so it could be played, cropped and added to lists, but it could not be KEPT. The dots menu now offers
+  **Download this song**, which opens the ask the owner described: **All Songs**, **All Songs and a playlist**, **All Songs and an
+  album**, or **Save the file to this device**. The bytes are the ones `scStreamCropFile()` already reads (the copy that is
+  playing, then the read-ahead copy, then a fresh read of the same source) and the whole song is kept, not a slice; it lands the way
+  a clip off a stream lands - its own id, its own blob, persisted, in All Songs and Unsorted - with `downloadedFromStream` recording
+  where it came from, so asking twice finds the first copy instead of keeping the file again. Playlists take the new id through the
+  same `playlists` store, albums go through `addTracksToAlbum()`, and the file leaves through `saveExportFile()` (Filesystem, then
+  the system share sheet). A source that does not answer is caught and said; a song that has left the shelf is refused; one keep
+  runs at a time.
+- **THE PLAY CHANNEL IS UNTOUCHED BY DESIGN.** The keeper lives inside the catalogue module, which `SC_STREAM_OK` (`!SC_IS_PLAY`)
+  keeps out of the store build - so the three notes are marked `[FULL]` and the Play card publishes the standing one-line fallback
+  instead of advertising a button it does not have. That is the same reason 80.6.x kept the downloader and converter out of it.
+- **WHAT WAS RUN.** `dev/patch-8079.py` over the released 80.7.8 page: `--check` **1** before, **4 steps** applied, a second run a
+  no-op, `--check` **0**; both channels rebuilt to a true fixed point on pass 3. `dev/check-8079.cjs` **72 passed, 0 failed** on
+  the shipped bytes, and the routing is **driven**, not just grepped: the keeper is lifted out of the page against stubs and every
+  destination is proved to do its job and nothing else - All Songs lands one track and touches no album or saver; asking twice
+  keeps one copy and says it is already there; a playlist keep creates and fills the list and touches no album; an album keep calls
+  the album writer with the new id and creates no playlist; a file keep hands the file to the saver and puts nothing in the library;
+  a failing read neither throws at the caller nor leaves a track behind; a song that left the shelf is refused. It also re-checks
+  80.7.8 (no `pointer:coarse` in the fitting sheet), 80.7.6's record, 80.7.5's covers, 80.7.2's crop, that the catalogue is still
+  gated off the Play build, and that every inline script compiles. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** No source, no network and no phone in this environment: the actual read of a song's bytes was stubbed, so the
+  copy that comes back from the resolver is the one thing here nobody has held. Background playback was not touched and needs no
+  claim - it ships. And **speed is not claimed**: nothing about it was changed, because a speedup without a measurement on the
+  hardware is a guess, and the honest next step for "it should be faster" is to time a real play on the device rather than to guess
+  at the code.
