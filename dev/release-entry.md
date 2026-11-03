@@ -1,32 +1,48 @@
-## 80.8 ({{STAMP}}): hold and drag to pick a run of songs
+## 80.9 ({{STAMP}}): a song keeps playing when the app does not
 
-- **WHAT THE OWNER SAID.** *"Add a hold and drag to select songs, make it nice."* Holding a row was already possible; it was
-  holding and *going somewhere* that the app could not do.
-- **WHY THE DRAG WAS IMPOSSIBLE, NOT JUST MISSING.** `attachLongPressChoice()` started a 450 ms timer and called
-  `openHoldChoice()` the moment it fired - while the finger was still down. The choice sheet's backdrop then landed over the
-  list, so the finger that began the press had nothing left to cross: a run of songs meant hold, tap *Select multiple songs*,
-  then one tap per row. The gesture the owner asked for was blocked by a sheet being open at the time.
-- **THE HOLD NOW ARMS THE ROW.** It tints the row and gives a short buzz instead of opening anything, and the same finger carries
-  on into a drag. Crossed rows take the list's own selection styling as the finger passes, and the sweep follows the direction
-  it is pulled: from the held row down the list, or back up above it. The range is always the run between the held row and the
-  row under the finger, so pulling back shortens it (one row is one song). Near either edge of the list the sweep scrolls the
-  pane under itself, faster the closer the finger gets, because a long library cannot be crossed without it.
-- **NOTHING IS REBUILT MID-GESTURE.** `renderList()` rebuilds the pane, and doing that under a moving finger takes the row the
-  gesture started on out of the document - so rows are painted in place (class plus check mark) and the list is drawn once,
-  properly, when the finger lifts. The click the lift itself sends to the row under the finger is swallowed, because in select
-  mode a click toggles and it would have deselected the anchor and left the run one short. The click after that is a tap again.
-- **IT SAYS SO WHILE IT HAPPENS.** A count rides at the top of the screen (*7 songs selected*), positioned there rather than in a
-  bar under the list because the thumb is over the list while the drag is running. `touch-action` is pinned for the length of the
-  sweep, or Android hands the vertical gesture to the scroller on the first centimetre, fires `pointercancel`, and the run stops
-  at the second row.
-- **A HOLD THAT DOES NOT MOVE IS UNCHANGED.** It still opens the same sheet (favourite, play next, select multiple, reorder), so
-  nothing that used to work was taken away to make room for the drag.
-- **WHAT WAS RUN.** `dev/patch-808.py` over the released 80.7.12 page: `--check` **1** before, **4 steps** applied, a second run
-  a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-808.cjs` lifts the gesture out of the shipped
-  page and **drives** it on a fake list (**49 checks, 0 failed**): hold then drag down selects the run, dragging back up selects the
-  run above the anchor, pulling back to the anchor leaves one song, a hold that lifts without moving opens the sheet and selects
-  nothing, a tap is still a tap, a scroll that starts before the hold arms selects nothing and opens nothing, a missing row under
-  the finger leaves the selection alone, the count reads *1 song selected* / *3 songs selected*, lifting re-renders once and hides
-  the count, and the click that follows the lift is swallowed. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** No phone and no browser in this environment, so nobody here has dragged across a real list with a real thumb:
-  what is verified is the gesture logic, the paint, the swallow and the channels, driven against the shipped bytes.
+- **WHAT THE OWNER SAID.** *"the streaming still doesn't work outside a app."* He had said it once before, in 80.7.1
+  (*"why doesn't streaming work outside of the app like when I close the app"*), and that release answered it with a page
+  full of machinery: a heartbeat that revives a stream the phone silenced, re-asserts the media session, pushes the position
+  to the widget, and remembers the second to come back to. It changed nothing he could feel, and this release is why.
+- **FAULT ONE: THE LOOP THAT KEEPS A STREAM ALIVE WAS PAUSED WITH THE APP.** The battery saver near the top of the page
+  replaces `window.setInterval`, tracks every interval longer than 500 ms, and stops all of them on `visibilitychange` when
+  the page is hidden - and again on `pagehide`. Exactly one timer is exempt: the one-second listening clock, which calls
+  `__scKeepAliveTimer` so a song heard with the screen off still gets counted. 80.7.1 then put the entire background revival
+  inside `startMediaSessionHeartbeat()` - a tracked 30-second interval. So the first thing the saver did when the owner left
+  the app was clear the one timer whose only job is keeping a song alive out there. The deck's revive path rides the same
+  loop, so both players were counting on a timer that is deliberately stopped. The code was right; it was not running.
+- **FAULT TWO: NOTHING ASKED THE PHONE TO STAY AWAKE FOR A SONG.** The Android half already carries the hold this needs -
+  `SideCutJob`, injected by `.github/workflows/patch-joblock.py`: a `PARTIAL_WAKE_LOCK` plus a `dataSync` foreground service,
+  because (that file's own words) *"with the screen off the CPU sleeps ... a cached process is frozen and can be killed"*.
+  A conversion has asked for it since it was written. Playback never did, so a streamed song was the one piece of work in
+  this app left to the freezer: the audio died with the page while the notification kept saying it was playing.
+- **A KEPT TIMER THAT WAS BORN HIDDEN IS STARTED NOW.** The interceptor starts an interval *stopped* when it is created while
+  `document.hidden` is set, and `__scKeepAliveTimer` only ever set `keep = true` - keeping a timer exempt from a pause that
+  had already happened. It now starts the timer as well, which is the state a stream resumed from the lock screen is in.
+- **THE HEARTBEAT IS MARKED KEPT.** Reviving a silenced stream, re-asserting metadata and position, and pushing the widget all
+  happen on the 30-second beat that only matters while nobody is looking. It survives the saver now.
+- **PLAYBACK TAKES THE HOLD, AND GIVES IT BACK FOR THE RIGHT REASON.** A streamed song's `play` asks for the hold; a `pause`
+  the owner asked for gives it back; a pause the platform applied does **not**, because that is the exact case the heartbeat
+  is there to undo; a finished song gives it back before advancing; and a now bar handed back to the deck gives it back from
+  the heartbeat, whatever the element's last event said.
+- **ONE HOLD, TWO OWNERS.** `SideCutJob` is a pair of calls with no reference count - `hold()`/`release()` - so the naive
+  version had a download finishing in the background stop the service out from under a playing song. `scHoldSync()` is the
+  missing arbiter: one `hold` when the first owner asks, one `release` when the last is done, named for whichever thing is
+  still running, and a no-op on a build without the plugin.
+- **NOT A NATIVE CHANGE.** `SideCutJob` has shipped in the APK since conversions used it; this release only calls it, so it
+  rides the OTA channels like any other page release.
+- **WHAT WAS RUN.** `dev/patch-809.py` over the released 80.8 page: `--check` **1** before, **10 steps** applied, a second
+  run a no-op, `--check` **0**; both channels rebuilt to a true fixed point (pass 3). `dev/check-809.cjs` **47 passed,
+  0 failed** against the shipped bytes, and the two new behaviours are **driven**, not grepped: a 30-second timer created
+  while hidden is started then stopped, marking it kept leaves it running, and a kept timer created while visible is not
+  restarted; the arbiter is run against a fake plugin in both owner orders - one `hold` for two owners, no `release` when the
+  first finishes, exactly one when the last does, nothing at all and no throw on a build with no plugin, and an unknown owner
+  cannot move it. The page carries one `hold` call site and one `release` call site, the stream's three events are wired to
+  it, the heartbeat is marked kept, every inline script compiles, and the notes survive the updater's own filter. Full
+  channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** No phone and no browser here, so nobody has played a song, closed the app and heard it carry on. What is
+  proven is the timer state, the arbiter, the wiring and the bytes. Two limits are worth naming: Android 12+ refuses a
+  foreground service started from the background, so a song resumed from a notification while the app is away gets the wake
+  lock alone (the plugin's own fallback, unchanged by this release); and whether the WebView keeps decoding audio once the
+  activity is destroyed - a swipe away from recents rather than a press of home - is the launcher's decision, not the page's.
+  The hold is what stops the freezer, which is the part the page can answer for.
