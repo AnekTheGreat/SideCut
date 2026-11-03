@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """80.7.10 - the save is a button, and the song starts from its first second.
 
-    python3 dev/patch-8080.py
-    python3 dev/patch-8080.py --check
+    python3 dev/patch-80710.py
+    python3 dev/patch-80710.py --check
 Idempotent: a second run over the patched page is a no-op and --check says so.
 
 WHY. Two things were wrong, and the owner said both plainly.
@@ -40,7 +40,7 @@ with open(INDEX, encoding='utf-8') as fh:
     SRC = fh.read()
 
 if MARKER in SRC and ("const APP_VERSION = '%s';" % VERSION) in SRC:
-    print('patch-8080: already on the page, the page is %s' % VERSION)
+    print('patch-80710: already on the page, the page is %s' % VERSION)
     sys.exit(0)
 
 applied, failed = [], []
@@ -323,15 +323,15 @@ once('the changelog records the release', ANCHOR, ENTRY + ANCHOR)
 
 
 if failed:
-    print('patch-8080: %d applied, %d FAILED' % (len(applied), len(failed)))
+    print('patch-80710: %d applied, %d FAILED' % (len(applied), len(failed)))
     for f in failed:
         print('  x ' + f)
     sys.exit(1)
 
 if CHECK:
-    print('patch-8080: pending - %d steps ready to apply' % len(applied))
+    print('patch-80710: pending - %d steps ready to apply' % len(applied))
     sys.exit(1)
 
 with open(INDEX, 'w', encoding='utf-8') as fh:
     fh.write(SRC)
-print('patch-8080: %d steps applied, page is %s' % (len(applied), VERSION))
+print('patch-80710: %d steps applied, page is %s' % (len(applied), VERSION))

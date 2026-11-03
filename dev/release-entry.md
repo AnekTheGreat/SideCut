@@ -21,13 +21,13 @@
   element's `ended` handler advances the queue; the end of the opening is not the end of the song, so it waits for the whole copy
   instead of skipping. And the link path and the quiet-link watcher both open from the first megabyte before falling back, so no
   tap reads a whole file before it makes a sound.
-- **WHAT WAS RUN.** `dev/patch-8080.py` over the released 80.7.9 page: `--check` **1** before, **11 steps** applied, a second run
-  a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-8080.cjs` on the shipped bytes, and the order
-  is **driven**, not grepped: the fresh path is lifted out of the page against stubs and the events are recorded, so it is proved
-  that the opening is asked for **with** the link, that the opening is what plays when the link is refused, and that the whole
-  copy is only read **after** the opening has started - the exact reverse of the order that made the owner wait. It also proves
-  the three buttons exist on all three surfaces and all reach the ask, that the fragment guard and the `ended` guard are in
-  place, and that 80.7.9's keeper, the sheet, 80.7.8's phone-free fitting sheet, 80.7.2's crop and the Play gate all survive.
+- **WHAT WAS RUN.** `dev/patch-80710.py` over the released 80.7.9 page: `--check` **1** before, **11 steps** applied, a second
+  run a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-80710.cjs` on the shipped bytes, and the
+  order is **driven**, not grepped: the fresh path is lifted out of the page against stubs and the events are recorded, so it is
+  proved that the opening is asked for **with** the link, that the opening is what plays when the link is refused, and that the
+  whole copy is only read **after** the opening has started - the exact reverse of the order that made the owner wait. It also
+  proves the three buttons exist on all three surfaces and all reach the ask, that the fragment guard and the `ended` guard are
+  in place, and that 80.7.9's keeper, the sheet, 80.7.8's phone-free fitting sheet, 80.7.2's crop and the Play gate all survive.
   Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
 - **NOT CLAIMED.** No phone, no source and no network in this environment, so nobody here has heard the opening play or the swap
   happen - the read is stubbed in the checks. What is claimed is narrow and checkable: the element is now given a first

@@ -6,7 +6,7 @@
 // the whole song used to be read BEFORE the element was given anything, and the opening
 // is now asked for WITH the link and played before the full read starts.
 //
-//   node dev/check-8080.cjs
+//   node dev/check-80710.cjs
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -232,9 +232,9 @@ function world(opts) {
     /const APP_VERSION = '80\.7\.10';/.test(playZipped) && playZipped.includes('window.__PLAY_BUILD__=true') && playZipped.includes('function scStreamPrefix('));
 
   if (failures.length) {
-    console.log('check-8080: ' + pass + ' passed, ' + failures.length + ' failed');
+    console.log('check-80710: ' + pass + ' passed, ' + failures.length + ' failed');
     failures.forEach((f) => console.log('  x ' + f));
     process.exit(1);
   }
-  console.log('check-8080: ' + pass + ' passed, 0 failed');
+  console.log('check-80710: ' + pass + ' passed, 0 failed');
 })();
