@@ -260,13 +260,9 @@ once('add all is wired to its button',
     on('scStreamAddAll', 'click', scStreamAddAllResults);""")
 
 # -- 7. the button says what it does ----------------------------------------
-# Whole lines, quoted with single quotes, because this line ends in a quote of its own
-# and a triple-quoted literal here is one careless edit away from an unterminated string.
-SEARCH_BTN = '    h += ' + "'" + '<button type="button" id="scStreamGo" style="padding:8px 14px;border-radius:12px;border:none;background:var(--accent, var(--ink));color:var(--bg);font-size:12px;font-weight:700;">' + "'" + " + scIcon('search', 13) + ' "
-
 once('the button says get songs',
-     SEARCH_BTN + "Search</button>';\",",
-     SEARCH_BTN + "Get songs</button>';\",")
+     """+ scIcon('search', 13) + ' Search</button>';""",
+     """+ scIcon('search', 13) + ' Get songs</button>';""")
 
 once('the field says what to type',
      r'''placeholder="Search a song to stream\u2026"''',
