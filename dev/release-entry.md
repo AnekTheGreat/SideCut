@@ -1,34 +1,30 @@
-## 80.7.10 ({{STAMP}}): a button you can see, and a song that starts
+## 80.7.11 ({{STAMP}}): a shelf that opens, and a save you can watch
 
-- **WHAT THE OWNER SAID.** *"I CAN'T DOWNLOAD A STREAMED SONG, WHERE'S THE BUTTON. STREAMED SONGS ARE INCONSISTENT, I CLICK IT
-  THEN IT PLAYS IT 3 MINUTES LATER."* Both were real, and neither was a mystery in the code.
-- **THE BUTTON WAS HIDDEN BEHIND A TWO SECOND HOLD.** 80.7.9 added the save to the song menu, and the song menu is opened by
-  holding a row (or the player dots) for two seconds. A tap on a streamed row plays it, so the only way to find the save was to
-  already know it existed. Every streamed row now carries a device button beside its add button, a row inside a playlist or an
-  album carries one too, and the player card carries one in its transport row. All three open the same four answers 80.7.9
-  built: All Songs, All Songs and a playlist, All Songs and an album, or the file itself to the device. The long-press menu keeps
-  its entry; nothing was removed.
-- **THE THREE MINUTES WAS THE READ, NOT THE RESOLVER.** `scStreamSource()` reads the **whole** song before the element is given
-  anything - the first range, then six lanes of one mebibyte, then the tail - and only then builds a blob and calls
-  `scStreamStart()`. A three minute song on a phone is therefore minutes of a bar that says *Reading the song*, and a song played
-  before is instant because its blob is already in `scStreamCache`. **That is the inconsistency the owner described**: the same
-  tap is one second or three minutes depending on a memory cache nobody can see. A stream now opens from its **first mebibyte** -
-  `scStreamPrefix()` asks for `0` to `SC_AUDIO_CHUNK - 1`, which is the same bounded range the full reader asks for first and the
-  exact first megabyte the source's audio-only copies are capped at, so it is served rather than refused - and the full copy is
-  read behind it by `scStreamUpgrade()`, which swaps it in at the second the listener has reached and puts it in the cache.
-- **THE THREE PLACES A SHORT COPY WOULD HAVE BROKEN IT**, all guarded. `scStreamFragCheck()` treats a copy that ends early as a
-  fragment and starts the whole read again; the opening ends a minute in by design, so it is exempt while `via` is `prefix`. The
-  element's `ended` handler advances the queue; the end of the opening is not the end of the song, so it waits for the whole copy
-  instead of skipping. And the link path and the quiet-link watcher both open from the first megabyte before falling back, so no
-  tap reads a whole file before it makes a sound.
-- **WHAT WAS RUN.** `dev/patch-80710.py` over the released 80.7.9 page: `--check` **1** before, **11 steps** applied, a second
-  run a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-80710.cjs` on the shipped bytes, and the
-  order is **driven**, not grepped: the fresh path is lifted out of the page against stubs and the events are recorded, so it is
-  proved that the opening is asked for **with** the link, that the opening is what plays when the link is refused, and that the
-  whole copy is only read **after** the opening has started - the exact reverse of the order that made the owner wait. It also
-  proves the three buttons exist on all three surfaces and all reach the ask, that the fragment guard and the `ended` guard are
-  in place, and that 80.7.9's keeper, the sheet, 80.7.8's phone-free fitting sheet, 80.7.2's crop and the Play gate all survive.
-  Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** No phone, no source and no network in this environment, so nobody here has heard the opening play or the swap
-  happen - the read is stubbed in the checks. What is claimed is narrow and checkable: the element is now given a first
-  megabyte at the start of the tap instead of the whole song, and the order of those two events is proved in the verifier.
+- **WHAT THE OWNER SAID.** *"I SHOULD BE ABLE TO CREATE PLAYLISTS AND ALBUMS AND SEARCH THE STREAMING BEFORE I HAVE A SINGLE SONG
+  IMPORTED. MAKE THE DOWNLOADING LIKE SPOTISAVER"* - with photographs of the staged panel those sites show: a title, the song, a
+  bar, and the steps ticking off as they run.
+- **THE SHELF WAS NEVER MISSING, IT WAS COVERED.** `#scStreamBlock` is static markup and `scShelfBoot()` builds it and the rail
+  whether or not anything is imported; the rail is built with `data-built` and its three page glyphs plus the source switch are
+  unconditional. What sat on top was `#emptyState`, which `navigate()` lays over the library whenever `allTracks.length` is 0.
+  So the search box, **New playlist** and **New album** were all behind a screen that says add music first. `scShelfPage()` now
+  hides that screen while the shelf is open and restores it on close under the same rule `navigate()` uses
+  (`(allTracks.length || !scLibraryReadOk) ? none : flex`), so a failed library read still never shows onboarding.
+- **THE PANEL IS THE WORK, NOT A CARTOON.** `scKeepPanelOpen()` builds a card with the song and a bar; `scKeepPanelStep()` adds a
+  row and ticks every earlier one, which is also what makes a skipped stage honest (a copy already in memory still shows as
+  read); `scKeepPanelDone()` closes it on the answer. The stages come from the code that does the work: `scStreamCropFile()` grew
+  an **optional** `on` listener and reports `find` before the resolve, `read` with a real percentage from `scFetchBytes()` (via the
+  new `scStreamReadProgress()`, the same six-lane reader the stream uses), `check` after the blob is validated, and `pack` when the
+  `File` is built. `scStreamDownload()` moves the panel on those events and finishes it with the destination - All Songs, a
+  playlist, an album, or the file to the device - and a failure is a finished panel that names what failed rather than a spinner
+  that never stops. The crop sheet calls `scStreamCropFile(t)` with no listener and behaves exactly as before.
+- **WHAT WAS RUN.** `dev/patch-80711.py` over the released 80.7.10 page: `--check` **1** before, **6 steps** applied, a second run
+  a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-80711.cjs` on the shipped bytes, with both
+  changes **driven**: `scShelfPage()` is run against a stub document with an empty library and with two songs to prove onboarding
+  is hidden while the shelf is open, restored when it closes, and never shown after a failed library read; and
+  `scStreamDownload()` is run against stubs recording every panel event, proving a library save shows find -> read 40% -> read 100%
+  -> check -> pack -> save -> kept -> done, that a device save exports the file and adds nothing to the library, that a playlist
+  save lands after the keep, that a song already on the device is not read twice, and that a failed read finishes the panel as a
+  failure with nothing added. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** No phone and no source in this environment, so nobody here has watched the panel on a real save, and the read
+  callback is stubbed in the checks. What is checked is the order of the events the panel reacts to, the empty-library rule, and
+  that every inline script still compiles.
