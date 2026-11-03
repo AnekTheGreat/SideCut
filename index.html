@@ -16344,33 +16344,55 @@ function startLyricsAutoScroll(keepPos, noReset) {
     }
   }
 
+  // 81.2 - THE NAME ON THE ROW IS AN ALBUM OF YOURS, NOT A TAG ON A FILE.
+  // The album branch of this sheet walked allTracks and collected t.album - the tag
+  // on each file - so it offered whatever names other people's files happen to
+  // carry: the single a file was cut from, a compilation, "BK Songs". Not one of
+  // them had to be an album, and the albums the owner made were not in it at all.
+  // That is the bug the Albums page fixed for itself long ago (its own note says
+  // cards come from userAlbums only, because tag grouping "listed albums the user
+  // never created"), and the Add to an album sheet was taught it in 80.10; this
+  // sheet was missed. It now reads scStreamDeviceAlbums() - the albums you have,
+  // in card order, with the songs each holds, empty ones dropped - which is the very
+  // list the 80.10 sheet reads. The write path was already right: scStreamKeepIn
+  // calls addTracksToAlbum, so the song joins a real album on the Albums page.
   function scStreamDownloadPick(id, kind){
-    var names = [], seen = {};
+    var names = [], seen = {}, counts = {};
     if(kind === 'pl'){
       try{
         Object.keys(playlists || {}).forEach(function(n){
           if(!n || n === 'All Songs' || n === 'Unsorted' || seen[n]) return;
           seen[n] = 1; names.push(n);
+          // A list that holds nothing is not a place a song can go, so the row
+          // says how many it holds and the count is read, not guessed.
+          try{ var ids = (playlists || {})[n]; counts[n] = (ids && ids.length) || 0; }catch(_ePickCnt){}
         });
       }catch(_ePickPl){}
+      names.sort(function(a, b){ return String(a).toLowerCase() < String(b).toLowerCase() ? -1 : 1; });
     } else {
       try{
-        (allTracks || []).forEach(function(t){
-          var a = String((t && t.album) || '').trim();
-          if(!a || seen[a]) return;
-          seen[a] = 1; names.push(a);
+        var mine = (typeof scStreamDeviceAlbums === 'function') ? scStreamDeviceAlbums() : [];
+        (mine || []).forEach(function(a){
+          var n = String((a && a.name) || '').trim();
+          if(!n || seen[n]) return;
+          seen[n] = 1; names.push(n);
+          counts[n] = Number(a && a.n) || 0;
         });
       }catch(_ePickAl){}
     }
-    names.sort(function(a, b){ return String(a).toLowerCase() < String(b).toLowerCase() ? -1 : 1; });
-    var acts = [{ label: 'New ' + (kind === 'pl' ? 'playlist' : 'album') + '\u2026', run: function(){
+    var newLabel = 'New ' + (kind === 'pl' ? 'playlist' : 'album') + '\u2026';
+    // Nothing to choose from is not a dead sheet: the one choice names itself.
+    if(!names.length) newLabel = (kind === 'pl' ? 'No playlists yet - make the first one' : 'No albums yet - make the first one');
+    var acts = [{ label: newLabel, run: function(){
       var n = '';
       try{ n = String(prompt('Name the ' + (kind === 'pl' ? 'playlist' : 'album') + ':', '') || '').trim(); }catch(_ePickNew){ n = ''; }
       if(!n) return;
       scStreamDownload(id, { kind: kind, name: n });
     } }];
     names.slice(0, 40).forEach(function(n){
-      acts.push({ label: n, run: function(){ scStreamDownload(id, { kind: kind, name: n }); } });
+      var c = Number(counts[n]) || 0;
+      var label = c ? (n + ' \u00b7 ' + c + ' song' + (c === 1 ? '' : 's')) : n;
+      acts.push({ label: label, run: function(){ scStreamDownload(id, { kind: kind, name: n }); } });
     });
     scStreamSheet(kind === 'pl' ? 'All Songs and a playlist' : 'All Songs and an album', acts);
   }
@@ -20356,6 +20378,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // Changelog timestamps: this build sandbox runs on UTC with no tzdata, so
   // compute Eastern time as "UTC minus 4 hours" (EDT) for the date: field —
   // do NOT trust TZ=America/New_York here, it silently returns UTC.
+  //   AND THE SECOND NUMBER STOPS AT NINE TOO, from 81 on. The count after the
+  //   first dot is one digit, 0 to 9: 80.9 is followed by 81, a fix on top of 81
+  //   is 81.1, and the next one is 81.2 - never 80.10 or 80.11. Those two shipped
+  //   that way and are renumbered here to 81 and 81.1. Nothing on a device reads an
+  //   old changelog label (the updater compares the manifest's version), so no
+  //   install is left behind by the correction.
   //   AND THE DATE ROLLS BACK WITH IT. 64.2.4 to 64.2.9 were stamped by taking
   //   the UTC time-of-day minus four hours while KEEPING the UTC date, which put
   //   64.2.4 and 64.2.5 a day ahead of themselves and every one of them hours
@@ -20369,7 +20397,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.11';
+  const APP_VERSION = '81.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21069,14 +21097,20 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 80.7.12 - A SEARCH THAT ANSWERS WHEN THE PLAYER WILL NOT.
   // 80.8 - A HOLD IS A PRESS THAT CARRIES ON.
   // 80.9 - THE PHONE IS ASKED TO STAY AWAKE FOR A SONG.
-  // 80.10 - THE ALBUM CHOOSER SHOWS THE ALBUMS THAT EXIST.
-  // 80.11 - THE LAPTOP DESK, AND ANOTHER ROAD INTO THE LIBRARY.
-  { version: '80.11', date: 'November 2, 2026 · 10:14 PM EST', title: 'A laptop you can read, and another way into your library', items: [
+  // 81 - THE ALBUM CHOOSER SHOWS THE ALBUMS THAT EXIST.
+  // 81.1 - THE LAPTOP DESK, AND ANOTHER ROAD INTO THE LIBRARY.
+  // 81.2 - YOUR ALBUMS IN THE CHOOSER, AND THE NAME ON THE ROW MEANS SOMETHING.
+  { version: '81.2', date: 'November 2, 2026 · 11:24 PM EST', title: 'Your albums, not the tags on your files', items: [
+    '[FULL] Sending a song to an album now lists the albums you actually made, in the order the Albums page keeps them, with how many songs each one holds - instead of names picked up from the tags on your files.',
+    '[FULL] No more made-up album names in that list: a tag is not an album, so a single, a compilation or a junk label can no longer appear there, and a song you send this way joins its album on the Albums page.',
+    '[FULL] The version number counts the way it always has: one digit after the first dot, so 80.9 is followed by 81, then 81.1 and 81.2 - 80.10 and 80.11 are gone from the history.'
+  ]},
+  { version: '81.1', date: 'November 2, 2026 · 10:14 PM EST', title: 'A laptop you can read, and another way into your library', items: [
     '[FULL] Another way to get songs into your library: add a streamed song to an album you already have, and it joins that album without being downloaded first.',
     '[FULL] On a laptop the page now sizes itself for the screen: bigger text, list rows that keep to a comfortable width instead of spanning the whole window, and a player that floats over the page instead of gluing itself to the bottom and both edges.',
     '[FULL] The home wall stops stretching its bubbles across a wide window, and song menus, sheets and dialogs get more room and larger type - so nothing on a laptop is cramped, stretched or hard to see.'
   ]},
-  { version: '80.10', date: 'November 2, 2026 · 9:45 PM EST', title: 'Add to an album shows the albums you have', items: [
+  { version: '81', date: 'November 2, 2026 · 9:45 PM EST', title: 'Add to an album shows the albums you have', items: [
     '[FULL] Adding a song to an album now lists the albums you already have, with how many songs each one holds, instead of asking you to type a name and making a second album behind your back.',
     '[FULL] A long list of albums no longer runs off the top of the screen: the sheet stops at the height of the glass and the rows scroll inside it, so the choice that makes a new album is always reachable.',
     '[FULL] An album with no songs is not drawn as an album any more, and a name on a tile wraps onto a second line instead of being cut off - so the page shows albums that exist.'
