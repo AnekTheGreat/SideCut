@@ -1,48 +1,46 @@
-## 80.9 ({{STAMP}}): a song keeps playing when the app does not
+## 80.10 ({{STAMP}}): add to an album shows the albums you have
 
-- **WHAT THE OWNER SAID.** *"the streaming still doesn't work outside a app."* He had said it once before, in 80.7.1
-  (*"why doesn't streaming work outside of the app like when I close the app"*), and that release answered it with a page
-  full of machinery: a heartbeat that revives a stream the phone silenced, re-asserts the media session, pushes the position
-  to the widget, and remembers the second to come back to. It changed nothing he could feel, and this release is why.
-- **FAULT ONE: THE LOOP THAT KEEPS A STREAM ALIVE WAS PAUSED WITH THE APP.** The battery saver near the top of the page
-  replaces `window.setInterval`, tracks every interval longer than 500 ms, and stops all of them on `visibilitychange` when
-  the page is hidden - and again on `pagehide`. Exactly one timer is exempt: the one-second listening clock, which calls
-  `__scKeepAliveTimer` so a song heard with the screen off still gets counted. 80.7.1 then put the entire background revival
-  inside `startMediaSessionHeartbeat()` - a tracked 30-second interval. So the first thing the saver did when the owner left
-  the app was clear the one timer whose only job is keeping a song alive out there. The deck's revive path rides the same
-  loop, so both players were counting on a timer that is deliberately stopped. The code was right; it was not running.
-- **FAULT TWO: NOTHING ASKED THE PHONE TO STAY AWAKE FOR A SONG.** The Android half already carries the hold this needs -
-  `SideCutJob`, injected by `.github/workflows/patch-joblock.py`: a `PARTIAL_WAKE_LOCK` plus a `dataSync` foreground service,
-  because (that file's own words) *"with the screen off the CPU sleeps ... a cached process is frozen and can be killed"*.
-  A conversion has asked for it since it was written. Playback never did, so a streamed song was the one piece of work in
-  this app left to the freezer: the audio died with the page while the notification kept saying it was playing.
-- **A KEPT TIMER THAT WAS BORN HIDDEN IS STARTED NOW.** The interceptor starts an interval *stopped* when it is created while
-  `document.hidden` is set, and `__scKeepAliveTimer` only ever set `keep = true` - keeping a timer exempt from a pause that
-  had already happened. It now starts the timer as well, which is the state a stream resumed from the lock screen is in.
-- **THE HEARTBEAT IS MARKED KEPT.** Reviving a silenced stream, re-asserting metadata and position, and pushing the widget all
-  happen on the 30-second beat that only matters while nobody is looking. It survives the saver now.
-- **PLAYBACK TAKES THE HOLD, AND GIVES IT BACK FOR THE RIGHT REASON.** A streamed song's `play` asks for the hold; a `pause`
-  the owner asked for gives it back; a pause the platform applied does **not**, because that is the exact case the heartbeat
-  is there to undo; a finished song gives it back before advancing; and a now bar handed back to the deck gives it back from
-  the heartbeat, whatever the element's last event said.
-- **ONE HOLD, TWO OWNERS.** `SideCutJob` is a pair of calls with no reference count - `hold()`/`release()` - so the naive
-  version had a download finishing in the background stop the service out from under a playing song. `scHoldSync()` is the
-  missing arbiter: one `hold` when the first owner asks, one `release` when the last is done, named for whichever thing is
-  still running, and a no-op on a build without the plugin.
-- **NOT A NATIVE CHANGE.** `SideCutJob` has shipped in the APK since conversions used it; this release only calls it, so it
-  rides the OTA channels like any other page release.
-- **WHAT WAS RUN.** `dev/patch-809.py` over the released 80.8 page: `--check` **1** before, **10 steps** applied, a second
-  run a no-op, `--check` **0**; both channels rebuilt to a true fixed point (pass 3). `dev/check-809.cjs` **47 passed,
-  0 failed** against the shipped bytes, and the two new behaviours are **driven**, not grepped: a 30-second timer created
-  while hidden is started then stopped, marking it kept leaves it running, and a kept timer created while visible is not
-  restarted; the arbiter is run against a fake plugin in both owner orders - one `hold` for two owners, no `release` when the
-  first finishes, exactly one when the last does, nothing at all and no throw on a build with no plugin, and an unknown owner
-  cannot move it. The page carries one `hold` call site and one `release` call site, the stream's three events are wired to
-  it, the heartbeat is marked kept, every inline script compiles, and the notes survive the updater's own filter. Full
-  channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** No phone and no browser here, so nobody has played a song, closed the app and heard it carry on. What is
-  proven is the timer state, the arbiter, the wiring and the bytes. Two limits are worth naming: Android 12+ refuses a
-  foreground service started from the background, so a song resumed from a notification while the app is away gets the wake
-  lock alone (the plugin's own fallback, unchanged by this release); and whether the WebView keeps decoding audio once the
-  activity is destroyed - a swipe away from recents rather than a press of home - is the launcher's decision, not the page's.
-  The hold is what stops the freezer, which is the part the page can answer for.
+- **WHAT THE OWNER SAID.** *"these albums don't exist it should be from existing albums or create a new album downloaded
+  albums btw, also it shouldn't be cut off."* The shelf that plays from the source kept two stores of its own -
+  `streamPlaylists` and `streamAlbums` - and the **Add to an album** sheet offered nothing but the second one. On a phone
+  whose albums were all made the way this app makes albums (Select songs -> Create album, or a song's Add to albums), that
+  sheet answered with one made-up entry or none, while the album the owner actually wanted sat on the Albums page, invisible
+  to it. So: the albums it showed were not albums he had.
+- **HOW AN ALBUM THAT DOES NOT EXIST GOT MADE.** The row popup's own **Add to an album** did not show a chooser at all - it
+  opened a text prompt and filed the song under whatever was typed. A name typed once became a list in a store nothing else
+  in the app reads: an album on no Albums page, holding one song, wearing a name only that sheet knew. The same sheet also
+  drew a tile for every list in the store, so lists made and never filled - and lists whose songs had gone - were drawn as
+  albums with a count of 0: squares that open nothing, on a page whose subject is albums.
+- **THE PART THAT WAS CUT OFF.** `scStreamSheet()` anchors its panel to the bottom edge and appends one row per choice, with
+  no height limit and no scroller. Past about a dozen rows the panel grew upwards off the top of the screen, so the first
+  albums - and the choice that makes a new one, which is always last - could not be reached at all. The downloads picker,
+  which lists up to sixty songs, was clipped on every device, every time. The panel is a flex column capped at the height of
+  the screen now: the choices live in a scrolling body, the title and Cancel are pinned, and nothing can be pushed off the
+  glass.
+- **THE ALBUMS THAT EXIST.** `scStreamPickList()` lists your albums first - `visibleAlbumNames()`, in the order the Album
+  cards are in, each with how many songs it holds (`Road Trip · 12 on device`) - then the lists from the source that actually
+  hold something, then a new album as the last choice. A name that exists in both stores is offered once. A device album
+  with no songs is not offered, and neither is a list with none. And a song filed under a name that is already an album on
+  the Albums page goes into this shelf's list of that same name: one name stays one album instead of a second being invented
+  beside it.
+- **THE ROW POPUP ASKS THE CHOOSER NOW.** `scStreamMenu()`'s **Add to an album** opens `scStreamPickList('al', id)` - the
+  same sheet the shelf's plus opens - so a typed name is reachable only from the deliberate **New album** choice, which is
+  where it belongs.
+- **A TILE NAME WRAPS.** `scShelfGrid()` drew every album name on one nowrap line with an ellipsis, so a long album was a
+  cut-off word. It wraps to two lines now.
+- **TWO STORES STAY TWO STORES.** An album on the device is a set of file ids (`userAlbums`); a list here carries entries
+  that can be a song from the source or a file. This release makes the chooser speak both. It does not merge them, and it
+  does not move a song out of either one.
+- **WHAT WAS RUN.** `dev/patch-8010.py` over the released 80.9 page: `--check` **1** before, **9 steps** applied, a second
+  run a no-op, `--check` **0**; both channels rebuilt to a true fixed point (pass 3). `dev/check-8010.cjs` **69 passed,
+  0 failed** against the shipped bytes, and the new behaviour is **driven**, not grepped. The chooser is run against a
+  device store and a source store: an empty list is not offered, a device album with no songs is not offered, a name that
+  exists in both is offered exactly once, the labels count what they say, a new album is always the last choice and it is
+  the only one that asks for a name, and choosing `Road Trip` files the song under `Road Trip` and says so. The sheet is
+  built against a fake DOM: capped at the screen, every choice inside the scroller, Cancel its own child of the panel, and
+  nothing else in it. The grid is run with an empty list and a full one: one tile, `2 songs`, the empty album not drawn, and
+  a page of nothing but empties saying there are no albums. All seven inline scripts compile. Full channel
+  **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** No phone and no browser here, so no sheet was dragged with a thumb and no album was tapped on a screen.
+  What is proven is which choices the sheet produces from which stores, where those choices are appended, how tall the panel
+  is allowed to be, and that the page is the one in both zips.
