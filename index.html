@@ -20397,7 +20397,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '81.3';
+  const APP_VERSION = '81.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21101,6 +21101,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.1 - THE LAPTOP DESK, AND ANOTHER ROAD INTO THE LIBRARY.
   // 81.2 - YOUR ALBUMS IN THE CHOOSER, AND THE NAME ON THE ROW MEANS SOMETHING.
   // 81.3 - YOUR OWN SONGS PLAY OUTSIDE THE APP, AND ONE SOUND AT A TIME.
+  // 81.4 - NO MORE PLAYING THAT IS NOT PLAYING, AND THE FULL APK IN TOOLS.
+  { version: '81.4', date: 'November 3, 2026 · 12:28 PM EST', title: 'A stopped song stops saying it is playing', items: [
+    '[FULL] The lock screen, the shade and the widget no longer claim a song is playing when the phone has already silenced it - the playhead decides, not the button you last pressed.',
+    '[FULL] A song that stops while you are away now shows as paused instead of playing for ever, including one played online and one played from your own files.',
+    '[FULL] The full web app now has a Full APK card in Tools with a direct way to the newest Android build.'
+  ]},
   { version: '81.3', date: 'November 3, 2026 · 12:14 PM EST', title: 'Your downloads play outside the app, and the source plays fair', items: [
     '[FULL] A downloaded song no longer stops when you leave the app or turn the screen off: it asks the phone for the same hold a conversion gets, so Android stops freezing the page behind your music.',
     '[FULL] The controls outside the app now act on the song that is really making sound, including a song played online, and a song paused by another app comes straight back instead of leaving the last downloaded song playing.',
@@ -39732,9 +39738,19 @@ function _fallbackCopy(text){
       // While we are away the notification must not claim a song is playing that
       // Android has already silenced: the element still says `paused === false`
       // once the WebView is frozen, so the playhead is the only honest witness.
-      const bgDead = (typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns())
-        ? false : (!userPaused && !playbackSurvivedBackground());
-      if(bgDead) mediaSetPlaybackState('paused');
+      // 81.4 - A STREAM IS JUDGED LIKE THE DECK IS. It used to be declared alive
+      // outright, and then the DECK's state was pushed - so a song from the source,
+      // frozen by Android, kept telling the shade and the lock screen that it was
+      // playing with a playhead that never moved. The trip taken when the app left is
+      // the witness now, and the state pushed is the one belonging to what sounds.
+      const streamUpNow = (typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns());
+      const bgDead = streamUpNow
+        ? (!scStreamState.userPaused && !scStreamSurvivedBackgroundFrom(scStreamBgTrip))
+        : (!userPaused && !playbackSurvivedBackground());
+      if(bgDead){
+        mediaSetPlaybackState('paused');
+        try{ scStreamState.playing = false; scStreamBarSync(); }catch(_eBgDead){}
+      }
       // 72.5.1 - while a song plays this heartbeat is the one thing still
       // running, so it is what puts the controls back if the session was
       // rebuilt with none while the app was away.
@@ -39742,7 +39758,11 @@ function _fallbackCopy(text){
       if(!capMediaSession && !('mediaSession' in navigator)) return;
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
       if(t) updateMediaSession(t);
-      if(!bgDead) mediaSetPlaybackState(a.paused ? 'paused' : 'playing');
+      if(!bgDead){
+        const _sa = streamUpNow ? scStreamState.audio : null;
+        mediaSetPlaybackState(streamUpNow ? ((_sa && !_sa.paused) ? 'playing' : 'paused')
+                                          : (a.paused ? 'paused' : 'playing'));
+      }
       if(a.duration){
         mediaSetPositionState(a.duration, a.playbackRate || 1, Math.min(a.currentTime, a.duration));
       }
@@ -39768,6 +39788,9 @@ function _fallbackCopy(text){
   // from one that was silently killed — and, when it was killed, put it back
   // instead of making the user press play.
   let bgTrip = { at: 0, pos: 0, trackId: null, believedPlaying: false };
+  // 81.4 - A SONG THAT IS NOT SOUNDING DOES NOT SAY IT IS PLAYING. This judgement was
+  // made for the deck only; a stream was declared alive whatever happened.
+  let scStreamBgTrip = { at: 0, pos: 0, id: '', believedPlaying: false };
   function noteBackgroundStart(){
     try{
       const a = activeAudio();
@@ -39777,6 +39800,15 @@ function _fallbackCopy(text){
         trackId: (queueIndex >= 0 && queueIndex < queue.length) ? queue[queueIndex] : null,
         believedPlaying: !!(a && !a.paused && !userPaused
                             && queueIndex >= 0 && queueIndex < queue.length),
+      };
+      // 81.4 - the same record for the element that is actually making sound.
+      const s = (typeof scStreamState !== 'undefined') ? scStreamState.audio : null;
+      scStreamBgTrip = {
+        at: Date.now(),
+        pos: s ? (Number(s.currentTime) || 0) : 0,
+        id: (typeof scStreamState !== 'undefined') ? String(scStreamState.curId || '') : '',
+        believedPlaying: !!(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()
+                            && s && !s.paused && !scStreamState.userPaused),
       };
     }catch(e){ }
   }
@@ -39797,6 +39829,23 @@ function _fallbackCopy(text){
     return (awaySec - moved) < 3;
   }
   function playbackSurvivedBackground(){ return playbackSurvivedBackgroundFrom(bgTrip); }
+  // 81.4 - THE STREAM, BY ITS OWN PLAYHEAD. A frozen WebView leaves the element saying
+  // `paused === false` and the clock stopped; a song that really played moved it about
+  // one second per second. Same test as the deck, with the same slack.
+  function scStreamSurvivedBackgroundFrom(trip){
+    try{
+      if(!trip || !trip.at || !trip.believedPlaying) return true;
+      const s = scStreamState.audio;
+      if(!s) return false;
+      const awaySec = (Date.now() - trip.at) / 1000;
+      if(awaySec < 4) return true;
+      if(s.paused) return false;
+      if(String(scStreamState.curId || '') !== String(trip.id || '')) return true;
+      const moved = (Number(s.currentTime) || 0) - (Number(trip.pos) || 0);
+      if(moved < 0) return true;
+      return (awaySec - moved) < 3;
+    }catch(_eScTrip){ return true; }
+  }
   // The honest paused presentation, for when playback is NOT running and no pause
   // event is coming (a WebView that was frozen, or a resume the platform refused).
   function showPausedPlaybackState(){
@@ -64414,6 +64463,22 @@ window.showAlbumReorderPopup = function(albumName, focusTrackId){
       '</div>' +
     '</div>';
   }
+  // 81.4 - THE FULL APK, WHERE IT CAN BE HANDED OUT. This card exists on the FULL WEB
+  // page and nowhere else: not the plain web page (which is the store build), not the
+  // Play APK, not the sideloaded one - an installed copy does not need a download link
+  // for itself. android-build.yml attaches SideCut-$V-full.apk to a release tagged
+  // apk-..., so /releases/latest is the newest full build.
+  function apkCard(){
+    try{
+      if(typeof SC_IS_WEB === 'undefined' || !SC_IS_WEB) return '';
+      if(typeof SC_IS_PLAY !== 'undefined' && SC_IS_PLAY) return '';
+    }catch(_eApkCard){ return ''; }
+    return '<div style="margin:14px 0;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--bg-raised);">' +
+      '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">Full APK</div>' +
+      '<div style="font-size:12px;color:var(--ink-dim);line-height:1.5;margin-bottom:10px;">You are on the full web app. The same build installs on Android as the full APK - every tool, nothing gated by a store.</div>' +
+      '<a href="https://github.com/AnekTheGreat/SideCut/releases/latest" target="_blank" rel="noopener" style="display:inline-block;padding:9px 15px;border-radius:999px;background:var(--coral);color:#fff;font-size:12.5px;font-weight:700;text-decoration:none;">Download the full APK</a>' +
+      '</div>';
+  }
   function lookCard(){
     var cloud = isCloud(), grid = pinnedLayout() === 'grid';
     return '<div class="sc-sec" id="sc80Look">' +
@@ -64473,7 +64538,7 @@ window.showAlbumReorderPopup = function(albumName, focusTrackId){
       var key = fold ? fold.getAttribute('data-fold') : '';
       (TOOL_FOLDS[key] ? paneTools : paneStudio).appendChild(el);
     });
-    paneTools.insertAdjacentHTML('beforeend', milestonesCard() + playsCard() + lookCard());
+    paneTools.insertAdjacentHTML('beforeend', milestonesCard() + playsCard() + apkCard() + lookCard());
     // 80.0.3 - no bar is built here any more. The split is the dock's Studio
     // tab, so the view is only the two panes.
     host.appendChild(paneStudio);
