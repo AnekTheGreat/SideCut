@@ -1,48 +1,46 @@
-## 80.11 ({{STAMP}}): a laptop you can read, and another way into your library
+## 81.2 ({{STAMP}}): your albums, not the tags on your files
 
-- **WHAT THE OWNER SAID.** *"also for the full version, label that as another way to get songs into your library thru
-  streamed songs, and make UI on laptop not cluttered and hard to see, make it nice to see."*
-- **THE LABEL.** 80.10 taught the album chooser to list the albums that exist. The full notes now name it from the
-  library's side, which is what it is: **another way to get songs into your library** - add a streamed song to an album you
-  already have and it joins that album without being downloaded first. The word has to be *streamed*: the updater drops any
-  note that matches `streaming|streams?\b|from the source|pinned artist`, and `streamed` does not match that boundary. The
-  note is checked through the same regex the bundler uses, not by eye.
-- **WHY A LAPTOP WAS CLUTTERED.** Nothing in the ladder was wrong; the ladder simply never had a rung for the size of screen
-  a laptop is. The sheet already grows its gutters and its max-widths at 561, 768, 1024, 1440 and 1600, and the ten-foot
-  rung at 1800 grows the type and the targets - but **not one rung moved the type of a list row**. A track title was 14px on
-  a phone and 14px on a 27-inch monitor, a playlist heading 13.5px, a dock pill 11px, and all of it was laid out across the
-  full width of the window: small text on very long lines, a bubble wall with every bubble stretched to a quarter of the
-  glass, and a player glued to the bottom and to both side edges. Wide, flat and small at once is exactly what reads as
-  cluttered and hard to see.
-- **THE STRAY BRACE.** While measuring the sheet, its head stylesheet turned out to hold 1618 `{` and 1619 `}`. The extra
-  brace closed `.pane-header`'s rule one line early, and the two declarations after it - `min-width:0; overflow:hidden;`,
-  the two the comment directly above them explains are what stop a long playlist name pushing the whole row wider than the
-  window and shoving its sort/kebab buttons off screen - were sitting outside any block, ignored since the day they were
-  written. Removing that one brace puts them back inside the rule and brings the sheet to 1613 and 1613. A stray `}` is
-  silent in every browser, which is how it survived: no error, just a rule that switched half itself off.
-- **THE LAPTOP DESK.** A new rung, `@media (min-width:1024px) and (max-width:1799px)`, appended after the ten-foot rung so
-  it is the last word in its range and nothing below 1024 moves at all. In it: a row title at 15.5px with 13px under it,
-  list headings at 21px, dock pills at 14.5px, tabs at 13.5px, 56px art, a player title at 17px; the library keeps a
-  1040px measure, the bubble wall is capped at 1120px, dialog sheets get 600px (760 and 820 for theme and DJ), the song
-  menu gets more room, and the player becomes a rounded card floating 24px inside the window. It uses no `!important`, so
-  any more specific sandbox or theme rule still wins, and every floating-player rule is scoped to
-  `body:not(.sc80-cloud)` - the cloud layout computes its own dock and bar geometry and is left alone.
-- **THE LADDER IS FINISHED.** Above 1800 the ten-foot rung grows the type and the targets but never grew a row, so the tail
-  adds the three things it was missing: a 17px row title, 14px under it, 64px art, and a 1200px measure on the library. A
-  list is now never set smaller on a bigger monitor than it is on a laptop.
-- **NOT A REDESIGN.** No markup moved, no element was added or removed, no font was swapped, and the phone, tablet, cloud
-  and sandbox layouts are untouched. This is the same page, sized for the screen it is on.
-- **WHAT WAS RUN.** `dev/patch-8011.py` over the released 80.10 page: `--check` **1** before, **4 steps** applied, a second
-  run a no-op, `--check` **0**; the head stylesheet now balances at 1613 `{` and 1613 `}`; both channels rebuilt to a true
-  fixed point (pass 3). `dev/check-8011.cjs` **67 passed, 0 failed** against the shipped bytes. The cascade claim is driven,
-  not grepped: the rung and the tail are extracted from the sheet by counting braces from their own headers, the gap between
-  them is proven to be whitespace and a comment, and then their media conditions are evaluated at real widths - 390, 800,
-  900 and 1023 reach **none** of the new declarations; 1024, 1280, 1440 and 1799 reach all of them; 1800 and 1920 reach
-  only the tail. Each declaration the release is about (row title 15.5px, heading 21px, pill 14.5px, library 1040px, wall
-  1120px, dialog 600px, player inset 24px and rounded 22px) is read out of the extracted block, and every cloud-sensitive
-  rule in it is proven to be the player and nothing else. The repaired `.pane-header` rule is proven to carry both
-  declarations again. All seven inline scripts compile, and both zips carry the 80.11 page with the desk in it. Full channel
-  **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** No browser and no laptop screen here, so the shadow on the floating player, the exact weight of 15.5px
-  against a given wallpaper and every pixel of the spacing were not looked at - what is proven is which widths can reach
-  which declarations, and that the page is the one inside both zips. The look is the owner's to judge on the next open.
+- **WHAT THE OWNER SAID.** *"THESE ARENT MY ACTUAL ALBUMS DAWG FIX THIS AND FIX THE VERSIINS THERE ARE NEVER . 11 OR
+  . 12 ECT..."* - sent with a photograph of the phone: a sheet headed **All Songs and an album** listing *Bambiha Bole
+  (feat. Sidhu Moose Wala)*, *BATIDAO FUNK*, *Beeper Funk (Super Slowed)*, *Bermuda Triangle*, *Best Of Arijit Singh -
+  Revisited*, *BK Songs*, *BLACK NIGGA*, *Blue Eyes*, *Bobby*, *Bollywood Best Duet Songs Sonu Nigam,Shrey...*, *BOUNCE FUNK
+  (Slowed)*, *Brown Munde*: alphabetical, plain, no counts, and not one album the owner had made.
+- **THE LIST WAS TAGS, NOT ALBUMS.** `scStreamDownloadPick(id, 'al')` built its list by walking every track and collecting
+  `String(t.album)` - the album **tag** on each file - then sorted it and offered the first forty. A tag is whatever the
+  file's source says it came from: a single, a compilation, a playlist burned into a tag, *BK Songs*. So the sheet offered
+  names that had no album behind them, and the albums the owner had actually made were not in the list at all. The
+  photograph is exactly that: the names are tags, which is why they are alphabetical and bare.
+- **WHY IT SURVIVED.** This is the bug the Albums page fixed for itself years ago - the comment on its cards says they come
+  from `userAlbums` only, because one card per album tag "listed albums the user never created". The *Add to an album* sheet
+  was taught the same lesson in 80.10. The *All Songs and an album* sheet, one file away and reached from the same menu, was
+  never touched, so the tag scan lived on in the one place nobody was looking.
+- **THE FIX.** The album branch reads `scStreamDeviceAlbums()` - `visibleAlbumNames()` through `scAlbumCardOrder`, each
+  name's `trackIds.length` beside it, empty albums dropped - which is the very list the 80.10 sheet reads. One list, two
+  sheets: a row is *Road Trip · 12 songs*, in the order the Albums page keeps, and no tag can appear because no tag is
+  read. With no albums at all the one choice names itself ("No albums yet - make the first one") instead of a dead sheet.
+  The playlist branch keeps its own rules (`All Songs` and `Unsorted` still excluded, alphabetical still) and gains the same
+  counts.
+- **THE WRITE PATH WAS ALREADY RIGHT.** `scStreamKeepIn` sends an album destination through `addTracksToAlbum`, so the song
+  lands in a real album on the Albums page, and a name typed as a new album becomes one there rather than in the side store
+  that 80.10 removed. Nothing about the destination changed; only what the sheet offers.
+- **THE VERSION.** Every release in this page's changelog before the last two carries a **one digit** count after the first
+  dot: `80.6.x`, `80.7.x`, `80.8`, `80.9`. Then came `80.10` and `80.11` - the only two digit ones in the whole history, and
+  the owner is not having them. The page already writes the rule down ("a number stops at nine", said about the third one);
+  it is true of the second one too. **80.9 is followed by 81**, a fix on top of 81 is **81.1**, and this release is **81.2**.
+  The two shipped labels are renumbered in the changelog to match (`80.10` -> `81`, `80.11` -> `81.1`, one-line comments and
+  entries together), and the version comment in the page now states the rule so the next release cannot drift again. No
+  device reads an old changelog label - the updater compares the manifest's version, and 81.2 is newer than 80.11 by the
+  first number - so the correction leaves no install behind.
+- **WHAT WAS RUN.** `dev/patch-812.py` over the released 80.11 page: `--check` **1** before, **8 steps** applied, a second
+  run a no-op, `--check` **0**. Both OTA channels rebuilt to a true fixed point (pass 3). `dev/check-812.cjs` **60 passed,
+  0 failed**. The two claims are driven, not grepped: `scStreamDownloadPick` and `scStreamDeviceAlbums` are lifted out of the
+  page by counting braces from their own headers and run in a sandbox. The chooser is handed a library carrying the exact
+  tag names from the photograph plus two real albums, and its sheet is inspected - the rows come out as *Road Trip · 12
+  songs*, *Late Night · 1 song*, in card order, with **each of the eleven tags proven absent**, and with no albums it says
+  so and still sends the song to an album of the typed name. `scStreamDeviceAlbums` is handed a store holding an empty album
+  and an auto album and offers neither. The changelog reads `81.2, 81.1, 81, 80.9, 80.8`; no label in the page still says
+  80.10 or 80.11; all inline scripts compile; both zips carry the 81.2 page with the fixed sheet and without the tag scan.
+  Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** No phone and no browser here, so the sheet was not opened on a device: what is proven is the list the
+  function builds from a given library and that both zips carry that function. The look of the counts on the row is the
+  owner's to judge on the next open.
