@@ -1,41 +1,34 @@
-## 80.7.9 ({{STAMP}}): a song you kept
+## 80.7.10 ({{STAMP}}): a button you can see, and a song that starts
 
-- **WHAT THE OWNER SAID.** *"STREAMING SHOULD BE ABLE TO WORK OUTSIDE OF SIDECUT APP LIKE IN THE BACKGROUND, IT SHOULD BE FASTER AND I
-  SHOULD BE ABLE TO CROP A STREAMED SONG, ALSO FROM THE APP DIRECTLY I SHOULD BE ABLE TO DOWNLOAD A STREAMED SONG, AND IT SHOULD
-  PROMPT ME TO WHERE I WANT IT - ALL SONGS, ALL SONGS AND A SPECIFIC PLAYLIST, ALL SONGS AND A SPECIFIC ALBUM, OR DOWNLOADED TO
-  DEVICE, OR EXPORTED"*. Four asks, and three of them were already shipped.
-- **WHAT WAS ALREADY THERE, so nothing was rebuilt on a guess.** Background playback: the stream owns the phone through the
-  MediaSession adapter (`updateMediaSession`, the `@jofr/capacitor-media-session` plugin, `registerMediaSessionHandlers`, and the
-  heartbeat that keeps the notification live), which is why a catalogue song keeps playing with the screen off - 80.6.20 and
-  80.7.1 are the releases that fixed exactly that. Crop: 80.7.2 gave a catalogue song a `File` (`scStreamCropFile`) and
-  `scCropStreamSave` writes the clip into the library, and 80.7.3 put it one tap from the player. Speed: the read path already
-  resolves one answer per song and remembers it (`scStreamResolveCached`), reads six lanes wide behind the cover art
-  (`scStreamReadOnly`), and pulls the **next** song into memory while the current one plays (`scStreamPrefetch`, warmed 1.2s after
-  each start).
-- **WHAT WAS GENUINELY MISSING, and what landed.** A catalogue song is a reference - a title, an artist and the id of the copy a
-  source hands back - so it could be played, cropped and added to lists, but it could not be KEPT. The dots menu now offers
-  **Download this song**, which opens the ask the owner described: **All Songs**, **All Songs and a playlist**, **All Songs and an
-  album**, or **Save the file to this device**. The bytes are the ones `scStreamCropFile()` already reads (the copy that is
-  playing, then the read-ahead copy, then a fresh read of the same source) and the whole song is kept, not a slice; it lands the way
-  a clip off a stream lands - its own id, its own blob, persisted, in All Songs and Unsorted - with `downloadedFromStream` recording
-  where it came from, so asking twice finds the first copy instead of keeping the file again. Playlists take the new id through the
-  same `playlists` store, albums go through `addTracksToAlbum()`, and the file leaves through `saveExportFile()` (Filesystem, then
-  the system share sheet). A source that does not answer is caught and said; a song that has left the shelf is refused; one keep
-  runs at a time.
-- **THE PLAY CHANNEL IS UNTOUCHED BY DESIGN.** The keeper lives inside the catalogue module, which `SC_STREAM_OK` (`!SC_IS_PLAY`)
-  keeps out of the store build - so the three notes are marked `[FULL]` and the Play card publishes the standing one-line fallback
-  instead of advertising a button it does not have. That is the same reason 80.6.x kept the downloader and converter out of it.
-- **WHAT WAS RUN.** `dev/patch-8079.py` over the released 80.7.8 page: `--check` **1** before, **4 steps** applied, a second run a
-  no-op, `--check` **0**; both channels rebuilt to a true fixed point on pass 3. `dev/check-8079.cjs` **72 passed, 0 failed** on
-  the shipped bytes, and the routing is **driven**, not just grepped: the keeper is lifted out of the page against stubs and every
-  destination is proved to do its job and nothing else - All Songs lands one track and touches no album or saver; asking twice
-  keeps one copy and says it is already there; a playlist keep creates and fills the list and touches no album; an album keep calls
-  the album writer with the new id and creates no playlist; a file keep hands the file to the saver and puts nothing in the library;
-  a failing read neither throws at the caller nor leaves a track behind; a song that left the shelf is refused. It also re-checks
-  80.7.8 (no `pointer:coarse` in the fitting sheet), 80.7.6's record, 80.7.5's covers, 80.7.2's crop, that the catalogue is still
-  gated off the Play build, and that every inline script compiles. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** No source, no network and no phone in this environment: the actual read of a song's bytes was stubbed, so the
-  copy that comes back from the resolver is the one thing here nobody has held. Background playback was not touched and needs no
-  claim - it ships. And **speed is not claimed**: nothing about it was changed, because a speedup without a measurement on the
-  hardware is a guess, and the honest next step for "it should be faster" is to time a real play on the device rather than to guess
-  at the code.
+- **WHAT THE OWNER SAID.** *"I CAN'T DOWNLOAD A STREAMED SONG, WHERE'S THE BUTTON. STREAMED SONGS ARE INCONSISTENT, I CLICK IT
+  THEN IT PLAYS IT 3 MINUTES LATER."* Both were real, and neither was a mystery in the code.
+- **THE BUTTON WAS HIDDEN BEHIND A TWO SECOND HOLD.** 80.7.9 added the save to the song menu, and the song menu is opened by
+  holding a row (or the player dots) for two seconds. A tap on a streamed row plays it, so the only way to find the save was to
+  already know it existed. Every streamed row now carries a device button beside its add button, a row inside a playlist or an
+  album carries one too, and the player card carries one in its transport row. All three open the same four answers 80.7.9
+  built: All Songs, All Songs and a playlist, All Songs and an album, or the file itself to the device. The long-press menu keeps
+  its entry; nothing was removed.
+- **THE THREE MINUTES WAS THE READ, NOT THE RESOLVER.** `scStreamSource()` reads the **whole** song before the element is given
+  anything - the first range, then six lanes of one mebibyte, then the tail - and only then builds a blob and calls
+  `scStreamStart()`. A three minute song on a phone is therefore minutes of a bar that says *Reading the song*, and a song played
+  before is instant because its blob is already in `scStreamCache`. **That is the inconsistency the owner described**: the same
+  tap is one second or three minutes depending on a memory cache nobody can see. A stream now opens from its **first mebibyte** -
+  `scStreamPrefix()` asks for `0` to `SC_AUDIO_CHUNK - 1`, which is the same bounded range the full reader asks for first and the
+  exact first megabyte the source's audio-only copies are capped at, so it is served rather than refused - and the full copy is
+  read behind it by `scStreamUpgrade()`, which swaps it in at the second the listener has reached and puts it in the cache.
+- **THE THREE PLACES A SHORT COPY WOULD HAVE BROKEN IT**, all guarded. `scStreamFragCheck()` treats a copy that ends early as a
+  fragment and starts the whole read again; the opening ends a minute in by design, so it is exempt while `via` is `prefix`. The
+  element's `ended` handler advances the queue; the end of the opening is not the end of the song, so it waits for the whole copy
+  instead of skipping. And the link path and the quiet-link watcher both open from the first megabyte before falling back, so no
+  tap reads a whole file before it makes a sound.
+- **WHAT WAS RUN.** `dev/patch-8080.py` over the released 80.7.9 page: `--check` **1** before, **11 steps** applied, a second run
+  a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-8080.cjs` on the shipped bytes, and the order
+  is **driven**, not grepped: the fresh path is lifted out of the page against stubs and the events are recorded, so it is proved
+  that the opening is asked for **with** the link, that the opening is what plays when the link is refused, and that the whole
+  copy is only read **after** the opening has started - the exact reverse of the order that made the owner wait. It also proves
+  the three buttons exist on all three surfaces and all reach the ask, that the fragment guard and the `ended` guard are in
+  place, and that 80.7.9's keeper, the sheet, 80.7.8's phone-free fitting sheet, 80.7.2's crop and the Play gate all survive.
+  Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** No phone, no source and no network in this environment, so nobody here has heard the opening play or the swap
+  happen - the read is stubbed in the checks. What is claimed is narrow and checkable: the element is now given a first
+  megabyte at the start of the tap instead of the whole song, and the order of those two events is proved in the verifier.
