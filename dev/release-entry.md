@@ -1,30 +1,34 @@
-## 80.7.11 ({{STAMP}}): a shelf that opens, and a save you can watch
+## 80.7.12 ({{STAMP}}): songs when you search
 
-- **WHAT THE OWNER SAID.** *"I SHOULD BE ABLE TO CREATE PLAYLISTS AND ALBUMS AND SEARCH THE STREAMING BEFORE I HAVE A SINGLE SONG
-  IMPORTED. MAKE THE DOWNLOADING LIKE SPOTISAVER"* - with photographs of the staged panel those sites show: a title, the song, a
-  bar, and the steps ticking off as they run.
-- **THE SHELF WAS NEVER MISSING, IT WAS COVERED.** `#scStreamBlock` is static markup and `scShelfBoot()` builds it and the rail
-  whether or not anything is imported; the rail is built with `data-built` and its three page glyphs plus the source switch are
-  unconditional. What sat on top was `#emptyState`, which `navigate()` lays over the library whenever `allTracks.length` is 0.
-  So the search box, **New playlist** and **New album** were all behind a screen that says add music first. `scShelfPage()` now
-  hides that screen while the shelf is open and restores it on close under the same rule `navigate()` uses
-  (`(allTracks.length || !scLibraryReadOk) ? none : flex`), so a failed library read still never shows onboarding.
-- **THE PANEL IS THE WORK, NOT A CARTOON.** `scKeepPanelOpen()` builds a card with the song and a bar; `scKeepPanelStep()` adds a
-  row and ticks every earlier one, which is also what makes a skipped stage honest (a copy already in memory still shows as
-  read); `scKeepPanelDone()` closes it on the answer. The stages come from the code that does the work: `scStreamCropFile()` grew
-  an **optional** `on` listener and reports `find` before the resolve, `read` with a real percentage from `scFetchBytes()` (via the
-  new `scStreamReadProgress()`, the same six-lane reader the stream uses), `check` after the blob is validated, and `pack` when the
-  `File` is built. `scStreamDownload()` moves the panel on those events and finishes it with the destination - All Songs, a
-  playlist, an album, or the file to the device - and a failure is a finished panel that names what failed rather than a spinner
-  that never stops. The crop sheet calls `scStreamCropFile(t)` with no listener and behaves exactly as before.
-- **WHAT WAS RUN.** `dev/patch-80711.py` over the released 80.7.10 page: `--check` **1** before, **6 steps** applied, a second run
-  a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-80711.cjs` on the shipped bytes, with both
-  changes **driven**: `scShelfPage()` is run against a stub document with an empty library and with two songs to prove onboarding
-  is hidden while the shelf is open, restored when it closes, and never shown after a failed library read; and
-  `scStreamDownload()` is run against stubs recording every panel event, proving a library save shows find -> read 40% -> read 100%
-  -> check -> pack -> save -> kept -> done, that a device save exports the file and adds nothing to the library, that a playlist
-  save lands after the keep, that a song already on the device is not read twice, and that a failed read finishes the panel as a
-  failure with nothing added. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
-- **NOT CLAIMED.** No phone and no source in this environment, so nobody here has watched the panel on a real save, and the read
-  callback is stubbed in the checks. What is checked is the order of the events the panel reacts to, the empty-library rule, and
-  that every inline script still compiles.
+- **WHAT THE OWNER SAID.** *"THE STREAMING IS NOT GIVING ME ANY SONGS AT ALL. MAKE GET SONGS EASIER TO USE."* The search was not
+  slow, it was closed, and the measurement says so rather than the guess.
+- **THE ONE ROAD OUT WAS A POST THE PAGE CANNOT MAKE.** `scYtSearch()` calls the player's search through `scHttpJson()`, which
+  asks the **native bridge** first and then the **page fetch** - there is no third road. A browser refuses that POST to
+  `youtube.com` on CORS, so the call resolves to `null` and the shelf printed *Nothing found for that* for every query. The POST
+  itself is alive: run from a server it answers **200, 1.33 MB, 20 `videoRenderer` rows** (measured this session), which is why
+  the same code works on a phone with a working bridge and nothing else.
+- **PROXYING THE RESULTS PAGE WAS MEASURED, AND REJECTED.** The app already knows three CORS proxies; when this was written
+  **allorigins answered 522, codetabs 522, cors.lol 429**, so routing the results page through them would have replaced one
+  silent failure with another. The open catalogue (`archive.org/advancedsearch.php`) answered **200 with
+  `access-control-allow-origin: *`**, so that is the road the fallback is built on: a plain GET, no key, no bridge, no proxy.
+- **A SEARCH NOW ANSWERS.** `scStreamSearchRun()` asks the player first, because that is the whole catalogue; if it comes back
+  empty or throws, `scStreamArchiveSearch()` asks the open catalogue before the owner is told there are no songs. The shelf says
+  which catalogue answered (`12 found · the open catalogue`), so the two are never confused. An archive row carries `ia:<id>`,
+  `scStreamResolve()` routes it to `scStreamArchiveResolve()` (metadata -> the item's own mp3, or any audio it has), and its cover
+  comes from the archive's own image service - so those rows play from the archive with no key at all.
+- **AND GET SONGS MEANS GET SONGS.** The button now says **Get songs** instead of Search, the field says *Type a song or an
+  artist*, the results header shows how many were found and where from, and **Add all** puts every one of them on the shelf in one
+  tap through the same path a single Add uses - so a duplicate is still refused and the count reports only what really landed.
+  Twelve taps to fill a list was a large part of why the shelf looked empty.
+- **WHAT WAS RUN.** `dev/patch-80712.py` over the released 80.7.11 page: `--check` **1** before, **11 steps** applied, a second
+  run a no-op, `--check` **0**; both channels rebuilt to a true fixed point. `dev/check-80712.cjs` on the shipped bytes, and the
+  search is **driven** five ways: the player answers (its rows are the results and the catalogue is never asked); the player
+  returns null (the catalogue fills the shelf and says so); both return nothing (the line names the failure); the player throws
+  (the catalogue still answers); an empty query says what to do. `scStreamAddAllResults()` is driven too: three results add three
+  songs and clear the results, two duplicates add none and say they are already there, and an empty shelf says to search first.
+  The open catalogue path was also exercised from this machine: search **200** with three docs, metadata **200** for the first
+  item, four audio files listed in it. Full channel **{{ROOT}}** bytes, Play channel **{{PLAY}}** bytes.
+- **NOT CLAIMED.** No phone in this environment, so nobody here has played an archive row on a device, and the coverage of the
+  open catalogue is not the player's: it is a fallback for when the player cannot be reached, not a replacement for it. What is
+  verified is that a search now returns rows through a road measured open today, that those rows resolve to real files, and that
+  Add all fills the shelf in one tap.
