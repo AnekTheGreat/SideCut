@@ -20397,7 +20397,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '81.2';
+  const APP_VERSION = '81.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21100,6 +21100,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81 - THE ALBUM CHOOSER SHOWS THE ALBUMS THAT EXIST.
   // 81.1 - THE LAPTOP DESK, AND ANOTHER ROAD INTO THE LIBRARY.
   // 81.2 - YOUR ALBUMS IN THE CHOOSER, AND THE NAME ON THE ROW MEANS SOMETHING.
+  // 81.3 - YOUR OWN SONGS PLAY OUTSIDE THE APP, AND ONE SOUND AT A TIME.
+  { version: '81.3', date: 'November 3, 2026 · 12:14 PM EST', title: 'Your downloads play outside the app, and the source plays fair', items: [
+    '[FULL] A downloaded song no longer stops when you leave the app or turn the screen off: it asks the phone for the same hold a conversion gets, so Android stops freezing the page behind your music.',
+    '[FULL] The controls outside the app now act on the song that is really making sound, including a song played online, and a song paused by another app comes straight back instead of leaving the last downloaded song playing.',
+    '[FULL] A call now silences a song played online as well, and ten minutes with the screen off no longer shuts down the keep-alive behind a song that is still playing.'
+  ]},
   { version: '81.2', date: 'November 2, 2026 · 11:24 PM EST', title: 'Your albums, not the tags on your files', items: [
     '[FULL] Sending a song to an album now lists the albums you actually made, in the order the Albums page keeps them, with how many songs each one holds - instead of names picked up from the tags on your files.',
     '[FULL] No more made-up album names in that list: a tag is not an album, so a single, a compilation or a junk label can no longer appear there, and a song you send this way joins its album on the Albums page.',
@@ -38958,6 +38964,15 @@ function _fallbackCopy(text){
       audioFocusCallPause = false;
       if(userPaused) return;
       audioFocusInterrupted = false;
+      // 81.3 - and the song comes back to whichever element the call stopped.
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+        const s = scStreamState.audio;
+        if(wasKnown && s && s.paused && !scStreamState.userPaused){
+          recordPlaybackStop('call ended — putting the song back');
+          try{ s.play().catch(function(){}); }catch(_eCallEndStream){}
+        }
+        return;
+      }
       const a = activeAudio();
       if(wasKnown && a && a.paused && queueIndex >= 0 && queueIndex < queue.length
          && $('djModeBackdrop').style.display !== 'flex'){
@@ -38998,6 +39013,17 @@ function _fallbackCopy(text){
       // call would pause the song and the resume at the end of it would come back up
       // at the ducked level.
       try{ scUnduckForAssistant('a call is in progress'); }catch(e){}
+      // 81.3 - A CALL SILENCES WHATEVER IS MAKING SOUND. This paused the deck's
+      // element only, so a song playing from the source kept singing through a call -
+      // the one thing this app promises never to do.
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+        const s = scStreamState.audio;
+        if(s && !s.paused){
+          recordPlaybackStop('a call is in progress — pausing until it ends');
+          try{ s.pause(); }catch(_eCallStream){}
+        }
+        return;
+      }
       const a = activeAudio();
       if(a && !a.paused && !userPaused){
         recordPlaybackStop('a call is in progress — pausing until it ends');
@@ -39325,9 +39351,21 @@ function _fallbackCopy(text){
           // end-of-interruption signal there is, so the music comes straight back up
           // rather than waiting out the fallback window.
           try{ scUnduckForAssistant('the system handed the audio back'); }catch(e){}
-          const a = activeAudio();
-          if(audioFocusInterrupted && !userPaused && a && a.paused && queueIndex >= 0 && queueIndex < queue.length){
-            try{ a.play().catch(function(){}); }catch(e){}
+          // 81.3 - THE HAND-BACK GOES TO WHICHEVER ELEMENT IS MAKING SOUND. This
+          // played activeAudio() unconditionally, which is the deck: another app took
+          // the audio for a moment while a song from the source was playing, handed it
+          // back, and the app started the last DOWNLOADED song over it. With a stream
+          // on the bar the stream is resumed and the deck is never started.
+          if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+            const s = scStreamState.audio;
+            if(!userPaused && !scStreamState.userPaused && s && s.paused && !s.ended){
+              try{ s.play().catch(function(){}); }catch(_eGainStream){}
+            }
+          } else {
+            const a = activeAudio();
+            if(audioFocusInterrupted && !userPaused && a && a.paused && queueIndex >= 0 && queueIndex < queue.length){
+              try{ a.play().catch(function(){}); }catch(e){}
+            }
           }
           audioFocusInterrupted = false;
         } else if(ev === 'duck'){
@@ -39389,6 +39427,24 @@ function _fallbackCopy(text){
   // in flight is doing exactly that), false when the pause is one to believe.
   function scUndoPlatformPause(why, force){
     try{
+      // 81.3 - A SONG FROM THE SOURCE IS PAUSED FROM OUTSIDE THE SAME WAY. This opened
+      // by asking the deck and giving up when the deck was not paused - and while a
+      // stream plays the deck is deliberately paused, so the first thing every focus
+      // loss, message blip and platform pause met was `return false`. Nothing put the
+      // song back until the heartbeat came round, and a source that stopped in the
+      // meantime was never put back at all.
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+        const s = scStreamState.audio;
+        if(!s || !s.paused) return false;
+        if(scStreamState.userPaused || s.ended) return false;
+        if(audioFocusInterrupted) return false;
+        if(scInCall()) return false;
+        scStreamState.revives = (Number(scStreamState.revives) || 0) + 1;
+        if(scStreamState.revives > 20) return false;
+        recordPlaybackStop('reviving the stream after ' + why);
+        try{ s.play().catch(function(){}); }catch(_eUndoStream){}
+        return true;
+      }
       const a = activeAudio();
       if(!a || !a.paused) return false;
       if(userPaused || a.ended) return false;
@@ -39515,6 +39571,13 @@ function _fallbackCopy(text){
     if($('djModeBackdrop').style.display === 'flex') refreshDjMode();
     startMediaSessionHeartbeat();
     requestWakeLock();
+    // 81.3 - A DOWNLOADED SONG IS A RUN, TOO. 80.9 gave the stream a hold - a partial
+    // wake lock and a foreground service - so it could play with the screen off, and
+    // left the deck asking for nothing: leave the app with a downloaded song playing
+    // and Android was free to freeze the page, which takes the sound, the notification
+    // and every control out there with it. The deck asks for the same hold, on every
+    // start, exactly like the stream does.
+    try{ scHoldWant('deck'); }catch(_eHoldDeck){}
     cancelMediaRelease();
     rearmMediaSession();
     refreshMediaControlsThrottled();
@@ -39547,7 +39610,12 @@ function _fallbackCopy(text){
     // own (~20 min backgrounded), the heartbeat must stay alive so it can detect the
     // pause and auto-resume — tearing it down here would silence the very recovery
     // path that brings playback back.
-    if(userPaused){ stopMediaSessionHeartbeat(); releaseWakeLock(); }
+    if(userPaused){
+      stopMediaSessionHeartbeat(); releaseWakeLock();
+      // 81.3 - and the phone, for the same reason. A pause the user asked for is the
+      // one case where the deck has no work left to keep the process alive for.
+      try{ scHoldDrop('deck'); }catch(_eHoldDrop){}
+    }
     // Paused with the app away: keep the controls for the grace period, then let
     // the phone sleep (re-armed the next time anything plays).
     if(document.hidden) armMediaRelease(); else cancelMediaRelease();
@@ -39589,6 +39657,16 @@ function _fallbackCopy(text){
       // last event said, and the phone is released here rather than left awake for
       // a song nothing is showing.
       try{ if(typeof scStreamPhoneOwns === 'function' && !scStreamPhoneOwns()) scHoldDrop('stream'); }catch(_eHBHold){}
+      // 81.3 - THE HOLD BELONGS TO A SONG THAT IS REALLY PLAYING. A deck element that
+      // is paused or finished gives it back here, the same way the stream's gives its
+      // own back above, so a queue that stops at its last song cannot leave the phone
+      // awake for nothing.
+      try{
+        if(typeof scStreamPhoneOwns === 'function' && !scStreamPhoneOwns()){
+          var _hbDeck = activeAudio();
+          if(!_hbDeck || _hbDeck.paused || _hbDeck.ended) scHoldDrop('deck');
+        }
+      }catch(_eHBDeck){}
       if(document.hidden && (!listen || listen.paused)) return;
       const a = activeAudio();
       if(!a) return;
@@ -39808,14 +39886,29 @@ function _fallbackCopy(text){
   const MEDIA_BG_GRACE_MS = 10 * 60 * 1000; // 10 minutes paused with the app away
   // Exposed so the audit can drive this without waiting ten minutes for it.
   window.__scMediaBgGraceMs = MEDIA_BG_GRACE_MS;
+  // 81.3 - THE STREAM IS SOUND TOO. This asked the deck's element only, so a song
+  // playing from the source with the screen off read as "paused in the background":
+  // ten minutes later armMediaRelease() stopped the heartbeat, released the wake lock
+  // and parked the session - on the deck's song. The keep-alive was torn down behind
+  // the one player that was working, and the shade named a song nobody could hear.
   function mediaPausedInBackground(){
-    try{ const a = activeAudio(); return document.hidden && (!a || a.paused); }catch(e){ return false; }
+    try{
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()){
+        const s = scStreamState.audio;
+        return document.hidden && (!s || s.paused);
+      }
+      const a = activeAudio(); return document.hidden && (!a || a.paused);
+    }catch(e){ return false; }
   }
   // The song a press from outside would bring back - whatever is on the deck, if its
   // audio file is still on the device. No file means nothing to play, and then there
   // is no reason to keep a media session (or its service) alive.
   function mediaResumableTrack(){
     try{
+      // 81.3 - a song from the source is something to come back to as well. Without
+      // this the session was released outright while a paused stream sat on the bar,
+      // and the press that was meant to resume it had no entry to land on.
+      if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()) return scStreamPhoneTrack();
       if(queueIndex < 0 || queueIndex >= queue.length) return null;
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
       return (t && t.file) ? t : null;
@@ -52978,7 +53071,7 @@ function _renderAhFromData(artistAlbums){
   // a download finishing in the background would have taken the wake lock out from
   // under a song. This is the small piece that was missing - the hold is taken when
   // the first owner asks for it and released when the last one is done.
-  var scHoldOwners = { job: false, stream: false };
+  var scHoldOwners = { job: false, stream: false, deck: false };
   var scHoldNative = false;
   function scHoldText(){
     try{
@@ -52987,14 +53080,28 @@ function _renderAhFromData(artistAlbums){
     }catch(_eHoldText){}
     return 'Playing on SideCut';
   }
+  // 81.3 - THE DECK'S SONG, FOR THE SAME REASON. A downloaded song is a run too, and
+  // the shade entry it holds should name it instead of saying Conversion.
+  function scDeckHoldText(){
+    try{
+      var t = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; });
+      if(t && (t.name || t.artist)) return String(t.name || t.artist) + (t.name && t.artist ? ' \u00b7 ' + t.artist : '');
+    }catch(_eDeckHold){}
+    return 'Playing on SideCut';
+  }
   function scHoldSync(){
-    var want = !!(scHoldOwners.job || scHoldOwners.stream);
+    var want = !!(scHoldOwners.job || scHoldOwners.stream || scHoldOwners.deck);
     if(want === scHoldNative) return;
     if(want){
       // A build without the plugin answers null and nothing is held - the same way a
       // browser runs without it - and the next ask tries again.
-      var title = scHoldOwners.stream ? scHoldText() : ((scRunJob && scRunJob.title) || 'Conversion');
-      if(!scJobCall('hold', { title: title, sub: scHoldOwners.stream ? 'Playing on SideCut' : '' })) return;
+      // 81.3 - THREE OWNERS NOW. A downloaded song asks for the hold as well, so the
+      // title names whichever song is making sound, and the count keeps a conversion
+      // that finishes in the background from stopping the service under it.
+      var playing = !!(scHoldOwners.stream || scHoldOwners.deck);
+      var title = scHoldOwners.stream ? scHoldText()
+        : (scHoldOwners.deck ? scDeckHoldText() : ((scRunJob && scRunJob.title) || 'Conversion'));
+      if(!scJobCall('hold', { title: title, sub: playing ? 'Playing on SideCut' : '' })) return;
       scHoldNative = true;
     } else {
       scHoldNative = false;
