@@ -15890,11 +15890,22 @@ function startLyricsAutoScroll(keepPos, noReset) {
     bd.style.cssText = 'display:flex;align-items:flex-end;justify-content:center;';
     var m = document.createElement('div');
     m.className = 'modal';
-    m.style.cssText = 'width:100%;max-width:460px;margin:0;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));';
+    // 80.10 - A SHEET IS AS TALL AS THE GLASS, NOT AS TALL AS ITS LIST. This panel is
+    // anchored to the bottom edge and it appended one row per choice, so a long list -
+    // twenty albums, sixty downloads - grew UPWARDS past the top of the screen: the
+    // first rows, and the choice that makes a new album, were off the glass with
+    // nothing to scroll. It stops at the height of the screen now and the rows scroll
+    // inside it; the title and Cancel stay where they are.
+    m.style.cssText = 'width:100%;max-width:460px;margin:0;border-radius:18px 18px 0 0;'
+      + 'padding:14px 14px calc(14px + env(safe-area-inset-bottom));'
+      + 'display:flex;flex-direction:column;max-height:calc(100vh - 18px);max-height:calc(100dvh - 18px);';
     var hd = document.createElement('h3');
-    hd.style.cssText = 'margin:0 0 4px;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    hd.style.cssText = 'margin:0 0 4px;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 0 auto;';
     hd.textContent = String(title || '');
     m.appendChild(hd);
+    var body = document.createElement('div');
+    body.style.cssText = 'flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
+    m.appendChild(body);
     (actions || []).forEach(function(a){
       var b = document.createElement('button');
       b.type = 'button';
@@ -15903,12 +15914,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
         + 'color:' + (a.danger ? 'var(--coral)' : 'var(--ink)') + ';padding:13px 2px;font-size:13.5px;'
         + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
       b.addEventListener('click', function(){ scStreamSheetClose(); try{ a.run(); }catch(_eAct){} });
-      m.appendChild(b);
+      body.appendChild(b);
     });
     var c = document.createElement('button');
     c.type = 'button';
     c.textContent = 'Cancel';
-    c.style.cssText = 'display:block;width:100%;margin-top:8px;background:none;border:1px solid var(--line);border-radius:12px;'
+    c.style.cssText = 'flex:0 0 auto;display:block;width:100%;margin-top:8px;background:none;border:1px solid var(--line);border-radius:12px;'
       + 'color:var(--ink-dim);padding:11px;font-size:12.5px;';
     c.addEventListener('click', scStreamSheetClose);
     m.appendChild(c);
@@ -16332,7 +16343,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
       acts.push({ label: 'Crop a clip from this song\u2026', run: function(){ scStreamCrop(id); } });
     }
     acts.push({ label: 'Add to a playlist\u2026', run: function(){ scStreamToPlaylist(id); } });
-    acts.push({ label: 'Add to an album\u2026', run: function(){ scStreamToAlbum(id); } });
+    acts.push({ label: 'Add to an album\u2026', run: function(){ scStreamPickList('al', id); } });
     if(inList) acts.push({ label: 'Add songs from your downloads\u2026', run: scStreamPickDownloads });
     if(inList){
       acts.push({ danger: true, label: 'Remove from this ' + (scStreamState.plKind === 'al' ? 'album' : 'playlist'),
@@ -18162,13 +18173,18 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // draws an album: a cover, a name, and how many songs it holds.
   function scShelfGrid(kind, list){
     var isAl = (kind === 'al');
-    if(!(list || []).length){
+    // 80.10 - AN ALBUM WITH NO SONGS IS NOT AN ALBUM. A tile was drawn for every list
+    // in the store, so the page could fill with squares that open nothing - lists made
+    // and never filled, or ones whose songs had gone - each wearing a count of 0. Only
+    // the ones that hold something are drawn now.
+    var draw = (list || []).filter(function(p){ return !isAl || (((p && p.items) || []).length > 0); });
+    if(!draw.length){
       return '<div style="font-size:11.5px;color:var(--ink-dim);margin-top:10px;line-height:1.5;">'
-        + (isAl ? 'No streaming albums yet. Make one here, then add songs to it from the shelf or from a row popup.'
-                : 'No streaming playlists yet. Make one on the shelf, then add songs to it.') + '</div>';
+        + (isAl ? 'No albums yet. Make one here, or add a song to an album you already have.'
+                : 'No playlists yet. Make one on the shelf, then add songs to it.') + '</div>';
     }
     var h = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;">';
-    (list || []).forEach(function(p){
+    draw.forEach(function(p){
       var items = (p && p.items) || [];
       var th = scStreamThumb(items[0] || {});
       var name = String((p && p.name) || '');
@@ -18182,7 +18198,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
           + 'background:var(--bg);display:grid;place-items:center;color:var(--ink-dim);">'
           + scIcon(isAl ? 'grid' : 'list', 22) + '</div>';
       }
-      h += '<div style="font-size:12px;font-weight:600;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(name) + '</div>';
+      h += '<div style="font-size:12px;font-weight:600;margin-top:6px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;">' + escapeHtml(name) + '</div>';
       h += '<div style="font-size:10.5px;color:var(--ink-dim);">' + items.length + ' song' + (items.length === 1 ? '' : 's') + '</div>';
       h += '</button>';
     });
@@ -18201,15 +18217,43 @@ function startLyricsAutoScroll(keepPos, noReset) {
       { label: 'Add to an album\u2026', run: function(){ scStreamPickList('al', id); } }
     ]);
   }
+  // 80.10 - THE ALBUMS THAT EXIST, AND A NEW ONE IF YOU WANT IT.
+  // This sheet used to offer only the store this shelf keeps for itself, so a device
+  // whose albums were all made in the app answered with one made-up entry or none,
+  // while the album the owner wanted sat on the Albums page out of its reach. The last
+  // choice typed a name into a second store, which is exactly how an album that is in
+  // no library came to exist. It lists your albums first, with how many songs each
+  // holds, then the lists that actually hold something, then a new album.
+  function scStreamDeviceAlbums(){
+    var out = [];
+    try{
+      if(typeof userAlbums === 'undefined' || typeof visibleAlbumNames !== 'function') return out;
+      var names = visibleAlbumNames();
+      if(typeof scAlbumCardOrder === 'function'){
+        names = scAlbumCardOrder(names, function(n){ var e = userAlbums[n]; return (e && e.artist) || ''; });
+      }
+      names.forEach(function(n){
+        var e = userAlbums[n];
+        if(!e || !Array.isArray(e.trackIds) || !e.trackIds.length) return;
+        out.push({ name: String(n), n: e.trackIds.length });
+      });
+    }catch(_eDevAlb){}
+    return out;
+  }
   function scStreamPickList(kind, id){
     var t = scStreamEntry(id);
     if(!t){ scStreamSay('That song is not in Streaming any more'); return; }
     var isAl = (kind === 'al');
     var lists = isAl ? scStreamAlbums() : (scStreamState.playlists || []);
     var acts = [];
+    var seen = {};
+    // A list that holds nothing is not a place a song can go, and it is not an album
+    // either - an empty square was one of the albums that did not exist.
     (lists || []).forEach(function(p){
       var name = String((p && p.name) || '');
       var n = ((p && p.items) || []).length;
+      if(!name || !n) return;
+      seen[name.toLowerCase()] = 1;
       acts.push({ label: name + ' \u00b7 ' + n + ' song' + (n === 1 ? '' : 's'), run: function(){
         if(isAl) scStreamState.albums = scLibAdd(scStreamAlbums(), name, t);
         else scStreamState.playlists = scLibAdd(scStreamState.playlists || [], name, t);
@@ -18218,6 +18262,26 @@ function startLyricsAutoScroll(keepPos, noReset) {
         scStreamSay('In \u201c' + name + '\u201d');
       } });
     });
+    if(isAl){
+      scStreamDeviceAlbums().forEach(function(a){
+        var key = String(a.name || '').toLowerCase();
+        if(!key || seen[key]) return;
+        seen[key] = 1;
+        acts.push({ label: a.name + ' \u00b7 ' + a.n + ' on device', run: function(){
+          // THE ALBUM IS THE ONE YOU HAVE. Filing a song under a name that is already
+          // an album on the Albums page keeps one name for the album: this shelf's list
+          // carries what plays from the source, the page carries what is on the device,
+          // and neither invents a third album beside them.
+          scStreamState.albums = scLibAdd(scStreamAlbums(), a.name, t);
+          scStreamSave();
+          scStreamRender();
+          scStreamSay('In \u201c' + a.name + '\u201d');
+        } });
+      });
+    }
+    if(!acts.length){
+      acts.push({ label: isAl ? 'No albums yet - make the first one' : 'No playlists yet - make the first one', run: function(){} });
+    }
     acts.push({ label: (isAl ? 'New album' : 'New playlist') + '\u2026', run: function(){
       if(isAl) scStreamToAlbum(id); else scStreamToPlaylist(id);
     } });
@@ -20234,7 +20298,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '80.9';
+  const APP_VERSION = '80.10';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -20934,6 +20998,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 80.7.12 - A SEARCH THAT ANSWERS WHEN THE PLAYER WILL NOT.
   // 80.8 - A HOLD IS A PRESS THAT CARRIES ON.
   // 80.9 - THE PHONE IS ASKED TO STAY AWAKE FOR A SONG.
+  // 80.10 - THE ALBUM CHOOSER SHOWS THE ALBUMS THAT EXIST.
+  { version: '80.10', date: 'November 2, 2026 · 9:45 PM EST', title: 'Add to an album shows the albums you have', items: [
+    '[FULL] Adding a song to an album now lists the albums you already have, with how many songs each one holds, instead of asking you to type a name and making a second album behind your back.',
+    '[FULL] A long list of albums no longer runs off the top of the screen: the sheet stops at the height of the glass and the rows scroll inside it, so the choice that makes a new album is always reachable.',
+    '[FULL] An album with no songs is not drawn as an album any more, and a name on a tile wraps onto a second line instead of being cut off - so the page shows albums that exist.'
+  ]},
   { version: '80.9', date: 'November 2, 2026 · 9:25 PM EST', title: 'A streamed song keeps playing when you leave the app', items: [
     '[FULL] A song that is playing now asks the phone to stay awake for it, so leaving the app no longer freezes the page and kills the sound.',
     '[FULL] The loop that puts a silenced song back and keeps the notification, the lock screen and the saved place current is no longer paused when the screen goes off.',
