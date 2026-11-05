@@ -17634,6 +17634,10 @@ function startLyricsAutoScroll(keepPos, noReset) {
       mediaSetActionHandler('play', function(){
         var a = el();
         if(!a) return;
+        // 81.6 - THE PRESS IS THE REQUEST. The deck's handlers cleared the deliberate
+        // pause mark and the stream's did not, so a source paused from the headphones
+        // kept saying "the owner paused this on purpose" for as long as it stayed up.
+        scStreamState.userPaused = false;
         if(!a.src && scStreamState.curId){ scStreamPlay(scStreamState.curId); return; }
         if(a.paused){ Promise.resolve(a.play()).catch(function(){}); }
       });
@@ -17644,10 +17648,17 @@ function startLyricsAutoScroll(keepPos, noReset) {
       });
       mediaSetActionHandler('previoustrack', function(){
         var a = el();
-        if(a && (a.currentTime || 0) > 3){ try{ a.currentTime = 0; }catch(_ePpv){} return; }
+        scStreamState.userPaused = false;
+        if(a && (a.currentTime || 0) > 3){
+          try{ a.currentTime = 0; }catch(_ePpv){}
+          // 81.6 - and it SOUNDS. Rewinding a paused stream and returning left the
+          // press looking like it had done nothing but move a number.
+          if(a.paused){ try{ Promise.resolve(a.play()).catch(function(){}); }catch(_ePpv2){} }
+          return;
+        }
         scStreamNext(-1);
       });
-      mediaSetActionHandler('nexttrack', function(){ scStreamNext(1); });
+      mediaSetActionHandler('nexttrack', function(){ scStreamState.userPaused = false; scStreamNext(1); });
       mediaSetActionHandler('stop', function(){
         var a = el();
         if(!a) return;
@@ -20444,7 +20455,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '81.5';
+  const APP_VERSION = '81.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21151,6 +21162,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.4 - NO MORE PLAYING THAT IS NOT PLAYING, AND THE FULL APK IN TOOLS.
   // 81.5 - THE LIBRARY PILL IS NEVER A DEAD DOOR, CROPPING IS DONE BY EAR, AND
   // STUDIO HAS DJ SETS.
+  // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
+  { version: '81.6', date: 'November 5, 2026 · 12:20 PM EST', title: 'The headphones keep working after a pause', items: [
+    'Pause from the headphones and the same buttons bring the music back: play, next and previous all resume a paused song, and next starts the song it moves to.',
+    'A paused song stays reachable from the headphones, the lock screen and the widget instead of the player going quiet after ten minutes away, and a song played from a URL stays reachable the same way a file does.',
+    'Previous on a paused song rewinds to the start and plays it, and a skip that resumes a long-paused song rebuilds its audio if the phone had reclaimed it, so the bar moves and the sound comes back.',
+  ] },
   { version: '81.5', date: 'November 3, 2026 · 2:06 PM EST', title: 'Library opens on the first tap, and Studio can build a set', items: [
     '[FULL] Moving around is fixed: Library opens on the first tap from Studio or Tools, and the cloud layout spaces its bubbles and its top bar so nothing sits on top of anything else.',
     '[FULL] Cropping is done by ear: play the song inside the crop sheet, drop the playhead anywhere in it, and set the start or the end at the second you are hearing.',
@@ -37324,6 +37341,15 @@ function _fallbackCopy(text){
     // Safety: stop BOTH audio elements so two tracks can never overlap
     try{ audio.pause(); audio2.pause(); }catch(_){}
     const a = activeAudio();
+    // 81.6 - A SKIP THAT RESUMES A LONG-PAUSED SONG IS WHEN THE BLOB IS DEAD. Android
+    // reclaims the object URL of a song that has been paused for a while, and the
+    // element then plays nothing (or its last buffer): the press moved the queue and
+    // the bar but no sound came out. The file is still here, so the URL is remade
+    // first - the same rebuild recoverAudio() does, done before play() can fail.
+    if(t.file && (!t.url || a.error)){
+      try{ if(t.url) URL.revokeObjectURL(t.url); }catch(_eRebuildRevoke){}
+      try{ t.url = URL.createObjectURL(t.file); }catch(_eRebuildUrl){}
+    }
     a.src = t.url;
     a.currentTime = 0;
     a.volume = 1;
@@ -38248,12 +38274,30 @@ function _fallbackCopy(text){
     userPaused = false;
     audioFocusInterrupted = false;
   }
+  // 81.6 - A PRESS FROM THE HEADPHONES IS A REQUEST FOR THE WHOLE PLAYER BACK.
+  // Clearing the mark was half of it. The pause that set the mark also stopped the
+  // keep-alive and started a clock that parks (or, with nothing resumable, releases)
+  // the session - so the press that undoes a pause was obeyed by a player that had
+  // stopped listening. This puts back what the pause took away, in the order that
+  // matters: the clock is cancelled before it can fire, the parked/released flags are
+  // cleared so the re-arm is not a no-op, the handlers are re-registered on whatever
+  // session the phone rebuilt while we were away, and the heartbeat that keeps the
+  // card and the playhead fresh is running again before the press is obeyed.
+  let scTransportPaused = false;
+  function scTransportPress(){
+    try{ scTransportResume(); }catch(_eTpResume){}
+    try{ cancelMediaRelease(); }catch(_eTpRelease){}
+    try{ mediaParkedInBackground = false; mediaReleasedInBackground = false; }catch(_eTpFlags){}
+    try{ rearmMediaSession(); }catch(_eTpRearm){}
+    try{ startMediaSessionHeartbeat(); }catch(_eTpBeat){}
+    scTransportPaused = false;
+  }
   function registerMediaSessionHandlers(){
     // 80.6.20 - a rebuild while a stream is playing must not put the deck's
     // buttons back on a song nobody is hearing.
     if(scStreamPhoneOwns()){ try{ scStreamPhoneArm(); }catch(_eRms){ } return; }
     mediaSetActionHandler('play', () => {
-      try{ scTransportResume(); }catch(e){}
+      try{ scTransportPress(); }catch(e){}
       if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       const _pa = activeAudio();
       if(!_pa) return;
@@ -38279,12 +38323,17 @@ function _fallbackCopy(text){
       const _wasPlaying = !!_a && !_a.paused;
       if(_wasPlaying && blockSpuriousStop('media-session')) return;
       if(_wasPlaying) recordPlaybackStop('media-session-pause');
+      // 81.6 - REMEMBER WHERE THIS PAUSE CAME FROM. A pause pressed on the headphones
+      // (or the lock screen, or the widget) is a pause the owner expects to undo with
+      // the same buttons, from a phone that is still in their hand - so its keep-alive
+      // survives the grace window below instead of being dropped on the spot.
+      scTransportPaused = true;
       scPauseDeck();
     });
     // Below a few seconds in, "previous" means the previous song — the rule every
     // player uses. Past that it restarts the song that is playing.
     mediaSetActionHandler('previoustrack', () => {
-      try{ scTransportResume(); }catch(e){}
+      try{ scTransportPress(); }catch(e){}
       const _a = activeAudio();
       // A press here that lands on a paused song starts it again rather than
       // moving the playhead on a player nobody can hear.
@@ -38295,7 +38344,9 @@ function _fallbackCopy(text){
     mediaSetActionHandler('nexttrack', () => {
       // 72.5.2 - a skip is a request to HEAR the next song: the deliberate-stop
       // mark an earlier pause left behind must not silence it in the background.
-      try{ scTransportResume(); }catch(e){}
+      // 81.6 - and a skip after a HEADPHONE pause asks for the player back too: the
+      // press re-arms the session the pause parked before the next song is picked.
+      try{ scTransportPress(); }catch(e){}
       hardAdvance(1, true);
     });
     // The plugin offers these two as 30-second skips (that is what its replay/forward
@@ -38310,7 +38361,8 @@ function _fallbackCopy(text){
     });
     mediaSetActionHandler('stop', () => {
       scPauseDeck();
-      activeAudio().currentTime = 0;
+      const _stopA = activeAudio();
+      if(_stopA){ try{ _stopA.currentTime = 0; }catch(_eStopSeek){} }
     });
     mediaSetActionHandler('seekto', (details) => {
       if(details && details.seekTime != null) activeAudio().currentTime = details.seekTime;
@@ -39671,10 +39723,20 @@ function _fallbackCopy(text){
     // pause and auto-resume — tearing it down here would silence the very recovery
     // path that brings playback back.
     if(userPaused){
-      stopMediaSessionHeartbeat(); releaseWakeLock();
+      // 81.6 - A PAUSE PRESSED FROM THE HEADPHONES WITH THE APP AWAY IS NOT THE END OF
+      // THE SESSION. Dropping the keep-alive here is what made the second press dead:
+      // the card stopped being refreshed, the handlers were never re-registered on a
+      // session the phone rebuilt, and ten minutes later the session was parked or
+      // released with nothing left listening. The keep-alive now survives a transport
+      // pause while the page is hidden, and armMediaRelease() - the ten minute clock
+      // armed on the very next line - still takes every bit of it away when the window
+      // closes, so the battery answer is exactly what it was.
+      const _keepForPress = scTransportPaused && document.hidden;
+      if(!_keepForPress) stopMediaSessionHeartbeat();
+      releaseWakeLock();
       // 81.3 - and the phone, for the same reason. A pause the user asked for is the
       // one case where the deck has no work left to keep the process alive for.
-      try{ scHoldDrop('deck'); }catch(_eHoldDrop){}
+      if(!_keepForPress){ try{ scHoldDrop('deck'); }catch(_eHoldDrop){} }
     }
     // Paused with the app away: keep the controls for the grace period, then let
     // the phone sleep (re-armed the next time anything plays).
@@ -40014,7 +40076,14 @@ function _fallbackCopy(text){
       if(typeof scStreamPhoneOwns === 'function' && scStreamPhoneOwns()) return scStreamPhoneTrack();
       if(queueIndex < 0 || queueIndex >= queue.length) return null;
       const t = allTracks.find(tr => tr.id === queue[queueIndex]);
-      return (t && t.file) ? t : null;
+      if(!t) return null;
+      // 81.6 - ANYTHING THAT CAN SOUND IS SOMETHING TO COME BACK TO. This asked for a
+      // File, so a song playing from a URL - cloud mode, a share, a source cache - had
+      // no resumable track at all: ten minutes into a pause the session was RELEASED
+      // ('none'), the notification went away, and the headphones' play and skips were
+      // handed to nothing. A parked session is the whole point of the grace window, so
+      // a live URL counts exactly like a file on the device.
+      return (t.file || t.url) ? t : null;
     }catch(e){ return null; }
   }
   function cancelMediaRelease(){
@@ -40029,6 +40098,9 @@ function _fallbackCopy(text){
       // never leave a heartbeat, a wake lock or a metadata push running behind it.
       stopMediaSessionHeartbeat();
       releaseWakeLock();
+      // 81.6 - the hold kept for a transport pause is given back here, with the rest of
+      // it: the window ending is the window ending, whichever press started it.
+      try{ scHoldDrop('deck'); }catch(_eHoldGrace){}
       const back = mediaResumableTrack();
       if(back){
         mediaParkedInBackground = true;
