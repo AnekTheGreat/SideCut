@@ -1,0 +1,75 @@
+name: Land 81.6 - the headphones work after a pause
+
+# One dispatch. The change is fourteen exact-string replacements across a 1.2 MB page,
+# and that page is what GitHub Pages serves to every installed copy: it has to land
+# byte for byte, so it travels as a patch script against the checked-out file and this
+# run refuses to push unless dev/check-816.cjs passes against the result.
+#
+# The OTA bundle carries the page inside it and the manifest inside the bundle carries
+# the bundle's size, so the bundle is rebuilt to a fixed point here - the same
+# `node dev/ota-bundle.mjs` the owner runs by hand.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: land-816
+  cancel-in-progress: false
+
+jobs:
+  land:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply 81.6
+        run: |
+          set -euo pipefail
+          python3 dev/patch-816.py
+          python3 dev/stamp-816.py
+          node dev/ota-bundle.mjs
+          node dev/ota-bundle-play.mjs
+          node dev/ota-fixpoint.mjs
+          python3 dev/record-816.py
+
+      - name: Prove the result before it is pushed
+        run: |
+          set -euo pipefail
+          node dev/check-816.cjs
+          node dev/ota-bundle.mjs --check
+          python3 dev/patch-816.py --check
+          python3 dev/stamp-816.py --check
+          python3 dev/record-816.py
+          # A second bundle generation has to produce the same bytes, or the pushed
+          # bundle is one the next `--check` will call stale.
+          git status --porcelain -- ota/ | tee /tmp/after-first.txt
+          if [ -s /tmp/after-first.txt ]; then
+            echo '::error::the OTA bundle is not at a fixed point - a rebuild changed it'
+            exit 1
+          fi
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name 'SideCut release'
+          git config user.email 'actions@github.com'
+          git add index.html updates.json manifest.json sw.js ota ota-play AGENTS.md dev/patch-816.py dev/stamp-816.py dev/record-816.py dev/check-816.cjs
+          if git diff --cached --quiet; then
+            echo 'nothing to commit - main already carries 81.6'
+            exit 0
+          fi
+          git status --porcelain
+          # This run exists to land 81.6 and nothing else, so it fails rather than
+          # sweeping anything unexpected into the commit.
+          stray=$(git diff --cached --name-only | grep -vE '^(index\.html|updates\.json|manifest\.json|sw\.js|ota/|ota-play/|AGENTS\.md|dev/(patch|stamp|record)-816\.py|dev/check-816\.cjs)' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::unexpected path(s) in this commit: $stray"
+            exit 1
+          fi
+          git commit -m 'The headphones keep working after a pause: a press asks for the whole player back, not just the pause mark'
+          git push
+          echo '--- landed ---'
+          git log --oneline -1
