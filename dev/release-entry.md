@@ -1,33 +1,9 @@
-## 81.6 ({{STAMP}}): the headphones keep working after a pause
+## 82 ({{STAMP}}): cropping by the number, and a speed for one song
 
-- **WHAT THE OWNER SAID.** *"when I'm listening to music with headphones and I pause it using the headphone pause control, it
-  doesn't let me unpause it with skipping forward a song and back, fix this so I can pause and unpause and use all controls
-  on headphones"*. Everything ships to both builds: one page, one `index.html`, the store build is the same file with
-  `SC_IS_PLAY` on.
-- **A PAUSE DISMANTLED THE THING THAT UNDOES IT.** A pause is answered in four places at once: the element stops and
-  `userPaused` is set; the keep-alive heartbeat is stopped; and - because a phone in a pocket means a hidden page -
-  `armMediaRelease()` arms a ten minute clock that ends by PARKING or RELEASING the media session. Every way back lived
-  behind one of those. `scTransportResume()` - what play, next and previous called - cleared only the two marks, so a press
-  was obeyed by a player whose keep-alive had been stopped by the pause it was undoing. `mediaResumableTrack()` then asked
-  for a **File**, so a song played from a URL answered null and was RELEASED outright: a session released with `'none'` is a
-  notification that no longer exists, and its buttons have nothing to press.
-- **THE STREAM HAD ITS OWN HALF.** `scStreamPhoneArm()`'s play and previous never cleared `scStreamState.userPaused`, so a
-  source paused from the headphones kept telling the app "the owner paused this on purpose" while the press asked it to
-  sound - and previous on a paused stream past three seconds seeked to zero and returned without starting.
-- **THE ANSWER.** `scTransportPress()` is what play, next and previous now call: it clears the marks, cancels the release
-  clock, clears the parked/released flags, re-arms the handlers on whatever session the phone rebuilt while we were away
-  and restarts the keep-alive - then the press is obeyed. A transport pause with the app away keeps the keep-alive for the
-  grace window instead of dropping it on the spot, and `armMediaRelease()` still stops every bit of it when the window
-  closes (it gives the phone hold back there too, which is where that battery cost was always meant to be paid).
-  `mediaResumableTrack()` answers with anything that can sound, File OR URL. The stream's buttons clear the mark, and
-  previous plays what it rewound. `playCurrent()` remakes a blob URL the phone reclaimed before it hands it to the element,
-  and `stop` no longer dereferences a missing element.
-- **WHAT WAS CHECKED.** `python3 dev/patch-816.py --check` reported 1 before the payload and 0 after it, and a second run
-  was a no-op. `node dev/check-816.cjs` runs 39 checks: `scTransportPress` lifted out of the page and driven with stub
-  plumbing (mark cleared, clock cancelled, flags cleared, handlers re-armed, heartbeat restarted), `mediaResumableTrack`
-  handed a file, a URL and neither, the stream's and the deck's handlers pinned in the source, the five manifests agreeing
-  on the version, and every inline script in the page compiling. The OTA manifests reached a fixed point at {{ROOT}} bytes
-  for the full page and {{PLAY}} for the store build.
-- **NOT CLAIMED.** No phone, no headphones and no Android build ran here: the press that lands on a parked session was
-  driven through the lifted functions, not heard. Whether a particular headset sends previous as `previoustrack` is the
-  phone's business, not this page's.
+- **WHAT THE OWNER SAID.** *"make cropping better and easier to use, make it more optimized for computer, add a feature where just for a specific song you can increase or decrease the speed push this to both versions"*. Then: *"push the SideCut stuff and bump version v82"*. Both builds come from the one `index.html`; the store build is the same file with `SC_IS_PLAY` on.
+- **CROPPING WAS A PHONE GESTURE ON A DESKTOP.** The crop sheet was a waveform, two 26px handles and nothing else: on a desktop a pixel is a hundred milliseconds, so every trim was guesswork, and the only numbers on screen were labels. 82 adds the tools a mouse and a keyboard expect, without taking anything away from a thumb.
+- **THE SHEET, AS A COMPUTER JOB.** The sheet is wider (820px, capped at 96vw), the grab handles are 44px with the selection clamp following them, and a tools row carries **Start** and **End** as typed times to a tenth of a second (`1:23.4` or `83.4`), each with −/＋ a second. `cropClampSel` is the one place a typed or nudged edge is clamped, so a start can never cross its end. A click on the waveform drops the **nearest** edge where it landed, and the edge you touched last is the one the arrow keys nudge - Shift for a whole second, Home and End to snap to the ends, Space to preview, Enter to save, Escape to cancel.
+- **SPEED BELONGS TO THE SONG.** `sidecut.song.speed` keeps a rate per track id, clamped to 0.25..3, and `scSpeedFor(id)` multiplies it into the existing global speed and Studio rate at both places a song is given a rate - so a song left at 1x is byte for byte the old behaviour. The now bar carries a chip showing that song's rate (tap to step 1 → 1.25 → 1.5 → 2 → 0.75 → 0.5, shift-tap to reset) and the song's own rack carries the exact control: −/＋ in 0.05 steps over 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2. The pitch is untouched because the element is rate-shifted, not re-rendered; the value survives a reload; no other song moves.
+- **A VERSION THAT SAYS SO, WHICH WAS THE POINT OF THE BUMP.** 81.7 and 81.8 changed the page and left `APP_VERSION` at 81.6, so an installed copy had nothing to compare against and no reason to take either. The page now names **82**, carries the changelog entry above it, and the service worker's cache is named `sidecut-shell-v82` so the shell it serves is not the old one.
+- **WHAT WAS CHECKED.** `python3 dev/patch-82.py --check` exited **1** before the payload and **0** after it, and a second run was a no-op; every inline script in the page compiles (`node --check` over the ten `<script>` blocks). The 81.8 page was loaded in a browser at `?full=1` earlier in the session: `#cropTools` present, both handles 44px, the backdrop focusable, no console errors, and a search in the open catalogue returned rows.
+- **NOT CLAIMED.** No phone and no headphones ran here: no real song was cropped, and no speed change was listened to. What is proven is the code the controls call, on the bytes the release ships. The OTA bundles reached their fixed point at {{ROOT}} bytes for the full page and {{PLAY}} for the store build.
