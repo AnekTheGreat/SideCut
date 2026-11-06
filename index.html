@@ -6678,8 +6678,8 @@ html, body{ max-width:100%; overflow-x:hidden; }
 </div>
 
 <!-- Crop song modal (trim start/end of the audio file) -->
-<div class="modal-backdrop" id="cropSongBackdrop">
-  <div class="modal">
+<div class="modal-backdrop" id="cropSongBackdrop" tabindex="-1">
+  <div class="modal" style="max-width:820px;width:min(820px,96vw);">
     <h3>✂️ Crop song</h3>
     <div id="cropSongNp" style="display:flex; align-items:center; gap:10px; margin:4px 0 10px; padding-bottom:10px; border-bottom:1px solid var(--line);">
       <div id="cropSongArt" style="width:40px; height:40px; border-radius:6px; background:var(--bg-raised); background-size:cover; background-position:center; flex-shrink:0;"></div>
@@ -6689,7 +6689,7 @@ html, body{ max-width:100%; overflow-x:hidden; }
       </div>
       <div style="font-size:11px; color:var(--ink-dim);" id="cropSongOrigDur"></div>
     </div>
-    <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Trim the song by dragging the handles — everything outside the selection is removed and the song is saved as a new file in your library.</div>
+    <div style="font-size:12px; color:var(--ink-dim); margin-bottom:6px;">Drag a handle, type the exact times, or click the waveform to drop the nearest edge there. Arrow keys nudge the edge you last touched (Shift = 1 second), Space previews, Enter saves.</div>
     <div id="cropSongBody">
       <div id="cropSongLoading" style="padding:22px 0; text-align:center; font-size:13px; color:var(--ink-dim);"></div>
       <div id="cropSongControls" style="display:none;">
@@ -6699,8 +6699,8 @@ html, body{ max-width:100%; overflow-x:hidden; }
           <!-- Grab bars sitting ON the selection edges. They used to be invisible 18px
                strips pinned to the far ends of the waveform (never on the selection),
                so there was nothing to grab where the selection actually was. -->
-          <div id="cropSongSelEdgeL" style="position:absolute; top:0; bottom:0; width:26px; left:0; margin-left:-13px; cursor:ew-resize; z-index:3; display:flex; align-items:center; justify-content:center; touch-action:none;"><span style="width:6px; height:76%; min-height:34px; border-radius:3px; background:rgba(255,255,255,0.9); box-shadow:0 0 7px rgba(0,0,0,0.5);"></span></div>
-          <div id="cropSongSelEdgeR" style="position:absolute; top:0; bottom:0; width:26px; left:100%; margin-left:-13px; cursor:ew-resize; z-index:3; display:flex; align-items:center; justify-content:center; touch-action:none;"><span style="width:6px; height:76%; min-height:34px; border-radius:3px; background:rgba(255,255,255,0.9); box-shadow:0 0 7px rgba(0,0,0,0.5);"></span></div>
+          <div id="cropSongSelEdgeL" style="position:absolute; top:0; bottom:0; width:44px; left:0; margin-left:-22px; cursor:ew-resize; z-index:3; display:flex; align-items:center; justify-content:center; touch-action:none;"><span style="width:6px; height:76%; min-height:34px; border-radius:3px; background:rgba(255,255,255,0.9); box-shadow:0 0 7px rgba(0,0,0,0.5);"></span></div>
+          <div id="cropSongSelEdgeR" style="position:absolute; top:0; bottom:0; width:44px; left:100%; margin-left:-22px; cursor:ew-resize; z-index:3; display:flex; align-items:center; justify-content:center; touch-action:none;"><span style="width:6px; height:76%; min-height:34px; border-radius:3px; background:rgba(255,255,255,0.9); box-shadow:0 0 7px rgba(0,0,0,0.5);"></span></div>
           <!-- Playhead: rides the waveform while a preview plays so you can see
                how far into the song (and into the kept slice) you are. -->
           <div id="cropSongPlayhead" style="display:none; position:absolute; top:0; bottom:0; width:2px; left:0; background:#fff; box-shadow:0 0 8px rgba(255,255,255,0.85); z-index:4; pointer-events:none;">
@@ -6712,6 +6712,10 @@ html, body{ max-width:100%; overflow-x:hidden; }
           <span id="cropSongLenLbl"></span>
           <span id="cropSongEndLbl"></span>
         </div>
+        <!-- 81.8 - THE EXACT TIMES, TYPED. Dragging is a fine way to trim on a phone;
+             on a computer a pixel is a hundred milliseconds, so both edges are also
+             editable to a tenth of a second. -->
+        <div id="cropTools" style="display:grid; grid-template-columns:auto 1fr auto auto; gap:8px 10px; align-items:center; margin:10px 0 6px; font-size:12px;"></div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0 4px;">
           <button id="cropSongPreviewPlay" style="flex:1; min-width:120px; padding:10px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid var(--line); color:var(--ink); font-size:13px; cursor:pointer;">▶ Preview selection</button>
           <span style="font-size:11px; color:var(--ink-dim);" id="cropSongPreviewStatus"></span>
@@ -12046,7 +12050,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const rEdge = $('cropSongSelEdgeR');
     if(waveEl && lEdge && rEdge){
       const w = waveEl.clientWidth || 0;
-      const hw = 13;   // half of a handle's 26px width
+      const hw = 22;   // half of a handle's 44px width
       if(w > hw * 2 + 4){
         lEdge.style.left = Math.max(hw, Math.min(w - hw, (cropSelStart / total) * w)) + 'px';
         rEdge.style.left = Math.max(hw, Math.min(w - hw, (cropSelEnd / total) * w)) + 'px';
@@ -12058,6 +12062,126 @@ $('crossfadeSlider').addEventListener('input', (e) => {
     const apply = $('cropSongApply');
     const maxMin = 0.5; // require at least half a second selected
     apply.style.display = (cropSelEnd - cropSelStart >= maxMin) ? '' : 'none';
+  }
+
+  // 81.8 - THE CROP AS A COMPUTER JOB: exact times, a nudge per edge, click-to-place
+  // on the waveform, and the keyboard on the sheet itself.
+  var cropActiveEdge = 'l';
+
+  function cropClampSel(which, sec){
+    if(!cropBuf) return;
+    const total = cropBuf.duration || 1;
+    const gap = 0.2;
+    sec = Math.max(0, Math.min(total, Number(sec) || 0));
+    if(which === 'l'){ cropSelStart = Math.min(sec, Math.max(0, cropSelEnd - gap)); cropActiveEdge = 'l'; }
+    else { cropSelEnd = Math.max(sec, Math.min(total, cropSelStart + gap)); cropActiveEdge = 'r'; }
+    cropUpdateFrame();
+  }
+
+  function cropFmtExact(sec){
+    sec = Math.max(0, Number(sec) || 0);
+    const m = Math.floor(sec / 60), r = sec - m * 60;
+    return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1);
+  }
+
+  function cropParseExact(txt){
+    // "1:23.4" or "83.4" - a plain split, no regular expression needed.
+    const parts = String(txt || '').trim().split(':');
+    if(parts.length < 1 || parts.length > 2) return null;
+    const mins = parts.length === 2 ? Number(parts[0]) : 0;
+    const secs = Number(parts[parts.length - 1]);
+    if(!isFinite(mins) || !isFinite(secs) || mins < 0 || secs < 0 || secs >= 60) return null;
+    return mins * 60 + secs;
+  }
+
+  function cropSyncToolInputs(){
+    const a = $('cropStartIn'), b = $('cropEndIn');
+    if(a && document.activeElement !== a) a.value = cropFmtExact(cropSelStart);
+    if(b && document.activeElement !== b) b.value = cropFmtExact(cropSelEnd);
+  }
+
+  function cropNudge(which, delta){
+    if(!cropBuf) return;
+    cropClampSel(which, (which === 'l' ? cropSelStart : cropSelEnd) + delta);
+    cropSyncToolInputs();
+  }
+
+  function cropWireTools(){
+    const host = $('cropTools');
+    if(!host) return;
+    if(!host.getAttribute('data-built')){
+      host.setAttribute('data-built', '1');
+      const box = 'padding:7px 9px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:12.5px; font-variant-numeric:tabular-nums;';
+      const btn = 'padding:7px 10px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink); font-size:12px; cursor:pointer;';
+      host.innerHTML =
+        '<span style="color:var(--ink-dim);">Start</span>' +
+        '<input id="cropStartIn" type="text" inputmode="decimal" spellcheck="false" style="' + box + '">' +
+        '<button class="crop-nudge" data-nudge="l-1" title="Start 1s earlier" style="' + btn + '">−1s</button>' +
+        '<button class="crop-nudge" data-nudge="l1" title="Start 1s later" style="' + btn + '">+1s</button>' +
+        '<span style="color:var(--ink-dim);">End</span>' +
+        '<input id="cropEndIn" type="text" inputmode="decimal" spellcheck="false" style="' + box + '">' +
+        '<button class="crop-nudge" data-nudge="r-1" title="End 1s earlier" style="' + btn + '">−1s</button>' +
+        '<button class="crop-nudge" data-nudge="r1" title="End 1s later" style="' + btn + '">+1s</button>';
+      Array.prototype.forEach.call(host.querySelectorAll('.crop-nudge'), function(b){
+        b.addEventListener('click', function(){
+          const v = b.getAttribute('data-nudge') || '';
+          cropNudge(v.charAt(0), Number(v.slice(1)) || 0);
+        });
+      });
+      const si = $('cropStartIn'), ei = $('cropEndIn');
+      function commit(el, which){
+        const v = cropParseExact(el ? el.value : '');
+        if(v == null){ cropSyncToolInputs(); toast('Type a time like 1:23.4'); return; }
+        cropClampSel(which, v);
+        cropSyncToolInputs();
+      }
+      [[si, 'l'], [ei, 'r']].forEach(function(pair){
+        const el = pair[0], which = pair[1];
+        if(!el) return;
+        el.addEventListener('change', function(){ commit(el, which); });
+        el.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); commit(el, which); } });
+        el.addEventListener('focus', function(){ cropActiveEdge = which; });
+      });
+    }
+    cropSyncToolInputs();
+    const wave = $('cropSongWave');
+    if(wave && !wave.getAttribute('data-clickplace')){
+      wave.setAttribute('data-clickplace', '1');
+      wave.addEventListener('pointerdown', function(e){
+        if(!cropBuf) return;
+        if(e.target && e.target.closest && e.target.closest('#cropSongSelEdgeL, #cropSongSelEdgeR')) return;
+        const r = wave.getBoundingClientRect();
+        if(!r || !r.width) return;
+        const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        const sec = frac * (cropBuf.duration || 1);
+        cropClampSel(Math.abs(sec - cropSelStart) <= Math.abs(sec - cropSelEnd) ? 'l' : 'r', sec);
+        cropSyncToolInputs();
+      });
+    }
+    const back = $('cropSongBackdrop');
+    if(back && !back.getAttribute('data-keys')){
+      back.setAttribute('data-keys', '1');
+      back.addEventListener('keydown', function(e){
+        const tag = (e.target && e.target.tagName) || '';
+        if(tag === 'INPUT' && e.key !== 'Enter' && e.key !== 'Escape') return;
+        const step = e.shiftKey ? 1 : 0.1;
+        if(e.key === 'ArrowLeft' || e.key === 'ArrowRight'){
+          e.preventDefault(); cropNudge(cropActiveEdge, e.key === 'ArrowLeft' ? -step : step);
+        } else if(e.key === ' '){
+          e.preventDefault(); const pv = $('cropSongPreviewPlay'); if(pv) pv.click();
+        } else if(e.key === 'Enter'){
+          const ap = $('cropSongApply');
+          if(ap && ap.style.display !== 'none'){ e.preventDefault(); ap.click(); }
+        } else if(e.key === 'Escape'){
+          const c = $('cropSongCancel'); if(c){ e.preventDefault(); c.click(); }
+        } else if(e.key === 'Home'){
+          e.preventDefault(); cropClampSel('l', 0); cropSyncToolInputs();
+        } else if(e.key === 'End'){
+          e.preventDefault(); cropClampSel('r', cropBuf ? cropBuf.duration : 0); cropSyncToolInputs();
+        }
+      });
+      try{ back.focus({ preventScroll: true }); }catch(_eF){}
+    }
   }
 
   function cropBuildWaveform(){
@@ -12136,6 +12260,7 @@ $('crossfadeSlider').addEventListener('input', (e) => {
       $('cropSongControls').style.display = '';
       cropBuildWaveform();
       cropUpdateFrame();
+      cropWireTools();
       // A freshly decoded song arms the selection preview: the whole song is
       // selected, so cropping starts as a drag in from either end.
     }catch(err){
@@ -37337,6 +37462,108 @@ function _fallbackCopy(text){
     shuffledOrderCache = { playlist: activePlaylist, ids: shuffleArray(base.slice()) };
   }
 
+  // 81.8 - EVERY SONG KEEPS ITS OWN SPEED. A podcast at 1.5x, a drill at 0.8x, the
+  // rest untouched: the rate belongs to the song rather than to the player, so the
+  // tempo a song was set to is the tempo it comes back at. It rides on top of the
+  // global speed and the Studio rate instead of replacing either, so a song left at
+  // 1x behaves exactly as it did before.
+  var scSpeedMap = (function(){
+    try{ return JSON.parse(localStorage.getItem('sidecut.song.speed') || '{}') || {}; }catch(_eS){ return {}; }
+  })();
+  var SC_SPEED_MIN = 0.25, SC_SPEED_MAX = 3;
+
+  function scSongSpeed(id){
+    var v = Number(scSpeedMap[String(id || '')]);
+    return (v >= SC_SPEED_MIN && v <= SC_SPEED_MAX) ? v : 1;
+  }
+  function scSpeedSave(){ try{ localStorage.setItem('sidecut.song.speed', JSON.stringify(scSpeedMap)); }catch(_eS){} }
+  function scSpeedFor(id){
+    return playbackSpeed * (typeof window.__scStudioRate === 'function' ? window.__scStudioRate() : 1) * scSongSpeed(id);
+  }
+  function scSpeedPlayingId(){
+    return (queueIndex >= 0 && queue && queue[queueIndex]) ? queue[queueIndex] : '';
+  }
+  function scSpeedRelabel(){
+    var chip = document.getElementById('scSpeedChip');
+    if(!chip) return;
+    var r = scSongSpeed(scSpeedPlayingId());
+    chip.textContent = (Math.round(r * 100) / 100) + 'x';
+    chip.title = 'Speed for this song — tap to change, shift-tap to reset';
+    chip.style.color = (r === 1) ? '' : 'var(--coral)';
+  }
+  function scSpeedSet(id, rate){
+    if(id == null || id === '') return 1;
+    rate = Math.round(Math.max(SC_SPEED_MIN, Math.min(SC_SPEED_MAX, Number(rate) || 1)) * 100) / 100;
+    var key = String(id);
+    if(Math.abs(rate - 1) < 0.001) delete scSpeedMap[key]; else scSpeedMap[key] = rate;
+    scSpeedSave();
+    try{
+      if(scSpeedPlayingId() === key){
+        var a = activeAudio();
+        if(a && a.src) a.playbackRate = scSpeedFor(key);
+      }
+    }catch(_eLive){}
+    scSpeedRelabel();
+    return rate;
+  }
+  function scSpeedChipAttach(){
+    if(document.getElementById('scSpeedChip')){ scSpeedRelabel(); return; }
+    var bar = document.getElementById('nowPlaying');
+    if(!bar) return;
+    var chip = document.createElement('button');
+    chip.id = 'scSpeedChip';
+    chip.type = 'button';
+    chip.style.cssText = 'padding:5px 9px; border-radius:999px; border:1px solid var(--line); background:rgba(255,255,255,0.05); color:var(--ink-dim); font-size:11px; font-weight:600; cursor:pointer; font-variant-numeric:tabular-nums; flex:0 0 auto;';
+    chip.addEventListener('click', function(e){
+      var id = scSpeedPlayingId();
+      if(!id){ toast('Play a song first.'); return; }
+      if(e.shiftKey){ scSpeedSet(id, 1); toast('Speed back to 1x'); return; }
+      var steps = [1, 1.25, 1.5, 2, 0.75, 0.5], cur = scSongSpeed(id), next = steps[0];
+      for(var i = 0; i < steps.length; i++){ if(steps[i] > cur + 0.001){ next = steps[i]; break; } }
+      toast('This song: ' + scSpeedSet(id, next) + 'x');
+    });
+    bar.appendChild(chip);
+    scSpeedRelabel();
+  }
+  // The rack entry: the same control with every rate shown, for the song you opened.
+  function scSpeedAttachSheet(t){
+    var body = document.getElementById('scSheetBody');
+    if(!body || !t) return;
+    var id = t.id;
+    var host = document.createElement('div');
+    host.style.cssText = 'margin-top:12px; padding-top:12px; border-top:1px solid var(--line);';
+    var rates = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2];
+    function paint(){
+      var cur = scSongSpeed(id);
+      var btn = 'padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--ink);font-size:12px;cursor:pointer;';
+      host.innerHTML =
+        '<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">' +
+          '<span style="font-size:12px; font-weight:600;">Speed</span>' +
+          '<span style="font-size:12px; color:var(--coral); font-variant-numeric:tabular-nums;">' + cur + 'x</span>' +
+          '<span style="flex:1;"></span>' +
+          '<button id="scSpeedMinus" style="' + btn + '">−</button>' +
+          '<button id="scSpeedPlus" style="' + btn + '">+</button>' +
+        '</div>' +
+        '<div style="display:flex; gap:6px; flex-wrap:wrap;">' +
+          rates.map(function(r){
+            var on = Math.abs(r - cur) < 0.001;
+            return '<button data-rate="' + r + '" style="padding:5px 10px;border-radius:999px;border:1px solid ' + (on ? 'var(--coral)' : 'var(--line)') + ';background:' + (on ? 'var(--coral)' : 'none') + ';color:' + (on ? 'var(--on-coral,#fff)' : 'var(--ink-dim)') + ';font-size:11.5px;cursor:pointer;">' + r + 'x</button>';
+          }).join('') +
+        '</div>' +
+        '<div style="font-size:10.5px; color:var(--ink-dim); margin-top:6px; line-height:1.5;">Only this song, and the pitch is kept — a faster song is not a chipmunk one. It comes back at this speed next time.</div>';
+      Array.prototype.forEach.call(host.querySelectorAll('[data-rate]'), function(b){
+        b.addEventListener('click', function(){ scSpeedSet(id, Number(b.getAttribute('data-rate'))); paint(); });
+      });
+      var mi = host.querySelector('#scSpeedMinus'), pl = host.querySelector('#scSpeedPlus');
+      if(mi) mi.addEventListener('click', function(){ scSpeedSet(id, scSongSpeed(id) - 0.05); paint(); });
+      if(pl) pl.addEventListener('click', function(){ scSpeedSet(id, scSongSpeed(id) + 0.05); paint(); });
+    }
+    paint();
+    body.appendChild(host);
+    scSpeedChipAttach();
+    scSpeedRelabel();
+  }
+
   function playCurrent(hardSwitch){
     if(queueIndex < 0 || queueIndex >= queue.length) return;
     const t = allTracks.find(tr => tr.id === queue[queueIndex]);
@@ -37358,7 +37585,7 @@ function _fallbackCopy(text){
     a.src = t.url;
     a.currentTime = 0;
     a.volume = 1;
-    a.playbackRate = playbackSpeed * (typeof window.__scStudioRate === 'function' ? window.__scStudioRate() : 1);
+    a.playbackRate = scSpeedFor(t.id);   // 81.8 - this song's own speed rides on top
     applyNormalizedGain(t, activeIdx); applyEQ(t, activeIdx);
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
     a.play().catch(() => recoverAudio(a, 'play() rejected'));
@@ -37370,6 +37597,7 @@ function _fallbackCopy(text){
 
   function updateNowPlayingUI(t){
     scStreamQuiet();
+    try{ scSpeedChipAttach(); scSpeedRelabel(); }catch(_eChip){}   // 81.8
     $('nowPlaying').style.display = 'flex';
     $('npTitle').textContent = t.name;
     $('npArtist').textContent = t.artist;
@@ -38898,7 +39126,7 @@ function _fallbackCopy(text){
       }
     }catch(_eScAlign){}
     nxt.volume = 0;
-    nxt.playbackRate = playbackSpeed * (typeof window.__scStudioRate === 'function' ? window.__scStudioRate() : 1);
+    nxt.playbackRate = scSpeedFor(nextTrack.id);   // 81.8 - the incoming song brings its own
     applyNormalizedGain(nextTrack, 1-activeIdx); applyEQ(nextTrack, 1-activeIdx);
     nxt.play().catch(()=>{});
     updateNowPlayingUI(nextTrack); // show the incoming track as it starts blending in, like Spotify does
@@ -64117,6 +64345,7 @@ window.showAlbumReorderPopup = function(albumName, focusTrackId){
     bump('studio');
     markFeature('studio');
     openSheet('Edit rack', editSheetHtml());
+    try{ scSpeedAttachSheet(t); }catch(_eSheet){}   // 81.8 - the song's own speed
     var chipWire = function(sel, fn){
       Array.prototype.slice.call(document.querySelectorAll('#scSheetBody ' + sel)).forEach(function(b){
         b.addEventListener('click', function(){ fn(b); openEditSheet(); });
