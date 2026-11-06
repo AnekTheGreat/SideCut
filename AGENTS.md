@@ -1,5 +1,13 @@
 # SideCut — repository memory
 
+## 83.0.2 (November 6, 2026 · 4:06 PM EDT): My Hub comes off the Other apps list
+
+- **WHAT THE OWNER SAID.** *"don't include my hub"* - said about 83.0.1, which listed four apps in its Other apps tab.
+- **WHAT CHANGED.** The My Hub card is gone from `#settingsPaneOther`: the name, the line and the link with it. The line above the cards now says "Three more" instead of "Four more". FamTM (`com.FamTM.app`), UJournal (`app.ujournal`) and MeasureT (`com.CompassEDC.myapp`) stay exactly as they were, in the same order, in the same card shape.
+- **WHY IT IS THE ONE THAT GOES.** The other three links are store pages, where a tap lands somewhere an install can finish. My Hub has no store page - it is a repository - so a tap left the app for a page that cannot install anything, and listing it beside the others claimed a thing it could not do. Nothing else in Settings moved: the tab still sits last before More, the strip still reads Theme, Donate, Important, Glow, Sandbox, Support, Widget, Other apps, More.
+- **HOW IT WAS DONE.** `dev/patch-8302.py`, applied by `release.yml`: it asserts the My Hub card appears exactly once before deleting it, bumps `APP_VERSION` to 83.0.2, writes the changelog entry above 83.0.1's, and leaves every other byte of the page alone. Running it twice changes nothing.
+- **WHAT WAS CHECKED.** `python3 dev/patch-8302.py --check` exited **1** before the payload and **0** after it; the second run printed "already on the page" and `cmp` showed the page byte for byte the same. Every inline script compiles. `node dev/check-8302.cjs` drives the patched page in jsdom: three cards, three links, the three names FamTM, UJournal and MeasureT, no `My-Hub` href anywhere in the pane, the tab still directly before More, the pane hidden until the tap and the only one shown after it, and the page saying 83.0.2. 1227222 bytes on the full channel and 1227232 on the store build; both OTA bundles reached their fixed point in the release commit.
+- **NOT CLAIMED.** No phone tapped this. What is proven is the page the release ships, that the card is gone from it, and that the tab still opens with the three cards that remain.
 ## 83.0.1 (November 6, 2026 · 4:02 PM EDT): Other apps under the gear, the whole family in one place
 
 - **WHAT THE OWNER SAID.** *"where's the stuff in SideCut the other apps part in settings before settings and more"*, then, on hearing it was not there at all: *"add it bro and v83.0.1"*.
