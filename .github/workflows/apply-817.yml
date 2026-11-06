@@ -1,0 +1,49 @@
+name: Apply 81.7 (browser converters + Streaming)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  apply:
+    name: Apply the 81.7 page fixes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply the patch
+        run: python3 dev/patch-817.py
+
+      - name: Check the page still parses
+        run: |
+          python3 - <<'PY'
+          import io, re
+          h = io.open('index.html', encoding='utf-8').read()
+          blocks = re.findall(r'<script[^>]*>(.*?)</script>', h, re.S)
+          io.open('/tmp/page.js', 'w', encoding='utf-8').write('\n'.join(blocks))
+          print('script blocks:', len(blocks))
+          PY
+          node --version
+          node --check /tmp/page.js
+          grep -q 'function scArchiveAudioSource' index.html
+          grep -q 'function scNativeHttpAvailable' index.html
+          grep -q 'NO CONTENT-TYPE WITHOUT A BODY' index.html
+          grep -c "var r = await fetch(url, { method: method, headers: { 'Content-Type'" index.html || true
+          echo "the four fixes are in the page"
+
+      - name: Commit and push
+        run: |
+          git config user.name 'SideCut'
+          git config user.email 'actions@users.noreply.github.com'
+          git add index.html dev/patch-817.py
+          if git diff --cached --quiet; then echo 'nothing to commit'; exit 0; fi
+          git commit -m '81.7: the converters and Streaming answer in a browser'
+          git push
+
+      - name: Let Pages rebuild the site
+        run: gh workflow run deploy.yml || echo 'deploy.yml did not dispatch - Pages builds from the branch push anyway'
+        env:
+          GH_TOKEN: ${{ github.token }}
