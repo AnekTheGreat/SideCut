@@ -1,28 +1,26 @@
 #!/usr/bin/env python3
-"""83.0.6 - the widget plays without opening the app, with the app's own bridge.
+"""83.0.7 - the widget plays without opening the app, and says what it did.
 
-WHY 83.0.5 STILL DID NOTHING. The hidden player extended `BridgeActivity` directly.
-Capacitor only registers a page's plugins when the activity builds its bridge, and
-this app's local plugin - SideCutWidget, the one that hands the page a pending
-resume - is registered in **MainActivity's constructor** (`initialPlugins.add(...)`,
-before `super.onCreate`). A BridgeActivity subclass that is not MainActivity gets
-none of that: the page booted with no SideCutWidget plugin, `getPendingResume` failed
-as "not implemented", no song was ever resumed, and the host sat there silently until
-it timed out. The trampoline worked; the thing it started was deaf.
+WHY 83.0.5 AND 83.0.6 STILL DID NOTHING, AND WHAT CHANGED.
 
-THE FIX. GhostPlayerActivity extends MainActivity. It inherits the plugin list, the
-auto-registered npm plugins, and every other thing the real activity sets up - it is
-the same app, with the same bridge, only invisible.
+83.0.5's hidden player extended BridgeActivity, so the page booted with no plugin at all:
+the pending resume came back "not implemented" and nothing ever pressed play. 83.0.6
+fixed that by extending MainActivity. A press could still end in silence, for two reasons
+this release removes:
 
-AND IT CAN NOW SAY WHAT HAPPENED. Every stage writes a breadcrumb into the widget's
-preferences (`GhostDiag.java`): the press, which branch the trampoline took, the
-player booting, whether audio arrived, whether it gave up. `getGhostDiag` hands the
-trail to Settings -> Widget, so a press that does nothing can explain itself instead
-of needing another guess.
+  * the trampoline hands a press back to the widget when the app looks "alive", and it
+    judges that from a heartbeat the page writes - one that stays fresh for 90 seconds
+    after the process dies. Play something, swipe the app away, press the widget, and the
+    press was handed to a player that no longer existed. A hand-back now has to produce
+    sound within 2.5 s, or the hidden player starts anyway.
+  * asking for the pending resume used to CONSUME it, so a request read a moment before
+    the library finished hydrating was answered "nothing to play" and was gone. Asking no
+    longer consumes (ghostAskResume); the page's answer clears it (ghostStep), and the
+    page asks four times instead of once.
 
-Also: the fallback is much quicker. The player looks 5 s after boot and every 3 s
-after that, and if it never makes a sound in ~12 s it opens the app - so a press
-always ends in the app rather than in nothing.
+And the whole chain reports itself now: GhostDiag writes the trail Settings -> Widget
+shows and posts every line as a notification, so a press that does nothing says where it
+stopped without anyone having to go looking for it.
 
     python3 dev/ghost-host.py
 """
@@ -44,6 +42,8 @@ GHOST = os.path.join(JAVA_DIR, 'GhostHostActivity.java')
 PLAYER = os.path.join(JAVA_DIR, 'GhostPlayerActivity.java')
 DIAG = os.path.join(JAVA_DIR, 'GhostDiag.java')
 
+# Deliberately still 83.0.6: this marks the provider as already amended. Bumping it
+# would make the next run try to amend a file that already has the helpers.
 MARK = '83.0.6: the widget plays without opening the app'
 changed = []
 
@@ -58,35 +58,77 @@ def write(path, text):
 DIAG_JAVA = """package %s;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 /**
- * 83.0.6 - A PRESS THAT DOES NOTHING SHOULD SAY WHY.
+ * 83.0.7 - THE CHAIN NOW SAYS WHAT IT DID, ON THE PHONE ITSELF.
  *
- * Two releases were spent guessing what a silent press was doing. This records it
- * instead: five short lines, newest first, in the widget's own preferences, read
- * back by Settings -> Widget through getGhostDiag. No logs, no cable, no adb.
+ * Every branch of a widget press writes one line here: the switch, which way the
+ * trampoline went, the player booting, the page's own report, whether audio arrived,
+ * whether it gave up. The trail is kept for Settings -> Widget, and the newest line
+ * is also posted as a notification, so a press that does nothing can say so without
+ * anyone opening the app to go looking for it. Both halves are best effort: a
+ * breadcrumb must never be able to break the thing it is describing.
  */
-final class GhostDiag {
+public final class GhostDiag {
 
-    private GhostDiag() {}
+    private static final String PREFS = "sidecut_widget";
+    private static final String CHANNEL = "sidecut_ghost";
+    private static final int NOTIF = 7712;
+    private static final int MAX_LINES = 12;
 
-    static void note(Context ctx, String what) {
+    private GhostDiag() {
+    }
+
+    public static void note(Context ctx, String what) {
+        if (ctx == null || what == null) return;
         try {
-            SharedPreferences sp = ctx.getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
-            String line = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
-                    .format(new java.util.Date()) + "  " + what;
+            android.content.SharedPreferences sp =
+                    ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             String old = sp.getString("ghostDiag", "");
-            StringBuilder sb = new StringBuilder(line);
-            if (old != null && old.length() > 0) {
-                String[] parts = old.split("\\n");
-                int from = parts.length > 4 ? parts.length - 4 : 0;
-                for (int i = from; i < parts.length; i++) {
-                    sb.append("\\n").append(parts[i]);
-                }
+            String all = stamp() + "  " + what + (old.isEmpty() ? "" : "\n" + old);
+            String[] keep = all.split("\n");
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < keep.length && i < MAX_LINES; i++) {
+                if (i > 0) sb.append('\n');
+                sb.append(keep[i]);
             }
             sp.edit().putString("ghostDiag", sb.toString()).apply();
         } catch (Exception ignored) {
+        }
+        post(ctx, what);
+    }
+
+    /** The newest line, on the shade. No permission, no notification, no problem. */
+    private static void post(Context ctx, String what) {
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager)
+                    ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                android.app.NotificationChannel ch = new android.app.NotificationChannel(
+                        CHANNEL, "SideCut widget", android.app.NotificationManager.IMPORTANCE_LOW);
+                ch.setShowBadge(false);
+                nm.createNotificationChannel(ch);
+            }
+            android.app.Notification.Builder b = (android.os.Build.VERSION.SDK_INT >= 26)
+                    ? new android.app.Notification.Builder(ctx, CHANNEL)
+                    : new android.app.Notification.Builder(ctx);
+            b.setSmallIcon(android.R.drawable.ic_media_play)
+                    .setContentTitle("SideCut widget")
+                    .setContentText(what)
+                    .setStyle(new android.app.Notification.BigTextStyle().bigText(what))
+                    .setOnlyAlertOnce(true)
+                    .setAutoCancel(true);
+            nm.notify(NOTIF, b.build());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static String stamp() {
+        try {
+            return new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
+        } catch (Exception e) {
+            return "--:--:--";
         }
     }
 }
@@ -101,10 +143,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.media.AudioManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 
 /**
- * 83.0.6 - THE PRESS LANDS HERE, AND THE DECISION IS MADE HERE.
+ * 83.0.7 - THE PRESS LANDS HERE, AND THE DECISION IS MADE HERE.
  *
  * A widget cannot choose its own intent at press time: its button carries whatever
  * was installed when the widget was last painted, and that is almost always while
@@ -112,9 +156,9 @@ import android.view.View;
  * activity with no content and no WebView - which costs one frame and then does the
  * only two things that are possible:
  *
- *   music playing, or the app still alive  ->  hand the press straight back to the
- *                                              widget's own play action
- *   nothing playing and the app is gone    ->  start the hidden player
+ *   music playing  ->  hand the press straight back to the widget's own play action
+ *   anything else  ->  hand it back, and if that makes no sound in 2.5 s, start the
+ *                      hidden player
  *
  * It never shows anything and it is gone in milliseconds either way. Every branch
  * leaves a breadcrumb.
@@ -162,6 +206,41 @@ public class GhostHostActivity extends Activity {
         }
     }
 
+    // 83.0.7 - A HAND-BACK IS ONLY A GUESS, SO IT IS NOW THE FIRST HALF OF ONE.
+    // "SideCut is still alive" comes from a heartbeat the page writes while it runs,
+    // and that heartbeat stays fresh for 90 seconds after the process dies. Swipe the
+    // app away and press the widget straight afterwards and the press was handed to a
+    // player that no longer existed: nothing played, nothing crashed, nothing said
+    // why. The hand-back now gets 2.5 seconds to make sound, and if the phone is
+    // still quiet the hidden player starts anyway - which is what the press wanted.
+    private void handBackThenPlayer(final String why) {
+        handBack(why);
+        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override public void run() {
+                if (musicActive(GhostHostActivity.this)) {
+                    GhostDiag.note(GhostHostActivity.this, "press -> " + why + ", and it played");
+                    finish();
+                    return;
+                }
+                GhostDiag.note(GhostHostActivity.this,
+                        "press -> " + why + ", but nothing played - starting the hidden player");
+                startHiddenPlayer();
+                finish();
+            }
+        }, 2500L);
+    }
+
+    /** Start the invisible copy of the app that owns the sound. */
+    private void startHiddenPlayer() {
+        try {
+            Intent i = new Intent(this, GhostPlayerActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+            startActivity(i);
+        } catch (Exception e) {
+            GhostDiag.note(this, "press -> could not start it: " + e);
+        }
+    }
+
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -173,17 +252,11 @@ public class GhostHostActivity extends Activity {
         }
 
         if (!switchOn(this)) { handBack("the switch is off"); finish(); return; }
-        if (appAlive(this)) { handBack("SideCut is still alive"); finish(); return; }
+        if (appAlive(this)) { handBackThenPlayer("SideCut is still alive"); return; }
         if (musicActive(this)) { handBack("music is already playing"); finish(); return; }
 
         GhostDiag.note(this, "press -> starting the hidden player");
-        try {
-            Intent i = new Intent(this, GhostPlayerActivity.class);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
-            startActivity(i);
-        } catch (Exception e) {
-            GhostDiag.note(this, "press -> could not start it: " + e);
-        }
+        startHiddenPlayer();
         finish();
     }
 
@@ -209,21 +282,21 @@ import android.view.View;
 import android.webkit.WebSettings;
 
 /**
- * 83.0.6 - THE HIDDEN COPY THAT MAKES THE SOUND.
+ * 83.0.7 - THE HIDDEN COPY THAT MAKES THE SOUND.
  *
- * It extends MainActivity, and that is the whole fix. Capacitor builds a page's
- * plugin list when the activity creates its bridge, and this app registers its own
- * SideCutWidget plugin in MainActivity's CONSTRUCTOR. A plain BridgeActivity gets
- * none of that, so the page booted without the plugin that holds the pending
- * resume - it asked, got "not implemented", and never pressed play. Inheriting
- * MainActivity means the hidden player is the same app with the same plugins,
- * only invisible: alpha 0, its own task, no recents entry.
+ * It extends MainActivity, and that is the fix 83.0.6 was about. Capacitor builds a
+ * page's plugin list when the activity creates its bridge, and this app registers its
+ * own SideCutWidget plugin in MainActivity's CONSTRUCTOR. A plain BridgeActivity gets
+ * none of that, so the page booted without the plugin that holds the pending resume -
+ * it asked, got "not implemented", and never pressed play. Inheriting MainActivity
+ * means the hidden player is the same app with the same plugins, only invisible:
+ * alpha 0, its own task, no recents entry.
  *
  * The resume request is written BEFORE the bridge exists, so the page's own boot
  * finds it and presses play on the song the restore put on the deck.
  *
- * If that song never makes a sound, the host does what the widget used to do and
- * opens the app: a press can end in the app, never in nothing.
+ * If that song never makes a sound, the player opens the app instead: a press can end
+ * in the app, never in nothing.
  */
 public class GhostPlayerActivity extends MainActivity {
 
@@ -233,7 +306,7 @@ public class GhostPlayerActivity extends MainActivity {
 
     private final Runnable watch = new Runnable() {
         @Override public void run() {
-            if (musicActive()) {
+            if (musicActive() || pageSaysPlaying()) {
                 if (!started) GhostDiag.note(GhostPlayerActivity.this, "player -> audio is playing");
                 started = true;
                 silent = 0;
@@ -265,6 +338,20 @@ public class GhostPlayerActivity extends MainActivity {
         }
     }
 
+    // 83.0.7 - the phone's own answer is not the only one. isMusicActive() is a
+    // guess about the whole device and it can be wrong while the first buffer fills
+    // or while another app is winding down. The page knows for certain that its
+    // play() resolved, so it says so, and that counts - otherwise the player would
+    // "give up" over music that is playing.
+    private boolean pageSaysPlaying() {
+        try {
+            return getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
+                    .getBoolean("ghostAudioOk", false);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void openApp() {
         try {
             Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
@@ -281,6 +368,8 @@ public class GhostPlayerActivity extends MainActivity {
         try {
             getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
                     .edit().putBoolean("pendingResume", true).apply();
+            getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
+                    .edit().putBoolean("ghostAudioOk", false).apply();
         } catch (Exception ignored) {}
         super.onCreate(savedInstanceState);
         GhostDiag.note(this, "player -> page is booting");
@@ -351,10 +440,11 @@ ACTIVITY_XML = """        <!-- 83.0.6 - the widget's play button lands here. A t
 PROVIDER_HELPERS = """    // ---- 83.0.6: the widget plays without opening the app ------------------
     // The switch lives in Settings -> Widget. With it on, the play button opens a
     // transparent trampoline (GhostHostActivity) that decides at the press: it hands
-    // the press back to this provider when SideCut is alive or music is playing, and
-    // starts the hidden player when the app is really gone. The decision is NOT made
-    // here - the widget is painted while the app is alive, so a choice made here
-    // would describe the state at the last paint, which is the bug 83.0.4 shipped.
+    // the press back to this provider when music is playing (or the app looks alive,
+    // and then starts the hidden player if that makes no sound), and it starts the
+    // hidden player when the app is really gone. The decision is NOT made here - the
+    // widget is painted while the app is alive, so a choice made here would describe
+    // the state at the last paint, which is the bug 83.0.4 shipped.
     static final String GHOST_PREFS = "sidecut_widget";
     static final String GHOST_ACTIVITY = "GhostHostActivity";
 
@@ -377,7 +467,49 @@ PROVIDER_HELPERS = """    // ---- 83.0.6: the widget plays without opening the a
 
 """
 
-PLUGIN_METHODS = """    // 83.0.6 - the Settings -> Widget switch for playing without opening the app,
+PLUGIN_METHODS = """    // 83.0.7 - the page's own account of a resume: what it found, whether the phone
+    // accepted the play, or what it had nothing to play with. "playing" is also the
+    // one answer the hidden player trusts over the phone's own guess.
+    @PluginMethod
+    public void ghostStep(PluginCall call) {
+        try {
+            String step = call.getString("step", "");
+            if (step != null && !step.isEmpty()) {
+                GhostDiag.note(getContext(), "page -> " + step);
+                android.content.SharedPreferences sp =
+                        getContext().getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
+                android.content.SharedPreferences.Editor ed = sp.edit();
+                if (step.startsWith("playing")) {
+                    ed.putBoolean("ghostAudioOk", true);
+                } else {
+                    ed.putBoolean("ghostAudioOk", false);
+                }
+                // The request has been answered, one way or the other - a request that
+                // outlived its press would resume a song the next time the app opened.
+                ed.remove("pendingResume").apply();
+            }
+        } catch (Exception ignored) {
+        }
+        call.resolve();
+    }
+
+    // Reading the request used to consume it, so a press that arrived before the
+    // library had hydrated was read, found nothing to play, and was gone. This asks
+    // without consuming; ghostStep is what clears it.
+    @PluginMethod
+    public void ghostAskResume(PluginCall call) {
+        boolean resume = false;
+        try {
+            resume = getContext().getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
+                    .getBoolean("pendingResume", false);
+        } catch (Exception ignored) {
+        }
+        JSObject out = new JSObject();
+        try { out.put("resume", resume); } catch (Exception ignored) {}
+        call.resolve(out);
+    }
+
+    // 83.0.6 - the Settings -> Widget switch for playing without opening the app,
     // and the breadcrumb trail that says what the last press did.
     @PluginMethod
     public void setGhostPlay(PluginCall call) {
@@ -482,9 +614,9 @@ def main():
             'public class SideCutWidgetProvider extends AppWidgetProvider {', 1)
         write(PROVIDER, provider)
 
-    # ---- the switch and the trail the page reads --------------------------------
+    # ---- the switch, the trail and the page's report ----------------------------
     plugin = open(PLUGIN).read()
-    if 'getGhostDiag' not in plugin:
+    if 'ghostAskResume' not in plugin:
         anchor = '    // Live job progress in the Android shade'
         if anchor not in plugin:
             print('ghost-host: ERROR the plugin has no place to put the switch')
@@ -495,7 +627,7 @@ def main():
     if changed:
         print('ghost-host: OK - ' + ', '.join(changed))
     else:
-        print('ghost-host: nothing to change (already 83.0.6)')
+        print('ghost-host: nothing to change (already patched)')
     return 0
 
 
