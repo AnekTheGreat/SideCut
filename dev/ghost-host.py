@@ -25,7 +25,9 @@ stopped without anyone having to go looking for it.
 THIS FILE CONTAINS NO BACKSLASH SEQUENCES AT ALL, on purpose. It is written out by
 editors and tools that have to escape them, and a lost backslash inside a generated Java
 string literal is a build failure that only shows up several steps later. Everything that
-needs a newline builds one from chr(10) or (char) 10 instead.
+needs a newline builds one from chr(10) or (char) 10 instead - and the two string halves
+that need a marker comment are joined with an explicit +, because chr() is not a literal
+and cannot rely on implicit concatenation.
 
     python3 dev/ghost-host.py
 """
@@ -620,8 +622,8 @@ def main():
         provider = provider.replace(anchor, PROVIDER_HELPERS + anchor, 1)
         provider = provider.replace(
             'public class SideCutWidgetProvider extends AppWidgetProvider {',
-            '// ' + MARK + chr(10)
-            'public class SideCutWidgetProvider extends AppWidgetProvider {', 1)
+            ('// ' + MARK + chr(10)
+             + 'public class SideCutWidgetProvider extends AppWidgetProvider {'), 1)
         write(PROVIDER, provider)
 
     # ---- the switch, the trail and the page's report ----------------------------
