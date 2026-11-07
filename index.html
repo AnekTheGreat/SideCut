@@ -5593,7 +5593,7 @@ html, body{ max-width:100%; overflow-x:hidden; }
 
     <div id="settingsPaneWidget" style="display:none;">
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget: twenty presets from bright to liquid glass, a Frost dial on the two glass ones, a follow-the-app-theme switch, an idle battery saver and the fine-tune palette. Changes apply to every widget you have placed; re-adding one also picks these up. Tapping the widget - or its play button - picks the song you were last playing back up where you left it.</div>
-      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">Note: if the app is closed or swiped away from recents, the widget will not play the right audio — open SideCut again to get the widget back in sync.</div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">A paused song stays reachable from this widget, the lock screen and your headphones - press play there and it resumes without opening the app, even after twenty minutes or an hour. The one case that still needs the app is a phone that has killed SideCut (swiped away from recents, or short of memory): open it once and the song is back.</div>
       <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
       <div id="widgetFrostRow" style="display:none; margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
         <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px;">
@@ -20613,7 +20613,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.0.2';
+  const APP_VERSION = '83.0.3';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21323,6 +21323,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  { version: '83.0.3', date: 'November 7, 2026 · 1:20 PM EST', title: 'A paused song answers the headphones and the widget again', items: [
+    'Press play on your earbuds after twenty minutes away and the song starts again, instead of nothing answering.',
+    'Parked is not silent any more: while a song sits on the deck, the player behind the lock screen, the shade and the widget is kept warm once a minute, so the press always has something live to land on.',
+    'The home-screen widget resumes without opening the app. Its play button was always asking this app to press play - the session it reached had simply stopped being refreshed ten minutes into a pause.',
+    'Battery is unchanged: no wake lock is held and nothing is decoded while parked, just one small call a minute until you press play or the queue empties.',
+    'This one is in the page: it arrives the next time the app opens, with nothing to install.'
+  ]},
   { version: '83.0.2', date: 'November 6, 2026 · 10:36 PM EST', title: 'My Hub is off the Other apps list', items: [
     'Other apps carries FamTM, UJournal and MeasureT now: the three whose link is a store page, where a tap can actually finish.',
     'My Hub is not on a store page, so a tap on it left the app for a repository that cannot install anything. It is gone rather than listed beside the others as if it could.',
@@ -40451,6 +40458,48 @@ function _fallbackCopy(text){
   function cancelMediaRelease(){
     if(mediaReleaseTimer){ clearTimeout(mediaReleaseTimer); mediaReleaseTimer = null; }
   }
+  // 83.0.3 - A PARKED SONG KEEPS ITS SESSION WARM.
+  //
+  // The grace window used to end in silence: one last `paused` push and nothing ever
+  // refreshed the card again, so a press from the headphones twenty minutes later
+  // landed on a session Android had long stopped listening to - and the widget, which
+  // asks this app's player to press play, fell back to opening the app. This is the
+  // missing half: while a song sits on the deck and the page is parked, the entry, its
+  // metadata and its controls are re-stated once a minute. No wake lock, no audio work,
+  // no position churn - a paused notification is what the phone already shows.
+  //
+  // A press goes through scTransportPress(), which clears the parked flag and calls
+  // rearmMediaSession(); that stops this beat, re-registers every control and hands the
+  // press to the deck. Nothing here tries to start playback on its own.
+  let mediaParkedBeat = null;
+  let mediaParkedBeats = 0;
+  function stopParkedBeat(){
+    if(mediaParkedBeat){ clearInterval(mediaParkedBeat); mediaParkedBeat = null; }
+  }
+  function startParkedBeat(track){
+    stopParkedBeat();
+    mediaParkedBeats = 0;
+    const beat = function(){
+      try{
+        if(!mediaParkedInBackground){ stopParkedBeat(); return; }
+        const t = track || (typeof mediaResumableTrack === 'function' ? mediaResumableTrack() : null);
+        if(!t){ stopParkedBeat(); return; }
+        try{ mediaSetMetadata(t); }catch(_ePkMeta){}
+        try{ mediaSetPlaybackState('paused'); }catch(_ePkState){}
+        mediaParkedBeats++;
+        // The handlers are what make forward/back present instead of dead. Re-asserting
+        // them every beat would be a bridge call a minute for nothing; every fourth is
+        // enough to cover a session the phone rebuilt underneath us.
+        if(mediaParkedBeats % 4 === 1){
+          try{ mediaHandlersNeedArm(); refreshMediaControls(); }catch(_ePkArm){}
+        }
+      }catch(_ePk){ }
+    };
+    mediaParkedBeat = setInterval(beat, 60000);
+    // The battery saver stops every tracked timer on hide, and this beat only ever runs
+    // while hidden - so it is exempt, exactly like the heartbeat.
+    try{ if(window.__scKeepAliveTimer && mediaParkedBeat) window.__scKeepAliveTimer(mediaParkedBeat); }catch(_ePkKeep){}
+  }
   function armMediaRelease(){
     if(mediaReleaseTimer) return;
     mediaReleaseTimer = setTimeout(function(){
@@ -40466,9 +40515,13 @@ function _fallbackCopy(text){
       const back = mediaResumableTrack();
       if(back){
         mediaParkedInBackground = true;
-        // One last push, then silence: the player names the song and says paused, so
-        // the outside surfaces have something truthful to press play on.
+        // 83.0.3 - PARKED MEANS STILL LISTENING, NOT GONE QUIET. This one push used to
+        // be all the session ever got: the beat was stopped, the wake lock given back and
+        // nothing refreshed the card again, so the press that arrives twenty minutes
+        // later - headphones, lock screen, widget, shade - had no live session to land
+        // on. startParkedBeat() keeps it warm until a press arrives or the deck empties.
         try{ mediaSetMetadata(back); mediaSetPlaybackState('paused'); }catch(e){}
+        startParkedBeat(back);
         recordPlaybackStop('background-paused ' + Math.round(MEDIA_BG_GRACE_MS / 60000) + ' min — session parked so play still works from outside the app');
         return;
       }
@@ -40480,6 +40533,9 @@ function _fallbackCopy(text){
   function rearmMediaSession(){
     if(mediaParkedInBackground){
       mediaParkedInBackground = false;
+      // 83.0.3 - the press that undoes a park also ends the parked beat: the deck's own
+      // heartbeat is the one that should be running from here.
+      stopParkedBeat();
       mediaHandlersNeedArm();
       try{ refreshMediaControls(); }catch(e){}
       try{ const a = activeAudio(); mediaSetPlaybackState(a && !a.paused ? 'playing' : 'paused'); }catch(e){}
