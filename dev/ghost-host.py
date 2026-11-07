@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""83.0.8 - the widget plays SideCut's music, and only ever SideCut's.
+"""83.0.9 resident - the widget press is allowed to take its time.
 
 WHY 83.0.5 AND 83.0.6 STILL DID NOTHING.
 
@@ -27,6 +27,15 @@ WHAT THIS FILE NOW DOES:
   * the hidden player accepts its own page's report, or music alongside a heartbeat it is
     still writing - never bare isMusicActive(), which any app can satisfy;
   * asking for the pending resume no longer consumes it, and the page asks four times.
+
+83.0.9 - THE PRESS WAS NEVER THE PROBLEM, AND NEITHER WAS ANY OF THE ABOVE. Every
+build so far ended in silence because the page's resume pressed play() on an element it
+had never loaded, and because the first miss deleted the request. The page half is fixed
+in dev/patch-8309.py; this half gives it room: the hidden player now waits about forty
+seconds for the song to start instead of twelve, a request is only settled by a song that
+actually began ("playing ..."), and a request older than two minutes is dropped rather
+than resuming days later. The ordering matters: the player must outlast the page's own
+forty-second budget, or it opens the app at the exact moment the song was about to start.
 
 And the whole chain reports itself: GhostDiag writes the trail Settings -> Widget shows
 and posts every line as a notification, so a press that does nothing says where it stopped.
@@ -346,7 +355,7 @@ public class GhostPlayerActivity extends MainActivity {
                 return;
             }
             silent++;
-            if (!started && silent >= 4) {   // never made a sound in ~12 s
+            if (!started && silent >= 12) {  // 83.0.9 - never made a sound in ~40 s
                 GhostDiag.note(GhostPlayerActivity.this, "player -> no audio, opening the app");
                 openApp();
                 finish();
@@ -412,6 +421,7 @@ public class GhostPlayerActivity extends MainActivity {
             android.content.SharedPreferences.Editor ed =
                     getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE).edit();
             ed.putBoolean("pendingResume", true);
+            ed.putLong("pendingResumeAt", System.currentTimeMillis());
             ed.putBoolean("ghostAudioOk", false);
             ed.apply();
         } catch (Exception ignored) {}
@@ -437,7 +447,7 @@ public class GhostPlayerActivity extends MainActivity {
                 try { root.setAlpha(0f); } catch (Exception ignored) {}
             }
         });
-        handler.postDelayed(watch, 5000);
+        handler.postDelayed(watch, 6000);
     }
 
     @Override
@@ -524,12 +534,15 @@ PLUGIN_METHODS = """    // 83.0.7 - the page's own account of a resume: what it 
                         getContext().getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE).edit();
                 if (step.startsWith("playing")) {
                     ed.putBoolean("ghostAudioOk", true);
+                    // 83.0.9 - ONLY A SONG THAT ACTUALLY STARTED SETTLES THE REQUEST.
+                    // Clearing it on any report is what turned one early miss - the
+                    // queue has not been rebuilt from the database yet - into a press
+                    // that could never be answered, no matter how often it asked.
+                    ed.remove("pendingResume");
+                    ed.remove("pendingResumeAt");
                 } else {
                     ed.putBoolean("ghostAudioOk", false);
                 }
-                // The request has been answered, one way or the other - a request that
-                // outlived its press would resume a song the next time the app opened.
-                ed.remove("pendingResume");
                 ed.apply();
             }
         } catch (Exception ignored) {
@@ -544,8 +557,19 @@ PLUGIN_METHODS = """    // 83.0.7 - the page's own account of a resume: what it 
     public void ghostAskResume(PluginCall call) {
         boolean resume = false;
         try {
-            resume = getContext().getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
-                    .getBoolean("pendingResume", false);
+            android.content.SharedPreferences sp =
+                    getContext().getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
+            resume = sp.getBoolean("pendingResume", false);
+            if (resume) {
+                // 83.0.9 - A REQUEST NOBODY ANSWERED IS NOT STILL WAITING. Two minutes
+                // is far longer than a boot and far shorter than the next day: a press
+                // that could not play must not start music when the app is opened later.
+                long at = sp.getLong("pendingResumeAt", 0);
+                if (at > 0 && (System.currentTimeMillis() - at) > 120000L) {
+                    sp.edit().remove("pendingResume").remove("pendingResumeAt").apply();
+                    resume = false;
+                }
+            }
         } catch (Exception ignored) {
         }
         JSObject out = new JSObject();
