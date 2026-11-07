@@ -20686,7 +20686,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.2.0';
+  const APP_VERSION = '83.2.1';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21396,6 +21396,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  { version: '83.2.1', date: 'November 7, 2026 \u00b7 10:05 AM EST', title: 'The press plays your music, for real this time', items: [
+    'The widget press with the app swiped away now produces sound. 83.2.0 built the player that survives the swipe but handed it a broken copy of the song, so this is the fix that makes it audible.',
+    'The copy was being saved as text instead of audio - a 1.2 MB song arrived as 1.6 MB of encoded letters - and the player, quite correctly, refused to play it. The copy is now written as real bytes.',
+    'The app also checks the copy against the song before trusting it. If the file that landed is not the song, the press says so in the widget diagnostics instead of going quiet.',
+    'Everything from 83.2.0 stands: the player is a real Android service outside the app window, pressing again pauses it, and opening the app takes playback back.'
+  ]},
   { version: '83.2.0', date: 'November 7, 2026 \u00b7 9:15 AM EST', title: 'The music stops living in the window', items: [
     'The widget plays with the app swiped away for a reason that is not a workaround: SideCut keeps a copy of the song you are playing and plays it with a real Android player, in a service the swipe cannot remove. Every player here until now was a WebView, so the swipe killed the only thing making sound.',
     'Pressing play with nothing open starts that player straight away - no app launch, no window, no waiting for a page to answer.',
@@ -38466,17 +38472,28 @@ function _fallbackCopy(text){
           var b64 = await blobChunkToBase64(t.file.slice(offset, end));
           if(!b64) throw new Error('the song could not be read');
           if(first){
-            await FS.writeFile({ path: 'np/' + want, data: b64, directory: 'DATA', recursive: true });
+            await FS.writeFile({ path: 'np/' + want, data: b64, encoding: 'base64', directory: 'DATA', recursive: true });
             first = false;
           }else if(typeof FS.appendFile === 'function'){
-            await FS.appendFile({ path: 'np/' + want, data: b64, directory: 'DATA' });
+            await FS.appendFile({ path: 'np/' + want, data: b64, encoding: 'base64', directory: 'DATA' });
           }else{
             throw new Error('this filesystem cannot append');
           }
           offset = end;
         }
+        // 83.2.1 - A COPY THAT IS NOT THE SONG IS NOT A COPY.
+        // The encoding above is the fix; this is the belt. A copy that is text, that
+        // stopped early, or that was never written is refused here and named in the
+        // diag trail, so the press falls through to the old path instead of handing
+        // Android a file it cannot decode.
+        var st = null;
+        try{ st = await FS.stat({ path: 'np/' + want, directory: 'DATA' }); }catch(_eSt){ st = null; }
+        if(!st || Number(st.size) !== size){
+          throw new Error('the copy is ' + ((st && st.size) || 0) + ' of ' + size + ' bytes');
+        }
         scCustodyId = id;
         scCustodyFile = want;
+        try{ scGhostStep('copy -> ' + size + ' bytes ready'); }catch(_e){}
       }catch(e){
         // No copy is not a crash: the native player reports it is not ready and the
         // press falls through to the old path.
