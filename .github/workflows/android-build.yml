@@ -2,13 +2,20 @@ name: Build Android (Capacitor) AAB
 
 # Builds a signed SideCut Android app (WebView, NOT a TWA) entirely in the cloud.
 # Result: a downloadable .aab you upload to Play Console. No Android Studio needed.
+#
+# On demand only. A push to main publishes the OTA bundle (deploy.yml) and starts
+# nothing else: the installed app picks the new bundle up over the air, so the
+# signed AAB/APK does not have to be rebuilt and re-released for every change.
+# Run this workflow (Actions -> Build Android -> Run workflow) when an APK/AAB is
+# actually wanted, e.g. for a Play upload or a fresh sideload.
 on:
-  # On demand only. A push to main publishes the OTA bundle (deploy.yml) and starts
-  # nothing else: the installed app picks the new bundle up over the air, so the
-  # signed AAB/APK does not have to be rebuilt and re-released for every change.
-  # Run this workflow (Actions -> Build Android -> Run workflow) when an APK/AAB is
-  # actually wanted, e.g. for a Play upload or a fresh sideload.
   workflow_dispatch:
+    inputs:
+      flavor:
+        description: 'Which build to produce: full (sideload), play (Play AAB), or both'
+        required: false
+        default: 'both'
+        type: string
 
 concurrency:
   group: android-build
@@ -28,7 +35,10 @@ jobs:
       #   play - Play flag injected (licensed sources, ota-play channel) -> upload AAB to Play
       #   full - no flag: the complete build, sideloaded only -> full ota/ updates
       matrix:
-        flavor: [play, full]
+        # 83.0.4 - the flavor can be chosen when the build is run, so the native
+        # change can be tested on the full (sideloaded) build on its own without
+        # producing a Play AAB. Both flavors still build by default.
+        flavor: ${{ fromJSON(inputs.flavor == 'full' && '["full"]' || (inputs.flavor == 'play' && '["play"]' || '["play","full"]')) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,6 +103,12 @@ jobs:
         # ships has to be able to arrive through dev/. This runs straight after the
         # generator, on the project it just wrote.
         run: python3 dev/widget-sizes.py
+      - name: Give the widget a hidden player to start (83.0.4)
+        # The native half of "the widget plays with the app swiped away". A dev/
+        # script, like widget-sizes.py, because a release can carry dev/ and cannot
+        # carry .github/workflows/. It writes GhostHostActivity, its manifest entry,
+        # the widget's play intent and the Settings switch behind a plugin method.
+        run: python3 dev/ghost-host.py
       - name: Inject the audio-focus plugin (calls / headset takeovers)
         run: python3 .github/workflows/patch-audiofocus.py
       - name: Inject the conversion job hold (wake lock + dataSync foreground service)
