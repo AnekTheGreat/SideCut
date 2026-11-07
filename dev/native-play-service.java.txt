@@ -1,0 +1,310 @@
+package com.SideCut.myapp;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.media.MediaPlayer;
+import android.os.Build;
+import android.os.IBinder;
+
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+
+/**
+ * 83.2.0 - the player that is not a window.
+ *
+ * Everything SideCut played until now was an audio element inside the WebView, so
+ * the recents swipe destroyed the only thing making sound - no press could bring it
+ * back. This plays a copy of the current song with MediaPlayer in a foreground
+ * service instead, which the swipe does not remove. The copy (files/np/current.json
+ * plus the audio it names) is written by the page, see dev/patch-8320.py.
+ *
+ * Every native call is wrapped: a fault here ends in silence and a diag line, never
+ * in a dead process.
+ */
+public class NativePlayService extends Service {
+
+    public static final String ACTION_PLAY = "com.SideCut.myapp.np.PLAY";
+    public static final String ACTION_PAUSE = "com.SideCut.myapp.np.PAUSE";
+    public static final String ACTION_STOP = "com.SideCut.myapp.np.STOP";
+
+    private static final String CHANNEL = "sidecut_native_play";
+    private static final int NOTE_ID = 8410;
+
+    private static NativePlayService live;
+
+    private MediaPlayer player;
+    private String title = "SideCut";
+    private int startMs = 0;
+
+    // ---- what the rest of the app asks ---------------------------------
+
+    /** Is there a copy of a song on disk that this service could play? */
+    public static boolean ready(Context c) {
+        return audioFile(c) != null;
+    }
+
+    public static boolean playing(Context c) {
+        NativePlayService s = live;
+        if (s == null) return false;
+        try {
+            return s.player != null && s.player.isPlaying();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static void play(Context c) {
+        send(c, ACTION_PLAY);
+    }
+
+    public static void pause(Context c) {
+        send(c, ACTION_PAUSE);
+    }
+
+    /** Used when the app comes back: the page owns playback again. */
+    public static void stopIfPlaying(Context c) {
+        NativePlayService s = live;
+        if (s == null) return;
+        boolean any = false;
+        try {
+            any = s.player != null;
+        } catch (Exception e) {
+            any = false;
+        }
+        if (any) send(c, ACTION_STOP);
+    }
+
+    private static void send(Context c, String action) {
+        try {
+            Intent i = new Intent(c, NativePlayService.class);
+            i.setAction(action);
+            if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i);
+            else c.startService(i);
+        } catch (Exception e) {
+            note(c, "native -> could not start: " + e.getClass().getSimpleName());
+        }
+    }
+
+    private static void note(Context c, String what) {
+        try {
+            GhostDiag.note(c, what);
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ---- the copy on disk ----------------------------------------------
+
+    private static JSONObject meta(Context c) {
+        try {
+            return new JSONObject(readAll(new File(new File(c.getFilesDir(), "np"), "current.json")));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static File audioFile(Context c) {
+        try {
+            JSONObject j = meta(c);
+            if (j == null) return null;
+            String name = j.optString("file", "");
+            if (name.length() == 0) return null;
+            File f = new File(new File(c.getFilesDir(), "np"), name);
+            if (!f.exists() || f.length() <= 0) return null;
+            return f;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String readAll(File f) throws Exception {
+        FileInputStream in = new FileInputStream(f);
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return new String(out.toByteArray(), "UTF-8");
+        } finally {
+            try { in.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    // ---- the service ---------------------------------------------------
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        live = this;
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        // The notification has to exist almost immediately or Android 8+ kills the
+        // service for starting as foreground without it, so it comes first.
+        showNote();
+        String action = intent == null ? ACTION_PLAY : String.valueOf(intent.getAction());
+        if (ACTION_STOP.equals(action)) {
+            stopEverything();
+            return START_NOT_STICKY;
+        }
+        if (ACTION_PAUSE.equals(action)) {
+            try {
+                if (player != null && player.isPlaying()) {
+                    player.pause();
+                    note(this, "native -> paused");
+                }
+            } catch (Exception e) {
+                note(this, "native -> pause failed");
+            }
+            showNote();
+            return START_STICKY;
+        }
+        boolean playingNow = false;
+        try {
+            playingNow = player != null && player.isPlaying();
+        } catch (Exception ignored) {
+        }
+        if (playingNow) return START_STICKY;
+        if (player != null) {
+            try {
+                player.start();
+                note(this, "native -> resumed");
+                showNote();
+                return START_STICKY;
+            } catch (Exception e) {
+                releasePlayer();
+            }
+        }
+        begin();
+        return START_STICKY;
+    }
+
+    private void begin() {
+        File f = audioFile(this);
+        if (f == null) {
+            note(this, "native -> nothing on disk to play");
+            stopEverything();
+            return;
+        }
+        JSONObject j = meta(this);
+        if (j != null) {
+            title = j.optString("title", "SideCut");
+            startMs = j.optInt("positionMs", 0);
+        }
+        try {
+            player = new MediaPlayer();
+            player.setDataSource(f.getAbsolutePath());
+            player.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+                @Override public void onPrepared(MediaPlayer mp) {
+                    try {
+                        if (startMs > 0) mp.seekTo(startMs);
+                        mp.start();
+                        note(NativePlayService.this, "native -> playing " + title);
+                        showNote();
+                    } catch (Exception e) {
+                        note(NativePlayService.this, "native -> start failed");
+                        stopEverything();
+                    }
+                }
+            });
+            player.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                @Override public void onCompletion(MediaPlayer mp) {
+                    note(NativePlayService.this, "native -> finished");
+                    stopEverything();
+                }
+            });
+            player.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+                @Override public boolean onError(MediaPlayer mp, int what, int extra) {
+                    note(NativePlayService.this, "native -> cannot decode this file");
+                    stopEverything();
+                    return true;
+                }
+            });
+            note(this, "native -> loading " + f.getName());
+            player.prepareAsync();
+        } catch (Exception e) {
+            note(this, "native -> " + e.getClass().getSimpleName() + " on " + f.getName());
+            releasePlayer();
+            stopEverything();
+        }
+    }
+
+    private void showNote() {
+        try {
+            NotificationManager nm =
+                    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (Build.VERSION.SDK_INT >= 26 && nm != null) {
+                NotificationChannel ch = new NotificationChannel(CHANNEL, "SideCut playback",
+                        NotificationManager.IMPORTANCE_LOW);
+                ch.setShowBadge(false);
+                nm.createNotificationChannel(ch);
+            }
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 23) flags = flags | PendingIntent.FLAG_IMMUTABLE;
+
+            Intent open = new Intent(this, MainActivity.class);
+            open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent tap = PendingIntent.getActivity(this, 0, open, flags);
+
+            Intent pz = new Intent(this, NativePlayService.class);
+            pz.setAction(ACTION_PAUSE);
+            PendingIntent pausePi = PendingIntent.getService(this, 1, pz, flags);
+
+            Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                    ? new Notification.Builder(this, CHANNEL)
+                    : new Notification.Builder(this);
+            b.setSmallIcon(android.R.drawable.ic_media_play)
+                    .setContentTitle(title)
+                    .setContentText("SideCut is playing")
+                    .setOngoing(true)
+                    .setOnlyAlertOnce(true)
+                    .setVisibility(Notification.VISIBILITY_PUBLIC)
+                    .setContentIntent(tap)
+                    .addAction(android.R.drawable.ic_media_pause, "Pause", pausePi);
+            startForeground(NOTE_ID, b.build());
+        } catch (Exception e) {
+            note(this, "native -> notification failed: " + e.getClass().getSimpleName());
+        }
+    }
+
+    private void releasePlayer() {
+        try {
+            if (player != null) {
+                player.reset();
+                player.release();
+            }
+        } catch (Exception ignored) {
+        }
+        player = null;
+    }
+
+    private void stopEverything() {
+        releasePlayer();
+        try {
+            if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE);
+            else stopForeground(true);
+        } catch (Exception ignored) {
+        }
+        stopSelf();
+    }
+
+    @Override
+    public void onDestroy() {
+        releasePlayer();
+        live = null;
+        super.onDestroy();
+    }
+}
