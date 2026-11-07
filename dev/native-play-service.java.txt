@@ -116,12 +116,52 @@ public class NativePlayService extends Service {
             if (j == null) return null;
             String name = j.optString("file", "");
             if (name.length() == 0) return null;
-            File f = new File(new File(c.getFilesDir(), "np"), name);
+            File dir = new File(c.getFilesDir(), "np");
+            File f = new File(dir, name);
             if (!f.exists() || f.length() <= 0) return null;
+            // 83.2.2 - A FILE NAMED current.mp3 IS NOT NECESSARILY AUDIO.
+            // 83.2.0's base64 text still passes exists() and length(), so a press kept
+            // starting this service on garbage. The header decides, not the name.
+            if (!sniff(f)) {
+                note(c, "native -> the copy on disk is not audio, throwing it away");
+                try { f.delete(); } catch (Exception ignored) {}
+                try { new File(dir, "current.json").delete(); } catch (Exception ignored) {}
+                return null;
+            }
             return f;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 83.2.2 - do the first bytes look like something MediaPlayer can open? */
+    private static boolean sniff(File f) {
+        byte[] h = new byte[12];
+        int n = 0;
+        FileInputStream in = null;
+        try {
+            in = new FileInputStream(f);
+            int r;
+            while (n < h.length && (r = in.read(h, n, h.length - n)) > 0) n += r;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            try { if (in != null) in.close(); } catch (Exception ignored) {}
+        }
+        if (n < 4) return false;
+        String s = new String(h, 0, n);
+        if (s.startsWith("ID3")) return true;              // mp3 with a tag
+        if (s.startsWith("fLaC")) return true;             // flac
+        if (s.startsWith("OggS")) return true;             // ogg / opus in ogg
+        if (s.startsWith("RIFF")) return true;             // wav
+        if (s.startsWith("FORM")) return true;             // aiff
+        if (s.startsWith("#!AMR")) return true;            // amr
+        if (s.startsWith("MThd")) return true;             // midi
+        if (n >= 8 && s.substring(4, 8).equals("ftyp")) return true;   // m4a / mp4 / aac
+        int b0 = h[0] & 0xFF;
+        int b1 = h[1] & 0xFF;
+        if (b0 == 0xFF && (b1 & 0xE0) == 0xE0) return true;   // bare mp3 frame
+        return false;
     }
 
     private static String readAll(File f) throws Exception {
