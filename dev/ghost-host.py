@@ -22,6 +22,11 @@ And the whole chain reports itself now: GhostDiag writes the trail Settings -> W
 shows and posts every line as a notification, so a press that does nothing says where it
 stopped without anyone having to go looking for it.
 
+THIS FILE CONTAINS NO BACKSLASH SEQUENCES AT ALL, on purpose. It is written out by
+editors and tools that have to escape them, and a lost backslash inside a generated Java
+string literal is a build failure that only shows up several steps later. Everything that
+needs a newline builds one from chr(10) or (char) 10 instead.
+
     python3 dev/ghost-host.py
 """
 import json
@@ -68,6 +73,9 @@ import android.content.Context;
  * is also posted as a notification, so a press that does nothing can say so without
  * anyone opening the app to go looking for it. Both halves are best effort: a
  * breadcrumb must never be able to break the thing it is describing.
+ *
+ * The line break is built from (char) 10 rather than an escape sequence, so this file
+ * stays free of backslashes (see the module docstring).
  */
 public final class GhostDiag {
 
@@ -75,6 +83,7 @@ public final class GhostDiag {
     private static final String CHANNEL = "sidecut_ghost";
     private static final int NOTIF = 7712;
     private static final int MAX_LINES = 12;
+    private static final String SEP = String.valueOf((char) 10);
 
     private GhostDiag() {
     }
@@ -85,11 +94,11 @@ public final class GhostDiag {
             android.content.SharedPreferences sp =
                     ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             String old = sp.getString("ghostDiag", "");
-            String all = stamp() + "  " + what + (old.isEmpty() ? "" : "\n" + old);
-            String[] keep = all.split("\n");
+            String all = stamp() + "  " + what + (old.isEmpty() ? "" : SEP + old);
+            String[] keep = all.split(java.util.regex.Pattern.quote(SEP));
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < keep.length && i < MAX_LINES; i++) {
-                if (i > 0) sb.append('\n');
+                if (i > 0) sb.append(SEP);
                 sb.append(keep[i]);
             }
             sp.edit().putString("ghostDiag", sb.toString()).apply();
@@ -366,10 +375,11 @@ public class GhostPlayerActivity extends MainActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         try {
-            getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
-                    .edit().putBoolean("pendingResume", true).apply();
-            getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
-                    .edit().putBoolean("ghostAudioOk", false).apply();
+            android.content.SharedPreferences.Editor ed =
+                    getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE).edit();
+            ed.putBoolean("pendingResume", true);
+            ed.putBoolean("ghostAudioOk", false);
+            ed.apply();
         } catch (Exception ignored) {}
         super.onCreate(savedInstanceState);
         GhostDiag.note(this, "player -> page is booting");
@@ -476,9 +486,8 @@ PLUGIN_METHODS = """    // 83.0.7 - the page's own account of a resume: what it 
             String step = call.getString("step", "");
             if (step != null && !step.isEmpty()) {
                 GhostDiag.note(getContext(), "page -> " + step);
-                android.content.SharedPreferences sp =
-                        getContext().getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE);
-                android.content.SharedPreferences.Editor ed = sp.edit();
+                android.content.SharedPreferences.Editor ed =
+                        getContext().getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE).edit();
                 if (step.startsWith("playing")) {
                     ed.putBoolean("ghostAudioOk", true);
                 } else {
@@ -486,7 +495,8 @@ PLUGIN_METHODS = """    // 83.0.7 - the page's own account of a resume: what it 
                 }
                 // The request has been answered, one way or the other - a request that
                 // outlived its press would resume a song the next time the app opened.
-                ed.remove("pendingResume").apply();
+                ed.remove("pendingResume");
+                ed.apply();
             }
         } catch (Exception ignored) {
         }
@@ -559,7 +569,7 @@ def replace_play_line(src):
     """
     out = []
     hits = 0
-    for line in src.split('\n'):
+    for line in src.split(chr(10)):
         if 'setOnClickPendingIntent(R.id.wPlay' in line and 'playpause' in line:
             indent = line[:len(line) - len(line.lstrip())]
             out.append(indent + 'rv.setOnClickPendingIntent(R.id.wPlay,')
@@ -567,7 +577,7 @@ def replace_play_line(src):
             hits += 1
         else:
             out.append(line)
-    return '\n'.join(out), hits
+    return chr(10).join(out), hits
 
 
 def main():
@@ -610,7 +620,7 @@ def main():
         provider = provider.replace(anchor, PROVIDER_HELPERS + anchor, 1)
         provider = provider.replace(
             'public class SideCutWidgetProvider extends AppWidgetProvider {',
-            '// ' + MARK + '\n'
+            '// ' + MARK + chr(10)
             'public class SideCutWidgetProvider extends AppWidgetProvider {', 1)
         write(PROVIDER, provider)
 
