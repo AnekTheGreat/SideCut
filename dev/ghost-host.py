@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
-"""83.0.7 - the widget plays without opening the app, and says what it did.
+"""83.0.8 - the widget plays SideCut's music, and only ever SideCut's.
 
-WHY 83.0.5 AND 83.0.6 STILL DID NOTHING, AND WHAT CHANGED.
+WHY 83.0.5 AND 83.0.6 STILL DID NOTHING.
 
 83.0.5's hidden player extended BridgeActivity, so the page booted with no plugin at all:
 the pending resume came back "not implemented" and nothing ever pressed play. 83.0.6
-fixed that by extending MainActivity. A press could still end in silence, for two reasons
-this release removes:
+fixed that by extending MainActivity.
 
-  * the trampoline hands a press back to the widget when the app looks "alive", and it
-    judges that from a heartbeat the page writes - one that stays fresh for 90 seconds
-    after the process dies. Play something, swipe the app away, press the widget, and the
-    press was handed to a player that no longer existed. A hand-back now has to produce
-    sound within 2.5 s, or the hidden player starts anyway.
-  * asking for the pending resume used to CONSUME it, so a request read a moment before
-    the library finished hydrating was answered "nothing to play" and was gone. Asking no
-    longer consumes (ghostAskResume); the page's answer clears it (ghostStep), and the
-    page asks four times instead of once.
+WHY 83.0.7 THEN PLAYED SOMEBODY ELSE'S AUDIO.
 
-And the whole chain reports itself now: GhostDiag writes the trail Settings -> Widget
-shows and posts every line as a notification, so a press that does nothing says where it
-stopped without anyone having to go looking for it.
+83.0.7 handed the press back to SideCut when the app "looked alive", judged from a
+heartbeat that stayed believable for 90 s after the process died. That hand-back is not
+addressed to SideCut at all: it is AudioManager.dispatchMediaKeyEvent(), a system-wide
+media key, and Android gives it to whichever player it considers active - with SideCut
+gone, whatever played last. Spotify answered. And the check for success was isMusicActive(),
+which answers for the whole phone, so Spotify starting counted as SideCut working, the
+hidden player was never started, and a SideCut widget press launched Spotify.
+
+WHAT THIS FILE NOW DOES:
+
+  * the heartbeat window is 15 s, not 90: a dead app stops looking alive almost at once;
+  * a press is handed back ONLY when SideCut is running, and counts as success ONLY when
+    SideCut's own heartbeat moves afterwards - nothing else can fake that;
+  * with nothing of SideCut running, the press goes straight to the hidden player and no
+    media key is sent at all, so there is no route left to another player;
+  * the hidden player accepts its own page's report, or music alongside a heartbeat it is
+    still writing - never bare isMusicActive(), which any app can satisfy;
+  * asking for the pending resume no longer consumes it, and the page asks four times.
+
+And the whole chain reports itself: GhostDiag writes the trail Settings -> Widget shows
+and posts every line as a notification, so a press that does nothing says where it stopped.
 
 THIS FILE CONTAINS NO BACKSLASH SEQUENCES AT ALL, on purpose. It is written out by
 editors and tools that have to escape them, and a lost backslash inside a generated Java
@@ -67,7 +76,7 @@ DIAG_JAVA = """package %s;
 import android.content.Context;
 
 /**
- * 83.0.7 - THE CHAIN NOW SAYS WHAT IT DID, ON THE PHONE ITSELF.
+ * 83.0.8 - THE CHAIN NOW SAYS WHAT IT DID, ON THE PHONE ITSELF.
  *
  * Every branch of a widget press writes one line here: the switch, which way the
  * trampoline went, the player booting, the page's own report, whether audio arrived,
@@ -159,25 +168,29 @@ import android.os.Looper;
 import android.view.View;
 
 /**
- * 83.0.7 - THE PRESS LANDS HERE, AND THE DECISION IS MADE HERE.
+ * 83.0.8 - THE PRESS LANDS HERE, AND THE DECISION IS MADE HERE.
  *
  * A widget cannot choose its own intent at press time: its button carries whatever
- * was installed when the widget was last painted, and that is almost always while
- * SideCut is still running. So the button carries THIS instead - a transparent
- * activity with no content and no WebView - which costs one frame and then does the
- * only two things that are possible:
+ * was installed when the widget was last painted. So the button carries THIS instead -
+ * a transparent activity with no content and no WebView - which costs one frame and
+ * then does one of three things:
  *
- *   music playing  ->  hand the press straight back to the widget's own play action
- *   anything else  ->  hand it back, and if that makes no sound in 2.5 s, start the
- *                      hidden player
+ *   the switch is off  ->  hand the press back, exactly as before 83.0.4
+ *   SideCut is running ->  hand it back, and watch its heartbeat: if it does not move
+ *                          in 2.5 s, start the hidden player
+ *   anything else      ->  start the hidden player, and send no media key at all
  *
- * It never shows anything and it is gone in milliseconds either way. Every branch
- * leaves a breadcrumb.
+ * That last line is the whole of 83.0.8. A hand-back is a system-wide media key, so it
+ * only belongs to SideCut when SideCut is the app that is actually there.
  */
 public class GhostHostActivity extends Activity {
 
     private static final String PREFS = "sidecut_widget";
-    private static final long ALIVE_MS = 90000L;
+    // 83.0.8 - NINETY SECONDS WAS A CORPSE'S HEARTBEAT. The page writes this while it
+    // runs; keeping it "alive" for a minute and a half after the process dies is what
+    // made a press straight after a swipe believe SideCut was still there. Fifteen
+    // seconds is long enough to cover a song change and short enough to be honest.
+    private static final long ALIVE_MS = 15000L;
 
     private static boolean switchOn(Context ctx) {
         try {
@@ -197,13 +210,18 @@ public class GhostHostActivity extends Activity {
         }
     }
 
-    private static boolean appAlive(Context ctx) {
+    /** The last moment the running app said it was alive, in wall-clock ms. */
+    private static long heartbeat(Context ctx) {
         try {
-            long hb = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("hb", 0);
-            return hb > 0 && (System.currentTimeMillis() - hb) <= ALIVE_MS;
+            return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("hb", 0);
         } catch (Exception e) {
-            return false;
+            return 0;
         }
+    }
+
+    private static boolean appAlive(Context ctx) {
+        long hb = heartbeat(ctx);
+        return hb > 0 && (System.currentTimeMillis() - hb) <= ALIVE_MS;
     }
 
     /** Give the press back to the widget, exactly as it was before 83.0.4. */
@@ -217,24 +235,25 @@ public class GhostHostActivity extends Activity {
         }
     }
 
-    // 83.0.7 - A HAND-BACK IS ONLY A GUESS, SO IT IS NOW THE FIRST HALF OF ONE.
-    // "SideCut is still alive" comes from a heartbeat the page writes while it runs,
-    // and that heartbeat stays fresh for 90 seconds after the process dies. Swipe the
-    // app away and press the widget straight afterwards and the press was handed to a
-    // player that no longer existed: nothing played, nothing crashed, nothing said
-    // why. The hand-back now gets 2.5 seconds to make sound, and if the phone is
-    // still quiet the hidden player starts anyway - which is what the press wanted.
+    // 83.0.8 - AND IT HAS TO BE SIDECUT THAT ANSWERS. The hand-back is a system-wide
+    // media key, so when SideCut is not the player the phone saw last, that key starts
+    // SOMEBODY ELSE: pressing this widget brought Spotify back to life instead. Worse,
+    // the old success test asked the phone "is music playing?", Spotify said yes, and
+    // the hidden player was never started. Now the hand-back is only given to SideCut
+    // when its own heartbeat says it is running, and it only counts as success when
+    // that heartbeat MOVES afterwards. Nothing else is allowed to look like success.
     private void handBackThenPlayer(final String why) {
+        final long before = heartbeat(this);
         handBack(why);
         new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
             @Override public void run() {
-                if (musicActive(GhostHostActivity.this)) {
-                    GhostDiag.note(GhostHostActivity.this, "press -> " + why + ", and it played");
+                if (heartbeat(GhostHostActivity.this) > before) {
+                    GhostDiag.note(GhostHostActivity.this, "press -> " + why + ", and SideCut answered");
                     finish();
                     return;
                 }
                 GhostDiag.note(GhostHostActivity.this,
-                        "press -> " + why + ", but nothing played - starting the hidden player");
+                        "press -> " + why + ", but SideCut did not answer - starting the hidden player");
                 startHiddenPlayer();
                 finish();
             }
@@ -263,8 +282,10 @@ public class GhostHostActivity extends Activity {
         }
 
         if (!switchOn(this)) { handBack("the switch is off"); finish(); return; }
-        if (appAlive(this)) { handBackThenPlayer("SideCut is still alive"); return; }
-        if (musicActive(this)) { handBack("music is already playing"); finish(); return; }
+
+        // 83.0.8 - ONLY SIDECUT'S OWN PRESS GOES BACK TO SIDECUT. Anything else is
+        // handed to the phone, and the phone gives it to whatever played last.
+        if (appAlive(this)) { handBackThenPlayer("SideCut is running"); return; }
 
         GhostDiag.note(this, "press -> starting the hidden player");
         startHiddenPlayer();
@@ -293,7 +314,7 @@ import android.view.View;
 import android.webkit.WebSettings;
 
 /**
- * 83.0.7 - THE HIDDEN COPY THAT MAKES THE SOUND.
+ * 83.0.8 - THE HIDDEN COPY THAT MAKES THE SOUND.
  *
  * It extends MainActivity, and that is the fix 83.0.6 was about. Capacitor builds a
  * page's plugin list when the activity creates its bridge, and this app registers its
@@ -317,7 +338,7 @@ public class GhostPlayerActivity extends MainActivity {
 
     private final Runnable watch = new Runnable() {
         @Override public void run() {
-            if (musicActive() || pageSaysPlaying()) {
+            if (pageSaysPlaying() || (musicActive() && sidecutRunning())) {
                 if (!started) GhostDiag.note(GhostPlayerActivity.this, "player -> audio is playing");
                 started = true;
                 silent = 0;
@@ -349,15 +370,26 @@ public class GhostPlayerActivity extends MainActivity {
         }
     }
 
-    // 83.0.7 - the phone's own answer is not the only one. isMusicActive() is a
-    // guess about the whole device and it can be wrong while the first buffer fills
-    // or while another app is winding down. The page knows for certain that its
-    // play() resolved, so it says so, and that counts - otherwise the player would
-    // "give up" over music that is playing.
+    // 83.0.8 - the phone's own answer is not proof of anything: isMusicActive() reports
+    // "something is playing" for ANY app, and answering it with "so it worked" is how a
+    // press ended up crediting Spotify for SideCut's widget. The page knows for certain
+    // that its play() resolved, so that counts.
     private boolean pageSaysPlaying() {
         try {
             return getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE)
                     .getBoolean("ghostAudioOk", false);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // 83.0.8 - music being audible is not proof that it is ours: the phone reports
+    // "something is playing" for any app. Ours has the page's own report, or music plus
+    // a heartbeat SideCut is still writing.
+    private boolean sidecutRunning() {
+        try {
+            long hb = getSharedPreferences("sidecut_widget", Context.MODE_PRIVATE).getLong("hb", 0);
+            return hb > 0 && (System.currentTimeMillis() - hb) <= 15000L;
         } catch (Exception e) {
             return false;
         }
@@ -452,11 +484,11 @@ ACTIVITY_XML = """        <!-- 83.0.6 - the widget's play button lands here. A t
 PROVIDER_HELPERS = """    // ---- 83.0.6: the widget plays without opening the app ------------------
     // The switch lives in Settings -> Widget. With it on, the play button opens a
     // transparent trampoline (GhostHostActivity) that decides at the press: it hands
-    // the press back to this provider when music is playing (or the app looks alive,
-    // and then starts the hidden player if that makes no sound), and it starts the
-    // hidden player when the app is really gone. The decision is NOT made here - the
-    // widget is painted while the app is alive, so a choice made here would describe
-    // the state at the last paint, which is the bug 83.0.4 shipped.
+    // the press back to this provider only when SideCut is running, and starts the
+    // hidden player otherwise - never handing a press to the phone when SideCut is not
+    // there to answer it. The decision is NOT made here - the widget is painted while
+    // the app is alive, so a choice made here would describe the state at the last
+    // paint, which is the bug 83.0.4 shipped.
     static final String GHOST_PREFS = "sidecut_widget";
     static final String GHOST_ACTIVITY = "GhostHostActivity";
 
