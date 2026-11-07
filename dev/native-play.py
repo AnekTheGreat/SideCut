@@ -54,7 +54,7 @@ NEW_HIDDEN = (
     '        // Everything above here ends in a WebView, and the swipe that made the\n'
     '        // press necessary destroyed the WebView that was making sound. The page\n'
     '        // keeps a copy of the current song beside NativePlayService, so this press\n'
-    '        // can start native playback that the swipe cannot touch.\n'
+    '        // can start native playback the swipe cannot touch.\n'
     '        if (NativePlayService.playing(this)) {\n'
     '            GhostDiag.note(this, "press -> native is playing, pausing it");\n'
     '            NativePlayService.pause(this);\n'
@@ -84,7 +84,7 @@ MAIN_NEW = (
     '    // 83.2.0 - the app is back, so the page owns playback again. Without this the\n'
     '    // native copy would keep playing under a page that thinks it is paused.\n'
     '    @Override\n'
-    '    protected void onResume() {\n'
+    '    public void onResume() {\n'
     '        super.onResume();\n'
     '        try { NativePlayService.stopIfPlaying(this); } catch (Exception ignored) {}\n'
     '    }\n'
@@ -157,6 +157,13 @@ def main():
         main_java = main_java.replace(MAIN_OLD, MAIN_NEW, 1)
         write(MAIN, main_java)
         changed.append('stopping native when the app opens')
+    elif '    protected void onResume() {' in main_java:
+        # An earlier cut of this script wrote a protected override, and
+        # BridgeActivity.onResume is public: the weaker one is a compile error
+        # ("attempting to assign weaker access privileges"). Repair it in place.
+        write(MAIN, main_java.replace('    protected void onResume() {',
+                                      '    public void onResume() {', 1))
+        changed.append('onResume is public, as the base class requires')
 
     if changed:
         print('native-play: OK - ' + ', '.join(changed))
