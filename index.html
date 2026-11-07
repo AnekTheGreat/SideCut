@@ -5593,7 +5593,7 @@ html, body{ max-width:100%; overflow-x:hidden; }
 
     <div id="settingsPaneWidget" style="display:none;">
       <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px;">Customize the home-screen widget: twenty presets from bright to liquid glass, a Frost dial on the two glass ones, a follow-the-app-theme switch, an idle battery saver and the fine-tune palette. Changes apply to every widget you have placed; re-adding one also picks these up. Tapping the widget - or its play button - picks the song you were last playing back up where you left it.</div>
-      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">A paused song stays reachable from this widget, the lock screen and your headphones - press play there and it resumes without opening the app, even after twenty minutes or an hour. The one case that still needs the app is a phone that has killed SideCut (swiped away from recents, or short of memory): open it once and the song is back.</div>
+      <div style="font-size:11px; color:var(--ink-dim); margin-bottom:12px; line-height:1.5; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">A paused song stays reachable from this widget, the lock screen and your headphones - press play there and it resumes without opening the app, even after twenty minutes or an hour. If the phone has thrown SideCut away entirely, <b>Play without opening the app</b> below decides what happens: on, the widget starts a hidden copy that plays with nothing on screen; off, the app opens and picks the song up. It needs the newest Android build - this half is native.</div>
       <div id="widgetThemeGrid" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; margin-bottom:16px;"></div>
       <div id="widgetFrostRow" style="display:none; margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
         <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px;">
@@ -5633,6 +5633,15 @@ html, body{ max-width:100%; overflow-x:hidden; }
             <option value="0">Never</option>
           </select>
         </div>
+      </div>
+      <div id="widgetGhostRow" style="margin-bottom:16px; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:12px; padding:12px 14px;">
+        <label for="widgetGhostToggle" style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+          <input type="checkbox" id="widgetGhostToggle" style="width:18px; height:18px; margin:1px 0 0; flex:0 0 auto; accent-color:var(--gold);">
+          <span>
+            <span style="font-size:13px; font-weight:600;">Play without opening the app</span>
+            <span style="display:block; font-size:11px; color:var(--ink-dim); margin-top:4px; line-height:1.5;">When SideCut has been swiped away or put to sleep, the widget's play button starts a hidden copy of the player that plays your last song and shows nothing at all &mdash; the screen stays where it is. It only does this when the app is really gone: if SideCut is still alive behind the widget, the press goes to the running player as it always did, and the hidden copy closes itself when the music stops. Off by default.</span>
+          </span>
+        </label>
       </div>
       <div id="widgetCustomWrap" style="margin-bottom:16px;">
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Fine-tune</div>
@@ -9581,6 +9590,28 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         barsTog.addEventListener('change', () => {
           setWidgetBars(barsTog.checked);
           toast(barsTog.checked ? 'Playing bars on' : 'Playing bars hidden');
+        });
+      }
+    }
+    // 83.0.4 - THE SWITCH THAT LETS THE WIDGET START MUSIC WITH NOTHING ON SCREEN.
+    // The choice is kept on the page so the switch remembers itself even on a build
+    // without the native host, and it is written to the widget's own preferences so
+    // the provider can choose the hidden host over opening the app.
+    const ghostTog = $('widgetGhostToggle');
+    if(ghostTog){
+      try{ ghostTog.checked = localStorage.getItem('sidecut_ghost_play') === '1'; }catch(_eGhostRead){}
+      if(!ghostTog._scWired){
+        ghostTog._scWired = true;
+        ghostTog.addEventListener('change', () => {
+          const on = !!ghostTog.checked;
+          try{ localStorage.setItem('sidecut_ghost_play', on ? '1' : '0'); }catch(_eGhostWrite){}
+          try{
+            const C = window.Capacitor;
+            const P = C && C.Plugins && C.Plugins.SideCutWidget;
+            if(P && typeof P.setGhostPlay === 'function') P.setGhostPlay({ on: on }).catch(function(){});
+            else if(C && typeof C.nativePromise === 'function') C.nativePromise('SideCutWidget', 'setGhostPlay', { on: on }).catch(function(){});
+          }catch(_eGhostNative){}
+          toast(on ? 'The widget starts music on its own now' : 'The widget opens the app to play');
         });
       }
     }
@@ -20613,7 +20644,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.0.3';
+  const APP_VERSION = '83.0.4';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21323,6 +21354,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  { version: '83.0.4', date: 'November 7, 2026 · 3:05 PM EST', title: 'The widget plays without opening the app', items: [
+    'The play button on the home-screen widget can now start your last song with nothing on screen, even after SideCut has been swiped away from recents.',
+    'It is a switch, off by default: Settings, Widget, "Play without opening the app". With it off the widget opens the app exactly as before.',
+    'It only steps in when the app is really gone. If SideCut is still alive behind the widget, the press goes to the running player - no second copy, no double audio.',
+    'The hidden copy shows nothing, sits in no recents list, and closes itself when the music stops or when there is nothing to pick back up.',
+    'This half is native, so it arrives with the new Android build rather than over the air. The switch itself is in the page, so it shows up on its own.'
+  ]},
   { version: '83.0.3', date: 'November 7, 2026 · 1:20 PM EST', title: 'A paused song answers the headphones and the widget again', items: [
     'Press play on your earbuds after twenty minutes away and the song starts again, instead of nothing answering.',
     'Parked is not silent any more: while a song sits on the deck, the player behind the lock screen, the shade and the widget is kept warm once a minute, so the press always has something live to land on.',
