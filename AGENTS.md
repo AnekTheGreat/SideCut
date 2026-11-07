@@ -1,5 +1,11 @@
 # SideCut — repository memory
 
+## 83.2.3 (November 7, 2026 · 7:07 PM EDT): UNote is on the list
+
+- **WHAT CHANGED.** Settings → Other apps has a fourth card. UNote is a notebook: plain notes, `[[links]]` between them with backlinks and a graph, folders and tags, and a Vault that asks for a PIN you choose on first launch and keeps what is inside encrypted on the device.
+- **WHY IT SAYS OPEN, NOT GET.** The other three cards are store pages. UNote is a page of its own: the link opens in the phone's own browser and can be added to the home screen from there, so the card does not pretend a store listing exists. The line under the list already says a link opens in the browser.
+- **CHECKS.** `dev/patch-8323.py --check` exits 1 before the payload and 0 after it, a second run is a no-op, and all four edits land in one pass: the card above the footnote, `Three more` becoming `Four more`, the version line, and the changelog entry. The card is inside `#settingsPaneOther`, above the line that explains where a link goes. The service-worker cache moves to 83.2.3. Rebuilt bundles: 1235701 bytes on the full channel, 1235711 on the store build.
+- **NOT CLAIMED.** No phone has opened this tab. What is proven is that the card is in the page the OTA delivers, points at a live URL, and that the rest of the tab is untouched.
 ## 83.2.2 (November 7, 2026 · 5:39 PM EDT): a bad copy can no longer swallow the press
 
 - **WHY 83.2.1 STILL LOOKED BROKEN.** 83.2.1 fixed the writer; it did not touch the copy already on the phone. The 1.6 MB of base64 text that 83.2.0 saved was still at `files/np/current.mp3`, and `NativePlayService.audioFile()` only asked two questions - does it exist, is it longer than zero bytes - and garbage answers yes to both. So the press still routed to the native player, the player still started, `MediaPlayer` still refused the file, and the press still ended in silence. Nothing about 83.2.1 could be seen on a phone that had already been through 83.2.0.
