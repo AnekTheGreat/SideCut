@@ -112,9 +112,16 @@ jobs:
       - name: Route the widget press without the phone's media keys (83.1.0)
         # A resume must never travel as AudioManager.dispatchMediaKeyEvent: that key
         # reaches whichever player the phone saw last, so a press could start another
-        # app or reach nobody at all. A dev/ script like the two above, and last of
-        # the native patches because it edits the files dev/ghost-host.py generates.
+        # app or reach nobody at all. A dev/ script like the two above, and before the
+        # native player because they both edit GhostHostActivity.
         run: python3 dev/ghost-route.py
+      - name: Give the widget a real player instead of a hidden window (83.2.0)
+        # Every player here until now was a WebView, and the recents swipe destroys
+        # the WebView that was making sound - which is why a press could play nothing
+        # no matter how it was routed. This one is MediaPlayer in a foreground service,
+        # which the swipe does not remove. It runs last of the native patches because
+        # it edits the files the three above generate.
+        run: python3 dev/native-play.py
       - name: Inject the audio-focus plugin (calls / headset takeovers)
         run: python3 .github/workflows/patch-audiofocus.py
       - name: Inject the conversion job hold (wake lock + dataSync foreground service)
