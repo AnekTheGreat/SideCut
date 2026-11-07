@@ -20686,7 +20686,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.0.6';
+  const APP_VERSION = '83.0.7';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21396,6 +21396,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  { version: '83.0.7', date: 'November 7, 2026 · 4:55 AM EST', title: 'The press stops lying about what it did', items: [
+    'If the app looks alive but nothing plays within a couple of seconds, the press now starts the hidden player anyway instead of handing it to a player that is already gone.',
+    'The hidden player asks for the song four times as the library loads, and asking no longer uses the request up - a press that arrived a moment too early used to be lost for good.',
+    'The page now reports each step of a resume: nothing queued, the song has no file, pressing play, playing. That report is what the trail on Settings, Widget and the phone notification are made of.',
+    'This half is native: install the newest Android build for it.'
+  ]},
   { version: '83.0.6', date: 'November 7, 2026 · 3:40 AM EST', title: 'The hidden player gets the app\'s own bridge', items: [
     'The hidden player now starts as SideCut itself, so the page inside it has the widget plugin it needs to learn that a song was waiting - that was why the press still did nothing.',
     'Settings, Widget now shows what the last press did: the switch state, the branch it took, whether the player booted and whether any audio arrived.',
@@ -38537,12 +38543,28 @@ function _fallbackCopy(text){
   // - which is why pressing play on the widget used to open the app and then sit
   // there paused. The restore already knows the song and the position (it is the
   // same state the boot cue uses); this only has to press play.
+  // 83.0.7 - THE PAGE'S HALF OF THE STORY. A resume that quietly found nothing to
+  // play looked exactly like a press that never arrived: both were silence. Every
+  // step that can fail now says so - it lands in the trail on Settings -> Widget and
+  // on the phone's shade - so "it does not work" can turn into "it stopped here".
+  function scGhostStep(txt){
+    try{
+      var C = window.Capacitor;
+      var P = C && C.Plugins && C.Plugins.SideCutWidget;
+      var args = { step: String(txt || '') };
+      if(P && typeof P.ghostStep === 'function') P.ghostStep(args).catch(function(){});
+      else if(C && typeof C.nativePromise === 'function') C.nativePromise('SideCutWidget', 'ghostStep', args).catch(function(){});
+    }catch(_eGhostStep){}
+  }
   var scWidgetResumeBusy = false;
   var scWidgetResumeSeen = false;
   function scWidgetBridge(){
     try{
       var P = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SideCutWidget) || null;
       var nat = (window.Capacitor && typeof window.Capacitor.nativePromise === 'function') ? window.Capacitor : null;
+      if(P && typeof P.ghostAskResume === 'function'){
+        return Promise.resolve(P.ghostAskResume({})).catch(function(){ return null; });
+      }
       if(P && typeof P.getPendingResume === 'function'){
         return Promise.resolve(P.getPendingResume({})).catch(function(){ return null; });
       }
@@ -38557,9 +38579,9 @@ function _fallbackCopy(text){
       // 80.7.2 - the press from the widget, the lock screen or the now bar
       // resumes the song that is actually on the bar, streamed or not.
       if(typeof scStreamResumeFromPhone === 'function' && scStreamResumeFromPhone()) return true;
-      if(queueIndex < 0 || queueIndex >= queue.length) return false;
+      if(queueIndex < 0 || queueIndex >= queue.length){ scGhostStep("nothing queued to resume"); return false; }
       var t = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; });
-      if(!t || !t.file || !t.url) return false;
+      if(!t || !t.file || !t.url){ scGhostStep('the queued song has no file loaded'); return false; }
       var a = activeAudio();
       // A song that had already finished is started over, not left at its end:
       // play() on an element parked at duration ends on the first tick.
@@ -38570,7 +38592,9 @@ function _fallbackCopy(text){
       if(audioCtx && audioCtx.state === 'suspended'){ audioCtx.resume().catch(function(){}); }
       if(window.__scMark){ __scMark('resuming from the widget'); setTimeout(function(){ if(window.__scMarkDone) __scMarkDone(); }, 4000); }
       $('playPauseBtn').classList.remove('pulse-cue');
-      a.play().catch(function(){ recoverAudio(a, 'widget resume rejected'); });
+      scGhostStep('found "' + t.name + '", pressing play');
+      a.play().then(function(){ scGhostStep('playing "' + t.name + '"'); })
+              .catch(function(){ scGhostStep('the phone refused the play'); recoverAudio(a, 'widget resume rejected'); });
       // Everything a normal play does to the screen and to the phone: the now bar,
       // the widget's own state push, and the notification / lock-screen player -
       // which only exists while the app is PLAYING, so the resume has to say so.
@@ -43961,7 +43985,13 @@ function _fallbackCopy(text){
         // playing). Delayed a moment so the native bridge is up and the restored
         // source has had time to resolve; with no request this does nothing and the
         // "Tap play to pick back up" cue stays exactly as it was.
-        setTimeout(function(){ try{ scWidgetResumeCheck(); }catch(_eWr){} }, 700);
+        // 83.0.7 - ONE ASK WAS NOT ENOUGH. A hidden boot has to hydrate the
+        // library out of the database before there is a queue to resume, so a press
+        // that asked at 700 ms could read the request and find nothing to play. The
+        // request is no longer consumed by asking, which makes asking again safe.
+        [700, 2500, 5000, 8000].forEach(function(ms){
+          setTimeout(function(){ try{ scWidgetResumeCheck(); }catch(_eWr){} }, ms);
+        });
       }
       // Small delay so the "what's new" popup reads as a deliberate moment
       // once the library/UI has settled, rather than flashing in instantly
