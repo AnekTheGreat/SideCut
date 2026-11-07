@@ -20686,7 +20686,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.0.8';
+  const APP_VERSION = '83.0.9';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21396,6 +21396,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  { version: '83.0.9', date: 'November 7, 2026 · 6:05 AM EST', title: 'The widget press actually plays', items: [
+    'The resume pressed play on an element it had never loaded, so a press after the app was swiped away could only ever be silence: the song file was there, but nothing had put it on the deck.',
+    'It now puts the song on the deck first, remakes the audio URL if the phone reclaimed it, and tries again instead of giving up on the first refusal.',
+    'A press that arrives while the library is still loading is no longer thrown away: the app keeps trying for about forty seconds until music is really playing.',
+    'This half is the page; install the newest Android build for the native half.'
+  ]},
   { version: '83.0.8', date: 'November 7, 2026 · 5:20 AM EST', title: 'The widget only ever plays SideCut', items: [
     'Pressing the widget with SideCut gone could start Spotify: the press was handed back to the phone as a system-wide play key, and that key goes to whichever player the phone saw last.',
     'That hand-back now only happens when SideCut itself is demonstrably running, and it counts as success only if SideCut answers - never because some other app started making noise.',
@@ -38578,17 +38584,38 @@ function _fallbackCopy(text){
     }catch(e){}
     return Promise.resolve(null);
   }
-  // Press play on whatever the restore put on the deck, at the position it was
-  // left at. Returns true when a song was actually startable.
+  // 83.0.9 - A PRESS IS A PLAY, NOT A GUESS AT A SONG.
+  //
+  // This used to call play() on whatever the restore had left on the deck. On a fresh
+  // process the restore gives up on a song with no object URL, so the element sits there
+  // with no src, play() rejects, and the press is silent - which is what four builds in a
+  // row reported. The song's File is still in the library, so the URL is remade here and
+  // the element is loaded before it is asked to play.
+  //
+  // Nothing in here reports a failure to the native side. A miss is not a verdict: the
+  // caller keeps asking until audio is really playing (scResumePollStart below), and only
+  // an actual "playing ..." report settles the request.
   function scResumeRestoredSong(){
     try{
       // 80.7.2 - the press from the widget, the lock screen or the now bar
       // resumes the song that is actually on the bar, streamed or not.
       if(typeof scStreamResumeFromPhone === 'function' && scStreamResumeFromPhone()) return true;
-      if(queueIndex < 0 || queueIndex >= queue.length){ scGhostStep("nothing queued to resume"); return false; }
+      if(queueIndex < 0 || queueIndex >= queue.length) return false;
       var t = allTracks.find(function(tr){ return tr.id === queue[queueIndex]; });
-      if(!t || !t.file || !t.url){ scGhostStep('the queued song has no file loaded'); return false; }
+      if(!t || !t.file) return false;
       var a = activeAudio();
+      if(!a) return false;
+      // Put the song on the element. A blob URL can also be dead after the app was
+      // away (the OS reclaims it), so the URL is remade whenever the element is not
+      // already holding this song.
+      try{
+        if(!t.url || a.error || a.src !== t.url){
+          if(t.url && a.src !== t.url){ try{ URL.revokeObjectURL(t.url); }catch(_eRv1){} t.url = null; }
+          if(!t.url){ try{ t.url = URL.createObjectURL(t.file); }catch(_eMk1){ t.url = null; } }
+          if(t.url && a.src !== t.url) a.src = t.url;
+        }
+      }catch(_eSrc){}
+      if(!a.src) return false;
       // A song that had already finished is started over, not left at its end:
       // play() on an element parked at duration ends on the first tick.
       if(a.duration && a.currentTime >= a.duration - 0.5) a.currentTime = 0;
@@ -38596,19 +38623,39 @@ function _fallbackCopy(text){
       // is over.
       userPaused = false;
       if(audioCtx && audioCtx.state === 'suspended'){ audioCtx.resume().catch(function(){}); }
-      if(window.__scMark){ __scMark('resuming from the widget'); setTimeout(function(){ if(window.__scMarkDone) __scMarkDone(); }, 4000); }
       $('playPauseBtn').classList.remove('pulse-cue');
-      scGhostStep('found "' + t.name + '", pressing play');
-      a.play().then(function(){ scGhostStep('playing "' + t.name + '"'); })
-              .catch(function(){ scGhostStep('the phone refused the play'); recoverAudio(a, 'widget resume rejected'); });
-      // Everything a normal play does to the screen and to the phone: the now bar,
-      // the widget's own state push, and the notification / lock-screen player -
-      // which only exists while the app is PLAYING, so the resume has to say so.
       try{ updateNowPlayingUI(t); }catch(_eUi){}
-      try{ mediaSetPlaybackState('playing'); }catch(_eMs){}
-      toast('Picked back up on "' + t.name + '"', 2600);
-      if(window.__scWidgetResumed === undefined) window.__scWidgetResumed = 0;
-      window.__scWidgetResumed++;
+      var started = function(){
+        scGhostStep('playing "' + t.name + '"');
+        // Everything a normal play does to the screen and to the phone: the now
+        // bar, the widget's own state push, and the notification / lock-screen
+        // player - which only exists while the app is PLAYING, so the resume has
+        // to say so. The widget push also refreshes the heartbeat, which is what
+        // tells the hidden player its sound is real.
+        try{ mediaSetPlaybackState('playing'); }catch(_eMs){}
+        try{ pushWidgetState(t, true); }catch(_ePush){}
+        toast('Picked back up on "' + t.name + '"', 2600);
+        window.__scWidgetResumed = (window.__scWidgetResumed || 0) + 1;
+      };
+      var attempt = function(first){
+        try{
+          var p = a.play();
+          if(p && typeof p.then === 'function'){
+            p.then(started).catch(function(){
+              if(!first) return;   // one rebuild per attempt - the caller retries
+              // A rejected play on a dead blob: remake it and try once more, or the
+              // retry would keep hammering the same dead URL.
+              try{ URL.revokeObjectURL(t.url); }catch(_eRv2){}
+              try{ t.url = URL.createObjectURL(t.file); a.src = t.url; }catch(_eMk2){ return; }
+              try{
+                var q = a.play();
+                if(q && typeof q.then === 'function') q.then(started).catch(function(){});
+              }catch(_eQ){}
+            });
+          } else started();
+        }catch(_ePlay){}
+      };
+      attempt(true);
       return true;
     }catch(_eRes){ return false; }
   }
@@ -38624,13 +38671,41 @@ function _fallbackCopy(text){
       scWidgetResumeBusy = true;
       scWidgetBridge().then(function(res){
         scWidgetResumeBusy = false;
-        if(!res || !res.resume) return;
-        if(!scResumeRestoredSong()) toast('Nothing to pick back up yet - play a song first.', 3000);
+        // 83.0.9 - nothing to resume YET is not nothing to resume: the queue is
+        // rebuilt from the database during boot, so this keeps asking instead of
+        // telling the listener their press did nothing.
+        if(!res || !res.resume){ scResumePollStop(); return; }
+        scResumeRestoredSong();
+        scResumePollStart();
       }).catch(function(){ scWidgetResumeBusy = false; });
     }catch(_eChk){ scWidgetResumeBusy = false; }
   }
   window.__scWidgetResumeCheck = scWidgetResumeCheck;
   window.__scWidgetResumeRestored = scResumeRestoredSong;
+  // 83.0.9 - THE PRESS THAT ARRIVED A SECOND TOO EARLY IS THE NORMAL ONE.
+  //
+  // A cold boot has to hydrate the library out of the database before there is a queue
+  // to resume. The old four asks were a guess at how long that takes, and the first miss
+  // used to delete the request outright. Now the page asks again, every 600 ms, until
+  // audio is actually playing (or about 40 s have gone by), and a miss costs nothing.
+  var scResumePoll = null;
+  var scResumePolls = 0;
+  function scResumePollStop(){
+    if(scResumePoll){ try{ clearInterval(scResumePoll); }catch(_eSp){} scResumePoll = null; }
+  }
+  function scResumePollStart(){
+    if(scResumePoll) return;
+    scResumePolls = 0;
+    scResumePoll = setInterval(function(){
+      scResumePolls++;
+      var playingNow = false;
+      try{ playingNow = !activeAudio().paused; }catch(_ePp){ playingNow = false; }
+      // 67 ticks is a little over 40 s: long enough for a cold library, short
+      // enough that a press which cannot play does not keep a ghost alive.
+      if(playingNow || scResumePolls > 67){ scResumePollStop(); return; }
+      try{ scWidgetResumeCheck(); }catch(_ePc){}
+    }, 600);
+  }
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState !== 'visible') return;
     // Debounced like the other resume paths: a phone being folded and unfolded
