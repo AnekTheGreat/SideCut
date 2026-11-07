@@ -5643,6 +5643,7 @@ html, body{ max-width:100%; overflow-x:hidden; }
           </span>
         </label>
       </div>
+      <div id="widgetGhostDiag" style="display:none; margin:-6px 0 16px; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:10px; font-size:11px; color:var(--ink-dim); line-height:1.6; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;"></div>
       <div id="widgetCustomWrap" style="margin-bottom:16px;">
         <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Fine-tune</div>
         <div id="widgetCustomColors" style="display:grid; grid-template-columns:1fr 1fr; gap:10px 14px;"></div>
@@ -9630,6 +9631,32 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
         });
       }
     }
+    // 83.0.6 - WHAT THE LAST WIDGET PRESS ACTUALLY DID. The native half leaves a
+    // breadcrumb on every branch it takes; this shows it under the switch. It is the
+    // difference between "it does not work" and knowing which step stopped.
+    function ghostDiagShow(txt, on){
+      const el = $('widgetGhostDiag');
+      if(!el) return;
+      if(!txt){ el.style.display = 'none'; el.textContent = ''; return; }
+      el.style.display = 'block';
+      el.textContent = 'Last widget press - switch ' + (on ? 'on' : 'off') + '\n' + txt;
+    }
+    function ghostDiagRefresh(){
+      try{
+        const C = window.Capacitor;
+        const P = C && C.Plugins && C.Plugins.SideCutWidget;
+        const done = (v) => { if(v && typeof v.diag === 'string') ghostDiagShow(v.diag, !!v.on); };
+        if(P && typeof P.getGhostDiag === 'function') P.getGhostDiag({}).then(done).catch(function(){});
+        else if(C && typeof C.nativePromise === 'function') C.nativePromise('SideCutWidget', 'getGhostDiag', {}).then(done).catch(function(){});
+      }catch(_eGhostDiag){}
+    }
+    try{
+      const wt = $('settingsTabWidget');
+      if(wt && !wt._scDiagWired){
+        wt._scDiagWired = true;
+        wt.addEventListener('click', function(){ setTimeout(ghostDiagRefresh, 200); });
+      }
+    }catch(_eGhostDiagTab){}
     // 80.3.6 - the two options this release adds, wired the same way.
     const followTog = $('widgetFollowToggle');
     if(followTog){
@@ -20659,7 +20686,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.0.5';
+  const APP_VERSION = '83.0.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21369,6 +21396,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  { version: '83.0.6', date: 'November 7, 2026 · 3:40 AM EST', title: 'The hidden player gets the app\'s own bridge', items: [
+    'The hidden player now starts as SideCut itself, so the page inside it has the widget plugin it needs to learn that a song was waiting - that was why the press still did nothing.',
+    'Settings, Widget now shows what the last press did: the switch state, the branch it took, whether the player booted and whether any audio arrived.',
+    'If the hidden player cannot start a sound, it opens the app within a few seconds instead of waiting twenty.',
+    'This half is native: install the newest Android build for it.'
+  ]},
   { version: '83.0.5', date: 'November 7, 2026 · 2:20 AM EST', title: 'The widget plays without opening the app, for real', items: [
     'The switch in Settings, Widget now tells the truth: if this Android build has no hidden player, flipping it says so instead of quietly saving a choice nothing acts on.',
     'The press on the widget decides what to do when you press it, not when the widget was last drawn - which is why the first attempt could still open the app.',
