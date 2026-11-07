@@ -9611,7 +9611,22 @@ let albumReorderTarget = null; // album name when reordering songs within an alb
             if(P && typeof P.setGhostPlay === 'function') P.setGhostPlay({ on: on }).catch(function(){});
             else if(C && typeof C.nativePromise === 'function') C.nativePromise('SideCutWidget', 'setGhostPlay', { on: on }).catch(function(){});
           }catch(_eGhostNative){}
-          toast(on ? 'The widget starts music on its own now' : 'The widget opens the app to play');
+          // 83.0.5 - A SWITCH MUST NOT LIE. The setting lives in this page, so it
+          // appears on any build; the hidden player only exists in a build that
+          // carries it. The choice is written, then read back from the widget's own
+          // preferences, and the toast reports what the phone can actually do.
+          const ghostSaid = (confirmed) => {
+            if(!confirmed) toast('Saved, but this Android build has no hidden player - install the new SideCut build');
+            else toast(on ? 'The widget starts music on its own now' : 'The widget opens the app to play');
+          };
+          try{
+            const G = window.Capacitor;
+            const GP = G && G.Plugins && G.Plugins.SideCutWidget;
+            const ghostReadBack = (v) => ghostSaid(!!v && (v.on === on || v === on));
+            if(GP && typeof GP.getGhostPlay === 'function') GP.getGhostPlay({}).then(ghostReadBack).catch(function(){ ghostSaid(false); });
+            else if(G && typeof G.nativePromise === 'function') G.nativePromise('SideCutWidget', 'getGhostPlay', {}).then(ghostReadBack).catch(function(){ ghostSaid(false); });
+            else ghostSaid(false);
+          }catch(_eGhostVerify){ ghostSaid(false); }
         });
       }
     }
@@ -20644,7 +20659,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.0.4';
+  const APP_VERSION = '83.0.5';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21354,6 +21369,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+  { version: '83.0.5', date: 'November 7, 2026 · 2:20 AM EST', title: 'The widget plays without opening the app, for real', items: [
+    'The switch in Settings, Widget now tells the truth: if this Android build has no hidden player, flipping it says so instead of quietly saving a choice nothing acts on.',
+    'The press on the widget decides what to do when you press it, not when the widget was last drawn - which is why the first attempt could still open the app.',
+    'When the hidden player never manages to start a sound, the press now opens the app instead of doing nothing at all.',
+    'This half is native: install the newest Android build for it.'
+  ]},
   { version: '83.0.4', date: 'November 7, 2026 · 3:05 PM EST', title: 'The widget plays without opening the app', items: [
     'The play button on the home-screen widget can now start your last song with nothing on screen, even after SideCut has been swiped away from recents.',
     'It is a switch, off by default: Settings, Widget, "Play without opening the app". With it off the widget opens the app exactly as before.',
