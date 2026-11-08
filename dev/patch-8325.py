@@ -9,6 +9,9 @@ packages answer with Play's not-found page. 83.2.5 gives the five cards the same
 one-line descriptions and the same addresses the rest of the family uses, and every card opens a page
 that answers today.
 
+--check says whether the tree ALREADY carries the change, which is what the release asks it before
+deciding there is nothing to do.
+
     python3 dev/patch-8325.py            # apply
     python3 dev/patch-8325.py --check    # verify only, writes nothing
 """
@@ -130,8 +133,9 @@ def main():
         sys.exit("; ".join(bad))
 
     if check:
+        if touched:
+            sys.exit("the tree does not carry %s yet (%s)" % (V, ", ".join(touched)))
         print("all %d checks pass - the tree carries SideCut %s" % (len(probes), V))
-        print("untouched this run" if not touched else "applied: " + ", ".join(touched))
         return
 
     write(PAGE, page)
