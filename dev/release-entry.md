@@ -1,6 +1,6 @@
-## 83.2.3 ({{STAMP}}): UNote is on the list
+## 83.2.4 ({{STAMP}}): UNote moved to its own place
 
-- **WHAT CHANGED.** Settings → Other apps has a fourth card. UNote is a notebook: plain notes, `[[links]]` between them with backlinks and a graph, folders and tags, and a Vault that asks for a PIN you choose on first launch and keeps what is inside encrypted on the device.
-- **WHY IT SAYS OPEN, NOT GET.** The other three cards are store pages. UNote is a page of its own: the link opens in the phone's own browser and can be added to the home screen from there, so the card does not pretend a store listing exists. The line under the list already says a link opens in the browser.
-- **CHECKS.** `dev/patch-8323.py --check` exits 1 before the payload and 0 after it, a second run is a no-op, and all four edits land in one pass: the card above the footnote, `Three more` becoming `Four more`, the version line, and the changelog entry. The card is inside `#settingsPaneOther`, above the line that explains where a link goes. The service-worker cache moves to 83.2.3. Rebuilt bundles: {{ROOT}} bytes on the full channel, {{PLAY}} on the store build.
-- **NOT CLAIMED.** No phone has opened this tab. What is proven is that the card is in the page the OTA delivers, points at a live URL, and that the rest of the tab is untouched.
+- **WHAT CHANGED.** The UNote card in Settings → Other apps opens `https://anekthegreat.github.io/UNote/` instead of the host it was first tried on. Same card, same wording, same Open it.
+- **WHY.** UNote lives in its own repository now, and that repository publishes both the page and an APK, rebuilt on every push. A card that pointed at a host which was only ever a stopover would rot the moment that host changed.
+- **CHECKS.** `dev/patch-8324.py --check` exits 1 before the payload and 0 after it, a second run changes nothing, and the page diff is four lines: the card's `href` and `APP_VERSION`. The card sits inside `#settingsPaneOther`, and the wording around it - `Four more`, `Open it` - is untouched. Rebuilt bundles: {{ROOT}} bytes on the full channel, {{PLAY}} on the store build.
+- **NOT CLAIMED.** No phone has tapped the new link. What is proven is that the page the OTA delivers carries the repository URL, and that the repository URL is the app.
