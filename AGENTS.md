@@ -1,5 +1,12 @@
 # SideCut — repository memory
 
+## 83.2.4 (November 7, 2026 · 9:27 PM EDT): UNote moved to its own place
+
+- **WHAT CHANGED.** The UNote card in Settings → Other apps opens `https://anekthegreat.github.io/UNote/` instead of the host it was first tried on. Same card, same wording, same Open it. There is a changelog entry for it, which is also what names this release.
+- **WHY.** UNote lives in its own repository now, and that repository publishes both the page and an APK, rebuilt on every push. A card pointing at a host that was only ever a stopover would rot the moment the host changed.
+- **CHECKS.** `dev/patch-8324.py --check` exits 1 before the payload and 0 after it, and a second run changes nothing. The page diff is six lines: the card's `href`, `APP_VERSION`, and a three-line changelog entry above 83.2.3. All ten script blocks in the page were extracted and passed `node --check`, and the release step's own changelog lookup was replayed under `set -euo pipefail` and returned the title. Rebuilt bundles: 1235486 bytes on the full channel, 1235496 on the store build.
+- **WHY THERE IS AN ENTRY THIS TIME.** The first attempt at 83.2.4 shipped no changelog entry, and the commit step reads the release title out of the changelog: `grep` found nothing, `pipefail` turned that into a failure, and the release stopped before it could commit. The page was fine; the payload was incomplete.
+- **NOT CLAIMED.** No phone has tapped the new link. What is proven is that the page the OTA delivers carries the repository URL, and that the repository URL is the app.
 ## 83.2.3 (November 7, 2026 · 7:07 PM EDT): UNote is on the list
 
 - **WHAT CHANGED.** Settings → Other apps has a fourth card. UNote is a notebook: plain notes, `[[links]]` between them with backlinks and a graph, folders and tags, and a Vault that asks for a PIN you choose on first launch and keeps what is inside encrypted on the device.
