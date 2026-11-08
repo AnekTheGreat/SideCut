@@ -1,5 +1,11 @@
 # SideCut — repository memory
 
+## 83.2.5 (November 7, 2026 · 11:18 PM EDT): My Hub is on the shelf
+
+- **WHAT CHANGED.** Settings → Other apps carries five cards now: FamTM, UJournal, MeasureT, My Hub and UNote, in the order the other apps list them, with the same one-line descriptions. My Hub is the one app the shelf was missing. Four of the five cards had been opening Play listings that are not up yet - `com.FamTM.app`, `app.ujournal`, `com.CompassEDC.myapp` and `app.unote` all answer with Play's own not-found page - so FamTM, UJournal and My Hub open the release they install from, MeasureT and UNote open their own page, and SideCut keeps its Play link because `com.SideCut.myapp` is the one listing that is live. The line over the cards says five more, the line under them says nothing is downloaded from here, and the changelog entry names the release.
+- **WHY.** A shelf that lists four of the five siblings and half of its taps land on a page that says the app does not exist is worse than no shelf: it reads as if those apps were never made. Every card now opens something that answers today, and the list matches the shelves inside the other five apps.
+- **CHECKS.** `dev/patch-8325.py --check` exits 1 before the payload and 0 after it, and a second run changes nothing; the diff is one hunk of the Other apps pane, `APP_VERSION` and a three-line changelog entry. The pane as patched carries zero `play.google.com` links other than SideCut's own, names My Hub, and carries the five addresses. Rebuilt bundles: 1235975 bytes on the full channel, 1235986 on the store build.
+- **NOT CLAIMED.** No phone has tapped the new cards. What is proven is that the page the OTA delivers carries the five cards and their addresses, and that each address answers with a 200.
 ## 83.2.4 (November 7, 2026 · 9:27 PM EDT): UNote moved to its own place
 
 - **WHAT CHANGED.** The UNote card in Settings → Other apps opens `https://anekthegreat.github.io/UNote/` instead of the host it was first tried on. Same card, same wording, same Open it. There is a changelog entry for it, which is also what names this release.
