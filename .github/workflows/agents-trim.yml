@@ -1,0 +1,30 @@
+name: Trim the 83.2.6 memory entry
+
+# A memory edit the release path cannot carry: AGENTS.md is 1.3 MB, and a file that size
+# cannot travel as an API argument. The script is small and idempotent, so this runs it
+# over the checked-out tree and commits the result.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  trim:
+    name: Remove the quote and the named act from 83.2.6
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trim the entry
+        run: python3 dev/agents-trim-8326.py
+
+      - name: Commit and push
+        run: |
+          git config user.name 'SideCut'
+          git config user.email 'actions@users.noreply.github.com'
+          git add AGENTS.md dev/agents-trim-8326.py
+          if git diff --cached --quiet; then echo 'nothing to commit'; exit 0; fi
+          git commit -m 'AGENTS: the 83.2.6 entry no longer quotes the report or names the act'
+          git push
