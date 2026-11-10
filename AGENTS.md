@@ -1,5 +1,12 @@
 # SideCut — repository memory
 
+## 83.2.7 (November 10, 2026 · 7:52 AM EDT): A quiet refresh
+
+- **WHAT CHANGED.** The version moves to 83.2.7 and the service-worker cache moves with it. Nothing in the app behaves differently, and there is no note to read: the changelog entry for this release is marked `silent`, so What's new stays shut and the notes for 83.2.6 do not come back with the new version.
+- **WHY.** An update that only exists to refresh the cache should not announce itself. The version has to move for an installed copy to pick the bundle up, so what changed is the two numbers that make that happen and nothing else.
+- **NOTE STYLE.** A release entry no longer opens with a quotation of the report that prompted it. It says what changed and why, in the repository's own words.
+- **CHECKS.** `dev/patch-8327.py --check` exits 1 before the payload and 0 after it, and a second run is a no-op; the diff is `APP_VERSION`, one changelog entry marked silent, the two lines that keep that entry out of every notes surface, and the cache name. All script blocks of the patched page parse. Rebuilt bundles: 1238571 bytes on the full channel, 1238587 on the store build.
+- **NOT CLAIMED.** No phone has booted 83.2.7. What is proven is that the page carries the silent entry and that no notes surface can show it.
 ## 83.2.6 (November 10, 2026 · 7:34 AM EDT): The right artist, and a check that runs on its own
 
 - **WHAT THE OWNER SAID.** *"fix the looking for a new release - it should do that in the background then notify you about it ... if the artist name is SUKHA it should just get me songs from the dude named SUKHA in the right genre, it should not add anything like SUKHA MANN."*
