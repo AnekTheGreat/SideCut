@@ -7478,16 +7478,18 @@ window.__scActWords = /\b(tribute|karaoke|cover|remix|remixed|mix|live|band|orch
 // Is this credit one of ours? An exact name, or a whole-word prefix of it, so
 // "Karan Aujla" is the same artist as "Karan" — but never a substring inside a
 // word, which is how "Karan Aujla Tribute Band" used to pass for Karan Aujla.
+// IS THIS THE SAME ARTIST? The names have to MATCH, whole. 83.2.6 made this exact:
+// it used to accept a whole-word prefix, so a pinned "Sukha" treated "Sukha Mann",
+// "Sukha Dhal" and every other Sukha as the same person and filed their releases under
+// your artist. Two spellings of one name (a leading "The", punctuation, case) still
+// match; anything with words added to it is somebody else and is refused.
 window.__scSameArtistName = function(a, b){
-  var n = function(s){ return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+  var n = function(s){ return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/^the /, ''); };
   var x = n(a), y = n(b);
   if(!x || !y) return false;
-  if(x === y) return true;
-  var longer = (x + ' ').indexOf(y + ' ') === 0 ? x : ((y + ' ').indexOf(x + ' ') === 0 ? y : '');
-  if(!longer) return false;
-  // The longer credit has to be the same name, not the same name plus an act.
-  return !window.__scActWords.test(longer);
+  return x === y;
 };
+
 // Drop the remixes and covers already stored on the device, so they leave every
 // list at once instead of lingering until each artist is refetched. Returns how
 // many rows went.
@@ -20708,7 +20710,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.2.5';
+  const APP_VERSION = '83.2.6';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21418,7 +21420,13 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
-  { version: '83.2.5', date: 'November 8, 2026', title: 'My Hub is on the shelf', items: [
+    { version: '83.2.6', date: 'November 10, 2026', title: 'The right artist, and a check that runs on its own', items: [
+    'Pinning an artist watches that artist, not a name that starts the same way. A song by a different act whose name merely begins with yours - Sukha Mann beside Sukha - was landing in New releases; names are compared exactly now.',
+    'The artist is looked up once and kept: their Apple catalogue id and their genre. Every source is then filtered by that id, so a namesake in another genre stays out, and the rows keep the name you pinned.',
+    'The release check runs by itself instead of waiting for a tap: shortly after the app opens, again while it is open (including in the background), and when you come back to it. The six-hour clock used to be written before the check ran, so a launch that beat the library silenced it for the rest of the day.',
+    'The list is rebuilt once with the right artist, quietly, so the songs an earlier build filed under the wrong name leave it without the phone announcing a dozen rows.'
+  ] },
+{ version: '83.2.5', date: 'November 8, 2026', title: 'My Hub is on the shelf', items: [
     'Other apps has a fifth card: My Hub, the screen that launches every app here and keeps each one up to date. It was the one app the shelf did not carry.',
     'Four of the five cards pointed at Play listings that are not up yet, so a tap answered with Play\'s own not-found page. FamTM, UJournal and My Hub now open the release they install from, and MeasureT and UNote open their page.',
     'The cards are in the same order and carry the same one-line descriptions as the shelves in the other apps.'
@@ -48969,6 +48977,82 @@ function _renderAhFromData(artistAlbums){
       return window.__scSameArtistName(n, want);
     });
   }
+  // 83.2.6 - WHOSE SONGS ARE THESE? A name is not an identity. Two artists can carry
+  // one name, and a catalogue search for "Sukha" answers with everything that sounds
+  // like it. So the pinned artist is resolved ONCE to the Apple artist ids that carry
+  // exactly this name, and to their genres; when the listener's own library says which
+  // genre theirs is - the songs they already have by that artist - only that genre's
+  // artist is kept. The answer is cached for a fortnight, so a check does not pay for
+  // it every time.
+  function scIdentNorm(s){
+    return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/^the /, '');
+  }
+  async function scArtistIdentity(name){
+    var key = scIdentNorm(name);
+    var out = { ids: [], genres: [] };
+    if(!key) return out;
+    if(!window.__scIdentStore){
+      var seed = {};
+      try{ seed = JSON.parse(localStorage.getItem('sidecut_artist_ident_v1') || '{}') || {}; }catch(_eSeed){ seed = {}; }
+      window.__scIdentStore = seed;
+    }
+    var store = window.__scIdentStore;
+    var hit = store[key];
+    if(hit && hit.t && (Date.now() - hit.t) < 14 * 86400000 && hit.ids && hit.ids.length){
+      return { ids: hit.ids.slice(), genres: (hit.genres || []).slice() };
+    }
+    try{
+      var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(name) + '&media=music&entity=musicArtist&limit=25';
+      var resp = await fetchWithProxy(url, SC_RELEASE_FETCH);
+      if(resp && resp.ok){
+        var data = await resp.json();
+        var rows = [];
+        ((data && data.results) || []).forEach(function(r){
+          if(!r || !r.artistId) return;
+          if(scIdentNorm(r.artistName) !== key) return;      // this name, not this name plus words
+          rows.push({ id: String(r.artistId), g: String(r.primaryGenreName || '').toLowerCase().trim() });
+        });
+        // The library decides between namesakes: the genre of the songs already there.
+        var mine = [];
+        try{
+          for(var i = 0; i < allTracks.length && !mine.length; i++){
+            var t = allTracks[i];
+            if(!t || scIdentNorm(t.artist) !== key) continue;
+            var lg = String(t.genre || '').toLowerCase().trim();
+            if(lg) mine.push(lg);
+          }
+        }catch(_eLib){}
+        if(mine.length && rows.length > 1){
+          var narrow = rows.filter(function(x){ return x.g && mine.indexOf(x.g) !== -1; });
+          if(narrow.length) rows = narrow;
+        }
+        // Still more than one: the catalogue's own first answer for this exact name.
+        if(rows.length > 1) rows = [rows[0]];
+        rows.forEach(function(x){
+          if(out.ids.indexOf(x.id) === -1) out.ids.push(x.id);
+          if(x.g && out.genres.indexOf(x.g) === -1) out.genres.push(x.g);
+        });
+      }
+    }catch(_eId){}
+    if(out.ids.length){
+      store[key] = { ids: out.ids.slice(), genres: out.genres.slice(), t: Date.now() };
+      try{ localStorage.setItem('sidecut_artist_ident_v1', JSON.stringify(store)); }catch(_eSave){}
+    }
+    return out;
+  }
+  // Does this catalogue row belong to the artist we resolved? A row with no artist id
+  // cannot contradict the name test that already let it through; a row with one has to
+  // be that artist's.
+  function scResultArtistOk(r, ident){
+    if(!r) return false;
+    var ids = (ident && ident.ids) || [];
+    if(!ids.length) return true;
+    if(r.artistId == null) return true;
+    return ids.indexOf(String(r.artistId)) !== -1;
+  }
+  // Read by the release list and by the checks that stand behind this file.
+  window.__scArtistIdentity = scArtistIdentity;
+  window.__scResultArtistOk = scResultArtistOk;
     let lastUnpinned = null; // {name, art, addedAt} for undo
     // When the pinned set changes, every popup built from it (Singles, Old
     // songs, Album History) is stale — bust the caches so a newly pinned
@@ -50095,7 +50179,7 @@ function _renderAhFromData(artistAlbums){
   // cannot set a User-Agent — only the native attempt in fetchWithProxy can, so
   // hand it one. A browser keeps its own UA, which MusicBrainz also accepts.
   var SC_MB_FETCH = Object.assign({}, SC_RELEASE_FETCH, { headers: { 'User-Agent': 'SideCut/' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') + ' (https://anekthegreat.github.io/SideCut/)' } });
-  async function scItunesArtistAlbums(artist){
+  async function scItunesArtistAlbums(artist, ident){
     try{
       var norm = function(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
       var want = norm(primaryArtistName(artist));
@@ -50107,11 +50191,15 @@ function _renderAhFromData(artistAlbums){
       var arResp = await fetchWithProxy(arUrl, SC_RELEASE_FETCH);
       if(!arResp || !arResp.ok) return [];
       var arData = await arResp.json();
-      var artistId = null;
-      ((arData && arData.results) || []).forEach(function(r){
-        if(artistId || !r || !r.artistName) return;
-        if(credited(norm(primaryArtistName(r.artistName)))) artistId = r.artistId;
-      });
+      // 83.2.6 - the identity the release check already resolved wins: it is the id whose
+      // name is exactly this artist's, and the one the rest of the run is filtered by.
+      var artistId = (ident && ident.ids && ident.ids.length) ? ident.ids[0] : null;
+      if(!artistId){
+        ((arData && arData.results) || []).forEach(function(r){
+          if(artistId || !r || !r.artistName) return;
+          if(credited(norm(primaryArtistName(r.artistName)))) artistId = r.artistId;
+        });
+      }
       if(!artistId) return [];
       // 72.3 - read the artist's own catalog from more than the default
       // storefront. Plenty of releases (Punjabi and Indian film singles
@@ -50174,6 +50262,8 @@ function _renderAhFromData(artistAlbums){
     // newest releases were absent from the 200 song results. The catalog pass
     // below is what actually catches a fresh single.
     try{
+      // 83.2.6 - who this artist IS, before anything is read in their name.
+      const ident = await scArtistIdentity(artist);
       const url = `https://itunes.apple.com/search?term=${encodeURIComponent(artist)}&media=music&entity=song&limit=200`;
       const resp = await fetchWithProxy(url, SC_RELEASE_FETCH);
       // The iTunes pass is one source of three: when it fails (a rate limit, a
@@ -50185,7 +50275,8 @@ function _renderAhFromData(artistAlbums){
         const data = await resp.json();
         results = (data.results || []).filter(r => r && r.trackName &&
           !window.__scJunkTitle(r.trackName) &&
-          scCreditHas(r.artistName || '', artist));
+          scCreditHas(r.artistName || '', artist) &&
+          scResultArtistOk(r, ident));
       }
       // ---- 73.5: a song that is seven years old is not a new release --------
       // The popularity pass carries the artist's real catalog, so when a
@@ -50262,6 +50353,7 @@ function _renderAhFromData(artistAlbums){
             // collaboration album is filed under one name and credited to both.
             // The test is still by name, never by substring.
             if(!scCreditHas(r.artistName || '', artist)) return;
+            if(!scResultArtistOk(r, ident)) return;   // 83.2.6 - another artist with the same name
             if(window.__scJunkTitle(r.collectionName)) return;
             if((r.trackCount || 0) === 1) return; // one-track releases come through the song query
             const albDate = (r.releaseDate || '').slice(0, 10);
@@ -50325,7 +50417,7 @@ function _renderAhFromData(artistAlbums){
       // one-track release as the single it is, and give it the same title+day
       // key the other sources use, so a drop named twice still yields one row.
       try{
-        var _catAlbums = await scItunesArtistAlbums(artist);
+        var _catAlbums = await scItunesArtistAlbums(artist, ident);
         var _catNewest = prev.reduce(function(mx, pr){ return (pr.date || '') > (mx || '') ? pr.date : mx; }, '');
         var _catCut = 60 * 86400000;
         var _catCand = [];
@@ -50566,6 +50658,10 @@ function _renderAhFromData(artistAlbums){
     try{ const _sv = savePinnedArtists(); if(_sv && _sv.catch) _sv.catch(function(){}); }catch(_eSvp){}
     try{ renderNewReleases(); }catch(_eRnr){}
     try{ updateNotifBadge(); }catch(_eUnb){}
+    // 83.2.6 - the one rebuild after the artist change is silent: the rows were already
+    // marked announced above, so nothing is said twice and nothing is said about songs
+    // that were never this artist's.
+    if(window.__scQuietRebuild){ window.__scQuietRebuild = false; return; }
     const first = found[0];
     const more = found.length > 1 ? ' (+' + (found.length - 1) + ' more from your pinned artists)' : '';
     const head = 'New release — ' + first.artist;
@@ -50611,6 +50707,13 @@ function _renderAhFromData(artistAlbums){
     pinnedCheckState = { active:true, total:pinnedArtists.length, done:0, newCount:0, finishedAt:0, seen:false };
     let totalNew = 0;
     try{
+    // 83.2.6 - one clean list, and a rebuild that says nothing.
+    try{
+      if(scResetReleaseSnapshot()){
+        window.__scQuietRebuild = true;
+        try{ await savePinnedArtists(); }catch(_eRq){}
+      }
+    }catch(_eRs){}
     renderHomeExportPopup();
     // A few artists at a time: the catalogs are independent, so one stalled
     // host can no longer hold the whole list behind it, and a big pin list
@@ -50666,6 +50769,8 @@ function _renderAhFromData(artistAlbums){
       // …and SAY so: a drop that landed is announced, not merely counted somewhere.
       try{ scReleaseAlert(_announce); }catch(_eAlert){ console.warn('release alert skipped', _eAlert); }
     }
+    // 83.2.6 - the silent rebuild is over whether or not it found anything to say.
+    window.__scQuietRebuild = false;
     renderHomeExportPopup();
     updateNotifBadge();
     })();
@@ -50700,6 +50805,7 @@ function _renderAhFromData(artistAlbums){
       for(var i = 0; i < _due.length; i++){
         var _d = _due[i];
         _d.rel._deliverTried = _today;
+        try{ _d.ident = await scArtistIdentity(_d.artist); }catch(_eIdn){ _d.ident = { ids: [], genres: [] }; }
         try{
           var _q = _d.rel.title + ' ' + _d.artist;
           var _resp = await fetchWithProxy('https://itunes.apple.com/search?term=' + encodeURIComponent(_q) + '&media=music&entity=song&limit=10', SC_RELEASE_FETCH);
@@ -50710,6 +50816,7 @@ function _renderAhFromData(artistAlbums){
           ((_data && _data.results) || []).forEach(function(s){
             if(_match || !s || !s.trackName) return;
             if(!window.__scSameArtistName(primaryArtistName(s.artistName || ''), primaryArtistName(_d.artist))) return;
+            if(!scResultArtistOk(s, _d.ident)) return;   // 83.2.6 - a namesake's song is not this drop
             var _tn = String(s.trackName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             if(!_tn) return;
             if(_tn === _want || _tn.indexOf(_want) === 0 || _want.indexOf(_tn) === 0) _match = s;
@@ -50783,27 +50890,58 @@ function _renderAhFromData(artistAlbums){
             var t = day ? Date.parse(day + 'T00:00:00Z') : NaN;
             if(!isNaN(t) && (Date.now() - t) > maxDays * 86400000) return;
           }
-          out.push(Object.assign({}, rel, { artist: rel.artist || artist }));
+          // 83.2.6 - the row wears the name that was pinned, never the credit a catalogue
+          // printed for somebody with a longer name.
+          out.push(Object.assign({}, rel, { artist: artist }));
         });
       });
     }catch(_eRel){}
     out.sort(function(a, b){ return String(b.date || '').localeCompare(String(a.date || '')); });
     return out;
   };
+  // 83.2.6 - THE LIST IS REBUILT ONCE, WITH THE RIGHT ARTIST. Rows an earlier build
+  // stored were matched on the first words of a name, so an artist's list can carry
+  // another act's songs, and those rows have no artist id to test. Throwing the snapshot
+  // away once and refilling it is the only honest correction - done quietly, so the phone
+  // does not announce a dozen rows that should never have been there.
+  function scResetReleaseSnapshot(){
+    var want = 'release-reset-' + '83.2.6';
+    var done = '';
+    try{ done = localStorage.getItem('sidecut_releaseReset') || ''; }catch(_eR0){ return false; }
+    if(done === want) return false;
+    try{ Object.keys(pinnedReleases || {}).forEach(function(k){ pinnedReleases[k] = []; }); }
+    catch(_eR1){}
+    try{ localStorage.setItem('sidecut_releaseReset', want); }catch(_eR2){}
+    return true;
+  }
   async function scPinnedAutoCheck(){
     try{
-      if(!pinnedArtists || !pinnedArtists.length) return;
       if(typeof navigator !== 'undefined' && navigator.onLine === false) return;
       if(typeof pinnedCheckState !== 'undefined' && pinnedCheckState && pinnedCheckState.active) return;
+      // 83.2.6 - NO PINS YET IS NOT "NOTHING TO DO". This used to return here, after the
+      // caller had already stamped the six-hour clock: a launch that beat the pin list
+      // wrote "checked just now" and then every timer for six hours read it and did
+      // nothing. It asks again shortly instead.
+      if(!pinnedArtists || !pinnedArtists.length){
+        if(!window.__scPinRetry){
+          window.__scPinRetry = setTimeout(function(){ window.__scPinRetry = 0; scPinnedAutoCheck(); }, 45000);
+        }
+        return;
+      }
       let last = 0;
       try{ last = parseInt(localStorage.getItem('sidecut_pinnedAutoAt') || '0', 10) || 0; }catch(_eL){}
-      if(Date.now() - last < 6 * 60 * 60 * 1000) return;
-      try{ localStorage.setItem('sidecut_pinnedAutoAt', String(Date.now())); }catch(_eS){}
+      if(Date.now() - last < 2 * 60 * 60 * 1000) return;   // 83.2.6 - two hours, not six
       await checkPinnedArtistReleases();
+      // Written AFTER a run that happened, so a run that never happened cannot look like one.
+      try{ localStorage.setItem('sidecut_pinnedAutoAt', String(Date.now())); }catch(_eS){}
     }catch(_eAuto){ console.warn('auto pinned check skipped', _eAuto); }
   }
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) scPinnedAutoCheck(); });
   setTimeout(function(){ scPinnedAutoCheck(); }, 75000);
+  // 83.2.6 - WHILE THE APP IS OPEN, INCLUDING IN THE BACKGROUND. A tick every twenty
+  // minutes; the two-hour floor above is what decides whether a tick really checks, so a
+  // phone in a pocket still finds a drop on its own and says so on the shade.
+  setInterval(function(){ scPinnedAutoCheck(); }, 20 * 60 * 1000);
   // BOOT RUN. The check waited 75 seconds after launch, so an open shorter than
   // that — a quick launch to skip one track — meant NO check at all that session,
   // and "it never looks on its own" is what that sounds like. It now fires shortly
