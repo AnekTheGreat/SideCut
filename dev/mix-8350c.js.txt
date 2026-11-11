@@ -1,0 +1,98 @@
+  // ---- beat sync: same tempo, and B's beat lands on A's next one ----
+  function mixSync(){
+    if(!deckEngineB.buffer){ toast('Load a song onto deck B first'); return false; }
+    const A = mixTempo(deckEngine);
+    const B = mixTempo(deckEngineB);
+    if(!A || !B){ toast('Could not read the tempo of both decks — try again once deck B has played a few seconds'); return false; }
+    const aRate = deckEngine.rate || 1;
+    const bpmA = A.bpm * aRate;
+    const wanted = bpmA / B.bpm;
+    const rate = Math.max(0.25, Math.min(4, wanted));
+    deckEngineB.rate = rate;
+    // How far into its own beat deck A is right now.
+    let aPhase = 0;
+    if(deckEngine.running && deckEngine.buffer){
+      const pos = deckNow();
+      aPhase = ((pos - A.offset) / A.beat) % 1;
+      if(aPhase < 0) aPhase += 1;
+    }
+    // Wait for A's next beat, and start B exactly on one of its own so the two land together.
+    const wait = deckEngine.running ? Math.max(0, (1 - aPhase) * A.beat) : 0;
+    deckBStop();
+    ensureAudioGraph();
+    const gB = ensureDeckGainNode(deckEngineB);
+    if(!audioCtx || !gB){ toast('Mixing needs Web Audio, which is not available on this device'); return false; }
+    const dur = deckEngineB.buffer.duration;
+    const startAt = Math.max(0, Math.min(dur - 0.001, B.offset));
+    const node = audioCtx.createBufferSource();
+    node.buffer = deckEngineB.buffer;
+    node.playbackRate.value = rate;
+    node.connect(deckEngineB.knobGainNode);
+    node.start(audioCtx.currentTime + wait, startAt);
+    deckEngineB.node = node;
+    deckEngineB.startedAt = audioCtx.currentTime + wait;
+    deckEngineB.startOffset = startAt;
+    deckEngineB.running = true;
+    mixFaderApply();
+    mixPaint();
+    const pitch = $('mixBPitch');
+    if(pitch) pitch.value = String(Math.round((rate - 1) * 1000) / 10);
+    const out = $('mixBPitchOut');
+    if(out) out.textContent = ((rate - 1) * 100).toFixed(1) + '%';
+    toast('Deck B locked to ' + (Math.round(bpmA * 10) / 10) + ' BPM' + (wait > 0.05 ? (' — beat in ' + wait.toFixed(2) + 's') : ''), 3500);
+    return true;
+  }
+
+  // ---- hand the mix over: B becomes the deck the knobs and pads control ----
+  function mixHandOver(){
+    if(!deckEngineB.buffer){ toast('Nothing on deck B to take over'); return; }
+    try{
+      const bPos = deckBNow();
+      const wasRunning = deckEngineB.running;
+      deckBStop();
+      deckStop();
+      const oldG = deckEngine.gainNode, oldK = deckEngine.knobGainNode;
+      deckEngine.buffer = deckEngineB.buffer;
+      deckEngine.trackId = deckEngineB.trackId;
+      deckEngine.startOffset = bPos;
+      deckEngine.rate = deckEngineB.rate || 1;
+      deckEngine.node = null;
+      deckEngine.running = false;
+      deckEngine.gainNode = null;
+      deckEngine.knobGainNode = null;
+      deckEngine.filterNode = null;
+      deckEngine.reverbNodes = null;
+      deckEngine.flangerNodes = null;
+      deckEngine.delayNodes = null;
+      deckEngine.__tempo = deckEngineB.__tempo;
+      deckEngine.__tempoFor = deckEngineB.__tempoFor;
+      deckEngine.loop = null;
+      if(oldG){ try{ oldG.disconnect(); }catch(_eHandG){} }
+      if(oldK){ try{ oldK.disconnect(); }catch(_eHandK){} }
+      ensureDeckGainNode(deckEngine);
+      if(wasRunning) deckStart(bPos, deckEngine.rate);
+      if(mixBTrack){
+        djCurrentTrackId = mixBTrack.id;
+        djLastTrackId = null;
+      }
+      deckEngineB.buffer = null;
+      deckEngineB.trackId = null;
+      deckEngineB.node = null;
+      deckEngineB.running = false;
+      deckEngineB.startOffset = 0;
+      deckEngineB.rate = 1;
+      deckEngineB.gainNode = null;
+      deckEngineB.knobGainNode = null;
+      deckEngineB.__tempo = null;
+      deckEngineB.__tempoFor = null;
+      mixBTrack = null;
+      if(typeof applyKillState === 'function') applyKillState();
+      if(typeof refreshDjMode === 'function') refreshDjMode();
+      mixFaderApply();
+      mixPaint();
+      toast('Deck B is now the turntable — deck A is free for the next song', 4000);
+    }catch(_eHandOver){
+      toast('Could not hand the mix over to deck B');
+    }
+  }
+
