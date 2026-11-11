@@ -1,0 +1,229 @@
+  // ---- MixPad: the sound ----
+  function mpCtx(){
+    ensureAudioGraph();
+    if(!audioCtx) return null;
+    if(audioCtx.state === 'suspended') audioCtx.resume().catch(function(){});
+    return audioCtx;
+  }
+
+  function mpMaster(){
+    const ctx = mpCtx();
+    if(!ctx) return null;
+    if(!mixPad.master){
+      const g = ctx.createGain();
+      g.gain.value = 1;
+      // A gentle ceiling before the speakers: four songs at once clip long before
+      // one does, and a mixdown that crackles is not a mixdown.
+      let tail = g;
+      if(ctx.createDynamicsCompressor){
+        const lim = ctx.createDynamicsCompressor();
+        lim.threshold.value = -3;
+        lim.knee.value = 6;
+        lim.ratio.value = 12;
+        lim.attack.value = 0.003;
+        lim.release.value = 0.25;
+        g.connect(lim);
+        tail = lim;
+      }
+      tail.connect(ctx.destination);
+      mixPad.master = g;
+      mixPad.masterTail = tail;
+    }
+    return mixPad.master;
+  }
+
+  function mpAnySolo(){
+    return mixPad.track.some(function(t){ return t.solo; });
+  }
+
+  function mpTrackGainValue(tr){
+    if(tr.mute) return 0;
+    if(mpAnySolo() && !tr.solo) return 0;
+    return Math.max(0, Math.min(2, tr.gain));
+  }
+
+  // Applied live, so MUTE and a volume drag are heard while the mix is running
+  // instead of only on the next PLAY.
+  function mpApplyMix(){
+    mixPad.voices.forEach(function(v){
+      const tr = mixPad.track[v.trackIndex];
+      if(!tr) return;
+      try{ if(v.gain) v.gain.gain.value = mpTrackGainValue(tr); }catch(_eMpGain){}
+      try{ if(v.pan && v.pan.pan) v.pan.pan.value = Math.max(-1, Math.min(1, tr.pan)); }catch(_eMpPan){}
+    });
+  }
+
+  function mpStopVoices(){
+    mixPad.voices.forEach(function(v){
+      try{ v.source.stop(); }catch(_eMpStop){}
+      try{ v.source.disconnect(); }catch(_eMpDisc){}
+      try{ if(v.gain) v.gain.disconnect(); }catch(_eMpGainDisc){}
+      try{ if(v.pan) v.pan.disconnect(); }catch(_eMpPanDisc){}
+    });
+    mixPad.voices = [];
+  }
+
+  function mpPlay(){
+    const ctx = mpCtx();
+    const master = mpMaster();
+    if(!ctx || !master){ toast('Mix Pad needs Web Audio, which is not available on this device'); return; }
+    mpStopVoices();
+    const from = Math.max(0, mixPad.playhead || 0);
+    let scheduled = 0;
+    mixPad.track.forEach(function(tr, ti){
+      if(mpAnySolo() && !tr.solo) return;
+      scMixPadLayout(tr.clips, from).forEach(function(plan){
+        const src = ctx.createBufferSource();
+        src.buffer = plan.clip.buffer;
+        const g = ctx.createGain();
+        g.gain.value = mpTrackGainValue(tr);
+        src.connect(g);
+        let out = g, p = null;
+        if(ctx.createStereoPanner){
+          p = ctx.createStereoPanner();
+          p.pan.value = Math.max(-1, Math.min(1, tr.pan));
+          g.connect(p);
+          out = p;
+        }
+        out.connect(master);
+        src.start(ctx.currentTime + plan.when, plan.offset, plan.dur);
+        mixPad.voices.push({ source: src, gain: g, pan: p, trackIndex: ti, clip: plan.clip });
+        scheduled++;
+      });
+    });
+    if(!scheduled){ toast('Nothing to play yet — add a song to a track first'); return; }
+    mixPad.playing = true;
+    mixPad.startedAt = ctx.currentTime - from;
+    if(mixPad.timer) clearInterval(mixPad.timer);
+    mixPad.timer = setInterval(mpTick, 120);
+    mpPaint();
+  }
+
+  function mpStop(){
+    mpStopVoices();
+    mixPad.playing = false;
+    if(mixPad.timer){ clearInterval(mixPad.timer); mixPad.timer = null; }
+    mpPaint();
+  }
+
+  function mpTick(){
+    if(!mixPad.playing) return;
+    const ctx = audioCtx;
+    if(!ctx) return;
+    mixPad.playhead = Math.max(0, ctx.currentTime - mixPad.startedAt);
+    if(mixPad.playhead >= scMixPadLength()){
+      mixPad.playhead = 0;
+      mpStop();
+      return;
+    }
+    mpPaint();
+  }
+
+  function mpSeek(seconds){
+    const wasPlaying = mixPad.playing;
+    mpStop();
+    mixPad.playhead = Math.max(0, Math.min(scMixPadLength(), Number(seconds) || 0));
+    if(wasPlaying) mpPlay(); else mpPaint();
+  }
+
+  // ---- the mixdown: render the whole timeline offline ----
+  async function mpExport(){
+    if(mixPad.exporting) return;
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if(!OAC){ toast('This device cannot render a mixdown'); return; }
+    const length = scMixPadLength();
+    const sr = (audioCtx && audioCtx.sampleRate) || 44100;
+    const status = $('mixPadStatus');
+    mixPad.exporting = true;
+    try{
+      if(status) status.textContent = 'Rendering ' + fmtTime(Math.floor(length)) + ' of audio…';
+      const off = new OAC(2, Math.ceil(length * sr), sr);
+      const master = off.createGain();
+      master.gain.value = 1;
+      let tail = master;
+      if(off.createDynamicsCompressor){
+        const lim = off.createDynamicsCompressor();
+        lim.threshold.value = -3;
+        lim.knee.value = 6;
+        lim.ratio.value = 12;
+        lim.attack.value = 0.003;
+        lim.release.value = 0.25;
+        master.connect(lim);
+        tail = lim;
+      }
+      tail.connect(off.destination);
+      let scheduled = 0;
+      mixPad.track.forEach(function(tr){
+        if(mpAnySolo() && !tr.solo) return;
+        tr.clips.forEach(function(c){
+          if(!c.buffer || !(c.dur > 0)) return;
+          const src = off.createBufferSource();
+          src.buffer = c.buffer;
+          const g = off.createGain();
+          g.gain.value = mpTrackGainValue(tr);
+          src.connect(g);
+          let out = g;
+          if(off.createStereoPanner){
+            const p = off.createStereoPanner();
+            p.pan.value = Math.max(-1, Math.min(1, tr.pan));
+            g.connect(p);
+            out = p;
+          }
+          out.connect(master);
+          src.start(Math.max(0, c.start || 0), c.offset || 0, c.dur);
+          scheduled++;
+        });
+      });
+      if(!scheduled){ toast('Nothing to render yet — add a song to a track first'); return; }
+      const rendered = await off.startRendering();
+      const channels = [];
+      for(let i = 0; i < rendered.numberOfChannels; i++) channels.push(rendered.getChannelData(i));
+      const wav = scWavEncode(channels, rendered.sampleRate || sr);
+      scMixPadDownload(new Blob([wav], { type: 'audio/wav' }), 'sidecut-mixdown-' + scMixPadStamp() + '.wav');
+      if(status) status.textContent = 'Mixdown saved (' + fmtTime(Math.floor(rendered.duration || length)) + ')';
+      toast('Mixdown saved to your downloads');
+    }catch(_eMpExport){
+      if(status) status.textContent = 'The render did not finish — try a shorter mix';
+      toast('Could not render the mixdown');
+    }finally{
+      mixPad.exporting = false;
+    }
+  }
+
+  // ---- a live take, recorded off the same master ----
+  function mpToggleRecord(){
+    if(mixPad.recording){
+      mixPad.recording = false;
+      try{ mixPad.recorder.stop(); }catch(_eMpRecStop){}
+      const btn = $('mixPadRec');
+      if(btn){ btn.classList.remove('recording'); btn.textContent = 'REC'; }
+      return;
+    }
+    if(!window.MediaRecorder){ toast('Recording is not supported on this device'); return; }
+    const ctx = mpCtx();
+    const master = mpMaster();
+    if(!ctx || !master){ toast('Mix Pad needs Web Audio to record'); return; }
+    try{
+      if(!mixPad.streamDest) mixPad.streamDest = ctx.createMediaStreamDestination();
+      master.connect(mixPad.streamDest);
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(function(c){
+        return window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c);
+      }) || '';
+      mixPad.chunks = [];
+      mixPad.recorder = new MediaRecorder(mixPad.streamDest.stream, mime ? { mimeType: mime } : undefined);
+      mixPad.recorder.ondataavailable = function(e){ if(e.data && e.data.size) mixPad.chunks.push(e.data); };
+      mixPad.recorder.onstop = function(){
+        const type = mixPad.recorder.mimeType || 'audio/webm';
+        const ext = type.indexOf('mp4') >= 0 ? 'm4a' : 'webm';
+        scMixPadDownload(new Blob(mixPad.chunks, { type: type }), 'sidecut-mixpad-' + scMixPadStamp() + '.' + ext);
+        toast('Recording saved to your downloads');
+      };
+      mixPad.recorder.start(250);
+      mixPad.recording = true;
+      const btn = $('mixPadRec');
+      if(btn){ btn.classList.add('recording'); btn.textContent = 'STOP'; }
+      toast('Recording the mix pad…');
+    }catch(_eMpRec){
+      toast('Could not start recording');
+    }
+  }
