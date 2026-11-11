@@ -1,8 +1,17 @@
-## 83.6.0 ({{STAMP}}): Mix Pad, four tracks and a timeline
+# 83.7.0 — the Mix Pad becomes an editor
 
-- **WHAT IT IS.** A second way to make a mix, and a separate tool rather than another deck. DJ Mode is two songs meeting in real time; Mix Pad is a timeline with **four tracks**, a song dropped onto any of them at the playhead, and a clip you can slide earlier or later, shorten or lengthen until it sits where you want it. An instrumental on track 1 and a vocal on track 2 is a mashup; four stacks is a mixdown.
-- **LEVELS THAT MOVE WHILE IT PLAYS.** Every track has its own volume and pan plus MUTE and SOLO, and all four are applied to the voices that are already running - not on the next press of play. SOLO wins over everything, which is what makes it useful.
-- **EXPORT IS OFFLINE.** EXPORT WAV renders the whole timeline through an `OfflineAudioContext` in seconds rather than recording it in real time, writes a 16-bit PCM WAV (the format every phone, player and editor opens without asking) and downloads it as `sidecut-mixdown-<stamp>.wav`. A compressor at -3 dB / 12:1 sits on the master, because four songs at once clip long before one does. REC still exists for a live take off the same master.
-- **ITS OWN ENGINE.** The Mix Pad keeps its own buffer cache, its own voices and its own master gain. It never borrows the turntable, so a mixdown cannot be coloured by what the deck is doing, it works with DJ Mode closed, and opening it pauses whatever the main player had going so nothing leaks into the take.
-- **CHECKS.** `dev/patch-8360.py --check` exits 1 before the payload and 0 after it, a second run is a no-op, all seven inline scripts of the patched page parse, every element id the window touches exists in the markup, and the engine is driven in the session that wrote it: the WAV writer produces a 444-byte file for 100 stereo frames with RIFF/WAVE/fmt headers, 2 channels, 44100 Hz, 16 bits and a 400-byte data chunk, and clamps a 2.0 sample to 32767; the clip scheduler returns when 0 / offset 7 / dur 3 and when 0 / offset 2 / dur 8 for two overlapping clips played from 7 s, and drops the finished clip at 12 s; the offline render schedules each clip at its own start, offset and duration, and a muted track contributes nothing. Rebuilt bundles: {{ROOT}} bytes on the full channel, {{PLAY}} on the store build.
-- **NOT CLAIMED.** Nothing was listened to and no phone ran here. The arithmetic, the file format and the wiring are proven; whether a particular mashup sounds good, and how a four-track render feels on a mid-range phone, are the owner's to judge.
+**Mix Pad: drag, crop, crossfade, reverse**
+
+- A **Mix Pad** card now sits in **Studio** with the other tools, so it is one tap from the Studio screen instead of hidden in the header.
+- Clips are dragged by hand: pull the body to move it, pull either edge to crop the start or the end. The fades are drawn on the clip as shading, and the selected clip is outlined.
+- **CROSSFADE 1s / 2s / 4s / 8s** overlaps the selected clip with the one before it on the same track and fades one out as the other comes in.
+- **REVERSE** flips a clip, **FADE IN** and **FADE OUT** set each side by hand, and every clip has its own level.
+- Playback and the exported WAV both follow all of it: fades are scheduled on the clip's gain, a reversed clip is built once and shared, and a fade-in that has already been passed is not replayed when playback starts mid-clip.
+
+Page-only release: the installed app picks it up over the air.
+
+## Checks
+
+- `dev/patch-8370.py --check` exits 1 before, 0 after; a second run is a no-op; all anchors match exactly once.
+- All 7 script blocks of the patched page parse; every `mixPad*` id the code reaches for exists in the markup; the Studio card and the ten new clip controls are present.
+- Node harness: drag graph (120px of 600px across 60s = 12s), head crop +3 and −4 (offset/start/length land where they should), tail crop clamped to the song, crossfade 4s picks the clip before it and pulls the incoming clip to a 4s overlap, crossfade with nothing before returns nothing, the fade schedule is 0→level over the fade-in and level→0 over the last seconds, starting 6s into a clip schedules no fade-in, a reversed buffer plays the last sample first and is cached, and the mixdown schedules each clip at its own start with its own offset and length.
