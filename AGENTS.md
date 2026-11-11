@@ -1,5 +1,12 @@
 # SideCut — repository memory
 
+## 83.2.9 (November 11, 2026 · 9:15 AM EDT): The headphones get the player back
+
+- **WHAT CHANGED.** The page half: a press on a streamed song from the earbuds, the lock screen or the shade now goes through the same door as a press on a downloaded one - it ends the deliberate pause, cancels the clock that parks the session, restarts the keep-alive and re-arms the controls, instead of only starting the element. The native half, `dev/native-session.py`, is in the Android build: the swipe-away player carries a real `MediaSession` now, answers play, pause and stop itself, and its card carries a button that matches what it is doing.
+- **WHY.** A stream paused for ten minutes was handed to a session that had stopped listening, and the native player had no session at all - so the press reached nothing. The deck half of this was fixed in 81.6 and 83.0.3; these are the two paths that were left.
+- **HOW IT ARRIVES.** The version moves to 83.2.9 and the service-worker cache moves with it, so an installed copy takes the new page over the air. The player half needs the newest sideloaded build; the page half arrives without one.
+- **CHECKS.** `dev/patch-8329.py --check` exits 1 before the payload and 0 after it, a second run is a no-op, `dev/native-session.py` applies its eleven edits to a copy of `dev/native-play-service.java.txt` and a second run writes nothing, every inline script of the patched page parses, and the Android build is the first compiler the Java sees. Rebuilt bundles: 1239814 bytes on the full channel, 1239832 on the store build.
+- **NOT CLAIMED.** No phone and no earbuds ran here: nothing was listened to and no headset button was pressed. What is proven is the code the press reaches and the session the native player registers, on the bytes the release ships.
 ## 83.2.8 (November 10, 2026 · 8:53 AM EDT): The example comes out
 
 - **WHAT CHANGED.** An earlier release note explained a fix by naming a real act beside the one that had been pinned. That example is gone: the line now says what changed without naming anyone, and the rest of the entry is untouched.
