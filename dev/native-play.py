@@ -165,6 +165,17 @@ def main():
                                       '    public void onResume() {', 1))
         changed.append('onResume is public, as the base class requires')
 
+    # 83.2.9 - the session the earbuds need; see dev/native-session.py.
+    try:
+        import importlib.util as _iu
+        _s = _iu.spec_from_file_location('sc_ns', os.path.join(HERE, 'native-session.py'))
+        _m = _iu.module_from_spec(_s)
+        _s.loader.exec_module(_m)
+        _m.main()
+        changed.append('a MediaSession for the player')
+    except Exception as _e:
+        print('native-play: the session half was skipped (%s)' % _e)
+
     if changed:
         print('native-play: OK - ' + ', '.join(changed))
     else:
