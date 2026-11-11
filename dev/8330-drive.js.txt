@@ -1,0 +1,61 @@
+  // 83.3.0 - THE PRESS ENDS IN SOUND OR IN A REASON. A deck song's sound leaves
+  // through the graph, so a sleeping context silences a good play(); and a press that
+  // cannot make sound now says so instead of looking like a dead button.
+  function scAudioCtxAwake(){
+    try{
+      if(!audioCtx) return true;                       // no graph: the element talks directly
+      if(audioCtx.state === 'running') return true;
+      if(typeof audioCtx.resume === 'function') audioCtx.resume().catch(function(){});
+      return audioCtx.state === 'running';
+    }catch(_eCtx){ return true; }
+  }
+  function scTransportNote(txt){
+    try{ scGhostStep('press -> ' + String(txt || '')); }catch(_eNote){}
+  }
+  function scTransportSay(txt){
+    scTransportNote(txt);
+    try{ console.warn('transport: ' + txt); }catch(_eSay){}
+    try{ if(!document.hidden) toast('Headphones: ' + txt, 4200); }catch(_eSayToast){}
+  }
+  // One door for every press from outside that asks for sound.
+  function scTransportPlay(why){
+    const who = why || 'the headphones';
+    try{ scTransportPress(); }catch(_ePress){}
+    try{ scAudioCtxAwake(); }catch(_eAwake){}
+    const a = activeAudio();
+    if(!a){ scTransportSay(who + ' asked for music and there is no player'); return true; }
+    if(!a.src){
+      try{
+        if(scResumeRestoredSong()){ scTransportNote(who + ' -> the last song went back on the deck and started'); return true; }
+      }catch(_eRestore){}
+    }
+    let started = null;
+    try{ started = a.play(); }catch(_ePlay){ started = null; }
+    if(!started || typeof started.then !== 'function'){
+      scTransportNote(who + ' -> the player took the press');
+      return true;
+    }
+    started.then(function(){
+      scTransportNote(who + ' -> playing');
+      // The failure the element cannot report: it plays, the mixer above it is asleep.
+      setTimeout(function(){
+        try{
+          if(!a.paused && audioCtx && audioCtx.state !== 'running'){
+            scTransportSay('the song is running but the phone will not wake the mixer - tap play in the app once');
+          }
+        }catch(_eCheck){}
+      }, 1200);
+    }).catch(function(err){
+      const name = (err && (err.name || err.message)) || 'a refusal';
+      scTransportSay('the player would not start (' + name + ')');
+      try{ recoverAudio(a, 'media session play failed'); }catch(_eRecover){}
+      setTimeout(function(){
+        try{
+          if(a.paused && !userPaused){
+            Promise.resolve(a.play()).then(function(){ scTransportNote(who + ' -> playing on the second try'); }).catch(function(){});
+          }
+        }catch(_eRetry){}
+      }, 400);
+    });
+    return true;
+  }
