@@ -3154,6 +3154,18 @@ body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #studioView
 .mp-slide{ display:grid; grid-template-columns:78px 1fr 44px; align-items:center; gap:6px; font-size:9px; letter-spacing:.5px; color:var(--ink-dim); }
 .mp-slide input[type=range]{ width:100%; accent-color:var(--accent); }
 .mp-slide i{ font-style:normal; font-size:9px; text-align:right; }
+/* 83.8.0 - the clip shows the song and the playhead is something you pull. */
+.mp-clip canvas.mp-wave{ position:absolute; left:0; top:0; width:100%; height:100%;
+  pointer-events:none; opacity:.85; }
+.mp-clip{ text-shadow:0 1px 2px rgba(0,0,0,.65); }
+.mp-grab{ position:absolute; top:2px; bottom:2px; width:8px; border-radius:3px;
+  background:#fff; opacity:.92; pointer-events:none; box-shadow:0 1px 3px rgba(0,0,0,.45); }
+.mp-grab.left{ left:1px; }
+.mp-grab.right{ right:1px; }
+.mp-head{ width:14px; margin-left:-7px; cursor:ew-resize; touch-action:none; }
+.mp-knob{ position:absolute; top:-9px; left:50%; margin-left:-6px; width:12px; height:12px;
+  border-radius:50%; background:#fff; border:1px solid rgba(0,0,0,.45);
+  box-shadow:0 1px 3px rgba(0,0,0,.5); touch-action:none; }
 /* 83.5.0 - the mix panel: a second deck you drive by hand. */
 .mix-panel{
   margin-top:14px; padding:12px; border-radius:14px;
@@ -7306,7 +7318,7 @@ html, body{ max-width:100%; overflow-x:hidden; }
           <div class="mp-status" id="mixPadStatus"></div>
 
           <div class="mp-clips-info" id="mixPadClipInfo">Tap a clip to select it</div>
-          <div class="mp-hint">Drag a clip to move it · drag either edge to crop it · tap to select</div>
+          <div class="mp-hint">Drag a clip to move it · drag either edge to crop it · drag the white playhead to jump · tap to select</div>
           <div class="mp-clip-btns">
             <button class="mp-mini" id="mixPadClipLeft" title="Move this clip one second earlier">◀ 1s</button>
             <button class="mp-mini" id="mixPadClipRight" title="Move this clip one second later">1s ▶</button>
@@ -20973,7 +20985,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.7.0';
+  const APP_VERSION = '83.8.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21683,6 +21695,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '83.8.0', date: 'November 11, 2026', title: 'Mix Pad: waveforms and a playhead you drag', items: [
+    'Every clip now draws its own waveform, cut from the part of the song that clip actually plays - so you can see the beat you are lining up instead of guessing where it is.',
+    'The selected clip wears the same white grab bars the crop sheet uses: drag one to crop, drag the body to move. The clip outlines itself so you can see exactly what you have hold of.',
+    'The playhead has a round knob at the top of the first track. Pull it anywhere on the timeline to jump, and if the mix was playing it picks up from where you dropped it.',
+    'Waveforms are read once per song and kept, so placing the same track on four lanes costs nothing after the first time.'
+  ] },
       { version: '83.7.0', date: 'November 11, 2026', title: 'Mix Pad: drag, crop, crossfade, reverse', items: [
     'A Mix Pad card now sits in Studio with the other tools, so it is one tap from the Studio screen instead of hidden in the header.',
     'Clips are dragged by hand: pull the body to move it, pull either edge to crop the start or the end, and the timeline shows the fades as shading so you can see the shape of the mix.',
@@ -43301,7 +43319,7 @@ function _fallbackCopy(text){
   }
 
   // ---- what the timeline shows: handles, fades, and the tool settings ----
-  function mpPaint(){
+  function mpPaintTracks(){
     mpPaintBase();
     mixPad.track.forEach(function(tr, ti){
       const lane = $('mixPadLane' + (ti + 1));
@@ -43484,6 +43502,192 @@ function _fallbackCopy(text){
   }
 
   setTimeout(function(){ try{ mpWireEdit(); }catch(_eEd){} }, 300);
+  // ---- 83.8.0 - the picture: waveforms, grab handles and a playhead you drag ----
+  //
+  // The crop sheet has always shown the song, so a mix built blind was the odd
+  // one out. Every clip now draws its own waveform from the decoded audio, the
+  // selected clip wears the same white grab bars the crop sheet has, and the
+  // playhead in lane 1 has a round knob you can pull anywhere on the timeline.
+  const mpPeakCache = new Map();
+  const MP_PEAK_BUCKETS = 1600;
+
+  // One pass over the song, 1600 loudest-sample buckets, cached: a clip drawn
+  // from the same song reuses it, and a redraw costs a scan of 1600 numbers.
+  function mpPeaks(buffer){
+    if(!buffer) return null;
+    if(mpPeakCache.has(buffer)) return mpPeakCache.get(buffer);
+    const len = buffer.length || 0;
+    if(!len) return null;
+    const buckets = Math.max(1, Math.min(MP_PEAK_BUCKETS, len));
+    const out = new Float32Array(buckets);
+    const chs = Math.max(1, buffer.numberOfChannels || 1);
+    try{
+      for(let c = 0; c < chs; c++){
+        const data = buffer.getChannelData(c);
+        for(let i = 0; i < buckets; i++){
+          const from = Math.floor(i * len / buckets), to = Math.floor((i + 1) * len / buckets);
+          let peak = 0;
+          for(let j = from; j < to; j++){
+            const v = data[j] < 0 ? -data[j] : data[j];
+            if(v > peak) peak = v;
+          }
+          if(peak > out[i]) out[i] = peak;
+        }
+      }
+    }catch(_ePeak){ return null; }
+    mpPeakCache.set(buffer, out);
+    if(mpPeakCache.size > 8){
+      const first = mpPeakCache.keys().next();
+      if(!first.done) mpPeakCache.delete(first.value);
+    }
+    return out;
+  }
+
+  // The window a clip actually plays - its offset for `dur` seconds - resampled
+  // to the number of bars the canvas has room for.
+  function mpClipPeaks(clip, buckets){
+    if(!clip || !clip.buffer) return null;
+    const all = mpPeaks(clip.buffer);
+    if(!all) return null;
+    const n = Math.max(1, Math.round(buckets));
+    const out = new Float32Array(n);
+    const total = clip.buffer.duration || 0;
+    if(!(total > 0)) return out;
+    const from = Math.max(0, (clip.offset || 0) / total) * all.length;
+    const to = Math.max(0, Math.min(total, (clip.offset || 0) + (clip.dur || 0)) / total) * all.length;
+    const span = Math.max(1, to - from);
+    for(let i = 0; i < n; i++){
+      const a = Math.floor(from + span * i / n);
+      const b = Math.max(a + 1, Math.floor(from + span * (i + 1) / n));
+      let peak = 0;
+      for(let j = a; j < b && j < all.length; j++) if(all[j] > peak) peak = all[j];
+      out[i] = peak;
+    }
+    return out;
+  }
+
+  function mpDrawWave(canvas, peaks){
+    if(!canvas) return;
+    let g = null;
+    try{ g = canvas.getContext && canvas.getContext('2d'); }catch(_eCtx){ g = null; }
+    if(!g) return;
+    const w = canvas.width, h = canvas.height;
+    g.clearRect(0, 0, w, h);
+    if(!peaks || !peaks.length) return;
+    const mid = h / 2;
+    let ink = 'rgba(255,255,255,.55)';
+    try{
+      const cs = getComputedStyle(canvas);
+      if(cs && cs.color) ink = cs.color;
+    }catch(_eInk){}
+    g.fillStyle = ink;
+    for(let x = 0; x < w; x++){
+      const i = Math.min(peaks.length - 1, Math.floor(x / Math.max(1, w) * peaks.length));
+      const peak = Math.max(0, Math.min(1, peaks[i] || 0));
+      const bar = Math.max(1, peak * (h - 3));
+      g.fillRect(x, mid - bar / 2, 1, bar);
+    }
+  }
+
+  // Everything 83.7.0 painted, plus the waveform in each clip and the grab bars
+  // on the one you have hold of.
+  function mpPaint(){
+    mpPaintTracks();
+    mixPad.track.forEach(function(tr, ti){
+      const lane = $('mixPadLane' + (ti + 1));
+      if(!lane) return;
+      if(ti === 0){
+        const head = lane.querySelector('.mp-head');
+        if(head && !head.querySelector('.mp-knob')){
+          const knob = document.createElement('i');
+          knob.className = 'mp-knob';
+          head.appendChild(knob);
+        }
+      }
+      Array.prototype.slice.call(lane.querySelectorAll('.mp-clip')).forEach(function(el, ci){
+        const c = (tr.clips || [])[ci];
+        if(!c) return;
+        let wave = el.querySelector('canvas.mp-wave');
+        if(!wave){
+          wave = document.createElement('canvas');
+          wave.className = 'mp-wave';
+          wave.width = 240;
+          wave.height = 48;
+          el.insertBefore(wave, el.firstChild);
+        }
+        mpDrawWave(wave, mpClipPeaks(c, 240));
+        const sel = !!(mixPad.selected && mixPad.selected.track === ti && mixPad.selected.index === ci);
+        let gl = el.querySelector('.mp-grab.left'), gr = el.querySelector('.mp-grab.right');
+        if(sel && !gl){
+          gl = document.createElement('i');
+          gl.className = 'mp-grab left';
+          gr = document.createElement('i');
+          gr.className = 'mp-grab right';
+          el.appendChild(gl);
+          el.appendChild(gr);
+        }else if(!sel && gl){
+          gl.remove();
+          if(gr) gr.remove();
+        }
+      });
+    });
+  }
+
+  // ---- the playhead: press the line or its knob, pull it anywhere ----
+  function mpWireScrub(){
+    if(mixPad.scrubbed) return;
+    mixPad.scrubbed = true;
+    let scrub = null;
+
+    const toTime = function(x){
+      if(!scrub) return 0;
+      const secs = (x - scrub.left) / scrub.width * scrub.total;
+      return Math.max(0, Math.min(scrub.total, secs));
+    };
+    const pull = function(x){
+      if(!scrub) return;
+      mixPad.playhead = Math.round(toTime(x) * 10) / 10;
+      mpPaint();
+    };
+
+    document.addEventListener('pointerdown', function(e){
+      const knob = e.target && e.target.closest ? e.target.closest('.mp-head, .mp-knob') : null;
+      if(!knob) return;
+      const lane = knob.closest('.mp-lane') || $('mixPadLane1');
+      if(!lane) return;
+      const rect = lane.getBoundingClientRect();
+      scrub = {
+        left: rect.left,
+        width: Math.max(1, rect.width),
+        total: scMixPadLength(),
+        was: !!mixPad.playing
+      };
+      if(mixPad.playing) mpStop();
+      if(e.cancelable) e.preventDefault();
+      if(e.stopPropagation) e.stopPropagation();
+      pull(e.clientX);
+    }, true);
+
+    document.addEventListener('pointermove', function(e){
+      if(scrub) pull(e.clientX);
+    }, true);
+
+    document.addEventListener('pointerup', function(){
+      if(!scrub) return;
+      const was = scrub.was;
+      scrub = null;
+      if(was) mpPlay();
+    }, true);
+
+    document.addEventListener('pointercancel', function(){
+      if(!scrub) return;
+      const was = scrub.was;
+      scrub = null;
+      if(was) mpPlay();
+    }, true);
+  }
+
+  setTimeout(function(){ try{ mpWireScrub(); }catch(_eScrub){} }, 350);
   function ensureDeckGainNode(deck){
     if(deck.gainNode) return deck.gainNode;
     ensureAudioGraph();
