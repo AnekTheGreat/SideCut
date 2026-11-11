@@ -1,0 +1,152 @@
+  // ---------------- 83.6.0 - MIX PAD: a studio you build a mix in ----------------
+  //
+  // DJ Mode is one song meeting another in real time. This is the other way of
+  // making a mix: a timeline with four tracks, a song dropped onto each one,
+  // levelled and placed, then rendered into a single file. Nothing here is
+  // shared with the deck's engine — the buffer cache, the voices and the master
+  // gain are its own, so a mixdown can never be coloured by what the platter is
+  // doing, and it keeps working with DJ Mode closed.
+  //
+  //   mixPad.track[n].clips[]   { name, buffer, start, offset, dur }
+  //     start   where on the timeline the clip begins, in seconds
+  //     offset  how far into the song the clip begins
+  //     dur     how much of the song the clip plays
+  //
+  // Two helpers below are pure on purpose, because they are the two places this
+  // can be wrong silently: where a clip is scheduled from (scMixPadLayout) and
+  // what the exported file says it is (scWavEncode). Both are exercised without a
+  // browser.
+  const MP_TRACKS = 4;
+  const mixPad = {
+    open: false,
+    playing: false,
+    playhead: 0,
+    startedAt: 0,
+    timer: null,
+    voices: [],
+    master: null,
+    streamDest: null,
+    recorder: null,
+    chunks: [],
+    recording: false,
+    recStartedAt: 0,
+    selected: null,          // { track: n, index: i }
+    exporting: false,
+    track: [
+      { gain: 1, pan: 0, mute: false, solo: false, clips: [] },
+      { gain: 1, pan: 0, mute: false, solo: false, clips: [] },
+      { gain: 1, pan: 0, mute: false, solo: false, clips: [] },
+      { gain: 1, pan: 0, mute: false, solo: false, clips: [] }
+    ]
+  };
+  const scMixPadCache = {};
+
+  function scMixPadLength(){
+    let end = 0;
+    mixPad.track.forEach(function(tr){
+      (tr.clips || []).forEach(function(c){
+        const to = (c.start || 0) + (c.dur || 0);
+        if(to > end) end = to;
+      });
+    });
+    return Math.max(60, Math.ceil(end));
+  }
+
+  // What has to be scheduled, and from where, if playback starts at `playhead`.
+  // A clip that began BEFORE the playhead starts part-way into the song: `when`
+  // is 0 (now), `offset` moves forward by what was already missed. A clip that
+  // begins later waits. A clip that has already finished schedules nothing.
+  function scMixPadLayout(clips, playhead){
+    const at = Math.max(0, Number(playhead) || 0);
+    const out = [];
+    (clips || []).forEach(function(c){
+      if(!c || !(c.dur > 0)) return;
+      const missed = Math.max(0, at - (c.start || 0));
+      const left = c.dur - missed;
+      if(left <= 0.01) return;
+      out.push({
+        clip: c,
+        when: Math.max(0, (c.start || 0) - at),
+        offset: (c.offset || 0) + missed,
+        dur: left
+      });
+    });
+    return out;
+  }
+
+  // A 16-bit PCM WAV file, because that is the one format every player, every
+  // phone and every editor opens without asking a question.
+  function scWavEncode(channels, sampleRate){
+    const chs = channels && channels.length ? channels : [];
+    const frames = chs.length ? chs[0].length : 0;
+    const ch = Math.max(1, chs.length);
+    const sr = Math.max(8000, Math.round(sampleRate || 44100));
+    const bytes = 44 + frames * ch * 2;
+    const buf = new ArrayBuffer(bytes);
+    const view = new DataView(buf);
+    const str = function(off, s){
+      for(let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+    };
+    str(0, 'RIFF');
+    view.setUint32(4, bytes - 8, true);
+    str(8, 'WAVE');
+    str(12, 'fmt ');
+    view.setUint32(16, 16, true);          // fmt chunk size
+    view.setUint16(20, 1, true);           // PCM
+    view.setUint16(22, ch, true);
+    view.setUint32(24, sr, true);
+    view.setUint32(28, sr * ch * 2, true); // byte rate
+    view.setUint16(32, ch * 2, true);      // block align
+    view.setUint16(34, 16, true);          // bits per sample
+    str(36, 'data');
+    view.setUint32(40, frames * ch * 2, true);
+    let at = 44;
+    for(let i = 0; i < frames; i++){
+      for(let c = 0; c < ch; c++){
+        const src = chs[c] || chs[0];
+        let v = src ? src[i] : 0;
+        if(!isFinite(v)) v = 0;
+        if(v > 1) v = 1;
+        if(v < -1) v = -1;
+        view.setInt16(at, Math.round(v * 32767), true);
+        at += 2;
+      }
+    }
+    return buf;
+  }
+
+  // One decode per song, shared by every clip made from it - a mashup places the
+  // same instrumental on three tracks and should not hold three copies of it.
+  async function scMixPadDecode(track){
+    if(!track) throw new Error('no track');
+    if(scMixPadCache[track.id]) return scMixPadCache[track.id];
+    ensureAudioGraph();
+    if(!audioCtx) throw new Error('no audio');
+    let url = track.url;
+    if(track.file){
+      try{ URL.revokeObjectURL(track.url); }catch(_eMpRevoke){}
+      url = URL.createObjectURL(track.file);
+      track.url = url;
+    }
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('fetch failed');
+    const arr = await resp.arrayBuffer();
+    const buf = await audioCtx.decodeAudioData(arr);
+    scMixPadCache[track.id] = buf;
+    return buf;
+  }
+
+  function scMixPadStamp(){
+    return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  }
+
+  function scMixPadDownload(blob, name){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(_eMpUrl){} }, 30000);
+  }
