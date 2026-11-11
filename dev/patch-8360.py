@@ -53,7 +53,7 @@ BTN_NEW = ("    <button id=\"mixPadBtn\" title=\"Mix Pad\" style=\"background:no
            "padding:2px 9px; font-size:9.5px; font-family:'JetBrains Mono',monospace; "
            "letter-spacing:1px; cursor:pointer;\">MIX PAD</button>\n")
 
-MODAL_ANCHOR = "<!-- What's New popup - shown once whenever the app version changes -->"
+MODAL_ANCHOR = u"<!-- What's New popup \u2014 shown once whenever the app version changes -->"
 
 CSS_ANCHOR = "/* 83.5.0 - the mix panel: a second deck you drive by hand. */"
 
