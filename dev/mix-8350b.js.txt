@@ -1,0 +1,83 @@
+  // ---- deck B: transport ----
+  function mixBPlaying(){ return !!(deckEngineB.running); }
+
+  function mixBPlayPause(){
+    if(!deckEngineB.buffer){ mixLoadB(1); return; }
+    if(deckEngineB.running){
+      try{
+        const pos = deckBNow();
+        deckBStop();
+        deckEngineB.startOffset = pos;
+      }catch(_eMixPause){ deckBStop(); }
+      mixPaint();
+      return;
+    }
+    ensureAudioGraph();
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(function(){});
+    deckBStart(deckEngineB.startOffset || 0, deckEngineB.rate || 1);
+    mixFaderApply();
+    mixPaint();
+  }
+
+  function deckBNow(){
+    if(!deckEngineB.buffer || !audioCtx) return 0;
+    if(!deckEngineB.running) return deckEngineB.startOffset || 0;
+    const elapsed = (audioCtx.currentTime - deckEngineB.startedAt) * deckEngineB.rate;
+    const pos = (deckEngineB.startOffset || 0) + elapsed;
+    return Math.max(0, Math.min(deckEngineB.buffer.duration, pos));
+  }
+
+  function mixBCue(){
+    if(!deckEngineB.buffer) return;
+    if(deckEngineB.running){
+      deckBStart(0, deckEngineB.rate || 1);
+    } else {
+      deckEngineB.startOffset = 0;
+    }
+    mixFaderApply();
+    mixPaint();
+  }
+
+  function mixBPitch(percent){
+    const rate = 1 + (Number(percent) || 0) / 100;
+    const clamped = Math.max(0.25, Math.min(4, rate));
+    if(deckEngineB.running && deckEngineB.node){
+      // Re-anchor first so the change does not retroactively rewrite time already played.
+      deckEngineB.startOffset = deckBNow();
+      deckEngineB.startedAt = audioCtx.currentTime;
+      deckEngineB.rate = clamped;
+      try{ deckEngineB.node.playbackRate.setValueAtTime(clamped, audioCtx.currentTime); }catch(_eMixRate){}
+    } else {
+      deckEngineB.rate = clamped;
+    }
+    return clamped;
+  }
+
+  function mixBGainDb(db){
+    const g = Math.pow(10, (Number(db) || 0) / 20);
+    try{
+      // The KNOB node, never the blend node: the blend one belongs to the crossfader,
+      // and writing the knob's value there would quietly re-set the fade on every drag.
+      ensureDeckGainNode(deckEngineB);
+      deckEngineB.__gainDb = Number(db) || 0;
+      if(deckEngineB.knobGainNode) deckEngineB.knobGainNode.gain.value = g;
+    }catch(_eMixGain){}
+  }
+
+  // ---- the hand crossfader: equal power, so the middle is as loud as either end ----
+  function mixFaderApply(){
+    try{
+      const el = $('mixFader');
+      const p = el ? Math.max(0, Math.min(1, (Number(el.value) || 0) / 100)) : 0;
+      const aGain = Math.cos(p * Math.PI / 2);
+      const bGain = Math.sin(p * Math.PI / 2);
+      const gA = ensureDeckGainNode(deckEngine);
+      const gB = ensureDeckGainNode(deckEngineB);
+      if(gA) gA.gain.value = aGain;
+      if(gB) gB.gain.value = bGain;
+      const out = $('mixFaderOut');
+      if(out) out.textContent = p <= 0.02 ? 'A' : (p >= 0.98 ? 'B' : Math.round(p * 100) + '% B');
+      return { a: aGain, b: bGain };
+    }catch(_eMixFader){ return null; }
+  }
+
