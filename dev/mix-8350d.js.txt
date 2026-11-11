@@ -1,0 +1,131 @@
+  // ---- the picture: both songs' shape, their beat grid and both playheads ----
+  function mixDraw(){
+    const cv = $('mixWave');
+    if(!cv || !cv.getContext) return;
+    const ctx2 = cv.getContext('2d');
+    if(!ctx2) return;
+    const w = cv.width, h = cv.height;
+    ctx2.clearRect(0, 0, w, h);
+    const rows = [
+      { buf: deckEngine.buffer,  top: 2,        height: h / 2 - 3, color: '#e8734a', pos: (deckEngine.buffer && deckEngine.buffer.duration) ? deckNow() / deckEngine.buffer.duration : 0, deck: deckEngine },
+      { buf: deckEngineB.buffer, top: h / 2 + 1, height: h / 2 - 3, color: '#6fa8dc', pos: (deckEngineB.buffer && deckEngineB.buffer.duration) ? deckBNow() / deckEngineB.buffer.duration : 0, deck: deckEngineB }
+    ];
+    const bars = Math.max(60, Math.min(320, Math.floor(w / 2)));
+    rows.forEach(function(row){
+      if(!row.buf) return;
+      let data = null;
+      try{ data = row.buf.getChannelData(0); }catch(_eMixDraw){ return; }
+      if(!data) return;
+      const step = Math.floor(data.length / bars) || 1;
+      ctx2.fillStyle = row.color;
+      for(let i = 0; i < bars; i++){
+        let peak = 0;
+        const start = i * step;
+        for(let j = start; j < start + step; j += 32){
+          const v = Math.abs(data[j] || 0);
+          if(v > peak) peak = v;
+        }
+        const bh = Math.max(1, Math.round(peak * row.height));
+        ctx2.fillRect(i * (w / bars), row.top + (row.height - bh), Math.max(1, Math.floor(w / bars) - 1), bh);
+      }
+      // The beat grid, drawn only once a tempo is known.
+      const t = mixTempo(row.deck);
+      if(t && t.beat > 0.1){
+        ctx2.fillStyle = 'rgba(255,255,255,0.5)';
+        for(let b = t.offset; b < row.buf.duration; b += t.beat * (row.deck.rate || 1)){
+          const x = Math.round((b / row.buf.duration) * w);
+          ctx2.fillRect(x, row.top, 1, row.height);
+          if((b - t.offset) / t.beat > 64) break;   // enough lines to read, not a wash
+        }
+      }
+      // Playhead.
+      ctx2.fillStyle = '#ffffff';
+      ctx2.fillRect(Math.round(Math.max(0, Math.min(1, row.pos)) * (w - 2)), row.top, 2, row.height);
+    });
+  }
+
+  function mixPaint(){
+    try{
+      const title = $('mixBTitle');
+      if(title) title.textContent = mixBTrack ? (mixBTrack.name + (mixBTrack.artist ? (' — ' + mixBTrack.artist) : '')) : 'Nothing loaded on deck B';
+      const play = $('mixBPlay');
+      if(play){ play.textContent = deckEngineB.running ? 'PAUSE B' : (deckEngineB.buffer ? 'PLAY B' : 'LOAD B'); play.classList.toggle('active', !!deckEngineB.running); }
+      const tA = mixTempo(deckEngine);
+      const tB = mixTempo(deckEngineB);
+      const bpm = $('mixBpmReadout');
+      if(bpm) bpm.textContent = 'A ' + (tA ? tA.bpm : '—') + ' · B ' + (tB ? (Math.round(tB.bpm * (deckEngineB.rate || 1) * 10) / 10) : '—');
+      mixDraw();
+    }catch(_eMixPaint){}
+  }
+
+  function mixWire(){
+    const panel = $('mixPanel');
+    if(!panel || panel.dataset.mixWired === '1') return;
+    panel.dataset.mixWired = '1';
+    const on = function(id, ev, fn){
+      const el = $(id);
+      if(el) el.addEventListener(ev, fn);
+    };
+    on('mixBPlay', 'click', function(){ mixBPlayPause(); });
+    on('mixBCue', 'click', function(){ mixBCue(); });
+    on('mixBNextTrack', 'click', function(){ mixLoadB(1); });
+    on('mixBPrevTrack', 'click', function(){ mixLoadB(-1); });
+    on('mixSync', 'click', function(){ mixSync(); });
+    on('mixSwap', 'click', function(){ mixHandOver(); });
+    on('mixBPitch', 'input', function(e){
+      const rate = mixBPitch(e.target.value);
+      const out = $('mixBPitchOut');
+      if(out) out.textContent = ((rate - 1) * 100).toFixed(1) + '%';
+      mixPaint();
+    });
+    on('mixBGain', 'input', function(e){
+      mixBGainDb(e.target.value);
+      const out = $('mixBGainOut');
+      if(out) out.textContent = (Number(e.target.value) >= 0 ? '+' : '') + Number(e.target.value).toFixed(1) + ' dB';
+    });
+    on('mixFader', 'input', function(){ mixFaderApply(); });
+    try{
+      const el = $('mixFader');
+      if(el && !el.dataset.mixDefault){ el.dataset.mixDefault = '1'; el.value = '0'; }
+    }catch(_eMixFaderInit){}
+    mixBJog();
+    mixPaint();
+    setInterval(function(){
+      try{
+        if(document.hidden) return;
+        const p = $('mixPanel');
+        if(!p || !p.offsetParent) return;
+        if(deckEngineB.running || deckEngine.running) mixPaint();
+      }catch(_eMixTick){}
+    }, 700);
+  }
+
+  // A small drag on the deck B card to nudge it: drag right to push it ahead,
+  // left to pull it back — the "give it a shove" every DJ does by hand.
+  function mixBJog(){
+    const cv = $('mixWave');
+    if(!cv || cv.dataset.jogWired === '1') return;
+    cv.dataset.jogWired = '1';
+    let dragging = false, lastX = 0;
+    cv.addEventListener('pointerdown', function(e){
+      if(!deckEngineB.buffer) return;
+      dragging = true; lastX = e.clientX;
+      try{ cv.setPointerCapture(e.pointerId); }catch(_eJogCap){}
+    });
+    cv.addEventListener('pointermove', function(e){
+      if(!dragging || !deckEngineB.running) return;
+      const dx = e.clientX - lastX;
+      lastX = e.clientX;
+      if(!dx) return;
+      const shift = (dx / Math.max(1, cv.getBoundingClientRect().width)) * 0.5;
+      const next = Math.max(0, Math.min(deckEngineB.buffer.duration - 0.05, deckBNow() + shift));
+      deckBStart(next, deckEngineB.rate || 1);
+      mixFaderApply();
+    });
+    const end = function(){ dragging = false; };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('lostpointercapture', end);
+  }
+
+  setTimeout(function(){ try{ mixWire(); }catch(_eMixWire){} }, 200);
