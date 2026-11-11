@@ -1,0 +1,92 @@
+    // 83.2.9 - THE SESSION THE EARBUDS REACH. Without this the service had no player
+    // card on the phone, so a pause or a play from outside reached the WebView's
+    // session - and a swipe takes that away.
+    private void startSession() {
+        try {
+            session = new MediaSession(this, "SideCutNativePlay");
+            session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS
+                    | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+            session.setCallback(new MediaSession.Callback() {
+                @Override public void onPlay() { resumeOrBegin(); }
+                @Override public void onPause() { pauseIfPlaying(); }
+                @Override public void onStop() { stopEverything(); }
+            });
+            setMetadata();
+            setState(PlaybackState.STATE_PAUSED);
+            session.setActive(true);
+            note(this, "native -> the earbuds reach this player");
+        } catch (Exception e) {
+            session = null;
+            note(this, "native -> no session: " + e.getClass().getSimpleName());
+        }
+    }
+
+    private void setMetadata() {
+        try {
+            if (session == null) return;
+            JSONObject j = meta(this);
+            if (j != null) {
+                title = j.optString("title", title);
+                artist = j.optString("artist", artist);
+            }
+            session.setMetadata(new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, artist).build());
+        } catch (Exception ignored) { }
+    }
+
+    private void setState(int state) {
+        try {
+            if (session == null) return;
+            session.setPlaybackState(new PlaybackState.Builder()
+                    .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP)
+                    .setState(state, nowMs(), 1.0f).build());
+        } catch (Exception ignored) { }
+    }
+
+    private long nowMs() {
+        try { if (player != null) return Math.max(0, player.getCurrentPosition()); } catch (Exception ignored) { }
+        return Math.max(0, startMs);
+    }
+
+    /** A play from outside: the song it already holds, from where it stopped. */
+    private void resumeOrBegin() {
+        boolean playingNow = false;
+        try { playingNow = player != null && player.isPlaying(); } catch (Exception ignored) { }
+        if (playingNow) {
+            paused = false;
+            setState(PlaybackState.STATE_PLAYING);
+            return;
+        }
+        if (player != null) {
+            try {
+                player.start();
+                paused = false;
+                note(this, "native -> resumed");
+                showNote();
+                setState(PlaybackState.STATE_PLAYING);
+                return;
+            } catch (Exception e) { releasePlayer(); }
+        }
+        begin();
+    }
+
+    // A pause from outside, answered exactly like the card's own button.
+    private void pauseIfPlaying() {
+        try {
+            if (player != null && player.isPlaying()) {
+                player.pause();
+                paused = true;
+                note(this, "native -> paused");
+                showNote();
+                setState(PlaybackState.STATE_PAUSED);
+            }
+        } catch (Exception e) { note(this, "native -> pause failed"); }
+    }
+
+    private void stopSession() {
+        try { if (session != null) { session.setActive(false); session.release(); } } catch (Exception ignored) { }
+        session = null;
+    }
+
