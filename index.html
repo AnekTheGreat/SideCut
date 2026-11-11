@@ -20716,7 +20716,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.2.9';
+  const APP_VERSION = '83.3.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21426,6 +21426,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '83.3.0', date: 'November 11, 2026', title: 'The headphones wake the sound again', items: [
+    'Pressing play on the earbuds after a pause wakes the audio mixer before it starts the song. The sound of a song leaves through that mixer, and a mixer the phone had put to sleep could turn a good press into silence.',
+    'A paused song keeps that mixer awake while it waits on the deck, so a press that arrives twenty minutes later finds it ready.',
+    'A press that still cannot start the song says so - one short line on screen, and the same line kept in Settings, Widget - instead of the app doing nothing.'
+  ] },
       { version: '83.2.9', date: 'November 11, 2026', title: 'The headphones get the player back', items: [
     'Pressing play on your earbuds after a pause starts the music again, including the player that keeps going with the app swiped away: it answers the earbud, lock-screen and shade buttons itself instead of leaving them to a session that went with the swipe.',
     'That player shows itself properly now: the song and artist on the shade and the lock screen, and one button that pauses or plays to match what it is doing, so a pause no longer leaves a card with no way back.',
@@ -39076,19 +39081,83 @@ function _fallbackCopy(text){
   let scTransportPaused = false;
   function scTransportPress(){
     try{ scTransportResume(); }catch(_eTpResume){}
+    // 83.3.0 - and the mixer, before anything is asked to play through it.
+    try{ scAudioCtxAwake(); }catch(_eTpCtx){}
     try{ cancelMediaRelease(); }catch(_eTpRelease){}
     try{ mediaParkedInBackground = false; mediaReleasedInBackground = false; }catch(_eTpFlags){}
     try{ rearmMediaSession(); }catch(_eTpRearm){}
     try{ startMediaSessionHeartbeat(); }catch(_eTpBeat){}
     scTransportPaused = false;
   }
+  // 83.3.0 - THE PRESS ENDS IN SOUND OR IN A REASON. A deck song's sound leaves
+  // through the graph, so a sleeping context silences a good play(); and a press that
+  // cannot make sound now says so instead of looking like a dead button.
+  function scAudioCtxAwake(){
+    try{
+      if(!audioCtx) return true;                       // no graph: the element talks directly
+      if(audioCtx.state === 'running') return true;
+      if(typeof audioCtx.resume === 'function') audioCtx.resume().catch(function(){});
+      return audioCtx.state === 'running';
+    }catch(_eCtx){ return true; }
+  }
+  function scTransportNote(txt){
+    try{ scGhostStep('press -> ' + String(txt || '')); }catch(_eNote){}
+  }
+  function scTransportSay(txt){
+    scTransportNote(txt);
+    try{ console.warn('transport: ' + txt); }catch(_eSay){}
+    try{ if(!document.hidden) toast('Headphones: ' + txt, 4200); }catch(_eSayToast){}
+  }
+  // One door for every press from outside that asks for sound.
+  function scTransportPlay(why){
+    const who = why || 'the headphones';
+    try{ scTransportPress(); }catch(_ePress){}
+    try{ scAudioCtxAwake(); }catch(_eAwake){}
+    const a = activeAudio();
+    if(!a){ scTransportSay(who + ' asked for music and there is no player'); return true; }
+    if(!a.src){
+      try{
+        if(scResumeRestoredSong()){ scTransportNote(who + ' -> the last song went back on the deck and started'); return true; }
+      }catch(_eRestore){}
+    }
+    let started = null;
+    try{ started = a.play(); }catch(_ePlay){ started = null; }
+    if(!started || typeof started.then !== 'function'){
+      scTransportNote(who + ' -> the player took the press');
+      return true;
+    }
+    started.then(function(){
+      scTransportNote(who + ' -> playing');
+      // The failure the element cannot report: it plays, the mixer above it is asleep.
+      setTimeout(function(){
+        try{
+          if(!a.paused && audioCtx && audioCtx.state !== 'running'){
+            scTransportSay('the song is running but the phone will not wake the mixer - tap play in the app once');
+          }
+        }catch(_eCheck){}
+      }, 1200);
+    }).catch(function(err){
+      const name = (err && (err.name || err.message)) || 'a refusal';
+      scTransportSay('the player would not start (' + name + ')');
+      try{ recoverAudio(a, 'media session play failed'); }catch(_eRecover){}
+      setTimeout(function(){
+        try{
+          if(a.paused && !userPaused){
+            Promise.resolve(a.play()).then(function(){ scTransportNote(who + ' -> playing on the second try'); }).catch(function(){});
+          }
+        }catch(_eRetry){}
+      }, 400);
+    });
+    return true;
+  }
   function registerMediaSessionHandlers(){
     // 80.6.20 - a rebuild while a stream is playing must not put the deck's
     // buttons back on a song nobody is hearing.
     if(scStreamPhoneOwns()){ try{ scStreamPhoneArm(); }catch(_eRms){ } return; }
     mediaSetActionHandler('play', () => {
+      // 83.3.0 - one door: wake the mixer, start the song, say what happened.
+      if(scTransportPlay('the headphones or the lock screen')) return;
       try{ scTransportPress(); }catch(e){}
-      if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
       const _pa = activeAudio();
       if(!_pa) return;
       // 73.4.6 - A PRESS FROM OUTSIDE AFTER A LONG TIME AWAY. The page can come back
@@ -40903,6 +40972,8 @@ function _fallbackCopy(text){
     const beat = function(){
       try{
         if(!mediaParkedInBackground){ stopParkedBeat(); return; }
+        // 83.3.0 - a paused song still needs a live mixer for the press that resumes it.
+        try{ scAudioCtxAwake(); }catch(_ePkCtx){}
         const t = track || (typeof mediaResumableTrack === 'function' ? mediaResumableTrack() : null);
         if(!t){ stopParkedBeat(); return; }
         try{ mediaSetMetadata(t); }catch(_ePkMeta){}
