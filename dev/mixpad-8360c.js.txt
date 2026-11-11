@@ -1,0 +1,218 @@
+  // ---- MixPad: the picture and the wiring ----
+  function mpSelectedClip(){
+    if(!mixPad.selected) return null;
+    const tr = mixPad.track[mixPad.selected.track];
+    if(!tr) return null;
+    return tr.clips[mixPad.selected.index] || null;
+  }
+
+  function mpPaint(){
+    const total = scMixPadLength();
+    const tEl = $('mixPadTime');
+    if(tEl) tEl.textContent = fmtTime(Math.floor(mixPad.playhead || 0));
+    const lEl = $('mixPadLen');
+    if(lEl) lEl.textContent = fmtTime(Math.floor(total));
+    document.querySelectorAll('.mp-lane').forEach(function(lane){
+      let head = lane.querySelector('.mp-head');
+      if(!head){
+        head = document.createElement('div');
+        head.className = 'mp-head';
+        lane.appendChild(head);
+      }
+      head.style.left = (Math.min(1, (mixPad.playhead || 0) / total) * 100) + '%';
+    });
+    const play = $('mixPadPlay');
+    if(play){
+      play.textContent = mixPad.playing ? 'PAUSE' : 'PLAY';
+      play.classList.toggle('active', !!mixPad.playing);
+    }
+    const info = $('mixPadClipInfo');
+    if(info){
+      const c = mpSelectedClip();
+      info.textContent = c
+        ? (c.name + ' · starts ' + fmtTime(Math.floor(c.start)) + ' · plays ' + fmtTime(Math.floor(c.dur)))
+        : 'Tap a clip to select it';
+    }
+  }
+
+  function mpRender(){
+    const total = scMixPadLength();
+    mixPad.track.forEach(function(tr, ti){
+      const lane = $('mixPadLane' + (ti + 1));
+      if(!lane) return;
+      Array.prototype.slice.call(lane.querySelectorAll('.mp-clip')).forEach(function(el){ el.remove(); });
+      (tr.clips || []).forEach(function(c, ci){
+        const el = document.createElement('div');
+        const chosen = mixPad.selected && mixPad.selected.track === ti && mixPad.selected.index === ci;
+        el.className = 'mp-clip' + (chosen ? ' sel' : '');
+        el.style.left = ((c.start || 0) / total * 100) + '%';
+        el.style.width = Math.max(2, ((c.dur || 0) / total * 100)) + '%';
+        el.textContent = c.name || 'clip';
+        el.title = c.name || '';
+        el.addEventListener('click', function(){
+          mixPad.selected = { track: ti, index: ci };
+          mpRender();
+        });
+        lane.appendChild(el);
+      });
+    });
+    mpPaint();
+  }
+
+  function mpFillPicker(){
+    const sel = $('mixPadSongPick');
+    if(!sel) return;
+    const keep = sel.value;
+    sel.innerHTML = '';
+    const list = (allTracks || []).slice(0, 400);
+    if(!list.length){
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = 'No songs in the library yet';
+      sel.appendChild(o);
+      return;
+    }
+    list.forEach(function(t){
+      const o = document.createElement('option');
+      o.value = t.id;
+      o.textContent = t.artist ? (t.name + ' — ' + t.artist) : t.name;
+      sel.appendChild(o);
+    });
+    if(keep) sel.value = keep;
+  }
+
+  async function mpAddSong(){
+    const sel = $('mixPadSongPick');
+    const id = sel && sel.value;
+    if(!id){ toast('Pick a song first'); return; }
+    const targetSel = $('mixPadTarget');
+    const ti = Math.max(0, Math.min(MP_TRACKS - 1, Number(targetSel && targetSel.value) || 0));
+    const t = (allTracks || []).find(function(x){ return x.id === id; });
+    if(!t){ toast('That song is not available'); return; }
+    const status = $('mixPadStatus');
+    if(status) status.textContent = 'Loading ' + t.name + '…';
+    try{
+      const buf = await scMixPadDecode(t);
+      const clip = {
+        id: 'mp' + Date.now() + Math.random().toString(36).slice(2, 6),
+        trackId: t.id,
+        name: t.name,
+        buffer: buf,
+        start: Math.max(0, mixPad.playhead || 0),
+        offset: 0,
+        dur: buf.duration
+      };
+      mixPad.track[ti].clips.push(clip);
+      mixPad.selected = { track: ti, index: mixPad.track[ti].clips.length - 1 };
+      if(status) status.textContent = '';
+      mpRender();
+      toast('Added to track ' + (ti + 1) + (mixPad.playhead > 0 ? (' at ' + fmtTime(Math.floor(mixPad.playhead))) : ''));
+    }catch(_eMpAdd){
+      if(status) status.textContent = '';
+      toast('Could not load that song for the mix');
+    }
+  }
+
+  function mpClipMove(delta){
+    const c = mpSelectedClip();
+    if(!c) return;
+    c.start = Math.max(0, (c.start || 0) + delta);
+    mpRender();
+  }
+
+  function mpClipResize(delta){
+    const c = mpSelectedClip();
+    if(!c || !c.buffer) return;
+    const room = Math.max(0.5, c.buffer.duration - (c.offset || 0));
+    c.dur = Math.max(0.5, Math.min(room, (c.dur || 0) + delta));
+    mpRender();
+  }
+
+  function mpClipDelete(){
+    const c = mpSelectedClip();
+    if(!c || !mixPad.selected) return;
+    mixPad.track[mixPad.selected.track].clips.splice(mixPad.selected.index, 1);
+    mixPad.selected = null;
+    mpRender();
+  }
+
+  function mpOpen(){
+    mixPad.open = true;
+    const bd = $('mixPadBackdrop');
+    if(bd) bd.style.display = 'flex';
+    // The studio takes the speakers: a song still playing under the timeline
+    // would be heard in the mix and recorded into the take.
+    try{ const a = activeAudio(); if(a && !a.paused) a.pause(); }catch(_eMpPause){}
+    mpFillPicker();
+    mpRender();
+  }
+
+  function mpClose(){
+    mpStop();
+    if(mixPad.recording) mpToggleRecord();
+    mixPad.open = false;
+    const bd = $('mixPadBackdrop');
+    if(bd) bd.style.display = 'none';
+  }
+
+  function mpWire(){
+    if(mixPad.wired) return;
+    mixPad.wired = true;
+    const on = function(id, fn){
+      const el = $(id);
+      if(el) el.addEventListener('click', fn);
+    };
+    on('mixPadBtn', function(){ mpOpen(); });
+    on('mixPadClose', function(){ mpClose(); });
+    on('mixPadPlay', function(){ if(mixPad.playing) mpStop(); else mpPlay(); });
+    on('mixPadStop', function(){ mixPad.playhead = 0; mpStop(); mpPaint(); });
+    on('mixPadAdd', function(){ mpAddSong(); });
+    on('mixPadExport', function(){ mpExport(); });
+    on('mixPadRec', function(){ mpToggleRecord(); });
+    on('mixPadClipLeft', function(){ mpClipMove(-1); });
+    on('mixPadClipRight', function(){ mpClipMove(1); });
+    on('mixPadClipShort', function(){ mpClipResize(-1); });
+    on('mixPadClipLong', function(){ mpClipResize(1); });
+    on('mixPadClipDel', function(){ mpClipDelete(); });
+
+    document.querySelectorAll('[data-mp-mute]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        const i = Number(btn.getAttribute('data-mp-mute'));
+        const tr = mixPad.track[i];
+        if(!tr) return;
+        tr.mute = !tr.mute;
+        btn.classList.toggle('on', tr.mute);
+        mpApplyMix();
+      });
+    });
+    document.querySelectorAll('[data-mp-solo]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        const i = Number(btn.getAttribute('data-mp-solo'));
+        const tr = mixPad.track[i];
+        if(!tr) return;
+        tr.solo = !tr.solo;
+        btn.classList.toggle('on', tr.solo);
+        mpApplyMix();
+      });
+    });
+    document.querySelectorAll('[data-mp-vol]').forEach(function(slider){
+      slider.addEventListener('input', function(){
+        const i = Number(slider.getAttribute('data-mp-vol'));
+        const tr = mixPad.track[i];
+        if(!tr) return;
+        tr.gain = Math.max(0, Math.min(1, (Number(slider.value) || 0) / 100));
+        mpApplyMix();
+      });
+    });
+    document.querySelectorAll('[data-mp-pan]').forEach(function(slider){
+      slider.addEventListener('input', function(){
+        const i = Number(slider.getAttribute('data-mp-pan'));
+        const tr = mixPad.track[i];
+        if(!tr) return;
+        tr.pan = Math.max(-1, Math.min(1, (Number(slider.value) || 0) / 100));
+        mpApplyMix();
+      });
+    });
+  }
+
+  setTimeout(function(){ try{ mpWire(); }catch(_eMpWire){} }, 250);
