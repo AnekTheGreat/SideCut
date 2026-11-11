@@ -1,0 +1,139 @@
+  // ---------------- 83.5.0 - the mix panel: a second deck, driven by hand ----------------
+  //
+  // DJ Mode has always carried a second lane (deckEngineB), but only the automatic
+  // "crossfade to next" ever touched it: you could not load a song onto it, start
+  // it yourself, or hold two songs in the air at once. A mix you perform needs
+  // exactly that, so the lane gets a transport, a tempo reading, a beat sync and a
+  // hand fader. Everything below drives the same gain nodes the automatic crossfade
+  // uses, which is why the recorder and the master limiter keep hearing both decks.
+
+  // ---- tempo, read off the audio itself ----
+  //
+  // A song is not "128 BPM because someone typed 128": what a mix needs is where the
+  // beats actually fall. The onset envelope is the positive rise in short-window
+  // loudness (a kick, a snare, a pluck), and the beat is the spacing the envelope
+  // repeats at most strongly between 60 and 190 BPM. The first strong onset after
+  // the top is the grid's phase, which is what lets two decks line up.
+  function scDetectTempo(buffer){
+    try{
+      if(!buffer || typeof buffer.getChannelData !== 'function') return null;
+      const sr = buffer.sampleRate || 44100;
+      const n = buffer.length || 0;
+      if(!n) return null;
+      const hop = Math.max(128, Math.round(sr * 0.01));    // 10 ms of audio per frame
+      const fps = sr / hop;
+      const frames = Math.floor(n / hop);
+      if(frames < 64) return null;
+      const limit = Math.min(frames, Math.round(fps * 90)); // first 90 s is plenty
+      const ch0 = buffer.getChannelData(0);
+      const ch1 = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null;
+      const env = new Float32Array(limit);
+      let prev = 0;
+      for(let i = 0; i < limit; i++){
+        const base = i * hop;
+        let sum = 0, count = 0;
+        for(let j = base; j < base + hop && j < n; j += 4){
+          const v = ch1 ? (ch0[j] + ch1[j]) * 0.5 : ch0[j];
+          sum += v * v;
+          count++;
+        }
+        const rms = Math.sqrt(sum / (count || 1));
+        env[i] = rms > prev ? (rms - prev) : 0;
+        prev = rms;
+      }
+      // The spacing the envelope repeats at, 60..190 BPM.
+      const minLag = Math.max(2, Math.round(fps * 60 / 190));
+      const maxLag = Math.round(fps * 60 / 60);
+      let best = 0, bestLag = 0;
+      for(let lag = minLag; lag <= maxLag; lag++){
+        let s = 0;
+        const stop = limit - lag;
+        for(let i = 0; i < stop; i++) s += env[i] * env[i + lag];
+        s = s / (stop || 1);
+        if(s > best){ best = s; bestLag = lag; }
+      }
+      if(!bestLag || best <= 0) return null;
+      let bpm = (60 * fps) / bestLag;
+      while(bpm < 70) bpm *= 2;
+      while(bpm > 190) bpm /= 2;
+      if(!(bpm > 60 && bpm < 200)) return null;
+      const beat = 60 / bpm;
+      // Phase: the strongest onset in the first few seconds of the grid.
+      let offset = 0, peak = 0;
+      const window = Math.min(limit, Math.round(fps * Math.max(4, beat * 4)));
+      for(let i = 0; i < window; i++){
+        if(env[i] > peak){ peak = env[i]; offset = i / fps; }
+      }
+      return { bpm: Math.round(bpm * 10) / 10, beat: beat, offset: offset, strength: best };
+    }catch(_eTempo){ return null; }
+  }
+
+  function mixTempo(deck){
+    try{
+      if(!deck || !deck.buffer) return null;
+      // The answer belongs to the buffer, including "there is no tempo here": re-running
+      // the analysis on every repaint would cost more than the picture is worth.
+      if(deck.__tempoFor === deck.buffer) return deck.__tempo || null;
+      deck.__tempoFor = deck.buffer;
+      deck.__tempo = scDetectTempo(deck.buffer);
+      return deck.__tempo || null;
+    }catch(_eMixTempo){ return null; }
+  }
+
+  // ---- deck B: loading ----
+  let mixBTrack = null;
+  let mixBusy = false;
+
+  function mixTrackFor(id){
+    try{
+      if(typeof djTrackById === 'function') return djTrackById(id);
+    }catch(_eMixLookup){}
+    return allTracks.find(function(tr){ return tr.id === id; }) || null;
+  }
+
+  async function mixLoadB(dir){
+    if(mixBusy) return;
+    const ids = djBrowseIds();
+    if(!ids || !ids.length){ toast('This playlist has no songs to load onto deck B'); return; }
+    let at = deckEngineB.trackId ? ids.indexOf(deckEngineB.trackId) : -1;
+    if(at < 0) at = ids.indexOf(djCurrentTrackId);
+    let next = at + (dir || 1);
+    if(next < 0) next = ids.length - 1;
+    if(next >= ids.length) next = 0;
+    const track = mixTrackFor(ids[next]);
+    if(!track){ toast('That song is not available'); return; }
+    mixBusy = true;
+    try{
+      ensureAudioGraph();
+      if(!audioCtx){ toast('Mixing needs Web Audio, which is not available on this device'); return; }
+      toast('Loading deck B…', 9000);
+      let url = track.url;
+      if(track.file){
+        try{ URL.revokeObjectURL(track.url); }catch(_eMixRevoke){}
+        url = URL.createObjectURL(track.file);
+        track.url = url;
+      }
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error('fetch failed');
+      const arrBuf = await resp.arrayBuffer();
+      const buf = await audioCtx.decodeAudioData(arrBuf);
+      deckBStop();
+      deckEngineB.buffer = buf;
+      deckEngineB.trackId = track.id;
+      deckEngineB.startOffset = 0;
+      deckEngineB.rate = 1;
+      deckEngineB.__tempo = null;
+      deckEngineB.__tempoFor = null;
+      mixBTrack = track;
+      ensureDeckGainNode(deckEngineB);
+      mixFaderApply();
+      mixPaint();
+      const tempo = mixTempo(deckEngineB);
+      toast(tempo ? ('Deck B: ' + track.name + ' — ' + tempo.bpm + ' BPM') : ('Deck B: ' + track.name), 5000);
+    }catch(_eMixLoad){
+      toast('Could not load that song onto deck B');
+    }finally{
+      mixBusy = false;
+    }
+  }
+
