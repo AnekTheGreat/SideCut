@@ -1,0 +1,167 @@
+package __PKG__;
+
+import android.content.Intent;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
+import android.view.KeyEvent;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
+
+/**
+ * 83.4.0 - THE APP ITSELF ANSWERS THE EARBUDS.
+ *
+ * Until now every press from a headset travelled through the media-session
+ * plugin. Its service only advertises a transport action it holds a live
+ * PluginCall for (MediaSessionService.update walks plugin.hasActionHandler),
+ * and it declares PlaybackState actions from that same list. A player that is
+ * not armed - the bridge not ready, the opt-in switch off, the crash recorder
+ * having turned it off once - therefore publishes a session with NO actions,
+ * and Android does not route a button press to a session that claims it can do
+ * nothing. The result is a press that reaches nobody, whatever headset is on
+ * the phone, while the in-app button keeps working because it never leaves the
+ * page.
+ *
+ * This class is that missing owner, owned by the app rather than by a plugin:
+ *
+ *   - one MediaSession, created with the activity, kept ACTIVE, and told what
+ *     the page is doing (playing/paused) through the SideCutKeys bridge the
+ *     page writes to;
+ *   - it always declares play, pause, play/pause, stop, next and previous, so
+ *     the phone has somewhere to send a press;
+ *   - every press is turned into one command and handed to the page's
+ *     window.__scNativeKey, on the UI thread, inside the WebView that made the
+ *     sound.
+ *
+ * Nothing here plays audio and nothing here needs the plugin. If the plugin's
+ * session is alive too, both carry the same actions and the press still lands
+ * on the same page function.
+ */
+public final class SideCutKeys {
+    private static MediaSession session;
+    private static WebView page;
+
+    private SideCutKeys() { }
+
+    /** Called from MainActivity.onCreate, after the bridge exists. */
+    public static void attach(MainActivity activity) {
+        if (activity == null) return;
+        // GhostPlayerActivity extends MainActivity; a hidden player must not
+        // steal the keys from the window the owner is looking at.
+        if (activity.getClass() != MainActivity.class) return;
+        try {
+            if (page == null && activity.getBridge() != null) {
+                WebView w = activity.getBridge().getWebView();
+                if (w != null) {
+                    page = w;
+                    w.addJavascriptInterface(new FromPage(), "SideCutKeys");
+                }
+            }
+        } catch (Exception ignored) { }
+        try {
+            if (session == null) {
+                MediaSession s = new MediaSession(activity.getApplicationContext(), "SideCut");
+                s.setCallback(new Keys());
+                s.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS
+                        | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+                session = s;
+            }
+            state("paused");
+        } catch (Exception ignored) { }
+    }
+
+    /** What the page says it is doing. */
+    public static void state(String what) {
+        MediaSession s = session;
+        if (s == null) return;
+        boolean playing = "playing".equals(what);
+        try {
+            long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                    | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_STOP
+                    | PlaybackState.ACTION_SKIP_TO_NEXT
+                    | PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+            s.setPlaybackState(new PlaybackState.Builder()
+                    .setActions(actions)
+                    .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                            PlaybackState.PLAYBACK_POSITION_UNKNOWN, playing ? 1.0f : 0.0f)
+                    .build());
+            s.setActive(true);
+        } catch (Exception ignored) { }
+    }
+
+    private static void send(final String cmd) {
+        final WebView w = page;
+        if (w == null) return;
+        try {
+            w.post(new Runnable() {
+                @Override public void run() {
+                    try {
+                        w.evaluateJavascript(
+                                "window.__scNativeKey&&window.__scNativeKey('" + cmd + "')", null);
+                    } catch (Exception ignored) { }
+                }
+            });
+        } catch (Exception ignored) { }
+    }
+
+    /** The bridge the page writes its playback state to. */
+    public static final class FromPage {
+        @JavascriptInterface
+        public void state(String what) {
+            SideCutKeys.state(what);
+        }
+    }
+
+    static final class Keys extends MediaSession.Callback {
+        @Override public void onPlay() { send("play"); }
+        @Override public void onPause() { send("pause"); }
+        @Override public void onStop() { send("pause"); }
+        @Override public void onSkipToNext() { send("next"); }
+        @Override public void onSkipToPrevious() { send("prev"); }
+
+        /**
+         * A single earbud press is KEYCODE_MEDIA_PLAY_PAUSE (or HEADSETHOOK),
+         * and which of play and pause it means is the page's question - the
+         * page is the only thing that knows whether a song is running. So the
+         * key is decided here, by name, and the page is asked to toggle.
+         */
+        @Override public boolean onMediaButtonEvent(Intent intent) {
+            try {
+                Object extra = (intent != null)
+                        ? intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) : null;
+                if (extra instanceof KeyEvent) {
+                    KeyEvent e = (KeyEvent) extra;
+                    if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                        switch (e.getKeyCode()) {
+                            case KeyEvent.KEYCODE_HEADSETHOOK:
+                            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                                send("toggle");
+                                return true;
+                            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                                send("play");
+                                return true;
+                            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                                send("pause");
+                                return true;
+                            case KeyEvent.KEYCODE_MEDIA_NEXT:
+                                send("next");
+                                return true;
+                            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                                send("prev");
+                                return true;
+                            case KeyEvent.KEYCODE_MEDIA_STOP:
+                                send("pause");
+                                return true;
+                            default:
+                                break;
+                        }
+                    } else if (e.getAction() == KeyEvent.ACTION_UP) {
+                        // The down already decided; swallow the up so nothing
+                        // downstream acts on the same press twice.
+                        return true;
+                    }
+                }
+            } catch (Exception ignored) { }
+            return true;
+        }
+    }
+}
