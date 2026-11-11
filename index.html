@@ -3138,6 +3138,22 @@ body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #studioView
 }
 .mp-hint{ font-size:10.5px; line-height:1.45; color:var(--ink-dim); margin-top:10px; }
 
+/* 83.7.0 - the clip as something you can pick up: edges to crop with, fades
+   drawn on the clip itself, and the small sliders under the tools. */
+.mp-clip{ position:relative; overflow:hidden; touch-action:none;
+  box-shadow: inset 2px 0 rgba(255,255,255,.28), inset -2px 0 rgba(255,255,255,.28); }
+.mp-clip::before, .mp-clip::after{ content:''; position:absolute; top:0; bottom:0; pointer-events:none; }
+.mp-clip::before{ left:0; width:var(--fi,0%); background:linear-gradient(90deg, rgba(0,0,0,.6), rgba(0,0,0,0)); }
+.mp-clip::after{ right:0; width:var(--fo,0%); background:linear-gradient(270deg, rgba(0,0,0,.6), rgba(0,0,0,0)); }
+.mp-clip.sel{ outline:1.5px solid var(--accent); outline-offset:-1px; }
+.mp-clip.rev{ border-style:dashed; }
+.mp-hint{ font-size:10px; color:var(--ink-dim); margin:4px 0 2px; line-height:1.45; }
+.mp-chip-label{ font-size:9px; letter-spacing:1px; color:var(--ink-dim); align-self:center; margin-right:2px; }
+.mp-mini.on{ border-color:var(--accent); color:var(--accent); }
+.mp-sliders{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+.mp-slide{ display:grid; grid-template-columns:78px 1fr 44px; align-items:center; gap:6px; font-size:9px; letter-spacing:.5px; color:var(--ink-dim); }
+.mp-slide input[type=range]{ width:100%; accent-color:var(--accent); }
+.mp-slide i{ font-style:normal; font-size:9px; text-align:right; }
 /* 83.5.0 - the mix panel: a second deck you drive by hand. */
 .mix-panel{
   margin-top:14px; padding:12px; border-radius:14px;
@@ -7290,12 +7306,30 @@ html, body{ max-width:100%; overflow-x:hidden; }
           <div class="mp-status" id="mixPadStatus"></div>
 
           <div class="mp-clips-info" id="mixPadClipInfo">Tap a clip to select it</div>
+          <div class="mp-hint">Drag a clip to move it · drag either edge to crop it · tap to select</div>
           <div class="mp-clip-btns">
             <button class="mp-mini" id="mixPadClipLeft" title="Move this clip one second earlier">◀ 1s</button>
             <button class="mp-mini" id="mixPadClipRight" title="Move this clip one second later">1s ▶</button>
             <button class="mp-mini" id="mixPadClipShort" title="Make this clip one second shorter">SHORTER</button>
             <button class="mp-mini" id="mixPadClipLong" title="Make this clip one second longer">LONGER</button>
             <button class="mp-mini" id="mixPadClipDel" title="Remove this clip">DELETE</button>
+          </div>
+          <div class="mp-clip-btns">
+            <button class="mp-mini" id="mixPadCropIn" title="Crop one second off the start of this clip">CROP START</button>
+            <button class="mp-mini" id="mixPadCropOut" title="Crop one second off the end of this clip">CROP END</button>
+            <button class="mp-mini" id="mixPadRev" title="Play this clip backwards">REVERSE</button>
+          </div>
+          <div class="mp-clip-btns">
+            <span class="mp-chip-label">CROSSFADE</span>
+            <button class="mp-mini" id="mixPadXf1" title="Overlap this clip with the one before it by one second">1s</button>
+            <button class="mp-mini" id="mixPadXf2" title="Overlap this clip with the one before it by two seconds">2s</button>
+            <button class="mp-mini" id="mixPadXf4" title="Overlap this clip with the one before it by four seconds">4s</button>
+            <button class="mp-mini" id="mixPadXf8" title="Overlap this clip with the one before it by eight seconds">8s</button>
+          </div>
+          <div class="mp-sliders">
+            <label class="mp-slide"><span>FADE IN</span><input type="range" id="mixPadFadeIn" min="0" max="80" step="1" value="0"><i>0.0s</i></label>
+            <label class="mp-slide"><span>FADE OUT</span><input type="range" id="mixPadFadeOut" min="0" max="80" step="1" value="0"><i>0.0s</i></label>
+            <label class="mp-slide"><span>CLIP LEVEL</span><input type="range" id="mixPadClipGain" min="-24" max="12" step="1" value="0"><i>0 dB</i></label>
           </div>
 
           <div class="mp-tracks">
@@ -20939,7 +20973,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.6.0';
+  const APP_VERSION = '83.7.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21649,6 +21683,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '83.7.0', date: 'November 11, 2026', title: 'Mix Pad: drag, crop, crossfade, reverse', items: [
+    'A Mix Pad card now sits in Studio with the other tools, so it is one tap from the Studio screen instead of hidden in the header.',
+    'Clips are dragged by hand: pull the body to move it, pull either edge to crop the start or the end, and the timeline shows the fades as shading so you can see the shape of the mix.',
+    'CROSSFADE 1s, 2s, 4s or 8s overlaps the selected clip with the one before it on the same track and fades one out as the other comes in. REVERSE flips a clip, FADE IN and FADE OUT set each side by hand, and every clip has its own level.',
+    'Playback and the exported WAV both follow all of it, so what you hear is what the file contains.'
+  ] },
       { version: '83.6.0', date: 'November 11, 2026', title: 'Mix Pad: four tracks and a timeline', items: [
     'A new window in Studio for building a mix instead of performing one: four tracks, a song placed on any of them at the playhead, and a clip you can slide, shorten or lengthen until it sits where you want it.',
     'Each track has its own volume and pan, plus MUTE and SOLO, and they all work while the mix is running - not on the next press of play.',
@@ -42775,9 +42815,9 @@ function _fallbackCopy(text){
       if(mpAnySolo() && !tr.solo) return;
       scMixPadLayout(tr.clips, from).forEach(function(plan){
         const src = ctx.createBufferSource();
-        src.buffer = plan.clip.buffer;
+        src.buffer = mpClipBuffer(plan.clip);
         const g = ctx.createGain();
-        g.gain.value = mpTrackGainValue(tr);
+        mpShapeGain(ctx, g, plan.clip, plan, mpTrackGainValue(tr), ctx.currentTime + plan.when);
         src.connect(g);
         let out = g, p = null;
         if(ctx.createStereoPanner){
@@ -42859,9 +42899,10 @@ function _fallbackCopy(text){
         tr.clips.forEach(function(c){
           if(!c.buffer || !(c.dur > 0)) return;
           const src = off.createBufferSource();
-          src.buffer = c.buffer;
+          src.buffer = mpClipBuffer(c);
           const g = off.createGain();
-          g.gain.value = mpTrackGainValue(tr);
+          mpShapeGain(off, g, c, { when: Math.max(0, c.start || 0), offset: c.offset || 0, dur: c.dur },
+            mpTrackGainValue(tr), Math.max(0, c.start || 0));
           src.connect(g);
           let out = g;
           if(off.createStereoPanner){
@@ -42936,7 +42977,7 @@ function _fallbackCopy(text){
     return tr.clips[mixPad.selected.index] || null;
   }
 
-  function mpPaint(){
+  function mpPaintBase(){
     const total = scMixPadLength();
     const tEl = $('mixPadTime');
     if(tEl) tEl.textContent = fmtTime(Math.floor(mixPad.playhead || 0));
@@ -43146,6 +43187,303 @@ function _fallbackCopy(text){
   }
 
   setTimeout(function(){ try{ mpWire(); }catch(_eMpWire){} }, 250);
+  // ---- 83.7.0 - editing a clip by hand: drag it, crop it, crossfade it ----
+  //
+  // A clip is four numbers - where it starts on the timeline, how far into the
+  // song it begins, how much of the song it plays, and now how loud it is and
+  // how long its two fades are. Everything below moves those numbers, and the
+  // three pure helpers (mpDragSeconds, mpCropHead, mpXFadePlan) are separated
+  // from the touching of the screen so they can be checked without one.
+  const mpRevCache = [];
+
+  function mpDragSeconds(dx, width, total){
+    const secs = (Number(dx) || 0) / Math.max(1, Number(width) || 1) * Math.max(1, Number(total) || 1);
+    return Math.round(secs * 10) / 10;
+  }
+
+  // Dragging a clip's left edge crops the head: the song starts later and the
+  // clip starts later with it, so what you hear at that point does not move.
+  function mpCropHead(clip, delta, base){
+    if(!clip || !clip.buffer) return;
+    const b = base || clip;
+    const bufDur = clip.buffer.duration || 0;
+    const dur = Number(b.dur) || 0, off = Number(b.offset) || 0, st = Number(b.start) || 0;
+    let d = Number(delta) || 0;
+    if(d > 0) d = Math.min(d, Math.max(0, dur - 0.3));
+    if(d < 0) d = Math.max(d, Math.max(-off, -st));
+    clip.offset = Math.max(0, off + d);
+    clip.start = Math.max(0, st + d);
+    clip.dur = Math.max(0.3, Math.min(bufDur - clip.offset, dur - d));
+  }
+
+  // The right edge is a plain length: never past the end of the song.
+  function mpCropTail(clip, delta, base){
+    if(!clip || !clip.buffer) return;
+    const b = base || clip;
+    const room = Math.max(0.3, (clip.buffer.duration || 0) - (Number(b.offset) || 0));
+    clip.dur = Math.max(0.3, Math.min(room, (Number(b.dur) || 0) + (Number(delta) || 0)));
+  }
+
+  // A crossfade is an overlap plus two opposing fades: the outgoing clip fades
+  // out over the last N seconds, the incoming one fades in over its first N,
+  // and the incoming one is pulled back so those N seconds actually overlap.
+  function mpXFadePlan(clips, index, seconds){
+    const list = clips || [];
+    const cur = list[index];
+    if(!cur) return null;
+    let prev = null, prevIndex = -1;
+    list.forEach(function(c, i){
+      if(i === index || !c) return;
+      const end = (c.start || 0) + (c.dur || 0);
+      if(end <= (cur.start || 0) + 0.001){
+        const best = prev ? (prev.start || 0) + (prev.dur || 0) : -1;
+        if(end > best){ prev = c; prevIndex = i; }
+      }
+    });
+    if(!prev) return null;
+    const s = Math.max(0.2, Math.min(Number(seconds) || 2, Math.min(prev.dur || 0, cur.dur || 0)));
+    return {
+      prevIndex: prevIndex,
+      seconds: s,
+      prevFadeOut: s,
+      curFadeIn: s,
+      curStart: Math.max(0, (prev.start || 0) + (prev.dur || 0) - s)
+    };
+  }
+
+  // Backwards audio, built once per song and shared by every reversed clip, so
+  // flipping a clip is instant the second time and a mashup keeps one copy.
+  function mpClipBuffer(clip){
+    if(!clip || !clip.buffer) return clip && clip.buffer;
+    if(!clip.reverse) return clip.buffer;
+    const key = clip.buffer;
+    for(let i = 0; i < mpRevCache.length; i++) if(mpRevCache[i].src === key) return mpRevCache[i].rev;
+    const ctx = audioCtx || mpCtx();
+    if(!ctx || !ctx.createBuffer) return clip.buffer;
+    try{
+      const chs = key.numberOfChannels || 1, len = key.length || 0;
+      const rev = ctx.createBuffer(chs, len, key.sampleRate || 44100);
+      for(let c = 0; c < chs; c++){
+        const src = key.getChannelData(c), dst = rev.getChannelData(c);
+        for(let i = 0; i < len; i++) dst[i] = src[len - 1 - i];
+      }
+      mpRevCache.push({ src: key, rev: rev });
+      while(mpRevCache.length > 4) mpRevCache.shift();
+      return rev;
+    }catch(_eRev){ return clip.buffer; }
+  }
+
+  // The clip's own level and its two fades, as a schedule on the gain node. A
+  // fade-in that has already been passed is not replayed: playing from the
+  // middle of a clip must not fade up again.
+  function mpShapeGain(ctx, node, clip, plan, baseGain, at){
+    const g = node.gain;
+    const level = Math.max(0, Math.min(2, (clip && clip.gain != null ? clip.gain : 1) * (Number(baseGain) || 0)));
+    const dur = Math.max(0, Number(plan && plan.dur) || 0);
+    const into = Math.max(0, (Number(plan && plan.offset) || 0) - (Number(clip && clip.offset) || 0));
+    const fi = Math.max(0, Math.min(Math.max(0, (clip && clip.fadeIn) || 0) - into, dur));
+    const fo = Math.max(0, Math.min((clip && clip.fadeOut) || 0, dur - fi));
+    const t0 = Math.max(0, Number(at) || 0);
+    try{
+      g.cancelScheduledValues(t0);
+      g.setValueAtTime(fi > 0.01 ? 0.0001 : level, t0);
+      if(fi > 0.01) g.linearRampToValueAtTime(level, t0 + fi);
+      if(fo > 0.01){
+        g.setValueAtTime(level, t0 + Math.max(fi, dur - fo));
+        g.linearRampToValueAtTime(0.0001, t0 + dur);
+      }
+    }catch(_eShape){ try{ g.value = level; }catch(_eShape2){} }
+  }
+
+  function mpClipGainValue(){
+    const c = mpSelectedClip();
+    return Math.max(0.01, c && c.gain != null ? c.gain : 1);
+  }
+
+  // ---- what the timeline shows: handles, fades, and the tool settings ----
+  function mpPaint(){
+    mpPaintBase();
+    mixPad.track.forEach(function(tr, ti){
+      const lane = $('mixPadLane' + (ti + 1));
+      if(!lane) return;
+      Array.prototype.slice.call(lane.querySelectorAll('.mp-clip')).forEach(function(el, ci){
+        const c = (tr.clips || [])[ci];
+        if(!c) return;
+        el.setAttribute('data-t', String(ti));
+        el.setAttribute('data-i', String(ci));
+        el.classList.toggle('rev', !!c.reverse);
+        const dur = Math.max(0.001, c.dur || 0);
+        const fi = Math.max(0, Math.min(c.fadeIn || 0, dur));
+        const fo = Math.max(0, Math.min(c.fadeOut || 0, dur - fi));
+        el.style.setProperty('--fi', (fi / dur * 100).toFixed(1) + '%');
+        el.style.setProperty('--fo', (fo / dur * 100).toFixed(1) + '%');
+        el.classList.toggle('sel', !!(mixPad.selected && mixPad.selected.track === ti && mixPad.selected.index === ci));
+      });
+    });
+    const c = mpSelectedClip();
+    const rev = $('mixPadRev');
+    if(rev) rev.classList.toggle('on', !!(c && c.reverse));
+    const fiS = $('mixPadFadeIn');
+    if(fiS && c) fiS.value = String(Math.round((c.fadeIn || 0) * 10));
+    const foS = $('mixPadFadeOut');
+    if(foS && c) foS.value = String(Math.round((c.fadeOut || 0) * 10));
+    const gn = $('mixPadClipGain');
+    if(gn && c) gn.value = String(Math.round(20 * Math.log(Math.max(0.01, c.gain == null ? 1 : c.gain)) / Math.LN10));
+  }
+
+  function mpCropStartBy(delta){
+    const c = mpSelectedClip();
+    if(!c) return;
+    mpCropHead(c, delta);
+    mpRender();
+  }
+
+  function mpCropEndBy(delta){
+    const c = mpSelectedClip();
+    if(!c) return;
+    mpCropTail(c, delta);
+    mpRender();
+  }
+
+  function mpReverseSel(){
+    const c = mpSelectedClip();
+    if(!c) return;
+    c.reverse = !c.reverse;
+    mpRender();
+    toast(c.reverse ? 'Clip reversed' : 'Clip back to forward');
+  }
+
+  function mpXfadeSel(seconds){
+    if(!mixPad.selected) return;
+    const tr = mixPad.track[mixPad.selected.track];
+    if(!tr) return;
+    const plan = mpXFadePlan(tr.clips, mixPad.selected.index, seconds);
+    if(!plan){ toast('Put a clip before this one on the same track first'); return; }
+    const prev = tr.clips[plan.prevIndex], cur = tr.clips[mixPad.selected.index];
+    if(!prev || !cur) return;
+    prev.fadeOut = plan.prevFadeOut;
+    cur.fadeIn = plan.curFadeIn;
+    cur.start = plan.curStart;
+    mpRender();
+    toast('Crossfaded over ' + plan.seconds.toFixed(1) + 's');
+  }
+
+  function mpSetFade(which, tenths){
+    const c = mpSelectedClip();
+    if(!c) return;
+    const secs = Math.max(0, Math.min(30, (Number(tenths) || 0) / 10));
+    if(which === 'in') c.fadeIn = secs; else c.fadeOut = secs;
+    mpPaint();
+  }
+
+  function mpSetClipGain(db){
+    const c = mpSelectedClip();
+    if(!c) return;
+    const d = Math.max(-24, Math.min(12, Number(db) || 0));
+    c.gain = Math.pow(10, d / 20);
+    mpPaint();
+  }
+
+  // ---- dragging a clip on the lane: body moves it, edges crop it ----
+  function mpWireEdit(){
+    if(mixPad.edited) return;
+    mixPad.edited = true;
+    const on = function(id, fn){
+      const el = $(id);
+      if(el) el.addEventListener('click', fn);
+    };
+    on('mixPadCropIn', function(){ mpCropStartBy(1); });
+    on('mixPadCropOut', function(){ mpCropEndBy(-1); });
+    on('mixPadRev', function(){ mpReverseSel(); });
+    on('mixPadXf1', function(){ mpXfadeSel(1); });
+    on('mixPadXf2', function(){ mpXfadeSel(2); });
+    on('mixPadXf4', function(){ mpXfadeSel(4); });
+    on('mixPadXf8', function(){ mpXfadeSel(8); });
+    const fi = $('mixPadFadeIn');
+    if(fi) fi.addEventListener('input', function(){ mpSetFade('in', fi.value); });
+    const fo = $('mixPadFadeOut');
+    if(fo) fo.addEventListener('input', function(){ mpSetFade('out', fo.value); });
+    const gn = $('mixPadClipGain');
+    if(gn) gn.addEventListener('input', function(){ mpSetClipGain(gn.value); });
+
+    // The Mix Pad card in Studio. Its own listener, in the capture phase, so it
+    // opens the window whether or not the Studio wiring knows the tool name.
+    document.addEventListener('click', function(e){
+      const card = e.target && e.target.closest && e.target.closest('#studioView [data-tool="mixpad"]');
+      if(card){ mpOpen(); }
+    }, true);
+
+    let drag = null;
+    const width = function(el){ const r = el.getBoundingClientRect(); return Math.max(1, r.width); };
+
+    const start = function(e){
+      const lane = e.currentTarget;
+      const el = e.target && e.target.closest ? e.target.closest('.mp-clip') : null;
+      if(!el || !lane) return;
+      const ti = Number(el.getAttribute('data-t'));
+      const ci = Number(el.getAttribute('data-i'));
+      if(!isFinite(ti) || !isFinite(ci)) return;
+      const tr = mixPad.track[ti];
+      const clip = tr && tr.clips[ci];
+      if(!clip) return;
+      mixPad.selected = { track: ti, index: ci };
+      const rect = el.getBoundingClientRect();
+      const w = Math.max(1, rect.width);
+      const off = e.clientX - rect.left;
+      const edge = Math.min(16, Math.max(8, w * 0.25));
+      drag = {
+        ti: ti, ci: ci, clip: clip, lane: lane,
+        x0: e.clientX,
+        mode: off <= edge ? 'head' : (off >= w - edge ? 'tail' : 'move'),
+        base: { start: clip.start || 0, offset: clip.offset || 0, dur: clip.dur || 0 },
+        total: scMixPadLength(),
+        laneWidth: width(lane),
+        moved: 0
+      };
+      try{ lane.setPointerCapture(e.pointerId); }catch(_eCap){}
+      if(e.cancelable) e.preventDefault();
+      mpPaint();
+    };
+    const move = function(e){
+      if(!drag) return;
+      const d = mpDragSeconds(e.clientX - drag.x0, drag.laneWidth, drag.total);
+      drag.moved = Math.abs(d);
+      if(drag.mode === 'move') drag.clip.start = Math.max(0, drag.base.start + d);
+      else if(drag.mode === 'tail') mpCropTail(drag.clip, d, drag.base);
+      else mpCropHead(drag.clip, d, drag.base);
+      const info = $('mixPadClipInfo');
+      if(info){
+        const c = drag.clip;
+        info.textContent = (c.name || 'clip') + ' · starts ' + fmtTime(Math.floor(c.start || 0)) +
+          ' · plays ' + fmtTime(Math.floor(c.dur || 0)) +
+          (drag.mode === 'move' ? ' · moving' : (drag.mode === 'head' ? ' · cropping the start' : ' · cropping the end'));
+      }
+      mpPaint();
+    };
+    const end = function(){
+      if(!drag) return;
+      const was = drag;
+      drag = null;
+      mpRender();
+      if(mixPad.playing && was.moved > 0.2) mpSeek(mixPad.playhead);
+    };
+    document.querySelectorAll('.mp-lane').forEach(function(lane){
+      lane.addEventListener('pointerdown', start);
+      lane.addEventListener('pointermove', move);
+      lane.addEventListener('pointerup', end);
+      lane.addEventListener('pointercancel', end);
+      lane.addEventListener('pointerleave', function(e){ if(drag && e.buttons === 0) end(); });
+    });
+  }
+
+  function mpCardSub(){
+    let n = 0;
+    mixPad.track.forEach(function(t){ n += (t.clips || []).length; });
+    if(!n) return 'Four tracks, drag, crop, crossfade, reverse, export a WAV.';
+    return n + ' clip' + (n === 1 ? '' : 's') + ' on ' + MP_TRACKS + ' tracks \u00b7 ' + fmtTime(Math.floor(scMixPadLength()));
+  }
+
+  setTimeout(function(){ try{ mpWireEdit(); }catch(_eEd){} }, 300);
   function ensureDeckGainNode(deck){
     if(deck.gainNode) return deck.gainNode;
     ensureAudioGraph();
@@ -65647,6 +65985,7 @@ window.showAlbumReorderPopup = function(albumName, focusTrackId){
       foldSec('', 'scFoldTools', 'Tools', 'Everything creative, on the working song',
         '<div class="sc-tools">' +
         toolCard('djmode', '\ud83d\udcbf', 'DJ Mode', djCardSub(), djCardState()) +
+        toolCard('mixpad', '\u25a6', 'Mix Pad', (typeof mpCardSub === 'function' ? mpCardSub() : 'Four tracks, drag, crop, crossfade, reverse.'), 'accent') +
         toolCard('crop', '\u2702', 'Crop song', 'Trim the start and the end in place \u2014 the same cropper as the \u22ee menu, with Undo crop on the song.', 'accent') +
         toolCard('edit', '\ud83c\udf9a', 'Edit rack', editSummary(), (edit.silent || edit.fades || edit.reverse || edit.gainDb) ? 'on' : '') +
         toolCard('clip', '\ud83c\udfb5', 'Ringtone / clip', 'Save a section as its own tagged MP3. Nothing in your library changes.', '') +
