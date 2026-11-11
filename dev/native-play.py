@@ -176,6 +176,17 @@ def main():
     except Exception as _e:
         print('native-play: the session half was skipped (%s)' % _e)
 
+    # 83.4.0 - the app's own media keys; see dev/native-keys.py.
+    try:
+        import importlib.util as _iu2
+        _s2 = _iu2.spec_from_file_location('sc_nk', os.path.join(HERE, 'native-keys.py'))
+        _m2 = _iu2.module_from_spec(_s2)
+        _s2.loader.exec_module(_m2)
+        _m2.main()
+        changed.append('the app answering its own media keys')
+    except Exception as _e2:
+        print('native-play: the keys half was skipped (%s)' % _e2)
+
     if changed:
         print('native-play: OK - ' + ', '.join(changed))
     else:

@@ -20716,7 +20716,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.3.0';
+  const APP_VERSION = '83.4.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21426,6 +21426,11 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '83.4.0', date: 'November 11, 2026', title: 'The app answers the headphones itself', items: [
+    'A press from the earbuds now goes to a media session the app owns, not to one a plugin has to be armed for. The plugin only advertises a button it holds a live handler for, and a phone will not route a press to a player that says it can do nothing - which is why every headset failed at once.',
+    'The app\'s session is always listening and always offers play, pause, play/pause, stop, next and previous. A single press is decided by the page, which is the only thing that knows whether a song is running.',
+    'Nothing here depends on the old notification player being switched on, so a press finds the app even after the phone has restarted it or the notification was turned off.'
+  ] },
       { version: '83.3.0', date: 'November 11, 2026', title: 'The headphones wake the sound again', items: [
     'Pressing play on the earbuds after a pause wakes the audio mixer before it starts the song. The sound of a song leaves through that mixer, and a mixer the phone had put to sleep could turn a good press into silence.',
     'A paused song keeps that mixer awake while it waits on the deck, so a press that arrives twenty minutes later finds it ready.',
@@ -39150,6 +39155,84 @@ function _fallbackCopy(text){
     });
     return true;
   }
+  // 83.4.0 - THE APP ITSELF ANSWERS THE PRESS.
+  //
+  // Every press until now travelled through the media-session plugin, whose
+  // service only advertises an action it has a live PluginCall for. When that
+  // call is absent - player not armed, bridge cold, crash recorder having
+  // switched it off - the service declares NO actions at all, and a phone does
+  // not route a button to a session that says it can do nothing. That is a
+  // press that reaches nobody, on any headset.
+  //
+  // MainActivity now owns a session of its own (dev/native-keys.py,
+  // SideCutKeys.java) and hands each press here, whatever state the plugin is
+  // in. This is the page's side of that door.
+  window.__scNativeKey = function(cmd){
+    const what = String(cmd || 'toggle');
+    try{
+      if(what === 'pause'){
+        scPauseDeck();
+        scTransportKeyState('paused');
+        scTransportNote('the headphones -> paused');
+        return true;
+      }
+      if(what === 'next'){
+        try{ scTransportPress(); }catch(_eKeyNext){}
+        hardAdvance(1, true);
+        scTransportNote('the headphones -> next');
+        return true;
+      }
+      if(what === 'prev'){
+        try{ scTransportPress(); }catch(_eKeyPrev){}
+        const ap = activeAudio();
+        // The rule every player uses: past a few seconds in, "previous" means
+        // the top of this song; before that it means the song before it.
+        if(ap && ap.currentTime > 3){ try{ ap.currentTime = 0; }catch(_eKeyRewind){} }
+        else { hardAdvance(-1, true); }
+        scTransportNote('the headphones -> previous');
+        return true;
+      }
+      if(what === 'toggle'){
+        const a = activeAudio();
+        if(a && !a.paused){
+          scPauseDeck();
+          scTransportKeyState('paused');
+          scTransportNote('the headphones -> paused');
+          return true;
+        }
+        scTransportNote('the headphones -> asking for sound');
+        scTransportPlay('the headphones');
+        return true;
+      }
+      scTransportNote('the headphones -> asking for sound');
+      scTransportPlay('the headphones');
+      return true;
+    }catch(_eKey){
+      scTransportSay('a press arrived and could not be obeyed');
+      return false;
+    }
+  };
+  // What the app's session tells the phone it is doing. A session that is
+  // playing is the one a press is routed to, so this is not cosmetic.
+  function scTransportKeyState(what){
+    try{
+      if(window.SideCutKeys && typeof window.SideCutKeys.state === 'function'){
+        window.SideCutKeys.state(String(what || 'paused'));
+      }
+    }catch(_eKeyState){}
+  }
+  // And keep it honest without asking every caller to remember: the deck's own
+  // elements report their own play and pause, streams included.
+  try{
+    document.addEventListener('play', function(){
+      const t = arguments && arguments[0] && arguments[0].target;
+      if(t && t.tagName === 'AUDIO') scTransportKeyState('playing');
+    }, true);
+    document.addEventListener('pause', function(){
+      const t = arguments && arguments[0] && arguments[0].target;
+      if(t && t.tagName === 'AUDIO') scTransportKeyState('paused');
+    }, true);
+  }catch(_eKeyListen){}
   function registerMediaSessionHandlers(){
     // 80.6.20 - a rebuild while a stream is playing must not put the deck's
     // buttons back on a song nobody is hearing.
