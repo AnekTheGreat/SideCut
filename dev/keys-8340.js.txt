@@ -1,0 +1,78 @@
+  // 83.4.0 - THE APP ITSELF ANSWERS THE PRESS.
+  //
+  // Every press until now travelled through the media-session plugin, whose
+  // service only advertises an action it has a live PluginCall for. When that
+  // call is absent - player not armed, bridge cold, crash recorder having
+  // switched it off - the service declares NO actions at all, and a phone does
+  // not route a button to a session that says it can do nothing. That is a
+  // press that reaches nobody, on any headset.
+  //
+  // MainActivity now owns a session of its own (dev/native-keys.py,
+  // SideCutKeys.java) and hands each press here, whatever state the plugin is
+  // in. This is the page's side of that door.
+  window.__scNativeKey = function(cmd){
+    const what = String(cmd || 'toggle');
+    try{
+      if(what === 'pause'){
+        scPauseDeck();
+        scTransportKeyState('paused');
+        scTransportNote('the headphones -> paused');
+        return true;
+      }
+      if(what === 'next'){
+        try{ scTransportPress(); }catch(_eKeyNext){}
+        hardAdvance(1, true);
+        scTransportNote('the headphones -> next');
+        return true;
+      }
+      if(what === 'prev'){
+        try{ scTransportPress(); }catch(_eKeyPrev){}
+        const ap = activeAudio();
+        // The rule every player uses: past a few seconds in, "previous" means
+        // the top of this song; before that it means the song before it.
+        if(ap && ap.currentTime > 3){ try{ ap.currentTime = 0; }catch(_eKeyRewind){} }
+        else { hardAdvance(-1, true); }
+        scTransportNote('the headphones -> previous');
+        return true;
+      }
+      if(what === 'toggle'){
+        const a = activeAudio();
+        if(a && !a.paused){
+          scPauseDeck();
+          scTransportKeyState('paused');
+          scTransportNote('the headphones -> paused');
+          return true;
+        }
+        scTransportNote('the headphones -> asking for sound');
+        scTransportPlay('the headphones');
+        return true;
+      }
+      scTransportNote('the headphones -> asking for sound');
+      scTransportPlay('the headphones');
+      return true;
+    }catch(_eKey){
+      scTransportSay('a press arrived and could not be obeyed');
+      return false;
+    }
+  };
+  // What the app's session tells the phone it is doing. A session that is
+  // playing is the one a press is routed to, so this is not cosmetic.
+  function scTransportKeyState(what){
+    try{
+      if(window.SideCutKeys && typeof window.SideCutKeys.state === 'function'){
+        window.SideCutKeys.state(String(what || 'paused'));
+      }
+    }catch(_eKeyState){}
+  }
+  // And keep it honest without asking every caller to remember: the deck's own
+  // elements report their own play and pause, streams included.
+  try{
+    document.addEventListener('play', function(){
+      const t = arguments && arguments[0] && arguments[0].target;
+      if(t && t.tagName === 'AUDIO') scTransportKeyState('playing');
+    }, true);
+    document.addEventListener('pause', function(){
+      const t = arguments && arguments[0] && arguments[0].target;
+      if(t && t.tagName === 'AUDIO') scTransportKeyState('paused');
+    }, true);
+  }catch(_eKeyListen){}
