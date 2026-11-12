@@ -1,47 +1,52 @@
-## 83.8.0 ({{STAMP}}): the Mix Pad shows the song, and the playhead is something you pull
+## 83.9.0 ({{STAMP}}): the Mix Pad window fits, and a song lands by itself
 
-The crop sheet has drawn the waveform and given you white handles since early
-on; the Mix Pad asked you to place clips blind, with a playhead you could only
-reach through the buttons. Both are gone: a clip now shows what is inside it and
-the playhead has a knob you can drag.
+83.8.0's window looked broken on a phone, and the cause was a name: three
+rules shared the class `.mp-head` - the title row (83.6.0), the 2px playhead
+line (83.6.0) and the 14px knob hit area (83.8.0). The title row won the
+`position:absolute`, `width:14px`, `margin-left:-7px` rules, so the panel header
+became a 14px absolutely-positioned column and everything under it stacked on
+top of everything else. The screenshot that reported it showed exactly that:
+the `mp-sub` sentence running down the middle of the window as a narrow column.
 
-- **Waveforms.** `mpPeaks(buffer)` reads the decoded song once into 1600
-loudest-sample buckets and keeps it (a `Map`, capped at 8 songs).
-`mpClipPeaks(clip, n)` resamples the window that clip actually plays -
-`offset` for `dur` seconds - so a clip cropped to the chorus shows the chorus,
-not the whole song, and cropping visibly changes the picture.
-`mpDrawWave(canvas, peaks)` paints one bar per pixel column, centred, at least
-1px tall so silence still reads as a line.
-- **Grab handles.** The selected clip gets two white `.mp-grab` bars, the same
-shape as the crop sheet's handles. They are `pointer-events:none`: the drag
-zones are still the outer 16px of the clip, so the bars show where to press
-without stealing the press from the clip underneath.
-- **The playhead.** `.mp-head` is now 14px wide with a centred hit area, and lane
-1 carries a round `.mp-knob` at the top. Pointerdown on either starts a scrub:
-playback stops, `playhead` follows the finger at 0.1s, and on release the mix
-resumes from where it was dropped if it had been playing. Releasing outside the
-window (`pointercancel`) does the same rather than leaving it paused.
-- `mpPaint()` in 83.7.0 was renamed `mpPaintTracks()` and the new `mpPaint()`
-wraps it, so the 83.7.0 handles, fades and slider state are all still painted -
-the waveforms are added on top rather than replacing any of it.
+The playhead is now `.mp-lane-head`; nothing else uses it. `.mp-head` keeps its
+83.6.0 meaning (the title row) and there is exactly one rule for it, which is
+`display:flex`.
+
+Also in this release:
+
+- `.modal.mp-modal` is capped at `88vh` with its own scroll, so the four tracks
+  are reachable on a phone instead of running off the bottom of the screen.
+- `.mp-chip-label` (CROSSFADE) takes a full row (`flex:1 1 100%`), so it cannot
+  sit on CROP START any more.
+- The fade sliders keep three columns (`74px minmax(0,1fr) 46px`) with nowrap
+  labels, so FADE IN and FADE OUT cannot overlap, and the range inputs are
+  allowed to shrink (`min-width:0`).
+- The song picker and the ADD button each get their own line when the window is
+  narrow instead of squeezing.
+
+And the behaviour the report asked for: opening the Mix Pad with an empty
+timeline now seeds track 1 with the working song (`mpSeedIfEmpty`), and choosing
+a song from the picker adds it at the playhead immediately - one tap instead of
+two. `mpOpen` is wrapped in `mpWireSeed` rather than edited in place, so the
+Studio card, the header button and anything else that opens the window all seed.
 
 Sizing on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
 {{PLAY}} bytes. Page-only.
 
 ### What was checked
 
-`dev/patch-8380.py --check` exits 1 before, 0 after; a second run is a no-op; six
-anchors each match exactly once. All 7 script blocks parse; `mpPaintTracks` and
-`mpPaint` each exist once; the 83.8.0 stylesheet, the grab bars, the knob and the
-new hint line are on the page. Node harness against a 10s song that is quiet for
-its first half and loud for its second: peaks come back 1000 long, 0.10 at the
-start and 0.90 at the end, and the second read is the same cached array; a clip
-covering 0-5s reads 0.10 throughout and one covering 5-10s reads 0.90; a clip
-from 4s for 2s over 4 bars reads 0.10, 0.10, 0.90, 0.90 - the window maths is
-right at the boundary; a 40px canvas draws 40 bars plus the clear; drawing with
-no canvas and no peaks does not throw.
+`dev/patch-8390.py --check` exits 1 before, 0 after; the second run is a no-op;
+nine anchors each match exactly once (both old `.mp-head` rules, the element
+creation, the 83.8.0 knob lookup, the scrub lookup, the stylesheet end, the
+version line, the 83.8.0 changelog entry, `ensureDeckGainNode`). On the patched
+page: `.mp-head{` matches once and carries no `position:absolute`;
+`.mp-lane-head{` matches twice; the JS refers to `.mp-lane-head` in the create,
+paint and scrub paths; `.modal.mp-modal{ max-height:88vh` is present; the seed
+functions and the `mpOpen` wrapper are present; all 7 script blocks parse; and
+every id the window depends on (`mixPadPlay/Stop/Rec/Export/SongPick/Target/Add`,
+lane 1, lane 4, crop, crossfade, fades, level, close) is still in the markup.
 
-Not checked: no phone, nothing listened to, and the canvas was never seen. The
-waveform arithmetic is verified; whether a bar-per-pixel reads well on a phone
-screen is not. The scrub is wired to `pointerdown/move/up`, so it works with a
-finger or a mouse, but it has only been exercised as code.
+Not checked: no phone, and the window was not seen. The collision is proven from
+the stylesheet itself - one class did two jobs, and the fix removes the second
+job - but the layout was not rendered here, so the next thing that needs doing
+is a look at it on the device.
