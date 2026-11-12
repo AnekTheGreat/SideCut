@@ -3178,6 +3178,16 @@ body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #studioView
 .mp-slide span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mp-slide input[type=range]{ min-width:0; }
 .mp-sliders{ gap:2px; }
+/* 83.10.0 - manual placement: room for two clips in one lane, and a badge that
+   follows the finger so a drag announces where it is going. */
+.mp-clip.banded{ border-radius:5px; font-size:8px; padding:2px 4px; }
+.mp-clip canvas.mp-wave{ opacity:.9; }
+.mp-badge{ position:fixed; display:none; z-index:10001; pointer-events:none;
+  background:#0c1113; color:#fff; border:1px solid var(--accent, #4de0c0);
+  border-radius:8px; padding:5px 9px; font-family:'JetBrains Mono',monospace;
+  font-size:10px; letter-spacing:.6px; white-space:nowrap;
+  box-shadow:0 6px 18px rgba(0,0,0,.55); }
+.mp-lane{ touch-action:none; }
 /* 83.5.0 - the mix panel: a second deck you drive by hand. */
 .mix-panel{
   margin-top:14px; padding:12px; border-radius:14px;
@@ -7301,6 +7311,7 @@ html, body{ max-width:100%; overflow-x:hidden; }
 
       <div class="modal-backdrop" id="mixPadBackdrop">
         <div class="modal mp-modal">
+          <div class="mp-badge" id="mpDragBadge"></div>
           <div class="mp-head">
             <div class="brand-mark" style="width:24px; height:24px; flex:0 0 auto;"></div>
             <div>
@@ -7330,7 +7341,7 @@ html, body{ max-width:100%; overflow-x:hidden; }
           <div class="mp-status" id="mixPadStatus"></div>
 
           <div class="mp-clips-info" id="mixPadClipInfo">Tap a clip to select it</div>
-          <div class="mp-hint">Drag a clip to move it · drag either edge to crop it · drag the white playhead to jump · tap to select</div>
+          <div class="mp-hint">Drag a clip to move it · either edge crops it · up or down moves it to another track · the white playhead jumps · two clips that overlap share the lane</div>
           <div class="mp-clip-btns">
             <button class="mp-mini" id="mixPadClipLeft" title="Move this clip one second earlier">◀ 1s</button>
             <button class="mp-mini" id="mixPadClipRight" title="Move this clip one second later">1s ▶</button>
@@ -7342,6 +7353,12 @@ html, body{ max-width:100%; overflow-x:hidden; }
             <button class="mp-mini" id="mixPadCropIn" title="Crop one second off the start of this clip">CROP START</button>
             <button class="mp-mini" id="mixPadCropOut" title="Crop one second off the end of this clip">CROP END</button>
             <button class="mp-mini" id="mixPadRev" title="Play this clip backwards">REVERSE</button>
+          </div>
+          <div class="mp-clip-btns">
+            <span class="mp-chip-label">SNAP</span>
+            <button class="mp-mini on" data-mp-snap="off" title="Place a clip anywhere under your finger">OFF</button>
+            <button class="mp-mini" data-mp-snap="0.5" title="Snap to half a second">½ s</button>
+            <button class="mp-mini" data-mp-snap="1" title="Snap to a whole second">1 s</button>
           </div>
           <div class="mp-clip-btns">
             <span class="mp-chip-label">CROSSFADE</span>
@@ -20997,7 +21014,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.9.0';
+  const APP_VERSION = '83.10.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21707,6 +21724,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '83.10.0', date: 'November 12, 2026', title: 'Mix Pad: free placement, and clips you can lay on top of each other', items: [
+    'Dragging is free by default now: a clip follows your finger instead of snapping to a grid. A SNAP row under the crossfade buttons switches to half a second or a whole second when you want things to line up exactly.',
+    'A clip can be pulled up or down onto another track while you drag it, and a small badge follows your finger showing where it will land and how long it is. Lay an acapella over an instrumental by dragging it onto the track below instead of adding it again.',
+    'When two clips overlap on the same track they now share the lane - one takes the top half, the other the bottom - so you can see both waveforms where they cross instead of one hiding the other.',
+    'The whole drag is one gesture: move, crop from either edge, or change track, and the mix keeps playing from where it was.'
+  ] },
       { version: '83.9.0', date: 'November 12, 2026', title: 'Mix Pad: a window that fits, and a song that lands itself', items: [
     'The Mix Pad window was drawing its title row as the playhead line - one class doing three jobs - so on a phone the panel collapsed and the labels sat on top of each other. The playhead has its own class now and the window lays out properly, capped at the height of the screen and scrolling inside it.',
     'Opening the Mix Pad with nothing on the timeline now puts the song you were working on straight onto track 1, so the window is never empty.',
@@ -43420,7 +43443,107 @@ function _fallbackCopy(text){
     mpPaint();
   }
 
-  // ---- dragging a clip on the lane: body moves it, edges crop it ----
+  // ---- 83.10.0 - manual placement: free drag, across tracks, on top of each
+  // other ----
+  //
+  // MixPad's whole idea is that you slide a clip by hand and see it sitting
+  // against the one next to it. So: the drag no longer snaps unless you ask,
+  // a clip can be pulled up or down onto another track, and two clips that
+  // overlap on the same track split the lane between them instead of one
+  // hiding the other.
+
+  // Free by default; OFF rounds to a twentieth of a second so a drag still
+  // lands where the finger is but two clips can be put exactly on top.
+  function mpSnapDelta(v){
+    const step = mixPad.snap === '1' ? 1 : (mixPad.snap === '0.5' ? 0.5 : 0);
+    if(!step) return Math.round(v * 20) / 20;
+    return Math.round(v / step) * step;
+  }
+
+  function mpMoveClipTo(ti, ci, targetTi){
+    const from = mixPad.track[ti], to = mixPad.track[targetTi];
+    if(!from || !to || ti === targetTi) return false;
+    const clip = (from.clips || [])[ci];
+    if(!clip) return false;
+    from.clips.splice(ci, 1);
+    to.clips.push(clip);
+    mixPad.selected = { track: targetTi, index: to.clips.length - 1 };
+    return true;
+  }
+
+  // Which clips share their track with another, and who takes the top half.
+  function mpClipBands(clips){
+    const list = clips || [];
+    const out = list.map(function(){ return { overlap: false, band: 0 }; });
+    const order = list.map(function(c, i){ return i; })
+      .sort(function(a, b){ return (list[a].start || 0) - (list[b].start || 0); });
+    let curEnd = -Infinity, n = 0;
+    order.forEach(function(i, k){
+      const c = list[i] || {};
+      const start = c.start || 0;
+      if(start < curEnd - 0.01){
+        n++;
+        if(n === 1 && k > 0){
+          out[order[k - 1]].overlap = true;
+          out[order[k - 1]].band = 0;
+        }
+        out[i].overlap = true;
+        out[i].band = n % 2;
+      }else{
+        n = 0;
+      }
+      curEnd = Math.max(curEnd, start + (c.dur || 0));
+    });
+    return out;
+  }
+
+  // A lane holds one clip at full height; two that overlap get a half each, so
+  // both waveforms stay visible where they cross.
+  function mpBandPaint(){
+    mixPad.track.forEach(function(tr, ti){
+      const lane = $('mixPadLane' + (ti + 1));
+      if(!lane) return;
+      const els = lane.querySelectorAll('.mp-clip');
+      const bands = mpClipBands(tr.clips);
+      for(let i = 0; i < els.length; i++){
+        const b = bands[i], el = els[i];
+        if(!el) continue;
+        if(b && b.overlap){
+          el.style.top = b.band ? '50%' : '4px';
+          el.style.bottom = b.band ? '4px' : '50%';
+          el.classList.add('banded');
+        }else{
+          el.style.top = '';
+          el.style.bottom = '';
+          el.classList.remove('banded');
+        }
+      }
+    });
+  }
+
+  const mpPaintNoBands = mpPaint;
+  mpPaint = function(){
+    mpPaintNoBands();
+    try{ mpBandPaint(); }catch(_eBand){}
+  };
+
+  function mpDragBadge(text, x, y){
+    const el = $('mpDragBadge');
+    if(!el) return;
+    el.textContent = text;
+    el.style.display = 'block';
+    const w = window.innerWidth || 360;
+    el.style.left = Math.max(6, Math.min(w - 160, x - 70)) + 'px';
+    el.style.top = Math.max(6, y - 48) + 'px';
+  }
+
+  function mpDragBadgeOff(){
+    const el = $('mpDragBadge');
+    if(el) el.style.display = 'none';
+  }
+
+  // ---- dragging a clip on the lane: body moves it, edges crop it, and up or
+  // down drops it on another track ----
   function mpWireEdit(){
     if(mixPad.edited) return;
     mixPad.edited = true;
@@ -43442,6 +43565,17 @@ function _fallbackCopy(text){
     const gn = $('mixPadClipGain');
     if(gn) gn.addEventListener('input', function(){ mpSetClipGain(gn.value); });
 
+    // Snap: free by default, because free is what a manual mix wants.
+    document.querySelectorAll('[data-mp-snap]').forEach(function(b){
+      b.addEventListener('click', function(){
+        mixPad.snap = b.getAttribute('data-mp-snap') || 'off';
+        document.querySelectorAll('[data-mp-snap]').forEach(function(o){
+          o.classList.toggle('on', o.getAttribute('data-mp-snap') === mixPad.snap);
+        });
+        toast(mixPad.snap === 'off' ? 'Free placement' : 'Snapping to ' + mixPad.snap + 's');
+      });
+    });
+
     // The Mix Pad card in Studio. Its own listener, in the capture phase, so it
     // opens the window whether or not the Studio wiring knows the tool name.
     document.addEventListener('click', function(e){
@@ -43450,7 +43584,15 @@ function _fallbackCopy(text){
     }, true);
 
     let drag = null;
-    const width = function(el){ const r = el.getBoundingClientRect(); return Math.max(1, r.width); };
+    const laneEls = function(){ return Array.prototype.slice.call(document.querySelectorAll('.mp-lane')); };
+    const laneAt = function(y){
+      const ls = laneEls();
+      for(let i = 0; i < ls.length; i++){
+        const r = ls[i].getBoundingClientRect();
+        if(y >= r.top - 14 && y <= r.bottom + 14) return i;
+      }
+      return -1;
+    };
 
     const start = function(e){
       const lane = e.currentTarget;
@@ -43468,41 +43610,52 @@ function _fallbackCopy(text){
       const off = e.clientX - rect.left;
       const edge = Math.min(16, Math.max(8, w * 0.25));
       drag = {
-        ti: ti, ci: ci, clip: clip, lane: lane,
-        x0: e.clientX,
+        ti: ti, ci: ci, clip: clip, lane: lane, targetTi: ti,
+        x0: e.clientX, y0: e.clientY,
         mode: off <= edge ? 'head' : (off >= w - edge ? 'tail' : 'move'),
         base: { start: clip.start || 0, offset: clip.offset || 0, dur: clip.dur || 0 },
         total: scMixPadLength(),
-        laneWidth: width(lane),
+        laneWidth: Math.max(1, lane.getBoundingClientRect().width),
         moved: 0
       };
       try{ lane.setPointerCapture(e.pointerId); }catch(_eCap){}
       if(e.cancelable) e.preventDefault();
       mpPaint();
     };
+
     const move = function(e){
       if(!drag) return;
-      const d = mpDragSeconds(e.clientX - drag.x0, drag.laneWidth, drag.total);
+      const d = mpSnapDelta(mpDragSeconds(e.clientX - drag.x0, drag.laneWidth, drag.total));
       drag.moved = Math.abs(d);
       if(drag.mode === 'move') drag.clip.start = Math.max(0, drag.base.start + d);
       else if(drag.mode === 'tail') mpCropTail(drag.clip, d, drag.base);
       else mpCropHead(drag.clip, d, drag.base);
+
+      // Up and down is a different track, not a different size.
+      const over = laneAt(e.clientY);
+      if(over >= 0) drag.targetTi = over;
+
       const info = $('mixPadClipInfo');
-      if(info){
-        const c = drag.clip;
-        info.textContent = (c.name || 'clip') + ' · starts ' + fmtTime(Math.floor(c.start || 0)) +
-          ' · plays ' + fmtTime(Math.floor(c.dur || 0)) +
-          (drag.mode === 'move' ? ' · moving' : (drag.mode === 'head' ? ' · cropping the start' : ' · cropping the end'));
-      }
+      const c = drag.clip;
+      const line = (c.name || 'clip') + ' · starts ' + fmtTime(Math.floor(c.start || 0)) +
+        ' · plays ' + fmtTime(Math.floor(c.dur || 0)) +
+        (drag.mode === 'move' ? ' · moving' : (drag.mode === 'head' ? ' · cropping the start' : ' · cropping the end'));
+      if(info) info.textContent = line;
+      mpDragBadge((drag.targetTi !== drag.ti ? 'TRACK ' + (drag.targetTi + 1) + ' · ' : '') +
+        fmtTime(Math.floor(c.start || 0)) + ' + ' + fmtTime(Math.floor(c.dur || 0)), e.clientX, e.clientY);
       mpPaint();
     };
+
     const end = function(){
       if(!drag) return;
       const was = drag;
       drag = null;
+      mpDragBadgeOff();
+      if(was.targetTi !== was.ti) mpMoveClipTo(was.ti, was.ci, was.targetTi);
       mpRender();
       if(mixPad.playing && was.moved > 0.2) mpSeek(mixPad.playhead);
     };
+
     document.querySelectorAll('.mp-lane').forEach(function(lane){
       lane.addEventListener('pointerdown', start);
       lane.addEventListener('pointermove', move);
