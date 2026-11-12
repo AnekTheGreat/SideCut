@@ -1,0 +1,41 @@
+  // ---- 83.9.0 - the window opens with the song already on a track ----
+  //
+  // Picking a song in Mix Pad used to be two gestures: choose it, then press ADD.
+  // Worse, the window opened empty even when a song was loaded. Both are gone:
+  // opening it with an empty timeline drops the song you were working on onto
+  // track 1, and choosing a different song puts it on the chosen track at the
+  // playhead straight away.
+  function mpSeedIfEmpty(){
+    let any = false;
+    mixPad.track.forEach(function(t){ if((t.clips || []).length) any = true; });
+    if(any) return;
+    let t = null;
+    try{ if(typeof workTrack === 'function') t = workTrack(); }catch(_eSeed){ t = null; }
+    if(!t && allTracks && allTracks.length) t = allTracks[0];
+    if(!t || !t.id) return;
+    const sel = $('mixPadSongPick');
+    if(sel) sel.value = t.id;
+    if(sel && sel.value) mpAddSong();
+  }
+
+  function mpWireSeed(){
+    if(mixPad.seeded) return;
+    mixPad.seeded = true;
+
+    // Every door into the window goes through mpOpen, so seeding here catches
+    // the Studio card, the header button and anything else that opens it later.
+    const openBase = mpOpen;
+    mpOpen = function(){
+      openBase();
+      setTimeout(function(){ try{ mpSeedIfEmpty(); }catch(_eSeed2){} }, 90);
+    };
+
+    const pick = $('mixPadSongPick');
+    if(pick){
+      pick.addEventListener('change', function(){
+        if(pick.value) mpAddSong();
+      });
+    }
+  }
+
+  setTimeout(function(){ try{ mpWireSeed(); }catch(_eSeed3){} }, 400);
