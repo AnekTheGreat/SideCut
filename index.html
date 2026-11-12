@@ -3132,7 +3132,7 @@ body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #studioView
   overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer;
 }
 .mp-clip.sel{ border-color:#fff; box-shadow:0 0 0 1px #fff inset; }
-.mp-head{
+.mp-lane-head{
   position:absolute; top:0; bottom:0; width:2px; background:#fff;
   pointer-events:none; opacity:0.85;
 }
@@ -3162,10 +3162,22 @@ body.sc80-cloud #homeView, body.sc80-cloud #library, body.sc80-cloud #studioView
   background:#fff; opacity:.92; pointer-events:none; box-shadow:0 1px 3px rgba(0,0,0,.45); }
 .mp-grab.left{ left:1px; }
 .mp-grab.right{ right:1px; }
-.mp-head{ width:14px; margin-left:-7px; cursor:ew-resize; touch-action:none; }
+.mp-lane-head{ width:14px; margin-left:-7px; cursor:ew-resize; touch-action:none; }
 .mp-knob{ position:absolute; top:-9px; left:50%; margin-left:-6px; width:12px; height:12px;
   border-radius:50%; background:#fff; border:1px solid rgba(0,0,0,.45);
   box-shadow:0 1px 3px rgba(0,0,0,.5); touch-action:none; }
+/* 83.9.0 - the playhead is not the title row any more, and the panel fits a
+   phone: capped height, its own scroll, and no label allowed to sit on a button. */
+.modal.mp-modal{ max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.mp-modal .mp-head > div:last-child{ min-width:0; }
+.mp-chip-label{ display:block; flex:1 1 100%; margin:0 0 5px; white-space:nowrap; }
+.mp-clip-btns{ align-items:center; }
+.mp-add select{ flex:1 1 150px; min-width:0; }
+.mp-add .deck-btn{ flex:0 0 auto; white-space:nowrap; }
+.mp-slide{ grid-template-columns:74px minmax(0,1fr) 46px; }
+.mp-slide span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mp-slide input[type=range]{ min-width:0; }
+.mp-sliders{ gap:2px; }
 /* 83.5.0 - the mix panel: a second deck you drive by hand. */
 .mix-panel{
   margin-top:14px; padding:12px; border-radius:14px;
@@ -20985,7 +20997,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '83.8.0';
+  const APP_VERSION = '83.9.0';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21695,6 +21707,12 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '83.9.0', date: 'November 12, 2026', title: 'Mix Pad: a window that fits, and a song that lands itself', items: [
+    'The Mix Pad window was drawing its title row as the playhead line - one class doing three jobs - so on a phone the panel collapsed and the labels sat on top of each other. The playhead has its own class now and the window lays out properly, capped at the height of the screen and scrolling inside it.',
+    'Opening the Mix Pad with nothing on the timeline now puts the song you were working on straight onto track 1, so the window is never empty.',
+    'Choosing a song from the picker adds it to the chosen track at the playhead by itself - one tap instead of picking it and then pressing ADD. The button is still there for adding the same song again.',
+    'The crossfade label takes its own line instead of sitting on top of the crop buttons, and the fade sliders got their own column so FADE IN and FADE OUT cannot overlap.'
+  ] },
       { version: '83.8.0', date: 'November 11, 2026', title: 'Mix Pad: waveforms and a playhead you drag', items: [
     'Every clip now draws its own waveform, cut from the part of the song that clip actually plays - so you can see the beat you are lining up instead of guessing where it is.',
     'The selected clip wears the same white grab bars the crop sheet uses: drag one to crop, drag the body to move. The clip outlines itself so you can see exactly what you have hold of.',
@@ -43002,10 +43020,10 @@ function _fallbackCopy(text){
     const lEl = $('mixPadLen');
     if(lEl) lEl.textContent = fmtTime(Math.floor(total));
     document.querySelectorAll('.mp-lane').forEach(function(lane){
-      let head = lane.querySelector('.mp-head');
+      let head = lane.querySelector('.mp-lane-head');
       if(!head){
         head = document.createElement('div');
-        head.className = 'mp-head';
+        head.className = 'mp-lane-head';
         lane.appendChild(head);
       }
       head.style.left = (Math.min(1, (mixPad.playhead || 0) / total) * 100) + '%';
@@ -43597,7 +43615,7 @@ function _fallbackCopy(text){
       const lane = $('mixPadLane' + (ti + 1));
       if(!lane) return;
       if(ti === 0){
-        const head = lane.querySelector('.mp-head');
+        const head = lane.querySelector('.mp-lane-head');
         if(head && !head.querySelector('.mp-knob')){
           const knob = document.createElement('i');
           knob.className = 'mp-knob';
@@ -43651,7 +43669,7 @@ function _fallbackCopy(text){
     };
 
     document.addEventListener('pointerdown', function(e){
-      const knob = e.target && e.target.closest ? e.target.closest('.mp-head, .mp-knob') : null;
+      const knob = e.target && e.target.closest ? e.target.closest('.mp-lane-head, .mp-knob') : null;
       if(!knob) return;
       const lane = knob.closest('.mp-lane') || $('mixPadLane1');
       if(!lane) return;
@@ -43688,6 +43706,47 @@ function _fallbackCopy(text){
   }
 
   setTimeout(function(){ try{ mpWireScrub(); }catch(_eScrub){} }, 350);
+  // ---- 83.9.0 - the window opens with the song already on a track ----
+  //
+  // Picking a song in Mix Pad used to be two gestures: choose it, then press ADD.
+  // Worse, the window opened empty even when a song was loaded. Both are gone:
+  // opening it with an empty timeline drops the song you were working on onto
+  // track 1, and choosing a different song puts it on the chosen track at the
+  // playhead straight away.
+  function mpSeedIfEmpty(){
+    let any = false;
+    mixPad.track.forEach(function(t){ if((t.clips || []).length) any = true; });
+    if(any) return;
+    let t = null;
+    try{ if(typeof workTrack === 'function') t = workTrack(); }catch(_eSeed){ t = null; }
+    if(!t && allTracks && allTracks.length) t = allTracks[0];
+    if(!t || !t.id) return;
+    const sel = $('mixPadSongPick');
+    if(sel) sel.value = t.id;
+    if(sel && sel.value) mpAddSong();
+  }
+
+  function mpWireSeed(){
+    if(mixPad.seeded) return;
+    mixPad.seeded = true;
+
+    // Every door into the window goes through mpOpen, so seeding here catches
+    // the Studio card, the header button and anything else that opens it later.
+    const openBase = mpOpen;
+    mpOpen = function(){
+      openBase();
+      setTimeout(function(){ try{ mpSeedIfEmpty(); }catch(_eSeed2){} }, 90);
+    };
+
+    const pick = $('mixPadSongPick');
+    if(pick){
+      pick.addEventListener('change', function(){
+        if(pick.value) mpAddSong();
+      });
+    }
+  }
+
+  setTimeout(function(){ try{ mpWireSeed(); }catch(_eSeed3){} }, 400);
   function ensureDeckGainNode(deck){
     if(deck.gainNode) return deck.gainNode;
     ensureAudioGraph();
