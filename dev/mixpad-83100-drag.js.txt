@@ -1,0 +1,222 @@
+  // ---- 83.10.0 - manual placement: free drag, across tracks, on top of each
+  // other ----
+  //
+  // MixPad's whole idea is that you slide a clip by hand and see it sitting
+  // against the one next to it. So: the drag no longer snaps unless you ask,
+  // a clip can be pulled up or down onto another track, and two clips that
+  // overlap on the same track split the lane between them instead of one
+  // hiding the other.
+
+  // Free by default; OFF rounds to a twentieth of a second so a drag still
+  // lands where the finger is but two clips can be put exactly on top.
+  function mpSnapDelta(v){
+    const step = mixPad.snap === '1' ? 1 : (mixPad.snap === '0.5' ? 0.5 : 0);
+    if(!step) return Math.round(v * 20) / 20;
+    return Math.round(v / step) * step;
+  }
+
+  function mpMoveClipTo(ti, ci, targetTi){
+    const from = mixPad.track[ti], to = mixPad.track[targetTi];
+    if(!from || !to || ti === targetTi) return false;
+    const clip = (from.clips || [])[ci];
+    if(!clip) return false;
+    from.clips.splice(ci, 1);
+    to.clips.push(clip);
+    mixPad.selected = { track: targetTi, index: to.clips.length - 1 };
+    return true;
+  }
+
+  // Which clips share their track with another, and who takes the top half.
+  function mpClipBands(clips){
+    const list = clips || [];
+    const out = list.map(function(){ return { overlap: false, band: 0 }; });
+    const order = list.map(function(c, i){ return i; })
+      .sort(function(a, b){ return (list[a].start || 0) - (list[b].start || 0); });
+    let curEnd = -Infinity, n = 0;
+    order.forEach(function(i, k){
+      const c = list[i] || {};
+      const start = c.start || 0;
+      if(start < curEnd - 0.01){
+        n++;
+        if(n === 1 && k > 0){
+          out[order[k - 1]].overlap = true;
+          out[order[k - 1]].band = 0;
+        }
+        out[i].overlap = true;
+        out[i].band = n % 2;
+      }else{
+        n = 0;
+      }
+      curEnd = Math.max(curEnd, start + (c.dur || 0));
+    });
+    return out;
+  }
+
+  // A lane holds one clip at full height; two that overlap get a half each, so
+  // both waveforms stay visible where they cross.
+  function mpBandPaint(){
+    mixPad.track.forEach(function(tr, ti){
+      const lane = $('mixPadLane' + (ti + 1));
+      if(!lane) return;
+      const els = lane.querySelectorAll('.mp-clip');
+      const bands = mpClipBands(tr.clips);
+      for(let i = 0; i < els.length; i++){
+        const b = bands[i], el = els[i];
+        if(!el) continue;
+        if(b && b.overlap){
+          el.style.top = b.band ? '50%' : '4px';
+          el.style.bottom = b.band ? '4px' : '50%';
+          el.classList.add('banded');
+        }else{
+          el.style.top = '';
+          el.style.bottom = '';
+          el.classList.remove('banded');
+        }
+      }
+    });
+  }
+
+  const mpPaintNoBands = mpPaint;
+  mpPaint = function(){
+    mpPaintNoBands();
+    try{ mpBandPaint(); }catch(_eBand){}
+  };
+
+  function mpDragBadge(text, x, y){
+    const el = $('mpDragBadge');
+    if(!el) return;
+    el.textContent = text;
+    el.style.display = 'block';
+    const w = window.innerWidth || 360;
+    el.style.left = Math.max(6, Math.min(w - 160, x - 70)) + 'px';
+    el.style.top = Math.max(6, y - 48) + 'px';
+  }
+
+  function mpDragBadgeOff(){
+    const el = $('mpDragBadge');
+    if(el) el.style.display = 'none';
+  }
+
+  // ---- dragging a clip on the lane: body moves it, edges crop it, and up or
+  // down drops it on another track ----
+  function mpWireEdit(){
+    if(mixPad.edited) return;
+    mixPad.edited = true;
+    const on = function(id, fn){
+      const el = $(id);
+      if(el) el.addEventListener('click', fn);
+    };
+    on('mixPadCropIn', function(){ mpCropStartBy(1); });
+    on('mixPadCropOut', function(){ mpCropEndBy(-1); });
+    on('mixPadRev', function(){ mpReverseSel(); });
+    on('mixPadXf1', function(){ mpXfadeSel(1); });
+    on('mixPadXf2', function(){ mpXfadeSel(2); });
+    on('mixPadXf4', function(){ mpXfadeSel(4); });
+    on('mixPadXf8', function(){ mpXfadeSel(8); });
+    const fi = $('mixPadFadeIn');
+    if(fi) fi.addEventListener('input', function(){ mpSetFade('in', fi.value); });
+    const fo = $('mixPadFadeOut');
+    if(fo) fo.addEventListener('input', function(){ mpSetFade('out', fo.value); });
+    const gn = $('mixPadClipGain');
+    if(gn) gn.addEventListener('input', function(){ mpSetClipGain(gn.value); });
+
+    // Snap: free by default, because free is what a manual mix wants.
+    document.querySelectorAll('[data-mp-snap]').forEach(function(b){
+      b.addEventListener('click', function(){
+        mixPad.snap = b.getAttribute('data-mp-snap') || 'off';
+        document.querySelectorAll('[data-mp-snap]').forEach(function(o){
+          o.classList.toggle('on', o.getAttribute('data-mp-snap') === mixPad.snap);
+        });
+        toast(mixPad.snap === 'off' ? 'Free placement' : 'Snapping to ' + mixPad.snap + 's');
+      });
+    });
+
+    // The Mix Pad card in Studio. Its own listener, in the capture phase, so it
+    // opens the window whether or not the Studio wiring knows the tool name.
+    document.addEventListener('click', function(e){
+      const card = e.target && e.target.closest && e.target.closest('#studioView [data-tool="mixpad"]');
+      if(card){ mpOpen(); }
+    }, true);
+
+    let drag = null;
+    const laneEls = function(){ return Array.prototype.slice.call(document.querySelectorAll('.mp-lane')); };
+    const laneAt = function(y){
+      const ls = laneEls();
+      for(let i = 0; i < ls.length; i++){
+        const r = ls[i].getBoundingClientRect();
+        if(y >= r.top - 14 && y <= r.bottom + 14) return i;
+      }
+      return -1;
+    };
+
+    const start = function(e){
+      const lane = e.currentTarget;
+      const el = e.target && e.target.closest ? e.target.closest('.mp-clip') : null;
+      if(!el || !lane) return;
+      const ti = Number(el.getAttribute('data-t'));
+      const ci = Number(el.getAttribute('data-i'));
+      if(!isFinite(ti) || !isFinite(ci)) return;
+      const tr = mixPad.track[ti];
+      const clip = tr && tr.clips[ci];
+      if(!clip) return;
+      mixPad.selected = { track: ti, index: ci };
+      const rect = el.getBoundingClientRect();
+      const w = Math.max(1, rect.width);
+      const off = e.clientX - rect.left;
+      const edge = Math.min(16, Math.max(8, w * 0.25));
+      drag = {
+        ti: ti, ci: ci, clip: clip, lane: lane, targetTi: ti,
+        x0: e.clientX, y0: e.clientY,
+        mode: off <= edge ? 'head' : (off >= w - edge ? 'tail' : 'move'),
+        base: { start: clip.start || 0, offset: clip.offset || 0, dur: clip.dur || 0 },
+        total: scMixPadLength(),
+        laneWidth: Math.max(1, lane.getBoundingClientRect().width),
+        moved: 0
+      };
+      try{ lane.setPointerCapture(e.pointerId); }catch(_eCap){}
+      if(e.cancelable) e.preventDefault();
+      mpPaint();
+    };
+
+    const move = function(e){
+      if(!drag) return;
+      const d = mpSnapDelta(mpDragSeconds(e.clientX - drag.x0, drag.laneWidth, drag.total));
+      drag.moved = Math.abs(d);
+      if(drag.mode === 'move') drag.clip.start = Math.max(0, drag.base.start + d);
+      else if(drag.mode === 'tail') mpCropTail(drag.clip, d, drag.base);
+      else mpCropHead(drag.clip, d, drag.base);
+
+      // Up and down is a different track, not a different size.
+      const over = laneAt(e.clientY);
+      if(over >= 0) drag.targetTi = over;
+
+      const info = $('mixPadClipInfo');
+      const c = drag.clip;
+      const line = (c.name || 'clip') + ' · starts ' + fmtTime(Math.floor(c.start || 0)) +
+        ' · plays ' + fmtTime(Math.floor(c.dur || 0)) +
+        (drag.mode === 'move' ? ' · moving' : (drag.mode === 'head' ? ' · cropping the start' : ' · cropping the end'));
+      if(info) info.textContent = line;
+      mpDragBadge((drag.targetTi !== drag.ti ? 'TRACK ' + (drag.targetTi + 1) + ' · ' : '') +
+        fmtTime(Math.floor(c.start || 0)) + ' + ' + fmtTime(Math.floor(c.dur || 0)), e.clientX, e.clientY);
+      mpPaint();
+    };
+
+    const end = function(){
+      if(!drag) return;
+      const was = drag;
+      drag = null;
+      mpDragBadgeOff();
+      if(was.targetTi !== was.ti) mpMoveClipTo(was.ti, was.ci, was.targetTi);
+      mpRender();
+      if(mixPad.playing && was.moved > 0.2) mpSeek(mixPad.playhead);
+    };
+
+    document.querySelectorAll('.mp-lane').forEach(function(lane){
+      lane.addEventListener('pointerdown', start);
+      lane.addEventListener('pointermove', move);
+      lane.addEventListener('pointerup', end);
+      lane.addEventListener('pointercancel', end);
+      lane.addEventListener('pointerleave', function(e){ if(drag && e.buttons === 0) end(); });
+    });
+  }
+
