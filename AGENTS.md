@@ -1,6 +1,12 @@
 # SideCut — repository memory
 
-## 83.10.0 (November 11, 2026 · 8:20 PM EDT): manual placement in the Mix Pad
+## 84.0.0 (November 11, 2026 · 8:20 PM EDT): manual placement in the Mix Pad
+
+First cut as 83.10.0, which is a number this project does not use. A release is
+major.minor.patch and the middle number is a single digit - 83.9.0 is followed by
+84.0.0 - so the page, the service worker's cache, the release notes and this memory
+all say 84.0.0, and `dev/release-record.py` now stops a release that carries a
+two-digit minor. Nothing else about the release changed.
 
 The Mix Pad was still deciding things for you: it snapped to a tenth of a second
 whether you wanted it or not, a clip could only live on the track you added it

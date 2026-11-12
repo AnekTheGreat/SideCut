@@ -76,6 +76,13 @@ def main():
 
 def write_entry():
     ver = version()
+    # 84.0.0 - the middle number is a single digit. 83.10.0 shipped by mistake
+    # because nothing looked: after 83.9.0 comes 84.0.0, never a two-digit minor.
+    minor = re.match(r'^[0-9]+\.([0-9]+)', ver).group(1)
+    if len(minor) > 1:
+        raise SystemExit('FATAL: %s has a two-digit minor (%s). A release is '
+                         'major.minor.patch with a single-digit minor: after 83.9.0 '
+                         'comes 84.0.0.' % (ver, minor))
     mark = '## %s (' % ver
     src = open(AGENTS, encoding='utf-8').read()
     if mark in src:
