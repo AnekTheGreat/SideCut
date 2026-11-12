@@ -1,52 +1,48 @@
-## 83.9.0 ({{STAMP}}): the Mix Pad window fits, and a song lands by itself
+## 83.10.0 ({{STAMP}}): manual placement in the Mix Pad
 
-83.8.0's window looked broken on a phone, and the cause was a name: three
-rules shared the class `.mp-head` - the title row (83.6.0), the 2px playhead
-line (83.6.0) and the 14px knob hit area (83.8.0). The title row won the
-`position:absolute`, `width:14px`, `margin-left:-7px` rules, so the panel header
-became a 14px absolutely-positioned column and everything under it stacked on
-top of everything else. The screenshot that reported it showed exactly that:
-the `mp-sub` sentence running down the middle of the window as a narrow column.
+The Mix Pad was still deciding things for you: it snapped to a tenth of a second
+whether you wanted it or not, a clip could only live on the track you added it
+to, and two clips in the same place meant one of them simply disappeared
+underneath the other. This makes it a manual editor.
 
-The playhead is now `.mp-lane-head`; nothing else uses it. `.mp-head` keeps its
-83.6.0 meaning (the title row) and there is exactly one rule for it, which is
-`display:flex`.
-
-Also in this release:
-
-- `.modal.mp-modal` is capped at `88vh` with its own scroll, so the four tracks
-  are reachable on a phone instead of running off the bottom of the screen.
-- `.mp-chip-label` (CROSSFADE) takes a full row (`flex:1 1 100%`), so it cannot
-  sit on CROP START any more.
-- The fade sliders keep three columns (`74px minmax(0,1fr) 46px`) with nowrap
-  labels, so FADE IN and FADE OUT cannot overlap, and the range inputs are
-  allowed to shrink (`min-width:0`).
-- The song picker and the ADD button each get their own line when the window is
-  narrow instead of squeezing.
-
-And the behaviour the report asked for: opening the Mix Pad with an empty
-timeline now seeds track 1 with the working song (`mpSeedIfEmpty`), and choosing
-a song from the picker adds it at the playhead immediately - one tap instead of
-two. `mpOpen` is wrapped in `mpWireSeed` rather than edited in place, so the
-Studio card, the header button and anything else that opens the window all seed.
+- **Free placement.** `mpSnapDelta` rounds to 0.05s when `mixPad.snap` is
+  `'off'` (the default now), to 0.5s or to 1s when the SNAP row says so. The
+  three chips write `mixPad.snap` and re-mark themselves.
+- **Across tracks.** `move()` hit-tests the finger against every `.mp-lane`
+  (14px of slack above and below, so a drop between lanes still lands), stores
+  `drag.targetTi`, and `end()` commits it with `mpMoveClipTo`, which splices the
+  clip out of one track's array and pushes it onto the other, then selects it at
+  its new index. Same-track drops are refused rather than reordering the list.
+- **Overlaps.** `mpClipBands` walks a track's clips in start order and marks any
+  clip that starts before the previous one ends (`start < curEnd - 0.01`, so
+  butt-joined clips are not "overlapping"). Overlapping clips take alternate
+  halves of the lane - `top:4px / bottom:50%` and `top:50% / bottom:4px` - so
+  both waveforms stay readable where they cross. `mpBandPaint` runs at the end of
+  `mpPaint`, which it wraps rather than replaces, so the 83.7.0/83.8.0 handles,
+  fades, knob and waveforms are all still painted first.
+- **Feedback.** A fixed `.mp-badge` follows the finger during a drag, saying
+  `TRACK n · start + length` only when the target track differs from the source.
 
 Sizing on this release: `ota/updates.json` {{ROOT}} bytes, `ota-play/updates.json`
 {{PLAY}} bytes. Page-only.
 
 ### What was checked
 
-`dev/patch-8390.py --check` exits 1 before, 0 after; the second run is a no-op;
-nine anchors each match exactly once (both old `.mp-head` rules, the element
-creation, the 83.8.0 knob lookup, the scrub lookup, the stylesheet end, the
-version line, the 83.8.0 changelog entry, `ensureDeckGainNode`). On the patched
-page: `.mp-head{` matches once and carries no `position:absolute`;
-`.mp-lane-head{` matches twice; the JS refers to `.mp-lane-head` in the create,
-paint and scrub paths; `.modal.mp-modal{ max-height:88vh` is present; the seed
-functions and the `mpOpen` wrapper are present; all 7 script blocks parse; and
-every id the window depends on (`mixPadPlay/Stop/Rec/Export/SongPick/Target/Add`,
-lane 1, lane 4, crop, crossfade, fades, level, close) is still in the markup.
+`dev/patch-83100.py --check` exits 1 before, 0 after; second run is a no-op; nine
+anchors match exactly once. The drag section is replaced by slicing between its
+comment and `function mpCardSub`, and the page ends up with exactly one
+`mpWireEdit`, one `mpDragBadge` element and three snap chips. All 7 script blocks
+parse, and the paint wrapper sits in the same script block as `mpPaint` (block 1)
+- which matters, because `const mpPaintNoBands = mpPaint` would throw at load if
+it did not.
 
-Not checked: no phone, and the window was not seen. The collision is proven from
-the stylesheet itself - one class did two jobs, and the fix removes the second
-job - but the layout was not rendered here, so the next thing that needs doing
-is a look at it on the device.
+Harness on the extracted Mix Pad block: snap off turns 1.234 into 1.25, half a
+second turns it into 1, a whole second turns 2.6 into 2 - and a drag delta of
+0.6 goes to 1. `mpClipBands` marks a clip at 0-10 and one at 5-10 as overlapping
+(top/bottom), leaves butt-joined clips at 0-10 and 10-15 unbanded, and alternates
+0/1/0 for three clips stacked at 0, 2 and 4. `mpMoveClipTo(0, 0, 2)` empties
+track 1, fills track 3 and selects index 0; a same-track move returns false.
+
+Not checked: no phone, and none of this was seen on a screen. The banding maths
+and the drag arithmetic are verified; whether the halves are tall enough to read
+on a phone, and whether a vertical drag feels right, are not.
