@@ -17,7 +17,7 @@ SideCut-5.0.53-release.aab with "Play automatic protection requires a minimum
 SDK version of 24 or higher". 24 is therefore the floor the template is
 patched up to before every build.
 """
-import os, re, sys
+import os, re, subprocess, sys
 
 ANDROID = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'android'))
 VARIABLES = os.path.join(ANDROID, 'variables.gradle')
@@ -77,3 +77,17 @@ if n5 == 0:
     sys.exit('FATAL: could not find distributionUrl in %s\n--- file content ---\n%s' % (WRAPPER, src))
 open(WRAPPER, 'w').write(new_src)
 print('set Gradle wrapper=%s in %s' % (GRADLE_VERSION, WRAPPER))
+
+# ---- 4) HAND-OVER: the hold's foreground-service type ----
+# This step is the first thing in android-build.yml that runs after
+# patch-joblock.py has written the hold, and nothing under .github/workflows/ can be
+# reached by a release commit (GitHub refuses an Actions token there) - so the type a
+# song needs has to arrive through dev/, the same way dev/widget-sizes.py and
+# dev/native-play.py do. It edits the project this build already has; it never touches
+# the repo. A failure is fatal: building with the wrong service type is the bug.
+HOLD = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'dev', 'native-holdtype.py'))
+if not os.path.exists(HOLD):
+    sys.exit('FATAL: %s missing - it gives the hold its mediaPlayback type.' % HOLD)
+rc = subprocess.call([sys.executable, HOLD])
+if rc != 0:
+    sys.exit('FATAL: dev/native-holdtype.py failed (%d) - the hold would be the wrong type.' % rc)
