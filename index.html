@@ -8135,17 +8135,32 @@ window.__scDragDelta = function(key, pxPerSec){
       if(!t.alive){ t.id = _origSI.call(window, t.fn, t.ms); t.alive = true; }
     });
   }
+  // 84.1.2 - A PLAYING SONG KEEPS ITS LOOPS. This saver assumed the audio would be the
+  // native service's job by the time the app went hidden. It is not: playback lives in
+  // this page, so stopping every tracked interval on hide starved the song and the music
+  // ended when the app was left. Nothing is paused while a song is actually playing.
+  function __scAudioLive(){
+    try{
+      if(window.scStreamState && scStreamState.audio && !scStreamState.audio.paused && !scStreamState.audio.ended) return true;
+    }catch(_eA1){}
+    try{
+      var as = document.querySelectorAll('audio,video');
+      for(var i = 0; i < as.length; i++){ if(as[i] && !as[i].paused && !as[i].ended) return true; }
+    }catch(_eA2){}
+    return false;
+  }
+  function __scPauseIdle(){ if(!__scAudioLive()) pauseAll(); }
   document.addEventListener('visibilitychange', function(){
     if(document.hidden && !wasHidden){
       wasHidden = true;
-      pauseAll();
+      __scPauseIdle();
     } else if(!document.hidden && wasHidden){
       wasHidden = false;
       resumeAll();
     }
   });
-  // Also pause on pagehide (app backgrounded on Android)
-  window.addEventListener('pagehide', function(){ pauseAll(); });
+  // Also pause on pagehide (app backgrounded on Android), unless a song is playing.
+  window.addEventListener('pagehide', function(){ __scPauseIdle(); });
   window.addEventListener('pageshow', function(){
     wasHidden = document.hidden;
     if(!document.hidden) resumeAll();
@@ -21052,7 +21067,7 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 72.5.1 adds a FOURTH number for a fix shipped inside a release: the
   // updater compares the numbers one at a time, so it reads 72.5.1 as newer
   // than 72.5 and installs it, while the release it belongs to stays 72.5.
-  const APP_VERSION = '84.1.1';
+  const APP_VERSION = '84.1.2';
   if(typeof window !== 'undefined') window.APP_VERSION = APP_VERSION;
   // 80.6.18 - THE WEB PAGE SAYS WHICH PAGE IT IS. The app on a phone and the page
   // in a browser are told apart by one small tag beside the name, and the tab says
@@ -21762,6 +21777,9 @@ function startLyricsAutoScroll(keepPos, noReset) {
   // 81.6 - THE HEADPHONES' BUTTONS WORK AFTER A PAUSE.
   // 82 - CROPPING BY THE NUMBER, AND A SPEED THAT BELONGS TO ONE SONG.
   // 83 - THE SPEED IS THE SONG'S, IN THE SONG'S SETTINGS, AND THE MIXES CARRY IT.
+      { version: '84.1.2', date: 'November 13, 2026', title: 'The music does not stop when you leave the app', items: [
+        'The music keeps playing when you leave the app. The battery saver was stopping every background timer as soon as the page went hidden, and the player lives in the page, so a song lost the loops that feed it and the music ended the moment you switched away or locked the phone. A playing song now keeps them, and the saver behaves exactly as before the moment nothing is playing.'
+      ] },
       { version: '84.1.0', date: 'November 12, 2026', title: 'Mix Pad: one door, and a desk you can actually touch', items: [
     'The MIX PAD button under the player is gone. It sat next to DJ MODE on the listening screen, which is where you are to play a song, so the Mix Pad is opened from Studio and nowhere else - one door, and the place the rest of the tools live.',
     'On a phone the Mix Pad is the whole screen now instead of a sheet that covered most of it. The title row and PLAY / STOP / REC / EXPORT stay pinned at the top while the timeline scrolls underneath, and Close stays pinned at the bottom, so the transport is never something you have to scroll back to find.',
