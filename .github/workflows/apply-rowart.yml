@@ -1,0 +1,57 @@
+name: Apply the row-art bridge
+
+# Hold-to-reorder on an album song throws "scAlbumRowArt is not defined".
+# The page is two top-level <script> blocks: the first (an IIFE) owns scAlbumRowArt,
+# the second draws the reorder sheet and can only see what the first publishes on
+# window (__scGetUserAlbums, __scGetAllTracks, ...). The art lookup was never published.
+# One export, one local name, version and cache bumped. Run once, then build as usual.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch, verify and push
+        run: |
+          python3 - <<'PY'
+          import io, json, sys
+          P = 'index.html'
+          s = io.open(P, encoding='utf-8').read()
+          if 'window.__scAlbumRowArt' in s:
+              print('already applied')
+          else:
+              a1 = "  window.__scGetAllTracks = function(){ return allTracks; };\n"
+              if s.count(a1) != 1: sys.exit('FATAL: album bridge anchor missing')
+              s = s.replace(a1, a1 + "  window.__scAlbumRowArt = function(t){ try{ return scAlbumRowArt(t); }catch(e){ return ''; } };\n", 1)
+              a2 = "document.addEventListener('lostpointercapture',()=>{},true);\n"
+              if s.count(a2) != 1: sys.exit('FATAL: second block anchor missing')
+              s = s.replace(a2, a2 + "function scAlbumRowArt(t){\n  try{ if(typeof window.__scAlbumRowArt === 'function') return window.__scAlbumRowArt(t); }catch(e){}\n  return '';\n}\n", 1)
+              o = "const APP_VERSION = '84.1.0';"
+              if s.count(o) != 1: sys.exit('FATAL: page is not on 84.1.0')
+              s = s.replace(o, "const APP_VERSION = '84.1.1';", 1)
+              io.open(P, 'w', encoding='utf-8').write(s)
+              w = io.open('sw.js', encoding='utf-8').read()
+              io.open('sw.js', 'w', encoding='utf-8').write(w.replace('sidecut-shell-v84.1.0', 'sidecut-shell-v84.1.1'))
+              u = json.load(io.open('updates.json', encoding='utf-8'))
+              u['version'] = '84.1.1'
+              u['date'] = 'November 13, 2026'
+              u['notes'] = ["Holding a song inside an album opens the reorder sheet again instead of failing with \"scAlbumRowArt is not defined\". The sheet is drawn in a later script than the one that finds a song's cover art, and that lookup was never handed over; it is now, and a row that cannot find its cover just draws without one."]
+              io.open('updates.json', 'w', encoding='utf-8').write(json.dumps(u, ensure_ascii=False) + '\n')
+              print('patched')
+          PY
+          grep -q "__scAlbumRowArt" index.html
+          grep -q "const APP_VERSION = '84.1.1';" index.html
+          grep -q "sidecut-shell-v84.1.1" sw.js
+          git config user.name SideCut
+          git config user.email actions@users.noreply.github.com
+          git add index.html sw.js updates.json
+          if git diff --cached --quiet; then echo 'nothing to commit'; exit 0; fi
+          git commit -m 'Hold-to-reorder opens again: the sheet can find a song cover'
+          git push
