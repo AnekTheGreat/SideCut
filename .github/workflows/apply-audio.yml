@@ -1,0 +1,136 @@
+name: Apply the media-service fix (a song is not a download)
+
+# WHY THIS EXISTS, in the phone's own terms.
+#
+# The hold SideCut takes while a song plays is a foreground service declared `dataSync` - the
+# type Android gives to a download that only has to finish. From Android 15 that is a job the
+# system is allowed to end: it is capped at six hours a day, it is among the first things an
+# OEM battery manager stops when the screen goes off, and it earns the app none of a music
+# app's standing. So the song was living on the wrong kind of service and dying with it when
+# the phone was locked or the app was left.
+#
+# A player should hold `mediaPlayback`, and say so itself in startForeground. Android 14 refuses
+# that type from an app with no active MediaSession and a phone can refuse the service outright,
+# so both fall back to dataSync: the change can only be the same or better than it was.
+#
+# The native lines in this repo live in .github/workflows/patch-joblock.py (the android/ project
+# is generated in CI and gitignored), so that is what this edits. Run it once, then run
+# "Build Android (Capacitor) AAB" as usual.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    name: Point the hold at mediaPlayback
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch the build-time joblock script
+        run: |
+          python3 - <<'PY'
+          import io
+          import sys
+
+          PATH = '.github/workflows/patch-joblock.py'
+          src = io.open(PATH, encoding='utf-8').read()
+
+          if 'FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK' in src:
+              print('already applied: the hold asks for mediaPlayback')
+              sys.exit(0)
+
+          # 1. startForeground asks for the media type first, dataSync second, nothing third.
+          old_start = (
+              "            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {\n"
+              "                startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);\n"
+              "            } else {\n"
+              "                startForeground(NOTIFICATION_ID, n);\n"
+              "            }\n"
+              "            running = true;\n"
+          )
+          new_start = (
+              "            /* A SONG IS NOT A DOWNLOAD. This service was written for a conversion and is\n"
+              "               declared dataSync, right for work that only has to finish. From Android 15 that\n"
+              "               is a job the system may end - capped at six hours a day, among the first things\n"
+              "               an OEM battery manager stops when the screen goes off - so a song was living on\n"
+              "               the wrong kind of service and dying with it. mediaPlayback is what a player\n"
+              "               holds; the older type stays as the fallback, because Android 14 refuses the\n"
+              "               media type without an active MediaSession and a phone can refuse the service\n"
+              "               outright. */\n"
+              "            boolean up = false;\n"
+              "            if (Build.VERSION.SDK_INT >= 34) {\n"
+              "                try {\n"
+              "                    startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);\n"
+              "                    up = true;\n"
+              "                } catch (Throwable notMedia) {\n"
+              "                    up = false;\n"
+              "                }\n"
+              "            }\n"
+              "            if (!up) {\n"
+              "                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {\n"
+              "                    startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);\n"
+              "                } else {\n"
+              "                    startForeground(NOTIFICATION_ID, n);\n"
+              "                }\n"
+              "            }\n"
+              "            running = true;\n"
+          )
+          if old_start not in src:
+              sys.exit('FATAL: the onStartCommand block this patch edits is not in patch-joblock.py')
+          src = src.replace(old_start, new_start, 1)
+
+          # 2. The permission the media type needs.
+          old_perm = (
+              "    'android.permission.FOREGROUND_SERVICE_DATA_SYNC',\n"
+          )
+          new_perm = (
+              "    'android.permission.FOREGROUND_SERVICE_DATA_SYNC',\n"
+              "    # A song is media, not a download: the type the service asks for first.\n"
+              "    'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',\n"
+          )
+          if old_perm not in src:
+              sys.exit('FATAL: the permission list this patch edits is not in patch-joblock.py')
+          src = src.replace(old_perm, new_perm, 1)
+
+          # 3. The declaration carries both types: startForeground with a type the manifest does
+          #    not declare is refused outright.
+          old_tag = "' android:foregroundServiceType=\"dataSync\" />')"
+          new_tag = "' android:foregroundServiceType=\"mediaPlayback|dataSync\" />')"
+          if old_tag not in src:
+              sys.exit('FATAL: the service declaration this patch edits is not in patch-joblock.py')
+          src = src.replace(old_tag, new_tag, 1)
+
+          io.open(PATH, 'w', encoding='utf-8').write(src)
+          print('applied: mediaPlayback first, dataSync as the fallback, both declared')
+          PY
+
+      - name: Check the script still compiles and says what it should
+        run: |
+          python3 -m py_compile .github/workflows/patch-joblock.py
+          grep -q 'FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK' .github/workflows/patch-joblock.py
+          grep -q 'FOREGROUND_SERVICE_MEDIA_PLAYBACK' .github/workflows/patch-joblock.py
+          grep -q 'foregroundServiceType="mediaPlayback|dataSync"' .github/workflows/patch-joblock.py
+          python3 - <<'PY'
+          import re
+          s = open('.github/workflows/patch-joblock.py', encoding='utf-8').read()
+          for i, java in enumerate(re.findall(r'"""(package.*?)"""', s, re.S)):
+              b = java.count('{') - java.count('}')
+              p = java.count('(') - java.count(')')
+              print('java block %d: braces %d parens %d' % (i + 1, b, p))
+              if b or p:
+                  raise SystemExit('FATAL: the generated Java is unbalanced')
+          print('the joblock script compiles, the Java in it is balanced, both types are declared')
+          PY
+
+      - name: Commit and push
+        run: |
+          git config user.name 'SideCut'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/patch-joblock.py
+          if git diff --cached --quiet; then echo 'nothing to commit'; exit 0; fi
+          git commit -m 'The hold is a media service, so a song stops dying with the screen off'
+          git push
