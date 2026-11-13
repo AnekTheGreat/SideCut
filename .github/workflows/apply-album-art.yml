@@ -1,0 +1,144 @@
+name: Apply the album-art bridge (hold-to-reorder)
+
+# WHY THIS EXISTS, in the phone's own terms.
+#
+# Holding a song row inside an album is meant to open the reorder sheet. On the phone it
+# opened an error instead: "Could not open reorder: scAlbumRowArt is not defined".
+#
+# SideCut's page is two top-level <script> blocks. The first is one big IIFE: it owns the
+# library, the tracks, and scAlbumRowArt - the function that finds a song's cover art. The
+# second block draws the reorder sheet, and it has always reached across into the first one
+# through the window.__scGet* hooks the first block publishes (__scGetUserAlbums,
+# __scGetAllTracks, __scGetLibraryMode). scAlbumRowArt was never on that list, so the sheet
+# threw on its first row and the long press went nowhere.
+#
+# Two insertions, nothing else changed: the first block publishes scAlbumRowArt, and the
+# second block defines the name the reorder code already calls. If the art lookup fails the
+# row simply draws without a cover - a sheet that opens is worth more than a picture.
+#
+# Run this once, then run "Build Android (Capacitor) AAB" as usual.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    name: Bridge the art lookup into the reorder block
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch the page
+        run: |
+          python3 - <<'PY'
+          import io
+          import json
+          import sys
+
+          PAGE = 'index.html'
+          src = io.open(PAGE, encoding='utf-8').read()
+
+          if 'window.__scAlbumRowArt' in src:
+              print('already applied: the reorder block can find the art')
+              sys.exit(0)
+
+          # 1. The first block publishes what it owns. It already publishes its album and
+          #    track lookups for this exact reason; the row art was simply left out.
+          anchor1 = "  window.__scGetAllTracks = function(){ return allTracks; };\n"
+          if src.count(anchor1) != 1:
+              sys.exit('FATAL: the album bridge anchor is not in the page exactly once')
+          add1 = (
+              "  // 84.1.1 - the reorder sheet is drawn in the second <script> block and paints its\n"
+              "  // rows with scAlbumRowArt, which only exists inside this closure. It was never on\n"
+              "  // the bridge list, so every hold-to-reorder died with \"scAlbumRowArt is not\n"
+              "  // defined\" before the sheet could draw a single row.\n"
+              "  window.__scAlbumRowArt = function(t){ try{ return scAlbumRowArt(t); }catch(_eArt){ return ''; } };\n"
+          )
+          src = src.replace(anchor1, anchor1 + add1, 1)
+
+          # 2. The second block gets the name its reorder code already calls. Art or no art,
+          #    the long press opens the sheet.
+          anchor2 = "document.addEventListener('lostpointercapture',()=>{},true);\n"
+          if src.count(anchor2) != 1:
+              sys.exit('FATAL: the second block anchor is not in the page exactly once')
+          add2 = (
+              "// 84.1.1 - Hold-to-reorder draws its album rows with scAlbumRowArt, a name that\n"
+              "// lives in the earlier <script> block and so was never in scope here: every long\n"
+              "// press ended in \"scAlbumRowArt is not defined\" instead of the reorder sheet. That\n"
+              "// block now exposes the lookup through window.__scAlbumRowArt, and this is the name\n"
+              "// the reorder code calls. A row with no cover beats a long press that does nothing.\n"
+              "function scAlbumRowArt(t){\n"
+              "  try{ if(typeof window.__scAlbumRowArt === 'function') return window.__scAlbumRowArt(t); }catch(_eArt2){}\n"
+              "  return '';\n"
+              "}\n"
+          )
+          src = src.replace(anchor2, anchor2 + add2, 1)
+
+          # 3. Version, because an over-the-air page has to be able to tell itself apart.
+          old_ver = "const APP_VERSION = '84.1.0';"
+          if src.count(old_ver) != 1:
+              sys.exit('FATAL: the page is not on 84.1.0 any more')
+          src = src.replace(old_ver, "const APP_VERSION = '84.1.1';", 1)
+          io.open(PAGE, 'w', encoding='utf-8').write(src)
+
+          sw = io.open('sw.js', encoding='utf-8').read()
+          if 'sidecut-shell-v84.1.0' not in sw:
+              sys.exit('FATAL: the service worker is not on 84.1.0 any more')
+          sw = sw.replace('sidecut-shell-v84.1.0', 'sidecut-shell-v84.1.1')
+          io.open('sw.js', 'w', encoding='utf-8').write(sw)
+
+          upd = json.load(io.open('updates.json', encoding='utf-8'))
+          upd['version'] = '84.1.1'
+          upd['date'] = 'November 13, 2026'
+          upd['notes'] = [
+              "Holding a song inside an album opens the reorder sheet again. It was failing "
+              "with \"scAlbumRowArt is not defined\": the sheet is drawn in a later script than "
+              "the one that knows how to find a song's cover art, and that lookup was never handed "
+              "over. Every long press now opens the sheet, and a row that cannot find its cover "
+              "just draws without one."
+          ]
+          io.open('updates.json', 'w', encoding='utf-8').write(json.dumps(upd, ensure_ascii=False) + '\n')
+          print('applied: the reorder block can reach the row art, page is 84.1.1')
+          PY
+
+      - name: Check the bridge, the blocks and the version agree
+        run: |
+          set -e
+          grep -q 'window.__scAlbumRowArt = function(t){ try{ return scAlbumRowArt(t); }catch(_eArt){ return .\{.. }; };' index.html
+          grep -q '^function scAlbumRowArt(t){$' index.html
+          grep -q "const APP_VERSION = '84.1.1';" index.html
+          grep -q 'sidecut-shell-v84.1.1' sw.js
+          python3 - <<'PY'
+          import io
+          import json
+          import re
+          import sys
+
+          page = io.open('index.html', encoding='utf-8').read()
+          d = json.load(io.open('updates.json', encoding='utf-8'))
+          print('page version', re.search(r"const APP_VERSION = '([^']+)'", page).group(1))
+          print('updates.json version', d['version'])
+          print('notes', len(d['notes']))
+          if d['version'] != '84.1.1':
+              sys.exit('FATAL: updates.json disagrees with the page')
+
+          # The two names must line up: one definition in each block, and the caller's name
+          # declared inside block two so it resolves there.
+          if page.count('function scAlbumRowArt(') != 2:
+              sys.exit('FATAL: expected exactly two definitions of the row art lookup')
+          if page.count('window.__scAlbumRowArt') != 1:
+              sys.exit('FATAL: the bridge is published more than once')
+          print('bridge in place, one private definition, one for the reorder block')
+          PY
+
+      - name: Commit and push
+        run: |
+          git config user.name 'SideCut'
+          git config user.email 'actions@users.noreply.github.com'
+          git add index.html sw.js updates.json
+          if git diff --cached --quiet; then echo 'nothing to commit'; exit 0; fi
+          git commit -m 'Hold-to-reorder opens again: the sheet can find a song cover'
+          git push
