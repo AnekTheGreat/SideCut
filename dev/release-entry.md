@@ -1,21 +1,21 @@
-## 84.1.2 ({{STAMP}})
+## 84.1.3 ({{STAMP}})
 
-**The music does not stop when you leave the app.** A song that is playing now keeps the
-loops it needs when SideCut goes to the background or the page is hidden, instead of being
-stopped by the app's own battery saver.
+**The music keeps playing when you leave the app.** While a song is playing, SideCut holds a
+foreground service, so switching to another app no longer freezes it and stops the song.
 
-- The battery saver tracks every interval longer than 500 ms and paused them all on
-  `visibilitychange` -> `document.hidden`, and again on `pagehide`. That was written when
-the audio was expected to be `NativePlayService`'s job by the time the app went hidden, and
-it is not: streamed and kept songs both play in this page. So the loops that feed playback
-were killed with visibility and the music ended the second the app was left - which is why
-downloaded songs stopped too, not just streams.
-- `__scAudioLive()` answers whether anything is actually playing (the stream player's own
-audio, or any live `<audio>`/`<video>` element), and `__scPauseIdle()` only runs the old
-`pauseAll()` when nothing is playing. Both the hidden branch and `pagehide` go through it.
-Nothing else about the saver changed: with the song stopped, hiding the app behaves exactly
-as it did before.
-- Honest limit: this keeps playback alive while the page is alive but hidden. A recents
-swipe that destroys the WebView still needs the native player to own the sound, which is
-the next piece of work, not this release.
+- Nothing in the page was pausing the audio. `scStreamRemember` only saves the position, and 84.1.2 had
+  already stopped the battery saver from killing the loops while a song plays. What was left was the
+  operating system: the player is an audio element inside the page, and Android freezes a cached
+  process - which is what SideCut becomes the moment another app comes forward. A frozen process
+  cannot feed an audio element, so the song stopped.
+- The app already carried the machinery for this and nothing used it: the `SideCutJob` bridge
+  (`hold` / `update` / `release`) starts `SideCutJobService`, a foreground service with a wake lock.
+  A foreground service is the difference between an app Android may freeze and a player it may not.
+- The page now holds it when a `<audio>` element starts playing and lets it go about half a second
+  after the last one pauses or ends. It never releases a hold from the background: an OS pause must
+  not tear down a hold something else may be relying on, so a release only happens while the app is
+  on screen.
+- Honest limit: this keeps the process alive, which is what stops the freeze. A recents swipe that
+  destroys the activity still ends the song; owning playback in the native player is the next piece of
+  work, not this release.
 - OTA: full channel {{ROOT}} bytes, Play channel {{PLAY}} bytes.
